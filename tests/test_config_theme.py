@@ -19,4 +19,4 @@ def test_all_presets_define_required_theme_keys() -> None:
 
 def test_preset_list_includes_varied_appearance_styles() -> None:
     names = set(get_preset_names())
-    assert {"Porcelain Light", "Graphite Focus", "Olive Operations", "Copper Night"}.issubset(names)
+    assert {"Porcelain Light", "Graphite Focus", "Olive Operations", "Copper Night", "Midnight Ocean", "Forest Zen", "Royal Purple", "Arctic Frost"}.issubset(names)

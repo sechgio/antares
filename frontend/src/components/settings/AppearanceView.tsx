@@ -149,6 +149,81 @@ const PRESET_PREVIEWS: Record<string, PresetPreview> = {
     description: 'Contraste violeta/cian para una apariencia más expresiva.',
     colors: ['#070713', '#111126', '#22D3EE', '#A855F7'],
   },
+  'Midnight Ocean': {
+    name: 'Midnight Ocean',
+    description: 'Azul profundo oceánico con acentos cian brillantes.',
+    colors: ['#0A1628', '#142238', '#0EA5E9', '#22D3EE'],
+  },
+  'Forest Zen': {
+    name: 'Forest Zen',
+    description: 'Verde natural relajante para una experiencia zen.',
+    colors: ['#0D1F14', '#16291D', '#22C55E', '#14B8A6'],
+  },
+  'Royal Purple': {
+    name: 'Royal Purple',
+    description: 'Púrpura real elegante con acentos vibrantes.',
+    colors: ['#1A0B2E', '#2D1B4E', '#8B5CF6', '#EC4899'],
+  },
+  'Rose Quartz': {
+    name: 'Rose Quartz',
+    description: 'Rosa suave y elegante con toques modernos.',
+    colors: ['#1F1115', '#2E1A20', '#EC4899', '#8B5CF6'],
+  },
+  'Arctic Frost': {
+    name: 'Arctic Frost',
+    description: 'Claro ártico limpio con acentos azul cielo.',
+    colors: ['#F8FAFC', '#FFFFFF', '#0EA5E9', '#06B6D4'],
+  },
+  'Ember Glow': {
+    name: 'Ember Glow',
+    description: 'Cálido ámbar con brillos de fuego controlado.',
+    colors: ['#1A1208', '#2A1A0D', '#F59E0B', '#38BDF8'],
+  },
+  'Slate Modern': {
+    name: 'Slate Modern',
+    description: 'Pizarra moderna con acentos azul técnico.',
+    colors: ['#0F172A', '#1E293B', '#3B82F6', '#06B6D4'],
+  },
+  'Aurora Borealis': {
+    name: 'Aurora Borealis',
+    description: 'Cian brillante inspirado en auroras boreales.',
+    colors: ['#0A0F1A', '#141B2D', '#06B6D4', '#A855F7'],
+  },
+  'Minimalist Cream': {
+    name: 'Minimalist Cream',
+    description: 'Crema minimalista elegante y sobrio.',
+    colors: ['#FFFBF0', '#FFFFFF', '#78716C', '#0EA5E9'],
+  },
+  'Cyberpunk': {
+    name: 'Cyberpunk',
+    description: 'Estilo cyberpunk con neón magenta y cian.',
+    colors: ['#050505', '#0A0A0A', '#FF00FF', '#00FFFF'],
+  },
+  'Deep Space': {
+    name: 'Deep Space',
+    description: 'Espacio profundo con acentos índigo brillantes.',
+    colors: ['#030712', '#0F172A', '#6366F1', '#22D3EE'],
+  },
+  'Golden Hour': {
+    name: 'Golden Hour',
+    description: 'Hora dorada con tonos ámbar cálidos.',
+    colors: ['#1C1917', '#292524', '#F59E0B', '#3B82F6'],
+  },
+  'Lavender Dreams': {
+    name: 'Lavender Dreams',
+    description: 'Lavanda soñador con toques suaves.',
+    colors: ['#1E1B4B', '#312E81', '#8B5CF6', '#EC4899'],
+  },
+  'Ocean Breeze': {
+    name: 'Ocean Breeze',
+    description: 'Brisa oceánica con azules profundos.',
+    colors: ['#0C4A6E', '#075985', '#0EA5E9', '#22D3EE'],
+  },
+  'Mars Red': {
+    name: 'Mars Red',
+    description: 'Rojo marciano intenso con acentos controlados.',
+    colors: ['#1C0A0A', '#2D1313', '#EF4444', '#3B82F6'],
+  },
 };
 
 const MODE_OPTIONS: { key: ThemeMode; label: string; description: string; icon: typeof Moon }[] = [
