@@ -327,15 +327,18 @@ export default function ConversionView() {
     ? `${imageCount} imagen${imageCount !== 1 ? 'es' : ''}${videoCount > 0 ? ` + ${videoCount} video${videoCount !== 1 ? 's' : ''}` : ''} → ${formato} · ${calidad}% · ${usarRename ? fileNameFromPath(patron) : 'Sin cambios'}`
     : '';
 
+  const isEmpty = files.length === 0;
+
   return (
     <div
-      className="space-y-6"
+      className={`h-full flex flex-col ${isEmpty ? 'space-y-6' : 'space-y-4'}`}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
       {running && status && <ProgressBar progress={status.progress} />}
 
+      {/* Dropzone / Estado de carga */}
       <Dropzone
         dragOver={dragOver}
         onAddFiles={addFiles}
@@ -345,59 +348,94 @@ export default function ConversionView() {
         onClear={clearFiles}
       />
 
-      {files.length > 0 && (
-        <FileGrid
-          files={files}
-          selectedFiles={selectedFiles}
-          selectedFile={selectedFile}
-          onFileClick={handleFileClick}
-          onRemoveFile={removeFile}
-          onSelectAll={selectAllFiles}
-          videoFiles={videoFiles}
+      {/* Estado Vacio: Mostrar solo barra de accion */}
+      {isEmpty && (
+        <StickyActionBar
+          destino={destino}
+          onSelectDest={selectDest}
+          onStart={doProcess}
+          onCancel={doCancel}
+          running={running}
+          allReady={allReady}
+          summary={summary}
         />
       )}
 
-      {files.length > 0 && (
-        <>
-          <OptionsCard
-            formato={formato}
-            formatos={formats}
-            onFormatoChange={setFormato}
-            calidad={calidad}
-            onCalidadChange={setCalidad}
-            resizeEnabled={resizeEnabled}
-            onToggleResize={toggleResize}
-            resizeAncho={resizeAncho}
-            resizeAlto={resizeAlto}
-            onResizeAnchoChange={setResizeAncho}
-            onResizeAltoChange={setResizeAlto}
-            keepExif={keepExif}
-            onToggleExif={setKeepExif}
-            hasVideos={videoFiles.size > 0}
-          />
+      {/* Estado con archivos: Layout de dos columnas */}
+      {!isEmpty && (
+        <div className="grid grid-cols-1 xl:grid-cols-5 gap-5 flex-1 min-h-0">
+          {/* Columna Izquierda: Archivos */}
+          <div className="xl:col-span-3 flex flex-col gap-4 min-h-0">
+            <div className="flex-1 min-h-0 bg-[var(--bg-surface)] rounded-2xl border border-[var(--border-subtle)] flex flex-col overflow-hidden">
+              <div className="px-4 py-3 border-b border-[var(--border-subtle)] flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Archivos</span>
+                  <span className="px-2 py-0.5 rounded-full bg-[var(--bg-elevated)] text-[var(--text-secondary)] text-[11px] font-medium border border-[var(--border-subtle)]">
+                    {files.length}
+                  </span>
+                </div>
+                <button
+                  onClick={selectAllFiles}
+                  className="text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                >
+                  {selectedFiles.size === files.length ? 'Deseleccionar todo' : 'Seleccionar todo'}
+                </button>
+              </div>
+              <div className="flex-1 overflow-hidden p-4">
+                <FileGrid
+                  files={files}
+                  selectedFiles={selectedFiles}
+                  selectedFile={selectedFile}
+                  onFileClick={handleFileClick}
+                  onRemoveFile={removeFile}
+                  videoFiles={videoFiles}
+                />
+              </div>
+            </div>
+          </div>
 
-          <RenameCard
-            files={files}
-            usarRename={usarRename}
-            namingMode={namingMode}
-            onNamingModeChange={(mode) => {
-              const preset = namingPresets.find((p) => p.id === mode);
-              if (preset) chooseNamingPreset(preset);
-              else setNamingMode(mode);
-            }}
-            patron={patron}
-            onPatronChange={(p) => { setPatron(p); setNamingMode('custom'); setUsarRename(true); }}
-            secuencia={secuencia}
-            onSecuenciaChange={setSecuencia}
-            useFilenameSeq={useFilenameSeq}
-            onToggleFilenameSeq={setUseFilenameSeq}
-            namingPresets={namingPresets}
-            preview={preview}
-            fields={fields}
-            onInsertVar={insertVar}
-            hasVideos={videoFiles.size > 0}
-          />
-        </>
+          {/* Columna Derecha: Opciones */}
+          <div className="xl:col-span-2 flex flex-col gap-4 overflow-y-auto pr-1 pb-1">
+            <OptionsCard
+              formato={formato}
+              formatos={formats}
+              onFormatoChange={setFormato}
+              calidad={calidad}
+              onCalidadChange={setCalidad}
+              resizeEnabled={resizeEnabled}
+              onToggleResize={toggleResize}
+              resizeAncho={resizeAncho}
+              resizeAlto={resizeAlto}
+              onResizeAnchoChange={setResizeAncho}
+              onResizeAltoChange={setResizeAlto}
+              keepExif={keepExif}
+              onToggleExif={setKeepExif}
+              hasVideos={videoFiles.size > 0}
+            />
+
+            <RenameCard
+              files={files}
+              usarRename={usarRename}
+              namingMode={namingMode}
+              onNamingModeChange={(mode) => {
+                const preset = namingPresets.find((p) => p.id === mode);
+                if (preset) chooseNamingPreset(preset);
+                else setNamingMode(mode);
+              }}
+              patron={patron}
+              onPatronChange={(p) => { setPatron(p); setNamingMode('custom'); setUsarRename(true); }}
+              secuencia={secuencia}
+              onSecuenciaChange={setSecuencia}
+              useFilenameSeq={useFilenameSeq}
+              onToggleFilenameSeq={setUseFilenameSeq}
+              namingPresets={namingPresets}
+              preview={preview}
+              fields={fields}
+              onInsertVar={insertVar}
+              hasVideos={videoFiles.size > 0}
+            />
+          </div>
+        </div>
       )}
 
       <PreviewDrawer
@@ -409,15 +447,17 @@ export default function ConversionView() {
         onClose={() => setDrawerOpen(false)}
       />
 
-      <StickyActionBar
-        destino={destino}
-        onSelectDest={selectDest}
-        onStart={doProcess}
-        onCancel={doCancel}
-        running={running}
-        allReady={allReady}
-        summary={summary}
-      />
+      {!isEmpty && (
+        <StickyActionBar
+          destino={destino}
+          onSelectDest={selectDest}
+          onStart={doProcess}
+          onCancel={doCancel}
+          running={running}
+          allReady={allReady}
+          summary={summary}
+        />
+      )}
     </div>
   );
 }

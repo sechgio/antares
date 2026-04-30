@@ -8,7 +8,6 @@ interface FileGridProps {
   selectedFile: string | null;
   onFileClick: (e: React.MouseEvent, path: string) => void;
   onRemoveFile: (path: string) => void;
-  onSelectAll: () => void;
   videoFiles?: Set<string>;
 }
 
@@ -44,7 +43,7 @@ function FileGridCell({ rowIndex, columnIndex, style, files, columnCount, select
   );
 }
 
-export default function FileGrid({ files, selectedFiles, selectedFile, onFileClick, onRemoveFile, onSelectAll, videoFiles = new Set() }: FileGridProps) {
+export default function FileGrid({ files, selectedFiles, selectedFile, onFileClick, onRemoveFile, videoFiles = new Set() }: FileGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = React.useState({ width: 800, height: 500 });
 
@@ -61,44 +60,26 @@ export default function FileGrid({ files, selectedFiles, selectedFile, onFileCli
 
   const columnCount = Math.max(1, Math.floor(dimensions.width / COL_WIDTH));
   const rowCount = Math.ceil(files.length / columnCount);
-  const gridHeight = Math.min(rowCount * ROW_HEIGHT, 600);
 
   const cellProps = useMemo<CellData>(() => ({
     files, columnCount, selectedFiles, selectedFile, onFileClick, onRemoveFile, videoFiles,
   }), [files, columnCount, selectedFiles, selectedFile, onFileClick, onRemoveFile, videoFiles]);
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] text-[#666666]">
-          {selectedFiles.size > 0 ? `${selectedFiles.size} seleccionados` : `${files.length} total`}
-        </span>
-        <button
-          onClick={onSelectAll}
-          className="text-xs text-[#A0A0A0] hover:text-white transition-colors"
-        >
-          {selectedFiles.size === files.length ? 'Deseleccionar' : 'Seleccionar todos'}
-        </button>
-      </div>
-      <div ref={containerRef} style={{ height: gridHeight }}>
-        {files.length > 0 && (
-          <Grid
-            columnCount={columnCount}
-            columnWidth={COL_WIDTH}
-            defaultHeight={gridHeight}
-            defaultWidth={dimensions.width}
-            rowCount={rowCount}
-            rowHeight={ROW_HEIGHT}
-            overscanCount={3}
-            cellComponent={FileGridCell}
-            cellProps={cellProps}
-            itemKey={({ columnIndex, rowIndex, data }) => {
-              const idx = rowIndex * data.columnCount + columnIndex;
-              return data.files[idx] || `${rowIndex}-${columnIndex}`;
-            }}
-          />
-        )}
-      </div>
+    <div ref={containerRef} className="h-full w-full">
+      {files.length > 0 && (
+        <Grid
+          columnCount={columnCount}
+          columnWidth={COL_WIDTH}
+          defaultHeight={dimensions.height}
+          defaultWidth={dimensions.width}
+          rowCount={rowCount}
+          rowHeight={ROW_HEIGHT}
+          overscanCount={3}
+          cellComponent={FileGridCell}
+          cellProps={cellProps}
+        />
+      )}
     </div>
   );
 }

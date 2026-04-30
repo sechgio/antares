@@ -142,32 +142,32 @@ function PdfMultiViewer({ blob, desde, total, padLen }: { blob: Blob | null; des
     const previewCount = Math.min(total, MAX_PREVIEW_PAGES);
 
     return (
-        <div ref={containerRef} className="w-full h-full overflow-y-auto flex flex-col" style={{ scrollbarWidth: 'thin', scrollbarColor: '#2a2a2a transparent' }}>
-            <div className="flex items-center justify-center gap-3 py-2 px-4 bg-[#0A0A0A]/50 border-b border-[#1A1A1A] flex-shrink-0">
-                <button onClick={() => setZoom(z => Math.max(50, z - zoomStep))} className="w-7 h-7 rounded bg-[#1A1A1A] hover:bg-[#222222] text-[#5E6AD2] text-sm font-bold flex items-center justify-center transition-colors">−</button>
-                <span className="text-[11px] text-[#5E6AD2] font-medium min-w-[40px] text-center" style={{ fontFamily: "'Roboto Mono', monospace" }}>{zoom}%</span>
-                <button onClick={() => setZoom(z => Math.min(200, z + zoomStep))} className="w-7 h-7 rounded bg-[#1A1A1A] hover:bg-[#222222] text-[#5E6AD2] text-sm font-bold flex items-center justify-center transition-colors">+</button>
-                <button onClick={() => setZoom(100)} className="ml-1 text-[10px] text-[#666666] hover:text-white transition-colors">reset</button>
+        <div ref={containerRef} className="w-full h-full overflow-y-auto flex flex-col" style={{ scrollbarWidth: 'thin', scrollbarColor: 'var(--scrollbar-thumb) transparent' }}>
+            <div className="flex items-center justify-center gap-3 py-2 px-4 bg-[var(--bg-base)]/50 border-b border-[var(--border-subtle)] flex-shrink-0">
+                <button onClick={() => setZoom(z => Math.max(50, z - zoomStep))} className="w-7 h-7 rounded bg-[var(--bg-elevated)] hover:bg-[var(--bg-input)] text-[var(--accent-primary)] text-sm font-bold flex items-center justify-center transition-colors">−</button>
+                <span className="text-[11px] text-[var(--accent-primary)] font-medium min-w-[40px] text-center" style={{ fontFamily: "'Roboto Mono', monospace" }}>{zoom}%</span>
+                <button onClick={() => setZoom(z => Math.min(200, z + zoomStep))} className="w-7 h-7 rounded bg-[var(--bg-elevated)] hover:bg-[var(--bg-input)] text-[var(--accent-primary)] text-sm font-bold flex items-center justify-center transition-colors">+</button>
+                <button onClick={() => setZoom(100)} className="ml-1 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">reset</button>
             </div>
             <div className="px-4 py-6 space-y-6 flex flex-col items-center flex-1">
                 {pageImgs.map((p) => (
-                    <div key={p.pageNum} className="relative mx-auto bg-[#111111] rounded-xl shadow-2xl shadow-black/50" style={{ width: `${(zoom / 100) * 100}%`, maxWidth: '100%' }}>
+                    <div key={p.pageNum} className="relative mx-auto bg-[var(--bg-surface)] rounded-xl shadow-2xl shadow-black/50" style={{ width: `${(zoom / 100) * 100}%`, maxWidth: '100%' }}>
                         <img src={p.url} alt={`Página ${p.pageNum}`} className="w-full object-contain rounded-lg block" draggable={false} style={{ imageRendering: 'auto' }} loading="lazy" />
-                        <div className="absolute bottom-3 right-3 flex items-center gap-1.5 bg-black/80 border border-[#5E6AD2]/25 rounded px-2 py-1" style={{ fontFamily: "'Roboto Mono', monospace" }}>
-                            <span className="text-[8px] text-[#666666]">N°</span>
-                            <span className="text-[10px] font-medium text-[#5E6AD2] tracking-widest">{pad(desde + p.pageNum - 1, padLen)}</span>
+                        <div className="absolute bottom-3 right-3 flex items-center gap-1.5 bg-black/80 border border-[var(--accent-primary)]/25 rounded px-2 py-1" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                            <span className="text-[8px] text-[var(--text-muted)]">N°</span>
+                            <span className="text-[10px] font-medium text-[var(--accent-primary)] tracking-widest">{pad(desde + p.pageNum - 1, padLen)}</span>
                         </div>
                     </div>
                 ))}
                 {renderingPage > 0 && (
-                    <div className="flex items-center gap-2.5 py-4 text-[#666666]">
-                        <RefreshCw size={11} className="animate-spin text-[#5E6AD2]/40 flex-shrink-0" />
+                    <div className="flex items-center gap-2.5 py-4 text-[var(--text-muted)]">
+                        <RefreshCw size={11} className="animate-spin text-[var(--accent-primary)]/40 flex-shrink-0" />
                         <span className="text-[10px] tracking-widest" style={{ fontFamily: "'Roboto Mono', monospace" }}>renderizando {renderingPage} / {previewCount}…</span>
                     </div>
                 )}
                 {isCapped && renderingPage === 0 && pageImgs.length > 0 && (
-                    <div className="w-full border border-[#5E6AD2]/10 bg-[#5E6AD2]/[0.03] rounded-md px-4 py-3 text-center">
-                        <p className="text-[10px] text-[#5E6AD2]/50 tracking-wider" style={{ fontFamily: "'Roboto Mono', monospace" }}>vista previa: {MAX_PREVIEW_PAGES} de {total} páginas</p>
+                    <div className="w-full border border-[var(--accent-primary)]/10 bg-[var(--accent-primary)]/[0.03] rounded-md px-4 py-3 text-center">
+                        <p className="text-[10px] text-[var(--accent-primary)]/50 tracking-wider" style={{ fontFamily: "'Roboto Mono', monospace" }}>vista previa: {MAX_PREVIEW_PAGES} de {total} páginas</p>
                     </div>
                 )}
                 <div className="h-2" />
@@ -179,18 +179,18 @@ function PdfMultiViewer({ blob, desde, total, padLen }: { blob: Blob | null; des
 /* ─── Empty / Loading State ──────────────────────────────────── */
 function EmptyPreview({ loading }: { loading: boolean }) {
     return (
-        <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-[#666666]">
+        <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-[var(--text-muted)]">
             {loading ? (
                 <>
-                    <Loader2 size={22} className="animate-spin text-[#5E6AD2]/40" />
+                    <Loader2 size={22} className="animate-spin text-[var(--accent-primary)]/40" />
                     <span className="text-[11px] tracking-widest" style={{ fontFamily: "'Roboto Mono', monospace" }}>cargando formatos…</span>
                 </>
             ) : (
                 <>
-                    <div className="w-20 h-20 border border-[#1A1A1A] rounded-lg flex items-center justify-center">
-                        <ScanLine size={28} className="text-[#444444]" />
+                    <div className="w-20 h-20 border border-[var(--border-subtle)] rounded-lg flex items-center justify-center">
+                        <ScanLine size={28} className="text-[var(--text-muted)] opacity-70" />
                     </div>
-                    <span className="text-[11px] tracking-widest text-[#666666]" style={{ fontFamily: "'Roboto Mono', monospace" }}>sin vista previa</span>
+                    <span className="text-[11px] tracking-widest text-[var(--text-muted)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>sin vista previa</span>
                 </>
             )}
         </div>
@@ -211,7 +211,7 @@ function MappingEditor({ mapping, onChange, onSave, onCancel }: {
     return (
         <div className="space-y-3">
             <div className="flex items-center justify-between mb-2">
-                <p className="text-[9px] tracking-[0.25em] uppercase text-[#5E6AD2]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                <p className="text-[9px] tracking-[0.25em] uppercase text-[var(--accent-primary)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
                     <Move size={10} className="inline mr-1.5" />Mapping Visual
                 </p>
             </div>
@@ -227,23 +227,23 @@ function MappingEditor({ mapping, onChange, onSave, onCancel }: {
                     { label: 'Página', key: 'page' as const, step: 1 },
                 ].map(({ label, key, step }) => (
                     <div key={key}>
-                        <div className="text-[8px] text-[#666666] tracking-widest mb-1" style={{ fontFamily: "'Roboto Mono', monospace" }}>{label}</div>
+                        <div className="text-[8px] text-[var(--text-muted)] tracking-widest mb-1" style={{ fontFamily: "'Roboto Mono', monospace" }}>{label}</div>
                         <input
                             type="number"
                             step={step}
                             value={mapping[key] as number}
                             onChange={e => set(key, parseFloat(e.target.value) || 0)}
-                            className="w-full bg-[#0A0A0A] border border-[#222222] hover:border-[#333333] focus:border-[#5E6AD2]/40 rounded px-2 py-1.5 text-white text-[11px] focus:outline-none transition-colors"
+                            className="w-full bg-[var(--bg-base)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)] focus:border-[var(--accent-primary)]/40 rounded px-2 py-1.5 text-[var(--text-primary)] text-[11px] focus:outline-none transition-colors"
                             style={{ fontFamily: "'Roboto Mono', monospace" }}
                         />
                     </div>
                 ))}
                 <div>
-                    <div className="text-[8px] text-[#666666] tracking-widest mb-1" style={{ fontFamily: "'Roboto Mono', monospace" }}>Fuente</div>
+                    <div className="text-[8px] text-[var(--text-muted)] tracking-widest mb-1" style={{ fontFamily: "'Roboto Mono', monospace" }}>Fuente</div>
                     <select
                         value={mapping.font_name}
                         onChange={e => set('font_name', e.target.value)}
-                        className="w-full bg-[#0A0A0A] border border-[#222222] hover:border-[#333333] focus:border-[#5E6AD2]/40 rounded px-2 py-1.5 text-white text-[11px] focus:outline-none transition-colors"
+                        className="w-full bg-[var(--bg-base)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)] focus:border-[var(--accent-primary)]/40 rounded px-2 py-1.5 text-[var(--text-primary)] text-[11px] focus:outline-none transition-colors"
                         style={{ fontFamily: "'Roboto Mono', monospace" }}
                     >
                         <option value="Courier-Bold">Courier-Bold</option>
@@ -256,7 +256,7 @@ function MappingEditor({ mapping, onChange, onSave, onCancel }: {
 
             {/* Color */}
             <div>
-                <div className="text-[8px] text-[#666666] tracking-widest mb-1" style={{ fontFamily: "'Roboto Mono', monospace" }}>Color (R, G, B: 0-1)</div>
+                <div className="text-[8px] text-[var(--text-muted)] tracking-widest mb-1" style={{ fontFamily: "'Roboto Mono', monospace" }}>Color (R, G, B: 0-1)</div>
                 <div className="grid grid-cols-3 gap-2">
                     {(['color_r', 'color_g', 'color_b'] as const).map(k => (
                         <input
@@ -264,7 +264,7 @@ function MappingEditor({ mapping, onChange, onSave, onCancel }: {
                             type="number" min={0} max={1} step={0.1}
                             value={mapping[k]}
                             onChange={e => set(k, parseFloat(e.target.value) || 0)}
-                            className="w-full bg-[#0A0A0A] border border-[#222222] hover:border-[#333333] focus:border-[#5E6AD2]/40 rounded px-2 py-1.5 text-white text-[11px] focus:outline-none transition-colors"
+                            className="w-full bg-[var(--bg-base)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)] focus:border-[var(--accent-primary)]/40 rounded px-2 py-1.5 text-[var(--text-primary)] text-[11px] focus:outline-none transition-colors"
                             style={{ fontFamily: "'Roboto Mono', monospace" }}
                         />
                     ))}
@@ -272,8 +272,8 @@ function MappingEditor({ mapping, onChange, onSave, onCancel }: {
             </div>
 
             {/* Preview of number */}
-            <div className="border border-[#1A1A1A] bg-[#141414] rounded-md p-3 text-center">
-                <span className="text-[9px] text-[#666666] block mb-1" style={{ fontFamily: "'Roboto Mono', monospace" }}>Ejemplo</span>
+            <div className="border border-[var(--border-subtle)] bg-[var(--bg-elevated)] rounded-md p-3 text-center">
+                <span className="text-[9px] text-[var(--text-muted)] block mb-1" style={{ fontFamily: "'Roboto Mono', monospace" }}>Ejemplo</span>
                 <span
                     className="tracking-widest font-bold"
                     style={{
@@ -289,14 +289,14 @@ function MappingEditor({ mapping, onChange, onSave, onCancel }: {
             <div className="flex gap-2">
                 <button
                     onClick={onSave}
-                    className="flex-1 flex items-center justify-center gap-1.5 bg-[#5E6AD2]/10 hover:bg-[#5E6AD2]/20 border border-[#5E6AD2]/30 text-[#5E6AD2] rounded-md py-2 text-[10px] tracking-wider transition-colors"
+                    className="flex-1 flex items-center justify-center gap-1.5 bg-[var(--accent-primary)]/10 hover:bg-[var(--accent-primary)]/20 border border-[var(--accent-primary)]/30 text-[var(--accent-primary)] rounded-md py-2 text-[10px] tracking-wider transition-colors"
                     style={{ fontFamily: "'Roboto Mono', monospace" }}
                 >
                     <Check size={11} />Guardar
                 </button>
                 <button
                     onClick={onCancel}
-                    className="flex-1 flex items-center justify-center gap-1.5 bg-[#141414] hover:bg-[#1A1A1A] border border-[#1A1A1A] text-[#A0A0A0] hover:text-white rounded-md py-2 text-[10px] tracking-wider transition-colors"
+                    className="flex-1 flex items-center justify-center gap-1.5 bg-[var(--bg-elevated)] hover:bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-md py-2 text-[10px] tracking-wider transition-colors"
                     style={{ fontFamily: "'Roboto Mono', monospace" }}
                 >
                     <X size={11} />Cancelar
@@ -344,28 +344,28 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
-            <div className="bg-[#111111] border border-[#1A1A1A] rounded-xl w-[380px] p-6 space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl w-[380px] p-6 space-y-4" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-white">Subir Formato PDF</h3>
-                    <button onClick={onClose} className="text-[#666666] hover:text-white transition-colors"><X size={16} /></button>
+                    <h3 className="text-sm font-semibold text-[var(--text-primary)]">Subir Formato PDF</h3>
+                    <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"><X size={16} /></button>
                 </div>
 
                 <div>
-                    <label className="text-[9px] text-[#666666] tracking-widest uppercase block mb-1.5" style={{ fontFamily: "'Roboto Mono', monospace" }}>Nombre</label>
+                    <label className="text-[9px] text-[var(--text-muted)] tracking-widest uppercase block mb-1.5" style={{ fontFamily: "'Roboto Mono', monospace" }}>Nombre</label>
                     <input
                         type="text"
                         value={nombre}
                         onChange={e => setNombre(e.target.value)}
                         placeholder="Ej: Formato Inspección"
-                        className="w-full bg-[#0A0A0A] border border-[#222222] hover:border-[#333333] focus:border-[#5E6AD2]/40 rounded-md px-3 py-2.5 text-white text-sm focus:outline-none transition-colors"
+                        className="w-full bg-[var(--bg-base)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)] focus:border-[var(--accent-primary)]/40 rounded-md px-3 py-2.5 text-[var(--text-primary)] text-sm focus:outline-none transition-colors"
                     />
                 </div>
 
                 <div>
-                    <label className="text-[9px] text-[#666666] tracking-widest uppercase block mb-1.5" style={{ fontFamily: "'Roboto Mono', monospace" }}>Archivo PDF</label>
-                    <label className="flex items-center gap-2.5 cursor-pointer bg-[#141414] border border-dashed border-[#333333] hover:border-[#5E6AD2]/30 rounded-md px-3 py-3 transition-colors">
-                        <Upload size={14} className="text-[#666666]" />
-                        <span className="text-[11px] text-[#A0A0A0] truncate" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                    <label className="text-[9px] text-[var(--text-muted)] tracking-widest uppercase block mb-1.5" style={{ fontFamily: "'Roboto Mono', monospace" }}>Archivo PDF</label>
+                    <label className="flex items-center gap-2.5 cursor-pointer bg-[var(--bg-elevated)] border border-dashed border-[var(--border-medium)] hover:border-[var(--accent-primary)]/30 rounded-md px-3 py-3 transition-colors">
+                        <Upload size={14} className="text-[var(--text-muted)]" />
+                        <span className="text-[11px] text-[var(--text-secondary)] truncate" style={{ fontFamily: "'Roboto Mono', monospace" }}>
                             {file ? file.name : 'Seleccionar archivo…'}
                         </span>
                         <input type="file" accept=".pdf" className="hidden" onChange={e => setFile(e.target.files?.[0] ?? null)} />
@@ -375,11 +375,11 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
                 <div className="flex items-center gap-3">
                     <button
                         onClick={() => setPersisted(!persisted)}
-                        className={`relative w-9 h-5 rounded-full transition-colors ${persisted ? 'bg-[#5E6AD2]' : 'bg-[#333333]'}`}
+                        className={`relative w-9 h-5 rounded-full transition-colors ${persisted ? 'bg-[var(--accent-primary)]' : 'bg-[var(--border-medium)]'}`}
                     >
                         <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${persisted ? 'translate-x-4' : 'translate-x-0.5'}`} />
                     </button>
-                    <span className="text-[11px] text-[#A0A0A0]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                    <span className="text-[11px] text-[var(--text-secondary)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
                         {persisted ? 'Persistente' : 'Temporal (se pierde al cerrar)'}
                     </span>
                 </div>
@@ -394,7 +394,7 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
                 <button
                     onClick={handleUpload}
                     disabled={!file || !nombre.trim() || uploading}
-                    className="w-full flex items-center justify-center gap-2 bg-[#5E6AD2]/10 hover:bg-[#5E6AD2]/20 border border-[#5E6AD2]/30 text-[#5E6AD2] disabled:opacity-30 disabled:pointer-events-none rounded-lg py-2.5 text-[11px] tracking-wider transition-colors"
+                    className="w-full flex items-center justify-center gap-2 bg-[var(--accent-primary)]/10 hover:bg-[var(--accent-primary)]/20 border border-[var(--accent-primary)]/30 text-[var(--accent-primary)] disabled:opacity-30 disabled:pointer-events-none rounded-lg py-2.5 text-[11px] tracking-wider transition-colors"
                     style={{ fontFamily: "'Roboto Mono', monospace" }}
                 >
                     {uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
@@ -406,10 +406,10 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
 }
 
 /* ─── Row utility ────────────────────────────────────────────── */
-function Row({ label, value, valueClass = 'text-white' }: { label: string; value: string; valueClass?: string }) {
+function Row({ label, value, valueClass = 'text-[var(--text-primary)]' }: { label: string; value: string; valueClass?: string }) {
     return (
         <div className="flex items-center justify-between px-3 py-2">
-            <span className="text-[10px] text-[#666666]" style={{ fontFamily: "'Roboto Mono', monospace" }}>{label}</span>
+            <span className="text-[10px] text-[var(--text-muted)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>{label}</span>
             <span className={`text-[10px] font-medium ${valueClass}`} style={{ fontFamily: "'Roboto Mono', monospace" }}>{value}</span>
         </div>
     );
@@ -586,22 +586,22 @@ export default function FormatosView() {
     const isCapped = previewTotal > MAX_PREVIEW_PAGES;
 
     return (
-        <div className="flex overflow-hidden bg-[#0A0A0A] text-white" style={{ height: 'calc(100vh - 0px)', fontFamily: "'Outfit', sans-serif" }}>
+        <div className="flex overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]" style={{ height: 'calc(100vh - 0px)', fontFamily: "'Outfit', sans-serif" }}>
             {/* ── LEFT: PREVIEW ─────────────────────────────────────── */}
             <div className="flex-1 flex flex-col min-w-0 relative">
-                <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px)', backgroundSize: '28px 28px' }} />
+                <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle, color-mix(in srgb, var(--border-medium) 70%, transparent) 1px, transparent 1px)', backgroundSize: '28px 28px' }} />
 
                 {/* topbar */}
-                <div className="relative z-10 flex items-center justify-between px-6 py-3 border-b border-[#1A1A1A]">
+                <div className="relative z-10 flex items-center justify-between px-6 py-3 border-b border-[var(--border-subtle)]">
                     <div className="flex items-center gap-2.5">
-                        <ScanLine size={13} className="text-[#5E6AD2]" />
-                        <span className="text-[10px] tracking-[0.22em] uppercase text-[#666666]" style={{ fontFamily: "'Roboto Mono', monospace" }}>Vista Previa</span>
+                        <ScanLine size={13} className="text-[var(--accent-primary)]" />
+                        <span className="text-[10px] tracking-[0.22em] uppercase text-[var(--text-muted)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>Vista Previa</span>
                     </div>
                     <div className="flex items-center gap-3">
                         {previewBlob && previewPagesShown > 0 && (
-                            <div className="flex items-center gap-1.5 border border-[#1A1A1A] rounded px-2.5 py-1 bg-[#141414]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
-                                <span className="text-[9px] tracking-wider text-[#666666]">N°</span>
-                                <span className="text-[10px] font-medium text-white tracking-wider">
+                            <div className="flex items-center gap-1.5 border border-[var(--border-subtle)] rounded px-2.5 py-1 bg-[var(--bg-elevated)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                                <span className="text-[9px] tracking-wider text-[var(--text-muted)]">N°</span>
+                                <span className="text-[10px] font-medium text-[var(--text-primary)] tracking-wider">
                                     {pad(previewDesde, padLen)}
                                     {previewTotal > 1 ? ` → ${pad(previewDesde + previewTotal - 1, padLen)}` : ''}
                                 </span>
@@ -609,14 +609,14 @@ export default function FormatosView() {
                         )}
                         {previewLoading && (
                             <div className="flex items-center gap-1.5">
-                                <RefreshCw size={9} className="animate-spin text-[#5E6AD2]/40" />
-                                <span className="text-[9px] tracking-wider text-[#666666]" style={{ fontFamily: "'Roboto Mono', monospace" }}>actualizando…</span>
+                                <RefreshCw size={9} className="animate-spin text-[var(--accent-primary)]/40" />
+                                <span className="text-[9px] tracking-wider text-[var(--text-muted)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>actualizando…</span>
                             </div>
                         )}
                         {previewBlob && previewPagesShown > 0 && (
-                            <div className="flex items-center gap-1.5 border border-[#5E6AD2]/25 rounded px-2.5 py-1 bg-[#5E6AD2]/[0.04]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
-                                <Layers size={9} className="text-[#5E6AD2]/60" />
-                                <span className="text-[10px] font-medium text-[#5E6AD2] tracking-wider">
+                            <div className="flex items-center gap-1.5 border border-[var(--accent-primary)]/25 rounded px-2.5 py-1 bg-[var(--accent-primary)]/[0.04]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                                <Layers size={9} className="text-[var(--accent-primary)]/60" />
+                                <span className="text-[10px] font-medium text-[var(--accent-primary)] tracking-wider">
                                     {isCapped ? `${MAX_PREVIEW_PAGES} / ${previewTotal}` : previewPagesShown} {previewPagesShown === 1 ? 'pág.' : 'págs.'}
                                 </span>
                             </div>
@@ -635,11 +635,11 @@ export default function FormatosView() {
             </div>
 
             {/* ── RIGHT: SIDEBAR ────────────────────────────────────── */}
-            <div className="w-[320px] flex-shrink-0 flex flex-col border-l border-[#1A1A1A] bg-[#0A0A0A]">
+            <div className="w-[320px] flex-shrink-0 flex flex-col border-l border-[var(--border-subtle)] bg-[var(--bg-base)]">
                 {/* brand header */}
-                <div className="px-6 pt-7 pb-5 border-b border-[#1A1A1A]">
-                    <h1 className="text-[22px] font-semibold tracking-tight text-white leading-none">Formatos</h1>
-                    <p className="text-[11px] text-[#666666] mt-1.5">Generador de PDFs con correlativo</p>
+                <div className="px-6 pt-7 pb-5 border-b border-[var(--border-subtle)]">
+                    <h1 className="text-[22px] font-semibold tracking-tight text-[var(--text-primary)] leading-none">Formatos</h1>
+                    <p className="text-[11px] text-[var(--text-muted)] mt-1.5">Generador de PDFs con correlativo</p>
                 </div>
 
                 {/* scrollable config */}
@@ -648,10 +648,10 @@ export default function FormatosView() {
                     {/* ─ Format Selector ─ */}
                     <section>
                         <div className="flex items-center justify-between mb-3">
-                            <p className="text-[9px] tracking-[0.25em] uppercase text-[#666666]" style={{ fontFamily: "'Roboto Mono', monospace" }}>Formato</p>
+                            <p className="text-[9px] tracking-[0.25em] uppercase text-[var(--text-muted)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>Formato</p>
                             <button
                                 onClick={() => setShowUpload(true)}
-                                className="flex items-center gap-1 text-[9px] text-[#5E6AD2]/60 hover:text-[#5E6AD2] transition-colors"
+                                className="flex items-center gap-1 text-[9px] text-[var(--accent-primary)]/60 hover:text-[var(--accent-primary)] transition-colors"
                                 style={{ fontFamily: "'Roboto Mono', monospace" }}
                             >
                                 <Plus size={10} />subir
@@ -663,21 +663,21 @@ export default function FormatosView() {
                                     key={f.id}
                                     onClick={() => { setSelectedId(f.id); setMappingMode(false); setEditMapping(null); }}
                                     className={`w-full flex items-center gap-2.5 rounded-md px-3 py-2.5 transition-colors group text-left ${f.id === selectedId
-                                            ? 'bg-[#5E6AD2]/[0.08] border border-[#5E6AD2]/25'
-                                            : 'bg-[#141414] border border-[#1A1A1A] hover:border-[#333333]'
+                                            ? 'bg-[var(--accent-primary)]/[0.08] border border-[var(--accent-primary)]/25'
+                                            : 'bg-[var(--bg-elevated)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)]'
                                         }`}
                                 >
-                                    <FileText size={13} className={f.id === selectedId ? 'text-[#5E6AD2]' : 'text-[#666666]'} />
+                                    <FileText size={13} className={f.id === selectedId ? 'text-[var(--accent-primary)]' : 'text-[var(--text-muted)]'} />
                                     <div className="flex-1 min-w-0">
-                                        <div className={`text-[11px] font-medium truncate ${f.id === selectedId ? 'text-[#5E6AD2]' : 'text-white'}`}>{f.nombre}</div>
-                                        <div className="text-[8px] text-[#666666] tracking-widest uppercase" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                                        <div className={`text-[11px] font-medium truncate ${f.id === selectedId ? 'text-[var(--accent-primary)]' : 'text-[var(--text-primary)]'}`}>{f.nombre}</div>
+                                        <div className="text-[8px] text-[var(--text-muted)] tracking-widest uppercase" style={{ fontFamily: "'Roboto Mono', monospace" }}>
                                             {f.origen}{!f.has_mapping && f.strategy === 'visual_overlay' ? ' · sin mapping' : ''}
                                         </div>
                                     </div>
                                     {f.origen === 'uploaded' && (
                                         <button
                                             onClick={e => { e.stopPropagation(); handleDelete(f.id); }}
-                                            className="opacity-0 group-hover:opacity-100 text-[#666666] hover:text-red-400 transition-all"
+                                            className="opacity-0 group-hover:opacity-100 text-[var(--text-muted)] hover:text-red-400 transition-all"
                                         >
                                             <Trash2 size={12} />
                                         </button>
@@ -685,12 +685,12 @@ export default function FormatosView() {
                                 </button>
                             ))}
                             {formats.length === 0 && !loadingFormats && (
-                                <div className="text-center text-[10px] text-[#666666] py-4" style={{ fontFamily: "'Roboto Mono', monospace" }}>Sin formatos</div>
+                                <div className="text-center text-[10px] text-[var(--text-muted)] py-4" style={{ fontFamily: "'Roboto Mono', monospace" }}>Sin formatos</div>
                             )}
                         </div>
                     </section>
 
-                    <div className="border-t border-[#1A1A1A]" />
+                    <div className="border-t border-[var(--border-subtle)]" />
 
                     {/* ─ Mapping Mode Toggle ─ */}
                     {selected && (selected.strategy === 'visual_overlay' || selected.strategy === 'simple_overlay') && (
@@ -706,11 +706,11 @@ export default function FormatosView() {
                                             setEditMapping(selected.mapping ? { ...selected.mapping } : { ...SIMPLE_OVERLAY_DEFAULT_MAPPING });
                                         }
                                     }}
-                                    className="w-full flex items-center justify-between gap-2 bg-[#141414] hover:bg-[#1A1A1A] border border-[#1A1A1A] rounded-md px-3 py-2.5 transition-colors"
+                                    className="w-full flex items-center justify-between gap-2 bg-[var(--bg-elevated)] hover:bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-md px-3 py-2.5 transition-colors"
                                 >
                                     <div className="flex items-center gap-2">
-                                        {mappingMode ? <Eye size={13} className="text-[#5E6AD2]" /> : <Settings2 size={13} className="text-[#666666]" />}
-                                        <span className="text-[10px] tracking-wider text-[#A0A0A0]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                                        {mappingMode ? <Eye size={13} className="text-[var(--accent-primary)]" /> : <Settings2 size={13} className="text-[var(--text-muted)]" />}
+                                        <span className="text-[10px] tracking-wider text-[var(--text-secondary)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
                                             {mappingMode ? 'Editando mapping' : selected.strategy === 'simple_overlay' ? 'Personalizar posición' : 'Configurar mapping'}
                                         </span>
                                     </div>
@@ -718,7 +718,7 @@ export default function FormatosView() {
                                         <span className="text-[8px] text-red-400 tracking-wider" style={{ fontFamily: "'Roboto Mono', monospace" }}>requerido</span>
                                     )}
                                     {selected.strategy === 'simple_overlay' && (
-                                        <span className="text-[8px] text-[#5E6AD2]/50 tracking-wider" style={{ fontFamily: "'Roboto Mono', monospace" }}>opcional</span>
+                                        <span className="text-[8px] text-[var(--accent-primary)]/50 tracking-wider" style={{ fontFamily: "'Roboto Mono', monospace" }}>opcional</span>
                                     )}
                                 </button>
                             </section>
@@ -732,44 +732,44 @@ export default function FormatosView() {
                                 />
                             )}
 
-                            <div className="border-t border-[#1A1A1A]" />
+                            <div className="border-t border-[var(--border-subtle)]" />
                         </>
                     )}
 
                     {/* ─ Rango ─ */}
                     {selected && !mappingMode && (
                         <section>
-                            <p className="text-[9px] tracking-[0.25em] uppercase text-[#666666] mb-3" style={{ fontFamily: "'Roboto Mono', monospace" }}>Rango de números</p>
+                            <p className="text-[9px] tracking-[0.25em] uppercase text-[var(--text-muted)] mb-3" style={{ fontFamily: "'Roboto Mono', monospace" }}>Rango de números</p>
                             <div className="space-y-2.5">
                                 <div>
-                                    <div className="text-[9px] text-[#666666] tracking-widest mb-1.5" style={{ fontFamily: "'Roboto Mono', monospace" }}>DESDE</div>
+                                    <div className="text-[9px] text-[var(--text-muted)] tracking-widest mb-1.5" style={{ fontFamily: "'Roboto Mono', monospace" }}>DESDE</div>
                                     <div className="relative">
                                         <input
                                             type="number" min={numMin} max={numMax}
                                             value={desde}
                                             onChange={e => setDesde(Math.max(numMin, parseInt(e.target.value) || numMin))}
-                                            className="w-full bg-[#0A0A0A] border border-[#222222] hover:border-[#333333] focus:border-[#5E6AD2]/40 rounded-md px-3 py-2.5 text-white text-sm focus:outline-none transition-colors pr-24"
+                                            className="w-full bg-[var(--bg-base)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)] focus:border-[var(--accent-primary)]/40 rounded-md px-3 py-2.5 text-[var(--text-primary)] text-sm focus:outline-none transition-colors pr-24"
                                             style={{ fontFamily: "'Roboto Mono', monospace" }}
                                         />
-                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-[#5E6AD2]/50 tracking-wider pointer-events-none" style={{ fontFamily: "'Roboto Mono', monospace" }}>{pad(desde, padLen)}</span>
+                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-[var(--accent-primary)]/50 tracking-wider pointer-events-none" style={{ fontFamily: "'Roboto Mono', monospace" }}>{pad(desde, padLen)}</span>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2 px-1">
-                                    <div className="flex-1 h-px bg-[#1A1A1A]" />
-                                    <ChevronRight size={10} className="text-[#666666]" />
-                                    <div className="flex-1 h-px bg-[#1A1A1A]" />
+                                    <div className="flex-1 h-px bg-[var(--bg-elevated)]" />
+                                    <ChevronRight size={10} className="text-[var(--text-muted)]" />
+                                    <div className="flex-1 h-px bg-[var(--bg-elevated)]" />
                                 </div>
                                 <div>
-                                    <div className="text-[9px] text-[#666666] tracking-widest mb-1.5" style={{ fontFamily: "'Roboto Mono', monospace" }}>HASTA</div>
+                                    <div className="text-[9px] text-[var(--text-muted)] tracking-widest mb-1.5" style={{ fontFamily: "'Roboto Mono', monospace" }}>HASTA</div>
                                     <div className="relative">
                                         <input
                                             type="number" min={desde} max={numMax}
                                             value={hasta}
                                             onChange={e => setHasta(Math.max(desde, parseInt(e.target.value) || desde))}
-                                            className="w-full bg-[#0A0A0A] border border-[#222222] hover:border-[#333333] focus:border-[#5E6AD2]/40 rounded-md px-3 py-2.5 text-white text-sm focus:outline-none transition-colors pr-24"
+                                            className="w-full bg-[var(--bg-base)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)] focus:border-[var(--accent-primary)]/40 rounded-md px-3 py-2.5 text-[var(--text-primary)] text-sm focus:outline-none transition-colors pr-24"
                                             style={{ fontFamily: "'Roboto Mono', monospace" }}
                                         />
-                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-[#5E6AD2]/50 tracking-wider pointer-events-none" style={{ fontFamily: "'Roboto Mono', monospace" }}>{pad(hasta, padLen)}</span>
+                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-[var(--accent-primary)]/50 tracking-wider pointer-events-none" style={{ fontFamily: "'Roboto Mono', monospace" }}>{pad(hasta, padLen)}</span>
                                     </div>
                                 </div>
                             </div>
@@ -779,13 +779,13 @@ export default function FormatosView() {
                     {/* ─ Resumen ─ */}
                     {selected && !mappingMode && (
                         <>
-                            <div className="border-t border-[#1A1A1A]" />
+                            <div className="border-t border-[var(--border-subtle)]" />
                             <section>
-                                <p className="text-[9px] tracking-[0.25em] uppercase text-[#666666] mb-3" style={{ fontFamily: "'Roboto Mono', monospace" }}>Resumen</p>
-                                <div className="rounded-md border border-[#1A1A1A] bg-[#141414] divide-y divide-[#1A1A1A]">
+                                <p className="text-[9px] tracking-[0.25em] uppercase text-[var(--text-muted)] mb-3" style={{ fontFamily: "'Roboto Mono', monospace" }}>Resumen</p>
+                                <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] divide-y divide-[var(--border-subtle)]">
                                     <Row label="Formato" value={selected.nombre} />
                                     <Row label="Tipo" value={total === 1 ? 'Individual' : 'Consolidado'} />
-                                    <Row label="Páginas" value={total > maxPages ? `${total} ✗` : String(total)} valueClass={total > maxPages ? 'text-red-400' : 'text-[#5E6AD2]'} />
+                                    <Row label="Páginas" value={total > maxPages ? `${total} ✗` : String(total)} valueClass={total > maxPages ? 'text-red-400' : 'text-[var(--accent-primary)]'} />
                                     <Row label="Correlativo" value={total > 1 ? `${pad(desde, padLen)} → ${pad(hasta, padLen)}` : pad(desde, padLen)} />
                                     {total > maxPages && <Row label="Límite" value={`máx. ${maxPages}`} valueClass="text-red-400/70" />}
                                     {!canGenerate && selected.strategy === 'visual_overlay' && (
@@ -807,11 +807,11 @@ export default function FormatosView() {
 
                 {/* ─ Footer / Generate ─ */}
                 {!mappingMode && (
-                    <div className="px-6 pb-6 pt-4 border-t border-[#1A1A1A] space-y-3">
+                    <div className="px-6 pb-6 pt-4 border-t border-[var(--border-subtle)] space-y-3">
                         <button
                             onClick={handleGenerate}
                             disabled={loading || !canGenerate}
-                            className="w-full flex items-center justify-between gap-2 bg-[#5E6AD2] hover:opacity-90 border border-[#5E6AD2] text-white disabled:opacity-30 disabled:pointer-events-none font-medium rounded-lg py-3 px-4 transition-colors text-sm group"
+                            className="w-full flex items-center justify-between gap-2 bg-[var(--accent-primary)] hover:opacity-90 border border-[var(--accent-primary)] text-[var(--text-primary)] disabled:opacity-30 disabled:pointer-events-none font-medium rounded-lg py-3 px-4 transition-colors text-sm group"
                             style={{ fontFamily: "'Roboto Mono', monospace" }}
                         >
                             <div className="flex items-center gap-2">
@@ -822,7 +822,7 @@ export default function FormatosView() {
                             </div>
                             {!loading && <ChevronRight size={12} className="opacity-40 group-hover:opacity-80 transition-opacity" />}
                         </button>
-                        <p className="text-center text-[9px] tracking-[0.2em] text-[#666666] uppercase" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                        <p className="text-center text-[9px] tracking-[0.2em] text-[var(--text-muted)] uppercase" style={{ fontFamily: "'Roboto Mono', monospace" }}>
                             máx. {maxPages} páginas / descarga
                         </p>
                     </div>

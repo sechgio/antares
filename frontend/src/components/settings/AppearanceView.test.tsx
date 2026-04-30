@@ -71,6 +71,30 @@ describe('AppearanceView', () => {
     });
   });
 
+  it('uses the available settings workspace instead of constraining appearance to a narrow column', async () => {
+    window.electronAPI = {
+      invoke: async (method: string) => {
+        if (method === 'theme_get') return baseTheme;
+        if (method === 'theme_presets') return { presets: ['Precision Linear', 'Professional Light'] };
+        return {};
+      },
+      onNotify: () => () => {},
+      onUpdateAvailable: () => () => {},
+      onUpdateDownloaded: () => () => {},
+    };
+
+    renderAppearance();
+
+    const root = await screen.findByTestId('appearance-view');
+    const workspace = screen.getByTestId('appearance-workspace');
+
+    expect(root).toHaveClass('h-full');
+    expect(root).toHaveClass('max-w-none');
+    expect(root).not.toHaveClass('max-w-5xl');
+    expect(workspace).toHaveClass('min-h-0');
+    expect(workspace.className).toContain('xl:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]');
+  });
+
   it('applies complete interface variables when selecting an expressive preset', async () => {
     const neonTheme = {
       ...baseTheme,

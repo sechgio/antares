@@ -142,14 +142,14 @@ export default function DatabaseView() {
   };
 
   return (
-    <div className="flex flex-col h-full w-full">
+    <div className="flex flex-col h-full w-full bg-[var(--bg-base)] text-[var(--text-primary)]">
       {/* Header */}
-      <div className="px-6 py-3 border-b border-[#1A1A1A] flex items-center justify-between">
+      <div className="px-6 py-3 border-b border-[var(--border-subtle)] flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold text-white">Base de Datos</h2>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">Base de Datos</h2>
           <button
             onClick={() => setShowSchema(!showSchema)}
-            className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${showSchema ? 'bg-[#5E6AD2] text-white border-[#5E6AD2]' : 'bg-[#1A1A1A] text-[#A0A0A0] border-[#222222] hover:text-white'}`}
+            className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${showSchema ? 'bg-[var(--accent-primary)] text-[var(--text-on-accent)] border-[var(--accent-primary)]' : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:text-[var(--text-primary)]'}`}
           >
             {showSchema ? 'Ver registros' : 'Ver esquema'}
           </button>
@@ -165,9 +165,9 @@ export default function DatabaseView() {
 
       {/* Search bar */}
       {!showSchema && (
-        <div className="px-6 py-3 border-b border-[#1A1A1A]">
+        <div className="px-6 py-3 border-b border-[var(--border-subtle)]">
           <div className="relative max-w-md">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="absolute left-3 top-1/2 -translate-y-1/2 text-[#666666]">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
               <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
             </svg>
             <input
@@ -175,7 +175,7 @@ export default function DatabaseView() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Buscar registros..."
-              className="w-full pl-9 pr-3 py-2 bg-[#1A1A1A] border border-[#222222] rounded-full text-sm text-white placeholder:text-[#555555] focus:border-[#5E6AD2] focus:outline-none focus:shadow-[0_0_0_3px_rgba(94,106,210,0.15)]"
+              className="w-full pl-9 pr-3 py-2 bg-[var(--bg-input)] border border-[var(--border-subtle)] rounded-full text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-primary)] focus:outline-none focus:shadow-[0_0_0_3px_var(--accent-primary-glow)]"
             />
           </div>
         </div>
@@ -186,29 +186,29 @@ export default function DatabaseView() {
         {!showSchema ? (
           records.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
-              <div className="w-12 h-12 rounded-2xl bg-[#1A1A1A] flex items-center justify-center mb-3 border border-[#222222]">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-[#666666]">
+              <div className="w-12 h-12 rounded-2xl bg-[var(--bg-elevated)] flex items-center justify-center mb-3 border border-[var(--border-subtle)]">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-[var(--text-muted)]">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                   <polyline points="14 2 14 8 20 8" />
                 </svg>
               </div>
-              <p className="text-sm text-[#666666]">Sin registros. Importa un archivo Excel para comenzar.</p>
+              <p className="text-sm text-[var(--text-muted)]">Sin registros. Importa un archivo Excel para comenzar.</p>
             </div>
           ) : (
-            <div className="border border-[#1A1A1A] rounded-xl overflow-hidden">
+            <div className="border border-[var(--border-subtle)] rounded-xl overflow-hidden bg-[var(--bg-surface)]">
               <table className="w-full text-left">
                 <thead>
-                  <tr className="border-b border-[#1A1A1A] bg-[#0A0A0A]">
+                  <tr className="border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
                     {fields.map((f) => (
-                      <th key={f} className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.15em] text-[#666666]">{f}</th>
+                      <th key={f} className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.15em] text-[var(--text-muted)]">{f}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {filteredRecords.map((r, i) => (
-                    <tr key={i} className="border-b border-[#1A1A1A] hover:bg-[#111111] transition-colors">
+                    <tr key={i} className="border-b border-[var(--border-subtle)] hover:bg-[var(--bg-elevated)] transition-colors">
                       {fields.map((f) => (
-                        <td key={f} className="px-4 py-3 text-sm text-white">{String(r[f] ?? '')}</td>
+                        <td key={f} className="px-4 py-3 text-sm text-[var(--text-primary)]">{String(r[f] ?? '')}</td>
                       ))}
                     </tr>
                   ))}
@@ -219,15 +219,15 @@ export default function DatabaseView() {
         ) : (
           <div className="space-y-6 max-w-4xl w-full">
             {/* Add field */}
-            <div className="bg-[#111111] rounded-xl border border-[#1A1A1A] p-4 flex items-end gap-3">
+            <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-subtle)] p-4 flex items-end gap-3">
               <div className="flex-1">
-                <label className="block text-xs text-[#666666] mb-1.5">Nombre del campo</label>
+                <label className="block text-xs text-[var(--text-muted)] mb-1.5">Nombre del campo</label>
                 <Input value={newField.name} onChange={(e) => setNewField({ ...newField, name: e.target.value })} placeholder="ej. sku_producto" />
               </div>
               <div className="w-32">
-                <label className="block text-xs text-[#666666] mb-1.5">Tipo</label>
+                <label className="block text-xs text-[var(--text-muted)] mb-1.5">Tipo</label>
                 <select
-                  className="w-full bg-[#1A1A1A] text-white border border-[#222222] rounded-lg px-3 py-2 text-sm appearance-none cursor-pointer focus:border-[#5E6AD2] focus:outline-none"
+                  className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-subtle)] rounded-lg px-3 py-2 text-sm appearance-none cursor-pointer focus:border-[var(--accent-primary)] focus:outline-none"
                   value={newField.type}
                   onChange={(e) => setNewField({ ...newField, type: e.target.value })}
                 >
@@ -241,26 +241,26 @@ export default function DatabaseView() {
             </div>
 
             {/* Fields list */}
-            <div className="border border-[#1A1A1A] rounded-xl overflow-hidden">
+            <div className="border border-[var(--border-subtle)] rounded-xl overflow-hidden bg-[var(--bg-surface)]">
               <table className="w-full text-left">
                 <thead>
-                  <tr className="border-b border-[#1A1A1A] bg-[#0A0A0A]">
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.15em] text-[#666666]">Campo</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.15em] text-[#666666]">Tipo</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.15em] text-[#666666]">Requerido</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.15em] text-[#666666]">Único</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.15em] text-[#666666]"></th>
+                  <tr className="border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.15em] text-[var(--text-muted)]">Campo</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.15em] text-[var(--text-muted)]">Tipo</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.15em] text-[var(--text-muted)]">Requerido</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.15em] text-[var(--text-muted)]">Único</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.15em] text-[var(--text-muted)]"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {allFields.map((f) => (
-                    <tr key={f.name} className="border-b border-[#1A1A1A] hover:bg-[#111111] transition-colors">
-                      <td className="px-4 py-3 text-sm text-white font-medium">{f.name}</td>
-                      <td className="px-4 py-3 text-xs text-[#A0A0A0] font-mono">{f.type}</td>
+                    <tr key={f.name} className="border-b border-[var(--border-subtle)] hover:bg-[var(--bg-elevated)] transition-colors">
+                      <td className="px-4 py-3 text-sm text-[var(--text-primary)] font-medium">{f.name}</td>
+                      <td className="px-4 py-3 text-xs text-[var(--text-secondary)] font-mono">{f.type}</td>
                       <td className="px-4 py-3"><Badge variant={f.required ? 'success' : 'default'} className="text-[10px]">{f.required ? 'Sí' : 'No'}</Badge></td>
                       <td className="px-4 py-3"><Badge variant={f.unique ? 'success' : 'default'} className="text-[10px]">{f.unique ? 'Sí' : 'No'}</Badge></td>
                       <td className="px-4 py-3">
-                        <button onClick={() => removeField(f.name)} className="text-[#666666] hover:text-[#EF4444] text-xs transition-colors">Eliminar</button>
+                        <button onClick={() => removeField(f.name)} className="text-[var(--text-muted)] hover:text-[var(--accent-red)] text-xs transition-colors">Eliminar</button>
                       </td>
                     </tr>
                   ))}

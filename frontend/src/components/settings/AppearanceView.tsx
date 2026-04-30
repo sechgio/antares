@@ -46,10 +46,10 @@ type EditableColor = {
 const CUSTOM_ACCENT_KEY = 'custom';
 
 const ACCENTS: AccentChoice[] = [
-  { key: 'violet', name: 'Violeta', color: '#5E6AD2', hover: '#4D57BE', light: '#8B93FF', dark: '#343B8F' },
-  { key: 'blue', name: 'Azul', color: '#2563EB', hover: '#1D4ED8', light: '#60A5FA', dark: '#1E3A8A' },
+  { key: 'violet', name: 'Azul', color: '#3B82F6', hover: '#2563EB', light: '#93C5FD', dark: '#1E40AF' },
+  { key: 'blue', name: 'Pizarra', color: '#475467', hover: '#344054', light: '#D0D5DD', dark: '#101828' },
   { key: 'teal', name: 'Turquesa', color: '#14B8A6', hover: '#0F766E', light: '#5EEAD4', dark: '#115E59' },
-  { key: 'green', name: 'Verde', color: '#22C55E', hover: '#16A34A', light: '#86EFAC', dark: '#166534' },
+  { key: 'green', name: 'Oliva', color: '#84CC16', hover: '#65A30D', light: '#BEF264', dark: '#365314' },
   { key: 'amber', name: 'Ambar', color: '#F59E0B', hover: '#D97706', light: '#FCD34D', dark: '#92400E' },
 ];
 
@@ -64,9 +64,44 @@ const LIGHT_THEME: Partial<ThemeConfig> = {
 };
 
 const PRESET_PREVIEWS: Record<string, PresetPreview> = {
+  'Slate Professional': {
+    name: 'Slate Professional',
+    description: 'Azul acero sobrio, equilibrado para trabajo continuo.',
+    colors: ['#0F172A', '#172033', '#3B82F6', '#14B8A6'],
+  },
+  'Graphite Focus': {
+    name: 'Graphite Focus',
+    description: 'Grafito neutral con acento lima para buena lectura.',
+    colors: ['#111315', '#1B1F23', '#A3E635', '#38BDF8'],
+  },
+  'Porcelain Light': {
+    name: 'Porcelain Light',
+    description: 'Claro profesional con contraste suave y acento gris.',
+    colors: ['#F7F8FA', '#FFFFFF', '#475467', '#0EA5E9'],
+  },
+  'Steel Blue': {
+    name: 'Steel Blue',
+    description: 'Azules técnicos sin saturación de marca.',
+    colors: ['#08111F', '#102033', '#38BDF8', '#22D3EE'],
+  },
+  'Olive Operations': {
+    name: 'Olive Operations',
+    description: 'Verde oliva discreto para flujos operativos.',
+    colors: ['#10140D', '#1B2316', '#84CC16', '#2DD4BF'],
+  },
+  'Copper Night': {
+    name: 'Copper Night',
+    description: 'Oscuro cálido con cobre controlado y elegante.',
+    colors: ['#17110D', '#241A14', '#F97316', '#38BDF8'],
+  },
+  'Mono Contrast': {
+    name: 'Mono Contrast',
+    description: 'Contraste máximo con colores directos y legibles.',
+    colors: ['#000000', '#111111', '#FFFF00', '#FFFFFF'],
+  },
   'Precision Linear': {
     name: 'Precision Linear',
-    description: 'Oscuro sobrio con acento violeta para trabajo diario.',
+    description: 'Legado violeta, conservado para compatibilidad.',
     colors: ['#0A0D12', '#111522', '#5E6AD2', '#8B93FF'],
   },
   'NVIDIA Dark': {
@@ -492,76 +527,94 @@ export default function AppearanceView() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl py-6 animate-fade-in">
-      <div className="mb-7 flex flex-col gap-2">
-        <span className="eyebrow">Ajustes</span>
-        <h2 className="text-xl font-semibold tracking-[0] text-[var(--text-primary)]">
-          {t('appearance.title') || 'Apariencia'}
-        </h2>
-        <p className="max-w-2xl text-sm leading-6 text-[var(--text-secondary)]">
-          Configura el tema, los estilos visuales y la densidad de la interfaz.
-        </p>
+    <div data-testid="appearance-view" className="flex h-full min-h-0 w-full max-w-none flex-col animate-fade-in">
+      <div className="mb-5 flex shrink-0 flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
+          <span className="eyebrow">Ajustes</span>
+          <h2 className="mt-1 text-xl font-semibold tracking-[0] text-[var(--text-primary)]">
+            {t('appearance.title') || 'Apariencia'}
+          </h2>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--text-secondary)]">
+            Configura el tema, los estilos visuales y la densidad de la interfaz.
+          </p>
+        </div>
+
+        <div className="flex shrink-0 flex-wrap gap-3">
+          <Button variant="primary" onClick={save}>
+            <Save size={16} />
+            Guardar cambios
+          </Button>
+          <Button variant="ghost" onClick={reset}>
+            <RotateCcw size={16} />
+            {t('appearance.reset') || 'Restaurar'}
+          </Button>
+        </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-8">
+      <div
+        data-testid="appearance-workspace"
+        className="grid min-h-0 flex-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]"
+      >
+        <div className="min-h-0 space-y-5">
           <section className="space-y-3">
             <div className="flex items-center gap-2">
               <SlidersHorizontal size={16} className="text-[var(--text-secondary)]" />
               <h3 className="text-sm font-semibold text-[var(--text-primary)]">Preferencias</h3>
             </div>
 
-            <SettingRow
-              icon={Monitor}
-              title="Modo de tema"
-              description="Elige la base de luminosidad para toda la aplicacion."
-            >
-              <div className="grid w-full grid-cols-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-1 sm:w-[276px]">
-                {MODE_OPTIONS.map((option) => {
-                  const Icon = option.icon;
-                  const active = mode === option.key;
-                  return (
-                    <button
-                      key={option.key}
-                      type="button"
-                      onClick={() => updateMode(option.key)}
-                      className={`flex items-center justify-center gap-2 rounded-md px-3 py-2 text-xs font-semibold transition-all ${
-                        active
-                          ? 'bg-[var(--accent-primary)] text-[var(--text-on-accent)] shadow-sm'
-                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                      }`}
-                      title={option.description}
-                    >
-                      <Icon size={14} />
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </SettingRow>
-
-            <SettingRow
-              icon={LayoutList}
-              title="Densidad compacta"
-              description="Reduce el espacio vertical para ver mas informacion en pantalla."
-            >
-              <Toggle checked={density === 'compact'} onChange={updateDensity} />
-            </SettingRow>
-
-            <SettingRow
-              icon={Languages}
-              title="Idioma"
-              description="Cambia el idioma de los textos principales de la interfaz."
-            >
-              <select
-                className="w-44 cursor-pointer appearance-none rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-sm font-medium text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent-primary)]"
-                value={language}
-                onChange={(e) => handleLanguageChange(e.target.value)}
+            <div className="grid gap-3 lg:grid-cols-3">
+              <SettingRow
+                icon={Monitor}
+                title="Modo de tema"
+                description="Elige la base de luminosidad para toda la aplicacion."
               >
-                <option value="es">Español</option>
-                <option value="en">English</option>
-              </select>
-            </SettingRow>
+                <div className="grid w-full grid-cols-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-1">
+                  {MODE_OPTIONS.map((option) => {
+                    const Icon = option.icon;
+                    const active = mode === option.key;
+                    return (
+                      <button
+                        key={option.key}
+                        type="button"
+                        onClick={() => updateMode(option.key)}
+                        className={`flex items-center justify-center gap-1 rounded-md px-2 py-2 text-xs font-semibold transition-all ${
+                          active
+                            ? 'bg-[var(--accent-primary)] text-[var(--text-on-accent)] shadow-sm'
+                            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                        }`}
+                        title={option.description}
+                      >
+                        <Icon size={14} />
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </SettingRow>
+
+              <SettingRow
+                icon={LayoutList}
+                title="Densidad compacta"
+                description="Reduce el espacio vertical para ver mas informacion en pantalla."
+              >
+                <Toggle checked={density === 'compact'} onChange={updateDensity} />
+              </SettingRow>
+
+              <SettingRow
+                icon={Languages}
+                title="Idioma"
+                description="Cambia el idioma de los textos principales de la interfaz."
+              >
+                <select
+                  className="w-full cursor-pointer appearance-none rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-sm font-medium text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent-primary)]"
+                  value={language}
+                  onChange={(e) => handleLanguageChange(e.target.value)}
+                >
+                  <option value="es">Español</option>
+                  <option value="en">English</option>
+                </select>
+              </SettingRow>
+            </div>
           </section>
 
           <section className="space-y-3">
@@ -570,7 +623,7 @@ export default function AppearanceView() {
               <h3 className="text-sm font-semibold text-[var(--text-primary)]">Estilos de apariencia</h3>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
               {presets.map((name) => {
                 const preview = getPresetPreview(name, theme);
                 const active = theme.name === name;
@@ -579,14 +632,14 @@ export default function AppearanceView() {
                     key={name}
                     type="button"
                     onClick={() => applyPreset(name)}
-                    className={`group min-h-[132px] rounded-lg border p-4 text-left transition-all ${
+                    className={`group min-h-[112px] rounded-lg border p-3 text-left transition-all ${
                       active
                         ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/10'
                         : 'border-[var(--border-subtle)] bg-[var(--bg-surface)] hover:border-[var(--border-medium)]'
                     }`}
                     aria-pressed={active}
                   >
-                    <span className="mb-4 flex items-start justify-between gap-3">
+                    <span className="mb-3 flex items-start justify-between gap-3">
                       <span>
                         <span className="block text-sm font-semibold text-[var(--text-primary)]">{preview.name}</span>
                         <span className="mt-1 block text-xs leading-5 text-[var(--text-secondary)]">{preview.description}</span>
@@ -603,7 +656,7 @@ export default function AppearanceView() {
                       {preview.colors.map((color, index) => (
                         <span
                           key={`${name}-${color}-${index}`}
-                          className="h-8 rounded-md border border-black/10"
+                          className="h-7 rounded-md border border-black/10"
                           style={{ backgroundColor: color }}
                         />
                       ))}
@@ -620,7 +673,7 @@ export default function AppearanceView() {
               <h3 className="text-sm font-semibold text-[var(--text-primary)]">Color de acento</h3>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               {ACCENTS.map((item) => {
                 const active = accent === item.key;
                 return (
@@ -628,7 +681,7 @@ export default function AppearanceView() {
                     key={item.key}
                     type="button"
                     onClick={() => updateAccent(item.key)}
-                    className={`flex items-center justify-between rounded-lg border bg-[var(--bg-surface)] px-4 py-3 text-left transition-all ${
+                    className={`flex items-center justify-between rounded-lg border bg-[var(--bg-surface)] px-3 py-3 text-left transition-all ${
                       active
                         ? 'border-[var(--accent-primary)]'
                         : 'border-[var(--border-subtle)] hover:border-[var(--border-medium)]'
@@ -651,15 +704,15 @@ export default function AppearanceView() {
               <h3 className="text-sm font-semibold text-[var(--text-primary)]">Editor avanzado</h3>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
               {EDITABLE_COLORS.map((item) => {
                 const value = visibleTheme[item.key] || '#000000';
                 return (
                   <label
                     key={item.key}
-                    className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-3"
+                    className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-3"
                   >
-                    <span className="mb-3 block">
+                    <span className="mb-2 block">
                       <span className="block text-sm font-semibold text-[var(--text-primary)]">{item.label}</span>
                       <span className="mt-1 block text-xs leading-5 text-[var(--text-secondary)]">{item.description}</span>
                     </span>
@@ -683,23 +736,12 @@ export default function AppearanceView() {
               })}
             </div>
           </section>
-
-          <div className="flex flex-wrap gap-3 border-t border-[var(--border-subtle)] pt-5">
-            <Button variant="primary" onClick={save}>
-              <Save size={16} />
-              Guardar cambios
-            </Button>
-            <Button variant="ghost" onClick={reset}>
-              <RotateCcw size={16} />
-              {t('appearance.reset') || 'Restaurar'}
-            </Button>
-          </div>
         </div>
 
-        <aside className="space-y-3">
+        <aside className="min-h-0 space-y-3 xl:sticky xl:top-0 xl:self-start">
           <h3 className="text-sm font-semibold text-[var(--text-primary)]">Vista previa</h3>
-          <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
-            <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3">
+          <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4 xl:min-h-[520px]">
+            <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3 xl:min-h-[330px]">
               <div className="mb-4 flex items-center justify-between">
                 <span className="flex items-center gap-2">
                   <span className="h-2.5 w-2.5 rounded-full bg-[var(--accent-primary)]" />
@@ -716,6 +758,10 @@ export default function AppearanceView() {
                   <span className="h-12 rounded-md bg-[var(--bg-surface)]" />
                   <span className="h-12 rounded-md bg-[var(--bg-surface)]" />
                   <span className="h-12 rounded-md bg-[var(--bg-surface)]" />
+                </div>
+                <div className="space-y-2 pt-2">
+                  <div className="h-7 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)]" />
+                  <div className="h-7 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)]" />
                 </div>
               </div>
             </div>
