@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="COSMO logo">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5E6AD2"/>
+      <stop offset="1" stop-color="#1A1F3D"/>
+    </linearGradient>
+    <linearGradient id="dropGrad" x1="100" y1="60" x2="156" y2="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6EE7D8"/>
+      <stop offset="1" stop-color="#3BA8D8"/>
+    </linearGradient>
+    <linearGradient id="arrowGrad" x1="90" y1="100" x2="200" y2="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8B93FF"/>
+      <stop offset="1" stop-color="#6EE7D8"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded square background -->
+  <rect width="256" height="256" rx="56" fill="url(#bgGrad)"/>
+  <!-- Subtle border -->
+  <rect x="4" y="4" width="248" height="248" rx="54" fill="none" stroke="url(#arrowGrad)" stroke-width="2" opacity="0.4"/>
+  <!-- Water drop shape -->
+  <path d="M128 48 C128 48 72 130 72 168 C72 199 97 224 128 224 C159 224 184 199 184 168 C184 130 128 48 128 48Z" fill="url(#dropGrad)" opacity="0.9"/>
+  <!-- Highlight on drop -->
+  <path d="M108 140 C108 120 128 80 128 80 C128 80 120 120 120 140 C120 152 112 156 108 140Z" fill="white" opacity="0.3"/>
+  <!-- Conversion arrow (circular) - right side -->
+  <path d="M152 108 L192 108 L182 96 M192 108 L182 120" fill="none" stroke="url(#arrowGrad)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Conversion arrow (circular) - left side -->
+  <path d="M104 148 L64 148 L74 160 M64 148 L74 136" fill="none" stroke="url(#arrowGrad)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

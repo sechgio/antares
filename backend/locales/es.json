@@ -1,0 +1,14 @@
+{
+  "error.file_not_found": "No se encontró la imagen: {path}",
+  "error.unsupported_format": "Formato no soportado: {format}",
+  "error.process_failed": "Error procesando {file}: {error}",
+  "error.backend_timeout": "IPC timeout: backend no responde",
+  "error.backend_start_failed": "El backend no pudo iniciar. Intenta reiniciar la aplicación.",
+  "error.process_already_running": "Ya hay un proceso en ejecución",
+  "error.no_files_to_process": "No hay archivos para procesar",
+  "error.no_destination": "No se especificó carpeta de destino",
+  "info.process_complete": "Proceso finalizado. Exitosos: {ok}, Errores: {err}",
+  "info.process_cancelled": "Proceso cancelado por el usuario",
+  "info.backend_ready": "Backend IPC iniciado. Esperando mensajes en stdin...",
+  "info.backend_shutdown": "Backend IPC finalizado."
+}

@@ -1,0 +1,1410 @@
+/* ===== VPAD – Padron Generator Styles ===== */
+/* All classes prefixed with vpad- to avoid conflicts */
+
+/* ===== APP LAYOUT ===== */
+.vpad-app {
+    display: grid;
+    grid-template-columns: 400px 1fr;
+    height: 100vh;
+    min-height: 100vh;
+    max-height: 100vh;
+    overflow: hidden;
+    font-family:
+        "Inter",
+        "Segoe UI",
+        system-ui,
+        -apple-system,
+        sans-serif;
+    position: relative;
+}
+
+.vpad-app:has(.vpad-sidebar.collapsed) {
+    grid-template-columns: 0 1fr;
+}
+
+/* When embedded inside another app layout (not full viewport) */
+.vpad-app.vpad-app-embedded {
+    height: 100%;
+    min-height: 100%;
+    max-height: 100%;
+}
+
+/* PDF Generation host */
+.vpad-pdf-hidden-container {
+    position: fixed;
+    left: -200vw;
+    top: 0;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+    z-index: -1;
+}
+
+.vpad-pdf-export-root {
+    position: fixed !important;
+    top: 0 !important;
+    overflow: visible !important;
+    visibility: visible !important;
+    pointer-events: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.vpad-pdf-export-root > div,
+.vpad-pdf-export-root [data-pdf-page] {
+    position: relative !important;
+    overflow: visible !important;
+    max-width: none !important;
+    max-height: none !important;
+}
+
+.vpad-export-mode .vpad-sheet,
+.vpad-export-mode .vpad-print-page {
+    box-shadow: none !important;
+    filter: none !important;
+    transition: none !important;
+}
+
+.vpad-export-mode .vpad-print-page::before,
+.vpad-export-mode .vpad-print-page:hover {
+    box-shadow: none !important;
+    content: none !important;
+}
+
+.vpad-export-mode .vpad-sheet {
+    text-rendering: auto;
+}
+
+/* ===== SIDEBAR ===== */
+.vpad-sidebar {
+    background: #000000;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    height: 100%;
+    max-height: 100vh;
+    position: relative;
+    z-index: 10;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.vpad-sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    height: 56px;
+    min-height: 56px;
+    max-height: 56px;
+    padding: 0 22px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.vpad-brand-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.vpad-brand-title {
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: #ffffff;
+    letter-spacing: -0.02em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+}
+
+.vpad-brand-title svg {
+    color: #ffffff;
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+}
+
+/* ---- Sidebar collapsed state ---- */
+.vpad-sidebar.collapsed {
+    width: 0;
+    min-width: 0;
+    overflow: hidden;
+    border-right: none;
+    padding: 0;
+}
+
+.vpad-sidebar.collapsed .vpad-sidebar-header {
+    display: none;
+}
+
+.vpad-sidebar.collapsed .vpad-config-panel {
+    display: none;
+}
+
+.vpad-sidebar.collapsed .vpad-action-box {
+    display: none;
+}
+
+/* ---- Scrollable config panel ---- */
+.vpad-config-panel {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 20px 20px 12px;
+    min-height: 0;
+}
+
+.vpad-config-panel::-webkit-scrollbar {
+    width: 8px;
+}
+.vpad-config-panel::-webkit-scrollbar-track {
+    background: #1a1a1a;
+    border-radius: 4px;
+}
+.vpad-config-panel::-webkit-scrollbar-thumb {
+    background: #888888;
+    border-radius: 4px;
+    border: 2px solid #1a1a1a;
+}
+.vpad-config-panel::-webkit-scrollbar-thumb:hover {
+    background: #aaaaaa;
+}
+
+/* ---- Sections ---- */
+.vpad-section {
+    margin-bottom: 24px;
+}
+
+.vpad-section-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.vpad-section-number {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
+    background: #ffffff;
+    color: #000000;
+    font-size: 0.72rem;
+    font-weight: 800;
+    flex-shrink: 0;
+}
+
+.vpad-section-title {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #f0f0f0;
+    margin: 0;
+}
+
+/* ---- Card container ---- */
+.vpad-card {
+    background: #0a0a0a;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 16px;
+}
+
+/* ---- Upload Zone ---- */
+.vpad-upload-zone {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1.5px dashed rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    background: #0a0a0a;
+}
+
+.vpad-upload-zone:hover {
+    border-color: rgba(255, 255, 255, 0.3);
+    background: #141414;
+}
+
+.vpad-upload-zone.active {
+    border-color: rgba(255, 255, 255, 0.3);
+    background: #141414;
+}
+
+.vpad-upload-zone.loaded {
+    border-style: solid;
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.vpad-upload-zone input {
+    display: none;
+}
+
+.vpad-upload-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #ffffff;
+    flex-shrink: 0;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.vpad-upload-icon-loaded {
+    color: #66bb6a;
+    background: rgba(102, 187, 106, 0.1);
+}
+
+.vpad-upload-zone:hover .vpad-upload-icon-loaded {
+    background: rgba(102, 187, 106, 0.15);
+    transform: none;
+}
+
+.vpad-upload-text {
+    font-weight: 600;
+    font-size: 0.82rem;
+    color: #f0f0f0;
+    line-height: 1.3;
+}
+
+.vpad-upload-hint {
+    font-size: 0.72rem;
+    color: #777777;
+    font-weight: 500;
+}
+
+/* ---- Fields ---- */
+.vpad-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-bottom: 12px;
+}
+
+.vpad-field:last-child {
+    margin-bottom: 0;
+}
+
+.vpad-field span {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #777777;
+    letter-spacing: 0.01em;
+}
+
+.vpad-field input,
+.vpad-field select,
+.vpad-field textarea {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    background: #0d0d0d;
+    color: #f0f0f0;
+    outline: none;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    font-size: 0.82rem;
+    font-family: inherit;
+}
+
+.vpad-field input:hover,
+.vpad-field select:hover,
+.vpad-field textarea:hover {
+    border-color: rgba(255, 255, 255, 0.18);
+}
+
+.vpad-field input:focus,
+.vpad-field select:focus,
+.vpad-field textarea:focus {
+    border-color: rgba(255, 255, 255, 0.35);
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+    background: rgba(13, 13, 13, 0.95);
+}
+
+.vpad-field input::placeholder,
+.vpad-field textarea::placeholder {
+    color: rgba(255, 255, 255, 0.18);
+}
+
+.vpad-field select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23777777' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+}
+
+.vpad-field select option {
+    background: #000000;
+    color: #f0f0f0;
+}
+
+.vpad-field textarea {
+    resize: vertical;
+    min-height: 56px;
+}
+
+.vpad-field-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+}
+
+.vpad-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.vpad-form-grid .wide {
+    grid-column: span 2;
+}
+
+/* ---- Action Box (inside config panel) ---- */
+.vpad-action-box {
+    padding: 16px 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.vpad-actions-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+/* ---- Buttons ---- */
+.vpad-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 11px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.82rem;
+    border: none;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.vpad-btn svg {
+    flex-shrink: 0;
+}
+
+.vpad-btn-primary {
+    background: #ffffff;
+    color: #000000;
+    width: 100%;
+}
+
+.vpad-btn-primary:hover {
+    background: #e0e0e0;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(255, 255, 255, 0.1);
+}
+
+.vpad-btn-primary:active {
+    transform: translateY(0);
+}
+
+.vpad-btn-primary:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.vpad-btn-secondary {
+    background: #0a0a0a;
+    color: #f0f0f0;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.vpad-btn-secondary:hover {
+    background: #141414;
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+.vpad-btn-ghost {
+    background: transparent;
+    color: #777777;
+}
+
+.vpad-btn-ghost:hover {
+    color: #cccccc;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+/* ===== PREVIEW AREA ===== */
+.vpad-preview-area {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    max-height: 100vh;
+    overflow: hidden;
+    background: #f5f5f5;
+}
+
+.vpad-preview-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-sizing: border-box;
+    height: 56px;
+    min-height: 56px;
+    max-height: 56px;
+    padding: 0 16px;
+    background: #ffffff;
+    border-bottom: 1px solid #e0e0e0;
+    z-index: 20;
+    position: sticky;
+    top: 0;
+}
+
+.vpad-preview-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.vpad-preview-title h2 {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #111111;
+    margin: 0;
+}
+
+.vpad-badges {
+    display: flex;
+    gap: 4px;
+}
+
+.vpad-badge {
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    background: #f0f0f0;
+    border: 1px solid #e0e0e0;
+    border-radius: 99px;
+    color: #666666;
+}
+
+.vpad-preview-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.vpad-preview-nav-info {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #666666;
+    white-space: nowrap;
+}
+
+.vpad-btn-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border-radius: 8px;
+    background: #f0f0f0;
+    border: 1px solid #e0e0e0;
+    color: #111111;
+    font-weight: 700;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.vpad-btn-nav:hover:not(:disabled) {
+    background: #e0e0e0;
+}
+
+.vpad-btn-nav:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.vpad-preview-scroll-container {
+    flex: 1 1 auto;
+    overflow-x: auto;
+    overflow-y: auto;
+    padding: 32px 32px 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    background-color: #ebebeb;
+    background-image: radial-gradient(
+        circle,
+        rgba(0, 0, 0, 0.06) 1px,
+        transparent 1px
+    );
+    background-size: 24px 24px;
+    min-height: 0;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: #aaaaaa #d8d8d8;
+}
+
+.vpad-preview-scroll-container::-webkit-scrollbar {
+    width: 7px;
+    height: 7px;
+}
+.vpad-preview-scroll-container::-webkit-scrollbar-track {
+    background: #d8d8d8;
+    border-radius: 4px;
+}
+.vpad-preview-scroll-container::-webkit-scrollbar-thumb {
+    background: #aaaaaa;
+    border-radius: 4px;
+    border: 2px solid #d8d8d8;
+}
+.vpad-preview-scroll-container::-webkit-scrollbar-thumb:hover {
+    background: #777777;
+}
+.vpad-preview-scroll-container::-webkit-scrollbar-corner {
+    background: #d8d8d8;
+}
+
+.vpad-print-doc {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    align-items: center;
+    transform: scale(1.08);
+    transform-origin: top center;
+}
+
+.vpad-print-doc::after {
+    content: "";
+    display: block;
+    height: 32px;
+    flex-shrink: 0;
+    width: 100%;
+}
+
+.vpad-print-page + .vpad-print-page {
+    margin-top: 40px;
+    position: relative;
+}
+
+.vpad-print-page + .vpad-print-page::before {
+    content: "";
+    position: absolute;
+    top: -20px;
+    left: 8%;
+    right: 8%;
+    border-top: 2px dashed #bdbdbd;
+}
+
+.vpad-print-page {
+    break-after: auto;
+    page-break-after: auto;
+    transition: box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 4px;
+    overflow: visible;
+}
+
+.vpad-print-page:hover {
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+}
+
+.vpad-print-page:not(:last-child) {
+    break-after: page;
+    page-break-after: always;
+}
+
+/* ===== SHEET (PRINT DOCUMENT) ===== */
+.vpad-sheet {
+    width: 297mm;
+    height: 210mm;
+    background: #fff;
+    padding: 8mm 12mm;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+    font-family: Arial, Helvetica, sans-serif;
+    color: #000;
+    position: relative;
+    overflow: hidden;
+    box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+}
+
+.vpad-sheet.portrait {
+    width: 210mm;
+    height: 297mm;
+    padding: 8mm 10mm;
+}
+
+/* Sheet Header */
+.vpad-sheet-head {
+    display: grid;
+    grid-template-columns: 150px 1fr 180px;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 6px;
+}
+
+.vpad-sheet.portrait .vpad-sheet-head {
+    grid-template-columns: 90px 1fr 100px;
+    gap: 4px;
+    margin-bottom: 4px;
+}
+
+.vpad-sheet.portrait .vpad-sheet-title h1 {
+    font-size: 9.5px;
+    line-height: 1.2;
+}
+
+.vpad-sheet.portrait .vpad-logo-r {
+    padding-right: 0;
+}
+
+.vpad-logo-l,
+.vpad-logo-r {
+    display: flex;
+}
+.vpad-logo-l {
+    justify-content: flex-start;
+}
+.vpad-logo-r {
+    justify-content: flex-end;
+    padding-right: 18px;
+}
+
+.vpad-logo-l img {
+    width: 140px;
+    height: auto;
+    object-fit: contain;
+    image-rendering: -webkit-optimize-contrast;
+}
+.vpad-logo-r img {
+    width: 160px;
+    height: auto;
+    object-fit: contain;
+    image-rendering: -webkit-optimize-contrast;
+}
+
+.vpad-sheet.portrait .vpad-logo-l img {
+    width: 100px;
+}
+.vpad-sheet.portrait .vpad-logo-r img {
+    width: 110px;
+}
+
+.vpad-sheet-title h1 {
+    font-size: 13px;
+    font-weight: 800;
+    text-align: center;
+    text-transform: uppercase;
+    line-height: 1.2;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    margin: 0;
+}
+
+/* Meta block */
+.vpad-meta {
+    display: grid;
+    grid-template-columns: 1.15fr 0.85fr;
+    gap: 16px;
+    margin-top: 6px;
+}
+
+.vpad-sheet.portrait .vpad-meta {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 16px;
+}
+
+.vpad-sheet.portrait .vpad-vlabel {
+    font-size: 9px;
+}
+
+.vpad-sheet.portrait .vpad-vval {
+    font-size: 9px;
+}
+
+.vpad-sheet.portrait .vpad-dt-sep {
+    font-size: 9px;
+}
+
+.vpad-meta-col {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+/* Value lines */
+.vpad-vline {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px;
+    align-items: baseline;
+    font-size: 9.5px;
+    line-height: 1.35;
+}
+
+.vpad-vlabel {
+    font-weight: 700;
+    white-space: nowrap;
+    font-size: 11px;
+}
+
+.vpad-vval {
+    min-height: 1.2em;
+    font-size: 11.5px;
+}
+
+.vpad-vval.empty {
+    color: #aaa;
+}
+
+.vpad-dtrow {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px;
+    align-items: baseline;
+    font-size: 9.5px;
+    line-height: 1.35;
+}
+
+.vpad-sheet.portrait .vpad-dtrow {
+    gap: 4px;
+    align-items: baseline;
+}
+
+.vpad-sheet.portrait .vpad-dt-date-time {
+    gap: 4px;
+}
+
+.vpad-sheet.portrait .vpad-dt-sep {
+    font-size: 10.5px;
+    padding: 0 1px;
+}
+
+.vpad-dt-date-time {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.vpad-dt-sep {
+    font-size: 11.5px;
+    font-weight: 400;
+    color: #000;
+    padding: 0 2px;
+}
+
+/* Areas */
+.vpad-areas {
+    margin-top: 5px;
+    border: 1.5px solid #333;
+}
+
+.vpad-area {
+    padding: 5px 8px;
+}
+.vpad-area + .vpad-area {
+    border-top: 1.5px solid #333;
+}
+
+.vpad-area-lg {
+    min-height: 52px;
+}
+.vpad-area-sm {
+    min-height: 36px;
+}
+
+.vpad-area-title {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.vpad-area p {
+    margin-top: 3px;
+    font-size: 11.5px;
+    line-height: 1.3;
+    min-height: 1.2em;
+}
+
+.vpad-sheet.portrait .vpad-areas {
+    margin-top: 3px;
+}
+
+.vpad-sheet.portrait .vpad-area-lg {
+    min-height: 36px;
+}
+
+.vpad-sheet.portrait .vpad-area-sm {
+    min-height: 28px;
+}
+
+.vpad-sheet.portrait .vpad-area-title {
+    font-size: 9.5px;
+}
+
+.vpad-sheet.portrait .vpad-area p {
+    font-size: 10px;
+    margin-top: 2px;
+}
+
+/* Notes */
+.vpad-notes {
+    display: grid;
+    grid-template-columns: 1.15fr 0.85fr;
+    gap: 12px;
+    margin-top: 4px;
+    padding: 0 2px;
+}
+
+.vpad-sheet.portrait .vpad-notes {
+    grid-template-columns: 1fr;
+    gap: 2px;
+}
+
+.vpad-sheet.portrait .vpad-notes-l {
+    display: flex;
+    gap: 0;
+    white-space: nowrap;
+    align-items: baseline;
+}
+
+.vpad-sheet.portrait .vpad-notes-l p {
+    font-size: 7px;
+    margin: 0;
+}
+
+.vpad-sheet.portrait .vpad-notes-l p + p {
+    padding-left: 20px;
+}
+
+.vpad-sheet.portrait .vpad-notes-l p + p::before {
+    content: "·";
+    padding: 0 8px;
+}
+
+.vpad-sheet.portrait .vpad-notes-r {
+    min-width: 0;
+}
+
+.vpad-sheet.portrait .vpad-cps-code {
+    font-size: 8.5px;
+}
+
+.vpad-sheet.portrait .vpad-cps-desc {
+    font-size: 7px;
+}
+
+.vpad-notes-l p {
+    font-size: 7.5px;
+    line-height: 1.3;
+    color: #333;
+}
+
+.vpad-notes-r {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 280px;
+}
+
+.vpad-cps-code {
+    font-size: 9.5px;
+    font-weight: 800;
+    line-height: 1.25;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+}
+
+.vpad-cps-desc {
+    font-size: 7.5px;
+    line-height: 1.25;
+    color: #111;
+    white-space: nowrap;
+    overflow: visible;
+}
+
+/* Table */
+.vpad-tbl {
+    margin-top: 4px;
+}
+
+.vpad-tbl table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.vpad-tbl th,
+.vpad-tbl td {
+    border: 1px solid #444;
+    padding: 2px 4px;
+    font-size: 9px;
+    line-height: 1.25;
+    vertical-align: middle;
+}
+
+.vpad-tbl th {
+    font-weight: 700;
+    text-align: center;
+    background: #f5f5f5;
+    font-size: 8.5px;
+    text-transform: uppercase;
+}
+
+.vpad-tbl tbody tr {
+    height: 22px;
+}
+
+.vpad-sheet.portrait .vpad-tbl tbody tr {
+    height: 20px;
+}
+
+.vpad-sheet.portrait .vpad-tbl th,
+.vpad-sheet.portrait .vpad-tbl td {
+    font-size: 7.5px;
+    padding: 1px 3px;
+}
+
+.vpad-sheet.portrait .vpad-tbl th {
+    font-size: 7px;
+}
+
+.vpad-tc {
+    text-align: center;
+}
+.vpad-tb {
+    font-weight: 700;
+    color: #005ca8;
+    font-size: 9.5px;
+}
+
+.vpad-tbl tbody tr:nth-child(even) {
+    background: #f8f9fb;
+}
+
+.vpad-tbl tbody tr:hover {
+    background: #eef3fa;
+}
+
+/* Footer */
+.vpad-sheet-foot {
+    position: absolute;
+    right: 14mm;
+    bottom: 8mm;
+    font-size: 10px;
+    font-weight: 700;
+    color: #000;
+}
+
+.vpad-sheet.portrait .vpad-sheet-foot {
+    right: 10mm;
+    bottom: 8mm;
+    font-size: 9px;
+}
+
+/* Volanteo section (last page only) */
+.vpad-volanteo-section {
+    margin-top: 8px;
+    padding-top: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.vpad-sheet.portrait .vpad-volanteo-section {
+    margin-top: 5px;
+    padding-top: 4px;
+    gap: 3px;
+}
+
+.vpad-sheet.portrait .vpad-volanteo-label {
+    font-size: 9.5px;
+}
+
+.vpad-sheet.portrait .vpad-volanteo-value {
+    font-size: 9.5px;
+}
+
+.vpad-sheet.portrait .vpad-volanteo-contratista {
+    font-size: 9.5px;
+}
+
+.vpad-volanteo-line {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.vpad-volanteo-label {
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.vpad-volanteo-value {
+    flex: 1;
+    min-height: 1.2em;
+    font-size: 11px;
+}
+.vpad-volanteo-contratista {
+    font-size: 11px;
+    font-weight: 400;
+    text-transform: uppercase;
+}
+
+.vpad-volanteo-contratista-label {
+    font-weight: 700;
+}
+
+.vpad-volanteo-contratista-value {
+    font-weight: 400;
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 1100px) {
+    .vpad-app {
+        grid-template-columns: 1fr;
+        height: auto;
+        min-height: 100vh;
+        max-height: none;
+        overflow: visible;
+    }
+    .vpad-sidebar {
+        height: auto;
+        max-height: none;
+        position: static;
+        border-right: none;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .vpad-config-panel {
+        max-height: none;
+    }
+    .vpad-preview-area {
+        height: auto;
+        max-height: none;
+        min-height: 50vh;
+    }
+    .vpad-sheet {
+        width: 100%;
+        min-height: auto;
+        aspect-ratio: auto;
+    }
+}
+
+@media (max-width: 768px) {
+    .vpad-form-grid {
+        grid-template-columns: 1fr;
+    }
+    .vpad-form-grid .wide {
+        grid-column: auto;
+    }
+    .vpad-field-row {
+        grid-template-columns: 1fr;
+    }
+    .vpad-preview-toolbar {
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 8px 12px;
+        height: auto;
+        min-height: 56px;
+    }
+    .vpad-badges {
+        order: 3;
+        width: 100%;
+        justify-content: flex-start;
+    }
+    .vpad-preview-nav {
+        order: 2;
+        margin-left: auto;
+    }
+    .vpad-preview-scroll-container {
+        padding: 16px;
+        justify-content: flex-start;
+    }
+    .vpad-sheet {
+        transform-origin: top center;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+    .vpad-print-page + .vpad-print-page {
+        margin-top: 20px;
+    }
+    .vpad-print-page + .vpad-print-page::before {
+        top: -12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .vpad-sidebar-header {
+        padding: 0 16px;
+    }
+    .vpad-preview-toolbar {
+        padding: 8px;
+    }
+    .vpad-badges {
+        gap: 4px;
+    }
+    .vpad-badge {
+        font-size: 0.65rem;
+        padding: 2px 6px;
+    }
+    .vpad-preview-scroll-container {
+        padding: 8px;
+    }
+    .vpad-sheet {
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+    }
+}
+
+/* ===== PRINT ===== */
+@media print {
+    .vpad-app {
+        display: block;
+        background: #fff;
+    }
+    .vpad-sidebar,
+    .vpad-preview-toolbar {
+        display: none !important;
+    }
+    .vpad-preview-area {
+        height: auto;
+        overflow: visible;
+    }
+    .vpad-preview-scroll-container {
+        padding: 0;
+        background: #fff;
+        overflow: visible;
+    }
+    .vpad-print-doc {
+        gap: 0;
+    }
+    .vpad-sheet {
+        width: 100%;
+        box-shadow: none;
+        page-break-after: always;
+        break-after: page;
+        margin: 0;
+        padding: 10mm 12mm;
+    }
+    .vpad-sheet:last-child {
+        page-break-after: auto;
+        break-after: auto;
+    }
+}
+
+/* ===== LIGHT THEME OVERRIDES ===== */
+[data-theme="light"] .vpad-sidebar {
+    background: #f7f7f8;
+    border-right-color: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .vpad-sidebar-header {
+    border-bottom-color: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .vpad-brand-title {
+    color: #1f2937;
+}
+
+[data-theme="light"] .vpad-brand-title svg {
+    color: #1f2937;
+}
+
+[data-theme="light"] .vpad-config-panel::-webkit-scrollbar-track {
+    background: #e5e5e5;
+}
+
+[data-theme="light"] .vpad-config-panel::-webkit-scrollbar-thumb {
+    background: #999999;
+    border-color: #e5e5e5;
+}
+
+[data-theme="light"] .vpad-config-panel::-webkit-scrollbar-thumb:hover {
+    background: #777777;
+}
+
+[data-theme="light"] .vpad-section-number {
+    background: #1f2937;
+    color: #ffffff;
+}
+
+[data-theme="light"] .vpad-section-title {
+    color: #1f2937;
+}
+
+[data-theme="light"] .vpad-card {
+    background: #ffffff;
+    border-color: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .vpad-upload-zone {
+    border-color: rgba(0, 0, 0, 0.15);
+    background: #ffffff;
+}
+
+[data-theme="light"] .vpad-upload-zone:hover {
+    border-color: rgba(0, 0, 0, 0.25);
+    background: #f0f0f0;
+}
+
+[data-theme="light"] .vpad-upload-zone.active {
+    border-color: rgba(0, 0, 0, 0.25);
+    background: #f0f0f0;
+}
+
+[data-theme="light"] .vpad-upload-zone.loaded {
+    border-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] .vpad-upload-icon {
+    background: rgba(0, 0, 0, 0.06);
+    color: #1f2937;
+}
+
+[data-theme="light"] .vpad-upload-icon-loaded {
+    color: #2e7d32;
+    background: rgba(46, 125, 50, 0.1);
+}
+
+[data-theme="light"] .vpad-upload-zone:hover .vpad-upload-icon-loaded {
+    background: rgba(46, 125, 50, 0.15);
+}
+
+[data-theme="light"] .vpad-upload-text {
+    color: #1f2937;
+}
+
+[data-theme="light"] .vpad-upload-hint {
+    color: #6b7280;
+}
+
+[data-theme="light"] .vpad-field span {
+    color: #6b7280;
+}
+
+[data-theme="light"] .vpad-field input,
+[data-theme="light"] .vpad-field select,
+[data-theme="light"] .vpad-field textarea {
+    border-color: rgba(0, 0, 0, 0.12);
+    background: #ffffff;
+    color: #1f2937;
+}
+
+[data-theme="light"] .vpad-field input:hover,
+[data-theme="light"] .vpad-field select:hover,
+[data-theme="light"] .vpad-field textarea:hover {
+    border-color: rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="light"] .vpad-field input:focus,
+[data-theme="light"] .vpad-field select:focus,
+[data-theme="light"] .vpad-field textarea:focus {
+    border-color: rgba(0, 0, 0, 0.35);
+    box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.06);
+    background: #ffffff;
+}
+
+[data-theme="light"] .vpad-field input::placeholder,
+[data-theme="light"] .vpad-field textarea::placeholder {
+    color: rgba(0, 0, 0, 0.25);
+}
+
+[data-theme="light"] .vpad-field select option {
+    background: #ffffff;
+    color: #1f2937;
+}
+
+[data-theme="light"] .vpad-action-box {
+    border-top-color: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .vpad-btn-primary {
+    background: #1f2937;
+    color: #ffffff;
+}
+
+[data-theme="light"] .vpad-btn-primary:hover {
+    background: #374151;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="light"] .vpad-btn-secondary {
+    background: #ffffff;
+    color: #1f2937;
+    border-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] .vpad-btn-secondary:hover {
+    background: #f0f0f0;
+    border-color: rgba(0, 0, 0, 0.18);
+}
+
+[data-theme="light"] .vpad-btn-ghost {
+    color: #6b7280;
+}
+
+[data-theme="light"] .vpad-btn-ghost:hover {
+    color: #374151;
+    background: rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] .vpad-preview-toolbar {
+    background: #ffffff;
+    border-bottom-color: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .vpad-badge {
+    background: #f0f0f0;
+    border-color: rgba(0, 0, 0, 0.08);
+    color: #555555;
+}
+
+[data-theme="light"] .vpad-btn-nav {
+    background: #f0f0f0;
+    border-color: rgba(0, 0, 0, 0.08);
+    color: #1f2937;
+}
+
+[data-theme="light"] .vpad-btn-nav:hover:not(:disabled) {
+    background: #e0e0e0;
+}
+
+[data-theme="light"] .vpad-preview-nav-info {
+    color: #555555;
+}
+
+[data-theme="light"] .vpad-preview-scroll-container {
+    background-color: #e8e8e8;
+    background-image: radial-gradient(
+        circle,
+        rgba(0, 0, 0, 0.08) 1px,
+        transparent 1px
+    );
+}
+
+@media (max-width: 1100px) {
+    [data-theme="light"] .vpad-sidebar {
+        border-bottom-color: rgba(0, 0, 0, 0.08);
+    }
+}

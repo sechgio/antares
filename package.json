@@ -1,0 +1,51 @@
+{
+  "name": "cosmo-app",
+  "version": "0.3.6",
+  "description": "Conversor y renombrador profesional de imágenes — nativo de escritorio",
+  "author": "COSMO <dev@cosmo.app>",
+  "private": true,
+  "main": "electron/main.js",
+  "homepage": ".",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HIDROAA/hidro_convert.git"
+  },
+  "bugs": {
+    "url": "https://github.com/HIDROAA/hidro_convert/issues"
+  },
+  "scripts": {
+    "dev": "concurrently \"cd frontend && npm run dev\" \"wait-on http://localhost:5173 && electron electron/main.js\"",
+    "build:frontend": "cd frontend && npm run build",
+    "build:backend": "node scripts/build-backend.js",
+    "build:win": "npm run build:backend && npm run build:frontend && electron-builder --win",
+    "build:mac": "npm run build:backend && npm run build:frontend && electron-builder --mac",
+    "build:linux": "npm run build:backend && npm run build:frontend && electron-builder --linux",
+    "build:all": "npm run build:backend && npm run build:frontend && electron-builder --win --mac --linux",
+    "dist": "npm run build:backend && npm run build:frontend && electron-builder",
+    "dist:dir": "npm run build:backend && npm run build:frontend && electron-builder --dir",
+    "test": "cd backend && python -m pytest ../tests -v",
+    "lint:python": "cd backend && ruff check .",
+    "lint:fix": "cd backend && ruff check . --fix",
+    "typecheck:frontend": "cd frontend && npx tsc --noEmit",
+    "bump:patch": "node scripts/bump-version.js patch",
+    "bump:minor": "node scripts/bump-version.js minor",
+    "bump:major": "node scripts/bump-version.js major",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "electron-icon-builder": "^2.0.1",
+    "icon-gen": "^5.0.0",
+    "png2icons": "^2.0.1",
+    "sharp": "^0.34.5",
+    "wait-on": "^8.0.0"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

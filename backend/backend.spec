@@ -1,0 +1,69 @@
+# -*- mode: python ; coding: utf-8 -*-
+import sys
+from pathlib import Path
+
+block_cipher = None
+
+backend_dir = Path(sys._getframe().f_code.co_filename).parent.resolve()
+project_dir = backend_dir.parent
+
+a = Analysis(
+    [str(backend_dir / 'main.py')],
+    pathex=[str(backend_dir), str(project_dir)],
+    binaries=[],
+    datas=[],
+    hiddenimports=[
+        'backend.core.converter',
+        'backend.core.database',
+        'backend.core.renamer',
+        'backend.core.config_fields',
+        'backend.core.config_theme',
+        'backend.core.plugins',
+        'backend.core.history',
+        'backend.core.format_registry',
+        'backend.core.formatos',
+        'backend.utils.validators',
+        'backend.utils.paths',
+        'backend.ipc_protocol',
+        'backend.handlers',
+        'backend.version',
+        'PIL',
+        'PIL._imagingtk',
+        'PIL.Image',
+        'pandas',
+        'pandas._libs.tslibs',
+        'openpyxl',
+        'pypdf',
+        'pypdf.generic',
+        'pypdf.generic._data_structures',
+    ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    [],
+    name='CosmoBackend',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=True,
+    disable_windowed_traceback=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)

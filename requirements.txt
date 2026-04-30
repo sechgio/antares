@@ -1,3 +1,5 @@
-Pillow>=10.0.0
-pandas>=2.0.0
-openpyxl>=3.1.0
+# Dependencies are now managed in pyproject.toml
+# Install with: pip install -e ".[dev]"
+
+# Keep this file for backwards compatibility
+-e .

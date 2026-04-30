@@ -11,11 +11,13 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.pytest_cache/
 
 # Entornos virtuales
 venv/
 .venv/
 env/
+venv*/
 
 # IDE
 .vscode/
@@ -24,6 +26,30 @@ env/
 
 # PyInstaller
 *.spec
+!backend/backend.spec
 
 # Output de pruebas
 test_output/
+
+# Electron
+node_modules/
+dist-electron/
+
+# Frontend build
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Worktrees
+.worktrees/
+worktrees/
+
+# Superpowers local companion sessions
+.superpowers/
+
+# Local dev server scratch files
+.vite-brand.*
