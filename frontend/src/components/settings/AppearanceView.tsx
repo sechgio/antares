@@ -37,6 +37,14 @@ type PresetPreview = {
   colors: string[];
 };
 
+type EditableColor = {
+  key: keyof ThemeConfig;
+  label: string;
+  description: string;
+};
+
+const CUSTOM_ACCENT_KEY = 'custom';
+
 const ACCENTS: AccentChoice[] = [
   { key: 'violet', name: 'Violeta', color: '#5E6AD2', hover: '#4D57BE', light: '#8B93FF', dark: '#343B8F' },
   { key: 'blue', name: 'Azul', color: '#2563EB', hover: '#1D4ED8', light: '#60A5FA', dark: '#1E3A8A' },
@@ -86,6 +94,26 @@ const PRESET_PREVIEWS: Record<string, PresetPreview> = {
     description: 'Máxima legibilidad con bordes fuertes y colores directos.',
     colors: ['#000000', '#111111', '#FFFF00', '#FFFFFF'],
   },
+  'Solar Claro': {
+    name: 'Solar Claro',
+    description: 'Claro luminoso con azul técnico y superficies limpias.',
+    colors: ['#F8FAFC', '#FFFFFF', '#0EA5E9', '#14B8A6'],
+  },
+  'Bosque Operativo': {
+    name: 'Bosque Operativo',
+    description: 'Verdes profundos para una interfaz operacional y estable.',
+    colors: ['#07130F', '#10231D', '#22C55E', '#2DD4BF'],
+  },
+  'Amanecer Ambar': {
+    name: 'Amanecer Ambar',
+    description: 'Oscuro cálido con acentos ámbar y naranja.',
+    colors: ['#1C1208', '#2A1A0D', '#F59E0B', '#FB923C'],
+  },
+  'Neon Grid': {
+    name: 'Neon Grid',
+    description: 'Contraste violeta/cian para una apariencia más expresiva.',
+    colors: ['#070713', '#111126', '#22D3EE', '#A855F7'],
+  },
 };
 
 const MODE_OPTIONS: { key: ThemeMode; label: string; description: string; icon: typeof Moon }[] = [
@@ -94,11 +122,27 @@ const MODE_OPTIONS: { key: ThemeMode; label: string; description: string; icon: 
   { key: 'system', label: 'Sistema', description: 'Sigue Windows.', icon: Monitor },
 ];
 
+const EDITABLE_COLORS: EditableColor[] = [
+  { key: 'bg', label: 'Fondo principal', description: 'Canvas general de la app.' },
+  { key: 'bg_secondary', label: 'Superficie', description: 'Paneles, sidebar y tarjetas.' },
+  { key: 'fg', label: 'Texto principal', description: 'Titulares y texto de alto énfasis.' },
+  { key: 'fg_muted', label: 'Texto secundario', description: 'Ayudas, descripciones y metadatos.' },
+  { key: 'accent', label: 'Acento principal', description: 'Acciones primarias y selección.' },
+  { key: 'accent_hover', label: 'Acento hover', description: 'Interacciones sobre botones y foco.' },
+  { key: 'accent_light', label: 'Acento claro', description: 'Brillos, previews y estados suaves.' },
+  { key: 'border', label: 'Bordes', description: 'Separadores y contornos.' },
+  { key: 'success', label: 'Éxito', description: 'Estados completados.' },
+  { key: 'warning', label: 'Advertencia', description: 'Alertas preventivas.' },
+  { key: 'error', label: 'Error', description: 'Estados fallidos.' },
+];
+
 const CSS_VAR_MAP: Record<string, string[]> = {
   bg: ['--bg-base', '--mc-canvas'],
   bg_secondary: ['--bg-surface', '--bg-elevated', '--mc-lifted', '--mc-bone'],
   fg: ['--text-primary', '--mc-ink'],
   fg_muted: ['--text-secondary', '--text-muted', '--mc-charcoal', '--mc-slate', '--mc-graphite'],
+  fg_secondary: ['--text-secondary-strong'],
+  fg_tertiary: ['--text-tertiary'],
   accent: ['--accent-primary', '--accent-orange', '--border-active', '--mc-signal'],
   accent_light: ['--accent-primary-hover', '--accent-orange-hover', '--mc-signalLight'],
   accent_hover: ['--mc-clay'],
@@ -118,38 +162,125 @@ function selectedAccent(key: string) {
   return ACCENTS.find((item) => item.key === key) || ACCENTS[0];
 }
 
+function isKnownAccentKey(value?: string) {
+  return ACCENTS.some((item) => item.key === value);
+}
+
 function normalizeAccentKey(value?: string) {
   if (value === 'orange') return 'violet';
-  return ACCENTS.some((item) => item.key === value) ? value || 'violet' : 'violet';
+  if (value === CUSTOM_ACCENT_KEY) return CUSTOM_ACCENT_KEY;
+  return isKnownAccentKey(value) ? value || 'violet' : CUSTOM_ACCENT_KEY;
 }
 
 function accentKeyForTheme(theme: ThemeConfig, fallback = 'violet') {
-  if (theme.accent_key && ACCENTS.some((item) => item.key === theme.accent_key)) {
+  if (theme.accent_key === CUSTOM_ACCENT_KEY) return CUSTOM_ACCENT_KEY;
+  if (theme.accent_key && isKnownAccentKey(theme.accent_key)) {
     return theme.accent_key;
   }
   const byColor = ACCENTS.find((item) => item.color.toLowerCase() === theme.accent?.toLowerCase());
-  return byColor?.key || normalizeAccentKey(fallback);
+  if (byColor?.key) return byColor.key;
+  return fallback === 'violet' && theme.accent ? CUSTOM_ACCENT_KEY : normalizeAccentKey(fallback);
+}
+
+function hexToRgb(hex: string) {
+  const normalized = hex.replace('#', '').trim();
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return null;
+  return {
+    r: Number.parseInt(normalized.slice(0, 2), 16),
+    g: Number.parseInt(normalized.slice(2, 4), 16),
+    b: Number.parseInt(normalized.slice(4, 6), 16),
+  };
+}
+
+function relativeLuminance(hex: string) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return 0;
+  const channel = (value: number) => {
+    const srgb = value / 255;
+    return srgb <= 0.03928 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(rgb.r) + 0.7152 * channel(rgb.g) + 0.0722 * channel(rgb.b);
+}
+
+function contrastRatio(a: string, b: string) {
+  const lighter = Math.max(relativeLuminance(a), relativeLuminance(b));
+  const darker = Math.min(relativeLuminance(a), relativeLuminance(b));
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function readableTextFor(background: string, light = '#FFFFFF', dark = '#111827') {
+  return contrastRatio(background, dark) >= contrastRatio(background, light) ? dark : light;
+}
+
+function readableSecondaryFor(background: string) {
+  return readableTextFor(background, '#CBD5E1', '#475467');
+}
+
+function clamp(value: number) {
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function shadeHex(hex: string, amount: number) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  const shift = amount * 255;
+  const next = [rgb.r + shift, rgb.g + shift, rgb.b + shift]
+    .map((value) => clamp(value).toString(16).padStart(2, '0'))
+    .join('');
+  return `#${next}`;
+}
+
+function normalizeHexColor(value: string) {
+  const trimmed = value.trim();
+  return /^#[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed.toUpperCase() : null;
+}
+
+function ensureReadableTheme(theme: ThemeConfig): ThemeConfig {
+  const background = theme.bg || '#0A0A0A';
+  const primary = contrastRatio(background, theme.fg || '#FFFFFF') >= 4.5
+    ? theme.fg
+    : readableTextFor(background, '#F8FAFC', '#111827');
+  const secondary = contrastRatio(background, theme.fg_muted || '#A0A0A0') >= 4.5
+    ? theme.fg_muted
+    : readableSecondaryFor(background);
+
+  return {
+    ...theme,
+    fg: primary,
+    fg_muted: secondary,
+    fg_secondary: contrastRatio(background, theme.fg_secondary || secondary) >= 4.5
+      ? theme.fg_secondary
+      : secondary,
+  };
 }
 
 function composeTheme(theme: ThemeConfig, mode: ThemeMode, accentKey: string): ThemeConfig {
   const useLight = mode === 'light' || (mode === 'system' && !systemPrefersDark());
-  const accent = selectedAccent(accentKey);
-  return {
+  const accent = isKnownAccentKey(accentKey) ? selectedAccent(accentKey) : null;
+  return ensureReadableTheme({
     ...theme,
     ...(useLight ? LIGHT_THEME : {}),
     mode,
-    accent_key: accent.key,
-    accent: accent.color,
-    accent_light: accent.light,
-    accent_hover: accent.hover,
-    accent_dark: accent.dark,
-    orange: accent.light,
-  } as ThemeConfig;
+    accent_key: accent?.key || CUSTOM_ACCENT_KEY,
+    ...(accent
+      ? {
+          accent: accent.color,
+          accent_light: accent.light,
+          accent_hover: accent.hover,
+          accent_dark: accent.dark,
+          orange: accent.light,
+        }
+      : {}),
+  } as ThemeConfig);
 }
 
 function applyThemeToCSS(theme: ThemeConfig, mode: ThemeMode, accentKey: string) {
   const nextTheme = composeTheme(theme, mode, accentKey);
   const root = document.documentElement;
+  const isLightTheme = relativeLuminance(nextTheme.bg) > 0.55;
+  const elevated = nextTheme.bg_elevated || shadeHex(nextTheme.bg_secondary, isLightTheme ? -0.04 : 0.04);
+  const input = nextTheme.bg_input || shadeHex(nextTheme.bg_secondary, isLightTheme ? -0.07 : 0.07);
+  const mediumBorder = nextTheme.border_medium || shadeHex(nextTheme.border, isLightTheme ? -0.12 : 0.12);
 
   Object.entries(CSS_VAR_MAP).forEach(([key, cssVars]) => {
     const value = nextTheme[key];
@@ -157,9 +288,21 @@ function applyThemeToCSS(theme: ThemeConfig, mode: ThemeMode, accentKey: string)
     cssVars.forEach((cssVar) => root.style.setProperty(cssVar, value));
   });
 
-  root.style.setProperty('--bg-input', mode === 'light' ? '#EEF2F7' : '#222222');
+  root.style.setProperty('--bg-elevated', elevated);
+  root.style.setProperty('--bg-input', input);
+  root.style.setProperty('--border-medium', mediumBorder);
+  root.style.setProperty('--mc-lifted', elevated);
+  root.style.setProperty('--mc-ghost', elevated);
+  root.style.setProperty('--text-secondary-strong', nextTheme.fg_secondary || nextTheme.fg_muted);
+  root.style.setProperty('--text-muted', nextTheme.fg_muted);
+  root.style.setProperty('--text-tertiary', nextTheme.fg_tertiary || nextTheme.fg_muted);
+  root.style.setProperty('--text-on-accent', readableTextFor(nextTheme.accent));
   root.style.setProperty('--accent-primary-glow', `${nextTheme.accent}33`);
   root.style.setProperty('--accent-orange-glow', `${nextTheme.accent}33`);
+  root.style.setProperty('--scrollbar-thumb', `${nextTheme.fg_muted}55`);
+  root.style.setProperty('--scrollbar-thumb-hover', `${nextTheme.fg_muted}88`);
+  root.style.setProperty('--selection-bg', `${nextTheme.accent}55`);
+  root.style.setProperty('--selection-fg', readableTextFor(nextTheme.accent));
   root.dataset.themeMode = mode;
 }
 
@@ -250,6 +393,25 @@ export default function AppearanceView() {
   const updateAccent = (value: string) => {
     setAccent(value);
     if (theme) applyThemeToCSS(theme, mode, value);
+  };
+
+  const updateThemeColor = (key: keyof ThemeConfig, value: string) => {
+    const normalized = normalizeHexColor(value);
+    if (!theme || !normalized) return;
+    const nextTheme = {
+      ...theme,
+      [key]: normalized,
+      ...(key === 'accent'
+        ? {
+            accent_key: CUSTOM_ACCENT_KEY,
+            orange: normalized,
+          }
+        : {}),
+    } as ThemeConfig;
+    const nextAccent = key === 'accent' ? CUSTOM_ACCENT_KEY : accent;
+    setTheme(nextTheme);
+    setAccent(nextAccent);
+    applyThemeToCSS(nextTheme, mode, nextAccent);
   };
 
   const updateDensity = (compact: boolean) => {
@@ -365,7 +527,7 @@ export default function AppearanceView() {
                       onClick={() => updateMode(option.key)}
                       className={`flex items-center justify-center gap-2 rounded-md px-3 py-2 text-xs font-semibold transition-all ${
                         active
-                          ? 'bg-[var(--accent-primary)] text-white shadow-sm'
+                          ? 'bg-[var(--accent-primary)] text-[var(--text-on-accent)] shadow-sm'
                           : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                       }`}
                       title={option.description}
@@ -431,16 +593,16 @@ export default function AppearanceView() {
                       </span>
                       <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
                         active
-                          ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)] text-white'
+                          ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)] text-[var(--text-on-accent)]'
                           : 'border-[var(--border-medium)] text-transparent group-hover:text-[var(--text-secondary)]'
                       }`}>
                         <Check size={12} />
                       </span>
                     </span>
                     <span className="grid grid-cols-4 gap-2">
-                      {preview.colors.map((color) => (
+                      {preview.colors.map((color, index) => (
                         <span
-                          key={`${name}-${color}`}
+                          key={`${name}-${color}-${index}`}
                           className="h-8 rounded-md border border-black/10"
                           style={{ backgroundColor: color }}
                         />
@@ -478,6 +640,45 @@ export default function AppearanceView() {
                     </span>
                     {active && <Check size={16} className="text-[var(--accent-primary)]" />}
                   </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Palette size={16} className="text-[var(--text-secondary)]" />
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Editor avanzado</h3>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              {EDITABLE_COLORS.map((item) => {
+                const value = visibleTheme[item.key] || '#000000';
+                return (
+                  <label
+                    key={item.key}
+                    className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-3"
+                  >
+                    <span className="mb-3 block">
+                      <span className="block text-sm font-semibold text-[var(--text-primary)]">{item.label}</span>
+                      <span className="mt-1 block text-xs leading-5 text-[var(--text-secondary)]">{item.description}</span>
+                    </span>
+                    <span className="grid grid-cols-[44px_minmax(0,1fr)] gap-3">
+                      <input
+                        aria-label={item.label}
+                        type="color"
+                        value={value}
+                        onChange={(event) => updateThemeColor(item.key, event.target.value)}
+                        className="h-10 w-11 cursor-pointer rounded-md border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-1"
+                      />
+                      <input
+                        type="text"
+                        value={value}
+                        onChange={(event) => updateThemeColor(item.key, event.target.value)}
+                        className="min-w-0 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 font-mono text-xs font-semibold text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent-primary)]"
+                      />
+                    </span>
+                  </label>
                 );
               })}
             </div>
@@ -525,7 +726,9 @@ export default function AppearanceView() {
               </div>
               <div className="flex items-center justify-between gap-3">
                 <dt className="text-[var(--text-secondary)]">Acento</dt>
-                <dd className="font-semibold text-[var(--text-primary)]">{selectedAccent(accent).name}</dd>
+                <dd className="font-semibold text-[var(--text-primary)]">
+                  {accent === CUSTOM_ACCENT_KEY ? 'Personalizado' : selectedAccent(accent).name}
+                </dd>
               </div>
               <div className="flex items-center justify-between gap-3">
                 <dt className="text-[var(--text-secondary)]">Densidad</dt>

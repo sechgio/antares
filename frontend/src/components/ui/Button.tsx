@@ -24,10 +24,10 @@ export default function Button({
   };
 
   const variants = {
-    primary: 'text-white font-medium',
-    secondary: 'bg-[#1A1A1A] text-[#A0A0A0] border border-[#222222] hover:text-white hover:border-[#444444]',
-    ghost: 'bg-transparent text-[#A0A0A0] hover:bg-[#1A1A1A] hover:text-white',
-    danger: 'bg-transparent text-[#EF4444] border border-[#EF4444]/30 hover:bg-[#EF4444]/10',
+    primary: 'text-[var(--text-on-accent)] font-medium',
+    secondary: 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border border-[var(--border-subtle)] hover:text-[var(--text-primary)] hover:border-[var(--border-medium)]',
+    ghost: 'bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]',
+    danger: 'bg-transparent text-[var(--accent-red)] border border-[var(--accent-red)] hover:bg-[var(--bg-elevated)]',
   };
 
   const isPrimary = variant === 'primary';
@@ -37,7 +37,7 @@ export default function Button({
       onClick={onClick}
       disabled={disabled}
       className={`inline-flex items-center justify-center gap-2 rounded-full transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] ${sizeClasses[size]} ${variants[variant]} ${className}`}
-      style={isPrimary ? { backgroundColor: disabled ? '#222222' : 'var(--accent-primary)' } : undefined}
+      style={isPrimary ? { backgroundColor: disabled ? 'var(--bg-input)' : 'var(--accent-primary)' } : undefined}
       onMouseEnter={(e) => { if (isPrimary && !disabled) (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'var(--accent-primary-hover)'; }}
       onMouseLeave={(e) => { if (isPrimary && !disabled) (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'var(--accent-primary)'; }}
     >

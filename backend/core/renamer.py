@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Union
+from typing import Any
 
 from backend.core.config_fields import get_field_names
-from backend.utils.validators import sanitizar_nombre, obtener_codigo_desde_nombre
+from backend.utils.validators import obtener_codigo_desde_nombre, sanitizar_nombre
 
 
 class RenamerEngine:
@@ -19,7 +20,7 @@ class RenamerEngine:
         fields = get_field_names()
         return {f"{{{f}}}" for f in fields} | {"{seq}", "{ext}"}
 
-    def __init__(self, patron: Union[str, None] = None, secuencia_inicial: int = 1):
+    def __init__(self, patron: str | None = None, secuencia_inicial: int = 1):
         """Inicializa el motor de renombrado.
 
         Args:
@@ -39,10 +40,10 @@ class RenamerEngine:
 
     def aplicar(
         self,
-        ruta_origen: Union[str, Path],
-        datos_bd: Union[dict[str, Any], None] = None,
-        codigo_manual: Union[str, None] = None,
-        file_seq: Union[str, None] = None,
+        ruta_origen: str | Path,
+        datos_bd: dict[str, Any] | None = None,
+        codigo_manual: str | None = None,
+        file_seq: str | None = None,
     ) -> str:
         """Genera el nuevo nombre para un archivo.
 
@@ -67,10 +68,7 @@ class RenamerEngine:
             datos_bd = {}
 
         # Determinar valor de {seq}: desde archivo o auto-incremental
-        if file_seq is not None:
-            seq_value = file_seq
-        else:
-            seq_value = str(self.secuencia).zfill(3)
+        seq_value = file_seq if file_seq is not None else str(self.secuencia).zfill(3)
 
         # Construir mapping dinámico según campos configurados
         mapping: dict[str, str] = {"seq": seq_value, "ext": ext}
@@ -103,10 +101,10 @@ class RenamerEngine:
 
     def preview_lote(
         self,
-        rutas: list[Union[str, Path]],
-        lookup_fn: Union[Callable[[str], Union[dict[str, Any], None]], None] = None,
-        codigos_manuales: Union[dict[str, str], None] = None,
-        file_seqs: Union[dict[str, str], None] = None,
+        rutas: list[str | Path],
+        lookup_fn: Callable[[str], dict[str, Any] | None] | None = None,
+        codigos_manuales: dict[str, str] | None = None,
+        file_seqs: dict[str, str] | None = None,
     ) -> list[tuple[str, str, bool]]:
         """Genera una vista previa del renombrado para un lote.
 

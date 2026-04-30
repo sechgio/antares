@@ -9,6 +9,7 @@
   --accent-primary: #5E6AD2;
   --accent-primary-hover: #8B93FF;
   --accent-primary-glow: rgba(94, 106, 210, 0.28);
+  --text-on-accent: #FFFFFF;
   --accent-secondary: #22C7A9;
   --accent-orange: var(--accent-primary);
   --accent-orange-hover: var(--accent-primary-hover);
@@ -20,6 +21,10 @@
   --border-subtle: #1A1A1A;
   --border-medium: #2A2A2A;
   --border-active: var(--accent-primary);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.12);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.25);
+  --selection-bg: rgba(94, 106, 210, 0.35);
+  --selection-fg: #FFFFFF;
   --ease-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);
 
   --mc-canvas: #0A0A0A;
@@ -66,53 +71,53 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.12);
+    background: var(--scrollbar-thumb);
     border-radius: 999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.25);
+    background: var(--scrollbar-thumb-hover);
   }
   ::selection {
-    background: rgba(94, 106, 210, 0.35);
-    color: #fff;
+    background: var(--selection-bg);
+    color: var(--selection-fg);
   }
 }
 
 @layer components {
   .card-surface {
-    @apply bg-[#111111] rounded-2xl border border-[#1A1A1A];
+    @apply bg-[var(--bg-surface)] rounded-2xl border border-[var(--border-subtle)];
   }
   .card-surface-hover:hover {
     border-color: var(--border-medium);
   }
   .eyebrow {
-    @apply text-[11px] font-bold uppercase tracking-[0.15em] text-[#666666];
+    @apply text-[11px] font-bold uppercase tracking-[0.15em] text-[var(--text-muted)];
   }
   .btn-pill {
     @apply inline-flex items-center justify-center gap-2 px-5 py-2 rounded-full text-sm font-medium transition-all duration-200;
   }
   .btn-pill-primary {
-    @apply btn-pill text-white;
+    @apply btn-pill text-[var(--text-on-accent)];
     background-color: var(--accent-orange);
   }
   .btn-pill-primary:hover {
     background-color: var(--accent-orange-hover);
   }
   .btn-pill-secondary {
-    @apply btn-pill bg-[#1A1A1A] text-[#A0A0A0] border border-[#222222];
+    @apply btn-pill bg-[var(--bg-elevated)] text-[var(--text-secondary)] border border-[var(--border-subtle)];
   }
   .btn-pill-secondary:hover {
-    @apply text-white border-[#444444];
+    @apply text-[var(--text-primary)] border-[var(--border-medium)];
   }
   .input-base {
-    @apply bg-[#1A1A1A] text-white border border-[#222222] rounded-lg px-3 py-2 text-sm outline-none transition-all duration-200;
+    @apply bg-[var(--bg-elevated)] text-[var(--text-primary)] border border-[var(--border-subtle)] rounded-lg px-3 py-2 text-sm outline-none transition-all duration-200;
   }
   .input-base:focus {
     border-color: var(--accent-orange);
-    box-shadow: 0 0 0 3px rgba(94, 106, 210, 0.16);
+    box-shadow: 0 0 0 3px var(--accent-primary-glow);
   }
   .input-base::placeholder {
-    @apply text-[#555555];
+    @apply text-[var(--text-muted)];
   }
   .brand-lockup {
     display: inline-flex;
@@ -121,13 +126,13 @@
     min-height: 2.25rem;
     padding: 0.25rem 0.625rem 0.25rem 0.25rem;
     border-radius: 999px;
-    background: #ffffff;
-    color: #141413;
-    border: 1px solid rgba(20, 20, 19, 0.12);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    box-shadow: 0 10px 30px color-mix(in srgb, var(--bg-base) 30%, transparent);
   }
   .brand-wordmark {
-    color: #141413;
+    color: var(--text-primary);
     font-size: 0.9375rem;
     font-weight: 800;
     letter-spacing: 0;
@@ -143,7 +148,7 @@
     border-color: var(--border-medium);
   }
   .mc-btn-primary {
-    @apply px-[24px] py-[6px] font-medium text-[16px] rounded-btn bg-[var(--accent-orange)] text-white border-[1.5px] border-[var(--accent-orange)] transition-all duration-200;
+    @apply px-[24px] py-[6px] font-medium text-[16px] rounded-btn bg-[var(--accent-orange)] text-[var(--text-on-accent)] border-[1.5px] border-[var(--accent-orange)] transition-all duration-200;
     letter-spacing: -0.02em;
   }
   .mc-btn-primary:hover {
@@ -160,7 +165,7 @@
     @apply border-[var(--accent-orange)] text-[var(--accent-orange)];
   }
   .mc-btn-signal {
-    @apply px-[30px] py-[1px] font-normal text-[13px] rounded-[24px] bg-[var(--accent-orange)] text-white transition-all duration-200 border-0;
+    @apply px-[30px] py-[1px] font-normal text-[13px] rounded-[24px] bg-[var(--accent-orange)] text-[var(--text-on-accent)] transition-all duration-200 border-0;
     letter-spacing: 0.13px;
   }
   .mc-btn-signal:hover {
@@ -195,7 +200,7 @@
     @apply border-[var(--accent-orange)];
   }
   .mc-chip-active {
-    @apply inline-flex items-center px-5 py-2 rounded-pill bg-[var(--accent-orange)] text-white text-sm font-medium border border-[var(--accent-orange)] transition-all duration-200;
+    @apply inline-flex items-center px-5 py-2 rounded-pill bg-[var(--accent-orange)] text-[var(--text-on-accent)] text-sm font-medium border border-[var(--accent-orange)] transition-all duration-200;
   }
 }
 

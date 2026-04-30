@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import base64
 import io
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Union
 
 from PIL import Image
 
@@ -54,7 +54,7 @@ def obtener_formatos() -> list[str]:
     return get_registry().list_formats()
 
 
-def es_video(ruta: Union[str, Path]) -> bool:
+def es_video(ruta: str | Path) -> bool:
     """Detecta si un archivo es un video basado en su extensión."""
     ruta = Path(ruta)
     ext = ruta.suffix.lower()
@@ -67,8 +67,8 @@ def obtener_formatos_video() -> list[str]:
 
 
 def copiar_video(
-    ruta_origen: Union[str, Path],
-    ruta_destino: Union[str, Path],
+    ruta_origen: str | Path,
+    ruta_destino: str | Path,
 ) -> Path:
     """Copia un archivo de video sin conversión (solo renombrado).
 
@@ -128,11 +128,11 @@ def _build_save_kwargs(formato: str, calidad: int, keep_exif: bool, img: Image.I
 
 
 def convertir_imagen(
-    ruta_origen: Union[str, Path],
-    ruta_destino: Union[str, Path],
+    ruta_origen: str | Path,
+    ruta_destino: str | Path,
     formato_salida: str,
     calidad: int = 95,
-    resize: Union[tuple[int, int], list[int], None] = None,
+    resize: tuple[int, int] | list[int] | None = None,
     keep_exif: bool = False,
 ) -> Path:
     """Convierte una imagen a otro formato.
@@ -187,14 +187,14 @@ def convertir_imagen(
 
 
 def procesar_lote(
-    origenes: list[Union[str, Path]],
-    carpeta_destino: Union[str, Path],
+    origenes: list[str | Path],
+    carpeta_destino: str | Path,
     formato: str,
     calidad: int = 95,
-    resize: Union[tuple[int, int], list[int], None] = None,
+    resize: tuple[int, int] | list[int] | None = None,
     keep_exif: bool = False,
-    progreso_callback: Union[ProgresoCallback, None] = None,
-) -> list[Union[Path, str]]:
+    progreso_callback: ProgresoCallback | None = None,
+) -> list[Path | str]:
     """Procesa un lote de imágenes.
 
     Args:
@@ -215,7 +215,7 @@ def procesar_lote(
     if formato_upper not in FORMATOS_SOPORTADOS:
         raise ValueError(f"Formato no soportado: {formato}")
     ext = FORMATOS_SOPORTADOS[formato_upper]["ext"]
-    resultados: list[Union[Path, str]] = []
+    resultados: list[Path | str] = []
 
     for i, ruta in enumerate(origenes, 1):
         ruta = Path(ruta)
@@ -234,10 +234,10 @@ def procesar_lote(
 
 
 def convertir_a_preview(
-    ruta_origen: Union[str, Path],
+    ruta_origen: str | Path,
     formato_salida: str = "PNG",
     calidad: int = 85,
-    resize: Union[tuple[int, int], list[int], None] = None,
+    resize: tuple[int, int] | list[int] | None = None,
 ) -> dict[str, str]:
     """Genera una vista previa en el formato seleccionado y retorna metadata.
 

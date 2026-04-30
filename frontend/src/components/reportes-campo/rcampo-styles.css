@@ -1,0 +1,601 @@
+/* Scoped chrome for Reportes de Campo. The printable sheet keeps its own paper colors in React. */
+
+.rcampo-app {
+    --rcampo-base: var(--bg-base);
+    --rcampo-surface: var(--bg-surface);
+    --rcampo-elevated: var(--bg-elevated);
+    --rcampo-input: var(--bg-input);
+    --rcampo-primary: var(--text-primary);
+    --rcampo-secondary: var(--text-secondary);
+    --rcampo-muted: var(--text-muted);
+    --rcampo-border: var(--border-subtle);
+    --rcampo-border-strong: var(--border-medium);
+    --rcampo-accent: var(--accent-primary);
+    --rcampo-accent-hover: var(--accent-primary-hover);
+    --rcampo-on-accent: var(--text-on-accent);
+    --rcampo-danger: var(--accent-red);
+    --rcampo-hover: color-mix(in srgb, var(--rcampo-elevated) 82%, var(--rcampo-primary) 18%);
+    --rcampo-soft: color-mix(in srgb, var(--rcampo-surface) 90%, var(--rcampo-primary) 10%);
+    --rcampo-grid-dot: color-mix(in srgb, var(--rcampo-border-strong) 70%, transparent);
+
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    font-family: "Inter", -apple-system, sans-serif;
+    color: var(--rcampo-primary);
+    background: var(--rcampo-base);
+}
+
+.rcampo-app * {
+    box-sizing: border-box;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.rcampo-app *::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+}
+
+.rcampo-app button,
+.rcampo-app input,
+.rcampo-app textarea {
+    font: inherit;
+}
+
+.rcampo-header {
+    height: 44px;
+    background: var(--rcampo-base);
+    border-bottom: 1px solid var(--rcampo-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    z-index: 20;
+    flex-shrink: 0;
+}
+
+.rcampo-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.rcampo-brand-icon {
+    width: 24px;
+    height: 24px;
+    background: var(--rcampo-accent);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--rcampo-on-accent);
+    flex-shrink: 0;
+}
+
+.rcampo-brand-icon svg {
+    width: 13px;
+    height: 13px;
+}
+
+.rcampo-brand h1 {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--rcampo-primary);
+    white-space: nowrap;
+    letter-spacing: 0;
+}
+
+.rcampo-type-pills {
+    display: flex;
+    gap: 1px;
+    background: var(--rcampo-elevated);
+    border: 1px solid var(--rcampo-border);
+    border-radius: 7px;
+    padding: 2px;
+}
+
+.rcampo-type-pill {
+    padding: 4px 10px;
+    border-radius: 5px;
+    font-size: 0.68rem;
+    font-weight: 500;
+    color: var(--rcampo-secondary);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.rcampo-type-pill:hover {
+    color: var(--rcampo-primary);
+    background: var(--rcampo-soft);
+}
+
+.rcampo-type-pill.active {
+    color: var(--rcampo-on-accent);
+    background: var(--rcampo-accent);
+}
+
+.rcampo-type-pill svg {
+    width: 12px;
+    height: 12px;
+}
+
+.rcampo-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.rcampo-page-badge {
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 0.62rem;
+    font-weight: 400;
+    font-family: "SF Mono", "Cascadia Code", monospace;
+    background: var(--rcampo-elevated);
+    color: var(--rcampo-secondary);
+    border: 1px solid var(--rcampo-border);
+    white-space: nowrap;
+}
+
+.rcampo-nav-btn {
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    background: transparent;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--rcampo-secondary);
+    transition: all 0.15s ease;
+}
+
+.rcampo-nav-btn:hover:not(:disabled) {
+    background: var(--rcampo-hover);
+    color: var(--rcampo-primary);
+}
+
+.rcampo-nav-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.rcampo-nav-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+.rcampo-workspace {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--rcampo-base);
+}
+
+.rcampo-sidebar {
+    flex-shrink: 0;
+    background: var(--rcampo-surface);
+    border-right: 1px solid var(--rcampo-border);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    z-index: 10;
+    position: relative;
+}
+
+.rcampo-sidebar-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 10px 16px;
+    position: relative;
+}
+
+.sash-module_sash__K-9lB {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 4px;
+    height: 100%;
+    background: transparent;
+    cursor: col-resize;
+    z-index: 100;
+}
+
+.sash-vertical {
+    cursor: col-resize;
+}
+
+.sash-module_vertical__pB-rs {
+    width: 4px;
+}
+
+.sash-module_sash__K-9lB::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 1px;
+    width: 1px;
+    height: 100%;
+    background: var(--rcampo-border-strong);
+    transition: background 0.15s ease;
+}
+
+.sash-module_sash__K-9lB:hover::after,
+.sash-module_sash__K-9lB.sash-active::after {
+    background: var(--rcampo-accent);
+}
+
+.rcampo-section {
+    margin-bottom: 2px;
+}
+
+.rcampo-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    padding: 5px 6px;
+    background: transparent;
+    border: none;
+    width: 100%;
+    border-radius: 4px;
+    transition: background 0.1s ease;
+}
+
+.rcampo-section-header:hover {
+    background: var(--rcampo-hover);
+}
+
+.rcampo-section-title {
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--rcampo-secondary);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.rcampo-section-title svg {
+    width: 11px;
+    height: 11px;
+    color: var(--rcampo-muted);
+}
+
+.rcampo-section-toggle {
+    color: var(--rcampo-muted);
+    transition: transform 0.15s ease;
+}
+
+.rcampo-section-toggle.open {
+    transform: rotate(180deg);
+}
+
+.rcampo-section-toggle svg {
+    width: 11px;
+    height: 11px;
+}
+
+.rcampo-section-body {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 2px 6px 6px;
+}
+
+.rcampo-field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.rcampo-field-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--rcampo-primary);
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.rcampo-field-label .required {
+    color: var(--rcampo-danger);
+    font-size: 0.6rem;
+}
+
+.rcampo-input,
+.rcampo-textarea {
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--rcampo-border);
+    border-radius: 0;
+    padding: 4px 0;
+    font-size: 0.75rem;
+    color: var(--rcampo-primary);
+    transition: border-color 0.15s ease;
+    outline: none;
+}
+
+.rcampo-input::placeholder,
+.rcampo-textarea::placeholder {
+    color: transparent;
+}
+
+.rcampo-input:focus,
+.rcampo-textarea:focus {
+    border-bottom-color: var(--rcampo-accent);
+}
+
+.rcampo-textarea {
+    resize: none;
+    line-height: 1.4;
+}
+
+.rcampo-input.error,
+.rcampo-textarea.error {
+    border-bottom-color: var(--rcampo-danger);
+}
+
+.rcampo-logos {
+    display: flex;
+    gap: 6px;
+}
+
+.rcampo-logo-slot {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.rcampo-logo-label {
+    font-size: 0.58rem;
+    color: var(--rcampo-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 500;
+}
+
+.rcampo-logo-btn {
+    width: 100%;
+    height: 40px;
+    border: 1px dashed var(--rcampo-border-strong);
+    border-radius: 4px;
+    background: var(--rcampo-input);
+    color: var(--rcampo-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    overflow: hidden;
+    position: relative;
+}
+
+.rcampo-logo-btn:hover {
+    border-color: var(--rcampo-accent);
+    background: var(--rcampo-hover);
+    color: var(--rcampo-primary);
+}
+
+.rcampo-logo-btn.has-logo {
+    border-style: solid;
+    background: var(--rcampo-elevated);
+}
+
+.rcampo-logo-btn img {
+    max-width: 88%;
+    max-height: 88%;
+    object-fit: contain;
+}
+
+.rcampo-logo-btn svg {
+    color: currentColor;
+    width: 14px;
+    height: 14px;
+}
+
+.rcampo-logo-remove {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--rcampo-danger);
+    color: var(--rcampo-on-accent);
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.1s ease;
+    z-index: 2;
+}
+
+.rcampo-logo-slot:hover .rcampo-logo-remove {
+    opacity: 1;
+}
+
+.rcampo-logo-remove svg {
+    width: 7px;
+    height: 7px;
+    color: currentColor;
+}
+
+.rcampo-dropzone {
+    border: 1px dashed var(--rcampo-border-strong);
+    border-radius: 6px;
+    padding: 10px 8px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    background: var(--rcampo-input);
+    color: var(--rcampo-secondary);
+}
+
+.rcampo-dropzone:hover {
+    border-color: var(--rcampo-accent);
+    background: var(--rcampo-hover);
+    color: var(--rcampo-primary);
+}
+
+.rcampo-dropzone.dragging {
+    border-color: var(--rcampo-accent);
+    border-style: solid;
+    background: color-mix(in srgb, var(--rcampo-accent) 16%, var(--rcampo-surface));
+    color: var(--rcampo-primary);
+}
+
+.rcampo-dropzone-icon {
+    color: currentColor;
+    margin-bottom: 2px;
+    transition: color 0.15s ease;
+}
+
+.rcampo-dropzone-text {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: currentColor;
+    transition: color 0.15s ease;
+}
+
+.rcampo-dropzone-hint {
+    font-size: 0.58rem;
+    color: var(--rcampo-muted);
+    margin-top: 1px;
+}
+
+.rcampo-photos-count {
+    font-size: 0.6rem;
+    color: var(--rcampo-secondary);
+}
+
+.rcampo-photos-clear,
+.rcampo-clear-btn {
+    color: var(--rcampo-muted);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    transition: color 0.15s ease, background 0.15s ease;
+    border-radius: 3px;
+}
+
+.rcampo-photos-clear {
+    font-size: 0.58rem;
+    gap: 2px;
+    padding: 1px 4px;
+}
+
+.rcampo-clear-btn {
+    font-size: 0.6rem;
+    font-weight: 400;
+    gap: 3px;
+    padding: 2px 4px;
+}
+
+.rcampo-photos-clear:hover,
+.rcampo-clear-btn:hover {
+    color: var(--rcampo-danger);
+    background: color-mix(in srgb, var(--rcampo-danger) 12%, transparent);
+}
+
+.rcampo-photos-clear svg {
+    width: 9px;
+    height: 9px;
+}
+
+.rcampo-clear-btn svg {
+    width: 10px;
+    height: 10px;
+}
+
+.rcampo-export-btn {
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: 5px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+    background: var(--rcampo-accent);
+    color: var(--rcampo-on-accent);
+}
+
+.rcampo-export-btn:hover:not(:disabled) {
+    background: var(--rcampo-accent-hover);
+}
+
+.rcampo-export-btn:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.rcampo-export-btn:disabled {
+    background: var(--rcampo-elevated);
+    color: var(--rcampo-muted);
+    cursor: not-allowed;
+}
+
+.rcampo-export-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+.rcampo-export-meta {
+    font-size: 0.58rem;
+    color: var(--rcampo-muted);
+    text-align: center;
+    margin-top: 4px;
+}
+
+.rcampo-canvas {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 20px;
+    overflow: auto;
+    background: var(--rcampo-base);
+    background-image: radial-gradient(var(--rcampo-grid-dot) 0.5px, transparent 0.5px);
+    background-size: 16px 16px;
+}
+
+.rcampo-divider {
+    height: 1px;
+    background: var(--rcampo-border);
+    margin: 8px 6px;
+}
+
+@media (max-width: 900px) {
+    .rcampo-sidebar {
+        width: 240px;
+    }
+
+    .rcampo-type-pill {
+        padding: 3px 8px;
+        font-size: 0.64rem;
+    }
+}

@@ -57,9 +57,7 @@ def _validar_nombre_campo(nombre: str) -> bool:
         return False
     if not re.fullmatch(r"[a-z_][a-z0-9_]*", nombre):
         return False
-    if nombre in _SQLITE_KEYWORDS:
-        return False
-    return True
+    return nombre not in _SQLITE_KEYWORDS
 
 
 def _validar_tipo_campo(tipo: str) -> bool:
@@ -72,7 +70,7 @@ def load_fields() -> list[dict[str, Any]]:
     path = _config_file()
     if path.exists():
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f)
             fields = data.get("fields", [])
             if fields and isinstance(fields, list):

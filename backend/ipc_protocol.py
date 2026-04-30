@@ -28,13 +28,10 @@ def validate_params(params: dict) -> bool:
     """Validate params dict for basic safety."""
     if not isinstance(params, dict):
         return False
-    
+
     # Check for path traversal attempts
     params_str = json.dumps(params)
-    if '../' in params_str or '..\\' in params_str:
-        return False
-    
-    return True
+    return not ('../' in params_str or '..\\' in params_str)
 
 # ─── IPC Protocol ────────────────────────────────────────────────────────────
 
@@ -45,7 +42,7 @@ class IPCMessage:
         self.id: str | int = raw.get("id", "")
         self.method: str = raw.get("method", "")
         self.params: dict[str, Any] = raw.get("params", {})
-        
+
         # Validate
         if not validate_method(self.method):
             raise ValueError(f"Invalid method name: {self.method}")

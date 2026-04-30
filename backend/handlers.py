@@ -6,21 +6,13 @@ import json
 import logging
 import os
 import threading
+from collections.abc import Callable
 from concurrent.futures import CancelledError, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
 from typing import Any
 
-from backend.core.converter import FORMATOS_SOPORTADOS, convertir_imagen, es_video, copiar_video, VIDEO_FORMATS
-from backend.core.database import (
-    buscar_por_codigo,
-    exportar_excel,
-    generar_plantilla_excel,
-    importar_excel,
-    limpiar_base_datos,
-    obtener_todos,
-)
 from backend.core.config_fields import (
     get_field_names,
     load_fields,
@@ -29,6 +21,8 @@ from backend.core.config_fields import (
 from backend.core.config_patterns import (
     load_patterns,
     save_patterns,
+)
+from backend.core.config_patterns import (
     reset_to_defaults as reset_patterns_defaults,
 )
 from backend.core.config_theme import (
@@ -38,11 +32,19 @@ from backend.core.config_theme import (
     reset_theme,
     save_theme,
 )
+from backend.core.converter import FORMATOS_SOPORTADOS, VIDEO_FORMATS, convertir_imagen, copiar_video, es_video
+from backend.core.database import (
+    buscar_por_codigo,
+    exportar_excel,
+    generar_plantilla_excel,
+    importar_excel,
+    limpiar_base_datos,
+    obtener_todos,
+)
 from backend.core.renamer import RenamerEngine
-from backend.utils.validators import parse_filename_parts
 from backend.ipc_protocol import send_notification
-from backend.utils.i18n import t, set_locale
-from backend.utils.dialogs import request_dialog
+from backend.utils.i18n import set_locale, t
+from backend.utils.validators import parse_filename_parts
 from backend.version import __version__
 
 logger = logging.getLogger(__name__)
@@ -68,32 +70,33 @@ def validate_params(*required_params):
             for param in required_params:
                 if param not in params or params[param] is None:
                     raise ValueError(f"Missing required parameter: {param}")
-            
+
             # Validate file paths if present
             for key in ['files', 'destino', 'path', 'folder']:
-                if key in params and params[key]:
+                if params.get(key):
                     if isinstance(params[key], list):
                         for f in params[key]:
                             _validate_path(f)
                     else:
                         _validate_path(params[key])
-            
+
             return fn(params)
         return wrapper
     return decorator
 
 
+_PATH_TRAVERSAL_RE = __import__('re').compile(r'\.\.[\\/]')
+
+
 def _validate_path(path: str) -> None:
     """Validate that path doesn't contain traversal attempts."""
-    import re
     if not path or not isinstance(path, str):
         raise ValueError(f"Invalid path: {path}")
-    
+
     # Check for traversal
-    if '..' in path or path.startswith('/') or ':' in path[1:] if len(path) > 1 else False:
-        # Allow Windows drive letters but not traversal
-        if re.search(r'\.\.[\\/]', path):
-            raise ValueError(f"Path traversal detected: {path}")
+    has_traversal = ('..' in path or path.startswith('/') or (':' in path[1:] if len(path) > 1 else False))
+    if has_traversal and _PATH_TRAVERSAL_RE.search(path):
+        raise ValueError(f"Path traversal detected: {path}")
 
 # ─── Estado de procesamiento ────────────────────────────────────────────────
 
@@ -351,17 +354,17 @@ class Handlers:
                 error_msg = "error.process_already_running"
                 _log(t(error_msg), "warn")
                 return {"started": False}
-        
+
         files = params.get("files", [])
         if not files or not isinstance(files, list) or len(files) == 0:
             _log(t("error.no_files_to_process"), "error")
             return {"started": False}
-        
+
         destino = params.get("destino", "")
         if not destino:
             _log(t("error.no_destination"), "error")
             return {"started": False}
-        
+
         _reset_state()
         with _state._lock:
             _state.running = True
@@ -398,7 +401,8 @@ class Handlers:
         from backend.core.history import list_runs
         limit = params.get("limit", 50)
         offset = params.get("offset", 0)
-        return {"runs": list_runs(limit, offset)}
+        run_type = params.get("run_type")
+        return {"runs": list_runs(run_type, limit, offset)}
 
     @staticmethod
     @with_locale
@@ -417,6 +421,23 @@ class Handlers:
         from backend.core.history import delete_run
         run_id = params.get("id", 0)
         return {"deleted": delete_run(run_id)}
+
+    @staticmethod
+    @with_locale
+    def history_save(params: dict[str, Any]) -> dict[str, Any]:
+        from backend.core.history import save_run
+        run_id = save_run(
+            files=params.get("files", []),
+            options=params.get("options", {}),
+            patron=params.get("patron", ""),
+            formato=params.get("formato", ""),
+            calidad=params.get("calidad", 0),
+            resize=params.get("resize"),
+            ok_count=params.get("ok_count", 0),
+            err_count=params.get("err_count", 0),
+            run_type=params.get("run_type", "conversion"),
+        )
+        return {"id": run_id}
 
     @staticmethod
     @with_locale
@@ -491,6 +512,42 @@ class Handlers:
         result["has_mapping"] = result.get("mapping") is not None
         return {"format": result}
 
+    @staticmethod
+    @with_locale
+    def image_optimizer_zip(params: dict[str, Any]) -> dict[str, str]:
+        """Create a ZIP file from base64-encoded images."""
+        import base64
+        import io
+        import os
+        import zipfile
+
+        files = params.get("files", [])
+        zip_name = params.get("zip_name", "imagenes_optimizadas")
+
+        if not files:
+            raise ValueError("No files provided")
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, mode='w', compression=zipfile.ZIP_DEFLATED) as zip_file:
+            for file_info in files:
+                filename = file_info.get("filename", "file")
+                content_b64 = file_info.get("content_b64", "")
+                if not content_b64:
+                    continue
+                content = base64.b64decode(content_b64)
+                safe_name = os.path.basename(filename)
+                zip_file.writestr(safe_name, content)
+
+        zip_buffer.seek(0)
+        zip_bytes = zip_buffer.read()
+        zip_base64 = base64.b64encode(zip_bytes).decode("ascii")
+
+        safe_zip_name = zip_name.strip().replace(" ", "_")
+        if not safe_zip_name.lower().endswith(".zip"):
+            safe_zip_name += ".zip"
+
+        return {"zip_base64": zip_base64, "filename": safe_zip_name}
+
 
 def _process_thread(params: dict[str, Any]) -> None:
     """Thread de procesamiento en background con conversión paralela."""
@@ -532,10 +589,7 @@ def _process_thread(params: dict[str, Any]) -> None:
             else:
                 out_path = (Path(destino) / nuevo_nombre).with_suffix(ext_dest)
         else:
-            if is_video_file:
-                out_path = Path(destino) / p.name
-            else:
-                out_path = Path(destino) / (p.stem + ext_dest)
+            out_path = Path(destino) / p.name if is_video_file else Path(destino) / (p.stem + ext_dest)
 
         tasks.append((fpath, out_path, is_video_file))
 
@@ -663,6 +717,7 @@ HANDLERS: dict[str, Callable[[dict[str, Any]], Any]] = {
     "history_list": Handlers.history_list,
     "history_get": Handlers.history_get,
     "history_delete": Handlers.history_delete,
+    "history_save": Handlers.history_save,
     "preview_image": Handlers.preview_image,
     "is_video": Handlers.is_video,
     "formatos_list": Handlers.formatos_list,
@@ -670,4 +725,8 @@ HANDLERS: dict[str, Callable[[dict[str, Any]], Any]] = {
     "formatos_upload": Handlers.formatos_upload,
     "formatos_delete": Handlers.formatos_delete,
     "formatos_update_mapping": Handlers.formatos_update_mapping,
+
+    # ─── Image Optimizer ────────────────────────────────────────────────────
+
+    "image_optimizer_zip": Handlers.image_optimizer_zip,
 }

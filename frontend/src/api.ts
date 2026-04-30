@@ -103,9 +103,20 @@ export const api = {
   applyPreset: (name: string) => _invoke<ThemeConfig>('theme_preset', { name }),
   resetTheme: () => _invoke<ThemeConfig>('theme_reset'),
 
-  historyList: (body?: { limit?: number }) => _invoke<{ runs: unknown[] }>('history_list', body),
+  historyList: (body?: { limit?: number; run_type?: string }) => _invoke<{ runs: unknown[] }>('history_list', body),
   historyGet: (id: number) => _invoke<{ run: unknown }>('history_get', { id }),
   historyDelete: (id: number) => _invoke<{ deleted: boolean }>('history_delete', { id }),
+  historySave: (body: {
+    files: string[];
+    options: Record<string, unknown>;
+    patron?: string;
+    formato?: string;
+    calidad?: number;
+    resize?: string | null;
+    ok_count?: number;
+    err_count?: number;
+    run_type: string;
+  }) => _invoke<{ id: number }>('history_save', body),
 
   // ─── Formatos PDF ───────────────────────────────────────────────────────
   formatosList: () => _invoke<{ formats: FormatInfo[] }>('formatos_list'),
@@ -116,4 +127,8 @@ export const api = {
   formatosDelete: (format_id: string) => _invoke<{ deleted: boolean }>('formatos_delete', { format_id }),
   formatosUpdateMapping: (format_id: string, mapping: VisualMapping) =>
     _invoke<{ format: FormatInfo }>('formatos_update_mapping', { format_id, mapping }),
+
+  // ─── Image Optimizer ────────────────────────────────────────────────────
+  imageOptimizerZip: (body: { files: Array<{ filename: string; content_b64: string }>; zip_name: string }) =>
+    _invoke<{ zip_base64: string; filename: string }>('image_optimizer_zip', body),
 };

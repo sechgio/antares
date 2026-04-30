@@ -1,7 +1,7 @@
 """Helpers para rutas compatibles con PyInstaller y ejecución desde fuente."""
 
-import sys
 import os
+import sys
 from pathlib import Path
 
 

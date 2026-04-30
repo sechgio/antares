@@ -2,8 +2,16 @@ import { useEffect, useState, useMemo } from 'react';
 import { api } from '../../api';
 import { useToast } from '../../hooks/useToast';
 import { useDialog } from '../../hooks/useDialog';
-import RunList, { HistoryRun } from './RunList';
+import RunList, { HistoryRun, RunType } from './RunList';
 import RunDetail from './RunDetail';
+
+const TYPE_FILTERS: { label: string; value: RunType | 'all' }[] = [
+  { label: 'Todos', value: 'all' },
+  { label: 'Conversión', value: 'conversion' },
+  { label: 'Formatos', value: 'formato' },
+  { label: 'Padrón', value: 'padron' },
+  { label: 'Volante', value: 'volante' },
+];
 
 export default function HistoryView() {
   const { addToast } = useToast();
@@ -11,17 +19,20 @@ export default function HistoryView() {
   const [runs, setRuns] = useState<HistoryRun[]>([]);
   const [selected, setSelected] = useState<HistoryRun | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeType, setActiveType] = useState<RunType | 'all'>('all');
 
   const refresh = async () => {
     try {
-      const r = await api.historyList({ limit: 50 });
+      const params: { limit: number; run_type?: string } = { limit: 50 };
+      if (activeType !== 'all') params.run_type = activeType;
+      const r = await api.historyList(params);
       setRuns(r.runs as HistoryRun[]);
     } catch {
       addToast({ message: 'Error cargando historial', type: 'error' });
     }
   };
 
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => { refresh(); }, [activeType]);
 
   const filteredRuns = useMemo(() => {
     if (!searchQuery.trim()) return runs;
@@ -54,7 +65,24 @@ export default function HistoryView() {
   return (
     <div className="flex flex-col h-full w-full">
       <div className="px-6 py-3 border-b border-[#1A1A1A] flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-white">Historial</h2>
+        <div className="flex items-center gap-4">
+          <h2 className="text-lg font-semibold text-white">Historial</h2>
+          <div className="flex items-center gap-1 bg-[#111111] rounded-full p-1 border border-[#222222]">
+            {TYPE_FILTERS.map((t) => (
+              <button
+                key={t.value}
+                onClick={() => setActiveType(t.value)}
+                className={`px-3 py-1 rounded-full text-[11px] font-medium transition-all ${
+                  activeType === t.value
+                    ? 'bg-[#5E6AD2] text-white'
+                    : 'text-[#666666] hover:text-white'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="relative">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="absolute left-3 top-1/2 -translate-y-1/2 text-[#666666]">
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>

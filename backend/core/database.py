@@ -10,9 +10,9 @@ import unicodedata
 from pathlib import Path
 from typing import Any
 
-from backend.utils.paths import user_data_path
-from backend.core.config_fields import load_fields, get_field_names, save_fields
+from backend.core.config_fields import get_field_names, load_fields, save_fields
 from backend.core.exceptions import DatabaseError
+from backend.utils.paths import user_data_path
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +32,9 @@ def _get_connection() -> sqlite3.Connection:
         current_path = str(get_db_path())
         if _db_conn is None or _db_conn_path != current_path:
             if _db_conn is not None:
-                try:
+                import contextlib
+                with contextlib.suppress(Exception):
                     _db_conn.close()
-                except Exception:
-                    pass
             db_path = Path(current_path)
             db_path.parent.mkdir(parents=True, exist_ok=True)
             _db_conn = sqlite3.connect(current_path, check_same_thread=False)
@@ -116,11 +115,11 @@ def _create_indexes(cursor: sqlite3.Cursor, fields: list[dict[str, Any]]) -> Non
     """Create indexes on commonly queried fields."""
     if not fields:
         return
-    
+
     # Index on first field (usually code/codigo)
     first_field = fields[0]["name"]
     cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_imagenes_{first_field} ON imagenes({first_field})")
-    
+
     # Index on any unique fields
     for f in fields:
         if f.get("unique") and f["name"] != first_field:
@@ -156,7 +155,7 @@ def init_db() -> None:
                 col_names = ", ".join(new_cols)
                 defaults = {"INTEGER": 0, "REAL": 0.0, "TEXT": "", "BLOB": b""}
                 for row in old_rows:
-                    row_dict = dict(zip(old_cols, row))
+                    row_dict = dict(zip(old_cols, row, strict=False))
                     values = []
                     for f in fields:
                         col = f["name"]
@@ -272,7 +271,7 @@ def exportar_excel(excel_path: str) -> int:
         df = pd.read_sql_query(f"SELECT {cols} FROM imagenes", conn)
 
     df.to_excel(excel_path, index=False)
-    return int(len(df))
+    return len(df)
 
 
 def buscar_por_codigo(codigo: str) -> dict[str, Any] | None:

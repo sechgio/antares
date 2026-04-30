@@ -76,7 +76,7 @@ mac:
     - target: zip
       arch: [x64, arm64]
   category: public.app-category.utilities
-  icon: assets/icon.icns
+  icon: assets/icon_512.png
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
@@ -116,7 +116,7 @@ portable:
   artifactName: "COSMO-Portable-${version}.exe"
 dmg:
   artifactName: "COSMO-${version}-${arch}.dmg"
-  icon: assets/icon.icns
+  icon: assets/icon_512.png
   sign: false
   contents:
     - x: 130

@@ -44,7 +44,7 @@ def load_patterns() -> list[dict[str, Any]]:
     path = _config_file()
     if path.exists():
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f)
             patterns = data.get("patterns", [])
             if patterns and isinstance(patterns, list):

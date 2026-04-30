@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -200,7 +200,9 @@ autoUpdater.on('error', (err) => {
 });
 
 function createWindow() {
-  const { width, height } = require('electron').screen.getPrimaryDisplay().workAreaSize;
+  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+
+  const iconPath = path.join(__dirname, '..', 'assets', 'icon.ico');
 
   mainWindow = new BrowserWindow({
     width: width,
@@ -208,6 +210,7 @@ function createWindow() {
     show: false,
     frame: true,
     titleBarStyle: 'default',
+    icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

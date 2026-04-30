@@ -14,7 +14,7 @@ _translations: dict[str, dict[str, str]] = {}
 def _load(locale: str) -> dict[str, str]:
     path = _LOCALE_DIR / f"{locale}.json"
     if path.exists():
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f)
     return {}
 

@@ -31,7 +31,26 @@ import { parseWorkbook } from './excel';
 import type { ExcelRecord } from './data';
 import accionaLogoSrc from '../../assets/vpad-assets/logo_acciona.png';
 import sedapalLogoSrc from '../../assets/vpad-assets/logo_sedapal.jpg';
+import { api } from '../../api';
 import './vpad-styles.css';
+
+async function saveToHistory(runType: string, label: string, details: Record<string, unknown>, count = 1) {
+  try {
+    await api.historySave({
+      run_type: runType,
+      files: [label],
+      options: details,
+      formato: label,
+      patron: '',
+      calidad: 0,
+      resize: null,
+      ok_count: count,
+      err_count: 0,
+    });
+  } catch {
+    // Silently ignore history save errors so main flow is never blocked
+  }
+}
 
 const ACCIONA_LOGO = accionaLogoSrc;
 const SEDAPAL_LOGO = sedapalLogoSrc;
@@ -435,6 +454,12 @@ export default function PadronView() {
       }
 
       pdf.save(`padron-${startItem}-${endItem}.pdf`);
+      await saveToHistory(
+        'padron',
+        `padron-${startItem}-${endItem}`,
+        { orientation, startItem, endItem, pages: pages.length },
+        visibleItems.length,
+      );
     } finally {
       if (root) {
         root.unmount();
@@ -445,7 +470,7 @@ export default function PadronView() {
       setIsGeneratingPdf(false);
       setPdfProgress('');
     }
-  }, [logosLoaded, orientation, pages, headerData, logosBase64, startItem, endItem]);
+  }, [logosLoaded, orientation, pages, headerData, logosBase64, startItem, endItem, visibleItems.length]);
 
   const handlePrint = useCallback(() => window.print(), []);
 

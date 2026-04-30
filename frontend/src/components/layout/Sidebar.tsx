@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Camera } from 'lucide-react';
 import BrandMark from '../brand/BrandMark';
 
 interface SidebarProps {
@@ -13,6 +14,8 @@ const tabs = [
   { id: 'formatos', icon: FilePdfIcon, label: 'Formatos PDF', shortcut: '3' },
   { id: 'padron', icon: ScrollTextIcon, label: 'Generar Padrones', shortcut: '4' },
   { id: 'volantes', icon: MegaphoneIcon, label: 'Generar Volantes', shortcut: '5' },
+  { id: 'reportesCampo', icon: Camera, label: 'Reportes de Campo', shortcut: '8' },
+  { id: 'imageOptimizer', icon: ImageOptimizerIcon, label: 'Optimizador', shortcut: '9' },
   { id: 'history', icon: HistoryIcon, label: 'Historial', shortcut: '6' },
   { id: 'appearance', icon: PaletteIcon, label: 'Apariencia', shortcut: '7' },
 ];
@@ -96,6 +99,16 @@ function SearchIcon({ className }: { className?: string }) {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  );
+}
+
+function ImageOptimizerIcon({ className }: { className?: string }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+      <circle cx="8.5" cy="8.5" r="1.5" />
+      <polyline points="21 15 16 10 5 21" />
     </svg>
   );
 }

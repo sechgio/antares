@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import App from '../App';
 
 describe('App', () => {
@@ -28,5 +28,12 @@ describe('App', () => {
     render(<App />);
     const buttons = screen.getAllByRole('button');
     expect(buttons.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('opens Reportes de Campo from the sidebar', async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: /Reportes de Campo/i }));
+
+    expect(await screen.findByRole('heading', { name: /Paneles/i })).toBeInTheDocument();
   });
 });

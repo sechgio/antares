@@ -114,7 +114,8 @@ class TestIPC:
     def test_unknown_method(self, backend_process):
         resp = _rpc_call(backend_process, "nonexistent_method", {})
         assert "error" in resp
-        assert "Método desconocido" in resp["error"]["message"] or "unknown" in resp["error"]["message"].lower()
+        msg = resp["error"]["message"]
+        assert "desconocido" in msg.lower() or "unknown" in msg.lower()
 
     def test_plugin_formats(self, backend_process):
         resp = _rpc_call(backend_process, "plugin_formats", {})

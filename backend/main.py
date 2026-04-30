@@ -18,7 +18,7 @@ from pathlib import Path
 from backend.core.database import close_connection, init_db
 from backend.core.plugins import load_plugins_from_dir
 from backend.handlers import HANDLERS
-from backend.ipc_protocol import read_message, send_response, send_notification
+from backend.ipc_protocol import read_message, send_notification, send_response
 from backend.utils.i18n import t
 
 # Ensure backend is on path
@@ -65,14 +65,11 @@ logger = logging.getLogger(__name__)
 def _validate_encoding():
     """Validate that system supports required encoding."""
     try:
-        # Check if UTF-8 is available
-        'test'.encode('utf-8')
-        
         # Set environment variables for child processes
         import os
         os.environ['PYTHONIOENCODING'] = 'utf-8'
         os.environ['PYTHONUTF8'] = '1'
-        
+
         # Try to set locale if possible
         try:
             locale.setlocale(locale.LC_ALL, 'C.UTF-8')
@@ -81,9 +78,9 @@ def _validate_encoding():
                 locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
             except locale.Error:
                 logger.warning("Could not set UTF-8 locale, using system default")
-        
+
         logger.info(f"System encoding: {locale.getpreferredencoding()}")
-        
+
     except Exception as e:
         logger.error(f"Encoding validation failed: {e}")
         raise
@@ -100,7 +97,7 @@ def main() -> None:
     except Exception as e:
         print(f"FATAL: Encoding validation failed: {e}")
         sys.exit(1)
-    
+
     # Handshake: report ready so Electron knows the pipe is open
     print(json.dumps({"jsonrpc": "2.0", "method": "ready", "params": {}}))
     sys.stdout.flush()

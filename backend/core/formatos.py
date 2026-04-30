@@ -10,13 +10,10 @@ import json
 import logging
 import os
 import re
-import shutil
-import string
 import sys
-import tempfile
 import uuid
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import DictionaryObject, IndirectObject, NameObject, create_string_object
@@ -106,7 +103,7 @@ _BUILTIN_FORMATS: list[dict[str, Any]] = [
 
 # ─── Catalogo en memoria ────────────────────────────────────────────────────
 
-_formats: Dict[str, dict[str, Any]] = {}
+_formats: dict[str, dict[str, Any]] = {}
 
 
 def _load_catalog() -> None:
@@ -117,14 +114,14 @@ def _load_catalog() -> None:
 
     if _CATALOG_PATH.exists():
         try:
-            with open(_CATALOG_PATH, "r", encoding="utf-8") as f:
+            with open(_CATALOG_PATH, encoding="utf-8") as f:
                 data = json.load(f)
             for raw in data:
                 fid = raw.get("id")
                 # Ensure has_mapping field is present
                 if "has_mapping" not in raw:
                     raw["has_mapping"] = raw.get("mapping") is not None
-                
+
                 if fid in _formats and _formats[fid]["origen"] == "builtin":
                     # Merge uploaded mapping into builtin if present
                     if raw.get("mapping") is not None:
@@ -188,7 +185,7 @@ def list_formats() -> list[dict[str, Any]]:
     return result
 
 
-def get_format(fmt_id: str) -> Optional[dict[str, Any]]:
+def get_format(fmt_id: str) -> dict[str, Any] | None:
     fmt = _formats.get(fmt_id)
     if fmt:
         result = dict(fmt)
@@ -215,7 +212,7 @@ def delete_format(fmt_id: str) -> bool:
     return True
 
 
-def update_mapping(fmt_id: str, mapping: dict[str, Any]) -> Optional[dict[str, Any]]:
+def update_mapping(fmt_id: str, mapping: dict[str, Any]) -> dict[str, Any] | None:
     entry = _formats.get(fmt_id)
     if entry is None:
         return None
@@ -236,7 +233,7 @@ def add_uploaded_format(
     filename: str,
     content: bytes,
     persisted: bool = True,
-    filename_pattern: Optional[str] = None,
+    filename_pattern: str | None = None,
 ) -> dict[str, Any]:
     fmt_id = f"upload-{uuid.uuid4().hex[:8]}"
     safe_name = f"{fmt_id}_{filename}"
@@ -246,7 +243,7 @@ def add_uploaded_format(
     try:
         PdfReader(io.BytesIO(content))
     except Exception as exc:
-        raise ValueError(f"PDF invalido o corrupto: {exc}")
+        raise ValueError(f"PDF invalido o corrupto: {exc}") from exc
 
     dest.write_bytes(content)
 

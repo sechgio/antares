@@ -36,36 +36,39 @@ export default function BrandMark({
         fill="none"
       >
         <rect x="1" y="1" width="38" height="38" rx="11" fill="url(#hcMarkBg)" />
-        <rect x="1" y="1" width="38" height="38" rx="11" stroke="url(#hcMarkStroke)" strokeWidth="1.5" />
+        <rect x="4" y="4" width="32" height="32" rx="9" fill="none" stroke="url(#hcMarkStroke)" strokeWidth="0.5" opacity="0.4" />
+        {/* Water drop */}
         <path
-          d="M10.5 12.5V27.5M10.5 20H18.5M18.5 12.5V27.5"
-          stroke="white"
-          strokeWidth="2.3"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+          d="M20 7C20 7 11 19 11 24.5C11 29 15 33 20 33C25 33 29 29 29 24.5C29 19 20 7 20 7Z"
+          fill="url(#hcDropGrad)"
+          opacity="0.9"
         />
+        {/* Drop highlight */}
         <path
-          d="M29.6 13.8C28.3 12.9 26.7 12.4 25 12.4C20.8 12.4 17.4 15.8 17.4 20C17.4 24.2 20.8 27.6 25 27.6C26.8 27.6 28.4 27 29.8 26"
-          stroke="#6EE7D8"
-          strokeWidth="2.3"
-          strokeLinecap="round"
+          d="M17 22C17 18.5 20 12 20 12C20 12 18.5 18.5 18.5 22C18.5 24 16.5 24.5 17 22Z"
+          fill="white"
+          opacity="0.3"
         />
-        <path
-          d="M27.7 10.9L30.4 13.9L26.8 15.1"
-          stroke="#6EE7D8"
-          strokeWidth="2.3"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
+        {/* Arrow right */}
+        <path d="M23.5 16.5L30 16.5L28.5 15M30 16.5L28.5 18" stroke="url(#hcArrowGrad)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+        {/* Arrow left */}
+        <path d="M16.5 23.5L10 23.5L11.5 25M10 23.5L11.5 22" stroke="url(#hcArrowGrad)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
         <defs>
           <linearGradient id="hcMarkBg" x1="4" y1="3" x2="36" y2="38" gradientUnits="userSpaceOnUse">
             <stop stopColor="#5E6AD2" />
-            <stop offset="0.55" stopColor="#27304E" />
-            <stop offset="1" stopColor="#0A0D12" />
+            <stop offset="1" stopColor="#1A1F3D" />
           </linearGradient>
           <linearGradient id="hcMarkStroke" x1="3" y1="2" x2="37" y2="38" gradientUnits="userSpaceOnUse">
             <stop stopColor="#8B93FF" />
-            <stop offset="1" stopColor="#22C7A9" />
+            <stop offset="1" stopColor="#6EE7D8" />
+          </linearGradient>
+          <linearGradient id="hcDropGrad" x1="15" y1="8" x2="25" y2="33" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#6EE7D8" />
+            <stop offset="1" stopColor="#3BA8D8" />
+          </linearGradient>
+          <linearGradient id="hcArrowGrad" x1="10" y1="20" x2="30" y2="20" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#8B93FF" />
+            <stop offset="1" stopColor="#6EE7D8" />
           </linearGradient>
         </defs>
       </svg>

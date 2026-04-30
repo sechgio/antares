@@ -67,7 +67,7 @@ export default function CommandPalette({ isOpen, onClose, items }: CommandPalett
   return (
     <div
       className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh] animate-fade-in"
-      style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
+      style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 66%, transparent)', backdropFilter: 'blur(4px)' }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -100,7 +100,7 @@ export default function CommandPalette({ isOpen, onClose, items }: CommandPalett
               onClick={() => { item.action(); onClose(); }}
               onMouseEnter={() => setSelectedIndex(index)}
               className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
-                index === selectedIndex ? 'bg-accent/10' : 'hover:bg-dark-elevated'
+                index === selectedIndex ? 'bg-[var(--accent-primary-glow)]' : 'hover:bg-dark-elevated'
               }`}
             >
               {item.icon && <span className="text-txt-muted shrink-0">{item.icon}</span>}

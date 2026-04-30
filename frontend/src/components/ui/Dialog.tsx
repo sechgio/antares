@@ -37,14 +37,14 @@ export default function Dialog() {
 
   const confirmClasses =
     type === 'destructive'
-      ? 'bg-accent-red hover:bg-red-500 border-accent-red'
+      ? 'bg-accent-red hover:opacity-90 border-accent-red'
       : 'bg-accent-orange hover:bg-accent-orange-hover border-accent-orange';
 
   return (
     <div
       ref={overlayRef}
       className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-fade-in"
-      style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+      style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 72%, transparent)', backdropFilter: 'blur(4px)' }}
       onClick={(e) => {
         if (e.target === overlayRef.current) handleCancel();
       }}
@@ -64,7 +64,7 @@ export default function Dialog() {
           )}
           <button
             onClick={handleConfirm}
-            className={`px-5 py-2 rounded-btn text-sm font-medium text-white border transition-all ${confirmClasses}`}
+            className={`px-5 py-2 rounded-btn text-sm font-medium text-[var(--text-on-accent)] border transition-all ${confirmClasses}`}
           >
             {confirmLabel}
           </button>

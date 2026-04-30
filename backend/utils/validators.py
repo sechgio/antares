@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Union
 
 _EXTENSIONES_IMAGEN: set[str] = {
     ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif", ".gif", ".ico", ".pdf"
 }
 
 
-def es_imagen(ruta: Union[str, Path]) -> bool:
+def es_imagen(ruta: str | Path) -> bool:
     """Verifica si la ruta corresponde a una imagen soportada.
 
     Args:
@@ -23,40 +22,40 @@ def es_imagen(ruta: Union[str, Path]) -> bool:
     return Path(ruta).suffix.lower() in _EXTENSIONES_IMAGEN
 
 
-def sanitizar_nombre(nombre: Union[str, Path]) -> str:
+def sanitizar_nombre(nombre: str | Path) -> str:
     """Elimina caracteres no válidos para nombres de archivo en Windows/Linux.
-    
+
     Also prevents path traversal attacks.
-    
+
     Args:
         nombre: Nombre de archivo a sanitizar.
-        
+
     Returns:
         Nombre limpio con caracteres inválidos reemplazados por guiones bajos.
     """
     nombre_str = str(nombre).strip()
-    
+
     # First, check for path traversal attempts
     if '../' in nombre_str or '..\\' in nombre_str:
         # Extract just the filename without path
         nombre_str = Path(nombre_str).name
-    
+
     # Caracteres no permitidos en Windows: < > : " / \ | ? *
     nombre_limpio = re.sub(r'[<>\:"/\\|?*]', "_", nombre_str)
-    
+
     # Remove control characters (0x00-0x1F, 0x7F)
     nombre_limpio = re.sub(r'[\x00-\x1F\x7F]', '', nombre_limpio)
-    
+
     # Eliminar espacios múltiples
     nombre_limpio = re.sub(r'\s+', " ", nombre_limpio)
-    
+
     # Prevent names starting with dots (hidden files on Unix)
     nombre_limpio = nombre_limpio.lstrip('.')
-    
+
     return nombre_limpio.strip("_. ")
 
 
-def obtener_codigo_desde_nombre(nombre_archivo: Union[str, Path]) -> str:
+def obtener_codigo_desde_nombre(nombre_archivo: str | Path) -> str:
     """Extrae el código base del nombre del archivo (stem sin extensión).
 
     Args:
@@ -68,7 +67,7 @@ def obtener_codigo_desde_nombre(nombre_archivo: Union[str, Path]) -> str:
     return Path(nombre_archivo).stem
 
 
-def parse_filename_parts(nombre_archivo: Union[str, Path]) -> tuple[str, str]:
+def parse_filename_parts(nombre_archivo: str | Path) -> tuple[str, str]:
     """Extrae (grupo, secuencia) del nombre de archivo.
 
     Formato esperado: '{grupo}_{secuencia}.ext' o '{grupo}-{secuencia}.ext'

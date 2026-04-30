@@ -13,8 +13,10 @@ const DatabaseView = React.lazy(() => import('./components/database/DatabaseView
 const FormatosView = React.lazy(() => import('./components/formatos/FormatosView'));
 const PadronView = React.lazy(() => import('./components/padron/PadronView'));
 const VolantesView = React.lazy(() => import('./components/volantes/VolantesView'));
+const ReportesCampoView = React.lazy(() => import('./components/reportes-campo'));
 const HistoryView = React.lazy(() => import('./components/history/HistoryView'));
 const AppearanceView = React.lazy(() => import('./components/settings/AppearanceView'));
+const ImageOptimizerView = React.lazy(() => import('./components/image-optimizer'));
 
 const tabTitles: Record<string, string> = {
   convert: 'Conversión',
@@ -22,11 +24,13 @@ const tabTitles: Record<string, string> = {
   formatos: 'Formatos PDF',
   padron: 'Generar Padrones',
   volantes: 'Generar Volantes',
+  reportesCampo: 'Reportes de Campo',
+  imageOptimizer: 'Optimizador de Imágenes',
   history: 'Historial',
   appearance: 'Apariencia',
 };
 
-type TabId = 'convert' | 'db' | 'formatos' | 'padron' | 'volantes' | 'history' | 'appearance';
+type TabId = 'convert' | 'db' | 'formatos' | 'padron' | 'volantes' | 'reportesCampo' | 'imageOptimizer' | 'history' | 'appearance';
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<TabId>('convert');
@@ -40,6 +44,8 @@ function AppContent() {
   useKeyboardShortcut('5', () => setActiveTab('volantes'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('6', () => setActiveTab('history'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('7', () => setActiveTab('appearance'), { ctrl: true, preventDefault: true });
+  useKeyboardShortcut('8', () => setActiveTab('reportesCampo'), { ctrl: true, preventDefault: true });
+  useKeyboardShortcut('9', () => setActiveTab('imageOptimizer'), { ctrl: true, preventDefault: true });
 
   const commandItems = [
     { id: 'tab-convert', label: 'Ir a Conversión', shortcut: 'Ctrl+1', action: () => setActiveTab('convert') },
@@ -49,6 +55,8 @@ function AppContent() {
     { id: 'tab-volantes', label: 'Ir a Generar Volantes', shortcut: 'Ctrl+5', action: () => setActiveTab('volantes') },
     { id: 'tab-history', label: 'Ir a Historial', shortcut: 'Ctrl+6', action: () => setActiveTab('history') },
     { id: 'tab-appearance', label: 'Ir a Apariencia', shortcut: 'Ctrl+7', action: () => setActiveTab('appearance') },
+    { id: 'tab-reportes-campo', label: 'Ir a Reportes de Campo', shortcut: 'Ctrl+8', action: () => setActiveTab('reportesCampo') },
+    { id: 'tab-image-optimizer', label: 'Ir a Optimizador de Imágenes', shortcut: 'Ctrl+9', action: () => setActiveTab('imageOptimizer') },
   ];
 
   return (
@@ -62,12 +70,14 @@ function AppContent() {
         <Header title={tabTitles[activeTab]} onSearchClick={() => setCommandOpen(true)} />
         <main className="flex-1 overflow-hidden relative">
           <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">Cargando...</div>}>
-            <div className={`h-full overflow-y-auto ${activeTab === 'padron' || activeTab === 'volantes' ? '' : 'px-6 py-6'}`}>
+            <div className={`h-full overflow-y-auto ${activeTab === 'padron' || activeTab === 'volantes' || activeTab === 'reportesCampo' ? '' : 'px-6 py-6'}`}>
               {activeTab === 'convert' && <ConversionView />}
               {activeTab === 'db' && <DatabaseView />}
               {activeTab === 'formatos' && <FormatosView />}
               {activeTab === 'padron' && <PadronView />}
               {activeTab === 'volantes' && <VolantesView />}
+              {activeTab === 'reportesCampo' && <ReportesCampoView />}
+              {activeTab === 'imageOptimizer' && <ImageOptimizerView />}
               {activeTab === 'history' && <HistoryView />}
               {activeTab === 'appearance' && <AppearanceView />}
             </div>

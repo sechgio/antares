@@ -1,8 +1,10 @@
 """Format registry for extensible image format support."""
 
 from __future__ import annotations
+
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 FormatEncoder = Callable[[Any, Path, str, dict[str, Any]], None]
 
