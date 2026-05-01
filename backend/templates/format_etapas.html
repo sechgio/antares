@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>
+        /* Google Font Import */
+        @import url('https://fonts.googleapis.com/css2?family=Stray+Script&display=swap');
+
+        /* Reset & Base */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* A4 Dimensions */
+        /* A4 Dimensions */
+        @page {
+            size: A4;
+            margin: 0;
+        }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 10px;
+            line-height: 1.3;
+            color: #222;
+            background: #fff;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Page Container */
+        .page {
+            width: 210mm;
+            min-height: 297mm;
+            margin: 0 auto;
+            padding: 8mm;
+            background: #fff;
+            page-break-after: always;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-sizing: border-box;
+            position: relative;
+        }
+
+        .page:last-child {
+            page-break-after: auto;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 22mm;
+            padding-bottom: 4mm;
+            margin-bottom: 4mm;
+            flex-shrink: 0;
+            /* Border removed to match requested style if needed, but keeping similar to reservorios */
+            /* border-bottom: 2px solid #333; */
+        }
+
+        .header-logo {
+            width: 50mm;
+            height: 18mm;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #fff;
+        }
+
+        .header-logo img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        .header-logo-placeholder {
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+            background: #e0e0e0;
+            padding: 8px 16px;
+            border: 1px solid #999;
+        }
+
+        .header-title {
+            flex: 1;
+            text-align: center;
+            padding: 0 10px;
+        }
+
+        .header-title h2 {
+            font-size: 18px;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: #000;
+            margin: 0;
+        }
+
+        /* Main Activity Title */
+        .activity-title {
+            text-align: center;
+            margin-bottom: 5mm;
+            padding: 0 5mm;
+        }
+
+        .activity-title h1 {
+            font-size: 14pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: #000;
+            line-height: 1.3;
+        }
+
+        /* Single Detail Line */
+        .buzon-info {
+            font-size: 11pt;
+            font-weight: bold;
+            margin-bottom: 5mm;
+            padding-left: 2mm;
+        }
+
+        /* 2x2 Photo Grid - Fixed heights to preserve image aspect ratios */
+        .photo-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: auto auto;
+            gap: 3mm;
+            margin-bottom: 3mm;
+        }
+
+        .photo-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .photo-cell {
+            position: relative;
+            background: #f5f5f5;
+            border: 1px solid #ccc;
+            width: 100%;
+            height: 95mm;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .photo-cell img {
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+            object-position: center;
+        }
+
+        .photo-label {
+            text-align: center;
+            font-weight: bold;
+            font-size: 12pt;
+            margin-top: 2mm;
+            text-transform: uppercase;
+            flex-shrink: 0;
+        }
+
+        .photo-placeholder {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #bbb;
+            font-size: 12px;
+            font-style: italic;
+            background: #f0f0f0;
+        }
+
+        /* Footer */
+        .footer {
+            height: 10mm;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            font-family: 'Stray Script', cursive;
+            font-size: 12pt;
+            border-top: 1px solid transparent;
+            padding-top: 2mm;
+            color: #1800ad;
+        }
+
+        .footer-left {
+            font-style: italic;
+        }
+
+        .footer-right {
+            text-align: right;
+            font-style: italic;
+        }
+
+        /* Screen preview styles */
+        @media screen {
+            body {
+                width: 100%;
+                background: transparent;
+                overflow: hidden;
+            }
+
+            .page {
+                width: 210mm;
+                height: 297mm;
+                margin: 0 auto;
+                box-shadow: none;
+            }
+        }
+
+        /* Print/PDF styles */
+        @media print {
+            .page {
+                margin: 0;
+                page-break-after: always;
+                box-shadow: none;
+            }
+
+            body {
+                margin: 0;
+            }
+
+            /* Preserve image aspect ratios in PDF */
+            .photo-cell {
+                height: 90mm;
+            }
+
+            .photo-cell img {
+                object-fit: contain;
+                max-width: 100%;
+                max-height: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    {% for report in reports %}
+    <div class="page">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-logo">
+                {% if logo_left %}
+                <img src="{{ logo_left }}" alt="Logo">
+                {% else %}
+                <span class="header-logo-placeholder">LOGO</span>
+                {% endif %}
+            </div>
+
+            <div class="header-title">
+                <h2>ZONAL : {{ report.data.get('ZONAL', '-') }}</h2>
+            </div>
+
+            <div class="header-logo">
+                {% if logo_right %}
+                <img src="{{ logo_right }}" alt="Logo">
+                {% else %}
+                <span class="header-logo-placeholder">LOGO</span>
+                {% endif %}
+            </div>
+        </header>
+
+        <!-- Main Title -->
+        <div class="activity-title">
+            <h1>"{{ report.data.get('NAME ACTIVITY', '-') }}"</h1>
+        </div>
+
+        <!-- Info/Buzon -->
+        <div class="buzon-info">
+            CODIGO DE BUZÓN: {{ report.data.get('CODIGO BUZON', '-') }}
+        </div>
+
+        <!-- Photo Grid -->
+        <section class="photo-grid">
+
+            <!-- ANTES (_1) -->
+            <div class="photo-container">
+                <div class="photo-cell">
+                    {% set ns = namespace(found=false) %}
+                    {% for img in report.images %}
+                    {% if not ns.found and '_1.' in img.name %}
+                    <img src="{{ img.path }}" alt="ANTES">
+                    {% set ns.found = true %}
+                    {% endif %}
+                    {% endfor %}
+                    {% if not ns.found %}
+                    <div class="photo-placeholder">Sin imagen</div>
+                    {% endif %}
+                </div>
+                <div class="photo-label">ANTES</div>
+            </div>
+
+            <!-- DURANTE (_2) -->
+            <div class="photo-container">
+                <div class="photo-cell">
+                    {% set ns = namespace(found=false) %}
+                    {% for img in report.images %}
+                    {% if not ns.found and '_2.' in img.name %}
+                    <img src="{{ img.path }}" alt="DURANTE">
+                    {% set ns.found = true %}
+                    {% endif %}
+                    {% endfor %}
+                    {% if not ns.found %}
+                    <div class="photo-placeholder">Sin imagen</div>
+                    {% endif %}
+                </div>
+                <div class="photo-label">DURANTE</div>
+            </div>
+
+            <!-- DESPUES (_3) -->
+            <div class="photo-container">
+                <div class="photo-cell">
+                    {% set ns = namespace(found=false) %}
+                    {% for img in report.images %}
+                    {% if not ns.found and '_3.' in img.name %}
+                    <img src="{{ img.path }}" alt="DESPUES">
+                    {% set ns.found = true %}
+                    {% endif %}
+                    {% endfor %}
+                    {% if not ns.found %}
+                    <div class="photo-placeholder">Sin imagen</div>
+                    {% endif %}
+                </div>
+                <div class="photo-label">DESPUES</div>
+            </div>
+
+            <!-- RESIDUOS (_4) -->
+            <div class="photo-container">
+                <div class="photo-cell">
+                    {% set ns = namespace(found=false) %}
+                    {% for img in report.images %}
+                    {% if not ns.found and '_4.' in img.name %}
+                    <img src="{{ img.path }}" alt="RESIDUOS">
+                    {% set ns.found = true %}
+                    {% endif %}
+                    {% endfor %}
+                    {% if not ns.found %}
+                    <div class="photo-placeholder">Sin imagen</div>
+                    {% endif %}
+                </div>
+                <div class="photo-label">RESIDUOS</div>
+            </div>
+
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="footer-left">
+                Panel fotográfico
+            </div>
+            <div class="footer-right">
+                {{ report.data.get('CONTRATISTA', '-') }}, trabajando para {{ report.data.get('CONTRATA', '-') }}
+            </div>
+        </footer>
+    </div>
+    {% endfor %}
+</body>
+
+</html>

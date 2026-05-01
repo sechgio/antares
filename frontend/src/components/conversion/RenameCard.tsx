@@ -4,6 +4,7 @@ import Badge from '../ui/Badge';
 import Input from '../ui/Input';
 import Toggle from '../ui/Toggle';
 import type { RenamePattern, PreviewItem } from '../../types';
+import { ChevronRight, PencilLine, Tags } from 'lucide-react';
 
 interface RenameCardProps {
   files: string[];
@@ -35,15 +36,6 @@ const exampleFromPattern = (pattern: string, fields: string[], firstFile?: strin
   return pattern.replace(/\{([^}]+)\}/g, (_, key: string) => values[key] ?? '').replace(/_+(?=\.)/g, '');
 };
 
-function TagIcon({ className }: { className?: string }) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
-      <line x1="7" y1="7" x2="7.01" y2="7" />
-    </svg>
-  );
-}
-
 export default function RenameCard({
   files, usarRename, namingMode, onNamingModeChange,
   patron, onPatronChange, secuencia, onSecuenciaChange,
@@ -53,23 +45,29 @@ export default function RenameCard({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const namingExample = exampleFromPattern(usarRename ? patron : '', fields, files[0]);
   const usesSeq = patron.includes('{seq}');
+  const previewRows = preview?.slice(0, 4) || [];
+  const hiddenPreviewCount = preview ? Math.max(0, preview.length - previewRows.length) : 0;
 
   return (
-    <Card className="space-y-5">
-      <div className="flex items-center gap-2 mb-1">
-        <div className="w-1 h-4 rounded-full bg-[var(--accent-secondary)]" />
-        <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]">Nombres de salida</span>
+    <Card className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent-secondary)]/10 text-[var(--accent-secondary)]">
+            <Tags className="h-4 w-4" />
+          </div>
+          <div>
+            <span className="block text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]">Renombrado</span>
+            <span className="text-xs text-[var(--text-secondary)] truncate block max-w-[220px]">{namingExample}</span>
+          </div>
+        </div>
       </div>
 
       {hasVideos && (
-        <div className="p-3 bg-[var(--accent-blue)]/10 border border-[var(--accent-blue)]/25 rounded-xl">
-          <p className="text-xs text-[var(--accent-blue)] leading-relaxed">
-            Los videos mantendrán su extensión original al renombrarse.
-          </p>
+        <div className="rounded-lg border border-[var(--accent-blue)]/25 bg-[var(--accent-blue)]/10 px-3 py-2">
+          <p className="text-xs leading-relaxed text-[var(--accent-blue)]">Videos: conserva extensión original.</p>
         </div>
       )}
 
-      {/* Presets */}
       <div className="grid grid-cols-2 gap-2">
         {namingPresets.map((preset) => {
           const active = namingMode === preset.id;
@@ -77,7 +75,7 @@ export default function RenameCard({
             <button
               key={preset.id}
               onClick={() => onNamingModeChange(preset.id)}
-              className={`text-left px-3.5 py-3 rounded-xl border transition-all duration-200 ${
+              className={`min-h-[66px] rounded-lg border px-3 py-2.5 text-left transition-all duration-200 ${
                 active
                   ? 'bg-[var(--accent-primary)]/15 text-[var(--accent-primary)] border-[var(--accent-primary)]/40'
                   : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)]'
@@ -92,22 +90,18 @@ export default function RenameCard({
         })}
       </div>
 
-      {/* Advanced toggle */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <button
           onClick={() => setShowAdvanced(!showAdvanced)}
-          className="text-[13px] text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)] font-medium flex items-center gap-1.5 transition-colors"
+          className="flex items-center gap-1.5 text-[13px] font-medium text-[var(--accent-primary)] transition-colors hover:text-[var(--accent-primary-hover)]"
         >
-          <TagIcon className="w-3.5 h-3.5" />
+          <PencilLine className="h-3.5 w-3.5" />
           {showAdvanced ? 'Ocultar patrón avanzado' : 'Editar patrón avanzado'}
         </button>
-        <span className="text-xs text-[var(--text-muted)]">
-          Ej: <span className="font-mono text-[var(--text-primary)] bg-[var(--bg-elevated)] px-1.5 py-0.5 rounded">{namingExample}</span>
-        </span>
       </div>
 
       {showAdvanced && (
-        <div className="space-y-4 p-4 bg-[var(--bg-elevated)]/50 rounded-xl border border-[var(--border-subtle)]">
+        <div className="space-y-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/50 p-3">
           <Input
             value={patron}
             onChange={(e) => onPatronChange(e.target.value)}
@@ -146,29 +140,31 @@ export default function RenameCard({
         </div>
       )}
 
-      {/* Preview list */}
       {files.length > 0 && usarRename && preview && (
-        <div className="border border-[var(--border-subtle)] rounded-xl overflow-hidden">
-          <div className="px-3 py-2 bg-[var(--bg-elevated)] border-b border-[var(--border-subtle)] flex items-center justify-between">
+        <div className="overflow-hidden rounded-lg border border-[var(--border-subtle)]">
+          <div className="flex items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Vista previa</span>
             <span className="text-[10px] text-[var(--text-muted)]">{preview.length} archivos</span>
           </div>
-          <div className="max-h-48 overflow-y-auto">
-            {preview.map((p, i) => (
+          <div>
+            {previewRows.map((p, i) => (
               <div
                 key={i}
                 className={`flex items-center gap-3 px-3 py-2 text-sm ${i % 2 === 0 ? 'bg-[var(--bg-base)]' : 'bg-transparent'}`}
               >
                 <span className="flex-1 truncate font-mono text-[11px] text-[var(--text-muted)]">{p.origen}</span>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[var(--border-medium)] shrink-0">
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[var(--border-medium)]" />
                 <span className="flex-1 truncate font-mono text-[12px] text-[var(--text-primary)] font-medium">{p.nuevo}</span>
                 <Badge variant={p.en_bd ? 'success' : 'warning'} className="shrink-0 text-[10px]">
                   {p.en_bd ? 'BD' : 'Sin BD'}
                 </Badge>
               </div>
             ))}
+            {hiddenPreviewCount > 0 && (
+              <div className="border-t border-[var(--border-subtle)] px-3 py-2 text-center text-[11px] text-[var(--text-muted)]">
+                +{hiddenPreviewCount} archivos más
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -3,6 +3,7 @@ import Dropdown from '../ui/Dropdown';
 import Slider from '../ui/Slider';
 import Toggle from '../ui/Toggle';
 import Input from '../ui/Input';
+import { Camera, Maximize2, SlidersHorizontal } from 'lucide-react';
 
 interface OptionsCardProps {
   formato: string;
@@ -21,23 +22,6 @@ interface OptionsCardProps {
   hasVideos?: boolean;
 }
 
-function ResizeIcon({ className }: { className?: string }) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
-    </svg>
-  );
-}
-
-function ExifIcon({ className }: { className?: string }) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-    </svg>
-  );
-}
-
 export default function OptionsCard({
   formato, formatos, onFormatoChange,
   calidad, onCalidadChange,
@@ -47,21 +31,26 @@ export default function OptionsCard({
   hasVideos = false,
 }: OptionsCardProps) {
   return (
-    <Card className="space-y-5">
-      <div className="flex items-center gap-2 mb-1">
-        <div className="w-1 h-4 rounded-full bg-[var(--accent-primary)]" />
-        <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]">Opciones de conversión</span>
+    <Card className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]">
+            <SlidersHorizontal className="h-4 w-4" />
+          </div>
+          <div>
+            <span className="block text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]">Conversión</span>
+            <span className="text-xs text-[var(--text-secondary)]">{formato} · {calidad}%</span>
+          </div>
+        </div>
       </div>
 
       {hasVideos && (
-        <div className="p-3 bg-[var(--accent-primary)]/10 border border-[var(--accent-primary)]/25 rounded-xl">
-          <p className="text-xs text-[var(--accent-primary)] leading-relaxed">
-            Los videos se copiarán sin conversión. Solo se aplicará el renombrado.
-          </p>
+        <div className="rounded-lg border border-[var(--accent-primary)]/25 bg-[var(--accent-primary)]/10 px-3 py-2">
+          <p className="text-xs leading-relaxed text-[var(--accent-primary)]">Videos: copia directa + renombrado.</p>
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-5">
+      <div className="grid grid-cols-1 gap-4">
         <div>
           <label className="block text-xs font-medium text-[var(--text-secondary)] mb-2">Formato de salida</label>
           <Dropdown value={formato} options={formatos} onChange={onFormatoChange} />
@@ -81,13 +70,12 @@ export default function OptionsCard({
         </div>
       </div>
 
-      <div className="pt-4 border-t border-[var(--border-subtle)] space-y-4">
-        {/* Resize Toggle */}
-        <div className="space-y-3">
+      <div className="space-y-3 border-t border-[var(--border-subtle)] pt-3">
+        <div className="space-y-2.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-[var(--bg-elevated)] flex items-center justify-center text-[var(--text-muted)]">
-                <ResizeIcon className="w-4 h-4" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--bg-elevated)] text-[var(--text-muted)]">
+                <Maximize2 className="h-4 w-4" />
               </div>
               <div>
                 <span className="text-sm font-medium text-[var(--text-primary)] block">Redimensionar</span>
@@ -124,11 +112,10 @@ export default function OptionsCard({
           )}
         </div>
 
-        {/* EXIF Toggle */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-[var(--bg-elevated)] flex items-center justify-center text-[var(--text-muted)]">
-              <ExifIcon className="w-4 h-4" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--bg-elevated)] text-[var(--text-muted)]">
+              <Camera className="h-4 w-4" />
             </div>
             <div>
               <span className="text-sm font-medium text-[var(--text-primary)] block">Preservar metadatos</span>

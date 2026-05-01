@@ -59,18 +59,21 @@ function AppContent() {
     { id: 'tab-image-optimizer', label: 'Ir a Optimizador de Imágenes', shortcut: 'Ctrl+9', action: () => setActiveTab('imageOptimizer') },
   ];
 
+  // Tabs that use full-bleed layout (no padding) because they manage their own internal layout
+  const fullBleedTabs = ['padron', 'volantes', 'reportesCampo', 'formatos'];
+  const isFullBleed = fullBleedTabs.includes(activeTab);
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]">
       <Sidebar
         activeTab={activeTab}
         onTabChange={(t) => setActiveTab(t as TabId)}
-        onSearchClick={() => setCommandOpen(true)}
       />
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <Header title={tabTitles[activeTab]} onSearchClick={() => setCommandOpen(true)} />
         <main className="flex-1 overflow-hidden relative">
           <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">Cargando...</div>}>
-            <div className={`h-full overflow-y-auto ${activeTab === 'padron' || activeTab === 'volantes' || activeTab === 'reportesCampo' ? '' : 'px-6 py-6'}`}>
+            <div className={`h-full overflow-y-auto ${isFullBleed ? '' : 'px-6 py-6'}`}>
               {activeTab === 'convert' && <ConversionView />}
               {activeTab === 'db' && <DatabaseView />}
               {activeTab === 'formatos' && <FormatosView />}

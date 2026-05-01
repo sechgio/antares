@@ -25,11 +25,29 @@ async function saveToHistory(runType: string, label: string, details: Record<str
   }
 }
 import type { FormatInfo, VisualMapping } from '../../types';
-import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
-GlobalWorkerOptions.workerSrc = pdfWorker;
+// ─── PDF.js lazy load (only when needed) ───────────────────────
+let pdfjsLib: typeof import('pdfjs-dist') | null = null;
+let pdfWorkerUrl: string | null = null;
+
+async function ensurePdfJs() {
+  if (pdfjsLib) return pdfjsLib;
+  const pdfjs = await import('pdfjs-dist');
+  if (!pdfWorkerUrl) {
+    try {
+      const workerModule = await import('pdfjs-dist/build/pdf.worker.min.mjs?url') as { default: string };
+      pdfWorkerUrl = workerModule.default;
+    } catch {
+      pdfWorkerUrl = '';
+    }
+  }
+  if (pdfWorkerUrl) {
+    pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+  }
+  pdfjsLib = pdfjs;
+  return pdfjs;
+}
 
 const MAX_PREVIEW_PAGES = 30;
 const PREVIEW_DEBOUNCE_MS = 400;
@@ -92,22 +110,26 @@ function PdfMultiViewer({ blob, desde, total, padLen }: { blob: Blob | null; des
     const [pageImgs, setPageImgs] = useState<PageImg[]>([]);
     const [renderingPage, setRenderingPage] = useState(0);
     const [zoom, setZoom] = useState(100);
+    const [renderError, setRenderError] = useState<string | null>(null);
     const zoomStep = 25;
     const rafId = useRef(0);
 
     useEffect(() => {
-        if (!blob) { setPageImgs([]); setRenderingPage(0); return; }
+        if (!blob) { setPageImgs([]); setRenderingPage(0); setRenderError(null); return; }
         let cancelled = false;
         setPageImgs([]);
+        setRenderError(null);
 
         async function renderAll() {
+            const pdfjs = await ensurePdfJs();
             const ab = await blob!.arrayBuffer();
             if (cancelled) return;
 
-            const pdf = await getDocument({ data: ab }).promise;
+            const pdf = await pdfjs.getDocument({ data: new Uint8Array(ab) }).promise;
             if (cancelled) return;
             const numPages = pdf.numPages;
-            const containerW = (containerRef.current?.clientWidth ?? 1100) - 32;
+            const rawContainerW = (containerRef.current?.clientWidth ?? 1100) - 32;
+            const containerW = Math.max(rawContainerW, 200);
             const dpr = Math.min(window.devicePixelRatio || 1, 1.5); // Cap DPR for speed
 
             for (let i = 1; i <= numPages; i++) {
@@ -126,7 +148,10 @@ function PdfMultiViewer({ blob, desde, total, padLen }: { blob: Blob | null; des
         }
 
         renderAll().catch(e => {
-            if (e?.name !== 'RenderingCancelledException') console.warn('render error', e);
+            if (e?.name !== 'RenderingCancelledException') {
+                console.warn('render error', e);
+                if (!cancelled) setRenderError('No se pudo renderizar. Intenta reintentar o descargar el PDF.');
+            }
             if (!cancelled) setRenderingPage(0);
         });
 
@@ -141,6 +166,44 @@ function PdfMultiViewer({ blob, desde, total, padLen }: { blob: Blob | null; des
     const isCapped = total > MAX_PREVIEW_PAGES;
     const previewCount = Math.min(total, MAX_PREVIEW_PAGES);
 
+    /* Error state – clean retry + download instead of iframe */
+    if (renderError && blob) {
+        return (
+            <div ref={containerRef} className="w-full h-full flex flex-col items-center justify-center gap-5 px-8">
+                <div className="w-16 h-16 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] flex items-center justify-center">
+                    <AlertCircle size={28} className="text-[var(--accent-primary)] opacity-60" />
+                </div>
+                <div className="text-center space-y-1.5">
+                    <p className="text-[12px] font-medium text-[var(--text-primary)]">No se pudo renderizar la vista previa</p>
+                    <p className="text-[10px] text-[var(--text-muted)] max-w-[280px] leading-relaxed" style={{ fontFamily: "'Roboto Mono', monospace" }}>{renderError}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => setRenderError(null)}
+                        className="flex items-center gap-1.5 bg-[var(--accent-primary)]/10 hover:bg-[var(--accent-primary)]/20 border border-[var(--accent-primary)]/30 text-[var(--accent-primary)] rounded-md px-4 py-2 text-[10px] tracking-wider transition-colors"
+                        style={{ fontFamily: "'Roboto Mono', monospace" }}
+                    >
+                        <RefreshCw size={11} />Reintentar
+                    </button>
+                    <button
+                        onClick={() => {
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = 'preview.pdf';
+                            a.click();
+                            setTimeout(() => URL.revokeObjectURL(url), 5000);
+                        }}
+                        className="flex items-center gap-1.5 bg-[var(--bg-elevated)] hover:bg-[var(--bg-input)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-md px-4 py-2 text-[10px] tracking-wider transition-colors"
+                        style={{ fontFamily: "'Roboto Mono', monospace" }}
+                    >
+                        <FileDown size={11} />Descargar PDF
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div ref={containerRef} className="w-full h-full overflow-y-auto flex flex-col" style={{ scrollbarWidth: 'thin', scrollbarColor: 'var(--scrollbar-thumb) transparent' }}>
             <div className="flex items-center justify-center gap-3 py-2 px-4 bg-[var(--bg-base)]/50 border-b border-[var(--border-subtle)] flex-shrink-0">
@@ -151,7 +214,7 @@ function PdfMultiViewer({ blob, desde, total, padLen }: { blob: Blob | null; des
             </div>
             <div className="px-4 py-6 space-y-6 flex flex-col items-center flex-1">
                 {pageImgs.map((p) => (
-                    <div key={p.pageNum} className="relative mx-auto bg-[var(--bg-surface)] rounded-xl shadow-2xl shadow-black/50" style={{ width: `${(zoom / 100) * 100}%`, maxWidth: '100%' }}>
+                    <div key={p.pageNum} className="relative mx-auto bg-white rounded-xl shadow-2xl shadow-black/50" style={{ width: `${(zoom / 100) * 100}%`, maxWidth: '100%' }}>
                         <img src={p.url} alt={`Página ${p.pageNum}`} className="w-full object-contain rounded-lg block" draggable={false} style={{ imageRendering: 'auto' }} loading="lazy" />
                         <div className="absolute bottom-3 right-3 flex items-center gap-1.5 bg-black/80 border border-[var(--accent-primary)]/25 rounded px-2 py-1" style={{ fontFamily: "'Roboto Mono', monospace" }}>
                             <span className="text-[8px] text-[var(--text-muted)]">N°</span>

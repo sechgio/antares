@@ -34,6 +34,8 @@ async function run() {
   assert(files.handled === true, 'dialog_files should be handled by Electron');
   assert(files.result.paths[0] === 'C:/tmp/data.xlsx', 'dialog_files should return selected file path');
   assert(calls[0].options.properties.includes('openFile'), 'dialog_files should use openFile');
+  assert(calls[0].options.filters[0].extensions.includes('mp4'), 'dialog_files should accept MP4 videos');
+  assert(calls[0].options.filters[0].extensions.includes('mkv'), 'dialog_files should accept MKV videos');
 
   const folder = await handleDialogCall('dialog_folder', {}, dialog, win);
   assert(folder.result.paths[0] === 'C:/tmp/data.xlsx', 'dialog_folder should return selected folder path');

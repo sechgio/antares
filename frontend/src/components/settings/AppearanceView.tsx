@@ -1,56 +1,44 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Check,
-  Languages,
-  LayoutList,
+  ChevronDown,
+  Copy,
+  Laptop,
   Monitor,
   Moon,
-  Palette,
   RotateCcw,
   Save,
-  SlidersHorizontal,
   Sun,
   Type,
+  Upload,
 } from 'lucide-react';
 import { api } from '../../api';
 import { ThemeConfig } from '../../types';
-import Button from '../ui/Button';
 import Toggle from '../ui/Toggle';
 import { useToast } from '../../hooks/useToast';
 
 type ThemeMode = 'dark' | 'light' | 'system';
-type DensityMode = 'comfortable' | 'compact';
-
-type AccentChoice = {
-  key: string;
-  name: string;
-  color: string;
-  hover: string;
-  light: string;
-  dark: string;
-};
-
-type PresetPreview = {
-  name: string;
-  description: string;
-  colors: string[];
-};
 
 type EditableColor = {
   key: keyof ThemeConfig;
   label: string;
-  description: string;
+};
+
+type ModeOption = {
+  key: ThemeMode;
+  label: string;
+  icon: typeof Moon;
 };
 
 const CUSTOM_ACCENT_KEY = 'custom';
 
-const ACCENTS: AccentChoice[] = [
-  { key: 'violet', name: 'Azul', color: '#3B82F6', hover: '#2563EB', light: '#93C5FD', dark: '#1E40AF' },
-  { key: 'blue', name: 'Pizarra', color: '#475467', hover: '#344054', light: '#D0D5DD', dark: '#101828' },
-  { key: 'teal', name: 'Turquesa', color: '#14B8A6', hover: '#0F766E', light: '#5EEAD4', dark: '#115E59' },
-  { key: 'green', name: 'Oliva', color: '#84CC16', hover: '#65A30D', light: '#BEF264', dark: '#365314' },
-  { key: 'amber', name: 'Ambar', color: '#F59E0B', hover: '#D97706', light: '#FCD34D', dark: '#92400E' },
+const ACCENTS = [
+  { key: 'violet', color: '#3B82F6', hover: '#2563EB', light: '#93C5FD', dark: '#1E40AF' },
+  { key: 'blue', color: '#475467', hover: '#344054', light: '#D0D5DD', dark: '#101828' },
+  { key: 'teal', color: '#14B8A6', hover: '#0F766E', light: '#5EEAD4', dark: '#115E59' },
+  { key: 'green', color: '#84CC16', hover: '#65A30D', light: '#BEF264', dark: '#365314' },
+  { key: 'amber', color: '#F59E0B', hover: '#D97706', light: '#FCD34D', dark: '#92400E' },
 ];
 
 const LIGHT_THEME: Partial<ThemeConfig> = {
@@ -63,187 +51,16 @@ const LIGHT_THEME: Partial<ThemeConfig> = {
   border: '#D9DEE8',
 };
 
-const PRESET_PREVIEWS: Record<string, PresetPreview> = {
-  'Slate Professional': {
-    name: 'Slate Professional',
-    description: 'Azul acero sobrio, equilibrado para trabajo continuo.',
-    colors: ['#0F172A', '#172033', '#3B82F6', '#14B8A6'],
-  },
-  'Graphite Focus': {
-    name: 'Graphite Focus',
-    description: 'Grafito neutral con acento lima para buena lectura.',
-    colors: ['#111315', '#1B1F23', '#A3E635', '#38BDF8'],
-  },
-  'Porcelain Light': {
-    name: 'Porcelain Light',
-    description: 'Claro profesional con contraste suave y acento gris.',
-    colors: ['#F7F8FA', '#FFFFFF', '#475467', '#0EA5E9'],
-  },
-  'Steel Blue': {
-    name: 'Steel Blue',
-    description: 'Azules técnicos sin saturación de marca.',
-    colors: ['#08111F', '#102033', '#38BDF8', '#22D3EE'],
-  },
-  'Olive Operations': {
-    name: 'Olive Operations',
-    description: 'Verde oliva discreto para flujos operativos.',
-    colors: ['#10140D', '#1B2316', '#84CC16', '#2DD4BF'],
-  },
-  'Copper Night': {
-    name: 'Copper Night',
-    description: 'Oscuro cálido con cobre controlado y elegante.',
-    colors: ['#17110D', '#241A14', '#F97316', '#38BDF8'],
-  },
-  'Mono Contrast': {
-    name: 'Mono Contrast',
-    description: 'Contraste máximo con colores directos y legibles.',
-    colors: ['#000000', '#111111', '#FFFF00', '#FFFFFF'],
-  },
-  'Precision Linear': {
-    name: 'Precision Linear',
-    description: 'Legado violeta, conservado para compatibilidad.',
-    colors: ['#0A0D12', '#111522', '#5E6AD2', '#8B93FF'],
-  },
-  'NVIDIA Dark': {
-    name: 'NVIDIA Dark',
-    description: 'Negro técnico con acentos verdes de alto contraste.',
-    colors: ['#000000', '#1A1A1A', '#76B900', '#BFF230'],
-  },
-  'Professional Light': {
-    name: 'Professional Light',
-    description: 'Claro, limpio y cómodo para sesiones largas.',
-    colors: ['#F5F5F5', '#FFFFFF', '#2563EB', '#9BDB00'],
-  },
-  'Midnight Blue': {
-    name: 'Midnight Blue',
-    description: 'Azules profundos con acento cian para enfoque visual.',
-    colors: ['#0A0E1A', '#121A2B', '#00D4FF', '#FF6B35'],
-  },
-  'Carbon Gray': {
-    name: 'Carbon Gray',
-    description: 'Gris grafito con acento cálido y buena separación.',
-    colors: ['#181818', '#242424', '#FF9500', '#00BCD4'],
-  },
-  'High Contrast': {
-    name: 'High Contrast',
-    description: 'Máxima legibilidad con bordes fuertes y colores directos.',
-    colors: ['#000000', '#111111', '#FFFF00', '#FFFFFF'],
-  },
-  'Solar Claro': {
-    name: 'Solar Claro',
-    description: 'Claro luminoso con azul técnico y superficies limpias.',
-    colors: ['#F8FAFC', '#FFFFFF', '#0EA5E9', '#14B8A6'],
-  },
-  'Bosque Operativo': {
-    name: 'Bosque Operativo',
-    description: 'Verdes profundos para una interfaz operacional y estable.',
-    colors: ['#07130F', '#10231D', '#22C55E', '#2DD4BF'],
-  },
-  'Amanecer Ambar': {
-    name: 'Amanecer Ambar',
-    description: 'Oscuro cálido con acentos ámbar y naranja.',
-    colors: ['#1C1208', '#2A1A0D', '#F59E0B', '#FB923C'],
-  },
-  'Neon Grid': {
-    name: 'Neon Grid',
-    description: 'Contraste violeta/cian para una apariencia más expresiva.',
-    colors: ['#070713', '#111126', '#22D3EE', '#A855F7'],
-  },
-  'Midnight Ocean': {
-    name: 'Midnight Ocean',
-    description: 'Azul profundo oceánico con acentos cian brillantes.',
-    colors: ['#0A1628', '#142238', '#0EA5E9', '#22D3EE'],
-  },
-  'Forest Zen': {
-    name: 'Forest Zen',
-    description: 'Verde natural relajante para una experiencia zen.',
-    colors: ['#0D1F14', '#16291D', '#22C55E', '#14B8A6'],
-  },
-  'Royal Purple': {
-    name: 'Royal Purple',
-    description: 'Púrpura real elegante con acentos vibrantes.',
-    colors: ['#1A0B2E', '#2D1B4E', '#8B5CF6', '#EC4899'],
-  },
-  'Rose Quartz': {
-    name: 'Rose Quartz',
-    description: 'Rosa suave y elegante con toques modernos.',
-    colors: ['#1F1115', '#2E1A20', '#EC4899', '#8B5CF6'],
-  },
-  'Arctic Frost': {
-    name: 'Arctic Frost',
-    description: 'Claro ártico limpio con acentos azul cielo.',
-    colors: ['#F8FAFC', '#FFFFFF', '#0EA5E9', '#06B6D4'],
-  },
-  'Ember Glow': {
-    name: 'Ember Glow',
-    description: 'Cálido ámbar con brillos de fuego controlado.',
-    colors: ['#1A1208', '#2A1A0D', '#F59E0B', '#38BDF8'],
-  },
-  'Slate Modern': {
-    name: 'Slate Modern',
-    description: 'Pizarra moderna con acentos azul técnico.',
-    colors: ['#0F172A', '#1E293B', '#3B82F6', '#06B6D4'],
-  },
-  'Aurora Borealis': {
-    name: 'Aurora Borealis',
-    description: 'Cian brillante inspirado en auroras boreales.',
-    colors: ['#0A0F1A', '#141B2D', '#06B6D4', '#A855F7'],
-  },
-  'Minimalist Cream': {
-    name: 'Minimalist Cream',
-    description: 'Crema minimalista elegante y sobrio.',
-    colors: ['#FFFBF0', '#FFFFFF', '#78716C', '#0EA5E9'],
-  },
-  'Cyberpunk': {
-    name: 'Cyberpunk',
-    description: 'Estilo cyberpunk con neón magenta y cian.',
-    colors: ['#050505', '#0A0A0A', '#FF00FF', '#00FFFF'],
-  },
-  'Deep Space': {
-    name: 'Deep Space',
-    description: 'Espacio profundo con acentos índigo brillantes.',
-    colors: ['#030712', '#0F172A', '#6366F1', '#22D3EE'],
-  },
-  'Golden Hour': {
-    name: 'Golden Hour',
-    description: 'Hora dorada con tonos ámbar cálidos.',
-    colors: ['#1C1917', '#292524', '#F59E0B', '#3B82F6'],
-  },
-  'Lavender Dreams': {
-    name: 'Lavender Dreams',
-    description: 'Lavanda soñador con toques suaves.',
-    colors: ['#1E1B4B', '#312E81', '#8B5CF6', '#EC4899'],
-  },
-  'Ocean Breeze': {
-    name: 'Ocean Breeze',
-    description: 'Brisa oceánica con azules profundos.',
-    colors: ['#0C4A6E', '#075985', '#0EA5E9', '#22D3EE'],
-  },
-  'Mars Red': {
-    name: 'Mars Red',
-    description: 'Rojo marciano intenso con acentos controlados.',
-    colors: ['#1C0A0A', '#2D1313', '#EF4444', '#3B82F6'],
-  },
-};
-
-const MODE_OPTIONS: { key: ThemeMode; label: string; description: string; icon: typeof Moon }[] = [
-  { key: 'dark', label: 'Oscuro', description: 'Interfaz de bajo brillo.', icon: Moon },
-  { key: 'light', label: 'Claro', description: 'Superficies luminosas.', icon: Sun },
-  { key: 'system', label: 'Sistema', description: 'Sigue Windows.', icon: Monitor },
+const MODE_OPTIONS: ModeOption[] = [
+  { key: 'light', label: 'Claro', icon: Sun },
+  { key: 'dark', label: 'Oscuro', icon: Moon },
+  { key: 'system', label: 'Sistema', icon: Monitor },
 ];
 
 const EDITABLE_COLORS: EditableColor[] = [
-  { key: 'bg', label: 'Fondo principal', description: 'Canvas general de la app.' },
-  { key: 'bg_secondary', label: 'Superficie', description: 'Paneles, sidebar y tarjetas.' },
-  { key: 'fg', label: 'Texto principal', description: 'Titulares y texto de alto énfasis.' },
-  { key: 'fg_muted', label: 'Texto secundario', description: 'Ayudas, descripciones y metadatos.' },
-  { key: 'accent', label: 'Acento principal', description: 'Acciones primarias y selección.' },
-  { key: 'accent_hover', label: 'Acento hover', description: 'Interacciones sobre botones y foco.' },
-  { key: 'accent_light', label: 'Acento claro', description: 'Brillos, previews y estados suaves.' },
-  { key: 'border', label: 'Bordes', description: 'Separadores y contornos.' },
-  { key: 'success', label: 'Éxito', description: 'Estados completados.' },
-  { key: 'warning', label: 'Advertencia', description: 'Alertas preventivas.' },
-  { key: 'error', label: 'Error', description: 'Estados fallidos.' },
+  { key: 'accent', label: 'Acento' },
+  { key: 'bg', label: 'Fondo' },
+  { key: 'fg', label: 'Color de primer plano' },
 ];
 
 const CSS_VAR_MAP: Record<string, string[]> = {
@@ -289,7 +106,7 @@ function accentKeyForTheme(theme: ThemeConfig, fallback = 'violet') {
   }
   const byColor = ACCENTS.find((item) => item.color.toLowerCase() === theme.accent?.toLowerCase());
   if (byColor?.key) return byColor.key;
-  return fallback === 'violet' && theme.accent ? CUSTOM_ACCENT_KEY : normalizeAccentKey(fallback);
+  return theme.accent ? CUSTOM_ACCENT_KEY : normalizeAccentKey(fallback);
 }
 
 function hexToRgb(hex: string) {
@@ -391,68 +208,77 @@ function applyThemeToCSS(theme: ThemeConfig, mode: ThemeMode, accentKey: string)
   const elevated = nextTheme.bg_elevated || shadeHex(nextTheme.bg_secondary, isLightTheme ? -0.04 : 0.04);
   const input = nextTheme.bg_input || shadeHex(nextTheme.bg_secondary, isLightTheme ? -0.07 : 0.07);
   const mediumBorder = nextTheme.border_medium || shadeHex(nextTheme.border, isLightTheme ? -0.12 : 0.12);
+  const interfaceFontSize = nextTheme.interface_font_size || '13';
+  const codeFontSize = nextTheme.code_font_size || '12';
+  const interfaceFont = nextTheme.interface_font || '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  const codeFont = nextTheme.code_font || 'ui-monospace, SFMono-Regular, Consolas, monospace';
+  const cssCache: Record<string, string> = {};
 
   Object.entries(CSS_VAR_MAP).forEach(([key, cssVars]) => {
     const value = nextTheme[key];
     if (!value) return;
-    cssVars.forEach((cssVar) => root.style.setProperty(cssVar, value));
+    cssVars.forEach((cssVar) => {
+      root.style.setProperty(cssVar, value);
+      cssCache[cssVar] = value;
+    });
   });
 
-  root.style.setProperty('--bg-elevated', elevated);
-  root.style.setProperty('--bg-input', input);
-  root.style.setProperty('--border-medium', mediumBorder);
-  root.style.setProperty('--mc-lifted', elevated);
-  root.style.setProperty('--mc-ghost', elevated);
-  root.style.setProperty('--text-secondary-strong', nextTheme.fg_secondary || nextTheme.fg_muted);
-  root.style.setProperty('--text-muted', nextTheme.fg_muted);
-  root.style.setProperty('--text-tertiary', nextTheme.fg_tertiary || nextTheme.fg_muted);
-  root.style.setProperty('--text-on-accent', readableTextFor(nextTheme.accent));
-  root.style.setProperty('--accent-primary-glow', `${nextTheme.accent}33`);
-  root.style.setProperty('--accent-orange-glow', `${nextTheme.accent}33`);
-  root.style.setProperty('--scrollbar-thumb', `${nextTheme.fg_muted}55`);
-  root.style.setProperty('--scrollbar-thumb-hover', `${nextTheme.fg_muted}88`);
-  root.style.setProperty('--selection-bg', `${nextTheme.accent}55`);
-  root.style.setProperty('--selection-fg', readableTextFor(nextTheme.accent));
-  root.dataset.themeMode = mode;
-}
-
-function getPresetPreview(name: string, activeTheme?: ThemeConfig | null): PresetPreview {
-  if (PRESET_PREVIEWS[name]) return PRESET_PREVIEWS[name];
-  return {
-    name,
-    description: 'Estilo personalizado guardado en la aplicacion.',
-    colors: [
-      activeTheme?.bg || '#0A0A0A',
-      activeTheme?.bg_secondary || '#1A1A1A',
-      activeTheme?.accent || '#5E6AD2',
-      activeTheme?.accent_light || '#8B93FF',
-    ],
+  const extraVars: Record<string, string> = {
+    '--bg-elevated': elevated,
+    '--bg-input': input,
+    '--border-medium': mediumBorder,
+    '--mc-lifted': elevated,
+    '--mc-ghost': elevated,
+    '--text-secondary-strong': nextTheme.fg_secondary || nextTheme.fg_muted,
+    '--text-muted': nextTheme.fg_muted,
+    '--text-tertiary': nextTheme.fg_tertiary || nextTheme.fg_muted,
+    '--text-on-accent': readableTextFor(nextTheme.accent),
+    '--accent-primary-glow': `${nextTheme.accent}33`,
+    '--accent-orange-glow': `${nextTheme.accent}33`,
+    '--scrollbar-thumb': `${nextTheme.fg_muted}55`,
+    '--scrollbar-thumb-hover': `${nextTheme.fg_muted}88`,
+    '--selection-bg': `${nextTheme.accent}55`,
+    '--selection-fg': readableTextFor(nextTheme.accent),
+    '--app-interface-font': interfaceFont,
+    '--app-code-font': codeFont,
+    '--app-font-size': `${interfaceFontSize}px`,
+    '--app-code-font-size': `${codeFontSize}px`,
   };
+
+  Object.entries(extraVars).forEach(([cssVar, value]) => {
+    root.style.setProperty(cssVar, value);
+    cssCache[cssVar] = value;
+  });
+
+  root.dataset.themeMode = mode;
+  root.dataset.pointerCursors = nextTheme.pointer_cursors || 'false';
+  root.dataset.sidebarTranslucent = nextTheme.sidebar_translucent || 'false';
+
+  try {
+    localStorage.setItem('hc_theme_css_cache', JSON.stringify(cssCache));
+    localStorage.setItem('hc_theme_mode', mode);
+    localStorage.setItem('hc_theme_density', document.documentElement.dataset.themeDensity || nextTheme.density || 'comfortable');
+  } catch {}
 }
 
-function SettingRow({
-  icon: Icon,
-  title,
-  description,
-  children,
-}: {
-  icon: typeof Palette;
-  title: string;
-  description: string;
-  children: React.ReactNode;
-}) {
+function displayPresetName(name?: string) {
+  return name === 'Precision Linear' || !name ? 'Codex' : name;
+}
+
+function toStoredBool(value?: string, fallback = false) {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return fallback;
+}
+
+function SettingRow({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-4 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex min-w-0 items-start gap-3">
-        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-secondary)]">
-          <Icon size={16} />
-        </span>
-        <span className="min-w-0">
-          <span className="block text-sm font-semibold text-[var(--text-primary)]">{title}</span>
-          <span className="mt-1 block text-xs leading-5 text-[var(--text-secondary)]">{description}</span>
-        </span>
+    <div className="grid min-h-[40px] grid-cols-[minmax(0,1fr)_minmax(120px,190px)] items-center gap-4 border-t border-[var(--border-subtle)] px-4 py-2.5 first:border-t-0 sm:grid-cols-[minmax(0,1fr)_136px]">
+      <div className="min-w-0">
+        <div className="text-[12px] font-semibold leading-4 text-[var(--text-primary)]">{label}</div>
+        {hint && <div className="mt-0.5 text-[11px] leading-4 text-[var(--text-secondary)]">{hint}</div>}
       </div>
-      <div className="shrink-0">{children}</div>
+      <div className="flex min-w-0 justify-end">{children}</div>
     </div>
   );
 }
@@ -460,12 +286,18 @@ function SettingRow({
 export default function AppearanceView() {
   const { t, i18n } = useTranslation();
   const { addToast } = useToast();
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const [theme, setTheme] = useState<ThemeConfig | null>(null);
   const [presets, setPresets] = useState<string[]>([]);
   const [mode, setMode] = useState<ThemeMode>('dark');
-  const [accent, setAccent] = useState('violet');
-  const [density, setDensity] = useState<DensityMode>('comfortable');
+  const [accent, setAccent] = useState(CUSTOM_ACCENT_KEY);
   const [language, setLanguage] = useState(i18n.language || 'es');
+  const [presetOpen, setPresetOpen] = useState(false);
+  const [pointerCursors, setPointerCursors] = useState(false);
+  const [sidebarTranslucent, setSidebarTranslucent] = useState(false);
+  const [contrast, setContrast] = useState(60);
+  const [interfaceFontSize, setInterfaceFontSize] = useState(13);
+  const [codeFontSize, setCodeFontSize] = useState(12);
 
   useEffect(() => { setLanguage(i18n.language); }, [i18n.language]);
 
@@ -473,16 +305,18 @@ export default function AppearanceView() {
     const backendTheme = await api.getTheme();
     const nextMode = (backendTheme?.mode as ThemeMode) || 'dark';
     const nextAccent = accentKeyForTheme(backendTheme);
-    const nextDensity = ((backendTheme?.density as DensityMode) || 'comfortable');
     const nextLanguage = backendTheme?.language || i18n.language || 'es';
 
     setTheme(backendTheme);
     setMode(nextMode);
     setAccent(nextAccent);
-    setDensity(nextDensity);
     setLanguage(nextLanguage);
+    setPointerCursors(toStoredBool(backendTheme.pointer_cursors));
+    setSidebarTranslucent(toStoredBool(backendTheme.sidebar_translucent));
+    setContrast(Number(backendTheme.contrast || 60));
+    setInterfaceFontSize(Number(backendTheme.interface_font_size || 13));
+    setCodeFontSize(Number(backendTheme.code_font_size || 12));
     applyThemeToCSS(backendTheme, nextMode, nextAccent);
-    document.documentElement.dataset.themeDensity = nextDensity;
 
     const presetResponse = await api.getPresets();
     setPresets(presetResponse.presets);
@@ -495,19 +329,22 @@ export default function AppearanceView() {
     return composeTheme(theme, mode, accent);
   }, [theme, mode, accent]);
 
+  const patchTheme = (patch: Partial<ThemeConfig>) => {
+    if (!theme) return;
+    const nextTheme = { ...theme, ...patch } as ThemeConfig;
+    setTheme(nextTheme);
+    applyThemeToCSS(nextTheme, mode, patch.accent_key || accent);
+  };
+
   const updateMode = (value: ThemeMode) => {
     setMode(value);
     if (theme) applyThemeToCSS(theme, value, accent);
   };
 
-  const updateAccent = (value: string) => {
-    setAccent(value);
-    if (theme) applyThemeToCSS(theme, mode, value);
-  };
-
   const updateThemeColor = (key: keyof ThemeConfig, value: string) => {
     const normalized = normalizeHexColor(value);
     if (!theme || !normalized) return;
+    const nextAccent = key === 'accent' ? CUSTOM_ACCENT_KEY : accent;
     const nextTheme = {
       ...theme,
       [key]: normalized,
@@ -518,24 +355,37 @@ export default function AppearanceView() {
           }
         : {}),
     } as ThemeConfig;
-    const nextAccent = key === 'accent' ? CUSTOM_ACCENT_KEY : accent;
     setTheme(nextTheme);
     setAccent(nextAccent);
     applyThemeToCSS(nextTheme, mode, nextAccent);
   };
 
-  const updateDensity = (compact: boolean) => {
-    const nextDensity = compact ? 'compact' : 'comfortable';
-    setDensity(nextDensity);
-    document.documentElement.dataset.themeDensity = nextDensity;
+  const updateBool = (key: 'pointer_cursors' | 'sidebar_translucent', value: boolean) => {
+    if (key === 'pointer_cursors') setPointerCursors(value);
+    if (key === 'sidebar_translucent') setSidebarTranslucent(value);
+    patchTheme({ [key]: String(value) } as Partial<ThemeConfig>);
+  };
+
+  const updateNumber = (key: 'contrast' | 'interface_font_size' | 'code_font_size', value: number) => {
+    const normalized = Number.isFinite(value) ? value : 0;
+    if (key === 'contrast') setContrast(normalized);
+    if (key === 'interface_font_size') setInterfaceFontSize(normalized);
+    if (key === 'code_font_size') setCodeFontSize(normalized);
+    patchTheme({ [key]: String(normalized) } as Partial<ThemeConfig>);
   };
 
   const buildThemePayload = (): ThemeConfig => {
     const base = theme || ({} as ThemeConfig);
     return {
       ...composeTheme(base, mode, accent),
-      density,
       language,
+      pointer_cursors: String(pointerCursors),
+      sidebar_translucent: String(sidebarTranslucent),
+      contrast: String(contrast),
+      interface_font_size: String(interfaceFontSize),
+      code_font_size: String(codeFontSize),
+      interface_font: base.interface_font || '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      code_font: base.code_font || 'ui-monospace, SFMono-Regular, Consolas, monospace',
     };
   };
 
@@ -554,16 +404,18 @@ export default function AppearanceView() {
     const resetTheme = await api.resetTheme();
     const nextMode = (resetTheme?.mode as ThemeMode) || 'dark';
     const nextAccent = accentKeyForTheme(resetTheme);
-    const nextDensity = ((resetTheme?.density as DensityMode) || 'comfortable');
     const nextLanguage = resetTheme?.language || 'es';
 
     setTheme(resetTheme);
     setMode(nextMode);
     setAccent(nextAccent);
-    setDensity(nextDensity);
     setLanguage(nextLanguage);
+    setPointerCursors(toStoredBool(resetTheme.pointer_cursors));
+    setSidebarTranslucent(toStoredBool(resetTheme.sidebar_translucent));
+    setContrast(Number(resetTheme.contrast || 60));
+    setInterfaceFontSize(Number(resetTheme.interface_font_size || 13));
+    setCodeFontSize(Number(resetTheme.code_font_size || 12));
     applyThemeToCSS(resetTheme, nextMode, nextAccent);
-    document.documentElement.dataset.themeDensity = nextDensity;
 
     if (nextLanguage !== i18n.language) {
       i18n.changeLanguage(nextLanguage);
@@ -575,22 +427,71 @@ export default function AppearanceView() {
     const presetTheme = await api.applyPreset(name);
     const nextMode = (presetTheme?.mode as ThemeMode) || mode;
     const nextAccent = accentKeyForTheme(presetTheme, accent);
-    const nextDensity = ((presetTheme?.density as DensityMode) || density);
     const nextLanguage = presetTheme?.language || language;
 
     setTheme(presetTheme);
     setMode(nextMode);
     setAccent(nextAccent);
-    setDensity(nextDensity);
     setLanguage(nextLanguage);
+    setPresetOpen(false);
+    setPointerCursors(toStoredBool(presetTheme.pointer_cursors, pointerCursors));
+    setSidebarTranslucent(toStoredBool(presetTheme.sidebar_translucent, sidebarTranslucent));
+    setContrast(Number(presetTheme.contrast || contrast));
+    setInterfaceFontSize(Number(presetTheme.interface_font_size || interfaceFontSize));
+    setCodeFontSize(Number(presetTheme.code_font_size || codeFontSize));
     applyThemeToCSS(presetTheme, nextMode, nextAccent);
-    document.documentElement.dataset.themeDensity = nextDensity;
-    addToast({ message: `Estilo "${name}" aplicado`, type: 'success' });
+    addToast({ message: `Estilo "${displayPresetName(name)}" aplicado`, type: 'success' });
   };
 
-  const handleLanguageChange = (value: string) => {
-    setLanguage(value);
-    i18n.changeLanguage(value);
+  const applyImportedTheme = (importedTheme: ThemeConfig) => {
+    const nextMode = (importedTheme?.mode as ThemeMode) || mode;
+    const nextAccent = accentKeyForTheme(importedTheme, accent);
+    const nextLanguage = importedTheme?.language || language;
+    const nextPointerCursors = toStoredBool(importedTheme.pointer_cursors, pointerCursors);
+    const nextSidebarTranslucent = toStoredBool(importedTheme.sidebar_translucent, sidebarTranslucent);
+    const nextContrast = Number(importedTheme.contrast || contrast);
+    const nextInterfaceFontSize = Number(importedTheme.interface_font_size || interfaceFontSize);
+    const nextCodeFontSize = Number(importedTheme.code_font_size || codeFontSize);
+
+    setTheme(importedTheme);
+    setMode(nextMode);
+    setAccent(nextAccent);
+    setLanguage(nextLanguage);
+    setPointerCursors(nextPointerCursors);
+    setSidebarTranslucent(nextSidebarTranslucent);
+    setContrast(nextContrast);
+    setInterfaceFontSize(nextInterfaceFontSize);
+    setCodeFontSize(nextCodeFontSize);
+    applyThemeToCSS(importedTheme, nextMode, nextAccent);
+
+    if (nextLanguage !== i18n.language) {
+      i18n.changeLanguage(nextLanguage);
+    }
+  };
+
+  const importTheme = async (file?: File) => {
+    if (!file) return;
+    try {
+      const imported = JSON.parse(await file.text()) as ThemeConfig;
+      if (!imported || typeof imported !== 'object' || !imported.bg || !imported.fg || !imported.accent) {
+        throw new Error('Invalid theme');
+      }
+      applyImportedTheme(imported);
+      addToast({ message: 'Tema importado', type: 'success' });
+    } catch {
+      addToast({ message: 'No se pudo importar el tema', type: 'error' });
+    } finally {
+      if (importInputRef.current) importInputRef.current.value = '';
+    }
+  };
+
+  const copyTheme = async () => {
+    try {
+      await navigator.clipboard?.writeText(JSON.stringify(buildThemePayload(), null, 2));
+      addToast({ message: 'Tema copiado', type: 'success' });
+    } catch {
+      addToast({ message: 'No se pudo copiar el tema', type: 'error' });
+    }
   };
 
   if (!theme || !visibleTheme) {
@@ -602,264 +503,236 @@ export default function AppearanceView() {
   }
 
   return (
-    <div data-testid="appearance-view" className="flex h-full min-h-0 w-full max-w-none flex-col animate-fade-in">
-      <div className="mb-5 flex shrink-0 flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="min-w-0">
-          <span className="eyebrow">Ajustes</span>
-          <h2 className="mt-1 text-xl font-semibold tracking-[0] text-[var(--text-primary)]">
-            {t('appearance.title') || 'Apariencia'}
-          </h2>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--text-secondary)]">
-            Configura el tema, los estilos visuales y la densidad de la interfaz.
-          </p>
-        </div>
+    <div data-testid="appearance-view" className="h-full min-h-0 w-full overflow-auto bg-[var(--bg-base)] px-5 py-4 text-[var(--text-primary)] animate-fade-in">
+      <div data-testid="appearance-workspace" className="mx-auto min-h-0 w-full max-w-[760px]">
+        <h1 className="mb-9 text-[19px] font-semibold tracking-normal text-[var(--text-primary)]">Aspecto</h1>
 
-        <div className="flex shrink-0 flex-wrap gap-3">
-          <Button variant="primary" onClick={save}>
-            <Save size={16} />
-            Guardar cambios
-          </Button>
-          <Button variant="ghost" onClick={reset}>
-            <RotateCcw size={16} />
-            {t('appearance.reset') || 'Restaurar'}
-          </Button>
-        </div>
-      </div>
-
-      <div
-        data-testid="appearance-workspace"
-        className="grid min-h-0 flex-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]"
-      >
-        <div className="min-h-0 space-y-5">
-          <section className="space-y-3">
-            <div className="flex items-center gap-2">
-              <SlidersHorizontal size={16} className="text-[var(--text-secondary)]" />
-              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Preferencias</h3>
+        <section className="overflow-visible rounded-lg border border-[var(--border-medium)] bg-[var(--bg-surface)]">
+          <div className="flex flex-col gap-3 border-b border-[var(--border-subtle)] px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-[12px] font-semibold text-[var(--text-primary)]">Tema</div>
+              <div className="mt-1 text-[12px] text-[var(--text-secondary)]">Usa claro, oscuro o el tema del sistema</div>
             </div>
-
-            <div className="grid gap-3 lg:grid-cols-3">
-              <SettingRow
-                icon={Monitor}
-                title="Modo de tema"
-                description="Elige la base de luminosidad para toda la aplicacion."
-              >
-                <div className="grid w-full grid-cols-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-1">
-                  {MODE_OPTIONS.map((option) => {
-                    const Icon = option.icon;
-                    const active = mode === option.key;
-                    return (
-                      <button
-                        key={option.key}
-                        type="button"
-                        onClick={() => updateMode(option.key)}
-                        className={`flex items-center justify-center gap-1 rounded-md px-2 py-2 text-xs font-semibold transition-all ${
-                          active
-                            ? 'bg-[var(--accent-primary)] text-[var(--text-on-accent)] shadow-sm'
-                            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                        }`}
-                        title={option.description}
-                      >
-                        <Icon size={14} />
-                        {option.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </SettingRow>
-
-              <SettingRow
-                icon={LayoutList}
-                title="Densidad compacta"
-                description="Reduce el espacio vertical para ver mas informacion en pantalla."
-              >
-                <Toggle checked={density === 'compact'} onChange={updateDensity} />
-              </SettingRow>
-
-              <SettingRow
-                icon={Languages}
-                title="Idioma"
-                description="Cambia el idioma de los textos principales de la interfaz."
-              >
-                <select
-                  className="w-full cursor-pointer appearance-none rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-sm font-medium text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent-primary)]"
-                  value={language}
-                  onChange={(e) => handleLanguageChange(e.target.value)}
-                >
-                  <option value="es">Español</option>
-                  <option value="en">English</option>
-                </select>
-              </SettingRow>
-            </div>
-          </section>
-
-          <section className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Palette size={16} className="text-[var(--text-secondary)]" />
-              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Estilos de apariencia</h3>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-              {presets.map((name) => {
-                const preview = getPresetPreview(name, theme);
-                const active = theme.name === name;
+            <div className="inline-flex items-center rounded-full bg-[var(--bg-elevated)] p-0.5">
+              {MODE_OPTIONS.map((option) => {
+                const Icon = option.icon;
+                const active = mode === option.key;
                 return (
                   <button
-                    key={name}
+                    key={option.key}
                     type="button"
-                    onClick={() => applyPreset(name)}
-                    className={`group min-h-[112px] rounded-lg border p-3 text-left transition-all ${
-                      active
-                        ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/10'
-                        : 'border-[var(--border-subtle)] bg-[var(--bg-surface)] hover:border-[var(--border-medium)]'
+                    onClick={() => updateMode(option.key)}
+                    className={`inline-flex h-7 items-center gap-1.5 rounded-full px-3 text-[12px] font-medium transition-colors ${
+                      active ? 'bg-[var(--bg-input)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                     }`}
-                    aria-pressed={active}
                   >
-                    <span className="mb-3 flex items-start justify-between gap-3">
-                      <span>
-                        <span className="block text-sm font-semibold text-[var(--text-primary)]">{preview.name}</span>
-                        <span className="mt-1 block text-xs leading-5 text-[var(--text-secondary)]">{preview.description}</span>
-                      </span>
-                      <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
-                        active
-                          ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)] text-[var(--text-on-accent)]'
-                          : 'border-[var(--border-medium)] text-transparent group-hover:text-[var(--text-secondary)]'
-                      }`}>
-                        <Check size={12} />
-                      </span>
-                    </span>
-                    <span className="grid grid-cols-4 gap-2">
-                      {preview.colors.map((color, index) => (
-                        <span
-                          key={`${name}-${color}-${index}`}
-                          className="h-7 rounded-md border border-black/10"
-                          style={{ backgroundColor: color }}
-                        />
-                      ))}
-                    </span>
+                    <Icon size={14} />
+                    {option.label}
                   </button>
                 );
               })}
             </div>
-          </section>
-
-          <section className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Type size={16} className="text-[var(--text-secondary)]" />
-              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Color de acento</h3>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-              {ACCENTS.map((item) => {
-                const active = accent === item.key;
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => updateAccent(item.key)}
-                    className={`flex items-center justify-between rounded-lg border bg-[var(--bg-surface)] px-3 py-3 text-left transition-all ${
-                      active
-                        ? 'border-[var(--accent-primary)]'
-                        : 'border-[var(--border-subtle)] hover:border-[var(--border-medium)]'
-                    }`}
-                  >
-                    <span className="flex items-center gap-3">
-                      <span className="h-7 w-7 rounded-full border border-white/20" style={{ backgroundColor: item.color }} />
-                      <span className="text-sm font-semibold text-[var(--text-primary)]">{item.name}</span>
-                    </span>
-                    {active && <Check size={16} className="text-[var(--accent-primary)]" />}
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Palette size={16} className="text-[var(--text-secondary)]" />
-              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Editor avanzado</h3>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
-              {EDITABLE_COLORS.map((item) => {
-                const value = visibleTheme[item.key] || '#000000';
-                return (
-                  <label
-                    key={item.key}
-                    className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-3"
-                  >
-                    <span className="mb-2 block">
-                      <span className="block text-sm font-semibold text-[var(--text-primary)]">{item.label}</span>
-                      <span className="mt-1 block text-xs leading-5 text-[var(--text-secondary)]">{item.description}</span>
-                    </span>
-                    <span className="grid grid-cols-[44px_minmax(0,1fr)] gap-3">
-                      <input
-                        aria-label={item.label}
-                        type="color"
-                        value={value}
-                        onChange={(event) => updateThemeColor(item.key, event.target.value)}
-                        className="h-10 w-11 cursor-pointer rounded-md border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-1"
-                      />
-                      <input
-                        type="text"
-                        value={value}
-                        onChange={(event) => updateThemeColor(item.key, event.target.value)}
-                        className="min-w-0 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 font-mono text-xs font-semibold text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent-primary)]"
-                      />
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          </section>
-        </div>
-
-        <aside className="min-h-0 space-y-3 xl:sticky xl:top-0 xl:self-start">
-          <h3 className="text-sm font-semibold text-[var(--text-primary)]">Vista previa</h3>
-          <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4 xl:min-h-[520px]">
-            <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3 xl:min-h-[330px]">
-              <div className="mb-4 flex items-center justify-between">
-                <span className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full bg-[var(--accent-primary)]" />
-                  <span className="text-xs font-semibold text-[var(--text-primary)]">COSMO</span>
-                </span>
-                <span className="rounded-md border border-[var(--border-subtle)] px-2 py-1 text-[10px] text-[var(--text-secondary)]">
-                  {mode}
-                </span>
-              </div>
-              <div className="space-y-2">
-                <div className="h-9 rounded-md bg-[var(--accent-primary)]" />
-                <div className="h-9 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)]" />
-                <div className="grid grid-cols-3 gap-2 pt-1">
-                  <span className="h-12 rounded-md bg-[var(--bg-surface)]" />
-                  <span className="h-12 rounded-md bg-[var(--bg-surface)]" />
-                  <span className="h-12 rounded-md bg-[var(--bg-surface)]" />
-                </div>
-                <div className="space-y-2 pt-2">
-                  <div className="h-7 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)]" />
-                  <div className="h-7 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)]" />
-                </div>
-              </div>
-            </div>
-            <dl className="mt-4 space-y-3 text-xs">
-              <div className="flex items-center justify-between gap-3">
-                <dt className="text-[var(--text-secondary)]">Estilo</dt>
-                <dd className="font-semibold text-[var(--text-primary)]">{visibleTheme.name}</dd>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <dt className="text-[var(--text-secondary)]">Acento</dt>
-                <dd className="font-semibold text-[var(--text-primary)]">
-                  {accent === CUSTOM_ACCENT_KEY ? 'Personalizado' : selectedAccent(accent).name}
-                </dd>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <dt className="text-[var(--text-secondary)]">Densidad</dt>
-                <dd className="font-semibold text-[var(--text-primary)]">
-                  {density === 'compact' ? 'Compacta' : 'Comoda'}
-                </dd>
-              </div>
-            </dl>
           </div>
-        </aside>
+
+          <div className="grid overflow-hidden border-b border-[var(--border-subtle)] bg-black sm:grid-cols-2">
+            <div className="border-b border-[var(--border-subtle)] sm:border-b-0 sm:border-r">
+              <div className="grid grid-cols-[34px_1fr] font-mono text-[11px] leading-[1.55]">
+                {[1, 2, 3, 4, 5].map((line) => (
+                  <div key={`left-${line}`} className={`px-2 text-right ${line > 1 && line < 5 ? 'bg-red-950/45 text-red-300' : 'text-slate-400'}`}>{line}</div>
+                ))}
+                <code className="col-start-2 row-start-1 whitespace-pre px-3 text-[#c084fc]">const <span className="text-[#fb923c]">themePreview</span>: <span className="text-[#818cf8]">ThemeConfig</span> = {'{'}</code>
+                <code className="col-start-2 row-start-2 whitespace-pre bg-red-950/45 px-3 text-[#fb923c]">  surface: <span className="text-[#86efac]">"sidebar"</span>,</code>
+                <code className="col-start-2 row-start-3 whitespace-pre bg-red-950/45 px-3 text-[#fb923c]">  accent: <span className="text-[#86efac]">"{visibleTheme.accent}"</span>,</code>
+                <code className="col-start-2 row-start-4 whitespace-pre bg-red-950/45 px-3 text-[#fb923c]">  contrast: <span className="text-[#67e8f9]">{Math.max(1, Math.round(contrast * 0.7))}</span>,</code>
+                <code className="col-start-2 row-start-5 whitespace-pre px-3 text-slate-200">{'};'}</code>
+              </div>
+            </div>
+            <div>
+              <div className="grid grid-cols-[34px_1fr] font-mono text-[11px] leading-[1.55]">
+                {[1, 2, 3, 4, 5].map((line) => (
+                  <div key={`right-${line}`} className={`px-2 text-right ${line > 1 && line < 5 ? 'bg-emerald-950/45 text-emerald-300' : 'text-slate-400'}`}>{line}</div>
+                ))}
+                <code className="col-start-2 row-start-1 whitespace-pre px-3 text-[#c084fc]">const <span className="text-[#fb923c]">themePreview</span>: <span className="text-[#818cf8]">ThemeConfig</span> = {'{'}</code>
+                <code className="col-start-2 row-start-2 whitespace-pre bg-emerald-950/45 px-3 text-[#fb923c]">  surface: <span className="text-[#86efac]">"sidebar-elevated"</span>,</code>
+                <code className="col-start-2 row-start-3 whitespace-pre bg-emerald-950/45 px-3 text-[#fb923c]">  accent: <span className="text-[#86efac]">"{visibleTheme.accent_light}"</span>,</code>
+                <code className="col-start-2 row-start-4 whitespace-pre bg-emerald-950/45 px-3 text-[#fb923c]">  contrast: <span className="text-[#67e8f9]">{contrast}</span>,</code>
+                <code className="col-start-2 row-start-5 whitespace-pre px-3 text-slate-200">{'};'}</code>
+              </div>
+            </div>
+          </div>
+
+          <div className="m-1 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)]">
+            <div className="flex min-h-[43px] flex-wrap items-center gap-2 border-b border-[var(--border-subtle)] px-4 py-2">
+              <div className="mr-auto text-[12px] font-semibold text-[var(--text-secondary)]">Tema oscuro</div>
+              <input
+                ref={importInputRef}
+                aria-label="Importar tema"
+                type="file"
+                accept="application/json,.json"
+                onChange={(event) => importTheme(event.target.files?.[0])}
+                className="sr-only"
+              />
+              <button type="button" onClick={() => importInputRef.current?.click()} className="inline-flex items-center gap-1.5 px-2 text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
+                <Upload size={13} />
+                Importar
+              </button>
+              <button type="button" onClick={copyTheme} className="inline-flex items-center gap-1.5 px-2 text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
+                <Copy size={13} />
+                Copiar tema
+              </button>
+              <div className="relative min-w-[240px] flex-1 sm:flex-none">
+                <button
+                  type="button"
+                  onClick={() => setPresetOpen((value) => !value)}
+                  className="flex h-8 w-full items-center gap-2 rounded-lg bg-[var(--bg-input)] px-3 text-left text-[12px] font-medium text-[var(--text-primary)]"
+                >
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-black text-[10px] font-bold text-white">
+                    <Type size={12} />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{displayPresetName(theme.name)}</span>
+                  <ChevronDown size={15} className={`text-[var(--text-secondary)] transition-transform ${presetOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {presetOpen && (
+                  <div className="absolute right-0 z-20 mt-1 max-h-[320px] w-full overflow-auto rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-1 shadow-2xl">
+                    {presets.map((name) => {
+                      const active = theme.name === name;
+                      return (
+                        <button
+                          key={name}
+                          type="button"
+                          onClick={() => applyPreset(name)}
+                          className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] transition-colors ${
+                            active ? 'bg-[var(--bg-input)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]'
+                          }`}
+                        >
+                          <span className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-[var(--border-medium)] text-[10px] font-bold" style={{ color: active ? visibleTheme.accent : undefined }}>
+                            Aa
+                          </span>
+                          <span className="min-w-0 flex-1 truncate">{displayPresetName(name)}</span>
+                          {active && <Check size={14} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {EDITABLE_COLORS.map((item) => {
+              const value = visibleTheme[item.key] || '#000000';
+              return (
+                <SettingRow key={item.key} label={item.label}>
+                  <label className="flex h-7 w-full max-w-[136px] items-center gap-2 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-base)] px-2">
+                    <input
+                      aria-label={item.label}
+                      type="color"
+                      value={value}
+                      onChange={(event) => updateThemeColor(item.key, event.target.value)}
+                      className="h-4 w-4 shrink-0 cursor-pointer rounded-full border-0 bg-transparent p-0"
+                    />
+                    <input
+                      type="text"
+                      value={value}
+                      onChange={(event) => updateThemeColor(item.key, event.target.value)}
+                      className="min-w-0 flex-1 bg-transparent font-mono text-[11px] font-semibold text-[var(--text-primary)] outline-none"
+                    />
+                  </label>
+                </SettingRow>
+              );
+            })}
+
+            <SettingRow label="Fuente de la interfaz">
+              <input
+                value={theme.interface_font || '-apple-system, BlinkMacSystemFont'}
+                onChange={(event) => patchTheme({ interface_font: event.target.value } as Partial<ThemeConfig>)}
+                className="h-7 w-full rounded-lg border border-[var(--border-medium)] bg-[var(--bg-base)] px-2 text-[11px] text-[var(--text-secondary)] outline-none focus:border-[var(--accent-primary)]"
+              />
+            </SettingRow>
+            <SettingRow label="Fuente de codigo">
+              <input
+                value={theme.code_font || 'ui-monospace, SFMono-Regular'}
+                onChange={(event) => patchTheme({ code_font: event.target.value } as Partial<ThemeConfig>)}
+                className="h-7 w-full rounded-lg border border-[var(--border-medium)] bg-[var(--bg-base)] px-2 font-mono text-[11px] text-[var(--text-secondary)] outline-none focus:border-[var(--accent-primary)]"
+              />
+            </SettingRow>
+            <SettingRow label="Barra lateral translucida">
+              <Toggle checked={sidebarTranslucent} onChange={(value) => updateBool('sidebar_translucent', value)} />
+            </SettingRow>
+            <SettingRow label="Contraste">
+              <div className="flex w-full items-center gap-3">
+                <input
+                  aria-label="Contraste"
+                  type="range"
+                  min={1}
+                  max={100}
+                  value={contrast}
+                  onChange={(event) => updateNumber('contrast', Number(event.target.value))}
+                  className="min-w-0 flex-1 accent-[var(--accent-primary)]"
+                />
+                <span className="w-7 text-right text-[12px] font-medium text-[var(--text-primary)]">{contrast}</span>
+              </div>
+            </SettingRow>
+          </div>
+
+          <SettingRow label="Usar cursores de puntero" hint="Cambia el cursor a un puntero al pasar sobre elementos interactivos">
+            <Toggle checked={pointerCursors} onChange={(value) => updateBool('pointer_cursors', value)} />
+          </SettingRow>
+          <SettingRow label="Tamano de fuente de la interfaz" hint="Ajusta el tamano base usado para la interfaz de HidroConvert">
+            <div className="flex items-center gap-2">
+              <input
+                aria-label="Tamano de fuente de la interfaz"
+                type="number"
+                min={10}
+                max={18}
+                value={interfaceFontSize}
+                onChange={(event) => updateNumber('interface_font_size', Number(event.target.value))}
+                className="h-7 w-16 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-2 text-center text-[12px] font-semibold text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]"
+              />
+              <span className="text-[11px] text-[var(--text-secondary)]">px</span>
+            </div>
+          </SettingRow>
+          <SettingRow label="Tamano de fuente del codigo" hint="Ajusta el tamano base usado para el codigo en chats y diffs">
+            <div className="flex items-center gap-2">
+              <input
+                aria-label="Tamano de fuente del codigo"
+                type="number"
+                min={10}
+                max={18}
+                value={codeFontSize}
+                onChange={(event) => updateNumber('code_font_size', Number(event.target.value))}
+                className="h-7 w-16 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-2 text-center text-[12px] font-semibold text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]"
+              />
+              <span className="text-[11px] text-[var(--text-secondary)]">px</span>
+            </div>
+          </SettingRow>
+        </section>
+
+        <div className="mt-3 flex justify-end gap-2">
+          <button type="button" onClick={reset} className="inline-flex h-8 items-center gap-2 rounded-lg px-3 text-[12px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]">
+            <RotateCcw size={14} />
+            Restaurar
+          </button>
+          <button type="button" onClick={save} className="inline-flex h-8 items-center gap-2 rounded-lg bg-[var(--accent-primary)] px-3 text-[12px] font-semibold text-[var(--text-on-accent)] hover:bg-[var(--accent-primary-hover)]">
+            <Save size={14} />
+            Guardar
+          </button>
+          <select
+            aria-label="Idioma"
+            value={language}
+            onChange={(event) => {
+              setLanguage(event.target.value);
+              i18n.changeLanguage(event.target.value);
+            }}
+            className="h-8 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-2 text-[12px] text-[var(--text-secondary)] outline-none focus:border-[var(--accent-primary)]"
+          >
+            <option value="es">ES</option>
+            <option value="en">EN</option>
+          </select>
+        </div>
+
+        <div className="sr-only">
+          <Laptop size={1} />
+        </div>
       </div>
     </div>
   );

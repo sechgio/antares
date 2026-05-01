@@ -131,4 +131,8 @@ export const api = {
   // ─── Image Optimizer ────────────────────────────────────────────────────
   imageOptimizerZip: (body: { files: Array<{ filename: string; content_b64: string }>; zip_name: string }) =>
     _invoke<{ zip_base64: string; filename: string }>('image_optimizer_zip', body),
+
+  // ─── Plantillas PreviewPanel ─────────────────────────────────────────────
+  templatesList: () => _invoke<{ templates: Array<{ id: string; name: string; filename: string }> }>('templates_list'),
+  templateGet: (name: string) => _invoke<{ name: string; content: string }>('template_get', { name }),
 };

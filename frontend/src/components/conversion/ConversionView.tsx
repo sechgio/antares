@@ -338,7 +338,6 @@ export default function ConversionView() {
     >
       {running && status && <ProgressBar progress={status.progress} />}
 
-      {/* Dropzone / Estado de carga */}
       <Dropzone
         dragOver={dragOver}
         onAddFiles={addFiles}
@@ -348,7 +347,6 @@ export default function ConversionView() {
         onClear={clearFiles}
       />
 
-      {/* Estado Vacio: Mostrar solo barra de accion */}
       {isEmpty && (
         <StickyActionBar
           destino={destino}
@@ -361,13 +359,11 @@ export default function ConversionView() {
         />
       )}
 
-      {/* Estado con archivos: Layout de dos columnas */}
       {!isEmpty && (
-        <div className="grid grid-cols-1 xl:grid-cols-5 gap-5 flex-1 min-h-0">
-          {/* Columna Izquierda: Archivos */}
-          <div className="xl:col-span-3 flex flex-col gap-4 min-h-0">
-            <div className="flex-1 min-h-0 bg-[var(--bg-surface)] rounded-2xl border border-[var(--border-subtle)] flex flex-col overflow-hidden">
-              <div className="px-4 py-3 border-b border-[var(--border-subtle)] flex items-center justify-between shrink-0">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-12">
+          <div className="flex min-h-0 flex-col gap-4 xl:col-span-7 2xl:col-span-8">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+              <div className="flex shrink-0 items-center justify-between border-b border-[var(--border-subtle)] px-4 py-3">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Archivos</span>
                   <span className="px-2 py-0.5 rounded-full bg-[var(--bg-elevated)] text-[var(--text-secondary)] text-[11px] font-medium border border-[var(--border-subtle)]">
@@ -381,7 +377,7 @@ export default function ConversionView() {
                   {selectedFiles.size === files.length ? 'Deseleccionar todo' : 'Seleccionar todo'}
                 </button>
               </div>
-              <div className="flex-1 overflow-hidden p-4">
+              <div className="flex-1 overflow-hidden p-3">
                 <FileGrid
                   files={files}
                   selectedFiles={selectedFiles}
@@ -394,8 +390,22 @@ export default function ConversionView() {
             </div>
           </div>
 
-          {/* Columna Derecha: Opciones */}
-          <div className="xl:col-span-2 flex flex-col gap-4 overflow-y-auto pr-1 pb-1">
+          <div className="grid min-h-0 content-start gap-4 xl:col-span-5 2xl:col-span-4">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Imágenes</span>
+                <span className="mt-1 block text-lg font-semibold text-[var(--text-primary)]">{imageCount}</span>
+              </div>
+              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Videos</span>
+                <span className="mt-1 block text-lg font-semibold text-[var(--text-primary)]">{videoCount}</span>
+              </div>
+              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Salida</span>
+                <span className="mt-1 block truncate text-lg font-semibold text-[var(--text-primary)]">{formato}</span>
+              </div>
+            </div>
+
             <OptionsCard
               formato={formato}
               formatos={formats}

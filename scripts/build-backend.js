@@ -6,6 +6,21 @@ const projectRoot = path.resolve(__dirname, '..');
 const backendDir = path.join(projectRoot, 'backend');
 const distDir = path.join(projectRoot, 'dist');
 const specFile = path.join(backendDir, 'backend.spec');
+const pyInstallerBuild = path.join(backendDir, 'build');
+const pyInstallerDist = path.join(backendDir, 'dist');
+const staleBackendNames = ['CosmoBackend.exe', 'HidroConvertBackend.exe'];
+
+function assertInsideProject(targetPath) {
+  const relative = path.relative(projectRoot, targetPath);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error(`Refusing to clean path outside project: ${targetPath}`);
+  }
+}
+
+function removePath(targetPath) {
+  assertInsideProject(targetPath);
+  fs.rmSync(targetPath, { recursive: true, force: true });
+}
 
 // Ensure dist directory exists
 if (!fs.existsSync(distDir)) {
@@ -15,7 +30,13 @@ if (!fs.existsSync(distDir)) {
 console.log('[build-backend] Building Python backend with PyInstaller...');
 
 try {
-  const result = execSync(
+  removePath(pyInstallerBuild);
+  removePath(pyInstallerDist);
+  for (const staleName of staleBackendNames) {
+    removePath(path.join(distDir, staleName));
+  }
+
+  execSync(
     `python -m PyInstaller "${specFile}" --noconfirm`,
     {
       cwd: backendDir,
@@ -25,7 +46,6 @@ try {
     }
   );
   // PyInstaller puts output in backend/dist by default; move to project dist
-  const pyInstallerDist = path.join(backendDir, 'dist');
   const pyInstallerExe = path.join(pyInstallerDist, 'CosmoBackend.exe');
   const targetExe = path.join(distDir, 'CosmoBackend.exe');
 

@@ -548,6 +548,46 @@ class Handlers:
 
         return {"zip_base64": zip_base64, "filename": safe_zip_name}
 
+    # ─── Plantillas HTML para PreviewPanel ───────────────────────────────────
+
+    @staticmethod
+    @with_locale
+    def templates_list(params: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
+        """Listar plantillas HTML disponibles en backend/templates."""
+        templates_dir = Path(__file__).parent / "templates"
+        if not templates_dir.exists():
+            return {"templates": []}
+
+        templates = []
+        for f in sorted(templates_dir.glob("*.html")):
+            templates.append({
+                "id": f.stem,
+                "name": f.name,
+                "filename": f.name,
+            })
+        return {"templates": templates}
+
+    @staticmethod
+    @with_locale
+    @validate_params('name')
+    def template_get(params: dict[str, Any]) -> dict[str, str]:
+        """Obtener contenido de una plantilla HTML por nombre."""
+        name = params.get("name", "")
+        templates_dir = Path(__file__).parent / "templates"
+        target = templates_dir / name
+
+        # Validar que no haya path traversal
+        try:
+            target.relative_to(templates_dir.resolve())
+        except ValueError:
+            raise ValueError("Invalid template name")
+
+        if not target.exists() or not target.is_file():
+            raise ValueError(f"Template not found: {name}")
+
+        content = target.read_text(encoding="utf-8")
+        return {"name": name, "content": content}
+
 
 def _process_thread(params: dict[str, Any]) -> None:
     """Thread de procesamiento en background con conversión paralela."""
@@ -729,4 +769,9 @@ HANDLERS: dict[str, Callable[[dict[str, Any]], Any]] = {
     # ─── Image Optimizer ────────────────────────────────────────────────────
 
     "image_optimizer_zip": Handlers.image_optimizer_zip,
+
+    # ─── Plantillas PreviewPanel ─────────────────────────────────────────────
+
+    "templates_list": Handlers.templates_list,
+    "template_get": Handlers.template_get,
 }

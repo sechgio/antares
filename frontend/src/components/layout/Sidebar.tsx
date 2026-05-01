@@ -5,7 +5,6 @@ import BrandMark from '../brand/BrandMark';
 interface SidebarProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
-  onSearchClick: () => void;
 }
 
 const tabs = [
@@ -95,14 +94,6 @@ function FilePdfIcon({ className }: { className?: string }) {
   );
 }
 
-function SearchIcon({ className }: { className?: string }) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-    </svg>
-  );
-}
-
 function ImageOptimizerIcon({ className }: { className?: string }) {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -113,7 +104,7 @@ function ImageOptimizerIcon({ className }: { className?: string }) {
   );
 }
 
-export default function Sidebar({ activeTab, onTabChange, onSearchClick }: SidebarProps) {
+export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -128,7 +119,7 @@ export default function Sidebar({ activeTab, onTabChange, onSearchClick }: Sideb
         className="flex items-center px-4 shrink-0 overflow-hidden transition-all duration-300"
         style={{ height: expanded ? 52 : 0, opacity: expanded ? 1 : 0, marginTop: expanded ? 12 : 0, marginBottom: expanded ? 8 : 0 }}
       >
-        <BrandMark showText tagline="Precision tools" />
+        <BrandMark showText />
       </div>
 
       {/* Tabs */}
@@ -165,30 +156,6 @@ export default function Sidebar({ activeTab, onTabChange, onSearchClick }: Sideb
             </button>
           );
         })}
-      </div>
-
-      {/* Bottom: Search + shortcuts info */}
-      <div className="flex flex-col gap-1 px-2 py-3 border-t border-[var(--border-subtle)]">
-        <button
-          onClick={onSearchClick}
-          title={!expanded ? 'Buscar' : undefined}
-          className="flex items-center gap-3 px-2 py-2.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-surface)] transition-all duration-200 w-full"
-        >
-          <span className={`shrink-0 flex items-center justify-center ${expanded ? '' : 'mx-auto'}`}>
-            <SearchIcon />
-          </span>
-          <span
-            className="text-[13px] font-medium whitespace-nowrap overflow-hidden transition-all duration-300"
-            style={{ width: expanded ? 'auto' : 0, opacity: expanded ? 1 : 0 }}
-          >
-            Buscar
-          </span>
-          {expanded && (
-            <kbd className="ml-auto text-[10px] bg-[var(--bg-input)] px-1.5 py-0.5 rounded border border-[var(--border-medium)] text-[var(--text-muted)] font-mono">
-              Ctrl+K
-            </kbd>
-          )}
-        </button>
       </div>
     </aside>
   );

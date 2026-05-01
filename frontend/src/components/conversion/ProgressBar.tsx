@@ -8,7 +8,7 @@ export default function ProgressBar({ progress }: ProgressBarProps) {
     <div className="fixed top-0 left-0 right-0 z-50">
       <div className="h-1 bg-[var(--border-subtle)]">
         <div
-          className="h-full bg-[var(--accent-primary)] transition-all duration-300 ease-out shadow-[0_0_10px_rgba(94,106,210,0.5)]"
+          className="h-full bg-[var(--accent-primary)] transition-all duration-300 ease-out shadow-[0_0_10px_var(--accent-primary-glow)]"
           style={{ width: `${progress}%` }}
         />
       </div>

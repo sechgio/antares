@@ -230,27 +230,27 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    border: 1.5px dashed rgba(255, 255, 255, 0.12);
+    border: 1.5px dashed var(--vpad-border-strong);
     border-radius: 8px;
     padding: 8px 12px;
     cursor: pointer;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    background: #0a0a0a;
+    background: var(--vpad-base);
 }
 
 .vpad-upload-zone:hover {
-    border-color: rgba(255, 255, 255, 0.3);
-    background: #141414;
+    border-color: var(--vpad-accent);
+    background: var(--vpad-elevated);
 }
 
 .vpad-upload-zone.active {
-    border-color: rgba(255, 255, 255, 0.3);
-    background: #141414;
+    border-color: var(--vpad-accent);
+    background: var(--vpad-elevated);
 }
 
 .vpad-upload-zone.loaded {
     border-style: solid;
-    border-color: rgba(255, 255, 255, 0.1);
+    border-color: var(--vpad-border);
 }
 
 .vpad-upload-zone input {
@@ -264,8 +264,8 @@
     width: 32px;
     height: 32px;
     border-radius: 6px;
-    background: rgba(255, 255, 255, 0.06);
-    color: #ffffff;
+    background: var(--vpad-elevated);
+    color: var(--vpad-primary);
     flex-shrink: 0;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -283,13 +283,13 @@
 .vpad-upload-text {
     font-weight: 600;
     font-size: 0.82rem;
-    color: #f0f0f0;
+    color: var(--vpad-primary);
     line-height: 1.3;
 }
 
 .vpad-upload-hint {
     font-size: 0.72rem;
-    color: #777777;
+    color: var(--vpad-muted);
     font-weight: 500;
 }
 
@@ -308,7 +308,7 @@
 .vpad-field span {
     font-size: 0.75rem;
     font-weight: 600;
-    color: #777777;
+    color: var(--vpad-muted);
     letter-spacing: 0.01em;
 }
 
@@ -317,10 +317,10 @@
 .vpad-field textarea {
     width: 100%;
     padding: 9px 12px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--vpad-border);
     border-radius: 8px;
-    background: #0d0d0d;
-    color: #f0f0f0;
+    background: var(--vpad-input);
+    color: var(--vpad-primary);
     outline: none;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     font-size: 0.82rem;
@@ -330,20 +330,20 @@
 .vpad-field input:hover,
 .vpad-field select:hover,
 .vpad-field textarea:hover {
-    border-color: rgba(255, 255, 255, 0.18);
+    border-color: var(--vpad-border-strong);
 }
 
 .vpad-field input:focus,
 .vpad-field select:focus,
 .vpad-field textarea:focus {
-    border-color: rgba(255, 255, 255, 0.35);
-    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
-    background: rgba(13, 13, 13, 0.95);
+    border-color: var(--vpad-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--vpad-accent) 15%, transparent);
+    background: var(--vpad-input);
 }
 
 .vpad-field input::placeholder,
 .vpad-field textarea::placeholder {
-    color: rgba(255, 255, 255, 0.18);
+    color: var(--vpad-muted);
 }
 
 .vpad-field select {
@@ -355,8 +355,8 @@
 }
 
 .vpad-field select option {
-    background: #000000;
-    color: #f0f0f0;
+    background: var(--vpad-base);
+    color: var(--vpad-primary);
 }
 
 .vpad-field textarea {
@@ -383,7 +383,7 @@
 /* ---- Action Box (inside config panel) ---- */
 .vpad-action-box {
     padding: 16px 20px;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: 1px solid var(--vpad-border);
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -419,15 +419,15 @@
 }
 
 .vpad-btn-primary {
-    background: #ffffff;
-    color: #000000;
+    background: var(--vpad-accent);
+    color: var(--vpad-on-accent);
     width: 100%;
 }
 
 .vpad-btn-primary:hover {
-    background: #e0e0e0;
+    filter: brightness(1.15);
     transform: translateY(-1px);
-    box-shadow: 0 6px 20px rgba(255, 255, 255, 0.1);
+    box-shadow: 0 6px 20px color-mix(in srgb, var(--vpad-accent) 25%, transparent);
 }
 
 .vpad-btn-primary:active {
@@ -442,24 +442,24 @@
 }
 
 .vpad-btn-secondary {
-    background: #0a0a0a;
-    color: #f0f0f0;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: var(--vpad-base);
+    color: var(--vpad-primary);
+    border: 1px solid var(--vpad-border);
 }
 
 .vpad-btn-secondary:hover {
-    background: #141414;
-    border-color: rgba(255, 255, 255, 0.15);
+    background: var(--vpad-elevated);
+    border-color: var(--vpad-border-strong);
 }
 
 .vpad-btn-ghost {
     background: transparent;
-    color: #777777;
+    color: var(--vpad-muted);
 }
 
 .vpad-btn-ghost:hover {
-    color: #cccccc;
-    background: rgba(255, 255, 255, 0.05);
+    color: var(--vpad-secondary);
+    background: var(--vpad-elevated);
 }
 
 /* ===== PREVIEW AREA ===== */

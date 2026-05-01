@@ -295,20 +295,20 @@
 .vgen-input {
     width: 100%;
     padding: 10px 12px;
-    border: 1px solid #e2e2e2;
+    border: 1px solid var(--vgen-line);
     border-radius: 4px;
     font-size: 0.82rem;
-    color: #000000;
-    background: #f9f9f9;
+    color: var(--vgen-ink);
+    background: var(--vgen-bg-input);
     transition: all 0.2s;
     font-family: inherit;
 }
 
 .vgen-input:focus {
     outline: none;
-    border-color: #000000;
-    box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.06);
-    background: #ffffff;
+    border-color: var(--vgen-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--vgen-accent) 12%, transparent);
+    background: var(--vgen-bg-panel);
 }
 
 textarea.vgen-input {
@@ -336,7 +336,7 @@ textarea.vgen-input {
 }
 
 .vgen-search .vgen-input {
-    background: #ffffff;
+    background: var(--vgen-bg-panel);
 }
 
 .vgen-new-btn {
@@ -355,21 +355,21 @@ textarea.vgen-input {
     align-items: center;
     justify-content: space-between;
     padding: 12px;
-    border: 1px solid #e2e2e2;
+    border: 1px solid var(--vgen-line);
     border-radius: 8px;
     cursor: pointer;
-    background: #ffffff;
+    background: var(--vgen-bg-panel);
     transition: all 0.2s;
 }
 
 .vgen-record-item:hover {
-    border-color: #aaaaaa;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+    border-color: var(--vgen-line-strong);
+    box-shadow: var(--vgen-shadow-sm);
 }
 
 .vgen-record-item.active {
-    border-color: #000000;
-    box-shadow: 0 0 0 1px #000000;
+    border-color: var(--vgen-accent);
+    box-shadow: 0 0 0 1px var(--vgen-accent);
 }
 
 .vgen-record-info h4 {
@@ -381,7 +381,7 @@ textarea.vgen-input {
 .vgen-record-info p {
     margin: 0;
     font-size: 0.72rem;
-    color: #555555;
+    color: var(--vgen-ink-soft);
 }
 
 .vgen-record-actions {
@@ -395,10 +395,10 @@ textarea.vgen-input {
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid #e2e2e2;
+    border: 1px solid var(--vgen-line);
     border-radius: 4px;
-    background: #ffffff;
-    color: #555555;
+    background: var(--vgen-bg-panel);
+    color: var(--vgen-ink-soft);
     transition: all 0.2s;
     font-size: 0.65rem;
     font-weight: bold;
@@ -406,20 +406,31 @@ textarea.vgen-input {
 }
 
 .v-icon-btn:hover {
-    background: #f0f0f0;
-    color: #000000;
-    border-color: #aaaaaa;
+    background: var(--vgen-bg-canvas);
+    color: var(--vgen-ink);
+    border-color: var(--vgen-line-strong);
 }
 
 .v-icon-btn.danger:hover {
-    background: #ff4444;
+    background: var(--vgen-danger);
     color: #ffffff;
-    border-color: #ff4444;
+    border-color: var(--vgen-danger);
 }
 
 /* UPLOAD BOX */
+.vgen-section-logos {
+    margin-bottom: 12px;
+}
+
+.vgen-logos-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: stretch;
+    gap: 8px;
+}
+
 .v-upload-box {
-    border: 1px dashed #cccccc;
+    border: 1px dashed var(--vgen-line-strong);
     border-radius: 4px;
     display: flex;
     flex-direction: column;
@@ -429,24 +440,46 @@ textarea.vgen-input {
     gap: 6px;
     cursor: pointer;
     transition: all 0.2s;
-    background: #f9f9f9;
+    background: var(--vgen-bg-input);
     text-align: center;
+}
+
+.vgen-section-logos .v-upload-box {
+    min-width: 0;
+    min-height: 76px;
+    padding: 8px;
+}
+
+.vgen-section-logos .v-upload-box:first-child {
+    justify-self: stretch;
+}
+
+.vgen-section-logos .v-upload-box:nth-child(2) {
+    justify-self: stretch;
+}
+
+.v-upload-preview {
+    display: block;
+    width: 100%;
+    height: 100%;
+    max-height: 96px;
+    object-fit: contain;
 }
 
 .v-upload-box:hover,
 .v-upload-box.drag-over {
-    border-color: #000000;
-    background: #ffffff;
+    border-color: var(--vgen-accent);
+    background: var(--vgen-bg-panel);
 }
 
 .v-upload-box svg {
-    color: #aaaaaa;
+    color: var(--vgen-ink-faint);
 }
 
 .v-upload-box span {
     font-size: 0.75rem;
     font-weight: 600;
-    color: #555555;
+    color: var(--vgen-ink-soft);
 }
 
 /* RANGE SLIDER */
@@ -459,7 +492,7 @@ textarea.vgen-input {
 .vgen-range-label {
     font-size: 0.65rem;
     font-weight: 700;
-    color: #555555;
+    color: var(--vgen-ink-soft);
     user-select: none;
     flex-shrink: 0;
 }
@@ -471,8 +504,8 @@ textarea.vgen-input {
 .vgen-range-value {
     font-size: 0.7rem;
     font-weight: 600;
-    color: #000000;
-    background: #f0f0f0;
+    color: var(--vgen-ink);
+    background: var(--vgen-bg-canvas);
     padding: 1px 6px;
     border-radius: 4px;
     margin-left: 4px;
@@ -484,14 +517,14 @@ textarea.vgen-input {
     appearance: none;
     height: 5px;
     border-radius: 4px;
-    background: #e2e2e2;
+    background: var(--vgen-line);
     outline: none;
     cursor: pointer;
     transition: background 0.2s;
 }
 
 .vgen-range:hover {
-    background: #cccccc;
+    background: var(--vgen-line-strong);
 }
 
 .vgen-range::-webkit-slider-thumb {
@@ -525,9 +558,9 @@ textarea.vgen-input {
 .vgen-range-block {
     margin-top: 6px;
     padding: 8px 10px 10px;
-    border: 1px solid #e2e2e2;
+    border: 1px solid var(--vgen-line);
     border-radius: 4px;
-    background: #f0f0f0;
+    background: var(--vgen-bg-canvas);
 }
 
 .vgen-range-block+.vgen-range-block {
@@ -544,16 +577,16 @@ textarea.vgen-input {
 .vgen-range-layout-label {
     font-size: 0.7rem;
     font-weight: 600;
-    color: #555555;
+    color: var(--vgen-ink-soft);
 }
 
 .vgen-range-block-title {
     font-size: 0.72rem;
     font-weight: 700;
-    color: #000000;
+    color: var(--vgen-ink);
     margin-bottom: 8px;
     padding-bottom: 5px;
-    border-bottom: 1px solid #e2e2e2;
+    border-bottom: 1px solid var(--vgen-line);
     letter-spacing: 0.02em;
 }
 
@@ -569,8 +602,8 @@ textarea.vgen-input {
 .vgen-canvas {
     flex: 1;
     position: relative;
-    background-color: #f0f0f0;
-    background-image: radial-gradient(#cccccc 1px, transparent 1px);
+    background-color: var(--vgen-bg-canvas);
+    background-image: radial-gradient(color-mix(in srgb, var(--vgen-ink) 10%, transparent) 1px, transparent 1px);
     background-size: 24px 24px;
     display: flex;
     justify-content: center;
@@ -620,7 +653,7 @@ textarea.vgen-input {
 .vgen-empty-state {
     text-align: center;
     padding: 40px 20px;
-    color: #555555;
+    color: var(--vgen-ink-soft);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -629,7 +662,7 @@ textarea.vgen-input {
 }
 
 .vgen-icon-muted {
-    color: #aaaaaa;
+    color: var(--vgen-ink-faint);
 }
 
 /* FLYER CARD STYLES — required for PDF export via html-to-image */
@@ -1453,10 +1486,10 @@ textarea.vgen-input {
     position: fixed;
     z-index: 1000;
     width: 300px;
-    background: #ffffff;
+    background: var(--vgen-bg-panel);
     border-radius: 8px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.1);
-    border: 1px solid #e2e2e2;
+    box-shadow: var(--vgen-shadow-float);
+    border: 1px solid var(--vgen-line);
     overflow: hidden;
     transition: box-shadow 0.2s;
 }
@@ -1467,7 +1500,7 @@ textarea.vgen-input {
 }
 
 .vgen-floating-panel.pinned {
-    border-color: #000000;
+    border-color: var(--vgen-accent);
 }
 
 .vgen-floating-panel-header {
@@ -1475,8 +1508,8 @@ textarea.vgen-input {
     align-items: center;
     justify-content: space-between;
     padding: 10px 12px;
-    background: #f8f8f8;
-    border-bottom: 1px solid #e2e2e2;
+    background: var(--vgen-bg-canvas);
+    border-bottom: 1px solid var(--vgen-line);
     cursor: grab;
     user-select: none;
 }
@@ -1491,11 +1524,11 @@ textarea.vgen-input {
     gap: 8px;
     font-size: 0.8rem;
     font-weight: 600;
-    color: #000000;
+    color: var(--vgen-ink);
 }
 
 .vgen-floating-panel-title svg {
-    color: #555555;
+    color: var(--vgen-ink-soft);
 }
 
 .vgen-floating-panel-actions {
@@ -1510,23 +1543,23 @@ textarea.vgen-input {
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid #e2e2e2;
+    border: 1px solid var(--vgen-line);
     border-radius: 4px;
-    background: #ffffff;
-    color: #555555;
+    background: var(--vgen-bg-panel);
+    color: var(--vgen-ink-soft);
     cursor: pointer;
     transition: all 0.2s;
 }
 
 .vgen-floating-panel-btn:hover {
-    background: #f0f0f0;
-    border-color: #cccccc;
+    background: var(--vgen-bg-canvas);
+    border-color: var(--vgen-line-strong);
 }
 
 .vgen-floating-panel-btn.pin:hover,
 .vgen-floating-panel-btn.pin.active {
-    color: #000000;
-    border-color: #000000;
+    color: var(--vgen-accent);
+    border-color: var(--vgen-accent);
 }
 
 .vgen-floating-panel-btn.close:hover {
@@ -1539,8 +1572,8 @@ textarea.vgen-input {
     display: flex;
     padding: 0 12px;
     gap: 8px;
-    background: #fafafa;
-    border-bottom: 1px solid #e2e2e2;
+    background: var(--vgen-bg-canvas);
+    border-bottom: 1px solid var(--vgen-line);
 }
 
 .vgen-floating-panel-tabs button {
@@ -1550,7 +1583,7 @@ textarea.vgen-input {
     background: transparent;
     font-size: 0.72rem;
     font-weight: 600;
-    color: #555555;
+    color: var(--vgen-ink-soft);
     cursor: pointer;
     border-bottom: 2px solid transparent;
     transition: all 0.2s;
@@ -1558,12 +1591,12 @@ textarea.vgen-input {
 }
 
 .vgen-floating-panel-tabs button:hover {
-    color: #000000;
+    color: var(--vgen-ink);
 }
 
 .vgen-floating-panel-tabs button.active {
-    color: #000000;
-    border-bottom-color: #000000;
+    color: var(--vgen-ink);
+    border-bottom-color: var(--vgen-accent);
 }
 
 .vgen-floating-panel-content {
@@ -1580,9 +1613,9 @@ textarea.vgen-input {
     padding: 6px 12px;
     text-align: center;
     font-size: 0.65rem;
-    color: #aaaaaa;
-    background: #fafafa;
-    border-top: 1px solid #e2e2e2;
+    color: var(--vgen-ink-faint);
+    background: var(--vgen-bg-canvas);
+    border-top: 1px solid var(--vgen-line);
 }
 
 /* FLOATING ACTION BUTTON (FAB) */

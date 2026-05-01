@@ -11,7 +11,6 @@ import {
   Printer,
   Trash2,
   CheckCircle,
-  FileText,
   PanelLeft,
 } from 'lucide-react';
 import PreviewPage from './PreviewPage';
@@ -477,15 +476,6 @@ export default function PadronView() {
   return (
     <div className="vpad-app vpad-app-embedded">
       <aside className={`vpad-sidebar${sidebarVisible ? '' : ' collapsed'}`}>
-        <div className="vpad-sidebar-header">
-          <div className="vpad-brand-wrapper">
-            <h1 className="vpad-brand-title">
-              <FileText size={20} />
-              Vpad
-            </h1>
-          </div>
-        </div>
-
         {sidebarVisible && (
           <div className="vpad-config-panel">
             <section className="vpad-section">

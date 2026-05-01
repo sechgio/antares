@@ -45,7 +45,7 @@ function renderAppearance() {
 }
 
 describe('AppearanceView', () => {
-  it('shows professional appearance style cards and applies a selected style', async () => {
+  it('shows a minimal Codex-like appearance panel and applies a selected style', async () => {
     window.electronAPI = {
       invoke: async (method: string, params?: Record<string, unknown>) => {
         if (method === 'theme_get') return baseTheme;
@@ -60,10 +60,13 @@ describe('AppearanceView', () => {
 
     renderAppearance();
 
-    expect(await screen.findByText('Estilos de apariencia')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Precision Linear/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Aspecto' })).toBeInTheDocument();
+    expect(screen.getByText('Usa claro, oscuro o el tema del sistema')).toBeInTheDocument();
+    expect(screen.getAllByText('themePreview').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /Codex/i })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /Professional Light/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Codex/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Professional Light/i }));
 
     await waitFor(() => {
       expect(document.documentElement.style.getPropertyValue('--bg-base')).toBe('#F6F7FB');
@@ -71,7 +74,7 @@ describe('AppearanceView', () => {
     });
   });
 
-  it('uses the available settings workspace instead of constraining appearance to a narrow column', async () => {
+  it('centers the settings workspace without constraining appearance to a narrow column', async () => {
     window.electronAPI = {
       invoke: async (method: string) => {
         if (method === 'theme_get') return baseTheme;
@@ -89,10 +92,57 @@ describe('AppearanceView', () => {
     const workspace = screen.getByTestId('appearance-workspace');
 
     expect(root).toHaveClass('h-full');
-    expect(root).toHaveClass('max-w-none');
-    expect(root).not.toHaveClass('max-w-5xl');
+    expect(root).toHaveClass('overflow-auto');
     expect(workspace).toHaveClass('min-h-0');
-    expect(workspace.className).toContain('xl:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]');
+    expect(workspace).toHaveClass('mx-auto');
+    expect(workspace).toHaveClass('w-full');
+    expect(workspace).toHaveClass('max-w-[760px]');
+  });
+
+  it('imports a theme JSON and applies it to the live interface', async () => {
+    window.electronAPI = {
+      invoke: async (method: string) => {
+        if (method === 'theme_get') return baseTheme;
+        if (method === 'theme_presets') return { presets: ['Precision Linear'] };
+        return {};
+      },
+      onNotify: () => () => {},
+      onUpdateAvailable: () => () => {},
+      onUpdateDownloaded: () => () => {},
+    };
+
+    renderAppearance();
+
+    const importedTheme = {
+      ...baseTheme,
+      name: 'Imported Focus',
+      bg: '#101826',
+      bg_secondary: '#172033',
+      fg: '#F8FAFC',
+      fg_muted: '#CBD5E1',
+      accent: '#14B8A6',
+      accent_light: '#5EEAD4',
+      accent_hover: '#0F766E',
+      accent_dark: '#115E59',
+      pointer_cursors: 'true',
+      sidebar_translucent: 'true',
+      contrast: '72',
+      interface_font_size: '14',
+      code_font_size: '13',
+    };
+    const file = new File([JSON.stringify(importedTheme)], 'theme.json', { type: 'application/json' });
+
+    const input = await screen.findByLabelText('Importar tema');
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(document.documentElement.style.getPropertyValue('--bg-base')).toBe('#101826');
+      expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('#14B8A6');
+      expect(document.documentElement.dataset.pointerCursors).toBe('true');
+      expect(screen.getByLabelText('Contraste')).toHaveValue('72');
+      expect(screen.getByLabelText('Tamano de fuente de la interfaz')).toHaveValue(14);
+      expect(screen.getByLabelText('Tamano de fuente del codigo')).toHaveValue(13);
+    });
   });
 
   it('applies complete interface variables when selecting an expressive preset', async () => {
@@ -131,6 +181,7 @@ describe('AppearanceView', () => {
 
     renderAppearance();
 
+    fireEvent.click(await screen.findByRole('button', { name: /Codex/i }));
     fireEvent.click(await screen.findByRole('button', { name: /Neon Grid/i }));
 
     await waitFor(() => {
@@ -164,7 +215,7 @@ describe('AppearanceView', () => {
 
     renderAppearance();
 
-    const backgroundInput = await screen.findByLabelText('Fondo principal');
+    const backgroundInput = await screen.findByLabelText('Fondo');
     fireEvent.change(backgroundInput, { target: { value: '#123456' } });
 
     expect(document.documentElement.style.getPropertyValue('--bg-base')).toBe('#123456');
@@ -192,7 +243,7 @@ describe('AppearanceView', () => {
 
     renderAppearance();
 
-    await screen.findByText('Estilos de apariencia');
+    await screen.findByRole('heading', { name: 'Aspecto' });
 
     expect(document.documentElement.style.getPropertyValue('--text-primary')).toBe('#111827');
     expect(document.documentElement.style.getPropertyValue('--text-secondary')).toBe('#475467');
@@ -212,8 +263,54 @@ describe('AppearanceView', () => {
 
     renderAppearance();
 
-    fireEvent.click(await screen.findByRole('button', { name: /Ambar/i }));
+    fireEvent.change(await screen.findByLabelText('Acento'), { target: { value: '#F59E0B' } });
 
     expect(document.documentElement.style.getPropertyValue('--text-on-accent')).toBe('#111827');
+  });
+
+  it('preserves the selected preset accent after a manual accent shortcut was used', async () => {
+    const neonTheme = {
+      ...baseTheme,
+      name: 'Neon Grid',
+      bg: '#070713',
+      bg_secondary: '#111126',
+      fg: '#F8FAFC',
+      fg_muted: '#A5B4FC',
+      fg_secondary: '#C4B5FD',
+      fg_tertiary: '#818CF8',
+      accent: '#22D3EE',
+      accent_light: '#67E8F9',
+      accent_hover: '#A855F7',
+      accent_dark: '#0891B2',
+      border: '#312E81',
+      blue_hover: '#F472B6',
+      error: '#FF4D8D',
+      warning: '#FACC15',
+      success: '#34D399',
+      orange: '#A855F7',
+    };
+
+    window.electronAPI = {
+      invoke: async (method: string, params?: Record<string, unknown>) => {
+        if (method === 'theme_get') return baseTheme;
+        if (method === 'theme_presets') return { presets: ['Precision Linear', 'Neon Grid'] };
+        if (method === 'theme_preset' && params?.name === 'Neon Grid') return neonTheme;
+        return {};
+      },
+      onNotify: () => () => {},
+      onUpdateAvailable: () => () => {},
+      onUpdateDownloaded: () => () => {},
+    };
+
+    renderAppearance();
+
+    fireEvent.change(await screen.findByLabelText('Acento'), { target: { value: '#F59E0B' } });
+    fireEvent.click(await screen.findByRole('button', { name: /Codex/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Neon Grid/i }));
+
+    await waitFor(() => {
+      expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('#22D3EE');
+      expect(document.documentElement.style.getPropertyValue('--accent-primary-hover')).toBe('#67E8F9');
+    });
   });
 });

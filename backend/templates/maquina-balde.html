@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title | default('Maquina de Balde', true) }}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        @page {
+            size: A4 portrait;
+            margin: 0;
+            background: #ffffff;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 10px;
+            line-height: 1.3;
+            color: #222;
+            background: #ffffff;
+            width: 210mm;
+            height: 297mm;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        .page {
+            width: 210mm;
+            height: 297mm;
+            max-height: 297mm;
+            margin: 0 auto;
+            padding: 8mm;
+            background: #ffffff;
+            display: -webkit-box;
+            display: -ms-flexbox;
+            display: flex;
+            -webkit-box-orient: vertical;
+            -webkit-box-direction: normal;
+            -ms-flex-direction: column;
+            flex-direction: column;
+            page-break-after: always;
+            page-break-inside: avoid;
+            -webkit-box-sizing: border-box;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        .page:last-child {
+            page-break-after: auto;
+        }
+
+        .header {
+            display: -webkit-box;
+            display: -ms-flexbox;
+            display: flex;
+            -webkit-box-pack: justify;
+            -ms-flex-pack: justify;
+            justify-content: space-between;
+            -webkit-box-align: center;
+            -ms-flex-align: center;
+            align-items: center;
+            height: 20mm;
+            padding-bottom: 4mm;
+            border-bottom: 2px solid #333;
+            margin-bottom: 3mm;
+            -ms-flex-negative: 0;
+            flex-shrink: 0;
+        }
+
+        .header-logo {
+            width: 55mm;
+            height: 18mm;
+            display: -webkit-box;
+            display: -ms-flexbox;
+            display: flex;
+            -webkit-box-align: center;
+            -ms-flex-align: center;
+            align-items: center;
+            -webkit-box-pack: center;
+            -ms-flex-pack: center;
+            justify-content: center;
+        }
+
+        .header-logo img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        .header-logo-placeholder {
+            font-size: 14px;
+            font-weight: bold;
+            color: #666;
+        }
+
+        .header-title {
+            -webkit-box-flex: 1;
+            -ms-flex: 1;
+            flex: 1;
+            text-align: center;
+        }
+
+        .header-title h1 {
+            font-size: 16px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #000;
+        }
+
+        .header-title .page-label {
+            font-size: 9px;
+            color: #777;
+            margin-top: 2px;
+        }
+
+        .info-bar {
+            display: -webkit-box;
+            display: -ms-flexbox;
+            display: flex;
+            border: 1px solid #ccc;
+            background: #f5f5f5;
+            margin-bottom: 2mm;
+            -ms-flex-negative: 0;
+            flex-shrink: 0;
+        }
+
+        .info-item {
+            -webkit-box-flex: 1;
+            -ms-flex: 1;
+            flex: 1;
+            display: -webkit-box;
+            display: -ms-flexbox;
+            display: flex;
+            -webkit-box-align: center;
+            -ms-flex-align: center;
+            align-items: center;
+            padding: 1.5mm 2mm;
+            border-right: 1px solid #ccc;
+            gap: 1mm;
+            white-space: nowrap;
+        }
+
+        .info-item:last-child {
+            border-right: none;
+        }
+
+        .info-label {
+            font-size: 9pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: #000;
+        }
+
+        .info-value {
+            font-size: 9pt;
+            font-weight: normal;
+            color: #000;
+        }
+
+        .section-title {
+            font-size: 10pt;
+            font-weight: bold;
+            color: #0066cc;
+            text-transform: uppercase;
+            margin-bottom: 3mm;
+            padding-bottom: 3px;
+            border-bottom: 1px solid #0066cc;
+            -ms-flex-negative: 0;
+            flex-shrink: 0;
+        }
+
+        .localizacion {
+            margin-bottom: 3mm;
+            -ms-flex-negative: 0;
+            flex-shrink: 0;
+        }
+
+        .loc-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .loc-table td {
+            padding: 1.5px 0;
+            vertical-align: baseline;
+        }
+
+        .loc-label {
+            font-size: 9pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: #000;
+            white-space: nowrap;
+            padding-right: 6px;
+        }
+
+        .loc-value {
+            font-size: 9pt;
+            color: #000;
+            word-break: break-word;
+        }
+
+        .actividad-section {
+            margin-bottom: 3mm;
+            -ms-flex-negative: 0;
+            flex-shrink: 0;
+        }
+
+        .actividad-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .actividad-table td {
+            padding: 1.5px 0;
+            vertical-align: baseline;
+        }
+
+        .panel-fotografico {
+            -webkit-box-flex: 1;
+            -ms-flex: 1;
+            flex: 1;
+            display: -webkit-box;
+            display: -ms-flexbox;
+            display: flex;
+            -webkit-box-orient: vertical;
+            -webkit-box-direction: normal;
+            -ms-flex-direction: column;
+            flex-direction: column;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .photo-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-rows: repeat(2, minmax(0, 1fr));
+            gap: 2mm;
+            width: 100%;
+            height: 100%;
+            border: 1px solid #0066cc;
+            padding: 2mm;
+            -webkit-box-flex: 1;
+            -ms-flex: 1;
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+            -webkit-box-sizing: border-box;
+            box-sizing: border-box;
+        }
+
+        .photo-cell {
+            background: #ffffff;
+            border: 1px solid #ddd;
+            width: 100%;
+            height: 100%;
+            min-width: 0;
+            min-height: 0;
+            overflow: hidden;
+            display: -webkit-box;
+            display: -ms-flexbox;
+            display: flex;
+            -webkit-box-align: center;
+            -ms-flex-align: center;
+            align-items: center;
+            -webkit-box-pack: center;
+            -ms-flex-pack: center;
+            justify-content: center;
+            -webkit-box-sizing: border-box;
+            box-sizing: border-box;
+        }
+
+        .photo-cell img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            object-position: center;
+            display: block;
+        }
+
+        .photo-cell-photo-3 {
+            grid-column: span 2;
+            justify-self: center;
+            width: calc(50% - 1mm);
+        }
+
+        .photo-placeholder {
+            width: 100%;
+            height: 100%;
+            display: -webkit-box;
+            display: -ms-flexbox;
+            display: flex;
+            -webkit-box-align: center;
+            -ms-flex-align: center;
+            align-items: center;
+            -webkit-box-pack: center;
+            -ms-flex-pack: center;
+            justify-content: center;
+            color: #999;
+            font-size: 10px;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    {% set report_list = reports if reports else ([report] if report else [{'data': data, 'images': images, 'layout_mode': layout_mode, 'img_count': img_count}]) %}
+    {% for report in report_list %}
+    {% set row = report.data if report.data is defined and report.data else (report if report else {}) %}
+    {% set report_images = report.images if report.images is defined and report.images else [] %}
+    {% set img_count = report_images | length %}
+    {% set total_pages = (img_count // 4) + (1 if img_count % 4 > 0 else 0) %}
+
+    {% if img_count > 0 %}
+    {% for page_num in range(total_pages) %}
+    {% set page_start = page_num * 4 %}
+    {% set page_images = [] %}
+    {% for i in range(4) %}
+    {% if page_start + i < img_count %}
+    {% set _ = page_images.append(report_images[page_start + i]) %}
+    {% endif %}
+    {% endfor %}
+    {% set page_img_count = page_images | length %}
+
+    <div class="page">
+        <header class="header">
+            <div class="header-logo">
+                {% if logo_left %}
+                <img src="{{ logo_left }}" alt="Logo Izquierdo">
+                {% else %}
+                <span class="header-logo-placeholder"></span>
+                {% endif %}
+            </div>
+            <div class="header-title">
+                <h1>{{ row.get('titulo', title | default('Maquina de Balde', true)) }}</h1>
+                {% if total_pages > 1 %}
+                <div class="page-label">Pagina {{ page_num + 1 }}/{{ total_pages }}</div>
+                {% endif %}
+            </div>
+            <div class="header-logo">
+                {% if logo_right %}
+                <img src="{{ logo_right }}" alt="Logo Derecho">
+                {% else %}
+                <span class="header-logo-placeholder"></span>
+                {% endif %}
+            </div>
+        </header>
+
+        <div class="info-bar">
+            <div class="info-item">
+                <span class="info-label">Fecha de Trabajo:</span>
+                <span class="info-value">{{ row.get('FECHA_TRABAJO', row.get('FECHA DE TRABAJO', row.get('Fecha de Trabajo', row.get('fecha_trabajo', '-')))) }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">NIS:</span>
+                <span class="info-value">{{ row.get('NIS', row.get('nis', '-')) }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">SGIO:</span>
+                <span class="info-value">{{ row.get('SGIO', row.get('sgio', '-')) }}</span>
+            </div>
+        </div>
+
+        <section class="localizacion">
+            <div class="section-title">1.0 Localizacion</div>
+            <table class="loc-table">
+                <tr>
+                    <td class="loc-label">Direccion:</td>
+                    <td class="loc-value" colspan="3">{{ row.get('DIRECCION', row.get('direccion', row.get('DIRECCIONES', '-'))) }}</td>
+                </tr>
+                <tr>
+                    <td style="width:50%">
+                        <span class="loc-label">Localidad:</span>
+                        <span class="loc-value">{{ row.get('LOCALIDAD', row.get('localidad', '-')) }}</span>
+                    </td>
+                    <td style="width:50%">
+                        <span class="loc-label">Distrito:</span>
+                        <span class="loc-value">{{ row.get('DISTRITO', row.get('distrito', '-')) }}</span>
+                    </td>
+                </tr>
+            </table>
+        </section>
+
+        <section class="actividad-section">
+            <div class="section-title">2.0 Detalles de Orden de Trabajo</div>
+            <table class="actividad-table">
+                <tr>
+                    <td class="loc-label">Actividad:</td>
+                    <td class="loc-value" colspan="3">{{ row.get('ACTIVIDAD', row.get('actividad', '-')) }}</td>
+                </tr>
+            </table>
+        </section>
+
+        <section class="panel-fotografico">
+            <div class="section-title">3.0 Panel Fotografico</div>
+            <div class="photo-grid">
+                {% if page_img_count == 3 %}
+                {% for img in page_images %}
+                <div class="photo-cell{% if loop.index == 3 %} photo-cell-photo-3{% endif %}">
+                    <img src="{{ img.path }}" alt="{{ img.name | default('Foto ' ~ (page_start + loop.index), true) }}">
+                </div>
+                {% endfor %}
+                {% else %}
+                {% for img in page_images %}
+                <div class="photo-cell">
+                    <img src="{{ img.path }}" alt="{{ img.name | default('Foto ' ~ (page_start + loop.index), true) }}">
+                </div>
+                {% endfor %}
+                {% for i in range(4 - page_img_count) %}
+                <div class="photo-cell">
+                    <div class="photo-placeholder">Sin imagen</div>
+                </div>
+                {% endfor %}
+                {% endif %}
+            </div>
+        </section>
+    </div>
+    {% endfor %}
+
+    {% else %}
+    <div class="page">
+        <header class="header">
+            <div class="header-logo">
+                {% if logo_left %}
+                <img src="{{ logo_left }}" alt="Logo Izquierdo">
+                {% else %}
+                <span class="header-logo-placeholder"></span>
+                {% endif %}
+            </div>
+            <div class="header-title">
+                <h1>{{ row.get('titulo', title | default('Maquina de Balde', true)) }}</h1>
+            </div>
+            <div class="header-logo">
+                {% if logo_right %}
+                <img src="{{ logo_right }}" alt="Logo Derecho">
+                {% else %}
+                <span class="header-logo-placeholder"></span>
+                {% endif %}
+            </div>
+        </header>
+
+        <div class="info-bar">
+            <div class="info-item">
+                <span class="info-label">Fecha de Trabajo:</span>
+                <span class="info-value">{{ row.get('FECHA_TRABAJO', row.get('FECHA DE TRABAJO', row.get('Fecha de Trabajo', row.get('fecha_trabajo', '-')))) }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">NIS:</span>
+                <span class="info-value">{{ row.get('NIS', row.get('nis', '-')) }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">SGIO:</span>
+                <span class="info-value">{{ row.get('SGIO', row.get('sgio', '-')) }}</span>
+            </div>
+        </div>
+
+        <section class="localizacion">
+            <div class="section-title">1.0 Localizacion</div>
+            <table class="loc-table">
+                <tr>
+                    <td class="loc-label">Direccion:</td>
+                    <td class="loc-value" colspan="3">{{ row.get('DIRECCION', row.get('direccion', row.get('DIRECCIONES', '-'))) }}</td>
+                </tr>
+                <tr>
+                    <td style="width:50%">
+                        <span class="loc-label">Localidad:</span>
+                        <span class="loc-value">{{ row.get('LOCALIDAD', row.get('localidad', '-')) }}</span>
+                    </td>
+                    <td style="width:50%">
+                        <span class="loc-label">Distrito:</span>
+                        <span class="loc-value">{{ row.get('DISTRITO', row.get('distrito', '-')) }}</span>
+                    </td>
+                </tr>
+            </table>
+        </section>
+
+        <section class="actividad-section">
+            <div class="section-title">2.0 Detalles de Orden de Trabajo</div>
+            <table class="actividad-table">
+                <tr>
+                    <td class="loc-label">Actividad:</td>
+                    <td class="loc-value" colspan="3">{{ row.get('ACTIVIDAD', row.get('actividad', '-')) }}</td>
+                </tr>
+            </table>
+        </section>
+
+        <section class="panel-fotografico">
+            <div class="section-title">3.0 Panel Fotografico</div>
+            <div class="photo-grid">
+                {% for i in range(4) %}
+                <div class="photo-cell">
+                    <div class="photo-placeholder">Sin imagen</div>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+    {% endif %}
+    {% endfor %}
+</body>
+</html>

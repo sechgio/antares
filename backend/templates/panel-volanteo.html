@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>
+        /* Reset & Base */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* Shared A4 Dimensions */
+        @page {
+            size: A4;
+            margin: 0;
+        }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 10px;
+            line-height: 1.3;
+            color: #222;
+            background: #fff;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Page Container - FIXED height to prevent overflow */
+        .page {
+            width: 210mm;
+            height: 297mm;
+            max-height: 297mm;
+            margin: 0 auto;
+            padding: 8mm;
+            background: #fff;
+            page-break-after: always;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-sizing: border-box;
+        }
+
+        .page:last-child {
+            page-break-after: auto;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 20mm;
+            padding-bottom: 4mm;
+            border-bottom: 2px solid #333;
+            margin-bottom: 3mm;
+            flex-shrink: 0;
+        }
+
+        .header-logo {
+            width: 55mm;
+            height: 18mm;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .header-logo img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        .header-logo-placeholder {
+            font-size: 14px;
+            font-weight: bold;
+            color: #666;
+        }
+
+        .header-title {
+            flex: 1;
+            text-align: center;
+        }
+
+        .header-title h1 {
+            font-size: 20px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #000;
+        }
+
+        /* Info Bar */
+        .info-bar {
+            display: flex;
+            justify-content: space-between;
+            border: 1px solid #ccc;
+            margin-bottom: 2mm;
+            flex-shrink: 0;
+        }
+
+        .info-item {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 1.5mm 2mm;
+            border-right: 1px solid #ccc;
+            line-height: 1.2;
+        }
+
+        .info-item:last-child {
+            border-right: none;
+        }
+
+        .info-label {
+            font-size: 9pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: #666;
+        }
+
+        .info-value {
+            font-size: 9pt;
+            font-weight: 600;
+            color: #000;
+        }
+
+        /* Section Title */
+        .section-title {
+            font-size: 10pt;
+            font-weight: bold;
+            color: #0066cc;
+            text-transform: uppercase;
+            margin-bottom: 3mm;
+            padding-bottom: 3px;
+            border-bottom: 1px solid #0066cc;
+            flex-shrink: 0;
+        }
+
+        /* Localization Section */
+        .localizacion {
+            margin-bottom: 3mm;
+            flex-shrink: 0;
+        }
+
+        .loc-row {
+            display: flex;
+            margin-bottom: 4px;
+        }
+
+        .loc-row.full {
+            display: block;
+        }
+
+        .loc-field {
+            display: flex;
+            align-items: baseline;
+            margin-right: 30px;
+        }
+
+        .loc-field.full {
+            width: 100%;
+            margin-right: 0;
+        }
+
+        .loc-label {
+            font-size: 9pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: #333;
+            margin-right: 8px;
+            white-space: nowrap;
+        }
+
+        .loc-value {
+            font-size: 9pt;
+            color: #000;
+        }
+
+        /* Photo Panel Section - fills remaining space */
+        .panel-fotografico {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        /* Photo Grid - CRITICAL: constrained to available space */
+        .photo-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            grid-template-rows: repeat(2, 1fr);
+            gap: 2mm;
+            flex: 1;
+            min-height: 0;
+            border: 1px solid #0066cc;
+            padding: 2mm;
+            overflow: hidden;
+        }
+
+        .photo-cell {
+            position: relative;
+            background: #f5f5f5;
+            border: 1px solid #ddd;
+            overflow: hidden;
+            min-height: 0;
+            min-width: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .photo-cell img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            object-position: center;
+            display: block;
+        }
+
+        .photo-metadata {
+            display: none;
+        }
+
+        .photo-metadata .meta-line {
+            display: none;
+        }
+
+        .photo-metadata .meta-date {
+            display: none;
+        }
+
+        .photo-placeholder {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #999;
+            font-size: 11px;
+            font-style: italic;
+        }
+
+        /* Empty state */
+        .no-photos {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 0;
+            color: #999;
+            font-style: italic;
+            border: 1px solid #0066cc;
+        }
+
+        /* Screen preview styles */
+        @media screen {
+            html,
+            body {
+                margin: 0;
+                padding: 0;
+                width: 210mm;
+                height: 297mm;
+                overflow: hidden;
+                background: transparent;
+            }
+
+            .page {
+                width: 210mm;
+                height: 297mm;
+                max-height: 297mm;
+                margin: 0 auto;
+                box-shadow: none;
+                padding: 8mm;
+                background: #fff;
+                box-sizing: border-box;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+        }
+
+        /* Print/PDF styles - Strict enforcement */
+        @media print {
+            @page {
+                size: A4;
+                margin: 0;
+            }
+
+            html,
+            body {
+                margin: 0;
+                padding: 0;
+                width: 210mm;
+                height: 297mm;
+                overflow: hidden;
+            }
+
+            .page {
+                width: 210mm;
+                height: 297mm;
+                max-height: 297mm;
+                padding: 8mm;
+                margin: 0;
+                box-shadow: none;
+                overflow: hidden;
+                page-break-after: always;
+                page-break-inside: avoid;
+            }
+
+            .photo-grid {
+                overflow: hidden;
+            }
+
+            .photo-metadata {
+                background: rgba(0, 102, 204, 0.85) !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    {% for report in reports %}
+    <div class="page">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-logo">
+                {% if logo_left %}
+                <img src="{{ logo_left }}" alt="Logo Izquierdo">
+                {% else %}
+                <span class="header-logo-placeholder"></span>
+                {% endif %}
+            </div>
+            <div class="header-title">
+                <h1>Panel Fotográfico Volanteo</h1>
+            </div>
+            <div class="header-logo">
+                {% if logo_right %}
+                <img src="{{ logo_right }}" alt="Logo Derecho">
+                {% else %}
+                <span class="header-logo-placeholder"></span>
+                {% endif %}
+            </div>
+        </header>
+
+        <!-- Info Bar -->
+        <div class="info-bar">
+            <div class="info-item">
+                <div class="info-label">Centro de Servicios:</div>
+                <div class="info-value">{{ report.data.get('CENTRO', '-') }}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">NIS:</div>
+                <div class="info-value">{{ report.data.get('NIS', '-') }}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Sector:</div>
+                <div class="info-value">{{ report.data.get('SECTOR', '-') }}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Fecha de Corte:</div>
+                <div class="info-value">{{ report.data.get('FECHA CORTE', '-') }}</div>
+            </div>
+        </div>
+
+        <!-- 1.0 Localización -->
+        <section class="localizacion">
+            <div class="section-title">1.0 Localización</div>
+
+            <div class="loc-row full">
+                <div class="loc-field full">
+                    <span class="loc-label">Direcciones Afectadas:</span>
+                    <span class="loc-value">{{ report.data.get('DIRECCIONES AFECTADAS', '-') }}</span>
+                </div>
+            </div>
+
+            <div class="loc-row">
+                <div class="loc-field">
+                    <span class="loc-label">Distrito:</span>
+                    <span class="loc-value">{{ report.data.get('DISTRITO', '-') }}</span>
+                </div>
+                <div class="loc-field">
+                    <span class="loc-label">Codigo de Componente:</span>
+                    <span class="loc-value">{{ report.data.get('CODIGO COMPONENTE', '-') }}</span>
+                </div>
+                <div class="loc-field">
+                    <span class="loc-label">Estado:</span>
+                    <span class="loc-value">{{ report.data.get('ESTADO', '-') }}</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2.0 Panel Fotográfico -->
+        <section class="panel-fotografico">
+            <div class="section-title">2.0 Panel Fotográfico</div>
+
+            {% if report.images and report.images|length > 0 %}
+            <div class="photo-grid">
+                {% for img in report.images[:4] %}
+                <div class="photo-cell">
+                    <img src="{{ img.path }}" alt="Foto {{ loop.index }}">
+                    <div class="photo-metadata">
+                        <div class="meta-line meta-date">{{ img.date if img.date != 'N/A' else '-' }}</div>
+                        {% if img.coords and img.coords != 'N/A' %}
+                        <div class="meta-line">{{ img.coords }}</div>
+                        {% endif %}
+                        <div class="meta-line">{{ img.name }}</div>
+                    </div>
+                </div>
+                {% endfor %}
+
+                {# Fill remaining cells if less than 4 images #}
+                {% for i in range(report.images|length, 4) %}
+                <div class="photo-cell">
+                    <div class="photo-placeholder">Sin imagen</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="no-photos">
+                No se encontraron imágenes asociadas a este registro.
+            </div>
+            {% endif %}
+        </section>
+    </div>
+    {% endfor %}
+</body>
+
+</html>

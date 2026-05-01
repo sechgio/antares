@@ -46,6 +46,15 @@ files:
   - "assets/**/*"
   - "formatos/**/*"
   - "node_modules/**/*"
+  - "!**/node_modules/**/*.map"
+  - "!**/node_modules/**/*.ts"
+  - "!**/node_modules/**/*.d.ts"
+  - "!**/node_modules/**/test/**/*"
+  - "!**/node_modules/**/tests/**/*"
+  - "!**/node_modules/**/docs/**/*"
+  - "!**/node_modules/**/examples/**/*"
+  - "!**/node_modules/**/README*"
+  - "!**/node_modules/**/CHANGELOG*"
 extraResources:
   - from: assets
     to: assets
@@ -131,3 +140,6 @@ publish:
   repo: hidro_convert
   releaseType: release
 asar: true
+electronLanguages:
+  - es
+  - en-US

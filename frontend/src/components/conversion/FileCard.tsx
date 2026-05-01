@@ -20,7 +20,7 @@ export default function FileCard({ path, selected, isPrimary, onClick, onRemove,
       onClick={onClick}
       className={`group relative cursor-pointer rounded-xl overflow-hidden border transition-all duration-200 ${
         isPrimary
-          ? 'border-[var(--accent-primary)] shadow-[0_0_0_3px_rgba(94,106,210,0.18)]'
+          ? 'border-[var(--accent-primary)] shadow-[0_0_0_3px_var(--accent-primary-glow)]'
           : selected
           ? 'border-[var(--accent-primary)]/50 bg-[var(--accent-primary)]/5'
           : 'border-[var(--border-subtle)] hover:border-[var(--border-medium)] hover:shadow-md'

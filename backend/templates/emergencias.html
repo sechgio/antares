@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title }}</title>
+    <style>
+        /* STRICT A4 ONE-PAGE FIT */
+        @page {
+            size: A4;
+            margin: 0;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        /* PRINT STYLES */
+        @media print {
+            @page {
+                size: A4;
+                margin: 0;
+            }
+
+            html,
+            body {
+                width: 210mm;
+                height: 297mm;
+                overflow: hidden;
+                margin: 0;
+                padding: 0;
+            }
+
+            .page {
+                width: 210mm !important;
+                height: 297mm !important;
+                max-height: 297mm !important;
+                padding: 8mm !important;
+                margin: 0 !important;
+                box-shadow: none !important;
+                overflow: hidden !important;
+                page-break-after: always !important;
+                page-break-inside: avoid !important;
+                box-sizing: border-box !important;
+            }
+        }
+
+        /* SCREEN PREVIEW STYLES */
+        @media screen {
+
+            html,
+            body {
+                width: 100%;
+                height: auto;
+                background: transparent;
+                overflow: hidden;
+            }
+
+            /* .page styles are already defined below, effectively centering it in the flex container of PreviewPanel */
+            .page {
+                margin: 0 auto;
+                background: white;
+            }
+        }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 10px;
+            color: #222;
+            line-height: 1.3;
+        }
+
+        .page {
+            width: 210mm;
+            height: 297mm;
+            max-height: 297mm;
+            margin: 0 auto;
+            padding: 8mm;
+            background: #fff;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-sizing: border-box;
+            position: relative;
+        }
+
+        .page:last-child {
+            page-break-after: auto;
+        }
+
+        /* === HEADER (Fixed Height) === */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 20mm;
+            padding-bottom: 4mm;
+            border-bottom: 2px solid #333;
+            margin-bottom: 3mm;
+            flex-shrink: 0;
+        }
+
+        .logo {
+            width: 55mm;
+            height: 18mm;
+            display: flex;
+            align-items: center;
+        }
+
+        .logo img,
+        .logo svg {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        .title {
+            flex: 1;
+            text-align: center;
+            font-size: 16px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #000;
+        }
+
+        /* === TOP INFO BAR === */
+        .info-bar {
+            display: flex;
+            border: 1px solid #ccc;
+            background: #f5f5f5;
+            margin-bottom: 2mm;
+            flex-shrink: 0;
+        }
+
+        .info-item {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            padding: 1.5mm 2mm;
+            border-right: 1px solid #ccc;
+            gap: 1mm;
+            white-space: nowrap;
+        }
+
+        .info-item:last-child {
+            border-right: none;
+        }
+
+        .info-label {
+            font-size: 9pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: #000;
+        }
+
+        .info-value {
+            font-size: 9pt;
+            font-weight: normal;
+            color: #000;
+        }
+
+        /* === SECTION HEADERS === */
+        .section-title {
+            font-size: 10pt;
+            font-weight: bold;
+            color: #0066cc;
+            text-transform: uppercase;
+            margin-bottom: 3mm;
+            padding-bottom: 3px;
+            border-bottom: 1px solid #0066cc;
+            flex-shrink: 0;
+        }
+
+        /* === DATA GRIDS === */
+        .localizacion {
+            margin-bottom: 3mm;
+            flex-shrink: 0;
+        }
+
+        .loc-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .loc-table td {
+            padding: 1.5px 0;
+            vertical-align: baseline;
+        }
+
+        .loc-label {
+            font-size: 9pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: #000;
+            white-space: nowrap;
+            padding-right: 6px;
+        }
+
+        .loc-value {
+            font-size: 9pt;
+            color: #000;
+            word-break: break-word;
+        }
+
+        /* === PHOTO SECTION (Fixed height or auto-fill) === */
+        .photo-section {
+            flex: 1;
+            border: 1px solid #0066cc;
+            padding: 2mm;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        /* === PHOTO GRID — adaptive layout by image count === */
+        .photo-grid {
+            flex: 1;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2mm;
+            width: 100%;
+            height: 100%;
+            min-height: 0;
+        }
+
+        .photo-item {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-sizing: border-box;
+        }
+
+        .photo-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        /* === LAYOUT-1: 1 imagen — centrada y grande === */
+        .layout-1 {
+            justify-content: center;
+            align-items: center;
+            align-content: center;
+        }
+
+        .layout-1 .photo-item {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* === LAYOUT-2: 2 imágenes — apiladas verticalmente === */
+        .layout-2 {
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .layout-2 .photo-item {
+            width: 100%;
+            height: calc(50% - 1mm);
+        }
+
+        /* === LAYOUT-3: 3 imágenes — 2 arriba + 1 abajo centrada === */
+        .layout-3 {
+            justify-content: space-between;
+            align-content: space-between;
+        }
+
+        .layout-3 .photo-item {
+            width: calc(50% - 1mm);
+            height: calc(50% - 1mm);
+        }
+
+        .layout-3 .photo-item:nth-child(3) {
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        /* === LAYOUT-4: 4 imágenes — grid 2x2 === */
+        .layout-4 {
+            justify-content: space-between;
+            align-content: space-between;
+        }
+
+        .layout-4 .photo-item {
+            width: calc(50% - 1mm);
+            height: calc(50% - 1mm);
+        }
+
+        /* DEFAULT PHOTO SPACING */
+        .layout-grid {
+            justify-content: space-between;
+            align-content: space-between;
+        }
+
+        .layout-grid .photo-item {
+            width: calc(50% - 1mm);
+            height: calc(50% - 1mm);
+        }
+
+        .no-photos {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px dashed #ccc;
+            color: #999;
+            font-style: italic;
+        }
+    </style>
+</head>
+
+<body>
+    {# Handle both single 'data'/'images' (legacy) and 'reports' list #}
+    {% set report_list = reports if reports else [{'data': data, 'images': images, 'layout_mode': layout_mode,
+    'img_count': img_count}] %}
+
+    {% for report in report_list %}
+    <div class="page" style="page-break-after: always;">
+
+        <!-- HEADER -->
+        <div class="header">
+            <div class="logo">
+                {% if logo_left %}
+                <img src="{{ logo_left }}" alt="Logo">
+                {% else %}
+                <svg width="100%" height="100%" viewBox="0 0 200 60" xmlns="http://www.w3.org/2000/svg"></svg>
+                {% endif %}
+            </div>
+            <div class="title">INFORME TÉCNICO DE ACTIVIDADES</div>
+            <div class="logo" style="justify-content: flex-end;">
+                {% if logo_right %}
+                <img src="{{ logo_right }}" alt="Logo">
+                {% else %}
+                <svg width="100%" height="100%" viewBox="0 0 140 50" xmlns="http://www.w3.org/2000/svg"></svg>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- INFO BAR -->
+        <div class="info-bar">
+            <div class="info-item">
+                <span class="info-label">CENTRO DE SERVICIO:</span>
+                <span class="info-value">{{ report.data.get('CENTRO', '-') }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">CONTRATISTA:</span>
+                <span class="info-value">{{ report.data.get('CONTRATISTA', '-') }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">NIS:</span>
+                <span class="info-value">{{ report.data.get('NIS', '-') }}</span>
+            </div>
+        </div>
+
+        <!-- 1.0 LOCALIZACION -->
+        <section class="localizacion">
+            <div class="section-title">1.0 LOCALIZACIÓN</div>
+            <table class="loc-table">
+                <tr>
+                    <td class="loc-label">DIRECCION:</td>
+                    <td class="loc-value" colspan="3">{{ report.data.get('DIRECCION', '-') }}</td>
+                </tr>
+                <tr>
+                    <td class="loc-label">LOCALIDAD:</td>
+                    <td class="loc-value">{{ report.data.get('LOCALIDAD', '-') }}</td>
+                    <td class="loc-label" style="padding-left:8px">DISTRITO:</td>
+                    <td class="loc-value">{{ report.data.get('DISTRITO', '-') }}</td>
+                </tr>
+            </table>
+        </section>
+
+        <!-- 2.0 DETALLES -->
+        <section class="localizacion">
+            <div class="section-title">2.0 DETALLES DE ORDEN DE TRABAJO</div>
+            <table class="loc-table">
+                <tr>
+                    <td class="loc-label">ACTIVIDAD:</td>
+                    <td class="loc-value">{{ report.data.get('ACTIVIDAD', '-') }}</td>
+                    <td class="loc-label" style="padding-left:8px">SUBACTIVIDAD:</td>
+                    <td class="loc-value">{{ report.data.get('SUBACTIVIDAD', '-') }}</td>
+                </tr>
+            </table>
+        </section>
+
+        <!-- 3.0 PANEL FOTOGRAFICO -->
+        <div class="section-title">3.0 PANEL FOTOGRÁFICO</div>
+        <div class="photo-section">
+            {% if report.images %}
+            {% set panel_count = report.images[:4]|length %}
+            <div class="photo-grid layout-{{ panel_count }}">
+                {% for img in report.images[:4] %}
+                <div class="photo-item">
+                    <img src="{{ img.path }}" alt="{{ img.name }}">
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="no-photos">No se encontraron imágenes asociadas a esta orden.</div>
+            {% endif %}
+        </div>
+
+    </div>
+    {% endfor %}
+</body>
+
+</html>

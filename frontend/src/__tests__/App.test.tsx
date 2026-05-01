@@ -12,9 +12,7 @@ describe('App', () => {
 
   it('shows conversion tab by default', async () => {
     render(<App />);
-    await waitFor(() => {
-      expect(screen.getByText('Arrastra imágenes aquí')).toBeInTheDocument();
-    });
+    expect(await screen.findByText('Arrastra imágenes o videos aquí', {}, { timeout: 5000 })).toBeInTheDocument();
   });
 
   it('keeps start disabled until files and destination are ready', async () => {
@@ -34,6 +32,6 @@ describe('App', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: /Reportes de Campo/i }));
 
-    expect(await screen.findByRole('heading', { name: /Paneles/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Paneles/i }, { timeout: 5000 })).toBeInTheDocument();
   });
 });
