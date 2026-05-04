@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 
 interface ThumbnailProps {
   path: string;
@@ -9,11 +9,11 @@ interface ThumbnailProps {
 export default function Thumbnail({ path, size = 48, variant = 'compact' }: ThumbnailProps) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
-  const parts = path.split(/[\\/]/);
-  const filename = parts[parts.length - 1] || path;
-  const ext = filename.split('.').pop()?.toUpperCase() ?? '';
-  const src = path.startsWith('file://') ? path : `file://${path}`;
   const isCard = variant === 'card';
+
+  const filename = useMemo(() => path.split(/[\\/]/).pop() || path, [path]);
+  const ext = useMemo(() => filename.split('.').pop()?.toUpperCase() ?? '', [filename]);
+  const src = useMemo(() => path.startsWith('file://') ? path : `file://${path}`, [path]);
 
   const handleLoad = useCallback(() => setLoaded(true), []);
   const handleError = useCallback(() => { setError(true); setLoaded(true); }, []);
@@ -27,7 +27,6 @@ export default function Thumbnail({ path, size = 48, variant = 'compact' }: Thum
       }`}
       style={isCard ? undefined : { width: size, height: size }}
     >
-      {/* Skeleton loader */}
       {!loaded && (
         <div className="absolute inset-0 animate-pulse bg-dark-elevated">
           <div className="h-full w-full bg-gradient-to-r from-transparent via-white/5 to-transparent animate-shimmer" />

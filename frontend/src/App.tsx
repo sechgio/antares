@@ -1,6 +1,7 @@
-import React, { useState, Suspense } from 'react';
+import React, { useState, Suspense, useMemo, useCallback, useEffect } from 'react';
 import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';
+import TitleBar from './components/layout/TitleBar';
 import { ToastProvider } from './hooks/useToast';
 import { DialogProvider } from './hooks/useDialog';
 import { useKeyboardShortcut } from './hooks/useKeyboardShortcut';
@@ -17,6 +18,19 @@ const ReportesCampoView = React.lazy(() => import('./components/reportes-campo')
 const HistoryView = React.lazy(() => import('./components/history/HistoryView'));
 const AppearanceView = React.lazy(() => import('./components/settings/AppearanceView'));
 const ImageOptimizerView = React.lazy(() => import('./components/image-optimizer'));
+const PreviewPanelView = React.lazy(() => import('./components/preview-panel/PreviewPanelView'));
+
+const LAZY_MODULES = [
+  () => import('./components/database/DatabaseView'),
+  () => import('./components/formatos/FormatosView'),
+  () => import('./components/padron/PadronView'),
+  () => import('./components/volantes/VolantesView'),
+  () => import('./components/reportes-campo'),
+  () => import('./components/history/HistoryView'),
+  () => import('./components/settings/AppearanceView'),
+  () => import('./components/image-optimizer'),
+  () => import('./components/preview-panel/PreviewPanelView'),
+];
 
 const tabTitles: Record<string, string> = {
   convert: 'Conversión',
@@ -26,28 +40,54 @@ const tabTitles: Record<string, string> = {
   volantes: 'Generar Volantes',
   reportesCampo: 'Reportes de Campo',
   imageOptimizer: 'Optimizador de Imágenes',
+  previewPanel: 'Generador Reportes',
   history: 'Historial',
   appearance: 'Apariencia',
 };
 
-type TabId = 'convert' | 'db' | 'formatos' | 'padron' | 'volantes' | 'reportesCampo' | 'imageOptimizer' | 'history' | 'appearance';
+const FULL_BLEED_TABS = new Set(['padron', 'volantes', 'reportesCampo', 'formatos', 'previewPanel']);
+
+type TabId = 'convert' | 'db' | 'formatos' | 'padron' | 'volantes' | 'reportesCampo' | 'imageOptimizer' | 'previewPanel' | 'history' | 'appearance';
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<TabId>('convert');
   const [commandOpen, setCommandOpen] = useState(false);
 
-  useKeyboardShortcut('k', () => setCommandOpen(true), { ctrl: true, preventDefault: true });
-  useKeyboardShortcut('1', () => setActiveTab('convert'), { ctrl: true, preventDefault: true });
-  useKeyboardShortcut('2', () => setActiveTab('db'), { ctrl: true, preventDefault: true });
-  useKeyboardShortcut('3', () => setActiveTab('formatos'), { ctrl: true, preventDefault: true });
-  useKeyboardShortcut('4', () => setActiveTab('padron'), { ctrl: true, preventDefault: true });
-  useKeyboardShortcut('5', () => setActiveTab('volantes'), { ctrl: true, preventDefault: true });
-  useKeyboardShortcut('6', () => setActiveTab('history'), { ctrl: true, preventDefault: true });
-  useKeyboardShortcut('7', () => setActiveTab('appearance'), { ctrl: true, preventDefault: true });
-  useKeyboardShortcut('8', () => setActiveTab('reportesCampo'), { ctrl: true, preventDefault: true });
-  useKeyboardShortcut('9', () => setActiveTab('imageOptimizer'), { ctrl: true, preventDefault: true });
+  // Prefetch lazy modules after mount for faster tab switching
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      for (const loader of LAZY_MODULES) {
+        loader().catch(() => {});
+      }
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, []);
 
-  const commandItems = [
+  const openCommandPalette = useCallback(() => setCommandOpen(true), []);
+  const setActiveTabConvert = useCallback(() => setActiveTab('convert'), []);
+  const setActiveTabDb = useCallback(() => setActiveTab('db'), []);
+  const setActiveTabFormatos = useCallback(() => setActiveTab('formatos'), []);
+  const setActiveTabPadron = useCallback(() => setActiveTab('padron'), []);
+  const setActiveTabVolantes = useCallback(() => setActiveTab('volantes'), []);
+  const setActiveTabHistory = useCallback(() => setActiveTab('history'), []);
+  const setActiveTabAppearance = useCallback(() => setActiveTab('appearance'), []);
+  const setActiveTabReportesCampo = useCallback(() => setActiveTab('reportesCampo'), []);
+  const setActiveTabImageOptimizer = useCallback(() => setActiveTab('imageOptimizer'), []);
+  const setActiveTabPreviewPanel = useCallback(() => setActiveTab('previewPanel'), []);
+
+  useKeyboardShortcut('k', openCommandPalette, { ctrl: true, preventDefault: true });
+  useKeyboardShortcut('1', setActiveTabConvert, { ctrl: true, preventDefault: true });
+  useKeyboardShortcut('2', setActiveTabDb, { ctrl: true, preventDefault: true });
+  useKeyboardShortcut('3', setActiveTabFormatos, { ctrl: true, preventDefault: true });
+  useKeyboardShortcut('4', setActiveTabPadron, { ctrl: true, preventDefault: true });
+  useKeyboardShortcut('5', setActiveTabVolantes, { ctrl: true, preventDefault: true });
+  useKeyboardShortcut('6', setActiveTabHistory, { ctrl: true, preventDefault: true });
+  useKeyboardShortcut('7', setActiveTabAppearance, { ctrl: true, preventDefault: true });
+  useKeyboardShortcut('8', setActiveTabReportesCampo, { ctrl: true, preventDefault: true });
+  useKeyboardShortcut('9', setActiveTabImageOptimizer, { ctrl: true, preventDefault: true });
+  useKeyboardShortcut('0', setActiveTabPreviewPanel, { ctrl: true, preventDefault: true });
+
+  const commandItems = useMemo(() => [
     { id: 'tab-convert', label: 'Ir a Conversión', shortcut: 'Ctrl+1', action: () => setActiveTab('convert') },
     { id: 'tab-db', label: 'Ir a Base de Datos', shortcut: 'Ctrl+2', action: () => setActiveTab('db') },
     { id: 'tab-formatos', label: 'Ir a Formatos PDF', shortcut: 'Ctrl+3', action: () => setActiveTab('formatos') },
@@ -57,35 +97,38 @@ function AppContent() {
     { id: 'tab-appearance', label: 'Ir a Apariencia', shortcut: 'Ctrl+7', action: () => setActiveTab('appearance') },
     { id: 'tab-reportes-campo', label: 'Ir a Reportes de Campo', shortcut: 'Ctrl+8', action: () => setActiveTab('reportesCampo') },
     { id: 'tab-image-optimizer', label: 'Ir a Optimizador de Imágenes', shortcut: 'Ctrl+9', action: () => setActiveTab('imageOptimizer') },
-  ];
+    { id: 'tab-preview-panel', label: 'Ir a Generador de Reportes', shortcut: 'Ctrl+0', action: () => setActiveTab('previewPanel') },
+  ], []);
 
-  // Tabs that use full-bleed layout (no padding) because they manage their own internal layout
-  const fullBleedTabs = ['padron', 'volantes', 'reportesCampo', 'formatos'];
-  const isFullBleed = fullBleedTabs.includes(activeTab);
+  const isFullBleed = FULL_BLEED_TABS.has(activeTab);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]">
-      <Sidebar
-        activeTab={activeTab}
-        onTabChange={(t) => setActiveTab(t as TabId)}
-      />
-      <div className="flex-1 flex flex-col min-w-0 min-h-0">
-        <Header title={tabTitles[activeTab]} onSearchClick={() => setCommandOpen(true)} />
-        <main className="flex-1 overflow-hidden relative">
-          <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">Cargando...</div>}>
-            <div className={`h-full overflow-y-auto ${isFullBleed ? '' : 'px-6 py-6'}`}>
-              {activeTab === 'convert' && <ConversionView />}
-              {activeTab === 'db' && <DatabaseView />}
-              {activeTab === 'formatos' && <FormatosView />}
-              {activeTab === 'padron' && <PadronView />}
-              {activeTab === 'volantes' && <VolantesView />}
-              {activeTab === 'reportesCampo' && <ReportesCampoView />}
-              {activeTab === 'imageOptimizer' && <ImageOptimizerView />}
-              {activeTab === 'history' && <HistoryView />}
-              {activeTab === 'appearance' && <AppearanceView />}
-            </div>
-          </Suspense>
-        </main>
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]">
+      <TitleBar />
+      <div className="flex min-h-0 flex-1">
+        <Sidebar
+          activeTab={activeTab}
+          onTabChange={(t) => setActiveTab(t as TabId)}
+        />
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
+          <Header title={tabTitles[activeTab]} onSearchClick={() => setCommandOpen(true)} />
+          <main className="flex-1 overflow-hidden relative">
+            <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">Cargando...</div>}>
+              <div className={`h-full overflow-y-auto ${isFullBleed ? '' : 'px-6 py-6'}`}>
+                {activeTab === 'convert' && <ConversionView />}
+                {activeTab === 'db' && <DatabaseView />}
+                {activeTab === 'formatos' && <FormatosView />}
+                {activeTab === 'padron' && <PadronView />}
+                {activeTab === 'volantes' && <VolantesView />}
+                {activeTab === 'reportesCampo' && <ReportesCampoView />}
+                {activeTab === 'imageOptimizer' && <ImageOptimizerView />}
+                {activeTab === 'previewPanel' && <PreviewPanelView />}
+                {activeTab === 'history' && <HistoryView />}
+                {activeTab === 'appearance' && <AppearanceView />}
+              </div>
+            </Suspense>
+          </main>
+        </div>
       </div>
       <CommandPalette isOpen={commandOpen} onClose={() => setCommandOpen(false)} items={commandItems} />
       <Dialog />

@@ -48,6 +48,10 @@ export function getOutputMimeType(format: OutputFormat, originalType: string): s
       return 'image/png';
     case 'webp':
       return 'image/webp';
+    case 'avif':
+      return 'image/avif';
+    case 'bmp':
+      return 'image/bmp';
     default:
       return originalType || 'image/jpeg';
   }
@@ -62,6 +66,10 @@ export function getExtensionForFormat(format: OutputFormat, originalName: string
       return 'png';
     case 'webp':
       return 'webp';
+    case 'avif':
+      return 'avif';
+    case 'bmp':
+      return 'bmp';
     default:
       return originalExtension;
   }

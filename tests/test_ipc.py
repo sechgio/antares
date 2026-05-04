@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from backend.version import __version__
+
 BACKEND_SCRIPT = Path(__file__).parent.parent / "backend" / "main.py"
 
 
@@ -85,7 +87,7 @@ class TestIPC:
     def test_version(self, backend_process):
         resp = _rpc_call(backend_process, "version", {})
         assert "result" in resp
-        assert resp["result"]["version"] == "0.3.6"
+        assert resp["result"]["version"] == __version__
 
     def test_formats(self, backend_process):
         resp = _rpc_call(backend_process, "formats", {})

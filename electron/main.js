@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, screen, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -10,6 +10,62 @@ const isDev = !app.isPackaged;
 
 let mainWindow;
 let pythonProcess = null;
+
+function buildAppMenu(menuIndex = 0) {
+  const menus = [
+    {
+      label: 'Archivo',
+      submenu: [
+        { label: 'Cerrar ventana', role: 'close' },
+        { type: 'separator' },
+        { label: 'Salir', role: 'quit' },
+      ],
+    },
+    {
+      label: 'Editar',
+      submenu: [
+        { label: 'Deshacer', role: 'undo' },
+        { label: 'Rehacer', role: 'redo' },
+        { type: 'separator' },
+        { label: 'Cortar', role: 'cut' },
+        { label: 'Copiar', role: 'copy' },
+        { label: 'Pegar', role: 'paste' },
+        { label: 'Seleccionar todo', role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'Ver',
+      submenu: [
+        { label: 'Recargar', role: 'reload' },
+        { label: 'Herramientas de desarrollo', role: 'toggleDevTools' },
+        { type: 'separator' },
+        { label: 'Zoom real', role: 'resetZoom' },
+        { label: 'Acercar', role: 'zoomIn' },
+        { label: 'Alejar', role: 'zoomOut' },
+        { type: 'separator' },
+        { label: 'Pantalla completa', role: 'togglefullscreen' },
+      ],
+    },
+    {
+      label: 'Ventana',
+      submenu: [
+        { label: 'Minimizar', role: 'minimize' },
+        { label: 'Maximizar', click: () => mainWindow?.maximize() },
+        { label: 'Restaurar', click: () => mainWindow?.unmaximize() },
+        { type: 'separator' },
+        { label: 'Cerrar', role: 'close' },
+      ],
+    },
+    {
+      label: 'Ayuda',
+      submenu: [
+        { label: 'Acerca de COSMO', role: 'about' },
+      ],
+    },
+  ];
+
+  return Menu.buildFromTemplate([menus[menuIndex] || menus[0]]);
+}
 
 async function startPythonBackend(attempt = 1) {
   try {
@@ -131,7 +187,7 @@ function setupNotificationListener() {
 
 // IPC bridge: frontend -> main -> Python -> main -> frontend
 ipcMain.handle('ipc-call', async (event, method, params) => {
-  const dialogResult = await handleDialogCall(method, params, dialog, mainWindow);
+  const dialogResult = await handleDialogCall(method, params, dialog, mainWindow, { BrowserWindow });
   if (dialogResult.handled) {
     return dialogResult.result;
   }
@@ -182,6 +238,45 @@ ipcMain.handle('ipc-call', async (event, method, params) => {
   });
 });
 
+ipcMain.handle('window-control', async (_event, action) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return { handled: false };
+
+  if (action === 'minimize') {
+    mainWindow.minimize();
+    return { handled: true };
+  }
+
+  if (action === 'maximize') {
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow.maximize();
+    }
+    return { handled: true, maximized: mainWindow.isMaximized() };
+  }
+
+  if (action === 'close') {
+    mainWindow.close();
+    return { handled: true };
+  }
+
+  return { handled: false };
+});
+
+ipcMain.handle('app-menu-popup', async (_event, menuIndex, position) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return { handled: false };
+
+  const menu = buildAppMenu(Number(menuIndex));
+  const x = Number(position?.x);
+  const y = Number(position?.y);
+  menu.popup({
+    window: mainWindow,
+    ...(Number.isFinite(x) && Number.isFinite(y) ? { x: Math.round(x), y: Math.round(y) } : {}),
+  });
+
+  return { handled: true };
+});
+
 // Auto-updater events
 autoUpdater.on('update-available', (info) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -208,8 +303,9 @@ function createWindow() {
     width: width,
     height: height,
     show: false,
-    frame: true,
-    titleBarStyle: 'default',
+    frame: false,
+    titleBarStyle: 'hidden',
+    autoHideMenuBar: true,
     icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -218,6 +314,9 @@ function createWindow() {
       sandbox: false,
     },
   });
+
+  // Prevent background throttling for smoother IPC
+  mainWindow.webContents.setBackgroundThrottling(false);
 
   mainWindow.maximize();
 
@@ -242,8 +341,10 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   try {
-    await startPythonBackend();
+    Menu.setApplicationMenu(null);
+    // Start backend and create window in parallel for faster startup
     createWindow();
+    await startPythonBackend();
     // Check for updates in production
     if (!isDev) {
       autoUpdater.checkForUpdates();

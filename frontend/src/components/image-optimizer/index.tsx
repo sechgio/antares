@@ -119,7 +119,7 @@ export default function ImageOptimizer() {
     const validFiles = fileArray.filter((file) => file.type.startsWith('image/') && !file.type.includes('gif'));
     const ignored = fileArray.length - validFiles.length;
     if (ignored > 0) {
-      addToast(`${ignored} archivo(s) ignorado(s). Solo JPG, PNG y WEBP.`, 'error', 4500);
+      addToast(`${ignored} archivo(s) ignorado(s). Formatos aceptados: JPG, PNG, WEBP, AVIF, BMP.`, 'error', 4500);
     }
     if (validFiles.length === 0) return;
 
@@ -466,12 +466,12 @@ export default function ImageOptimizer() {
                   }
                 }}
               >
-                <input ref={fileInputRef} type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={handleFileInput} className="hidden" />
+                <input ref={fileInputRef} type="file" multiple accept="image/jpeg,image/png,image/webp,image/avif,image/bmp" onChange={handleFileInput} className="hidden" />
                 <Upload size={12} className={`shrink-0 transition-colors ${isDragActive ? 'text-[var(--accent-primary)]' : 'text-[var(--text-muted)] group-hover:text-[var(--text-primary)]'}`} />
                 <span className="flex-1 text-[10px] font-mono uppercase tracking-widest text-[var(--text-muted)] transition-colors group-hover:text-[var(--text-primary)]">
                   {isDragActive ? 'Suelta aqui' : 'Agregar imagenes'}
                 </span>
-                <span className="hidden text-[9px] font-mono tracking-wider text-[var(--text-muted)] opacity-50 sm:inline">JPG · PNG · WEBP</span>
+                <span className="hidden text-[9px] font-mono tracking-wider text-[var(--text-muted)] opacity-50 sm:inline">JPG · PNG · WEBP · AVIF · BMP</span>
               </div>
 
             </div>

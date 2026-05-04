@@ -17,6 +17,10 @@ declare global {
       onUpdateAvailable?: (callback: (info: { version?: string }) => void) => () => void;
       onUpdateDownloaded?: (callback: (info: { version?: string }) => void) => () => void;
       quitAndInstall?: () => void;
+      minimizeWindow?: () => Promise<unknown>;
+      maximizeWindow?: () => Promise<unknown>;
+      closeWindow?: () => Promise<unknown>;
+      showAppMenu?: (menuIndex: number, position: { x: number; y: number }) => Promise<unknown>;
     };
   }
 }
@@ -135,4 +139,8 @@ export const api = {
   // ─── Plantillas PreviewPanel ─────────────────────────────────────────────
   templatesList: () => _invoke<{ templates: Array<{ id: string; name: string; filename: string }> }>('templates_list'),
   templateGet: (name: string) => _invoke<{ name: string; content: string }>('template_get', { name }),
+
+  // ─── Render HTML to PDF via Electron ─────────────────────────────────────
+  htmlToPdf: (body: { html: string; filename: string }) =>
+    _invoke<{ pdf_base64: string; filename: string }>('html_to_pdf', body),
 };

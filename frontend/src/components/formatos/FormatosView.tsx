@@ -105,13 +105,11 @@ async function renderPageToUrl(
 }
 
 /* ─── Multi-page PDF Viewer ──────────────────────────────────── */
-function PdfMultiViewer({ blob, desde, total, padLen }: { blob: Blob | null; desde: number; total: number; padLen: number }) {
+function PdfMultiViewer({ blob, desde, total, padLen, zoom }: { blob: Blob | null; desde: number; total: number; padLen: number; zoom: number }) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [pageImgs, setPageImgs] = useState<PageImg[]>([]);
     const [renderingPage, setRenderingPage] = useState(0);
-    const [zoom, setZoom] = useState(100);
     const [renderError, setRenderError] = useState<string | null>(null);
-    const zoomStep = 25;
     const rafId = useRef(0);
 
     useEffect(() => {
@@ -206,12 +204,6 @@ function PdfMultiViewer({ blob, desde, total, padLen }: { blob: Blob | null; des
 
     return (
         <div ref={containerRef} className="w-full h-full overflow-y-auto flex flex-col" style={{ scrollbarWidth: 'thin', scrollbarColor: 'var(--scrollbar-thumb) transparent' }}>
-            <div className="flex items-center justify-center gap-3 py-2 px-4 bg-[var(--bg-base)]/50 border-b border-[var(--border-subtle)] flex-shrink-0">
-                <button onClick={() => setZoom(z => Math.max(50, z - zoomStep))} className="w-7 h-7 rounded bg-[var(--bg-elevated)] hover:bg-[var(--bg-input)] text-[var(--accent-primary)] text-sm font-bold flex items-center justify-center transition-colors">−</button>
-                <span className="text-[11px] text-[var(--accent-primary)] font-medium min-w-[40px] text-center" style={{ fontFamily: "'Roboto Mono', monospace" }}>{zoom}%</span>
-                <button onClick={() => setZoom(z => Math.min(200, z + zoomStep))} className="w-7 h-7 rounded bg-[var(--bg-elevated)] hover:bg-[var(--bg-input)] text-[var(--accent-primary)] text-sm font-bold flex items-center justify-center transition-colors">+</button>
-                <button onClick={() => setZoom(100)} className="ml-1 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">reset</button>
-            </div>
             <div className="px-4 py-6 space-y-6 flex flex-col items-center flex-1">
                 {pageImgs.map((p) => (
                     <div key={p.pageNum} className="relative mx-auto bg-white rounded-xl shadow-2xl shadow-black/50" style={{ width: `${(zoom / 100) * 100}%`, maxWidth: '100%' }}>
@@ -499,6 +491,8 @@ export default function FormatosView() {
     const [showUpload, setShowUpload] = useState(false);
     const [mappingMode, setMappingMode] = useState(false);
     const [editMapping, setEditMapping] = useState<VisualMapping | null>(null);
+    const [zoom, setZoom] = useState(100);
+    const zoomStep = 25;
 
     const selected = formats.find(f => f.id === selectedId) ?? null;
     const padLen = selected?.mapping?.padding ?? 7;
@@ -649,7 +643,7 @@ export default function FormatosView() {
     const isCapped = previewTotal > MAX_PREVIEW_PAGES;
 
     return (
-        <div className="flex overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]" style={{ height: 'calc(100vh - 0px)', fontFamily: "'Outfit', sans-serif" }}>
+        <div className="flex h-full min-h-0 overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]" style={{ fontFamily: "'Outfit', sans-serif" }}>
             {/* ── LEFT: PREVIEW ─────────────────────────────────────── */}
             <div className="flex-1 flex flex-col min-w-0 relative">
                 <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle, color-mix(in srgb, var(--border-medium) 70%, transparent) 1px, transparent 1px)', backgroundSize: '28px 28px' }} />
@@ -661,6 +655,23 @@ export default function FormatosView() {
                         <span className="text-[10px] tracking-[0.22em] uppercase text-[var(--text-muted)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>Vista Previa</span>
                     </div>
                     <div className="flex items-center gap-3">
+                        <div
+                            data-testid="formatos-context-title"
+                            className="flex items-center gap-1.5 border border-[var(--border-subtle)] rounded px-2.5 py-1 bg-[var(--bg-elevated)]"
+                            style={{ fontFamily: "'Roboto Mono', monospace" }}
+                        >
+                            <FileText size={9} className="text-[var(--accent-primary)]/60" />
+                            <span className="text-[9px] font-medium tracking-[0.22em] uppercase text-[var(--text-secondary)]">FORMATOS PDF</span>
+                            {previewBlob && (
+                                <>
+                                    <div className="w-px h-3 bg-[var(--border-subtle)] mx-0.5" />
+                                    <button onClick={() => setZoom(z => Math.max(50, z - zoomStep))} className="w-4 h-4 rounded bg-[var(--bg-base)] hover:bg-[var(--bg-input)] text-[var(--accent-primary)] text-[10px] font-bold flex items-center justify-center transition-colors leading-none">−</button>
+                                    <span className="text-[9px] text-[var(--accent-primary)] font-medium min-w-[28px] text-center">{zoom}%</span>
+                                    <button onClick={() => setZoom(z => Math.min(200, z + zoomStep))} className="w-4 h-4 rounded bg-[var(--bg-base)] hover:bg-[var(--bg-input)] text-[var(--accent-primary)] text-[10px] font-bold flex items-center justify-center transition-colors leading-none">+</button>
+                                    <button onClick={() => setZoom(100)} className="text-[8px] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">reset</button>
+                                </>
+                            )}
+                        </div>
                         {previewBlob && previewPagesShown > 0 && (
                             <div className="flex items-center gap-1.5 border border-[var(--border-subtle)] rounded px-2.5 py-1 bg-[var(--bg-elevated)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
                                 <span className="text-[9px] tracking-wider text-[var(--text-muted)]">N°</span>
@@ -690,7 +701,7 @@ export default function FormatosView() {
                 {/* viewer area */}
                 <div className="relative flex-1 overflow-hidden">
                     {previewBlob ? (
-                        <PdfMultiViewer blob={previewBlob} desde={previewDesde} total={previewTotal} padLen={padLen} />
+                        <PdfMultiViewer blob={previewBlob} desde={previewDesde} total={previewTotal} padLen={padLen} zoom={zoom} />
                     ) : (
                         <EmptyPreview loading={previewLoading || loadingFormats} />
                     )}
@@ -699,14 +710,8 @@ export default function FormatosView() {
 
             {/* ── RIGHT: SIDEBAR ────────────────────────────────────── */}
             <div className="w-[320px] flex-shrink-0 flex flex-col border-l border-[var(--border-subtle)] bg-[var(--bg-base)]">
-                {/* brand header */}
-                <div className="px-6 pt-7 pb-5 border-b border-[var(--border-subtle)]">
-                    <h1 className="text-[22px] font-semibold tracking-tight text-[var(--text-primary)] leading-none">Formatos</h1>
-                    <p className="text-[11px] text-[var(--text-muted)] mt-1.5">Generador de PDFs con correlativo</p>
-                </div>
-
                 {/* scrollable config */}
-                <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+                <div className={`flex-1 px-6 pt-5 pb-3 space-y-4 ${mappingMode ? 'overflow-y-auto' : 'overflow-y-hidden'}`}>
 
                     {/* ─ Format Selector ─ */}
                     <section>
@@ -870,7 +875,7 @@ export default function FormatosView() {
 
                 {/* ─ Footer / Generate ─ */}
                 {!mappingMode && (
-                    <div className="px-6 pb-6 pt-4 border-t border-[var(--border-subtle)] space-y-3">
+                    <div className="px-6 pb-12 pt-3 border-t border-[var(--border-subtle)]">
                         <button
                             onClick={handleGenerate}
                             disabled={loading || !canGenerate}
@@ -885,9 +890,6 @@ export default function FormatosView() {
                             </div>
                             {!loading && <ChevronRight size={12} className="opacity-40 group-hover:opacity-80 transition-opacity" />}
                         </button>
-                        <p className="text-center text-[9px] tracking-[0.2em] text-[var(--text-muted)] uppercase" style={{ fontFamily: "'Roboto Mono', monospace" }}>
-                            máx. {maxPages} páginas / descarga
-                        </p>
                     </div>
                 )}
             </div>

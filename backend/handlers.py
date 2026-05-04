@@ -44,10 +44,19 @@ from backend.core.database import (
 from backend.core.renamer import RenamerEngine
 from backend.ipc_protocol import send_notification
 from backend.utils.i18n import set_locale, t
+from backend.utils.paths import resource_path
 from backend.utils.validators import parse_filename_parts
 from backend.version import __version__
 
 logger = logging.getLogger(__name__)
+
+
+def _preview_templates_dir() -> Path:
+    """Resolve report-generator templates in source and PyInstaller builds."""
+    bundled = resource_path("backend/templates")
+    if bundled.exists():
+        return bundled
+    return Path(__file__).resolve().parent / "templates"
 
 # ─── Decorador para locale ──────────────────────────────────────────────────
 
@@ -93,9 +102,8 @@ def _validate_path(path: str) -> None:
     if not path or not isinstance(path, str):
         raise ValueError(f"Invalid path: {path}")
 
-    # Check for traversal
-    has_traversal = ('..' in path or path.startswith('/') or (':' in path[1:] if len(path) > 1 else False))
-    if has_traversal and _PATH_TRAVERSAL_RE.search(path):
+    # Reject path traversal
+    if '..' in path or _PATH_TRAVERSAL_RE.search(path):
         raise ValueError(f"Path traversal detected: {path}")
 
 # ─── Estado de procesamiento ────────────────────────────────────────────────
@@ -554,7 +562,7 @@ class Handlers:
     @with_locale
     def templates_list(params: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
         """Listar plantillas HTML disponibles en backend/templates."""
-        templates_dir = Path(__file__).parent / "templates"
+        templates_dir = _preview_templates_dir()
         if not templates_dir.exists():
             return {"templates": []}
 
@@ -573,14 +581,14 @@ class Handlers:
     def template_get(params: dict[str, Any]) -> dict[str, str]:
         """Obtener contenido de una plantilla HTML por nombre."""
         name = params.get("name", "")
-        templates_dir = Path(__file__).parent / "templates"
+        templates_dir = _preview_templates_dir()
         target = templates_dir / name
 
         # Validar que no haya path traversal
         try:
             target.relative_to(templates_dir.resolve())
-        except ValueError:
-            raise ValueError("Invalid template name")
+        except ValueError as err:
+            raise ValueError("Invalid template name") from err
 
         if not target.exists() or not target.is_file():
             raise ValueError(f"Template not found: {name}")

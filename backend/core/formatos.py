@@ -139,8 +139,8 @@ def _save_catalog() -> None:
     persistable = [fmt for fmt in _formats.values() if fmt.get("persisted", True)]
     with open(_CATALOG_PATH, "w", encoding="utf-8") as f:
         json.dump(persistable, f, ensure_ascii=False, indent=2)
-    f.flush()
-    os.fsync(f.fileno())
+        f.flush()
+        os.fsync(f.fileno())
 
 
 def _resolve_path(fmt: dict[str, Any]) -> Path:

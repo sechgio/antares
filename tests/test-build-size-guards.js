@@ -25,6 +25,7 @@ const spec = readProjectFile('backend', 'backend.spec');
 for (const moduleName of ['scipy', 'numba', 'llvmlite', 'pandas._testing']) {
   assert(spec.includes(`'${moduleName}'`) || spec.includes(`"${moduleName}"`), `PyInstaller should exclude optional heavy module ${moduleName}`);
 }
+assert(spec.includes("backend/templates"), 'PyInstaller should bundle backend HTML templates for report generator');
 
 const builderConfig = readProjectFile('electron-builder.yml');
 assert(/electronLanguages:\s*\n\s*-\s*es\s*\n\s*-\s*en-US/m.test(builderConfig), 'electron-builder should keep only Spanish and English Electron locales');

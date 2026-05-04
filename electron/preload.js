@@ -18,6 +18,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('update-downloaded', listener);
   },
   quitAndInstall: () => ipcRenderer.send('quit-and-install'),
+  minimizeWindow: () => ipcRenderer.invoke('window-control', 'minimize'),
+  maximizeWindow: () => ipcRenderer.invoke('window-control', 'maximize'),
+  closeWindow: () => ipcRenderer.invoke('window-control', 'close'),
+  showAppMenu: (menuIndex, position) => ipcRenderer.invoke('app-menu-popup', menuIndex, position),
 });
 
 window.addEventListener('error', (e) => {

@@ -11,7 +11,9 @@ a = Analysis(
     [str(backend_dir / 'main.py')],
     pathex=[str(backend_dir), str(project_dir)],
     binaries=[],
-    datas=[],
+    datas=[
+        (str(backend_dir / 'templates'), 'backend/templates'),
+    ],
     hiddenimports=[
         'backend.core.converter',
         'backend.core.database',
@@ -40,7 +42,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[
+excludes=[
         # Optional acceleration/analytics stacks pulled in by pandas hooks.
         # The app uses pandas/openpyxl for Excel I/O, not SciPy/Numba.
         'scipy',
@@ -48,11 +50,24 @@ a = Analysis(
         'llvmlite',
         'pandas._testing',
         'numpy.testing',
+        # Unused large modules
+        'matplotlib',
+        'notebook',
+        'IPython',
+        'jupyterlab',
+        'tornado',
+        'sqlalchemy',
+        'pydoc',
+        'doctest',
+        'pip',
+        'tkinter',
+        'test',
+        'tests',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
-    noarchive=False,
+    noarchive=True,
 )
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
@@ -65,7 +80,7 @@ exe = EXE(
     name='CosmoBackend',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=False,
+    strip=True,
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,

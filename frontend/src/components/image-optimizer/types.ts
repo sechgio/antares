@@ -3,7 +3,7 @@ export interface CropOffset {
   y: number;
 }
 
-export type OutputFormat = 'original' | 'jpeg' | 'png' | 'webp';
+export type OutputFormat = 'original' | 'jpeg' | 'png' | 'webp' | 'avif' | 'bmp';
 
 export type AspectRatio = 'original' | '1:1' | '4:3' | '4:5' | '3:2' | '16:9' | '9:16' | '3:4' | '2:3';
 

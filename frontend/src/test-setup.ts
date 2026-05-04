@@ -21,6 +21,10 @@ Object.defineProperty(window, 'electronAPI', {
     onNotify: () => () => {},
     onUpdateAvailable: () => () => {},
     onUpdateDownloaded: () => () => {},
+    minimizeWindow: async () => ({}),
+    maximizeWindow: async () => ({}),
+    closeWindow: async () => ({}),
+    showAppMenu: async () => ({}),
   },
   writable: true,
 });

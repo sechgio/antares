@@ -25,8 +25,17 @@ function restoreCachedTheme() {
 
 restoreCachedTheme();
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
+const root = ReactDOM.createRoot(document.getElementById('root')!);
+
+// Use StrictMode only in development to avoid double renders in production
+const isDev = import.meta.env.DEV;
+
+root.render(
+  isDev ? (
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  ) : (
     <App />
-  </React.StrictMode>,
-)
+  ),
+);

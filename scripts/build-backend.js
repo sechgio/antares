@@ -42,7 +42,7 @@ try {
       cwd: backendDir,
       stdio: 'inherit',
       shell: true,
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONDONTWRITEBYTECODE: '1' }
     }
   );
   // PyInstaller puts output in backend/dist by default; move to project dist

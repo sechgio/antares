@@ -54,6 +54,9 @@
   html, body, #root {
     height: 100%;
   }
+  html {
+    background-color: var(--bg-surface);
+  }
   body {
     background-color: var(--bg-base);
     color: var(--text-primary);
@@ -92,6 +95,16 @@
   html[data-pointer-cursors="true"] input[type="range"],
   html[data-pointer-cursors="true"] input[type="checkbox"] {
     cursor: pointer;
+  }
+}
+
+@layer components {
+  .app-titlebar {
+    -webkit-app-region: drag;
+  }
+  .app-titlebar-button,
+  .app-titlebar-controls {
+    -webkit-app-region: no-drag;
   }
 }
 

@@ -13,6 +13,10 @@ describe('global appearance coverage', () => {
     const files = [
       'components/database/DatabaseView.tsx',
       'components/conversion/PreviewDrawer.tsx',
+      'components/history/HistoryView.tsx',
+      'components/history/RunList.tsx',
+      'components/history/RunDetail.tsx',
+      'components/layout/TitleBar.tsx',
     ];
 
     for (const file of files) {

@@ -127,9 +127,11 @@ export default function SettingsPanel({
             className="w-full appearance-none rounded-lg border border-[var(--border-medium)] bg-[var(--bg-base)] px-3 py-2 text-[11px] font-mono text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent-primary)]"
           >
             <option value="original" className="bg-[var(--bg-base)]">Original</option>
-            <option value="jpeg" className="bg-[var(--bg-base)]">JPEG</option>
+            <option value="jpeg" className="bg-[var(--bg-base)]">JPG</option>
             <option value="png" className="bg-[var(--bg-base)]">PNG</option>
             <option value="webp" className="bg-[var(--bg-base)]">WEBP</option>
+            <option value="avif" className="bg-[var(--bg-base)]">AVIF</option>
+            <option value="bmp" className="bg-[var(--bg-base)]">BMP</option>
           </select>
         </label>
       </OperationSection>

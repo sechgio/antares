@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import io
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from PIL import Image
@@ -194,8 +195,9 @@ def procesar_lote(
     resize: tuple[int, int] | list[int] | None = None,
     keep_exif: bool = False,
     progreso_callback: ProgresoCallback | None = None,
+    max_workers: int | None = None,
 ) -> list[Path | str]:
-    """Procesa un lote de imágenes.
+    """Procesa un lote de imágenes en paralelo usando ThreadPoolExecutor.
 
     Args:
         origenes: Lista de rutas de imágenes.
@@ -205,6 +207,7 @@ def procesar_lote(
         resize: Tupla (ancho, alto) opcional.
         keep_exif: Preservar metadatos EXIF.
         progreso_callback: Función(i, total, ruta) opcional para reportar progreso.
+        max_workers: Número máximo de workers paralelos (default: min(CPU count, 4)).
 
     Returns:
         Lista de Paths generados o strings de error 'ERROR: ...'.
@@ -215,22 +218,39 @@ def procesar_lote(
     if formato_upper not in FORMATOS_SOPORTADOS:
         raise ValueError(f"Formato no soportado: {formato}")
     ext = FORMATOS_SOPORTADOS[formato_upper]["ext"]
-    resultados: list[Path | str] = []
 
-    for i, ruta in enumerate(origenes, 1):
+    if max_workers is None:
+        import os
+        max_workers = min(os.cpu_count() or 2, 4)
+
+    def _process_single(args: tuple[int, str | Path]) -> tuple[int, Path | str]:
+        i, ruta = args
         ruta = Path(ruta)
         nombre_salida = ruta.stem + ext
         ruta_salida = carpeta_destino / nombre_salida
         try:
-            convertir_imagen(ruta, ruta_salida, formato, calidad, resize, keep_exif)
-            resultados.append(ruta_salida)
+            if es_video(ruta):
+                copiar_video(ruta, ruta_salida)
+            else:
+                convertir_imagen(ruta, ruta_salida, formato, calidad, resize, keep_exif)
+            return i, ruta_salida
         except Exception as e:
-            resultados.append(f"ERROR: {ruta.name} -> {e}")
+            return i, f"ERROR: {ruta.name} -> {e}"
 
-        if progreso_callback:
-            progreso_callback(i, len(origenes), ruta)
+    # Use ThreadPoolExecutor for I/O-bound and CPU-bound image processing
+    # Pillow releases the GIL during C-level operations
+    indexed_results: dict[int, Path | str] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_process_single, (idx, ruta)): idx for idx, ruta in enumerate(origenes)}
 
-    return resultados
+        for future in as_completed(futures):
+            idx, result = future.result()
+            indexed_results[idx] = result
+            if progreso_callback:
+                progreso_callback(len(indexed_results), len(origenes), Path(origenes[idx]))
+
+    # Preserve original order
+    return [indexed_results[i] for i in range(len(origenes))]
 
 
 def convertir_a_preview(

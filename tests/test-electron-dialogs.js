@@ -48,6 +48,56 @@ async function run() {
   const ignored = await handleDialogCall('db_records', {}, dialog, win);
   assert(ignored.handled === false, 'non-dialog methods should not be handled');
 
+  class FakeBrowserWindow {
+    static instances = [];
+
+    constructor(options) {
+      this.options = options;
+      this.closed = false;
+      this.listeners = {};
+      this.webContents = {
+        once: (event, callback) => {
+          this.listeners[event] = callback;
+        },
+        printToPDF: async (options) => {
+          this.printOptions = options;
+          return Buffer.from('%PDF-test');
+        },
+      };
+      FakeBrowserWindow.instances.push(this);
+    }
+
+    async loadFile(filePath) {
+      this.loadedFile = filePath;
+      this.listeners['did-finish-load']();
+    }
+
+    isDestroyed() {
+      return this.closed;
+    }
+
+    close() {
+      this.closed = true;
+    }
+  }
+
+  const pdf = await handleDialogCall(
+    'html_to_pdf',
+    { html: '<!doctype html><html><body>PDF</body></html>', filename: 'reporte.pdf' },
+    dialog,
+    win,
+    { BrowserWindow: FakeBrowserWindow },
+  );
+  const pdfWindow = FakeBrowserWindow.instances[0];
+  assert(pdf.handled === true, 'html_to_pdf should be handled by Electron');
+  assert(pdf.result.filename === 'reporte.pdf', 'html_to_pdf should return requested filename');
+  assert(pdf.result.pdf_base64 === Buffer.from('%PDF-test').toString('base64'), 'html_to_pdf should return PDF bytes as base64');
+  assert(pdfWindow.options.show === false, 'html_to_pdf should render in a hidden window');
+  assert(pdfWindow.loadedFile.endsWith('render.html'), 'html_to_pdf should render from a temporary HTML file');
+  assert(pdfWindow.printOptions.printBackground === true, 'html_to_pdf should print backgrounds');
+  assert(pdfWindow.printOptions.preferCSSPageSize === true, 'html_to_pdf should respect CSS page size');
+  assert(pdfWindow.closed === true, 'html_to_pdf should close the hidden window');
+
   console.log(`\n${'='.repeat(50)}`);
   console.log(`Results: ${passed} passed, ${failed} failed`);
   console.log('='.repeat(50));

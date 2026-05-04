@@ -1,6 +1,7 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { api, onNotify } from '../../api';
 import { PreviewItem, ProcessStatus, RenamePattern } from '../../types';
+import { ConversionConfig } from './ConversionPresets';
 import Dropzone from './Dropzone';
 import FileGrid from './FileGrid';
 import OptionsCard from './OptionsCard';
@@ -8,6 +9,7 @@ import RenameCard from './RenameCard';
 import StickyActionBar from './StickyActionBar';
 import ProgressBar from './ProgressBar';
 import PreviewDrawer from './PreviewDrawer';
+import { Image, Film, FolderOpen, ArrowRight, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 const fileNameFromPath = (path: string) => path.split(/[\\/]/).pop() || path;
 
@@ -40,7 +42,6 @@ const isVideoByExt = (path: string) => {
 };
 
 export default function ConversionView() {
-
   const [files, setFiles] = useState<string[]>([]);
   const [destino, setDestino] = useState('');
   const [formato, setFormato] = useState('JPEG');
@@ -66,7 +67,7 @@ export default function ConversionView() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [videoFiles, setVideoFiles] = useState<Set<string>>(new Set());
 
-  const namingPresets = patterns.length > 0 ? patterns : buildDefaultPresets(fields);
+  const namingPresets = useMemo(() => patterns.length > 0 ? patterns : buildDefaultPresets(fields), [patterns, fields]);
   const resizeWidth = resizeEnabled ? parsePositiveInt(resizeAncho) : null;
   const resizeHeight = resizeEnabled ? parsePositiveInt(resizeAlto) : null;
   const filesReady = files.length > 0;
@@ -74,6 +75,26 @@ export default function ConversionView() {
   const renameReady = !usarRename || patron.trim().length > 0;
   const outputReady = destino.trim().length > 0;
   const allReady = filesReady && optionsReady && renameReady && outputReady;
+
+  const currentConfig: ConversionConfig = useMemo(() => ({
+    formato, calidad, resizeEnabled, resizeAncho, resizeAlto,
+    keepExif, usarRename, patron, secuencia, useFilenameSeq, namingMode,
+  }), [formato, calidad, resizeEnabled, resizeAncho, resizeAlto, keepExif, usarRename, patron, secuencia, useFilenameSeq, namingMode]);
+
+  const handleLoadConfig = useCallback((config: ConversionConfig) => {
+    setFormato(config.formato);
+    setCalidad(config.calidad);
+    setResizeEnabled(config.resizeEnabled);
+    setResizeAncho(config.resizeAncho);
+    setResizeAlto(config.resizeAlto);
+    setKeepExif(config.keepExif);
+    setUsarRename(config.usarRename);
+    setPatron(config.patron);
+    setSecuencia(config.secuencia);
+    setUseFilenameSeq(config.useFilenameSeq);
+    setNamingMode(config.namingMode);
+    setPreview(null);
+  }, []);
 
   // History reexecute listener
   useEffect(() => {
@@ -120,8 +141,6 @@ export default function ConversionView() {
     api.getRenamePatterns().then((r) => {
       if (r.patterns && r.patterns.length > 0) setPatterns(r.patterns);
     }).catch(() => {});
-
-    // Fetch status once on mount to recover previous state, then rely on push notifications
     pollStatus();
   }, []);
 
@@ -133,7 +152,7 @@ export default function ConversionView() {
     } catch { /* ignore */ }
   };
 
-  // Use push notifications instead of polling — backend sends process.progress and process.complete
+  // Push notifications
   useEffect(() => {
     const unsub = onNotify((method, params) => {
       const p = params as Record<string, unknown>;
@@ -203,7 +222,7 @@ export default function ConversionView() {
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [files, patron, secuencia, useFilenameSeq, usarRename]);
 
-  // Detect videos (client-side by extension — no IPC needed)
+  // Detect videos
   useEffect(() => {
     const videoSet = new Set<string>();
     for (const file of files) {
@@ -212,18 +231,28 @@ export default function ConversionView() {
     setVideoFiles(videoSet);
   }, [files]);
 
-  // Sync selectedFiles when files change (remove entries no longer in files)
+  // Sync selectedFiles when files change - only remove deleted files
+  const filesRef = useRef(files);
+  useEffect(() => {
+    filesRef.current = files;
+  }, [files]);
+
   useEffect(() => {
     setSelectedFiles((prev) => {
-      const next = new Set(prev);
-      let changed = false;
-      for (const f of next) {
-        if (!files.includes(f)) {
-          next.delete(f);
-          changed = true;
+      const currentFiles = filesRef.current;
+      let needsUpdate = false;
+      for (const f of prev) {
+        if (!currentFiles.includes(f)) {
+          needsUpdate = true;
+          break;
         }
       }
-      return changed ? next : prev;
+      if (!needsUpdate) return prev;
+      const next = new Set(prev);
+      for (const f of prev) {
+        if (!currentFiles.includes(f)) next.delete(f);
+      }
+      return next;
     });
   }, [files]);
 
@@ -253,6 +282,10 @@ export default function ConversionView() {
     setDragOver(false);
     const dropped = Array.from(e.dataTransfer.files).map((f: any) => f.path || f.name);
     mergeFiles(dropped);
+  }, [mergeFiles]);
+
+  const onPasteFiles = useCallback((paths: string[]) => {
+    mergeFiles(paths);
   }, [mergeFiles]);
 
   const removeFile = (path: string) => {
@@ -323,9 +356,9 @@ export default function ConversionView() {
 
   const videoCount = videoFiles.size;
   const imageCount = files.length - videoCount;
-  const summary = files.length > 0
+  const summary = useMemo(() => files.length > 0
     ? `${imageCount} imagen${imageCount !== 1 ? 'es' : ''}${videoCount > 0 ? ` + ${videoCount} video${videoCount !== 1 ? 's' : ''}` : ''} → ${formato} · ${calidad}% · ${usarRename ? fileNameFromPath(patron) : 'Sin cambios'}`
-    : '';
+    : '', [files.length, imageCount, videoCount, formato, calidad, usarRename, patron]);
 
   const isEmpty = files.length === 0;
 
@@ -345,8 +378,10 @@ export default function ConversionView() {
         fileCount={files.length - videoFiles.size}
         videoCount={videoFiles.size}
         onClear={clearFiles}
+        onPasteFiles={onPasteFiles}
       />
 
+      {/* Empty State - Action Bar */}
       {isEmpty && (
         <StickyActionBar
           destino={destino}
@@ -356,28 +391,56 @@ export default function ConversionView() {
           running={running}
           allReady={allReady}
           summary={summary}
+          currentConfig={currentConfig}
+          onLoadConfig={handleLoadConfig}
         />
       )}
 
+      {/* Main Content */}
       {!isEmpty && (
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-12">
+          {/* Left Column: Files */}
           <div className="flex min-h-0 flex-col gap-4 xl:col-span-7 2xl:col-span-8">
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
-              <div className="flex shrink-0 items-center justify-between border-b border-[var(--border-subtle)] px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Archivos</span>
-                  <span className="px-2 py-0.5 rounded-full bg-[var(--bg-elevated)] text-[var(--text-secondary)] text-[11px] font-medium border border-[var(--border-subtle)]">
-                    {files.length}
-                  </span>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+              {/* Files Header */}
+              <div className="flex shrink-0 items-center justify-between border-b border-[var(--border-subtle)] px-5 py-3.5">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <Image className="h-4 w-4 text-[var(--text-muted)]" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Archivos</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="px-2.5 py-0.5 rounded-full bg-[var(--bg-elevated)] text-[var(--text-secondary)] text-[11px] font-semibold border border-[var(--border-subtle)]">
+                      {files.length}
+                    </span>
+                    {videoCount > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-[var(--accent-yellow)]/10 text-[var(--accent-yellow)] text-[10px] font-semibold border border-[var(--accent-yellow)]/20 flex items-center gap-1">
+                        <Film className="h-2.5 w-2.5" />
+                        {videoCount}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <button
-                  onClick={selectAllFiles}
-                  className="text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-                >
-                  {selectedFiles.size === files.length ? 'Deseleccionar todo' : 'Seleccionar todo'}
-                </button>
+                <div className="flex items-center gap-2">
+                  {selectedFiles.size > 0 && (
+                    <button
+                      onClick={removeSelectedFiles}
+                      className="text-[11px] font-medium text-[var(--accent-red)] hover:bg-[var(--accent-red)]/10 px-2.5 py-1 rounded-lg transition-colors"
+                    >
+                      Eliminar {selectedFiles.size}
+                    </button>
+                  )}
+                  <button
+                    onClick={selectAllFiles}
+                    className="text-[11px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] px-2.5 py-1 rounded-lg hover:bg-[var(--bg-elevated)] transition-colors"
+                  >
+                    {selectedFiles.size === files.length ? 'Deseleccionar todo' : 'Seleccionar todo'}
+                  </button>
+                </div>
               </div>
-              <div className="flex-1 overflow-hidden p-3">
+
+              {/* File Grid */}
+              <div className="flex-1 overflow-hidden p-4">
                 <FileGrid
                   files={files}
                   selectedFiles={selectedFiles}
@@ -387,22 +450,86 @@ export default function ConversionView() {
                   videoFiles={videoFiles}
                 />
               </div>
+
+              {/* File Grid Footer */}
+              <div className="shrink-0 flex items-center justify-between border-t border-[var(--border-subtle)] px-5 py-2.5 bg-[var(--bg-elevated)]/30">
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
+                    <Image className="h-3 w-3" />
+                    <span className="font-semibold text-[var(--text-primary)]">{imageCount}</span>
+                    <span>imagen{imageCount !== 1 ? 'es' : ''}</span>
+                  </div>
+                  {videoCount > 0 && (
+                    <div className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
+                      <Film className="h-3 w-3" />
+                      <span className="font-semibold text-[var(--text-primary)]">{videoCount}</span>
+                      <span>video{videoCount !== 1 ? 's' : ''}</span>
+                    </div>
+                  )}
+                </div>
+                {selectedFiles.size > 0 && (
+                  <span className="text-[11px] text-[var(--accent-primary)] font-medium">
+                    {selectedFiles.size} seleccionado{selectedFiles.size !== 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
-          <div className="grid min-h-0 content-start gap-4 xl:col-span-5 2xl:col-span-4">
-            <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
-                <span className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Imágenes</span>
-                <span className="mt-1 block text-lg font-semibold text-[var(--text-primary)]">{imageCount}</span>
+          {/* Right Column: Options */}
+          <div className="grid min-h-0 content-start gap-4 xl:col-span-5 2xl:col-span-4 overflow-y-auto pr-1">
+            {/* Quick Stats Cards */}
+            <div className="grid grid-cols-3 gap-2.5">
+              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3 flex flex-col items-center text-center">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] mb-1.5">
+                  <Image className="h-4 w-4" />
+                </div>
+                <span className="text-lg font-bold text-[var(--text-primary)] leading-tight">{imageCount}</span>
+                <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Imágenes</span>
               </div>
-              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
-                <span className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Videos</span>
-                <span className="mt-1 block text-lg font-semibold text-[var(--text-primary)]">{videoCount}</span>
+              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3 flex flex-col items-center text-center">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent-yellow)]/10 text-[var(--accent-yellow)] mb-1.5">
+                  <Film className="h-4 w-4" />
+                </div>
+                <span className="text-lg font-bold text-[var(--text-primary)] leading-tight">{videoCount}</span>
+                <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Videos</span>
               </div>
-              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
-                <span className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Salida</span>
-                <span className="mt-1 block truncate text-lg font-semibold text-[var(--text-primary)]">{formato}</span>
+              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3 flex flex-col items-center text-center">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent-green)]/10 text-[var(--accent-green)] mb-1.5">
+                  <FolderOpen className="h-4 w-4" />
+                </div>
+                <span className="text-lg font-bold text-[var(--text-primary)] leading-tight truncate w-full">{formato}</span>
+                <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Formato</span>
+              </div>
+            </div>
+
+            {/* Status indicators */}
+            <div className="flex items-center gap-2">
+              <div className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium transition-colors ${
+                optionsReady
+                  ? 'bg-[var(--accent-green)]/5 border-[var(--accent-green)]/20 text-[var(--accent-green)]'
+                  : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-muted)]'
+              }`}>
+                {optionsReady ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                <span>Opciones</span>
+                <ArrowRight className="h-3 w-3 ml-auto opacity-60" />
+              </div>
+              <div className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium transition-colors ${
+                renameReady
+                  ? 'bg-[var(--accent-green)]/5 border-[var(--accent-green)]/20 text-[var(--accent-green)]'
+                  : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-muted)]'
+              }`}>
+                {renameReady ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                <span>Nombres</span>
+                <ArrowRight className="h-3 w-3 ml-auto opacity-60" />
+              </div>
+              <div className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium transition-colors ${
+                outputReady
+                  ? 'bg-[var(--accent-green)]/5 border-[var(--accent-green)]/20 text-[var(--accent-green)]'
+                  : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-muted)]'
+              }`}>
+                {outputReady ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                <span>Destino</span>
               </div>
             </div>
 
@@ -466,6 +593,15 @@ export default function ConversionView() {
           running={running}
           allReady={allReady}
           summary={summary}
+          currentConfig={currentConfig}
+          onLoadConfig={handleLoadConfig}
+          fileCount={files.length}
+          videoCount={videoCount}
+          imageCount={imageCount}
+          formato={formato}
+          calidad={calidad}
+          resizeEnabled={resizeEnabled}
+          usarRename={usarRename}
         />
       )}
     </div>

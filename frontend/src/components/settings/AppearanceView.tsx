@@ -39,6 +39,13 @@ const ACCENTS = [
   { key: 'teal', color: '#14B8A6', hover: '#0F766E', light: '#5EEAD4', dark: '#115E59' },
   { key: 'green', color: '#84CC16', hover: '#65A30D', light: '#BEF264', dark: '#365314' },
   { key: 'amber', color: '#F59E0B', hover: '#D97706', light: '#FCD34D', dark: '#92400E' },
+  { key: 'rose', color: '#F43F5E', hover: '#E11D48', light: '#FDA4AF', dark: '#9F1239' },
+  { key: 'indigo', color: '#6366F1', hover: '#4F46E5', light: '#A5B4FC', dark: '#3730A3' },
+  { key: 'cyan', color: '#06B6D4', hover: '#0891B2', light: '#67E8F9', dark: '#0E7490' },
+  { key: 'pink', color: '#EC4899', hover: '#DB2777', light: '#F9A8D4', dark: '#BE185D' },
+  { key: 'emerald', color: '#10B981', hover: '#059669', light: '#6EE7B7', dark: '#047857' },
+  { key: 'orange', color: '#F97316', hover: '#EA580C', light: '#FDBA74', dark: '#9A3412' },
+  { key: 'red', color: '#EF4444', hover: '#DC2626', light: '#FCA5A5', dark: '#B91C1C' },
 ];
 
 const LIGHT_THEME: Partial<ThemeConfig> = {

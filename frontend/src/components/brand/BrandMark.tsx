@@ -75,8 +75,8 @@ export default function BrandMark({
 
       {showText && (
         <span className="min-w-0 leading-none">
-          <span className={`block font-bold tracking-[0] text-white ${activeSize.word}`}>COSMO</span>
-          {tagline && <span className={`mt-1 block truncate text-[#7C8494] ${activeSize.tagline}`}>{tagline}</span>}
+          <span className={`block font-bold tracking-[0] text-[var(--text-primary)] ${activeSize.word}`}>COSMO</span>
+          {tagline && <span className={`mt-1 block truncate text-[var(--text-secondary)] ${activeSize.tagline}`}>{tagline}</span>}
         </span>
       )}
     </div>

@@ -88,75 +88,82 @@ async function renderTransformedFile(source: File, settings: BatchSettings, crop
     : { width: sourceRect.width, height: sourceRect.height, scale: 1 };
 
   const canvas = document.createElement('canvas');
-  canvas.width = resize.width;
-  canvas.height = resize.height;
+  try {
+    canvas.width = resize.width;
+    canvas.height = resize.height;
 
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    throw new Error('No se pudo crear el canvas de procesamiento.');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      throw new Error('No se pudo crear el canvas de procesamiento.');
+    }
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(
+      image,
+      sourceRect.offsetX,
+      sourceRect.offsetY,
+      sourceRect.width,
+      sourceRect.height,
+      0,
+      0,
+      resize.width,
+      resize.height,
+    );
+
+    const outputFormat = settings.operations.formatEnabled ? settings.format.outputFormat : 'original';
+    const mimeType = getOutputMimeType(outputFormat, source.type);
+    const quality = mimeType === 'image/png' ? 1 : 0.95;
+    return await canvasToFile(canvas, source.name, mimeType, quality);
+  } finally {
+    canvas.width = 0;
+    canvas.height = 0;
   }
-
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(
-    image,
-    sourceRect.offsetX,
-    sourceRect.offsetY,
-    sourceRect.width,
-    sourceRect.height,
-    0,
-    0,
-    resize.width,
-    resize.height,
-  );
-
-  const outputFormat = settings.operations.formatEnabled ? settings.format.outputFormat : 'original';
-  const mimeType = getOutputMimeType(outputFormat, source.type);
-  const quality = mimeType === 'image/png' ? 1 : 0.95;
-  return canvasToFile(canvas, source.name, mimeType, quality);
 }
 
 async function compressImage(file: File, maxSizeMB: number, quality: number, mimeType?: string): Promise<Blob> {
-  // Native canvas-based compression without browser-image-compression
   const img = await loadImageElement(file);
   const canvas = document.createElement('canvas');
-  canvas.width = img.naturalWidth;
-  canvas.height = img.naturalHeight;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('No se pudo crear canvas');
-  ctx.drawImage(img, 0, 0);
+  try {
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('No se pudo crear canvas');
+    ctx.drawImage(img, 0, 0);
 
-  const targetMime = mimeType || file.type || 'image/jpeg';
-  const isPNG = targetMime === 'image/png';
+    const targetMime = mimeType || file.type || 'image/jpeg';
+    const isPNG = targetMime === 'image/png';
 
-  // Try progressively lower quality until under maxSizeMB
-  let currentQuality = isPNG ? 1 : quality;
-  const maxBytes = maxSizeMB * 1024 * 1024;
+    let currentQuality = isPNG ? 1 : quality;
+    const maxBytes = maxSizeMB * 1024 * 1024;
 
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const blob = await new Promise<Blob | null>((resolve) => {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob((b) => resolve(b), targetMime, currentQuality);
+      });
+
+      if (!blob) break;
+
+      if (blob.size <= maxBytes || isPNG || currentQuality <= 0.15) {
+        return blob;
+      }
+
+      currentQuality = Math.max(0.1, currentQuality - 0.1);
+    }
+
+    const finalBlob = await new Promise<Blob | null>((resolve) => {
       canvas.toBlob((b) => resolve(b), targetMime, currentQuality);
     });
 
-    if (!blob) break;
-
-    if (blob.size <= maxBytes || isPNG || currentQuality <= 0.15) {
-      return blob;
+    if (!finalBlob) {
+      throw new Error('No se pudo comprimir la imagen');
     }
 
-    currentQuality = Math.max(0.1, currentQuality - 0.1);
+    return finalBlob;
+  } finally {
+    canvas.width = 0;
+    canvas.height = 0;
   }
-
-  // Fallback: return with current quality
-  const finalBlob = await new Promise<Blob | null>((resolve) => {
-    canvas.toBlob((b) => resolve(b), targetMime, currentQuality);
-  });
-
-  if (!finalBlob) {
-    throw new Error('No se pudo comprimir la imagen');
-  }
-
-  return finalBlob;
 }
 
 export async function createImageItem(file: File): Promise<ImageItem> {

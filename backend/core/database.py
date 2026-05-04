@@ -26,6 +26,7 @@ _db_conn_path: str | None = None
 def _get_connection() -> sqlite3.Connection:
     """Retorna una conexión persistente con WAL mode (thread-safe via lock).
     Automatically reconnects if db_path changes (e.g. during tests).
+    Optimized with performance PRAGMAs for better concurrency and speed.
     """
     global _db_conn, _db_conn_path
     with _db_lock:
@@ -37,9 +38,14 @@ def _get_connection() -> sqlite3.Connection:
                     _db_conn.close()
             db_path = Path(current_path)
             db_path.parent.mkdir(parents=True, exist_ok=True)
-            _db_conn = sqlite3.connect(current_path, check_same_thread=False)
+            _db_conn = sqlite3.connect(current_path, check_same_thread=False, isolation_level=None)
+            # Performance optimizations
             _db_conn.execute("PRAGMA journal_mode=WAL")
             _db_conn.execute("PRAGMA synchronous=NORMAL")
+            _db_conn.execute("PRAGMA cache_size=-64000")  # 64MB cache
+            _db_conn.execute("PRAGMA temp_store=MEMORY")
+            _db_conn.execute("PRAGMA mmap_size=268435456")  # 256MB memory-mapped I/O
+            _db_conn.execute("PRAGMA page_size=4096")
             _db_conn.row_factory = sqlite3.Row
             _db_conn_path = current_path
         return _db_conn
@@ -193,7 +199,7 @@ def importar_excel(excel_path: str) -> int:
     if not Path(excel_path).exists():
         raise FileNotFoundError(f"No se encontró el archivo: {excel_path}")
 
-    df = pd.read_excel(excel_path, dtype=str)
+    df = pd.read_excel(excel_path, dtype=str, engine='openpyxl')
     df.columns = _normalize_excel_columns(list(df.columns))
 
     fields = load_fields()
@@ -233,7 +239,8 @@ def importar_excel(excel_path: str) -> int:
             col_names = ", ".join(field_names)
             sql = f"INSERT INTO imagenes ({col_names}) VALUES ({placeholders})"
 
-            inserted = 0
+            # Use executemany for bulk insert performance
+            all_values: list[list[Any]] = []
             for _, row in df.iterrows():
                 values: list[Any] = []
                 valid = True
@@ -247,8 +254,10 @@ def importar_excel(excel_path: str) -> int:
                     else:
                         values.append(None)
                 if valid:
-                    cursor.execute(sql, values)
-                    inserted += 1
+                    all_values.append(values)
+
+            cursor.executemany(sql, all_values)
+            inserted = len(all_values)
 
             conn.commit()
             return inserted
@@ -270,12 +279,13 @@ def exportar_excel(excel_path: str) -> int:
         cols = ", ".join(field_names)
         df = pd.read_sql_query(f"SELECT {cols} FROM imagenes", conn)
 
-    df.to_excel(excel_path, index=False)
+    df.to_excel(excel_path, index=False, engine='openpyxl')
     return len(df)
 
 
 def buscar_por_codigo(codigo: str) -> dict[str, Any] | None:
-    """Busca un registro por código o por cualquier campo de texto exacto."""
+    """Busca un registro por código o por cualquier campo de texto exacto.
+    Optimizado con una sola query usando OR en lugar de múltiples queries."""
     with _db_lock:
         conn = _get_connection()
         cursor = conn.cursor()
@@ -283,18 +293,12 @@ def buscar_por_codigo(codigo: str) -> dict[str, Any] | None:
         if not field_names:
             return None
         search_value = str(codigo).strip()
-        code_field = field_names[0]
-        cursor.execute(f"SELECT * FROM imagenes WHERE {code_field} = ?", (search_value,))
-        row = cursor.fetchone()
-        if row:
-            return dict(row)
 
-        for field_name in field_names[1:]:
-            cursor.execute(f"SELECT * FROM imagenes WHERE {field_name} = ?", (search_value,))
-            row = cursor.fetchone()
-            if row:
-                return dict(row)
-    return None
+        # Single query with OR instead of multiple queries
+        conditions = " OR ".join([f"{fn} = ?" for fn in field_names])
+        cursor.execute(f"SELECT * FROM imagenes WHERE {conditions} LIMIT 1", [search_value] * len(field_names))
+        row = cursor.fetchone()
+        return dict(row) if row else None
 
 
 def buscar_por_indice(indice: int) -> dict[str, Any] | None:
@@ -335,6 +339,8 @@ def limpiar_base_datos() -> int:
         count = cursor.fetchone()[0]
         cursor.execute("DELETE FROM imagenes")
         conn.commit()
+        # Vacuum to reclaim space and optimize
+        cursor.execute("VACUUM")
     return count
 
 
@@ -370,5 +376,5 @@ def generar_plantilla_excel(ruta_salida: str) -> int:
         else:
             sample.append(f"Ejemplo {fname}")
     df.loc[0] = sample
-    df.to_excel(ruta_salida, index=False)
+    df.to_excel(ruta_salida, index=False, engine='openpyxl')
     return len(df)

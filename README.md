@@ -41,7 +41,7 @@ Aplicación de escritorio construida con:
 ### Estructura del proyecto
 
 ```
-hidro_convert/
+COSMO/
 ├── electron/                  # Capa de escritorio Electron
 │   ├── main.js               # Proceso principal (ventanas, IPC, auto-updater)
 │   ├── preload.js            # Bridge seguro para el renderer (contextBridge)

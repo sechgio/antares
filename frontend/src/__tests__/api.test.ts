@@ -48,6 +48,15 @@ describe('API Client', () => {
     expect(result.paths).toContain('/path/file.jpg');
   });
 
+  it('should call HTML PDF renderer with correct method', async () => {
+    mockInvoke.mockResolvedValue({ pdf_base64: 'JVBERi0=', filename: 'reporte.pdf' });
+
+    const result = await api.htmlToPdf({ html: '<html></html>', filename: 'reporte.pdf' });
+
+    expect(mockInvoke).toHaveBeenCalledWith('html_to_pdf', { html: '<html></html>', filename: 'reporte.pdf' });
+    expect(result.filename).toBe('reporte.pdf');
+  });
+
   it('should call startProcess with correct params', async () => {
     mockInvoke.mockResolvedValue({ started: true });
     const body = {

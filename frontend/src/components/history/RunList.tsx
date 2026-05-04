@@ -33,29 +33,29 @@ const RUN_TYPE_LABELS: Record<RunType, string> = {
 };
 
 const RUN_TYPE_COLORS: Record<RunType, string> = {
-  conversion: 'text-[#22C55E] border-[#22C55E]/20 bg-[#22C55E]/10',
-  formato: 'text-[#5E6AD2] border-[#5E6AD2]/20 bg-[#5E6AD2]/10',
-  padron: 'text-[#F59E0B] border-[#F59E0B]/20 bg-[#F59E0B]/10',
-  volante: 'text-[#06B6D4] border-[#06B6D4]/20 bg-[#06B6D4]/10',
+  conversion: 'text-[var(--accent-green)] border-[color:var(--accent-green)]/20 bg-[color:var(--accent-green)]/10',
+  formato: 'text-[var(--accent-primary)] border-[color:var(--accent-primary)]/20 bg-[color:var(--accent-primary)]/10',
+  padron: 'text-[var(--accent-yellow)] border-[color:var(--accent-yellow)]/20 bg-[color:var(--accent-yellow)]/10',
+  volante: 'text-[var(--accent-secondary)] border-[color:var(--accent-secondary)]/20 bg-[color:var(--accent-secondary)]/10',
 };
 
 export default function RunList({ runs, selected, onSelect }: RunListProps) {
   if (runs.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center p-6">
-        <div className="w-12 h-12 rounded-2xl bg-[#1A1A1A] flex items-center justify-center mb-3 border border-[#222222]">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-[#666666]">
+        <div className="w-12 h-12 rounded-2xl bg-[var(--bg-elevated)] flex items-center justify-center mb-3 border border-[var(--border-subtle)]">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-[var(--text-muted)]">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
             <polyline points="14 2 14 8 20 8" />
           </svg>
         </div>
-        <p className="text-sm text-[#666666]">Aún no hay ejecuciones</p>
+        <p className="text-sm text-[var(--text-secondary)]">Aún no hay ejecuciones</p>
       </div>
     );
   }
 
   return (
-    <div className="divide-y divide-[#1A1A1A]/50">
+    <div className="divide-y divide-[var(--border-subtle)]">
       {runs.map((run) => {
         const fileCount = safeJsonParse<string[]>(run.files_json, []).length;
         const hasErrors = run.err_count > 0;
@@ -68,23 +68,23 @@ export default function RunList({ runs, selected, onSelect }: RunListProps) {
             onClick={() => onSelect(run)}
             className={`w-full text-left px-5 py-4 text-sm transition-all border-l-2 ${
               isSelected
-                ? 'bg-[#111111] border-[#5E6AD2]'
-                : 'bg-transparent border-transparent hover:bg-[#111111]'
+                ? 'bg-[var(--bg-surface)] border-[var(--accent-primary)]'
+                : 'bg-transparent border-transparent hover:bg-[var(--bg-surface)]'
             }`}
           >
             <div className="flex items-center justify-between mb-1.5">
-              <span className="font-medium text-[13px] text-white">{new Date(run.timestamp).toLocaleString()}</span>
+              <span className="font-medium text-[13px] text-[var(--text-primary)]">{new Date(run.timestamp).toLocaleString()}</span>
               <Badge variant={allErrors ? 'error' : hasErrors ? 'warning' : 'success'} className="text-[10px]">
                 {run.ok_count}/{run.ok_count + run.err_count}
               </Badge>
             </div>
-            <div className="flex items-center gap-2 text-[11px] text-[#666666]">
+            <div className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
               <span className={`px-1.5 py-0.5 rounded border text-[10px] font-medium ${RUN_TYPE_COLORS[type]}`}>
                 {RUN_TYPE_LABELS[type]}
               </span>
               {type === 'conversion' && (
                 <>
-                  <span className="px-1.5 py-0.5 rounded bg-[#1A1A1A] border border-[#222222]">{run.formato}</span>
+                  <span className="px-1.5 py-0.5 rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[var(--text-secondary)]">{run.formato}</span>
                   <span>{fileCount} archivos</span>
                   <span>· {run.calidad}%</span>
                 </>

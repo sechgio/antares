@@ -6,25 +6,45 @@ Incluye un mecanismo de handshake para reportar "ready" al proceso padre (Electr
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Force UTF-8 for stdio streams to prevent encoding issues in IPC pipes on Windows
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stdin, "reconfigure"):
+    sys.stdin.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
+try:
+    from bootstrap import adjust_backend_import_path
+except ModuleNotFoundError:
+    from backend.bootstrap import adjust_backend_import_path
+
+# Ensure backend package is importable when running main.py directly.
+# When executing `python backend/main.py`, Python adds the script's directory
+# to sys.path[0], causing `from backend.core...` to fail because `backend`
+# resolves to the directory itself instead of the parent directory.
+_backend_dir = Path(__file__).resolve().parent
+sys.path = adjust_backend_import_path(
+    sys.path,
+    _backend_dir,
+    frozen=bool(getattr(sys, "frozen", False)),
+)
+
 import json
 import locale
 import logging
 import signal
-import sys
 import traceback
 import warnings
-from pathlib import Path
 
 from backend.core.database import close_connection, init_db
 from backend.core.plugins import load_plugins_from_dir
 from backend.handlers import HANDLERS
 from backend.ipc_protocol import read_message, send_notification, send_response
 from backend.utils.i18n import t
-
-# Ensure backend is on path
-_backend = Path(__file__).resolve().parent
-if str(_backend) not in sys.path:
-    sys.path.insert(0, str(_backend))
 
 # Silence tkinter deprecation warning on macOS
 warnings.filterwarnings("ignore", category=DeprecationWarning)

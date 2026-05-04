@@ -7,7 +7,7 @@
       "options": {
         "baseURL": "https://inference.canopywave.io/v1",
         "headers": {
-          "Authorization": "Bearer P1-bW2TZf0Ze_oB6hufF-fJHeU1Vttz04qKN7XTADKA"
+          "Authorization": "Bearer wGEcNEHExDNCT4amrpr-1CZGJ0SWaUcPmag4x2_MK8I"
         }
       },
       "models": {
