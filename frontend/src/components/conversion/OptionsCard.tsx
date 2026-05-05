@@ -18,6 +18,8 @@ interface OptionsCardProps {
   onResizeAltoChange: (v: string) => void;
   keepExif: boolean;
   onToggleExif: (v: boolean) => void;
+  conversionEnabled: boolean;
+  onToggleConversion: (v: boolean) => void;
   hasVideos?: boolean;
 }
 
@@ -46,6 +48,7 @@ export default function OptionsCard({
   resizeEnabled, onToggleResize,
   resizeAncho, resizeAlto, onResizeAnchoChange, onResizeAltoChange,
   keepExif, onToggleExif,
+  conversionEnabled, onToggleConversion,
   hasVideos = false,
 }: OptionsCardProps) {
   const [showFormatInfo, setShowFormatInfo] = useState(false);
@@ -61,18 +64,38 @@ export default function OptionsCard({
           </div>
           <div>
             <span className="block text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]">Conversión</span>
-            <span className="text-xs text-[var(--text-secondary)]">{formato} · {calidad}%</span>
+            <span className="text-xs text-[var(--text-secondary)]">
+              {conversionEnabled ? `${formato} · ${calidad}%` : 'Desactivada · solo renombrar'}
+            </span>
           </div>
         </div>
-        {hasVideos && (
-          <div className="rounded-lg border border-[var(--accent-yellow)]/25 bg-[var(--accent-yellow)]/10 px-2.5 py-1">
-            <p className="text-[11px] font-medium text-[var(--accent-yellow)]">Videos: copia directa</p>
+        <div className="flex items-center gap-3">
+          {hasVideos && conversionEnabled && (
+            <div className="rounded-lg border border-[var(--accent-yellow)]/25 bg-[var(--accent-yellow)]/10 px-2.5 py-1">
+              <p className="text-[11px] font-medium text-[var(--accent-yellow)]">Videos: copia directa</p>
+            </div>
+          )}
+          <div className="flex items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-1.5">
+            <span className="text-[11px] font-semibold text-[var(--text-secondary)]">
+              {conversionEnabled ? 'Activa' : 'Solo renombrar'}
+            </span>
+            <Toggle checked={conversionEnabled} onChange={onToggleConversion} />
           </div>
-        )}
+        </div>
       </div>
 
-      {/* Format Selector */}
-      <div className="space-y-2">
+      {!conversionEnabled && (
+        <div className="rounded-xl border border-[var(--accent-secondary)]/25 bg-[var(--accent-secondary)]/10 px-3 py-2.5">
+          <p className="text-xs font-medium text-[var(--accent-secondary)]">
+            La conversión está desactivada. Los archivos se copiarán al destino con el nuevo nombre y conservarán su formato original.
+          </p>
+        </div>
+      )}
+
+      {conversionEnabled && (
+        <>
+          {/* Format Selector */}
+          <div className="space-y-2">
         <div className="flex items-center justify-between">
           <label className="text-xs font-medium text-[var(--text-secondary)]">Formato de salida</label>
           <button
@@ -124,10 +147,10 @@ export default function OptionsCard({
             </div>
           </div>
         )}
-      </div>
+          </div>
 
-      {/* Quality Section */}
-      <div className="space-y-3">
+          {/* Quality Section */}
+          <div className="space-y-3">
         <div className="flex items-center justify-between">
           <label className="text-xs font-medium text-[var(--text-secondary)]">Calidad de compresión</label>
           <span className="text-sm font-bold text-[var(--accent-primary)]">{calidad}%</span>
@@ -175,11 +198,11 @@ export default function OptionsCard({
             <span>100%</span>
           </div>
         </div>
-      </div>
+          </div>
 
-      <div className="space-y-3 border-t border-[var(--border-subtle)] pt-4">
-        {/* Resize Toggle */}
-        <div className="space-y-2.5">
+          <div className="space-y-3 border-t border-[var(--border-subtle)] pt-4">
+            {/* Resize Toggle */}
+            <div className="space-y-2.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--bg-elevated)] text-[var(--text-muted)]">
@@ -218,10 +241,10 @@ export default function OptionsCard({
               </div>
             </div>
           )}
-        </div>
+            </div>
 
-        {/* EXIF Toggle */}
-        <div className="flex items-center justify-between">
+            {/* EXIF Toggle */}
+            <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--bg-elevated)] text-[var(--text-muted)]">
               <Camera className="h-4 w-4" />
@@ -232,8 +255,10 @@ export default function OptionsCard({
             </div>
           </div>
           <Toggle checked={keepExif} onChange={onToggleExif} />
-        </div>
-      </div>
+            </div>
+          </div>
+        </>
+      )}
     </Card>
   );
 }

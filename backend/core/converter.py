@@ -97,6 +97,25 @@ def copiar_video(
     return ruta_destino
 
 
+def copiar_archivo(
+    ruta_origen: str | Path,
+    ruta_destino: str | Path,
+) -> Path:
+    """Copia un archivo sin conversión, preservando metadatos."""
+    import shutil
+
+    ruta_origen = Path(ruta_origen)
+    ruta_destino = Path(ruta_destino)
+
+    if not ruta_origen.exists():
+        raise FileNotFoundError(f"No se encontró el archivo: {ruta_origen}")
+
+    ruta_destino.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(ruta_origen, ruta_destino)
+
+    return ruta_destino
+
+
 def _ensure_mode(img: Image.Image, target_modes: tuple[str, ...]) -> Image.Image:
     """Convierte la imagen al modo compatible con el formato destino."""
     if img.mode in target_modes:

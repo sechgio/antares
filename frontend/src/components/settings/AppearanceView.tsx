@@ -32,6 +32,10 @@ type ModeOption = {
 };
 
 const CUSTOM_ACCENT_KEY = 'custom';
+const THEME_CSS_CACHE_KEY = 'hc_theme_css_cache';
+const THEME_ACTIVE_CACHE_KEY = 'hc_theme_active_cache';
+const THEME_MODE_CACHE_KEY = 'hc_theme_mode';
+const THEME_DENSITY_CACHE_KEY = 'hc_theme_density';
 
 const ACCENTS = [
   { key: 'violet', color: '#3B82F6', hover: '#2563EB', light: '#93C5FD', dark: '#1E40AF' },
@@ -169,6 +173,33 @@ function normalizeHexColor(value: string) {
   return /^#[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed.toUpperCase() : null;
 }
 
+function isThemeConfig(value: unknown): value is ThemeConfig {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<ThemeConfig>;
+  return typeof candidate.bg === 'string' && typeof candidate.fg === 'string' && typeof candidate.accent === 'string';
+}
+
+function readCachedActiveTheme() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const cached = localStorage.getItem(THEME_ACTIVE_CACHE_KEY);
+    if (!cached) return null;
+    const parsed = JSON.parse(cached) as unknown;
+    return isThemeConfig(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function hasCachedThemeCSS() {
+  if (typeof window === 'undefined') return false;
+  try {
+    return Boolean(localStorage.getItem(THEME_CSS_CACHE_KEY));
+  } catch {
+    return false;
+  }
+}
+
 function ensureReadableTheme(theme: ThemeConfig): ThemeConfig {
   const background = theme.bg || '#0A0A0A';
   const primary = contrastRatio(background, theme.fg || '#FFFFFF') >= 4.5
@@ -262,9 +293,10 @@ function applyThemeToCSS(theme: ThemeConfig, mode: ThemeMode, accentKey: string)
   root.dataset.sidebarTranslucent = nextTheme.sidebar_translucent || 'false';
 
   try {
-    localStorage.setItem('hc_theme_css_cache', JSON.stringify(cssCache));
-    localStorage.setItem('hc_theme_mode', mode);
-    localStorage.setItem('hc_theme_density', document.documentElement.dataset.themeDensity || nextTheme.density || 'comfortable');
+    localStorage.setItem(THEME_CSS_CACHE_KEY, JSON.stringify(cssCache));
+    localStorage.setItem(THEME_ACTIVE_CACHE_KEY, JSON.stringify(nextTheme));
+    localStorage.setItem(THEME_MODE_CACHE_KEY, mode);
+    localStorage.setItem(THEME_DENSITY_CACHE_KEY, document.documentElement.dataset.themeDensity || nextTheme.density || 'comfortable');
   } catch {}
 }
 
@@ -310,20 +342,25 @@ export default function AppearanceView() {
 
   const refresh = useCallback(async () => {
     const backendTheme = await api.getTheme();
-    const nextMode = (backendTheme?.mode as ThemeMode) || 'dark';
-    const nextAccent = accentKeyForTheme(backendTheme);
-    const nextLanguage = backendTheme?.language || i18n.language || 'es';
+    const cachedTheme = readCachedActiveTheme();
+    const initialTheme = cachedTheme || backendTheme;
+    const nextMode = (initialTheme?.mode as ThemeMode) || 'dark';
+    const nextAccent = accentKeyForTheme(initialTheme);
+    const nextLanguage = initialTheme?.language || i18n.language || 'es';
 
-    setTheme(backendTheme);
+    setTheme(initialTheme);
     setMode(nextMode);
     setAccent(nextAccent);
     setLanguage(nextLanguage);
-    setPointerCursors(toStoredBool(backendTheme.pointer_cursors));
-    setSidebarTranslucent(toStoredBool(backendTheme.sidebar_translucent));
-    setContrast(Number(backendTheme.contrast || 60));
-    setInterfaceFontSize(Number(backendTheme.interface_font_size || 13));
-    setCodeFontSize(Number(backendTheme.code_font_size || 12));
-    applyThemeToCSS(backendTheme, nextMode, nextAccent);
+    setPointerCursors(toStoredBool(initialTheme.pointer_cursors));
+    setSidebarTranslucent(toStoredBool(initialTheme.sidebar_translucent));
+    setContrast(Number(initialTheme.contrast || 60));
+    setInterfaceFontSize(Number(initialTheme.interface_font_size || 13));
+    setCodeFontSize(Number(initialTheme.code_font_size || 12));
+
+    if (cachedTheme || !hasCachedThemeCSS()) {
+      applyThemeToCSS(initialTheme, nextMode, nextAccent);
+    }
 
     const presetResponse = await api.getPresets();
     setPresets(presetResponse.presets);

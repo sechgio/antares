@@ -32,7 +32,7 @@ from backend.core.config_theme import (
     reset_theme,
     save_theme,
 )
-from backend.core.converter import FORMATOS_SOPORTADOS, VIDEO_FORMATS, convertir_imagen, copiar_video, es_video
+from backend.core.converter import FORMATOS_SOPORTADOS, VIDEO_FORMATS, convertir_imagen, copiar_archivo, copiar_video, es_video
 from backend.core.database import (
     buscar_por_codigo,
     exportar_excel,
@@ -604,6 +604,7 @@ def _process_thread(params: dict[str, Any]) -> None:
     destino = params.get("destino", "")
     formato = params.get("formato", "JPEG")
     calidad = params.get("calidad", 95)
+    conversion_enabled = params.get("conversion_enabled", True)
     resize_ancho = params.get("resize_ancho")
     resize_alto = params.get("resize_alto")
     keep_exif = params.get("keep_exif", False)
@@ -618,7 +619,7 @@ def _process_thread(params: dict[str, Any]) -> None:
     if resize_ancho and resize_alto:
         resize = (int(resize_ancho), int(resize_alto))
 
-    ext_dest = FORMATOS_SOPORTADOS[formato]["ext"]
+    ext_dest = FORMATOS_SOPORTADOS[formato]["ext"] if conversion_enabled else None
     total = len(files)
 
     # Pre-compute output paths (rename lookup needs DB access — do sequentially)
@@ -632,12 +633,12 @@ def _process_thread(params: dict[str, Any]) -> None:
             datos = buscar_por_codigo(codigo)
             fseq = seq if use_filename_seq else None
             nuevo_nombre = engine.aplicar(p, datos_bd=datos, codigo_manual=codigo, file_seq=fseq)
-            if is_video_file:
+            if is_video_file or not conversion_enabled:
                 out_path = Path(destino) / nuevo_nombre
             else:
                 out_path = (Path(destino) / nuevo_nombre).with_suffix(ext_dest)
         else:
-            out_path = Path(destino) / p.name if is_video_file else Path(destino) / (p.stem + ext_dest)
+            out_path = Path(destino) / p.name if is_video_file or not conversion_enabled else Path(destino) / (p.stem + ext_dest)
 
         tasks.append((fpath, out_path, is_video_file))
 
@@ -653,6 +654,8 @@ def _process_thread(params: dict[str, Any]) -> None:
         try:
             if is_video_file:
                 copiar_video(fpath, out_path)
+            elif not conversion_enabled:
+                copiar_archivo(fpath, out_path)
             else:
                 convertir_imagen(fpath, out_path, formato, calidad, resize, keep_exif)
             return (True, out_path.name, "")
@@ -687,7 +690,7 @@ def _process_thread(params: dict[str, Any]) -> None:
             with _state._lock:
                 if success:
                     _state.ok_count += 1
-                    _log(f"Procesado: {name}", "ok")
+                    _log(f"{'Renombrado' if not conversion_enabled else 'Procesado'}: {name}", "ok")
                 else:
                     _state.err_count += 1
                     _log(t("error.process_failed", file=name, error=error), "error")
@@ -721,7 +724,7 @@ def _process_thread(params: dict[str, Any]) -> None:
     from backend.core.history import save_run
     save_run(
         files=[str(f) for f in files],
-        options={"formato": formato, "calidad": calidad, "resize": str(resize) if resize else None, "keep_exif": keep_exif, "usar_rename": usar_rename},
+        options={"formato": formato, "calidad": calidad, "conversion_enabled": conversion_enabled, "resize": str(resize) if resize else None, "keep_exif": keep_exif, "usar_rename": usar_rename},
         patron=patron,
         formato=formato,
         calidad=calidad,

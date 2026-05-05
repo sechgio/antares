@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import Card from '../ui/Card';
-import Badge from '../ui/Badge';
 import Input from '../ui/Input';
 import Toggle from '../ui/Toggle';
-import type { RenamePattern, PreviewItem } from '../../types';
-import { ChevronRight, PencilLine, Tags, LayoutGrid, List, Database, Hash, FileType, GripHorizontal } from 'lucide-react';
+import type { RenamePattern } from '../../types';
+import { PencilLine, Tags, LayoutGrid, Database, Hash, FileType, GripHorizontal } from 'lucide-react';
 
 interface RenameCardProps {
   files: string[];
@@ -18,7 +17,6 @@ interface RenameCardProps {
   useFilenameSeq: boolean;
   onToggleFilenameSeq: (v: boolean) => void;
   namingPresets: RenamePattern[];
-  preview: PreviewItem[] | null;
   fields: string[];
   onInsertVar: (v: string) => void;
   hasVideos?: boolean;
@@ -39,18 +37,14 @@ const exampleFromPattern = (pattern: string, fields: string[], firstFile?: strin
 export default function RenameCard({
   files, usarRename, namingMode, onNamingModeChange,
   patron, onPatronChange, secuencia, onSecuenciaChange,
-  useFilenameSeq, onToggleFilenameSeq, namingPresets, preview, fields, onInsertVar,
+  useFilenameSeq, onToggleFilenameSeq, namingPresets, fields, onInsertVar,
   hasVideos = false,
 }: RenameCardProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showManager, setShowManager] = useState(false);
-  const [previewMode, setPreviewMode] = useState<'compact' | 'full'>('compact');
 
   const namingExample = exampleFromPattern(usarRename ? patron : '', fields, files[0]);
   const usesSeq = patron.includes('{seq}');
-  const previewRows = preview?.slice(0, previewMode === 'compact' ? 3 : 8) || [];
-  const hiddenPreviewCount = preview ? Math.max(0, preview.length - previewRows.length) : 0;
-  const dbMatchedCount = preview?.filter((item) => item.en_bd).length ?? 0;
 
   return (
     <Card className="space-y-4">
@@ -67,14 +61,6 @@ export default function RenameCard({
             </span>
           </div>
         </div>
-        {files.length > 0 && usarRename && (
-          <div className="flex items-center gap-1.5 shrink-0">
-            <Database className="h-3 w-3 text-[var(--text-muted)]" />
-            <span className={`text-[11px] font-bold ${dbMatchedCount === files.length ? 'text-[var(--accent-green)]' : 'text-[var(--accent-yellow)]'}`}>
-              {dbMatchedCount}/{files.length}
-            </span>
-          </div>
-        )}
       </div>
 
       {hasVideos && (
@@ -91,14 +77,14 @@ export default function RenameCard({
             <button
               key={preset.id}
               onClick={() => onNamingModeChange(preset.id)}
-              className={`min-h-[68px] rounded-xl border px-3 py-2.5 text-left transition-all duration-200 ${
+              className={`min-h-[48px] rounded-xl border px-3 py-2 text-left transition-all duration-200 ${
                 active
                   ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] border-[var(--accent-primary)]/40 shadow-[0_0_0_3px_var(--accent-primary-glow)]'
                   : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)]'
               }`}
             >
-              <span className="block text-[13px] font-semibold">{preset.label}</span>
-              <span className={`block mt-1 font-mono text-[11px] truncate ${active ? 'text-[var(--accent-primary)]/80' : 'text-[var(--text-muted)]'}`}>
+              <span className="block text-xs font-semibold leading-4">{preset.label}</span>
+              <span className={`block mt-0.5 font-mono text-[10px] leading-3 truncate ${active ? 'text-[var(--accent-primary)]/80' : 'text-[var(--text-muted)]'}`}>
                 {exampleFromPattern(preset.pattern, fields, files[0])}
               </span>
             </button>
@@ -255,60 +241,6 @@ export default function RenameCard({
                 </button>
               );
             })}
-          </div>
-        </div>
-      )}
-
-      {/* Preview Section */}
-      {files.length > 0 && usarRename && preview && (
-        <div className="overflow-hidden rounded-xl border border-[var(--border-subtle)]">
-          <div className="flex items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-4 py-2.5">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Vista previa</span>
-              {dbMatchedCount < files.length && (
-                <span className="text-[10px] text-[var(--accent-yellow)]">{files.length - dbMatchedCount} sin BD</span>
-              )}
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setPreviewMode('compact')}
-                className={`p-1.5 rounded-md transition-colors ${previewMode === 'compact' ? 'bg-[var(--bg-input)] text-[var(--text-primary)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
-                title="Vista compacta"
-              >
-                <LayoutGrid className="h-3.5 w-3.5" />
-              </button>
-              <button
-                onClick={() => setPreviewMode('full')}
-                className={`p-1.5 rounded-md transition-colors ${previewMode === 'full' ? 'bg-[var(--bg-input)] text-[var(--text-primary)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
-                title="Vista completa"
-              >
-                <List className="h-3.5 w-3.5" />
-              </button>
-              <span className="text-[10px] text-[var(--text-muted)] ml-1">{preview.length} archivos</span>
-            </div>
-          </div>
-          <div>
-            {previewRows.map((p, i) => (
-              <div
-                key={i}
-                className={`flex items-center gap-3 px-4 py-2 text-sm ${i % 2 === 0 ? 'bg-[var(--bg-base)]' : 'bg-transparent'}`}
-              >
-                <span className="flex-1 truncate font-mono text-[11px] text-[var(--text-muted)]">{p.origen}</span>
-                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[var(--border-medium)]" />
-                <span className="flex-1 truncate font-mono text-[12px] text-[var(--text-primary)] font-medium">{p.nuevo}</span>
-                <Badge variant={p.en_bd ? 'success' : 'warning'} className="shrink-0 text-[10px]">
-                  {p.en_bd ? 'BD' : 'Sin BD'}
-                </Badge>
-              </div>
-            ))}
-            {hiddenPreviewCount > 0 && (
-              <button
-                onClick={() => setPreviewMode('full')}
-                className="w-full border-t border-[var(--border-subtle)] px-4 py-2 text-center text-[11px] text-[var(--text-muted)] hover:text-[var(--accent-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
-              >
-                +{hiddenPreviewCount} archivos más — ver todo
-              </button>
-            )}
           </div>
         </div>
       )}

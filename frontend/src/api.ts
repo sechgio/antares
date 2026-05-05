@@ -44,6 +44,7 @@ export interface ProcessBody {
   destino: string;
   formato: string;
   calidad: number;
+  conversion_enabled?: boolean;
   resize_ancho: number | null;
   resize_alto: number | null;
   keep_exif: boolean;

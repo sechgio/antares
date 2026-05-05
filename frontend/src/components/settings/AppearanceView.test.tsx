@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../i18n';
 import AppearanceView from './AppearanceView';
@@ -45,6 +45,13 @@ function renderAppearance() {
 }
 
 describe('AppearanceView', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    document.documentElement.removeAttribute('style');
+    delete document.documentElement.dataset.pointerCursors;
+    delete document.documentElement.dataset.sidebarTranslucent;
+  });
+
   it('shows a minimal Codex-like appearance panel and applies a selected style', async () => {
     window.electronAPI = {
       invoke: async (method: string, params?: Record<string, unknown>) => {
@@ -72,6 +79,47 @@ describe('AppearanceView', () => {
       expect(document.documentElement.style.getPropertyValue('--bg-base')).toBe('#F6F7FB');
       expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('#2563EB');
     });
+  });
+
+  it('keeps the active cached theme when opening appearance settings', async () => {
+    const activeTheme = {
+      ...baseTheme,
+      name: 'Imported Focus',
+      bg: '#101826',
+      bg_secondary: '#172033',
+      fg: '#F8FAFC',
+      fg_muted: '#CBD5E1',
+      accent: '#14B8A6',
+      accent_light: '#5EEAD4',
+      accent_hover: '#0F766E',
+      accent_dark: '#115E59',
+    };
+
+    localStorage.setItem('hc_theme_active_cache', JSON.stringify(activeTheme));
+    localStorage.setItem('hc_theme_css_cache', JSON.stringify({
+      '--bg-base': activeTheme.bg,
+      '--accent-primary': activeTheme.accent,
+    }));
+    document.documentElement.style.setProperty('--bg-base', activeTheme.bg);
+    document.documentElement.style.setProperty('--accent-primary', activeTheme.accent);
+
+    window.electronAPI = {
+      invoke: async (method: string) => {
+        if (method === 'theme_get') return baseTheme;
+        if (method === 'theme_presets') return { presets: ['Precision Linear'] };
+        return {};
+      },
+      onNotify: () => () => {},
+      onUpdateAvailable: () => () => {},
+      onUpdateDownloaded: () => () => {},
+    };
+
+    renderAppearance();
+
+    expect(await screen.findByRole('heading', { name: 'Aspecto' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Imported Focus/i })).toBeInTheDocument();
+    expect(document.documentElement.style.getPropertyValue('--bg-base')).toBe('#101826');
+    expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('#14B8A6');
   });
 
   it('centers the settings workspace without constraining appearance to a narrow column', async () => {

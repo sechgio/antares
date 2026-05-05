@@ -7,6 +7,7 @@ interface FileGridProps {
   selectedFiles: Set<string>;
   selectedFile: string | null;
   onFileClick: (e: React.MouseEvent, path: string) => void;
+  onFileDoubleClick: (e: React.MouseEvent, path: string) => void;
   onRemoveFile: (path: string) => void;
   videoFiles?: Set<string>;
 }
@@ -17,6 +18,7 @@ interface CellData {
   selectedFiles: Set<string>;
   selectedFile: string | null;
   onFileClick: (e: React.MouseEvent, path: string) => void;
+  onFileDoubleClick: (e: React.MouseEvent, path: string) => void;
   onRemoveFile: (path: string) => void;
   videoFiles: Set<string>;
 }
@@ -24,7 +26,7 @@ interface CellData {
 const COL_WIDTH = 152;
 const ROW_HEIGHT = 198;
 
-function FileGridCell({ rowIndex, columnIndex, style, files, columnCount, selectedFiles, selectedFile, onFileClick, onRemoveFile, videoFiles }: { ariaAttributes: { "aria-colindex": number; role: "gridcell" }; rowIndex: number; columnIndex: number; style: React.CSSProperties } & CellData) {
+function FileGridCell({ rowIndex, columnIndex, style, files, columnCount, selectedFiles, selectedFile, onFileClick, onFileDoubleClick, onRemoveFile, videoFiles }: { ariaAttributes: { "aria-colindex": number; role: "gridcell" }; rowIndex: number; columnIndex: number; style: React.CSSProperties } & CellData) {
   const idx = rowIndex * columnCount + columnIndex;
   if (idx >= files.length) return <div style={style} />;
   const f = files[idx];
@@ -35,6 +37,7 @@ function FileGridCell({ rowIndex, columnIndex, style, files, columnCount, select
         selected={selectedFiles.has(f)}
         isPrimary={selectedFile === f}
         onClick={(e) => onFileClick(e, f)}
+        onDoubleClick={(e) => onFileDoubleClick(e, f)}
         onRemove={(e) => { e.stopPropagation(); onRemoveFile(f); }}
         index={idx}
         isVideo={videoFiles.has(f)}
@@ -43,7 +46,7 @@ function FileGridCell({ rowIndex, columnIndex, style, files, columnCount, select
   );
 }
 
-export default function FileGrid({ files, selectedFiles, selectedFile, onFileClick, onRemoveFile, videoFiles = new Set() }: FileGridProps) {
+export default function FileGrid({ files, selectedFiles, selectedFile, onFileClick, onFileDoubleClick, onRemoveFile, videoFiles = new Set() }: FileGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = React.useState({ width: 800, height: 500 });
 
@@ -62,8 +65,8 @@ export default function FileGrid({ files, selectedFiles, selectedFile, onFileCli
   const rowCount = Math.ceil(files.length / columnCount);
 
   const cellProps = useMemo<CellData>(() => ({
-    files, columnCount, selectedFiles, selectedFile, onFileClick, onRemoveFile, videoFiles,
-  }), [files, columnCount, selectedFiles, selectedFile, onFileClick, onRemoveFile, videoFiles]);
+    files, columnCount, selectedFiles, selectedFile, onFileClick, onFileDoubleClick, onRemoveFile, videoFiles,
+  }), [files, columnCount, selectedFiles, selectedFile, onFileClick, onFileDoubleClick, onRemoveFile, videoFiles]);
 
   return (
     <div ref={containerRef} className="h-full w-full">

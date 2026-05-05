@@ -7,12 +7,13 @@ interface FileCardProps {
   selected: boolean;
   isPrimary: boolean;
   onClick: (e: React.MouseEvent) => void;
+  onDoubleClick: (e: React.MouseEvent) => void;
   onRemove: (e: React.MouseEvent) => void;
   index: number;
   isVideo?: boolean;
 }
 
-export default React.memo(function FileCard({ path, selected, isPrimary, onClick, onRemove, isVideo = false }: FileCardProps) {
+export default React.memo(function FileCard({ path, selected, isPrimary, onClick, onDoubleClick, onRemove, isVideo = false }: FileCardProps) {
   const filename = useMemo(() => path.split(/[\\/]/).pop() || path, [path]);
   const ext = useMemo(() => filename.slice(filename.lastIndexOf('.')).toUpperCase(), [filename]);
   const [showRemove, setShowRemove] = useState(false);
@@ -20,6 +21,7 @@ export default React.memo(function FileCard({ path, selected, isPrimary, onClick
   return (
     <div
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
       onMouseEnter={() => setShowRemove(true)}
       onMouseLeave={() => setShowRemove(false)}
       className={`group relative cursor-pointer rounded-xl overflow-hidden border transition-all duration-200 ${

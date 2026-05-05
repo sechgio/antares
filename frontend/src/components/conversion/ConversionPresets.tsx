@@ -4,6 +4,7 @@ import { Save, FolderOpen, ChevronDown, Trash2, Check, Settings2 } from 'lucide-
 export interface ConversionConfig {
   formato: string;
   calidad: number;
+  conversionEnabled?: boolean;
   resizeEnabled: boolean;
   resizeAncho: string;
   resizeAlto: string;
@@ -36,6 +37,7 @@ const DEFAULT_PRESETS: SavedPreset[] = [
     config: {
       formato: 'WEBP',
       calidad: 80,
+      conversionEnabled: true,
       resizeEnabled: true,
       resizeAncho: '1920',
       resizeAlto: '1080',
@@ -54,6 +56,7 @@ const DEFAULT_PRESETS: SavedPreset[] = [
     config: {
       formato: 'PNG',
       calidad: 100,
+      conversionEnabled: true,
       resizeEnabled: false,
       resizeAncho: '',
       resizeAlto: '',
@@ -72,6 +75,7 @@ const DEFAULT_PRESETS: SavedPreset[] = [
     config: {
       formato: 'JPEG',
       calidad: 95,
+      conversionEnabled: true,
       resizeEnabled: false,
       resizeAncho: '',
       resizeAlto: '',
@@ -90,6 +94,7 @@ const DEFAULT_PRESETS: SavedPreset[] = [
     config: {
       formato: 'JPEG',
       calidad: 85,
+      conversionEnabled: true,
       resizeEnabled: true,
       resizeAncho: '1080',
       resizeAlto: '1080',

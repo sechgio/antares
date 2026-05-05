@@ -1,17 +1,14 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { api, onNotify } from '../../api';
-import { PreviewItem, ProcessStatus, RenamePattern } from '../../types';
-import { ConversionConfig } from './ConversionPresets';
+import { ProcessStatus, RenamePattern } from '../../types';
+import ConversionPresets, { ConversionConfig } from './ConversionPresets';
 import Dropzone from './Dropzone';
 import FileGrid from './FileGrid';
 import OptionsCard from './OptionsCard';
 import RenameCard from './RenameCard';
-import StickyActionBar from './StickyActionBar';
 import ProgressBar from './ProgressBar';
-import PreviewDrawer from './PreviewDrawer';
-import { Image, Film, FolderOpen, ArrowRight, CheckCircle2, AlertTriangle } from 'lucide-react';
-
-const fileNameFromPath = (path: string) => path.split(/[\\/]/).pop() || path;
+import Button from '../ui/Button';
+import { Image, Film, FolderOpen, ArrowRight, CheckCircle2, AlertTriangle, AlertCircle, Play, Settings, Square, Tag } from 'lucide-react';
 
 const buildDefaultPresets = (fields: string[]): RenamePattern[] => {
   const codeField = fields[0];
@@ -46,6 +43,7 @@ export default function ConversionView() {
   const [destino, setDestino] = useState('');
   const [formato, setFormato] = useState('JPEG');
   const [calidad, setCalidad] = useState(95);
+  const [conversionEnabled, setConversionEnabled] = useState(true);
   const [resizeAncho, setResizeAncho] = useState('');
   const [resizeAlto, setResizeAlto] = useState('');
   const [resizeEnabled, setResizeEnabled] = useState(false);
@@ -59,31 +57,30 @@ export default function ConversionView() {
   const [fields, setFields] = useState<string[]>(DEFAULT_FIELDS);
   const [patterns, setPatterns] = useState<RenamePattern[]>([]);
   const [status, setStatus] = useState<ProcessStatus | null>(null);
-  const [preview, setPreview] = useState<PreviewItem[] | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [running, setRunning] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
   const [videoFiles, setVideoFiles] = useState<Set<string>>(new Set());
 
   const namingPresets = useMemo(() => patterns.length > 0 ? patterns : buildDefaultPresets(fields), [patterns, fields]);
   const resizeWidth = resizeEnabled ? parsePositiveInt(resizeAncho) : null;
   const resizeHeight = resizeEnabled ? parsePositiveInt(resizeAlto) : null;
   const filesReady = files.length > 0;
-  const optionsReady = Boolean(formato) && (!resizeEnabled || (resizeWidth !== null && resizeHeight !== null));
+  const optionsReady = !conversionEnabled || (Boolean(formato) && (!resizeEnabled || (resizeWidth !== null && resizeHeight !== null)));
   const renameReady = !usarRename || patron.trim().length > 0;
   const outputReady = destino.trim().length > 0;
   const allReady = filesReady && optionsReady && renameReady && outputReady;
 
   const currentConfig: ConversionConfig = useMemo(() => ({
-    formato, calidad, resizeEnabled, resizeAncho, resizeAlto,
+    formato, calidad, conversionEnabled, resizeEnabled, resizeAncho, resizeAlto,
     keepExif, usarRename, patron, secuencia, useFilenameSeq, namingMode,
-  }), [formato, calidad, resizeEnabled, resizeAncho, resizeAlto, keepExif, usarRename, patron, secuencia, useFilenameSeq, namingMode]);
+  }), [formato, calidad, conversionEnabled, resizeEnabled, resizeAncho, resizeAlto, keepExif, usarRename, patron, secuencia, useFilenameSeq, namingMode]);
 
   const handleLoadConfig = useCallback((config: ConversionConfig) => {
     setFormato(config.formato);
     setCalidad(config.calidad);
+    setConversionEnabled(config.conversionEnabled ?? true);
     setResizeEnabled(config.resizeEnabled);
     setResizeAncho(config.resizeAncho);
     setResizeAlto(config.resizeAlto);
@@ -93,7 +90,6 @@ export default function ConversionView() {
     setSecuencia(config.secuencia);
     setUseFilenameSeq(config.useFilenameSeq);
     setNamingMode(config.namingMode);
-    setPreview(null);
   }, []);
 
   // History reexecute listener
@@ -106,6 +102,7 @@ export default function ConversionView() {
         setFiles(files);
         setFormato(options.formato || 'JPEG');
         setCalidad(options.calidad || 95);
+        setConversionEnabled(options.conversion_enabled !== false);
         setPatron(run.patron || '');
         setUsarRename(options.usar_rename !== false && Boolean(run.patron));
         setNamingMode(options.usar_rename === false ? 'keep' : 'custom');
@@ -206,21 +203,7 @@ export default function ConversionView() {
     setNamingMode(preset.id);
     setUsarRename(preset.id !== 'keep' && preset.pattern !== '');
     setPatron(preset.pattern);
-    setPreview(null);
   };
-
-  // Preview debounce
-  useEffect(() => {
-    if (!usarRename || !files.length || !patron) { setPreview(null); return; }
-    let cancelled = false;
-    const timer = window.setTimeout(async () => {
-      try {
-        const r = await api.preview({ files, patron, secuencia, use_filename_seq: useFilenameSeq });
-        if (!cancelled) setPreview(r.preview);
-      } catch { if (!cancelled) setPreview(null); }
-    }, 250);
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [files, patron, secuencia, useFilenameSeq, usarRename]);
 
   // Detect videos
   useEffect(() => {
@@ -260,6 +243,7 @@ export default function ConversionView() {
     if (!allReady) return;
     const body = {
       files, destino, formato, calidad,
+      conversion_enabled: conversionEnabled,
       resize_ancho: resizeAncho ? parseInt(resizeAncho) : null,
       resize_alto: resizeAlto ? parseInt(resizeAlto) : null,
       keep_exif: keepExif, usar_rename: usarRename, patron, secuencia,
@@ -334,8 +318,12 @@ export default function ConversionView() {
     } else {
       setSelectedFile(path);
       setSelectedFiles(new Set([path]));
-      setDrawerOpen(true);
     }
+  };
+
+  const handleFileDoubleClick = (_e: React.MouseEvent, path: string) => {
+    setSelectedFile(path);
+    setSelectedFiles(new Set([path]));
   };
 
   const selectAllFiles = () => {
@@ -356,11 +344,10 @@ export default function ConversionView() {
 
   const videoCount = videoFiles.size;
   const imageCount = files.length - videoCount;
-  const summary = useMemo(() => files.length > 0
-    ? `${imageCount} imagen${imageCount !== 1 ? 'es' : ''}${videoCount > 0 ? ` + ${videoCount} video${videoCount !== 1 ? 's' : ''}` : ''} → ${formato} · ${calidad}% · ${usarRename ? fileNameFromPath(patron) : 'Sin cambios'}`
-    : '', [files.length, imageCount, videoCount, formato, calidad, usarRename, patron]);
-
   const isEmpty = files.length === 0;
+  const destinoLabel = destino
+    ? destino.split(/[\\/]/).pop() || destino
+    : 'Seleccionar carpeta de destino…';
 
   return (
     <div
@@ -379,22 +366,73 @@ export default function ConversionView() {
         videoCount={videoFiles.size}
         onClear={clearFiles}
         onPasteFiles={onPasteFiles}
+        centerControls={!isEmpty ? (
+          <div className="flex w-full min-w-0 items-center gap-3">
+            <ConversionPresets currentConfig={currentConfig} onLoadConfig={handleLoadConfig} className="hidden sm:block shrink-0" />
+            <button
+              onClick={selectDest}
+              className={`flex h-11 w-[280px] max-w-[32vw] shrink-0 items-center gap-2.5 rounded-xl border px-3 text-left transition-all group ${
+                destino
+                  ? 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] hover:border-[var(--border-medium)]'
+                  : 'bg-[var(--accent-yellow)]/5 border-[var(--accent-yellow)]/30 hover:border-[var(--accent-yellow)]/50'
+              }`}
+            >
+              <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                destino ? 'bg-[var(--bg-base)] text-[var(--text-muted)] group-hover:text-[var(--accent-primary)]' : 'bg-[var(--accent-yellow)]/10 text-[var(--accent-yellow)]'
+              }`}>
+                <FolderOpen className="h-3.5 w-3.5" />
+              </div>
+              <div className="flex min-w-0 flex-col">
+                <span className="text-[10px] font-medium leading-3 text-[var(--text-muted)]">Destino</span>
+                <span className={`truncate text-xs leading-4 ${destino ? 'font-medium text-[var(--text-primary)]' : 'text-[var(--accent-yellow)]'}`}>
+                  {destinoLabel}
+                </span>
+              </div>
+              {!destino && <AlertCircle className="ml-auto h-3.5 w-3.5 shrink-0 text-[var(--accent-yellow)]" />}
+            </button>
+            <div className="hidden shrink-0 items-center gap-2 xl:flex">
+              <div className="flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2">
+                <Image className="h-3.5 w-3.5 text-[var(--text-muted)]" />
+                <span className="text-xs font-bold text-[var(--text-primary)]">{imageCount}</span>
+                <span className="text-xs text-[var(--text-muted)]">img</span>
+                {videoCount > 0 && (
+                  <>
+                    <span className="text-[var(--border-medium)]">|</span>
+                    <span className="text-xs font-bold text-[var(--text-primary)]">{videoCount}</span>
+                    <span className="text-xs text-[var(--text-muted)]">vid</span>
+                  </>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2">
+                <Settings className="h-3.5 w-3.5 text-[var(--text-muted)]" />
+                <span className="text-xs font-bold text-[var(--text-primary)]">{conversionEnabled ? formato : 'Original'}</span>
+                {conversionEnabled && (
+                  <>
+                    <span className="text-xs text-[var(--text-muted)]">·</span>
+                    <span className="text-xs text-[var(--text-muted)]">{calidad}%</span>
+                  </>
+                )}
+                {conversionEnabled && resizeEnabled && <span className="text-[10px] font-medium text-[var(--accent-primary)]">R</span>}
+                {usarRename && <Tag className="h-3 w-3 text-[var(--accent-secondary)]" />}
+              </div>
+            </div>
+          </div>
+        ) : undefined}
+        conversionAction={!isEmpty ? (
+          !running ? (
+            <Button variant="primary" size="sm" onClick={doProcess} disabled={!allReady}>
+              <Play className="h-3.5 w-3.5 fill-current" />
+              {conversionEnabled ? 'Iniciar conversión' : 'Iniciar renombrado'}
+              <ArrowRight className="h-3.5 w-3.5 opacity-60" />
+            </Button>
+          ) : (
+            <Button variant="danger" size="sm" onClick={doCancel}>
+              <Square className="h-3.5 w-3.5 fill-current" />
+              Detener
+            </Button>
+          )
+        ) : undefined}
       />
-
-      {/* Empty State - Action Bar */}
-      {isEmpty && (
-        <StickyActionBar
-          destino={destino}
-          onSelectDest={selectDest}
-          onStart={doProcess}
-          onCancel={doCancel}
-          running={running}
-          allReady={allReady}
-          summary={summary}
-          currentConfig={currentConfig}
-          onLoadConfig={handleLoadConfig}
-        />
-      )}
 
       {/* Main Content */}
       {!isEmpty && (
@@ -446,6 +484,7 @@ export default function ConversionView() {
                   selectedFiles={selectedFiles}
                   selectedFile={selectedFile}
                   onFileClick={handleFileClick}
+                  onFileDoubleClick={handleFileDoubleClick}
                   onRemoveFile={removeFile}
                   videoFiles={videoFiles}
                 />
@@ -467,42 +506,20 @@ export default function ConversionView() {
                     </div>
                   )}
                 </div>
-                {selectedFiles.size > 0 && (
-                  <span className="text-[11px] text-[var(--accent-primary)] font-medium">
-                    {selectedFiles.size} seleccionado{selectedFiles.size !== 1 ? 's' : ''}
-                  </span>
-                )}
+                <div className="flex items-center gap-3 text-[11px]">
+                  <span className="hidden text-[var(--text-muted)] sm:inline">Click para seleccionar</span>
+                  {selectedFiles.size > 0 && (
+                    <span className="text-[var(--accent-primary)] font-medium">
+                      {selectedFiles.size} seleccionado{selectedFiles.size !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
 
           {/* Right Column: Options */}
           <div className="grid min-h-0 content-start gap-4 xl:col-span-5 2xl:col-span-4 overflow-y-auto pr-1">
-            {/* Quick Stats Cards */}
-            <div className="grid grid-cols-3 gap-2.5">
-              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3 flex flex-col items-center text-center">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] mb-1.5">
-                  <Image className="h-4 w-4" />
-                </div>
-                <span className="text-lg font-bold text-[var(--text-primary)] leading-tight">{imageCount}</span>
-                <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Imágenes</span>
-              </div>
-              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3 flex flex-col items-center text-center">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent-yellow)]/10 text-[var(--accent-yellow)] mb-1.5">
-                  <Film className="h-4 w-4" />
-                </div>
-                <span className="text-lg font-bold text-[var(--text-primary)] leading-tight">{videoCount}</span>
-                <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Videos</span>
-              </div>
-              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3 flex flex-col items-center text-center">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent-green)]/10 text-[var(--accent-green)] mb-1.5">
-                  <FolderOpen className="h-4 w-4" />
-                </div>
-                <span className="text-lg font-bold text-[var(--text-primary)] leading-tight truncate w-full">{formato}</span>
-                <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Formato</span>
-              </div>
-            </div>
-
             {/* Status indicators */}
             <div className="flex items-center gap-2">
               <div className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium transition-colors ${
@@ -547,6 +564,8 @@ export default function ConversionView() {
               onResizeAltoChange={setResizeAlto}
               keepExif={keepExif}
               onToggleExif={setKeepExif}
+              conversionEnabled={conversionEnabled}
+              onToggleConversion={setConversionEnabled}
               hasVideos={videoFiles.size > 0}
             />
 
@@ -566,43 +585,12 @@ export default function ConversionView() {
               useFilenameSeq={useFilenameSeq}
               onToggleFilenameSeq={setUseFilenameSeq}
               namingPresets={namingPresets}
-              preview={preview}
               fields={fields}
               onInsertVar={insertVar}
               hasVideos={videoFiles.size > 0}
             />
           </div>
         </div>
-      )}
-
-      <PreviewDrawer
-        path={drawerOpen ? selectedFile : null}
-        formato={formato}
-        calidad={calidad}
-        resizeAncho={resizeAncho}
-        resizeAlto={resizeAlto}
-        onClose={() => setDrawerOpen(false)}
-      />
-
-      {!isEmpty && (
-        <StickyActionBar
-          destino={destino}
-          onSelectDest={selectDest}
-          onStart={doProcess}
-          onCancel={doCancel}
-          running={running}
-          allReady={allReady}
-          summary={summary}
-          currentConfig={currentConfig}
-          onLoadConfig={handleLoadConfig}
-          fileCount={files.length}
-          videoCount={videoCount}
-          imageCount={imageCount}
-          formato={formato}
-          calidad={calidad}
-          resizeEnabled={resizeEnabled}
-          usarRename={usarRename}
-        />
       )}
     </div>
   );

@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import Button from '../ui/Button';
-import { Folder, Images, Plus, RotateCcw, UploadCloud, FileImage, Film, ClipboardPaste } from 'lucide-react';
+import { Folder, Images, Plus, RotateCcw, UploadCloud, FileImage, Film } from 'lucide-react';
 
 interface DropzoneProps {
   dragOver: boolean;
@@ -10,6 +10,8 @@ interface DropzoneProps {
   onClear?: () => void;
   videoCount?: number;
   onPasteFiles?: (files: string[]) => void;
+  centerControls?: ReactNode;
+  conversionAction?: ReactNode;
 }
 
 const SUPPORTED_IMAGE_FORMATS = ['JPG', 'JPEG', 'PNG', 'WEBP', 'TIFF', 'BMP', 'GIF', 'ICO', 'PDF'];
@@ -23,6 +25,8 @@ export default function Dropzone({
   onClear,
   videoCount = 0,
   onPasteFiles,
+  centerControls,
+  conversionAction,
 }: DropzoneProps) {
   const totalCount = fileCount + videoCount;
   const imageCount = fileCount;
@@ -60,7 +64,7 @@ export default function Dropzone({
   if (totalCount > 0) {
     return (
       <div
-        className={`flex items-center justify-between rounded-2xl border px-5 py-3.5 transition-all duration-300 ${
+        className={`flex flex-wrap items-center gap-3 rounded-2xl border px-5 py-3.5 transition-all duration-300 ${
           dragOver
             ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/10 shadow-[0_0_24px_var(--accent-primary-glow)] scale-[1.01]'
             : pasting
@@ -68,7 +72,7 @@ export default function Dropzone({
             : 'bg-[var(--bg-surface)] border-[var(--border-subtle)]'
         }`}
       >
-        <div className="flex items-center gap-4">
+        <div className="flex shrink-0 items-center gap-4">
           <div className={`flex items-center justify-center w-10 h-10 rounded-xl transition-all duration-300 ${
             dragOver ? 'bg-[var(--accent-primary)]/20 text-[var(--accent-primary)] scale-110' : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)]'
           }`}>
@@ -84,13 +88,12 @@ export default function Dropzone({
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {onPasteFiles && (
-            <div className="hidden sm:inline-flex items-center gap-1.5 text-[var(--text-muted)] text-xs px-2" title="Ctrl+V para pegar">
-              <ClipboardPaste className="h-3.5 w-3.5" />
-              <span>Ctrl+V</span>
-            </div>
-          )}
+        {centerControls && (
+          <div className="flex min-w-0 flex-1 items-center">
+            {centerControls}
+          </div>
+        )}
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           <Button variant="ghost" size="sm" onClick={onAddFiles}>
             <Plus className="h-3.5 w-3.5" />
             Agregar
@@ -104,6 +107,12 @@ export default function Dropzone({
             <RotateCcw className="h-3.5 w-3.5" />
             Limpiar
           </Button>
+          {conversionAction && (
+            <>
+              <div className="w-px h-4 bg-[var(--border-medium)] mx-1" />
+              {conversionAction}
+            </>
+          )}
         </div>
       </div>
     );

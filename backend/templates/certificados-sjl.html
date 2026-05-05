@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>
+        /* Reset & Base */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* A4 Dimensions */
+        @page {
+            size: A4 portrait;
+            margin: 0;
+        }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 11pt;
+            line-height: 1.5;
+            color: #000;
+            background: #fff;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Page Container */
+        .page {
+            width: 210mm;
+            height: 297mm;
+            margin: 0 auto;
+            padding: 20mm 25mm;
+            background: #fff;
+            page-break-after: always;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        .page:last-child {
+            page-break-after: auto;
+        }
+
+        /* Header with Logo */
+        .header {
+            display: flex;
+            flex-direction: row;
+            flex-wrap: nowrap;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12mm;
+            min-height: 25mm;
+            gap: 5mm;
+        }
+
+        .header-logo {
+            width: 55mm;
+            height: 25mm;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+        }
+
+        .header-logo img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        .header-right {
+            text-align: left;
+            color: #228B22;
+            font-weight: bold;
+            font-size: 9pt;
+            line-height: 1.4;
+        }
+
+        /* Certificate Title */
+        .certificate-title {
+            text-align: center;
+            font-size: 13pt;
+            font-weight: bold;
+            margin-bottom: 10mm;
+            color: #000;
+            letter-spacing: 0.3px;
+        }
+
+        /* Description Text */
+        .description {
+            text-align: justify;
+            margin-bottom: 8mm;
+            font-size: 11pt;
+            line-height: 1.6;
+        }
+
+        /* Service Options - 2 columns */
+        .service-options {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2mm 10mm;
+            margin-bottom: 12mm;
+            font-size: 10pt;
+        }
+
+        .service-option {
+            display: flex;
+            align-items: flex-start;
+            gap: 2mm;
+        }
+
+        .service-checkbox {
+            white-space: nowrap;
+            min-width: 25px;
+        }
+
+        .service-label {
+            flex: 1;
+        }
+
+        /* Information Fields - Label : Value format */
+        .info-fields {
+            margin-bottom: 15mm;
+        }
+
+        .info-field {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 5mm;
+            font-size: 11pt;
+        }
+
+        .info-label {
+            min-width: 80px;
+            font-weight: normal;
+            text-transform: uppercase;
+            flex-shrink: 0;
+        }
+
+        .info-separator {
+            margin: 0 3mm;
+            flex-shrink: 0;
+        }
+
+        .info-value {
+            font-weight: bold;
+            flex: 1;
+        }
+
+        /* Signatures Section */
+        .signatures {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15mm;
+            margin-top: auto;
+            padding-top: 25mm;
+        }
+
+        .signature-block {
+            text-align: center;
+        }
+
+        .signature-line {
+            border-top: 1px solid #000;
+            margin-bottom: 3mm;
+            width: 55mm;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .signature-role {
+            font-weight: bold;
+            margin-bottom: 1mm;
+            font-size: 10pt;
+        }
+
+        .signature-name {
+            font-size: 10pt;
+            margin-bottom: 1mm;
+        }
+
+        .signature-cip {
+            font-size: 10pt;
+        }
+
+        /* Screen preview styles */
+        @media screen {
+            body {
+                width: 100%;
+                overflow: hidden;
+                background: transparent;
+            }
+
+            .page {
+                width: 210mm;
+                height: 297mm;
+                margin: 0 auto;
+                box-shadow: none;
+                padding: 20mm 25mm;
+                background: #fff;
+                box-sizing: border-box;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+        }
+
+        /* Print/PDF styles */
+        @media print {
+            @page {
+                size: A4;
+                margin: 0;
+            }
+
+            body {
+                margin: 0;
+                padding: 0;
+                width: 210mm;
+                height: 297mm;
+            }
+
+            .page {
+                box-shadow: none;
+                margin: 0;
+                page-break-after: always;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    {% for report in reports %}
+    <div class="page">
+        <!-- Header with Logo -->
+        <header class="header">
+            <div class="header-logo">
+                {% if logo_left %}
+                <img src="{{ logo_left }}" alt="Logo">
+                {% endif %}
+            </div>
+            <div class="header-right">
+                HIDROSERVICIOS AA E.I.R.L – RUC: 20606864192<br>
+                Mz J1 lote 20. Urb. Los Precursores. Surco. Lima<br>
+                946803367
+            </div>
+        </header>
+
+        <!-- Certificate Title -->
+        <div class="certificate-title">
+            CERTIFICADO N° {{ report.data.get('NUMERO CERTIFICADO', '-') }}
+        </div>
+
+        <!-- Description -->
+        <div class="description">
+            Por el presente certificamos que se han realizado los servicios de saneamiento ambiental correspondiente a:
+        </div>
+
+        <!-- Service Options - 2 column layout -->
+        <div class="service-options">
+            <div class="service-option">
+                <span class="service-checkbox">a)</span>
+                <span class="service-label">Desinfección ( <b>{{ report.data.get('A', ' ') }}</b> )</span>
+            </div>
+            <div class="service-option">
+                <span class="service-checkbox">c)</span>
+                <span class="service-label">Limpieza de pozos sépticos ( <b>{{ report.data.get('C', ' ') }}</b> )</span>
+            </div>
+            <div class="service-option">
+                <span class="service-checkbox">b)</span>
+                <span class="service-label">Limpieza y desinfección de Reservorios de agua ( <b>{{ report.data.get('B',
+                        ' ') }}</b> )</span>
+            </div>
+            <div class="service-option">
+                <span class="service-checkbox">d)</span>
+                <span class="service-label">Limpieza de ambientes ( <b>{{ report.data.get('D', ' ') }}</b> )</span>
+            </div>
+        </div>
+
+        <!-- Information Fields -->
+        <div class="info-fields">
+            <div class="info-field">
+                <span class="info-label">NOMBRE</span>
+                <span class="info-separator">:</span>
+                <span class="info-value">{{ report.data.get('NOMBRE', '-') }}</span>
+            </div>
+            <div class="info-field">
+                <span class="info-label">RUC</span>
+                <span class="info-separator">:</span>
+                <span class="info-value">{{ report.data.get('RUC', '-') }}</span>
+            </div>
+            <div class="info-field">
+                <span class="info-label">DIRECCIÓN</span>
+                <span class="info-separator">:</span>
+                <span class="info-value">{{ report.data.get('DIRECCION', '-') }}</span>
+            </div>
+            <div class="info-field">
+                <span class="info-label">GIRO</span>
+                <span class="info-separator">:</span>
+                <span class="info-value">{{ report.data.get('GIRO', '-') }}</span>
+            </div>
+            <div class="info-field">
+                <span class="info-label">ÁREA TRATADA</span>
+                <span class="info-separator">:</span>
+                <span class="info-value">{{ report.data.get('AREA TRATADA', '-') }}</span>
+            </div>
+            <div class="info-field">
+                <span class="info-label">FECHA DEL SERVICIO</span>
+                <span class="info-separator">:</span>
+                <span class="info-value">{{ report.data.get('FECHA', '-') }}</span>
+            </div>
+        </div>
+
+        <!-- Signatures -->
+        <div class="signatures">
+            <div class="signature-block">
+                <div class="signature-line"></div>
+                <div class="signature-role">Ingeniero Sanitario</div>
+                <div class="signature-name">Ing. Walter Benito Guardamino Estacio</div>
+                <div class="signature-cip">CIP: 68013</div>
+            </div>
+            <div class="signature-block">
+                <div class="signature-line"></div>
+                <div class="signature-role">Gerente General</div>
+                <div class="signature-name">Ing. Sixto David Purizaca Cruz</div>
+                <div class="signature-cip">CIP: 157948</div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</body>
+
+</html>
