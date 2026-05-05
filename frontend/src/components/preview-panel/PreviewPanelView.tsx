@@ -614,7 +614,7 @@ export default function PreviewPanelView() {
                   <span className="text-[var(--text-primary)] text-[10px] uppercase font-medium">{col.name}</span>
                   <select
                     className={`h-6 rounded-md border bg-[var(--bg-base)] px-1.5 text-[10px] text-[var(--text-primary)] outline-none ${mappings[col.id] ? 'border-l-2 border-l-[var(--accent-primary)]' : 'border-[var(--border-medium)]'}`}
-                    value={mappings[col.id] || col.mappedTo}
+                    value={mappings[col.id] ?? col.mappedTo}
                     onChange={e => setMappings(prev => ({ ...prev, [col.id]: e.target.value }))}
                   >
                     <option value="">Ignorar</option>
