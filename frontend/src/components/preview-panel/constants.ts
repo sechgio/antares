@@ -16,12 +16,6 @@ export const REPORT_FIELDS: ReportField[] = [
   { id: 'actividad', label: 'Actividad' },
   { id: 'contrata', label: 'Contrata' },
   { id: 'subactividad', label: 'Subactividad' },
-  { id: 'cuadrilla', label: 'Cuadrilla' },
-  { id: 'obs-sedapal', label: 'Obs. SEDAPAL' },
-  { id: 'obs-contrata', label: 'Obs. Contrata' },
-  { id: 'fecha_corte', label: 'Fecha Corte' },
-  { id: 'fecha_trabajo', label: 'Fecha Trabajo' },
-  { id: 'direcciones_afectadas', label: 'Dir. Afectadas' },
 ];
 
 export const TEMPLATE_KEY_MAP: Record<string, string> = {
