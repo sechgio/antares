@@ -186,7 +186,7 @@ export function OperationSection({
 
   return (
     <div
-      className={`relative overflow-hidden rounded-[14px] border border-[var(--border-medium)] bg-[var(--bg-surface)] transition-all duration-200 ${disabled ? 'opacity-40 pointer-events-none' : ''}`}
+      className={`relative shrink-0 overflow-hidden rounded-[14px] border border-[var(--border-medium)] bg-[var(--bg-surface)] transition-all duration-200 ${disabled ? 'opacity-40 pointer-events-none' : ''}`}
       style={{ borderLeftColor: enabled ? accentColor : 'var(--border-medium)', borderLeftWidth: '3px' }}
     >
       {isCollapsible ? (

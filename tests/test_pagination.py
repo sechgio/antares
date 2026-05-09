@@ -1,9 +1,12 @@
 import sys
+
 sys.path.insert(0, '.')
 
-from backend.core.history import save_run, list_runs, _ensure_table
-from backend.core.database import get_db_path
 import sqlite3
+
+from backend.core.database import get_db_path
+from backend.core.history import _ensure_table, list_runs, save_run
+
 
 def setup():
     """Clear history table for testing."""
@@ -16,7 +19,7 @@ def setup():
 def test_pagination():
     """Test that list_runs supports offset."""
     setup()
-    
+
     # Save some test runs
     for i in range(10):
         save_run(
@@ -29,7 +32,7 @@ def test_pagination():
             ok_count=1,
             err_count=0,
         )
-    
+
     # Get first page
     page1 = list_runs(limit=5, offset=0)
     assert len(page1) == 5, f"Expected 5, got {len(page1)}"
@@ -48,7 +51,7 @@ def test_pagination():
     assert len(conversion_runs) == 10, f"Expected 10 conversion, got {len(conversion_runs)}"
     empty_runs = list_runs(run_type='formato')
     assert len(empty_runs) == 0, f"Expected 0 formato, got {len(empty_runs)}"
-    
+
     print("Pagination test passed!")
 
 if __name__ == '__main__':

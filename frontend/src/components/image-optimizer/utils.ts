@@ -303,6 +303,24 @@ export function buildDownloadNameMap(items: ImageItem[], settings: BatchSettings
   return new Map(items.map((item, index) => [item.id, uniqueNames[index]]));
 }
 
+export function reorderImageItems(items: ImageItem[], draggedId: string, targetId: string): ImageItem[] {
+  if (draggedId === targetId) {
+    return items;
+  }
+
+  const draggedIndex = items.findIndex((item) => item.id === draggedId);
+  const targetIndex = items.findIndex((item) => item.id === targetId);
+  if (draggedIndex < 0 || targetIndex < 0) {
+    return items;
+  }
+
+  const next = [...items];
+  const [draggedItem] = next.splice(draggedIndex, 1);
+  const insertionIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
+  next.splice(insertionIndex, 0, draggedItem);
+  return next;
+}
+
 export function previewFilenames(settings: BatchSettings, count: number): string[] {
   const virtualItems = Array.from({ length: Math.max(3, count || 0) }, (_, index) => ({
     id: String(index),

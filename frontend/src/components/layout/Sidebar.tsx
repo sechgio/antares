@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Camera } from 'lucide-react';
+import { Camera, ClipboardList } from 'lucide-react';
 import BrandMark from '../brand/BrandMark';
 
 interface SidebarProps {
@@ -9,11 +9,11 @@ interface SidebarProps {
 
 const tabs = [
   { id: 'convert', icon: LightningIcon, label: 'Conversión', shortcut: '1' },
-  { id: 'db', icon: DatabaseIcon, label: 'Base de datos', shortcut: '2' },
   { id: 'formatos', icon: FilePdfIcon, label: 'Formatos PDF', shortcut: '3' },
   { id: 'padron', icon: ScrollTextIcon, label: 'Generar Padrones', shortcut: '4' },
   { id: 'volantes', icon: MegaphoneIcon, label: 'Generar Volantes', shortcut: '5' },
   { id: 'reportesCampo', icon: Camera, label: 'Reportes de Campo', shortcut: '8' },
+  { id: 'technicalReports', icon: ClipboardList, label: 'Informes técnicos', shortcut: 'I' },
   { id: 'imageOptimizer', icon: ImageOptimizerIcon, label: 'Optimizador', shortcut: '9' },
   { id: 'previewPanel', icon: PreviewPanelIcon, label: 'Generador Reportes', shortcut: '0' },
   { id: 'history', icon: HistoryIcon, label: 'Historial', shortcut: '6' },
@@ -24,16 +24,6 @@ function LightningIcon({ className }: { className?: string }) {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-    </svg>
-  );
-}
-
-function DatabaseIcon({ className }: { className?: string }) {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <ellipse cx="12" cy="5" rx="9" ry="3" />
-      <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
-      <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
     </svg>
   );
 }

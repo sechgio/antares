@@ -15,10 +15,10 @@ describe('App', () => {
     expect(await screen.findByText('Arrastra imágenes o videos aquí', {}, { timeout: 5000 })).toBeInTheDocument();
   });
 
-  it('keeps start disabled until files and destination are ready', async () => {
+  it('keeps conversion empty-state actions visible before files are selected', async () => {
     render(<App />);
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Iniciar conversión/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /Seleccionar archivos/i })).toBeInTheDocument();
     });
   });
 
@@ -33,5 +33,24 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: /Reportes de Campo/i }));
 
     expect(await screen.findByRole('heading', { name: /Paneles/i }, { timeout: 5000 })).toBeInTheDocument();
+  });
+
+  it('opens Informes tecnicos from the sidebar', async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: /Informes técnicos|Informes tecnicos/i }));
+
+    expect(await screen.findByRole('heading', { name: /Informes técnicos|Informes tecnicos/i }, { timeout: 5000 })).toBeInTheDocument();
+  });
+
+  it('renders the image optimizer in a full-height workspace without the generic page padding', async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: /Optimizador/i }));
+
+    const heading = await screen.findByRole('heading', { name: /Image Optimizer/i }, { timeout: 5000 });
+    const routeViewport = heading.closest('main')?.firstElementChild;
+
+    expect(routeViewport).toBeInstanceOf(HTMLElement);
+    expect(routeViewport).not.toHaveClass('px-6');
+    expect(routeViewport).not.toHaveClass('py-6');
   });
 });

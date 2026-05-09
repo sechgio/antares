@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hidro-convert-backend"
-version = "0.4.9"
+version = "0.5.3"
 description = "Backend for COSMO - Image conversion and renaming"
 authors = [
     {name = "COSMO", email = "dev@cosmo.app"},
@@ -14,9 +14,11 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "Pillow>=10.0.0",
+    "Jinja2>=3.1.0",
     "pandas>=2.0.0",
     "openpyxl>=3.1.0",
     "pypdf>=5.0.0",
+    "weasyprint>=60.0",
 ]
 
 [project.optional-dependencies]
@@ -37,6 +39,7 @@ ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "backend/main.py" = ["E402"]
+"tests/test_db_indexes.py" = ["E402"]
 
 [tool.mypy]
 python_version = "3.10"

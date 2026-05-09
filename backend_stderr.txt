@@ -1,3 +1,0 @@
-[INFO] System encoding: cp1252
-[INFO] System encoding: cp1252
-[INFO] Backend IPC iniciado. Esperando mensajes en stdin...

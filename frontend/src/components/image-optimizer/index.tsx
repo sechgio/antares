@@ -21,11 +21,30 @@ import {
   isItemDirectExport,
   previewFilenames,
   resolveSettingsForItem,
+  reorderImageItems,
   revokeItemUrls,
   syncStaleState,
   downloadBlob,
 } from './utils';
 import { api } from '../../api';
+
+async function saveToHistory(label: string, details: Record<string, unknown>, count = 1) {
+  try {
+    await api.historySave({
+      run_type: 'image_optimizer',
+      files: [label],
+      options: details,
+      formato: label,
+      patron: '',
+      calidad: 0,
+      resize: null,
+      ok_count: count,
+      err_count: 0,
+    });
+  } catch {
+    // Silently ignore history save errors so main flow is never blocked
+  }
+}
 
 export default function ImageOptimizer() {
   const [items, setItems] = useState<ImageItem[]>([]);
@@ -256,6 +275,10 @@ export default function ImageOptimizer() {
     addToast('Imagen eliminada de la cola.', 'info', 1800);
   }, [addToast, commitItems]);
 
+  const handleReorderItems = useCallback((draggedId: string, targetId: string) => {
+    commitItems((prev) => reorderImageItems(prev, draggedId, targetId));
+  }, [commitItems]);
+
   const handleClearAll = useCallback(() => {
     items.forEach((item) => revokeItemUrls(item));
     setItems([]);
@@ -394,8 +417,24 @@ export default function ImageOptimizer() {
 
     setIsProcessing(false);
     setProcessingMessage('');
+
+    // Save to history
+    const errorCount = targets.length - successCount;
+    const settingsJson = JSON.stringify(settingsRef.current);
+    saveToHistory(
+      `Lote ${successCount + errorCount} imágenes`,
+      {
+        preset: activePresetId || 'custom',
+        scope,
+        successCount,
+        errorCount,
+        settings: settingsJson,
+      },
+      successCount,
+    );
+
     addToast(`${successCount}/${targets.length} imagen(es) procesadas.`, successCount === targets.length ? 'success' : 'info', 2800);
-  }, [addToast, commitItems, downloadItems]);
+  }, [addToast, commitItems, downloadItems, activePresetId]);
 
   const cropEditorItem = cropEditorItemId ? items.find((item) => item.id === cropEditorItemId) ?? null : null;
   const activeItemOutputName = activeItem ? downloadNameMap.get(activeItem.id) || activeItem.originalName : '';
@@ -539,6 +578,7 @@ export default function ImageOptimizer() {
             onOpenCropEditor={setCropEditorItemId}
             onDownloadSingle={(item) => downloadItems([item])}
             onRemoveItem={handleRemoveItem}
+            onReorderItems={handleReorderItems}
             getResolvedBlob={getResolvedBlob}
           />
         </div>

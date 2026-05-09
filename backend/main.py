@@ -112,12 +112,6 @@ _validate_encoding()
 
 def main() -> None:
     """Bucle principal IPC."""
-    try:
-        _validate_encoding()
-    except Exception as e:
-        print(f"FATAL: Encoding validation failed: {e}")
-        sys.exit(1)
-
     # Handshake: report ready so Electron knows the pipe is open
     print(json.dumps({"jsonrpc": "2.0", "method": "ready", "params": {}}))
     sys.stdout.flush()

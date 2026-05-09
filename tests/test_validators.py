@@ -1,7 +1,6 @@
 """Tests para utilidades de validación."""
 
-import pytest
-from backend.utils.validators import es_imagen, sanitizar_nombre, obtener_codigo_desde_nombre, parse_filename_parts
+from backend.utils.validators import es_imagen, obtener_codigo_desde_nombre, parse_filename_parts, sanitizar_nombre
 
 
 class TestEsImagen:

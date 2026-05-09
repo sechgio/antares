@@ -1,4 +1,5 @@
-import { Crop, FileDown, Image as ImageIcon, Loader2, Trash2 } from 'lucide-react';
+import { DragEvent, useMemo, useState } from 'react';
+import { Crop, FileDown, GripVertical, Image as ImageIcon, Loader2, Trash2 } from 'lucide-react';
 import { BatchSettings, ImageItem } from './types';
 import { formatBytes, buildDownloadNameMap, resolveSettingsForItem } from './utils';
 
@@ -20,6 +21,7 @@ interface QueuePanelProps {
   onOpenCropEditor: (id: string) => void;
   onDownloadSingle: (item: ImageItem) => void;
   onRemoveItem: (id: string) => void;
+  onReorderItems: (draggedId: string, targetId: string) => void;
   getResolvedBlob: (item: ImageItem) => Blob | null;
 }
 
@@ -41,11 +43,48 @@ export default function QueuePanel({
   onOpenCropEditor,
   onDownloadSingle,
   onRemoveItem,
+  onReorderItems,
   getResolvedBlob,
 }: QueuePanelProps) {
-  const downloadNameMap = buildDownloadNameMap(items.filter((item) => !item.excluded), settings);
+  const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const downloadNameMap = useMemo(
+    () => buildDownloadNameMap(items.filter((item) => !item.excluded), settings),
+    [items, settings]
+  );
   const pendingCount = items.filter(i => i.status === 'pending' && !i.excluded).length;
   const allSelected = items.length > 0 && items.every((item) => item.selected);
+
+  const handleDragStart = (event: DragEvent<HTMLDivElement>, id: string) => {
+    setDraggedItemId(id);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', id);
+  };
+
+  const handleDragOver = (event: DragEvent<HTMLDivElement>, id: string) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    if (draggedItemId && draggedItemId !== id) {
+      setDropTargetId(id);
+    }
+  };
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>, targetId: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const sourceId = event.dataTransfer.getData('text/plain') || draggedItemId;
+    if (sourceId && sourceId !== targetId) {
+      onReorderItems(sourceId, targetId);
+      onSetActiveItem(sourceId);
+    }
+    setDraggedItemId(null);
+    setDropTargetId(null);
+  };
+
+  const resetDragState = () => {
+    setDraggedItemId(null);
+    setDropTargetId(null);
+  };
 
   return (
     <section className="relative flex h-full flex-col overflow-hidden rounded-[14px] border border-[var(--border-medium)] bg-[var(--bg-surface)] shadow-sm">
@@ -111,13 +150,21 @@ export default function QueuePanel({
             return (
               <div
                 key={item.id}
+                draggable
+                onDragStart={(e) => handleDragStart(e, item.id)}
+                onDragOver={(e) => handleDragOver(e, item.id)}
+                onDragLeave={() => setDropTargetId((current) => current === item.id ? null : current)}
+                onDrop={(e) => handleDrop(e, item.id)}
+                onDragEnd={resetDragState}
                 className={`group relative flex items-center gap-2.5 rounded-[10px] p-2 cursor-pointer transition-all duration-150 ${
                   isActive
                     ? 'bg-[var(--bg-elevated)] border border-[var(--border-medium)]'
                     : 'border border-transparent hover:bg-[var(--bg-surface)] hover:border-[var(--border-medium)]'
-                } ${item.excluded ? 'opacity-40' : ''}`}
+                } ${dropTargetId === item.id ? 'border-[var(--accent-primary)]/60 bg-[var(--accent-primary)]/10' : ''} ${draggedItemId === item.id ? 'opacity-60' : item.excluded ? 'opacity-40' : ''}`}
                 onClick={() => onSetActiveItem(item.id)}
+                title="Arrastra para cambiar el orden de exportacion"
               >
+                <GripVertical size={13} className="shrink-0 text-[var(--text-muted)] opacity-45 transition-opacity group-hover:opacity-100" />
                 {/* Checkbox */}
                 <input
                   type="checkbox"

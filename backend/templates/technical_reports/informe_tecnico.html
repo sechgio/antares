@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Informe Técnico SEDAPAL - Limpieza y Desinfección</title>
+    <style>
+        @page {
+            size: A4 portrait;
+            margin: 0;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Calibri, Arial, sans-serif;
+            font-size: 7.5pt;
+            line-height: 1.15;
+            background: #fff;
+            margin: 0;
+            padding: 0;
+            color: #333;
+            width: 210mm;
+        }
+
+        .page-container {
+            width: 210mm;
+            min-height: 297mm;
+            margin: 0 auto;
+            background: #fff;
+            padding: 6mm !important;
+            box-sizing: border-box;
+            page-break-after: always;
+        }
+
+        .page-container:last-child {
+            page-break-after: avoid;
+        }
+
+        /* ==================== HEADER ==================== */
+        .header {
+            display: grid;
+            grid-template-columns: 120px 1fr 160px;
+            gap: 8px;
+            align-items: center;
+            padding: 8px 10px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border: 2px solid #0066a1;
+            border-radius: 6px;
+            margin-bottom: 8px;
+        }
+
+        .logo-left,
+        .logo-right {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 50px;
+        }
+
+        .logo-img {
+            max-width: 100%;
+            max-height: 45px;
+            object-fit: contain;
+        }
+
+        .sedapal-text {
+            font-size: 18pt;
+            font-weight: bold;
+            color: #0066a1;
+            font-family: 'Arial Black', Arial, sans-serif;
+            letter-spacing: -1px;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
+        }
+
+        .sedapal-line1 {
+            height: 3px;
+            background: linear-gradient(90deg, #0066a1, #0088cc);
+            border-radius: 2px;
+        }
+
+        .sedapal-line2 {
+            height: 2px;
+            background: linear-gradient(90deg, #66b3d9, #99cce6);
+            margin-top: 2px;
+            border-radius: 1px;
+        }
+
+        .header-title h1 {
+            font-size: 11pt;
+            font-weight: bold;
+            color: #0066a1;
+            text-transform: uppercase;
+            text-align: center;
+            line-height: 1.2;
+        }
+
+        .hidro-name {
+            font-size: 8pt;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .hidro-aa {
+            font-size: 12pt;
+            font-weight: bold;
+            color: #d4a017;
+        }
+
+        /* ==================== METADATA & INFO ==================== */
+        .metadata-box {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 8px;
+        }
+
+        .metadata-table {
+            border-collapse: collapse;
+            border: 1px solid #ccc;
+            font-size: 7pt;
+        }
+
+        .metadata-table td {
+            padding: 3px 6px;
+            border: 1px solid #ccc;
+        }
+
+        .meta-label {
+            background: #0066a1;
+            color: #fff;
+            font-weight: bold;
+        }
+
+        .info-section {
+            border: 1px solid #999;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .info-row {
+            display: grid;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .info-row.two-cols {
+            grid-template-columns: 100px 1fr;
+        }
+
+        .info-row.four-cols {
+            grid-template-columns: 100px 1fr 80px 100px;
+        }
+
+        .info-row.codigo {
+            grid-template-columns: 180px 1fr;
+        }
+
+        .info-label {
+            font-weight: bold;
+            padding: 5px 8px;
+            background: #e9ecef;
+            border-right: 1px solid #ccc;
+            display: flex;
+            align-items: center;
+            font-size: 7pt;
+        }
+
+        .info-value {
+            padding: 5px 8px;
+            border-right: 1px solid #ccc;
+            display: flex;
+            align-items: center;
+            font-size: 7pt;
+        }
+
+        .info-value:last-child {
+            border-right: none;
+        }
+
+        /* ==================== TABLES COMMON ==================== */
+        .section-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 8px;
+            font-size: 7pt;
+            table-layout: fixed;
+        }
+
+        .section-table th,
+        .section-table td {
+            border: 1px solid #999;
+            padding: 2px 5px;
+            vertical-align: middle;
+        }
+
+        .section-table thead th {
+            background: #0066a1;
+            color: #fff;
+            text-transform: uppercase;
+            font-size: 6.5pt;
+            padding: 4px 5px;
+        }
+
+        /* Anchos compartidos para alineación vertical */
+        .col-main-label {
+            width: 11%;
+        }
+
+        .col-obs {
+            width: 17%;
+        }
+
+        .col-sug {
+            width: 18%;
+        }
+
+        .section-table .center {
+            text-align: center;
+        }
+
+        .row-label {
+            background: #e9ecef !important;
+            font-weight: bold;
+        }
+
+        .check-normal {
+            color: #000;
+            font-weight: bold;
+        }
+
+        .check-critico {
+            color: #c00;
+            font-weight: bold;
+        }
+
+        /* ==================== ACTIVIDADES ESPECÍFICO ==================== */
+        .actividades-table .num-col {
+            text-align: left;
+            padding-left: 8px;
+        }
+
+        .actividades-table .act-col {
+            text-align: left;
+            padding-left: 10px;
+        }
+
+        /* ==================== INSPECCIÓN ESPECÍFICO ==================== */
+        .inspection-table .sub-label {
+            font-weight: 600;
+            padding-left: 12px;
+            background: #f8f9fa !important;
+        }
+
+        /* ==================== PANEL FOTOGRAFICO ==================== */
+        .photo-section {
+            page-break-before: always;
+            border: 2px solid #0066a1;
+            border-radius: 6px;
+            padding: 10px;
+        }
+
+        .photo-title {
+            text-align: center;
+            font-size: 11pt;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #0066a1;
+            border-bottom: 2px solid #0066a1;
+            padding-bottom: 6px;
+        }
+
+        .photo-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .photo-item {
+            text-align: center;
+        }
+
+        .photo-img {
+            width: 100%;
+            height: 180px;
+            object-fit: contain;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            margin-bottom: 4px;
+            background: #fafafa;
+        }
+
+        .photo-caption {
+            font-size: 7pt;
+            font-weight: bold;
+            color: #333;
+        }
+
+        @media print {
+            body {
+                background: #fff;
+                padding: 0;
+            }
+
+            .page-container {
+                box-shadow: none;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    {% for report in reports %}
+    <div class="page-container">
+
+        <!-- HEADER -->
+        <div class="header">
+            <div class="logo-left">
+                {% if logo_left %}
+                <img src="{{ logo_left }}" class="logo-img" />
+                {% else %}
+                <!-- Blank default -->
+                {% endif %}
+            </div>
+            <div class="header-title">
+                <h1>Informe Técnico de Limpieza y<br>Desinfección de Reservorios y Cisternas</h1>
+            </div>
+            <div class="logo-right">
+                {% if logo_right %}
+                <img src="{{ logo_right }}" class="logo-img" />
+                {% else %}
+                <!-- Blank default -->
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- METADATA -->
+        <div class="metadata-box">
+            <table class="metadata-table">
+                <tr>
+                    <td class="meta-label">INFORME</td>
+                    <td style="width:50px; text-align:center;">{{ report.metadata.informe_id }}</td>
+                    <td class="meta-label">DÍA</td>
+                    <td style="width:35px; text-align:center;">{{ report.metadata.dia }}</td>
+                    <td class="meta-label">MES</td>
+                    <td style="width:50px; text-align:center;">{{ report.metadata.mes }}</td>
+                    <td class="meta-label">AÑO</td>
+                    <td style="width:45px; text-align:center;">{{ report.metadata.anio }}</td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- INFO SECTION -->
+        <div class="info-section">
+            <div class="info-row two-cols">
+                <div class="info-label">C.S :</div>
+                <div class="info-value">{{ report.header.cs }}</div>
+            </div>
+            <div class="info-row two-cols">
+                <div class="info-label">CONTRATISTA :</div>
+                <div class="info-value">{{ report.header.contratista }}</div>
+            </div>
+            <div class="info-row codigo">
+                <div class="info-label">CÓDIGO DE INFRAESTRUCTURA :</div>
+                <div class="info-value"
+                    style="font-weight:bold; color:#0066a1; text-align:center; justify-content:center; font-size: 12pt; padding: 8px;">
+                    {{
+                    report.header.codigo_infraestructura }}</div>
+            </div>
+            <div class="info-row four-cols">
+                <div class="info-label">UBICACIÓN :</div>
+                <div class="info-value">{{ report.header.ubicacion }}</div>
+                <div class="info-label">TIPO :</div>
+                <div class="info-value" style="justify-content: center;">{{ report.header.tipo }}</div>
+            </div>
+            <div class="info-row four-cols">
+                <div class="info-label">SUMINISTRO :</div>
+                <div class="info-value">{{ report.header.suministro }}</div>
+                <div class="info-label">VOLUMEN :</div>
+                <div class="info-value" style="justify-content: center;">{{ report.header.volumen }}</div>
+            </div>
+        </div>
+
+        <!-- INSPECCIÓN TABLE -->
+        <table class="section-table inspection-table">
+            <thead>
+                <tr>
+                    <th rowspan="2" colspan="2" style="width:31.5%">Descripción</th>
+                    <th colspan="2">Estado</th>
+                    <th rowspan="2" class="col-obs">Observaciones</th>
+                    <th rowspan="2" class="col-sug">Sugerencias</th>
+                </tr>
+                <tr>
+                    <th style="width:7.5%">Normal</th>
+                    <th style="width:7.5%">Crítico</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% set items = [
+                ('CAJA DE REGISTRO', 'caja_registro'),
+                ('MARCO Y TAPA SANITARIA', 'marco_tapa'),
+                ('ESCALERA INTERIOR', 'escalera_interior'),
+                ('ESCALERA EXTERIOR', 'escalera_exterior'),
+                ('CUBA INTERIOR', 'cuba_interior'),
+                ('CUBA EXTERIOR', 'cuba_exterior'),
+                ('LOZA DE FONDO', 'loza_fondo'),
+                ('LOZA DE TECHO INTERIOR', 'loza_techo_interior'),
+                ('LOZA DE TECHO EXTERIOR', 'loza_techo_exterior'),
+                ('DUCTO DE VENTILACIÓN', 'ducto_ventilacion'),
+                ('CERCO PERIMÉTRICO', 'cerco_perimetrico'),
+                ('DESCARGA', 'descarga')
+                ] %}
+
+                <!-- Manual Rows to match specific layout requirements (merged cells for Escalera, Cuba, Loza Techo) -->
+                <tr>
+                    <td colspan="2" class="row-label">CAJA DE REGISTRO</td>
+                    <td class="center">{% if report.inspeccion.caja_registro == 'normal' %}<span
+                            class="check-normal">X</span>{% endif %}</td>
+                    <td class="center">{% if report.inspeccion.caja_registro == 'critico' %}<span
+                            class="check-critico">X</span>{% endif %}</td>
+                    <td class="center">{{ report.inspeccion.observaciones_caja_registro }}</td>
+                    <td class="center">{{ report.inspeccion.sugerencias_caja_registro }}</td>
+                </tr>
+                <tr>
+                    <td colspan="2" class="row-label">MARCO Y TAPA SANITARIA</td>
+                    <td class="center">{% if report.inspeccion.marco_tapa == 'normal' %}<span
+                            class="check-normal">X</span>{% endif %}</td>
+                    <td class="center">{% if report.inspeccion.marco_tapa == 'critico' %}<span
+                            class="check-critico">X</span>{% endif %}</td>
+                    <td class="center">{{ report.inspeccion.observaciones_marco_tapa }}</td>
+                    <td class="center">{{ report.inspeccion.sugerencias_marco_tapa }}</td>
+                </tr>
+                <tr>
+                    <td rowspan="2" class="row-label center" style="width:11%">ESCALERA</td>
+                    <td class="sub-label">INTERIOR</td>
+                    <td class="center">{% if report.inspeccion.escalera_interior == 'normal' %}<span
+                            class="check-normal">X</span>{% endif %}</td>
+                    <td class="center">{% if report.inspeccion.escalera_interior == 'critico' %}<span
+                            class="check-critico">X</span>{% endif %}</td>
+                    <td class="center">{{ report.inspeccion.observaciones_escalera_int }}</td>
+                    <td class="center">{{ report.inspeccion.sugerencias_escalera_int }}</td>
+                </tr>
+                <tr>
+                    <td class="sub-label">EXTERIOR</td>
+                    <td class="center">{% if report.inspeccion.escalera_exterior == 'normal' %}<span
+                            class="check-normal">X</span>{% endif %}</td>
+                    <td class="center">{% if report.inspeccion.escalera_exterior == 'critico' %}<span
+                            class="check-critico">X</span>{% endif %}</td>
+                    <td class="center">{{ report.inspeccion.observaciones_escalera_ext }}</td>
+                    <td class="center">{{ report.inspeccion.sugerencias_escalera_ext }}</td>
+                </tr>
+                <tr>
+                    <td rowspan="2" class="row-label center">CUBA</td>
+                    <td class="sub-label">INTERIOR</td>
+                    <td class="center">{% if report.inspeccion.cuba_interior == 'normal' %}<span
+                            class="check-normal">X</span>{% endif %}</td>
+                    <td class="center">{% if report.inspeccion.cuba_interior == 'critico' %}<span
+                            class="check-critico">X</span>{% endif %}</td>
+                    <td class="center">{{ report.inspeccion.observaciones_cuba_int }}</td>
+                    <td class="center">{{ report.inspeccion.sugerencias_cuba_int }}</td>
+                </tr>
+                <tr>
+                    <td class="sub-label">EXTERIOR</td>
+                    <td class="center">{% if report.inspeccion.cuba_exterior == 'normal' %}<span
+                            class="check-normal">X</span>{% endif %}</td>
+                    <td class="center">{% if report.inspeccion.cuba_exterior == 'critico' %}<span
+                            class="check-critico">X</span>{% endif %}</td>
+                    <td class="center">{{ report.inspeccion.observaciones_cuba_ext }}</td>
+                    <td class="center">{{ report.inspeccion.sugerencias_cuba_ext }}</td>
+                </tr>
+                <tr>
+                    <td colspan="2" class="row-label">LOZA DE FONDO</td>
+                    <td class="center">{% if report.inspeccion.loza_fondo == 'normal' %}<span
+                            class="check-normal">X</span>{% endif %}</td>
+                    <td class="center">{% if report.inspeccion.loza_fondo == 'critico' %}<span
+                            class="check-critico">X</span>{% endif %}</td>
+                    <td class="center">{{ report.inspeccion.observaciones_loza_fondo }}</td>
+                    <td class="center">{{ report.inspeccion.sugerencias_loza_fondo }}</td>
+                </tr>
+                <tr>
+                    <td rowspan="2" class="row-label center">LOZA DE TECHO</td>
+                    <td class="sub-label">INTERIOR</td>
+                    <td class="center">{% if report.inspeccion.loza_techo_interior == 'normal' %}<span
+                            class="check-normal">X</span>{% endif %}</td>
+                    <td class="center">{% if report.inspeccion.loza_techo_interior == 'critico' %}<span
+                            class="check-critico">X</span>{% endif %}</td>
+                    <td class="center">{{ report.inspeccion.observaciones_loza_techo_int }}</td>
+                    <td class="center">{{ report.inspeccion.sugerencias_loza_techo_int }}</td>
+                </tr>
+                <tr>
+                    <td class="sub-label">EXTERIOR</td>
+                    <td class="center">{% if report.inspeccion.loza_techo_exterior == 'normal' %}<span
+                            class="check-normal">X</span>{% endif %}</td>
+                    <td class="center">{% if report.inspeccion.loza_techo_exterior == 'critico' %}<span
+                            class="check-critico">X</span>{% endif %}</td>
+                    <td class="center">{{ report.inspeccion.observaciones_loza_techo_ext }}</td>
+                    <td class="center">{{ report.inspeccion.sugerencias_loza_techo_ext }}</td>
+                </tr>
+                <tr>
+                    <td colspan="2" class="row-label">DUCTO DE VENTILACIÓN</td>
+                    <td class="center">{% if report.inspeccion.ducto_ventilacion == 'normal' %}<span
+                            class="check-normal">X</span>{% endif %}</td>
+                    <td class="center">{% if report.inspeccion.ducto_ventilacion == 'critico' %}<span
+                            class="check-critico">X</span>{% endif %}</td>
+                    <td class="center">{{ report.inspeccion.observaciones_ducto }}</td>
+                    <td class="center">{{ report.inspeccion.sugerencias_ducto }}</td>
+                </tr>
+                <tr>
+                    <td colspan="2" class="row-label">CERCO PERIMÉTRICO</td>
+                    <td class="center">{% if report.inspeccion.cerco_perimetrico == 'normal' %}<span
+                            class="check-normal">X</span>{% endif %}</td>
+                    <td class="center">{% if report.inspeccion.cerco_perimetrico == 'critico' %}<span
+                            class="check-critico">X</span>{% endif %}</td>
+                    <td class="center">{{ report.inspeccion.observaciones_cerco }}</td>
+                    <td class="center">{{ report.inspeccion.sugerencias_cerco }}</td>
+                </tr>
+                <tr>
+                    <td colspan="2" class="row-label">DESCARGA</td>
+                    <td class="center">{% if report.inspeccion.descarga == 'normal' %}<span
+                            class="check-normal">X</span>{% endif %}</td>
+                    <td class="center">{% if report.inspeccion.descarga == 'critico' %}<span
+                            class="check-critico">X</span>{% endif %}</td>
+                    <td class="center">{{ report.inspeccion.observaciones_descarga }}</td>
+                    <td class="center">{{ report.inspeccion.sugerencias_descarga }}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- VÁLVULAS TABLE -->
+        <table class="section-table valvulas-table">
+            <colgroup>
+                <col class="col-main-label">
+                <col span="7">
+                <col style="width:5%">
+                <col style="width:5%">
+                <col class="col-obs">
+                <col class="col-sug">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th rowspan="2">Válvulas</th>
+                    <th colspan="7">Diámetro de Válvulas</th>
+                    <th rowspan="2">Oper.</th>
+                    <th rowspan="2">No Op.</th>
+                    <th rowspan="2">Observaciones</th>
+                    <th rowspan="2">Sugerencias</th>
+                </tr>
+                <tr>
+                    <th>2''</th>
+                    <th>3''</th>
+                    <th>4''</th>
+                    <th>6''</th>
+                    <th>8''</th>
+                    <th>10''</th>
+                    <th>12''</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="row-label">CONDUCCIÓN</td>
+                    <td class="center">{{ report.valvulas.diametros['2'] if report.valvulas.diametros['2'] else '' }}
+                    </td>
+                    <td class="center">{{ report.valvulas.diametros['3'] if report.valvulas.diametros['3'] else '' }}
+                    </td>
+                    <td class="center">{{ report.valvulas.diametros['4'] if report.valvulas.diametros['4'] else '' }}
+                    </td>
+                    <td class="center">{{ report.valvulas.diametros['6'] if report.valvulas.diametros['6'] else '' }}
+                    </td>
+                    <td class="center">{{ report.valvulas.diametros['8'] if report.valvulas.diametros['8'] else '' }}
+                    </td>
+                    <td class="center">{{ report.valvulas.diametros['10'] if report.valvulas.diametros['10'] else '' }}
+                    </td>
+                    <td class="center">{{ report.valvulas.diametros['12'] if report.valvulas.diametros['12'] else '' }}
+                    </td>
+                    <td class="center"></td>
+                    <td class="center"></td>
+                    <td>{{ report.valvulas.observaciones_conduccion }}</td>
+                    <td>{{ report.valvulas.sugerencias_conduccion }}</td>
+                </tr>
+                <tr>
+                    <td class="row-label">IMPULSIÓN</td>
+                    <td class="center">{{ report.valvulas.impulsion['2'] if report.valvulas.impulsion['2'] else '' }}
+                    </td>
+                    <td class="center">{{ report.valvulas.impulsion['3'] if report.valvulas.impulsion['3'] else '' }}
+                    </td>
+                    <td class="center">{{ report.valvulas.impulsion['4'] if report.valvulas.impulsion['4'] else '' }}
+                    </td>
+                    <td class="center">{{ report.valvulas.impulsion['6'] if report.valvulas.impulsion['6'] else '' }}
+                    </td>
+                    <td class="center">{{ report.valvulas.impulsion['8'] if report.valvulas.impulsion['8'] else '' }}
+                    </td>
+                    <td class="center">{{ report.valvulas.impulsion['10'] if report.valvulas.impulsion['10'] else '' }}
+                    </td>
+                    <td class="center">{{ report.valvulas.impulsion['12'] if report.valvulas.impulsion['12'] else '' }}
+                    </td>
+                    <td class="center"></td>
+                    <td class="center"></td>
+                    <td>{{ report.valvulas.observaciones_impulsion }}</td>
+                    <td>{{ report.valvulas.sugerencias_impulsion }}</td>
+                </tr>
+                <tr>
+                    <td class="row-label">ADUCCIÓN</td>
+                    <td class="center">{{ report.valvulas.aduccion['2'] if report.valvulas.aduccion['2'] else '' }}</td>
+                    <td class="center">{{ report.valvulas.aduccion['3'] if report.valvulas.aduccion['3'] else '' }}</td>
+                    <td class="center">{{ report.valvulas.aduccion['4'] if report.valvulas.aduccion['4'] else '' }}</td>
+                    <td class="center">{{ report.valvulas.aduccion['6'] if report.valvulas.aduccion['6'] else '' }}</td>
+                    <td class="center">{{ report.valvulas.aduccion['8'] if report.valvulas.aduccion['8'] else '' }}</td>
+                    <td class="center">{{ report.valvulas.aduccion['10'] if report.valvulas.aduccion['10'] else '' }}
+                    </td>
+                    <td class="center">{{ report.valvulas.aduccion['12'] if report.valvulas.aduccion['12'] else '' }}
+                    </td>
+                    <td class="center"></td>
+                    <td class="center"></td>
+                    <td>{{ report.valvulas.observaciones_aduccion }}</td>
+                    <td>{{ report.valvulas.sugerencias_aduccion }}</td>
+                </tr>
+                <tr>
+                    <td class="row-label">BY PASS</td>
+                    <td class="center">{{ report.valvulas.bypass['2'] if report.valvulas.bypass['2'] else '' }}</td>
+                    <td class="center">{{ report.valvulas.bypass['3'] if report.valvulas.bypass['3'] else '' }}</td>
+                    <td class="center">{{ report.valvulas.bypass['4'] if report.valvulas.bypass['4'] else '' }}</td>
+                    <td class="center">{{ report.valvulas.bypass['6'] if report.valvulas.bypass['6'] else '' }}</td>
+                    <td class="center">{{ report.valvulas.bypass['8'] if report.valvulas.bypass['8'] else '' }}</td>
+                    <td class="center">{{ report.valvulas.bypass['10'] if report.valvulas.bypass['10'] else '' }}</td>
+                    <td class="center">{{ report.valvulas.bypass['12'] if report.valvulas.bypass['12'] else '' }}</td>
+                    <td class="center"></td>
+                    <td class="center"></td>
+                    <td>{{ report.valvulas.observaciones_bypass }}</td>
+                    <td>{{ report.valvulas.sugerencias_bypass }}</td>
+                </tr>
+                <tr>
+                    <td class="row-label">DESAGÜE</td>
+                    <td class="center">{{ report.valvulas.desague['2'] if report.valvulas.desague['2'] else '' }}</td>
+                    <td class="center">{{ report.valvulas.desague['3'] if report.valvulas.desague['3'] else '' }}</td>
+                    <td class="center">{{ report.valvulas.desague['4'] if report.valvulas.desague['4'] else '' }}</td>
+                    <td class="center">{{ report.valvulas.desague['6'] if report.valvulas.desague['6'] else '' }}</td>
+                    <td class="center">{{ report.valvulas.desague['8'] if report.valvulas.desague['8'] else '' }}</td>
+                    <td class="center">{{ report.valvulas.desague['10'] if report.valvulas.desague['10'] else '' }}</td>
+                    <td class="center">{{ report.valvulas.desague['12'] if report.valvulas.desague['12'] else '' }}</td>
+                    <td class="center"></td>
+                    <td class="center"></td>
+                    <td>{{ report.valvulas.observaciones_desague }}</td>
+                    <td>{{ report.valvulas.sugerencias_desague }}</td>
+                </tr>
+                <tr style="background:#d4d8dd">
+                    <td class="row-label">TOTAL</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td class="center" style="font-weight:bold;">{{ report.valvulas.operativas }}</td>
+                    <td class="center" style="font-weight:bold;">{{ report.valvulas.no_operativas }}</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- CANASTILLA TABLE -->
+        <table class="section-table valvulas-table">
+            <colgroup>
+                <col class="col-main-label">
+                <col span="7">
+                <col style="width:5%">
+                <col style="width:5%">
+                <col class="col-obs">
+                <col class="col-sug">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th rowspan="2">Canastilla</th>
+                    <th colspan="7">Diámetro de Canastilla</th>
+                    <th rowspan="2">Oper.</th>
+                    <th rowspan="2">No Op.</th>
+                    <th rowspan="2">Observaciones</th>
+                    <th rowspan="2">Sugerencias</th>
+                </tr>
+                <tr>
+                    <th>2''</th>
+                    <th>3''</th>
+                    <th>4''</th>
+                    <th>6''</th>
+                    <th>8''</th>
+                    <th>10''</th>
+                    <th>14''</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="row-label">ADUCCION</td>
+                    <td class="center">{{ report.canastillas.aduccion['2'] if report.canastillas.aduccion['2'] else ''
+                        }}</td>
+                    <td class="center">{{ report.canastillas.aduccion['3'] if report.canastillas.aduccion['3'] else ''
+                        }}</td>
+                    <td class="center">{{ report.canastillas.aduccion['4'] if report.canastillas.aduccion['4'] else ''
+                        }}</td>
+                    <td class="center">{{ report.canastillas.aduccion['6'] if report.canastillas.aduccion['6'] else ''
+                        }}</td>
+                    <td class="center">{{ report.canastillas.aduccion['8'] if report.canastillas.aduccion['8'] else ''
+                        }}</td>
+                    <td class="center">{{ report.canastillas.aduccion['10'] if report.canastillas.aduccion['10'] else ''
+                        }}</td>
+                    <td class="center">{{ report.canastillas.aduccion['14'] if report.canastillas.aduccion['14'] else ''
+                        }}</td>
+                    <td class="center"></td>
+                    <td class="center"></td>
+                    <td class="center">{{ report.canastillas.observaciones_aduccion }}</td>
+                    <td class="center">{{ report.canastillas.sugerencias_aduccion }}</td>
+                </tr>
+                <tr>
+                    <td class="row-label">SUCCION</td>
+                    <td class="center">{{ report.canastillas.succion['2'] if report.canastillas.succion['2'] else '' }}
+                    </td>
+                    <td class="center">{{ report.canastillas.succion['3'] if report.canastillas.succion['3'] else '' }}
+                    </td>
+                    <td class="center">{{ report.canastillas.succion['4'] if report.canastillas.succion['4'] else '' }}
+                    </td>
+                    <td class="center">{{ report.canastillas.succion['6'] if report.canastillas.succion['6'] else '' }}
+                    </td>
+                    <td class="center">{{ report.canastillas.succion['8'] if report.canastillas.succion['8'] else '' }}
+                    </td>
+                    <td class="center">{{ report.canastillas.succion['10'] if report.canastillas.succion['10'] else ''
+                        }}</td>
+                    <td class="center">{{ report.canastillas.succion['14'] if report.canastillas.succion['14'] else ''
+                        }}</td>
+                    <td class="center"></td>
+                    <td class="center"></td>
+                    <td class="center">{{ report.canastillas.observaciones_succion }}</td>
+                    <td class="center">{{ report.canastillas.sugerencias_succion }}</td>
+                </tr>
+                <tr>
+                    <td class="row-label">DESAGUE</td>
+                    <td class="center">{{ report.canastillas.desague['2'] if report.canastillas.desague['2'] else '' }}
+                    </td>
+                    <td class="center">{{ report.canastillas.desague['3'] if report.canastillas.desague['3'] else '' }}
+                    </td>
+                    <td class="center">{{ report.canastillas.desague['4'] if report.canastillas.desague['4'] else '' }}
+                    </td>
+                    <td class="center">{{ report.canastillas.desague['6'] if report.canastillas.desague['6'] else '' }}
+                    </td>
+                    <td class="center">{{ report.canastillas.desague['8'] if report.canastillas.desague['8'] else '' }}
+                    </td>
+                    <td class="center">{{ report.canastillas.desague['10'] if report.canastillas.desague['10'] else ''
+                        }}</td>
+                    <td class="center">{{ report.canastillas.desague['14'] if report.canastillas.desague['14'] else ''
+                        }}</td>
+                    <td class="center"></td>
+                    <td class="center"></td>
+                    <td class="center">{{ report.canastillas.observaciones_desague }}</td>
+                    <td class="center">{{ report.canastillas.sugerencias_desague }}</td>
+                </tr>
+                <tr style="background:#d4d8dd">
+                    <td class="row-label">TOTAL</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td class="center" style="font-weight:bold;">{{ report.canastillas.operativas }}</td>
+                    <td class="center" style="font-weight:bold;">{{ report.canastillas.no_operativas }}</td>
+                    <td></td>
+                    <td></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- MEDIDAS TABLE -->
+        <table class="section-table medidas-table">
+            <colgroup>
+                <col style="width: 65%;">
+                <col class="col-obs">
+                <col class="col-sug">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th>Medidas</th>
+                    <th class="center">U/M</th>
+                    <th class="center">Cantidad</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="row-label">DIAMETRO</td>
+                    <td class="center">M</td>
+                    <td class="center">{{ report.medidas.diametro }}</td>
+                </tr>
+                <tr>
+                    <td class="row-label">DIAMETRO INTERNO</td>
+                    <td class="center">M</td>
+                    <td class="center">{{ report.medidas.diametro_interno }}</td>
+                </tr>
+                <tr>
+                    <td class="row-label">ALTURA UTIL</td>
+                    <td class="center">M</td>
+                    <td class="center">{{ report.medidas.altura_util }}</td>
+                </tr>
+                <tr>
+                    <td class="row-label">ALTURA TOTAL</td>
+                    <td class="center">M</td>
+                    <td class="center">{{ report.medidas.altura_total }}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- ACTIVIDADES EJECUTADAS TABLE -->
+        <table class="section-table actividades-table">
+            <colgroup>
+                <col class="col-main-label">
+                <col>
+            </colgroup>
+            <thead>
+                <tr>
+                    <th colspan="2">Actividades Ejecutadas</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="num-col row-label">1</td>
+                    <td class="act-col">SEÑALIZACION DE LA ZONA DE TRABAJO</td>
+                </tr>
+                <tr>
+                    <td class="num-col row-label">2</td>
+                    <td class="act-col">LLENADO DE FORMATOS: ATS, ALTURA.</td>
+                </tr>
+                <tr>
+                    <td class="num-col row-label">3</td>
+                    <td class="act-col">DESCARGA DE HERRAMIENTAS, EQUIPOS E INSUMOS DEL VEHICULO</td>
+                </tr>
+                <tr>
+                    <td class="num-col row-label">4</td>
+                    <td class="act-col">VENTILACION DE LA ESTRUCTURA DE ALMACENAMIENTO DE AGUA</td>
+                </tr>
+                <tr>
+                    <td class="num-col row-label">5</td>
+                    <td class="act-col">INSTALACION DEL SISTEMA DE ILUMINACION</td>
+                </tr>
+                <tr>
+                    <td class="num-col row-label">6</td>
+                    <td class="act-col">TRASLADO E INGRESO DE HERRAMIENTAS NECESARIOS PARA INICIAR LA LIMPIEZA</td>
+                </tr>
+                <tr>
+                    <td class="num-col row-label">7</td>
+                    <td class="act-col">RASQUETEO DE LAS PAREDES, PISO Y TECHO CON AYUDA DE HERRAMIENTAS Y EL AGUA</td>
+                </tr>
+                <tr>
+                    <td class="num-col row-label">8</td>
+                    <td class="act-col">ENJUAGUE Y DESCARGA DEL AGUA DE LIMPIEZA</td>
+                </tr>
+                <tr>
+                    <td class="num-col row-label">9</td>
+                    <td class="act-col">PREPARACION DE LA SOLUCION DE HIPOCLORITO DE CALCIO</td>
+                </tr>
+                <tr>
+                    <td class="num-col row-label">10</td>
+                    <td class="act-col">DESINFECCION CON AYUDA DE LA BOMBA DE ALTA PRESION</td>
+                </tr>
+                <tr>
+                    <td class="num-col row-label">11</td>
+                    <td class="act-col">SE PROCEDE A CARGAR LAS HERRAMIENTAS, EQUIPOS Y SEÑALIZACION AL VEHICULO.</td>
+                </tr>
+            </tbody>
+        </table>
+
+    </div>
+    {% endfor %}
+
+</body>
+
+</html>

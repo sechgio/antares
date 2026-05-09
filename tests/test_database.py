@@ -5,7 +5,7 @@ garantizando aislamiento entre tests.
 """
 
 import pytest
-from pathlib import Path
+
 from backend.core import database as db
 from backend.core.config_fields import save_fields
 

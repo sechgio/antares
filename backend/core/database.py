@@ -301,20 +301,6 @@ def buscar_por_codigo(codigo: str) -> dict[str, Any] | None:
         return dict(row) if row else None
 
 
-def buscar_por_indice(indice: int) -> dict[str, Any] | None:
-    """Busca un registro por su posición (1-based) en la tabla."""
-    if indice < 1:
-        return None
-    with _db_lock:
-        conn = _get_connection()
-        cursor = conn.cursor()
-        field_names = get_field_names()
-        cols = ", ".join(field_names)
-        cursor.execute(f"SELECT {cols} FROM imagenes LIMIT 1 OFFSET ?", (indice - 1,))
-        row = cursor.fetchone()
-    return dict(row) if row else None
-
-
 def obtener_todos() -> list[dict[str, Any]]:
     """Retorna todos los registros como lista de diccionarios."""
     with _db_lock:

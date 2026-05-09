@@ -33,6 +33,14 @@ interface CustomColumn {
   mappedTo: string;
 }
 
+interface StepProps {
+  number: string;
+  title: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+  disabled?: boolean;
+}
+
 const LOGO_LEFT_KEY = 'cosmo_preview_logo_left';
 const LOGO_RIGHT_KEY = 'cosmo_preview_logo_right';
 const CUSTOM_COLS_KEY = 'cosmo_preview_custom_columns';
@@ -69,6 +77,21 @@ function savePersistedLogo(key: string, dataUrl: string, fileName: string) {
 
 function clearPersistedLogo(key: string) {
   try { localStorage.removeItem(key); } catch { /* ignore */ }
+}
+
+function Step({ number, title, icon, children, disabled }: StepProps) {
+  return (
+    <div className={`space-y-3 ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+      <div className="flex items-center gap-2">
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[10px] font-bold text-[var(--text-on-accent)]">
+          {number}
+        </span>
+        <span className="text-[12px] font-semibold text-[var(--text-primary)]">{title}</span>
+        <span className="text-[var(--text-secondary)]">{icon}</span>
+      </div>
+      <div className="pl-7">{children}</div>
+    </div>
+  );
 }
 
 export default function PreviewPanelView() {
@@ -442,22 +465,6 @@ export default function PreviewPanelView() {
       setPdfLoadingMessage('');
     }
   };
-
-  // ─── Step component ───
-  const Step = ({ number, title, icon, children, disabled }: {
-    number: string; title: string; icon: React.ReactNode; children: React.ReactNode; disabled?: boolean;
-  }) => (
-    <div className={`space-y-3 ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
-      <div className="flex items-center gap-2">
-        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[10px] font-bold text-[var(--text-on-accent)]">
-          {number}
-        </span>
-        <span className="text-[12px] font-semibold text-[var(--text-primary)]">{title}</span>
-        <span className="text-[var(--text-secondary)]">{icon}</span>
-      </div>
-      <div className="pl-7">{children}</div>
-    </div>
-  );
 
   return (
     <div className="flex h-full w-full bg-[var(--bg-base)] text-[var(--text-primary)] overflow-hidden">

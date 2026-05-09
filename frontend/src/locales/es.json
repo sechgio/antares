@@ -2,7 +2,6 @@
   "app.title": "COSMO",
   "app.subtitle": "Conversor y renombrador profesional de imágenes",
   "tab.convert": "Conversión",
-  "tab.db": "Base de Datos",
   "tab.appearance": "Apariencia",
   "tab.history": "Historial",
   "convert.files": "Archivos de origen",

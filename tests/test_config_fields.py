@@ -1,16 +1,12 @@
 """Tests para la configuración personalizable de campos."""
 
-import json
-import pytest
-from pathlib import Path
 from backend.core.config_fields import (
-    load_fields,
-    save_fields,
+    DEFAULT_FIELDS,
     get_field_names,
     get_required_fields,
     get_unique_fields,
-    reset_to_defaults,
-    DEFAULT_FIELDS,
+    load_fields,
+    save_fields,
 )
 
 

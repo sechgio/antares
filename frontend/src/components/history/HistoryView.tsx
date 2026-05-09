@@ -11,6 +11,7 @@ const TYPE_FILTERS: { label: string; value: RunType | 'all' }[] = [
   { label: 'Formatos', value: 'formato' },
   { label: 'Padrón', value: 'padron' },
   { label: 'Volante', value: 'volante' },
+  { label: 'Imágenes', value: 'image_optimizer' },
 ];
 
 export default function HistoryView() {

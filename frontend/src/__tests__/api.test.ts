@@ -57,6 +57,33 @@ describe('API Client', () => {
     expect(result.filename).toBe('reporte.pdf');
   });
 
+  it('should call technical reports list with correct method', async () => {
+    mockInvoke.mockResolvedValue({ reports: [] });
+
+    const result = await api.technicalReportsList({ summary: true });
+
+    expect(mockInvoke).toHaveBeenCalledWith('technical_reports_list', { summary: true });
+    expect(result.reports).toEqual([]);
+  });
+
+  it('should call technical reports import with base64 payload', async () => {
+    mockInvoke.mockResolvedValue({ imported_count: 1, deleted_count: 0, total_rows_in_file: 1, success: true, message: 'ok' });
+
+    const result = await api.technicalReportsImportFile({ filename: 'datos.csv', content_b64: 'YQ==' });
+
+    expect(mockInvoke).toHaveBeenCalledWith('technical_reports_import_file', { filename: 'datos.csv', content_b64: 'YQ==' });
+    expect(result.imported_count).toBe(1);
+  });
+
+  it('should call technical reports HTML renderer', async () => {
+    mockInvoke.mockResolvedValue({ html: '<html></html>', filename: 'informe_RPT-0001.pdf' });
+
+    const result = await api.technicalReportsRenderHtml({ id: 'RPT-0001' });
+
+    expect(mockInvoke).toHaveBeenCalledWith('technical_reports_render_html', { id: 'RPT-0001' });
+    expect(result.filename).toBe('informe_RPT-0001.pdf');
+  });
+
   it('should call startProcess with correct params', async () => {
     mockInvoke.mockResolvedValue({ started: true });
     const body = {

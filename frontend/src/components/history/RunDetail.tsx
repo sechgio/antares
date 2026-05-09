@@ -16,6 +16,7 @@ const RUN_TYPE_LABELS: Record<RunType, string> = {
   formato: 'Formato',
   padron: 'Padrón',
   volante: 'Volante',
+  image_optimizer: 'Imágenes',
 };
 
 const RUN_TYPE_COLORS: Record<RunType, string> = {
@@ -23,6 +24,7 @@ const RUN_TYPE_COLORS: Record<RunType, string> = {
   formato: 'text-[var(--accent-primary)]',
   padron: 'text-[var(--accent-yellow)]',
   volante: 'text-[var(--accent-secondary)]',
+  image_optimizer: 'text-purple-400',
 };
 
 export default function RunDetail({ run, onReexecute, onDelete }: RunDetailProps) {
@@ -55,6 +57,16 @@ export default function RunDetail({ run, onReexecute, onDelete }: RunDetailProps
         { label: 'Padrón', value: run.formato || 'Padrón' },
         { label: 'Ítems', value: `${files.length}`, color: 'text-[var(--accent-yellow)]' },
         { label: 'Correctos', value: run.ok_count, color: 'text-[var(--accent-green)]' },
+        { label: 'Errores', value: run.err_count, color: run.err_count > 0 ? 'text-[var(--accent-red)]' : 'text-[var(--text-secondary)]' },
+      ];
+    }
+    if (type === 'image_optimizer') {
+      const preset = (options.preset as string) ?? 'custom';
+      const scope = (options.scope as string) ?? 'all';
+      return [
+        { label: 'Preset', value: preset, color: 'text-purple-400' },
+        { label: 'Alcance', value: scope },
+        { label: 'Procesadas', value: run.ok_count, color: 'text-[var(--accent-green)]' },
         { label: 'Errores', value: run.err_count, color: run.err_count > 0 ? 'text-[var(--accent-red)]' : 'text-[var(--text-secondary)]' },
       ];
     }
@@ -105,7 +117,7 @@ export default function RunDetail({ run, onReexecute, onDelete }: RunDetailProps
         </div>
       )}
 
-      {(type === 'formato' || type === 'padron' || type === 'volante') && Object.keys(options).length > 0 && (
+      {(type === 'formato' || type === 'padron' || type === 'volante' || type === 'image_optimizer') && Object.keys(options).length > 0 && (
         <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-subtle)] p-4">
           <div className="eyebrow mb-2">Opciones</div>
           <div className="space-y-1.5">
@@ -125,6 +137,7 @@ export default function RunDetail({ run, onReexecute, onDelete }: RunDetailProps
             {type === 'conversion' ? `Archivos (${files.length})` :
              type === 'formato' ? `Páginas (${files.length})` :
              type === 'padron' ? `Ítems (${files.length})` :
+             type === 'image_optimizer' ? `Imágenes (${files.length})` :
              `Registros (${files.length})`}
           </span>
         </div>

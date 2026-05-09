@@ -1,4 +1,3 @@
-from pathlib import Path
 
 from backend.bootstrap import adjust_backend_import_path
 

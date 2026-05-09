@@ -5,8 +5,6 @@ Prove-It: El bug reportado era que {codigo}_{nombre}{ext} generaba
 nombre=2454514245 para codigo=1.
 """
 
-import pytest
-from pathlib import Path
 from backend.core.renamer import RenamerEngine
 
 

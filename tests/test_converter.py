@@ -4,14 +4,16 @@ Crea imágenes reales con Pillow para verificar conversiones,
 redimensiones, manejo de errores y procesamiento por lotes.
 """
 
-import pytest
 from pathlib import Path
+
+import pytest
 from PIL import Image
+
 from backend.core.converter import (
-    obtener_formatos,
     convertir_imagen,
     procesar_lote,
 )
+from backend.core.format_registry import get_registry
 
 
 @pytest.fixture
@@ -34,7 +36,7 @@ def imagen_rgba(tmp_path):
 
 class TestObtenerFormatos:
     def test_retorna_lista_no_vacia(self):
-        formatos = obtener_formatos()
+        formatos = get_registry().list_formats()
         assert isinstance(formatos, list)
         assert "JPEG" in formatos
         assert "PNG" in formatos

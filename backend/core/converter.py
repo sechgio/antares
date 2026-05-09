@@ -50,21 +50,11 @@ PIL_FORMAT_MAP: dict[str, str] = {
 ProgresoCallback = Callable[[int, int, Path], None]
 
 
-def obtener_formatos() -> list[str]:
-    """Retorna lista de formatos soportados."""
-    return get_registry().list_formats()
-
-
 def es_video(ruta: str | Path) -> bool:
     """Detecta si un archivo es un video basado en su extensión."""
     ruta = Path(ruta)
     ext = ruta.suffix.lower()
     return ext in VIDEO_FORMATS.values()
-
-
-def obtener_formatos_video() -> list[str]:
-    """Retorna lista de formatos de video soportados para renombrado."""
-    return list(VIDEO_FORMATS.keys())
 
 
 def copiar_video(

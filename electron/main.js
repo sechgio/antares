@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, screen, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const { autoUpdater } = require('electron-updater');
 const { getBackendCommand } = require('./backend-command');
 const { handleDialogCall } = require('./dialog-handlers');
@@ -104,7 +104,7 @@ function _startPythonBackend() {
       cmd = systemPython;
       // Verify system python is available in PATH
       try {
-        require('child_process').execSync(`${cmd} --version`, { stdio: 'ignore' });
+        execSync(`${cmd} --version`, { stdio: 'ignore' });
       } catch {
         throw new Error(`Python no encontrado: ni el entorno virtual (${venvPath}) ni Python del sistema (${cmd}) están disponibles. Instala Python o configura el entorno virtual.`);
       }

@@ -68,6 +68,25 @@ export interface PreviewImageBody {
   resize?: number[] | null;
 }
 
+export interface TechnicalReportsListBody {
+  cs?: string;
+  contratista?: string;
+  status?: string;
+  summary?: boolean;
+}
+
+export interface TechnicalReportsImportBody {
+  filename: string;
+  content_b64: string;
+}
+
+export interface TechnicalReportsRenderBody {
+  id?: string;
+  report?: unknown;
+  logo_left?: string | null;
+  logo_right?: string | null;
+}
+
 export const api = {
   version: () => _invoke<{ version: string }>('version'),
   formats: () => _invoke<{ formats: string[] }>('formats'),
@@ -144,4 +163,30 @@ export const api = {
   // ─── Render HTML to PDF via Electron ─────────────────────────────────────
   htmlToPdf: (body: { html: string; filename: string }) =>
     _invoke<{ pdf_base64: string; filename: string }>('html_to_pdf', body),
+
+  // ─── Informes técnicos ─────────────────────────────────────────────────
+  technicalReportsList: (body?: TechnicalReportsListBody) =>
+    _invoke<{ reports: unknown[] }>('technical_reports_list', body),
+  technicalReportsGet: (id: string) =>
+    _invoke<{ report: unknown }>('technical_reports_get', { id }),
+  technicalReportsCreate: (report?: unknown) =>
+    _invoke<{ success: boolean; report: unknown }>('technical_reports_create', report ? { report } : {}),
+  technicalReportsUpdate: (id: string, report: unknown) =>
+    _invoke<{ success: boolean; report: unknown }>('technical_reports_update', { id, report }),
+  technicalReportsDelete: (id: string) =>
+    _invoke<{ success: boolean; deleted_id: string }>('technical_reports_delete', { id }),
+  technicalReportsClear: () =>
+    _invoke<{ success: boolean; deleted_count: number; message: string }>('technical_reports_clear'),
+  technicalReportsImportFile: (body: TechnicalReportsImportBody) =>
+    _invoke<{ success: boolean; message: string; deleted_count: number; imported_count: number; total_rows_in_file: number }>('technical_reports_import_file', body),
+  technicalReportsVariables: () =>
+    _invoke<{ variables: Array<{ key: string; label: string; category: string }> }>('technical_reports_variables'),
+  technicalReportsAutocompleteCs: () =>
+    _invoke<{ options: string[] }>('technical_reports_autocomplete_cs'),
+  technicalReportsAutocompleteContratista: (cs?: string) =>
+    _invoke<{ options: string[] }>('technical_reports_autocomplete_contratista', cs ? { cs } : {}),
+  technicalReportsRenderHtml: (body: TechnicalReportsRenderBody) =>
+    _invoke<{ html: string; filename: string }>('technical_reports_render_html', body),
+  technicalReportsRenderConsolidatedHtml: (body?: { report_ids?: string[]; logo_left?: string | null; logo_right?: string | null }) =>
+    _invoke<{ html: string; filename: string; count: number }>('technical_reports_render_consolidated_html', body),
 };

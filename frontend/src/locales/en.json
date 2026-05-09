@@ -2,7 +2,6 @@
   "app.title": "COSMO",
   "app.subtitle": "Professional image converter and renamer",
   "tab.convert": "Conversion",
-  "tab.db": "Database",
   "tab.appearance": "Appearance",
   "tab.history": "History",
   "convert.files": "Source files",

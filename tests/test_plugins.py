@@ -1,7 +1,5 @@
 """Tests for the plugin system."""
 
-import pytest
-from pathlib import Path
 from backend.core import format_registry
 from backend.core.plugins import load_plugins_from_dir
 

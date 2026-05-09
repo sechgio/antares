@@ -7,8 +7,9 @@ import FileGrid from './FileGrid';
 import OptionsCard from './OptionsCard';
 import RenameCard from './RenameCard';
 import ProgressBar from './ProgressBar';
+import DatabaseView from '../database/DatabaseView';
 import Button from '../ui/Button';
-import { Image, Film, FolderOpen, ArrowRight, CheckCircle2, AlertTriangle, AlertCircle, Play, Settings, Square, Tag } from 'lucide-react';
+import { Image, Film, FolderOpen, ArrowRight, CheckCircle2, AlertTriangle, AlertCircle, Play, Settings, Square, Tag, Database, ChevronDown } from 'lucide-react';
 
 const buildDefaultPresets = (fields: string[]): RenamePattern[] => {
   const codeField = fields[0];
@@ -62,6 +63,7 @@ export default function ConversionView() {
   const [running, setRunning] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [videoFiles, setVideoFiles] = useState<Set<string>>(new Set());
+  const [showDatabase, setShowDatabase] = useState(false);
 
   const namingPresets = useMemo(() => patterns.length > 0 ? patterns : buildDefaultPresets(fields), [patterns, fields]);
   const resizeWidth = resizeEnabled ? parsePositiveInt(resizeAncho) : null;
@@ -592,6 +594,25 @@ export default function ConversionView() {
           </div>
         </div>
       )}
+
+      {/* Database section */}
+      <div className="border-t border-[var(--border-subtle)] pt-4">
+        <button
+          onClick={() => setShowDatabase(!showDatabase)}
+          className="flex w-full items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-3 text-left transition-colors hover:bg-[var(--bg-elevated)]"
+        >
+          <Database className="h-4 w-4 text-[var(--text-muted)]" />
+          <span className="text-sm font-medium text-[var(--text-primary)]">Base de Datos</span>
+          <span className="ml-auto text-[var(--text-muted)] transition-transform duration-200" style={{ transform: showDatabase ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+            <ChevronDown className="h-4 w-4" />
+          </span>
+        </button>
+        {showDatabase && (
+          <div className="mt-2 h-[420px] overflow-hidden rounded-xl border border-[var(--border-subtle)]">
+            <DatabaseView />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,7 +1,9 @@
 """Tests for IPC input validation."""
 
 import pytest
-from backend.ipc_protocol import IPCMessage, validate_method, validate_params
+
+from backend.ipc_protocol import IPCMessage
+
 
 def test_invalid_method():
     """Test that invalid methods are rejected."""

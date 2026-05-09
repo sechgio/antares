@@ -1677,6 +1677,317 @@ textarea.vgen-input {
     animation: vgen-fab-check-in 0.2s ease;
 }
 
+/* DATE PICKER */
+.vgen-date-picker {
+    width: 100%;
+    position: relative;
+}
+
+.vgen-date-picker-trigger {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--vgen-line);
+    border-radius: 6px;
+    background: var(--vgen-bg-panel);
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 0.82rem;
+    color: var(--vgen-ink);
+}
+
+.vgen-date-picker-trigger:hover {
+    border-color: var(--vgen-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--vgen-accent) 12%, transparent);
+}
+
+.vgen-date-picker-trigger-icon {
+    color: var(--vgen-ink-soft);
+    flex-shrink: 0;
+}
+
+.vgen-date-picker-trigger-value {
+    flex: 1;
+    font-weight: 500;
+}
+
+.vgen-date-picker-popup {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    z-index: 1000;
+    width: 280px;
+    background: var(--vgen-bg-panel);
+    border: 1px solid var(--vgen-line);
+    border-radius: 12px;
+    box-shadow: var(--vgen-shadow-float);
+    padding: 16px;
+    animation: vgen-popup-in 0.2s ease;
+}
+
+@keyframes vgen-popup-in {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.vgen-date-picker-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.vgen-date-picker-nav {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--vgen-line);
+    border-radius: 8px;
+    background: var(--vgen-bg-canvas);
+    color: var(--vgen-ink-soft);
+    cursor: pointer;
+    transition: all 0.2s;
+    padding: 0;
+}
+
+.vgen-date-picker-nav:hover {
+    background: var(--vgen-bg-panel);
+    border-color: var(--vgen-accent);
+    color: var(--vgen-accent);
+}
+
+.vgen-date-picker-month {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--vgen-ink);
+    text-transform: capitalize;
+}
+
+.vgen-date-picker-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.vgen-date-picker-weekday {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--vgen-ink-soft);
+    text-align: center;
+    padding: 6px 0;
+    text-transform: uppercase;
+}
+
+.vgen-date-picker-days {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+}
+
+.vgen-date-picker-day {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--vgen-ink);
+    cursor: pointer;
+    transition: all 0.15s;
+    padding: 0;
+    font-family: inherit;
+}
+
+.vgen-date-picker-day.empty {
+    cursor: default;
+    pointer-events: none;
+}
+
+.vgen-date-picker-day:hover:not(.empty):not(.selected) {
+    background: var(--vgen-bg-canvas);
+    border-color: var(--vgen-line);
+}
+
+.vgen-date-picker-day.selected {
+    background: var(--vgen-accent);
+    color: var(--vgen-on-accent);
+    border-color: var(--vgen-accent);
+    font-weight: 600;
+}
+
+.vgen-date-picker-day.today:not(.selected) {
+    border-color: var(--vgen-accent);
+    font-weight: 600;
+}
+
+.vgen-date-picker-today {
+    width: 100%;
+    margin-top: 12px;
+    padding: 8px 12px;
+    border: 1px solid var(--vgen-line);
+    border-radius: 8px;
+    background: var(--vgen-bg-canvas);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--vgen-ink);
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+
+.vgen-date-picker-today:hover {
+    background: var(--vgen-bg-panel);
+    border-color: var(--vgen-accent);
+    color: var(--vgen-accent);
+}
+
+/* TIME PICKER */
+.vgen-time-picker {
+    width: 100%;
+    position: relative;
+}
+
+.vgen-time-picker-trigger {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--vgen-line);
+    border-radius: 6px;
+    background: var(--vgen-bg-panel);
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 0.82rem;
+    color: var(--vgen-ink);
+}
+
+.vgen-time-picker-trigger:hover {
+    border-color: var(--vgen-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--vgen-accent) 12%, transparent);
+}
+
+.vgen-time-picker-trigger-icon {
+    color: var(--vgen-ink-soft);
+    flex-shrink: 0;
+}
+
+.vgen-time-picker-trigger-value {
+    flex: 1;
+    font-weight: 500;
+}
+
+.vgen-time-picker-popup {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    z-index: 1000;
+    width: 200px;
+    background: var(--vgen-bg-panel);
+    border: 1px solid var(--vgen-line);
+    border-radius: 12px;
+    box-shadow: var(--vgen-shadow-float);
+    padding: 16px;
+    animation: vgen-popup-in 0.2s ease;
+}
+
+.vgen-time-picker-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 12px;
+}
+
+.vgen-time-picker-column {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+}
+
+.vgen-time-picker-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--vgen-ink-soft);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+}
+
+.vgen-time-picker-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+
+.vgen-time-picker-btn {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--vgen-line);
+    border-radius: 8px;
+    background: var(--vgen-bg-canvas);
+    color: var(--vgen-ink-soft);
+    cursor: pointer;
+    transition: all 0.2s;
+    padding: 0;
+}
+
+.vgen-time-picker-btn:hover {
+    background: var(--vgen-bg-panel);
+    border-color: var(--vgen-accent);
+    color: var(--vgen-accent);
+}
+
+.vgen-time-picker-value {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--vgen-ink);
+    min-width: 48px;
+    text-align: center;
+}
+
+.vgen-time-picker-separator {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--vgen-ink-soft);
+}
+
+.vgen-time-picker-now {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--vgen-line);
+    border-radius: 8px;
+    background: var(--vgen-bg-canvas);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--vgen-ink);
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+
+.vgen-time-picker-now:hover {
+    background: var(--vgen-bg-panel);
+    border-color: var(--vgen-accent);
+    color: var(--vgen-accent);
+}
+
 @keyframes vgen-fab-check-in {
     from {
         transform: scale(0);

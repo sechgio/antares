@@ -4,6 +4,8 @@ import type { ChangeEvent, DragEvent } from "react";
 import SheetPreview from "./components/SheetPreview";
 import FloatingSizePanel from "./components/FloatingSizePanel";
 import FloatingRecordsPanel from "./components/FloatingRecordsPanel";
+import DatePicker from "./components/DatePicker";
+import TimePicker from "./components/TimePicker";
 import { DEFAULT_BRAND } from "./constants";
 import type { BrandConfig, FlyerRecord, LayoutMode } from "./types";
 import { sanitizeMultilineText, toSlugId } from "./utils/format";
@@ -470,14 +472,12 @@ export default function VolantesView() {
                     <div className="vgen-section-fields">
                       <div className="vgen-row">
                         <div className="vgen-field">
-                          <label className="vgen-label-sm">Fecha</label>
-                          <input
-                            className="vgen-input"
-                            type="date"
-                            onChange={(e) =>
-                              updateSelectedRecord({ fecha: e.target.value })
-                            }
+                          <DatePicker
+                            label="Fecha"
                             value={selectedRecord.fecha}
+                            onChange={(value) =>
+                              updateSelectedRecord({ fecha: value })
+                            }
                           />
                         </div>
                         <div className="vgen-field">
@@ -495,27 +495,21 @@ export default function VolantesView() {
                       </div>
                       <div className="vgen-row">
                         <div className="vgen-field">
-                          <label className="vgen-label-sm">Inicio</label>
-                          <input
-                            className="vgen-input"
-                            type="time"
-                            onChange={(e) =>
-                              updateSelectedRecord({
-                                horaInicio: e.target.value,
-                              })
-                            }
+                          <TimePicker
+                            label="Inicio"
                             value={selectedRecord.horaInicio}
+                            onChange={(value) =>
+                              updateSelectedRecord({ horaInicio: value })
+                            }
                           />
                         </div>
                         <div className="vgen-field">
-                          <label className="vgen-label-sm">Fin</label>
-                          <input
-                            className="vgen-input"
-                            type="time"
-                            onChange={(e) =>
-                              updateSelectedRecord({ horaFin: e.target.value })
-                            }
+                          <TimePicker
+                            label="Fin"
                             value={selectedRecord.horaFin}
+                            onChange={(value) =>
+                              updateSelectedRecord({ horaFin: value })
+                            }
                           />
                         </div>
                       </div>

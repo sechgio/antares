@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
 import threading
+import zipfile
 from collections.abc import Callable
 from concurrent.futures import CancelledError, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from functools import wraps
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -32,7 +35,14 @@ from backend.core.config_theme import (
     reset_theme,
     save_theme,
 )
-from backend.core.converter import FORMATOS_SOPORTADOS, VIDEO_FORMATS, convertir_imagen, copiar_archivo, copiar_video, es_video
+from backend.core.converter import (
+    FORMATOS_SOPORTADOS,
+    VIDEO_FORMATS,
+    convertir_imagen,
+    copiar_archivo,
+    copiar_video,
+    es_video,
+)
 from backend.core.database import (
     buscar_por_codigo,
     exportar_excel,
@@ -62,6 +72,7 @@ def _preview_templates_dir() -> Path:
 
 def with_locale(fn: Callable[..., Any]) -> Callable[..., Any]:
     """Auto-set locale from params before executing handler."""
+    @wraps(fn)
     def wrapper(params: dict[str, Any]) -> Any:
         set_locale(params.get("locale", "es"))
         return fn(params)
@@ -479,7 +490,6 @@ class Handlers:
         desde = int(params.get("desde", 1))
         hasta = int(params.get("hasta", 1))
         pdf_bytes, filename = generate_pdf(fmt_id, desde, hasta)
-        import base64
         return {"pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"), "filename": filename}
 
     @staticmethod
@@ -491,7 +501,6 @@ class Handlers:
         content_b64 = params.get("content_b64", "")
         persisted = params.get("persisted", True)
         filename_pattern = params.get("filename_pattern")
-        import base64
         content = base64.b64decode(content_b64)
         entry = add_uploaded_format(nombre, filename, content, bool(persisted), filename_pattern)
         # Ensure has_mapping field is included
@@ -524,18 +533,13 @@ class Handlers:
     @with_locale
     def image_optimizer_zip(params: dict[str, Any]) -> dict[str, str]:
         """Create a ZIP file from base64-encoded images."""
-        import base64
-        import io
-        import os
-        import zipfile
-
         files = params.get("files", [])
         zip_name = params.get("zip_name", "imagenes_optimizadas")
 
         if not files:
             raise ValueError("No files provided")
 
-        zip_buffer = io.BytesIO()
+        zip_buffer = BytesIO()
         with zipfile.ZipFile(zip_buffer, mode='w', compression=zipfile.ZIP_DEFLATED) as zip_file:
             for file_info in files:
                 filename = file_info.get("filename", "file")
@@ -595,6 +599,201 @@ class Handlers:
 
         content = target.read_text(encoding="utf-8")
         return {"name": name, "content": content}
+
+    # ─── Informes técnicos ─────────────────────────────────────────────────
+
+    @staticmethod
+    @with_locale
+    def technical_reports_list(params: dict[str, Any]) -> dict[str, Any]:
+        from backend.core.technical_reports.database import TechnicalReportsDB
+
+        reports = TechnicalReportsDB().get_all()
+        cs = str(params.get("cs") or "").strip()
+        contratista = str(params.get("contratista") or "").strip()
+        status = str(params.get("status") or "").strip()
+        if cs:
+            reports = [r for r in reports if r["header"].get("cs") == cs]
+        if contratista:
+            reports = [r for r in reports if r["header"].get("contratista") == contratista]
+        if status:
+            reports = [r for r in reports if r.get("status") == status]
+        reports.sort(key=lambda r: int(r["metadata"].get("informe_id", 0)))
+        if params.get("summary"):
+            reports = [_technical_report_summary(report) for report in reports]
+        return {"reports": reports}
+
+    @staticmethod
+    @with_locale
+    def technical_reports_get(params: dict[str, Any]) -> dict[str, Any]:
+        from backend.core.technical_reports.database import TechnicalReportsDB
+
+        report_id = str(params.get("id") or "")
+        report = TechnicalReportsDB().get(report_id)
+        if report is None:
+            raise ValueError(f"Informe no encontrado: {report_id}")
+        return {"report": report}
+
+    @staticmethod
+    @with_locale
+    def technical_reports_create(params: dict[str, Any]) -> dict[str, Any]:
+        from backend.core.technical_reports.database import TechnicalReportsDB
+
+        db = TechnicalReportsDB()
+        report = params.get("report")
+        created = db.create(report) if isinstance(report, dict) else db.create_empty()
+        return {"success": True, "report": created}
+
+    @staticmethod
+    @with_locale
+    def technical_reports_update(params: dict[str, Any]) -> dict[str, Any]:
+        from backend.core.technical_reports.database import TechnicalReportsDB
+
+        report_id = str(params.get("id") or "")
+        report = params.get("report")
+        if not report_id or not isinstance(report, dict):
+            raise ValueError("id y report son requeridos")
+        updated = TechnicalReportsDB().update(report_id, report)
+        return {"success": True, "report": updated}
+
+    @staticmethod
+    @with_locale
+    def technical_reports_delete(params: dict[str, Any]) -> dict[str, Any]:
+        from backend.core.technical_reports.database import TechnicalReportsDB
+
+        report_id = str(params.get("id") or "")
+        deleted = TechnicalReportsDB().delete(report_id)
+        if not deleted:
+            raise ValueError(f"Informe no encontrado: {report_id}")
+        return {"success": True, "deleted_id": report_id}
+
+    @staticmethod
+    @with_locale
+    def technical_reports_clear(params: dict[str, Any]) -> dict[str, Any]:
+        from backend.core.technical_reports.database import TechnicalReportsDB
+
+        count = TechnicalReportsDB().clear_all()
+        return {"success": True, "deleted_count": count, "message": f"Se eliminaron {count} informes"}
+
+    @staticmethod
+    @with_locale
+    def technical_reports_import_file(params: dict[str, Any]) -> dict[str, Any]:
+        from backend.core.technical_reports.database import TechnicalReportsDB
+        from backend.core.technical_reports.importer import import_reports_from_bytes
+
+        filename = str(params.get("filename") or "")
+        content_b64 = str(params.get("content_b64") or "")
+        if not filename or not content_b64:
+            raise ValueError("filename y content_b64 son requeridos")
+        content = base64.b64decode(content_b64)
+        reports = import_reports_from_bytes(filename, content)
+        db = TechnicalReportsDB()
+        deleted_count = len(db.get_all())
+        imported = db.replace_all(reports)
+        return {
+            "success": True,
+            "message": f"{len(imported)} informes importados",
+            "deleted_count": deleted_count,
+            "imported_count": len(imported),
+            "total_rows_in_file": len(reports),
+        }
+
+    @staticmethod
+    @with_locale
+    def technical_reports_variables(params: dict[str, Any]) -> dict[str, Any]:
+        variables = [
+            {"key": "metadata.informe_id", "label": "Numero de informe", "category": "Identificadores"},
+            {"key": "header.cs", "label": "Centro de servicio", "category": "Infraestructura"},
+            {"key": "header.codigo_infraestructura", "label": "Codigo de infraestructura", "category": "Infraestructura"},
+            {"key": "inspeccion.caja_registro", "label": "Caja de registro", "category": "Inspeccion"},
+            {"key": "valvulas.operativas", "label": "Valvulas operativas", "category": "Valvulas"},
+            {"key": "canastillas.operativas", "label": "Canastillas operativas", "category": "Canastillas"},
+            {"key": "medidas.altura_total", "label": "Altura total", "category": "Medidas"},
+        ]
+        return {"variables": variables}
+
+    @staticmethod
+    @with_locale
+    def technical_reports_autocomplete_cs(params: dict[str, Any]) -> dict[str, Any]:
+        from backend.core.technical_reports.database import TechnicalReportsDB
+
+        reports = TechnicalReportsDB().get_all()
+        options = sorted({r["header"].get("cs", "") for r in reports if r["header"].get("cs")})
+        return {"options": options}
+
+    @staticmethod
+    @with_locale
+    def technical_reports_autocomplete_contratista(params: dict[str, Any]) -> dict[str, Any]:
+        from backend.core.technical_reports.database import TechnicalReportsDB
+
+        cs = str(params.get("cs") or "").strip()
+        reports = TechnicalReportsDB().get_all()
+        if cs:
+            reports = [r for r in reports if r["header"].get("cs") == cs]
+        options = sorted({r["header"].get("contratista", "") for r in reports if r["header"].get("contratista")})
+        return {"options": options}
+
+    @staticmethod
+    @with_locale
+    def technical_reports_render_html(params: dict[str, Any]) -> dict[str, Any]:
+        from backend.core.technical_reports.database import TechnicalReportsDB
+        from backend.core.technical_reports.rendering import render_report_html
+
+        report = params.get("report")
+        report_id = str(params.get("id") or "")
+        if not isinstance(report, dict):
+            report = TechnicalReportsDB().get(report_id)
+        if not isinstance(report, dict):
+            raise ValueError(f"Informe no encontrado: {report_id}")
+        html = render_report_html(report, params.get("logo_left"), params.get("logo_right"))
+        return {"html": html, "filename": f"informe_{report['id']}.pdf"}
+
+    @staticmethod
+    @with_locale
+    def technical_reports_render_consolidated_html(params: dict[str, Any]) -> dict[str, Any]:
+        from backend.core.technical_reports.database import TechnicalReportsDB
+        from backend.core.technical_reports.rendering import render_consolidated_html
+
+        reports = TechnicalReportsDB().get_all()
+        report_ids = params.get("report_ids")
+        if isinstance(report_ids, list) and report_ids:
+            allowed = {str(report_id) for report_id in report_ids}
+            reports = [report for report in reports if report["id"] in allowed]
+        if not reports:
+            raise ValueError("No hay informes para exportar")
+        reports.sort(key=lambda r: int(r["metadata"].get("informe_id", 0)))
+        html = render_consolidated_html(reports, params.get("logo_left"), params.get("logo_right"))
+        return {"html": html, "filename": f"informes_tecnicos_consolidado_{len(reports)}.pdf", "count": len(reports)}
+
+    @staticmethod
+    @with_locale
+    def html_to_pdf(params: dict[str, Any]) -> dict[str, str]:
+        import base64
+        import io
+
+        from weasyprint import HTML
+
+        html = str(params.get("html") or "")
+        filename = str(params.get("filename") or "documento.pdf")
+        if not html:
+            raise ValueError("html es requerido")
+        if not filename.lower().endswith(".pdf"):
+            filename += ".pdf"
+        pdf_buffer = io.BytesIO()
+        HTML(string=html).write_pdf(pdf_buffer)
+        pdf_base64 = base64.b64encode(pdf_buffer.getvalue()).decode("ascii")
+        return {"pdf_base64": pdf_base64, "filename": filename}
+
+
+def _technical_report_summary(report: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": report["id"],
+        "metadata": {"informe_id": report["metadata"].get("informe_id", 0)},
+        "header": {
+            "cs": report["header"].get("cs", ""),
+            "codigo_infraestructura": report["header"].get("codigo_infraestructura", ""),
+        },
+        "status": report.get("status", "draft"),
+    }
 
 
 def _process_thread(params: dict[str, Any]) -> None:
@@ -785,4 +984,23 @@ HANDLERS: dict[str, Callable[[dict[str, Any]], Any]] = {
 
     "templates_list": Handlers.templates_list,
     "template_get": Handlers.template_get,
+
+    # ─── Informes técnicos ─────────────────────────────────────────────────
+
+    "technical_reports_list": Handlers.technical_reports_list,
+    "technical_reports_get": Handlers.technical_reports_get,
+    "technical_reports_create": Handlers.technical_reports_create,
+    "technical_reports_update": Handlers.technical_reports_update,
+    "technical_reports_delete": Handlers.technical_reports_delete,
+    "technical_reports_clear": Handlers.technical_reports_clear,
+    "technical_reports_import_file": Handlers.technical_reports_import_file,
+    "technical_reports_variables": Handlers.technical_reports_variables,
+    "technical_reports_autocomplete_cs": Handlers.technical_reports_autocomplete_cs,
+    "technical_reports_autocomplete_contratista": Handlers.technical_reports_autocomplete_contratista,
+    "technical_reports_render_html": Handlers.technical_reports_render_html,
+    "technical_reports_render_consolidated_html": Handlers.technical_reports_render_consolidated_html,
+
+    # ─── Render HTML to PDF ────────────────────────────────────────────────
+
+    "html_to_pdf": Handlers.html_to_pdf,
 }

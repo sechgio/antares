@@ -1,9 +1,11 @@
-import sys
 import os
+import sys
+
 # Add project root to path so backend is recognized as a package
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from backend.main import _validate_encoding
+
 
 def test_encoding_validation():
     """Test that encoding validation works."""
