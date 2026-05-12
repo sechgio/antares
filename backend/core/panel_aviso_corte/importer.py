@@ -66,12 +66,21 @@ def _coerce_cell(value: Any) -> str:
 
     - ``None`` → ``""`` (celda vacía).
     - ``str`` → tal cual (sin alterar).
-    - Cualquier otro tipo (int, float, datetime, Decimal) → ``str(value)``.
+    - ``datetime`` / ``date`` → formato ISO ``YYYY-MM-DD`` (para que pase
+      la validación de ``Panel.fecha_corte``).
+    - Cualquier otro tipo (int, float, Decimal) → ``str(value)``.
     """
     if value is None:
         return ""
     if isinstance(value, str):
         return value
+    # openpyxl devuelve datetime para celdas con formato de fecha;
+    # necesitamos solo la parte de fecha en formato ISO.
+    import datetime as _dt
+    if isinstance(value, _dt.datetime):
+        return value.strftime("%Y-%m-%d")
+    if isinstance(value, _dt.date):
+        return value.strftime("%Y-%m-%d")
     return str(value)
 
 

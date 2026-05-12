@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hidro-convert-backend"
-version = "0.5.8"
+version = "0.5.9"
 description = "Backend for COSMO - Image conversion and renaming"
 authors = [
     {name = "COSMO", email = "dev@cosmo.app"},

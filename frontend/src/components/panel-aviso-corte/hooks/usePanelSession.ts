@@ -140,6 +140,60 @@ export function usePanelSession(): PanelSession {
 
   const clearErrors = useCallback(() => setErrors([]), []);
 
+  /**
+   * Find the original column name from an ExcelSource by checking its
+   * normalized column names. Returns '' if not found.
+   */
+  const _findColumnValue = useCallback(
+    (src: ExcelSource, normalizedName: string, rowIndex = 0): string => {
+      const idx = src.normalizedColumns.findIndex((n) => n === normalizedName);
+      if (idx < 0 || !src.rows[rowIndex]) return '';
+      return src.rows[rowIndex][src.columns[idx]] ?? '';
+    },
+    []
+  );
+
+  /**
+   * Normalize a raw date string to ISO YYYY-MM-DD for the date input.
+   */
+  const _normalizeDateStr = useCallback((raw: string): string => {
+    const s = raw.trim();
+    if (!s) return '';
+    // Already ISO?
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    // ISO datetime with time (e.g. "2024-05-15 00:00:00")
+    const isoMatch = s.match(/^(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}/);
+    if (isoMatch) return isoMatch[1];
+    // DD/MM/YYYY or DD-MM-YYYY
+    const dmyMatch = s.match(/^(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})$/);
+    if (dmyMatch) {
+      const [, d, m, y] = dmyMatch;
+      return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+    return s;
+  }, []);
+
+  const setExcelSource = useCallback(
+    (src: ExcelSource | null) => {
+      setExcelSourceState(src);
+      if (src && src.rows.length > 0) {
+        // Auto-populate form fields from the first row
+        const cuadrante = _findColumnValue(src, 'cuadrante afectado');
+        const fechaRaw = _findColumnValue(src, 'fecha de corte');
+        const motivo = _findColumnValue(src, 'motivo');
+        setHeaderFormState({
+          cuadrante,
+          fechaCorte: _normalizeDateStr(fechaRaw),
+          motivo,
+        });
+      } else {
+        // Reset form when Excel is cleared
+        setHeaderFormState({ cuadrante: '', fechaCorte: '', motivo: '' });
+      }
+    },
+    [_findColumnValue, _normalizeDateStr]
+  );
+
   const computeMatch = useCallback(async () => {
     const src = excelRef.current;
     if (!src) {
@@ -250,7 +304,7 @@ export function usePanelSession(): PanelSession {
     addImages,
     removeImage,
     clearImages,
-    setExcelSource: setExcelSourceState,
+    setExcelSource,
     setMatchRule: setMatchRuleState,
     setAddressColumn: setAddressColumnState,
     setExportMode: setExportModeState,

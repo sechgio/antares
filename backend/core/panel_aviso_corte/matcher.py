@@ -340,6 +340,34 @@ def build_panels(
         elif col_norm == "motivo" and motivo_col is None:
             motivo_col = col_orig
 
+    def _normalize_date_str(raw: str) -> str:
+        """Normaliza una cadena de fecha a ISO YYYY-MM-DD.
+
+        Acepta formatos comunes:
+        - YYYY-MM-DD (ya ISO, pasa directo)
+        - DD/MM/YYYY o DD-MM-YYYY
+        - YYYY-MM-DD HH:MM:SS (datetime str de Python)
+        Devuelve '' si no puede parsear.
+        """
+        raw = raw.strip()
+        if not raw:
+            return ""
+        import re as _re
+        # Already ISO?
+        if _re.match(r"^\d{4}-\d{2}-\d{2}$", raw):
+            return raw
+        # ISO datetime with time component (e.g. "2024-05-15 00:00:00")
+        m = _re.match(r"^(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}", raw)
+        if m:
+            return m.group(1)
+        # DD/MM/YYYY or DD-MM-YYYY
+        m = _re.match(r"^(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})$", raw)
+        if m:
+            day, month, year = m.group(1), m.group(2), m.group(3)
+            return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+        # Return raw and let Panel validation decide
+        return raw
+
     def _resolve_panel_fields(row: dict[str, str]) -> tuple[str, str, str]:
         """Extrae cuadrante, fecha_corte y motivo de la fila usando las
         columnas pre-resueltas, con fallback a la columna clave."""
@@ -348,9 +376,11 @@ def build_panels(
         # usar la columna clave (comportamiento legacy).
         if not cuadrante:
             cuadrante = row.get(key_col_original, "")
-        fecha_corte = row.get(fecha_corte_col, "") if fecha_corte_col else ""
+        fecha_corte_raw = row.get(fecha_corte_col, "") if fecha_corte_col else ""
+        fecha_corte = _normalize_date_str(fecha_corte_raw)
         motivo = row.get(motivo_col, "") if motivo_col else ""
         return cuadrante, fecha_corte, motivo
+
 
     for row_idx, row in enumerate(source.rows):
         cell_value = row.get(key_col_original, "")
