@@ -1,5 +1,5 @@
 /**
- * Python backend process lifecycle: spawn, handshake, kill.
+ * Python backend process lifecycle: spawn, handshake, kill, auto-restart.
  */
 const { dialog } = require('electron');
 const fs = require('fs');
@@ -7,12 +7,46 @@ const { spawn, execSync } = require('child_process');
 const { getBackendCommand } = require('./backend-command');
 
 let pythonProcess = null;
+let _isReady = false;
+let _isDev = false;
+let _isShuttingDown = false;
+let _restartCount = 0;
+const MAX_AUTO_RESTARTS = 3;
+const RESTART_RESET_MS = 60000; // reset restart counter after 1 min of stability
+let _restartResetTimer = null;
+
+// Promise-based readiness gate: resolves when backend is ready
+let _readyResolve = null;
+let _readyPromise = _createReadyPromise();
+
+function _createReadyPromise() {
+  return new Promise((resolve) => { _readyResolve = resolve; });
+}
 
 function getProcess() { return pythonProcess; }
+function isReady() { return _isReady; }
+
+/**
+ * Wait until the backend is ready (or already is).
+ * Returns true if ready, false if timed out.
+ */
+async function waitForReady(timeoutMs = 35000) {
+  if (_isReady && pythonProcess && !pythonProcess.killed) return true;
+  const timeout = new Promise((resolve) => setTimeout(() => resolve(false), timeoutMs));
+  const ready = _readyPromise.then(() => true);
+  return Promise.race([ready, timeout]);
+}
 
 async function startPythonBackend(isDev, attempt = 1) {
+  _isDev = isDev;
+  _isShuttingDown = false;
   try {
     await _spawn(isDev);
+    _isReady = true;
+    _readyResolve?.();
+    // Reset restart counter after a period of stability
+    if (_restartResetTimer) clearTimeout(_restartResetTimer);
+    _restartResetTimer = setTimeout(() => { _restartCount = 0; }, RESTART_RESET_MS);
   } catch (err) {
     console.error(`Backend start attempt ${attempt} failed:`, err.message);
     if (attempt >= 3) {
@@ -24,6 +58,43 @@ async function startPythonBackend(isDev, attempt = 1) {
     await new Promise(r => setTimeout(r, Math.pow(2, attempt - 1) * 1000));
     return startPythonBackend(isDev, attempt + 1);
   }
+}
+
+/**
+ * Automatically restart the backend after an unexpected crash.
+ */
+async function _autoRestart() {
+  if (_isShuttingDown) return;
+  _restartCount++;
+  console.warn(`[backend-spawner] Auto-restart attempt ${_restartCount}/${MAX_AUTO_RESTARTS}`);
+
+  if (_restartCount > MAX_AUTO_RESTARTS) {
+    console.error('[backend-spawner] Max auto-restarts exceeded, giving up.');
+    const { getMainWindow } = require('./window-manager');
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('ipc-notify', 'backend.fatal', {
+        message: 'El backend se cerró inesperadamente y no se pudo reiniciar. Reinicia la aplicación.',
+      });
+    }
+    return;
+  }
+
+  // Reset the ready gate for new waiters
+  _readyPromise = _createReadyPromise();
+
+  // Notify renderer that backend is restarting
+  const { getMainWindow } = require('./window-manager');
+  const win = getMainWindow();
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('ipc-notify', 'backend.restarting', {
+      message: 'Backend reiniciándose...',
+      attempt: _restartCount,
+    });
+  }
+
+  await new Promise(r => setTimeout(r, 1000 * _restartCount)); // progressive backoff
+  await startPythonBackend(_isDev);
 }
 
 function _spawn(isDev) {
@@ -52,7 +123,15 @@ function _spawn(isDev) {
 
   pythonProcess.on('close', (code) => {
     console.log(`Python backend exited with code ${code}`);
+    const wasReady = _isReady;
     pythonProcess = null;
+    _isReady = false;
+
+    // If it was running fine and crashed unexpectedly, auto-restart
+    if (wasReady && !_isShuttingDown) {
+      console.warn('[backend-spawner] Unexpected backend exit, triggering auto-restart...');
+      _autoRestart().catch((err) => console.error('[backend-spawner] Auto-restart failed:', err));
+    }
   });
 
   pythonProcess.on('error', (err) => {
@@ -93,10 +172,13 @@ function _spawn(isDev) {
 }
 
 function killPython() {
+  _isShuttingDown = true;
+  _isReady = false;
+  if (_restartResetTimer) clearTimeout(_restartResetTimer);
   if (pythonProcess && !pythonProcess.killed) {
     try { pythonProcess.stdin.end(); } catch {}
     pythonProcess.kill();
   }
 }
 
-module.exports = { startPythonBackend, getProcess, killPython };
+module.exports = { startPythonBackend, getProcess, killPython, isReady, waitForReady };

@@ -1,6 +1,6 @@
 {
   "name": "cosmo-app",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "description": "Conversor y renombrador profesional de imágenes — nativo de escritorio",
   "author": "COSMO <dev@cosmo.app>",
   "private": true,

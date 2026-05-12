@@ -26,18 +26,48 @@ declare global {
 }
 
 const IPC_TIMEOUT = 30000;
+const IPC_MAX_RETRIES = 2;
+const IPC_RETRY_DELAY = 2000;
+
+const _delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const _isRetryable = (err: unknown): boolean => {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message.toLowerCase();
+  return (
+    msg.includes('backend no disponible') ||
+    msg.includes('backend process exited') ||
+    msg.includes('stdin write failed') ||
+    msg.includes('backend reiniciándose')
+  );
+};
 
 const _invoke = async <T>(method: string, params?: Record<string, unknown> | object): Promise<T> => {
   if (!window.electronAPI) {
     throw new Error('Electron IPC no disponible');
   }
-  const result = await Promise.race([
-    window.electronAPI.invoke(method, params as Record<string, unknown>),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`IPC timeout: ${method}`)), IPC_TIMEOUT)
-    ),
-  ]);
-  return result as T;
+
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt <= IPC_MAX_RETRIES; attempt++) {
+    try {
+      const result = await Promise.race([
+        window.electronAPI.invoke(method, params as Record<string, unknown>),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`IPC timeout: ${method}`)), IPC_TIMEOUT)
+        ),
+      ]);
+      return result as T;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (_isRetryable(err) && attempt < IPC_MAX_RETRIES) {
+        console.warn(`[api] Retry ${attempt + 1}/${IPC_MAX_RETRIES} for "${method}": ${lastError.message}`);
+        await _delay(IPC_RETRY_DELAY * (attempt + 1));
+        continue;
+      }
+      throw lastError;
+    }
+  }
+  throw lastError || new Error('IPC call failed');
 };
 
 export function onNotify(callback: (method: string, params: unknown) => void) {

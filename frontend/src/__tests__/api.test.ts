@@ -24,11 +24,14 @@ describe('API Client', () => {
     expect(result.version).toBe('0.3.6');
   });
 
-  it('should handle IPC errors', async () => {
+  it('should handle IPC errors after retries exhausted', async () => {
+    // The invoke rejects on every call (all retries fail)
     mockInvoke.mockRejectedValue(new Error('Backend no disponible'));
     
     await expect(api.version()).rejects.toThrow('Backend no disponible');
-  });
+    // With IPC_MAX_RETRIES = 2, expect 3 total attempts (0, 1, 2)
+    expect(mockInvoke).toHaveBeenCalledTimes(3);
+  }, 30000);
 
   it('should validate response types', async () => {
     mockInvoke.mockResolvedValue({ formats: ['JPEG', 'PNG'] });
