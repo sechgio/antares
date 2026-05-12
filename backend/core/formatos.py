@@ -34,6 +34,9 @@ _DATA_DIR.mkdir(parents=True, exist_ok=True)
 # ─── Modelos simples (dict-based para IPC serializable) ──────────────────────
 
 # Strategies
+# LEGACY_XOBJECT: mantenida para compatibilidad con el template "Formato D (SEDAPAL)"
+# que usa un XObject específico del PDF para inyectar el número de correlativo.
+# No usar para nuevos formatos — preferir VISUAL_OVERLAY o SIMPLE_OVERLAY.
 LEGACY_XOBJECT = "legacy_xobject"
 VISUAL_OVERLAY = "visual_overlay"
 SIMPLE_OVERLAY = "simple_overlay"
@@ -583,13 +586,10 @@ def generate_pdf(fmt_id: str, desde: int, hasta: int) -> tuple[bytes, str]:
         raise ValueError("Este formato requiere configurar el mapping visual antes de generar")
 
     template_bytes = _load_template_bytes(entry)
-    strategy = entry["strategy"]
-    if strategy == LEGACY_XOBJECT:
-        pdf_bytes = _generate_legacy(template_bytes, desde, hasta)
-    elif strategy == SIMPLE_OVERLAY:
-        pdf_bytes = _generate_simple_overlay(template_bytes, desde, hasta)
-    else:
-        pdf_bytes = _generate_visual(template_bytes, desde, hasta, entry["mapping"])
+
+    from backend.core.format_strategies import get_strategy
+    strategy_impl = get_strategy(entry["strategy"])
+    pdf_bytes = strategy_impl.generate(template_bytes, desde, hasta, entry.get("mapping"))
 
     pad = entry.get("mapping", {}).get("padding", 7) if entry.get("mapping") else 7
     desde_s = str(desde).zfill(pad)

@@ -53,3 +53,20 @@ worktrees/
 
 # Local dev server scratch files
 .vite-brand.*
+# AI tool configs (not project-specific)
+.claude/
+.codex/
+.devin/
+.hypothesis/
+.kiro/
+.agents/
+.openclaude-profile.json
+.mcp.json
+skills-lock.json
+opencode.json
+
+# Ruff cache
+.ruff_cache/
+
+# Temp files
+_temp_*

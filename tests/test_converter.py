@@ -69,8 +69,8 @@ class TestConvertirImagen:
         # Crear imagen JPEG con EXIF real mínimo válido
         origen = tmp_path / "con_exif.jpg"
         img = Image.new("RGB", (10, 10))
-        # EXIF mínimo válido: header + IFD vacío (APP1 segment)
-        exif_bytes = b"Exif\x00\x00MM\x00*\x00\x00\x00\x08\x00\x00\x00\x00\x00"
+        # EXIF mínimo válido: header + IFD0 con 0 entradas (little-endian)
+        exif_bytes = b"Exif\x00\x00II\x2a\x00\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00"
         img.save(origen, exif=exif_bytes)
 
         salida = tmp_path / "salida_exif.jpg"

@@ -25,11 +25,19 @@ declare global {
   }
 }
 
+const IPC_TIMEOUT = 30000;
+
 const _invoke = async <T>(method: string, params?: Record<string, unknown> | object): Promise<T> => {
   if (!window.electronAPI) {
     throw new Error('Electron IPC no disponible');
   }
-  return window.electronAPI.invoke(method, params as Record<string, unknown>) as Promise<T>;
+  const result = await Promise.race([
+    window.electronAPI.invoke(method, params as Record<string, unknown>),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`IPC timeout: ${method}`)), IPC_TIMEOUT)
+    ),
+  ]);
+  return result as T;
 };
 
 export function onNotify(callback: (method: string, params: unknown) => void) {
@@ -94,7 +102,7 @@ export const api = {
   dialogFiles: () => _invoke<{ paths: string[] }>('dialog_files'),
   dialogFolder: () => _invoke<{ paths: string[] }>('dialog_folder'),
   dialogDest: () => _invoke<{ paths: string[] }>('dialog_dest'),
-  dialogSave: () => _invoke<{ paths: string[] }>('dialog_save'),
+  dialogSave: (params?: { title?: string; defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }) => _invoke<{ paths: string[] }>('dialog_save', params),
 
   startProcess: (body: ProcessBody) => _invoke<{ started: boolean }>('process_start', body),
   getStatus: () => _invoke<ProcessStatus>('process_status'),
@@ -189,4 +197,24 @@ export const api = {
     _invoke<{ html: string; filename: string }>('technical_reports_render_html', body),
   technicalReportsRenderConsolidatedHtml: (body?: { report_ids?: string[]; logo_left?: string | null; logo_right?: string | null }) =>
     _invoke<{ html: string; filename: string; count: number }>('technical_reports_render_consolidated_html', body),
+
+  // ─── Panel Aviso de Corte ──────────────────────────────────────────────
+  panelAvisoCorteParseExcel: (body: { xlsx_b64: string; filename: string }) =>
+    _invoke<{ columns: string[]; normalizedColumns: string[]; rows: Array<Record<string, string>>; warnings: string[] }>('panel_aviso_corte_parse_excel', body),
+  panelAvisoCorteComputeMatch: (body: {
+    rows: Array<Record<string, string>>;
+    key_column: string;
+    strategy: string;
+    pattern?: string;
+    address_column?: string;
+    image_names: string[];
+    export_mode: string;
+  }) => _invoke<{ panels: unknown[]; summary: unknown; warnings: string[] }>('panel_aviso_corte_compute_match', body),
+  panelAvisoCorteRenderPdf: (body: {
+    panels: unknown[];
+    logos: { left_b64?: string; right_b64?: string };
+    images: Record<string, string>;
+    format?: string;
+  }) => _invoke<{ pdf_base64: string; filename: string }>('panel_aviso_corte_render_pdf', body),
+  panelAvisoCorteTemplate: (body: { path: string }) => _invoke<{ path: string }>('panel_aviso_corte_template', body),
 };

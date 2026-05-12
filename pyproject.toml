@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hidro-convert-backend"
-version = "0.5.3"
+version = "0.5.7"
 description = "Backend for COSMO - Image conversion and renaming"
 authors = [
     {name = "COSMO", email = "dev@cosmo.app"},
@@ -19,6 +19,7 @@ dependencies = [
     "openpyxl>=3.1.0",
     "pypdf>=5.0.0",
     "weasyprint>=60.0",
+    "python-docx>=1.1.0",
 ]
 
 [project.optional-dependencies]

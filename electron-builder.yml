@@ -4,6 +4,7 @@ copyright: Copyright © 2026 COSMO
 directories:
   output: dist-electron
   buildResources: assets
+compression: maximum
 files:
   - "!frontend/src/**/*"
   - "!frontend/public/**/*"
@@ -43,8 +44,7 @@ files:
   - "!node_modules/@electron/**/*"
   - "frontend/dist/**/*"
   - "electron/**/*"
-  - "assets/**/*"
-  - "formatos/**/*"
+  - "assets/icon.ico"
   - "node_modules/**/*"
   - "!**/node_modules/**/*.map"
   - "!**/node_modules/**/*.ts"
@@ -56,9 +56,6 @@ files:
   - "!**/node_modules/**/README*"
   - "!**/node_modules/**/CHANGELOG*"
 extraResources:
-  - from: assets
-    to: assets
-    filter: ["**/*"]
   - from: formatos
     to: formatos
     filter: ["**/*"]

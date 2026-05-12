@@ -29,6 +29,7 @@ if (!fs.existsSync(distDir)) {
 
 console.log('[build-backend] Building Python backend with PyInstaller...');
 
+let failed = false;
 try {
   removePath(pyInstallerBuild);
   removePath(pyInstallerDist);
@@ -58,5 +59,12 @@ try {
   console.log('[build-backend] Backend build completed.');
 } catch (err) {
   console.error('[build-backend] Failed to build backend:', err.message);
+  failed = true;
+} finally {
+  removePath(pyInstallerBuild);
+  removePath(pyInstallerDist);
+}
+
+if (failed) {
   process.exit(1);
 }

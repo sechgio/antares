@@ -5,60 +5,21 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
-import threading
 import unicodedata
 from pathlib import Path
 from typing import Any
 
 from backend.core.config_fields import get_field_names, load_fields, save_fields
 from backend.core.exceptions import DatabaseError
+from backend.core.repository import get_connection, close_connection, _db_lock
 from backend.utils.paths import user_data_path
 
 logger = logging.getLogger(__name__)
 
-# ─── Connection pool with WAL mode ──────────────────────────────────────────
-
-_db_lock = threading.RLock()
-_db_conn: sqlite3.Connection | None = None
-_db_conn_path: str | None = None
-
 
 def _get_connection() -> sqlite3.Connection:
-    """Retorna una conexión persistente con WAL mode (thread-safe via lock).
-    Automatically reconnects if db_path changes (e.g. during tests).
-    Optimized with performance PRAGMAs for better concurrency and speed.
-    """
-    global _db_conn, _db_conn_path
-    with _db_lock:
-        current_path = str(get_db_path())
-        if _db_conn is None or _db_conn_path != current_path:
-            if _db_conn is not None:
-                import contextlib
-                with contextlib.suppress(Exception):
-                    _db_conn.close()
-            db_path = Path(current_path)
-            db_path.parent.mkdir(parents=True, exist_ok=True)
-            _db_conn = sqlite3.connect(current_path, check_same_thread=False, isolation_level=None)
-            # Performance optimizations
-            _db_conn.execute("PRAGMA journal_mode=WAL")
-            _db_conn.execute("PRAGMA synchronous=NORMAL")
-            _db_conn.execute("PRAGMA cache_size=-64000")  # 64MB cache
-            _db_conn.execute("PRAGMA temp_store=MEMORY")
-            _db_conn.execute("PRAGMA mmap_size=268435456")  # 256MB memory-mapped I/O
-            _db_conn.execute("PRAGMA page_size=4096")
-            _db_conn.row_factory = sqlite3.Row
-            _db_conn_path = current_path
-        return _db_conn
-
-
-def close_connection() -> None:
-    """Close the pooled connection (call on shutdown or when path changes)."""
-    global _db_conn, _db_conn_path
-    with _db_lock:
-        if _db_conn is not None:
-            _db_conn.close()
-            _db_conn = None
-            _db_conn_path = None
+    """Retorna la conexión compartida del pool."""
+    return get_connection(get_db_path())
 
 
 def _normalize_excel_column_name(name: Any, fallback: str) -> str:

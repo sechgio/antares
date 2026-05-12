@@ -24,27 +24,35 @@ export interface RenderPreviewHtmlOptions {
   customColumns?: Array<{ id: string; name: string; mappedTo?: string }>;
 }
 
-const MAQ_BALDE_TEMPLATE_NAME = 'maq balde sjl.html';
-const MAQUINA_BALDE_TEMPLATE_NAME = 'maquina-balde.html';
 const EMPTY_PIXEL = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1' height='1'%3E%3C/svg%3E";
+
+/** Nombres exactos de templates con layout A4 fijo.
+ *  Si se agrega un nuevo template que requiera comportamiento especial de preview,
+ *  registrarlo aquí en lugar de hardcodear strings dispersos en el componente.
+ */
+const KNOWN_TEMPLATES = {
+  maqBalde: 'maq balde sjl.html',
+  maquinaBalde: 'maquina-balde.html',
+  reportVolanteo: 'report_volanteo.html',
+} as const;
 
 function isMaquinaBaldeTemplate(template?: { name?: string } | null): boolean {
   if (!template) return false;
   const normalized = String(template.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
-  return normalized === MAQUINA_BALDE_TEMPLATE_NAME || normalized.includes('maquina-balde');
+  return normalized === KNOWN_TEMPLATES.maquinaBalde || normalized.includes('maquina-balde');
 }
 
 function isMaqBaldeTemplate(template?: { name?: string; content?: string } | null): boolean {
   if (!template) return false;
   if (isMaquinaBaldeTemplate(template)) return false;
   const normalized = String(template.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
-  if (normalized === MAQ_BALDE_TEMPLATE_NAME || normalized.includes('maq balde sjl')) return true;
+  if (normalized === KNOWN_TEMPLATES.maqBalde || normalized.includes('maq balde sjl')) return true;
   const content = String(template.content || '').toLowerCase();
   return content.includes("row.get('titulo'") || content.includes("row.get('direcciones_afectadas'") || content.includes('photo-cell-photo-3');
 }
 
 function isFixedA4TemplatePreview(template?: { name?: string } | null): boolean {
-  return template?.name === 'report_volanteo.html' || isMaqBaldeTemplate(template) || isMaquinaBaldeTemplate(template);
+  return template?.name === KNOWN_TEMPLATES.reportVolanteo || isMaqBaldeTemplate(template) || isMaquinaBaldeTemplate(template);
 }
 
 function normalizePhotoGridTemplate(sourceHtml: string): string {

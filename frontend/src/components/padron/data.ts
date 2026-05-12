@@ -3,6 +3,7 @@
  */
 
 export type Orientation = 'landscape' | 'portrait';
+export type OutputFormat = 'service-interruption' | 'water-cut-notice';
 
 export interface HeaderField {
   key: string;
@@ -16,12 +17,31 @@ export interface HeaderData {
   [key: string]: string;
 }
 
+export interface WaterCutData {
+  [key: string]: string;
+  cuadranteAfectado: string;
+  fechaCorte: string;
+  horarioCorte: string;
+  motivo: string;
+}
+
 export interface PadronItem {
   item: number | string;
   nombresApellidos: string;
   direccion: string;
   horaComunicacion: string;
   firmaSuministro: string;
+}
+
+export interface WaterCutItem {
+  item: number | string;
+  hora: string;
+  fecha: string;
+  nombresApellidos: string;
+  direccion: string;
+  dni: string;
+  firma: string;
+  observaciones: string;
 }
 
 export interface ExcelRecord {
@@ -36,7 +56,13 @@ export interface ParseResult {
   workbookName: string;
   records: ExcelRecord[];
   importedItems: PadronItem[];
+  importedWaterCutItems: WaterCutItem[];
 }
+
+export const OUTPUT_FORMAT_OPTIONS = [
+  { value: 'service-interruption' as OutputFormat, label: 'Plantilla actual', rowsPerPage: 18 },
+  { value: 'water-cut-notice' as OutputFormat, label: 'Aviso corte de agua', rowsPerPage: 36 },
+];
 
 export const ORIENTATION_OPTIONS = [
   { value: 'landscape' as Orientation, label: 'Horizontal', rowsPerPage: 18 },
@@ -64,6 +90,7 @@ export const HEADER_FIELDS: HeaderField[] = [
 ];
 
 export const DATE_FIELDS = new Set(['fechaInicio', 'fechaPrevista', 'fechaTrabajo', 'fechaComunicacion']);
+export const WATER_CUT_DATE_FIELDS = new Set(['fechaCorte', 'fecha']);
 
 export const ITEM_COLUMNS = [
   { key: 'item', label: 'Item' },
@@ -71,6 +98,13 @@ export const ITEM_COLUMNS = [
   { key: 'direccion', label: 'Dirección' },
   { key: 'horaComunicacion', label: 'Hora de comunicación' },
   { key: 'firmaSuministro', label: 'Firma del usuario / N° medidor / suministro' },
+];
+
+export const WATER_CUT_FIELDS: HeaderField[] = [
+  { key: 'cuadranteAfectado', label: 'Cuadrante afectado', required: true },
+  { key: 'fechaCorte', label: 'Fecha de corte', required: true },
+  { key: 'horarioCorte', label: 'Horario de corte de servicio', required: true, wide: true },
+  { key: 'motivo', label: 'Motivo', required: true, wide: true },
 ];
 
 export const FIELD_ALIASES: Record<string, string[]> = {
@@ -111,6 +145,19 @@ export const FIELD_ALIASES: Record<string, string[]> = {
   cantidadItems: ['cantidad de items', 'cantidad items', 'cant items', 'total items'],
 };
 
+export const WATER_CUT_FIELD_ALIASES: Record<string, string[]> = {
+  cuadranteAfectado: ['cuadrante afectado', 'cuadrante', 'sector afectado'],
+  fechaCorte: ['fecha de corte de', 'fecha de corte', 'fecha corte'],
+  horarioCorte: [
+    'horario de corte de servicio',
+    'horario de corte de servicio:',
+    'horario de corte',
+    'horario corte',
+  ],
+  motivo: ['motivo'],
+  cantidadItems: ['cantidad de items', 'cantidad items', 'cant items', 'total items'],
+};
+
 export const ITEM_FIELD_ALIASES: Record<string, string[]> = {
   item: ['item', 'nro', 'n°', 'numero', '#'],
   nombresApellidos: [
@@ -129,6 +176,22 @@ export const ITEM_FIELD_ALIASES: Record<string, string[]> = {
     'suministro',
     'firma del usuario',
   ],
+};
+
+export const WATER_CUT_ITEM_FIELD_ALIASES: Record<string, string[]> = {
+  hora: ['hora'],
+  fecha: ['fecha'],
+  nombresApellidos: [
+    'nombre y apellidos',
+    'nombre y apellido',
+    'nombres y apellidos',
+    'nombres',
+    'nombre',
+  ],
+  direccion: ['direccion', 'dirección'],
+  dni: ['dni', 'documento'],
+  firma: ['firma'],
+  observaciones: ['observaciones', 'observacion', 'observación'],
 };
 
 export function toDisplayDate(isoOrAny: string): string {
@@ -181,6 +244,15 @@ export function createDefaultHeaderData(): HeaderData {
   };
 }
 
+export function createDefaultWaterCutData(): WaterCutData {
+  return {
+    cuadranteAfectado: '',
+    fechaCorte: '',
+    horarioCorte: '',
+    motivo: '',
+  };
+}
+
 export function createEmptyItem(num: number): PadronItem {
   return {
     item: num,
@@ -193,4 +265,21 @@ export function createEmptyItem(num: number): PadronItem {
 
 export function createInitialItems(total = 36): PadronItem[] {
   return Array.from({ length: total }, (_, i) => createEmptyItem(i + 1));
+}
+
+export function createEmptyWaterCutItem(num: number): WaterCutItem {
+  return {
+    item: num,
+    hora: '',
+    fecha: '',
+    nombresApellidos: '',
+    direccion: '',
+    dni: '',
+    firma: '',
+    observaciones: '',
+  };
+}
+
+export function createInitialWaterCutItems(total = 36): WaterCutItem[] {
+  return Array.from({ length: total }, (_, i) => createEmptyWaterCutItem(i + 1));
 }

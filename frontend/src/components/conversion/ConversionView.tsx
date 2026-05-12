@@ -1,6 +1,9 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { api, onNotify } from '../../api';
-import { ProcessStatus, RenamePattern } from '../../types';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { api } from '../../api';
+import { RenamePattern } from '../../types';
+import { useFileSelection } from '../../hooks/useFileSelection';
+import { useProcessRunner } from '../../hooks/useProcessRunner';
+import { buildDefaultPresets, isVideoByExt, DEFAULT_FORMATS, DEFAULT_FIELDS, DEFAULT_PATTERN, parsePositiveInt } from './helpers';
 import ConversionPresets, { ConversionConfig } from './ConversionPresets';
 import Dropzone from './Dropzone';
 import FileGrid from './FileGrid';
@@ -10,34 +13,6 @@ import ProgressBar from './ProgressBar';
 import DatabaseView from '../database/DatabaseView';
 import Button from '../ui/Button';
 import { Image, Film, FolderOpen, ArrowRight, CheckCircle2, AlertTriangle, AlertCircle, Play, Settings, Square, Tag, Database, ChevronDown } from 'lucide-react';
-
-const buildDefaultPresets = (fields: string[]): RenamePattern[] => {
-  const codeField = fields[0];
-  const nameField = fields[1];
-  const codeNamePattern = codeField && nameField ? `{${codeField}}_{${nameField}}_{seq}{ext}` : codeField ? `{${codeField}}_{seq}{ext}` : 'img_{seq}{ext}';
-  const codeSeqPattern = codeField ? `{${codeField}}_{seq}{ext}` : 'img_{seq}{ext}';
-  return [
-    { id: 'code_name', label: 'BD + número', pattern: codeNamePattern },
-    { id: 'code_seq', label: 'Código + número', pattern: codeSeqPattern },
-    { id: 'sequential', label: 'IMG + número', pattern: 'img_{seq}{ext}' },
-    { id: 'keep', label: 'Mantener nombres', pattern: '' },
-  ];
-};
-
-const parsePositiveInt = (value: string) => {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
-};
-
-const DEFAULT_FORMATS = ['JPEG', 'PNG', 'WEBP', 'TIFF'];
-const DEFAULT_FIELDS = ['codigo', 'nombre'];
-const DEFAULT_PATTERN = '{codigo}_{nombre}_{seq}{ext}';
-
-const VIDEO_EXTENSIONS = new Set(['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v', '.3gp', '.mpg', '.mpeg']);
-const isVideoByExt = (path: string) => {
-  const ext = path.slice(path.lastIndexOf('.')).toLowerCase();
-  return VIDEO_EXTENSIONS.has(ext);
-};
 
 export default function ConversionView() {
   const [files, setFiles] = useState<string[]>([]);
@@ -57,13 +32,12 @@ export default function ConversionView() {
   const [formats, setFormats] = useState<string[]>(DEFAULT_FORMATS);
   const [fields, setFields] = useState<string[]>(DEFAULT_FIELDS);
   const [patterns, setPatterns] = useState<RenamePattern[]>([]);
-  const [status, setStatus] = useState<ProcessStatus | null>(null);
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
-  const [running, setRunning] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
   const [videoFiles, setVideoFiles] = useState<Set<string>>(new Set());
   const [showDatabase, setShowDatabase] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+
+  const { selectedFile, setSelectedFile, selectedFiles, setSelectedFiles, handleFileClick, handleFileDoubleClick, selectAllFiles } = useFileSelection(files);
+  const { status, running, pollStatus, startProcess, cancelProcess } = useProcessRunner();
 
   const namingPresets = useMemo(() => patterns.length > 0 ? patterns : buildDefaultPresets(fields), [patterns, fields]);
   const resizeWidth = resizeEnabled ? parsePositiveInt(resizeAncho) : null;
@@ -99,9 +73,9 @@ export default function ConversionView() {
     const onMessage = (e: MessageEvent) => {
       if (e.data?.type === 'HISTORY_REEXECUTE') {
         const run = e.data.payload;
-        const files = JSON.parse(run.files_json || '[]');
+        const f = JSON.parse(run.files_json || '[]');
         const options = JSON.parse(run.options_json || '{}');
-        setFiles(files);
+        setFiles(f);
         setFormato(options.formato || 'JPEG');
         setCalidad(options.calidad || 95);
         setConversionEnabled(options.conversion_enabled !== false);
@@ -124,8 +98,10 @@ export default function ConversionView() {
 
   // Initial data load
   useEffect(() => {
-    api.formats().then((r) => setFormats(r.formats.length ? r.formats : DEFAULT_FORMATS)).catch(() => setFormats(DEFAULT_FORMATS));
+    let cancelled = false;
+    api.formats().then((r) => { if (!cancelled) setFormats(r.formats.length ? r.formats : DEFAULT_FORMATS); }).catch(() => { if (!cancelled) setFormats(DEFAULT_FORMATS); });
     api.getFields().then((r) => {
+      if (cancelled) return;
       const names = r.fields.map((f) => f.name);
       const effectiveNames = names.length ? names : DEFAULT_FIELDS;
       setFields(effectiveNames);
@@ -133,36 +109,16 @@ export default function ConversionView() {
       setPatron(defaultPat);
       setNamingMode(effectiveNames.length >= 2 ? 'code_name' : 'code_seq');
     }).catch(() => {
+      if (cancelled) return;
       setFields(DEFAULT_FIELDS);
       setPatron(DEFAULT_PATTERN);
       setNamingMode('code_name');
     });
     api.getRenamePatterns().then((r) => {
-      if (r.patterns && r.patterns.length > 0) setPatterns(r.patterns);
+      if (!cancelled && r.patterns && r.patterns.length > 0) setPatterns(r.patterns);
     }).catch(() => {});
     pollStatus();
-  }, []);
-
-  const pollStatus = async () => {
-    try {
-      const s = await api.getStatus();
-      setStatus(s);
-      setRunning(s.running);
-    } catch { /* ignore */ }
-  };
-
-  // Push notifications
-  useEffect(() => {
-    const unsub = onNotify((method, params) => {
-      const p = params as Record<string, unknown>;
-      if (method === 'process.progress') {
-        setStatus((prev) => prev ? { ...prev, ...p } as ProcessStatus : null);
-      } else if (method === 'process.complete') {
-        setStatus((prev) => prev ? { ...prev, running: false, progress: 100, ...p } as ProcessStatus : null);
-        setRunning(false);
-      }
-    });
-    return unsub;
+    return () => { cancelled = true; };
   }, []);
 
   const mergeFiles = useCallback((incoming: string[]) => {
@@ -216,63 +172,17 @@ export default function ConversionView() {
     setVideoFiles(videoSet);
   }, [files]);
 
-  // Sync selectedFiles when files change - only remove deleted files
-  const filesRef = useRef(files);
-  useEffect(() => {
-    filesRef.current = files;
-  }, [files]);
-
-  useEffect(() => {
-    setSelectedFiles((prev) => {
-      const currentFiles = filesRef.current;
-      let needsUpdate = false;
-      for (const f of prev) {
-        if (!currentFiles.includes(f)) {
-          needsUpdate = true;
-          break;
-        }
-      }
-      if (!needsUpdate) return prev;
-      const next = new Set(prev);
-      for (const f of prev) {
-        if (!currentFiles.includes(f)) next.delete(f);
-      }
-      return next;
-    });
-  }, [files]);
-
   const doProcess = async () => {
     if (!allReady) return;
-    const body = {
+    await startProcess({
       files, destino, formato, calidad,
       conversion_enabled: conversionEnabled,
       resize_ancho: resizeAncho ? parseInt(resizeAncho) : null,
       resize_alto: resizeAlto ? parseInt(resizeAlto) : null,
       keep_exif: keepExif, usar_rename: usarRename, patron, secuencia,
       use_filename_seq: useFilenameSeq,
-    };
-    await api.startProcess(body);
-    setRunning(true);
-    pollStatus();
+    });
   };
-
-  const doCancel = async () => {
-    await api.cancelProcess();
-    pollStatus();
-  };
-
-  const onDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(true); }, []);
-  const onDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(false); }, []);
-  const onDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    const dropped = Array.from(e.dataTransfer.files).map((f: any) => f.path || f.name);
-    mergeFiles(dropped);
-  }, [mergeFiles]);
-
-  const onPasteFiles = useCallback((paths: string[]) => {
-    mergeFiles(paths);
-  }, [mergeFiles]);
 
   const removeFile = (path: string) => {
     setFiles((prev) => {
@@ -296,43 +206,6 @@ export default function ConversionView() {
     });
   };
 
-  const handleFileClick = (e: React.MouseEvent, path: string) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      setSelectedFiles((prev) => {
-        const next = new Set(prev);
-        if (next.has(path)) next.delete(path); else next.add(path);
-        return next;
-      });
-      setSelectedFile(path);
-    } else if (e.shiftKey && selectedFile) {
-      e.preventDefault();
-      const idx1 = files.indexOf(selectedFile);
-      const idx2 = files.indexOf(path);
-      const start = Math.min(idx1, idx2);
-      const end = Math.max(idx1, idx2);
-      setSelectedFiles((prev) => {
-        const next = new Set(prev);
-        for (let i = start; i <= end; i++) next.add(files[i]);
-        return next;
-      });
-      setSelectedFile(path);
-    } else {
-      setSelectedFile(path);
-      setSelectedFiles(new Set([path]));
-    }
-  };
-
-  const handleFileDoubleClick = (_e: React.MouseEvent, path: string) => {
-    setSelectedFile(path);
-    setSelectedFiles(new Set([path]));
-  };
-
-  const selectAllFiles = () => {
-    if (selectedFiles.size === files.length) setSelectedFiles(new Set());
-    else setSelectedFiles(new Set(files));
-  };
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedFiles.size > 0) {
@@ -343,6 +216,17 @@ export default function ConversionView() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [selectedFiles]);
+
+  const onDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(true); }, []);
+  const onDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(false); }, []);
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const dropped = Array.from(e.dataTransfer.files).map((f: any) => f.path || f.name);
+    mergeFiles(dropped);
+  }, [mergeFiles]);
+
+  const onPasteFiles = useCallback((paths: string[]) => { mergeFiles(paths); }, [mergeFiles]);
 
   const videoCount = videoFiles.size;
   const imageCount = files.length - videoCount;
@@ -428,7 +312,7 @@ export default function ConversionView() {
               <ArrowRight className="h-3.5 w-3.5 opacity-60" />
             </Button>
           ) : (
-            <Button variant="danger" size="sm" onClick={doCancel}>
+            <Button variant="danger" size="sm" onClick={cancelProcess}>
               <Square className="h-3.5 w-3.5 fill-current" />
               Detener
             </Button>

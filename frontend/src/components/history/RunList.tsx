@@ -1,6 +1,6 @@
 import Badge from '../ui/Badge';
 
-export type RunType = 'conversion' | 'formato' | 'padron' | 'volante' | 'image_optimizer';
+export type RunType = 'conversion' | 'formato' | 'padron' | 'volante' | 'image_optimizer' | 'reporte_campo' | 'panel_aviso_corte' | 'informe_tecnico';
 
 export interface HistoryRun {
   id: number;
@@ -31,6 +31,9 @@ const RUN_TYPE_LABELS: Record<RunType, string> = {
   padron: 'Padrón',
   volante: 'Volante',
   image_optimizer: 'Imágenes',
+  reporte_campo: 'Reporte Campo',
+  panel_aviso_corte: 'Panel Aviso',
+  informe_tecnico: 'Informe Técnico',
 };
 
 const RUN_TYPE_COLORS: Record<RunType, string> = {
@@ -39,6 +42,9 @@ const RUN_TYPE_COLORS: Record<RunType, string> = {
   padron: 'text-[var(--accent-yellow)] border-[color:var(--accent-yellow)]/20 bg-[color:var(--accent-yellow)]/10',
   volante: 'text-[var(--accent-secondary)] border-[color:var(--accent-secondary)]/20 bg-[color:var(--accent-secondary)]/10',
   image_optimizer: 'text-purple-400 border-purple-400/20 bg-purple-400/10',
+  reporte_campo: 'text-orange-400 border-orange-400/20 bg-orange-400/10',
+  panel_aviso_corte: 'text-rose-400 border-rose-400/20 bg-rose-400/10',
+  informe_tecnico: 'text-cyan-400 border-cyan-400/20 bg-cyan-400/10',
 };
 
 export default function RunList({ runs, selected, onSelect }: RunListProps) {

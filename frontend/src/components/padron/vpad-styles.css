@@ -305,7 +305,8 @@
     margin-bottom: 0;
 }
 
-.vpad-field span {
+.vpad-field span,
+.vpad-field label {
     font-size: 0.75rem;
     font-weight: 600;
     color: var(--vpad-muted);
@@ -368,6 +369,10 @@
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
     gap: 10px;
+}
+
+.vpad-field-row-two {
+    grid-template-columns: 1fr 1fr;
 }
 
 .vpad-form-grid {
@@ -1094,6 +1099,135 @@
     font-weight: 400;
 }
 
+/* ===== Water cut notice format ===== */
+.vpad-cut-sheet {
+    padding: 14mm 10mm 12mm;
+}
+
+.vpad-cut-head {
+    display: grid;
+    grid-template-columns: 1fr 42mm;
+    min-height: 18mm;
+    border: 1.5px solid #222;
+    border-bottom: none;
+}
+
+.vpad-cut-title-block {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.6mm 4mm;
+    border-right: 1.5px solid #222;
+}
+
+.vpad-cut-title-block h1 {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 13px;
+    line-height: 1.35;
+    font-weight: 800;
+    text-align: center;
+    text-transform: uppercase;
+}
+
+.vpad-cut-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.6mm 3mm;
+}
+
+.vpad-cut-logo img {
+    width: 34mm;
+    height: auto;
+    object-fit: contain;
+}
+
+.vpad-cut-meta {
+    border: 1.5px solid #222;
+    border-bottom: none;
+}
+
+.vpad-cut-meta-row {
+    display: grid;
+    grid-template-columns: 58mm 1fr;
+    min-height: 5.4mm;
+    border-bottom: 1.2px solid #222;
+}
+
+.vpad-cut-meta-row:last-child {
+    border-bottom: none;
+}
+
+.vpad-cut-meta-label,
+.vpad-cut-meta-value {
+    display: flex;
+    align-items: center;
+    padding: 0 1.2mm;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 9.5px;
+    line-height: 1.2;
+}
+
+.vpad-cut-meta-label {
+    font-weight: 700;
+    border-right: 1.2px solid #222;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.vpad-cut-meta-value {
+    font-weight: 700;
+    color: #005ca8;
+}
+
+.vpad-cut-table-wrap {
+    border: 1.5px solid #222;
+    margin-bottom: 7mm;
+}
+
+.vpad-cut-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.vpad-cut-table th,
+.vpad-cut-table td {
+    border-right: 1.1px solid #222;
+    border-bottom: 1.1px solid #222;
+    padding: 0.35mm 0.7mm;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 8.2px;
+    line-height: 1.15;
+    vertical-align: middle;
+}
+
+.vpad-cut-table th:last-child,
+.vpad-cut-table td:last-child {
+    border-right: none;
+}
+
+.vpad-cut-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.vpad-cut-table th {
+    height: 7mm;
+    text-align: center;
+    font-weight: 800;
+    background: #fff;
+}
+
+.vpad-cut-table tbody tr {
+    height: 5.8mm;
+}
+
+.vpad-cut-sheet .vpad-sheet-foot {
+    right: 10mm;
+    bottom: 4mm;
+}
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 1100px) {
     .vpad-app {
@@ -1311,7 +1445,8 @@
     color: #6b7280;
 }
 
-[data-theme="light"] .vpad-field span {
+[data-theme="light"] .vpad-field span,
+[data-theme="light"] .vpad-field label {
     color: #6b7280;
 }
 

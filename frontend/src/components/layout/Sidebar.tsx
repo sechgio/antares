@@ -16,6 +16,7 @@ const tabs = [
   { id: 'technicalReports', icon: ClipboardList, label: 'Informes técnicos', shortcut: 'I' },
   { id: 'imageOptimizer', icon: ImageOptimizerIcon, label: 'Optimizador', shortcut: '9' },
   { id: 'previewPanel', icon: PreviewPanelIcon, label: 'Generador Reportes', shortcut: '0' },
+  { id: 'panelAvisoCorte', icon: PanelAvisoCorteIcon, label: 'Aviso de Corte', shortcut: '2' },
   { id: 'history', icon: HistoryIcon, label: 'Historial', shortcut: '6' },
   { id: 'appearance', icon: PaletteIcon, label: 'Apariencia', shortcut: '7' },
 ];
@@ -102,6 +103,17 @@ function PreviewPanelIcon({ className }: { className?: string }) {
       <path d="M3 9h18" />
       <path d="M9 21V9" />
       <circle cx="15" cy="15" r="2" />
+    </svg>
+  );
+}
+
+function PanelAvisoCorteIcon({ className }: { className?: string }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+      <path d="M3 9h18" />
+      <path d="M9 21V9" />
+      <rect x="12" y="12" width="6" height="6" rx="1" />
     </svg>
   );
 }

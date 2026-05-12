@@ -62,12 +62,14 @@ export default function VolantesView() {
   /* ── pending single-record export ── */
   useEffect(() => {
     if (!pendingExport) return;
+    let cancelled = false;
 
     const doExport = async () => {
       await new Promise((r) => setTimeout(r, 300));
+      if (cancelled) return;
       const container = exportSingleRef.current;
       if (!container) {
-        setPendingExport(null);
+        if (!cancelled) setPendingExport(null);
         return;
       }
 
@@ -82,15 +84,18 @@ export default function VolantesView() {
           1,
         );
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "No se pudo generar el PDF.";
-        addToast({ message, type: "error" });
+        if (!cancelled) {
+          const message =
+            error instanceof Error ? error.message : "No se pudo generar el PDF.";
+          addToast({ message, type: "error" });
+        }
       } finally {
-        setPendingExport(null);
+        if (!cancelled) setPendingExport(null);
       }
     };
 
     doExport();
+    return () => { cancelled = true; };
   }, [pendingExport, addToast]);
 
   /* ── handlers ── */

@@ -19,6 +19,7 @@ const AppearanceView = React.lazy(() => import('./components/settings/Appearance
 const ImageOptimizerView = React.lazy(() => import('./components/image-optimizer'));
 const PreviewPanelView = React.lazy(() => import('./components/preview-panel/PreviewPanelView'));
 const TechnicalReportsView = React.lazy(() => import('./components/technical-reports'));
+const PanelAvisoCorteView = React.lazy(() => import('./components/panel-aviso-corte'));
 
 const LAZY_MODULES = [
   () => import('./components/formatos/FormatosView'),
@@ -30,6 +31,7 @@ const LAZY_MODULES = [
   () => import('./components/settings/AppearanceView'),
   () => import('./components/image-optimizer'),
   () => import('./components/preview-panel/PreviewPanelView'),
+  () => import('./components/panel-aviso-corte'),
 ];
 
 const tabTitles: Record<string, string> = {
@@ -41,13 +43,14 @@ const tabTitles: Record<string, string> = {
   technicalReports: 'Informes técnicos',
   imageOptimizer: 'Optimizador de Imágenes',
   previewPanel: 'Generador Reportes',
+  panelAvisoCorte: 'Aviso de Corte',
   history: 'Historial',
   appearance: 'Apariencia',
 };
 
-const FULL_BLEED_TABS = new Set(['padron', 'volantes', 'reportesCampo', 'technicalReports', 'formatos', 'imageOptimizer', 'previewPanel']);
+const FULL_BLEED_TABS = new Set(['padron', 'volantes', 'reportesCampo', 'technicalReports', 'formatos', 'imageOptimizer', 'previewPanel', 'panelAvisoCorte']);
 
-type TabId = 'convert' | 'formatos' | 'padron' | 'volantes' | 'reportesCampo' | 'technicalReports' | 'imageOptimizer' | 'previewPanel' | 'history' | 'appearance';
+type TabId = 'convert' | 'formatos' | 'padron' | 'volantes' | 'reportesCampo' | 'technicalReports' | 'imageOptimizer' | 'previewPanel' | 'panelAvisoCorte' | 'history' | 'appearance';
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<TabId>('convert');
@@ -76,6 +79,7 @@ function AppContent() {
   useKeyboardShortcut('8', () => handleTabChange('reportesCampo'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('9', () => handleTabChange('imageOptimizer'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('0', () => handleTabChange('previewPanel'), { ctrl: true, preventDefault: true });
+  useKeyboardShortcut('2', () => handleTabChange('panelAvisoCorte'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('i', () => handleTabChange('technicalReports'), { ctrl: true, shift: true, preventDefault: true });
 
   const commandItems = useMemo(() => [
@@ -89,6 +93,7 @@ function AppContent() {
     { id: 'tab-technical-reports', label: 'Ir a Informes técnicos', shortcut: 'Ctrl+Shift+I', action: () => handleTabChange('technicalReports') },
     { id: 'tab-image-optimizer', label: 'Ir a Optimizador de Imágenes', shortcut: 'Ctrl+9', action: () => handleTabChange('imageOptimizer') },
     { id: 'tab-preview-panel', label: 'Ir a Generador de Reportes', shortcut: 'Ctrl+0', action: () => handleTabChange('previewPanel') },
+    { id: 'tab-panel-aviso-corte', label: 'Ir a Aviso de Corte', shortcut: 'Ctrl+2', action: () => handleTabChange('panelAvisoCorte') },
   ], [handleTabChange]);
 
   const isFullBleed = FULL_BLEED_TABS.has(activeTab);
@@ -114,6 +119,7 @@ function AppContent() {
                 {activeTab === 'technicalReports' && <TechnicalReportsView />}
                 {activeTab === 'imageOptimizer' && <ImageOptimizerView />}
                 {activeTab === 'previewPanel' && <PreviewPanelView />}
+                {activeTab === 'panelAvisoCorte' && <PanelAvisoCorteView />}
                 {activeTab === 'history' && <HistoryView />}
                 {activeTab === 'appearance' && <AppearanceView />}
               </div>

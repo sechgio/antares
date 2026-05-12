@@ -8,10 +8,10 @@ import { useToast } from '../../hooks/useToast';
 import { useDialog } from '../../hooks/useDialog';
 
 function useDbError(addToast: (t: { message: string; type: 'error' }) => void) {
-  return (action: string, err: unknown) => {
+  return useCallback((action: string, err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err);
     addToast({ message: `Error ${action}: ${msg}`, type: 'error' });
-  };
+  }, [addToast]);
 }
 
 export default function DatabaseView() {

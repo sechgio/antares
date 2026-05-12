@@ -1,6 +1,5 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { toJpeg } from 'html-to-image';
 import SheetPreview from '../components/SheetPreview';
 import { CHUNK_SIZE, chunkArray } from '../constants';
 import type { LogoData, PhotoFile, ReportTypeConfig } from '../types';
@@ -37,6 +36,7 @@ const waitForReflow = (): Promise<void> =>
     new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
 const rasterizePage = async (node: HTMLElement): Promise<string> => {
+    const { toJpeg } = await import('html-to-image');
     const naturalWidth = node.scrollWidth || node.offsetWidth;
     const targetWidth = Math.round(A4_WIDTH_MM * PX_PER_MM * RENDER_SCALE);
     const pixelRatio = targetWidth / naturalWidth;

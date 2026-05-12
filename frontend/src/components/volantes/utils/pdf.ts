@@ -1,4 +1,3 @@
-import { toJpeg } from "html-to-image";
 import type { LayoutMode } from "../types";
 
 const A4_WIDTH_MM = 297;
@@ -36,6 +35,7 @@ const waitForReflow = (): Promise<void> =>
   );
 
 const rasterizeNode = async (node: HTMLElement): Promise<string> => {
+  const { toJpeg } = await import("html-to-image");
   const naturalW = node.scrollWidth || node.offsetWidth;
   const targetPxW = Math.round(A4_WIDTH_MM * PX_PER_MM * RENDER_SCALE);
   const pixelRatio = targetPxW / naturalW;

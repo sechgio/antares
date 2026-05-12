@@ -38,7 +38,9 @@ export default defineConfig(({ mode }) => ({
         manualChunks: {
           'vendor-react': ['react', 'react-dom'],
           'vendor-ui': ['framer-motion', 'lucide-react'],
-          'vendor-pdf': ['jspdf', 'html-to-image', 'pdfjs-dist'],
+          'vendor-jspdf': ['jspdf'],
+          'vendor-html-to-image': ['html-to-image'],
+          'vendor-pdfjs': ['pdfjs-dist'],
           'vendor-data': ['xlsx'],
           'vendor-i18n': ['i18next', 'react-i18next'],
         },

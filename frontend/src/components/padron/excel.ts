@@ -1,13 +1,17 @@
 /**
  * Utilidades para parsear archivos Excel del padron
  */
-import type { HeaderData, PadronItem, ParseResult, ExcelRecord } from './data';
+import type { HeaderData, PadronItem, ParseResult, ExcelRecord, OutputFormat, WaterCutItem } from './data';
 import {
   FIELD_ALIASES,
   ITEM_FIELD_ALIASES,
   DATE_FIELDS,
+  WATER_CUT_DATE_FIELDS,
+  WATER_CUT_FIELD_ALIASES,
+  WATER_CUT_ITEM_FIELD_ALIASES,
   toDisplayDate,
   createDefaultHeaderData,
+  createDefaultWaterCutData,
 } from './data';
 
 function normalize(value: unknown): string {
@@ -27,13 +31,24 @@ function matchKey(headerText: string, aliasMap: Record<string, string[]>): strin
   )?.[0];
 }
 
-function mapHeaderRow(row: Record<string, unknown>): HeaderData {
-  const data = createDefaultHeaderData();
+function mapHeaderRow(
+  row: Record<string, unknown>,
+  outputFormat: OutputFormat,
+): HeaderData {
+  const data = outputFormat === 'water-cut-notice'
+    ? createDefaultWaterCutData()
+    : createDefaultHeaderData();
+  const aliases = outputFormat === 'water-cut-notice'
+    ? WATER_CUT_FIELD_ALIASES
+    : FIELD_ALIASES;
+  const dateFields = outputFormat === 'water-cut-notice'
+    ? WATER_CUT_DATE_FIELDS
+    : DATE_FIELDS;
   Object.entries(row).forEach(([col, value]) => {
-    const key = matchKey(col, FIELD_ALIASES);
+    const key = matchKey(col, aliases);
     if (key) {
       const raw = String(value ?? '').trim();
-      data[key] = DATE_FIELDS.has(key) ? toDisplayDate(raw) : raw;
+      data[key] = dateFields.has(key) ? toDisplayDate(raw) : raw;
     }
   });
   return data;
@@ -59,18 +74,50 @@ function mapItems(rows: Record<string, unknown>[]): PadronItem[] {
     .filter((item): item is NonNullable<typeof item> => item !== null) as PadronItem[];
 }
 
-function detectRecords(sheetMap: Record<string, Record<string, unknown>[]>): ExcelRecord[] {
+function mapWaterCutItems(rows: Record<string, unknown>[]): WaterCutItem[] {
+  return rows
+    .map((row, idx) => {
+      const mapped: Record<string, string> = {};
+      Object.entries(row).forEach(([col, value]) => {
+        const key = matchKey(col, WATER_CUT_ITEM_FIELD_ALIASES);
+        if (key) {
+          const raw = String(value ?? '').trim();
+          mapped[key] = WATER_CUT_DATE_FIELDS.has(key) ? toDisplayDate(raw) : raw;
+        }
+      });
+      if (!Object.keys(mapped).length) return null;
+      return {
+        item: idx + 1,
+        hora: mapped.hora ?? '',
+        fecha: mapped.fecha ?? '',
+        nombresApellidos: mapped.nombresApellidos ?? '',
+        direccion: mapped.direccion ?? '',
+        dni: mapped.dni ?? '',
+        firma: mapped.firma ?? '',
+        observaciones: mapped.observaciones ?? '',
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null) as WaterCutItem[];
+}
+
+function detectRecords(
+  sheetMap: Record<string, Record<string, unknown>[]>,
+  outputFormat: OutputFormat,
+): ExcelRecord[] {
   const records: ExcelRecord[] = [];
+  const aliases = outputFormat === 'water-cut-notice'
+    ? WATER_CUT_FIELD_ALIASES
+    : FIELD_ALIASES;
   Object.entries(sheetMap).forEach(([name, rows]) => {
     rows.forEach((row, idx) => {
-      const hasMatch = Object.keys(row).some((col) => matchKey(col, FIELD_ALIASES));
+      const hasMatch = Object.keys(row).some((col) => matchKey(col, aliases));
       if (hasMatch) {
         records.push({
           id: `${name}-${idx}`,
           label: `${name} - Fila ${idx + 2}`,
           sheetName: name,
           rowIndex: idx,
-          data: mapHeaderRow(row),
+          data: mapHeaderRow(row, outputFormat),
         });
       }
     });
@@ -83,7 +130,15 @@ function detectItems(sheetMap: Record<string, Record<string, unknown>[]>): Padro
   return mapItems(allRows);
 }
 
-export async function parseWorkbook(file: File): Promise<ParseResult> {
+function detectWaterCutItems(sheetMap: Record<string, Record<string, unknown>[]>): WaterCutItem[] {
+  const allRows = Object.values(sheetMap).flat();
+  return mapWaterCutItems(allRows);
+}
+
+export async function parseWorkbook(
+  file: File,
+  outputFormat: OutputFormat = 'service-interruption',
+): Promise<ParseResult> {
   const XLSX = await import('xlsx');
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(buffer, { type: 'array' });
@@ -96,8 +151,9 @@ export async function parseWorkbook(file: File): Promise<ParseResult> {
     });
   });
 
-  const records = detectRecords(sheetMap);
+  const records = detectRecords(sheetMap, outputFormat);
   const importedItems = detectItems(sheetMap);
+  const importedWaterCutItems = detectWaterCutItems(sheetMap);
 
   return {
     workbookName: file.name,
@@ -108,8 +164,11 @@ export async function parseWorkbook(file: File): Promise<ParseResult> {
           label: 'Manual',
           sheetName: 'Manual',
           rowIndex: 0,
-          data: createDefaultHeaderData(),
+          data: outputFormat === 'water-cut-notice'
+            ? createDefaultWaterCutData()
+            : createDefaultHeaderData(),
         }],
     importedItems,
+    importedWaterCutItems,
   };
 }

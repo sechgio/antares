@@ -16,8 +16,8 @@
 - **Historial completo**: Registro de todas las ejecuciones por tipo (conversión, formato, padrón, volante) con opción de re-ejecutar configuraciones previas
 - **Auto-actualizaciones**: Sistema de actualización automática integrado (GitHub Releases)
 - **Vista previa de imágenes**: Previsualización de conversiones antes de procesar, con drawer interactivo
-- **Command Palette**: Búscula y navegación rápida entre secciones con `Ctrl+K`
-- **Temas personalizables**: 12 presets de tema integrados + editor de colores con identidad Precision Linear
+- **Command Palette**: Búsqueda rápida y navegación entre secciones con `Ctrl+K`
+- **Temas personalizables**: 23 presets de tema integrados + editor de colores con identidad Precision Linear
 - **Internacionalización**: Español e inglés (frontend y backend)
 - **Sistema de plugins**: Extensión de formatos vía archivos Python en directorio de usuario
 

@@ -7,7 +7,26 @@ import DatabasePanel from './DatabasePanel';
 import FormPanel from './FormPanel';
 import PreviewPanel from './PreviewPanel';
 import { downloadBase64Pdf, fileToBase64, fileToDataUrl, technicalReportsApi } from './api';
+import { api } from '../../api';
 import type { TechnicalReport, TechnicalReportListItem } from './types';
+
+async function saveToHistory(label: string, details: Record<string, unknown>, count = 1) {
+  try {
+    await api.historySave({
+      run_type: 'informe_tecnico',
+      files: [label],
+      options: details,
+      formato: label,
+      patron: '',
+      calidad: 0,
+      resize: null,
+      ok_count: count,
+      err_count: 0,
+    });
+  } catch {
+    // Silently ignore history save errors so main flow is never blocked
+  }
+}
 
 export default function TechnicalReportsApp() {
   const { addToast } = useToast();
@@ -181,6 +200,7 @@ export default function TechnicalReportsApp() {
       const rendered = await technicalReportsApi.renderHtml({ report: formData, logo_left: logoLeft, logo_right: logoRight });
       const pdf = await technicalReportsApi.htmlToPdf({ html: rendered.html, filename: rendered.filename });
       downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
+      await saveToHistory(pdf.filename, { type: 'individual', reportId: formData.id });
       addToast({ message: 'PDF generado', type: 'success' });
     } catch (error) {
       addToast({ message: error instanceof Error ? error.message : 'No se pudo generar el PDF', type: 'error' });
@@ -196,6 +216,7 @@ export default function TechnicalReportsApp() {
       const rendered = await technicalReportsApi.renderConsolidatedHtml({ logo_left: logoLeft, logo_right: logoRight });
       const pdf = await technicalReportsApi.htmlToPdf({ html: rendered.html, filename: rendered.filename });
       downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
+      await saveToHistory(pdf.filename, { type: 'consolidado', count: rendered.count }, rendered.count);
       addToast({ message: `PDF consolidado generado (${rendered.count})`, type: 'success' });
     } catch (error) {
       addToast({ message: error instanceof Error ? error.message : 'No se pudo generar el consolidado', type: 'error' });

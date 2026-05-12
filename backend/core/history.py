@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any
 
 from backend.core.database import get_db_path
+from backend.core.repository import _db_lock, get_connection
 
 # ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -16,14 +17,22 @@ RUN_TYPE_FORMATO = "formato"
 RUN_TYPE_PADRON = "padron"
 RUN_TYPE_VOLANTE = "volante"
 RUN_TYPE_IMAGE_OPTIMIZER = "image_optimizer"
+RUN_TYPE_REPORTE_CAMPO = "reporte_campo"
+RUN_TYPE_PANEL_AVISO_CORTE = "panel_aviso_corte"
+RUN_TYPE_INFORME_TECNICO = "informe_tecnico"
 
-ALL_RUN_TYPES = [RUN_TYPE_CONVERSION, RUN_TYPE_FORMATO, RUN_TYPE_PADRON, RUN_TYPE_VOLANTE, RUN_TYPE_IMAGE_OPTIMIZER]
+ALL_RUN_TYPES = [
+    RUN_TYPE_CONVERSION, RUN_TYPE_FORMATO, RUN_TYPE_PADRON, RUN_TYPE_VOLANTE,
+    RUN_TYPE_IMAGE_OPTIMIZER, RUN_TYPE_REPORTE_CAMPO, RUN_TYPE_PANEL_AVISO_CORTE,
+    RUN_TYPE_INFORME_TECNICO,
+]
 
 
 def _ensure_table() -> None:
     """Create the historial table if it doesn't exist, and migrate old ones."""
     db = get_db_path()
-    with sqlite3.connect(str(db)) as conn:
+    with _db_lock:
+        conn = get_connection(db)
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS historial (
@@ -41,7 +50,6 @@ def _ensure_table() -> None:
             )
             """
         )
-        # Migration: add run_type column if missing (legacy DB)
         try:
             conn.execute("SELECT run_type FROM historial LIMIT 1")
         except sqlite3.OperationalError:
@@ -63,7 +71,8 @@ def save_run(
     """Save a processing run to history and return its ID."""
     _ensure_table()
     db = get_db_path()
-    with sqlite3.connect(str(db)) as conn:
+    with _db_lock:
+        conn = get_connection(db)
         cursor = conn.execute(
             """
             INSERT INTO historial (run_type, timestamp, files_json, options_json, patron, formato, calidad, resize, ok_count, err_count)
@@ -90,7 +99,8 @@ def list_runs(run_type: str | None = None, limit: int = 50, offset: int = 0) -> 
     """List recent processing runs, newest first."""
     _ensure_table()
     db = get_db_path()
-    with sqlite3.connect(str(db)) as conn:
+    with _db_lock:
+        conn = get_connection(db)
         conn.row_factory = sqlite3.Row
         if run_type:
             rows = conn.execute(
@@ -109,7 +119,8 @@ def get_run(run_id: int) -> dict[str, Any] | None:
     """Get a single run by ID."""
     _ensure_table()
     db = get_db_path()
-    with sqlite3.connect(str(db)) as conn:
+    with _db_lock:
+        conn = get_connection(db)
         conn.row_factory = sqlite3.Row
         row = conn.execute("SELECT * FROM historial WHERE id = ?", (run_id,)).fetchone()
     return dict(row) if row else None
@@ -119,7 +130,8 @@ def delete_run(run_id: int) -> bool:
     """Delete a run by ID."""
     _ensure_table()
     db = get_db_path()
-    with sqlite3.connect(str(db)) as conn:
+    with _db_lock:
+        conn = get_connection(db)
         cursor = conn.execute("DELETE FROM historial WHERE id = ?", (run_id,))
         conn.commit()
         return cursor.rowcount > 0

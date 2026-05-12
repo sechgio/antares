@@ -43,7 +43,7 @@ import warnings
 from backend.core.database import close_connection, init_db
 from backend.core.plugins import load_plugins_from_dir
 from backend.handlers import HANDLERS
-from backend.ipc_protocol import read_message, send_notification, send_response
+from backend.ipc_protocol import _SKIP, read_message, send_notification, send_response
 from backend.utils.i18n import t
 
 # Silence tkinter deprecation warning on macOS
@@ -122,7 +122,9 @@ def main() -> None:
         while True:
             msg = read_message()
             if msg is None:
-                break
+                break  # EOF — pipe closed
+            if msg is _SKIP:
+                continue  # Parse error, already responded
 
             if msg.method in HANDLERS:
                 try:

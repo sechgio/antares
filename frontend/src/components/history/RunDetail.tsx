@@ -17,6 +17,9 @@ const RUN_TYPE_LABELS: Record<RunType, string> = {
   padron: 'Padrón',
   volante: 'Volante',
   image_optimizer: 'Imágenes',
+  reporte_campo: 'Reporte Campo',
+  panel_aviso_corte: 'Panel Aviso',
+  informe_tecnico: 'Informe Técnico',
 };
 
 const RUN_TYPE_COLORS: Record<RunType, string> = {
@@ -25,6 +28,9 @@ const RUN_TYPE_COLORS: Record<RunType, string> = {
   padron: 'text-[var(--accent-yellow)]',
   volante: 'text-[var(--accent-secondary)]',
   image_optimizer: 'text-purple-400',
+  reporte_campo: 'text-orange-400',
+  panel_aviso_corte: 'text-rose-400',
+  informe_tecnico: 'text-cyan-400',
 };
 
 export default function RunDetail({ run, onReexecute, onDelete }: RunDetailProps) {

@@ -10,11 +10,14 @@ import json
 import logging
 import re
 import sys
+import threading
 import traceback
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+_stdout_lock = threading.Lock()
 
 
 def validate_method(method: str) -> bool:
@@ -29,9 +32,41 @@ def validate_params(params: dict) -> bool:
     if not isinstance(params, dict):
         return False
 
-    # Check for path traversal attempts
-    params_str = json.dumps(params)
-    return not ('../' in params_str or '..\\' in params_str)
+    # Check for path traversal attempts using resolved paths
+    for key in ('files', 'destino', 'path', 'folder', 'name'):
+        value = params.get(key)
+        if value is None:
+            continue
+        if isinstance(value, list):
+            for item in value:
+                if not _is_path_safe(item):
+                    return False
+        elif not _is_path_safe(value):
+            return False
+
+    return True
+
+
+def _is_path_safe(value: Any) -> bool:
+    """Check if a path value is safe (no traversal, valid string).
+
+    Rejects explicit traversal sequences (``../`` and ``..\\``), null bytes,
+    URL-encoded traversal, and suspicious absolute-path patterns.
+    """
+    if not isinstance(value, str) or not value:
+        return True  # Empty/invalid values handled downstream
+    # Reject null bytes (used in injection attacks).
+    if '\x00' in value:
+        return False
+    # Reject obvious traversal patterns (both POSIX and Windows separators).
+    if '../' in value or '..\\' in value:
+        return False
+    # Reject URL-encoded traversal patterns (single and double-encoded).
+    lowered = value.lower()
+    if '%2e%2e' in lowered or '%252e' in lowered:
+        return False
+    # Reject Windows absolute paths that could escape expected roots.
+    return not (len(value) >= 2 and value[1] == ':')
 
 # ─── IPC Protocol ────────────────────────────────────────────────────────────
 
@@ -64,8 +99,9 @@ def send_response(result: Any, msg_id: str | int, *, error: str | None = None) -
     else:
         payload["result"] = result
     json_str = json.dumps(payload, ensure_ascii=False, default=_json_default)
-    sys.stdout.write(json_str + '\n')
-    sys.stdout.flush()
+    with _stdout_lock:
+        sys.stdout.write(json_str + '\n')
+        sys.stdout.flush()
 
 
 def send_notification(method: str, params: dict[str, Any]) -> None:
@@ -75,8 +111,10 @@ def send_notification(method: str, params: dict[str, Any]) -> None:
         "method": method,
         "params": params,
     }
-    print(json.dumps(payload, ensure_ascii=False, default=_json_default))
-    sys.stdout.flush()
+    json_str = json.dumps(payload, ensure_ascii=False, default=_json_default)
+    with _stdout_lock:
+        sys.stdout.write(json_str + '\n')
+        sys.stdout.flush()
 
 
 def _json_default(obj: Any) -> Any:
@@ -85,17 +123,21 @@ def _json_default(obj: Any) -> Any:
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
+# Sentinel returned on parse errors (not EOF)
+_SKIP = object()
+
+
 def read_message() -> IPCMessage | None:
-    """Lee una línea JSON desde stdin."""
+    """Lee una línea JSON desde stdin. Returns None on EOF, _SKIP on parse error."""
     try:
         line = sys.stdin.readline()
         if not line:
-            return None
+            return None  # EOF — pipe closed
         data = json.loads(line)
         return IPCMessage(data)
     except json.JSONDecodeError:
         send_response(None, 0, error="JSON inválido")
-        return None
+        return _SKIP  # type: ignore[return-value]
     except Exception:
         send_response(None, 0, error=f"Error leyendo stdin: {traceback.format_exc()}")
-        return None
+        return _SKIP  # type: ignore[return-value]

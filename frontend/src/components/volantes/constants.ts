@@ -1,9 +1,9 @@
 import type { FlyerRecord } from "./types";
-import pcmVivienda from "../../assets/vgen-assets/PCM-Vivienda.png";
-import logoSedapal from "../../assets/vgen-assets/logo_sedapal.jpg";
-import logoAcciona from "../../assets/vgen-assets/logo_acciona.png";
-import aquafono from "../../assets/vgen-assets/aquafono.png";
-import grifo from "../../assets/vgen-assets/grifo.png";
+import pcmVivienda from "../../assets/vgen-assets/PCM-Vivienda.webp";
+import logoSedapal from "../../assets/vgen-assets/logo_sedapal.webp";
+import logoAcciona from "../../assets/vgen-assets/logo_acciona.webp";
+import aquafono from "../../assets/vgen-assets/aquafono.webp";
+import grifo from "../../assets/vgen-assets/grifo.webp";
 
 export const REQUIRED_COLUMNS = [
   "distrito",

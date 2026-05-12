@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { api } from '../../api';
 import { useToast } from '../../hooks/useToast';
 import { useDialog } from '../../hooks/useDialog';
@@ -12,6 +12,9 @@ const TYPE_FILTERS: { label: string; value: RunType | 'all' }[] = [
   { label: 'Padrón', value: 'padron' },
   { label: 'Volante', value: 'volante' },
   { label: 'Imágenes', value: 'image_optimizer' },
+  { label: 'Reporte Campo', value: 'reporte_campo' },
+  { label: 'Panel Aviso', value: 'panel_aviso_corte' },
+  { label: 'Informe Técnico', value: 'informe_tecnico' },
 ];
 
 export default function HistoryView() {
@@ -21,15 +24,17 @@ export default function HistoryView() {
   const [selected, setSelected] = useState<HistoryRun | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeType, setActiveType] = useState<RunType | 'all'>('all');
+  const reqId = useRef(0);
 
   const refresh = async () => {
+    const id = ++reqId.current;
     try {
       const params: { limit: number; run_type?: string } = { limit: 50 };
       if (activeType !== 'all') params.run_type = activeType;
       const r = await api.historyList(params);
-      setRuns(r.runs as HistoryRun[]);
+      if (id === reqId.current) setRuns(r.runs as HistoryRun[]);
     } catch {
-      addToast({ message: 'Error cargando historial', type: 'error' });
+      if (id === reqId.current) addToast({ message: 'Error cargando historial', type: 'error' });
     }
   };
 

@@ -44,6 +44,8 @@ interface StepProps {
 const LOGO_LEFT_KEY = 'cosmo_preview_logo_left';
 const LOGO_RIGHT_KEY = 'cosmo_preview_logo_right';
 const CUSTOM_COLS_KEY = 'cosmo_preview_custom_columns';
+const PERSISTED_LOGO_MAX_EDGE = 900;
+const PERSISTED_LOGO_QUALITY = 0.86;
 
 function base64ToPdfBlob(base64: string): Blob {
   const binary = atob(base64);
@@ -77,6 +79,49 @@ function savePersistedLogo(key: string, dataUrl: string, fileName: string) {
 
 function clearPersistedLogo(key: string) {
   try { localStorage.removeItem(key); } catch { /* ignore */ }
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = evt => resolve(String(evt.target?.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('No se pudo leer el archivo'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImage(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('No se pudo procesar la imagen'));
+    img.src = dataUrl;
+  });
+}
+
+async function compressLogoForStorage(file: File): Promise<string> {
+  const original = await readFileAsDataUrl(file);
+  if (!file.type.startsWith('image/') || file.type === 'image/svg+xml') {
+    return original;
+  }
+
+  try {
+    const img = await loadImage(original);
+    const maxEdge = Math.max(img.naturalWidth, img.naturalHeight);
+    const scale = maxEdge > PERSISTED_LOGO_MAX_EDGE ? PERSISTED_LOGO_MAX_EDGE / maxEdge : 1;
+    const width = Math.max(1, Math.round(img.naturalWidth * scale));
+    const height = Math.max(1, Math.round(img.naturalHeight * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return original;
+    ctx.drawImage(img, 0, 0, width, height);
+    const compressed = canvas.toDataURL('image/webp', PERSISTED_LOGO_QUALITY);
+    return compressed.length < original.length ? compressed : original;
+  } catch {
+    return original;
+  }
 }
 
 function Step({ number, title, icon, children, disabled }: StepProps) {
@@ -179,16 +224,16 @@ export default function PreviewPanelView() {
   }, [addToast]);
 
   // ─── Logo upload ───
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>, side: 'left' | 'right') => {
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>, side: 'left' | 'right') => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = evt => {
-      const result = evt.target?.result as string;
+    try {
+      const result = await compressLogoForStorage(file);
       if (side === 'left') setLogoLeft(result);
       else setLogoRight(result);
-    };
-    reader.readAsDataURL(file);
+    } catch {
+      addToast({ message: 'No se pudo cargar el logo seleccionado', type: 'error' });
+    }
   };
 
   // ─── Template upload ───
