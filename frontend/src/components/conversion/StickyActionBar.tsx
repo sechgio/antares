@@ -59,7 +59,6 @@ export default function StickyActionBar({
 
   return (
     <div className="flex items-center justify-between rounded-2xl border px-5 py-3.5 transition-all duration-300 bg-[var(--bg-surface)] border-[var(--border-subtle)]">
-      {/* Left: Config + Destination */}
       <div className="flex items-center gap-4 min-w-0">
         {currentConfig && onLoadConfig && (
           <ConversionPresets currentConfig={currentConfig} onLoadConfig={onLoadConfig} className="hidden sm:block shrink-0" />
@@ -87,7 +86,6 @@ export default function StickyActionBar({
         </button>
       </div>
 
-      {/* Center: Quick Stats */}
       {hasFiles && (
         <div className="hidden md:flex items-center gap-3 shrink-0 mx-4">
           <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-subtle)]">
@@ -115,7 +113,6 @@ export default function StickyActionBar({
         </div>
       )}
 
-      {/* Right: Action Button */}
       <div className="flex flex-col items-end gap-1 shrink-0">
         {!running ? (
           <ActionButton variant="primary" onClick={onStart} disabled={!allReady}>

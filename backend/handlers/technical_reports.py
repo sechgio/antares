@@ -1,8 +1,11 @@
 """Technical reports handlers."""
 from __future__ import annotations
+
 import base64
 from typing import Any
+
 from backend.handlers.common import with_locale
+
 
 def _summary(report: dict[str, Any]) -> dict[str, Any]:
     return {
@@ -36,7 +39,8 @@ def technical_reports_get(params: dict[str, Any]) -> dict[str, Any]:
     report_id = str(params.get("id") or "")
     report = TechnicalReportsDB().get(report_id)
     if report is None:
-        raise ValueError(f"Informe no encontrado: {report_id}")
+        msg = f"Informe no encontrado: {report_id}"
+        raise ValueError(msg)
     return {"report": report}
 
 @with_locale
@@ -53,7 +57,8 @@ def technical_reports_update(params: dict[str, Any]) -> dict[str, Any]:
     report_id = str(params.get("id") or "")
     report = params.get("report")
     if not report_id or not isinstance(report, dict):
-        raise ValueError("id y report son requeridos")
+        msg = "id y report son requeridos"
+        raise ValueError(msg)
     return {"success": True, "report": TechnicalReportsDB().update(report_id, report)}
 
 @with_locale
@@ -61,7 +66,8 @@ def technical_reports_delete(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.technical_reports.database import TechnicalReportsDB
     report_id = str(params.get("id") or "")
     if not TechnicalReportsDB().delete(report_id):
-        raise ValueError(f"Informe no encontrado: {report_id}")
+        msg = f"Informe no encontrado: {report_id}"
+        raise ValueError(msg)
     return {"success": True, "deleted_id": report_id}
 
 @with_locale
@@ -77,7 +83,8 @@ def technical_reports_import_file(params: dict[str, Any]) -> dict[str, Any]:
     filename = str(params.get("filename") or "")
     content_b64 = str(params.get("content_b64") or "")
     if not filename or not content_b64:
-        raise ValueError("filename y content_b64 son requeridos")
+        msg = "filename y content_b64 son requeridos"
+        raise ValueError(msg)
     content = base64.b64decode(content_b64)
     reports = import_reports_from_bytes(filename, content)
     db = TechnicalReportsDB()
@@ -121,7 +128,8 @@ def technical_reports_render_html(params: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(report, dict):
         report = TechnicalReportsDB().get(report_id)
     if not isinstance(report, dict):
-        raise ValueError(f"Informe no encontrado: {report_id}")
+        msg = f"Informe no encontrado: {report_id}"
+        raise ValueError(msg)
     html = render_report_html(report, params.get("logo_left"), params.get("logo_right"))
     return {"html": html, "filename": f"informe_{report['id']}.pdf"}
 
@@ -135,7 +143,8 @@ def technical_reports_render_consolidated_html(params: dict[str, Any]) -> dict[s
         allowed = {str(rid) for rid in report_ids}
         reports = [r for r in reports if r["id"] in allowed]
     if not reports:
-        raise ValueError("No hay informes para exportar")
+        msg = "No hay informes para exportar"
+        raise ValueError(msg)
     reports.sort(key=lambda r: int(r["metadata"].get("informe_id", 0)))
     html = render_consolidated_html(reports, params.get("logo_left"), params.get("logo_right"))
     return {"html": html, "filename": f"informes_tecnicos_consolidado_{len(reports)}.pdf", "count": len(reports)}
@@ -143,11 +152,13 @@ def technical_reports_render_consolidated_html(params: dict[str, Any]) -> dict[s
 @with_locale
 def html_to_pdf(params: dict[str, Any]) -> dict[str, str]:
     import io
+
     from weasyprint import HTML
     html = str(params.get("html") or "")
     filename = str(params.get("filename") or "documento.pdf")
     if not html:
-        raise ValueError("html es requerido")
+        msg = "html es requerido"
+        raise ValueError(msg)
     if not filename.lower().endswith(".pdf"):
         filename += ".pdf"
     pdf_buffer = io.BytesIO()

@@ -1,20 +1,24 @@
 """Image optimizer handlers."""
 from __future__ import annotations
+
 import base64
 import os
 import zipfile
 from io import BytesIO
 from typing import Any
+
 from backend.handlers.common import with_locale
+
 
 @with_locale
 def image_optimizer_zip(params: dict[str, Any]) -> dict[str, str]:
     files = params.get("files", [])
     zip_name = params.get("zip_name", "imagenes_optimizadas")
     if not files:
-        raise ValueError("No files provided")
+        msg = "No files provided"
+        raise ValueError(msg)
     zip_buffer = BytesIO()
-    with zipfile.ZipFile(zip_buffer, mode='w', compression=zipfile.ZIP_DEFLATED) as zip_file:
+    with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zip_file:
         for file_info in files:
             filename = file_info.get("filename", "file")
             content_b64 = file_info.get("content_b64", "")

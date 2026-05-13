@@ -1,8 +1,11 @@
 """Theme configuration handlers."""
 from __future__ import annotations
+
 from typing import Any
-from backend.handlers.common import with_locale
+
 from backend.core.config_theme import PRESETS, load_preset, load_theme, reset_theme, save_theme
+from backend.handlers.common import with_locale
+
 
 @with_locale
 def theme_get(params: dict[str, Any]) -> dict[str, str]:

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
@@ -18,8 +18,20 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
+let toastTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
+
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  useEffect(() => {
+    return () => {
+      // Clear all pending timeouts on unmount
+      for (const tid of toastTimeouts.values()) {
+        clearTimeout(tid);
+      }
+      toastTimeouts.clear();
+    };
+  }, []);
 
   const addToast = useCallback((toast: Omit<ToastItem, 'id'>) => {
     const id = Math.random().toString(36).slice(2, 9);
@@ -27,13 +39,20 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
     const duration = toast.duration ?? 5000;
     if (duration > 0) {
-      setTimeout(() => {
+      const tid = setTimeout(() => {
+        toastTimeouts.delete(id);
         setToasts((prev) => prev.filter((t) => t.id !== id));
       }, duration);
+      toastTimeouts.set(id, tid);
     }
   }, []);
 
   const removeToast = useCallback((id: string) => {
+    const tid = toastTimeouts.get(id);
+    if (tid) {
+      clearTimeout(tid);
+      toastTimeouts.delete(id);
+    }
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 

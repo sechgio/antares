@@ -1,5 +1,6 @@
 """Visual overlay strategy for PDF correlative number generation."""
 from __future__ import annotations
+
 import io
 import re
 from typing import Any
@@ -55,22 +56,22 @@ def _blank_number_in_xobject(page, mcids: list[int]) -> None:
     xobjects = page["/Resources"].get("/XObject")
     if not xobjects:
         return
-    for _, ref in xobjects.get_object().items():
+    for ref in xobjects.get_object().values():
         xobj = ref.get_object()
         if xobj.get("/Subtype") != "/Form":
             continue
         data = xobj.get_data()
         modified = False
         for mcid in mcids:
-            marker_pat = re.compile(rb'MCID\s*' + str(mcid).encode() + rb'\s*>>\s*BDC')
+            marker_pat = re.compile(rb"MCID\s*" + str(mcid).encode() + rb"\s*>>\s*BDC")
             marker = marker_pat.search(data)
             if not marker:
                 continue
             section_start = marker.end()
-            next_mcid = re.search(rb'MCID\s+\d+', data[section_start + 4:])
-            section_end = section_start + 4 + next_mcid.start() if next_mcid else min(section_start + 1500, len(data))
+            next_mcid = re.search(rb"MCID\s+\d+", data[section_start + 4:])
+            section_end = section_start + 4 + next_mcid.start() if next_mcid else min(section_start + max(len(data) // 10, 500), len(data))
             section = data[section_start:section_end]
-            new_section = re.sub(rb'\([^\)]{1,4}\)\s*Tj', b'(\x00\x03) Tj', section)
+            new_section = re.sub(rb"\([^\)]{1,4}\)\s*Tj", b"(\x00\x03) Tj", section)
             if new_section != section:
                 data = data[:section_start] + new_section + data[section_end:]
                 modified = True
@@ -142,7 +143,8 @@ _DEFAULT_OVERLAY_MAPPING = {
 class VisualOverlayStrategy:
     def generate(self, template_bytes: bytes, desde: int, hasta: int, mapping: dict[str, Any] | None = None) -> bytes:
         if mapping is None:
-            raise ValueError("Visual overlay requires mapping configuration")
+            msg = "Visual overlay requires mapping configuration"
+            raise ValueError(msg)
         writer = PdfWriter()
         for number in range(desde, hasta + 1):
             reader = PdfReader(io.BytesIO(template_bytes))

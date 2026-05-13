@@ -3,7 +3,7 @@ import base64
 from backend.handlers import HANDLERS
 
 
-def test_technical_reports_handlers_are_registered(monkeypatch, tmp_path):
+def test_technical_reports_handlers_are_registered(monkeypatch, tmp_path) -> None:
     from backend.core.technical_reports import database as db_module
 
     monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "technical_reports.json")
@@ -11,7 +11,7 @@ def test_technical_reports_handlers_are_registered(monkeypatch, tmp_path):
     assert "technical_reports_import_file" in HANDLERS
 
 
-def test_import_file_handler_imports_csv(monkeypatch, tmp_path):
+def test_import_file_handler_imports_csv(monkeypatch, tmp_path) -> None:
     from backend.core.technical_reports import database as db_module
 
     monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "technical_reports.json")

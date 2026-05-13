@@ -159,7 +159,6 @@ export function usePanelSession(): PanelSession {
   const _normalizeDateStr = useCallback((raw: string): string => {
     const s = raw.trim();
     if (!s) return '';
-    // Already ISO?
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
     // ISO datetime with time (e.g. "2024-05-15 00:00:00")
     const isoMatch = s.match(/^(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}/);
@@ -268,19 +267,24 @@ export function usePanelSession(): PanelSession {
   const previewPanels = useMemo(() => {
     if (matchResult) return matchResult.panels;
     if (!excelSource) {
-      // Form mode: single panel
-      const refs = images.slice(0, 4).map((img, i) => ({
-        filename: img.file.name,
-        caption: `IMAGEN N°${i + 1}: (Indicar dirección según lista de usuarios)`,
-        position: i + 1,
-      }));
-      return [{
-        cuadrante: headerForm.cuadrante,
-        fechaCorte: headerForm.fechaCorte,
-        motivo: headerForm.motivo,
-        imagenes: refs,
-        sourceRowIndex: null,
-      }];
+      // Form mode: agrupar imágenes en paneles de 4 con numeración secuencial global
+      const panels: PanelVM[] = [];
+      for (let i = 0; i < images.length; i += 4) {
+        const chunk = images.slice(i, i + 4);
+        const refs = chunk.map((img, idx) => ({
+          filename: img.file.name,
+          caption: `IMAGEN N°${i + idx + 1}: (Indicar dirección según lista de usuarios)`,
+          position: idx + 1,
+        }));
+        panels.push({
+          cuadrante: headerForm.cuadrante,
+          fechaCorte: headerForm.fechaCorte,
+          motivo: headerForm.motivo,
+          imagenes: refs,
+          sourceRowIndex: null,
+        });
+      }
+      return panels;
     }
     return [];
   }, [matchResult, excelSource, images, headerForm]);

@@ -1,4 +1,3 @@
-// frontend/src/__tests__/api.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { api } from '../api';
 

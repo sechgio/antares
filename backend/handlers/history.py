@@ -1,8 +1,11 @@
 """History handlers."""
 from __future__ import annotations
+
 import json
 from typing import Any
+
 from backend.handlers.common import with_locale
+
 
 @with_locale
 def history_list(params: dict[str, Any]) -> dict[str, Any]:

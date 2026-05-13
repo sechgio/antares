@@ -58,7 +58,7 @@ def _safe_str(value: Any, default: str = "") -> str:
     if value is None:
         return default
     text = str(value).strip()
-    return text if text else default
+    return text or default
 
 
 def _diameter_map(diameters: list[str], source: dict[str, Any] | None = None) -> dict[str, int]:
@@ -90,7 +90,7 @@ def default_header() -> dict[str, Any]:
 
 
 def default_inspeccion() -> dict[str, Any]:
-    data: dict[str, Any] = {item: "unchecked" for item in INSPECTION_ITEMS}
+    data: dict[str, Any] = dict.fromkeys(INSPECTION_ITEMS, "unchecked")
     for obs_key, sug_key in INSPECTION_TEXT_FIELDS.values():
         data[obs_key] = ""
         data[sug_key] = ""

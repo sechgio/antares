@@ -56,7 +56,6 @@ export default function OptionsCard({
 
   return (
     <Card className="space-y-5">
-      {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]">
@@ -94,7 +93,6 @@ export default function OptionsCard({
 
       {conversionEnabled && (
         <>
-          {/* Format Selector */}
           <div className="space-y-2">
         <div className="flex items-center justify-between">
           <label className="text-xs font-medium text-[var(--text-secondary)]">Formato de salida</label>
@@ -149,14 +147,12 @@ export default function OptionsCard({
         )}
           </div>
 
-          {/* Quality Section */}
           <div className="space-y-3">
         <div className="flex items-center justify-between">
           <label className="text-xs font-medium text-[var(--text-secondary)]">Calidad de compresión</label>
           <span className="text-sm font-bold text-[var(--accent-primary)]">{calidad}%</span>
         </div>
 
-        {/* Quality Presets */}
         <div className="grid grid-cols-4 gap-1.5">
           {QUALITY_PRESETS.map((preset) => {
             const Icon = preset.icon;
@@ -179,7 +175,6 @@ export default function OptionsCard({
           })}
         </div>
 
-        {/* Fine-tune Slider */}
         <div className="pt-1">
           <input
             type="range"
@@ -201,7 +196,6 @@ export default function OptionsCard({
           </div>
 
           <div className="space-y-3 border-t border-[var(--border-subtle)] pt-4">
-            {/* Resize Toggle */}
             <div className="space-y-2.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
@@ -243,7 +237,6 @@ export default function OptionsCard({
           )}
             </div>
 
-            {/* EXIF Toggle */}
             <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--bg-elevated)] text-[var(--text-muted)]">

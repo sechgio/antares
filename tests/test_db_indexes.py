@@ -10,7 +10,7 @@ import sqlite3
 from backend.core.database import get_db_path, init_db
 
 
-def test_indexes_created():
+def test_indexes_created() -> None:
     """Test that required explicit indexes exist after init_db."""
     init_db()
 
@@ -19,7 +19,7 @@ def test_indexes_created():
         indexes = cursor.fetchall()
 
         # Filter out auto indexes (they start with 'sqlite_autoindex')
-        explicit_indexes = [idx for idx in indexes if not idx[1].startswith('sqlite_autoindex')]
+        explicit_indexes = [idx for idx in indexes if not idx[1].startswith("sqlite_autoindex")]
 
         # Should have at least one explicit index on the first field (code field)
         assert len(explicit_indexes) > 0, "No explicit indexes found on imagenes table"
@@ -28,10 +28,8 @@ def test_indexes_created():
         for idx in explicit_indexes:
             idx_name = idx[1]
             cursor.execute(f"PRAGMA index_info({idx_name})")
-            columns = cursor.fetchall()
-            print(f"Explicit Index {idx_name}: {columns}")
+            cursor.fetchall()
 
-    print("Index test passed!")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     test_indexes_created()

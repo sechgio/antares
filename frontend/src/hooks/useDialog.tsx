@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 
 export interface DialogOptions {
   title: string;
@@ -25,6 +25,23 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [options, setOptions] = useState<DialogOptions | null>(null);
   const resolverRef = useRef<((value: boolean) => void) | null>(null);
+  const alertResolverRef = useRef<(() => void) | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (resolverRef.current) {
+        resolverRef.current(false);
+        resolverRef.current = null;
+      }
+      if (alertResolverRef.current) {
+        alertResolverRef.current();
+        alertResolverRef.current = null;
+      }
+    };
+  }, []);
 
   const openDialog = useCallback((opts: DialogOptions) => {
     setOptions(opts);
@@ -34,13 +51,17 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
   const closeDialog = useCallback(() => {
     setIsOpen(false);
     setTimeout(() => {
-      setOptions(null);
-      resolverRef.current = null;
+      if (mountedRef.current) {
+        setOptions(null);
+        resolverRef.current = null;
+        alertResolverRef.current = null;
+      }
     }, 200);
   }, []);
 
   const confirm = useCallback((opts: Omit<DialogOptions, 'onConfirm' | 'onCancel'>): Promise<boolean> => {
     return new Promise((resolve) => {
+      if (!mountedRef.current) { resolve(false); return; }
       resolverRef.current = resolve;
       setOptions({
         ...opts,
@@ -60,7 +81,8 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
 
   const alert = useCallback((opts: Omit<DialogOptions, 'type' | 'cancelLabel' | 'onConfirm' | 'onCancel'>): Promise<void> => {
     return new Promise((resolve) => {
-      resolverRef.current = null;
+      if (!mountedRef.current) { resolve(); return; }
+      alertResolverRef.current = resolve;
       setOptions({
         ...opts,
         type: 'alert',

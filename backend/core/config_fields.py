@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import logging
 import re
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from backend.utils.paths import user_data_path
+from backend.utils.paths import cached_config_path
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +23,6 @@ DEFAULT_FIELDS: list[dict[str, Any]] = [
     {"name": "descripcion", "type": "TEXT", "required": False, "unique": False},
 ]
 
-# SQLite keywords que no deben usarse como nombres de columna
 _SQLITE_KEYWORDS: set[str] = {
     "abort", "action", "add", "after", "all", "alter", "analyze", "and", "as",
     "asc", "attach", "autoincrement", "before", "begin", "between", "by", "cascade",
@@ -47,7 +48,7 @@ _CONFIG_PATH: Path | None = None
 def _config_file() -> Path:
     global _CONFIG_PATH
     if _CONFIG_PATH is None:
-        _CONFIG_PATH = user_data_path("fields_config.json")
+        _CONFIG_PATH = cached_config_path("fields", "fields_config.json")
     return _CONFIG_PATH
 
 
@@ -65,8 +66,28 @@ def _validar_tipo_campo(tipo: str) -> bool:
     return tipo.upper() in {"TEXT", "INTEGER", "REAL", "BLOB", "NUMERIC"}
 
 
+_cached_fields: tuple[Path, list[dict[str, Any]]] | None = None
+
+
+def _invalidate_fields_cache() -> None:
+    """Clear the in-memory fields cache so next read hits disk."""
+    global _cached_fields
+    _cached_fields = None
+
+
 def load_fields() -> list[dict[str, Any]]:
-    """Carga la configuración de campos desde disco o retorna los defaults."""
+    """Carga la configuración de campos desde disco o retorna los defaults.
+
+    Results are cached in memory and invalidated on write or if the config
+    file path changes (e.g. during tests with monkeypatch).
+    """
+    global _cached_fields
+    path = _config_file()
+    if _cached_fields is not None:
+        cached_path, cached_data = _cached_fields
+        if cached_path == path:
+            return [dict(f) for f in cached_data]
+        # Path changed — cache is stale]
     path = _config_file()
     if path.exists():
         try:
@@ -88,10 +109,13 @@ def load_fields() -> list[dict[str, Any]]:
                             "unique": bool(f.get("unique", False)),
                         })
                 if validated:
-                    return validated
+                    _cached_fields = (path, validated)
+                    return [dict(f) for f in validated]
         except (json.JSONDecodeError, OSError, TypeError) as exc:
             logger.warning("Error leyendo configuración de campos, usando defaults: %s", exc)
-    return [dict(f) for f in DEFAULT_FIELDS]
+    defaults = [dict(f) for f in DEFAULT_FIELDS]
+    _cached_fields = (path, defaults)
+    return defaults
 
 
 def save_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -112,6 +136,7 @@ def save_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
             })
     with open(path, "w", encoding="utf-8") as file:
         json.dump({"fields": validated}, file, indent=2, ensure_ascii=False)
+    _invalidate_fields_cache()
     return validated
 
 
@@ -132,5 +157,5 @@ def get_unique_fields() -> list[str]:
 
 def reset_to_defaults() -> list[dict[str, Any]]:
     """Restaura la configuración a los valores por defecto."""
-    save_fields(DEFAULT_FIELDS)
-    return [dict(f) for f in DEFAULT_FIELDS]
+    result = save_fields(DEFAULT_FIELDS)
+    return result

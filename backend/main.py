@@ -33,43 +33,46 @@ sys.path = adjust_backend_import_path(
     frozen=bool(getattr(sys, "frozen", False)),
 )
 
-import json
 import locale
 import logging
+import os
 import signal
 import traceback
 import warnings
 
-from backend.core.database import close_connection, init_db
+from backend.core.database import init_db
 from backend.core.plugins import load_plugins_from_dir
+from backend.core.repository import close_connection
 from backend.handlers import HANDLERS
 from backend.ipc_protocol import _SKIP, read_message, send_notification, send_response
 from backend.utils.i18n import t
 
+_shutdown_requested = False
+
 # Silence tkinter deprecation warning on macOS
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-# Init DB before handling requests
 init_db()
 load_plugins_from_dir()
 
 
-def _signal_handler(signum, frame):
-    """Handle termination signals gracefully."""
-    logger.info(f"Received signal {signum}, shutting down...")
-    # Send a final message to Electron
-    send_notification("backend.shutdown", {"reason": "signal", "signal": signum})
-    sys.exit(0)
+def _signal_handler(signum, frame) -> None:
+    """Handle termination signals gracefully.
+
+    Only sets a flag — avoids non-async-signal-safe calls (logging, I/O)
+    that can deadlock inside a signal handler.
+    """
+    global _shutdown_requested
+    _shutdown_requested = True
 
 
-# Register signal handlers
-if hasattr(signal, 'SIGTERM'):
+if hasattr(signal, "SIGTERM"):
     signal.signal(signal.SIGTERM, _signal_handler)
-if hasattr(signal, 'SIGINT'):
+if hasattr(signal, "SIGINT"):
     signal.signal(signal.SIGINT, _signal_handler)
 
 # Windows doesn't have SIGHUP
-if hasattr(signal, 'SIGHUP'):
+if hasattr(signal, "SIGHUP"):
     signal.signal(signal.SIGHUP, _signal_handler)
 
 
@@ -82,27 +85,25 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def _validate_encoding():
+def _validate_encoding() -> None:
     """Validate that system supports required encoding."""
     try:
-        # Set environment variables for child processes
         import os
-        os.environ['PYTHONIOENCODING'] = 'utf-8'
-        os.environ['PYTHONUTF8'] = '1'
+        os.environ["PYTHONIOENCODING"] = "utf-8"
+        os.environ["PYTHONUTF8"] = "1"
 
-        # Try to set locale if possible
         try:
-            locale.setlocale(locale.LC_ALL, 'C.UTF-8')
+            locale.setlocale(locale.LC_ALL, "C.UTF-8")
         except locale.Error:
             try:
-                locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+                locale.setlocale(locale.LC_ALL, "en_US.UTF-8")
             except locale.Error:
                 logger.warning("Could not set UTF-8 locale, using system default")
 
         logger.info(f"System encoding: {locale.getpreferredencoding()}")
 
     except Exception as e:
-        logger.error(f"Encoding validation failed: {e}")
+        logger.exception(f"Encoding validation failed: {e}")
         raise
 
 
@@ -113,13 +114,20 @@ _validate_encoding()
 def main() -> None:
     """Bucle principal IPC."""
     # Handshake: report ready so Electron knows the pipe is open
-    print(json.dumps({"jsonrpc": "2.0", "method": "ready", "params": {}}))
-    sys.stdout.flush()
+    send_notification("ready", {"status": "ok"})
 
     logger.info(t("info.backend_ready"))
 
     try:
         while True:
+            if _shutdown_requested:
+                logger.info("Shutdown signal received, exiting...")
+                try:
+                    send_notification("backend.shutdown", {"reason": "signal"})
+                except Exception:
+                    pass
+                break
+
             msg = read_message()
             if msg is None:
                 break  # EOF — pipe closed
@@ -132,7 +140,7 @@ def main() -> None:
                     send_response(result, msg.id)
                 except Exception as exc:
                     error_msg = f"{type(exc).__name__}: {exc}"
-                    logger.error("Error en %s: %s\n%s", msg.method, error_msg, traceback.format_exc())
+                    logger.exception("Error en %s: %s\n%s", msg.method, error_msg, traceback.format_exc())
                     send_response(None, msg.id, error=error_msg)
             else:
                 send_response(None, msg.id, error=f"Método desconocido: {msg.method}")

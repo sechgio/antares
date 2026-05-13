@@ -73,7 +73,8 @@ class TechnicalReportsDB:
     def update(self, report_id: str, report: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
             if str(report_id) not in self._items:
-                raise KeyError(f"Informe no encontrado: {report_id}")
+                msg = f"Informe no encontrado: {report_id}"
+                raise KeyError(msg)
             payload = dict(report)
             payload["id"] = str(report_id)
             normalized = TechnicalReport.normalize(payload)

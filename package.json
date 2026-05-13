@@ -1,8 +1,8 @@
 {
   "name": "cosmo-app",
-  "version": "0.5.9",
+  "version": "0.5.10",
   "description": "Conversor y renombrador profesional de imágenes — nativo de escritorio",
-  "author": "COSMO <dev@cosmo.app>",
+  "author": "ANTARES <dev@cosmo.app>",
   "private": true,
   "main": "electron/main.js",
   "homepage": ".",

@@ -1,6 +1,6 @@
 /**
  * Padron Generator - Vista principal
- * Adaptado al estilo del proyecto principal COSMO
+ * Adaptado al estilo del proyecto principal ANTARES
  */
 import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -57,7 +57,6 @@ async function saveToHistory(runType: string, label: string, details: Record<str
       err_count: 0,
     });
   } catch {
-    // Silently ignore history save errors so main flow is never blocked
   }
 }
 

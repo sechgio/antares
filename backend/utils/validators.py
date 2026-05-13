@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 _EXTENSIONES_IMAGEN: set[str] = {
-    ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif", ".gif", ".ico", ".pdf"
+    ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif", ".gif", ".ico",
 }
 
 
@@ -35,22 +35,19 @@ def sanitizar_nombre(nombre: str | Path) -> str:
     """
     nombre_str = str(nombre).strip()
 
-    # First, check for path traversal attempts
-    if '../' in nombre_str or '..\\' in nombre_str:
+    if "../" in nombre_str or "..\\" in nombre_str:
         # Extract just the filename without path
         nombre_str = Path(nombre_str).name
 
     # Caracteres no permitidos en Windows: < > : " / \ | ? *
     nombre_limpio = re.sub(r'[<>\:"/\\|?*]', "_", nombre_str)
 
-    # Remove control characters (0x00-0x1F, 0x7F)
-    nombre_limpio = re.sub(r'[\x00-\x1F\x7F]', '', nombre_limpio)
+    nombre_limpio = re.sub(r"[\x00-\x1F\x7F]", "", nombre_limpio)
 
-    # Eliminar espacios múltiples
-    nombre_limpio = re.sub(r'\s+', " ", nombre_limpio)
+    nombre_limpio = re.sub(r"\s+", " ", nombre_limpio)
 
     # Prevent names starting with dots (hidden files on Unix)
-    nombre_limpio = nombre_limpio.lstrip('.')
+    nombre_limpio = nombre_limpio.lstrip(".")
 
     return nombre_limpio.strip("_. ")
 
@@ -58,13 +55,21 @@ def sanitizar_nombre(nombre: str | Path) -> str:
 def obtener_codigo_desde_nombre(nombre_archivo: str | Path) -> str:
     """Extrae el código base del nombre del archivo (stem sin extensión).
 
+    Sanitizes path traversal before extracting the stem to prevent
+    directory traversal attacks.
+
     Args:
         nombre_archivo: Nombre o ruta del archivo.
 
     Returns:
-        Stem del archivo como cadena de texto.
+        Stem del archivo como cadena de texto sanitizada.
     """
-    return Path(nombre_archivo).stem
+    # Extract just the filename to neutralize any path components
+    nombre_limpio = Path(nombre_archivo).name
+    # Strip traversal sequences from the filename itself
+    if "../" in nombre_limpio or "..\\" in nombre_limpio:
+        nombre_limpio = nombre_limpio.replace("../", "").replace("..\\", "")
+    return Path(nombre_limpio).stem
 
 
 def parse_filename_parts(nombre_archivo: str | Path) -> tuple[str, str]:

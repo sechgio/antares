@@ -13,17 +13,17 @@ from __future__ import annotations
 
 import re
 import string
-from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from hypothesis import settings as hypothesis_module_settings
 from hypothesis import strategies as st
 
-# ---------------------------------------------------------------------------
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 # Constantes espejo del diseño (se replican para evitar importar `models`
 # antes de que exista). Si el módulo de modelos cambia, actualizar aquí.
-# ---------------------------------------------------------------------------
 
 MAX_IMAGES_PER_PANEL: int = 4
 MAX_EXCEL_ROWS_FOR_TESTS: int = 200  # subset razonable del MAX_EXCEL_ROWS real
@@ -50,9 +50,7 @@ _FILENAME_STEM_ALPHABET = st.characters(
 )
 
 
-# ---------------------------------------------------------------------------
 # Fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -66,14 +64,12 @@ def hypothesis_settings() -> hypothesis_module_settings:
     return hypothesis_module_settings(max_examples=100, deadline=None)
 
 
-# ---------------------------------------------------------------------------
 # Estrategias primitivas
-# ---------------------------------------------------------------------------
 
 
 def _non_empty_text(max_size: int = 32) -> st.SearchStrategy[str]:
     return st.text(alphabet=_TEXT_ALPHABET, min_size=1, max_size=max_size).map(
-        lambda s: s.strip() or "x"
+        lambda s: s.strip() or "x",
     )
 
 
@@ -92,7 +88,7 @@ def filenames(draw: st.DrawFn, *, unique_suffix: bool = False) -> str:
     # casing mixto para el stem (sólo si contiene ascii letters)
     if any(c in string.ascii_letters for c in stem):
         stem = draw(
-            st.sampled_from([stem, stem.upper(), stem.lower(), stem.capitalize()])
+            st.sampled_from([stem, stem.upper(), stem.lower(), stem.capitalize()]),
         )
     name = f"{stem}{ext_casing}"
     if unique_suffix:
@@ -138,23 +134,20 @@ def bulk_image_sets(
     return chosen
 
 
-# ---------------------------------------------------------------------------
 # Estrategias de Excel
-# ---------------------------------------------------------------------------
 
 
 @st.composite
 def column_names(draw: st.DrawFn, *, count: int = 3) -> list[str]:
     """Genera una lista de nombres de columna únicos para un Excel."""
-    base = draw(
+    return draw(
         st.lists(
             _non_empty_text(max_size=24),
             min_size=count,
             max_size=count,
             unique_by=lambda s: s.casefold(),
-        )
+        ),
     )
-    return base
 
 
 @st.composite
@@ -196,7 +189,7 @@ def excel_sources(
         draw(excel_rows(columns=cols)) for _ in range(row_count)
     )
     filename = draw(
-        st.text(alphabet=_FILENAME_STEM_ALPHABET, min_size=1, max_size=24)
+        st.text(alphabet=_FILENAME_STEM_ALPHABET, min_size=1, max_size=24),
     ) + ".xlsx"
     return {
         "filename": filename,
@@ -222,9 +215,7 @@ def _normalize_column(name: str) -> str:
     return cleaned.casefold()
 
 
-# ---------------------------------------------------------------------------
 # Estrategia de reglas de emparejamiento
-# ---------------------------------------------------------------------------
 
 
 @st.composite
@@ -253,8 +244,8 @@ def match_rules(
                     r"(?P<clave>\d+)",
                     r"^img_(?P<clave>[A-Za-z0-9]+)",
                     r"(?P<clave>[A-Za-zÁÉÍÓÚÑáéíóúñ0-9_-]+)",
-                ]
-            )
+                ],
+            ),
         )
         # Sanity check: el patrón debe compilar.
         re.compile(skeleton)
@@ -267,9 +258,7 @@ def match_rules(
     }
 
 
-# ---------------------------------------------------------------------------
 # Estrategia de modos de exportación y paneles
-# ---------------------------------------------------------------------------
 
 
 def export_modes() -> st.SearchStrategy[str]:
@@ -295,7 +284,8 @@ def panel_image_refs(
 ) -> dict[str, Any]:
     """Genera un dict espejo de ``PanelImageRef`` con la posición dada."""
     if not 1 <= position <= MAX_IMAGES_PER_PANEL:
-        raise ValueError("position debe estar en 1..4")
+        msg = "position debe estar en 1..4"
+        raise ValueError(msg)
     filename = draw(filenames())
     addr = direccion if direccion is not None else draw(_non_empty_text(max_size=48))
     caption = f"IMAGEN N°{position}: {addr}"
@@ -319,7 +309,7 @@ def panels(draw: st.DrawFn) -> dict[str, Any]:
         st.one_of(
             _iso_date(),
             st.just(""),
-        )
+        ),
     )
     motivo = draw(_non_empty_text(max_size=120))
 
@@ -330,7 +320,7 @@ def panels(draw: st.DrawFn) -> dict[str, Any]:
             min_size=n_images,
             max_size=n_images,
             unique=True,
-        )
+        ),
     )
     positions.sort()
 
@@ -353,11 +343,11 @@ def panels(draw: st.DrawFn) -> dict[str, Any]:
                     "filename": fallback_name,
                     "caption": f"IMAGEN N°{pos}: placeholder",
                     "position": pos,
-                }
+                },
             )
 
     source_row_index = draw(
-        st.one_of(st.none(), st.integers(min_value=0, max_value=9_999))
+        st.one_of(st.none(), st.integers(min_value=0, max_value=9_999)),
     )
 
     return {

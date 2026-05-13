@@ -24,7 +24,7 @@ def validate_method(method: str) -> bool:
     """Validate that method name is alphanumeric with underscores only."""
     if not method or not isinstance(method, str):
         return False
-    return bool(re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', method))
+    return bool(re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", method))
 
 
 def validate_params(params: dict) -> bool:
@@ -33,7 +33,7 @@ def validate_params(params: dict) -> bool:
         return False
 
     # Check for path traversal attempts using resolved paths
-    for key in ('files', 'destino', 'path', 'folder', 'name'):
+    for key in ("files", "destino", "path", "folder", "name"):
         value = params.get(key)
         if value is None:
             continue
@@ -51,22 +51,23 @@ def _is_path_safe(value: Any) -> bool:
     """Check if a path value is safe (no traversal, valid string).
 
     Rejects explicit traversal sequences (``../`` and ``..\\``), null bytes,
-    URL-encoded traversal, and suspicious absolute-path patterns.
+    and URL-encoded traversal. Windows absolute paths (e.g. ``C:\\...``) are
+    allowed since the Electron layer already constrains path selection via
+    native file dialogs.
     """
     if not isinstance(value, str) or not value:
         return True  # Empty/invalid values handled downstream
     # Reject null bytes (used in injection attacks).
-    if '\x00' in value:
+    if "\x00" in value:
         return False
     # Reject obvious traversal patterns (both POSIX and Windows separators).
-    if '../' in value or '..\\' in value:
+    if "../" in value or "..\\" in value:
         return False
     # Reject URL-encoded traversal patterns (single and double-encoded).
     lowered = value.lower()
-    if '%2e%2e' in lowered or '%252e' in lowered:
+    if "%2e%2e" in lowered or "%252e" in lowered:
         return False
-    # Reject Windows absolute paths that could escape expected roots.
-    return not (len(value) >= 2 and value[1] == ':')
+    return True
 
 # ─── IPC Protocol ────────────────────────────────────────────────────────────
 
@@ -80,9 +81,11 @@ class IPCMessage:
 
         # Validate
         if not validate_method(self.method):
-            raise ValueError(f"Invalid method name: {self.method}")
+            msg = f"Invalid method name: {self.method}"
+            raise ValueError(msg)
         if not validate_params(self.params):
-            raise ValueError("Invalid params: possible path traversal detected")
+            msg = "Invalid params: possible path traversal detected"
+            raise ValueError(msg)
 
     def __repr__(self) -> str:
         return f"IPCMessage(id={self.id}, method={self.method})"
@@ -100,7 +103,7 @@ def send_response(result: Any, msg_id: str | int, *, error: str | None = None) -
         payload["result"] = result
     json_str = json.dumps(payload, ensure_ascii=False, default=_json_default)
     with _stdout_lock:
-        sys.stdout.write(json_str + '\n')
+        sys.stdout.write(json_str + "\n")
         sys.stdout.flush()
 
 
@@ -113,14 +116,15 @@ def send_notification(method: str, params: dict[str, Any]) -> None:
     }
     json_str = json.dumps(payload, ensure_ascii=False, default=_json_default)
     with _stdout_lock:
-        sys.stdout.write(json_str + '\n')
+        sys.stdout.write(json_str + "\n")
         sys.stdout.flush()
 
 
 def _json_default(obj: Any) -> Any:
     if isinstance(obj, Path):
         return str(obj)
-    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+    msg = f"Object of type {type(obj).__name__} is not JSON serializable"
+    raise TypeError(msg)
 
 
 # Sentinel returned on parse errors (not EOF)

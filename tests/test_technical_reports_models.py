@@ -1,7 +1,7 @@
 from backend.core.technical_reports.models import TechnicalReport, create_empty_report
 
 
-def test_empty_report_has_nested_defaults():
+def test_empty_report_has_nested_defaults() -> None:
     report = create_empty_report(1)
 
     assert report["id"] == "RPT-0001"
@@ -11,7 +11,7 @@ def test_empty_report_has_nested_defaults():
     assert report["canastillas"]["aduccion"]["14"] == 0
 
 
-def test_normalize_report_patches_legacy_canastillas():
+def test_normalize_report_patches_legacy_canastillas() -> None:
     report = TechnicalReport.normalize({
         "id": "RPT-0007",
         "metadata": {"informe_id": 7},

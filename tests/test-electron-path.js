@@ -36,14 +36,14 @@ assert(devLinux.cmd.includes('python'), 'Dev mode linux should use python');
 // Test 3: Production mode on win32
 console.log('\nTest 3: Production mode on win32');
 const prodWin = getBackendCommand(false, 'win32');
-assert(prodWin.cmd.includes('CosmoBackend.exe'), 'Prod mode win32 should use .exe');
+assert(prodWin.cmd.includes('AntaresBackend.exe'), 'Prod mode win32 should use .exe');
 assert(prodWin.args.length === 0, 'Prod mode should have no args');
 
 // Test 4: Production mode on linux
 console.log('\nTest 4: Production mode on linux');
 const prodLinux = getBackendCommand(false, 'linux');
 assert(!prodLinux.cmd.includes('.exe'), 'Prod mode linux should not use .exe');
-assert(prodLinux.cmd.includes('CosmoBackend'), 'Prod mode should use CosmoBackend');
+assert(prodLinux.cmd.includes('AntaresBackend'), 'Prod mode should use AntaresBackend');
 assert(prodLinux.args.length === 0, 'Prod mode should have no args');
 
 // Test 5: Fallback paths in dev mode

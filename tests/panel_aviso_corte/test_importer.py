@@ -22,7 +22,7 @@ Validates: Requirements 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.8
 from __future__ import annotations
 
 from io import BytesIO
-from typing import Any, Sequence
+from typing import TYPE_CHECKING, Any
 
 import openpyxl
 import pytest
@@ -31,10 +31,10 @@ from backend.core.panel_aviso_corte.errors import InvalidExcelError
 from backend.core.panel_aviso_corte.importer import parse_excel_bytes
 from backend.core.panel_aviso_corte.models import MAX_EXCEL_ROWS, ExcelSource
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
-# ---------------------------------------------------------------------------
 # Fixtures / helpers de construcción de xlsx en memoria
-# ---------------------------------------------------------------------------
 
 
 def _build_xlsx(rows: Sequence[Sequence[Any]]) -> bytes:
@@ -63,7 +63,7 @@ def valid_xlsx_bytes() -> bytes:
             ["CUAD-01", "2024-01-15", "Mantenimiento", "Av. Principal 100"],
             ["CUAD-02", "2024-01-16", "Reparación", "Av. Secundaria 200"],
             ["CUAD-03", "2024-01-17", "Limpieza", "Pasaje Ñandú 50"],
-        ]
+        ],
     )
 
 
@@ -75,9 +75,7 @@ def header_only_xlsx_bytes() -> bytes:
     )
 
 
-# ---------------------------------------------------------------------------
 # Casos de éxito
-# ---------------------------------------------------------------------------
 
 
 class TestParseValidXlsx:
@@ -87,7 +85,7 @@ class TestParseValidXlsx:
         assert result.filename == "datos.xlsx"
 
     def test_preserves_original_columns_in_order(
-        self, valid_xlsx_bytes: bytes
+        self, valid_xlsx_bytes: bytes,
     ) -> None:
         result = parse_excel_bytes(valid_xlsx_bytes, "datos.xlsx")
         assert result.columns == (
@@ -98,7 +96,7 @@ class TestParseValidXlsx:
         )
 
     def test_normalizes_column_names_removing_accents_and_casefolding(
-        self, valid_xlsx_bytes: bytes
+        self, valid_xlsx_bytes: bytes,
     ) -> None:
         result = parse_excel_bytes(valid_xlsx_bytes, "datos.xlsx")
         assert result.normalized_columns == (
@@ -113,7 +111,7 @@ class TestParseValidXlsx:
             [
                 ["Motivo (principal):", "Número N°", "Fecha / Hora"],
                 ["A", "1", "2024-01-15"],
-            ]
+            ],
         )
         result = parse_excel_bytes(content, "x.xlsx")
         assert result.normalized_columns == (
@@ -123,7 +121,7 @@ class TestParseValidXlsx:
         )
 
     def test_rows_indexed_by_original_column_name(
-        self, valid_xlsx_bytes: bytes
+        self, valid_xlsx_bytes: bytes,
     ) -> None:
         result = parse_excel_bytes(valid_xlsx_bytes, "datos.xlsx")
         assert len(result.rows) == 3
@@ -145,7 +143,7 @@ class TestParseValidXlsx:
                 ["CODIGO", "VALOR"],
                 [123, 4.5],
                 [456, 7],
-            ]
+            ],
         )
         result = parse_excel_bytes(content, "x.xlsx")
         assert result.rows[0]["CODIGO"] == "123"
@@ -159,7 +157,7 @@ class TestParseValidXlsx:
                 ["A", "B", "C"],
                 ["v1", None, "v3"],
                 [None, None, "v3b"],
-            ]
+            ],
         )
         result = parse_excel_bytes(content, "x.xlsx")
         assert result.rows[0] == {"A": "v1", "B": "", "C": "v3"}
@@ -173,7 +171,7 @@ class TestParseValidXlsx:
                 [None, None],
                 ["v3", "v4"],
                 [None, None],
-            ]
+            ],
         )
         result = parse_excel_bytes(content, "x.xlsx")
         # sólo quedan 2 filas con datos reales
@@ -185,7 +183,7 @@ class TestParseValidXlsx:
         assert any("omitieron" in w.lower() for w in result.warnings)
 
     def test_warnings_is_empty_tuple_when_no_empty_rows(
-        self, valid_xlsx_bytes: bytes
+        self, valid_xlsx_bytes: bytes,
     ) -> None:
         result = parse_excel_bytes(valid_xlsx_bytes, "datos.xlsx")
         assert result.warnings == ()
@@ -196,9 +194,7 @@ class TestParseValidXlsx:
         assert result.filename == "DATOS.XLSX"
 
 
-# ---------------------------------------------------------------------------
 # Errores: extensión (Req 6.2)
-# ---------------------------------------------------------------------------
 
 
 class TestInvalidExtension:
@@ -213,25 +209,23 @@ class TestInvalidExtension:
         ],
     )
     def test_rejects_non_xlsx_extension(
-        self, valid_xlsx_bytes: bytes, bad_name: str
+        self, valid_xlsx_bytes: bytes, bad_name: str,
     ) -> None:
         with pytest.raises(
-            InvalidExcelError, match=r"^Solo se admiten archivos \.xlsx$"
+            InvalidExcelError, match=r"^Solo se admiten archivos \.xlsx$",
         ):
             parse_excel_bytes(valid_xlsx_bytes, bad_name)
 
 
-# ---------------------------------------------------------------------------
 # Errores: archivo sin filas (Req 6.5)
-# ---------------------------------------------------------------------------
 
 
 class TestNoDataRows:
     def test_header_only_file_rejected(
-        self, header_only_xlsx_bytes: bytes
+        self, header_only_xlsx_bytes: bytes,
     ) -> None:
         with pytest.raises(
-            InvalidExcelError, match=r"^El Excel no contiene filas de datos$"
+            InvalidExcelError, match=r"^El Excel no contiene filas de datos$",
         ):
             parse_excel_bytes(header_only_xlsx_bytes, "vacio.xlsx")
 
@@ -241,17 +235,15 @@ class TestNoDataRows:
                 ["A", "B"],
                 [None, None],
                 [None, None],
-            ]
+            ],
         )
         with pytest.raises(
-            InvalidExcelError, match=r"^El Excel no contiene filas de datos$"
+            InvalidExcelError, match=r"^El Excel no contiene filas de datos$",
         ):
             parse_excel_bytes(content, "vacio.xlsx")
 
 
-# ---------------------------------------------------------------------------
 # Errores: límite de filas (Req 6.8)
-# ---------------------------------------------------------------------------
 
 
 class TestRowLimit:
@@ -275,21 +267,19 @@ class TestRowLimit:
             parse_excel_bytes(content, "huge.xlsx")
 
 
-# ---------------------------------------------------------------------------
 # Errores: archivo corrupto o ilegible (Req 6.6)
-# ---------------------------------------------------------------------------
 
 
 class TestUnreadableFile:
     def test_not_an_xlsx_bytes_are_rejected(self) -> None:
         with pytest.raises(
-            InvalidExcelError, match=r"^No se pudo leer el archivo Excel:"
+            InvalidExcelError, match=r"^No se pudo leer el archivo Excel:",
         ):
             parse_excel_bytes(b"not-a-real-xlsx-just-plain-text", "datos.xlsx")
 
     def test_empty_bytes_are_rejected(self) -> None:
         with pytest.raises(
-            InvalidExcelError, match=r"^No se pudo leer el archivo Excel:"
+            InvalidExcelError, match=r"^No se pudo leer el archivo Excel:",
         ):
             parse_excel_bytes(b"", "datos.xlsx")
 
@@ -298,20 +288,18 @@ class TestUnreadableFile:
         # truncado → openpyxl lanzará BadZipFile.
         truncated = b"PK\x03\x04" + b"\x00" * 20
         with pytest.raises(
-            InvalidExcelError, match=r"^No se pudo leer el archivo Excel:"
+            InvalidExcelError, match=r"^No se pudo leer el archivo Excel:",
         ):
             parse_excel_bytes(truncated, "datos.xlsx")
 
     def test_non_bytes_content_is_rejected(self) -> None:
         with pytest.raises(
-            InvalidExcelError, match=r"^No se pudo leer el archivo Excel:"
+            InvalidExcelError, match=r"^No se pudo leer el archivo Excel:",
         ):
             parse_excel_bytes("not bytes", "datos.xlsx")  # type: ignore[arg-type]
 
 
-# ---------------------------------------------------------------------------
 # Errores: cabecera inválida / columnas duplicadas (Req 6.6)
-# ---------------------------------------------------------------------------
 
 
 class TestInvalidHeader:
@@ -320,10 +308,10 @@ class TestInvalidHeader:
             [
                 ["A", None, "C"],
                 ["v1", "v2", "v3"],
-            ]
+            ],
         )
         with pytest.raises(
-            InvalidExcelError, match=r"^No se pudo leer el archivo Excel:"
+            InvalidExcelError, match=r"^No se pudo leer el archivo Excel:",
         ):
             parse_excel_bytes(content, "datos.xlsx")
 
@@ -332,10 +320,10 @@ class TestInvalidHeader:
             [
                 ["A", "   ", "C"],
                 ["v1", "v2", "v3"],
-            ]
+            ],
         )
         with pytest.raises(
-            InvalidExcelError, match=r"^No se pudo leer el archivo Excel:"
+            InvalidExcelError, match=r"^No se pudo leer el archivo Excel:",
         ):
             parse_excel_bytes(content, "datos.xlsx")
 
@@ -345,7 +333,7 @@ class TestInvalidHeader:
             [
                 ["Dirección", "DIRECCION"],
                 ["calle 1", "calle 2"],
-            ]
+            ],
         )
         with pytest.raises(
             InvalidExcelError,

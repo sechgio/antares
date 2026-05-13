@@ -48,12 +48,15 @@ def _ensure_table() -> None:
                 ok_count INTEGER DEFAULT 0,
                 err_count INTEGER DEFAULT 0
             )
-            """
+            """,
         )
         try:
             conn.execute("SELECT run_type FROM historial LIMIT 1")
         except sqlite3.OperationalError:
-            conn.execute("ALTER TABLE historial ADD COLUMN run_type TEXT NOT NULL DEFAULT 'conversion'")
+            # Add column as nullable first (safe across all SQLite versions)
+            conn.execute("ALTER TABLE historial ADD COLUMN run_type TEXT")
+            # Backfill existing rows with the default value
+            conn.execute("UPDATE historial SET run_type = 'conversion' WHERE run_type IS NULL")
             conn.commit()
 
 
@@ -105,12 +108,12 @@ def list_runs(run_type: str | None = None, limit: int = 50, offset: int = 0) -> 
         if run_type:
             rows = conn.execute(
                 "SELECT * FROM historial WHERE run_type = ? ORDER BY timestamp DESC LIMIT ? OFFSET ?",
-                (run_type, limit, offset)
+                (run_type, limit, offset),
             ).fetchall()
         else:
             rows = conn.execute(
                 "SELECT * FROM historial ORDER BY timestamp DESC LIMIT ? OFFSET ?",
-                (limit, offset)
+                (limit, offset),
             ).fetchall()
     return [dict(r) for r in rows]
 

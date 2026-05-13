@@ -289,7 +289,6 @@ function processJinja2Template(
 ): string {
   const imageCount = images.length;
 
-  // Preparar reportData
   const reportData: Record<string, string> = {};
   if (data && mappings) {
     Object.keys(mappings).forEach(key => {
@@ -316,12 +315,10 @@ function processJinja2Template(
     });
   }
 
-  // Panel count (emergencias)
   const panelCount = Math.min(images.length, 4);
   html = html.replace(/\{\{\s*panel_count\s*\}\}/g, String(panelCount));
   html = html.replace(/\{%\s*set\s+panel_count\s*=[\s\S]*?%\}/g, '');
 
-  // Image count conditionals
   const processIfBlocks = () => {
     const patterns = [
       { regex: /\{%\s*if\s+report\.images\|length\s*==\s*(\d+)\s*%\}((?:(?!\{%\s*else\s*%)\[\s\S\])*?)\{%\s*endif\s*%\}/g, handler: (_m: string, count: string, content: string) => imageCount === parseInt(count, 10) ? content : '' },
@@ -341,7 +338,6 @@ function processJinja2Template(
   };
   processIfBlocks();
 
-  // img_count variable
   html = html.replace(/\{%\s*set\s+img_count\s*=\s*report\.images\|length\s*%\}/g, '');
   const imgCountPatterns = [
     { regex: /\{%\s*if\s+img_count\s*==\s*(\d+)\s*%\}([\s\S]*?)\{%\s*elif\s+img_count\s*==\s*(\d+)\s*%\}([\s\S]*?)\{%\s*else\s*%\}([\s\S]*?)\{%\s*endif\s*%\}/g, handler: (_m: string, c1: string, content1: string, c2: string, content2: string, elseContent: string) => { if (imageCount === parseInt(c1, 10)) return content1; if (imageCount === parseInt(c2, 10)) return content2; return elseContent; } },
@@ -353,22 +349,18 @@ function processJinja2Template(
     html = html.replace(regex, handler as (...args: string[]) => string);
   });
 
-  // Image presence blocks
   html = html.replace(/\{%\s*if\s+report\.images\s+and\s+report\.images\|length\s*>\s*0\s*%\}([\s\S]*?)\{%\s*else\s*%\}([\s\S]*?)\{%\s*endif\s*%\}/g, (_m, ifContent, elseContent) => imageCount > 0 ? ifContent : elseContent);
   html = html.replace(/\{%\s*if\s+report\.images\s*%\}([\s\S]*?)\{%\s*else\s*%\}([\s\S]*?)\{%\s*endif\s*%\}/g, (_m, ifContent, elseContent) => imageCount > 0 ? ifContent : elseContent);
 
-  // Logos
   html = html.replace(/\{%\s*if\s+logo_left\s*%\}([\s\S]*?)\{%\s*else\s*%\}([\s\S]*?)\{%\s*endif\s*%\}/g, (_m, ifPart, elsePart) => logoLeft ? ifPart : elsePart);
   html = html.replace(/\{%\s*if\s+logo_right\s*%\}([\s\S]*?)\{%\s*else\s*%\}([\s\S]*?)\{%\s*endif\s*%\}/g, (_m, ifPart, elsePart) => logoRight ? ifPart : elsePart);
   html = html.replace(/\{%\s*if\s+logo_left\s*%\}([\s\S]*?)\{%\s*endif\s*%\}/g, (_m, content) => logoLeft ? content : '');
   html = html.replace(/\{%\s*if\s+logo_right\s*%\}([\s\S]*?)\{%\s*endif\s*%\}/g, (_m, content) => logoRight ? content : '');
 
-  // Simple replacements
   html = html.split('{{ title }}').join('PANEL FOTOGRÁFICO VOLANTEO');
   html = html.split('{{ logo_left }}').join(logoLeft || EMPTY_PIXEL);
   html = html.split('{{ logo_right }}').join(logoRight || EMPTY_PIXEL);
 
-  // report.data.get(...)
   let prev = '';
   while (html !== prev) {
     prev = html;
@@ -384,7 +376,6 @@ function processJinja2Template(
     });
   }
 
-  // Direct image access
   html = html.replace(/\{\{\s*report\.images\[(\d+)\]\.(path|name)\s*\}\}/g, (_m, idxStr, prop) => {
     const idx = parseInt(idxStr);
     if (images[idx]) {
@@ -394,7 +385,6 @@ function processJinja2Template(
     return '';
   });
 
-  // Image loops
   const loopRegex = /\{%\s*for\s+img\s+in\s+report\.images.*?\s*%\}([\s\S]*?)\{%\s*endfor\s*%\}/g;
   let loopIdx = 0;
   const matches = [...html.matchAll(loopRegex)];
@@ -436,20 +426,16 @@ function processJinja2Template(
     loopIdx++;
   }
 
-  // Remove outer loops
   html = html.replace(/\{%\s*for\s+report\s+in\s+.*%\}/g, '');
 
-  // Range loops
   html = html.replace(/\{%\s*for\s+i\s+in\s+range\(report\.images\|length,\s*(\d+)\)\s*%\}([\s\S]*?)(?:\{%\s*endfor\s*%\}|$)/g, (_m, max, content) => {
     const remaining = parseInt(max) - images.length;
     return remaining > 0 ? content.repeat(remaining) : '';
   });
 
-  // Clean remaining Jinja2
   html = html.replace(/\{%\s*[\s\S]*?\s*%\}/g, '');
   html = html.replace(/\{#.*?#\}/g, '');
 
-  // Remove "Sin imagen" placeholders when images exist
   if (images.length > 0) {
     html = html.replace(/<div class="photo-placeholder">\s*Sin imagen\s*<\/div>/g, '');
   }
@@ -479,7 +465,6 @@ function renderCustomTemplate(
   return html;
 }
 
-// Default preview (no custom template)
 function renderDefaultPreview(
   data: Record<string, unknown> | null | undefined,
   images: File[],
@@ -637,7 +622,6 @@ const PreviewPanel = forwardRef<HTMLIFrameElement, PreviewPanelProps>(
     const [imageUrls, setImageUrls] = useState<string[]>([]);
     const templateObjUrlsRef = useRef<string[]>([]);
 
-    // Create object URLs for images
     useEffect(() => {
       if (!images || images.length === 0) {
         setImageUrls([]);
@@ -648,7 +632,6 @@ const PreviewPanel = forwardRef<HTMLIFrameElement, PreviewPanelProps>(
       return () => urls.forEach(url => URL.revokeObjectURL(url));
     }, [images]);
 
-    // Render template
     useEffect(() => {
       // Revoke old template object URLs
       templateObjUrlsRef.current.forEach(url => URL.revokeObjectURL(url));

@@ -11,7 +11,7 @@ from backend.core.config_fields import (
 
 
 class TestConfigFields:
-    def test_load_fields_retorna_defaults_sin_archivo(self, monkeypatch, tmp_path):
+    def test_load_fields_retorna_defaults_sin_archivo(self, monkeypatch, tmp_path) -> None:
         monkeypatch.setattr(
             "backend.core.config_fields._config_file",
             lambda: tmp_path / "no_existe.json",
@@ -20,7 +20,7 @@ class TestConfigFields:
         assert len(fields) == len(DEFAULT_FIELDS)
         assert fields[0]["name"] == "codigo"
 
-    def test_save_y_load_roundtrip(self, monkeypatch, tmp_path):
+    def test_save_y_load_roundtrip(self, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"
         monkeypatch.setattr(
             "backend.core.config_fields._config_file",
@@ -39,7 +39,7 @@ class TestConfigFields:
         assert loaded[0]["required"] is True
         assert loaded[1]["name"] == "titulo"
 
-    def test_get_field_names(self, monkeypatch, tmp_path):
+    def test_get_field_names(self, monkeypatch, tmp_path) -> None:
         monkeypatch.setattr(
             "backend.core.config_fields._config_file",
             lambda: tmp_path / "fields_config.json",
@@ -47,7 +47,7 @@ class TestConfigFields:
         save_fields([{"name": "a", "type": "TEXT"}, {"name": "b", "type": "INTEGER"}])
         assert get_field_names() == ["a", "b"]
 
-    def test_get_required_fields(self, monkeypatch, tmp_path):
+    def test_get_required_fields(self, monkeypatch, tmp_path) -> None:
         monkeypatch.setattr(
             "backend.core.config_fields._config_file",
             lambda: tmp_path / "fields_config.json",
@@ -58,7 +58,7 @@ class TestConfigFields:
         ])
         assert get_required_fields() == ["a"]
 
-    def test_get_unique_fields(self, monkeypatch, tmp_path):
+    def test_get_unique_fields(self, monkeypatch, tmp_path) -> None:
         monkeypatch.setattr(
             "backend.core.config_fields._config_file",
             lambda: tmp_path / "fields_config.json",
@@ -69,7 +69,7 @@ class TestConfigFields:
         ])
         assert get_unique_fields() == ["a"]
 
-    def test_corrupt_json_retorna_defaults(self, monkeypatch, tmp_path):
+    def test_corrupt_json_retorna_defaults(self, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"
         config_path.write_text("NO ES JSON")
         monkeypatch.setattr(
@@ -79,7 +79,7 @@ class TestConfigFields:
         fields = load_fields()
         assert fields[0]["name"] == "codigo"
 
-    def test_normaliza_nombres_minusculas(self, monkeypatch, tmp_path):
+    def test_normaliza_nombres_minusculas(self, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"
         monkeypatch.setattr(
             "backend.core.config_fields._config_file",

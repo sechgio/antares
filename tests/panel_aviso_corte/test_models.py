@@ -25,10 +25,7 @@ from backend.core.panel_aviso_corte.models import (
     PanelImageRef,
 )
 
-
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 
 
 def _ref(position: int, *, filename: str | None = None, direccion: str = "Calle X") -> PanelImageRef:
@@ -39,9 +36,7 @@ def _ref(position: int, *, filename: str | None = None, direccion: str = "Calle 
     )
 
 
-# ---------------------------------------------------------------------------
 # Constantes del módulo
-# ---------------------------------------------------------------------------
 
 
 class TestModuleConstants:
@@ -58,9 +53,7 @@ class TestModuleConstants:
         assert MAX_IMAGE_BYTES == 15 * 1024 * 1024
 
 
-# ---------------------------------------------------------------------------
 # PanelImageRef: caption + position (I3)
-# ---------------------------------------------------------------------------
 
 
 class TestPanelImageRefCaption:
@@ -80,23 +73,26 @@ class TestPanelImageRefCaption:
                 position=1,
             )
 
-    def test_invalid_caption_position_out_of_range_raises(self) -> None:
-        # "N°5" no coincide con el regex (sólo 1..4).
-        with pytest.raises(InvalidPanelError, match="caption"):
-            PanelImageRef(
-                filename="foto.jpg",
-                caption="IMAGEN N°5: direccion",
-                position=1,
-            )
+    def test_caption_with_number_above_4_is_valid(self) -> None:
+        # El número de caption ya no está limitado a 1..4; es un
+        # secuencial global (I3 relajado).
+        ref = PanelImageRef(
+            filename="foto.jpg",
+            caption="IMAGEN N°5: direccion",
+            position=1,
+        )
+        assert ref.position == 1
+        assert ref.caption == "IMAGEN N°5: direccion"
 
-    def test_caption_number_mismatched_with_position_raises(self) -> None:
-        # Caption dice N°2 pero position=3: I3 exige que coincidan.
-        with pytest.raises(InvalidPanelError, match="caption"):
-            PanelImageRef(
-                filename="foto.jpg",
-                caption="IMAGEN N°2: direccion",
-                position=3,
-            )
+    def test_caption_number_mismatched_with_position_is_valid(self) -> None:
+        # Ya no se exige que el número del caption coincida con position
+        # (I3 relajado: caption es secuencial global, position es 1..4).
+        ref = PanelImageRef(
+            filename="foto.jpg",
+            caption="IMAGEN N°42: direccion",
+            position=3,
+        )
+        assert ref.position == 3
 
     def test_empty_filename_raises(self) -> None:
         with pytest.raises(InvalidPanelError, match="filename"):
@@ -116,21 +112,13 @@ class TestPanelImageRefCaption:
             )
 
 
-# ---------------------------------------------------------------------------
 # Panel: capacidad y posiciones (I1 + I2) y fecha (I4)
-# ---------------------------------------------------------------------------
 
 
 class TestPanelCapacityAndPositions:
     def test_panel_with_5_images_raises(self) -> None:
         """I1: más de 4 imágenes debe lanzar InvalidPanelError."""
-        refs = tuple(_ref(p) for p in [1, 2, 3, 4]) + (
-            PanelImageRef(
-                filename="extra.jpg",
-                caption="IMAGEN N°4: extra",
-                position=4,
-            ),
-        )
+        refs = (*tuple(_ref(p) for p in [1, 2, 3, 4]), PanelImageRef(filename="extra.jpg", caption="IMAGEN N°4: extra", position=4))
         with pytest.raises(InvalidPanelError, match="imagenes"):
             Panel(
                 cuadrante="CUAD-1",
@@ -151,7 +139,7 @@ class TestPanelCapacityAndPositions:
             )
 
     def test_panel_with_0_to_4_images_is_valid(self) -> None:
-        for count in range(0, MAX_IMAGES_PER_PANEL + 1):
+        for count in range(MAX_IMAGES_PER_PANEL + 1):
             refs = tuple(_ref(p) for p in range(1, count + 1))
             panel = Panel(
                 cuadrante="CUAD-1",
@@ -250,9 +238,7 @@ class TestPanelSourceRowIndex:
             )
 
 
-# ---------------------------------------------------------------------------
 # MatchRule: regex con grupo (?P<clave>...) (I6)
-# ---------------------------------------------------------------------------
 
 
 class TestMatchRule:
@@ -319,9 +305,7 @@ class TestMatchRule:
             )
 
 
-# ---------------------------------------------------------------------------
 # Inmutabilidad de los dataclasses (frozen=True)
-# ---------------------------------------------------------------------------
 
 
 class TestFrozenDataclasses:

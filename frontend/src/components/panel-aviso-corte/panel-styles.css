@@ -152,3 +152,61 @@
   font-style: italic;
   font-size: 9pt;
 }
+
+/* ── Sidebar export controls ── */
+
+.pac-sidebar-export__row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.pac-sidebar-export__select {
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s;
+  outline: none;
+}
+
+.pac-sidebar-export__select:focus {
+  border-color: var(--accent-primary);
+}
+
+.pac-sidebar-export__btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent-primary);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.pac-sidebar-export__btn:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.pac-sidebar-export__btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.pac-sidebar-export__btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+

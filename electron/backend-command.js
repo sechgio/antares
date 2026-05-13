@@ -13,7 +13,6 @@ const path = require('path');
  */
 function getBackendCommand(isDev, platform, dir) {
   if (isDev) {
-    // Build platform-specific Python paths
     const pythonPaths = [];
     
     if (dir) {
@@ -24,7 +23,6 @@ function getBackendCommand(isDev, platform, dir) {
       }
     }
     
-    // Add system Python fallbacks
     pythonPaths.push('python3', 'python');
     
     const script = dir ? path.join(dir, '..', 'backend', 'main.py') : null;
@@ -33,10 +31,9 @@ function getBackendCommand(isDev, platform, dir) {
     return { cmd: pythonPaths[0], args: script ? [script] : [] };
   }
   
-  // Production: use PyInstaller bundled executable
   const exeName = platform === 'win32'
-    ? 'CosmoBackend.exe'
-    : 'CosmoBackend';
+    ? 'AntaresBackend.exe'
+    : 'AntaresBackend';
   
   // In production, resourcesPath would be provided; for testing, use a default
   const resourcesPath = typeof process !== 'undefined' && process.resourcesPath 

@@ -27,10 +27,7 @@ from backend.core.panel_aviso_corte.serialization import (
     serialize_panel,
 )
 
-
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 
 
 def _ref(
@@ -68,9 +65,7 @@ def _valid_payload() -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
 # serialize_panel: forma del dict
-# ---------------------------------------------------------------------------
 
 
 class TestSerializeReturnsJsonFriendlyDict:
@@ -123,9 +118,7 @@ class TestSerializeReturnsJsonFriendlyDict:
         assert reloaded["imagenes"][0]["position"] == 1
 
 
-# ---------------------------------------------------------------------------
 # Round-trip: ejemplos fijos (Req 13.3 / 14.4)
-# ---------------------------------------------------------------------------
 
 
 class TestRoundTripFixedExamples:
@@ -202,9 +195,7 @@ class TestRoundTripFixedExamples:
         assert result.imagenes[1].caption == "IMAGEN N°2: Pasaje Ñirehuao s/n"
 
 
-# ---------------------------------------------------------------------------
 # Errores: campos obligatorios faltantes (Req 13.4)
-# ---------------------------------------------------------------------------
 
 
 class TestDeserializeMissingRequiredFields:
@@ -236,9 +227,7 @@ class TestDeserializeMissingRequiredFields:
             deserialize_panel(data)
 
 
-# ---------------------------------------------------------------------------
 # Errores: tipos inválidos (Req 13.4)
-# ---------------------------------------------------------------------------
 
 
 class TestDeserializeInvalidImagenesType:
@@ -279,7 +268,7 @@ class TestDeserializeInvalidImageRef:
     def test_image_ref_missing_position_raises(self) -> None:
         data = _valid_payload()
         data["imagenes"] = [
-            {"filename": "img_1.jpg", "caption": "IMAGEN N°1: Calle X"}
+            {"filename": "img_1.jpg", "caption": "IMAGEN N°1: Calle X"},
         ]
         with pytest.raises(InvalidPanelError, match="position"):
             deserialize_panel(data)
@@ -299,7 +288,7 @@ class TestDeserializeInvalidImageRef:
                 "filename": "img_1.jpg",
                 "caption": "IMAGEN N°1: Calle X",
                 "position": bad_position,
-            }
+            },
         ]
         with pytest.raises(InvalidPanelError, match="position"):
             deserialize_panel(data)

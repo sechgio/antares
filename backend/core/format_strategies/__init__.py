@@ -1,5 +1,6 @@
 """Format strategy interface and registry for PDF generation."""
 from __future__ import annotations
+
 from typing import Any, Protocol
 
 
@@ -18,13 +19,14 @@ def register_strategy(name: str, strategy: FormatStrategy) -> None:
 
 def get_strategy(name: str) -> FormatStrategy:
     if name not in _strategies:
-        raise ValueError(f"Unknown strategy: {name}")
+        msg = f"Unknown strategy: {name}"
+        raise ValueError(msg)
     return _strategies[name]
 
 
 # Register built-in strategies
 from backend.core.format_strategies.legacy_xobject import LegacyXObjectStrategy
-from backend.core.format_strategies.visual_overlay import VisualOverlayStrategy, SimpleOverlayStrategy
+from backend.core.format_strategies.visual_overlay import SimpleOverlayStrategy, VisualOverlayStrategy
 
 register_strategy("legacy_xobject", LegacyXObjectStrategy())
 register_strategy("visual_overlay", VisualOverlayStrategy())

@@ -17,6 +17,7 @@ export function useProcessRunner() {
 
   useEffect(() => {
     const unsub = onNotify((method, params) => {
+      if (!params || typeof params !== 'object' || Array.isArray(params)) return;
       const p = params as Record<string, unknown>;
       if (method === 'process.progress') {
         setStatus((prev) => prev ? { ...prev, ...p } as ProcessStatus : null);

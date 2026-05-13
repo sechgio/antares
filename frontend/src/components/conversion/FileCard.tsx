@@ -9,7 +9,6 @@ interface FileCardProps {
   onClick: (e: React.MouseEvent) => void;
   onDoubleClick: (e: React.MouseEvent) => void;
   onRemove: (e: React.MouseEvent) => void;
-  index: number;
   isVideo?: boolean;
 }
 

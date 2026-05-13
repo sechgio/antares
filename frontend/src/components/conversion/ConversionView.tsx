@@ -68,22 +68,27 @@ export default function ConversionView() {
     setNamingMode(config.namingMode);
   }, []);
 
-  // History reexecute listener
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (e.data?.type === 'HISTORY_REEXECUTE') {
         const run = e.data.payload;
-        const f = JSON.parse(run.files_json || '[]');
-        const options = JSON.parse(run.options_json || '{}');
+        let f: string[] = [];
+        let options: Record<string, unknown> = {};
+        try {
+          f = JSON.parse(run.files_json || '[]') as string[];
+        } catch { /* keep default */ }
+        try {
+          options = JSON.parse(run.options_json || '{}') as Record<string, unknown>;
+        } catch { /* keep default */ }
         setFiles(f);
-        setFormato(options.formato || 'JPEG');
-        setCalidad(options.calidad || 95);
+        setFormato((options.formato as string) || 'JPEG');
+        setCalidad((options.calidad as number) || 95);
         setConversionEnabled(options.conversion_enabled !== false);
         setPatron(run.patron || '');
         setUsarRename(options.usar_rename !== false && Boolean(run.patron));
         setNamingMode(options.usar_rename === false ? 'keep' : 'custom');
         if (options.resize) {
-          const parts = options.resize.replace(/[()\[\]]/g, '').split(',');
+          const parts = (options.resize as string).replace(/[()\[\]]/g, '').split(',');
           if (parts.length === 2) {
             setResizeAncho(parts[0].trim());
             setResizeAlto(parts[1].trim());
@@ -96,27 +101,43 @@ export default function ConversionView() {
     return () => window.removeEventListener('message', onMessage);
   }, []);
 
-  // Initial data load
   useEffect(() => {
     let cancelled = false;
-    api.formats().then((r) => { if (!cancelled) setFormats(r.formats.length ? r.formats : DEFAULT_FORMATS); }).catch(() => { if (!cancelled) setFormats(DEFAULT_FORMATS); });
-    api.getFields().then((r) => {
+
+    Promise.allSettled([
+      api.formats(),
+      api.getFields(),
+      api.getRenamePatterns(),
+    ]).then(([fmtResult, fieldsResult, patternsResult]) => {
       if (cancelled) return;
-      const names = r.fields.map((f) => f.name);
-      const effectiveNames = names.length ? names : DEFAULT_FIELDS;
-      setFields(effectiveNames);
-      const defaultPat = effectiveNames.length >= 2 ? `{${effectiveNames[0]}}_${effectiveNames[1]}_{seq}{ext}` : `{${effectiveNames[0]}}_{seq}{ext}`;
-      setPatron(defaultPat);
-      setNamingMode(effectiveNames.length >= 2 ? 'code_name' : 'code_seq');
-    }).catch(() => {
-      if (cancelled) return;
-      setFields(DEFAULT_FIELDS);
-      setPatron(DEFAULT_PATTERN);
-      setNamingMode('code_name');
+
+      if (fmtResult.status === 'fulfilled') {
+        const r = fmtResult.value;
+        setFormats(r.formats.length ? r.formats : DEFAULT_FORMATS);
+      } else {
+        setFormats(DEFAULT_FORMATS);
+      }
+
+      if (fieldsResult.status === 'fulfilled') {
+        const r = fieldsResult.value;
+        const names = r.fields.map((f) => f.name);
+        const effectiveNames = names.length ? names : DEFAULT_FIELDS;
+        setFields(effectiveNames);
+        const defaultPat = effectiveNames.length >= 2 ? `{${effectiveNames[0]}}_${effectiveNames[1]}_{seq}{ext}` : `{${effectiveNames[0]}}_{seq}{ext}`;
+        setPatron(defaultPat);
+        setNamingMode(effectiveNames.length >= 2 ? 'code_name' : 'code_seq');
+      } else {
+        setFields(DEFAULT_FIELDS);
+        setPatron(DEFAULT_PATTERN);
+        setNamingMode('code_name');
+      }
+
+      if (patternsResult.status === 'fulfilled') {
+        const r = patternsResult.value;
+        if (r.patterns && r.patterns.length > 0) setPatterns(r.patterns);
+      }
     });
-    api.getRenamePatterns().then((r) => {
-      if (!cancelled && r.patterns && r.patterns.length > 0) setPatterns(r.patterns);
-    }).catch(() => {});
+
     pollStatus();
     return () => { cancelled = true; };
   }, []);
@@ -163,7 +184,6 @@ export default function ConversionView() {
     setPatron(preset.pattern);
   };
 
-  // Detect videos
   useEffect(() => {
     const videoSet = new Set<string>();
     for (const file of files) {
@@ -177,8 +197,8 @@ export default function ConversionView() {
     await startProcess({
       files, destino, formato, calidad,
       conversion_enabled: conversionEnabled,
-      resize_ancho: resizeAncho ? parseInt(resizeAncho) : null,
-      resize_alto: resizeAlto ? parseInt(resizeAlto) : null,
+      resize_ancho: parsePositiveInt(resizeAncho),
+      resize_alto: parsePositiveInt(resizeAlto),
       keep_exif: keepExif, usar_rename: usarRename, patron, secuencia,
       use_filename_seq: useFilenameSeq,
     });
@@ -320,13 +340,10 @@ export default function ConversionView() {
         ) : undefined}
       />
 
-      {/* Main Content */}
       {!isEmpty && (
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-12">
-          {/* Left Column: Files */}
           <div className="flex min-h-0 flex-col gap-4 xl:col-span-7 2xl:col-span-8">
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
-              {/* Files Header */}
               <div className="flex shrink-0 items-center justify-between border-b border-[var(--border-subtle)] px-5 py-3.5">
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-2">
@@ -363,7 +380,6 @@ export default function ConversionView() {
                 </div>
               </div>
 
-              {/* File Grid */}
               <div className="flex-1 overflow-hidden p-4">
                 <FileGrid
                   files={files}
@@ -376,7 +392,6 @@ export default function ConversionView() {
                 />
               </div>
 
-              {/* File Grid Footer */}
               <div className="shrink-0 flex items-center justify-between border-t border-[var(--border-subtle)] px-5 py-2.5 bg-[var(--bg-elevated)]/30">
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
@@ -404,9 +419,7 @@ export default function ConversionView() {
             </div>
           </div>
 
-          {/* Right Column: Options */}
           <div className="grid min-h-0 content-start gap-4 xl:col-span-5 2xl:col-span-4 overflow-y-auto pr-1">
-            {/* Status indicators */}
             <div className="flex items-center gap-2">
               <div className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium transition-colors ${
                 optionsReady
@@ -479,7 +492,6 @@ export default function ConversionView() {
         </div>
       )}
 
-      {/* Database section */}
       <div className="border-t border-[var(--border-subtle)] pt-4">
         <button
           onClick={() => setShowDatabase(!showDatabase)}

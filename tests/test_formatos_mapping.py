@@ -3,7 +3,7 @@ import json
 from backend.core import formatos
 
 
-def test_update_mapping_persists_catalog_without_closed_file(tmp_path, monkeypatch):
+def test_update_mapping_persists_catalog_without_closed_file(tmp_path, monkeypatch) -> None:
     catalog_path = tmp_path / "catalog.json"
     mapping = {
         "page": 0,

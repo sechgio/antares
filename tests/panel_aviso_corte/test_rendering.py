@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import base64
-
 import pytest
 
 from backend.core.panel_aviso_corte import Panel, PanelImageRef, render_docx, render_pdf

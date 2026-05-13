@@ -5,7 +5,7 @@ from openpyxl import Workbook
 from backend.core.technical_reports.importer import import_reports_from_bytes, normalize_header_value
 
 
-def test_csv_semicolon_import_maps_human_headers():
+def test_csv_semicolon_import_maps_human_headers() -> None:
     content = (
         b"Nro Informe;Centro de Servicio;Codigo Infraestructura;Tipo;Volumen;Caja Registro;Mes\n"
         b"3;SUR;RES-01;ELEVADO;150;X;5\n"
@@ -19,7 +19,7 @@ def test_csv_semicolon_import_maps_human_headers():
     assert reports[0]["inspeccion"]["caja_registro"] == "normal"
 
 
-def test_csv_import_assigns_unique_ids_when_missing_report_number():
+def test_csv_import_assigns_unique_ids_when_missing_report_number() -> None:
     content = (
         b"Centro de Servicio;Codigo Infraestructura;Tipo\n"
         b"SUR;RES-01;ELEVADO\n"
@@ -32,7 +32,7 @@ def test_csv_import_assigns_unique_ids_when_missing_report_number():
     assert [report["metadata"]["informe_id"] for report in reports] == [1, 2]
 
 
-def test_xlsx_import_reads_rows():
+def test_xlsx_import_reads_rows() -> None:
     wb = Workbook()
     ws = wb.active
     ws.append(["Informe", "CS", "Codigo", "Tipo", "Volumen", "Descarga"])
@@ -47,7 +47,7 @@ def test_xlsx_import_reads_rows():
     assert reports[0]["inspeccion"]["descarga"] == "critico"
 
 
-def test_xlsx_import_maps_reference_human_header_aliases():
+def test_xlsx_import_maps_reference_human_header_aliases() -> None:
     wb = Workbook()
     ws = wb.active
     ws.append([
@@ -78,7 +78,7 @@ def test_xlsx_import_maps_reference_human_header_aliases():
     assert report["canastillas"]["sugerencias_succion"] == "MANTENIMIENTO"
 
 
-def test_xlsx_import_maps_recommendation_headers_to_sugerencias():
+def test_xlsx_import_maps_recommendation_headers_to_sugerencias() -> None:
     wb = Workbook()
     ws = wb.active
     ws.append([
@@ -101,5 +101,5 @@ def test_xlsx_import_maps_recommendation_headers_to_sugerencias():
     assert report["sugerencias"] == "REVISAR EN CAMPO"
 
 
-def test_normalize_header_value_removes_accents_and_separators():
+def test_normalize_header_value_removes_accents_and_separators() -> None:
     assert normalize_header_value("Código de Infraestructura") == "codigoinfraestructura"

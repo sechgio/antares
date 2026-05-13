@@ -18,8 +18,7 @@ export default function SheetPreview({ panel, logoCenterUrl, images }: Props) {
             <col className="pac-col-right-value" />
             <col className="pac-col-logo" />
           </colgroup>
-          {/* Row 0: Título + Logo */}
-          <tr className="pac-row-title">
+              <tr className="pac-row-title">
             <td colSpan={3} className="pac-cell-title">
               AVISO DE CORTE DEL SERVICIO DE AGUA POTABLE, POR TRABAJOS DE MEJORAMIENTO EN EL SISTEMA
             </td>
@@ -27,27 +26,22 @@ export default function SheetPreview({ panel, logoCenterUrl, images }: Props) {
               {logoCenterUrl && <img src={logoCenterUrl} alt="Logo" />}
             </td>
           </tr>
-          {/* Row 1: Cuadrante */}
-          <tr className="pac-row-meta-a">
+              <tr className="pac-row-meta-a">
             <td className="pac-cell-label">CUADRANTE AFECTADO</td>
             <td colSpan={2} className="pac-cell-value">{panel.cuadrante}</td>
           </tr>
-          {/* Row 2: Fecha */}
-          <tr className="pac-row-meta-b">
+              <tr className="pac-row-meta-b">
             <td className="pac-cell-label">FECHA DE CORTE</td>
             <td colSpan={2} className="pac-cell-value">{panel.fechaCorte}</td>
           </tr>
-          {/* Row 3: Motivo */}
-          <tr className="pac-row-meta-c">
+              <tr className="pac-row-meta-c">
             <td className="pac-cell-label">MOTIVO</td>
             <td colSpan={2} className="pac-cell-value">{panel.motivo}</td>
           </tr>
-          {/* Row 4: Panel Fotográfico */}
-          <tr className="pac-row-section">
+              <tr className="pac-row-section">
             <td colSpan={4} className="pac-cell-section">PANEL FOTOGRAFICO</td>
           </tr>
-          {/* Row 5: Imágenes 1 y 2 */}
-          <tr className="pac-row-image">
+              <tr className="pac-row-image">
             {[1, 2].map((pos) => {
               const img = getImage(pos);
               return (
@@ -63,8 +57,7 @@ export default function SheetPreview({ panel, logoCenterUrl, images }: Props) {
               );
             })}
           </tr>
-          {/* Row 6: Captions 1 y 2 */}
-          <tr className="pac-row-caption">
+              <tr className="pac-row-caption">
             {[1, 2].map((pos) => {
               const img = getImage(pos);
               return (
@@ -74,8 +67,7 @@ export default function SheetPreview({ panel, logoCenterUrl, images }: Props) {
               );
             })}
           </tr>
-          {/* Row 7: Imágenes 3 y 4 */}
-          <tr className="pac-row-image">
+              <tr className="pac-row-image">
             {[3, 4].map((pos) => {
               const img = getImage(pos);
               return (
@@ -91,8 +83,7 @@ export default function SheetPreview({ panel, logoCenterUrl, images }: Props) {
               );
             })}
           </tr>
-          {/* Row 8: Captions 3 y 4 */}
-          <tr className="pac-row-caption pac-row-caption-last">
+              <tr className="pac-row-caption pac-row-caption-last">
             {[3, 4].map((pos) => {
               const img = getImage(pos);
               return (

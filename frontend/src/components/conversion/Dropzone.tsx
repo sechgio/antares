@@ -32,7 +32,6 @@ export default function Dropzone({
   const imageCount = fileCount;
   const [pasting, setPasting] = useState(false);
 
-  // Paste support
   const handlePaste = useCallback((e: ClipboardEvent) => {
     if (!onPasteFiles) return;
     const items = e.clipboardData?.items;
@@ -139,7 +138,6 @@ export default function Dropzone({
           También puedes usar Ctrl+V para pegar desde el portapapeles
         </p>
 
-        {/* Format tags */}
         <div className="flex flex-wrap items-center justify-center gap-1.5 mb-5 max-w-md">
           <div className="flex items-center gap-1 text-[10px] text-[var(--text-muted)] mr-1">
             <FileImage className="h-3 w-3" />

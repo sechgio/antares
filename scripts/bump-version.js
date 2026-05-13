@@ -39,12 +39,10 @@ const newVersion = bumpVersion(rootPkg.version, type);
 
 console.log(`Bumping version: ${rootPkg.version} → ${newVersion}\n`);
 
-// Update root package.json
 rootPkg.version = newVersion;
 fs.writeFileSync('package.json', JSON.stringify(rootPkg, null, 2) + '\n', 'utf8');
 console.log('✓ Updated package.json');
 
-// Update frontend package.json
 const frontendPkgPath = 'frontend/package.json';
 if (fs.existsSync(frontendPkgPath)) {
   const frontendPkg = JSON.parse(fs.readFileSync(frontendPkgPath, 'utf8'));
@@ -53,17 +51,14 @@ if (fs.existsSync(frontendPkgPath)) {
   console.log('✓ Updated frontend/package.json');
 }
 
-// Update backend version.py
 updateFile('backend/version.py', [
   { regex: /__version__\s*=\s*"[^"]+"/, template: `__version__ = "${newVersion}"` },
 ]);
 
-// Update electron main.js if it has hardcoded version
 updateFile('electron/main.js', [
   { regex: /version["']?\s*:\s*["'][^"']+["']/, template: `version: "${newVersion}"` },
 ]);
 
-// Update pyproject.toml
 updateFile('pyproject.toml', [
   { regex: /^version\s*=\s*"[^"]+"/m, template: `version = "${newVersion}"` },
 ]);

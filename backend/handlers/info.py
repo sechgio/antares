@@ -1,8 +1,11 @@
 """Info and system handlers."""
 from __future__ import annotations
+
 from typing import Any
+
 from backend.handlers.common import with_locale
 from backend.version import __version__
+
 
 @with_locale
 def version(params: dict[str, Any]) -> dict[str, str]:

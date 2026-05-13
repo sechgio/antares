@@ -1,4 +1,4 @@
-# COSMO
+# ANTARES
 
 > Conversor y renombrador profesional de imágenes — aplicación de escritorio nativa.
 
@@ -41,7 +41,7 @@ Aplicación de escritorio construida con:
 ### Estructura del proyecto
 
 ```
-COSMO/
+ANTARES/
 ├── electron/                  # Capa de escritorio Electron
 │   ├── main.js               # Proceso principal (ventanas, IPC, auto-updater)
 │   ├── preload.js            # Bridge seguro para el renderer (contextBridge)
@@ -161,8 +161,8 @@ npm run build:frontend
 npm run build:backend
 ```
 
-El instalador resultante estará en `dist-electron/COSMO-Setup-<version>.exe`.
-La versión portable estará en `dist-electron/COSMO-Portable-<version>.exe`.
+El instalador resultante estará en `dist-electron/ANTARES-Setup-<version>.exe`.
+La versión portable estará en `dist-electron/ANTARES-Portable-<version>.exe`.
 
 ### Pruebas y lint
 

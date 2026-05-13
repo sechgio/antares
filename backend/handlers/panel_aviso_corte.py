@@ -1,21 +1,26 @@
 """Panel Aviso de Corte handlers."""
 from __future__ import annotations
+
 import base64
 from typing import Any
-from backend.handlers.common import with_locale
+
 from backend.core.panel_aviso_corte import build_panels, parse_excel_bytes, render_docx, render_pdf
 from backend.core.panel_aviso_corte.models import MatchRule
 from backend.core.panel_aviso_corte.serialization import deserialize_panel
+from backend.handlers.common import with_locale
+
 
 @with_locale
 def panel_aviso_corte_parse_excel(params: dict[str, Any]) -> dict[str, Any]:
     xlsx_b64 = params.get("xlsx_b64", "")
     if not xlsx_b64:
-        raise ValueError("xlsx_b64 es requerido")
+        msg = "xlsx_b64 es requerido"
+        raise ValueError(msg)
     try:
         content = base64.b64decode(xlsx_b64, validate=True)
     except Exception as exc:
-        raise ValueError(f"xlsx_b64 no es base64 válido: {exc}") from exc
+        msg = f"xlsx_b64 no es base64 válido: {exc}"
+        raise ValueError(msg) from exc
     source = parse_excel_bytes(content, params.get("filename", "datos.xlsx"))
     return {
         "columns": list(source.columns),
@@ -34,18 +39,21 @@ def panel_aviso_corte_compute_match(params: dict[str, Any]) -> dict[str, Any]:
     image_names = params.get("image_names", [])
     export_mode = str(params.get("export_mode", "skip_empty"))
     if not rows:
-        raise ValueError("rows es requerido")
+        msg = "rows es requerido"
+        raise ValueError(msg)
     if not key_column:
-        raise ValueError("key_column es requerido")
+        msg = "key_column es requerido"
+        raise ValueError(msg)
     if not image_names:
-        raise ValueError("image_names es requerido")
+        msg = "image_names es requerido"
+        raise ValueError(msg)
     columns = tuple(str(k) for k in rows[0]) if rows else ()
     from backend.core.panel_aviso_corte.importer import _normalize_column_name
     normalized_columns = tuple(_normalize_column_name(c) for c in columns)
     from backend.core.panel_aviso_corte.models import ExcelSource
     excel_source = ExcelSource(filename="inline.xlsx", columns=columns, normalized_columns=normalized_columns, rows=tuple(dict(r) for r in rows))
-    rule = MatchRule(key_column=key_column, strategy=strategy, regex_pattern=pattern if pattern else None)  # type: ignore[arg-type]
-    result = build_panels(source=excel_source, rule=rule, image_names=image_names, address_column=address_column if address_column else None, export_mode=export_mode)  # type: ignore[arg-type]
+    rule = MatchRule(key_column=key_column, strategy=strategy, regex_pattern=pattern or None)  # type: ignore[arg-type]
+    result = build_panels(source=excel_source, rule=rule, image_names=image_names, address_column=address_column or None, export_mode=export_mode)  # type: ignore[arg-type]
     from backend.core.panel_aviso_corte.serialization import serialize_panel
     return {
         "panels": [serialize_panel(p) for p in result.panels],
@@ -66,7 +74,8 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
     images_raw = params.get("images", {})
     fmt = str(params.get("format", "pdf")).lower()
     if not panels_raw:
-        raise ValueError("panels es requerido")
+        msg = "panels es requerido"
+        raise ValueError(msg)
     panels = tuple(deserialize_panel(p) for p in panels_raw)
     logos = {"left": logos_raw.get("left_b64") or None, "right": logos_raw.get("right_b64") or None}
     images = {str(k): str(v) for k, v in images_raw.items()}
@@ -79,34 +88,35 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
 @with_locale
 def panel_aviso_corte_template(params: dict[str, Any]) -> dict[str, Any]:
     path = params.get("path", "")
-    if path and not path.lower().endswith('.xlsx'):
-        path = path + '.xlsx'
-    
+    if path and not path.lower().endswith(".xlsx"):
+        path = path + ".xlsx"
+
     try:
         import pandas as pd  # type: ignore
     except ImportError as exc:
-        raise ImportError("pandas no está instalado.") from exc
+        msg = "pandas no está instalado."
+        raise ImportError(msg) from exc
 
     columns = [
-        "ID", 
-        "DIRECCION", 
-        "FECHA DE CORTE", 
-        "CUADRANTE AFECTADO", 
-        "MOTIVO"
+        "ID",
+        "DIRECCION",
+        "FECHA DE CORTE",
+        "CUADRANTE AFECTADO",
+        "MOTIVO",
     ]
     df = pd.DataFrame(columns=columns)
-    
+
     data = [
         ["1001", "Calle Las Flores 123, Urbanización Santa Rosa", "2024-05-15", "CUADRANTE A-12", "Mantenimiento Preventivo de Redes"],
         ["1002", "Av. Principal 456, Sector 4", "2024-05-15", "CUADRANTE B-05", "Reparación de Tubería Matriz"],
         ["1003", "Jr. Independencia 789", "2024-05-16", "CUADRANTE C-08", "Mejora de Presión en la Zona"],
         ["1004", "Pasaje El Olivo 101", "2024-05-17", "CUADRANTE D-11", "Conexión de Nuevas Redes"],
     ]
-    
+
     for i, row in enumerate(data):
         df.loc[i] = row
-        
-    df.to_excel(path, index=False, engine='openpyxl')
+
+    df.to_excel(path, index=False, engine="openpyxl")
     return {"path": path}
 
 HANDLERS = {

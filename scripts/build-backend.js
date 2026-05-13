@@ -8,7 +8,7 @@ const distDir = path.join(projectRoot, 'dist');
 const specFile = path.join(backendDir, 'backend.spec');
 const pyInstallerBuild = path.join(backendDir, 'build');
 const pyInstallerDist = path.join(backendDir, 'dist');
-const staleBackendNames = ['CosmoBackend.exe', 'HidroConvertBackend.exe'];
+const staleBackendNames = ['AntaresBackend.exe', 'HidroConvertBackend.exe'];
 
 function assertInsideProject(targetPath) {
   const relative = path.relative(projectRoot, targetPath);
@@ -22,7 +22,6 @@ function removePath(targetPath) {
   fs.rmSync(targetPath, { recursive: true, force: true });
 }
 
-// Ensure dist directory exists
 if (!fs.existsSync(distDir)) {
   fs.mkdirSync(distDir, { recursive: true });
 }
@@ -47,14 +46,14 @@ try {
     }
   );
   // PyInstaller puts output in backend/dist by default; move to project dist
-  const pyInstallerExe = path.join(pyInstallerDist, 'CosmoBackend.exe');
-  const targetExe = path.join(distDir, 'CosmoBackend.exe');
+  const pyInstallerExe = path.join(pyInstallerDist, 'AntaresBackend.exe');
+  const targetExe = path.join(distDir, 'AntaresBackend.exe');
 
   if (fs.existsSync(pyInstallerExe)) {
     fs.copyFileSync(pyInstallerExe, targetExe);
     console.log(`[build-backend] Backend executable copied to ${targetExe}`);
   } else {
-    console.warn('[build-backend] Warning: CosmoBackend.exe not found in expected location');
+    console.warn('[build-backend] Warning: AntaresBackend.exe not found in expected location');
   }
   console.log('[build-backend] Backend build completed.');
 } catch (err) {

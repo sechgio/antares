@@ -1,21 +1,21 @@
-"""Excepciones personalizadas del dominio de COSMO."""
+"""Excepciones personalizadas del dominio de ANTARES."""
 
 
-class CosmoError(Exception):
+class AntaresError(Exception):
     """Base para todas las excepciones de la aplicación."""
 
 
-class ConfigError(CosmoError):
+class ConfigError(AntaresError):
     """Error al leer o escribir configuración persistente."""
 
 
-class DatabaseError(CosmoError):
+class DatabaseError(AntaresError):
     """Error relacionado con operaciones de base de datos."""
 
 
-class ConversionError(CosmoError):
+class ConversionError(AntaresError):
     """Error durante la conversión de una imagen."""
 
 
-class ValidationError(CosmoError):
+class ValidationError(AntaresError):
     """Error de validación de entrada del usuario o datos."""

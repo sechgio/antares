@@ -5,8 +5,10 @@ import contextlib
 import logging
 import sqlite3
 import threading
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 

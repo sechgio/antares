@@ -63,7 +63,6 @@ export default function LogoPicker({ right, onRight }: Props) {
         }`}
       >
         {right ? (
-          /* ── Logo loaded state ── */
           <div className="flex items-center gap-3 p-2.5">
             <div className="w-10 h-10 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] flex items-center justify-center overflow-hidden shrink-0">
               <img src={right.objectUrl} alt="" className="w-full h-full object-contain p-0.5" />
@@ -86,7 +85,6 @@ export default function LogoPicker({ right, onRight }: Props) {
             </button>
           </div>
         ) : (
-          /* ── Empty state ── */
           <div className="flex items-center gap-3 p-2.5">
             <div className={`w-10 h-10 rounded-md flex items-center justify-center shrink-0 transition-colors ${
               dragging ? 'bg-[var(--accent-primary)]/10' : 'bg-[var(--bg-surface)]'

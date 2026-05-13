@@ -4,15 +4,13 @@ from __future__ import annotations
 
 import base64
 import io
-from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import shutil
 from pathlib import Path
 
 from PIL import Image
 
 from backend.core.format_registry import get_registry
 
-# Initialize default formats in the global registry
 _registry = get_registry()
 _registry.add_format("JPEG", ".jpg", ("RGB", "L", "CMYK"))
 _registry.add_format("JPG", ".jpg", ("RGB", "L", "CMYK"))
@@ -39,15 +37,13 @@ VIDEO_FORMATS = {
     "MPEG": ".mpeg",
 }
 
-# Backward compatibility alias
+# Backward compatibility alias — _registry manages format registration;
+# external code should modify formats via FormatRegistry.add_format() only.
 FORMATOS_SOPORTADOS = _registry
 
-# Mapeo de nombres internos a formatos Pillow
 PIL_FORMAT_MAP: dict[str, str] = {
     "JPG": "JPEG",
 }
-
-ProgresoCallback = Callable[[int, int, Path], None]
 
 
 def es_video(ruta: str | Path) -> bool:
@@ -73,13 +69,12 @@ def copiar_video(
     Raises:
         FileNotFoundError: Si el video origen no existe.
     """
-    import shutil
-
     ruta_origen = Path(ruta_origen)
     ruta_destino = Path(ruta_destino)
 
     if not ruta_origen.exists():
-        raise FileNotFoundError(f"No se encontró el video: {ruta_origen}")
+        msg = f"No se encontró el video: {ruta_origen}"
+        raise FileNotFoundError(msg)
 
     ruta_destino.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(ruta_origen, ruta_destino)
@@ -92,13 +87,12 @@ def copiar_archivo(
     ruta_destino: str | Path,
 ) -> Path:
     """Copia un archivo sin conversión, preservando metadatos."""
-    import shutil
-
     ruta_origen = Path(ruta_origen)
     ruta_destino = Path(ruta_destino)
 
     if not ruta_origen.exists():
-        raise FileNotFoundError(f"No se encontró el archivo: {ruta_origen}")
+        msg = f"No se encontró el archivo: {ruta_origen}"
+        raise FileNotFoundError(msg)
 
     ruta_destino.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(ruta_origen, ruta_destino)
@@ -131,7 +125,8 @@ def _build_save_kwargs(formato: str, calidad: int, keep_exif: bool, img: Image.I
     upper_fmt = formato.upper()
     if upper_fmt in ("JPEG", "JPG", "WEBP"):
         kwargs["quality"] = max(1, min(100, int(calidad)))
-        kwargs["optimize"] = True
+        if calidad >= 90:
+            kwargs["optimize"] = True
     if keep_exif and "exif" in img.info:
         kwargs["exif"] = img.info["exif"]
     return kwargs
@@ -166,20 +161,30 @@ def convertir_imagen(
     ruta_destino = Path(ruta_destino)
 
     if not ruta_origen.exists():
-        raise FileNotFoundError(f"No se encontró la imagen: {ruta_origen}")
+        msg = f"No se encontró la imagen: {ruta_origen}"
+        raise FileNotFoundError(msg)
 
     formato = formato_salida.upper()
-    if formato not in FORMATOS_SOPORTADOS:
-        raise ValueError(f"Formato no soportado: {formato_salida}")
+    if formato not in _registry:
+        msg = f"Formato no soportado: {formato_salida}"
+        raise ValueError(msg)
 
     calidad = max(1, min(100, int(calidad)))
 
     with Image.open(ruta_origen) as source_img:
-        info = FORMATOS_SOPORTADOS[formato]
+        if source_img.width == 0 or source_img.height == 0:
+            msg = f"Imagen con dimensiones inválidas ({source_img.width}x{source_img.height}): {ruta_origen}"
+            raise ValueError(msg)
+
+        info = _registry[formato]
         img: Image.Image = _ensure_mode(source_img, info["modes"])
 
         if resize and isinstance(resize, (tuple, list)) and len(resize) == 2:
-            img = img.resize((int(resize[0]), int(resize[1])), getattr(Image, "Resampling", Image).LANCZOS)
+            rw, rh = int(resize[0]), int(resize[1])
+            if rw <= 0 or rh <= 0:
+                msg = f"Dimensiones de resize inválidas ({rw}x{rh})"
+                raise ValueError(msg)
+            img = img.resize((rw, rh), getattr(Image, "Resampling", Image).LANCZOS)
 
         ruta_destino.parent.mkdir(parents=True, exist_ok=True)
         save_kwargs = _build_save_kwargs(formato, calidad, keep_exif, img)
@@ -194,72 +199,6 @@ def convertir_imagen(
         img.save(ruta_destino, format=pil_formato, **save_kwargs)
 
     return ruta_destino
-
-
-def procesar_lote(
-    origenes: list[str | Path],
-    carpeta_destino: str | Path,
-    formato: str,
-    calidad: int = 95,
-    resize: tuple[int, int] | list[int] | None = None,
-    keep_exif: bool = False,
-    progreso_callback: ProgresoCallback | None = None,
-    max_workers: int | None = None,
-) -> list[Path | str]:
-    """Procesa un lote de imágenes en paralelo usando ThreadPoolExecutor.
-
-    Args:
-        origenes: Lista de rutas de imágenes.
-        carpeta_destino: Carpeta de salida.
-        formato: Formato destino.
-        calidad: Calidad de salida.
-        resize: Tupla (ancho, alto) opcional.
-        keep_exif: Preservar metadatos EXIF.
-        progreso_callback: Función(i, total, ruta) opcional para reportar progreso.
-        max_workers: Número máximo de workers paralelos (default: min(CPU count, 4)).
-
-    Returns:
-        Lista de Paths generados o strings de error 'ERROR: ...'.
-    """
-    carpeta_destino = Path(carpeta_destino)
-    carpeta_destino.mkdir(parents=True, exist_ok=True)
-    formato_upper = formato.upper()
-    if formato_upper not in FORMATOS_SOPORTADOS:
-        raise ValueError(f"Formato no soportado: {formato}")
-    ext = FORMATOS_SOPORTADOS[formato_upper]["ext"]
-
-    if max_workers is None:
-        import os
-        max_workers = min(os.cpu_count() or 2, 4)
-
-    def _process_single(args: tuple[int, str | Path]) -> tuple[int, Path | str]:
-        i, ruta = args
-        ruta = Path(ruta)
-        nombre_salida = ruta.stem + ext
-        ruta_salida = carpeta_destino / nombre_salida
-        try:
-            if es_video(ruta):
-                copiar_video(ruta, ruta_salida)
-            else:
-                convertir_imagen(ruta, ruta_salida, formato, calidad, resize, keep_exif)
-            return i, ruta_salida
-        except Exception as e:
-            return i, f"ERROR: {ruta.name} -> {e}"
-
-    # Use ThreadPoolExecutor for I/O-bound and CPU-bound image processing
-    # Pillow releases the GIL during C-level operations
-    indexed_results: dict[int, Path | str] = {}
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(_process_single, (idx, ruta)): idx for idx, ruta in enumerate(origenes)}
-
-        for future in as_completed(futures):
-            idx, result = future.result()
-            indexed_results[idx] = result
-            if progreso_callback:
-                progreso_callback(len(indexed_results), len(origenes), Path(origenes[idx]))
-
-    # Preserve original order
-    return [indexed_results[i] for i in range(len(origenes))]
 
 
 def convertir_a_preview(
@@ -285,7 +224,8 @@ def convertir_a_preview(
     """
     ruta_origen = Path(ruta_origen)
     if not ruta_origen.exists():
-        raise FileNotFoundError(f"No se encontró: {ruta_origen}")
+        msg = f"No se encontró: {ruta_origen}"
+        raise FileNotFoundError(msg)
 
     formato = formato_salida.upper()
     pil_formato = PIL_FORMAT_MAP.get(formato, formato)
@@ -296,18 +236,19 @@ def convertir_a_preview(
 
         # Max preview size 400px on longest side
         max_size = 400
-        ratio = min(max_size / max(source_img.size), 1.0)
+        longest = max(source_img.size)
+        if longest == 0:
+            raise ValueError("Imagen con dimensiones 0x0 no puede ser procesada")
+        ratio = min(max_size / longest, 1.0)
         preview_size = (int(source_img.width * ratio), int(source_img.height * ratio))
         img: Image.Image = source_img.resize(preview_size, getattr(Image, "Resampling", Image).LANCZOS)
 
-        # Aplicar modo y calidad según formato
-        if formato in FORMATOS_SOPORTADOS:
-            info = FORMATOS_SOPORTADOS[formato]
+        if formato in _registry:
+            info = _registry[formato]
             img = _ensure_mode(img, info["modes"])
         elif img.mode != "RGB":
             img = img.convert("RGB")
 
-        # Aplicar resize de preview si se proporciona
         if resize and isinstance(resize, (tuple, list)) and len(resize) == 2:
             img = img.resize((int(resize[0]), int(resize[1])), getattr(Image, "Resampling", Image).LANCZOS)
 

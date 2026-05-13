@@ -39,7 +39,6 @@ function FileGridCell({ rowIndex, columnIndex, style, files, columnCount, select
         onClick={(e) => onFileClick(e, f)}
         onDoubleClick={(e) => onFileDoubleClick(e, f)}
         onRemove={(e) => { e.stopPropagation(); onRemoveFile(f); }}
-        index={idx}
         isVideo={videoFiles.has(f)}
       />
     </div>

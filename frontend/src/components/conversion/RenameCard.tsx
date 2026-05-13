@@ -48,7 +48,6 @@ export default function RenameCard({
 
   return (
     <Card className="space-y-4">
-      {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent-secondary)]/10 text-[var(--accent-secondary)]">
@@ -69,7 +68,6 @@ export default function RenameCard({
         </div>
       )}
 
-      {/* Naming Mode Presets */}
       <div className="grid grid-cols-2 gap-2">
         {namingPresets.map((preset) => {
           const active = namingMode === preset.id;
@@ -92,7 +90,6 @@ export default function RenameCard({
         })}
       </div>
 
-      {/* Quick Actions */}
       <div className="flex items-center gap-2">
         <button
           onClick={() => setShowAdvanced(!showAdvanced)}
@@ -114,10 +111,8 @@ export default function RenameCard({
         </button>
       </div>
 
-      {/* Advanced Pattern Editor */}
       {showAdvanced && (
         <div className="space-y-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/50 p-4 animate-fade-in">
-          {/* Visual Token Builder */}
           <div className="space-y-2">
             <label className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Patrón visual</label>
             <div className="flex flex-wrap gap-2">
@@ -159,7 +154,6 @@ export default function RenameCard({
             </div>
           </div>
 
-          {/* Pattern Input */}
           <div className="space-y-2">
             <label className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Patrón actual</label>
             <Input
@@ -174,7 +168,6 @@ export default function RenameCard({
             </div>
           </div>
 
-          {/* Sequence Controls */}
           {usesSeq && (
             <div className="flex items-center gap-4 pt-3 border-t border-[var(--border-subtle)]">
               <div className="flex items-center gap-3">
@@ -202,7 +195,6 @@ export default function RenameCard({
         </div>
       )}
 
-      {/* Pattern Manager */}
       {showManager && (
         <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/50 overflow-hidden animate-fade-in">
           <div className="px-4 py-3 border-b border-[var(--border-subtle)] flex items-center justify-between">

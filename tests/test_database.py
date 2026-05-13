@@ -19,7 +19,7 @@ def db_path(tmp_path, monkeypatch):
 
 
 class TestInitDb:
-    def test_crea_tabla_si_no_existe(self, db_path, monkeypatch, tmp_path):
+    def test_crea_tabla_si_no_existe(self, db_path, monkeypatch, tmp_path) -> None:
         monkeypatch.setattr(
             "backend.core.config_fields._config_file",
             lambda: tmp_path / "fields_config.json",
@@ -31,7 +31,7 @@ class TestInitDb:
         db.init_db()
         assert db_path.exists()
 
-    def test_migra_datos_cuando_cambia_esquema(self, db_path, monkeypatch, tmp_path):
+    def test_migra_datos_cuando_cambia_esquema(self, db_path, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"
         monkeypatch.setattr(
             "backend.core.config_fields._config_file",
@@ -66,7 +66,7 @@ class TestInitDb:
 
 
 class TestBuscarPorCodigo:
-    def test_encuentra_registro(self, db_path, monkeypatch, tmp_path):
+    def test_encuentra_registro(self, db_path, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"
         monkeypatch.setattr(
             "backend.core.config_fields._config_file",
@@ -89,7 +89,7 @@ class TestBuscarPorCodigo:
         assert resultado["codigo"] == "ABC"
         assert resultado["nombre"] == "Producto"
 
-    def test_no_encuentra_retorna_none(self, db_path, monkeypatch, tmp_path):
+    def test_no_encuentra_retorna_none(self, db_path, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"
         monkeypatch.setattr(
             "backend.core.config_fields._config_file",
@@ -102,7 +102,7 @@ class TestBuscarPorCodigo:
 
         assert db.buscar_por_codigo("NO_EXISTE") is None
 
-    def test_strip_en_busqueda(self, db_path, monkeypatch, tmp_path):
+    def test_strip_en_busqueda(self, db_path, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"
         monkeypatch.setattr(
             "backend.core.config_fields._config_file",
@@ -124,7 +124,7 @@ class TestBuscarPorCodigo:
         assert resultado is not None
         assert resultado["codigo"] == "XYZ"
 
-    def test_busca_por_cualquier_campo_texto_si_codigo_no_coincide(self, db_path, monkeypatch, tmp_path):
+    def test_busca_por_cualquier_campo_texto_si_codigo_no_coincide(self, db_path, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"
         monkeypatch.setattr(
             "backend.core.config_fields._config_file",
@@ -154,7 +154,7 @@ class TestBuscarPorCodigo:
 
 
 class TestImportarExcel:
-    def test_importa_columnas_nuevas_del_excel_al_esquema(self, db_path, monkeypatch, tmp_path):
+    def test_importa_columnas_nuevas_del_excel_al_esquema(self, db_path, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"
         monkeypatch.setattr(
             "backend.core.config_fields._config_file",
@@ -184,7 +184,7 @@ class TestImportarExcel:
 
 
 class TestObtenerTodos:
-    def test_retorna_lista_vacia(self, db_path, monkeypatch, tmp_path):
+    def test_retorna_lista_vacia(self, db_path, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"
         monkeypatch.setattr(
             "backend.core.config_fields._config_file",

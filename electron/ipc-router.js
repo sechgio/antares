@@ -10,6 +10,34 @@ const { getMainWindow, buildAppMenu } = require('./window-manager');
 const _pendingRequests = new Map();
 let _ipcListenersReady = false;
 
+/**
+ * Allowlist of backend method names that can be called via IPC.
+ * Only these methods are forwarded to the Python backend — any other
+ * method name is rejected immediately, preventing arbitrary calls.
+ */
+const ALLOWED_METHODS = new Set([
+  'version', 'formats', 'plugin_formats',
+  'db_records', 'db_import', 'db_export', 'db_clear', 'db_template',
+  'db_fields', 'db_fields_update', 'db_fields_reset',
+  'rename_patterns_get', 'rename_patterns_update', 'rename_patterns_reset',
+  'scan_folder',
+  'process_start', 'process_status', 'process_cancel',
+  'preview', 'preview_image', 'is_video',
+  'formatos_list', 'formatos_generate', 'formatos_upload', 'formatos_delete', 'formatos_update_mapping',
+  'history_list', 'history_get', 'history_delete', 'history_save',
+  'technical_reports_list', 'technical_reports_get', 'technical_reports_create',
+  'technical_reports_update', 'technical_reports_delete', 'technical_reports_clear',
+  'technical_reports_import_file', 'technical_reports_variables',
+  'technical_reports_autocomplete_cs', 'technical_reports_autocomplete_contratista',
+  'technical_reports_render_html', 'technical_reports_render_consolidated_html', 'html_to_pdf',
+  'panel_aviso_corte_parse_excel', 'panel_aviso_corte_compute_match',
+  'panel_aviso_corte_render_pdf', 'panel_aviso_corte_template',
+  'image_optimizer_zip',
+  'jobs_list', 'jobs_get', 'jobs_cancel', 'jobs_cleanup',
+  'theme_get', 'theme_save', 'theme_presets', 'theme_preset', 'theme_reset',
+  'templates_list', 'template_get',
+]);
+
 function setupIpcResponseListener() {
   const proc = getProcess();
   if (!proc) return;
@@ -54,10 +82,6 @@ function ensureIpcListeners() {
   _ipcListenersReady = true;
 }
 
-/**
- * Attempt to send a single IPC request to the backend.
- * Returns a promise that resolves/rejects with the response.
- */
 function _sendRequest(proc, method, params) {
   ensureIpcListeners();
   const id = Math.random().toString(36).slice(2);
@@ -79,21 +103,19 @@ function _sendRequest(proc, method, params) {
   });
 }
 
-/**
- * Maximum number of times to retry an IPC call when backend is unavailable.
- * This covers: startup race condition, mid-session crash + auto-restart.
- */
 const MAX_IPC_RETRIES = 3;
-const IPC_RETRY_WAIT_MS = 5000; // wait up to 5s for backend readiness per retry
+const IPC_RETRY_WAIT_MS = 5000;
 
 function registerIpcHandlers() {
   ipcMain.handle('ipc-call', async (event, method, params) => {
+    if (typeof method !== 'string' || !ALLOWED_METHODS.has(method)) {
+      throw new Error(`IPC method not allowed: ${method}`);
+    }
     const win = getMainWindow();
     const { BrowserWindow } = require('electron');
     const dialogResult = await handleDialogCall(method, params, dialog, win, { BrowserWindow });
     if (dialogResult.handled) return dialogResult.result;
 
-    // Retry loop: wait for backend readiness if it's currently unavailable
     let lastError = null;
     for (let attempt = 1; attempt <= MAX_IPC_RETRIES; attempt++) {
       const proc = getProcess();
@@ -111,16 +133,13 @@ function registerIpcHandlers() {
             }
             continue;
           }
-          // For other errors (timeout, actual backend errors), don't retry
           throw err;
         }
       }
 
-      // Backend not available yet — wait for it
       console.warn(`[ipc-router] Backend not ready, waiting (attempt ${attempt}/${MAX_IPC_RETRIES}) for "${method}"...`);
       const ready = await waitForReady(IPC_RETRY_WAIT_MS);
       if (ready) {
-        // Backend became ready, try the call
         const retryProc = getProcess();
         if (retryProc && !retryProc.killed) {
           try {
@@ -137,7 +156,6 @@ function registerIpcHandlers() {
       lastError = new Error('Backend no disponible');
     }
 
-    // All retries exhausted
     throw lastError || new Error('Backend no disponible después de varios intentos');
   });
 
@@ -161,7 +179,9 @@ function registerIpcHandlers() {
 
   ipcMain.on('quit-and-install', () => {
     const { autoUpdater } = require('electron-updater');
-    autoUpdater.quitAndInstall();
+    if (autoUpdater.isUpdaterActive?.() || autoUpdater.updateDownloaded) {
+      autoUpdater.quitAndInstall();
+    }
   });
 }
 

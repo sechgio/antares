@@ -21,13 +21,11 @@ async function saveToHistory(runType: string, label: string, details: Record<str
       err_count: 0,
     });
   } catch {
-    // Silently ignore history save errors so main flow is never blocked
   }
 }
 import type { FormatInfo, VisualMapping } from '../../types';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
-// ─── PDF.js lazy load (only when needed) ───────────────────────
 let pdfjsLib: typeof import('pdfjs-dist') | null = null;
 let pdfWorkerUrl: string | null = null;
 
@@ -76,10 +74,8 @@ function pad(n: number, len = 7) {
     return String(n).padStart(len, '0');
 }
 
-/* ─── Types ──────────────────────────────────────────────────── */
 interface PageImg { url: string; pageNum: number; }
 
-/* ─── Optimized single page renderer (async + JPEG) ──────────── */
 async function renderPageToUrl(
     pdf: PDFDocumentProxy,
     pageNum: number,
@@ -104,7 +100,6 @@ async function renderPageToUrl(
     return canvas.toDataURL('image/jpeg', 0.88);
 }
 
-/* ─── Multi-page PDF Viewer ──────────────────────────────────── */
 function PdfMultiViewer({ blob, desde, total, padLen, zoom }: { blob: Blob | null; desde: number; total: number; padLen: number; zoom: number }) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [pageImgs, setPageImgs] = useState<PageImg[]>([]);
@@ -231,7 +226,6 @@ function PdfMultiViewer({ blob, desde, total, padLen, zoom }: { blob: Blob | nul
     );
 }
 
-/* ─── Empty / Loading State ──────────────────────────────────── */
 function EmptyPreview({ loading }: { loading: boolean }) {
     return (
         <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-[var(--text-muted)]">
@@ -252,7 +246,6 @@ function EmptyPreview({ loading }: { loading: boolean }) {
     );
 }
 
-/* ─── Mapping Editor Panel ───────────────────────────────────── */
 function MappingEditor({ mapping, onChange, onSave, onCancel }: {
     mapping: VisualMapping;
     onChange: (m: VisualMapping) => void;
@@ -361,7 +354,6 @@ function MappingEditor({ mapping, onChange, onSave, onCancel }: {
     );
 }
 
-/* ─── Upload Modal ───────────────────────────────────────────── */
 function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded: (f: FormatInfo) => void }) {
     const [file, setFile] = useState<File | null>(null);
     const [nombre, setNombre] = useState('');
@@ -460,7 +452,6 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
     );
 }
 
-/* ─── Row utility ────────────────────────────────────────────── */
 function Row({ label, value, valueClass = 'text-[var(--text-primary)]' }: { label: string; value: string; valueClass?: string }) {
     return (
         <div className="flex items-center justify-between px-3 py-2">
@@ -470,7 +461,6 @@ function Row({ label, value, valueClass = 'text-[var(--text-primary)]' }: { labe
     );
 }
 
-/* ─── Main App ───────────────────────────────────────────────── */
 export default function FormatosView() {
     const { addToast } = useToast();
     const { confirm } = useDialog();

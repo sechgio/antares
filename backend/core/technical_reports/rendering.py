@@ -16,11 +16,18 @@ def _templates_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "templates" / "technical_reports"
 
 
+# Module-level singleton — avoids recreating Environment + losing template cache on each render.
+_jinja_env: Environment | None = None
+
+
 def _environment() -> Environment:
-    return Environment(
-        loader=FileSystemLoader(str(_templates_dir())),
-        autoescape=select_autoescape(("html", "xml")),
-    )
+    global _jinja_env
+    if _jinja_env is None:
+        _jinja_env = Environment(
+            loader=FileSystemLoader(str(_templates_dir())),
+            autoescape=select_autoescape(("html", "xml")),
+        )
+    return _jinja_env
 
 
 def render_report_html(report: dict[str, Any], logo_left: str | None = None, logo_right: str | None = None) -> str:
@@ -34,7 +41,8 @@ def render_consolidated_html(
     logo_right: str | None = None,
 ) -> str:
     if not reports:
-        raise ValueError("No hay informes para exportar")
+        msg = "No hay informes para exportar"
+        raise ValueError(msg)
     template = _environment().get_template("informe_tecnico.html")
     return template.render(
         reports=[TechnicalReport.normalize(report) for report in reports],

@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from backend.utils.paths import user_data_path
+from backend.utils.paths import cached_config_path
+from backend.core.config_fields import get_field_names
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +27,7 @@ _CONFIG_PATH: Path | None = None
 def _config_file() -> Path:
     global _CONFIG_PATH
     if _CONFIG_PATH is None:
-        _CONFIG_PATH = user_data_path("rename_patterns.json")
+        _CONFIG_PATH = cached_config_path("patterns", "rename_patterns.json")
     return _CONFIG_PATH
 
 
@@ -66,19 +69,22 @@ def load_patterns() -> list[dict[str, Any]]:
 def save_patterns(patterns: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Guarda la configuración de patrones en disco."""
     path = _config_file()
+    available_vars = set(get_field_names())
     validated = []
     seen_ids = set()
     for p in patterns:
         if isinstance(p, dict) and "id" in p and "label" in p and "pattern" in p:
             pid = str(p["id"])
-            # Evitar IDs duplicados
             if pid in seen_ids:
                 continue
             seen_ids.add(pid)
+            pattern = str(p["pattern"])
+            if not _validate_pattern(pattern, available_vars):
+                logger.warning("Patrón con variables inválidas, se guarda como está: %s", pattern)
             validated.append({
                 "id": pid,
                 "label": str(p["label"]),
-                "pattern": str(p["pattern"]),
+                "pattern": pattern,
             })
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"patterns": validated}, f, indent=2, ensure_ascii=False)

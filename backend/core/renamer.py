@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from backend.core.config_fields import get_field_names
 from backend.utils.validators import obtener_codigo_desde_nombre, sanitizar_nombre
+
+# Pre-compiled regex patterns for clean-up in aplicar()
+_RE_MULTIPLE_UNDERSCORES = re.compile(r"_+")
+_RE_TRAILING_SEPARATOR_BEFORE_DOT = re.compile(r"[_\s-]+(?=\.)")
+_RE_MULTIPLE_SPACES = re.compile(r"\s+")
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class RenamerEngine:
@@ -20,7 +27,7 @@ class RenamerEngine:
         fields = get_field_names()
         return {f"{{{f}}}" for f in fields} | {"{seq}", "{ext}"}
 
-    def __init__(self, patron: str | None = None, secuencia_inicial: int = 1):
+    def __init__(self, patron: str | None = None, secuencia_inicial: int = 1) -> None:
         """Inicializa el motor de renombrado.
 
         Args:
@@ -60,17 +67,14 @@ class RenamerEngine:
         ruta = Path(ruta_origen)
         ext = ruta.suffix.lower()
 
-        # Determinar código
-        codigo = codigo_manual if codigo_manual else obtener_codigo_desde_nombre(ruta.name)
+        codigo = codigo_manual or obtener_codigo_desde_nombre(ruta.name)
 
         # Si no se proporcionaron datos, usar diccionario vacío (desacoplado de BD)
         if datos_bd is None:
             datos_bd = {}
 
-        # Determinar valor de {seq}: desde archivo o auto-incremental
         seq_value = file_seq if file_seq is not None else str(self.secuencia).zfill(3)
 
-        # Construir mapping dinámico según campos configurados
         mapping: dict[str, str] = {"seq": seq_value, "ext": ext}
         field_names = get_field_names()
         for f in field_names:
@@ -80,19 +84,17 @@ class RenamerEngine:
             default_val = codigo if f == field_names[0] else ""
             mapping[f] = str(datos_bd.get(f, default_val) or "")
 
-        # Reemplazar placeholders
         nombre_salida = self.patron
         for key, val in mapping.items():
             nombre_salida = nombre_salida.replace(f"{{{key}}}", val)
 
         # Limpiar separadores que quedan cuando faltan datos de la BD.
-        nombre_salida = re.sub(r"_+", "_", nombre_salida)
-        nombre_salida = re.sub(r"[_\s-]+(?=\.)", "", nombre_salida)
-        nombre_salida = re.sub(r"\s+", " ", nombre_salida)
+        nombre_salida = _RE_MULTIPLE_UNDERSCORES.sub("_", nombre_salida)
+        nombre_salida = _RE_TRAILING_SEPARATOR_BEFORE_DOT.sub("", nombre_salida)
+        nombre_salida = _RE_MULTIPLE_SPACES.sub(" ", nombre_salida)
         nombre_salida = nombre_salida.strip("_. ")
         nombre_salida = sanitizar_nombre(nombre_salida)
 
-        # Asegurar extensión
         if not nombre_salida.lower().endswith(ext.lower()):
             nombre_salida += ext
 
@@ -122,13 +124,14 @@ class RenamerEngine:
         resultados: list[tuple[str, str, bool]] = []
         seq_backup = self.secuencia
 
-        for ruta in rutas:
-            ruta = Path(ruta)
-            codigo = codigos_manuales.get(ruta.name, obtener_codigo_desde_nombre(ruta.name))
-            datos = lookup_fn(codigo) if lookup_fn else None
-            fseq = file_seqs.get(ruta.name)
-            nombre_nuevo = self.aplicar(ruta, datos_bd=datos, codigo_manual=codigo, file_seq=fseq)
-            resultados.append((str(ruta), nombre_nuevo, datos is not None))
-
-        self.secuencia = seq_backup
+        try:
+            for ruta in rutas:
+                ruta = Path(ruta)
+                codigo = codigos_manuales.get(ruta.name, obtener_codigo_desde_nombre(ruta.name))
+                datos = lookup_fn(codigo) if lookup_fn else None
+                fseq = file_seqs.get(ruta.name)
+                nombre_nuevo = self.aplicar(ruta, datos_bd=datos, codigo_manual=codigo, file_seq=fseq)
+                resultados.append((str(ruta), nombre_nuevo, datos is not None))
+        finally:
+            self.secuencia = seq_backup
         return resultados

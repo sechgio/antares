@@ -8,12 +8,14 @@ import logging
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .errors import RenderingError
-from .models import ExportMode, Panel, PanelImageRef
+
+if TYPE_CHECKING:
+    from .models import ExportMode, Panel, PanelImageRef
 
 logger = logging.getLogger(__name__)
 
@@ -36,17 +38,10 @@ PHOTO_WIDTH_CM = 7.36
 LOGO_WIDTH_CM = 5.49
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _template_dir() -> Path:
-    """Resuelve el directorio de plantillas en fuente y builds PyInstaller."""
     bundled = Path(__file__).resolve().parent.parent.parent / "templates"
     if bundled.exists():
         return bundled
-    # Fallback relativo al backend source
     return Path(__file__).resolve().parent.parent / "templates"
 
 
@@ -57,9 +52,7 @@ _jinja_env = Environment(
 
 
 def _data_uri_from_b64(b64_string: str, default_mime: str = "image/png") -> str:
-    """Convierte una cadena base64 cruda en un data URI."""
     mime = default_mime
-    # Intentar adivinar MIME a partir de los primeros bytes decodificados
     try:
         header = base64.b64decode(b64_string[:24], validate=True)
         if header.startswith(b"\xff\xd8"):
@@ -85,11 +78,6 @@ def _data_uri_from_bytes(content: bytes, default_mime: str = "image/png") -> str
     return f"data:{mime};base64,{b64}"
 
 
-# ---------------------------------------------------------------------------
-# Serialización de Panel para la plantilla
-# ---------------------------------------------------------------------------
-
-
 def _serialize_image(ref: PanelImageRef) -> dict[str, Any]:
     return {
         "filename": ref.filename,
@@ -99,7 +87,6 @@ def _serialize_image(ref: PanelImageRef) -> dict[str, Any]:
 
 
 def _serialize_panel(panel: Panel) -> dict[str, Any]:
-    """Convierte un Panel a dict apto para Jinja2 (listas, no tuplas)."""
     return {
         "cuadrante": panel.cuadrante,
         "fecha_corte": panel.fecha_corte,
@@ -109,16 +96,8 @@ def _serialize_panel(panel: Panel) -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
-# API pública
-# ---------------------------------------------------------------------------
-
-
 def _prepare_logos(logos: dict[str, str | None]) -> tuple[str | None, str | None, str | None]:
-    """Devuelve (logo_left, logo_right, logo_center) como data URIs.
-
-    Si solo hay un logo cargado se asigna a ``logo_center`` para replicar
-    el diseño del documento Word de referencia."""
+    """Devuelve (logo_left, logo_right, logo_center) como data URIs."""
     left = _data_uri_from_b64(logos["left"]) if logos.get("left") else None
     right = _data_uri_from_b64(logos["right"]) if logos.get("right") else None
     center = None
@@ -141,13 +120,15 @@ def render_pdf(
 ) -> tuple[bytes, str]:
     """Renderiza un PDF consolidado con una página por Panel."""
     if not panels:
-        raise RenderingError("No hay paneles para exportar")
+        msg = "No hay paneles para exportar"
+        raise RenderingError(msg)
 
     try:
         template = _jinja_env.get_template("panel-aviso-corte.html")
     except Exception as exc:
         logger.exception("No se pudo cargar la plantilla panel-aviso-corte.html")
-        raise RenderingError(f"Error al cargar plantilla: {exc}") from exc
+        msg = f"Error al cargar plantilla: {exc}"
+        raise RenderingError(msg) from exc
 
     logo_left, logo_right, logo_center = _prepare_logos(logos)
 
@@ -179,7 +160,8 @@ def render_pdf(
         html_string = template.render(context)
     except Exception as exc:
         logger.exception("Error al renderizar la plantilla Jinja2")
-        raise RenderingError(f"Error al renderizar plantilla: {exc}") from exc
+        msg = f"Error al renderizar plantilla: {exc}"
+        raise RenderingError(msg) from exc
 
     try:
         from weasyprint import HTML
@@ -189,7 +171,8 @@ def render_pdf(
         pdf_bytes = pdf_buffer.getvalue()
     except Exception as exc:
         logger.exception("WeasyPrint falló al generar el PDF")
-        raise RenderingError(f"Error al generar PDF: {exc}") from exc
+        msg = f"Error al generar PDF: {exc}"
+        raise RenderingError(msg) from exc
 
     return pdf_bytes, filename
 
@@ -200,12 +183,10 @@ def render_docx(
     images: dict[str, str],
     export_mode: ExportMode,
 ) -> tuple[bytes, str]:
-    """Genera un documento Word (.docx) replicando la estructura exacta del
-    documento de referencia ``aviso-volanteo-panel.docx``:
-    una sola tabla de 9 filas x 4 columnas con merges.
-    """
+    """Genera un documento Word (.docx) con tabla de 9 filas x 4 columnas con merges."""
     if not panels:
-        raise RenderingError("No hay paneles para exportar")
+        msg = "No hay paneles para exportar"
+        raise RenderingError(msg)
 
     try:
         from docx import Document
@@ -215,7 +196,8 @@ def render_docx(
         from docx.oxml.ns import qn
         from docx.shared import Cm, Pt, RGBColor
     except ImportError as exc:
-        raise RenderingError("python-docx no está instalado") from exc
+        msg = "python-docx no está instalado"
+        raise RenderingError(msg) from exc
 
     doc = Document()
     doc.styles["Normal"].font.name = DOC_FONT
@@ -230,7 +212,7 @@ def render_docx(
             trPr.remove(node)
         trPr.append(parse_xml(
             '<w:trHeight xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
-            f'w:val="{cm_to_twips(height_cm)}" w:hRule="exact"/>'
+            f'w:val="{cm_to_twips(height_cm)}" w:hRule="exact"/>',
         ))
 
     def set_cell_width(cell: Any, width_cm: float) -> None:
@@ -238,7 +220,7 @@ def render_docx(
         tcW = tcPr.find(qn("w:tcW"))
         if tcW is None:
             tcW = parse_xml(
-                '<w:tcW xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>'
+                '<w:tcW xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
             )
             tcPr.append(tcW)
         tcW.set(qn("w:w"), str(cm_to_twips(width_cm)))
@@ -256,7 +238,7 @@ def render_docx(
             f'<w:start w:w="{left}" w:type="dxa"/>'
             f'<w:bottom w:w="{bottom}" w:type="dxa"/>'
             f'<w:end w:w="{right}" w:type="dxa"/>'
-            '</w:tcMar>'
+            '</w:tcMar>',
         ))
 
     def set_vertical_align(cell: Any, value: str = "top") -> None:
@@ -266,14 +248,14 @@ def render_docx(
             tcPr.remove(old)
         tcPr.append(parse_xml(
             '<w:vAlign xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
-            f'w:val="{value}"/>'
+            f'w:val="{value}"/>',
         ))
 
     def set_no_wrap(cell: Any) -> None:
         tcPr = cell._tc.get_or_add_tcPr()
         if tcPr.find(qn("w:noWrap")) is None:
             tcPr.append(parse_xml(
-                '<w:noWrap xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>'
+                '<w:noWrap xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
             ))
 
     def format_run(run: Any, size_pt: float, *, bold: bool = False,
@@ -285,7 +267,6 @@ def render_docx(
         if color:
             run.font.color.rgb = RGBColor(*color)
 
-    # A4 vertical, márgenes 1.27cm (idéntico al documento de referencia)
     section = doc.sections[0]
     section.page_height = Cm(29.7)
     section.page_width = Cm(21.0)
@@ -294,7 +275,6 @@ def render_docx(
     section.left_margin = Cm(1.27)
     section.right_margin = Cm(1.27)
 
-    # Decodificar imágenes
     image_bytes: dict[str, bytes] = {}
     for filename, b64 in images.items():
         with contextlib.suppress(Exception):
@@ -312,13 +292,11 @@ def render_docx(
         if pidx > 0:
             doc.add_page_break()
 
-        # Crear tabla 9 filas x 4 columnas
         table = doc.add_table(rows=9, cols=4)
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
         table.autofit = False
         table.allow_autofit = False
 
-        # Bordes de tabla
         tblPr = table._tbl.tblPr
         existing_borders = tblPr.find(qn("w:tblBorders"))
         if existing_borders is not None:
@@ -331,12 +309,12 @@ def render_docx(
             '<w:right w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
             '<w:insideH w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
             '<w:insideV w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
-            '</w:tblBorders>'
+            '</w:tblBorders>',
         ))
 
         tblPr.append(parse_xml(
             '<w:tblW xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
-            f'w:w="{cm_to_twips(TABLE_WIDTH_CM)}" w:type="dxa"/>'
+            f'w:w="{cm_to_twips(TABLE_WIDTH_CM)}" w:type="dxa"/>',
         ))
         grid = table._tbl.tblGrid
         for col, width_cm in zip(grid.gridCol_lst, COL_WIDTHS_CM, strict=True):
@@ -365,11 +343,10 @@ def render_docx(
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = p.add_run(
             "AVISO DE CORTE DEL SERVICIO DE AGUA POTABLE, "
-            "POR TRABAJOS DE MEJORAMIENTO EN EL SISTEMA"
+            "POR TRABAJOS DE MEJORAMIENTO EN EL SISTEMA",
         )
         format_run(run, 12, bold=True)
 
-        # Logo cell con vertical merge
         logo_cell = table.cell(0, 3).merge(table.cell(3, 3))
         logo_cell.paragraphs[0].clear()
         set_vertical_align(logo_cell, "center")
@@ -386,7 +363,6 @@ def render_docx(
             (3, "MOTIVO", panel.motivo),
         ]
         for ri, label, value in data_items:
-            # Label
             lbl_cell = table.cell(ri, 0)
             lbl_cell.paragraphs[0].clear()
             set_cell_margins(lbl_cell, top=40, right=0, bottom=40)
@@ -435,23 +411,21 @@ def render_docx(
                 set_cell_margins(cap_cell)
 
                 img_ref = next(
-                    (im for im in panel.imagenes if im.position == pos), None
+                    (im for im in panel.imagenes if im.position == pos), None,
                 )
 
-                # Imagen
                 p = img_cell.paragraphs[0]
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 if img_ref and img_ref.filename in image_bytes:
                     run = p.add_run()
                     run.add_picture(
-                        BytesIO(image_bytes[img_ref.filename]), width=Cm(PHOTO_WIDTH_CM)
+                        BytesIO(image_bytes[img_ref.filename]), width=Cm(PHOTO_WIDTH_CM),
                     )
                 else:
                     run = p.add_run("Sin imagen")
                     run.italic = True
                     format_run(run, 9)
 
-                # Caption
                 p = cap_cell.paragraphs[0]
                 p.alignment = WD_ALIGN_PARAGRAPH.LEFT
                 if img_ref:

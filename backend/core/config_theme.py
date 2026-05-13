@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from backend.utils.paths import user_data_path
+from backend.utils.paths import cached_config_path
 
 logger = logging.getLogger(__name__)
 
@@ -49,14 +49,13 @@ def _load_presets() -> dict[str, dict[str, str]]:
         if not isinstance(data, dict):
             logger.warning("presets.json is not a dict, using default only")
             return {"Slate Professional": dict(DEFAULT_THEME)}
-        # Validate each preset has required keys
         valid: dict[str, dict[str, str]] = {}
         for name, preset in data.items():
             if isinstance(preset, dict) and _THEME_KEYS.issubset(preset.keys()):
                 valid[name] = preset
             else:
                 logger.warning("Preset '%s' missing keys, skipping", name)
-        return valid if valid else {"Slate Professional": dict(DEFAULT_THEME)}
+        return valid or {"Slate Professional": dict(DEFAULT_THEME)}
     except (json.JSONDecodeError, OSError) as exc:
         logger.warning("Error loading presets.json: %s", exc)
         return {"Slate Professional": dict(DEFAULT_THEME)}
@@ -72,7 +71,7 @@ _CONFIG_PATH: Path | None = None
 def _config_file() -> Path:
     global _CONFIG_PATH
     if _CONFIG_PATH is None:
-        _CONFIG_PATH = user_data_path("theme_config.json")
+        _CONFIG_PATH = cached_config_path("theme", "theme_config.json")
     return _CONFIG_PATH
 
 

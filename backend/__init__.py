@@ -1,1 +1,1 @@
-"""Backend IPC nativo para COSMO."""
+"""Backend IPC nativo para ANTARES."""

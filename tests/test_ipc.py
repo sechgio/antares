@@ -46,7 +46,7 @@ def backend_process():
         pytest.fail(
             f"Backend did not send ready message within 10 seconds.\n"
             f"stdout buffer: {buffer!r}\n"
-            f"stderr: {stderr_data!r}"
+            f"stderr: {stderr_data!r}",
         )
 
     yield proc
@@ -84,12 +84,12 @@ def _rpc_call(proc, method: str, params: dict, timeout: float = 5.0):
 
 
 class TestIPC:
-    def test_version(self, backend_process):
+    def test_version(self, backend_process) -> None:
         resp = _rpc_call(backend_process, "version", {})
         assert "result" in resp
         assert resp["result"]["version"] == __version__
 
-    def test_formats(self, backend_process):
+    def test_formats(self, backend_process) -> None:
         resp = _rpc_call(backend_process, "formats", {})
         assert "result" in resp
         formats = resp["result"]["formats"]
@@ -97,29 +97,29 @@ class TestIPC:
         assert "PNG" in formats
         assert "WEBP" in formats
 
-    def test_db_records_shape(self, backend_process):
+    def test_db_records_shape(self, backend_process) -> None:
         resp = _rpc_call(backend_process, "db_records", {})
         assert "result" in resp
         assert isinstance(resp["result"]["records"], list)
         assert "fields" in resp["result"]
 
-    def test_theme_get(self, backend_process):
+    def test_theme_get(self, backend_process) -> None:
         resp = _rpc_call(backend_process, "theme_get", {})
         assert "result" in resp
         assert "name" in resp["result"]
 
-    def test_history_list_shape(self, backend_process):
+    def test_history_list_shape(self, backend_process) -> None:
         resp = _rpc_call(backend_process, "history_list", {})
         assert "result" in resp
         assert isinstance(resp["result"]["runs"], list)
 
-    def test_unknown_method(self, backend_process):
+    def test_unknown_method(self, backend_process) -> None:
         resp = _rpc_call(backend_process, "nonexistent_method", {})
         assert "error" in resp
         msg = resp["error"]["message"]
         assert "desconocido" in msg.lower() or "unknown" in msg.lower()
 
-    def test_plugin_formats(self, backend_process):
+    def test_plugin_formats(self, backend_process) -> None:
         resp = _rpc_call(backend_process, "plugin_formats", {})
         assert "result" in resp
         formats = resp["result"]["formats"]

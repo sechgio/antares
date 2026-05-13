@@ -17,10 +17,11 @@ let _restartResetTimer = null;
 
 // Promise-based readiness gate: resolves when backend is ready
 let _readyResolve = null;
+let _readyReject = null;
 let _readyPromise = _createReadyPromise();
 
 function _createReadyPromise() {
-  return new Promise((resolve) => { _readyResolve = resolve; });
+  return new Promise((resolve, reject) => { _readyResolve = resolve; _readyReject = reject; });
 }
 
 function getProcess() { return pythonProcess; }
@@ -33,7 +34,7 @@ function isReady() { return _isReady; }
 async function waitForReady(timeoutMs = 35000) {
   if (_isReady && pythonProcess && !pythonProcess.killed) return true;
   const timeout = new Promise((resolve) => setTimeout(() => resolve(false), timeoutMs));
-  const ready = _readyPromise.then(() => true);
+  const ready = _readyPromise.then(() => true).catch(() => false);
   return Promise.race([ready, timeout]);
 }
 
@@ -60,9 +61,6 @@ async function startPythonBackend(isDev, attempt = 1) {
   }
 }
 
-/**
- * Automatically restart the backend after an unexpected crash.
- */
 async function _autoRestart() {
   if (_isShuttingDown) return;
   _restartCount++;
@@ -77,10 +75,17 @@ async function _autoRestart() {
         message: 'El backend se cerró inesperadamente y no se pudo reiniciar. Reinicia la aplicación.',
       });
     }
+    // Resolve orphaned waiters so they don't hang forever
+    if (_readyResolve) {
+      try { _readyResolve(undefined); } catch {}
+    }
     return;
   }
 
-  // Reset the ready gate for new waiters
+  // Reject previous waiters and reset the ready gate
+  if (_readyReject) {
+    try { _readyReject(new Error('Backend restarting')); } catch {}
+  }
   _readyPromise = _createReadyPromise();
 
   // Notify renderer that backend is restarting

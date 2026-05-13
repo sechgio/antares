@@ -16,9 +16,7 @@ from typing import Literal
 
 from .errors import InvalidMatchRuleError, InvalidPanelError
 
-# ---------------------------------------------------------------------------
 # Constantes públicas del dominio
-# ---------------------------------------------------------------------------
 
 #: Máximo de imágenes permitidas por Panel (ver I1).
 MAX_IMAGES_PER_PANEL: int = 4
@@ -32,36 +30,30 @@ MAX_LOGO_BYTES: int = 5 * 1024 * 1024
 #: Tamaño máximo (bytes) admitido para cada imagen del bulk set (15 MB).
 MAX_IMAGE_BYTES: int = 15 * 1024 * 1024
 
-# ---------------------------------------------------------------------------
 # Alias de tipo literales (espejo de los contratos TypeScript del frontend)
-# ---------------------------------------------------------------------------
 
 MatchStrategy = Literal["prefix", "contains", "exact", "regex"]
 ExportMode = Literal["skip_empty", "include_empty"]
 
 # Conjunto canónico de estrategias aceptadas (se usa en validaciones).
 _VALID_MATCH_STRATEGIES: frozenset[str] = frozenset(
-    {"prefix", "contains", "exact", "regex"}
+    {"prefix", "contains", "exact", "regex"},
 )
 
-# ---------------------------------------------------------------------------
 # Regex internos de validación
-# ---------------------------------------------------------------------------
 
 # I4: fecha ISO-8601 "YYYY-MM-DD" (o cadena vacía, permitida en form-mode).
 _ISO_DATE_RE: re.Pattern[str] = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
-# I3: caption "IMAGEN N°{1..4}: {direccion}" — captura el número para
-# cruzarlo con la posición de la imagen.
-_CAPTION_RE: re.Pattern[str] = re.compile(r"^IMAGEN N°([1-4]): .+$")
+# I3: caption "IMAGEN N°{N}: {direccion}" — captura el número secuencial
+# global (no necesariamente 1..4) para usarlo en leyendas.
+_CAPTION_RE: re.Pattern[str] = re.compile(r"^IMAGEN N°(\d+): .+$")
 
 # I6: presencia del grupo nombrado (?P<clave>...) dentro del patrón regex.
 _NAMED_CLAVE_GROUP_RE: re.Pattern[str] = re.compile(r"\(\?P<clave>")
 
 
-# ---------------------------------------------------------------------------
 # Modelos del dominio
-# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -71,9 +63,9 @@ class PanelImageRef:
     Invariantes aplicadas en ``__post_init__``:
 
     * ``filename`` es una cadena no vacía.
-    * ``position`` ∈ {1, 2, 3, 4} (I2 parcial).
-    * ``caption`` cumple ``^IMAGEN N°[1-4]: .+$`` y el número coincide con
-      ``position`` (I3).
+    * ``position`` ∈ {1, 2, 3, 4} (I2 parcial) — posición dentro del grid 2x2.
+    * ``caption`` cumple ``^IMAGEN N°\\d+: .+$`` (I3) — el número es
+      secuencial global (no necesariamente 1..4).
     """
 
     filename: str
@@ -82,35 +74,40 @@ class PanelImageRef:
 
     def __post_init__(self) -> None:
         if not isinstance(self.filename, str) or not self.filename:
+            msg = "PanelImageRef.filename: debe ser una cadena no vacía"
             raise InvalidPanelError(
-                "PanelImageRef.filename: debe ser una cadena no vacía"
+                msg,
             )
         # ``bool`` es subtipo de ``int`` en Python; excluirlo explícitamente.
         if not isinstance(self.position, int) or isinstance(self.position, bool):
-            raise InvalidPanelError(
+            msg = (
                 "PanelImageRef.position: debe ser int, no "
                 f"{type(self.position).__name__}"
             )
-        if not 1 <= self.position <= MAX_IMAGES_PER_PANEL:
             raise InvalidPanelError(
+                msg,
+            )
+        if not 1 <= self.position <= MAX_IMAGES_PER_PANEL:
+            msg = (
                 "PanelImageRef.position: debe estar en "
                 f"1..{MAX_IMAGES_PER_PANEL}, se recibió {self.position}"
             )
-        if not isinstance(self.caption, str):
             raise InvalidPanelError(
-                "PanelImageRef.caption: debe ser una cadena"
+                msg,
+            )
+        if not isinstance(self.caption, str):
+            msg = "PanelImageRef.caption: debe ser una cadena"
+            raise InvalidPanelError(
+                msg,
             )
         match = _CAPTION_RE.match(self.caption)
         if match is None:
-            raise InvalidPanelError(
+            msg = (
                 "PanelImageRef.caption: debe cumplir el formato "
-                "'IMAGEN N°{1-4}: {direccion}'"
+                "'IMAGEN N°{N}: {direccion}'"
             )
-        caption_position = int(match.group(1))
-        if caption_position != self.position:
             raise InvalidPanelError(
-                "PanelImageRef.caption: el número N°"
-                f"{caption_position} no coincide con position={self.position}"
+                msg,
             )
 
 
@@ -138,52 +135,76 @@ class Panel:
 
     def __post_init__(self) -> None:
         if not isinstance(self.cuadrante, str):
-            raise InvalidPanelError("Panel.cuadrante: debe ser una cadena")
+            msg = "Panel.cuadrante: debe ser una cadena"
+            raise InvalidPanelError(msg)
         if not isinstance(self.fecha_corte, str):
-            raise InvalidPanelError("Panel.fecha_corte: debe ser una cadena")
+            msg = "Panel.fecha_corte: debe ser una cadena"
+            raise InvalidPanelError(msg)
         if self.fecha_corte != "" and _ISO_DATE_RE.match(self.fecha_corte) is None:
-            raise InvalidPanelError(
+            msg = (
                 "Panel.fecha_corte: debe cumplir ISO YYYY-MM-DD o ser '' "
                 f"(form-mode); se recibió {self.fecha_corte!r}"
             )
-        if not isinstance(self.motivo, str):
-            raise InvalidPanelError("Panel.motivo: debe ser una cadena")
-        if not isinstance(self.imagenes, tuple):
             raise InvalidPanelError(
+                msg,
+            )
+        if not isinstance(self.motivo, str):
+            msg = "Panel.motivo: debe ser una cadena"
+            raise InvalidPanelError(msg)
+        if not isinstance(self.imagenes, tuple):
+            msg = (
                 "Panel.imagenes: debe ser tuple, no "
                 f"{type(self.imagenes).__name__}"
             )
-        if len(self.imagenes) > MAX_IMAGES_PER_PANEL:
             raise InvalidPanelError(
+                msg,
+            )
+        if len(self.imagenes) > MAX_IMAGES_PER_PANEL:
+            msg = (
                 "Panel.imagenes: máximo "
                 f"{MAX_IMAGES_PER_PANEL} imágenes, se recibieron "
                 f"{len(self.imagenes)}"
             )
+            raise InvalidPanelError(
+                msg,
+            )
         positions: list[int] = []
         for idx, ref in enumerate(self.imagenes):
             if not isinstance(ref, PanelImageRef):
-                raise InvalidPanelError(
+                msg = (
                     f"Panel.imagenes[{idx}]: debe ser PanelImageRef, se recibió "
                     f"{type(ref).__name__}"
                 )
+                raise InvalidPanelError(
+                    msg,
+                )
             positions.append(ref.position)
         if len(set(positions)) != len(positions):
-            raise InvalidPanelError(
+            msg = (
                 "Panel.imagenes: las posiciones deben ser únicas, se "
                 f"recibieron {positions}"
             )
+            raise InvalidPanelError(
+                msg,
+            )
         if self.source_row_index is not None:
             if not isinstance(self.source_row_index, int) or isinstance(
-                self.source_row_index, bool
+                self.source_row_index, bool,
             ):
-                raise InvalidPanelError(
+                msg = (
                     "Panel.source_row_index: debe ser int o None, se recibió "
                     f"{type(self.source_row_index).__name__}"
                 )
-            if self.source_row_index < 0:
                 raise InvalidPanelError(
+                    msg,
+                )
+            if self.source_row_index < 0:
+                msg = (
                     "Panel.source_row_index: debe ser >= 0, se recibió "
                     f"{self.source_row_index}"
+                )
+                raise InvalidPanelError(
+                    msg,
                 )
 
 
@@ -206,32 +227,45 @@ class MatchRule:
 
     def __post_init__(self) -> None:
         if not isinstance(self.key_column, str) or not self.key_column:
+            msg = "MatchRule.key_column: debe ser una cadena no vacía"
             raise InvalidMatchRuleError(
-                "MatchRule.key_column: debe ser una cadena no vacía"
+                msg,
             )
         if self.strategy not in _VALID_MATCH_STRATEGIES:
-            raise InvalidMatchRuleError(
+            msg = (
                 "MatchRule.strategy: debe ser uno de "
                 f"{sorted(_VALID_MATCH_STRATEGIES)}, se recibió "
                 f"{self.strategy!r}"
             )
+            raise InvalidMatchRuleError(
+                msg,
+            )
         if self.strategy == "regex":
             if not isinstance(self.regex_pattern, str) or not self.regex_pattern:
-                raise InvalidMatchRuleError(
+                msg = (
                     "MatchRule.regex_pattern: debe ser una cadena no vacía "
                     "cuando strategy=='regex'"
+                )
+                raise InvalidMatchRuleError(
+                    msg,
                 )
             try:
                 re.compile(self.regex_pattern)
             except re.error as err:
-                raise InvalidMatchRuleError(
+                msg = (
                     "MatchRule.regex_pattern: expresión regular inválida: "
                     f"{err}"
+                )
+                raise InvalidMatchRuleError(
+                    msg,
                 ) from err
             if _NAMED_CLAVE_GROUP_RE.search(self.regex_pattern) is None:
-                raise InvalidMatchRuleError(
+                msg = (
                     "MatchRule.regex_pattern: debe contener el grupo "
                     "nombrado (?P<clave>...)"
+                )
+                raise InvalidMatchRuleError(
+                    msg,
                 )
 
 

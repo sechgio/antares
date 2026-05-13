@@ -38,10 +38,6 @@ from .errors import InvalidExcelError
 from .matcher import _normalize_column_name
 from .models import MAX_EXCEL_ROWS, ExcelSource
 
-# ---------------------------------------------------------------------------
-# Constantes y logger
-# ---------------------------------------------------------------------------
-
 #: Logger estándar del módulo (ver Req 16.4).
 logger = logging.getLogger(__name__)
 
@@ -49,16 +45,11 @@ logger = logging.getLogger(__name__)
 _ERR_INVALID_EXTENSION: str = "Solo se admiten archivos .xlsx"
 _ERR_NO_DATA_ROWS: str = "El Excel no contiene filas de datos"
 _ERR_ROW_LIMIT: str = f"El Excel excede el límite de {MAX_EXCEL_ROWS:,} filas".replace(
-    ",", "."
+    ",", ".",
 )
 # "No se pudo leer el archivo Excel: {detalle}" — prefijo usado por varios
 # fallos; el detalle se añade en el sitio de captura.
 _ERR_READ_PREFIX: str = "No se pudo leer el archivo Excel"
-
-
-# ---------------------------------------------------------------------------
-# Utilidades internas
-# ---------------------------------------------------------------------------
 
 
 def _coerce_cell(value: Any) -> str:
@@ -100,9 +91,6 @@ def _is_row_completely_empty(raw_row: tuple[Any, ...]) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# API pública
-# ---------------------------------------------------------------------------
-
 
 def parse_excel_bytes(content: bytes, filename: str) -> ExcelSource:
     """Parsea los bytes de un Excel y devuelve un :class:`ExcelSource`.
@@ -135,14 +123,14 @@ def parse_excel_bytes(content: bytes, filename: str) -> ExcelSource:
         * ``warnings``: tupla de advertencias no fatales (por ejemplo,
           filas completamente vacías que fueron omitidas).
     """
-    # ---- Validación de tipos básicos ----
     if not isinstance(content, (bytes, bytearray)):
         logger.error(
             "parse_excel_bytes: content debe ser bytes, se recibió %s",
             type(content).__name__,
         )
+        msg = f"{_ERR_READ_PREFIX}: el contenido no son bytes válidos"
         raise InvalidExcelError(
-            f"{_ERR_READ_PREFIX}: el contenido no son bytes válidos"
+            msg,
         )
     if not isinstance(filename, str):
         logger.error(
@@ -154,7 +142,7 @@ def parse_excel_bytes(content: bytes, filename: str) -> ExcelSource:
     # ---- Validación de extensión (Req 6.1 / 6.2) ----
     if not filename.lower().endswith(".xlsx"):
         logger.warning(
-            "parse_excel_bytes: extensión inválida para filename=%r", filename
+            "parse_excel_bytes: extensión inválida para filename=%r", filename,
         )
         raise InvalidExcelError(_ERR_INVALID_EXTENSION)
 
@@ -172,7 +160,8 @@ def parse_excel_bytes(content: bytes, filename: str) -> ExcelSource:
             filename,
             err,
         )
-        raise InvalidExcelError(f"{_ERR_READ_PREFIX}: {err}") from err
+        msg = f"{_ERR_READ_PREFIX}: {err}"
+        raise InvalidExcelError(msg) from err
     except InvalidExcelError:
         # No envolver dos veces si un helper futuro ya hizo el trabajo.
         raise
@@ -185,35 +174,37 @@ def parse_excel_bytes(content: bytes, filename: str) -> ExcelSource:
             filename,
             err,
         )
-        raise InvalidExcelError(f"{_ERR_READ_PREFIX}: {err}") from err
+        msg = f"{_ERR_READ_PREFIX}: {err}"
+        raise InvalidExcelError(msg) from err
 
     try:
         sheet = workbook.active
         if sheet is None:  # pragma: no cover - workbook siempre tiene hoja activa
             logger.error(
-                "parse_excel_bytes: workbook %r sin hoja activa", filename
+                "parse_excel_bytes: workbook %r sin hoja activa", filename,
             )
+            msg = f"{_ERR_READ_PREFIX}: el archivo no tiene hojas"
             raise InvalidExcelError(
-                f"{_ERR_READ_PREFIX}: el archivo no tiene hojas"
+                msg,
             )
 
-        # ---- Lectura de filas usando iter_rows (streaming) ----
         row_iter = sheet.iter_rows(values_only=True)
         try:
             header_row = next(row_iter)
         except StopIteration as err:
             logger.warning(
-                "parse_excel_bytes: archivo %r sin cabecera", filename
+                "parse_excel_bytes: archivo %r sin cabecera", filename,
             )
             raise InvalidExcelError(_ERR_NO_DATA_ROWS) from err
 
         # Cabecera vacía o con todos None → archivo ilegible (Req 6.6).
         if not header_row or all(cell is None for cell in header_row):
             logger.warning(
-                "parse_excel_bytes: cabecera vacía en archivo %r", filename
+                "parse_excel_bytes: cabecera vacía en archivo %r", filename,
             )
+            msg = f"{_ERR_READ_PREFIX}: la cabecera está vacía"
             raise InvalidExcelError(
-                f"{_ERR_READ_PREFIX}: la cabecera está vacía"
+                msg,
             )
 
         original_columns: list[str] = []
@@ -228,8 +219,9 @@ def parse_excel_bytes(content: bytes, filename: str) -> ExcelSource:
                     idx,
                     filename,
                 )
+                msg = f"{_ERR_READ_PREFIX}: la cabecera contiene celdas vacías"
                 raise InvalidExcelError(
-                    f"{_ERR_READ_PREFIX}: la cabecera contiene celdas vacías"
+                    msg,
                 )
             original = _coerce_cell(cell).strip()
             if not original:
@@ -238,8 +230,9 @@ def parse_excel_bytes(content: bytes, filename: str) -> ExcelSource:
                     idx,
                     filename,
                 )
+                msg = f"{_ERR_READ_PREFIX}: la cabecera contiene celdas vacías"
                 raise InvalidExcelError(
-                    f"{_ERR_READ_PREFIX}: la cabecera contiene celdas vacías"
+                    msg,
                 )
             normalized = _normalize_column_name(original)
             if not normalized:
@@ -249,14 +242,16 @@ def parse_excel_bytes(content: bytes, filename: str) -> ExcelSource:
                     original,
                     filename,
                 )
-                raise InvalidExcelError(
+                msg = (
                     f"{_ERR_READ_PREFIX}: nombre de columna no utilizable: "
                     f"{original!r}"
+                )
+                raise InvalidExcelError(
+                    msg,
                 )
             original_columns.append(original)
             normalized_columns.append(normalized)
 
-        # ---- Detección de nombres normalizados duplicados ----
         seen: set[str] = set()
         for norm in normalized_columns:
             if norm in seen:
@@ -265,13 +260,15 @@ def parse_excel_bytes(content: bytes, filename: str) -> ExcelSource:
                     norm,
                     filename,
                 )
-                raise InvalidExcelError(
+                msg = (
                     f"{_ERR_READ_PREFIX}: columnas duplicadas tras normalizar "
                     f"({norm!r})"
                 )
+                raise InvalidExcelError(
+                    msg,
+                )
             seen.add(norm)
 
-        # ---- Lectura de filas de datos ----
         rows: list[dict[str, str]] = []
         skipped_empty_rows = 0
         for raw_row in row_iter:

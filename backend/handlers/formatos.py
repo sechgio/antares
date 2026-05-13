@@ -1,8 +1,11 @@
 """Formatos PDF handlers."""
 from __future__ import annotations
+
 import base64
 from typing import Any
+
 from backend.handlers.common import with_locale
+
 
 @with_locale
 def formatos_list(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
@@ -40,7 +43,8 @@ def formatos_update_mapping(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.formatos import update_mapping
     entry = update_mapping(params.get("format_id", ""), params.get("mapping", {}))
     if entry is None:
-        raise ValueError("Formato no encontrado")
+        msg = "Formato no encontrado"
+        raise ValueError(msg)
     result = dict(entry)
     result["has_mapping"] = result.get("mapping") is not None
     return {"format": result}

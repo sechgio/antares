@@ -1,6 +1,6 @@
 """Jerarquía de errores del módulo Panel Aviso de Corte.
 
-Todas las excepciones heredan de :class:`backend.core.exceptions.CosmoError`
+Todas las excepciones heredan de :class:`backend.core.exceptions.AntaresError`
 para integrarse con la jerarquía global de errores de la aplicación.
 Cada clase expone un código canónico en el atributo de clase
 ``ERROR_CODE`` que el adaptador IPC puede usar para traducir el error
@@ -9,10 +9,10 @@ a una respuesta estructurada hacia el renderer.
 
 from __future__ import annotations
 
-from backend.core.exceptions import CosmoError
+from backend.core.exceptions import AntaresError
 
 
-class PanelAvisoCorteError(CosmoError):
+class PanelAvisoCorteError(AntaresError):
     """Error base para cualquier fallo del módulo Panel Aviso de Corte."""
 
     ERROR_CODE: str = "PANEL_AVISO_CORTE_ERROR"

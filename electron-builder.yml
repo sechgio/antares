@@ -1,6 +1,6 @@
 appId: com.cosmo.app
-productName: COSMO
-copyright: Copyright © 2026 COSMO
+productName: ANTARES
+copyright: Copyright © 2026 ANTARES
 directories:
   output: dist-electron
   buildResources: assets
@@ -61,7 +61,7 @@ extraResources:
     filter: ["**/*"]
   - from: dist
     to: backend
-    filter: ["CosmoBackend*"]
+    filter: ["AntaresBackend*"]
 win:
   target:
     - target: nsis
@@ -69,7 +69,7 @@ win:
     - target: portable
       arch: [x64]
   icon: assets/icon.ico
-  legalTrademarks: "COSMO"
+  legalTrademarks: "ANTARES"
   requestedExecutionLevel: asInvoker
   verifyUpdateCodeSignature: true
   signtoolOptions:
@@ -94,8 +94,8 @@ linux:
     - rpm
   category: Utility
   icon: assets/icon.png
-  maintainer: "COSMO"
-  vendor: "COSMO"
+  maintainer: "ANTARES"
+  vendor: "ANTARES"
 snap:
   grade: stable
   confinement: strict
@@ -108,20 +108,20 @@ nsis:
   allowElevation: true
   createDesktopShortcut: always
   createStartMenuShortcut: true
-  shortcutName: COSMO
-  uninstallDisplayName: "COSMO"
+  shortcutName: ANTARES
+  uninstallDisplayName: "ANTARES"
   installerIcon: assets/icon.ico
   uninstallerIcon: assets/icon.ico
   installerHeaderIcon: assets/icon.ico
-  artifactName: "COSMO-Setup-${version}.exe"
+  artifactName: "ANTARES-Setup-${version}.exe"
   deleteAppDataOnUninstall: false
   runAfterFinish: true
   menuCategory: true
   displayLanguageSelector: false
 portable:
-  artifactName: "COSMO-Portable-${version}.exe"
+  artifactName: "ANTARES-Portable-${version}.exe"
 dmg:
-  artifactName: "COSMO-${version}-${arch}.dmg"
+  artifactName: "ANTARES-${version}-${arch}.dmg"
   icon: assets/icon_512.png
   sign: false
   contents:

@@ -32,23 +32,26 @@ export function useFileSelection(files: string[]) {
         return next;
       });
       setSelectedFile(path);
-    } else if (e.shiftKey && selectedFile) {
+    } else if (e.shiftKey) {
       e.preventDefault();
-      const idx1 = filesRef.current.indexOf(selectedFile);
-      const idx2 = filesRef.current.indexOf(path);
-      const start = Math.min(idx1, idx2);
-      const end = Math.max(idx1, idx2);
-      setSelectedFiles((prev) => {
-        const next = new Set(prev);
-        for (let i = start; i <= end; i++) next.add(filesRef.current[i]);
-        return next;
+      setSelectedFile((prevSel) => {
+        const anchorPath = prevSel || filesRef.current[0];
+        const idx1 = filesRef.current.indexOf(anchorPath);
+        const idx2 = filesRef.current.indexOf(path);
+        const start = Math.min(idx1, idx2);
+        const end = Math.max(idx1, idx2);
+        setSelectedFiles((prev) => {
+          const next = new Set(prev);
+          for (let i = start; i <= end; i++) next.add(filesRef.current[i]);
+          return next;
+        });
+        return path;
       });
-      setSelectedFile(path);
     } else {
       setSelectedFile(path);
       setSelectedFiles(new Set([path]));
     }
-  }, [selectedFile]);
+  }, []);
 
   const handleFileDoubleClick = useCallback((_e: React.MouseEvent, path: string) => {
     setSelectedFile(path);

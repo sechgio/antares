@@ -40,7 +40,7 @@ assert(nodeModulesInclude >= 0, 'electron-builder should explicitly include runt
 assert(sourcemapExclude > nodeModulesInclude, 'node_modules sourcemap exclusion should run after the broad include');
 
 const backendBuild = readProjectFile('scripts', 'build-backend.js');
-for (const staleName of ['CosmoBackend.exe', 'HidroConvertBackend.exe']) {
+for (const staleName of ['AntaresBackend.exe', 'HidroConvertBackend.exe']) {
   assert(backendBuild.includes(staleName), `backend build should guard against stale ${staleName}`);
 }
 assert(backendBuild.includes('rmSync'), 'backend build should clean stale PyInstaller output before rebuilding');

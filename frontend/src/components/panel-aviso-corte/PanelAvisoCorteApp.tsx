@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { FileDown, AlertTriangle } from 'lucide-react';
+import { FileDown, AlertTriangle, Download, Loader2 } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
 import { useDialog } from '../../hooks/useDialog';
 import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut';
@@ -19,7 +19,6 @@ async function saveToHistory(label: string, details: Record<string, unknown>, co
       err_count: 0,
     });
   } catch {
-    // Silently ignore history save errors so main flow is never blocked
   }
 }
 import { usePanelSession } from './hooks/usePanelSession';
@@ -95,10 +94,8 @@ export default function PanelAvisoCorteApp() {
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* ─── Left: Configuration ─── */}
       <div className="w-[380px] min-w-[340px] flex flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-base)] overflow-y-auto">
         <div className="flex flex-col gap-4 p-4">
-          {/* Datos del aviso */}
           <HeaderForm
             value={session.headerForm}
             onChange={session.setHeaderForm}
@@ -111,7 +108,6 @@ export default function PanelAvisoCorteApp() {
 
           <hr className="border-[var(--border-subtle)]" />
 
-          {/* Imágenes y Excel */}
           <ImageUploader
             images={session.images}
             onAdd={session.addImages}
@@ -134,7 +130,32 @@ export default function PanelAvisoCorteApp() {
             </>
           )}
 
-          {/* Resumen */}
+          {/* ── Export controls ── */}
+          <div className="pac-sidebar-export__row mt-1">
+            <select
+              aria-label="Formato de exportación"
+              value={exportFormat}
+              onChange={(e) => setExportFormat(e.target.value as 'pdf' | 'docx')}
+              className="pac-sidebar-export__select"
+            >
+              <option value="pdf">PDF</option>
+              <option value="docx">Word</option>
+            </select>
+            <button
+              aria-label="Exportar documento"
+              onClick={handleExport}
+              disabled={!session.previewPanels.length || session.isExporting}
+              className="pac-sidebar-export__btn"
+            >
+              {session.isExporting ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Download size={14} />
+              )}
+              {session.isExporting ? 'Exportando…' : `Exportar ${exportFormat.toUpperCase()}`}
+            </button>
+          </div>
+
           {session.matchResult && (
             <>
               <hr className="border-[var(--border-subtle)]" />
@@ -147,7 +168,6 @@ export default function PanelAvisoCorteApp() {
           )}
         </div>
 
-        {/* Errors */}
         {session.errors.length > 0 && (
           <div className="mt-auto px-4 py-2 border-t border-[var(--border-subtle)] bg-red-500/5">
             <div className="flex items-start gap-2">
@@ -163,24 +183,18 @@ export default function PanelAvisoCorteApp() {
         )}
       </div>
 
-      {/* ─── Right: Preview + Export ─── */}
       <div className="flex-1 flex flex-col bg-[var(--bg-elevated)] overflow-hidden">
-        {/* Export toolbar */}
-        <div className="shrink-0 border-b border-[var(--border-subtle)] bg-[var(--bg-base)] px-5 py-2.5">
-          <ExportBar
-            canExport={session.previewPanels.length > 0}
-            isExporting={session.isExporting}
-            format={exportFormat}
-            onFormatChange={setExportFormat}
-            onExport={handleExport}
-            totalPages={totalPages}
-            pageIndex={session.currentPageIndex}
-            onPrev={() => session.setCurrentPageIndex(Math.max(0, session.currentPageIndex - 1))}
-            onNext={() => session.setCurrentPageIndex(Math.min(totalPages - 1, session.currentPageIndex + 1))}
-          />
-        </div>
+        {totalPages > 0 && (
+          <div className="shrink-0 border-b border-[var(--border-subtle)] bg-[var(--bg-base)] px-5 py-2.5">
+            <ExportBar
+              totalPages={totalPages}
+              pageIndex={session.currentPageIndex}
+              onPrev={() => session.setCurrentPageIndex(Math.max(0, session.currentPageIndex - 1))}
+              onNext={() => session.setCurrentPageIndex(Math.min(totalPages - 1, session.currentPageIndex + 1))}
+            />
+          </div>
+        )}
 
-        {/* Preview area */}
         <div className="flex-1 overflow-auto p-6 flex items-start justify-center">
           {currentPanel ? (
             <SheetPreview
@@ -189,12 +203,17 @@ export default function PanelAvisoCorteApp() {
               images={imagesMap}
             />
           ) : (
-            <div className="flex flex-col items-center justify-center gap-2 py-20 text-center">
-              <FileDown size={20} className="text-[var(--text-muted)]" />
-              <p className="text-xs text-[var(--text-muted)] max-w-[240px]">
-                Configura los datos o importa un Excel para ver la vista previa.
-              </p>
-            </div>
+            <SheetPreview
+              panel={{
+                cuadrante: session.headerForm.cuadrante,
+                fechaCorte: session.headerForm.fechaCorte,
+                motivo: session.headerForm.motivo,
+                imagenes: [],
+                sourceRowIndex: null
+              }}
+              logoCenterUrl={logoCenterUrl}
+              images={imagesMap}
+            />
           )}
         </div>
       </div>

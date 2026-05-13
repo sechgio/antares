@@ -11,7 +11,7 @@ from backend.core.renamer import RenamerEngine
 class TestRenamerEngine:
     """Pruebas para RenamerEngine.aplicar y preview_lote."""
 
-    def test_aplicar_con_datos_completos(self, monkeypatch, tmp_path):
+    def test_aplicar_con_datos_completos(self, monkeypatch, tmp_path) -> None:
         """Patrón {codigo}_{nombre}{ext} con datos en BD → nombre correcto."""
         monkeypatch.setattr(
             "backend.core.renamer.get_field_names",
@@ -26,7 +26,7 @@ class TestRenamerEngine:
 
         assert resultado == "1_2454514245.jpg"
 
-    def test_aplicar_fallback_codigo_para_campo_principal(self, monkeypatch, tmp_path):
+    def test_aplicar_fallback_codigo_para_campo_principal(self, monkeypatch, tmp_path) -> None:
         """Si faltan campos secundarios, elimina separadores sobrantes."""
         monkeypatch.setattr(
             "backend.core.renamer.get_field_names",
@@ -41,7 +41,7 @@ class TestRenamerEngine:
 
         assert resultado == "1.jpg"
 
-    def test_aplicar_otros_campos_vacios_si_no_estan_en_bd(self, monkeypatch, tmp_path):
+    def test_aplicar_otros_campos_vacios_si_no_estan_en_bd(self, monkeypatch, tmp_path) -> None:
         """Campos distintos al primero quedan vacíos si no hay BD."""
         monkeypatch.setattr(
             "backend.core.renamer.get_field_names",
@@ -56,7 +56,7 @@ class TestRenamerEngine:
 
         assert resultado == "1.jpg"
 
-    def test_aplicar_no_propaga_stem_como_dato(self, monkeypatch, tmp_path):
+    def test_aplicar_no_propaga_stem_como_dato(self, monkeypatch, tmp_path) -> None:
         """Bugfix: el stem del archivo NO debe usarse como fallback para campos secundarios.
 
         Antes del fix, si el archivo se llamaba '1_1.jpg' y no había BD,
@@ -77,7 +77,7 @@ class TestRenamerEngine:
         assert resultado == "1.jpg"
         assert "1_1_1_1" not in resultado
 
-    def test_limpia_separadores_repetidos_al_faltar_datos(self, monkeypatch, tmp_path):
+    def test_limpia_separadores_repetidos_al_faltar_datos(self, monkeypatch, tmp_path) -> None:
         """Los campos vacíos no deben dejar guiones o espacios colgando."""
         monkeypatch.setattr(
             "backend.core.renamer.get_field_names",
@@ -92,7 +92,7 @@ class TestRenamerEngine:
 
         assert resultado == "1.jpg"
 
-    def test_secuencia_autoincremental(self, monkeypatch, tmp_path):
+    def test_secuencia_autoincremental(self, monkeypatch, tmp_path) -> None:
         """Cada llamada a aplicar incrementa {seq}."""
         monkeypatch.setattr(
             "backend.core.renamer.get_field_names",
@@ -107,7 +107,7 @@ class TestRenamerEngine:
         assert engine.aplicar(archivo) == "img_006.jpg"
         assert engine.aplicar(archivo) == "img_007.jpg"
 
-    def test_ext_mantiene_extension_original(self, monkeypatch, tmp_path):
+    def test_ext_mantiene_extension_original(self, monkeypatch, tmp_path) -> None:
         """{ext} usa la extensión del archivo origen."""
         monkeypatch.setattr(
             "backend.core.renamer.get_field_names",
@@ -124,7 +124,7 @@ class TestRenamerEngine:
         assert engine.aplicar(jpg, codigo_manual="X") == "X.jpg"
         assert engine.aplicar(png, codigo_manual="Y") == "Y.png"
 
-    def test_sanitiza_nombre(self, monkeypatch, tmp_path):
+    def test_sanitiza_nombre(self, monkeypatch, tmp_path) -> None:
         """Elimina caracteres inválidos del resultado final."""
         monkeypatch.setattr(
             "backend.core.renamer.get_field_names",
@@ -141,7 +141,7 @@ class TestRenamerEngine:
         assert ">" not in resultado
         assert resultado == "prod_1_.jpg"
 
-    def test_preview_lote_no_mutua_secuencia(self, monkeypatch, tmp_path):
+    def test_preview_lote_no_mutua_secuencia(self, monkeypatch, tmp_path) -> None:
         """preview_lote no debe cambiar el contador interno de secuencia."""
         monkeypatch.setattr(
             "backend.core.renamer.get_field_names",
@@ -161,7 +161,7 @@ class TestRenamerEngine:
         # La primera llamada real debe seguir desde 10
         assert engine.aplicar(a, codigo_manual="x") == "010.jpg"
 
-    def test_patron_por_defecto(self, monkeypatch, tmp_path):
+    def test_patron_por_defecto(self, monkeypatch, tmp_path) -> None:
         """Sin patrón explícito usa los dos primeros campos."""
         monkeypatch.setattr(
             "backend.core.renamer.get_field_names",
@@ -174,11 +174,11 @@ class TestRenamerEngine:
 
         assert engine.patron == "{codigo}_{nombre}{ext}"
 
-    def test_patron_por_defecto_sin_campos_usa_secuencia(self, monkeypatch, tmp_path):
+    def test_patron_por_defecto_sin_campos_usa_secuencia(self, monkeypatch, tmp_path) -> None:
         """Sin campos configurados usa un patrón secuencial simple."""
         monkeypatch.setattr(
             "backend.core.renamer.get_field_names",
-            lambda: [],
+            list,
         )
 
         engine = RenamerEngine(patron=None, secuencia_inicial=1)

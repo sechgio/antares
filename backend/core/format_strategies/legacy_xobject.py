@@ -1,5 +1,6 @@
 """Legacy XObject strategy for PDF correlative number generation."""
 from __future__ import annotations
+
 import io
 import logging
 from typing import Any
@@ -25,8 +26,9 @@ _TEMPLATE_NUMBER_TEXT = "0000001"
 def _find_number_xobject(page) -> Any:
     xobjects = page["/Resources"].get("/XObject")
     if xobjects is None:
-        raise ValueError("Template sin XObjects")
-    for _, ref in xobjects.get_object().items():
+        msg = "Template sin XObjects"
+        raise ValueError(msg)
+    for ref in xobjects.get_object().values():
         xobject = ref.get_object()
         if xobject.get("/Subtype") != "/Form":
             continue
@@ -35,7 +37,8 @@ def _find_number_xobject(page) -> Any:
             continue
         if all(marker in data for marker in _NUMBER_XOBJECT_MARKERS):
             return xobject
-    raise ValueError("No se encontro el XObject del correlativo en el template")
+    msg = "No se encontro el XObject del correlativo en el template"
+    raise ValueError(msg)
 
 
 def _ensure_number_font(xobject) -> None:
@@ -57,7 +60,7 @@ def _update_number_xobject(page, padded_number: str) -> None:
     xobject = _find_number_xobject(page)
     _ensure_number_font(xobject)
     xobject[NameObject("/BBox")] = ArrayObject([
-        NumberObject(0), NumberObject(0), NumberObject(200), NumberObject(42)
+        NumberObject(0), NumberObject(0), NumberObject(200), NumberObject(42),
     ])
     escaped = _escape_pdf_text(padded_number)
     xobject.set_data((

@@ -28,7 +28,6 @@ async function saveToHistory(runType: string, label: string, details: Record<str
       err_count: 0,
     });
   } catch {
-    // Silently ignore history save errors so main flow is never blocked
   }
 }
 

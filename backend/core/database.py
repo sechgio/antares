@@ -11,10 +11,29 @@ from typing import Any
 
 from backend.core.config_fields import get_field_names, load_fields, save_fields
 from backend.core.exceptions import DatabaseError
-from backend.core.repository import get_connection, close_connection, _db_lock
+from backend.core.repository import _db_lock, get_connection
 from backend.utils.paths import user_data_path
 
 logger = logging.getLogger(__name__)
+
+_IDENTIFIER_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
+
+
+def _validate_identifier(name: str, context: str = "column") -> str:
+    """Validate a SQL identifier to prevent injection.
+
+    Only allows lowercase alphanumeric + underscore identifiers.
+    Raises ValueError if the name is not a safe identifier.
+    """
+    if not _IDENTIFIER_RE.match(name):
+        msg = f"Invalid SQL {context} name: {name!r}"
+        raise ValueError(msg)
+    return name
+
+
+def _qi(name: str) -> str:
+    """Quote a validated SQL identifier with double-quotes (SQLite style)."""
+    return f'"{name}"'
 
 
 def _get_connection() -> sqlite3.Connection:
@@ -54,14 +73,15 @@ def _build_schema(fields: list[dict[str, Any]]) -> str:
     """Construye la sentencia CREATE TABLE a partir de la configuración de campos."""
     columns = ["id INTEGER PRIMARY KEY AUTOINCREMENT"]
     for f in fields:
-        name: str = f["name"]
-        ftype: str = f["type"]
+        name = _validate_identifier(f["name"])
+        quoted_name = _qi(name)
+        ftype = f["type"]
         constraints: list[str] = []
         if f.get("required"):
             constraints.append("NOT NULL")
         if f.get("unique"):
             constraints.append("UNIQUE")
-        col = f"{name} {ftype}"
+        col = f"{quoted_name} {ftype}"
         if constraints:
             col += " " + " ".join(constraints)
         columns.append(col)
@@ -84,13 +104,14 @@ def _create_indexes(cursor: sqlite3.Cursor, fields: list[dict[str, Any]]) -> Non
         return
 
     # Index on first field (usually code/codigo)
-    first_field = fields[0]["name"]
-    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_imagenes_{first_field} ON imagenes({first_field})")
+    first_field = _validate_identifier(fields[0]["name"])
+    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_imagenes_{first_field} ON imagenes({_qi(first_field)})")
 
     # Index on any unique fields
     for f in fields:
-        if f.get("unique") and f["name"] != first_field:
-            cursor.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS idx_imagenes_{f['name']} ON imagenes({f['name']})")
+        name = _validate_identifier(f["name"])
+        if f.get("unique") and name != first_field:
+            cursor.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS idx_imagenes_{name} ON imagenes({_qi(name)})")
 
 
 def init_db() -> None:
@@ -106,33 +127,60 @@ def init_db() -> None:
         if not table_exists:
             cursor.execute(_build_schema(fields))
         elif not _table_matches_config(cursor, fields):
-            try:
-                cursor.execute("SELECT * FROM imagenes")
-                old_rows = cursor.fetchall()
-                old_cols = [d[0] for d in cursor.description]
-            except sqlite3.Error as exc:
-                logger.warning("No se pudieron leer datos antiguos durante migración: %s", exc)
-                old_rows = []
-                old_cols = []
-            cursor.execute("DROP TABLE imagenes")
-            cursor.execute(_build_schema(fields))
-            if old_rows:
-                new_cols = [f["name"] for f in fields]
-                placeholders = ", ".join(["?"] * len(new_cols))
-                col_names = ", ".join(new_cols)
-                defaults = {"INTEGER": 0, "REAL": 0.0, "TEXT": "", "BLOB": b""}
-                for row in old_rows:
-                    row_dict = dict(zip(old_cols, row, strict=False))
-                    values = []
-                    for f in fields:
-                        col = f["name"]
-                        if col in row_dict and row_dict[col] is not None:
-                            values.append(row_dict[col])
-                        elif f.get("required"):
-                            values.append(defaults.get(f["type"], ""))
-                        else:
-                            values.append(None)
-                    cursor.execute(f"INSERT INTO imagenes ({col_names}) VALUES ({placeholders})", values)
+            cursor.execute("PRAGMA table_info(imagenes)")
+            existing_cols = {row[1]: row[2].upper() for row in cursor.fetchall()}
+            expected_cols = {f["name"]: f["type"] for f in fields}
+            expected_cols["id"] = "INTEGER"
+
+            new_cols = {name: ftype for name, ftype in expected_cols.items() if name not in existing_cols}
+            removed_cols = [name for name in existing_cols if name not in expected_cols]
+            changed_cols = [name for name in expected_cols if name in existing_cols and existing_cols[name] != expected_cols[name]]
+
+            if removed_cols or changed_cols:
+                try:
+                    cursor.execute("SELECT * FROM imagenes")
+                    old_rows = cursor.fetchall()
+                    old_cols = [d[0] for d in cursor.description]
+                except sqlite3.Error as exc:
+                    logger.warning("No se pudieron leer datos antiguos durante migración: %s", exc)
+                    old_rows = []
+                    old_cols = []
+                cursor.execute("ALTER TABLE imagenes RENAME TO imagenes_old")
+                cursor.execute(_build_schema(fields))
+                if old_rows:
+                    new_col_names = [_validate_identifier(f["name"]) for f in fields]
+                    placeholders = ", ".join(["?"] * len(new_col_names))
+                    col_names = ", ".join(_qi(c) for c in new_col_names)
+                    defaults = {"INTEGER": 0, "REAL": 0.0, "TEXT": "", "BLOB": b""}
+                    try:
+                        for row in old_rows:
+                            row_dict = dict(zip(old_cols, row, strict=False))
+                            values = []
+                            for f in fields:
+                                col = f["name"]
+                                if col in row_dict and row_dict[col] is not None:
+                                    values.append(row_dict[col])
+                                elif f.get("required"):
+                                    values.append(defaults.get(f["type"], ""))
+                                else:
+                                    values.append(None)
+                            cursor.execute(f"INSERT INTO imagenes ({col_names}) VALUES ({placeholders})", values)
+                        cursor.execute("DROP TABLE imagenes_old")
+                    except sqlite3.Error as exc:
+                        logger.error("Fallo migración de datos, se mantiene tabla antigua: %s", exc)
+                        cursor.execute("DROP TABLE imagenes")
+                        cursor.execute("ALTER TABLE imagenes_old RENAME TO imagenes")
+                        raise DatabaseError(f"Migración fallida, esquema anterior preservado: {exc}") from exc
+                else:
+                    cursor.execute("DROP TABLE imagenes_old")
+            else:
+                defaults = {"INTEGER": "0", "REAL": "0.0", "TEXT": "''", "BLOB": "NULL"}
+                for col_name, col_type in new_cols.items():
+                    safe_name = _validate_identifier(col_name)
+                    quoted = _qi(safe_name)
+                    default_val = defaults.get(col_type, "''")
+                    cursor.execute(f"ALTER TABLE imagenes ADD COLUMN {quoted} {col_type} DEFAULT {default_val}")
+                logger.info("Migración aditiva: se agregaron columnas %s", list(new_cols.keys()))
 
         _create_indexes(cursor, fields)
         conn.commit()
@@ -155,12 +203,14 @@ def importar_excel(excel_path: str) -> int:
     try:
         import pandas as pd  # type: ignore
     except ImportError as exc:
-        raise ImportError("pandas no está instalado. Ejecuta: pip install pandas openpyxl") from exc
+        msg = "pandas no está instalado. Ejecuta: pip install pandas openpyxl"
+        raise ImportError(msg) from exc
 
     if not Path(excel_path).exists():
-        raise FileNotFoundError(f"No se encontró el archivo: {excel_path}")
+        msg = f"No se encontró el archivo: {excel_path}"
+        raise FileNotFoundError(msg)
 
-    df = pd.read_excel(excel_path, dtype=str, engine='openpyxl')
+    df = pd.read_excel(excel_path, dtype=str, engine="openpyxl")
     df.columns = _normalize_excel_columns(list(df.columns))
 
     fields = load_fields()
@@ -181,12 +231,17 @@ def importar_excel(excel_path: str) -> int:
     init_db()
     required = [f["name"] for f in fields if f.get("required")]
 
-    # Verificar campos requeridos
+    # Validate all field names as safe SQL identifiers (defense in depth)
+    field_names = [_validate_identifier(fn) for fn in field_names]
+
     missing = [r for r in required if r not in df.columns]
     if missing:
-        raise ValueError(
+        msg = (
             f"El Excel debe contener al menos las columnas requeridas: {missing}. "
             f"Columnas encontradas: {list(df.columns)}"
+        )
+        raise ValueError(
+            msg,
         )
 
     with _db_lock:
@@ -194,10 +249,12 @@ def importar_excel(excel_path: str) -> int:
         cursor = conn.cursor()
 
         try:
+            cursor.execute("BEGIN")
+
             cursor.execute("DELETE FROM imagenes")
 
             placeholders = ", ".join(["?"] * len(field_names))
-            col_names = ", ".join(field_names)
+            col_names = ", ".join(_qi(fn) for fn in field_names)
             sql = f"INSERT INTO imagenes ({col_names}) VALUES ({placeholders})"
 
             # Use executemany for bulk insert performance
@@ -220,11 +277,12 @@ def importar_excel(excel_path: str) -> int:
             cursor.executemany(sql, all_values)
             inserted = len(all_values)
 
-            conn.commit()
+            cursor.execute("COMMIT")
             return inserted
         except sqlite3.Error as exc:
-            conn.rollback()
-            raise DatabaseError(f"Error importando datos: {exc}") from exc
+            cursor.execute("ROLLBACK")
+            msg = f"Error importando datos: {exc}"
+            raise DatabaseError(msg) from exc
 
 
 def exportar_excel(excel_path: str) -> int:
@@ -232,15 +290,16 @@ def exportar_excel(excel_path: str) -> int:
     try:
         import pandas as pd  # type: ignore
     except ImportError as exc:
-        raise ImportError("pandas no está instalado.") from exc
+        msg = "pandas no está instalado."
+        raise ImportError(msg) from exc
 
     with _db_lock:
         conn = _get_connection()
-        field_names = get_field_names()
-        cols = ", ".join(field_names)
+        field_names = [_validate_identifier(fn) for fn in get_field_names()]
+        cols = ", ".join(_qi(fn) for fn in field_names)
         df = pd.read_sql_query(f"SELECT {cols} FROM imagenes", conn)
 
-    df.to_excel(excel_path, index=False, engine='openpyxl')
+    df.to_excel(excel_path, index=False, engine="openpyxl")
     return len(df)
 
 
@@ -250,26 +309,36 @@ def buscar_por_codigo(codigo: str) -> dict[str, Any] | None:
     with _db_lock:
         conn = _get_connection()
         cursor = conn.cursor()
-        field_names = get_field_names()
+        field_names = [_validate_identifier(fn) for fn in get_field_names()]
         if not field_names:
             return None
         search_value = str(codigo).strip()
 
-        # Single query with OR instead of multiple queries
-        conditions = " OR ".join([f"{fn} = ?" for fn in field_names])
+        # Single query with OR instead of multiple queries (identifiers are quoted for safety)
+        conditions = " OR ".join([f"{_qi(fn)} = ?" for fn in field_names])
         cursor.execute(f"SELECT * FROM imagenes WHERE {conditions} LIMIT 1", [search_value] * len(field_names))
         row = cursor.fetchone()
         return dict(row) if row else None
 
 
-def obtener_todos() -> list[dict[str, Any]]:
-    """Retorna todos los registros como lista de diccionarios."""
+def obtener_todos(limit: int | None = None, offset: int = 0) -> list[dict[str, Any]]:
+    """Retorna registros como lista de diccionarios con paginación opcional.
+
+    Args:
+        limit: Número máximo de registros a retornar. None = todos.
+        offset: Número de registros a saltar desde el inicio.
+    """
     with _db_lock:
         conn = _get_connection()
         cursor = conn.cursor()
-        field_names = get_field_names()
-        cols = ", ".join(field_names)
-        cursor.execute(f"SELECT {cols} FROM imagenes")
+        field_names = [_validate_identifier(fn) for fn in get_field_names()]
+        cols = ", ".join(_qi(fn) for fn in field_names)
+        sql = f"SELECT {cols} FROM imagenes"
+        params: list[Any] = []
+        if limit is not None:
+            sql += " LIMIT ? OFFSET ?"
+            params = [limit, offset]
+        cursor.execute(sql, params)
         rows = cursor.fetchall()
     return [dict(r) for r in rows]
 
@@ -300,7 +369,8 @@ def generar_plantilla_excel(ruta_salida: str) -> int:
     try:
         import pandas as pd  # type: ignore
     except ImportError as exc:
-        raise ImportError("pandas no está instalado.") from exc
+        msg = "pandas no está instalado."
+        raise ImportError(msg) from exc
 
     fields = load_fields()
     columns = [f["name"] for f in fields]
@@ -323,5 +393,5 @@ def generar_plantilla_excel(ruta_salida: str) -> int:
         else:
             sample.append(f"Ejemplo {fname}")
     df.loc[0] = sample
-    df.to_excel(ruta_salida, index=False, engine='openpyxl')
+    df.to_excel(ruta_salida, index=False, engine="openpyxl")
     return len(df)

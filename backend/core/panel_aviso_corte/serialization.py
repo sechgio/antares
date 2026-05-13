@@ -41,9 +41,7 @@ _REQUIRED_PANEL_KEYS: tuple[str, ...] = (
 _REQUIRED_IMAGE_KEYS: tuple[str, ...] = ("filename", "caption", "position")
 
 
-# ---------------------------------------------------------------------------
 # Serialización
-# ---------------------------------------------------------------------------
 
 
 def _serialize_image_ref(ref: PanelImageRef) -> dict[str, Any]:
@@ -69,9 +67,12 @@ def serialize_panel(panel: Panel) -> dict[str, Any]:
     :raises TypeError: si ``panel`` no es una instancia de :class:`Panel`.
     """
     if not isinstance(panel, Panel):
-        raise TypeError(
+        msg = (
             "serialize_panel: se esperaba Panel, se recibió "
             f"{type(panel).__name__}"
+        )
+        raise TypeError(
+            msg,
         )
     return {
         "cuadrante": panel.cuadrante,
@@ -82,9 +83,7 @@ def serialize_panel(panel: Panel) -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
 # Deserialización
-# ---------------------------------------------------------------------------
 
 
 def _deserialize_image_ref(raw: Any, index: int) -> PanelImageRef:
@@ -94,21 +93,28 @@ def _deserialize_image_ref(raw: Any, index: int) -> PanelImageRef:
     :param index: posición dentro de la lista ``imagenes`` (para mensajes).
     """
     if not isinstance(raw, dict):
-        raise InvalidPanelError(
+        msg = (
             f"imagenes[{index}]: debe ser dict, se recibió "
             f"{type(raw).__name__}"
         )
+        raise InvalidPanelError(
+            msg,
+        )
     for key in _REQUIRED_IMAGE_KEYS:
         if key not in raw:
+            msg = f"imagenes[{index}].{key}: campo obligatorio ausente"
             raise InvalidPanelError(
-                f"imagenes[{index}].{key}: campo obligatorio ausente"
+                msg,
             )
     position = raw["position"]
     # ``bool`` es subtipo de ``int`` en Python; rechazar explícitamente.
     if not isinstance(position, int) or isinstance(position, bool):
-        raise InvalidPanelError(
+        msg = (
             f"imagenes[{index}].position: debe ser int, se recibió "
             f"{type(position).__name__}"
+        )
+        raise InvalidPanelError(
+            msg,
         )
     # Delegamos el resto de invariantes (I2..I3) al constructor del dataclass.
     return PanelImageRef(
@@ -139,29 +145,35 @@ def deserialize_panel(data: Any) -> Panel:
         mensaje que nombra el campo problemático.
     """
     if not isinstance(data, dict):
-        raise InvalidPanelError(
+        msg = (
             "deserialize_panel: se esperaba dict, se recibió "
             f"{type(data).__name__}"
+        )
+        raise InvalidPanelError(
+            msg,
         )
 
     for key in _REQUIRED_PANEL_KEYS:
         if key not in data:
+            msg = f"{key}: campo obligatorio ausente en la carga serializada"
             raise InvalidPanelError(
-                f"{key}: campo obligatorio ausente en la carga serializada"
+                msg,
             )
 
     imagenes_raw = data["imagenes"]
     if not isinstance(imagenes_raw, (list, tuple)):
-        raise InvalidPanelError(
+        msg = (
             "imagenes: debe ser list o tuple, se recibió "
             f"{type(imagenes_raw).__name__}"
+        )
+        raise InvalidPanelError(
+            msg,
         )
 
     image_refs: tuple[PanelImageRef, ...] = tuple(
         _deserialize_image_ref(item, idx) for idx, item in enumerate(imagenes_raw)
     )
 
-    # ``source_row_index`` es opcional; si no está, por defecto None.
     source_row_index = data.get("source_row_index", None)
 
     # Delegamos tipado estricto de cuadrante/fecha_corte/motivo al constructor,

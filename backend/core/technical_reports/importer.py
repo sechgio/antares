@@ -194,7 +194,7 @@ INSPECTION_TEXT_TARGETS = {
 }
 
 for field, aliases in INSPECTION_ALIAS_GROUPS.items():
-    COLUMN_MAPPING.update({alias: field for alias in aliases})
+    COLUMN_MAPPING.update(dict.fromkeys(aliases, field))
     obs_target, sug_target = INSPECTION_TEXT_TARGETS[field]
     for alias in aliases:
         COLUMN_MAPPING[f"obs{alias}"] = obs_target
@@ -279,9 +279,11 @@ def import_reports_from_bytes(filename: str, content: bytes) -> list[dict[str, A
     elif lower_name.endswith(".xlsx"):
         rows = parse_xlsx_file(content)
     else:
-        raise ValueError("Formato no soportado. Use archivos .csv o .xlsx")
+        msg = "Formato no soportado. Use archivos .csv o .xlsx"
+        raise ValueError(msg)
     if not rows:
-        raise ValueError("El archivo esta vacio o no tiene datos validos")
+        msg = "El archivo esta vacio o no tiene datos validos"
+        raise ValueError(msg)
     reports: list[dict[str, Any]] = []
     next_report_number = 1
     for row in rows:
