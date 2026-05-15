@@ -160,6 +160,24 @@ def test_render_pdf_fixture_keeps_four_images_per_page(tmp_path: Path) -> None:
     assert len(PdfReader(str(output)).pages) == 2
 
 
+def test_render_pdf_fixture_with_square_logo_keeps_one_panel_per_page(
+    tmp_path: Path,
+) -> None:
+    panels, images = _fixture_panels_and_images()
+
+    pdf_bytes, _ = render_pdf(
+        panels=panels,
+        logos={"left": _png_b64(2000, 2000), "right": None},
+        images=images,
+        export_mode="include_empty",
+    )
+
+    output = tmp_path / "fixture-panel-aviso-with-logo.pdf"
+    output.write_bytes(pdf_bytes)
+    assert [len(panel.imagenes) for panel in panels] == [4, 4]
+    assert len(PdfReader(str(output)).pages) == 2
+
+
 def test_render_docx_limits_photo_height_to_image_row() -> None:
     panel = Panel(
         cuadrante="C001",

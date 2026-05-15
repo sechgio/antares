@@ -36,9 +36,11 @@
     .col-left-value { width: 4.98cm; }
     .col-right-value { width: 3.47cm; }
     .col-logo { width: 5.76cm; }
+    .row-title { height: 1.05cm; }
     .row-meta-a { height: 0.73cm; }
     .row-meta-b { height: 0.77cm; }
     .row-meta-c { height: 0.96cm; }
+    .row-section { height: 0.53cm; }
     .row-image { height: 9.82cm; }
     .row-caption { height: 1.40cm; }
     .row-caption-last { height: 1.43cm; }
@@ -53,12 +55,27 @@
       line-height: 1.3;
     }
     .cell-logo {
+      position: relative;
       text-align: center;
       vertical-align: middle;
     }
-    .cell-logo img {
+    .cell-logo-inner {
+      position: absolute;
+      top: 50%;
+      left: 50%;
       width: 5.49cm;
-      max-height: 2.24cm;
+      height: 2.24cm;
+      margin-top: -1.12cm;
+      margin-left: -2.745cm;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .cell-logo img {
+      display: block;
+      max-width: 100%;
+      max-height: 100%;
       object-fit: contain;
     }
     .cell-label {
@@ -134,9 +151,14 @@
       <!-- Row 0: Title + Logo -->
       <tr class="row-title">
         <td colspan="3" class="cell-title">AVISO DE CORTE DEL SERVICIO DE AGUA POTABLE, POR TRABAJOS DE MEJORAMIENTO EN EL SISTEMA</td>
-        <td rowspan="4" class="cell-logo">
+        <td
+          rowspan="4"
+          class="cell-logo"
+        >
           {% if logo_center %}
-            <img src="{{ logo_center }}" alt="Logo">
+            <div class="cell-logo-inner">
+              <img src="{{ logo_center }}" alt="Logo">
+            </div>
           {% endif %}
         </td>
       </tr>
