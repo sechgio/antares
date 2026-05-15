@@ -13,21 +13,32 @@ declare global {
   interface Window {
     electronAPI?: {
       invoke: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+      backendStatus: () => Promise<{ state: string; ready: boolean; lastError: { kind: string; message: string; stderrTail: string } | null; stderrTail: string }>;
+      backendRestart: () => Promise<{ success: boolean; state: string }>;
       onNotify: (callback: (method: string, params: unknown) => void) => () => void;
-      onUpdateAvailable?: (callback: (info: { version?: string }) => void) => () => void;
-      onUpdateDownloaded?: (callback: (info: { version?: string }) => void) => () => void;
-      quitAndInstall?: () => void;
-      minimizeWindow?: () => Promise<unknown>;
-      maximizeWindow?: () => Promise<unknown>;
-      closeWindow?: () => Promise<unknown>;
-      showAppMenu?: (menuIndex: number, position: { x: number; y: number }) => Promise<unknown>;
+      minimizeWindow: () => Promise<unknown>;
+      maximizeWindow: () => Promise<unknown>;
+      closeWindow: () => Promise<unknown>;
+      showAppMenu: (menuIndex: number, position: { x: number; y: number }) => Promise<unknown>;
     };
   }
 }
 
-const IPC_TIMEOUT = 30000;
+const IPC_TIMEOUT = 90_000;           // default timeout
+const IPC_LONG_TIMEOUT = 600_000;     // 10 min for heavy operations
 const IPC_MAX_RETRIES = 2;
-const IPC_RETRY_DELAY = 2000;
+const IPC_RETRY_DELAY = 2_000;
+
+const LONG_RUNNING_METHODS = new Set([
+  'process_start',
+  'formatos_generate',
+  'image_optimizer_zip',
+  'technical_reports_render_consolidated_html',
+  'technical_reports_render_html',
+  'panel_aviso_corte_render_pdf',
+  'panel_aviso_corte_compute_match',
+  'html_to_pdf',
+]);
 
 const _delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -36,9 +47,16 @@ const _isRetryable = (err: unknown): boolean => {
   const msg = err.message.toLowerCase();
   return (
     msg.includes('backend no disponible') ||
+    msg.includes('todavía se está iniciando') ||
     msg.includes('backend process exited') ||
+    msg.includes('backend process not available') ||
     msg.includes('stdin write failed') ||
-    msg.includes('backend reiniciándose')
+    msg.includes('se cerró') ||
+    msg.includes('backend_starting') ||
+    msg.includes('backend_exited') ||
+    msg.includes('cerró inesperadamente') ||
+    msg.includes('backend fatal') ||
+    msg.includes('restarting')
   );
 };
 
@@ -47,13 +65,14 @@ const _invoke = async <T>(method: string, params?: Record<string, unknown> | obj
     throw new Error('Electron IPC no disponible');
   }
 
+  const timeoutMs = LONG_RUNNING_METHODS.has(method) ? IPC_LONG_TIMEOUT : IPC_TIMEOUT;
   let lastError: Error | null = null;
   for (let attempt = 0; attempt <= IPC_MAX_RETRIES; attempt++) {
     try {
       const result = await Promise.race([
         window.electronAPI.invoke(method, params as Record<string, unknown>),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`IPC timeout: ${method}`)), IPC_TIMEOUT)
+          setTimeout(() => reject(new Error(`IPC timeout: ${method}`)), timeoutMs)
         ),
       ]);
       return result as T;
@@ -73,6 +92,27 @@ const _invoke = async <T>(method: string, params?: Record<string, unknown> | obj
 export function onNotify(callback: (method: string, params: unknown) => void) {
   if (!window.electronAPI) return () => {};
   return window.electronAPI.onNotify(callback);
+}
+
+export interface BackendStatus {
+  state: string;
+  ready: boolean;
+  lastError: { kind: string; message: string; stderrTail: string } | null;
+  stderrTail: string;
+}
+
+export async function getBackendStatus(): Promise<BackendStatus> {
+  if (!window.electronAPI) {
+    return { state: 'unavailable', ready: false, lastError: null, stderrTail: '' };
+  }
+  return window.electronAPI.backendStatus();
+}
+
+export async function restartBackend(): Promise<{ success: boolean; state: string }> {
+  if (!window.electronAPI) {
+    throw new Error('Electron IPC no disponible');
+  }
+  return window.electronAPI.backendRestart();
 }
 
 // ─── API methods ───────────────────────────────────────────────────────────

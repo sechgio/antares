@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import sys
+import threading
 import uuid
 from pathlib import Path
 from typing import Any
@@ -108,13 +109,14 @@ _BUILTIN_FORMATS: list[dict[str, Any]] = [
 # ─── Catalogo en memoria ────────────────────────────────────────────────────
 
 _formats: dict[str, dict[str, Any]] = {}
+_formats_lock = threading.RLock()
 
 
 def _load_catalog() -> None:
     global _formats
-    _formats = {}
+    new_formats: dict[str, dict[str, Any]] = {}
     for fmt in _BUILTIN_FORMATS:
-        _formats[fmt["id"]] = dict(fmt)
+        new_formats[fmt["id"]] = dict(fmt)
 
     if _CATALOG_PATH.exists():
         try:
@@ -125,20 +127,23 @@ def _load_catalog() -> None:
                 if "has_mapping" not in raw:
                     raw["has_mapping"] = raw.get("mapping") is not None
 
-                if fid in _formats and _formats[fid]["origen"] == "builtin":
+                if fid in new_formats and new_formats[fid]["origen"] == "builtin":
                     if raw.get("mapping") is not None:
-                        _formats[fid]["mapping"] = raw["mapping"]
-                        _formats[fid]["has_mapping"] = True
+                        new_formats[fid]["mapping"] = raw["mapping"]
+                        new_formats[fid]["has_mapping"] = True
                 else:
                     if raw.get("origen") == "uploaded" and raw.get("strategy") == VISUAL_OVERLAY and raw.get("mapping") is None:
                         raw["strategy"] = SIMPLE_OVERLAY
-                    _formats[fid] = raw
+                    new_formats[fid] = raw
         except Exception:
             logger.exception("Error cargando catalogo desde %s", _CATALOG_PATH)
+    with _formats_lock:
+        _formats = new_formats
 
 
 def _save_catalog() -> None:
-    persistable = [fmt for fmt in _formats.values() if fmt.get("persisted", True)]
+    with _formats_lock:
+        persistable = [fmt for fmt in _formats.values() if fmt.get("persisted", True)]
     with open(_CATALOG_PATH, "w", encoding="utf-8") as f:
         json.dump(persistable, f, ensure_ascii=False, indent=2)
         f.flush()
@@ -177,19 +182,20 @@ def _load_template_bytes(fmt: dict[str, Any]) -> bytes:
 
 
 def list_formats() -> list[dict[str, Any]]:
+    with _formats_lock:
+        snapshots = [dict(f) for f in _formats.values()]
     result = []
-    for f in _formats.values():
+    for f in snapshots:
         if not f.get("enabled", True):
             continue
-        # Add has_mapping field for frontend compatibility
-        fmt = dict(f)
-        fmt["has_mapping"] = fmt.get("mapping") is not None
-        result.append(fmt)
+        f["has_mapping"] = f.get("mapping") is not None
+        result.append(f)
     return result
 
 
 def get_format(fmt_id: str) -> dict[str, Any] | None:
-    fmt = _formats.get(fmt_id)
+    with _formats_lock:
+        fmt = _formats.get(fmt_id)
     if fmt:
         result = dict(fmt)
         result["has_mapping"] = result.get("mapping") is not None
@@ -198,32 +204,33 @@ def get_format(fmt_id: str) -> dict[str, Any] | None:
 
 
 def delete_format(fmt_id: str) -> bool:
-    entry = _formats.get(fmt_id)
-    if entry is None:
-        return False
-    if entry["origen"] == "builtin":
-        entry["enabled"] = False
-    else:
-        _formats.pop(fmt_id, None)
-        try:
-            os.remove(_resolve_path(entry))
-        except FileNotFoundError:
-            pass
-        except Exception:
-            logger.exception("Error eliminando archivo de formato %s", fmt_id)
+    with _formats_lock:
+        entry = _formats.get(fmt_id)
+        if entry is None:
+            return False
+        if entry["origen"] == "builtin":
+            entry["enabled"] = False
+        else:
+            _formats.pop(fmt_id, None)
+    try:
+        os.remove(_resolve_path(entry))
+    except FileNotFoundError:
+        pass
+    except Exception:
+        logger.exception("Error eliminando archivo de formato %s", fmt_id)
     _save_catalog()
     return True
 
 
 def update_mapping(fmt_id: str, mapping: dict[str, Any]) -> dict[str, Any] | None:
-    entry = _formats.get(fmt_id)
+    with _formats_lock:
+        entry = _formats.get(fmt_id)
     if entry is None:
         return None
     entry["mapping"] = mapping
     if entry["strategy"] == SIMPLE_OVERLAY:
         entry["strategy"] = VISUAL_OVERLAY
     _save_catalog()
-    # Return with has_mapping field
     result = dict(entry)
     result["has_mapping"] = result.get("mapping") is not None
     return result
@@ -291,7 +298,8 @@ def add_uploaded_format(
         "number_max": 9999999,
         "has_mapping": False,
     }
-    _formats[fmt_id] = entry
+    with _formats_lock:
+        _formats[fmt_id] = entry
     if persisted:
         _save_catalog()
     return entry

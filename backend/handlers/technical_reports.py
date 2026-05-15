@@ -7,6 +7,11 @@ from typing import Any
 from backend.handlers.common import with_locale
 
 
+def _db():
+    from backend.core.technical_reports.database import get_reports_db
+    return get_reports_db()
+
+
 def _summary(report: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": report["id"],
@@ -17,8 +22,7 @@ def _summary(report: dict[str, Any]) -> dict[str, Any]:
 
 @with_locale
 def technical_reports_list(params: dict[str, Any]) -> dict[str, Any]:
-    from backend.core.technical_reports.database import TechnicalReportsDB
-    reports = TechnicalReportsDB().get_all()
+    reports = _db().get_all()
     cs = str(params.get("cs") or "").strip()
     contratista = str(params.get("contratista") or "").strip()
     status = str(params.get("status") or "").strip()
@@ -35,9 +39,8 @@ def technical_reports_list(params: dict[str, Any]) -> dict[str, Any]:
 
 @with_locale
 def technical_reports_get(params: dict[str, Any]) -> dict[str, Any]:
-    from backend.core.technical_reports.database import TechnicalReportsDB
     report_id = str(params.get("id") or "")
-    report = TechnicalReportsDB().get(report_id)
+    report = _db().get(report_id)
     if report is None:
         msg = f"Informe no encontrado: {report_id}"
         raise ValueError(msg)
@@ -45,40 +48,35 @@ def technical_reports_get(params: dict[str, Any]) -> dict[str, Any]:
 
 @with_locale
 def technical_reports_create(params: dict[str, Any]) -> dict[str, Any]:
-    from backend.core.technical_reports.database import TechnicalReportsDB
-    db = TechnicalReportsDB()
+    db = _db()
     report = params.get("report")
     created = db.create(report) if isinstance(report, dict) else db.create_empty()
     return {"success": True, "report": created}
 
 @with_locale
 def technical_reports_update(params: dict[str, Any]) -> dict[str, Any]:
-    from backend.core.technical_reports.database import TechnicalReportsDB
     report_id = str(params.get("id") or "")
     report = params.get("report")
     if not report_id or not isinstance(report, dict):
         msg = "id y report son requeridos"
         raise ValueError(msg)
-    return {"success": True, "report": TechnicalReportsDB().update(report_id, report)}
+    return {"success": True, "report": _db().update(report_id, report)}
 
 @with_locale
 def technical_reports_delete(params: dict[str, Any]) -> dict[str, Any]:
-    from backend.core.technical_reports.database import TechnicalReportsDB
     report_id = str(params.get("id") or "")
-    if not TechnicalReportsDB().delete(report_id):
+    if not _db().delete(report_id):
         msg = f"Informe no encontrado: {report_id}"
         raise ValueError(msg)
     return {"success": True, "deleted_id": report_id}
 
 @with_locale
 def technical_reports_clear(params: dict[str, Any]) -> dict[str, Any]:
-    from backend.core.technical_reports.database import TechnicalReportsDB
-    count = TechnicalReportsDB().clear_all()
+    count = _db().clear_all()
     return {"success": True, "deleted_count": count, "message": f"Se eliminaron {count} informes"}
 
 @with_locale
 def technical_reports_import_file(params: dict[str, Any]) -> dict[str, Any]:
-    from backend.core.technical_reports.database import TechnicalReportsDB
     from backend.core.technical_reports.importer import import_reports_from_bytes
     filename = str(params.get("filename") or "")
     content_b64 = str(params.get("content_b64") or "")
@@ -87,7 +85,7 @@ def technical_reports_import_file(params: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(msg)
     content = base64.b64decode(content_b64)
     reports = import_reports_from_bytes(filename, content)
-    db = TechnicalReportsDB()
+    db = _db()
     deleted_count = len(db.get_all())
     imported = db.replace_all(reports)
     return {"success": True, "message": f"{len(imported)} informes importados", "deleted_count": deleted_count, "imported_count": len(imported), "total_rows_in_file": len(reports)}
@@ -106,27 +104,24 @@ def technical_reports_variables(params: dict[str, Any]) -> dict[str, Any]:
 
 @with_locale
 def technical_reports_autocomplete_cs(params: dict[str, Any]) -> dict[str, Any]:
-    from backend.core.technical_reports.database import TechnicalReportsDB
-    reports = TechnicalReportsDB().get_all()
+    reports = _db().get_all()
     return {"options": sorted({r["header"].get("cs", "") for r in reports if r["header"].get("cs")})}
 
 @with_locale
 def technical_reports_autocomplete_contratista(params: dict[str, Any]) -> dict[str, Any]:
-    from backend.core.technical_reports.database import TechnicalReportsDB
     cs = str(params.get("cs") or "").strip()
-    reports = TechnicalReportsDB().get_all()
+    reports = _db().get_all()
     if cs:
         reports = [r for r in reports if r["header"].get("cs") == cs]
     return {"options": sorted({r["header"].get("contratista", "") for r in reports if r["header"].get("contratista")})}
 
 @with_locale
 def technical_reports_render_html(params: dict[str, Any]) -> dict[str, Any]:
-    from backend.core.technical_reports.database import TechnicalReportsDB
     from backend.core.technical_reports.rendering import render_report_html
     report = params.get("report")
     report_id = str(params.get("id") or "")
     if not isinstance(report, dict):
-        report = TechnicalReportsDB().get(report_id)
+        report = _db().get(report_id)
     if not isinstance(report, dict):
         msg = f"Informe no encontrado: {report_id}"
         raise ValueError(msg)
@@ -135,9 +130,8 @@ def technical_reports_render_html(params: dict[str, Any]) -> dict[str, Any]:
 
 @with_locale
 def technical_reports_render_consolidated_html(params: dict[str, Any]) -> dict[str, Any]:
-    from backend.core.technical_reports.database import TechnicalReportsDB
     from backend.core.technical_reports.rendering import render_consolidated_html
-    reports = TechnicalReportsDB().get_all()
+    reports = _db().get_all()
     report_ids = params.get("report_ids")
     if isinstance(report_ids, list) and report_ids:
         allowed = {str(rid) for rid in report_ids}

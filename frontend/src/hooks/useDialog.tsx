@@ -27,11 +27,13 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
   const resolverRef = useRef<((value: boolean) => void) | null>(null);
   const alertResolverRef = useRef<(() => void) | null>(null);
   const mountedRef = useRef(true);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
       if (resolverRef.current) {
         resolverRef.current(false);
         resolverRef.current = null;
@@ -44,13 +46,28 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const openDialog = useCallback((opts: DialogOptions) => {
+    // Cancel any pending close timer and resolve/reject previous pending promises
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    if (resolverRef.current) {
+      resolverRef.current(false);
+      resolverRef.current = null;
+    }
+    if (alertResolverRef.current) {
+      alertResolverRef.current();
+      alertResolverRef.current = null;
+    }
     setOptions(opts);
     setIsOpen(true);
   }, []);
 
   const closeDialog = useCallback(() => {
     setIsOpen(false);
-    setTimeout(() => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null;
       if (mountedRef.current) {
         setOptions(null);
         resolverRef.current = null;
@@ -59,9 +76,11 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     }, 200);
   }, []);
 
-  const confirm = useCallback((opts: Omit<DialogOptions, 'onConfirm' | 'onCancel'>): Promise<boolean> => {
+  const confirm = useCallback((opts: Omit<DialogOptions, 'onConfirm' | 'onConfirm'>): Promise<boolean> => {
     return new Promise((resolve) => {
       if (!mountedRef.current) { resolve(false); return; }
+      // Resolve any previous pending promise before creating a new one
+      if (resolverRef.current) resolverRef.current(false);
       resolverRef.current = resolve;
       setOptions({
         ...opts,
@@ -82,6 +101,8 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
   const alert = useCallback((opts: Omit<DialogOptions, 'type' | 'cancelLabel' | 'onConfirm' | 'onCancel'>): Promise<void> => {
     return new Promise((resolve) => {
       if (!mountedRef.current) { resolve(); return; }
+      // Resolve any previous pending alert promise before creating a new one
+      if (alertResolverRef.current) alertResolverRef.current();
       alertResolverRef.current = resolve;
       setOptions({
         ...opts,

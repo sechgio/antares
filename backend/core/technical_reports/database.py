@@ -11,6 +11,20 @@ from backend.utils.paths import resource_path, user_data_path
 
 DEFAULT_DB_PATH = user_data_path("technical_reports.json") if getattr(sys, "frozen", False) else resource_path("data/technical_reports.json")
 
+# Module-level singleton — prevents concurrent instances from clobbering each other's data.
+_db_instance: TechnicalReportsDB | None = None
+_db_instance_lock = threading.Lock()
+
+
+def get_reports_db(db_path: str | Path | None = None) -> TechnicalReportsDB:
+    """Return the process-wide TechnicalReportsDB singleton."""
+    global _db_instance
+    if _db_instance is None:
+        with _db_instance_lock:
+            if _db_instance is None:
+                _db_instance = TechnicalReportsDB(db_path)
+    return _db_instance
+
 
 class TechnicalReportsDB:
     def __init__(self, db_path: str | Path | None = None) -> None:

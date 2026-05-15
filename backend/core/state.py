@@ -20,4 +20,4 @@ class ProcessState:
     err_count: int = 0
     logs: list[dict[str, str]] = field(default_factory=list)
     cancel_requested: bool = False
-    _lock: threading.Lock = field(default_factory=threading.Lock)
+    _lock: threading.RLock = field(default_factory=threading.RLock)

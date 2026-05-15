@@ -6,7 +6,8 @@ with the legacy single-job frontend API.
 from __future__ import annotations
 
 import os
-from concurrent.futures import CancelledError, ThreadPoolExecutor, as_completed
+import time
+from concurrent.futures import CancelledError, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -186,7 +187,10 @@ def _run_conversion_job(job: Job) -> None:
                 out_path = Path(destino) / p.name if is_video_file or not conversion_enabled else Path(destino) / (p.stem + ext_dest)
             tasks.append((fpath, out_path, is_video_file))
 
-        max_workers = min(os.cpu_count() or 2, 4)
+        # Dynamic workers: up to 8, capped by CPU count but respecting memory.
+        # For I/O-bound work (image conversion), we can oversubscribe CPU a bit.
+        raw_cpu = os.cpu_count() or 2
+        max_workers = max(4, min(raw_cpu * 2, 16))
         completed = 0
 
         def _process_one(task: tuple[str, Path, bool]) -> tuple[bool, str, str]:
@@ -209,52 +213,77 @@ def _run_conversion_job(job: Job) -> None:
                 return (False, p.name, str(e))
 
         pool = ThreadPoolExecutor(max_workers=max_workers)
-        futures = [pool.submit(_process_one, task) for task in tasks]
+        # Submit tasks in chunks to avoid memory bloat with thousands of futures.
+        CHUNK_SIZE = 500
         cancelled = False
+        pending_futures: list = []
+
+        def _submit_chunk(start_idx: int) -> None:
+            end_idx = min(start_idx + CHUNK_SIZE, len(tasks))
+            for task in tasks[start_idx:end_idx]:
+                pending_futures.append(pool.submit(_process_one, task))
+
+        _submit_chunk(0)
+        next_chunk_start = CHUNK_SIZE
 
         try:
-            for future in as_completed(futures):
+            while pending_futures:
+                # Remove completed futures efficiently
+                still_pending = []
+                for future in pending_futures:
+                    if future.done():
+                        if future.cancelled():
+                            continue
+                        try:
+                            success, name, error = future.result()
+                        except CancelledError:
+                            continue
+                        completed += 1
+                        with state._lock:
+                            if success:
+                                state.ok_count += 1
+                                log_message(f"{'Renombrado' if not conversion_enabled else 'Procesado'}: {name}", "ok", state=state)
+                            else:
+                                state.err_count += 1
+                                log_message(t("error.process_failed", file=name, error=error), "error", state=state)
+                            state.progress = int((completed / total) * 100)
+                            state.current_file = name
+                            progress = state.progress
+                            current_file = state.current_file
+                            ok_count = state.ok_count
+                            err_count = state.err_count
+                        # Send per-job notification and legacy notification
+                        notif_data = {
+                            "progress": progress, "current_file": current_file,
+                            "ok_count": ok_count, "err_count": err_count,
+                            "job_id": job_id,
+                        }
+                        send_notification(f"job.{job_id}.progress", notif_data)
+                        if is_default:
+                            send_notification("process.progress", {
+                                "progress": progress, "current_file": current_file,
+                                "ok_count": ok_count, "err_count": err_count,
+                            })
+                    else:
+                        still_pending.append(future)
+                pending_futures = still_pending
+
                 with state._lock:
                     if state.cancel_requested and not cancelled:
                         cancelled = True
                         log_message(t("info.process_cancelled"), "warn", state=state)
                 if cancelled:
-                    for f in futures:
-                        if not f.done():
-                            f.cancel()
+                    for f in pending_futures:
+                        f.cancel()
                     break
-                if future.cancelled():
-                    continue
-                try:
-                    success, name, error = future.result()
-                except CancelledError:
-                    continue
-                completed += 1
-                with state._lock:
-                    if success:
-                        state.ok_count += 1
-                        log_message(f"{'Renombrado' if not conversion_enabled else 'Procesado'}: {name}", "ok", state=state)
-                    else:
-                        state.err_count += 1
-                        log_message(t("error.process_failed", file=name, error=error), "error", state=state)
-                    state.progress = int((completed / total) * 100)
-                    state.current_file = name
-                    progress = state.progress
-                    current_file = state.current_file
-                    ok_count = state.ok_count
-                    err_count = state.err_count
-                # Send per-job notification and legacy notification
-                notif_data = {
-                    "progress": progress, "current_file": current_file,
-                    "ok_count": ok_count, "err_count": err_count,
-                    "job_id": job_id,
-                }
-                send_notification(f"job.{job_id}.progress", notif_data)
-                if is_default:
-                    send_notification("process.progress", {
-                        "progress": progress, "current_file": current_file,
-                        "ok_count": ok_count, "err_count": err_count,
-                    })
+
+                # Submit next chunk if we have capacity and more tasks
+                if len(pending_futures) < CHUNK_SIZE // 2 and next_chunk_start < len(tasks):
+                    _submit_chunk(next_chunk_start)
+                    next_chunk_start += CHUNK_SIZE
+
+                if pending_futures:
+                    time.sleep(0.05)
         finally:
             pool.shutdown(wait=False)
 
