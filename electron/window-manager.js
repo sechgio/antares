@@ -5,6 +5,7 @@ const { BrowserWindow, screen, session, Menu } = require('electron');
 const path = require('path');
 
 let mainWindow = null;
+let _isDev = false;
 
 function buildAppMenu(menuIndex = 0) {
   const menus = [
@@ -18,6 +19,7 @@ function buildAppMenu(menuIndex = 0) {
 }
 
 function createWindow(isDev) {
+  _isDev = !!isDev;
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
   const iconPath = path.join(__dirname, '..', 'assets', 'icon.ico');
 
@@ -60,5 +62,6 @@ function createWindow(isDev) {
 }
 
 function getMainWindow() { return mainWindow; }
+function getIsDev() { return _isDev; }
 
-module.exports = { createWindow, getMainWindow, buildAppMenu };
+module.exports = { createWindow, getMainWindow, getIsDev, buildAppMenu };

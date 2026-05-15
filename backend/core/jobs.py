@@ -9,6 +9,7 @@ handlers.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -19,8 +20,28 @@ from backend.core.state import ProcessState
 logger = logging.getLogger(__name__)
 
 DEFAULT_JOB_ID = "default"
-MAX_CONCURRENT_DEFAULT = 4
-MAX_COMPLETED_JOBS = 20
+
+
+def _detect_max_concurrent() -> int:
+    """Auto-detect max concurrent jobs based on CPU cores and RAM."""
+    try:
+        cpu_count = os.cpu_count() or 2
+        # Try to get available RAM (Windows/Linux/macOS)
+        try:
+            import psutil
+            available_gb = psutil.virtual_memory().available / (1024 ** 3)
+        except ImportError:
+            available_gb = 4  # fallback assumption
+        # Each conversion job can use up to ~4 threads (image I/O + Pillow).
+        # Cap at CPU count, but also respect RAM: ~2GB per job is generous.
+        ram_limited = max(1, int(available_gb // 2))
+        return max(4, min(cpu_count, ram_limited, 16))
+    except Exception:
+        return 4
+
+
+MAX_CONCURRENT_DEFAULT = _detect_max_concurrent()
+MAX_COMPLETED_JOBS = 50
 
 
 @dataclass

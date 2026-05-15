@@ -35,8 +35,8 @@ sys.path = adjust_backend_import_path(
 
 import locale
 import logging
-import os
 import signal
+import time
 import traceback
 import warnings
 
@@ -87,23 +87,29 @@ logger = logging.getLogger(__name__)
 
 def _validate_encoding() -> None:
     """Validate that system supports required encoding."""
+    import os as _os
+
     try:
-        import os
-        os.environ["PYTHONIOENCODING"] = "utf-8"
-        os.environ["PYTHONUTF8"] = "1"
+        _os.environ["PYTHONIOENCODING"] = "utf-8"
+        _os.environ["PYTHONUTF8"] = "1"
 
-        try:
-            locale.setlocale(locale.LC_ALL, "C.UTF-8")
-        except locale.Error:
+        utf8_locales = ["C.UTF-8", "en_US.UTF-8"]
+        if sys.platform == "win32":
+            utf8_locales.extend(["es-MX", "Spanish_Mexico.UTF-8"])
+        locale_ok = False
+        for candidate in utf8_locales:
             try:
-                locale.setlocale(locale.LC_ALL, "en_US.UTF-8")
+                locale.setlocale(locale.LC_ALL, candidate)
+                locale_ok = True
+                break
             except locale.Error:
-                logger.warning("Could not set UTF-8 locale, using system default")
+                continue
 
-        logger.info(f"System encoding: {locale.getpreferredencoding()}")
+        enc = locale.getpreferredencoding()
+        logger.info("System encoding: %s | locale: %s", enc, (locale_ok and candidate) or "default")
 
     except Exception as e:
-        logger.exception(f"Encoding validation failed: {e}")
+        logger.exception("Encoding validation failed: %s", e)
         raise
 
 
@@ -112,38 +118,60 @@ _validate_encoding()
 
 
 def main() -> None:
-    """Bucle principal IPC."""
+    """Bucle principal IPC — diseñado para nunca morir."""
     # Handshake: report ready so Electron knows the pipe is open
     send_notification("ready", {"status": "ok"})
 
     logger.info(t("info.backend_ready"))
 
+    # Track consecutive errors to avoid spamming logs on persistent issues
+    _consecutive_errors = 0
+    _MAX_CONSECUTIVE_ERRORS = 100
+
     try:
         while True:
             if _shutdown_requested:
                 logger.info("Shutdown signal received, exiting...")
-                try:
+                from contextlib import suppress
+                with suppress(Exception):
                     send_notification("backend.shutdown", {"reason": "signal"})
-                except Exception:
-                    pass
                 break
 
-            msg = read_message()
-            if msg is None:
-                break  # EOF — pipe closed
-            if msg is _SKIP:
-                continue  # Parse error, already responded
+            try:
+                msg = read_message()
+                if msg is None:
+                    # EOF — pipe closed. DO NOT exit; instead, sleep and retry.
+                    # This prevents crashes when Electron briefly closes the pipe.
+                    logger.warning("EOF on stdin — pipe may have closed. Retrying in 1s...")
+                    time.sleep(1.0)
+                    _consecutive_errors += 1
+                    if _consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
+                        logger.error("Too many consecutive EOF errors, exiting.")
+                        break
+                    continue
+                if msg is _SKIP:
+                    _consecutive_errors = max(0, _consecutive_errors - 1)
+                    continue  # Parse error, already responded
 
-            if msg.method in HANDLERS:
-                try:
-                    result = HANDLERS[msg.method](msg.params)
-                    send_response(result, msg.id)
-                except Exception as exc:
-                    error_msg = f"{type(exc).__name__}: {exc}"
-                    logger.exception("Error en %s: %s\n%s", msg.method, error_msg, traceback.format_exc())
-                    send_response(None, msg.id, error=error_msg)
-            else:
-                send_response(None, msg.id, error=f"Método desconocido: {msg.method}")
+                if msg.method in HANDLERS:
+                    try:
+                        result = HANDLERS[msg.method](msg.params)
+                        send_response(result, msg.id)
+                    except Exception as exc:
+                        error_msg = f"{type(exc).__name__}: {exc}"
+                        logger.exception("Error en %s: %s\n%s", msg.method, error_msg, traceback.format_exc())
+                        send_response(None, msg.id, error=error_msg)
+                else:
+                    send_response(None, msg.id, error=f"Método desconocido: {msg.method}")
+                _consecutive_errors = 0
+            except Exception as exc:
+                # Global handler: any unexpected exception in the loop should NOT kill the process
+                _consecutive_errors += 1
+                logger.exception("Unexpected error in main loop (consecutive=%d): %s", _consecutive_errors, exc)
+                if _consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
+                    logger.error("Too many consecutive errors, exiting.")
+                    break
+                time.sleep(0.5)
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received")
     finally:

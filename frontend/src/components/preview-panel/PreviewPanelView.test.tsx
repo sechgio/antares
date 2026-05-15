@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { ToastProvider } from '../../hooks/useToast';
 import PreviewPanelView from './PreviewPanelView';
 
-const CUSTOM_COLS_KEY = 'cosmo_preview_custom_columns';
+const CUSTOM_COLS_KEY = 'antares_preview_custom_columns';
 
 function renderView() {
   return render(

@@ -130,10 +130,10 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
     >
       {/* App branding — visible when expanded */}
       <div
-        className="flex items-center px-4 shrink-0 overflow-hidden transition-all duration-300"
-        style={{ height: expanded ? 52 : 0, opacity: expanded ? 1 : 0, marginTop: expanded ? 12 : 0, marginBottom: expanded ? 8 : 0 }}
+        className="flex items-center px-3 shrink-0 overflow-hidden transition-all duration-300"
+        style={{ height: expanded ? 56 : 0, opacity: expanded ? 1 : 0, marginTop: expanded ? 10 : 0, marginBottom: expanded ? 6 : 0 }}
       >
-        <BrandMark showText />
+        <BrandMark showText size="md" />
       </div>
 
       {/* Tabs */}

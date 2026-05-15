@@ -1,7 +1,7 @@
 {
-  "name": "cosmo-frontend",
+  "name": "antares-frontend",
   "private": true,
-  "version": "0.5.10",
+  "version": "0.5.14",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -34,6 +34,7 @@
     "jsdom": "^29.0.2",
     "postcss": "^8.4.32",
     "rollup-plugin-visualizer": "^7.0.1",
+    "sharp": "^0.34.5",
     "tailwindcss": "^3.4.0",
     "terser": "^5.47.1",
     "typescript": "^5.2.2",

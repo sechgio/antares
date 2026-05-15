@@ -63,10 +63,11 @@ def _normalize(s: str) -> str:
        ``ﬁ`` → ``f`` + ``i``, etc.
     3. Descartar cualquier carácter *combining* (``unicodedata.combining``
        ≠ 0): elimina los diacríticos sueltos que deja el paso anterior.
-    4. ``casefold`` final: equivalente a ``lower()`` pero más estricto para
+    4. ``strip`` inicial: elimina espacios accidentales al inicio o fin.
+    5. ``casefold`` final: equivalente a ``lower()`` pero más estricto para
        texto Unicode (``ß`` → ``ss``, etc.).
 
-    **Preserva** espacios y símbolos. Úsese para comparar nombres de
+    **Preserva** espacios internos y símbolos. Úsese para comparar nombres de
     archivo o valores de celda donde los separadores son significativos.
     Para normalizar cabeceras de Excel use :func:`_normalize_column_name`.
 
@@ -77,7 +78,7 @@ def _normalize(s: str) -> str:
         >>> _normalize("Dirección")
         'direccion'
         >>> _normalize("  AV. Principal 123  ")
-        '  av. principal 123  '
+        'av. principal 123'
         >>> _normalize("Niño.JPG")
         'nino.jpg'
 
@@ -87,7 +88,7 @@ def _normalize(s: str) -> str:
     """
     if not isinstance(s, str):
         s = str(s) if s is not None else ""
-    return _strip_diacritics(s).casefold()
+    return _strip_diacritics(s.strip()).casefold()
 
 
 def _normalize_column_name(name: str) -> str:

@@ -65,9 +65,7 @@ def _is_path_safe(value: Any) -> bool:
         return False
     # Reject URL-encoded traversal patterns (single and double-encoded).
     lowered = value.lower()
-    if "%2e%2e" in lowered or "%252e" in lowered:
-        return False
-    return True
+    return not ("%2e%2e" in lowered or "%252e" in lowered)
 
 # ─── IPC Protocol ────────────────────────────────────────────────────────────
 
@@ -92,7 +90,7 @@ class IPCMessage:
 
 
 def send_response(result: Any, msg_id: str | int, *, error: str | None = None) -> None:
-    """Escribe una respuesta JSON-RPC a stdout."""
+    """Escribe una respuesta JSON-RPC a stdout. Nunca levanta excepción."""
     payload: dict[str, Any] = {
         "jsonrpc": "2.0",
         "id": msg_id,
@@ -101,23 +99,32 @@ def send_response(result: Any, msg_id: str | int, *, error: str | None = None) -
         payload["error"] = {"code": -32000, "message": error}
     else:
         payload["result"] = result
-    json_str = json.dumps(payload, ensure_ascii=False, default=_json_default)
-    with _stdout_lock:
-        sys.stdout.write(json_str + "\n")
-        sys.stdout.flush()
+    try:
+        json_str = json.dumps(payload, ensure_ascii=False, default=_json_default)
+        with _stdout_lock:
+            sys.stdout.write(json_str + "\n")
+            sys.stdout.flush()
+    except Exception as exc:
+        # If stdout is broken (e.g., Electron closed the pipe), log to stderr
+        # but DO NOT crash the backend process.
+        logger.error("Failed to write response to stdout: %s", exc)
 
 
 def send_notification(method: str, params: dict[str, Any]) -> None:
-    """Escribe una notificación (sin id) a stdout — usada para progreso."""
+    """Escribe una notificación (sin id) a stdout — usada para progreso. Nunca levanta excepción."""
     payload = {
         "jsonrpc": "2.0",
         "method": method,
         "params": params,
     }
-    json_str = json.dumps(payload, ensure_ascii=False, default=_json_default)
-    with _stdout_lock:
-        sys.stdout.write(json_str + "\n")
-        sys.stdout.flush()
+    try:
+        json_str = json.dumps(payload, ensure_ascii=False, default=_json_default)
+        with _stdout_lock:
+            sys.stdout.write(json_str + "\n")
+            sys.stdout.flush()
+    except Exception as exc:
+        # If stdout is broken, log to stderr but DO NOT crash the backend.
+        logger.error("Failed to write notification to stdout: %s", exc)
 
 
 def _json_default(obj: Any) -> Any:

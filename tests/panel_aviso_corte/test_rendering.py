@@ -2,10 +2,31 @@
 
 from __future__ import annotations
 
-import pytest
+import base64
+from io import BytesIO
+from pathlib import Path
+from zipfile import ZipFile
+import xml.etree.ElementTree as ET
 
-from backend.core.panel_aviso_corte import Panel, PanelImageRef, render_docx, render_pdf
+import pytest
+from PIL import Image
+from pypdf import PdfReader
+
+from backend.core.panel_aviso_corte import (
+    Panel,
+    PanelImageRef,
+    build_panels,
+    parse_excel_bytes,
+    render_docx,
+    render_pdf,
+)
 from backend.core.panel_aviso_corte.errors import RenderingError
+from backend.core.panel_aviso_corte.models import MatchRule
+from backend.core.panel_aviso_corte.rendering import ROW_HEIGHTS_CM
+
+_ROOT = Path(__file__).resolve().parents[2]
+_W_NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+_WP_NS = {"wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"}
 
 
 def _tiny_png() -> str:
@@ -26,6 +47,30 @@ def _make_panel() -> Panel:
         ),
         source_row_index=0,
     )
+
+
+def _png_b64(width: int, height: int) -> str:
+    buffer = BytesIO()
+    Image.new("RGB", (width, height), "white").save(buffer, format="PNG")
+    return base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
+def _fixture_panels_and_images() -> tuple[tuple[Panel, ...], dict[str, str]]:
+    excel_path = _ROOT / "tests" / "aviso.xlsx"
+    image_paths = sorted((_ROOT / "tests" / "aviso").glob("*.jpg"))
+    source = parse_excel_bytes(excel_path.read_bytes(), excel_path.name)
+    result = build_panels(
+        source=source,
+        rule=MatchRule(key_column="ID", strategy="exact"),
+        image_names=[path.name for path in image_paths],
+        address_column="DIRECCION",
+        export_mode="skip_empty",
+    )
+    images = {
+        path.name: base64.b64encode(path.read_bytes()).decode("ascii")
+        for path in image_paths
+    }
+    return result.panels, images
 
 
 def test_render_pdf_empty_panels_raises() -> None:
@@ -97,3 +142,67 @@ def test_render_docx_multiple_panels() -> None:
     )
     assert docx_bytes[:4] == b"PK\x03\x04"
     assert filename.endswith(".docx")
+
+
+def test_render_pdf_fixture_keeps_four_images_per_page(tmp_path: Path) -> None:
+    panels, images = _fixture_panels_and_images()
+
+    pdf_bytes, _ = render_pdf(
+        panels=panels,
+        logos={},
+        images=images,
+        export_mode="include_empty",
+    )
+
+    output = tmp_path / "fixture-panel-aviso.pdf"
+    output.write_bytes(pdf_bytes)
+    assert [len(panel.imagenes) for panel in panels] == [4, 4]
+    assert len(PdfReader(str(output)).pages) == 2
+
+
+def test_render_docx_limits_photo_height_to_image_row() -> None:
+    panel = Panel(
+        cuadrante="C001",
+        fecha_corte="2025-06-15",
+        motivo="Mantenimiento",
+        imagenes=(
+            PanelImageRef(filename="tall.png", caption="IMAGEN N°1: Calle 1", position=1),
+        ),
+        source_row_index=0,
+    )
+
+    docx_bytes, _ = render_docx(
+        panels=(panel,),
+        logos={},
+        images={"tall.png": _png_b64(600, 2000)},
+        export_mode="include_empty",
+    )
+
+    with ZipFile(BytesIO(docx_bytes)) as archive:
+        document_xml = archive.read("word/document.xml")
+    root = ET.fromstring(document_xml)
+    extents = root.findall(".//wp:extent", _WP_NS)
+    photo_heights_emu = [int(ext.attrib["cy"]) for ext in extents]
+    max_photo_height_emu = round(ROW_HEIGHTS_CM["image"] * 360000)
+
+    assert photo_heights_emu
+    assert max(photo_heights_emu) <= max_photo_height_emu
+
+
+def test_render_docx_fixture_keeps_four_images_without_internal_page_break() -> None:
+    panels, images = _fixture_panels_and_images()
+
+    docx_bytes, _ = render_docx(
+        panels=(panels[0],),
+        logos={},
+        images=images,
+        export_mode="include_empty",
+    )
+
+    with ZipFile(BytesIO(docx_bytes)) as archive:
+        document_xml = archive.read("word/document.xml")
+    root = ET.fromstring(document_xml)
+
+    assert len(panels[0].imagenes) == 4
+    assert len(root.findall(".//wp:extent", _WP_NS)) == 4
+    assert root.findall('.//w:br[@w:type="page"]', _W_NS) == []

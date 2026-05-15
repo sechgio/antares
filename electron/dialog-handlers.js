@@ -64,7 +64,7 @@ async function renderHtmlToPdf(params = {}, electronModules = {}) {
 
   let tempDir = null;
   try {
-    tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'cosmo-pdf-'));
+    tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'antares-pdf-'));
     const htmlPath = path.join(tempDir, 'render.html');
     // Strip dangerous tags and inject CSP meta tag to prevent SSRF/XSS
     const safeHtml = html

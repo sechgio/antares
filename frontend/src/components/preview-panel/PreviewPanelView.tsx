@@ -41,9 +41,9 @@ interface StepProps {
   disabled?: boolean;
 }
 
-const LOGO_LEFT_KEY = 'cosmo_preview_logo_left';
-const LOGO_RIGHT_KEY = 'cosmo_preview_logo_right';
-const CUSTOM_COLS_KEY = 'cosmo_preview_custom_columns';
+const LOGO_LEFT_KEY = 'antares_preview_logo_left';
+const LOGO_RIGHT_KEY = 'antares_preview_logo_right';
+const CUSTOM_COLS_KEY = 'antares_preview_custom_columns';
 const PERSISTED_LOGO_MAX_EDGE = 900;
 const PERSISTED_LOGO_QUALITY = 0.86;
 

@@ -13,22 +13,29 @@ const path = require('path');
  */
 function getBackendCommand(isDev, platform, dir) {
   if (isDev) {
-    const pythonPaths = [];
-    
+    const script = dir ? path.join(dir, '..', 'backend', 'main.py') : null;
+
+    // Check venv first, fall back to system python silently
     if (dir) {
-      if (platform === 'win32') {
-        pythonPaths.push(path.join(dir, '..', 'venv312', 'Scripts', 'python.exe'));
-      } else {
-        pythonPaths.push(path.join(dir, '..', 'venv312', 'bin', 'python'));
+      const venvPy = platform === 'win32'
+        ? path.join(dir, '..', 'venv312', 'Scripts', 'python.exe')
+        : path.join(dir, '..', 'venv312', 'bin', 'python');
+      if (require('fs').existsSync(venvPy)) {
+        return { cmd: venvPy, args: script ? [script] : [] };
       }
     }
-    
-    pythonPaths.push('python3', 'python');
-    
-    const script = dir ? path.join(dir, '..', 'backend', 'main.py') : null;
-    
-    // Return first valid path (validation happens in startPythonBackend)
-    return { cmd: pythonPaths[0], args: script ? [script] : [] };
+
+    // System python fallback
+    const systemCmds = ['python3', 'python'];
+    for (const cmd of systemCmds) {
+      try {
+        require('child_process').execSync(`${cmd} --version`, { stdio: 'ignore' });
+        return { cmd, args: script ? [script] : [] };
+      } catch { /* try next */ }
+    }
+
+    // Last resort: return python and let the spawner fail with a clear error
+    return { cmd: 'python', args: script ? [script] : [] };
   }
   
   const exeName = platform === 'win32'

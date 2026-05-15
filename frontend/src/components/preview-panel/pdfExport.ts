@@ -103,7 +103,7 @@ export function mergeHtmlDocuments(documents: string[]): string {
 <head>
 <meta charset="UTF-8">
 ${head}
-<style id="cosmo-consolidated-pdf">
+<style id="antares-consolidated-pdf">
   @page { size: A4 portrait; margin: 0; }
   html, body { width: auto !important; height: auto !important; margin: 0; padding: 0; overflow: visible !important; background: #ffffff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .page { page-break-after: always; break-after: page; }

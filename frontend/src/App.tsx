@@ -2,6 +2,7 @@ import React, { useState, Suspense, useMemo, useCallback, useEffect } from 'reac
 import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';
 import TitleBar from './components/layout/TitleBar';
+import BackendStatusBar from './components/layout/BackendStatusBar';
 import { ToastProvider } from './hooks/useToast';
 import { DialogProvider } from './hooks/useDialog';
 import { useKeyboardShortcut } from './hooks/useKeyboardShortcut';
@@ -130,6 +131,7 @@ function AppContent() {
       <CommandPalette isOpen={commandOpen} onClose={() => setCommandOpen(false)} items={commandItems} />
       <Dialog />
       <ToastContainer />
+      <BackendStatusBar />
     </div>
   );
 }

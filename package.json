@@ -1,8 +1,8 @@
 {
-  "name": "cosmo-app",
-  "version": "0.5.10",
+  "name": "antares-app",
+  "version": "0.5.15",
   "description": "Conversor y renombrador profesional de imágenes — nativo de escritorio",
-  "author": "ANTARES <dev@cosmo.app>",
+  "author": "ANTARES <dev@antares.app>",
   "private": true,
   "main": "electron/main.js",
   "homepage": ".",
@@ -39,9 +39,6 @@
     "electron": "^33.0.0",
     "electron-builder": "^25.0.0",
     "wait-on": "^8.0.0"
-  },
-  "dependencies": {
-    "electron-updater": "^6.8.3"
   },
   "engines": {
     "node": ">=18.0.0"

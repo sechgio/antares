@@ -35,6 +35,7 @@ ROW_HEIGHTS_CM = {
 }
 CELL_MARGIN_TWIPS = 104
 PHOTO_WIDTH_CM = 7.36
+PHOTO_HEIGHT_CM = ROW_HEIGHTS_CM["image"]
 LOGO_WIDTH_CM = 5.49
 
 
@@ -267,6 +268,20 @@ def render_docx(
         if color:
             run.font.color.rgb = RGBColor(*color)
 
+    def fit_image_size_cm(content: bytes, max_width_cm: float, max_height_cm: float) -> tuple[float, float]:
+        from PIL import Image
+
+        with Image.open(BytesIO(content)) as image:
+            width_px, height_px = image.size
+
+        if width_px <= 0 or height_px <= 0:
+            return max_width_cm, max_height_cm
+
+        width_ratio = max_width_cm / width_px
+        height_ratio = max_height_cm / height_px
+        scale = min(width_ratio, height_ratio)
+        return width_px * scale, height_px * scale
+
     section = doc.sections[0]
     section.page_height = Cm(29.7)
     section.page_width = Cm(21.0)
@@ -417,9 +432,16 @@ def render_docx(
                 p = img_cell.paragraphs[0]
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 if img_ref and img_ref.filename in image_bytes:
+                    width_cm, height_cm = fit_image_size_cm(
+                        image_bytes[img_ref.filename],
+                        PHOTO_WIDTH_CM,
+                        PHOTO_HEIGHT_CM,
+                    )
                     run = p.add_run()
                     run.add_picture(
-                        BytesIO(image_bytes[img_ref.filename]), width=Cm(PHOTO_WIDTH_CM),
+                        BytesIO(image_bytes[img_ref.filename]),
+                        width=Cm(width_cm),
+                        height=Cm(height_cm),
                     )
                 else:
                     run = p.add_run("Sin imagen")

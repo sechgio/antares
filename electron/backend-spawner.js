@@ -1,121 +1,263 @@
 /**
- * Python backend process lifecycle: spawn, handshake, kill, auto-restart.
+ * Python backend process lifecycle.
+ *
+ * Responsibilities:
+ *   - Spawn the Python process (dev: venv / system python; prod: PyInstaller .exe).
+ *   - Handshake: wait for the `ready` JSON-RPC notification on stdout.
+ *   - Track process state (`starting` → `ready` → `exited`/`fatal`).
+ *   - Capture a rolling tail of stderr so failures can be diagnosed.
+ *   - Auto-restart on unexpected crashes, with bounded backoff.
+ *   - Emit lifecycle notifications to the renderer (`backend.starting`,
+ *     `backend.ready`, `backend.error`, `backend.restarting`, `backend.fatal`).
+ *
+ * The IPC router relies on `waitForReady()` and `getLastError()` to decide
+ * whether to queue a pending request or fail it with a helpful message.
  */
-const { dialog } = require('electron');
 const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const { getBackendCommand } = require('./backend-command');
 
+const STATE = Object.freeze({
+  IDLE: 'idle',
+  STARTING: 'starting',
+  READY: 'ready',
+  EXITED: 'exited',
+  FATAL: 'fatal',
+});
+
+const HANDSHAKE_TIMEOUT_MS = 30_000;    // single spawn attempt timeout
+const START_RETRY_LIMIT = 5;             // spawn retry count per start cycle
+const MAX_AUTO_RESTARTS = Infinity;      // NEVER give up on auto-restart
+const MAX_RESTART_BACKOFF_SEC = 30;      // cap backoff at 30s
+const RESTART_RESET_MS = 60_000;         // time of stability before counter resets
+const STDERR_BUFFER_LINES = 60;          // rolling stderr tail
+const HEALTH_CHECK_INTERVAL_MS = 10_000; // periodic health check when ready
+
 let pythonProcess = null;
-let _isReady = false;
+let _state = STATE.IDLE;
 let _isDev = false;
 let _isShuttingDown = false;
 let _restartCount = 0;
-const MAX_AUTO_RESTARTS = 3;
-const RESTART_RESET_MS = 60000; // reset restart counter after 1 min of stability
 let _restartResetTimer = null;
+let _stderrBuffer = [];
+let _lastError = null;                   // { kind: 'fatal'|'transient', message, stderrTail }
+let _healthCheckTimer = null;            // periodic health check interval
+let _startInProgress = false;            // prevents concurrent start/restart cycles
 
-// Promise-based readiness gate: resolves when backend is ready
+// Promise-based readiness gate; resolves when state === READY,
+// rejects when state === FATAL.
 let _readyResolve = null;
 let _readyReject = null;
 let _readyPromise = _createReadyPromise();
 
 function _createReadyPromise() {
-  return new Promise((resolve, reject) => { _readyResolve = resolve; _readyReject = reject; });
+  return new Promise((resolve, reject) => {
+    _readyResolve = resolve;
+    _readyReject = reject;
+  });
+}
+
+function _resetReadyGate() {
+  // Rejections must be swallowed to avoid unhandled rejection warnings
+  // when no one is awaiting.
+  if (_readyPromise) {
+    _readyPromise.catch(() => {});
+  }
+  _readyPromise = _createReadyPromise();
 }
 
 function getProcess() { return pythonProcess; }
-function isReady() { return _isReady; }
+function isReady() { return _state === STATE.READY; }
+function getState() { return _state; }
+function getLastError() { return _lastError; }
+function getStderrTail() { return _stderrBuffer.join('\n'); }
 
 /**
- * Wait until the backend is ready (or already is).
- * Returns true if ready, false if timed out.
+ * Wait until the backend is ready. Resolves true when ready, false when it
+ * fails fatally or the timeout expires. Never rejects.
  */
-async function waitForReady(timeoutMs = 35000) {
-  if (_isReady && pythonProcess && !pythonProcess.killed) return true;
-  const timeout = new Promise((resolve) => setTimeout(() => resolve(false), timeoutMs));
-  const ready = _readyPromise.then(() => true).catch(() => false);
-  return Promise.race([ready, timeout]);
+async function waitForReady(timeoutMs = 60_000) {
+  if (_state === STATE.READY && pythonProcess && !pythonProcess.killed) return true;
+  if (_state === STATE.FATAL) return false;
+
+  let timer = null;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(false), timeoutMs);
+  });
+  const ready = _readyPromise.then(() => true, () => false);
+  const result = await Promise.race([ready, timeout]);
+  if (timer) clearTimeout(timer);
+  return result;
+}
+
+function _notifyRenderer(method, params) {
+  try {
+    const { getMainWindow } = require('./window-manager');
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('ipc-notify', method, params);
+    }
+  } catch {
+    // window-manager may not be loaded during tests
+  }
+}
+
+function _recordStderr(chunk) {
+  const text = chunk.toString();
+  // Forward to main-process stderr for CLI visibility
+  process.stderr.write(text);
+  // Keep a rolling buffer of the last N non-empty lines for diagnostics
+  const lines = text.split(/\r?\n/).map((l) => l.trimEnd()).filter(Boolean);
+  for (const line of lines) {
+    _stderrBuffer.push(line);
+  }
+  if (_stderrBuffer.length > STDERR_BUFFER_LINES) {
+    _stderrBuffer = _stderrBuffer.slice(-STDERR_BUFFER_LINES);
+  }
+}
+
+function _classifyStartupError(rawMessage) {
+  const msg = (rawMessage || '').toLowerCase();
+  // Fatal = no point retrying: executable missing, python not installed.
+  if (msg.includes('backend executable not found')) return 'fatal';
+  if (msg.includes('python no encontrado')) return 'fatal';
+  if (msg.includes('enoent')) return 'fatal';
+  return 'transient';
 }
 
 async function startPythonBackend(isDev, attempt = 1) {
   _isDev = isDev;
   _isShuttingDown = false;
-  try {
-    await _spawn(isDev);
-    _isReady = true;
-    _readyResolve?.();
-    // Reset restart counter after a period of stability
-    if (_restartResetTimer) clearTimeout(_restartResetTimer);
-    _restartResetTimer = setTimeout(() => { _restartCount = 0; }, RESTART_RESET_MS);
-  } catch (err) {
-    console.error(`Backend start attempt ${attempt} failed:`, err.message);
-    if (attempt >= 3) {
-      dialog.showErrorBox('Error de inicio', 'El backend no pudo iniciar después de 3 intentos. Intenta reiniciar la aplicación.');
-      const { app } = require('electron');
-      app.quit();
+
+  if (attempt === 1) {
+    if (_startInProgress) {
+      console.warn('[backend-spawner] Start already in progress, skipping duplicate.');
       return;
     }
-    await new Promise(r => setTimeout(r, Math.pow(2, attempt - 1) * 1000));
+    _startInProgress = true;
+    _state = STATE.STARTING;
+    _lastError = null;
+    _stderrBuffer = [];
+    _resetReadyGate();
+    _notifyRenderer('backend.starting', { attempt: 1, limit: START_RETRY_LIMIT });
+  }
+
+  try {
+    await _spawn(isDev);
+    if (_isShuttingDown) {
+      console.log('[backend-spawner] Shutdown requested after spawn, aborting.');
+      _startInProgress = false;
+      return;
+    }
+    _state = STATE.READY;
+    _lastError = null;
+    _startInProgress = false;
+    _readyResolve?.();
+    if (_restartResetTimer) clearTimeout(_restartResetTimer);
+    _restartResetTimer = setTimeout(() => { _restartCount = 0; }, RESTART_RESET_MS);
+    _startHealthCheck();
+    _notifyRenderer('backend.ready', { version: process.env.npm_package_version || null });
+  } catch (err) {
+    const kind = _classifyStartupError(err.message);
+    const stderrTail = getStderrTail();
+    _lastError = { kind, message: err.message, stderrTail };
+    console.error(`[backend-spawner] Start attempt ${attempt} failed (${kind}): ${err.message}`);
+    if (stderrTail) console.error(`[backend-spawner] stderr tail:\n${stderrTail}`);
+
+    // Only truly fatal if Python / executable is missing. Everything else retries forever.
+    if (kind === 'fatal') {
+      _state = STATE.FATAL;
+      _startInProgress = false;
+      _readyReject?.(err);
+      _notifyRenderer('backend.fatal', {
+        message: err.message,
+        stderrTail,
+        attempts: attempt,
+      });
+      return;
+    }
+
+    // Never give up on transient failures — keep retrying with increasing backoff.
+    const backoffSec = Math.min(Math.pow(2, attempt - 1), MAX_RESTART_BACKOFF_SEC);
+    _notifyRenderer('backend.error', {
+      message: err.message,
+      stderrTail,
+      attempt,
+      willRetry: true,
+      nextRetrySec: backoffSec,
+    });
+    await new Promise((r) => setTimeout(r, 1000 * backoffSec));
+    if (_isShuttingDown) {
+      console.log('[backend-spawner] Shutdown requested during retry delay, aborting start.');
+      _startInProgress = false;
+      return;
+    }
     return startPythonBackend(isDev, attempt + 1);
+  }
+}
+
+/**
+ * Periodic health check: if the backend process exited without firing 'close',
+ * or if it's a zombie, force a restart.
+ */
+function _startHealthCheck() {
+  if (_healthCheckTimer) clearInterval(_healthCheckTimer);
+  _healthCheckTimer = setInterval(() => {
+    if (_isShuttingDown) return;
+    if (_state !== STATE.READY) return;
+    if (!pythonProcess || pythonProcess.killed) {
+      console.warn('[backend-spawner] Health check: process is gone, triggering restart.');
+      _autoRestart().catch((err) => console.error('[backend-spawner] Health-check restart failed:', err));
+    }
+  }, HEALTH_CHECK_INTERVAL_MS);
+}
+
+function _stopHealthCheck() {
+  if (_healthCheckTimer) {
+    clearInterval(_healthCheckTimer);
+    _healthCheckTimer = null;
   }
 }
 
 async function _autoRestart() {
   if (_isShuttingDown) return;
-  _restartCount++;
-  console.warn(`[backend-spawner] Auto-restart attempt ${_restartCount}/${MAX_AUTO_RESTARTS}`);
-
-  if (_restartCount > MAX_AUTO_RESTARTS) {
-    console.error('[backend-spawner] Max auto-restarts exceeded, giving up.');
-    const { getMainWindow } = require('./window-manager');
-    const win = getMainWindow();
-    if (win && !win.isDestroyed()) {
-      win.webContents.send('ipc-notify', 'backend.fatal', {
-        message: 'El backend se cerró inesperadamente y no se pudo reiniciar. Reinicia la aplicación.',
-      });
-    }
-    // Resolve orphaned waiters so they don't hang forever
-    if (_readyResolve) {
-      try { _readyResolve(undefined); } catch {}
-    }
+  if (_startInProgress) {
+    console.warn('[backend-spawner] Auto-restart skipped: start already in progress.');
     return;
   }
+  _restartCount++;
+  console.warn(`[backend-spawner] Auto-restart attempt ${_restartCount} (unlimited)`);
 
-  // Reject previous waiters and reset the ready gate
-  if (_readyReject) {
-    try { _readyReject(new Error('Backend restarting')); } catch {}
+  _state = STATE.STARTING;
+  _resetReadyGate();
+  _notifyRenderer('backend.restarting', {
+    attempt: _restartCount,
+    limit: null, // unlimited
+  });
+
+  // Exponential backoff with a cap so we don't spam too fast
+  const backoffSec = Math.min(Math.pow(2, _restartCount - 1), MAX_RESTART_BACKOFF_SEC);
+  await new Promise((r) => setTimeout(r, 1000 * backoffSec));
+  if (_isShuttingDown) {
+    console.log('[backend-spawner] Shutdown requested during auto-restart backoff, aborting.');
+    _startInProgress = false;
+    return;
   }
-  _readyPromise = _createReadyPromise();
-
-  // Notify renderer that backend is restarting
-  const { getMainWindow } = require('./window-manager');
-  const win = getMainWindow();
-  if (win && !win.isDestroyed()) {
-    win.webContents.send('ipc-notify', 'backend.restarting', {
-      message: 'Backend reiniciándose...',
-      attempt: _restartCount,
-    });
+  try {
+    await startPythonBackend(_isDev);
+  } finally {
+    _startInProgress = false;
   }
-
-  await new Promise(r => setTimeout(r, 1000 * _restartCount)); // progressive backoff
-  await startPythonBackend(_isDev);
 }
 
 function _spawn(isDev) {
   let { cmd, args } = getBackendCommand(isDev, process.platform, __dirname);
 
-  if (!isDev) {
-    if (!fs.existsSync(cmd)) throw new Error(`Backend executable not found: ${cmd}`);
-  } else {
-    if (!fs.existsSync(cmd)) {
-      console.warn(`Venv Python not found at ${cmd}, trying system python...`);
-      const systemPython = process.platform === 'win32' ? 'python.exe' : 'python3';
-      cmd = systemPython;
-      try { execSync(`${cmd} --version`, { stdio: 'ignore' }); } catch {
-        throw new Error(`Python no encontrado: ni el entorno virtual ni Python del sistema están disponibles.`);
-      }
-    }
+  if (isDev && !fs.existsSync(cmd)) {
+    throw new Error('Python no encontrado: ni el entorno virtual ni Python del sistema están disponibles.');
+  }
+  if (!isDev && !fs.existsSync(cmd)) {
+    throw new Error(`Backend executable not found: ${cmd}`);
   }
 
   pythonProcess = spawn(cmd, args, {
@@ -123,34 +265,37 @@ function _spawn(isDev) {
     env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
   });
 
-  pythonProcess.stderr.on('data', (data) => console.error('[Python]', data.toString().trim()));
-  pythonProcess.stdin.on('error', (err) => console.error('[Python stdin error]', err.message));
+  pythonProcess.stderr.on('data', _recordStderr);
+  pythonProcess.stdin.on('error', (err) => {
+    console.error('[backend-spawner] stdin error:', err.message);
+  });
 
-  pythonProcess.on('close', (code) => {
-    console.log(`Python backend exited with code ${code}`);
-    const wasReady = _isReady;
-    pythonProcess = null;
-    _isReady = false;
+  const spawnedPid = pythonProcess.pid;
+  pythonProcess.on('close', (code, signal) => {
+    console.log(`[backend-spawner] Python backend exited (code=${code}, signal=${signal})`);
+    const wasReady = _state === STATE.READY;
+    // Only null out pythonProcess if it still references this closed process.
+    // Prevents race where a new process was already spawned.
+    if (pythonProcess && pythonProcess.pid === spawnedPid) {
+      pythonProcess = null;
+    }
+    _state = wasReady ? STATE.EXITED : _state;
 
-    // If it was running fine and crashed unexpectedly, auto-restart
     if (wasReady && !_isShuttingDown) {
-      console.warn('[backend-spawner] Unexpected backend exit, triggering auto-restart...');
+      // Unexpected crash after being healthy → try to restart.
       _autoRestart().catch((err) => console.error('[backend-spawner] Auto-restart failed:', err));
     }
   });
 
   pythonProcess.on('error', (err) => {
-    console.error('Failed to start Python backend:', err);
-    const msg = err.code === 'ENOENT'
-      ? `Python no encontrado: verifica que el entorno virtual o Python del sistema esté instalado.\n${err.message}`
-      : `No se pudo iniciar el backend Python:\n${err.message}`;
-    dialog.showErrorBox('Backend Error', msg);
-    const { app } = require('electron');
-    app.quit();
+    console.error('[backend-spawner] Failed to start Python backend:', err);
+    // The handshake promise below will reject on timeout; no dialog here —
+    // let startPythonBackend() decide how to surface the failure.
   });
 
   return new Promise((resolve, reject) => {
     let buffer = '';
+    let handshakeDone = false;
     const onData = (data) => {
       buffer += data.toString();
       const lines = buffer.split('\n');
@@ -160,30 +305,105 @@ function _spawn(isDev) {
         try {
           const msg = JSON.parse(line);
           if (msg.method === 'ready') {
+            handshakeDone = true;
             pythonProcess.stdout.off('data', onData);
             resolve();
             return;
           }
-        } catch { /* Not JSON */ }
+        } catch { /* not JSON yet */ }
       }
     };
     pythonProcess.stdout.on('data', onData);
-    setTimeout(() => {
+
+    const handshakeTimer = setTimeout(() => {
       pythonProcess?.stdout.off('data', onData);
-      if (pythonProcess && !pythonProcess.killed) pythonProcess.kill();
-      reject(new Error('Python backend timeout'));
-    }, 30000);
+      if (pythonProcess && !pythonProcess.killed) {
+        _forceKillProcess(pythonProcess);
+      }
+      const tail = getStderrTail();
+      const detail = tail ? `\nÚltima salida de Python:\n${tail}` : '';
+      handshakeDone = true;
+      reject(new Error(`Python backend handshake timeout (>${HANDSHAKE_TIMEOUT_MS / 1000}s)${detail}`));
+    }, HANDSHAKE_TIMEOUT_MS);
+
+    pythonProcess.once('close', (code, signal) => {
+      clearTimeout(handshakeTimer);
+      pythonProcess?.stdout.off('data', onData);
+      if (!handshakeDone) {
+        handshakeDone = true;
+        const tail = getStderrTail();
+        const detail = tail ? `\nÚltima salida de Python:\n${tail}` : '';
+        reject(new Error(`Python backend exited before handshake (code=${code}, signal=${signal})${detail}`));
+      }
+    });
   });
+}
+
+function _forceKillProcess(proc) {
+  if (!proc || proc.killed) return;
+  try { proc.stdin.end(); } catch { /* ignore */ }
+  try { proc.kill(); } catch { /* ignore */ }
+  // On Windows, child processes may survive SIGTERM. Use taskkill to force-kill
+  // the entire process tree to prevent zombie processes from blocking the port
+  // or holding file locks.
+  if (process.platform === 'win32' && proc.pid) {
+    try {
+      execSync(`taskkill /pid ${proc.pid} /T /F`, { stdio: 'ignore', timeout: 5000 });
+    } catch { /* process may already be dead */ }
+  }
 }
 
 function killPython() {
   _isShuttingDown = true;
-  _isReady = false;
+  _state = STATE.EXITED;
+  _stopHealthCheck();
   if (_restartResetTimer) clearTimeout(_restartResetTimer);
-  if (pythonProcess && !pythonProcess.killed) {
-    try { pythonProcess.stdin.end(); } catch {}
-    pythonProcess.kill();
+  _forceKillProcess(pythonProcess);
+}
+
+/**
+ * Manual restart: reset the FATAL state so a fresh start cycle can proceed.
+ * Returns true if a start cycle was kicked off, false if already running.
+ */
+async function manualRestart(isDev) {
+  // If already ready, nothing to do
+  if (_state === STATE.READY && pythonProcess && !pythonProcess.killed) {
+    return true;
+  }
+  if (_startInProgress) {
+    console.warn('[backend-spawner] Manual restart skipped: start already in progress.');
+    return false;
+  }
+
+  // Kill any lingering process (handles Windows zombie processes)
+  _forceKillProcess(pythonProcess);
+  pythonProcess = null;
+  _stopHealthCheck();
+
+  // Reset ANY state so startPythonBackend can proceed — even if previously fatal.
+  _state = STATE.IDLE;
+  _restartCount = 0;
+  _lastError = null;
+  _stderrBuffer = [];
+  _isShuttingDown = false;
+
+  try {
+    await startPythonBackend(isDev);
+    return isReady();
+  } finally {
+    _startInProgress = false;
   }
 }
 
-module.exports = { startPythonBackend, getProcess, killPython, isReady, waitForReady };
+module.exports = {
+  startPythonBackend,
+  getProcess,
+  killPython,
+  manualRestart,
+  isReady,
+  waitForReady,
+  getState,
+  getLastError,
+  getStderrTail,
+  STATE,
+};

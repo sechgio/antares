@@ -13,6 +13,7 @@ a = Analysis(
     binaries=[],
     datas=[
         (str(backend_dir / 'templates'), 'backend/templates'),
+        (str(backend_dir / 'core' / 'presets.json'), 'backend/core'),
     ],
     hiddenimports=[
         'backend.core.converter',
@@ -90,7 +91,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='CosmoBackend',
+    name='AntaresBackend',
     debug=False,
     bootloader_ignore_signals=False,
     strip=True,

@@ -54,14 +54,11 @@ def _is_safe_plugin(source: str) -> bool:
                 return False
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _BLOCKED_NAMES:
             return False
-        if isinstance(node, ast.Attribute):
-            if node.attr in _BLOCKED_ATTRS:
-                return False
+        if isinstance(node, ast.Attribute) and node.attr in _BLOCKED_ATTRS:
+            return False
         if isinstance(node, ast.Name) and node.id in _BLOCKED_NAMES:
             return False
-    if not has_register:
-        return False
-    return True
+    return has_register
 
 
 def load_plugins_from_dir(plugins_dir: Path | None = None) -> None:

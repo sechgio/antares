@@ -235,7 +235,14 @@ function composeTheme(theme: ThemeConfig, mode: ThemeMode, accentKey: string): T
           accent_dark: accent.dark,
           orange: accent.light,
         }
-      : {}),
+      : theme.accent_key === CUSTOM_ACCENT_KEY
+        ? {
+            accent_light: shadeHex(theme.accent, 0.35),
+            accent_hover: shadeHex(theme.accent, -0.15),
+            accent_dark: shadeHex(theme.accent, -0.35),
+            orange: shadeHex(theme.accent, 0.35),
+          }
+        : {}),
   } as ThemeConfig);
 }
 
@@ -396,6 +403,9 @@ export default function AppearanceView() {
         ? {
             accent_key: CUSTOM_ACCENT_KEY,
             orange: normalized,
+            accent_light: shadeHex(normalized, 0.35),
+            accent_hover: shadeHex(normalized, -0.15),
+            accent_dark: shadeHex(normalized, -0.35),
           }
         : {}),
     } as ThemeConfig;
@@ -684,6 +694,40 @@ export default function AppearanceView() {
                 </SettingRow>
               );
             })}
+
+            <div className="grid min-h-[40px] grid-cols-[minmax(0,1fr)_minmax(120px,190px)] items-center gap-4 border-t border-[var(--border-subtle)] px-4 py-2.5 sm:grid-cols-[minmax(0,1fr)_136px]">
+              <div className="text-[12px] font-semibold leading-4 text-[var(--text-primary)]">Acentos rapidos</div>
+              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                {ACCENTS.map((item) => {
+                  const isActive = accent === item.key;
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => {
+                        setAccent(item.key);
+                        const nextTheme = {
+                          ...theme,
+                          accent: item.color,
+                          accent_key: item.key,
+                          accent_light: item.light,
+                          accent_hover: item.hover,
+                          accent_dark: item.dark,
+                          orange: item.light,
+                        } as ThemeConfig;
+                        setTheme(nextTheme);
+                        applyThemeToCSS(nextTheme, mode, item.key);
+                      }}
+                      className={`h-5 w-5 shrink-0 rounded-full border-2 transition-all ${
+                        isActive ? 'border-[var(--text-primary)] scale-110' : 'border-transparent hover:border-[var(--text-secondary)]'
+                      }`}
+                      style={{ backgroundColor: item.color }}
+                      title={item.key}
+                    />
+                  );
+                })}
+              </div>
+            </div>
 
             <SettingRow label="Fuente de la interfaz">
               <input

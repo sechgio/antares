@@ -3,6 +3,9 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from backend.core.format_strategies.legacy_xobject import LegacyXObjectStrategy
+from backend.core.format_strategies.visual_overlay import SimpleOverlayStrategy, VisualOverlayStrategy
+
 
 class FormatStrategy(Protocol):
     """Interface for PDF generation strategies."""
@@ -25,9 +28,6 @@ def get_strategy(name: str) -> FormatStrategy:
 
 
 # Register built-in strategies
-from backend.core.format_strategies.legacy_xobject import LegacyXObjectStrategy
-from backend.core.format_strategies.visual_overlay import SimpleOverlayStrategy, VisualOverlayStrategy
-
 register_strategy("legacy_xobject", LegacyXObjectStrategy())
 register_strategy("visual_overlay", VisualOverlayStrategy())
 register_strategy("simple_overlay", SimpleOverlayStrategy())

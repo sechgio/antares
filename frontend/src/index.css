@@ -273,12 +273,3 @@
 }
 
 
-:root {
-  --display-light-logo: none;
-  --display-dark-logo: block;
-}
-
-html[data-theme-mode="light"] {
-  --display-light-logo: block;
-  --display-dark-logo: none;
-}

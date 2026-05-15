@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { FileDown, AlertTriangle, Download, Loader2 } from 'lucide-react';
+import { AlertTriangle, Download, Loader2 } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
 import { useDialog } from '../../hooks/useDialog';
 import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut';

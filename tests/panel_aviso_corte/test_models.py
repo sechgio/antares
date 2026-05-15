@@ -9,6 +9,8 @@ Validates: Requirements 13.1, 13.4
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
+
 import pytest
 
 from backend.core.panel_aviso_corte.errors import (
@@ -315,15 +317,15 @@ class TestFrozenDataclasses:
             fecha_corte="",
             motivo="Trabajos",
         )
-        with pytest.raises(Exception):  # FrozenInstanceError
+        with pytest.raises(FrozenInstanceError):
             panel.cuadrante = "otro"  # type: ignore[misc]
 
     def test_panel_image_ref_is_frozen(self) -> None:
         ref = _ref(1)
-        with pytest.raises(Exception):  # FrozenInstanceError
+        with pytest.raises(FrozenInstanceError):
             ref.position = 2  # type: ignore[misc]
 
     def test_match_rule_is_frozen(self) -> None:
         rule = MatchRule(key_column="CODIGO", strategy="prefix")
-        with pytest.raises(Exception):  # FrozenInstanceError
+        with pytest.raises(FrozenInstanceError):
             rule.strategy = "contains"  # type: ignore[misc]

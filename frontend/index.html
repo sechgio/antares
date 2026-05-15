@@ -3,50 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#F6F7FB" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0A0A0A" media="(prefers-color-scheme: dark)" />
     <title>ANTARES</title>
-    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
-    <link rel="icon" type="image/png" sizes="256x256" href="/icon.png" />
-    <link rel="apple-touch-icon" sizes="256x256" href="/icon.png" />
-    <script>
-      (function () {
-        try {
-          var cache = localStorage.getItem('hc_theme_css_cache');
-          if (cache) {
-            var vars = JSON.parse(cache);
-            var root = document.documentElement;
-            for (var key in vars) {
-              if (Object.prototype.hasOwnProperty.call(vars, key)) {
-                root.style.setProperty(key, vars[key]);
-              }
-            }
-          }
-          var mode = localStorage.getItem('hc_theme_mode');
-          if (mode) {
-            root.dataset.themeMode = mode;
-            if (mode === 'dark') {
-              root.classList.add('theme-dark');
-              root.classList.remove('theme-light');
-            } else if (mode === 'light') {
-              root.classList.add('theme-light');
-              root.classList.remove('theme-dark');
-            } else {
-              var systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-              if (systemDark) {
-                root.classList.add('theme-dark');
-                root.classList.remove('theme-light');
-              } else {
-                root.classList.add('theme-light');
-                root.classList.remove('theme-dark');
-              }
-            }
-          }
-          var density = localStorage.getItem('hc_theme_density');
-          if (density) {
-            root.dataset.themeDensity = density;
-          }
-        } catch (e) {}
-      })();
-    </script>
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="96x96" href="favicon-96.png" />
+    <link rel="icon" type="image/png" sizes="128x128" href="favicon-128.png" />
+    <link rel="icon" type="image/png" sizes="256x256" href="icon.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="favicon-152.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="favicon-180.png" />
+    <link rel="apple-touch-icon" sizes="256x256" href="icon.png" />
+    <script src="theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>

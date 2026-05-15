@@ -1,14 +1,50 @@
 /**
- * IPC routing: request/response correlation, notifications forwarding.
- * Includes automatic retry when backend is temporarily unavailable.
+ * IPC router: JSON-RPC request/response correlation between renderer and
+ * the Python backend, plus notification forwarding.
+ *
+ * Design goals:
+ *   - A request issued before the backend finishes booting **waits** for it
+ *     (bounded by a generous startup budget) instead of failing with a
+ *     cryptic "Backend no disponible".
+ *   - Failures include a meaningful reason: handshake timeout, Python
+ *     crashed with stderr, executable missing, etc.
+ *   - Mid-flight transient failures (process died while we were waiting
+ *     for a response) retry a small, bounded number of times.
  */
 const { ipcMain, dialog } = require('electron');
 const { handleDialogCall } = require('./dialog-handlers');
-const { getProcess, isReady, waitForReady } = require('./backend-spawner');
+const {
+  getProcess,
+  isReady,
+  waitForReady,
+  getState,
+  getLastError,
+  getStderrTail,
+  manualRestart,
+  STATE,
+} = require('./backend-spawner');
 const { getMainWindow, buildAppMenu } = require('./window-manager');
 
 const _pendingRequests = new Map();
-let _ipcListenersReady = false;
+let _attachedProcess = null;               // process instance we have listeners on
+
+// Budgets
+const REQUEST_TIMEOUT_MS = 30_000;         // per-request response timeout (default)
+const LONG_REQUEST_TIMEOUT_MS = 300_000;   // 5 min for heavy operations (conversion, PDF generation, ZIP)
+const STARTUP_WAIT_MS = 90_000;            // how long a call will wait for boot
+const MID_FLIGHT_RETRIES = 2;              // retries for transient mid-flight errors
+
+// Methods that can take a very long time (bulk conversion, PDF rendering, ZIP creation)
+const LONG_RUNNING_METHODS = new Set([
+  'process_start',
+  'formatos_generate',
+  'image_optimizer_zip',
+  'technical_reports_render_consolidated_html',
+  'technical_reports_render_html',
+  'panel_aviso_corte_render_pdf',
+  'panel_aviso_corte_compute_match',
+  'html_to_pdf',
+]);
 
 /**
  * Allowlist of backend method names that can be called via IPC.
@@ -38,10 +74,18 @@ const ALLOWED_METHODS = new Set([
   'templates_list', 'template_get',
 ]);
 
-function setupIpcResponseListener() {
+/**
+ * Attach stdout/close listeners to the current backend process if we haven't
+ * already. Re-runs whenever the backend is restarted.
+ */
+function _ensureListeners() {
   const proc = getProcess();
-  if (!proc) return;
+  if (!proc) return false;
+  if (_attachedProcess === proc) return true;
+
+  _attachedProcess = proc;
   let buffer = '';
+
   proc.stdout.on('data', (data) => {
     buffer += data.toString();
     const lines = buffer.split('\n');
@@ -50,113 +94,180 @@ function setupIpcResponseListener() {
       if (!line.trim()) continue;
       try {
         const msg = JSON.parse(line);
-        if (msg.method && msg.params && msg.id === undefined) {
+        // Notification (no `id`): forward to renderer
+        if (msg.method && msg.params !== undefined && msg.id === undefined) {
           const win = getMainWindow();
           if (win && !win.isDestroyed()) win.webContents.send('ipc-notify', msg.method, msg.params);
           continue;
         }
+        // Response to a pending request
         if (msg.id !== undefined && _pendingRequests.has(String(msg.id))) {
           const entry = _pendingRequests.get(String(msg.id));
           clearTimeout(entry.timeout);
           _pendingRequests.delete(String(msg.id));
-          if (msg.error) entry.reject(new Error(msg.error.message || msg.error));
-          else entry.resolve(msg.result);
+          if (msg.error) {
+            const errMsg = typeof msg.error === 'object' ? (msg.error.message || JSON.stringify(msg.error)) : String(msg.error);
+            entry.reject(new Error(errMsg));
+          } else {
+            entry.resolve(msg.result);
+          }
         }
-      } catch { /* ignore */ }
+      } catch { /* malformed line — ignore */ }
     }
   });
 
   proc.on('close', () => {
-    _ipcListenersReady = false;
+    _attachedProcess = null;
     for (const [, entry] of _pendingRequests) {
       clearTimeout(entry.timeout);
-      entry.reject(new Error('Backend process exited'));
+      entry.reject(new Error('Backend process exited while waiting for response'));
     }
     _pendingRequests.clear();
   });
+
+  return true;
 }
 
-function ensureIpcListeners() {
-  if (_ipcListenersReady) return;
-  setupIpcResponseListener();
-  _ipcListenersReady = true;
+function _getTimeoutForMethod(method) {
+  return LONG_RUNNING_METHODS.has(method) ? LONG_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
 }
 
-function _sendRequest(proc, method, params) {
-  ensureIpcListeners();
+function _sendRequest(method, params) {
+  const proc = getProcess();
+  if (!proc || proc.killed) {
+    return Promise.reject(new Error('Backend process not available'));
+  }
+  _ensureListeners();
+
   const id = Math.random().toString(36).slice(2);
   const request = { jsonrpc: '2.0', id, method, params };
+  const timeoutMs = _getTimeoutForMethod(method);
 
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => {
       _pendingRequests.delete(id);
-      const w = getMainWindow();
-      if (w && !w.isDestroyed()) w.webContents.send('ipc-notify', 'ipc.error', { message: 'IPC timeout: backend no responde' });
-      reject(new Error('IPC timeout'));
-    }, 30000);
+      const win = getMainWindow();
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('ipc-notify', 'ipc.error', {
+          method,
+          message: `IPC timeout: el backend no respondió a "${method}" en ${timeoutMs / 1000}s`,
+        });
+      }
+      reject(new Error(`IPC timeout: ${method}`));
+    }, timeoutMs);
+
     _pendingRequests.set(id, { resolve, reject, timeout: timeoutId });
-    try { proc.stdin.write(JSON.stringify(request) + '\n'); } catch (err) {
+    try {
+      proc.stdin.write(JSON.stringify(request) + '\n');
+    } catch (err) {
       clearTimeout(timeoutId);
       _pendingRequests.delete(id);
-      reject(new Error('Backend stdin write failed: ' + err.message));
+      reject(new Error(`Backend stdin write failed: ${err.message}`));
     }
   });
 }
 
-const MAX_IPC_RETRIES = 3;
-const IPC_RETRY_WAIT_MS = 5000;
+/**
+ * Build a user-facing error message when the backend is not available.
+ * Pulls detail from the spawner so the renderer sees what actually happened.
+ */
+function _buildUnavailableError() {
+  const state = getState();
+  const last = getLastError();
+  const tail = getStderrTail();
+
+  if (state === STATE.FATAL) {
+    const base = last?.message || 'El backend no pudo iniciarse.';
+    const suffix = tail ? `\n\nDetalle:\n${tail}` : '';
+    const err = new Error(`${base}${suffix}`);
+    err.code = 'BACKEND_FATAL';
+    return err;
+  }
+  if (state === STATE.STARTING) {
+    const err = new Error('El backend todavía se está iniciando. Intenta de nuevo en unos segundos.');
+    err.code = 'BACKEND_STARTING';
+    return err;
+  }
+  if (state === STATE.EXITED) {
+    const suffix = tail ? `\n\nÚltima salida:\n${tail}` : '';
+    const err = new Error(`El backend se cerró inesperadamente.${suffix}`);
+    err.code = 'BACKEND_EXITED';
+    return err;
+  }
+  const err = new Error('Backend no disponible (estado desconocido).');
+  err.code = 'BACKEND_UNAVAILABLE';
+  return err;
+}
+
+/**
+ * Call a backend method, waiting for boot if necessary, with a small number
+ * of retries if the process dies mid-flight.
+ */
+async function _callBackend(method, params) {
+  // 1. Wait for ready (or fatal). This is the ONLY place we block for boot.
+  if (!isReady()) {
+    if (getState() === STATE.FATAL) throw _buildUnavailableError();
+    const ready = await waitForReady(STARTUP_WAIT_MS);
+    if (!ready) throw _buildUnavailableError();
+  }
+
+  // 2. Send, retrying on transient mid-flight failures.
+  let lastErr = null;
+  for (let attempt = 0; attempt <= MID_FLIGHT_RETRIES; attempt++) {
+    try {
+      _ensureListeners();
+      return await _sendRequest(method, params);
+    } catch (err) {
+      lastErr = err;
+      const msg = err.message || '';
+      const transient = msg.includes('Backend process exited')
+        || msg.includes('Backend process not available')
+        || msg.includes('stdin write failed');
+      if (!transient || attempt === MID_FLIGHT_RETRIES) throw err;
+
+      console.warn(`[ipc-router] "${method}" transient failure (attempt ${attempt + 1}/${MID_FLIGHT_RETRIES + 1}): ${msg}. Waiting for backend...`);
+      const ready = await waitForReady(STARTUP_WAIT_MS);
+      if (!ready) throw _buildUnavailableError();
+    }
+  }
+  throw lastErr || _buildUnavailableError();
+}
 
 function registerIpcHandlers() {
   ipcMain.handle('ipc-call', async (event, method, params) => {
     if (typeof method !== 'string' || !ALLOWED_METHODS.has(method)) {
       throw new Error(`IPC method not allowed: ${method}`);
     }
+
+    // Dialog / native methods are handled in Electron main without touching Python.
     const win = getMainWindow();
     const { BrowserWindow } = require('electron');
     const dialogResult = await handleDialogCall(method, params, dialog, win, { BrowserWindow });
     if (dialogResult.handled) return dialogResult.result;
 
-    let lastError = null;
-    for (let attempt = 1; attempt <= MAX_IPC_RETRIES; attempt++) {
-      const proc = getProcess();
-      if (proc && !proc.killed && isReady()) {
-        try {
-          return await _sendRequest(proc, method, params);
-        } catch (err) {
-          lastError = err;
-          // If the error is about the process dying mid-request, retry after wait
-          if (err.message.includes('Backend process exited') || err.message.includes('stdin write failed')) {
-            console.warn(`[ipc-router] Attempt ${attempt}/${MAX_IPC_RETRIES} for "${method}" failed: ${err.message}`);
-            if (attempt < MAX_IPC_RETRIES) {
-              const ready = await waitForReady(IPC_RETRY_WAIT_MS);
-              if (!ready) continue;
-            }
-            continue;
-          }
-          throw err;
-        }
-      }
+    return _callBackend(method, params);
+  });
 
-      console.warn(`[ipc-router] Backend not ready, waiting (attempt ${attempt}/${MAX_IPC_RETRIES}) for "${method}"...`);
-      const ready = await waitForReady(IPC_RETRY_WAIT_MS);
-      if (ready) {
-        const retryProc = getProcess();
-        if (retryProc && !retryProc.killed) {
-          try {
-            return await _sendRequest(retryProc, method, params);
-          } catch (err) {
-            lastError = err;
-            if (err.message.includes('Backend process exited') || err.message.includes('stdin write failed')) {
-              continue;
-            }
-            throw err;
-          }
-        }
-      }
-      lastError = new Error('Backend no disponible');
+  ipcMain.handle('backend-status', async () => {
+    return {
+      state: getState(),
+      ready: isReady(),
+      lastError: getLastError(),
+      stderrTail: getStderrTail(),
+    };
+  });
+
+  ipcMain.handle('backend-restart', async () => {
+    const { getIsDev } = require('./window-manager');
+    // Fallback: determine isDev from app if window-manager doesn't export it
+    let isDev;
+    try {
+      isDev = getIsDev();
+    } catch {
+      isDev = !require('electron').app.isPackaged;
     }
-
-    throw lastError || new Error('Backend no disponible después de varios intentos');
+    const ok = await manualRestart(isDev);
+    return { success: ok, state: getState() };
   });
 
   ipcMain.handle('window-control', async (_event, action) => {
@@ -172,17 +283,14 @@ function registerIpcHandlers() {
     const win = getMainWindow();
     if (!win || win.isDestroyed()) return { handled: false };
     const menu = buildAppMenu(Number(menuIndex));
-    const x = Number(position?.x), y = Number(position?.y);
-    menu.popup({ window: win, ...(Number.isFinite(x) && Number.isFinite(y) ? { x: Math.round(x), y: Math.round(y) } : {}) });
+    const x = Number(position?.x);
+    const y = Number(position?.y);
+    menu.popup({
+      window: win,
+      ...(Number.isFinite(x) && Number.isFinite(y) ? { x: Math.round(x), y: Math.round(y) } : {}),
+    });
     return { handled: true };
-  });
-
-  ipcMain.on('quit-and-install', () => {
-    const { autoUpdater } = require('electron-updater');
-    if (autoUpdater.isUpdaterActive?.() || autoUpdater.updateDownloaded) {
-      autoUpdater.quitAndInstall();
-    }
   });
 }
 
-module.exports = { registerIpcHandlers, ensureIpcListeners };
+module.exports = { registerIpcHandlers, _ensureListeners };

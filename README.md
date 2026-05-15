@@ -14,7 +14,6 @@
 - **Reportes de Campo**: Gestión de reportes con fotos, hojas de datos y exportación
 - **Optimizador de Imágenes**: Pipeline de optimización con previsualización, crop, ajustes y exportación ZIP
 - **Historial completo**: Registro de todas las ejecuciones por tipo (conversión, formato, padrón, volante) con opción de re-ejecutar configuraciones previas
-- **Auto-actualizaciones**: Sistema de actualización automática integrado (GitHub Releases)
 - **Vista previa de imágenes**: Previsualización de conversiones antes de procesar, con drawer interactivo
 - **Command Palette**: Búsqueda rápida y navegación entre secciones con `Ctrl+K`
 - **Temas personalizables**: 23 presets de tema integrados + editor de colores con identidad Precision Linear

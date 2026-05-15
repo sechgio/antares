@@ -18,9 +18,23 @@ export async function exportPanelDocument(
     imagesB64[filename] = await readFileAsBase64(file);
   }
 
+  const normalizeDate = (raw: string): string => {
+    const s = raw.trim();
+    if (!s) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const isoMatch = s.match(/^(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}/);
+    if (isoMatch) return isoMatch[1];
+    const dmyMatch = s.match(/^(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})$/);
+    if (dmyMatch) {
+      const [, d, m, y] = dmyMatch;
+      return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+    return s;
+  };
+
   const panelsPayload = panels.map((p) => ({
     cuadrante: p.cuadrante,
-    fecha_corte: p.fechaCorte,
+    fecha_corte: normalizeDate(p.fechaCorte),
     motivo: p.motivo,
     imagenes: p.imagenes,
     source_row_index: p.sourceRowIndex,

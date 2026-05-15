@@ -108,7 +108,7 @@ const DEFAULT_PRESETS: SavedPreset[] = [
   },
 ];
 
-const STORAGE_KEY = 'cosmo_conversion_presets';
+const STORAGE_KEY = 'antares_conversion_presets';
 
 function loadPresets(): SavedPreset[] {
   try {
