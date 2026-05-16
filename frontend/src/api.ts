@@ -284,6 +284,7 @@ export const api = {
     panels: unknown[];
     logos: { left_b64?: string; right_b64?: string };
     images: Record<string, string>;
+    image_paths?: Record<string, string>;
     format?: string;
   }) => _invoke<{ pdf_base64: string; filename: string }>('panel_aviso_corte_render_pdf', body),
   panelAvisoCorteTemplate: (body: { path: string }) => _invoke<{ path: string }>('panel_aviso_corte_template', body),

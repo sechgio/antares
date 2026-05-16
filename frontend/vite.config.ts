@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => ({
     }),
     mode === 'analyze' && visualizer({ open: true, gzipSize: true, brotliSize: true }),
   ],
-  base: './',
+  base: mode === 'development' ? '/' : './',
   build: {
     outDir: 'dist',
     emptyOutDir: true,

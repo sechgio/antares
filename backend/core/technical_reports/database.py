@@ -116,3 +116,20 @@ class TechnicalReportsDB:
             self._items = {report["id"]: report for report in imported}
             self._save()
             return imported
+
+    def get_unique_cs(self) -> list[str]:
+        """Return sorted unique CS values without full normalization overhead."""
+        with self._lock:
+            return sorted(
+                {r.get("header", {}).get("cs", "") for r in self._items.values() if r.get("header", {}).get("cs")}
+            )
+
+    def get_unique_contratista(self, cs: str | None = None) -> list[str]:
+        """Return sorted unique contratista values, optionally filtered by CS."""
+        with self._lock:
+            items = self._items.values()
+            if cs:
+                items = [r for r in items if r.get("header", {}).get("cs") == cs]
+            return sorted(
+                {r.get("header", {}).get("contratista", "") for r in items if r.get("header", {}).get("contratista")}
+            )

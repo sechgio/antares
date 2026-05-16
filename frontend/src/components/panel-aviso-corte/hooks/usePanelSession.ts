@@ -119,7 +119,8 @@ export function usePanelSession(): PanelSession {
         newErrors.push(MSG_IMAGE_TOO_LARGE(file.name));
         continue;
       }
-      accepted.push({ file, objectUrl: URL.createObjectURL(file) });
+      const localPath = (file as File & { path?: string }).path || undefined;
+      accepted.push({ file, objectUrl: URL.createObjectURL(file), localPath });
     }
     setImages((prev) => [...prev, ...accepted]);
     return newErrors;

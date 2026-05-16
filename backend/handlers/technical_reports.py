@@ -104,16 +104,12 @@ def technical_reports_variables(params: dict[str, Any]) -> dict[str, Any]:
 
 @with_locale
 def technical_reports_autocomplete_cs(params: dict[str, Any]) -> dict[str, Any]:
-    reports = _db().get_all()
-    return {"options": sorted({r["header"].get("cs", "") for r in reports if r["header"].get("cs")})}
+    return {"options": _db().get_unique_cs()}
 
 @with_locale
 def technical_reports_autocomplete_contratista(params: dict[str, Any]) -> dict[str, Any]:
     cs = str(params.get("cs") or "").strip()
-    reports = _db().get_all()
-    if cs:
-        reports = [r for r in reports if r["header"].get("cs") == cs]
-    return {"options": sorted({r["header"].get("contratista", "") for r in reports if r["header"].get("contratista")})}
+    return {"options": _db().get_unique_contratista(cs if cs else None)}
 
 @with_locale
 def technical_reports_render_html(params: dict[str, Any]) -> dict[str, Any]:

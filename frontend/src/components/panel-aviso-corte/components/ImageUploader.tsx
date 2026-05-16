@@ -46,7 +46,7 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
         </div>
         <div className="flex flex-col">
           <span className="text-xs font-medium text-[var(--text-primary)]">Arrastra imágenes o haz clic</span>
-          <span className="text-[11px] text-[var(--text-muted)]">PNG, JPG, WebP · máx. 15 MB</span>
+          <span className="text-[11px] text-[var(--text-muted)]">PNG, JPG, WebP · admite lotes grandes</span>
         </div>
         {images.length > 0 && (
           <span className="ml-auto px-2 py-0.5 rounded-full bg-[var(--accent-primary)] text-white text-[11px] font-bold">
@@ -82,7 +82,7 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
           <div className="grid grid-cols-5 gap-1.5">
             {images.map((img, idx) => (
               <div key={idx} className="relative group rounded-md overflow-hidden border border-[var(--border-subtle)] aspect-square bg-[var(--bg-surface)]">
-                <img src={img.objectUrl} alt={img.file.name} className="w-full h-full object-cover" />
+                <img src={img.objectUrl} alt={img.file.name} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                 <button
                   onClick={() => onRemove(idx)}
                   className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"

@@ -72,6 +72,7 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
     panels_raw = params.get("panels", [])
     logos_raw = params.get("logos", {})
     images_raw = params.get("images", {})
+    image_paths_raw = params.get("image_paths", {})
     fmt = str(params.get("format", "pdf")).lower()
     if not panels_raw:
         msg = "panels es requerido"
@@ -79,10 +80,23 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
     panels = tuple(deserialize_panel(p) for p in panels_raw)
     logos = {"left": logos_raw.get("left_b64") or None, "right": logos_raw.get("right_b64") or None}
     images = {str(k): str(v) for k, v in images_raw.items()}
+    image_paths = {str(k): str(v) for k, v in image_paths_raw.items()}
     if fmt == "docx":
-        docx_bytes, filename = render_docx(panels=panels, logos=logos, images=images, export_mode="include_empty")
+        docx_bytes, filename = render_docx(
+            panels=panels,
+            logos=logos,
+            images=images,
+            image_paths=image_paths,
+            export_mode="include_empty",
+        )
         return {"pdf_base64": base64.b64encode(docx_bytes).decode("ascii"), "filename": filename}
-    pdf_bytes, filename = render_pdf(panels=panels, logos=logos, images=images, export_mode="include_empty")
+    pdf_bytes, filename = render_pdf(
+        panels=panels,
+        logos=logos,
+        images=images,
+        image_paths=image_paths,
+        export_mode="include_empty",
+    )
     return {"pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"), "filename": filename}
 
 @with_locale

@@ -14,6 +14,7 @@
  * whether to queue a pending request or fail it with a helpful message.
  */
 const fs = require('fs');
+const path = require('path');
 const { spawn, execSync } = require('child_process');
 const { getBackendCommand } = require('./backend-command');
 
@@ -123,6 +124,10 @@ function _classifyStartupError(rawMessage) {
   if (msg.includes('python no encontrado')) return 'fatal';
   if (msg.includes('enoent')) return 'fatal';
   return 'transient';
+}
+
+function _isFileBackedCommand(cmd) {
+  return path.isAbsolute(cmd) || cmd.includes(path.sep) || cmd.includes('/') || cmd.includes('\\');
 }
 
 async function startPythonBackend(isDev, attempt = 1) {
@@ -253,7 +258,7 @@ async function _autoRestart() {
 function _spawn(isDev) {
   let { cmd, args } = getBackendCommand(isDev, process.platform, __dirname);
 
-  if (isDev && !fs.existsSync(cmd)) {
+  if (isDev && _isFileBackedCommand(cmd) && !fs.existsSync(cmd)) {
     throw new Error('Python no encontrado: ni el entorno virtual ni Python del sistema están disponibles.');
   }
   if (!isDev && !fs.existsSync(cmd)) {
@@ -306,6 +311,7 @@ function _spawn(isDev) {
           const msg = JSON.parse(line);
           if (msg.method === 'ready') {
             handshakeDone = true;
+            clearTimeout(handshakeTimer);
             pythonProcess.stdout.off('data', onData);
             resolve();
             return;

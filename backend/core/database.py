@@ -99,19 +99,16 @@ def _table_matches_config(cursor: sqlite3.Cursor, fields: list[dict[str, Any]]) 
 
 
 def _create_indexes(cursor: sqlite3.Cursor, fields: list[dict[str, Any]]) -> None:
-    """Create indexes on commonly queried fields."""
+    """Create indexes on all queryable fields to avoid full-table scans."""
     if not fields:
         return
 
-    # Index on first field (usually code/codigo)
-    first_field = _validate_identifier(fields[0]["name"])
-    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_imagenes_{first_field} ON imagenes({_qi(first_field)})")
-
-    # Index on any unique fields
     for f in fields:
         name = _validate_identifier(f["name"])
-        if f.get("unique") and name != first_field:
-            cursor.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS idx_imagenes_{name} ON imagenes({_qi(name)})")
+        unique_clause = "UNIQUE" if f.get("unique") else ""
+        cursor.execute(
+            f"CREATE {unique_clause} INDEX IF NOT EXISTS idx_imagenes_{name} ON imagenes({_qi(name)})"
+        )
 
 
 def init_db() -> None:
@@ -153,9 +150,10 @@ def init_db() -> None:
                     col_names = ", ".join(_qi(c) for c in new_col_names)
                     defaults = {"INTEGER": 0, "REAL": 0.0, "TEXT": "", "BLOB": b""}
                     try:
+                        all_values: list[list[Any]] = []
                         for row in old_rows:
                             row_dict = dict(zip(old_cols, row, strict=False))
-                            values = []
+                            values: list[Any] = []
                             for f in fields:
                                 col = f["name"]
                                 if col in row_dict and row_dict[col] is not None:
@@ -164,7 +162,10 @@ def init_db() -> None:
                                     values.append(defaults.get(f["type"], ""))
                                 else:
                                     values.append(None)
-                            cursor.execute(f"INSERT INTO imagenes ({col_names}) VALUES ({placeholders})", values)
+                            all_values.append(values)
+                        cursor.executemany(
+                            f"INSERT INTO imagenes ({col_names}) VALUES ({placeholders})", all_values
+                        )
                         cursor.execute("DROP TABLE imagenes_old")
                     except sqlite3.Error as exc:
                         logger.error("Fallo migración de datos, se mantiene tabla antigua: %s", exc)

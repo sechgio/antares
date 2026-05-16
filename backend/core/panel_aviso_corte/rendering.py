@@ -118,6 +118,7 @@ def render_pdf(
     logos: dict[str, str | None],
     images: dict[str, str],
     export_mode: ExportMode,
+    image_paths: dict[str, str] | None = None,
 ) -> tuple[bytes, str]:
     """Renderiza un PDF consolidado con una página por Panel."""
     if not panels:
@@ -134,8 +135,12 @@ def render_pdf(
     logo_left, logo_right, logo_center = _prepare_logos(logos)
 
     image_uris: dict[str, str] = {}
+    for filename, raw_path in (image_paths or {}).items():
+        path = Path(raw_path)
+        if path.is_file():
+            image_uris[filename] = path.resolve().as_uri()
     for filename, b64 in images.items():
-        image_uris[filename] = _data_uri_from_b64(b64)
+        image_uris.setdefault(filename, _data_uri_from_b64(b64))
 
     panels_data: list[dict[str, Any]] = []
     for panel in panels:
@@ -183,6 +188,7 @@ def render_docx(
     logos: dict[str, str | None],
     images: dict[str, str],
     export_mode: ExportMode,
+    image_paths: dict[str, str] | None = None,
 ) -> tuple[bytes, str]:
     """Genera un documento Word (.docx) con tabla de 9 filas x 4 columnas con merges."""
     if not panels:
@@ -294,6 +300,12 @@ def render_docx(
     for filename, b64 in images.items():
         with contextlib.suppress(Exception):
             image_bytes[filename] = base64.b64decode(b64, validate=True)
+
+    disk_image_paths = {
+        filename: Path(raw_path)
+        for filename, raw_path in (image_paths or {}).items()
+        if Path(raw_path).is_file()
+    }
 
     logo_bytes: bytes | None = None
     if logos.get("left"):
@@ -431,15 +443,22 @@ def render_docx(
 
                 p = img_cell.paragraphs[0]
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                if img_ref and img_ref.filename in image_bytes:
+                image_content: bytes | None = None
+                if img_ref and img_ref.filename in disk_image_paths:
+                    with contextlib.suppress(Exception):
+                        image_content = disk_image_paths[img_ref.filename].read_bytes()
+                elif img_ref and img_ref.filename in image_bytes:
+                    image_content = image_bytes[img_ref.filename]
+
+                if image_content is not None:
                     width_cm, height_cm = fit_image_size_cm(
-                        image_bytes[img_ref.filename],
+                        image_content,
                         PHOTO_WIDTH_CM,
                         PHOTO_HEIGHT_CM,
                     )
                     run = p.add_run()
                     run.add_picture(
-                        BytesIO(image_bytes[img_ref.filename]),
+                        BytesIO(image_content),
                         width=Cm(width_cm),
                         height=Cm(height_cm),
                     )

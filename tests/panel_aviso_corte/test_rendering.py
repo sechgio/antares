@@ -96,6 +96,32 @@ def test_render_pdf_success() -> None:
     assert filename.endswith(".pdf")
 
 
+def test_pdf_template_photos_fill_their_cells() -> None:
+    template_path = _ROOT / "backend" / "templates" / "panel-aviso-corte.html"
+    template = template_path.read_text(encoding="utf-8")
+
+    assert ".cell-photo-inner {\n      width: 100%;\n      height: 9.82cm;" in template
+    assert ".cell-photo img {\n      width: 100%;\n      height: 100%;" in template
+    assert "object-fit: cover;" in template
+
+
+def test_render_pdf_accepts_disk_backed_images(tmp_path: Path) -> None:
+    panel = _make_panel()
+    image_path = tmp_path / "img1.png"
+    image_path.write_bytes(base64.b64decode(_tiny_png(), validate=True))
+
+    pdf_bytes, filename = render_pdf(
+        panels=(panel,),
+        logos={},
+        images={},
+        image_paths={"img1.jpg": str(image_path)},
+        export_mode="include_empty",
+    )
+
+    assert pdf_bytes.startswith(b"%PDF")
+    assert filename.endswith(".pdf")
+
+
 def test_render_docx_success() -> None:
     panel = _make_panel()
     images = {"img1.jpg": _tiny_png(), "img2.jpg": _tiny_png()}

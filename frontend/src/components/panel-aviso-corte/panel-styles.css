@@ -133,9 +133,10 @@
 }
 
 .pac-cell-photo img {
-  max-width: 7.36cm;
-  max-height: 9.82cm;
-  object-fit: contain;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 /* Rows 6,8: Caption cells */
@@ -208,5 +209,4 @@
   opacity: 0.35;
   cursor: not-allowed;
 }
-
 

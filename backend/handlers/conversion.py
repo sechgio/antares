@@ -187,10 +187,10 @@ def _run_conversion_job(job: Job) -> None:
                 out_path = Path(destino) / p.name if is_video_file or not conversion_enabled else Path(destino) / (p.stem + ext_dest)
             tasks.append((fpath, out_path, is_video_file))
 
-        # Dynamic workers: up to 8, capped by CPU count but respecting memory.
-        # For I/O-bound work (image conversion), we can oversubscribe CPU a bit.
+        # Cap workers to CPU count (max 8) to reduce context-switching overhead
+        # and avoid starving the main IPC thread.
         raw_cpu = os.cpu_count() or 2
-        max_workers = max(4, min(raw_cpu * 2, 16))
+        max_workers = max(2, min(raw_cpu, 8))
         completed = 0
 
         def _process_one(task: tuple[str, Path, bool]) -> tuple[bool, str, str]:
@@ -217,6 +217,8 @@ def _run_conversion_job(job: Job) -> None:
         CHUNK_SIZE = 500
         cancelled = False
         pending_futures: list = []
+        _last_notify_time = 0.0
+        _NOTIFY_INTERVAL = 0.5  # seconds — throttle IPC to avoid saturating the pipe
 
         def _submit_chunk(start_idx: int) -> None:
             end_idx = min(start_idx + CHUNK_SIZE, len(tasks))
@@ -252,18 +254,22 @@ def _run_conversion_job(job: Job) -> None:
                             current_file = state.current_file
                             ok_count = state.ok_count
                             err_count = state.err_count
-                        # Send per-job notification and legacy notification
-                        notif_data = {
-                            "progress": progress, "current_file": current_file,
-                            "ok_count": ok_count, "err_count": err_count,
-                            "job_id": job_id,
-                        }
-                        send_notification(f"job.{job_id}.progress", notif_data)
-                        if is_default:
-                            send_notification("process.progress", {
+                        # Throttle notifications so we don't overwhelm IPC
+                        now = time.time()
+                        is_last = completed == total
+                        if is_last or (now - _last_notify_time >= _NOTIFY_INTERVAL):
+                            _last_notify_time = now
+                            notif_data = {
                                 "progress": progress, "current_file": current_file,
                                 "ok_count": ok_count, "err_count": err_count,
-                            })
+                                "job_id": job_id,
+                            }
+                            send_notification(f"job.{job_id}.progress", notif_data)
+                            if is_default:
+                                send_notification("process.progress", {
+                                    "progress": progress, "current_file": current_file,
+                                    "ok_count": ok_count, "err_count": err_count,
+                                })
                     else:
                         still_pending.append(future)
                 pending_futures = still_pending

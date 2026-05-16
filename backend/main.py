@@ -39,6 +39,7 @@ import signal
 import time
 import traceback
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 
 from backend.core.database import init_db
 from backend.core.plugins import load_plugins_from_dir
@@ -52,8 +53,6 @@ _shutdown_requested = False
 # Silence tkinter deprecation warning on macOS
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-init_db()
-load_plugins_from_dir()
 
 
 def _signal_handler(signum, frame) -> None:
@@ -117,12 +116,43 @@ def _validate_encoding() -> None:
 _validate_encoding()
 
 
+def _dispatch(handler, params, msg_id, method_name) -> None:
+    """Run a handler in a worker thread and send its response back."""
+    try:
+        result = handler(params)
+        send_response(result, msg_id)
+    except Exception as exc:
+        error_msg = f"{type(exc).__name__}: {exc}"
+        logger.exception("Error en %s: %s\n%s", method_name, error_msg, traceback.format_exc())
+        send_response(None, msg_id, error=error_msg)
+
+
 def main() -> None:
-    """Bucle principal IPC — diseñado para nunca morir."""
-    # Handshake: report ready so Electron knows the pipe is open
+    """Bucle principal IPC — diseñado para nunca morir.
+
+    Requests are dispatched to a ThreadPoolExecutor so that slow handlers
+    (PDF generation, Excel import, etc.) do NOT block the main loop from
+    reading subsequent messages on stdin.
+    """
+    # Handshake: report ready IMMEDIATELY so the spawner doesn't timeout
+    # on heavy initialization work.
     send_notification("ready", {"status": "ok"})
 
     logger.info(t("info.backend_ready"))
+
+    # Initialize heavy resources AFTER handshake to prevent spawner kill loops.
+    try:
+        init_db()
+    except Exception as exc:
+        logger.exception("init_db failed during startup: %s", exc)
+    try:
+        load_plugins_from_dir()
+    except Exception as exc:
+        logger.exception("load_plugins_from_dir failed during startup: %s", exc)
+
+    # Executor for concurrent handler execution.
+    # max_workers=8 is enough: most workloads are I/O bound (PDF, Excel, DB).
+    executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="handler")
 
     # Track consecutive errors to avoid spamming logs on persistent issues
     _consecutive_errors = 0
@@ -154,13 +184,7 @@ def main() -> None:
                     continue  # Parse error, already responded
 
                 if msg.method in HANDLERS:
-                    try:
-                        result = HANDLERS[msg.method](msg.params)
-                        send_response(result, msg.id)
-                    except Exception as exc:
-                        error_msg = f"{type(exc).__name__}: {exc}"
-                        logger.exception("Error en %s: %s\n%s", msg.method, error_msg, traceback.format_exc())
-                        send_response(None, msg.id, error=error_msg)
+                    executor.submit(_dispatch, HANDLERS[msg.method], msg.params, msg.id, msg.method)
                 else:
                     send_response(None, msg.id, error=f"Método desconocido: {msg.method}")
                 _consecutive_errors = 0
@@ -175,6 +199,7 @@ def main() -> None:
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received")
     finally:
+        executor.shutdown(wait=False)
         close_connection()
         logger.info(t("info.backend_shutdown"))
 

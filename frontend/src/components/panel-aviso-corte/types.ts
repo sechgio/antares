@@ -9,6 +9,7 @@ export interface LogoAsset {
 export interface LocalImage {
   file: File;
   objectUrl: string;
+  localPath?: string;
 }
 
 export interface ExcelRow {

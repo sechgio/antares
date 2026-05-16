@@ -59,14 +59,14 @@ export default function PanelAvisoCorteApp() {
       addToast({ message: MSG_CUADRANTE_REQUIRED, type: 'error' });
       return;
     }
-    const fileMap = new Map<string, File>(session.images.map((i) => [i.file.name, i.file]));
+    const imageMap = new Map(session.images.map((i) => [i.file.name, i]));
     session.setIsExporting(true);
     try {
       const { filename } = await exportPanelDocument(
         session.previewPanels,
         null,
         session.logoRight?.file ?? null,
-        fileMap,
+        imageMap,
         exportFormat,
       );
       await saveToHistory(filename, { format: exportFormat, panels: session.previewPanels.length }, session.previewPanels.length);

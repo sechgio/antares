@@ -43,10 +43,9 @@ export function useBackendStatus(): BackendStatusResult {
     // Initial poll
     pollStatus();
     // Poll every 2 seconds if not ready for faster UX recovery; every 5s otherwise.
-    let intervalMs = 2000;
     const interval = setInterval(() => {
       pollStatus();
-    }, intervalMs);
+    }, backendState === 'ready' ? 5000 : 2000);
     // Listen for backend lifecycle notifications
     const unsub = onNotify((method, _params) => {
       if (!mountedRef.current) return;
@@ -73,7 +72,7 @@ export function useBackendStatus(): BackendStatusResult {
       clearInterval(interval);
       unsub();
     };
-  }, [pollStatus]);
+  }, [pollStatus, backendState]);
 
   const handleRestart = useCallback(async () => {
     setIsRestarting(true);

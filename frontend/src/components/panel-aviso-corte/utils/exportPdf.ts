@@ -1,22 +1,40 @@
 import { api } from '../../../api';
 import { readFileAsBase64 } from './fileLoader';
-import type { PanelVM } from '../types';
+import type { LocalImage, PanelVM } from '../types';
+
+export async function buildImagePayload(
+  images: Map<string, LocalImage>,
+  toBase64: (file: File) => Promise<string> = readFileAsBase64,
+): Promise<{
+  imagePaths: Record<string, string>;
+  imagesBase64: Record<string, string>;
+}> {
+  const imagePaths: Record<string, string> = {};
+  const imagesBase64: Record<string, string> = {};
+
+  for (const [filename, image] of images.entries()) {
+    if (image.localPath) {
+      imagePaths[filename] = image.localPath;
+      continue;
+    }
+    imagesBase64[filename] = await toBase64(image.file);
+  }
+
+  return { imagePaths, imagesBase64 };
+}
 
 export async function exportPanelDocument(
   panels: PanelVM[],
   logoLeft: File | null,
   logoRight: File | null,
-  images: Map<string, File>,
+  images: Map<string, LocalImage>,
   format: 'pdf' | 'docx' = 'pdf',
 ): Promise<{ filename: string }> {
   const logos: { left_b64?: string; right_b64?: string } = {};
   if (logoLeft) logos.left_b64 = await readFileAsBase64(logoLeft);
   if (logoRight) logos.right_b64 = await readFileAsBase64(logoRight);
 
-  const imagesB64: Record<string, string> = {};
-  for (const [filename, file] of images.entries()) {
-    imagesB64[filename] = await readFileAsBase64(file);
-  }
+  const { imagePaths, imagesBase64 } = await buildImagePayload(images);
 
   const normalizeDate = (raw: string): string => {
     const s = raw.trim();
@@ -43,7 +61,8 @@ export async function exportPanelDocument(
   const resp = await api.panelAvisoCorteRenderPdf({
     panels: panelsPayload,
     logos,
-    images: imagesB64,
+    images: imagesBase64,
+    image_paths: imagePaths,
     format,
   });
 
