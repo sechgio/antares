@@ -164,14 +164,20 @@ function setupAutoUpdater(isDev) {
   }, 6 * 60 * 60 * 1000);
 
   ipcMain.handle('auto-update-check', async () => {
+    console.log('[auto-updater] Manual check requested. In progress:', _updateInProgress);
     if (!updater || _updateInProgress) {
-      return { success: false, reason: 'update in progress or unavailable' };
+      const reason = !updater ? 'updater not loaded' : 'update in progress';
+      console.log('[auto-updater] Check rejected:', reason);
+      return { success: false, reason };
     }
     _manualCheckRequested = true;
+    console.log('[auto-updater] Calling checkForUpdates...');
     try {
-      await updater.checkForUpdates();
+      const result = await updater.checkForUpdates();
+      console.log('[auto-updater] checkForUpdates result:', result?.version || 'no update');
       return { success: true };
     } catch (err) {
+      console.warn('[auto-updater] checkForUpdates error:', err.message);
       return { success: false, reason: err.message };
     }
   });
