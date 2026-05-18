@@ -2030,3 +2030,220 @@ textarea.vgen-input {
     max-height: 400px;
     overflow-y: auto;
 }
+
+/* TUTORIAL OVERLAY */
+.tutorial-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 9998;
+    backdrop-filter: blur(4px);
+}
+
+.tutorial-overlay {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 9999;
+    background: var(--vgen-bg-panel);
+    border: 1px solid var(--vgen-line);
+    border-radius: 16px;
+    box-shadow: var(--vgen-shadow-float);
+    width: 90%;
+    max-width: 480px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.tutorial-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.tutorial-close {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--vgen-ink-soft);
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.tutorial-close:hover {
+    background: var(--vgen-bg-canvas);
+    color: var(--vgen-ink);
+}
+
+.tutorial-step-counter {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--vgen-ink-soft);
+}
+
+.tutorial-progress-bar {
+    width: 100%;
+    height: 4px;
+    background: var(--vgen-bg-canvas);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.tutorial-progress-fill {
+    height: 100%;
+    background: var(--vgen-accent);
+    border-radius: 2px;
+}
+
+.tutorial-content {
+    text-align: center;
+    min-height: 180px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+}
+
+.tutorial-icon {
+    color: var(--vgen-accent);
+    margin-bottom: 8px;
+}
+
+.tutorial-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--vgen-ink);
+    margin: 0;
+}
+
+.tutorial-description {
+    font-size: 0.9rem;
+    color: var(--vgen-ink-soft);
+    line-height: 1.5;
+    margin: 0;
+    max-width: 400px;
+}
+
+.tutorial-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--vgen-line-soft);
+}
+
+.tutorial-btn {
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+    font-family: inherit;
+}
+
+.tutorial-btn-skip {
+    background: transparent;
+    color: var(--vgen-ink-soft);
+}
+
+.tutorial-btn-skip:hover {
+    color: var(--vgen-ink);
+}
+
+.tutorial-btn-secondary {
+    background: var(--vgen-bg-canvas);
+    color: var(--vgen-ink);
+    border: 1px solid var(--vgen-line);
+}
+
+.tutorial-btn-secondary:hover {
+    background: var(--vgen-bg-panel);
+    border-color: var(--vgen-accent);
+}
+
+.tutorial-btn-primary {
+    background: var(--vgen-accent);
+    color: var(--vgen-on-accent);
+}
+
+.tutorial-btn-primary:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+}
+
+.tutorial-dots {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.tutorial-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: none;
+    background: var(--vgen-line);
+    cursor: pointer;
+    transition: all 0.2s;
+    padding: 0;
+}
+
+.tutorial-dot.active {
+    background: var(--vgen-accent);
+    width: 20px;
+    border-radius: 4px;
+}
+
+.tutorial-nav-btns {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+/* TUTORIAL BUTTON IN HEADER */
+.vgen-tutorial-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid var(--vgen-line);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--vgen-ink-soft);
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 500;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+
+.vgen-tutorial-btn:hover {
+    background: var(--vgen-bg-canvas);
+    color: var(--vgen-accent);
+    border-color: var(--vgen-accent);
+}
+
+.vgen-tutorial-btn svg {
+    animation: vgen-tutorial-pulse 2s ease-in-out infinite;
+}
+
+@keyframes vgen-tutorial-pulse {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.1);
+    }
+}

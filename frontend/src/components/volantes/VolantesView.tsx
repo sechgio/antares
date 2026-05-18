@@ -6,6 +6,7 @@ import FloatingSizePanel from "./components/FloatingSizePanel";
 import FloatingRecordsPanel from "./components/FloatingRecordsPanel";
 import DatePicker from "./components/DatePicker";
 import TimePicker from "./components/TimePicker";
+import TutorialOverlay from "./components/TutorialOverlay";
 import { DEFAULT_BRAND } from "./constants";
 import type { BrandConfig, FlyerRecord, LayoutMode } from "./types";
 import { sanitizeMultilineText, toSlugId } from "./utils/format";
@@ -49,6 +50,7 @@ export default function VolantesView() {
   } | null>(null);
   const [isSizePanelOpen, setIsSizePanelOpen] = useState(false);
   const [isRecordsPanelOpen, setIsRecordsPanelOpen] = useState(false);
+  const [isTutorialOpen, setIsTutorialOpen] = useState(false);
 
   const previewRef = useRef<HTMLDivElement | null>(null);
   const exportSingleRef = useRef<HTMLDivElement | null>(null);
@@ -293,6 +295,25 @@ export default function VolantesView() {
         </div>
 
         <div className="vgen-header-actions">
+          <button
+            className="vgen-tutorial-btn"
+            onClick={() => setIsTutorialOpen(true)}
+            title="Ver tutorial de como usar Generar Volantes"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+            Como usar
+          </button>
           <button
             className="v-btn v-btn-outline"
             onClick={handleExportTemplate}
@@ -658,6 +679,11 @@ export default function VolantesView() {
         onAddRecord={handleAddRecord}
         onDeleteRecord={handleDeleteRecord}
         onExportSingle={handleExportSingle}
+      />
+
+      <TutorialOverlay
+        isOpen={isTutorialOpen}
+        onClose={() => setIsTutorialOpen(false)}
       />
 
       <button
