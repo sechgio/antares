@@ -1,6 +1,5 @@
 import React, { useState, Suspense, useMemo, useCallback, useEffect } from 'react';
 import Sidebar from './components/layout/Sidebar';
-import Header from './components/layout/Header';
 import TitleBar from './components/layout/TitleBar';
 import BackendStatusBar from './components/layout/BackendStatusBar';
 import { ToastProvider } from './hooks/useToast';
@@ -119,7 +118,6 @@ function AppContent() {
           onTabChange={(t) => setActiveTab(t as TabId)}
         />
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          <Header onSearchClick={openCommandPalette} />
           <main className="flex-1 overflow-hidden relative">
             <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">Cargando...</div>}>
               <div className={`h-full overflow-y-auto ${isFullBleed ? '' : 'px-6 py-6'}`}>

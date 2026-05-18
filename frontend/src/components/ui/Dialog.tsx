@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { AlertTriangle, Info, ShieldCheck } from 'lucide-react';
 import { useDialog } from '../../hooks/useDialog';
 
 export default function Dialog() {
@@ -37,8 +38,14 @@ export default function Dialog() {
 
   const confirmClasses =
     type === 'destructive'
-      ? 'bg-accent-red hover:opacity-90 border-accent-red'
-      : 'bg-accent-orange hover:bg-accent-orange-hover border-accent-orange';
+      ? 'bg-[var(--accent-red)] hover:opacity-90 border-[var(--accent-red)]'
+      : 'bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] border-[var(--accent-primary)]';
+
+  const Icon = type === 'destructive' ? AlertTriangle : type === 'alert' ? ShieldCheck : Info;
+  const iconClasses =
+    type === 'destructive'
+      ? 'border-[var(--accent-red)] bg-[var(--bg-elevated)] text-[var(--accent-red)]'
+      : 'border-[var(--accent-primary)] bg-[var(--bg-elevated)] text-[var(--accent-primary-hover)]';
 
   return (
     <div
@@ -49,22 +56,29 @@ export default function Dialog() {
         if (e.target === overlayRef.current) handleCancel();
       }}
     >
-      <div className="w-full max-w-md bg-dark-surface border border-bdr-medium rounded-2xl shadow-elevated p-6 animate-scale-in">
-        <h3 className="text-lg font-bold text-txt-primary mb-2">{title}</h3>
-        {description && <p className="text-sm text-txt-secondary mb-6 leading-relaxed">{description}</p>}
+      <div className="w-full max-w-[28rem] rounded-lg border border-[var(--border-medium)] bg-[var(--bg-surface)] p-5 shadow-elevated animate-scale-in">
+        <div className="mb-5 flex items-start gap-4">
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${iconClasses}`}>
+            <Icon size={20} strokeWidth={1.9} />
+          </div>
+          <div className="min-w-0 pt-0.5">
+            <h3 className="text-[16px] font-semibold leading-6 text-[var(--text-primary)]">{title}</h3>
+            {description && <p className="mt-1.5 text-[13px] leading-5 text-[var(--text-secondary)]">{description}</p>}
+          </div>
+        </div>
 
         <div className="flex items-center justify-end gap-3">
           {type !== 'alert' && (
             <button
               onClick={handleCancel}
-              className="px-5 py-2 rounded-btn text-sm font-medium text-txt-secondary border border-bdr-medium hover:border-bdr-active hover:text-txt-primary transition-all"
+              className="rounded-md border border-[var(--border-medium)] px-4 py-2 text-[13px] font-medium text-[var(--text-secondary)] transition-all hover:border-[var(--border-active)] hover:text-[var(--text-primary)]"
             >
               {cancelLabel}
             </button>
           )}
           <button
             onClick={handleConfirm}
-            className={`px-5 py-2 rounded-btn text-sm font-medium text-[var(--text-on-accent)] border transition-all ${confirmClasses}`}
+            className={`rounded-md border px-4 py-2 text-[13px] font-semibold text-[var(--text-on-accent)] transition-all ${confirmClasses}`}
           >
             {confirmLabel}
           </button>

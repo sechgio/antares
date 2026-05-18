@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Download, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { useDialog } from '../../hooks/useDialog';
 
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error' | 'up-to-date';
 
@@ -11,6 +12,8 @@ interface UpdateData {
 }
 
 export default function UpdateButton() {
+  const dialog = useDialog();
+  const promptedReadyKeyRef = useRef<string | null>(null);
   const [update, setUpdate] = useState<UpdateData>({
     status: 'idle',
     version: null,
@@ -46,13 +49,37 @@ export default function UpdateButton() {
     }
   }, []);
 
+  const promptInstall = useCallback(async () => {
+    const versionLabel = update.version ? `ANTARES ${update.version}` : 'la nueva versión de ANTARES';
+    const confirmed = await dialog.confirm({
+      title: 'Actualización lista',
+      description: `${versionLabel} ya se descargó. Si instalas ahora, ANTARES se cerrará y volverá a abrirse automáticamente con la nueva versión.`,
+      confirmLabel: 'Reiniciar e instalar',
+      cancelLabel: 'Más tarde',
+    });
+
+    if (confirmed) {
+      await handleInstall();
+    }
+  }, [dialog, handleInstall, update.version]);
+
+  useEffect(() => {
+    if (update.status !== 'ready') return;
+
+    const readyKey = update.version || 'ready';
+    if (promptedReadyKeyRef.current === readyKey) return;
+
+    promptedReadyKeyRef.current = readyKey;
+    void promptInstall();
+  }, [promptInstall, update.status, update.version]);
+
   const handleClick = useCallback(() => {
     if (update.status === 'ready') {
-      handleInstall();
+      void promptInstall();
     } else if (update.status === 'idle' || update.status === 'up-to-date' || update.status === 'error') {
       handleCheck();
     }
-  }, [update.status, handleInstall, handleCheck]);
+  }, [update.status, promptInstall, handleCheck]);
 
   const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI;
   if (!isElectron) return null;
@@ -89,9 +116,6 @@ export default function UpdateButton() {
         {update.status === 'ready' && <CheckCircle size={14} strokeWidth={1.8} />}
         {update.status === 'error' && <AlertCircle size={14} strokeWidth={1.8} />}
         {(update.status === 'idle' || update.status === 'up-to-date') && <Download size={14} strokeWidth={1.8} />}
-        {hasUpdate && (
-          <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-[var(--text-on-accent)]" />
-        )}
       </button>
 
       {update.status === 'downloading' && (

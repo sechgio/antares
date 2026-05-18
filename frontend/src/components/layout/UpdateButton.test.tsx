@@ -1,5 +1,7 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import Dialog from '../ui/Dialog';
+import { DialogProvider } from '../../hooks/useDialog';
 import UpdateButton from './UpdateButton';
 
 type UpdateStatusPayload = {
@@ -27,8 +29,15 @@ describe('UpdateButton', () => {
     };
   });
 
+  const renderUpdateButton = () => render(
+    <DialogProvider>
+      <UpdateButton />
+      <Dialog />
+    </DialogProvider>
+  );
+
   it('highlights the whole button with the active theme accent when an update is available', () => {
-    render(<UpdateButton />);
+    renderUpdateButton();
 
     act(() => {
       emitStatus?.({ status: 'available', version: '0.6.8', progress: 0 });
@@ -40,16 +49,18 @@ describe('UpdateButton', () => {
     expect(screen.queryByText(/Instalar/i)).not.toBeInTheDocument();
   });
 
-  it('keeps the ready state icon-only and installs when clicked', () => {
-    render(<UpdateButton />);
+  it('shows a friendlier install prompt when the update is ready', async () => {
+    renderUpdateButton();
 
     act(() => {
       emitStatus?.({ status: 'ready', version: '0.6.8', progress: 100 });
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Actualización lista para instalar' }));
+    expect(await screen.findByRole('heading', { name: 'Actualización lista' })).toBeInTheDocument();
+    expect(screen.getByText(/ANTARES 0.6.8 ya se descargó/i)).toBeInTheDocument();
 
-    expect(autoUpdateInstall).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText(/Instalar/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Reiniciar e instalar' }));
+
+    await waitFor(() => expect(autoUpdateInstall).toHaveBeenCalledTimes(1));
   });
 });
