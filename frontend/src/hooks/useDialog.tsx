@@ -76,7 +76,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     }, 200);
   }, []);
 
-  const confirm = useCallback((opts: Omit<DialogOptions, 'onConfirm' | 'onConfirm'>): Promise<boolean> => {
+  const confirm = useCallback((opts: Omit<DialogOptions, 'onConfirm' | 'onCancel'>): Promise<boolean> => {
     return new Promise((resolve) => {
       if (!mountedRef.current) { resolve(false); return; }
       // Resolve any previous pending promise before creating a new one

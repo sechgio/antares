@@ -15,9 +15,15 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+from backend.utils.validators import is_safe_user_path
+
 logger = logging.getLogger(__name__)
 
 _stdout_lock = threading.Lock()
+
+# Maximum allowed payload size for IPC messages (10MB)
+# Prevents buffer overflow and pipe blocking with large payloads
+_MAX_PAYLOAD_SIZE = 10 * 1024 * 1024
 
 
 def validate_method(method: str) -> bool:
@@ -28,44 +34,27 @@ def validate_method(method: str) -> bool:
 
 
 def validate_params(params: dict) -> bool:
-    """Validate params dict for basic safety."""
+    """Validate params dict for basic safety.
+
+    Delegates to backend.handlers.common._validate_path for consistency
+    with the handler-side validator.
+    """
     if not isinstance(params, dict):
         return False
 
-    # Check for path traversal attempts using resolved paths
     for key in ("files", "destino", "path", "folder", "name"):
         value = params.get(key)
         if value is None:
             continue
         if isinstance(value, list):
             for item in value:
-                if not _is_path_safe(item):
+                if not is_safe_user_path(item):
                     return False
-        elif not _is_path_safe(value):
+        elif not is_safe_user_path(value):
             return False
 
     return True
 
-
-def _is_path_safe(value: Any) -> bool:
-    """Check if a path value is safe (no traversal, valid string).
-
-    Rejects explicit traversal sequences (``../`` and ``..\\``), null bytes,
-    and URL-encoded traversal. Windows absolute paths (e.g. ``C:\\...``) are
-    allowed since the Electron layer already constrains path selection via
-    native file dialogs.
-    """
-    if not isinstance(value, str) or not value:
-        return True  # Empty/invalid values handled downstream
-    # Reject null bytes (used in injection attacks).
-    if "\x00" in value:
-        return False
-    # Reject obvious traversal patterns (both POSIX and Windows separators).
-    if "../" in value or "..\\" in value:
-        return False
-    # Reject URL-encoded traversal patterns (single and double-encoded).
-    lowered = value.lower()
-    return not ("%2e%2e" in lowered or "%252e" in lowered)
 
 # ─── IPC Protocol ────────────────────────────────────────────────────────────
 
@@ -101,6 +90,16 @@ def send_response(result: Any, msg_id: str | int, *, error: str | None = None) -
         payload["result"] = result
     try:
         json_str = json.dumps(payload, ensure_ascii=False, default=_json_default)
+        # Validate payload size before sending
+        if len(json_str.encode('utf-8')) > _MAX_PAYLOAD_SIZE:
+            logger.error("Response payload too large: %d bytes (max: %d)", len(json_str), _MAX_PAYLOAD_SIZE)
+            # Send error response instead of oversized payload
+            error_payload = {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "error": {"code": -32001, "message": f"Response too large ({len(json_str)} bytes)"}
+            }
+            json_str = json.dumps(error_payload, ensure_ascii=False)
         with _stdout_lock:
             sys.stdout.write(json_str + "\n")
             sys.stdout.flush()
@@ -119,6 +118,10 @@ def send_notification(method: str, params: dict[str, Any]) -> None:
     }
     try:
         json_str = json.dumps(payload, ensure_ascii=False, default=_json_default)
+        # Validate payload size before sending
+        if len(json_str.encode('utf-8')) > _MAX_PAYLOAD_SIZE:
+            logger.error("Notification payload too large: %d bytes (max: %d), dropping", len(json_str), _MAX_PAYLOAD_SIZE)
+            return  # Drop oversized notifications to prevent pipe blocking
         with _stdout_lock:
             sys.stdout.write(json_str + "\n")
             sys.stdout.flush()
@@ -139,16 +142,34 @@ _SKIP = object()
 
 
 def read_message() -> IPCMessage | None:
-    """Lee una línea JSON desde stdin. Returns None on EOF, _SKIP on parse error."""
+    """Lee una línea JSON desde stdin. Returns None on EOF, _SKIP on parse error.
+
+    Parse errors are logged to stderr (no response is sent) because the
+    request id is unknown and an `id=None` response cannot be correlated
+    by the IPC router on the renderer side — it would just be discarded
+    and the caller would block until its own timeout.
+    """
     try:
         line = sys.stdin.readline()
         if not line:
             return None  # EOF — pipe closed
         data = json.loads(line)
-        return IPCMessage(data)
-    except json.JSONDecodeError:
-        send_response(None, 0, error="JSON inválido")
+        # Try to recover an id from the partially-parsed payload so the
+        # frontend can correlate the error response with the original request.
+        msg_id = data.get("id") if isinstance(data, dict) else None
+        try:
+            return IPCMessage(data)
+        except ValueError as exc:
+            # Malformed message but we know the id → send a proper error response.
+            if msg_id is not None:
+                send_response(None, msg_id, error=str(exc))
+            else:
+                logger.error("Invalid IPC message with no id: %s", exc)
+            return _SKIP  # type: ignore[return-value]
+    except json.JSONDecodeError as exc:
+        # Cannot correlate to any request → log only, do not send orphan response.
+        logger.error("JSON inválido en stdin: %s", exc)
         return _SKIP  # type: ignore[return-value]
     except Exception:
-        send_response(None, 0, error=f"Error leyendo stdin: {traceback.format_exc()}")
+        logger.error("Error leyendo stdin: %s", traceback.format_exc())
         return _SKIP  # type: ignore[return-value]

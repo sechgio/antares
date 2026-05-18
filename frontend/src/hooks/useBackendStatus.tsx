@@ -15,17 +15,15 @@ export function useBackendStatus(): BackendStatusResult {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isRestarting, setIsRestarting] = useState(false);
   const mountedRef = useRef(true);
+  const backendStateRef = useRef<BackendState>('unknown');
+  const lastPollAtRef = useRef(0);
 
   const pollStatus = useCallback(async () => {
     try {
       const status = await getBackendStatus();
       if (!mountedRef.current) return;
-      // Never stay stuck in 'fatal' from the renderer perspective — the spawner
-      // is now designed to retry forever. We map fatal/unknown to 'starting'
-      // so the UI always shows "reconnecting" instead of giving up.
       const rawState = (status.state as BackendState) || 'unknown';
-      const displayState = rawState === 'fatal' ? 'starting' : rawState;
-      setBackendState(displayState);
+      setBackendState(rawState);
       if (status.lastError && rawState !== 'ready') {
         // Only show non-scary truncated error
         setErrorMessage(status.lastError.message);
@@ -41,12 +39,32 @@ export function useBackendStatus(): BackendStatusResult {
   useEffect(() => {
     mountedRef.current = true;
     // Initial poll
+    lastPollAtRef.current = Date.now();
     pollStatus();
-    // Poll every 2 seconds if not ready for faster UX recovery; every 5s otherwise.
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [pollStatus]);
+
+  useEffect(() => {
+    backendStateRef.current = backendState;
+  }, [backendState]);
+
+  // Stable interval: poll frequently while starting, less often once ready,
+  // without recreating timers whenever the state changes.
+  useEffect(() => {
     const interval = setInterval(() => {
+      const now = Date.now();
+      const minDelay = backendStateRef.current === 'ready' ? 5000 : 2000;
+      if (now - lastPollAtRef.current < minDelay) return;
+      lastPollAtRef.current = now;
       pollStatus();
-    }, backendState === 'ready' ? 5000 : 2000);
-    // Listen for backend lifecycle notifications
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [pollStatus]);
+
+  // Listen for backend lifecycle notifications
+  useEffect(() => {
     const unsub = onNotify((method, _params) => {
       if (!mountedRef.current) return;
       if (method === 'backend.ready') {
@@ -54,8 +72,7 @@ export function useBackendStatus(): BackendStatusResult {
         setErrorMessage(null);
         setIsRestarting(false);
       } else if (method === 'backend.fatal') {
-        // The spawner retries forever; we just show reconnecting.
-        setBackendState('starting');
+        setBackendState('fatal');
         pollStatus();
         setIsRestarting(false);
       } else if (method === 'backend.starting') {
@@ -67,12 +84,8 @@ export function useBackendStatus(): BackendStatusResult {
         pollStatus();
       }
     });
-    return () => {
-      mountedRef.current = false;
-      clearInterval(interval);
-      unsub();
-    };
-  }, [pollStatus, backendState]);
+    return unsub;
+  }, [pollStatus]);
 
   const handleRestart = useCallback(async () => {
     setIsRestarting(true);
@@ -83,9 +96,7 @@ export function useBackendStatus(): BackendStatusResult {
       if (result.success) {
         setBackendState('ready');
       } else {
-        // Even if manual restart doesn't succeed immediately, the spawner
-        // will keep trying. Show reconnecting instead of fatal.
-        setBackendState('starting');
+        setBackendState((result.state as BackendState) || 'starting');
         await pollStatus();
       }
     } catch (err) {

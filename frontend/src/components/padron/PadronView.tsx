@@ -1,10 +1,22 @@
 /**
  * Padron Generator - Vista principal
- * Adaptado al estilo del proyecto principal ANTARES
+ * Adaptado al estilo del proyecto principal Antares
  */
-import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useRef, useState, useEffect, useCallback, Component, type ReactNode, type ErrorInfo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
+
+class PdfErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('[PadronView] PDF render error:', error, info);
+  }
+  render() {
+    if (this.state.hasError) return null;
+    return this.props.children;
+  }
+}
 
 import {
   Upload,
@@ -101,6 +113,31 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   return chunks.length ? chunks : [[]];
 }
 
+const LURIGANCHO_FIRST_PAGE_ROWS = {
+  landscape: 18,
+  portrait: 37,
+} as const satisfies Record<Orientation, number>;
+
+const LURIGANCHO_FOLLOWUP_PAGE_ROWS = {
+  landscape: 31,
+  portrait: 50,
+} as const satisfies Record<Orientation, number>;
+
+export function paginateLuriganchoItems(
+  items: PadronItem[],
+  orientation: Orientation,
+): PadronItem[][] {
+  const firstPageRows = LURIGANCHO_FIRST_PAGE_ROWS[orientation];
+  const followupRows = LURIGANCHO_FOLLOWUP_PAGE_ROWS[orientation];
+  const firstPage = items.slice(0, firstPageRows);
+  const remaining = items.slice(firstPageRows);
+
+  return [
+    firstPage,
+    ...chunkArray(remaining, followupRows).filter((page) => page.length > 0),
+  ];
+}
+
 function canvasToJpegBytes(canvas: HTMLCanvasElement, quality: number): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
     if (canvas.toBlob) {
@@ -191,6 +228,9 @@ export default function PadronView() {
   }, []);
 
   const isWaterCutNotice = outputFormat === 'water-cut-notice';
+  const previewVariant = outputFormat === 'volante-lurigancho'
+    ? 'volante-lurigancho'
+    : 'service-interruption';
   const rowsPerPage = isWaterCutNotice ? 39 : (orientation === 'landscape' ? 18 : 37);
   const maxItem = totalItemsCount;
   const waterCutMaxItem = waterCutTotalItemsCount;
@@ -250,8 +290,11 @@ export default function PadronView() {
   }, [waterCutItems, waterCutStartItem, waterCutEndItem, waterCutMaxItem]);
 
   const servicePages = useMemo(
-    () => chunkArray(visibleItems, rowsPerPage),
-    [visibleItems, rowsPerPage],
+    () =>
+      outputFormat === 'volante-lurigancho'
+        ? paginateLuriganchoItems(visibleItems, orientation)
+        : chunkArray(visibleItems, rowsPerPage),
+    [orientation, outputFormat, rowsPerPage, visibleItems],
   );
 
   const waterCutPages = useMemo(
@@ -527,6 +570,7 @@ export default function PadronView() {
 
         flushSync(() => {
           root?.render(
+            <PdfErrorBoundary>
             <>
               {batchPages.map((pageItems, j) => (
                 <div key={j} data-pdf-page={j}>
@@ -547,12 +591,15 @@ export default function PadronView() {
                       sedapalLogo={logosBase64.sedapal || SEDAPAL_LOGO}
                       pageNumber={batchStart + j + 1}
                       totalPages={exportPages.length}
+                      isFirstPage={batchStart + j === 0}
                       isLastPage={batchStart + j === exportPages.length - 1}
+                      variant={previewVariant}
                     />
                   )}
                 </div>
               ))}
-            </>,
+            </>
+            </PdfErrorBoundary>,
           );
         });
 
@@ -1015,7 +1062,9 @@ export default function PadronView() {
                       sedapalLogo={logosBase64.sedapal || SEDAPAL_LOGO}
                       pageNumber={globalIndex + 1}
                       totalPages={activePagesCount}
+                      isFirstPage={globalIndex === 0}
                       isLastPage={globalIndex === activePagesCount - 1}
+                      variant={previewVariant}
                     />
                   )}
                 </div>

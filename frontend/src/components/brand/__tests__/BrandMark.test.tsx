@@ -6,7 +6,7 @@ describe('BrandMark', () => {
   it('renders the logo with accessible alt text and tagline', () => {
     render(<BrandMark showText tagline="Orden tecnico para archivos visuales" />);
 
-    expect(screen.getByAltText('ANTARES')).toBeInTheDocument();
+    expect(screen.getByAltText('Antares')).toBeInTheDocument();
     expect(screen.getByText('Orden tecnico para archivos visuales')).toBeInTheDocument();
   });
 });

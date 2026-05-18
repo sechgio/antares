@@ -3,7 +3,7 @@
  */
 
 export type Orientation = 'landscape' | 'portrait';
-export type OutputFormat = 'service-interruption' | 'water-cut-notice';
+export type OutputFormat = 'service-interruption' | 'volante-lurigancho' | 'water-cut-notice';
 
 export interface HeaderField {
   key: string;
@@ -61,6 +61,7 @@ export interface ParseResult {
 
 export const OUTPUT_FORMAT_OPTIONS = [
   { value: 'service-interruption' as OutputFormat, label: 'Plantilla actual', rowsPerPage: 18 },
+  { value: 'volante-lurigancho' as OutputFormat, label: 'volante lurigancho', rowsPerPage: 18 },
   { value: 'water-cut-notice' as OutputFormat, label: 'Aviso corte de agua', rowsPerPage: 36 },
 ];
 

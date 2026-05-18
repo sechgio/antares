@@ -53,6 +53,31 @@ const FULL_BLEED_TABS = new Set(['padron', 'volantes', 'reportesCampo', 'technic
 
 type TabId = 'convert' | 'formatos' | 'padron' | 'volantes' | 'reportesCampo' | 'technicalReports' | 'imageOptimizer' | 'previewPanel' | 'panelAvisoCorte' | 'history' | 'appearance';
 
+function ElectronOnlyNotice() {
+  const isElectron = typeof window !== 'undefined' && (window as any).process?.type === 'renderer';
+  const hasAPI = typeof window !== 'undefined' && !!(window as any).electronAPI;
+
+  return (
+    <main className="flex h-screen w-screen items-center justify-center bg-[var(--bg-base)] px-6 text-[var(--text-primary)]">
+      <div className="max-w-md text-center">
+        <h1 className="text-2xl font-semibold">Abre Antares desde la aplicacion de escritorio</h1>
+        <p className="mt-3 text-sm text-[var(--text-secondary)]">
+          Esta interfaz necesita el puente de Electron para comunicarse con el backend.
+        </p>
+        <div className="mt-6 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-4 text-left text-xs font-mono">
+          <div className="mb-2 font-sans font-semibold text-[var(--text-primary)]">Diagnóstico:</div>
+          <div>Es Electron: <span className={isElectron ? 'text-green-400' : 'text-red-400'}>{isElectron ? 'Sí' : 'No'}</span></div>
+          <div>electronAPI: <span className={hasAPI ? 'text-green-400' : 'text-red-400'}>{hasAPI ? 'Disponible' : 'No disponible'}</span></div>
+          <div className="mt-2 text-[var(--text-muted)]">
+            {isElectron && !hasAPI && 'El preload script no se ejecutó correctamente.'}
+            {!isElectron && 'Abriendo desde navegador, no desde Electron.'}
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}
+
 function AppContent() {
   const [activeTab, setActiveTab] = useState<TabId>('convert');
   const [commandOpen, setCommandOpen] = useState(false);
@@ -137,6 +162,10 @@ function AppContent() {
 }
 
 function App() {
+  if (!window.electronAPI) {
+    return <ElectronOnlyNotice />;
+  }
+
   return (
     <ToastProvider>
       <DialogProvider>

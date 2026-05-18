@@ -5,6 +5,21 @@ const path = require('path');
 const DIALOG_METHODS = new Set(['dialog_files', 'dialog_folder', 'dialog_dest', 'dialog_save']);
 const NATIVE_METHODS = new Set([...DIALOG_METHODS, 'html_to_pdf']);
 
+function _sanitizeHtmlForPdf(html) {
+  const stripped = html
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<iframe[^>]*>[\s\S]*?<\/iframe>/gi, '')
+    .replace(/<object[^>]*>[\s\S]*?<\/object>/gi, '')
+    .replace(/<embed[^>]*>/gi, '')
+    .replace(/<link[^>]*>/gi, '')
+    .replace(/url\(\s*(['"]?)(.+?)\1\s*\)/gi, (match, _quote, urlValue) => {
+      return String(urlValue).trim().toLowerCase().startsWith('data:') ? match : "url('')";
+    });
+  const cspMeta = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:; font-src data:;">';
+  const injectedHtml = stripped.replace(/<head([^>]*)>/i, `<head$1>${cspMeta}`);
+  return /<head/i.test(injectedHtml) ? injectedHtml : cspMeta + injectedHtml;
+}
+
 function _sanitizeFilename(name) {
   if (typeof name !== 'string' || !name.trim()) return 'reporte.pdf';
   // Extract just the basename (no path components)
@@ -66,17 +81,7 @@ async function renderHtmlToPdf(params = {}, electronModules = {}) {
   try {
     tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'antares-pdf-'));
     const htmlPath = path.join(tempDir, 'render.html');
-    // Strip dangerous tags and inject CSP meta tag to prevent SSRF/XSS
-    const safeHtml = html
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-      .replace(/<iframe[^>]*>[\s\S]*?<\/iframe>/gi, '')
-      .replace(/<object[^>]*>[\s\S]*?<\/object>/gi, '')
-      .replace(/<embed[^>]*>/gi, '')
-      .replace(/<link[^>]*>/gi, '');
-    const cspMeta = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:; font-src data:;">';
-    const injectedHtml = safeHtml.replace(/<head([^>]*)>/i, `<head$1>${cspMeta}`);
-    const finalHtml = /<head/i.test(injectedHtml) ? injectedHtml : cspMeta + injectedHtml;
-    await fs.promises.writeFile(htmlPath, finalHtml, 'utf8');
+    await fs.promises.writeFile(htmlPath, _sanitizeHtmlForPdf(html), 'utf8');
 
     const didFinishLoad = new Promise((resolve, reject) => {
       pdfWindow.webContents.once('did-finish-load', resolve);
@@ -104,7 +109,23 @@ async function renderHtmlToPdf(params = {}, electronModules = {}) {
       pdfWindow.close();
     }
     if (tempDir) {
-      await fs.promises.rm(tempDir, { recursive: true, force: true });
+      // Retry removal on Windows where EBUSY is common right after window close
+      let attempts = 0;
+      const tryRm = async () => {
+        for (;;) {
+          try {
+            await fs.promises.rm(tempDir, { recursive: true, force: true });
+            return;
+          } catch (err) {
+            attempts++;
+            if (attempts >= 5 || err.code !== 'EBUSY') throw err;
+            await new Promise(r => setTimeout(r, 200 * attempts));
+          }
+        }
+      };
+      await tryRm().catch(err => {
+        console.warn('[dialog-handlers] Failed to clean temp dir after retries:', err.message);
+      });
     }
   }
 }
@@ -146,4 +167,4 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
   return { handled: true, result: resultFromOpenDialog(response) };
 }
 
-module.exports = { handleDialogCall };
+module.exports = { handleDialogCall, _sanitizeHtmlForPdf };

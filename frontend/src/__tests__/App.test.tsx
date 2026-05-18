@@ -3,6 +3,18 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import App from '../App';
 
 describe('App', () => {
+  it('shows an Electron-only message when the preload bridge is unavailable', () => {
+    const electronAPI = window.electronAPI;
+    window.electronAPI = undefined;
+
+    render(<App />);
+
+    expect(screen.getByText('Abre Antares desde la aplicacion de escritorio')).toBeInTheDocument();
+    expect(screen.queryByText('Arrastra imágenes o videos aquí')).not.toBeInTheDocument();
+
+    window.electronAPI = electronAPI;
+  });
+
   it('renders without crashing', async () => {
     render(<App />);
     await waitFor(() => {

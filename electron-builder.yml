@@ -1,5 +1,5 @@
 appId: com.antares.app
-productName: ANTARES
+productName: Antares
 copyright: Copyright © 2026 ANTARES
 directories:
   output: dist-electron
@@ -71,7 +71,9 @@ win:
   icon: assets/icon.ico
   legalTrademarks: "ANTARES"
   requestedExecutionLevel: asInvoker
-  verifyUpdateCodeSignature: true
+  # Disabled because installers are not code-signed. Required for
+  # electron-updater to accept new versions on unsigned Windows builds.
+  verifyUpdateCodeSignature: false
   signtoolOptions:
     signingHashAlgorithms:
       - sha256
@@ -108,20 +110,20 @@ nsis:
   allowElevation: true
   createDesktopShortcut: always
   createStartMenuShortcut: true
-  shortcutName: ANTARES
-  uninstallDisplayName: "ANTARES"
+  shortcutName: Antares
+  uninstallDisplayName: "Antares"
   installerIcon: assets/icon.ico
   uninstallerIcon: assets/icon.ico
   installerHeaderIcon: assets/icon.ico
-  artifactName: "ANTARES-Setup-${version}.exe"
+  artifactName: "Antares-Setup-${version}.exe"
   deleteAppDataOnUninstall: false
   runAfterFinish: true
   menuCategory: true
   displayLanguageSelector: false
 portable:
-  artifactName: "ANTARES-Portable-${version}.exe"
+  artifactName: "Antares-Portable-${version}.exe"
 dmg:
-  artifactName: "ANTARES-${version}-${arch}.dmg"
+  artifactName: "Antares-${version}-${arch}.dmg"
   icon: assets/icon.icns
   sign: false
   contents:
@@ -131,12 +133,17 @@ dmg:
       y: 220
       type: link
       path: /Applications
-# publish:
-#   provider: github
-#   owner: HIDROAA
-#   repo: hidro_convert
-#   releaseType: release
+publish:
+  provider: github
+  owner: sechgio
+  repo: antares
+  releaseType: release
 asar: true
+# Only unpack truly native modules (.node binaries) so they're loadable from disk.
+# Everything else stays inside app.asar to keep the install footprint small.
+asarUnpack:
+  - "**/*.node"
+  - "node_modules/**/build/Release/*.node"
 electronLanguages:
   - es
   - en-US

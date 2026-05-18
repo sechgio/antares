@@ -1,6 +1,6 @@
 {
   "name": "antares-app",
-  "version": "0.6.2",
+  "version": "0.6.5",
   "description": "Conversor y renombrador profesional de imágenes — nativo de escritorio",
   "author": "ANTARES <dev@antares.app>",
   "private": true,
@@ -8,10 +8,10 @@
   "homepage": ".",
   "repository": {
     "type": "git",
-    "url": "https://github.com/HIDROAA/hidro_convert.git"
+    "url": "https://github.com/sechgio/antares.git"
   },
   "bugs": {
-    "url": "https://github.com/HIDROAA/hidro_convert/issues"
+    "url": "https://github.com/sechgio/antares/issues"
   },
   "scripts": {
     "dev": "concurrently \"cd frontend && npm run dev\" \"wait-on http://localhost:5173 && electron electron/main.js\"",
@@ -25,7 +25,7 @@
     "build:all": "npm run build:backend && npm run build:frontend && npm run clean:dist-electron && electron-builder --win --mac --linux && npm run clean:after-package",
     "dist": "npm run build:backend && npm run build:frontend && npm run clean:dist-electron && electron-builder && npm run clean:after-package",
     "dist:dir": "npm run build:backend && npm run build:frontend && npm run clean:dist-electron && electron-builder --dir",
-    "test": "cd backend && python -m pytest ../tests -v && node ../tests/test-electron-path.js && node ../tests/test-backend-spawner.js && node ../tests/test-backend-spawner-handshake.js && node ../tests/test-electron-dialogs.js && node ../tests/test-build-size-guards.js",
+    "test": "cd backend && python -m pytest ../tests -v && node ../tests/test-electron-path.js && node ../tests/test-backend-spawner.js && node ../tests/test-backend-spawner-handshake.js && node ../tests/test-backend-spawner-recovery.js && node ../tests/test-backend-spawner-health.js && node ../tests/test-backend-spawner-shutdown.js && node ../tests/test-electron-dialogs.js && node ../tests/test-electron-preload.js && node ../tests/test-build-size-guards.js",
     "lint:python": "cd backend && ruff check .",
     "lint:fix": "cd backend && ruff check . --fix",
     "typecheck:frontend": "cd frontend && npx tsc --noEmit",
@@ -42,5 +42,8 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.3"
   }
 }

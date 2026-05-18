@@ -22,6 +22,18 @@ def es_imagen(ruta: str | Path) -> bool:
     return Path(ruta).suffix.lower() in _EXTENSIONES_IMAGEN
 
 
+def is_safe_user_path(value: object) -> bool:
+    """Return whether a user-provided path string avoids traversal patterns."""
+    if not isinstance(value, str) or not value:
+        return True
+    if "\x00" in value:
+        return False
+    if "../" in value or "..\\" in value or value.endswith(("/..", "\\..")) or value in ("..", "."):
+        return False
+    lowered = value.lower()
+    return not ("%2e%2e" in lowered or "%252e" in lowered)
+
+
 def sanitizar_nombre(nombre: str | Path) -> str:
     """Elimina caracteres no válidos para nombres de archivo en Windows/Linux.
 

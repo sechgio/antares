@@ -1,6 +1,12 @@
 """Tests para utilidades de validación."""
 
-from backend.utils.validators import es_imagen, obtener_codigo_desde_nombre, parse_filename_parts, sanitizar_nombre
+from backend.utils.validators import (
+    es_imagen,
+    is_safe_user_path,
+    obtener_codigo_desde_nombre,
+    parse_filename_parts,
+    sanitizar_nombre,
+)
 
 
 class TestEsImagen:
@@ -60,3 +66,22 @@ class TestParseFilenameParts:
 
     def test_extrae_base_y_secuencia_con_guion_bajo(self) -> None:
         assert parse_filename_parts("69466481_2.jpg") == ("69466481", "2")
+
+
+class TestSafeUserPath:
+    def test_rechaza_traversal_y_bytes_nulos(self) -> None:
+        assert not is_safe_user_path("../secret.txt")
+        assert not is_safe_user_path("..\\secret.txt")
+        assert not is_safe_user_path("folder/..")
+        assert not is_safe_user_path("folder\\..")
+        assert not is_safe_user_path("..")
+        assert not is_safe_user_path(".")
+        assert not is_safe_user_path("safe\x00name")
+
+    def test_rechaza_traversal_codificado(self) -> None:
+        assert not is_safe_user_path("%2e%2e/secret.txt")
+        assert not is_safe_user_path("%252e%252e/secret.txt")
+
+    def test_acepta_rutas_normales(self) -> None:
+        assert is_safe_user_path("C:/Users/demo/file.pdf")
+        assert is_safe_user_path("folder/subfolder/file.pdf")

@@ -12,7 +12,9 @@
  *     for a response) retry a small, bounded number of times.
  */
 const { ipcMain, dialog } = require('electron');
+const crypto = require('crypto');
 const { handleDialogCall } = require('./dialog-handlers');
+const { ALLOWED_RENDERER_METHODS } = require('./ipc-methods');
 const {
   getProcess,
   isReady,
@@ -21,6 +23,8 @@ const {
   getLastError,
   getStderrTail,
   manualRestart,
+  incrementPendingRequests,
+  decrementPendingRequests,
   STATE,
 } = require('./backend-spawner');
 const { getMainWindow, buildAppMenu } = require('./window-manager');
@@ -29,17 +33,24 @@ const _pendingRequests = new Map();
 let _attachedProcess = null;               // process instance we have listeners on
 
 // Budgets
-const REQUEST_TIMEOUT_MS = 30_000;         // per-request response timeout (default)
+const REQUEST_TIMEOUT_MS = 30_000;         // per-request response timeout — most ops finish in <5s
 const LONG_REQUEST_TIMEOUT_MS = 300_000;   // 5 min for heavy operations (conversion, PDF generation, ZIP)
-const STARTUP_WAIT_MS = 90_000;            // how long a call will wait for boot
+const STARTUP_WAIT_MS = 30_000;            // backend should start in <10s; 30s is a safe margin
 const MID_FLIGHT_RETRIES = 2;              // retries for transient mid-flight errors
 
 // Methods that can take a very long time (bulk conversion, PDF rendering, ZIP creation)
 const LONG_RUNNING_METHODS = new Set([
   'process_start',
+  'db_import',
+  'db_export',
+  'db_clear',
+  'scan_folder',
+  'preview_image',
   'formatos_generate',
   'image_optimizer_zip',
+  'technical_reports_import_file',
   'technical_reports_render_consolidated_html',
+  'panel_aviso_corte_parse_excel',
   'technical_reports_render_html',
   'panel_aviso_corte_render_pdf',
   'panel_aviso_corte_compute_match',
@@ -51,29 +62,6 @@ const LONG_RUNNING_METHODS = new Set([
  * Only these methods are forwarded to the Python backend — any other
  * method name is rejected immediately, preventing arbitrary calls.
  */
-const ALLOWED_METHODS = new Set([
-  'version', 'formats', 'plugin_formats',
-  'db_records', 'db_import', 'db_export', 'db_clear', 'db_template',
-  'db_fields', 'db_fields_update', 'db_fields_reset',
-  'rename_patterns_get', 'rename_patterns_update', 'rename_patterns_reset',
-  'scan_folder',
-  'process_start', 'process_status', 'process_cancel',
-  'preview', 'preview_image', 'is_video',
-  'formatos_list', 'formatos_generate', 'formatos_upload', 'formatos_delete', 'formatos_update_mapping',
-  'history_list', 'history_get', 'history_delete', 'history_save',
-  'technical_reports_list', 'technical_reports_get', 'technical_reports_create',
-  'technical_reports_update', 'technical_reports_delete', 'technical_reports_clear',
-  'technical_reports_import_file', 'technical_reports_variables',
-  'technical_reports_autocomplete_cs', 'technical_reports_autocomplete_contratista',
-  'technical_reports_render_html', 'technical_reports_render_consolidated_html', 'html_to_pdf',
-  'panel_aviso_corte_parse_excel', 'panel_aviso_corte_compute_match',
-  'panel_aviso_corte_render_pdf', 'panel_aviso_corte_template',
-  'image_optimizer_zip',
-  'jobs_list', 'jobs_get', 'jobs_cancel', 'jobs_cleanup',
-  'theme_get', 'theme_save', 'theme_presets', 'theme_preset', 'theme_reset',
-  'templates_list', 'template_get',
-]);
-
 /**
  * Attach stdout/close listeners to the current backend process if we haven't
  * already. Re-runs whenever the backend is restarted.
@@ -105,6 +93,7 @@ function _ensureListeners() {
           const entry = _pendingRequests.get(String(msg.id));
           clearTimeout(entry.timeout);
           _pendingRequests.delete(String(msg.id));
+          decrementPendingRequests();
           if (msg.error) {
             const errMsg = typeof msg.error === 'object' ? (msg.error.message || JSON.stringify(msg.error)) : String(msg.error);
             entry.reject(new Error(errMsg));
@@ -122,6 +111,8 @@ function _ensureListeners() {
       clearTimeout(entry.timeout);
       entry.reject(new Error('Backend process exited while waiting for response'));
     }
+    // Reset pending count since all in-flight requests are now dead
+    _pendingRequestCount = 0;
     _pendingRequests.clear();
   });
 
@@ -139,13 +130,16 @@ function _sendRequest(method, params) {
   }
   _ensureListeners();
 
-  const id = Math.random().toString(36).slice(2);
+  const id = crypto.randomUUID();
   const request = { jsonrpc: '2.0', id, method, params };
   const timeoutMs = _getTimeoutForMethod(method);
+
+  incrementPendingRequests();
 
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => {
       _pendingRequests.delete(id);
+      decrementPendingRequests();
       const win = getMainWindow();
       if (win && !win.isDestroyed()) {
         win.webContents.send('ipc-notify', 'ipc.error', {
@@ -162,6 +156,7 @@ function _sendRequest(method, params) {
     } catch (err) {
       clearTimeout(timeoutId);
       _pendingRequests.delete(id);
+      decrementPendingRequests();
       reject(new Error(`Backend stdin write failed: ${err.message}`));
     }
   });
@@ -235,7 +230,7 @@ async function _callBackend(method, params) {
 
 function registerIpcHandlers() {
   ipcMain.handle('ipc-call', async (event, method, params) => {
-    if (typeof method !== 'string' || !ALLOWED_METHODS.has(method)) {
+    if (typeof method !== 'string' || !ALLOWED_RENDERER_METHODS.has(method)) {
       throw new Error(`IPC method not allowed: ${method}`);
     }
 

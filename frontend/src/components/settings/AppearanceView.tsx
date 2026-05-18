@@ -695,9 +695,9 @@ export default function AppearanceView() {
               );
             })}
 
-            <div className="grid min-h-[40px] grid-cols-[minmax(0,1fr)_minmax(120px,190px)] items-center gap-4 border-t border-[var(--border-subtle)] px-4 py-2.5 sm:grid-cols-[minmax(0,1fr)_136px]">
+            <div className="flex min-h-[36px] items-center justify-between gap-3 border-t border-[var(--border-subtle)] px-4 py-2">
               <div className="text-[12px] font-semibold leading-4 text-[var(--text-primary)]">Acentos rapidos</div>
-              <div className="flex flex-wrap items-center justify-end gap-1.5">
+              <div className="flex flex-nowrap items-center justify-end gap-1">
                 {ACCENTS.map((item) => {
                   const isActive = accent === item.key;
                   return (
@@ -718,7 +718,7 @@ export default function AppearanceView() {
                         setTheme(nextTheme);
                         applyThemeToCSS(nextTheme, mode, item.key);
                       }}
-                      className={`h-5 w-5 shrink-0 rounded-full border-2 transition-all ${
+                      className={`h-4 w-4 shrink-0 rounded-full border transition-all ${
                         isActive ? 'border-[var(--text-primary)] scale-110' : 'border-transparent hover:border-[var(--text-secondary)]'
                       }`}
                       style={{ backgroundColor: item.color }}

@@ -19,10 +19,15 @@ export function useProcessRunner() {
     const unsub = onNotify((method, params) => {
       if (!params || typeof params !== 'object' || Array.isArray(params)) return;
       const p = params as Record<string, unknown>;
+      const safeKeys = new Set(['running', 'progress', 'current_file', 'ok_count', 'err_count', 'logs']);
+      const filtered: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(p)) {
+        if (safeKeys.has(k)) filtered[k] = v;
+      }
       if (method === 'process.progress') {
-        setStatus((prev) => prev ? { ...prev, ...p } as ProcessStatus : null);
+        setStatus((prev) => prev ? { ...prev, ...filtered } as ProcessStatus : null);
       } else if (method === 'process.complete') {
-        setStatus((prev) => prev ? { ...prev, running: false, progress: 100, ...p } as ProcessStatus : null);
+        setStatus((prev) => prev ? { ...prev, running: false, progress: 100, ...filtered } as ProcessStatus : null);
         setRunning(false);
       }
     });

@@ -5,6 +5,13 @@ export interface ProcessStatus {
   ok_count: number;
   err_count: number;
   logs: LogEntry[];
+  id?: string;
+  job_type?: string;
+  total?: number;
+  cancel_requested?: boolean;
+  created_at?: string;
+  params?: Record<string, unknown>;
+  result?: Record<string, unknown> | null;
 }
 
 export interface LogEntry {

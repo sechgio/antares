@@ -322,6 +322,53 @@ def buscar_por_codigo(codigo: str) -> dict[str, Any] | None:
         return dict(row) if row else None
 
 
+def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
+    """Busca múltiples códigos en una sola operación de BD.
+
+    Pre-carga todos los registros que coincidan con cualquiera de los códigos
+    proporcionados, eliminando la necesidad de N queries individuales.
+
+    Args:
+        codigos: Lista de códigos a buscar.
+
+    Returns:
+        Dict {codigo: registro} para los códigos encontrados.
+    """
+    if not codigos:
+        return {}
+    with _db_lock:
+        conn = _get_connection()
+        cursor = conn.cursor()
+        field_names = [_validate_identifier(fn) for fn in get_field_names()]
+        if not field_names:
+            return {}
+
+        unique_codes = list(set(str(c).strip() for c in codigos if c))
+        if not unique_codes:
+            return {}
+
+        # Batch query: fetch all records where ANY field matches ANY of the codes.
+        # Use chunks to avoid SQLite variable limit (999 per query).
+        result: dict[str, dict[str, Any]] = {}
+        CHUNK = 900 // len(field_names)  # safe margin for SQLite param limit
+        for i in range(0, len(unique_codes), CHUNK):
+            chunk = unique_codes[i:i + CHUNK]
+            placeholders = ", ".join(["?"] * len(chunk))
+            conditions = " OR ".join(
+                [f"{_qi(fn)} IN ({placeholders})" for fn in field_names]
+            )
+            params = chunk * len(field_names)
+            cursor.execute(f"SELECT * FROM imagenes WHERE {conditions}", params)
+            for row in cursor.fetchall():
+                row_dict = dict(row)
+                # Map each matching field value back to the code
+                for fn in field_names:
+                    val = str(row_dict.get(fn, "") or "").strip()
+                    if val and val in unique_codes:
+                        result[val] = row_dict
+        return result
+
+
 def obtener_todos(limit: int | None = None, offset: int = 0) -> list[dict[str, Any]]:
     """Retorna registros como lista de diccionarios con paginación opcional.
 

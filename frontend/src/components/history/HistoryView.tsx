@@ -4,6 +4,7 @@ import { useToast } from '../../hooks/useToast';
 import { useDialog } from '../../hooks/useDialog';
 import RunList, { HistoryRun, RunType } from './RunList';
 import RunDetail from './RunDetail';
+import { dispatchHistoryReexecute } from './historyEvents';
 
 const TYPE_FILTERS: { label: string; value: RunType | 'all' }[] = [
   { label: 'Todos', value: 'all' },
@@ -51,7 +52,7 @@ export default function HistoryView() {
   }, [runs, searchQuery]);
 
   const reexecute = (run: HistoryRun) => {
-    window.postMessage({ type: 'HISTORY_REEXECUTE', payload: run }, '*');
+    dispatchHistoryReexecute(run);
     addToast({ message: 'Configuración cargada en Conversión', type: 'success' });
   };
 

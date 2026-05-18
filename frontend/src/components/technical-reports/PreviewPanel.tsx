@@ -6,17 +6,43 @@ interface Props {
   logoRight: string | null;
 }
 
+const EMPTY_REPORT: TechnicalReport = {
+  id: '',
+  metadata: { informe_id: 0, dia: 0, mes: '', anio: 0, pagina: '' },
+  header: { cs: '', contratista: '', codigo_infraestructura: '', ubicacion: '', suministro: '', tipo: 'ELEVADO', volumen: 0 },
+  inspeccion: {
+    caja_registro: 'unchecked', marco_tapa: 'unchecked', escalera_interior: 'unchecked', escalera_exterior: 'unchecked',
+    cuba_interior: 'unchecked', cuba_exterior: 'unchecked', loza_fondo: 'unchecked', loza_techo_interior: 'unchecked',
+    loza_techo_exterior: 'unchecked', ducto_ventilacion: 'unchecked', cerco_perimetrico: 'unchecked', descarga: 'unchecked',
+  },
+  valvulas: {
+    diametros: {}, impulsion: {}, aduccion: {}, bypass: {}, desague: {},
+    operativas: 0, no_operativas: 0,
+    observaciones_conduccion: '', sugerencias_conduccion: '',
+    observaciones_impulsion: '', sugerencias_impulsion: '',
+    observaciones_aduccion: '', sugerencias_aduccion: '',
+    observaciones_bypass: '', sugerencias_bypass: '',
+    observaciones_desague: '', sugerencias_desague: '',
+  },
+  canastillas: {
+    diametros: {}, aduccion: {}, succion: {}, desague: {},
+    operativas: 0, no_operativas: 0,
+    observaciones_aduccion: '', sugerencias_aduccion: '',
+    observaciones_succion: '', sugerencias_succion: '',
+    observaciones_desague: '', sugerencias_desague: '',
+  },
+  medidas: { diametro: '', diametro_interno: '', altura_util: '', altura_total: '' },
+  observaciones: '',
+  sugerencias: '',
+  status: 'draft',
+  last_modified: '',
+};
+
 export default function PreviewPanel({ report, logoLeft, logoRight }: Props) {
-  if (!report) {
-    return (
-      <section className="tr-preview-wrap">
-        <div className="tr-paper tr-paper-empty">Selecciona o importa un informe</div>
-      </section>
-    );
-  }
+  const data = report ?? EMPTY_REPORT;
 
   const renderCheck = (key: string, state: 'normal' | 'critico') => {
-    if (report.inspeccion[key] !== state) return '';
+    if (data.inspeccion[key] !== state) return '';
     return (
       <span className={state === 'critico' ? 'tr-check-critico' : 'tr-check-normal'} data-testid={`preview-check-${key}-${state}`}>
         X
@@ -47,8 +73,8 @@ export default function PreviewPanel({ report, logoLeft, logoRight }: Props) {
       )}
       <td className="center">{renderCheck(key, 'normal')}</td>
       <td className="center">{renderCheck(key, 'critico')}</td>
-      <td className="center">{report.inspeccion[obsKey]}</td>
-      <td className="center">{report.inspeccion[sugKey]}</td>
+      <td className="center">{data.inspeccion[obsKey]}</td>
+      <td className="center">{data.inspeccion[sugKey]}</td>
     </tr>
   );
 
@@ -64,21 +90,21 @@ export default function PreviewPanel({ report, logoLeft, logoRight }: Props) {
         <table className="tr-paper-meta">
           <tbody>
             <tr>
-              <th>Informe</th><td>{report.metadata.informe_id}</td>
-              <th>Día</th><td>{report.metadata.dia}</td>
-              <th>Mes</th><td>{report.metadata.mes}</td>
-              <th>Año</th><td>{report.metadata.anio}</td>
+              <th>Informe</th><td>{data.metadata.informe_id}</td>
+              <th>Día</th><td>{data.metadata.dia}</td>
+              <th>Mes</th><td>{data.metadata.mes}</td>
+              <th>Año</th><td>{data.metadata.anio}</td>
             </tr>
           </tbody>
         </table>
 
         <table className="tr-paper-table">
           <tbody>
-            <tr><th>C.S :</th><td colSpan={3}>{report.header.cs}</td></tr>
-            <tr><th>Contratista :</th><td colSpan={3}>{report.header.contratista}</td></tr>
-            <tr><th>Código de infraestructura :</th><td colSpan={3} className="tr-paper-code">{report.header.codigo_infraestructura}</td></tr>
-            <tr><th>Ubicación :</th><td>{report.header.ubicacion}</td><th>Tipo :</th><td>{report.header.tipo}</td></tr>
-            <tr><th>Suministro :</th><td>{report.header.suministro}</td><th>Volumen :</th><td>{report.header.volumen}</td></tr>
+            <tr><th>C.S :</th><td colSpan={3}>{data.header.cs}</td></tr>
+            <tr><th>Contratista :</th><td colSpan={3}>{data.header.contratista}</td></tr>
+            <tr><th>Código de infraestructura :</th><td colSpan={3} className="tr-paper-code">{data.header.codigo_infraestructura}</td></tr>
+            <tr><th>Ubicación :</th><td>{data.header.ubicacion}</td><th>Tipo :</th><td>{data.header.tipo}</td></tr>
+            <tr><th>Suministro :</th><td>{data.header.suministro}</td><th>Volumen :</th><td>{data.header.volumen}</td></tr>
           </tbody>
         </table>
 
@@ -103,30 +129,30 @@ export default function PreviewPanel({ report, logoLeft, logoRight }: Props) {
               <td className="sub-label">INTERIOR</td>
               <td className="center">{renderCheck('escalera_interior', 'normal')}</td>
               <td className="center">{renderCheck('escalera_interior', 'critico')}</td>
-              <td className="center">{report.inspeccion.observaciones_escalera_int}</td>
-              <td className="center">{report.inspeccion.sugerencias_escalera_int}</td>
+              <td className="center">{data.inspeccion.observaciones_escalera_int}</td>
+              <td className="center">{data.inspeccion.sugerencias_escalera_int}</td>
             </tr>
             <tr>
               <td className="sub-label">EXTERIOR</td>
               <td className="center">{renderCheck('escalera_exterior', 'normal')}</td>
               <td className="center">{renderCheck('escalera_exterior', 'critico')}</td>
-              <td className="center">{report.inspeccion.observaciones_escalera_ext}</td>
-              <td className="center">{report.inspeccion.sugerencias_escalera_ext}</td>
+              <td className="center">{data.inspeccion.observaciones_escalera_ext}</td>
+              <td className="center">{data.inspeccion.sugerencias_escalera_ext}</td>
             </tr>
             <tr>
               <td rowSpan={2} className="row-label center">CUBA</td>
               <td className="sub-label">INTERIOR</td>
               <td className="center">{renderCheck('cuba_interior', 'normal')}</td>
               <td className="center">{renderCheck('cuba_interior', 'critico')}</td>
-              <td className="center">{report.inspeccion.observaciones_cuba_int}</td>
-              <td className="center">{report.inspeccion.sugerencias_cuba_int}</td>
+              <td className="center">{data.inspeccion.observaciones_cuba_int}</td>
+              <td className="center">{data.inspeccion.sugerencias_cuba_int}</td>
             </tr>
             <tr>
               <td className="sub-label">EXTERIOR</td>
               <td className="center">{renderCheck('cuba_exterior', 'normal')}</td>
               <td className="center">{renderCheck('cuba_exterior', 'critico')}</td>
-              <td className="center">{report.inspeccion.observaciones_cuba_ext}</td>
-              <td className="center">{report.inspeccion.sugerencias_cuba_ext}</td>
+              <td className="center">{data.inspeccion.observaciones_cuba_ext}</td>
+              <td className="center">{data.inspeccion.sugerencias_cuba_ext}</td>
             </tr>
             {renderInspectionRow('LOZA DE FONDO', 'loza_fondo', 'observaciones_loza_fondo', 'sugerencias_loza_fondo')}
             <tr>
@@ -134,15 +160,15 @@ export default function PreviewPanel({ report, logoLeft, logoRight }: Props) {
               <td className="sub-label">INTERIOR</td>
               <td className="center">{renderCheck('loza_techo_interior', 'normal')}</td>
               <td className="center">{renderCheck('loza_techo_interior', 'critico')}</td>
-              <td className="center">{report.inspeccion.observaciones_loza_techo_int}</td>
-              <td className="center">{report.inspeccion.sugerencias_loza_techo_int}</td>
+              <td className="center">{data.inspeccion.observaciones_loza_techo_int}</td>
+              <td className="center">{data.inspeccion.sugerencias_loza_techo_int}</td>
             </tr>
             <tr>
               <td className="sub-label">EXTERIOR</td>
               <td className="center">{renderCheck('loza_techo_exterior', 'normal')}</td>
               <td className="center">{renderCheck('loza_techo_exterior', 'critico')}</td>
-              <td className="center">{report.inspeccion.observaciones_loza_techo_ext}</td>
-              <td className="center">{report.inspeccion.sugerencias_loza_techo_ext}</td>
+              <td className="center">{data.inspeccion.observaciones_loza_techo_ext}</td>
+              <td className="center">{data.inspeccion.sugerencias_loza_techo_ext}</td>
             </tr>
             {renderInspectionRow('DUCTO DE VENTILACIÓN', 'ducto_ventilacion', 'observaciones_ducto', 'sugerencias_ducto')}
             {renderInspectionRow('CERCO PERIMÉTRICO', 'cerco_perimetrico', 'observaciones_cerco', 'sugerencias_cerco')}
@@ -154,26 +180,26 @@ export default function PreviewPanel({ report, logoLeft, logoRight }: Props) {
           title="Válvulas"
           diameters={['2', '3', '4', '6', '8', '10', '12']}
           rows={[
-            ['CONDUCCIÓN', report.valvulas.diametros, report.valvulas.observaciones_conduccion, report.valvulas.sugerencias_conduccion],
-            ['IMPULSIÓN', report.valvulas.impulsion, report.valvulas.observaciones_impulsion, report.valvulas.sugerencias_impulsion],
-            ['ADUCCIÓN', report.valvulas.aduccion, report.valvulas.observaciones_aduccion, report.valvulas.sugerencias_aduccion],
-            ['BY PASS', report.valvulas.bypass, report.valvulas.observaciones_bypass, report.valvulas.sugerencias_bypass],
-            ['DESAGÜE', report.valvulas.desague, report.valvulas.observaciones_desague, report.valvulas.sugerencias_desague],
+            ['CONDUCCIÓN', data.valvulas.diametros, data.valvulas.observaciones_conduccion, data.valvulas.sugerencias_conduccion],
+            ['IMPULSIÓN', data.valvulas.impulsion, data.valvulas.observaciones_impulsion, data.valvulas.sugerencias_impulsion],
+            ['ADUCCIÓN', data.valvulas.aduccion, data.valvulas.observaciones_aduccion, data.valvulas.sugerencias_aduccion],
+            ['BY PASS', data.valvulas.bypass, data.valvulas.observaciones_bypass, data.valvulas.sugerencias_bypass],
+            ['DESAGÜE', data.valvulas.desague, data.valvulas.observaciones_desague, data.valvulas.sugerencias_desague],
           ]}
-          operativas={report.valvulas.operativas}
-          noOperativas={report.valvulas.no_operativas}
+          operativas={data.valvulas.operativas}
+          noOperativas={data.valvulas.no_operativas}
         />
 
         <ReportDiameterTable
           title="Canastillas"
           diameters={['2', '3', '4', '6', '8', '10', '14']}
           rows={[
-            ['ADUCCION', report.canastillas.aduccion, report.canastillas.observaciones_aduccion, report.canastillas.sugerencias_aduccion],
-            ['SUCCION', report.canastillas.succion, report.canastillas.observaciones_succion, report.canastillas.sugerencias_succion],
-            ['DESAGUE', report.canastillas.desague, report.canastillas.observaciones_desague, report.canastillas.sugerencias_desague],
+            ['ADUCCION', data.canastillas.aduccion, data.canastillas.observaciones_aduccion, data.canastillas.sugerencias_aduccion],
+            ['SUCCION', data.canastillas.succion, data.canastillas.observaciones_succion, data.canastillas.sugerencias_succion],
+            ['DESAGUE', data.canastillas.desague, data.canastillas.observaciones_desague, data.canastillas.sugerencias_desague],
           ]}
-          operativas={report.canastillas.operativas}
-          noOperativas={report.canastillas.no_operativas}
+          operativas={data.canastillas.operativas}
+          noOperativas={data.canastillas.no_operativas}
         />
 
         <table className="tr-paper-table tr-paper-small">
@@ -186,10 +212,10 @@ export default function PreviewPanel({ report, logoLeft, logoRight }: Props) {
             <tr><th>Medidas</th><th className="center">U/M</th><th className="center">Cantidad</th></tr>
           </thead>
           <tbody>
-            <tr><th>DIAMETRO</th><td className="center">M</td><td className="center">{report.medidas.diametro}</td></tr>
-            <tr><th>DIAMETRO INTERNO</th><td className="center">M</td><td className="center">{report.medidas.diametro_interno}</td></tr>
-            <tr><th>ALTURA UTIL</th><td className="center">M</td><td className="center">{report.medidas.altura_util}</td></tr>
-            <tr><th>ALTURA TOTAL</th><td className="center">M</td><td className="center">{report.medidas.altura_total}</td></tr>
+            <tr><th>DIAMETRO</th><td className="center">M</td><td className="center">{data.medidas.diametro}</td></tr>
+            <tr><th>DIAMETRO INTERNO</th><td className="center">M</td><td className="center">{data.medidas.diametro_interno}</td></tr>
+            <tr><th>ALTURA UTIL</th><td className="center">M</td><td className="center">{data.medidas.altura_util}</td></tr>
+            <tr><th>ALTURA TOTAL</th><td className="center">M</td><td className="center">{data.medidas.altura_total}</td></tr>
           </tbody>
         </table>
 

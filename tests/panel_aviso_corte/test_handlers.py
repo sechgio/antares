@@ -47,3 +47,64 @@ def test_render_pdf_prefers_disk_backed_images(
 
     assert captured["images"] == {"img1.png": fallback_b64}
     assert captured["image_paths"] == {"img1.png": str(image_path)}
+
+
+def test_render_pdf_handles_null_images_and_logos(monkeypatch) -> None:
+    """Regression: frontend may send `images: null` / `logos: null` / etc.
+
+    The handler must NOT crash with AttributeError on `.items()` and should
+    treat null values as empty mappings.
+    """
+    captured: dict[str, object] = {}
+
+    def fake_render_pdf(*, panels, logos, images, image_paths, export_mode):  # type: ignore[no-untyped-def]
+        captured["images"] = images
+        captured["image_paths"] = image_paths
+        captured["logos"] = logos
+        return b"%PDF", "panel.pdf"
+
+    monkeypatch.setattr(handler_module, "render_pdf", fake_render_pdf)
+
+    result = handler_module.panel_aviso_corte_render_pdf(
+        {
+            "panels": [_panel_payload()],
+            "logos": None,
+            "images": None,
+            "image_paths": None,
+            "format": "pdf",
+        },
+    )
+
+    assert captured["images"] == {}
+    assert captured["image_paths"] == {}
+    assert captured["logos"] == {"left": None, "right": None}
+    # New keys for caller to disambiguate content type, plus backward-compat
+    # `pdf_base64` alias must still be present.
+    assert result["format"] == "pdf"
+    assert result["mime_type"] == "application/pdf"
+    assert result["pdf_base64"] == result["content_base64"]
+
+
+def test_render_docx_response_advertises_docx_format(monkeypatch) -> None:
+    """When format=docx the response must advertise the real content type
+    via `format` / `mime_type`, while keeping `pdf_base64` as legacy alias.
+    """
+    def fake_render_docx(*, panels, logos, images, image_paths, export_mode):  # type: ignore[no-untyped-def]
+        return b"PK\x03\x04docx-bytes", "panel.docx"
+
+    monkeypatch.setattr(handler_module, "render_docx", fake_render_docx)
+
+    result = handler_module.panel_aviso_corte_render_pdf(
+        {
+            "panels": [_panel_payload()],
+            "logos": {},
+            "images": {},
+            "image_paths": {},
+            "format": "docx",
+        },
+    )
+
+    assert result["format"] == "docx"
+    assert "wordprocessingml" in result["mime_type"]
+    assert result["pdf_base64"] == result["content_base64"]
+    assert result["filename"].endswith(".docx")

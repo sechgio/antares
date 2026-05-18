@@ -13,7 +13,7 @@ function buildAppMenu(menuIndex = 0) {
     { label: 'Editar', submenu: [{ label: 'Deshacer', role: 'undo' }, { label: 'Rehacer', role: 'redo' }, { type: 'separator' }, { label: 'Cortar', role: 'cut' }, { label: 'Copiar', role: 'copy' }, { label: 'Pegar', role: 'paste' }, { label: 'Seleccionar todo', role: 'selectAll' }] },
     { label: 'Ver', submenu: [{ label: 'Recargar', role: 'reload' }, { label: 'Herramientas de desarrollo', role: 'toggleDevTools' }, { type: 'separator' }, { label: 'Zoom real', role: 'resetZoom' }, { label: 'Acercar', role: 'zoomIn' }, { label: 'Alejar', role: 'zoomOut' }, { type: 'separator' }, { label: 'Pantalla completa', role: 'togglefullscreen' }] },
     { label: 'Ventana', submenu: [{ label: 'Minimizar', role: 'minimize' }, { label: 'Maximizar', click: () => mainWindow?.maximize() }, { label: 'Restaurar', click: () => mainWindow?.unmaximize() }, { type: 'separator' }, { label: 'Cerrar', role: 'close' }] },
-    { label: 'Ayuda', submenu: [{ label: 'Acerca de ANTARES', role: 'about' }] },
+    { label: 'Ayuda', submenu: [{ label: 'Acerca de Antares', role: 'about' }] },
   ];
   return Menu.buildFromTemplate([menus[menuIndex] || menus[0]]);
 }
@@ -28,7 +28,7 @@ function createWindow(isDev) {
     titleBarStyle: 'hidden', autoHideMenuBar: true, icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true, nodeIntegration: false, sandbox: true,
+      contextIsolation: true, nodeIntegration: false, sandbox: false,
     },
   });
 
@@ -51,13 +51,18 @@ function createWindow(isDev) {
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
+    // Only open DevTools when explicitly in dev mode AND app is not packaged
+    if (!require('electron').app.isPackaged) {
+      mainWindow.webContents.openDevTools();
+    }
   } else {
     const htmlPath = path.join(__dirname, '..', 'frontend', 'dist', 'index.html');
     mainWindow.loadFile(htmlPath);
   }
 
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+  });
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 

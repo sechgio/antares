@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import FormatosView from './FormatosView';
+import FormatosView, { safeBase64ToBytes } from './FormatosView';
 import { DialogProvider } from '../../hooks/useDialog';
 import { ToastProvider } from '../../hooks/useToast';
 
@@ -103,5 +103,11 @@ describe('FormatosView', () => {
 
     const mappingEditorTitle = await screen.findByText('Mapping Visual');
     expect(mappingEditorTitle.closest('.overflow-y-auto')).not.toBeNull();
+  });
+
+  it('rejects malformed base64 payloads before decoding', () => {
+    expect(() => safeBase64ToBytes('%%%')).toThrow('Datos base64 corruptos');
+    expect(() => safeBase64ToBytes('A')).toThrow('Datos base64 corruptos');
+    expect(Array.from(safeBase64ToBytes('JVBERi0='))).toEqual([37, 80, 68, 70, 45]);
   });
 });

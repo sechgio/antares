@@ -74,6 +74,24 @@ function pad(n: number, len = 7) {
     return String(n).padStart(len, '0');
 }
 
+export function safeBase64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
+    if (!b64 || typeof b64 !== 'string') throw new Error('Datos base64 inválidos');
+    const cleaned = b64.replace(/\s/g, '');
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(cleaned) || cleaned.length % 4 === 1) {
+        throw new Error('Datos base64 corruptos');
+    }
+    let binary: string;
+    try {
+        binary = atob(cleaned);
+    } catch {
+        throw new Error('Datos base64 corruptos');
+    }
+    const buffer = new ArrayBuffer(binary.length);
+    const bytes = new Uint8Array(buffer);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+}
+
 interface PageImg { url: string; pageNum: number; }
 
 async function renderPageToUrl(
@@ -94,7 +112,7 @@ async function renderPageToUrl(
     const ctx = canvas.getContext('2d')!;
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, viewport.width, viewport.height);
-    const renderTask = page.render({ canvasContext: ctx, viewport } as any);
+    const renderTask = page.render({ canvasContext: ctx, viewport });
     await renderTask.promise;
     // JPEG is ~5x faster than PNG toDataURL and smaller
     return canvas.toDataURL('image/jpeg', 0.88);
@@ -532,7 +550,7 @@ export default function FormatosView() {
                     hasta: previewHasta,
                 });
                 if (previewAbort.current) return;
-                const binary = Uint8Array.from(atob(res.pdf_base64), c => c.charCodeAt(0));
+                const binary = safeBase64ToBytes(res.pdf_base64);
                 const blob = new Blob([binary], { type: 'application/pdf' });
                 setPreviewBlob(blob);
                 setPreviewDesde(capturedDesde);
@@ -551,7 +569,7 @@ export default function FormatosView() {
             clearTimeout(t);
             previewAbort.current = true;
         };
-    }, [desde, hasta, selectedId, selected?.has_mapping, selected?.strategy]);
+    }, [desde, hasta, selectedId, selected?.has_mapping, selected?.strategy, selected?.id]);
 
     /* ── Download handler ── */
     const handleGenerate = async () => {
@@ -564,7 +582,7 @@ export default function FormatosView() {
                 desde,
                 hasta,
             });
-            const blob = new Blob([Uint8Array.from(atob(res.pdf_base64), c => c.charCodeAt(0))], { type: 'application/pdf' });
+            const blob = new Blob([safeBase64ToBytes(res.pdf_base64)], { type: 'application/pdf' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;

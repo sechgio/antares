@@ -87,8 +87,8 @@ export default function BrandMark({
 }: BrandMarkProps) {
   const bgIsLight = useIsBgLight();
 
-  // logo1 = dark text "ANTARES" → for light backgrounds
-  // logo2 = white text "ANTARES" → for dark backgrounds
+  // logo1 = dark text "Antares" → for light backgrounds
+  // logo2 = white text "Antares" → for dark backgrounds
   // favicon1 = eye with dark pupil → for dark backgrounds
   // favicon2 = eye outline only  → for light backgrounds
   const iconSrc = bgIsLight ? './favicon2.png' : './favicon1.png';
@@ -102,7 +102,7 @@ export default function BrandMark({
         <>
           <img
             src={logoSrc}
-            alt="ANTARES"
+            alt="Antares"
             className="object-contain shrink-0"
             style={{ maxHeight: size === 'md' ? 48 : 36, width: 'auto', maxWidth: '100%' }}
             draggable={false}
@@ -120,7 +120,7 @@ export default function BrandMark({
       ) : (
         <div
           role="img"
-          aria-label="ANTARES logo"
+          aria-label="Antares logo"
           style={{ width: markPx, height: markPx }}
           className="shrink-0 flex items-center justify-center overflow-hidden rounded-md"
         >

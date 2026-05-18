@@ -42,7 +42,9 @@ interface PreviewPageProps {
   sedapalLogo: string;
   pageNumber: number;
   totalPages: number;
+  isFirstPage: boolean;
   isLastPage: boolean;
+  variant?: 'service-interruption' | 'volante-lurigancho';
 }
 
 export default function PreviewPage({
@@ -53,73 +55,89 @@ export default function PreviewPage({
   sedapalLogo,
   pageNumber,
   totalPages,
+  isFirstPage,
   isLastPage,
+  variant = 'service-interruption',
 }: PreviewPageProps) {
   const colWidths = orientation === 'portrait'
     ? { item: '5%', name: '24%', address: '31%', time: '10%', firma: '30%' }
     : { item: '4%', name: '24%', address: '28%', time: '12%', firma: '32%' };
+  const isLurigancho = variant === 'volante-lurigancho';
+  const showUpperLayout = !isLurigancho || isFirstPage;
+  const showCurrentVolanteo = !isLurigancho && isLastPage;
+  const showLuriganchoVolanteo = isLurigancho;
+  const sheetClasses = [
+    'vpad-sheet',
+    orientation,
+    isLurigancho ? 'volante-lurigancho' : '',
+    isLurigancho && !isFirstPage ? 'is-followup' : '',
+  ].filter(Boolean).join(' ');
 
   return (
-    <div className={`vpad-sheet ${orientation}`}>
-      <header className="vpad-sheet-head">
-        <div className="vpad-logo-l">
-          <img src={accionaLogo} alt="Acciona" />
-        </div>
-        <div className="vpad-sheet-title">
-          <h1>NOTIFICACIÓN A TRAVÉS DE VOLANTES POR INTERRUPCIÓN DEL SERVICIO DE AGUA POTABLE</h1>
-        </div>
-        <div className="vpad-logo-r">
-          <img src={sedapalLogo} alt="Sedapal" />
-        </div>
-      </header>
+    <div className={sheetClasses}>
+      {showUpperLayout && (
+        <>
+          <header className="vpad-sheet-head">
+            <div className="vpad-logo-l">
+              <img src={accionaLogo} alt="Acciona" />
+            </div>
+            <div className="vpad-sheet-title">
+              <h1>NOTIFICACIÓN A TRAVÉS DE VOLANTES POR INTERRUPCIÓN DEL SERVICIO DE AGUA POTABLE</h1>
+            </div>
+            <div className="vpad-logo-r">
+              <img src={sedapalLogo} alt="Sedapal" />
+            </div>
+          </header>
 
-      <div className="vpad-meta">
-        <div className="vpad-meta-col">
-          <V label="Centro de servicio:" value={headerData.centro} />
-          <V label="Servicio afectado:" value={headerData.servicioAfectado} />
-          <V label="Motivo de la interrupción:" value={headerData.motivoInterrupcion} />
-          <DT
-            label="Fecha y hora del inicio de la interrupción del servicio:"
-            dateVal={headerData.fechaInicio}
-            timeVal={headerData.horaInicio}
-          />
-          <DT
-            label="Fecha y hora prevista del restablecimiento del servicio:"
-            dateVal={headerData.fechaPrevista}
-            timeVal={headerData.horaPrevista}
-          />
-          <V label="Distrito(s):" value={headerData.distrito} />
-        </div>
-        <div className="vpad-meta-col">
-          <V label="Sector(es):" value={headerData.sector} />
-          <V label="Subsector(es) o código(s) de abastecimiento:" value={headerData.subsectores} />
-          <V label="Estructura de almacenamiento:" value={headerData.estructura} />
-          <V label="Fecha de trabajo:" value={headerData.fechaTrabajo} />
-          <V label="Fecha de comunicación:" value={headerData.fechaComunicacion} />
-        </div>
-      </div>
+          <div className="vpad-meta">
+            <div className="vpad-meta-col">
+              <V label="Centro de servicio:" value={headerData.centro} />
+              <V label="Servicio afectado:" value={headerData.servicioAfectado} />
+              <V label="Motivo de la interrupción:" value={headerData.motivoInterrupcion} />
+              <DT
+                label="Fecha y hora del inicio de la interrupción del servicio:"
+                dateVal={headerData.fechaInicio}
+                timeVal={headerData.horaInicio}
+              />
+              <DT
+                label="Fecha y hora prevista del restablecimiento del servicio:"
+                dateVal={headerData.fechaPrevista}
+                timeVal={headerData.horaPrevista}
+              />
+              <V label="Distrito(s):" value={headerData.distrito} />
+            </div>
+            <div className="vpad-meta-col">
+              <V label="Sector(es):" value={headerData.sector} />
+              <V label="Subsector(es) o código(s) de abastecimiento:" value={headerData.subsectores} />
+              <V label="Estructura de almacenamiento:" value={headerData.estructura} />
+              <V label="Fecha de trabajo:" value={headerData.fechaTrabajo} />
+              <V label="Fecha de comunicación:" value={headerData.fechaComunicacion} />
+            </div>
+          </div>
 
-      <div className="vpad-areas">
-        <div className="vpad-area vpad-area-lg">
-          <span className="vpad-area-title">Localidades afectadas:</span>
-          <p>{headerData.localidades || '\u00A0'}</p>
-        </div>
-        <div className="vpad-area vpad-area-sm">
-          <span className="vpad-area-title">Área afectada:</span>
-          <p>{headerData.areaAfectada || '\u00A0'}</p>
-        </div>
-      </div>
+          <div className="vpad-areas">
+            <div className="vpad-area vpad-area-lg">
+              <span className="vpad-area-title">Localidades afectadas:</span>
+              <p>{headerData.localidades || '\u00A0'}</p>
+            </div>
+            <div className="vpad-area vpad-area-sm">
+              <span className="vpad-area-title">Área afectada:</span>
+              <p>{headerData.areaAfectada || '\u00A0'}</p>
+            </div>
+          </div>
 
-      <div className="vpad-notes">
-        <div className="vpad-notes-l">
-          <p>Precauciones para el uso adecuado del servicio (*)</p>
-          <p>(*) Reporte ante la ocurrencia de desastres, casos fortuitos o fuerza mayor.</p>
-        </div>
-        <div className="vpad-notes-r">
-          <div className="vpad-cps-code">{headerData.codigoServicio}</div>
-          <div className="vpad-cps-desc">{headerData.descripcionServicio}</div>
-        </div>
-      </div>
+          <div className="vpad-notes">
+            <div className="vpad-notes-l">
+              <p>Precauciones para el uso adecuado del servicio (*)</p>
+              <p>(*) Reporte ante la ocurrencia de desastres, casos fortuitos o fuerza mayor.</p>
+            </div>
+            <div className="vpad-notes-r">
+              <div className="vpad-cps-code">{headerData.codigoServicio}</div>
+              <div className="vpad-cps-desc">{headerData.descripcionServicio}</div>
+            </div>
+          </div>
+        </>
+      )}
 
       <div className="vpad-tbl">
         <table>
@@ -146,7 +164,7 @@ export default function PreviewPage({
         </table>
       </div>
 
-      {isLastPage && (
+      {showCurrentVolanteo && (
         <div className="vpad-volanteo-section">
           <div className="vpad-volanteo-line">
             <span className="vpad-volanteo-label">Responsable del volanteo :</span>
@@ -161,8 +179,17 @@ export default function PreviewPage({
         </div>
       )}
 
-      <div className="vpad-sheet-foot">
-        Página {pageNumber} de {totalPages}
+      {showLuriganchoVolanteo && (
+        <div className="vpad-volanteo-section vpad-volanteo-section-lurigancho">
+          <div className="vpad-volanteo-line">
+            <span className="vpad-volanteo-label">Responsable del volanteo :</span>
+            <span className="vpad-volanteo-value">{'\u00A0'}</span>
+          </div>
+        </div>
+      )}
+
+      <div className={isLurigancho ? 'vpad-sheet-folio-top' : 'vpad-sheet-foot'}>
+        {isLurigancho ? `${pageNumber} de ${totalPages}` : `Página ${pageNumber} de ${totalPages}`}
       </div>
     </div>
   );

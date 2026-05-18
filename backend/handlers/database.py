@@ -62,7 +62,28 @@ def scan_folder(params: dict[str, Any]) -> dict[str, list[str]]:
     if not path.is_dir():
         msg = f"Directorio no encontrado o no válido: {folder}"
         raise ValueError(msg)
-    files = [str(f.resolve()) for f in path.rglob("*") if f.is_file() and f.suffix in _SUPPORTED_EXTENSIONS]
+    MAX_DEPTH = 10
+    MAX_FILES = 50000
+
+    def _walk_with_depth(root: Path, max_depth: int) -> list[Path]:
+        """Walk directory tree respecting depth limit."""
+        result: list[Path] = []
+        if max_depth < 0:
+            return result
+        try:
+            for entry in root.iterdir():
+                if entry.is_file():
+                    result.append(entry)
+                elif entry.is_dir() and max_depth > 0:
+                    result.extend(_walk_with_depth(entry, max_depth - 1))
+        except PermissionError:
+            pass
+        return result
+
+    all_files = _walk_with_depth(path, MAX_DEPTH)
+    files = [str(f.resolve()) for f in all_files if f.suffix in _SUPPORTED_EXTENSIONS]
+    if len(files) > MAX_FILES:
+        files = files[:MAX_FILES]
     return {"files": files}
 
 @with_locale

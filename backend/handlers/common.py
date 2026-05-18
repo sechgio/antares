@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from backend.core.state import ProcessState
 from backend.utils.i18n import set_locale
+from backend.utils.validators import is_safe_user_path
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -46,14 +47,7 @@ def _validate_path(path: str) -> None:
     if not path or not isinstance(path, str):
         msg = f"Invalid path: {path}"
         raise ValueError(msg)
-    if "\x00" in path:
-        msg = f"Invalid path: {path}"
-        raise ValueError(msg)
-    if "../" in path or "..\\" in path or path.endswith(("/..", "\\..")) or path in ("..", "."):
-        msg = f"Path traversal detected: {path}"
-        raise ValueError(msg)
-    encoded = path.lower()
-    if "%2e%2e" in encoded or "%252e" in encoded:
+    if not is_safe_user_path(path):
         msg = f"Path traversal detected: {path}"
         raise ValueError(msg)
 

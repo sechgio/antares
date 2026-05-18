@@ -6,6 +6,8 @@ from typing import Any
 
 from backend.handlers.common import with_locale
 
+_PDF_MAGIC = b"%PDF"
+
 
 @with_locale
 def formatos_list(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
@@ -25,6 +27,9 @@ def formatos_generate(params: dict[str, Any]) -> dict[str, str]:
 def formatos_upload(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.formatos import add_uploaded_format
     content = base64.b64decode(params.get("content_b64", ""))
+    if not content.startswith(_PDF_MAGIC):
+        msg = "El archivo subido no es un PDF válido"
+        raise ValueError(msg)
     entry = add_uploaded_format(
         params.get("nombre", ""), params.get("filename", ""),
         content, bool(params.get("persisted", True)), params.get("filename_pattern"),

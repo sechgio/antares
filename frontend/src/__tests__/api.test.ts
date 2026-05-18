@@ -53,9 +53,18 @@ describe('API Client', () => {
   it('should call HTML PDF renderer with correct method', async () => {
     mockInvoke.mockResolvedValue({ pdf_base64: 'JVBERi0=', filename: 'reporte.pdf' });
 
-    const result = await api.htmlToPdf({ html: '<html></html>', filename: 'reporte.pdf' });
+    const result = await api.htmlToPdf({
+      html: '<html><head><style>.x{background:url(file:///etc/passwd)}</style></head><body><script>alert(1)</script></body></html>',
+      filename: 'reporte.pdf',
+    });
 
-    expect(mockInvoke).toHaveBeenCalledWith('html_to_pdf', { html: '<html></html>', filename: 'reporte.pdf' });
+    expect(mockInvoke).toHaveBeenCalledWith('html_to_pdf', {
+      html: expect.stringContaining('Content-Security-Policy'),
+      filename: 'reporte.pdf',
+    });
+    const payload = mockInvoke.mock.calls[0][1] as { html: string };
+    expect(payload.html).not.toContain('<script');
+    expect(payload.html).not.toContain('file:///etc/passwd');
     expect(result.filename).toBe('reporte.pdf');
   });
 

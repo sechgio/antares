@@ -1,3 +1,3 @@
 """Version centralizada del proyecto."""
 
-__version__ = "0.6.2"
+__version__ = "0.6.5"

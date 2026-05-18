@@ -17,7 +17,52 @@ interface PreviewCacheEntry {
   orig_size_kb: string;
 }
 
-const previewCache = new Map<string, PreviewCacheEntry>();
+// LRU Cache implementation to prevent memory leaks with large image sets
+class LRUCache<K, V> {
+  private cache: Map<K, { value: V; timestamp: number }>;
+  private maxSize: number;
+  private ttl: number;
+
+  constructor(maxSize: number = 100, ttl: number = 5 * 60 * 1000) {
+    this.cache = new Map();
+    this.maxSize = maxSize;
+    this.ttl = ttl;
+  }
+
+  get(key: K): V | undefined {
+    const entry = this.cache.get(key);
+    if (!entry) return undefined;
+
+    // Check TTL
+    if (Date.now() - entry.timestamp > this.ttl) {
+      this.cache.delete(key);
+      return undefined;
+    }
+
+    // Move to end (most recently used)
+    this.cache.delete(key);
+    this.cache.set(key, entry);
+    return entry.value;
+  }
+
+  set(key: K, value: V): void {
+    // Remove oldest if at capacity
+    if (this.cache.size >= this.maxSize) {
+      const firstKey = this.cache.keys().next().value;
+      if (firstKey !== undefined) {
+        this.cache.delete(firstKey);
+      }
+    }
+
+    this.cache.set(key, { value, timestamp: Date.now() });
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+}
+
+const previewCache = new LRUCache<string, PreviewCacheEntry>(100, 5 * 60 * 1000);
 
 function cacheKey(path: string, formato: string, calidad: number, resize: string): string {
   return `${path}::${formato}::${calidad}::${resize}`;

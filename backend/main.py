@@ -39,11 +39,12 @@ import signal
 import time
 import traceback
 import warnings
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future
 
 from backend.core.database import init_db
 from backend.core.plugins import load_plugins_from_dir
 from backend.core.repository import close_connection
+from backend.core.scheduler import SchedulerBusy, get_scheduler
 from backend.handlers import HANDLERS
 from backend.ipc_protocol import _SKIP, read_message, send_notification, send_response
 from backend.utils.i18n import t
@@ -82,6 +83,22 @@ logging.basicConfig(
     stream=sys.stderr,
 )
 logger = logging.getLogger(__name__)
+
+HEAVY_METHODS = {
+    "db_import",
+    "db_export",
+    "db_clear",
+    "scan_folder",
+    "preview_image",
+    "formatos_generate",
+    "image_optimizer_zip",
+    "technical_reports_import_file",
+    "technical_reports_render_html",
+    "technical_reports_render_consolidated_html",
+    "panel_aviso_corte_parse_excel",
+    "panel_aviso_corte_compute_match",
+    "panel_aviso_corte_render_pdf",
+}
 
 
 def _validate_encoding() -> None:
@@ -127,6 +144,30 @@ def _dispatch(handler, params, msg_id, method_name) -> None:
         send_response(None, msg_id, error=error_msg)
 
 
+def _log_future_exception(future: Future) -> None:
+    """Log unexpected executor failures that escape _dispatch."""
+    try:
+        future.result()
+    except Exception as handler_exc:
+        logger.exception("Handler raised: %s", handler_exc)
+
+
+def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
+    """Submit one handler onto the appropriate scheduler lane."""
+    scheduler = get_scheduler()
+    try:
+        if method_name in HEAVY_METHODS:
+            future = scheduler.submit_heavy(_dispatch, handler, params, msg_id, method_name)
+        else:
+            future = scheduler.submit_light(_dispatch, handler, params, msg_id, method_name)
+    except SchedulerBusy:
+        logger.warning("Heavy scheduler saturated while accepting %s: %s", method_name, scheduler.metrics())
+        send_response(None, msg_id, error="Backend ocupado: cola de trabajo pesada llena")
+        return None
+    future.add_done_callback(_log_future_exception)
+    return future
+
+
 def main() -> None:
     """Bucle principal IPC — diseñado para nunca morir.
 
@@ -150,9 +191,7 @@ def main() -> None:
     except Exception as exc:
         logger.exception("load_plugins_from_dir failed during startup: %s", exc)
 
-    # Executor for concurrent handler execution.
-    # max_workers=8 is enough: most workloads are I/O bound (PDF, Excel, DB).
-    executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="handler")
+    scheduler = get_scheduler()
 
     # Track consecutive errors to avoid spamming logs on persistent issues
     _consecutive_errors = 0
@@ -184,7 +223,7 @@ def main() -> None:
                     continue  # Parse error, already responded
 
                 if msg.method in HANDLERS:
-                    executor.submit(_dispatch, HANDLERS[msg.method], msg.params, msg.id, msg.method)
+                    _submit_handler(HANDLERS[msg.method], msg.params, msg.id, msg.method)
                 else:
                     send_response(None, msg.id, error=f"Método desconocido: {msg.method}")
                 _consecutive_errors = 0
@@ -199,7 +238,7 @@ def main() -> None:
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received")
     finally:
-        executor.shutdown(wait=False)
+        scheduler.shutdown(wait=True)
         close_connection()
         logger.info(t("info.backend_shutdown"))
 

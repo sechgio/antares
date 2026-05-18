@@ -69,6 +69,7 @@ async function run() {
 
     async loadFile(filePath) {
       this.loadedFile = filePath;
+      this.loadedHtml = await require('fs').promises.readFile(filePath, 'utf8');
       this.listeners['did-finish-load']();
     }
 
@@ -83,7 +84,10 @@ async function run() {
 
   const pdf = await handleDialogCall(
     'html_to_pdf',
-    { html: '<!doctype html><html><body>PDF</body></html>', filename: 'reporte.pdf' },
+    {
+      html: '<!doctype html><html><head><style>.x{background:url(file:///etc/passwd)}</style></head><body><script>alert(1)</script>PDF</body></html>',
+      filename: 'reporte.pdf',
+    },
     dialog,
     win,
     { BrowserWindow: FakeBrowserWindow },
@@ -97,6 +101,8 @@ async function run() {
   assert(pdfWindow.printOptions.printBackground === true, 'html_to_pdf should print backgrounds');
   assert(pdfWindow.printOptions.preferCSSPageSize === true, 'html_to_pdf should respect CSS page size');
   assert(pdfWindow.closed === true, 'html_to_pdf should close the hidden window');
+  assert(!pdfWindow.loadedHtml.includes('<script'), 'html_to_pdf should strip script tags');
+  assert(!pdfWindow.loadedHtml.includes('file:///etc/passwd'), 'html_to_pdf should block local file URLs');
 
   console.log(`\n${'='.repeat(50)}`);
   console.log(`Results: ${passed} passed, ${failed} failed`);

@@ -1,7 +1,9 @@
-import { useCallback, useRef, useState } from 'react';
-import { Upload, X, Trash2, ImageIcon } from 'lucide-react';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { Upload, X, Trash2, ImageIcon, ChevronDown, ChevronUp } from 'lucide-react';
 import { ARIA_LABELS, ACCEPTED_IMAGE_TYPES } from '../constants';
 import type { LocalImage } from '../types';
+
+const VISIBLE_LIMIT = 10;
 
 interface Props {
   images: LocalImage[];
@@ -14,6 +16,7 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
+  const [expanded, setExpanded] = useState(false);
 
   const handleFiles = useCallback((files: FileList | null) => {
     if (!files) return;
@@ -27,6 +30,13 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
     setIsDragging(false);
     handleFiles(e.dataTransfer.files);
   }, [handleFiles]);
+
+  const hasMore = images.length > VISIBLE_LIMIT;
+  const visibleImages = useMemo(
+    () => (expanded || !hasMore ? images : images.slice(0, VISIBLE_LIMIT)),
+    [images, expanded, hasMore],
+  );
+  const hiddenCount = images.length - VISIBLE_LIMIT;
 
   return (
     <div className="flex flex-col gap-2">
@@ -79,9 +89,9 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
               Limpiar
             </button>
           </div>
-          <div className="grid grid-cols-5 gap-1.5">
-            {images.map((img, idx) => (
-              <div key={idx} className="relative group rounded-md overflow-hidden border border-[var(--border-subtle)] aspect-square bg-[var(--bg-surface)]">
+          <div className="grid grid-cols-5 gap-1.5 place-items-center">
+            {visibleImages.map((img, idx) => (
+              <div key={idx} className="relative group rounded-md overflow-hidden border border-[var(--border-subtle)] aspect-square w-full bg-[var(--bg-surface)]">
                 <img src={img.objectUrl} alt={img.file.name} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                 <button
                   onClick={() => onRemove(idx)}
@@ -92,6 +102,26 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
               </div>
             ))}
           </div>
+
+          {/* Ver más / Ver menos toggle */}
+          {hasMore && (
+            <button
+              onClick={() => setExpanded((prev) => !prev)}
+              className="mx-auto flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-full text-[11px] font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] bg-[var(--bg-surface)] hover:bg-[var(--bg-elevated)] border border-[var(--border-subtle)] transition-all"
+            >
+              {expanded ? (
+                <>
+                  <ChevronUp size={12} />
+                  Ver menos
+                </>
+              ) : (
+                <>
+                  <ChevronDown size={12} />
+                  Ver más · {hiddenCount} más
+                </>
+              )}
+            </button>
+          )}
         </div>
       )}
     </div>

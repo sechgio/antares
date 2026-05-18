@@ -11,9 +11,10 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any
 
 from backend.core.state import ProcessState
 

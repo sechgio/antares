@@ -152,7 +152,18 @@ def _save_catalog() -> None:
 
 def _resolve_path(fmt: dict[str, Any]) -> Path:
     if fmt["origen"] == "uploaded":
-        return _UPLOADS_DIR / fmt["storage_path"]
+        # Sanitize storage_path so it cannot escape the uploads directory
+        # (defense in depth — storage_path is created server-side but we
+        # still validate before touching the filesystem).
+        candidate = (_UPLOADS_DIR / fmt["storage_path"]).resolve()
+        uploads_resolved = _UPLOADS_DIR.resolve()
+        try:
+            candidate.relative_to(uploads_resolved)
+        except ValueError as exc:
+            msg = f"storage_path fuera de directorio permitido: {fmt['storage_path']}"
+            raise ValueError(msg) from exc
+        return candidate
+
     fname = fmt["storage_path"]
     # 1. Development: project root /formatos/
     builtin = _BUILTIN_DIR / fname
@@ -161,9 +172,17 @@ def _resolve_path(fmt: dict[str, Any]) -> Path:
     # 2. Production (electron-builder + PyInstaller):
     #    backend exe is in resources/backend/, extraResources put formatos/ in resources/formatos/
     exe_dir = Path(sys.executable).parent.resolve()
-    prod_path = (exe_dir.parent / "formatos" / fname).resolve()
-    if prod_path.exists():
-        return prod_path
+    prod_root = (exe_dir.parent / "formatos").resolve()
+    prod_path = (prod_root / fname).resolve()
+    # Ensure prod_path actually lives under prod_root (rejects traversal via
+    # crafted storage_path or symlink shenanigans).
+    try:
+        prod_path.relative_to(prod_root)
+    except ValueError:
+        logger.warning("prod_path fuera del directorio formatos esperado: %s", prod_path)
+    else:
+        if prod_path.exists():
+            return prod_path
     # 3. Fallback to data dir
     return _DATA_DIR / fname
 

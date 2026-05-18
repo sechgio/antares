@@ -13,6 +13,7 @@ import ProgressBar from './ProgressBar';
 import DatabaseView from '../database/DatabaseView';
 import Button from '../ui/Button';
 import { Image, Film, FolderOpen, ArrowRight, CheckCircle2, AlertTriangle, AlertCircle, Play, Settings, Square, Tag, Database, ChevronDown } from 'lucide-react';
+import { subscribeHistoryReexecute } from '../history/historyEvents';
 
 export default function ConversionView() {
   const [files, setFiles] = useState<string[]>([]);
@@ -69,9 +70,8 @@ export default function ConversionView() {
   }, []);
 
   useEffect(() => {
-    const onMessage = (e: MessageEvent) => {
-      if (e.data?.type === 'HISTORY_REEXECUTE') {
-        const run = e.data.payload;
+    return subscribeHistoryReexecute((run) => {
+        if (!run || typeof run !== 'object') return;
         let f: string[] = [];
         let options: Record<string, unknown> = {};
         try {
@@ -95,10 +95,7 @@ export default function ConversionView() {
             setResizeEnabled(true);
           }
         }
-      }
-    };
-    window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
+    });
   }, []);
 
   useEffect(() => {

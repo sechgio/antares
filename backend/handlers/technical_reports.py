@@ -139,11 +139,50 @@ def technical_reports_render_consolidated_html(params: dict[str, Any]) -> dict[s
     html = render_consolidated_html(reports, params.get("logo_left"), params.get("logo_right"))
     return {"html": html, "filename": f"informes_tecnicos_consolidado_{len(reports)}.pdf", "count": len(reports)}
 
+def _sanitize_html_for_pdf(html: str) -> str:
+    """Strip dangerous HTML elements that could cause local file access via CSS.
+
+    WeasyPrint follows CSS url() directives, which can reference local files
+    (e.g. file:///etc/passwd). This sanitizer removes <script>, <iframe>,
+    <object>, <embed>, <link>, and neutralises CSS url() references while
+    preserving safe inline styles.
+    """
+    import re
+    safe = html
+    # Remove dangerous tags entirely
+    safe = re.sub(r"<script[^>]*>[\s\S]*?</script>", "", safe, flags=re.IGNORECASE)
+    safe = re.sub(r"<iframe[^>]*>[\s\S]*?</iframe>", "", safe, flags=re.IGNORECASE)
+    safe = re.sub(r"<object[^>]*>[\s\S]*?</object>", "", safe, flags=re.IGNORECASE)
+    safe = re.sub(r"<embed[^>]*>", "", safe, flags=re.IGNORECASE)
+    safe = re.sub(r"<link[^>]*/?>", "", safe, flags=re.IGNORECASE)
+    # Neutralise CSS url() that references external / local resources
+    # Allow data: URLs (inline images) but block file://, http://, https://, etc.
+    def _neutralise_url(m: re.Match) -> str:
+        url_content = m.group(2).strip().strip("'\"")
+        if url_content.lower().startswith("data:"):
+            return m.group(0)
+        return "url('')"
+    safe = re.sub(r"url\(\s*(['\"]?)(.+?)\1\s*\)", _neutralise_url, safe, flags=re.IGNORECASE)
+    # Inject a restrictive CSP meta tag if not already present
+    csp_meta = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:; font-src data:;">'
+    if "Content-Security-Policy" not in safe:
+        safe = safe.replace("<head>", f"<head>{csp_meta}", 1) if "<head" in safe else csp_meta + safe
+    return safe
+
+
 @with_locale
 def html_to_pdf(params: dict[str, Any]) -> dict[str, str]:
     import io
 
-    from weasyprint import HTML
+    try:
+        from weasyprint import HTML
+    except ImportError as exc:
+        msg = (
+            "WeasyPrint no está instalado en el backend. "
+            "Use la ruta nativa de Electron (html_to_pdf via dialog handler) o instale weasyprint."
+        )
+        raise RuntimeError(msg) from exc
+
     html = str(params.get("html") or "")
     filename = str(params.get("filename") or "documento.pdf")
     if not html:
@@ -151,6 +190,7 @@ def html_to_pdf(params: dict[str, Any]) -> dict[str, str]:
         raise ValueError(msg)
     if not filename.lower().endswith(".pdf"):
         filename += ".pdf"
+    html = _sanitize_html_for_pdf(html)
     pdf_buffer = io.BytesIO()
     HTML(string=html).write_pdf(pdf_buffer)
     return {"pdf_base64": base64.b64encode(pdf_buffer.getvalue()).decode("ascii"), "filename": filename}

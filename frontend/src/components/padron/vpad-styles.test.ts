@@ -22,3 +22,14 @@ describe('water cut notice print styles', () => {
     expect(css).toMatch(/\.vpad-cut-sheet \.vpad-sheet-foot\s*\{[^}]*bottom:\s*4mm/s);
   });
 });
+
+describe('volante lurigancho print styles', () => {
+  it('defines isolated layout hooks', () => {
+    const css = readFileSync(join(process.cwd(), 'src/components/padron/vpad-styles.css'), 'utf-8');
+
+    expect(css).toContain('.vpad-sheet.volante-lurigancho');
+    expect(css).toContain('.vpad-sheet-folio-top');
+    expect(css).toContain('.vpad-volanteo-section-lurigancho');
+    expect(css).toMatch(/\.vpad-sheet\.volante-lurigancho\.is-followup\s*\{[^}]*padding-top:\s*8mm/s);
+  });
+});

@@ -15,7 +15,8 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { spawn, execSync } = require('child_process');
+const crypto = require('crypto');
+const { spawn, execFile } = require('child_process');
 const { getBackendCommand } = require('./backend-command');
 
 const STATE = Object.freeze({
@@ -28,11 +29,12 @@ const STATE = Object.freeze({
 
 const HANDSHAKE_TIMEOUT_MS = 30_000;    // single spawn attempt timeout
 const START_RETRY_LIMIT = 5;             // spawn retry count per start cycle
-const MAX_AUTO_RESTARTS = Infinity;      // NEVER give up on auto-restart
+const MAX_AUTO_RESTARTS = Infinity;      // keep recovering from transient failures while the app is open
 const MAX_RESTART_BACKOFF_SEC = 30;      // cap backoff at 30s
 const RESTART_RESET_MS = 60_000;         // time of stability before counter resets
 const STDERR_BUFFER_LINES = 60;          // rolling stderr tail
-const HEALTH_CHECK_INTERVAL_MS = 10_000; // periodic health check when ready
+const HEALTH_CHECK_INTERVAL_MS = 5_000;  // detect crashes faster
+const HEALTH_PROBE_TIMEOUT_MS = 3_000;   // version probe is cheap — should answer in <1s
 
 let pythonProcess = null;
 let _state = STATE.IDLE;
@@ -43,7 +45,9 @@ let _restartResetTimer = null;
 let _stderrBuffer = [];
 let _lastError = null;                   // { kind: 'fatal'|'transient', message, stderrTail }
 let _healthCheckTimer = null;            // periodic health check interval
+let _healthProbeInFlight = false;        // avoid overlapping liveness probes
 let _startInProgress = false;            // prevents concurrent start/restart cycles
+let _pendingRequestCount = 0;            // track in-flight IPC requests to avoid killing busy backend
 
 // Promise-based readiness gate; resolves when state === READY,
 // rejects when state === FATAL.
@@ -72,6 +76,12 @@ function isReady() { return _state === STATE.READY; }
 function getState() { return _state; }
 function getLastError() { return _lastError; }
 function getStderrTail() { return _stderrBuffer.join('\n'); }
+function getAutoRestartLimit() {
+  return Number.isFinite(MAX_AUTO_RESTARTS) ? MAX_AUTO_RESTARTS : null;
+}
+function getPendingRequestCount() { return _pendingRequestCount; }
+function incrementPendingRequests() { _pendingRequestCount++; }
+function decrementPendingRequests() { if (_pendingRequestCount > 0) _pendingRequestCount--; }
 
 /**
  * Wait until the backend is ready. Resolves true when ready, false when it
@@ -169,7 +179,8 @@ async function startPythonBackend(isDev, attempt = 1) {
     console.error(`[backend-spawner] Start attempt ${attempt} failed (${kind}): ${err.message}`);
     if (stderrTail) console.error(`[backend-spawner] stderr tail:\n${stderrTail}`);
 
-    // Only truly fatal if Python / executable is missing. Everything else retries forever.
+    // Only truly fatal if Python / executable is missing. Everything else keeps
+    // retrying because renderer availability matters more than giving up early.
     if (kind === 'fatal') {
       _state = STATE.FATAL;
       _startInProgress = false;
@@ -205,15 +216,111 @@ async function startPythonBackend(isDev, attempt = 1) {
  * Periodic health check: if the backend process exited without firing 'close',
  * or if it's a zombie, force a restart.
  */
+function _probeBackendResponsiveness(proc) {
+  if (!proc || proc.killed) {
+    return Promise.reject(new Error('process unavailable'));
+  }
+
+  const probeId = `health-${crypto.randomUUID()}`;
+
+  return new Promise((resolve, reject) => {
+    let buffer = '';
+    let settled = false;
+
+    const cleanup = () => {
+      proc.stdout.off('data', onData);
+      proc.off('close', onClose);
+      clearTimeout(timer);
+    };
+
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      fn(value);
+    };
+
+    const onClose = () => finish(reject, new Error('process closed during probe'));
+    const onData = (data) => {
+      buffer += data.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const msg = JSON.parse(line);
+          if (msg.id === probeId) {
+            finish(resolve, true);
+            return;
+          }
+        } catch {
+          // Ignore malformed lines; the main IPC parser already does the same.
+        }
+      }
+    };
+
+    const timer = setTimeout(
+      () => finish(reject, new Error(`health probe timeout (>${HEALTH_PROBE_TIMEOUT_MS / 1000}s)`)),
+      HEALTH_PROBE_TIMEOUT_MS,
+    );
+
+    proc.stdout.on('data', onData);
+    proc.once('close', onClose);
+
+    try {
+      proc.stdin.write(JSON.stringify({
+        jsonrpc: '2.0',
+        id: probeId,
+        method: 'version',
+        params: {},
+      }) + '\n');
+    } catch (err) {
+      finish(reject, new Error(`health probe write failed: ${err.message}`));
+    }
+  });
+}
+
+async function runHealthCheckOnce() {
+  if (_isShuttingDown || _state !== STATE.READY || _healthProbeInFlight) return;
+  if (!pythonProcess || pythonProcess.killed) {
+    console.warn('[backend-spawner] Health check: process is gone, triggering restart.');
+    await _autoRestart();
+    return;
+  }
+
+  _healthProbeInFlight = true;
+  const probedProcess = pythonProcess;
+  try {
+    await _probeBackendResponsiveness(probedProcess);
+  } catch (err) {
+    if (_isShuttingDown || probedProcess !== pythonProcess) return;
+    // If there are in-flight requests, the backend is likely busy — not dead.
+    // A health probe timeout during active work is a false positive; restarting
+    // would kill the user's operation mid-flight.
+    if (_pendingRequestCount > 0) {
+      console.log(`[backend-spawner] Health probe timed out but ${_pendingRequestCount} request(s) in flight — skipping restart (backend is busy, not dead).`);
+      return;
+    }
+    const message = `Backend no responde al chequeo de salud: ${err.message}`;
+    _lastError = { kind: 'transient', message, stderrTail: getStderrTail() };
+    console.warn(`[backend-spawner] ${message}`);
+    _notifyRenderer('backend.error', {
+      message,
+      stderrTail: getStderrTail(),
+      attempt: _restartCount,
+      willRetry: true,
+      nextRetrySec: 0,
+    });
+    await manualRestart(_isDev, { force: true });
+  } finally {
+    _healthProbeInFlight = false;
+  }
+}
+
 function _startHealthCheck() {
   if (_healthCheckTimer) clearInterval(_healthCheckTimer);
   _healthCheckTimer = setInterval(() => {
-    if (_isShuttingDown) return;
-    if (_state !== STATE.READY) return;
-    if (!pythonProcess || pythonProcess.killed) {
-      console.warn('[backend-spawner] Health check: process is gone, triggering restart.');
-      _autoRestart().catch((err) => console.error('[backend-spawner] Health-check restart failed:', err));
-    }
+    runHealthCheckOnce().catch((err) => console.error('[backend-spawner] Health check failed:', err));
   }, HEALTH_CHECK_INTERVAL_MS);
 }
 
@@ -237,7 +344,7 @@ async function _autoRestart() {
   _resetReadyGate();
   _notifyRenderer('backend.restarting', {
     attempt: _restartCount,
-    limit: null, // unlimited
+    limit: null,
   });
 
   // Exponential backoff with a cap so we don't spam too fast
@@ -248,11 +355,7 @@ async function _autoRestart() {
     _startInProgress = false;
     return;
   }
-  try {
-    await startPythonBackend(_isDev);
-  } finally {
-    _startInProgress = false;
-  }
+  await startPythonBackend(_isDev);
 }
 
 function _spawn(isDev) {
@@ -352,9 +455,10 @@ function _forceKillProcess(proc) {
   // On Windows, child processes may survive SIGTERM. Use taskkill to force-kill
   // the entire process tree to prevent zombie processes from blocking the port
   // or holding file locks.
-  if (process.platform === 'win32' && proc.pid) {
+  if (process.platform === 'win32' && proc.pid && typeof proc.pid === 'number') {
     try {
-      execSync(`taskkill /pid ${proc.pid} /T /F`, { stdio: 'ignore', timeout: 5000 });
+      // Keep shutdown responsive while Windows tears down the child tree.
+      execFile('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { stdio: 'ignore', timeout: 5000 }, () => {});
     } catch { /* process may already be dead */ }
   }
 }
@@ -371,9 +475,9 @@ function killPython() {
  * Manual restart: reset the FATAL state so a fresh start cycle can proceed.
  * Returns true if a start cycle was kicked off, false if already running.
  */
-async function manualRestart(isDev) {
+async function manualRestart(isDev, { force = false } = {}) {
   // If already ready, nothing to do
-  if (_state === STATE.READY && pythonProcess && !pythonProcess.killed) {
+  if (!force && _state === STATE.READY && pythonProcess && !pythonProcess.killed) {
     return true;
   }
   if (_startInProgress) {
@@ -411,5 +515,10 @@ module.exports = {
   getState,
   getLastError,
   getStderrTail,
+  getAutoRestartLimit,
+  runHealthCheckOnce,
+  incrementPendingRequests,
+  decrementPendingRequests,
+  getPendingRequestCount,
   STATE,
 };

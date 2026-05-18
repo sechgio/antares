@@ -120,7 +120,7 @@ def render_pdf(
     export_mode: ExportMode,
     image_paths: dict[str, str] | None = None,
 ) -> tuple[bytes, str]:
-    """Renderiza un PDF consolidado con una página por Panel."""
+    """Renderiza un PDF consolidado con una p\u00e1gina por Panel."""
     if not panels:
         msg = "No hay paneles para exportar"
         raise RenderingError(msg)
@@ -176,7 +176,7 @@ def render_pdf(
         HTML(string=html_string, base_url=str(_template_dir())).write_pdf(pdf_buffer)
         pdf_bytes = pdf_buffer.getvalue()
     except Exception as exc:
-        logger.exception("WeasyPrint falló al generar el PDF")
+        logger.exception("WeasyPrint fall\u00f3 al generar el PDF")
         msg = f"Error al generar PDF: {exc}"
         raise RenderingError(msg) from exc
 
@@ -203,7 +203,7 @@ def render_docx(
         from docx.oxml.ns import qn
         from docx.shared import Cm, Pt, RGBColor
     except ImportError as exc:
-        msg = "python-docx no está instalado"
+        msg = "python-docx no est\u00e1 instalado"
         raise RenderingError(msg) from exc
 
     doc = Document()
@@ -274,19 +274,72 @@ def render_docx(
         if color:
             run.font.color.rgb = RGBColor(*color)
 
-    def fit_image_size_cm(content: bytes, max_width_cm: float, max_height_cm: float) -> tuple[float, float]:
+    def cover_image_size_cm(
+        content: bytes, max_width_cm: float, max_height_cm: float,
+    ) -> tuple[float, float, tuple[int, int, int, int]]:
+        """Scale image to *cover* the cell and return crop offsets.
+
+        Returns (insert_width_cm, insert_height_cm, (crop_top, crop_bottom, crop_left, crop_right))
+        where crop values are in units of 1/100000 used by ``<a:srcRect>``.
+        """
         from PIL import Image
 
         with Image.open(BytesIO(content)) as image:
             width_px, height_px = image.size
 
         if width_px <= 0 or height_px <= 0:
-            return max_width_cm, max_height_cm
+            return max_width_cm, max_height_cm, (0, 0, 0, 0)
 
         width_ratio = max_width_cm / width_px
         height_ratio = max_height_cm / height_px
-        scale = min(width_ratio, height_ratio)
-        return width_px * scale, height_px * scale
+        # Use max to *cover* (fill) the cell, opposite of *contain*
+        scale = max(width_ratio, height_ratio)
+        scaled_w = width_px * scale
+        scaled_h = height_px * scale
+
+        crop_left = 0
+        crop_right = 0
+        crop_top = 0
+        crop_bottom = 0
+
+        if scaled_w > max_width_cm + 0.01:
+            excess_pct = (scaled_w - max_width_cm) / scaled_w
+            half = excess_pct / 2
+            crop_left = round(half * 100_000)
+            crop_right = round(half * 100_000)
+
+        if scaled_h > max_height_cm + 0.01:
+            excess_pct = (scaled_h - max_height_cm) / scaled_h
+            # Crop from bottom only (align top, matching preview's flex-start)
+            crop_top = 0
+            crop_bottom = round(excess_pct * 100_000)
+
+        return max_width_cm, max_height_cm, (crop_top, crop_bottom, crop_left, crop_right)
+
+    def _apply_crop(inline_shape: Any, crop: tuple[int, int, int, int]) -> None:
+        """Apply Word XML cropping to an inline picture."""
+        top, bottom, left, right = crop
+        if top == 0 and bottom == 0 and left == 0 and right == 0:
+            return
+        # Navigate to the a:blipFill element in the inline shape's XML
+        nsmap = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
+        blip_fill = inline_shape._inline.graphic.graphicData.find(
+            ".//a:blipFill", nsmap,
+        )
+        if blip_fill is None:
+            return
+        # Remove existing srcRect if any
+        for old in blip_fill.findall("a:srcRect", nsmap):
+            blip_fill.remove(old)
+        from lxml import etree
+        src_rect = etree.SubElement(
+            blip_fill,
+            f"{{{nsmap['a']}}}srcRect",
+        )
+        src_rect.set("t", str(top))
+        src_rect.set("b", str(bottom))
+        src_rect.set("l", str(left))
+        src_rect.set("r", str(right))
 
     section = doc.sections[0]
     section.page_height = Cm(29.7)
@@ -362,7 +415,7 @@ def render_docx(
         for row, key in zip(table.rows, row_keys, strict=True):
             set_row_height(row, ROW_HEIGHTS_CM[key])
 
-        # --- Row 0: Título (cols 0-2) + Logo (col 3, rowspan 4) ---
+        # --- Row 0: Titulo (cols 0-2) + Logo (col 3, rowspan 4) ---
         table.cell(0, 0).merge(table.cell(0, 2))
         title_cell = table.cell(0, 0)
         title_cell.paragraphs[0].clear()
@@ -414,7 +467,7 @@ def render_docx(
         run = p.add_run("PANEL FOTOGRAFICO")
         format_run(run, 12, bold=True)
 
-        # --- Rows 5-8: Imágenes y captions ---
+        # --- Rows 5-8: Imagenes y captions ---
         # (img_row, cap_row, pos_left, pos_right)
         photo_rows = [(5, 6, 1, 2), (7, 8, 3, 4)]
 
@@ -451,17 +504,18 @@ def render_docx(
                     image_content = image_bytes[img_ref.filename]
 
                 if image_content is not None:
-                    width_cm, height_cm = fit_image_size_cm(
+                    width_cm, height_cm, crop = cover_image_size_cm(
                         image_content,
                         PHOTO_WIDTH_CM,
                         PHOTO_HEIGHT_CM,
                     )
                     run = p.add_run()
-                    run.add_picture(
+                    inline_shape = run.add_picture(
                         BytesIO(image_content),
                         width=Cm(width_cm),
                         height=Cm(height_cm),
                     )
+                    _apply_crop(inline_shape, crop)
                 else:
                     run = p.add_run("Sin imagen")
                     run.italic = True
@@ -473,8 +527,8 @@ def render_docx(
                     cap_text = img_ref.caption
                 else:
                     cap_text = (
-                        f"IMAGEN N°{pos}: "
-                        "(Indicar dirección según lista de usuarios)"
+                        f"IMAGEN N\u00b0{pos}: "
+                        "(Indicar direcci\u00f3n seg\u00fan lista de usuarios)"
                     )
                 run = p.add_run(cap_text)
                 format_run(run, 12)

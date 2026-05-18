@@ -77,11 +77,12 @@ class RenamerEngine:
 
         mapping: dict[str, str] = {"seq": seq_value, "ext": ext}
         field_names = get_field_names()
+        first_field = field_names[0] if field_names else None
         for f in field_names:
             # El primer campo usa el código como fallback; el resto queda vacío
             # si no hay datos en la BD. No usamos ruta.stem para evitar que el
             # nombre del archivo ya convertido/renombrado se propague como dato.
-            default_val = codigo if f == field_names[0] else ""
+            default_val = codigo if f == first_field else ""
             mapping[f] = str(datos_bd.get(f, default_val) or "")
 
         nombre_salida = self.patron

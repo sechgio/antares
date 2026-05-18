@@ -6,8 +6,8 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
-from backend.utils.paths import cached_config_path
 from backend.core.config_fields import get_field_names
+from backend.utils.paths import cached_config_path
 
 if TYPE_CHECKING:
     from pathlib import Path

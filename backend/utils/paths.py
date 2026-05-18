@@ -29,7 +29,7 @@ def user_data_path(relative_path: str) -> Path:
     En macOS: ~/Library/Application Support/ANTARES
     En Linux: ~/.local/share/ANTARES
     """
-    app_name = "ANTARES"
+    app_name = "Antares"
     if sys.platform == "win32":
         local = Path(os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))) / app_name
     elif sys.platform == "darwin":

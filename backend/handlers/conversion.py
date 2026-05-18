@@ -5,25 +5,28 @@ with the legacy single-job frontend API.
 """
 from __future__ import annotations
 
-import os
 import time
-from concurrent.futures import CancelledError, ThreadPoolExecutor
+from concurrent.futures import ALL_COMPLETED, CancelledError, wait
 from pathlib import Path
 from typing import Any
 
 from backend.core.converter import FORMATOS_SOPORTADOS, convertir_imagen, copiar_archivo, copiar_video, es_video
-from backend.core.database import buscar_por_codigo
 from backend.core.jobs import DEFAULT_JOB_ID, Job, get_job_manager
 from backend.core.renamer import RenamerEngine
+from backend.core.scheduler import get_scheduler
 from backend.handlers.common import log_message, validate_params, with_locale
 from backend.ipc_protocol import send_notification
 from backend.utils.i18n import set_locale, t
 from backend.utils.validators import parse_filename_parts
 
+_CANCEL_GRACE_SECONDS = 0.25
+
 
 @with_locale
 @validate_params("files")
 def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    from backend.core.database import buscar_lote_por_codigos
+
     files = params.get("files", [])
     patron = params.get("patron", "")
     secuencia = params.get("secuencia", 1)
@@ -31,14 +34,19 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     engine = RenamerEngine(patron, secuencia)
     file_seqs = {}
     codigos_manuales = {}
+    codigos_list = []
     for f in files:
         code, seq = parse_filename_parts(Path(f).name)
         codigos_manuales[Path(f).name] = code
+        codigos_list.append(code)
         if use_filename_seq:
             file_seqs[Path(f).name] = seq
 
+    # Batch DB lookup: 1 query instead of N
+    db_cache = buscar_lote_por_codigos(codigos_list)
+
     def lookup(codigo: str) -> dict[str, Any] | None:
-        return buscar_por_codigo(codigo)
+        return db_cache.get(codigo)
 
     res = engine.preview_lote(files, lookup_fn=lookup, codigos_manuales=codigos_manuales, file_seqs=file_seqs)
     return {"preview": [{"origen": Path(orig).name, "nuevo": nuev, "en_bd": en_bd} for orig, nuev, en_bd in res]}
@@ -134,6 +142,8 @@ def is_video(params: dict[str, Any]) -> dict[str, bool]:
 
 def _run_conversion_job(job: Job) -> None:
     """Thread target for a conversion job. Receives a Job object instead of raw params."""
+    from backend.core.database import buscar_lote_por_codigos
+
     state = job.state
     params = job.params
     job_id = job.id
@@ -170,27 +180,6 @@ def _run_conversion_job(job: Job) -> None:
         ext_dest = FORMATOS_SOPORTADOS[formato]["ext"] if conversion_enabled else None
         total = len(files)
 
-        tasks: list[tuple[str, Path, bool]] = []
-        for fpath in files:
-            p = Path(fpath)
-            is_video_file = es_video(p)
-            if engine:
-                codigo, seq = parse_filename_parts(p.name)
-                datos = buscar_por_codigo(codigo)
-                fseq = seq if use_filename_seq else None
-                nuevo_nombre = engine.aplicar(p, datos_bd=datos, codigo_manual=codigo, file_seq=fseq)
-                if is_video_file or not conversion_enabled:
-                    out_path = Path(destino) / nuevo_nombre
-                else:
-                    out_path = (Path(destino) / nuevo_nombre).with_suffix(ext_dest)
-            else:
-                out_path = Path(destino) / p.name if is_video_file or not conversion_enabled else Path(destino) / (p.stem + ext_dest)
-            tasks.append((fpath, out_path, is_video_file))
-
-        # Cap workers to CPU count (max 8) to reduce context-switching overhead
-        # and avoid starving the main IPC thread.
-        raw_cpu = os.cpu_count() or 2
-        max_workers = max(2, min(raw_cpu, 8))
         completed = 0
 
         def _process_one(task: tuple[str, Path, bool]) -> tuple[bool, str, str]:
@@ -212,86 +201,114 @@ def _run_conversion_job(job: Job) -> None:
             except Exception as e:
                 return (False, p.name, str(e))
 
-        pool = ThreadPoolExecutor(max_workers=max_workers)
-        # Submit tasks in chunks to avoid memory bloat with thousands of futures.
-        CHUNK_SIZE = 500
+        CHUNK_SIZE = _calculate_chunk_size()
+        scheduler = get_scheduler()
         cancelled = False
-        pending_futures: list = []
         _last_notify_time = 0.0
-        _NOTIFY_INTERVAL = 0.5  # seconds — throttle IPC to avoid saturating the pipe
+        _NOTIFY_INTERVAL = 0.5
+        _min_progress_delta = 1  # Minimum progress change to trigger notification (1%)
 
-        def _submit_chunk(start_idx: int) -> None:
-            end_idx = min(start_idx + CHUNK_SIZE, len(tasks))
-            for task in tasks[start_idx:end_idx]:
-                pending_futures.append(pool.submit(_process_one, task))
-
-        _submit_chunk(0)
-        next_chunk_start = CHUNK_SIZE
+        # --- FIX H4: Use as_completed instead of polling loop ---
+        # Submit in chunks to bound memory usage with large batches.
 
         try:
-            while pending_futures:
-                # Remove completed futures efficiently
-                still_pending = []
-                for future in pending_futures:
-                    if future.done():
-                        if future.cancelled():
-                            continue
-                        try:
-                            success, name, error = future.result()
-                        except CancelledError:
-                            continue
-                        completed += 1
-                        with state._lock:
-                            if success:
-                                state.ok_count += 1
-                                log_message(f"{'Renombrado' if not conversion_enabled else 'Procesado'}: {name}", "ok", state=state)
-                            else:
-                                state.err_count += 1
-                                log_message(t("error.process_failed", file=name, error=error), "error", state=state)
-                            state.progress = int((completed / total) * 100)
-                            state.current_file = name
-                            progress = state.progress
-                            current_file = state.current_file
-                            ok_count = state.ok_count
-                            err_count = state.err_count
-                        # Throttle notifications so we don't overwhelm IPC
-                        now = time.time()
-                        is_last = completed == total
-                        if is_last or (now - _last_notify_time >= _NOTIFY_INTERVAL):
-                            _last_notify_time = now
-                            notif_data = {
-                                "progress": progress, "current_file": current_file,
-                                "ok_count": ok_count, "err_count": err_count,
-                                "job_id": job_id,
-                            }
-                            send_notification(f"job.{job_id}.progress", notif_data)
-                            if is_default:
-                                send_notification("process.progress", {
-                                    "progress": progress, "current_file": current_file,
-                                    "ok_count": ok_count, "err_count": err_count,
-                                })
-                    else:
-                        still_pending.append(future)
-                pending_futures = still_pending
+            for chunk_start in range(0, len(files), CHUNK_SIZE):
+                if cancelled:
+                    break
+                chunk_end = min(chunk_start + CHUNK_SIZE, len(files))
+                chunk_files = files[chunk_start:chunk_end]
+                chunk_tasks = _prepare_chunk_tasks(
+                    chunk_files,
+                    destino=destino,
+                    engine=engine,
+                    conversion_enabled=conversion_enabled,
+                    ext_dest=ext_dest,
+                    use_filename_seq=use_filename_seq,
+                    lookup_fn=buscar_lote_por_codigos,
+                )
+                futures = []
+                for task in chunk_tasks:
+                    future = scheduler.submit_heavy(
+                        _process_one,
+                        task,
+                        block=True,
+                        cancel_check=lambda: state.cancel_requested,
+                    )
+                    if future is None:
+                        cancelled = True
+                        break
+                    futures.append(future)
+
+                if cancelled:
+                    for future in futures:
+                        future.cancel()
+                    wait(futures, timeout=_CANCEL_GRACE_SECONDS, return_when=ALL_COMPLETED)
+                    break
 
                 with state._lock:
-                    if state.cancel_requested and not cancelled:
+                    if state.cancel_requested:
                         cancelled = True
                         log_message(t("info.process_cancelled"), "warn", state=state)
                 if cancelled:
-                    for f in pending_futures:
-                        f.cancel()
+                    for future in futures:
+                        future.cancel()
+                    wait(futures, timeout=_CANCEL_GRACE_SECONDS, return_when=ALL_COMPLETED)
                     break
 
-                # Submit next chunk if we have capacity and more tasks
-                if len(pending_futures) < CHUNK_SIZE // 2 and next_chunk_start < len(tasks):
-                    _submit_chunk(next_chunk_start)
-                    next_chunk_start += CHUNK_SIZE
+                for future in futures:
+                    if future.cancelled():
+                        continue
+                    try:
+                        success, name, error = future.result()
+                    except CancelledError:
+                        continue
+                    completed += 1
+                    with state._lock:
+                        if success:
+                            state.ok_count += 1
+                            log_message(f"{'Renombrado' if not conversion_enabled else 'Procesado'}: {name}", "ok", state=state)
+                        else:
+                            state.err_count += 1
+                            log_message(t("error.process_failed", file=name, error=error), "error", state=state)
+                        old_progress = state.progress
+                        state.progress = int((completed / total) * 100)
+                        state.current_file = name
+                        progress = state.progress
+                        current_file = state.current_file
+                        ok_count = state.ok_count
+                        err_count = state.err_count
+                        progress_delta = progress - old_progress
 
-                if pending_futures:
-                    time.sleep(0.05)
+                    now = time.time()
+                    is_last = completed == total
+                    # Adaptive throttling: notify if enough time passed OR significant progress change
+                    should_notify = is_last or (now - _last_notify_time >= _NOTIFY_INTERVAL) or (progress_delta >= _min_progress_delta)
+                    if should_notify:
+                        _last_notify_time = now
+                        notif_data = {
+                            "progress": progress, "current_file": current_file,
+                            "ok_count": ok_count, "err_count": err_count,
+                            "job_id": job_id,
+                        }
+                        send_notification(f"job.{job_id}.progress", notif_data)
+                        if is_default:
+                            send_notification("process.progress", {
+                                "progress": progress, "current_file": current_file,
+                                "ok_count": ok_count, "err_count": err_count,
+                            })
+
+                    # Check cancellation between completions
+                    with state._lock:
+                        if state.cancel_requested and not cancelled:
+                            cancelled = True
+                            log_message(t("info.process_cancelled"), "warn", state=state)
+                    if cancelled:
+                        for pending in futures:
+                            pending.cancel()
+                        break
         finally:
-            pool.shutdown(wait=False)
+            if cancelled:
+                wait(futures if "futures" in locals() else [], timeout=_CANCEL_GRACE_SECONDS, return_when=ALL_COMPLETED)
 
         with state._lock:
             state.running = False
@@ -336,3 +353,51 @@ HANDLERS = {
     "preview_image": preview_image,
     "is_video": is_video,
 }
+
+
+def _calculate_chunk_size() -> int:
+    """Choose an adaptive chunk size without materializing the full batch."""
+    try:
+        import psutil
+
+        available_gb = psutil.virtual_memory().available / (1024 ** 3)
+        target_ram_per_chunk = available_gb * 0.25
+        chunk_size = int((target_ram_per_chunk * 1024) / 5)
+        return max(50, min(chunk_size, 1000))
+    except ImportError:
+        return 500
+
+
+def _prepare_chunk_tasks(
+    chunk_files: list[str],
+    *,
+    destino: str,
+    engine: RenamerEngine | None,
+    conversion_enabled: bool,
+    ext_dest: str | None,
+    use_filename_seq: bool,
+    lookup_fn,
+) -> list[tuple[str, Path, bool]]:
+    """Prepare one chunk of file work and batch only that chunk's DB lookup."""
+    db_cache: dict[str, dict] = {}
+    if engine:
+        codigos = [parse_filename_parts(Path(f).name)[0] for f in chunk_files]
+        db_cache = lookup_fn(codigos)
+
+    tasks: list[tuple[str, Path, bool]] = []
+    for fpath in chunk_files:
+        p = Path(fpath)
+        is_video_file = es_video(p)
+        if engine:
+            codigo, seq = parse_filename_parts(p.name)
+            datos = db_cache.get(codigo)
+            fseq = seq if use_filename_seq else None
+            nuevo_nombre = engine.aplicar(p, datos_bd=datos, codigo_manual=codigo, file_seq=fseq)
+            if is_video_file or not conversion_enabled:
+                out_path = Path(destino) / nuevo_nombre
+            else:
+                out_path = (Path(destino) / nuevo_nombre).with_suffix(ext_dest)
+        else:
+            out_path = Path(destino) / p.name if is_video_file or not conversion_enabled else Path(destino) / (p.stem + ext_dest)
+        tasks.append((fpath, out_path, is_video_file))
+    return tasks
