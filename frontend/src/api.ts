@@ -20,20 +20,30 @@ declare global {
       maximizeWindow: () => Promise<unknown>;
       closeWindow: () => Promise<unknown>;
       showAppMenu: (menuIndex: number, position: { x: number; y: number }) => Promise<unknown>;
+      autoUpdateCheck: () => Promise<{ success: boolean; reason?: string }>;
+      autoUpdateInstall: () => Promise<{ success: boolean; reason?: string }>;
+      onAutoUpdateStatus: (callback: (data: { status: string; version: string | null; progress: number; message?: string }) => void) => () => void;
     };
   }
 }
 
-const IPC_TIMEOUT = 90_000;           // default timeout
-const IPC_LONG_TIMEOUT = 600_000;     // 10 min for heavy operations
+const IPC_TIMEOUT = 30_000;           // default timeout — most ops finish in <5s
+const IPC_LONG_TIMEOUT = 300_000;     // 5 min for heavy operations
 const IPC_MAX_RETRIES = 2;
-const IPC_RETRY_DELAY = 2_000;
+const IPC_RETRY_DELAY = 500;          // fast retry — backend is usually ready by the time we retry
 
 const LONG_RUNNING_METHODS = new Set([
   'process_start',
+  'db_import',
+  'db_export',
+  'db_clear',
+  'scan_folder',
+  'preview_image',
   'formatos_generate',
   'image_optimizer_zip',
+  'technical_reports_import_file',
   'technical_reports_render_consolidated_html',
+  'panel_aviso_corte_parse_excel',
   'technical_reports_render_html',
   'panel_aviso_corte_render_pdf',
   'panel_aviso_corte_compute_match',
@@ -41,6 +51,21 @@ const LONG_RUNNING_METHODS = new Set([
 ]);
 
 const _delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const _sanitizeHtmlForPdf = (html: string): string => {
+  const stripped = html
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<iframe[^>]*>[\s\S]*?<\/iframe>/gi, '')
+    .replace(/<object[^>]*>[\s\S]*?<\/object>/gi, '')
+    .replace(/<embed[^>]*>/gi, '')
+    .replace(/<link[^>]*>/gi, '')
+    .replace(/url\(\s*(['"]?)(.+?)\1\s*\)/gi, (match, _quote, urlValue: string) => {
+      return urlValue.trim().toLowerCase().startsWith('data:') ? match : "url('')";
+    });
+  const cspMeta = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:; font-src data:;">';
+  const injectedHtml = stripped.replace(/<head([^>]*)>/i, `<head$1>${cspMeta}`);
+  return /<head/i.test(injectedHtml) ? injectedHtml : cspMeta + injectedHtml;
+};
 
 const _isRetryable = (err: unknown): boolean => {
   if (!(err instanceof Error)) return false;
@@ -105,14 +130,14 @@ export async function getBackendStatus(): Promise<BackendStatus> {
   if (!window.electronAPI) {
     return { state: 'unavailable', ready: false, lastError: null, stderrTail: '' };
   }
-  return window.electronAPI.backendStatus();
+  return window.electronAPI.backendStatus() as Promise<BackendStatus>;
 }
 
 export async function restartBackend(): Promise<{ success: boolean; state: string }> {
   if (!window.electronAPI) {
     throw new Error('Electron IPC no disponible');
   }
-  return window.electronAPI.backendRestart();
+  return window.electronAPI.backendRestart() as Promise<{ success: boolean; state: string }>;
 }
 
 // ─── API methods ───────────────────────────────────────────────────────────
@@ -200,7 +225,13 @@ export const api = {
   resetRenamePatterns: () => _invoke<{ patterns: RenamePattern[] }>('rename_patterns_reset'),
 
   getTheme: () => _invoke<ThemeConfig>('theme_get'),
-  saveTheme: (theme: ThemeConfig) => _invoke<ThemeConfig>('theme_save', theme as unknown as Record<string, unknown>),
+  saveTheme: (theme: ThemeConfig) => {
+    const safe: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(theme)) {
+      if (typeof v === 'string') safe[k] = v;
+    }
+    return _invoke<ThemeConfig>('theme_save', safe);
+  },
   getPresets: () => _invoke<{ presets: string[] }>('theme_presets'),
   applyPreset: (name: string) => _invoke<ThemeConfig>('theme_preset', { name }),
   resetTheme: () => _invoke<ThemeConfig>('theme_reset'),
@@ -240,7 +271,10 @@ export const api = {
 
   // ─── Render HTML to PDF via Electron ─────────────────────────────────────
   htmlToPdf: (body: { html: string; filename: string }) =>
-    _invoke<{ pdf_base64: string; filename: string }>('html_to_pdf', body),
+    _invoke<{ pdf_base64: string; filename: string }>('html_to_pdf', {
+      ...body,
+      html: _sanitizeHtmlForPdf(body.html),
+    }),
 
   // ─── Informes técnicos ─────────────────────────────────────────────────
   technicalReportsList: (body?: TechnicalReportsListBody) =>

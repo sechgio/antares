@@ -1,4 +1,5 @@
 import { Minus, Square, X } from 'lucide-react';
+import UpdateButton from './UpdateButton';
 
 const menuItems = ['Archivo', 'Editar', 'Ver', 'Ventana', 'Ayuda'];
 
@@ -31,6 +32,7 @@ export default function TitleBar() {
       </nav>
 
       <div className="app-titlebar-controls flex h-full items-stretch">
+        <UpdateButton />
         <button
           type="button"
           aria-label="Minimizar"
