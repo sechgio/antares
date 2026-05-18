@@ -16,17 +16,19 @@ export function useKeyboardShortcut(
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const opts = optionsRef.current;
+      const normalizedKey = key.toLowerCase();
       const ctrlOk = !opts?.ctrl || e.ctrlKey || e.metaKey;
       const shiftOk = !opts?.shift || e.shiftKey;
       const altOk = !opts?.alt || e.altKey;
+      const keyOk = e.key.toLowerCase() === normalizedKey || e.code.toLowerCase() === `key${normalizedKey}`;
 
-      if (e.key.toLowerCase() === key.toLowerCase() && ctrlOk && shiftOk && altOk) {
+      if (keyOk && ctrlOk && shiftOk && altOk) {
         if (opts?.preventDefault !== false) e.preventDefault();
         callbackRef.current(e);
       }
     };
 
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    window.addEventListener('keydown', handler, { capture: true });
+    return () => window.removeEventListener('keydown', handler, { capture: true });
   }, [key]);
 }

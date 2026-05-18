@@ -1,5 +1,4 @@
 interface HeaderProps {
-  title: string;
   onSearchClick: () => void;
 }
 
@@ -11,12 +10,16 @@ function SearchIcon({ className }: { className?: string }) {
   );
 }
 
-export default function Header({ title, onSearchClick }: HeaderProps) {
+export default function Header({ onSearchClick }: HeaderProps) {
   return (
-    <header className="h-12 shrink-0 flex items-center justify-between px-6 border-b border-[var(--border-subtle)] bg-[var(--bg-base)]/80 backdrop-blur-sm select-none">
-      <span className="text-[13px] text-[var(--text-secondary)] font-medium">{title}</span>
+    <header
+      data-testid="app-header"
+      className="h-12 shrink-0 flex items-center justify-end px-6 border-b border-[var(--border-subtle)] bg-[var(--bg-base)]/80 backdrop-blur-sm select-none"
+    >
       <button
         onClick={onSearchClick}
+        aria-label="Buscar"
+        title="Buscar (Ctrl+K)"
         className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:border-[var(--border-medium)] transition-all"
       >
         <SearchIcon />

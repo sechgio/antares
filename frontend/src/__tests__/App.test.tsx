@@ -65,4 +65,58 @@ describe('App', () => {
     expect(routeViewport).not.toHaveClass('px-6');
     expect(routeViewport).not.toHaveClass('py-6');
   });
+
+  it('does not render removed section titles in the shared header for any tool', async () => {
+    render(<App />);
+
+    const removedHeaderTitles = [
+      'Conversión',
+      'Formatos PDF',
+      'Generar Padrones',
+      'Generar Volantes',
+      'Reportes de Campo',
+      'Informes técnicos',
+      'Optimizador de Imágenes',
+      'Generador Reportes',
+      'Aviso de Corte',
+      'Historial',
+      'Apariencia',
+    ];
+
+    const toolButtons = [
+      'Conversión',
+      'Formatos PDF',
+      'Generar Padrones',
+      'Generar Volantes',
+      'Reportes de Campo',
+      'Informes técnicos',
+      'Optimizador',
+      'Generador Reportes',
+      'Aviso de Corte',
+      'Historial',
+      'Apariencia',
+    ];
+
+    for (const label of toolButtons) {
+      fireEvent.click(screen.getByTitle(label));
+      const header = screen.getByTestId('app-header');
+      expect(header).toHaveTextContent('Buscar');
+      for (const title of removedHeaderTitles) {
+        expect(header).not.toHaveTextContent(title);
+      }
+    }
+  });
+
+  it('opens search from the header button and Ctrl+K', async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Buscar' }));
+    expect(screen.getByPlaceholderText('Buscar acción...')).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByPlaceholderText('Buscar acción...')).not.toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'k', code: 'KeyK', ctrlKey: true });
+    expect(screen.getByPlaceholderText('Buscar acción...')).toBeInTheDocument();
+  });
 });

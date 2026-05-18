@@ -35,20 +35,6 @@ const LAZY_MODULES = [
   () => import('./components/panel-aviso-corte'),
 ];
 
-const tabTitles: Record<string, string> = {
-  convert: 'Conversión',
-  formatos: 'Formatos PDF',
-  padron: 'Generar Padrones',
-  volantes: 'Generar Volantes',
-  reportesCampo: 'Reportes de Campo',
-  technicalReports: 'Informes técnicos',
-  imageOptimizer: 'Optimizador de Imágenes',
-  previewPanel: 'Generador Reportes',
-  panelAvisoCorte: 'Aviso de Corte',
-  history: 'Historial',
-  appearance: 'Apariencia',
-};
-
 const FULL_BLEED_TABS = new Set(['padron', 'volantes', 'reportesCampo', 'technicalReports', 'formatos', 'imageOptimizer', 'previewPanel', 'panelAvisoCorte']);
 
 type TabId = 'convert' | 'formatos' | 'padron' | 'volantes' | 'reportesCampo' | 'technicalReports' | 'imageOptimizer' | 'previewPanel' | 'panelAvisoCorte' | 'history' | 'appearance';
@@ -133,7 +119,7 @@ function AppContent() {
           onTabChange={(t) => setActiveTab(t as TabId)}
         />
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          <Header title={tabTitles[activeTab]} onSearchClick={() => setCommandOpen(true)} />
+          <Header onSearchClick={openCommandPalette} />
           <main className="flex-1 overflow-hidden relative">
             <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">Cargando...</div>}>
               <div className={`h-full overflow-y-auto ${isFullBleed ? '' : 'px-6 py-6'}`}>
