@@ -2,15 +2,15 @@
  * Auto-update wiring around `electron-updater`.
  *
  * Strategy: GitHub Releases (free for public repos). The updater downloads
- * the new installer in the background and prompts the user — OpenCode style —
- * with "Instalar y reiniciar / Todavía no" once the download finishes.
+ * the new installer in the background and leaves the restart/install action
+ * to the renderer titlebar button once the download finishes.
  *
  * Requirements:
  *   - electron-builder publishes installers + `latest.yml` to GitHub Releases.
  *   - `publish` block in electron-builder.yml is configured to GitHub.
  *   - Only runs when the app is packaged (skips dev mode).
  */
-const { app, dialog, ipcMain } = require('electron');
+const { app, ipcMain } = require('electron');
 const { getMainWindow } = require('./window-manager');
 
 let _autoUpdater = null;
@@ -46,33 +46,6 @@ function _broadcastToRenderer(channel, data) {
   const win = getMainWindow();
   if (win && !win.isDestroyed()) {
     win.webContents.send(channel, data);
-  }
-}
-
-async function _promptInstall(info) {
-  const win = getMainWindow();
-  const version = info?.version ? ` (${info.version})` : '';
-  const opts = {
-    type: 'info',
-    buttons: ['Instalar y reiniciar', 'Todavía no'],
-    defaultId: 0,
-    cancelId: 1,
-    title: 'Actualización disponible',
-    message: `Una nueva versión de ANTARES${version} está lista para instalar.`,
-    detail: 'La aplicación se cerrará y se reabrirá automáticamente.',
-    noLink: true,
-  };
-
-  try {
-    const result = win && !win.isDestroyed()
-      ? await dialog.showMessageBox(win, opts)
-      : await dialog.showMessageBox(opts);
-
-    if (result.response === 0 && _autoUpdater) {
-      setImmediate(() => _autoUpdater.quitAndInstall(false, true));
-    }
-  } catch (err) {
-    console.warn('[auto-updater] prompt error:', err.message);
   }
 }
 
@@ -137,7 +110,6 @@ function setupAutoUpdater(isDev) {
       version: _availableVersion,
       progress: 100,
     });
-    _promptInstall(info);
   });
 
   updater.on('error', (err) => {
