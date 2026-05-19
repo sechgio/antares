@@ -107,6 +107,14 @@ def db_fields_reset(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     return {"fields": result}
 
 @with_locale
+def db_columns(params: dict[str, Any]) -> dict[str, Any]:
+    """Retorna las columnas disponibles en la BD con datos de muestra."""
+    from backend.core.database import obtener_todos
+    fields = get_field_names()
+    records = obtener_todos(limit=100)
+    return {"columns": fields, "records": records, "total": len(records)}
+
+@with_locale
 def rename_patterns_get(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     return {"patterns": load_patterns()}
 
@@ -128,6 +136,7 @@ HANDLERS = {
     "db_fields": db_fields,
     "db_fields_update": db_fields_update,
     "db_fields_reset": db_fields_reset,
+    "db_columns": db_columns,
     "rename_patterns_get": rename_patterns_get,
     "rename_patterns_update": rename_patterns_update,
     "rename_patterns_reset": rename_patterns_reset,

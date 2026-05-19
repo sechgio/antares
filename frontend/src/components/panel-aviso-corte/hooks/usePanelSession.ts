@@ -80,6 +80,11 @@ export function usePanelSession(): PanelSession {
   const exportModeRef = useRef(exportMode);
   exportModeRef.current = exportMode;
 
+  const logoLeftRef = useRef(logoLeft);
+  logoLeftRef.current = logoLeft;
+  const logoRightRef = useRef(logoRight);
+  logoRightRef.current = logoRight;
+
   const validateLogo = useCallback((file: File): string | null => {
     if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) return MSG_LOGO_INVALID;
     if (file.size > MAX_LOGO_BYTES) return MSG_LOGO_TOO_LARGE;
@@ -264,6 +269,21 @@ export function usePanelSession(): PanelSession {
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
     };
   }, [excelSource, images, matchRule, addressColumn, exportMode, computeMatch]);
+
+  // Saneamiento de URLs de objetos al desmontar el componente (evita fugas de memoria)
+  useEffect(() => {
+    return () => {
+      if (logoLeftRef.current) {
+        URL.revokeObjectURL(logoLeftRef.current.objectUrl);
+      }
+      if (logoRightRef.current) {
+        URL.revokeObjectURL(logoRightRef.current.objectUrl);
+      }
+      imagesRef.current.forEach((img) => {
+        URL.revokeObjectURL(img.objectUrl);
+      });
+    };
+  }, []);
 
   const previewPanels = useMemo(() => {
     if (matchResult) return matchResult.panels;

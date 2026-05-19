@@ -155,6 +155,8 @@ export interface ProcessBody {
   patron: string;
   secuencia: number;
   use_filename_seq: boolean;
+  use_column_rename?: boolean;
+  key_column?: string;
 }
 
 export interface PreviewBody {
@@ -162,6 +164,7 @@ export interface PreviewBody {
   patron: string;
   secuencia: number;
   use_filename_seq: boolean;
+  key_column?: string;
 }
 
 export interface PreviewImageBody {
@@ -219,6 +222,8 @@ export const api = {
   getFields: () => _invoke<{ fields: DBField[] }>('db_fields'),
   updateFields: (fields: DBField[]) => _invoke<{ fields: DBField[] }>('db_fields_update', { fields }),
   resetFields: () => _invoke<{ fields: DBField[] }>('db_fields_reset'),
+
+  getDbColumns: () => _invoke<{ columns: string[]; records: DBRecord[]; total: number }>('db_columns'),
 
   getRenamePatterns: () => _invoke<{ patterns: RenamePattern[] }>('rename_patterns_get'),
   updateRenamePatterns: (patterns: RenamePattern[]) => _invoke<{ patterns: RenamePattern[] }>('rename_patterns_update', { patterns }),

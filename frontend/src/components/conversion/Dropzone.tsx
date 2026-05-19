@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import Button from '../ui/Button';
-import { Folder, Images, Plus, RotateCcw, UploadCloud, FileImage, Film } from 'lucide-react';
+import { Folder, Images, Plus, RotateCcw, UploadCloud, FileImage, Film, Database } from 'lucide-react';
 
 interface DropzoneProps {
   dragOver: boolean;
   onAddFiles: () => void;
   onAddFolder: () => void;
+  onImportDatabase?: () => void;
   fileCount?: number;
   onClear?: () => void;
   videoCount?: number;
@@ -14,13 +15,11 @@ interface DropzoneProps {
   conversionAction?: ReactNode;
 }
 
-const SUPPORTED_IMAGE_FORMATS = ['JPG', 'JPEG', 'PNG', 'WEBP', 'TIFF', 'BMP', 'GIF', 'ICO', 'PDF'];
-const SUPPORTED_VIDEO_FORMATS = ['MP4', 'AVI', 'MOV', 'MKV', 'WMV', 'FLV', 'WEBM', 'M4V', '3GP', 'MPG', 'MPEG'];
-
 export default function Dropzone({
   dragOver,
   onAddFiles,
   onAddFolder,
+  onImportDatabase,
   fileCount = 0,
   onClear,
   videoCount = 0,
@@ -31,6 +30,9 @@ export default function Dropzone({
   const totalCount = fileCount + videoCount;
   const imageCount = fileCount;
   const [pasting, setPasting] = useState(false);
+
+  const SUPPORTED_IMAGE_FORMATS = ['JPG', 'JPEG', 'PNG', 'WEBP', 'TIFF', 'BMP', 'GIF', 'ICO', 'PDF'];
+  const SUPPORTED_VIDEO_FORMATS = ['MP4', 'AVI', 'MOV', 'MKV', 'WMV', 'FLV', 'WEBM', 'M4V', '3GP', 'MPG', 'MPEG'];
 
   const handlePaste = useCallback((e: ClipboardEvent) => {
     if (!onPasteFiles) return;
@@ -93,6 +95,12 @@ export default function Dropzone({
           </div>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          {onImportDatabase && (
+            <Button variant="ghost" size="sm" onClick={onImportDatabase}>
+              <Database className="h-3.5 w-3.5" />
+              Base de datos
+            </Button>
+          )}
           <Button variant="ghost" size="sm" onClick={onAddFiles}>
             <Plus className="h-3.5 w-3.5" />
             Agregar

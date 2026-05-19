@@ -2,8 +2,8 @@ import { useState } from 'react';
 import Card from '../ui/Card';
 import Input from '../ui/Input';
 import Toggle from '../ui/Toggle';
-import type { RenamePattern } from '../../types';
-import { PencilLine, Tags, LayoutGrid, Database, Hash, FileType, GripHorizontal } from 'lucide-react';
+import type { RenamePattern, DBRecord } from '../../types';
+import { PencilLine, Tags, LayoutGrid, Database, Hash, FileType, GripHorizontal, Table } from 'lucide-react';
 
 interface RenameCardProps {
   files: string[];
@@ -18,13 +18,19 @@ interface RenameCardProps {
   onToggleFilenameSeq: (v: boolean) => void;
   namingPresets: RenamePattern[];
   fields: string[];
+  dbColumns?: string[];
+  dbRecords?: DBRecord[];
+  useColumnRename?: boolean;
+  onToggleColumnRename?: (v: boolean) => void;
   onInsertVar: (v: string) => void;
   hasVideos?: boolean;
+  keyColumn?: string;
+  onKeyColumnChange?: (col: string) => void;
 }
 
 const fileNameFromPath = (path: string) => path.split(/[\\/]/).pop() || path;
 
-const exampleFromPattern = (pattern: string, fields: string[], firstFile?: string) => {
+const exampleFromPath = (pattern: string, fields: string[], firstFile?: string) => {
   const originalName = firstFile ? fileNameFromPath(firstFile) : '1.jpg';
   const dotIndex = originalName.lastIndexOf('.');
   const ext = dotIndex >= 0 ? originalName.slice(dotIndex) : '.jpg';
@@ -34,17 +40,36 @@ const exampleFromPattern = (pattern: string, fields: string[], firstFile?: strin
   return pattern.replace(/\{([^}]+)\}/g, (_, key: string) => values[key] ?? '').replace(/_+(?=\.)/g, '');
 };
 
+const exampleFromColumns = (pattern: string, columns: string[], sampleRecord: DBRecord) => {
+  const firstCol = columns[0];
+  const firstVal = String(sampleRecord[firstCol] || '');
+  const dotIndex = firstVal.lastIndexOf('.');
+  const ext = dotIndex >= 0 ? firstVal.slice(dotIndex) : '.jpg';
+  if (!pattern) return 'archivo.jpg';
+  const values: Record<string, string> = { seq: '001', ext };
+  columns.forEach((col) => { values[col] = String(sampleRecord[col] || '').substring(0, 20); });
+  return pattern.replace(/\{([^}]+)\}/g, (_, key: string) => values[key] ?? '').replace(/_+(?=\.)/g, '');
+};
+
 export default function RenameCard({
   files, usarRename, namingMode, onNamingModeChange,
   patron, onPatronChange, secuencia, onSecuenciaChange,
-  useFilenameSeq, onToggleFilenameSeq, namingPresets, fields, onInsertVar,
+  useFilenameSeq, onToggleFilenameSeq, namingPresets, fields,
+  dbColumns = [], dbRecords = [], useColumnRename = false, onToggleColumnRename,
+  onInsertVar,
   hasVideos = false,
+  keyColumn = '',
+  onKeyColumnChange,
 }: RenameCardProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showManager, setShowManager] = useState(false);
 
-  const namingExample = exampleFromPattern(usarRename ? patron : '', fields, files[0]);
+  const namingExample = exampleFromPath(usarRename ? patron : '', fields, files[0]);
+  const columnExample = useColumnRename && dbRecords.length > 0 && dbColumns.length > 0
+    ? exampleFromColumns(patron, dbColumns, dbRecords[0])
+    : namingExample;
   const usesSeq = patron.includes('{seq}');
+  const displayExample = useColumnRename ? columnExample : namingExample;
 
   return (
     <Card className="space-y-4">
@@ -56,7 +81,7 @@ export default function RenameCard({
           <div className="min-w-0">
             <span className="block text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]">Renombrado</span>
             <span className="text-xs text-[var(--text-secondary)] truncate block max-w-[200px]">
-              {usarRename ? namingExample : 'Mantener nombres originales'}
+              {usarRename ? displayExample : 'Mantener nombres originales'}
             </span>
           </div>
         </div>
@@ -65,6 +90,50 @@ export default function RenameCard({
       {hasVideos && (
         <div className="rounded-lg border border-[var(--accent-blue)]/25 bg-[var(--accent-blue)]/10 px-3 py-2">
           <p className="text-[11px] font-medium text-[var(--accent-blue)]">Videos: conserva extensión original</p>
+        </div>
+      )}
+
+      {dbColumns.length > 0 && onToggleColumnRename && (
+        <div className="flex items-center justify-between rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/50 px-4 py-3">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent-secondary)]/10 text-[var(--accent-secondary)]">
+              <Table className="h-4 w-4" />
+            </div>
+            <div>
+              <span className="block text-xs font-semibold text-[var(--text-primary)]">Renombrado por columnas</span>
+              <span className="text-[11px] text-[var(--text-muted)]">{dbRecords.length} registros · {dbColumns.length} columnas</span>
+            </div>
+          </div>
+          <Toggle checked={useColumnRename} onChange={onToggleColumnRename} />
+        </div>
+      )}
+
+      {dbColumns.length > 0 && onKeyColumnChange && (
+        <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/50 px-4 py-3 space-y-2">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]">
+              <Database className="h-4 w-4" />
+            </div>
+            <div>
+              <span className="block text-xs font-semibold text-[var(--text-primary)]">Buscar código en columna</span>
+              <span className="text-[11px] text-[var(--text-muted)]">Coincidencia exacta con valor de celda</span>
+            </div>
+          </div>
+          <select
+            value={keyColumn}
+            onChange={(e) => onKeyColumnChange(e.target.value)}
+            className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none"
+          >
+            <option value="">Sin búsqueda por columna</option>
+            {dbColumns.map((col) => (
+              <option key={col} value={col}>{col}</option>
+            ))}
+          </select>
+          {keyColumn && (
+            <p className="text-[11px] text-[var(--accent-primary)]">
+              Los archivos se renombran según la fila donde <strong>{keyColumn}</strong> coincida con el código extraído del nombre. Si no hay coincidencia, se mantiene el nombre original.
+            </p>
+          )}
         </div>
       )}
 
@@ -83,7 +152,9 @@ export default function RenameCard({
             >
               <span className="block text-xs font-semibold leading-4">{preset.label}</span>
               <span className={`block mt-0.5 font-mono text-[10px] leading-3 truncate ${active ? 'text-[var(--accent-primary)]/80' : 'text-[var(--text-muted)]'}`}>
-                {exampleFromPattern(preset.pattern, fields, files[0])}
+                {useColumnRename && dbRecords.length > 0
+                  ? exampleFromColumns(preset.pattern, dbColumns, dbRecords[0])
+                  : exampleFromPath(preset.pattern, fields, files[0])}
               </span>
             </button>
           );
@@ -114,9 +185,11 @@ export default function RenameCard({
       {showAdvanced && (
         <div className="space-y-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/50 p-4 animate-fade-in">
           <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Patrón visual</label>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
+              {useColumnRename ? 'Columnas de la base de datos' : 'Patrón visual'}
+            </label>
             <div className="flex flex-wrap gap-2">
-              {fields.map((f) => (
+              {(useColumnRename ? dbColumns : fields).map((f) => (
                 <button
                   key={f}
                   onClick={() => onInsertVar(`{${f}}`)}
@@ -164,7 +237,7 @@ export default function RenameCard({
             />
             <div className="flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
               <span>Resultado:</span>
-              <span className="font-mono text-[var(--text-primary)] bg-[var(--bg-input)] px-2 py-0.5 rounded">{namingExample}</span>
+              <span className="font-mono text-[var(--text-primary)] bg-[var(--bg-input)] px-2 py-0.5 rounded">{displayExample}</span>
             </div>
           </div>
 
@@ -228,7 +301,9 @@ export default function RenameCard({
                     <span className="block text-[11px] font-mono text-[var(--text-muted)] truncate">{preset.pattern || 'Sin cambios'}</span>
                   </div>
                   <span className="text-[10px] text-[var(--text-muted)] font-mono">
-                    {exampleFromPattern(preset.pattern, fields, files[0])}
+                    {useColumnRename && dbRecords.length > 0
+                      ? exampleFromColumns(preset.pattern, dbColumns, dbRecords[0])
+                      : exampleFromPath(preset.pattern, fields, files[0])}
                   </span>
                 </button>
               );

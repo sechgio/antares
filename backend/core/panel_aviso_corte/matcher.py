@@ -273,7 +273,7 @@ def build_panels(
         motivo = row.get(motivo_col, "") if motivo_col else ""
         return cuadrante, fecha_corte, motivo
 
-    all_entries: list[tuple[str, str, int]] = []
+    global_img_number = 0
 
     for row_idx, row in enumerate(source.rows):
         cell_value = row.get(key_col_original, "")
@@ -317,17 +317,10 @@ def build_panels(
 
         for img_name in matched_for_row:
             assigned_images.add(img_name)
-            all_entries.append((img_name, direccion, row_idx))
 
-    global_img_number = 0
-    for batch_start in range(0, len(all_entries), MAX_IMAGES_PER_PANEL):
-        batch = all_entries[batch_start:batch_start + MAX_IMAGES_PER_PANEL]
-        first_row_idx = batch[0][2]
-        first_row = source.rows[first_row_idx]
-        cuadrante, fecha_corte, motivo = _resolve_panel_fields(first_row)
-
+        cuadrante, fecha_corte, motivo = _resolve_panel_fields(row)
         image_refs: list[PanelImageRef] = []
-        for pos_in_panel, (img_name, direccion, _) in enumerate(batch, start=1):
+        for pos_in_panel, img_name in enumerate(matched_for_row, start=1):
             global_img_number += 1
             caption = f"IMAGEN N°{global_img_number}: {direccion}"
             image_refs.append(
@@ -339,7 +332,7 @@ def build_panels(
             fecha_corte=fecha_corte,
             motivo=motivo,
             imagenes=tuple(image_refs),
-            source_row_index=batch[0][2],
+            source_row_index=row_idx,
         )
         panels.append(panel)
 

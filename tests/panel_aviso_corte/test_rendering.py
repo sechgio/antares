@@ -182,8 +182,8 @@ def test_render_pdf_fixture_keeps_four_images_per_page(tmp_path: Path) -> None:
 
     output = tmp_path / "fixture-panel-aviso.pdf"
     output.write_bytes(pdf_bytes)
-    assert [len(panel.imagenes) for panel in panels] == [4, 4]
-    assert len(PdfReader(str(output)).pages) == 2
+    assert [len(panel.imagenes) for panel in panels] == [1] * 8
+    assert len(PdfReader(str(output)).pages) == 8
 
 
 def test_render_pdf_fixture_with_square_logo_keeps_one_panel_per_page(
@@ -200,8 +200,8 @@ def test_render_pdf_fixture_with_square_logo_keeps_one_panel_per_page(
 
     output = tmp_path / "fixture-panel-aviso-with-logo.pdf"
     output.write_bytes(pdf_bytes)
-    assert [len(panel.imagenes) for panel in panels] == [4, 4]
-    assert len(PdfReader(str(output)).pages) == 2
+    assert [len(panel.imagenes) for panel in panels] == [1] * 8
+    assert len(PdfReader(str(output)).pages) == 8
 
 
 def test_render_docx_limits_photo_height_to_image_row() -> None:
@@ -234,10 +234,22 @@ def test_render_docx_limits_photo_height_to_image_row() -> None:
 
 
 def test_render_docx_fixture_keeps_four_images_without_internal_page_break() -> None:
-    panels, images = _fixture_panels_and_images()
+    _, images = _fixture_panels_and_images()
+
+    # Construct a panel with exactly 4 images to verify layout limits
+    panel = Panel(
+        cuadrante="CUADRANTE A-12",
+        fecha_corte="2024-05-15",
+        motivo="Trabajos de mejoramiento del reservorio R104",
+        imagenes=tuple(
+            PanelImageRef(filename=name, caption=f"IMAGEN N°{idx}: Test", position=idx)
+            for idx, name in enumerate(sorted(images.keys())[:4], start=1)
+        ),
+        source_row_index=0,
+    )
 
     docx_bytes, _ = render_docx(
-        panels=(panels[0],),
+        panels=(panel,),
         logos={},
         images=images,
         export_mode="include_empty",
@@ -247,6 +259,6 @@ def test_render_docx_fixture_keeps_four_images_without_internal_page_break() -> 
         document_xml = archive.read("word/document.xml")
     root = ET.fromstring(document_xml)
 
-    assert len(panels[0].imagenes) == 4
+    assert len(panel.imagenes) == 4
     assert len(root.findall(".//wp:extent", _WP_NS)) == 4
     assert root.findall('.//w:br[@w:type="page"]', _W_NS) == []

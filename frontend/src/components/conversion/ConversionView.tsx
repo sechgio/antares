@@ -1,18 +1,18 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { api } from '../../api';
-import { RenamePattern } from '../../types';
+import { RenamePattern, DBRecord } from '../../types';
 import { useFileSelection } from '../../hooks/useFileSelection';
 import { useProcessRunner } from '../../hooks/useProcessRunner';
-import { buildDefaultPresets, isVideoByExt, DEFAULT_FORMATS, DEFAULT_FIELDS, DEFAULT_PATTERN, parsePositiveInt } from './helpers';
+import { useToast } from '../../hooks/useToast';
+import { buildDefaultPresets, buildColumnPresets, isVideoByExt, DEFAULT_FORMATS, DEFAULT_FIELDS, DEFAULT_PATTERN, parsePositiveInt } from './helpers';
 import ConversionPresets, { ConversionConfig } from './ConversionPresets';
 import Dropzone from './Dropzone';
 import FileGrid from './FileGrid';
 import OptionsCard from './OptionsCard';
 import RenameCard from './RenameCard';
 import ProgressBar from './ProgressBar';
-import DatabaseView from '../database/DatabaseView';
 import Button from '../ui/Button';
-import { Image, Film, FolderOpen, ArrowRight, CheckCircle2, AlertTriangle, AlertCircle, Play, Settings, Square, Tag, Database, ChevronDown } from 'lucide-react';
+import { Image, Film, FolderOpen, ArrowRight, CheckCircle2, AlertTriangle, AlertCircle, Play, Settings, Square, Tag } from 'lucide-react';
 import { subscribeHistoryReexecute } from '../history/historyEvents';
 
 export default function ConversionView() {
@@ -34,13 +34,21 @@ export default function ConversionView() {
   const [fields, setFields] = useState<string[]>(DEFAULT_FIELDS);
   const [patterns, setPatterns] = useState<RenamePattern[]>([]);
   const [videoFiles, setVideoFiles] = useState<Set<string>>(new Set());
-  const [showDatabase, setShowDatabase] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [dbColumns, setDbColumns] = useState<string[]>([]);
+  const [dbRecords, setDbRecords] = useState<DBRecord[]>([]);
+  const [columnPresets, setColumnPresets] = useState<RenamePattern[]>([]);
+  const [useColumnRename, setUseColumnRename] = useState(false);
+  const [keyColumn, setKeyColumn] = useState('');
 
   const { selectedFile, setSelectedFile, selectedFiles, setSelectedFiles, handleFileClick, handleFileDoubleClick, selectAllFiles } = useFileSelection(files);
   const { status, running, pollStatus, startProcess, cancelProcess } = useProcessRunner();
+  const { addToast } = useToast();
 
-  const namingPresets = useMemo(() => patterns.length > 0 ? patterns : buildDefaultPresets(fields), [patterns, fields]);
+  const namingPresets = useMemo(() => {
+    if (useColumnRename && columnPresets.length > 0) return columnPresets;
+    return patterns.length > 0 ? patterns : buildDefaultPresets(fields);
+  }, [patterns, fields, useColumnRename, columnPresets]);
   const resizeWidth = resizeEnabled ? parsePositiveInt(resizeAncho) : null;
   const resizeHeight = resizeEnabled ? parsePositiveInt(resizeAlto) : null;
   const filesReady = files.length > 0;
@@ -105,7 +113,8 @@ export default function ConversionView() {
       api.formats(),
       api.getFields(),
       api.getRenamePatterns(),
-    ]).then(([fmtResult, fieldsResult, patternsResult]) => {
+      api.getDbColumns(),
+    ]).then(([fmtResult, fieldsResult, patternsResult, dbColumnsResult]) => {
       if (cancelled) return;
 
       if (fmtResult.status === 'fulfilled') {
@@ -133,6 +142,16 @@ export default function ConversionView() {
         const r = patternsResult.value;
         if (r.patterns && r.patterns.length > 0) setPatterns(r.patterns);
       }
+
+      if (dbColumnsResult.status === 'fulfilled') {
+        const r = dbColumnsResult.value;
+        setDbColumns(r.columns ?? []);
+        setDbRecords(r.records ?? []);
+        if (r.columns && r.columns.length > 0) {
+          const colPresets = buildColumnPresets(r.columns);
+          setColumnPresets(colPresets);
+        }
+      }
     });
 
     pollStatus();
@@ -148,6 +167,33 @@ export default function ConversionView() {
   const addFiles = async () => {
     const r = await api.dialogFiles();
     mergeFiles(r.paths);
+  };
+
+  const importDatabaseExcel = async () => {
+    const d = await api.dialogFiles();
+    if (!d.paths.length) return;
+    try {
+      const result = await api.importExcel(d.paths[0]);
+      await loadDbColumns();
+      addToast({ message: `Base de datos importada: ${result.imported} registros`, type: 'success' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      addToast({ message: `Error importando Excel: ${msg}`, type: 'error' });
+    }
+  };
+
+  const loadDbColumns = async () => {
+    try {
+      const result = await api.getDbColumns();
+      setDbColumns(result.columns);
+      setDbRecords(result.records);
+      if (result.columns.length > 0) {
+        const colPresets = buildColumnPresets(result.columns);
+        setColumnPresets(colPresets);
+      }
+    } catch (err) {
+      console.error('Error loading DB columns:', err);
+    }
   };
 
   const addFolder = async () => {
@@ -198,6 +244,8 @@ export default function ConversionView() {
       resize_alto: parsePositiveInt(resizeAlto),
       keep_exif: keepExif, usar_rename: usarRename, patron, secuencia,
       use_filename_seq: useFilenameSeq,
+      use_column_rename: useColumnRename,
+      key_column: keyColumn || undefined,
     });
   };
 
@@ -265,6 +313,7 @@ export default function ConversionView() {
         dragOver={dragOver}
         onAddFiles={addFiles}
         onAddFolder={addFolder}
+        onImportDatabase={importDatabaseExcel}
         fileCount={files.length - videoFiles.size}
         videoCount={videoFiles.size}
         onClear={clearFiles}
@@ -482,30 +531,18 @@ export default function ConversionView() {
               onToggleFilenameSeq={setUseFilenameSeq}
               namingPresets={namingPresets}
               fields={fields}
+              dbColumns={dbColumns}
+              dbRecords={dbRecords}
+              useColumnRename={useColumnRename}
+              onToggleColumnRename={(v) => { setUseColumnRename(v); if (v) setKeyColumn(''); }}
               onInsertVar={insertVar}
               hasVideos={videoFiles.size > 0}
+              keyColumn={keyColumn}
+              onKeyColumnChange={(col) => { setKeyColumn(col); if (col) setUseColumnRename(false); }}
             />
           </div>
         </div>
       )}
-
-      <div className="border-t border-[var(--border-subtle)] pt-4">
-        <button
-          onClick={() => setShowDatabase(!showDatabase)}
-          className="flex w-full items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-3 text-left transition-colors hover:bg-[var(--bg-elevated)]"
-        >
-          <Database className="h-4 w-4 text-[var(--text-muted)]" />
-          <span className="text-sm font-medium text-[var(--text-primary)]">Base de Datos</span>
-          <span className="ml-auto text-[var(--text-muted)] transition-transform duration-200" style={{ transform: showDatabase ? 'rotate(180deg)' : 'rotate(0deg)' }}>
-            <ChevronDown className="h-4 w-4" />
-          </span>
-        </button>
-        {showDatabase && (
-          <div className="mt-2 h-[420px] overflow-hidden rounded-xl border border-[var(--border-subtle)]">
-            <DatabaseView />
-          </div>
-        )}
-      </div>
     </div>
   );
 }

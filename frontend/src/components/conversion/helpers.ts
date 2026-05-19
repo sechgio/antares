@@ -24,6 +24,24 @@ export const buildDefaultPresets = (fields: string[]): RenamePattern[] => {
   ];
 };
 
+export const buildColumnPresets = (columns: string[]): RenamePattern[] => {
+  if (columns.length === 0) return [];
+  const first = columns[0];
+  const second = columns[1];
+  const presets: RenamePattern[] = [];
+
+  if (columns.length >= 2) {
+    presets.push({ id: `col_${first}_${second}`, label: `${first} + ${second}`, pattern: `{${first}}_{${second}}_{seq}{ext}` });
+  }
+  presets.push({ id: `col_${first}`, label: `${first} + seq`, pattern: `{${first}}_{seq}{ext}` });
+
+  for (const col of columns) {
+    presets.push({ id: `col_only_${col}`, label: col, pattern: `{${col}}{ext}` });
+  }
+
+  return presets;
+};
+
 export const parsePositiveInt = (value: string) => {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;

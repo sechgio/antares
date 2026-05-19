@@ -53,9 +53,18 @@ _jinja_env = Environment(
 
 
 def _data_uri_from_b64(b64_string: str, default_mime: str = "image/png") -> str:
+    # Clean data URI scheme if already present
+    if b64_string.startswith("data:"):
+        header_end = b64_string.find(",")
+        if header_end != -1:
+            b64_string = b64_string[header_end + 1 :]
+
     mime = default_mime
     try:
-        header = base64.b64decode(b64_string[:24], validate=True)
+        sample = b64_string[:24]
+        # Pad sample to a multiple of 4 to ensure valid base64 decoding format
+        sample += "=" * ((4 - len(sample) % 4) % 4)
+        header = base64.b64decode(sample, validate=True)
         if header.startswith(b"\xff\xd8"):
             mime = "image/jpeg"
         elif header.startswith(b"\x89PNG"):

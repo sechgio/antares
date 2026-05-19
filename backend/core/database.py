@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 import sqlite3
@@ -118,73 +119,81 @@ def init_db() -> None:
     with _db_lock:
         cursor = conn.cursor()
 
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='imagenes'")
-        table_exists = cursor.fetchone() is not None
+        # Start a manual transaction for atomic schema creation and migrations
+        cursor.execute("BEGIN IMMEDIATE")
+        try:
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='imagenes'")
+            table_exists = cursor.fetchone() is not None
 
-        if not table_exists:
-            cursor.execute(_build_schema(fields))
-        elif not _table_matches_config(cursor, fields):
-            cursor.execute("PRAGMA table_info(imagenes)")
-            existing_cols = {row[1]: row[2].upper() for row in cursor.fetchall()}
-            expected_cols = {f["name"]: f["type"] for f in fields}
-            expected_cols["id"] = "INTEGER"
-
-            new_cols = {name: ftype for name, ftype in expected_cols.items() if name not in existing_cols}
-            removed_cols = [name for name in existing_cols if name not in expected_cols]
-            changed_cols = [name for name in expected_cols if name in existing_cols and existing_cols[name] != expected_cols[name]]
-
-            if removed_cols or changed_cols:
-                try:
-                    cursor.execute("SELECT * FROM imagenes")
-                    old_rows = cursor.fetchall()
-                    old_cols = [d[0] for d in cursor.description]
-                except sqlite3.Error as exc:
-                    logger.warning("No se pudieron leer datos antiguos durante migración: %s", exc)
-                    old_rows = []
-                    old_cols = []
-                cursor.execute("ALTER TABLE imagenes RENAME TO imagenes_old")
+            if not table_exists:
                 cursor.execute(_build_schema(fields))
-                if old_rows:
-                    new_col_names = [_validate_identifier(f["name"]) for f in fields]
-                    placeholders = ", ".join(["?"] * len(new_col_names))
-                    col_names = ", ".join(_qi(c) for c in new_col_names)
-                    defaults = {"INTEGER": 0, "REAL": 0.0, "TEXT": "", "BLOB": b""}
-                    try:
-                        all_values: list[list[Any]] = []
-                        for row in old_rows:
-                            row_dict = dict(zip(old_cols, row, strict=False))
-                            values: list[Any] = []
-                            for f in fields:
-                                col = f["name"]
-                                if col in row_dict and row_dict[col] is not None:
-                                    values.append(row_dict[col])
-                                elif f.get("required"):
-                                    values.append(defaults.get(f["type"], ""))
-                                else:
-                                    values.append(None)
-                            all_values.append(values)
-                        cursor.executemany(
-                            f"INSERT INTO imagenes ({col_names}) VALUES ({placeholders})", all_values
-                        )
-                        cursor.execute("DROP TABLE imagenes_old")
-                    except sqlite3.Error as exc:
-                        logger.error("Fallo migración de datos, se mantiene tabla antigua: %s", exc)
-                        cursor.execute("DROP TABLE imagenes")
-                        cursor.execute("ALTER TABLE imagenes_old RENAME TO imagenes")
-                        raise DatabaseError(f"Migración fallida, esquema anterior preservado: {exc}") from exc
-                else:
-                    cursor.execute("DROP TABLE imagenes_old")
-            else:
-                defaults = {"INTEGER": "0", "REAL": "0.0", "TEXT": "''", "BLOB": "NULL"}
-                for col_name, col_type in new_cols.items():
-                    safe_name = _validate_identifier(col_name)
-                    quoted = _qi(safe_name)
-                    default_val = defaults.get(col_type, "''")
-                    cursor.execute(f"ALTER TABLE imagenes ADD COLUMN {quoted} {col_type} DEFAULT {default_val}")
-                logger.info("Migración aditiva: se agregaron columnas %s", list(new_cols.keys()))
+            elif not _table_matches_config(cursor, fields):
+                cursor.execute("PRAGMA table_info(imagenes)")
+                existing_cols = {row[1]: row[2].upper() for row in cursor.fetchall()}
+                expected_cols = {f["name"]: f["type"] for f in fields}
+                expected_cols["id"] = "INTEGER"
 
-        _create_indexes(cursor, fields)
-        conn.commit()
+                new_cols = {name: ftype for name, ftype in expected_cols.items() if name not in existing_cols}
+                removed_cols = [name for name in existing_cols if name not in expected_cols]
+                changed_cols = [name for name in expected_cols if name in existing_cols and existing_cols[name] != expected_cols[name]]
+
+                if removed_cols or changed_cols:
+                    try:
+                        cursor.execute("SELECT * FROM imagenes")
+                        old_rows = cursor.fetchall()
+                        old_cols = [d[0] for d in cursor.description]
+                    except sqlite3.Error as exc:
+                        logger.warning("No se pudieron leer datos antiguos durante migración: %s", exc)
+                        old_rows = []
+                        old_cols = []
+                    cursor.execute("ALTER TABLE imagenes RENAME TO imagenes_old")
+                    cursor.execute(_build_schema(fields))
+                    if old_rows:
+                        new_col_names = [_validate_identifier(f["name"]) for f in fields]
+                        placeholders = ", ".join(["?"] * len(new_col_names))
+                        col_names = ", ".join(_qi(c) for c in new_col_names)
+                        defaults = {"INTEGER": 0, "REAL": 0.0, "TEXT": "", "BLOB": b""}
+                        try:
+                            all_values: list[list[Any]] = []
+                            for row in old_rows:
+                                row_dict = dict(zip(old_cols, row, strict=False))
+                                values: list[Any] = []
+                                for f in fields:
+                                    col = f["name"]
+                                    if col in row_dict and row_dict[col] is not None:
+                                        values.append(row_dict[col])
+                                    elif f.get("required"):
+                                        values.append(defaults.get(f["type"], ""))
+                                    else:
+                                        values.append(None)
+                                values_list = values
+                                all_values.append(values_list)
+                            cursor.executemany(
+                                f"INSERT INTO imagenes ({col_names}) VALUES ({placeholders})", all_values
+                            )
+                            cursor.execute("DROP TABLE imagenes_old")
+                        except sqlite3.Error as exc:
+                            logger.error("Fallo migración de datos, se mantiene tabla antigua: %s", exc)
+                            cursor.execute("DROP TABLE imagenes")
+                            cursor.execute("ALTER TABLE imagenes_old RENAME TO imagenes")
+                            raise DatabaseError(f"Migración fallida, esquema anterior preservado: {exc}") from exc
+                    else:
+                        cursor.execute("DROP TABLE imagenes_old")
+                else:
+                    defaults = {"INTEGER": "0", "REAL": "0.0", "TEXT": "''", "BLOB": "NULL"}
+                    for col_name, col_type in new_cols.items():
+                        safe_name = _validate_identifier(col_name)
+                        quoted = _qi(safe_name)
+                        default_val = defaults.get(col_type, "''")
+                        cursor.execute(f"ALTER TABLE imagenes ADD COLUMN {quoted} {col_type} DEFAULT {default_val}")
+                    logger.info("Migración aditiva: se agregaron columnas %s", list(new_cols.keys()))
+
+            _create_indexes(cursor, fields)
+            cursor.execute("COMMIT")
+        except Exception as exc:
+            with contextlib.suppress(sqlite3.Error):
+                cursor.execute("ROLLBACK")
+            raise DatabaseError(f"Inicialización/migración de base de datos fallida: {exc}") from exc
 
 
 def importar_excel(excel_path: str) -> int:
@@ -366,6 +375,43 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
                     val = str(row_dict.get(fn, "") or "").strip()
                     if val and val in unique_codes:
                         result[val] = row_dict
+        return result
+
+
+def buscar_por_columna(codigos: list[str], column: str) -> dict[str, dict[str, Any]]:
+    """Busca múltiples códigos en una columna específica de la BD.
+
+    Args:
+        codigos: Lista de códigos a buscar.
+        column: Nombre de la columna clave donde buscar.
+
+    Returns:
+        Dict {codigo: registro} para los códigos encontrados.
+    """
+    if not codigos or not column:
+        return {}
+    safe_column = _validate_identifier(column)
+    with _db_lock:
+        conn = _get_connection()
+        cursor = conn.cursor()
+        unique_codes = list(set(str(c).strip() for c in codigos if c))
+        if not unique_codes:
+            return {}
+
+        result: dict[str, dict[str, Any]] = {}
+        CHUNK = 900  # safe margin for SQLite param limit
+        for i in range(0, len(unique_codes), CHUNK):
+            chunk = unique_codes[i:i + CHUNK]
+            placeholders = ", ".join(["?"] * len(chunk))
+            cursor.execute(
+                f"SELECT * FROM imagenes WHERE {_qi(safe_column)} IN ({placeholders})",
+                chunk,
+            )
+            for row in cursor.fetchall():
+                row_dict = dict(row)
+                val = str(row_dict.get(safe_column, "") or "").strip()
+                if val and val in unique_codes:
+                    result[val] = row_dict
         return result
 
 

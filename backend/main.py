@@ -209,15 +209,9 @@ def main() -> None:
             try:
                 msg = read_message()
                 if msg is None:
-                    # EOF — pipe closed. DO NOT exit; instead, sleep and retry.
-                    # This prevents crashes when Electron briefly closes the pipe.
-                    logger.warning("EOF on stdin — pipe may have closed. Retrying in 1s...")
-                    time.sleep(1.0)
-                    _consecutive_errors += 1
-                    if _consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
-                        logger.error("Too many consecutive EOF errors, exiting.")
-                        break
-                    continue
+                    # EOF — pipe closed. Exit immediately to prevent zombie processes.
+                    logger.error("EOF on stdin — pipe closed. Exiting immediately.")
+                    break
                 if msg is _SKIP:
                     _consecutive_errors = max(0, _consecutive_errors - 1)
                     continue  # Parse error, already responded

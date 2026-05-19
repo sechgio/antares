@@ -25,12 +25,14 @@ _CANCEL_GRACE_SECONDS = 0.25
 @with_locale
 @validate_params("files")
 def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
-    from backend.core.database import buscar_lote_por_codigos
+    from backend.core.database import buscar_lote_por_codigos, buscar_por_columna, obtener_todos
 
     files = params.get("files", [])
     patron = params.get("patron", "")
     secuencia = params.get("secuencia", 1)
     use_filename_seq = params.get("use_filename_seq", True)
+    use_column_rename = params.get("use_column_rename", False)
+    key_column = params.get("key_column", "")
     engine = RenamerEngine(patron, secuencia)
     file_seqs = {}
     codigos_manuales = {}
@@ -42,13 +44,32 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
         if use_filename_seq:
             file_seqs[Path(f).name] = seq
 
-    # Batch DB lookup: 1 query instead of N
-    db_cache = buscar_lote_por_codigos(codigos_list)
+    if key_column:
+        db_cache = buscar_por_columna(codigos_list, key_column)
+        res: list[tuple[str, str, bool]] = []
+        seq_backup = engine.secuencia
+        for f in files:
+            code = codigos_manuales[Path(f).name]
+            datos = db_cache.get(code)
+            if datos:
+                fseq = file_seqs.get(Path(f).name) if use_filename_seq else None
+                nombre_nuevo = engine.aplicar(f, datos_bd=datos, codigo_manual=code, file_seq=fseq)
+                res.append((f, nombre_nuevo, True))
+            else:
+                res.append((f, Path(f).name, False))
+        engine.secuencia = seq_backup
+    elif use_column_rename:
+        db_cache = {str(i): rec for i, rec in enumerate(obtener_todos(limit=len(files)))}
+        def lookup(codigo: str) -> dict[str, Any] | None:
+            idx = str(codigos_list.index(codigo)) if codigo in codigos_list else None
+            return db_cache.get(idx) if idx else None
+        res = engine.preview_lote(files, lookup_fn=lookup, codigos_manuales=codigos_manuales, file_seqs=file_seqs)
+    else:
+        db_cache = buscar_lote_por_codigos(codigos_list)
+        def lookup(codigo: str) -> dict[str, Any] | None:
+            return db_cache.get(codigo)
+        res = engine.preview_lote(files, lookup_fn=lookup, codigos_manuales=codigos_manuales, file_seqs=file_seqs)
 
-    def lookup(codigo: str) -> dict[str, Any] | None:
-        return db_cache.get(codigo)
-
-    res = engine.preview_lote(files, lookup_fn=lookup, codigos_manuales=codigos_manuales, file_seqs=file_seqs)
     return {"preview": [{"origen": Path(orig).name, "nuevo": nuev, "en_bd": en_bd} for orig, nuev, en_bd in res]}
 
 
@@ -163,6 +184,8 @@ def _run_conversion_job(job: Job) -> None:
         patron = params.get("patron", "")
         secuencia = params.get("secuencia", 1)
         use_filename_seq = params.get("use_filename_seq", True)
+        use_column_rename = params.get("use_column_rename", False)
+        key_column = params.get("key_column", "")
 
         engine = RenamerEngine(patron, secuencia) if usar_rename else None
         try:
@@ -225,6 +248,9 @@ def _run_conversion_job(job: Job) -> None:
                     ext_dest=ext_dest,
                     use_filename_seq=use_filename_seq,
                     lookup_fn=buscar_lote_por_codigos,
+                    use_column_rename=use_column_rename,
+                    global_offset=chunk_start,
+                    key_column=key_column,
                 )
                 futures = []
                 for task in chunk_tasks:
@@ -327,7 +353,7 @@ def _run_conversion_job(job: Job) -> None:
         from backend.core.history import save_run
         save_run(
             files=[str(f) for f in files],
-            options={"formato": formato, "calidad": calidad, "conversion_enabled": conversion_enabled, "resize": str(resize) if resize else None, "keep_exif": keep_exif, "usar_rename": usar_rename},
+            options={"formato": formato, "calidad": calidad, "conversion_enabled": conversion_enabled, "resize": str(resize) if resize else None, "keep_exif": keep_exif, "usar_rename": usar_rename, "use_column_rename": use_column_rename},
             patron=patron, formato=formato, calidad=calidad,
             resize=str(resize) if resize else None, ok_count=ok_count, err_count=err_count,
         )
@@ -377,22 +403,47 @@ def _prepare_chunk_tasks(
     ext_dest: str | None,
     use_filename_seq: bool,
     lookup_fn,
+    use_column_rename: bool = False,
+    global_offset: int = 0,
+    key_column: str = "",
 ) -> list[tuple[str, Path, bool]]:
     """Prepare one chunk of file work and batch only that chunk's DB lookup."""
     db_cache: dict[str, dict] = {}
     if engine:
-        codigos = [parse_filename_parts(Path(f).name)[0] for f in chunk_files]
-        db_cache = lookup_fn(codigos)
+        if key_column:
+            from backend.core.database import buscar_por_columna
+            codigos = [parse_filename_parts(Path(f).name)[0] for f in chunk_files]
+            db_cache = buscar_por_columna(codigos, key_column)
+        elif use_column_rename:
+            from backend.core.database import obtener_todos
+            all_records = obtener_todos(limit=len(chunk_files), offset=global_offset)
+            for i, rec in enumerate(all_records):
+                db_cache[str(global_offset + i)] = rec
+        else:
+            codigos = [parse_filename_parts(Path(f).name)[0] for f in chunk_files]
+            db_cache = lookup_fn(codigos)
 
     tasks: list[tuple[str, Path, bool]] = []
-    for fpath in chunk_files:
+    for idx, fpath in enumerate(chunk_files):
         p = Path(fpath)
         is_video_file = es_video(p)
         if engine:
             codigo, seq = parse_filename_parts(p.name)
-            datos = db_cache.get(codigo)
-            fseq = seq if use_filename_seq else None
-            nuevo_nombre = engine.aplicar(p, datos_bd=datos, codigo_manual=codigo, file_seq=fseq)
+            if key_column:
+                datos = db_cache.get(codigo)
+                if datos:
+                    fseq = seq if use_filename_seq else None
+                    nuevo_nombre = engine.aplicar(p, datos_bd=datos, codigo_manual=codigo, file_seq=fseq)
+                else:
+                    nuevo_nombre = p.name
+            elif use_column_rename:
+                datos = db_cache.get(str(global_offset + idx))
+                fseq = seq if use_filename_seq else None
+                nuevo_nombre = engine.aplicar(p, datos_bd=datos, codigo_manual=codigo, file_seq=fseq)
+            else:
+                datos = db_cache.get(codigo)
+                fseq = seq if use_filename_seq else None
+                nuevo_nombre = engine.aplicar(p, datos_bd=datos, codigo_manual=codigo, file_seq=fseq)
             if is_video_file or not conversion_enabled:
                 out_path = Path(destino) / nuevo_nombre
             else:
