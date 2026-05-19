@@ -1,10 +1,11 @@
 /**
- * Bump version across all project files.
- * Usage: node scripts/bump-version.js [patch|minor|major]
+ * Bump version across all project files and optionally commit/tag/push.
+ * Usage: node scripts/bump-version.js [patch|minor|major] [--push]
  */
 
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 function bumpVersion(current, type) {
   const [major, minor, patch] = current.split('.').map(Number);
@@ -14,6 +15,7 @@ function bumpVersion(current, type) {
 }
 
 function updateFile(filePath, replacements) {
+  if (!fs.existsSync(filePath)) return;
   let content = fs.readFileSync(filePath, 'utf8');
   let modified = false;
   for (const { regex, template } of replacements) {
@@ -28,11 +30,9 @@ function updateFile(filePath, replacements) {
   }
 }
 
-const type = process.argv[2] || 'patch';
-if (!['patch', 'minor', 'major'].includes(type)) {
-  console.error('Usage: node scripts/bump-version.js [patch|minor|major]');
-  process.exit(1);
-}
+const args = process.argv.slice(2);
+const type = args.find(a => ['patch', 'minor', 'major'].includes(a)) || 'patch';
+const shouldPush = args.includes('--push');
 
 const rootPkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const newVersion = bumpVersion(rootPkg.version, type);
@@ -55,14 +55,27 @@ updateFile('backend/version.py', [
   { regex: /__version__\s*=\s*"[^"]+"/, template: `__version__ = "${newVersion}"` },
 ]);
 
-updateFile('electron/main.js', [
-  { regex: /version["']?\s*:\s*["'][^"']+["']/, template: `version: "${newVersion}"` },
-]);
-
 updateFile('pyproject.toml', [
   { regex: /^version\s*=\s*"[^"]+"/m, template: `version = "${newVersion}"` },
 ]);
 
 console.log(`\nVersion bumped to ${newVersion}`);
-console.log('Remember to commit and tag:');
-console.log(`  git add -A && git commit -m "release: v${newVersion}" && git tag v${newVersion}`);
+
+if (shouldPush) {
+  try {
+    console.log('\nCommitting and tagging...');
+    execSync(`git add -A`, { stdio: 'inherit' });
+    execSync(`git commit -m "release: v${newVersion}"`, { stdio: 'inherit' });
+    execSync(`git tag v${newVersion}`, { stdio: 'inherit' });
+    console.log('Pushing changes and tags...');
+    execSync(`git push && git push --tags`, { stdio: 'inherit' });
+    console.log('\n✓ Successfully pushed changes and tags.');
+    console.log('The GitHub Action will now build and create the release.');
+  } catch (err) {
+    console.error('\n✗ Failed to execute git commands:', err.message);
+    process.exit(1);
+  }
+} else {
+  console.log('Remember to commit and tag:');
+  console.log(`  git add -A && git commit -m "release: v${newVersion}" && git tag v${newVersion} && git push && git push --tags`);
+}

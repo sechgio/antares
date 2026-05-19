@@ -51,7 +51,24 @@ function _broadcastToRenderer(channel, data) {
 
 function setupAutoUpdater(isDev) {
   if (isDev || !app.isPackaged) {
-    console.log('[auto-updater] desactivado (modo dev / app no empaquetada).');
+    console.log('[auto-updater] desactivado (modo dev / app no empaquetada). Registrando manejadores mock.');
+
+    ipcMain.handle('auto-update-check', async () => {
+      console.log('[auto-updater] (dev) Manual check requested. Mocking up-to-date.');
+      setTimeout(() => {
+        _broadcastToRenderer('auto-update-status', {
+          status: 'up-to-date',
+          version: app.getVersion(),
+          progress: 0,
+        });
+      }, 500);
+      return { success: true };
+    });
+
+    ipcMain.handle('auto-update-install', async () => {
+      return { success: false, reason: 'No disponible en modo desarrollo' };
+    });
+
     return;
   }
 

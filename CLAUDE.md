@@ -172,4 +172,17 @@ npx @claude-flow/cli@latest daemon start
 npx @claude-flow/cli@latest doctor --fix
 ```
 
-**Agent tool** handles execution (agents, files, code, git). **MCP tools** handle coordination (swarm, memory, hooks). **CLI** is the same via Bash.
+## Release Workflow
+
+To create a new release:
+1. Run version bump script (updates files and pushes to GitHub):
+   ```bash
+   npm run bump:patch -- --push   # For bug fixes
+   npm run bump:minor -- --push   # For new features
+   npm run bump:major -- --push   # For breaking changes
+   ```
+2. The GitHub Action will automatically:
+   - Build the Python backend.
+   - Build the Frontend.
+   - Package the Electron app for Windows.
+   - Create a GitHub Release and upload binaries.

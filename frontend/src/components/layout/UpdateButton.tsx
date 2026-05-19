@@ -34,7 +34,10 @@ export default function UpdateButton() {
     if (!window.electronAPI?.autoUpdateCheck) return;
     setUpdate({ status: 'checking', version: null, progress: 0 });
     try {
-      await window.electronAPI.autoUpdateCheck();
+      const res = await window.electronAPI.autoUpdateCheck();
+      if (res && !res.success) {
+        setUpdate({ status: 'error', version: null, progress: 0, message: res.reason });
+      }
     } catch (err) {
       setUpdate({ status: 'error', version: null, progress: 0, message: String(err) });
     }
@@ -43,7 +46,10 @@ export default function UpdateButton() {
   const handleInstall = useCallback(async () => {
     if (!window.electronAPI?.autoUpdateInstall) return;
     try {
-      await window.electronAPI.autoUpdateInstall();
+      const res = await window.electronAPI.autoUpdateInstall();
+      if (res && !res.success) {
+        setUpdate({ status: 'error', version: null, progress: 0, message: res.reason });
+      }
     } catch (err) {
       setUpdate({ status: 'error', version: null, progress: 0, message: String(err) });
     }
@@ -92,7 +98,7 @@ export default function UpdateButton() {
     update.status === 'available' ? 'Actualización disponible' :
     update.status === 'downloading' ? `Descargando ${update.version}... ${update.progress}%` :
     update.status === 'ready' ? `${update.version} lista. Clic para instalar.` :
-    update.status === 'error' ? 'Error al actualizar' :
+    update.status === 'error' ? `Error al actualizar: ${update.message || 'Error desconocido'}` :
     update.status === 'up-to-date' ? 'Estás en la última versión' :
     'Buscar actualización';
   const ariaLabel =

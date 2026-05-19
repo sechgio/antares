@@ -47,15 +47,17 @@ class WorkScheduler:
         self.light_workers = max(1, light_workers)
         self.heavy_workers = max(1, heavy_workers)
         self.heavy_queue_limit = max(0, heavy_queue_limit)
+        
+        # Unified pool size: enough for all light tasks + heavy concurrency limit.
+        # We don't want heavy tasks to be able to occupy more than self.heavy_workers 
+        # threads at once, but we want a shared pool for efficiency.
+        self._max_total_workers = self.light_workers + self.heavy_workers
+        self._executor = ThreadPoolExecutor(
+            max_workers=self._max_total_workers,
+            thread_name_prefix="handler-pool",
+        )
+        
         self.heavy_capacity = self.heavy_workers + self.heavy_queue_limit
-        self._light_executor = ThreadPoolExecutor(
-            max_workers=self.light_workers,
-            thread_name_prefix="handler-light",
-        )
-        self._heavy_executor = ThreadPoolExecutor(
-            max_workers=self.heavy_workers,
-            thread_name_prefix="handler-heavy",
-        )
         self._heavy_slots = threading.BoundedSemaphore(self.heavy_capacity)
         self._lock = threading.RLock()
         self._heavy_outstanding = 0
@@ -76,7 +78,7 @@ class WorkScheduler:
 
     def submit_light(self, fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Future:
         """Submit latency-sensitive work that should not wait behind heavy jobs."""
-        return self._light_executor.submit(fn, *args, **kwargs)
+        return self._executor.submit(fn, *args, **kwargs)
 
     def submit_heavy(
         self,
@@ -113,7 +115,7 @@ class WorkScheduler:
                     self._heavy_completed += 1
                 self._heavy_slots.release()
 
-        return self._heavy_executor.submit(_wrapped)
+        return self._executor.submit(_wrapped)
 
     def _acquire_heavy_slot(
         self,
@@ -137,11 +139,11 @@ class WorkScheduler:
                 return True
             time.sleep(0)
 
-    def metrics(self) -> dict[str, int]:
+    def metrics(self) -> dict[str, Any]:
         """Return internal queue/worker metrics for diagnostics."""
         with self._lock:
             queued = max(0, self._heavy_outstanding - self._heavy_active)
-            return {
+            m = {
                 "light_workers": self.light_workers,
                 "heavy_workers": self.heavy_workers,
                 "heavy_queue_limit": self.heavy_queue_limit,
@@ -154,11 +156,19 @@ class WorkScheduler:
                 "heavy_submitted": self._heavy_submitted,
                 "heavy_completed": self._heavy_completed,
             }
+            try:
+                import psutil
+                vm = psutil.virtual_memory()
+                m["system_ram_total_mb"] = int(vm.total / (1024 * 1024))
+                m["system_ram_available_mb"] = int(vm.available / (1024 * 1024))
+                m["system_ram_percent"] = vm.percent
+            except ImportError:
+                pass
+            return m
 
     def shutdown(self, *, wait: bool = True) -> None:
-        """Shut down both executors."""
-        self._light_executor.shutdown(wait=wait, cancel_futures=True)
-        self._heavy_executor.shutdown(wait=wait, cancel_futures=True)
+        """Shut down the unified executor."""
+        self._executor.shutdown(wait=wait, cancel_futures=True)
 
 
 _scheduler: WorkScheduler | None = None

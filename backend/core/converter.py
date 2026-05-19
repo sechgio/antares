@@ -227,6 +227,16 @@ def convertir_a_preview(
         msg = f"No se encontró: {ruta_origen}"
         raise FileNotFoundError(msg)
 
+    # Cache lookup
+    from backend.core.preview_cache import get_preview_cache
+    
+    resize_key = f"{resize[0]}x{resize[1]}" if resize and len(resize) == 2 else "none"
+    cache_key = f"{ruta_origen}:{formato_salida}:{calidad}:{resize_key}"
+    cache = get_preview_cache()
+    cached_result = cache.get(cache_key)
+    if cached_result:
+        return cached_result
+
     formato = formato_salida.upper()
     pil_formato = PIL_FORMAT_MAP.get(formato, formato)
 
@@ -259,9 +269,12 @@ def convertir_a_preview(
         data = base64.b64encode(buffer.read()).decode("ascii")
 
     mime = "image/png" if pil_formato == "PNG" else f"image/{pil_formato.lower()}"
-    return {
+    result = {
         "preview": f"data:{mime};base64,{data}",
         "width": str(orig_w),
         "height": str(orig_h),
         "orig_size_kb": str(orig_size_kb),
     }
+    
+    cache.set(cache_key, result)
+    return result

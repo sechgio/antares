@@ -18,7 +18,10 @@ export function useBackendStatus(): BackendStatusResult {
   const backendStateRef = useRef<BackendState>('unknown');
   const lastPollAtRef = useRef(0);
 
+  const isPollingRef = useRef(false);
   const pollStatus = useCallback(async () => {
+    if (isPollingRef.current) return;
+    isPollingRef.current = true;
     try {
       const status = await getBackendStatus();
       if (!mountedRef.current) return;
@@ -33,6 +36,8 @@ export function useBackendStatus(): BackendStatusResult {
     } catch {
       // IPC not available yet — backend is still booting or Electron not ready
       if (mountedRef.current) setBackendState('starting');
+    } finally {
+      isPollingRef.current = false;
     }
   }, []);
 
