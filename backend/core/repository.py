@@ -33,9 +33,9 @@ def get_connection(db_path: Path) -> sqlite3.Connection:
             _db_conn = sqlite3.connect(current_path, check_same_thread=False, isolation_level=None)
             _db_conn.execute("PRAGMA journal_mode=WAL")
             _db_conn.execute("PRAGMA synchronous=NORMAL")
-            _db_conn.execute("PRAGMA cache_size=-64000")
-            _db_conn.execute("PRAGMA temp_store=MEMORY")
-            _db_conn.execute("PRAGMA mmap_size=268435456")
+            _db_conn.execute("PRAGMA cache_size=-16000")
+            _db_conn.execute("PRAGMA temp_store=FILE")
+            _db_conn.execute("PRAGMA mmap_size=67108864")
             _db_conn.execute("PRAGMA page_size=4096")
             _db_conn.row_factory = sqlite3.Row
             _db_conn_path = current_path

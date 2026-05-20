@@ -1,10 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import TitleBar from './TitleBar';
+import { DialogProvider } from '../../hooks/useDialog';
+
+function renderTitleBar() {
+  return render(
+    <DialogProvider>
+      <TitleBar />
+    </DialogProvider>,
+  );
+}
 
 describe('TitleBar', () => {
   it('renders the Spanish app menu and themed titlebar container', () => {
-    render(<TitleBar />);
+    renderTitleBar();
 
     const titlebar = screen.getByTestId('app-titlebar');
     expect(titlebar).toHaveClass('bg-[var(--bg-surface)]');
@@ -28,7 +37,7 @@ describe('TitleBar', () => {
       closeWindow,
     };
 
-    render(<TitleBar />);
+    renderTitleBar();
 
     fireEvent.click(screen.getByRole('button', { name: 'Minimizar' }));
     fireEvent.click(screen.getByRole('button', { name: 'Maximizar' }));
@@ -47,7 +56,7 @@ describe('TitleBar', () => {
       showAppMenu,
     };
 
-    render(<TitleBar />);
+    renderTitleBar();
 
     fireEvent.click(screen.getByRole('button', { name: 'Ver' }));
 

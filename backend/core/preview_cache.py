@@ -45,7 +45,7 @@ class PreviewCache:
         with self._lock:
             self._cache.clear()
 
-_preview_cache = PreviewCache(max_size=200, ttl_seconds=600)
+_preview_cache = PreviewCache(max_size=75, ttl_seconds=180)
 
 def get_preview_cache() -> PreviewCache:
     """Return the global preview cache singleton."""

@@ -62,7 +62,7 @@ class LRUCache<K, V> {
   }
 }
 
-const previewCache = new LRUCache<string, PreviewCacheEntry>(100, 5 * 60 * 1000);
+const previewCache = new LRUCache<string, PreviewCacheEntry>(50, 2 * 60 * 1000);
 
 function cacheKey(path: string, formato: string, calidad: number, resize: string): string {
   return `${path}::${formato}::${calidad}::${resize}`;

@@ -42,7 +42,7 @@ def _detect_max_concurrent() -> int:
 
 
 MAX_CONCURRENT_DEFAULT = _detect_max_concurrent()
-MAX_COMPLETED_JOBS = 50
+MAX_COMPLETED_JOBS = 15
 
 
 @dataclass

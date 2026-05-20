@@ -1,4 +1,4 @@
-import React, { useState, Suspense, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, Suspense, useMemo, useCallback } from 'react';
 import Sidebar from './components/layout/Sidebar';
 import TitleBar from './components/layout/TitleBar';
 import BackendStatusBar from './components/layout/BackendStatusBar';
@@ -20,19 +20,6 @@ const ImageOptimizerView = React.lazy(() => import('./components/image-optimizer
 const PreviewPanelView = React.lazy(() => import('./components/preview-panel/PreviewPanelView'));
 const TechnicalReportsView = React.lazy(() => import('./components/technical-reports'));
 const PanelAvisoCorteView = React.lazy(() => import('./components/panel-aviso-corte'));
-
-const LAZY_MODULES = [
-  () => import('./components/formatos/FormatosView'),
-  () => import('./components/padron/PadronView'),
-  () => import('./components/volantes/VolantesView'),
-  () => import('./components/reportes-campo'),
-  () => import('./components/technical-reports'),
-  () => import('./components/history/HistoryView'),
-  () => import('./components/settings/AppearanceView'),
-  () => import('./components/image-optimizer'),
-  () => import('./components/preview-panel/PreviewPanelView'),
-  () => import('./components/panel-aviso-corte'),
-];
 
 const FULL_BLEED_TABS = new Set(['padron', 'volantes', 'reportesCampo', 'technicalReports', 'formatos', 'imageOptimizer', 'previewPanel', 'panelAvisoCorte']);
 
@@ -66,16 +53,6 @@ function ElectronOnlyNotice() {
 function AppContent() {
   const [activeTab, setActiveTab] = useState<TabId>('convert');
   const [commandOpen, setCommandOpen] = useState(false);
-
-  // Prefetch lazy modules after mount for faster tab switching
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      for (const loader of LAZY_MODULES) {
-        loader().catch(() => {});
-      }
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, []);
 
   const openCommandPalette = useCallback(() => setCommandOpen(true), []);
   const handleTabChange = useCallback((tab: TabId) => setActiveTab(tab), []);

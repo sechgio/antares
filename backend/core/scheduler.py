@@ -28,8 +28,8 @@ def _detect_limits() -> tuple[int, int, int]:
         available_gb = 4
 
     light_workers = max(2, min(cpu_count, 4))
-    ram_limited_heavy = max(1, int(available_gb // 2))
-    heavy_workers = max(2, min(max(1, cpu_count // 2), ram_limited_heavy, 8))
+    ram_limited_heavy = max(1, int(available_gb // 3))
+    heavy_workers = max(2, min(max(1, cpu_count // 2), ram_limited_heavy, 6))
     heavy_queue_limit = max(heavy_workers, heavy_workers * 2)
     return light_workers, heavy_workers, heavy_queue_limit
 

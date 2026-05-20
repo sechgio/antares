@@ -32,8 +32,8 @@ const START_RETRY_LIMIT = 5;             // spawn retry count per start cycle
 const MAX_AUTO_RESTARTS = Infinity;      // keep recovering from transient failures while the app is open
 const MAX_RESTART_BACKOFF_SEC = 30;      // cap backoff at 30s
 const RESTART_RESET_MS = 60_000;         // time of stability before counter resets
-const STDERR_BUFFER_LINES = 60;          // rolling stderr tail
-const HEALTH_CHECK_INTERVAL_MS = 5_000;  // detect crashes faster
+const STDERR_BUFFER_LINES = 30;          // rolling stderr tail
+const HEALTH_CHECK_INTERVAL_MS = 15_000; // detect crashes faster
 const HEALTH_PROBE_TIMEOUT_MS = 3_000;   // version probe is cheap — should answer in <1s
 
 let pythonProcess = null;
