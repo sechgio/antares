@@ -300,7 +300,7 @@ export default function VolantesView() {
             Como usar
           </button>
           <button
-            className="v-btn v-btn-outline"
+            className="v-btn v-btn-outline vgen-btn-template"
             onClick={handleExportTemplate}
             title="Descargar Plantilla Excel"
           >
@@ -320,7 +320,7 @@ export default function VolantesView() {
             </svg>
             Plantilla
           </button>
-          <label className="v-btn v-btn-outline">
+          <label className="v-btn v-btn-outline vgen-btn-import">
             <svg
               width="16"
               height="16"
@@ -342,7 +342,7 @@ export default function VolantesView() {
             />
           </label>
           <button
-            className="v-btn v-btn-primary"
+            className="v-btn v-btn-primary vgen-btn-export-all"
             onClick={handleExportAllPdf}
             type="button"
           >
@@ -615,7 +615,7 @@ export default function VolantesView() {
 
       {selectedRecord && (
         <button
-          className={`vgen-fab ${isSizePanelOpen ? "active" : ""}`}
+          className={`vgen-fab vgen-fab-size ${isSizePanelOpen ? "active" : ""}`}
           onClick={() => setIsSizePanelOpen(!isSizePanelOpen)}
           title="Configurar tamaño de textos"
           type="button"

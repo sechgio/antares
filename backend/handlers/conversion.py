@@ -37,26 +37,32 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     file_seqs = {}
     codigos_manuales = {}
     codigos_list = []
+    stems = []
     for f in files:
-        code, seq = parse_filename_parts(Path(f).name)
-        codigos_manuales[Path(f).name] = code
+        p = Path(f)
+        code, seq = parse_filename_parts(p.name)
+        codigos_manuales[p.name] = code
         codigos_list.append(code)
+        stems.append(p.stem)
         if use_filename_seq:
-            file_seqs[Path(f).name] = seq
+            file_seqs[p.name] = seq
 
     if key_column:
-        db_cache = buscar_por_columna(codigos_list, key_column)
+        # Buscamos por código parseado y por stem completo para máxima compatibilidad
+        db_cache = buscar_por_columna(list(set(codigos_list + stems)), key_column)
         res: list[tuple[str, str, bool]] = []
         seq_backup = engine.secuencia
         for f in files:
-            code = codigos_manuales[Path(f).name]
-            datos = db_cache.get(code)
+            p = Path(f)
+            code = codigos_manuales[p.name]
+            stem = p.stem
+            datos = db_cache.get(code) or db_cache.get(stem)
             if datos:
-                fseq = file_seqs.get(Path(f).name) if use_filename_seq else None
+                fseq = file_seqs.get(p.name) if use_filename_seq else None
                 nombre_nuevo = engine.aplicar(f, datos_bd=datos, codigo_manual=code, file_seq=fseq)
                 res.append((f, nombre_nuevo, True))
             else:
-                res.append((f, Path(f).name, False))
+                res.append((f, p.name, False))
         engine.secuencia = seq_backup
     elif use_column_rename:
         db_cache = {str(i): rec for i, rec in enumerate(obtener_todos(limit=len(files)))}
@@ -230,9 +236,6 @@ def _run_conversion_job(job: Job) -> None:
         _last_notify_time = 0.0
         _NOTIFY_INTERVAL = 0.5
         _min_progress_delta = 1  # Minimum progress change to trigger notification (1%)
-
-        # --- FIX H4: Use as_completed instead of polling loop ---
-        # Submit in chunks to bound memory usage with large batches.
 
         try:
             for chunk_start in range(0, len(files), CHUNK_SIZE):
@@ -413,7 +416,9 @@ def _prepare_chunk_tasks(
         if key_column:
             from backend.core.database import buscar_por_columna
             codigos = [parse_filename_parts(Path(f).name)[0] for f in chunk_files]
-            db_cache = buscar_por_columna(codigos, key_column)
+            stems = [Path(f).stem for f in chunk_files]
+            # Buscamos por código parseado y por stem completo
+            db_cache = buscar_por_columna(list(set(codigos + stems)), key_column)
         elif use_column_rename:
             from backend.core.database import obtener_todos
             all_records = obtener_todos(limit=len(chunk_files), offset=global_offset)
@@ -429,8 +434,10 @@ def _prepare_chunk_tasks(
         is_video_file = es_video(p)
         if engine:
             codigo, seq = parse_filename_parts(p.name)
+            stem = p.stem
             if key_column:
-                datos = db_cache.get(codigo)
+                # Intentamos buscar por el código parseado o por el stem completo
+                datos = db_cache.get(codigo) or db_cache.get(stem)
                 if datos:
                     fseq = seq if use_filename_seq else None
                     nuevo_nombre = engine.aplicar(p, datos_bd=datos, codigo_manual=codigo, file_seq=fseq)

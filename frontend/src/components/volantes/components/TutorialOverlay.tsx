@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface TutorialStep {
   title: string;
   description: string;
   icon: React.ReactNode;
+  selector?: string;
 }
 
 const steps: TutorialStep[] = [
@@ -19,6 +20,7 @@ const steps: TutorialStep[] = [
         <line x1="12" y1="3" x2="12" y2="15" />
       </svg>
     ),
+    selector: ".vgen-btn-import",
   },
   {
     title: "Paso 2: Selecciona un registro",
@@ -31,6 +33,7 @@ const steps: TutorialStep[] = [
         <path d="M9 21V9" />
       </svg>
     ),
+    selector: ".vgen-fab-records",
   },
   {
     title: "Paso 3: Edita los datos",
@@ -42,6 +45,7 @@ const steps: TutorialStep[] = [
         <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
       </svg>
     ),
+    selector: ".vgen-sidebar",
   },
   {
     title: "Paso 4: Ajusta el tamaño de texto",
@@ -53,6 +57,7 @@ const steps: TutorialStep[] = [
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
       </svg>
     ),
+    selector: ".vgen-fab-size",
   },
   {
     title: "Paso 5: Elige el formato",
@@ -64,6 +69,7 @@ const steps: TutorialStep[] = [
         <path d="M3 12h18" />
       </svg>
     ),
+    selector: ".vgen-layout-toggle",
   },
   {
     title: "Paso 6: Exporta a PDF",
@@ -76,6 +82,7 @@ const steps: TutorialStep[] = [
         <line x1="12" y1="15" x2="12" y2="3" />
       </svg>
     ),
+    selector: ".vgen-btn-export-all",
   },
 ];
 
@@ -84,8 +91,90 @@ interface TutorialOverlayProps {
   onClose: () => void;
 }
 
+interface TargetRect {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+}
+
 export default function TutorialOverlay({ isOpen, onClose }: TutorialOverlayProps) {
   const [currentStep, setCurrentStep] = useState(0);
+  const [targetRect, setTargetRect] = useState<TargetRect | null>(null);
+  const spotlightRef = useRef<HTMLDivElement | null>(null);
+
+  // Reset step to 0 whenever the tutorial opens
+  useEffect(() => {
+    if (isOpen) {
+      setCurrentStep(0);
+    }
+  }, [isOpen]);
+
+  // Measure target element position, avoiding infinite loops from MutationObserver
+  const measureTarget = useCallback(() => {
+    const activeStep = steps[currentStep];
+    if (!activeStep?.selector) {
+      setTargetRect(null);
+      return;
+    }
+    const element = document.querySelector(activeStep.selector);
+    if (element) {
+      const rect = element.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setTargetRect((prev) => {
+          // Avoid unnecessary state updates that would re-trigger renders
+          if (
+            prev &&
+            Math.abs(prev.top - rect.top) < 1 &&
+            Math.abs(prev.left - rect.left) < 1 &&
+            Math.abs(prev.width - rect.width) < 1 &&
+            Math.abs(prev.height - rect.height) < 1
+          ) {
+            return prev;
+          }
+          return {
+            top: rect.top,
+            left: rect.left,
+            width: rect.width,
+            height: rect.height,
+          };
+        });
+        return;
+      }
+    }
+    setTargetRect(null);
+  }, [currentStep]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setTargetRect(null);
+      return;
+    }
+
+    // Initial measurement + delayed re-measure for layout shifts
+    measureTarget();
+    const timer = setTimeout(measureTarget, 200);
+
+    window.addEventListener("resize", measureTarget);
+    window.addEventListener("scroll", measureTarget, true);
+
+    // Only observe childList changes, NOT attribute changes (avoids infinite
+    // loops caused by framer-motion updating style attributes on the spotlight
+    // ring itself, which would re-trigger the observer endlessly).
+    const observer = new MutationObserver(measureTarget);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: false,
+    });
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("resize", measureTarget);
+      window.removeEventListener("scroll", measureTarget, true);
+      observer.disconnect();
+    };
+  }, [isOpen, measureTarget]);
 
   const handleNext = () => {
     if (currentStep < steps.length - 1) {
@@ -109,14 +198,72 @@ export default function TutorialOverlay({ isOpen, onClose }: TutorialOverlayProp
     <AnimatePresence>
       {isOpen && (
         <>
+          {/* Full-screen SVG backdrop with spotlight cutout */}
           <motion.div
-            className="tutorial-backdrop"
+            className="tutorial-backdrop-container"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-          />
+          >
+            <svg
+              style={{
+                position: "absolute",
+                width: "100%",
+                height: "100%",
+                pointerEvents: "none",
+              }}
+            >
+              <defs>
+                {targetRect && (
+                  <mask id="tutorial-spotlight-mask">
+                    <rect x="0" y="0" width="100%" height="100%" fill="white" />
+                    <motion.rect
+                      animate={{
+                        x: targetRect.left - 8,
+                        y: targetRect.top - 8,
+                        width: targetRect.width + 16,
+                        height: targetRect.height + 16,
+                      }}
+                      transition={{ type: "spring", stiffness: 300, damping: 28 }}
+                      rx="12"
+                      ry="12"
+                      fill="black"
+                    />
+                  </mask>
+                )}
+              </defs>
+              <rect
+                x="0"
+                y="0"
+                width="100%"
+                height="100%"
+                fill="rgba(0, 0, 0, 0.65)"
+                mask={targetRect ? "url(#tutorial-spotlight-mask)" : undefined}
+              />
+            </svg>
+          </motion.div>
 
+          {/* Glowing spotlight ring — rendered OUTSIDE the backdrop to avoid
+              triggering onClose when the user clicks on the ring area */}
+          {targetRect && (
+            <motion.div
+              ref={spotlightRef}
+              className="tutorial-spotlight-ring"
+              initial={{ opacity: 0 }}
+              animate={{
+                opacity: 1,
+                x: targetRect.left - 8,
+                y: targetRect.top - 8,
+                width: targetRect.width + 16,
+                height: targetRect.height + 16,
+              }}
+              exit={{ opacity: 0 }}
+              transition={{ type: "spring", stiffness: 300, damping: 28 }}
+            />
+          )}
+
+          {/* Central dialog card — always stays centred in the viewport */}
           <motion.div
             className="tutorial-overlay"
             initial={{ opacity: 0, scale: 0.9, y: 20 }}

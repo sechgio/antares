@@ -4,7 +4,7 @@ import { RenamePattern, DBRecord } from '../../types';
 import { useFileSelection } from '../../hooks/useFileSelection';
 import { useProcessRunner } from '../../hooks/useProcessRunner';
 import { useToast } from '../../hooks/useToast';
-import { buildDefaultPresets, buildColumnPresets, isVideoByExt, DEFAULT_FORMATS, DEFAULT_FIELDS, DEFAULT_PATTERN, parsePositiveInt } from './helpers';
+import { buildDefaultPresets, isVideoByExt, DEFAULT_FORMATS, DEFAULT_FIELDS, DEFAULT_PATTERN, parsePositiveInt } from './helpers';
 import ConversionPresets, { ConversionConfig } from './ConversionPresets';
 import Dropzone from './Dropzone';
 import FileGrid from './FileGrid';
@@ -37,8 +37,6 @@ export default function ConversionView() {
   const [dragOver, setDragOver] = useState(false);
   const [dbColumns, setDbColumns] = useState<string[]>([]);
   const [dbRecords, setDbRecords] = useState<DBRecord[]>([]);
-  const [columnPresets, setColumnPresets] = useState<RenamePattern[]>([]);
-  const [useColumnRename, setUseColumnRename] = useState(false);
   const [keyColumn, setKeyColumn] = useState('');
 
   const { selectedFile, setSelectedFile, selectedFiles, setSelectedFiles, handleFileClick, handleFileDoubleClick, selectAllFiles } = useFileSelection(files);
@@ -46,9 +44,8 @@ export default function ConversionView() {
   const { addToast } = useToast();
 
   const namingPresets = useMemo(() => {
-    if (useColumnRename && columnPresets.length > 0) return columnPresets;
     return patterns.length > 0 ? patterns : buildDefaultPresets(fields);
-  }, [patterns, fields, useColumnRename, columnPresets]);
+  }, [patterns, fields]);
   const resizeWidth = resizeEnabled ? parsePositiveInt(resizeAncho) : null;
   const resizeHeight = resizeEnabled ? parsePositiveInt(resizeAlto) : null;
   const filesReady = files.length > 0;
@@ -147,10 +144,6 @@ export default function ConversionView() {
         const r = dbColumnsResult.value;
         setDbColumns(r.columns ?? []);
         setDbRecords(r.records ?? []);
-        if (r.columns && r.columns.length > 0) {
-          const colPresets = buildColumnPresets(r.columns);
-          setColumnPresets(colPresets);
-        }
       }
     });
 
@@ -187,10 +180,6 @@ export default function ConversionView() {
       const result = await api.getDbColumns();
       setDbColumns(result.columns);
       setDbRecords(result.records);
-      if (result.columns.length > 0) {
-        const colPresets = buildColumnPresets(result.columns);
-        setColumnPresets(colPresets);
-      }
     } catch (err) {
       console.error('Error loading DB columns:', err);
     }
@@ -244,7 +233,6 @@ export default function ConversionView() {
       resize_alto: parsePositiveInt(resizeAlto),
       keep_exif: keepExif, usar_rename: usarRename, patron, secuencia,
       use_filename_seq: useFilenameSeq,
-      use_column_rename: useColumnRename,
       key_column: keyColumn || undefined,
     });
   };
@@ -533,12 +521,10 @@ export default function ConversionView() {
               fields={fields}
               dbColumns={dbColumns}
               dbRecords={dbRecords}
-              useColumnRename={useColumnRename}
-              onToggleColumnRename={(v) => { setUseColumnRename(v); if (v) setKeyColumn(''); }}
               onInsertVar={insertVar}
               hasVideos={videoFiles.size > 0}
               keyColumn={keyColumn}
-              onKeyColumnChange={(col) => { setKeyColumn(col); if (col) setUseColumnRename(false); }}
+              onKeyColumnChange={(col) => { setKeyColumn(col); if (col) setUsarRename(true); }}
             />
           </div>
         </div>

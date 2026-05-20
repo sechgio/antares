@@ -2040,6 +2040,35 @@ textarea.vgen-input {
     backdrop-filter: blur(4px);
 }
 
+.tutorial-backdrop-container {
+    position: fixed;
+    inset: 0;
+    z-index: 9998;
+    pointer-events: auto;
+}
+
+.tutorial-spotlight-ring {
+    position: fixed;
+    left: 0;
+    top: 0;
+    pointer-events: none;
+    border: 2px solid var(--vgen-accent);
+    border-radius: 12px;
+    z-index: 9999;
+    animation: spotlight-pulse 2s infinite ease-in-out;
+}
+
+@keyframes spotlight-pulse {
+    0%, 100% {
+        box-shadow: 0 0 0 4px rgba(242, 100, 34, 0.15), 0 0 15px var(--vgen-accent), inset 0 0 8px var(--vgen-accent);
+        border-color: var(--vgen-accent);
+    }
+    50% {
+        box-shadow: 0 0 0 8px rgba(242, 100, 34, 0.35), 0 0 25px var(--vgen-accent), inset 0 0 14px var(--vgen-accent);
+        border-color: #ff844f;
+    }
+}
+
 .tutorial-overlay {
     position: fixed;
     top: 50%;
