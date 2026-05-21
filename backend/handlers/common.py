@@ -21,6 +21,29 @@ def with_locale(fn: Callable[..., Any]) -> Callable[..., Any]:
     return wrapper
 
 
+# Keys whose values are always treated as filesystem paths.
+_KNOWN_PATH_KEYS: frozenset[str] = frozenset({
+    "files", "destino", "path", "folder",
+    "directory", "output", "source", "target", "filename", "filepath",
+})
+
+# Heuristic suffixes catching newer handler params (e.g. "output_path",
+# "input_folder", "logo_file"). Mirrored from ``backend.ipc_protocol`` so
+# both validation layers cover the same surface.
+_PATH_KEY_SUFFIXES: tuple[str, ...] = (
+    "_path", "_paths", "_folder", "_folders", "_dir", "_directory",
+    "_file", "_files", "_filename",
+)
+
+
+def _looks_like_path_key(key: str) -> bool:
+    """Heuristic: does this key name imply its value is a filesystem path?"""
+    if key in _KNOWN_PATH_KEYS:
+        return True
+    lowered = key.lower()
+    return any(lowered.endswith(suffix) for suffix in _PATH_KEY_SUFFIXES)
+
+
 def validate_params(*required_params):
     """Decorator to validate required parameters."""
     def decorator(fn):
@@ -30,13 +53,16 @@ def validate_params(*required_params):
                 if param not in params or params[param] is None:
                     msg = f"Missing required parameter: {param}"
                     raise ValueError(msg)
-            for key in ["files", "destino", "path", "folder"]:
-                if params.get(key):
-                    if isinstance(params[key], list):
-                        for f in params[key]:
-                            _validate_path(f)
-                    else:
-                        _validate_path(params[key])
+            for key, value in params.items():
+                if value is None:
+                    continue
+                if not _looks_like_path_key(key):
+                    continue
+                if isinstance(value, list):
+                    for f in value:
+                        _validate_path(f)
+                elif isinstance(value, str):
+                    _validate_path(value)
             return fn(params)
         return wrapper
     return decorator

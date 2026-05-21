@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ImagePlus, X, Upload } from 'lucide-react';
 import { ARIA_LABELS, ACCEPTED_IMAGE_TYPES, ACCEPTED_IMAGE_EXTENSIONS } from '../constants';
 import type { LogoAsset } from '../types';
@@ -11,11 +11,19 @@ interface Props {
 export default function LogoPicker({ right, onRight }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Auto-dismiss the error after a few seconds so it doesn't linger.
+  useEffect(() => {
+    if (!errorMessage) return;
+    const timer = setTimeout(() => setErrorMessage(null), 4000);
+    return () => clearTimeout(timer);
+  }, [errorMessage]);
 
   const handleFile = useCallback((file: File | null) => {
     if (!file) return;
     const err = onRight(file);
-    if (err) alert(err);
+    setErrorMessage(err ?? null);
   }, [onRight]);
 
   const openFilePicker = useCallback(() => {
@@ -113,6 +121,15 @@ export default function LogoPicker({ right, onRight }: Props) {
         className="hidden"
         onChange={handleInputChange}
       />
+      {errorMessage && (
+        <p
+          role="alert"
+          aria-live="polite"
+          className="text-[11px] text-red-400"
+        >
+          {errorMessage}
+        </p>
+      )}
     </div>
   );
 }

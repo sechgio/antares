@@ -33,18 +33,44 @@ def validate_method(method: str) -> bool:
     return bool(re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", method))
 
 
+# Keys whose values are always treated as filesystem paths.
+_KNOWN_PATH_KEYS: frozenset[str] = frozenset({
+    "files", "destino", "path", "folder", "name",
+    "directory", "output", "source", "target", "filename", "filepath",
+})
+
+# Heuristic suffixes for keys that newer handlers may use without us knowing.
+# Catches things like "output_path", "input_folder", "logo_file", "src_dir", etc.
+_PATH_KEY_SUFFIXES: tuple[str, ...] = (
+    "_path", "_paths", "_folder", "_folders", "_dir", "_directory",
+    "_file", "_files", "_filename",
+)
+
+
+def _looks_like_path_key(key: str) -> bool:
+    """Heuristic: does this key name imply its value is a filesystem path?"""
+    if key in _KNOWN_PATH_KEYS:
+        return True
+    lowered = key.lower()
+    return any(lowered.endswith(suffix) for suffix in _PATH_KEY_SUFFIXES)
+
+
 def validate_params(params: dict) -> bool:
     """Validate params dict for basic safety.
 
     Delegates to backend.handlers.common._validate_path for consistency
-    with the handler-side validator.
+    with the handler-side validator. This is defense-in-depth — the handler
+    decorators are still the authoritative validator. We extend the check
+    with a key-name heuristic so handlers that use non-canonical key names
+    (e.g. ``output_path``) still get a path-traversal screen at this layer.
     """
     if not isinstance(params, dict):
         return False
 
-    for key in ("files", "destino", "path", "folder", "name"):
-        value = params.get(key)
+    for key, value in params.items():
         if value is None:
+            continue
+        if not _looks_like_path_key(key):
             continue
         if isinstance(value, list):
             for item in value:

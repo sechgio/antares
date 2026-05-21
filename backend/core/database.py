@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import re
 import sqlite3
@@ -191,8 +190,17 @@ def init_db() -> None:
             _create_indexes(cursor, fields)
             cursor.execute("COMMIT")
         except Exception as exc:
-            with contextlib.suppress(sqlite3.Error):
+            try:
                 cursor.execute("ROLLBACK")
+            except sqlite3.Error as rollback_exc:
+                # Don't shadow the original failure, but surface this for
+                # post-mortem debugging — silent suppression hid real DB
+                # corruption issues in the past.
+                logger.error(
+                    "ROLLBACK failed after migration error (%s): %s",
+                    type(exc).__name__,
+                    rollback_exc,
+                )
             raise DatabaseError(f"Inicialización/migración de base de datos fallida: {exc}") from exc
 
 

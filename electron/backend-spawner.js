@@ -47,6 +47,7 @@ let _lastError = null;                   // { kind: 'fatal'|'transient', message
 let _healthCheckTimer = null;            // periodic health check interval
 let _healthProbeInFlight = false;        // avoid overlapping liveness probes
 let _startInProgress = false;            // prevents concurrent start/restart cycles
+let _manualRestartInProgress = false;    // synchronous claim for manualRestart() concurrency
 let _pendingRequestCount = 0;            // track in-flight IPC requests to avoid killing busy backend
 
 // Promise-based readiness gate; resolves when state === READY,
@@ -301,6 +302,13 @@ async function runHealthCheckOnce() {
       console.log(`[backend-spawner] Health probe timed out but ${_pendingRequestCount} request(s) in flight — skipping restart (backend is busy, not dead).`);
       return;
     }
+    // Re-check synchronously immediately before triggering a restart: a new
+    // request could have arrived between the probe failing and this point
+    // (await boundaries are scheduling points). Avoid killing it mid-flight.
+    if (_pendingRequestCount > 0) {
+      console.log(`[backend-spawner] Pending request arrived during probe failure handling — skipping restart.`);
+      return;
+    }
     const message = `Backend no responde al chequeo de salud: ${err.message}`;
     _lastError = { kind: 'transient', message, stderrTail: getStderrTail() };
     console.warn(`[backend-spawner] ${message}`);
@@ -480,28 +488,34 @@ async function manualRestart(isDev, { force = false } = {}) {
   if (!force && _state === STATE.READY && pythonProcess && !pythonProcess.killed) {
     return true;
   }
-  if (_startInProgress) {
+  // Synchronous claim — both concurrent callers cannot pass this guard.
+  // _startInProgress alone is insufficient because it is only flipped inside
+  // startPythonBackend's `attempt === 1` branch, leaving a window where two
+  // manualRestart() calls both see it as false.
+  if (_manualRestartInProgress || _startInProgress) {
     console.warn('[backend-spawner] Manual restart skipped: start already in progress.');
     return false;
   }
-
-  // Kill any lingering process (handles Windows zombie processes)
-  _forceKillProcess(pythonProcess);
-  pythonProcess = null;
-  _stopHealthCheck();
-
-  // Reset ANY state so startPythonBackend can proceed — even if previously fatal.
-  _state = STATE.IDLE;
-  _restartCount = 0;
-  _lastError = null;
-  _stderrBuffer = [];
-  _isShuttingDown = false;
+  _manualRestartInProgress = true;
 
   try {
+    // Kill any lingering process (handles Windows zombie processes)
+    _forceKillProcess(pythonProcess);
+    pythonProcess = null;
+    _stopHealthCheck();
+
+    // Reset ANY state so startPythonBackend can proceed — even if previously fatal.
+    _state = STATE.IDLE;
+    _restartCount = 0;
+    _lastError = null;
+    _stderrBuffer = [];
+    _isShuttingDown = false;
+
     await startPythonBackend(isDev);
     return isReady();
   } finally {
     _startInProgress = false;
+    _manualRestartInProgress = false;
   }
 }
 

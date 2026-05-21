@@ -1,6 +1,6 @@
 {
   "name": "antares-app",
-  "version": "0.6.13",
+  "version": "0.6.14",
   "description": "Conversor y renombrador profesional de imágenes — nativo de escritorio",
   "author": "ANTARES <dev@antares.app>",
   "private": true,
