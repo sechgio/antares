@@ -301,6 +301,12 @@ function processJinja2Template(
       if (TEMPLATE_KEY_MAP[key]) {
         reportData[TEMPLATE_KEY_MAP[key]] = value;
       }
+      // Also store under the original Excel column name so templates
+      // that reference it directly (e.g. 'Nro OT') can resolve it.
+      const excelCol = mappings[key];
+      if (excelCol) {
+        reportData[excelCol] = value;
+      }
     });
 
     customColumns.forEach(col => {

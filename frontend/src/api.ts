@@ -62,7 +62,7 @@ const _sanitizeHtmlForPdf = (html: string): string => {
     .replace(/url\(\s*(['"]?)(.+?)\1\s*\)/gi, (match, _quote, urlValue: string) => {
       return urlValue.trim().toLowerCase().startsWith('data:') ? match : "url('')";
     });
-  const cspMeta = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:; font-src data:;">';
+  const cspMeta = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data: file:; font-src data:;">';
   const injectedHtml = stripped.replace(/<head([^>]*)>/i, `<head$1>${cspMeta}`);
   return /<head/i.test(injectedHtml) ? injectedHtml : cspMeta + injectedHtml;
 };
@@ -275,7 +275,7 @@ export const api = {
   templateGet: (name: string) => _invoke<{ name: string; content: string }>('template_get', { name }),
 
   // ─── Render HTML to PDF via Electron ─────────────────────────────────────
-  htmlToPdf: (body: { html: string; filename: string }) =>
+  htmlToPdf: (body: { html: string; filename: string; localImagePaths?: Record<string, string> }) =>
     _invoke<{ pdf_base64: string; filename: string }>('html_to_pdf', {
       ...body,
       html: _sanitizeHtmlForPdf(body.html),

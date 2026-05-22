@@ -14,7 +14,7 @@ import {
 } from './utils';
 import {
   buildPdfFilename,
-  imageToPdfDataUrl,
+  imageToPdfSource,
   mergeHtmlDocuments,
   selectRowsForPdfExport,
   type PdfExportScope,
@@ -476,12 +476,20 @@ export default function PreviewPanelView() {
         ? `Generando PDF consolidado (${selectedRows.length})...`
         : 'Generando PDF...');
 
+      const localImagePaths: Record<string, string> = {};
       const documents = await Promise.all(selectedRows.map(async item => {
-        const imageUrls = await Promise.all(item.images.map(img => imageToPdfDataUrl(img, pdfQuality)));
+        const imageSources = await Promise.all(item.images.map((img, imageIndex) =>
+          imageToPdfSource(img, pdfQuality, `row-${item.rowIndex}-img-${imageIndex}`)
+        ));
+        imageSources.forEach(source => {
+          if (source.token && source.localPath) {
+            localImagePaths[source.token] = source.localPath;
+          }
+        });
         return renderPreviewHtml({
           data: item.row,
           images: item.images,
-          imageUrls,
+          imageUrls: imageSources.map(source => source.src),
           mappings,
           logoLeft,
           logoRight,
@@ -496,7 +504,11 @@ export default function PreviewPanelView() {
         templateName: customTemplate?.name,
         idValue: selectedRows[0]?.idValue,
       });
-      const res = await api.htmlToPdf({ html, filename });
+      const res = await api.htmlToPdf({
+        html,
+        filename,
+        localImagePaths: Object.keys(localImagePaths).length > 0 ? localImagePaths : undefined,
+      });
       saveBlob(base64ToPdfBlob(res.pdf_base64), res.filename || filename);
       addToast({
         message: exportScope === 'all' ? 'PDF consolidado generado correctamente.' : 'PDF generado correctamente.',

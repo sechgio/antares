@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildLocalImageToken,
   buildPdfFilename,
+  imageToPdfSource,
   mergeHtmlDocuments,
   selectRowsForPdfExport,
 } from './pdfExport';
@@ -80,5 +82,17 @@ describe('preview panel PDF export helpers', () => {
     expect(html).toContain('<div class="page">Uno</div>');
     expect(html).toContain('<div class="page">Dos</div>');
     expect(html).toContain('@page { size: A4 portrait; margin: 0; }');
+  });
+
+  it('uses local file references for high quality export when Electron exposes a path', async () => {
+    const source = await imageToPdfSource(
+      { name: 'foto.jpg', path: 'C:\\tmp\\foto.jpg' } as unknown as File,
+      'high',
+      'row-1-img-0',
+    );
+
+    expect(source.src).toBe(buildLocalImageToken('row-1-img-0'));
+    expect(source.token).toBe(source.src);
+    expect(source.localPath).toBe('C:\\tmp\\foto.jpg');
   });
 });

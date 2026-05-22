@@ -56,6 +56,13 @@ async function run() {
       this.closed = false;
       this.listeners = {};
       this.webContents = {
+        session: {
+          webRequest: {
+            onBeforeRequest: (_filter, callback) => {
+              this.onBeforeRequest = callback;
+            },
+          },
+        },
         once: (event, callback) => {
           this.listeners[event] = callback;
         },
@@ -103,6 +110,31 @@ async function run() {
   assert(pdfWindow.closed === true, 'html_to_pdf should close the hidden window');
   assert(!pdfWindow.loadedHtml.includes('<script'), 'html_to_pdf should strip script tags');
   assert(!pdfWindow.loadedHtml.includes('file:///etc/passwd'), 'html_to_pdf should block local file URLs');
+
+  const allowedImagePath = process.platform === 'win32' ? 'C:\\tmp\\foto.jpg' : '/tmp/foto.jpg';
+  const pdfWithLocalImage = await handleDialogCall(
+    'html_to_pdf',
+    {
+      html: '<!doctype html><html><body><img src="antares-local-image:row-1-img-0"><img src="file:///etc/passwd"></body></html>',
+      filename: 'local.pdf',
+      localImagePaths: { 'antares-local-image:row-1-img-0': allowedImagePath },
+    },
+    dialog,
+    win,
+    { BrowserWindow: FakeBrowserWindow },
+  );
+  const localImageWindow = FakeBrowserWindow.instances[1];
+  assert(pdfWithLocalImage.handled === true, 'html_to_pdf should accept disk-backed image references');
+  assert(localImageWindow.loadedHtml.includes('file://'), 'html_to_pdf should replace local image tokens with file URLs');
+  assert(!localImageWindow.loadedHtml.includes('antares-local-image:row-1-img-0'), 'html_to_pdf should remove local image tokens before rendering');
+
+  let allowedDecision = null;
+  localImageWindow.onBeforeRequest({ url: localImageWindow.loadedHtml.match(/src="([^"]+)"/)[1] }, decision => { allowedDecision = decision; });
+  assert(allowedDecision.cancel === false, 'html_to_pdf should allow only registered local image files');
+
+  let blockedDecision = null;
+  localImageWindow.onBeforeRequest({ url: 'file:///etc/passwd' }, decision => { blockedDecision = decision; });
+  assert(blockedDecision.cancel === true, 'html_to_pdf should block unregistered local file URLs');
 
   console.log(`\n${'='.repeat(50)}`);
   console.log(`Results: ${passed} passed, ${failed} failed`);

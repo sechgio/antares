@@ -1,6 +1,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { pathToFileURL } = require('url');
 
 const DIALOG_METHODS = new Set(['dialog_files', 'dialog_folder', 'dialog_dest', 'dialog_save']);
 const NATIVE_METHODS = new Set([...DIALOG_METHODS, 'html_to_pdf']);
@@ -15,9 +16,25 @@ function _sanitizeHtmlForPdf(html) {
     .replace(/url\(\s*(['"]?)(.+?)\1\s*\)/gi, (match, _quote, urlValue) => {
       return String(urlValue).trim().toLowerCase().startsWith('data:') ? match : "url('')";
     });
-  const cspMeta = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:; font-src data:;">';
+  const cspMeta = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data: file:; font-src data:;">';
   const injectedHtml = stripped.replace(/<head([^>]*)>/i, `<head$1>${cspMeta}`);
   return /<head/i.test(injectedHtml) ? injectedHtml : cspMeta + injectedHtml;
+}
+
+function _localImageEntries(rawPaths) {
+  if (!rawPaths || typeof rawPaths !== 'object' || Array.isArray(rawPaths)) return [];
+  const allowedExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif', '.tif', '.tiff', '.ico']);
+
+  return Object.entries(rawPaths).flatMap(([token, rawPath]) => {
+    if (typeof token !== 'string' || !/^antares-local-image:[a-zA-Z0-9_-]{1,120}$/.test(token)) return [];
+    if (typeof rawPath !== 'string' || !path.isAbsolute(rawPath)) return [];
+    if (!allowedExtensions.has(path.extname(rawPath).toLowerCase())) return [];
+    return [{ token, fileUrl: pathToFileURL(rawPath).toString() }];
+  });
+}
+
+function _injectLocalImageUrls(html, localImages) {
+  return localImages.reduce((current, entry) => current.split(entry.token).join(entry.fileUrl), html);
 }
 
 function _sanitizeFilename(name) {
@@ -47,9 +64,13 @@ async function renderHtmlToPdf(params = {}, electronModules = {}) {
     throw new Error('HTML requerido para generar PDF');
   }
 
-  const MAX_HTML_BYTES = 10 * 1024 * 1024; // 10 MB
+  const localImages = _localImageEntries(params.localImagePaths);
+  const htmlWithLocalImages = _injectLocalImageUrls(html, localImages);
+  const allowedFileUrls = new Set(localImages.map(entry => entry.fileUrl));
+
+  const MAX_HTML_BYTES = 150 * 1024 * 1024; // 150 MB
   if (Buffer.byteLength(html, 'utf8') > MAX_HTML_BYTES) {
-    throw new Error('HTML excede el tamaño máximo permitido (10 MB)');
+    throw new Error('HTML excede el tamaño máximo permitido (150 MB)');
   }
 
   const { BrowserWindow } = electronModules;
@@ -69,7 +90,7 @@ async function renderHtmlToPdf(params = {}, electronModules = {}) {
   // Block external resource loads to prevent SSRF
   if (pdfWindow.webContents.session && pdfWindow.webContents.session.webRequest) {
     pdfWindow.webContents.session.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, callback) => {
-      if (details.url.startsWith('file://') || details.url.startsWith('data:')) {
+      if (details.url.startsWith('data:') || allowedFileUrls.has(details.url)) {
         callback({ cancel: false });
       } else {
         callback({ cancel: true });
@@ -81,7 +102,9 @@ async function renderHtmlToPdf(params = {}, electronModules = {}) {
   try {
     tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'antares-pdf-'));
     const htmlPath = path.join(tempDir, 'render.html');
-    await fs.promises.writeFile(htmlPath, _sanitizeHtmlForPdf(html), 'utf8');
+    const htmlUrl = pathToFileURL(htmlPath).toString();
+    allowedFileUrls.add(htmlUrl);
+    await fs.promises.writeFile(htmlPath, _sanitizeHtmlForPdf(htmlWithLocalImages), 'utf8');
 
     const didFinishLoad = new Promise((resolve, reject) => {
       pdfWindow.webContents.once('did-finish-load', resolve);
