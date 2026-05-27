@@ -1,21 +1,20 @@
 import { matchesRecordId, naturalSortByName } from './utils';
+export {
+  buildLocalImageToken,
+  fileToDataUrl,
+  imageToPdfDataUrl,
+  imageToPdfSource,
+  type PdfImageSource,
+} from '../../utils/pdfAssets';
 
 export type PdfExportScope = 'single' | 'all';
 export type PdfQuality = 'high' | 'low';
-
-const LOCAL_IMAGE_TOKEN_PREFIX = 'antares-local-image:';
 
 export interface PdfExportRow {
   row: Record<string, unknown>;
   rowIndex: number;
   idValue: string;
   images: File[];
-}
-
-export interface PdfImageSource {
-  src: string;
-  localPath?: string;
-  token?: string;
 }
 
 export function safeFilenamePart(value: unknown): string {
@@ -122,91 +121,4 @@ ${head}
 ${body}
 </body>
 </html>`;
-}
-
-export function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(reader.error || new Error('No se pudo leer la imagen'));
-    reader.readAsDataURL(file);
-  });
-}
-
-function getElectronFilePath(file: File): string | null {
-  const maybePath = (file as File & { path?: unknown }).path;
-  if (typeof maybePath !== 'string' || !maybePath.trim()) return null;
-  return maybePath;
-}
-
-export function buildLocalImageToken(key: string): string {
-  return `${LOCAL_IMAGE_TOKEN_PREFIX}${key.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-}
-
-function compressImageForPdf(
-  file: File,
-  options: { maxSide: number; quality: number },
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-
-    img.onload = () => {
-      try {
-        const { maxSide, quality } = options;
-        const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
-        const width = Math.max(1, Math.round(img.naturalWidth * scale));
-        const height = Math.max(1, Math.round(img.naturalHeight * scale));
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) throw new Error('Canvas no disponible');
-        ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      } catch (err) {
-        reject(err);
-      } finally {
-        URL.revokeObjectURL(url);
-      }
-    };
-
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('No se pudo optimizar la imagen'));
-    };
-
-    img.src = url;
-  });
-}
-
-export async function imageToPdfDataUrl(file: File, quality: PdfQuality): Promise<string> {
-  if (quality === 'high') {
-    try {
-      return await compressImageForPdf(file, { maxSide: 2600, quality: 0.9 });
-    } catch {
-      return fileToDataUrl(file);
-    }
-  }
-  try {
-    return await compressImageForPdf(file, { maxSide: 1400, quality: 0.68 });
-  } catch {
-    return fileToDataUrl(file);
-  }
-}
-
-export async function imageToPdfSource(
-  file: File,
-  quality: PdfQuality,
-  key: string,
-): Promise<PdfImageSource> {
-  if (quality === 'high') {
-    const localPath = getElectronFilePath(file);
-    if (localPath) {
-      const token = buildLocalImageToken(key);
-      return { src: token, localPath, token };
-    }
-  }
-
-  return { src: await imageToPdfDataUrl(file, quality) };
 }

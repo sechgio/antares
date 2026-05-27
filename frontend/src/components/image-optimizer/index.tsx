@@ -27,23 +27,7 @@ import {
   downloadBlob,
 } from './utils';
 import { api } from '../../api';
-
-async function saveToHistory(label: string, details: Record<string, unknown>, count = 1) {
-  try {
-    await api.historySave({
-      run_type: 'image_optimizer',
-      files: [label],
-      options: details,
-      formato: label,
-      patron: '',
-      calidad: 0,
-      resize: null,
-      ok_count: count,
-      err_count: 0,
-    });
-  } catch {
-  }
-}
+import { saveFeatureHistory } from '../../utils/history';
 
 export default function ImageOptimizer() {
   const [items, setItems] = useState<ImageItem[]>([]);
@@ -315,7 +299,7 @@ export default function ImageOptimizer() {
 
     const nameMap = buildDownloadNameMap(entries.map((entry) => entry.item), settingsRef.current);
 
-    if (settingsRef.current.export.mode === 'individual' || entries.length === 1) {
+    if (entries.length === 1) {
       entries.forEach((entry, index) => {
         const filename = nameMap.get(entry.item.id) || entry.item.originalName;
         window.setTimeout(() => downloadBlob(entry.blob, filename), index * 120);
@@ -352,13 +336,8 @@ export default function ImageOptimizer() {
       addToast(`ZIP generado con ${entries.length} archivo(s).`, 'success', 2400);
     } catch (error) {
       console.error('ZIP creation failed', error);
-      // Fallback to individual downloads
-      entries.forEach((entry, index) => {
-        const filename = nameMap.get(entry.item.id) || entry.item.originalName;
-        window.setTimeout(() => downloadBlob(entry.blob, filename), index * 120);
-      });
       const message = error instanceof Error ? error.message : 'Error desconocido';
-      addToast(`Fallo el ZIP (${message}); se descargaron individualmente.`, 'error', 3800);
+      addToast(`No se pudo generar el ZIP: ${message}.`, 'error', 4200);
     }
   }, [addToast, getResolvedBlob]);
 
@@ -420,7 +399,8 @@ export default function ImageOptimizer() {
     // Save to history
     const errorCount = targets.length - successCount;
     const settingsJson = JSON.stringify(settingsRef.current);
-    saveToHistory(
+    saveFeatureHistory(
+      'image_optimizer',
       `Lote ${successCount + errorCount} imágenes`,
       {
         preset: activePresetId || 'custom',

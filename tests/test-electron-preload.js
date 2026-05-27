@@ -54,6 +54,10 @@ async function run() {
     assert(invokeCalls[0][0] === 'ipc-call', 'dialog_files should be forwarded through ipc-call');
     assert(invokeCalls[0][1] === 'dialog_files', 'dialog_files should stay allowlisted');
 
+    await exposedApi.invoke('db_columns');
+    assert(invokeCalls[1][0] === 'ipc-call', 'db_columns should be forwarded through ipc-call');
+    assert(invokeCalls[1][1] === 'db_columns', 'db_columns should stay allowlisted');
+
     let rejected = false;
     try {
       await exposedApi.invoke('totally_unknown_method');

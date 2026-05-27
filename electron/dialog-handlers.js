@@ -48,6 +48,14 @@ function _sanitizeFilename(name) {
   return safe || 'reporte.pdf';
 }
 
+function _sanitizePdfOutputPath(outputPath, fallbackFilename) {
+  if (typeof outputPath !== 'string' || !outputPath.trim()) return null;
+  const resolved = path.resolve(outputPath);
+  const dir = path.dirname(resolved);
+  const safeName = _sanitizeFilename(path.basename(resolved) || fallbackFilename);
+  return path.join(dir, safeName);
+}
+
 function resultFromOpenDialog(response) {
   if (response.canceled) return { paths: [] };
   return { paths: response.filePaths || [] };
@@ -122,10 +130,26 @@ async function renderHtmlToPdf(params = {}, electronModules = {}) {
       pageSize: 'A4',
       margins: { marginType: 'none' },
     });
+    const filename = _sanitizeFilename(params.filename) || 'reporte.pdf';
+    const outputPath = _sanitizePdfOutputPath(params.outputPath, filename);
+
+    if (outputPath) {
+      await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
+      await fs.promises.writeFile(outputPath, pdfBuffer);
+      return {
+        saved_path: outputPath,
+        filename: path.basename(outputPath),
+      };
+    }
+
+    const MAX_IPC_PDF_BYTES = 256 * 1024 * 1024;
+    if (Buffer.byteLength(pdfBuffer) > MAX_IPC_PDF_BYTES) {
+      throw new Error('El PDF generado es demasiado grande para devolverlo por IPC. Guarda el PDF directamente en disco.');
+    }
 
     return {
       pdf_base64: Buffer.from(pdfBuffer).toString('base64'),
-      filename: _sanitizeFilename(params.filename) || 'reporte.pdf',
+      filename,
     };
   } finally {
     if (!pdfWindow.isDestroyed()) {

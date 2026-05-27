@@ -13,24 +13,7 @@ import { sanitizeMultilineText, toSlugId } from "./utils/format";
 import { exportPagesToPdf } from "./utils/pdf";
 import { importSpreadsheet, exportTemplateWorkbook } from "./utils/import";
 import { useToast } from "../../hooks/useToast";
-import { api } from "../../api";
-
-async function saveToHistory(runType: string, label: string, details: Record<string, unknown>, count = 1) {
-  try {
-    await api.historySave({
-      run_type: runType,
-      files: [label],
-      options: details,
-      formato: label,
-      patron: '',
-      calidad: 0,
-      resize: null,
-      ok_count: count,
-      err_count: 0,
-    });
-  } catch {
-  }
-}
+import { saveFeatureHistory } from "../../utils/history";
 
 const defaultBrand: BrandConfig = {
   logoIzquierdo: DEFAULT_BRAND.logoIzquierdo,
@@ -78,7 +61,7 @@ export default function VolantesView() {
         const layoutNum = pendingExport.mode === "2-up" ? "2" : "3";
         const fileName = `${pendingExport.record.reservorio}_${layoutNum}`;
         await exportPagesToPdf(container, pendingExport.mode, fileName);
-        await saveToHistory(
+        await saveFeatureHistory(
           "volante",
           fileName,
           { layoutMode: pendingExport.mode, reservorio: pendingExport.record.reservorio, single: true },
@@ -204,7 +187,7 @@ export default function VolantesView() {
         : `volantes_${layoutNum}`;
       await exportPagesToPdf(previewRef.current, layoutMode, fileName);
       addToast({ message: "PDF generado correctamente", type: "success" });
-      await saveToHistory(
+      await saveFeatureHistory(
         "volante",
         fileName,
         { layoutMode, reservorio: selectedRecord?.reservorio || "", records: records.length },

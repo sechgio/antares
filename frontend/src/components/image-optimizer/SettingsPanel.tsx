@@ -215,25 +215,18 @@ export default function SettingsPanel({
         accentColor="#6366F1"
         enabled={true}
       >
-        <SegmentedControl
-          value={settings.export.mode}
-          options={[
-            { value: 'zip', label: 'ZIP' },
-            { value: 'individual', label: 'Individual' },
-          ]}
-          onChange={(value) => onUpdateSettings((draft) => { draft.export.mode = value; })}
-        />
-        {settings.export.mode === 'zip' ? (
-          <label className="block space-y-1.5 pt-1">
-            <span className="text-[10px] font-mono uppercase tracking-widest text-[var(--text-muted)]">Nombre ZIP</span>
-            <input
-              type="text"
-              value={settings.export.zipName}
-              onChange={(e) => onUpdateSettings((draft) => { draft.export.zipName = e.target.value; })}
-              className="w-full rounded-lg border border-[var(--border-medium)] bg-[var(--bg-base)] px-3 py-2 text-[11px] font-mono text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent-primary)]"
-            />
-          </label>
-        ) : null}
+        <label className="block space-y-1.5">
+          <span className="text-[10px] font-mono uppercase tracking-widest text-[var(--text-muted)]">Carpeta ZIP</span>
+          <input
+            type="text"
+            value={settings.export.zipName}
+            onChange={(e) => onUpdateSettings((draft) => {
+              draft.export.mode = 'zip';
+              draft.export.zipName = e.target.value;
+            })}
+            className="w-full rounded-lg border border-[var(--border-medium)] bg-[var(--bg-base)] px-3 py-2 text-[11px] font-mono text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent-primary)]"
+          />
+        </label>
       </OperationSection>
     </aside>
   );

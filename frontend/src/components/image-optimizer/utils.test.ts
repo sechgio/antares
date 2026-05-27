@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_BATCH_SETTINGS } from './presets';
 import { BatchSettings, ImageItem } from './types';
-import { buildDownloadNameMap, reorderImageItems } from './utils';
+import { buildDownloadNameMap, buildZipFilename, reorderImageItems } from './utils';
 
 function makeItem(id: string, originalName: string): ImageItem {
   return {
@@ -75,5 +75,19 @@ describe('image optimizer queue order', () => {
     expect(names.get('third')).toBe('foto_001.jpg');
     expect(names.get('first')).toBe('foto_002.jpg');
     expect(names.get('second')).toBe('foto_003.jpg');
+  });
+});
+
+describe('image optimizer zip export', () => {
+  it('keeps a single zip extension when the user includes it', () => {
+    const settings: BatchSettings = {
+      ...DEFAULT_BATCH_SETTINGS,
+      export: {
+        mode: 'zip',
+        zipName: 'fotos_cliente.zip',
+      },
+    };
+
+    expect(buildZipFilename(settings)).toBe('fotos_cliente.zip');
   });
 });

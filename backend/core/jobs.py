@@ -20,11 +20,48 @@ from backend.core.state import ProcessState
 
 logger = logging.getLogger(__name__)
 
+# =============================================================================
+# LEGACY SINGLE-JOB COMPATIBILITY LAYER
+# =============================================================================
+# DEFAULT_JOB_ID and the fallback behavior in resolve_job_id() exist solely
+# to keep the old frontend single-job API (process_start / process_status /
+# process_cancel without job_id) working without changes.
+#
+# The modern multi-job system (JobManager + jobs_* IPC methods) is fully
+# implemented and exposed, but the frontend (api.ts) has not yet migrated.
+#
+# DO NOT add new features that only work on the modern path while leaving
+# the legacy path broken. When the frontend is updated, this layer (and
+# the dual notification logic in conversion.py) can be removed.
+# =============================================================================
+
 DEFAULT_JOB_ID = "default"
 
 
+def resolve_job_id(params: dict[str, Any], *, default: str = DEFAULT_JOB_ID) -> str:
+    """Resolve job_id from incoming params.
+
+    Falls back to DEFAULT_JOB_ID for backward compatibility with legacy
+    single-job frontend code. All new code should prefer passing explicit job_id.
+    """
+    return params.get("job_id", default)
+
+
+def is_legacy_default_job(job_id: str) -> bool:
+    """True when the job_id matches the legacy single-job identifier."""
+    return job_id == DEFAULT_JOB_ID
+
+
 def _detect_max_concurrent() -> int:
-    """Auto-detect max concurrent jobs based on CPU cores and RAM."""
+    """Auto-detect max concurrent jobs based on CPU cores and RAM.
+
+    Note: This is intentionally separate from WorkScheduler._detect_limits().
+    JobManager limits the number of top-level concurrent user operations
+    (conversion jobs, formato generations, etc.).
+    The Scheduler then further limits heavy work *inside* those jobs.
+    See scheduler.py for the sibling detector. Changes here should be
+    coordinated with the heavy slot budget.
+    """
     try:
         cpu_count = os.cpu_count() or 2
         # Try to get available RAM (Windows/Linux/macOS)

@@ -2,6 +2,8 @@
 
 Supports concurrent jobs via JobManager while maintaining backward compatibility
 with the legacy single-job frontend API.
+
+See backend/core/jobs.py for the full explanation of the legacy layer.
 """
 from __future__ import annotations
 
@@ -11,7 +13,12 @@ from pathlib import Path
 from typing import Any
 
 from backend.core.converter import FORMATOS_SOPORTADOS, convertir_imagen, copiar_archivo, copiar_video, es_video
-from backend.core.jobs import DEFAULT_JOB_ID, Job, get_job_manager
+from backend.core.jobs import (
+    Job,
+    get_job_manager,
+    is_legacy_default_job,
+    resolve_job_id,
+)
 from backend.core.renamer import RenamerEngine
 from backend.core.scheduler import get_scheduler
 from backend.handlers.common import log_message, validate_params, with_locale
@@ -96,7 +103,7 @@ def process_start(params: dict[str, Any]) -> dict[str, Any]:
         log_message(t("error.no_destination"), "error")
         return {"started": False, "reason": "no_destination"}
 
-    job_id = params.get("job_id", DEFAULT_JOB_ID)
+    job_id = resolve_job_id(params)
     mgr = get_job_manager()
 
     existing = mgr.get_job(job_id)
@@ -126,7 +133,7 @@ def process_status(params: dict[str, Any]) -> dict[str, Any]:
 
     Accepts optional job_id. Falls back to "default" for backward compat.
     """
-    job_id = params.get("job_id", DEFAULT_JOB_ID)
+    job_id = resolve_job_id(params)
     mgr = get_job_manager()
     job = mgr.get_job(job_id)
     if job:
@@ -148,7 +155,7 @@ def process_cancel(params: dict[str, Any]) -> dict[str, Any]:
 
     Accepts optional job_id. Falls back to "default" for backward compat.
     """
-    job_id = params.get("job_id", DEFAULT_JOB_ID)
+    job_id = resolve_job_id(params)
     mgr = get_job_manager()
     result = mgr.cancel_job(job_id)
     if result.get("cancelled"):
@@ -174,7 +181,7 @@ def _run_conversion_job(job: Job) -> None:
     state = job.state
     params = job.params
     job_id = job.id
-    is_default = job_id == DEFAULT_JOB_ID
+    is_default = is_legacy_default_job(job_id)
 
     try:
         set_locale(params.get("locale", "es"))
@@ -319,12 +326,7 @@ def _run_conversion_job(job: Job) -> None:
                             "ok_count": ok_count, "err_count": err_count,
                             "job_id": job_id,
                         }
-                        send_notification(f"job.{job_id}.progress", notif_data)
-                        if is_default:
-                            send_notification("process.progress", {
-                                "progress": progress, "current_file": current_file,
-                                "ok_count": ok_count, "err_count": err_count,
-                            })
+                        _emit_progress_notifications(job_id, notif_data, is_default)
 
                     # Check cancellation between completions
                     with state._lock:
@@ -365,13 +367,29 @@ def _run_conversion_job(job: Job) -> None:
             state.running = False
 
 
-def _notify_complete(job: Job, ok_count: int, err_count: int) -> None:
-    """Send job completion notifications."""
-    is_default = job.id == DEFAULT_JOB_ID
+def _emit_progress_notifications(job_id: str, data: dict[str, Any], is_default: bool) -> None:
+    """Send modern job progress notification + legacy one when needed."""
+    send_notification(f"job.{job_id}.progress", data)
+    if is_default:
+        send_notification("process.progress", {
+            "progress": data["progress"],
+            "current_file": data["current_file"],
+            "ok_count": data["ok_count"],
+            "err_count": data["err_count"],
+        })
+
+
+def _emit_complete_notifications(job: Job, ok_count: int, err_count: int) -> None:
+    """Send modern job complete notification + legacy one when needed."""
+    is_default = is_legacy_default_job(job.id)
     notif_data = {"ok_count": ok_count, "err_count": err_count, "job_id": job.id}
     send_notification(f"job.{job.id}.complete", notif_data)
     if is_default:
         send_notification("process.complete", {"ok_count": ok_count, "err_count": err_count})
+
+
+# Backwards-compatible alias (used internally by _run_conversion_job)
+_notify_complete = _emit_complete_notifications
 
 
 HANDLERS = {

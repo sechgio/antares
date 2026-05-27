@@ -1,5 +1,8 @@
 import { api } from '../../api';
+import { downloadBase64Pdf, fileToBase64, fileToDataUrl } from '../../utils/pdfAssets';
 import type { TechnicalReport, TechnicalReportListItem } from './types';
+
+export { downloadBase64Pdf, fileToBase64, fileToDataUrl };
 
 export const technicalReportsApi = {
   list: (summary = true) =>
@@ -22,39 +25,3 @@ export const technicalReportsApi = {
     api.technicalReportsRenderConsolidatedHtml(body),
   htmlToPdf: api.htmlToPdf,
 };
-
-export function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const value = String(reader.result || '');
-      resolve(value.includes(',') ? value.split(',')[1] : value);
-    };
-    reader.onerror = () => reject(reader.error || new Error('No se pudo leer el archivo'));
-    reader.readAsDataURL(file);
-  });
-}
-
-export function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(reader.error || new Error('No se pudo leer el archivo'));
-    reader.readAsDataURL(file);
-  });
-}
-
-export function downloadBase64Pdf(pdf_base64: string, filename: string): void {
-  const binary = atob(pdf_base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  const blob = new Blob([bytes], { type: 'application/pdf' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-}

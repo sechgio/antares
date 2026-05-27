@@ -68,6 +68,23 @@ describe('API Client', () => {
     expect(result.filename).toBe('reporte.pdf');
   });
 
+  it('should pass an output path to HTML PDF renderer for direct saves', async () => {
+    mockInvoke.mockResolvedValue({ saved_path: 'C:\\tmp\\reporte.pdf', filename: 'reporte.pdf' });
+
+    const result = await api.htmlToPdf({
+      html: '<html><body>PDF</body></html>',
+      filename: 'reporte.pdf',
+      outputPath: 'C:\\tmp\\reporte.pdf',
+    });
+
+    expect(mockInvoke).toHaveBeenCalledWith('html_to_pdf', {
+      html: expect.stringContaining('Content-Security-Policy'),
+      filename: 'reporte.pdf',
+      outputPath: 'C:\\tmp\\reporte.pdf',
+    });
+    expect(result.saved_path).toBe('C:\\tmp\\reporte.pdf');
+  });
+
   it('should call technical reports list with correct method', async () => {
     mockInvoke.mockResolvedValue({ reports: [] });
 

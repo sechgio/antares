@@ -3,24 +3,7 @@ import { AlertTriangle, Download, Loader2 } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
 import { useDialog } from '../../hooks/useDialog';
 import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut';
-import { api } from '../../api';
-
-async function saveToHistory(label: string, details: Record<string, unknown>, count = 1) {
-  try {
-    await api.historySave({
-      run_type: 'panel_aviso_corte',
-      files: [label],
-      options: details,
-      formato: label,
-      patron: '',
-      calidad: 0,
-      resize: null,
-      ok_count: count,
-      err_count: 0,
-    });
-  } catch {
-  }
-}
+import { saveFeatureHistory } from '../../utils/history';
 import { usePanelSession } from './hooks/usePanelSession';
 import { exportPanelDocument } from './utils/exportPdf';
 import { MSG_CUADRANTE_REQUIRED, MSG_NO_PANELS } from './constants';
@@ -69,7 +52,7 @@ export default function PanelAvisoCorteApp() {
         imageMap,
         exportFormat,
       );
-      await saveToHistory(filename, { format: exportFormat, panels: session.previewPanels.length }, session.previewPanels.length);
+      await saveFeatureHistory('panel_aviso_corte', filename, { format: exportFormat, panels: session.previewPanels.length }, session.previewPanels.length);
       addToast({ message: `Exportado: ${filename}`, type: 'success' });
     } catch (e: any) {
       addToast({ message: e?.message || `Error al exportar ${exportFormat.toUpperCase()}`, type: 'error' });

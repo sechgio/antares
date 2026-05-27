@@ -136,6 +136,32 @@ async function run() {
   localImageWindow.onBeforeRequest({ url: 'file:///etc/passwd' }, decision => { blockedDecision = decision; });
   assert(blockedDecision.cancel === true, 'html_to_pdf should block unregistered local file URLs');
 
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'antares-dialog-test-'));
+  try {
+    const outputPath = path.join(tempDir, 'salida.pdf');
+    const pdfToDisk = await handleDialogCall(
+      'html_to_pdf',
+      {
+        html: '<!doctype html><html><body>PDF directo</body></html>',
+        filename: 'ignored.pdf',
+        outputPath,
+      },
+      dialog,
+      win,
+      { BrowserWindow: FakeBrowserWindow },
+    );
+
+    assert(pdfToDisk.handled === true, 'html_to_pdf should handle direct-to-disk export');
+    assert(pdfToDisk.result.saved_path === outputPath, 'html_to_pdf should return the saved PDF path');
+    assert(pdfToDisk.result.pdf_base64 === undefined, 'html_to_pdf should skip base64 when saving to disk');
+    assert((await fs.promises.readFile(outputPath, 'utf8')) === '%PDF-test', 'html_to_pdf should write PDF bytes to disk');
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+
   console.log(`\n${'='.repeat(50)}`);
   console.log(`Results: ${passed} passed, ${failed} failed`);
   console.log('='.repeat(50));

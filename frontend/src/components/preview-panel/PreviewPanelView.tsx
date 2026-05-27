@@ -47,24 +47,6 @@ const CUSTOM_COLS_KEY = 'antares_preview_custom_columns';
 const PERSISTED_LOGO_MAX_EDGE = 900;
 const PERSISTED_LOGO_QUALITY = 0.86;
 
-function base64ToPdfBlob(base64: string): Blob {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return new Blob([bytes.buffer], { type: 'application/pdf' });
-}
-
-function saveBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 function loadPersistedLogo(key: string): { dataUrl: string; fileName: string } | null {
   try {
     const raw = localStorage.getItem(key);
@@ -472,6 +454,22 @@ export default function PreviewPanelView() {
           : 'No hay una vista previa lista para exportar.');
       }
 
+      const filename = buildPdfFilename({
+        exportScope,
+        templateName: customTemplate?.name,
+        idValue: selectedRows[0]?.idValue,
+      });
+      const saveTarget = await api.dialogSave({
+        title: 'Guardar PDF',
+        defaultPath: filename,
+        filters: [
+          { name: 'PDF', extensions: ['pdf'] },
+          { name: 'Todos los archivos', extensions: ['*'] },
+        ],
+      });
+      const outputPath = saveTarget.paths[0];
+      if (!outputPath) return;
+
       setPdfLoadingMessage(exportScope === 'all'
         ? `Generando PDF consolidado (${selectedRows.length})...`
         : 'Generando PDF...');
@@ -499,19 +497,16 @@ export default function PreviewPanelView() {
       }));
 
       const html = exportScope === 'all' ? mergeHtmlDocuments(documents) : documents[0];
-      const filename = buildPdfFilename({
-        exportScope,
-        templateName: customTemplate?.name,
-        idValue: selectedRows[0]?.idValue,
-      });
       const res = await api.htmlToPdf({
         html,
         filename,
+        outputPath,
         localImagePaths: Object.keys(localImagePaths).length > 0 ? localImagePaths : undefined,
       });
-      saveBlob(base64ToPdfBlob(res.pdf_base64), res.filename || filename);
       addToast({
-        message: exportScope === 'all' ? 'PDF consolidado generado correctamente.' : 'PDF generado correctamente.',
+        message: res.saved_path
+          ? `PDF guardado: ${res.filename || filename}`
+          : 'PDF generado correctamente.',
         type: 'success',
       });
     } catch (err) {

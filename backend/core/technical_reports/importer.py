@@ -45,6 +45,7 @@ COLUMN_MAPPING = {
     "sede": "cs",
     "localidad": "cs",
     "contratista": "contratista",
+    "sgio": "sgio",
     "codigoinfraestructura": "codigo_infraestructura",
     "codinfraestructura": "codigo_infraestructura",
     "infraestructura": "codigo_infraestructura",
@@ -339,6 +340,7 @@ def transform_flat_to_nested(row: dict[str, Any], fallback_report_number: int = 
     report["header"].update({
         "cs": _safe_str(row.get("cs")),
         "contratista": _safe_str(row.get("contratista")),
+        "sgio": _safe_str(row.get("sgio")),
         "codigo_infraestructura": _safe_str(row.get("codigo_infraestructura")),
         "ubicacion": _safe_str(row.get("ubicacion")),
         "suministro": _safe_str(row.get("suministro")),

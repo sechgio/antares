@@ -49,7 +49,7 @@
             page-break-after: auto;
         }
 
-        /* Header - logos only, no center title */
+        /* Header */
         .header {
             display: flex;
             justify-content: space-between;
@@ -67,6 +67,16 @@
             align-items: center;
             justify-content: center;
             background: #fff;
+        }
+
+        .header-title {
+            flex: 1;
+            text-align: center;
+            font-size: 14pt;
+            font-weight: bold;
+            color: #0066cc;
+            text-transform: uppercase;
+            white-space: nowrap;
         }
 
         .header-logo img {
@@ -330,7 +340,7 @@
 <body>
     {% for report in reports %}
     <div class="page">
-        <!-- Header - Logos only -->
+        <!-- Header -->
         <header class="header">
             <div class="header-logo">
                 {% if logo_left %}
@@ -338,6 +348,7 @@
                 {% else %}
                 {% endif %}
             </div>
+            <div class="header-title">PANEL FOTOGRÁFICO</div>
             <div class="header-logo">
                 {% if logo_right %}
                 <img src="{{ logo_right }}" alt="Logo Derecho">

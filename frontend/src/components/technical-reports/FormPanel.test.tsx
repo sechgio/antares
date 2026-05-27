@@ -11,6 +11,7 @@ const report: TechnicalReport = {
   header: {
     cs: 'SUR',
     contratista: 'ACCIONA',
+    sgio: '454654001',
     codigo_infraestructura: 'RES-01',
     ubicacion: 'LIMA',
     suministro: '123',

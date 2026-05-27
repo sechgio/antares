@@ -14,7 +14,7 @@
 const { ipcMain, dialog } = require('electron');
 const crypto = require('crypto');
 const { handleDialogCall } = require('./dialog-handlers');
-const { ALLOWED_RENDERER_METHODS } = require('./ipc-methods');
+const { ALLOWED_RENDERER_METHODS, LONG_RUNNING_METHODS } = require('./ipc-methods');
 const {
   getProcess,
   isReady,
@@ -37,25 +37,6 @@ const REQUEST_TIMEOUT_MS = 30_000;         // per-request response timeout — m
 const LONG_REQUEST_TIMEOUT_MS = 300_000;   // 5 min for heavy operations (conversion, PDF generation, ZIP)
 const STARTUP_WAIT_MS = 30_000;            // backend should start in <10s; 30s is a safe margin
 const MID_FLIGHT_RETRIES = 2;              // retries for transient mid-flight errors
-
-// Methods that can take a very long time (bulk conversion, PDF rendering, ZIP creation)
-const LONG_RUNNING_METHODS = new Set([
-  'process_start',
-  'db_import',
-  'db_export',
-  'db_clear',
-  'scan_folder',
-  'preview_image',
-  'formatos_generate',
-  'image_optimizer_zip',
-  'technical_reports_import_file',
-  'technical_reports_render_consolidated_html',
-  'panel_aviso_corte_parse_excel',
-  'technical_reports_render_html',
-  'panel_aviso_corte_render_pdf',
-  'panel_aviso_corte_compute_match',
-  'html_to_pdf',
-]);
 
 /**
  * Allowlist of backend method names that can be called via IPC.
@@ -110,9 +91,8 @@ function _ensureListeners() {
     for (const [, entry] of _pendingRequests) {
       clearTimeout(entry.timeout);
       entry.reject(new Error('Backend process exited while waiting for response'));
+      decrementPendingRequests();
     }
-    // Reset pending count since all in-flight requests are now dead
-    _pendingRequestCount = 0;
     _pendingRequests.clear();
   });
 

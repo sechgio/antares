@@ -18,7 +18,16 @@ class SchedulerBusy(RuntimeError):
 
 
 def _detect_limits() -> tuple[int, int, int]:
-    """Return conservative `(light_workers, heavy_workers, heavy_queue_limit)`."""
+    """Return conservative `(light_workers, heavy_workers, heavy_queue_limit)`.
+
+    Note: This is intentionally separate from JobManager._detect_max_concurrent().
+    Scheduler controls thread-pool + heavy semaphore slots for individual
+    work items (image conversion, PDF render, etc.).
+    JobManager controls how many high-level user jobs can run concurrently.
+    They compose (a job can submit multiple heavy tasks).
+    See jobs.py for the other detector and backend/handlers/conversion.py
+    for how they interact in practice.
+    """
     cpu_count = os.cpu_count() or 2
     try:
         import psutil
@@ -47,16 +56,16 @@ class WorkScheduler:
         self.light_workers = max(1, light_workers)
         self.heavy_workers = max(1, heavy_workers)
         self.heavy_queue_limit = max(0, heavy_queue_limit)
-        
+
         # Unified pool size: enough for all light tasks + heavy concurrency limit.
-        # We don't want heavy tasks to be able to occupy more than self.heavy_workers 
+        # We don't want heavy tasks to be able to occupy more than self.heavy_workers
         # threads at once, but we want a shared pool for efficiency.
         self._max_total_workers = self.light_workers + self.heavy_workers
         self._executor = ThreadPoolExecutor(
             max_workers=self._max_total_workers,
             thread_name_prefix="handler-pool",
         )
-        
+
         self.heavy_capacity = self.heavy_workers + self.heavy_queue_limit
         self._heavy_slots = threading.BoundedSemaphore(self.heavy_capacity)
         self._lock = threading.RLock()

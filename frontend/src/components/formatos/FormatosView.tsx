@@ -4,25 +4,9 @@ import {
     Upload, Trash2, Settings2, Check, X, Plus, FileText, Move, Eye,
 } from 'lucide-react';
 import { api } from '../../api';
+import { saveFeatureHistory } from '../../utils/history';
 import { useToast } from '../../hooks/useToast';
 import { useDialog } from '../../hooks/useDialog';
-
-async function saveToHistory(runType: string, label: string, details: Record<string, unknown>, count = 1) {
-  try {
-    await api.historySave({
-      run_type: runType,
-      files: [label],
-      options: details,
-      formato: label,
-      patron: '',
-      calidad: 0,
-      resize: null,
-      ok_count: count,
-      err_count: 0,
-    });
-  } catch {
-  }
-}
 import type { FormatInfo, VisualMapping } from '../../types';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
@@ -595,7 +579,7 @@ export default function FormatosView() {
             a.click();
             URL.revokeObjectURL(url);
             addToast({ message: 'PDF generado correctamente', type: 'success' });
-            await saveToHistory('formato', selected.nombre, { format_id: selected.id, desde, hasta }, hasta - desde + 1);
+            await saveFeatureHistory('formato', selected.nombre, { format_id: selected.id, desde, hasta }, hasta - desde + 1);
         } catch (e: any) {
             const msg = e?.message || String(e);
             setError(msg);

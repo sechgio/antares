@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from backend.core.jobs import DEFAULT_JOB_ID, get_job_manager
+from backend.core.jobs import get_job_manager, resolve_job_id
 from backend.handlers.common import with_locale
 
 
@@ -34,7 +34,7 @@ def jobs_get(params: dict[str, Any]) -> dict[str, Any]:
     Required params:
         job_id: The job identifier
     """
-    job_id = params.get("job_id", DEFAULT_JOB_ID)
+    job_id = resolve_job_id(params)
     mgr = get_job_manager()
     job = mgr.get_job(job_id)
     if job is None:
@@ -50,7 +50,7 @@ def jobs_cancel(params: dict[str, Any]) -> dict[str, Any]:
     Required params:
         job_id: The job identifier
     """
-    job_id = params.get("job_id", DEFAULT_JOB_ID)
+    job_id = resolve_job_id(params)
     mgr = get_job_manager()
     return mgr.cancel_job(job_id)
 

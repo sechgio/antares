@@ -11,6 +11,7 @@ const report: TechnicalReport = {
   header: {
     cs: 'SUR',
     contratista: 'ACCIONA',
+    sgio: '454654001',
     codigo_infraestructura: 'RES-01',
     ubicacion: 'LIMA',
     suministro: '123',
@@ -76,5 +77,12 @@ describe('PreviewPanel', () => {
     render(<PreviewPanel report={report} logoLeft={null} logoRight={null} />);
 
     expect(screen.getByTestId('preview-check-descarga-critico')).toHaveClass('tr-check-critico');
+  });
+
+  it('shows SGIO alongside contratista in the header table', () => {
+    render(<PreviewPanel report={report} logoLeft={null} logoRight={null} />);
+
+    expect(screen.getByText('454654001')).toBeInTheDocument();
+    expect(screen.getByText('ACCIONA')).toBeInTheDocument();
   });
 });

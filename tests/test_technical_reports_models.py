@@ -5,6 +5,7 @@ def test_empty_report_has_nested_defaults() -> None:
     report = create_empty_report(1)
 
     assert report["id"] == "RPT-0001"
+    assert report["header"]["sgio"] == ""
     assert report["metadata"]["informe_id"] == 1
     assert report["inspeccion"]["caja_registro"] == "unchecked"
     assert report["valvulas"]["impulsion"]["2"] == 0

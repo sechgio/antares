@@ -13,6 +13,7 @@ export interface ReportMetadata {
 export interface ReportHeader {
   cs: string;
   contratista: string;
+  sgio: string;
   codigo_infraestructura: string;
   ubicacion: string;
   suministro: string;

@@ -9,7 +9,7 @@ interface Props {
 const EMPTY_REPORT: TechnicalReport = {
   id: '',
   metadata: { informe_id: 0, dia: 0, mes: '', anio: 0, pagina: '' },
-  header: { cs: '', contratista: '', codigo_infraestructura: '', ubicacion: '', suministro: '', tipo: 'ELEVADO', volumen: 0 },
+  header: { cs: '', contratista: '', sgio: '', codigo_infraestructura: '', ubicacion: '', suministro: '', tipo: 'ELEVADO', volumen: 0 },
   inspeccion: {
     caja_registro: 'unchecked', marco_tapa: 'unchecked', escalera_interior: 'unchecked', escalera_exterior: 'unchecked',
     cuba_interior: 'unchecked', cuba_exterior: 'unchecked', loza_fondo: 'unchecked', loza_techo_interior: 'unchecked',
@@ -113,7 +113,7 @@ export default function PreviewPanel({ report, logoLeft, logoRight }: Props) {
         <table className="tr-paper-table">
           <tbody>
             <tr><th>C.S :</th><td colSpan={3}>{data.header.cs}</td></tr>
-            <tr><th>Contratista :</th><td colSpan={3}>{data.header.contratista}</td></tr>
+            <tr><th>Contratista :</th><td>{data.header.contratista}</td><th>SGIO :</th><td>{data.header.sgio}</td></tr>
             <tr><th>Código de infraestructura :</th><td colSpan={3} className="tr-paper-code">{data.header.codigo_infraestructura}</td></tr>
             <tr><th>Ubicación :</th><td>{data.header.ubicacion}</td><th>Tipo :</th><td>{data.header.tipo}</td></tr>
             <tr><th>Suministro :</th><td>{data.header.suministro}</td><th>Volumen :</th><td>{data.header.volumen}</td></tr>

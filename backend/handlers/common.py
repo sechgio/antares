@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from backend.core.state import ProcessState
 from backend.utils.i18n import set_locale
-from backend.utils.validators import is_safe_user_path
+from backend.utils.validators import is_path_like_key, is_safe_user_path
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -21,31 +21,12 @@ def with_locale(fn: Callable[..., Any]) -> Callable[..., Any]:
     return wrapper
 
 
-# Keys whose values are always treated as filesystem paths.
-_KNOWN_PATH_KEYS: frozenset[str] = frozenset({
-    "files", "destino", "path", "folder",
-    "directory", "output", "source", "target", "filename", "filepath",
-})
-
-# Heuristic suffixes catching newer handler params (e.g. "output_path",
-# "input_folder", "logo_file"). Mirrored from ``backend.ipc_protocol`` so
-# both validation layers cover the same surface.
-_PATH_KEY_SUFFIXES: tuple[str, ...] = (
-    "_path", "_paths", "_folder", "_folders", "_dir", "_directory",
-    "_file", "_files", "_filename",
-)
-
-
-def _looks_like_path_key(key: str) -> bool:
-    """Heuristic: does this key name imply its value is a filesystem path?"""
-    if key in _KNOWN_PATH_KEYS:
-        return True
-    lowered = key.lower()
-    return any(lowered.endswith(suffix) for suffix in _PATH_KEY_SUFFIXES)
-
-
 def validate_params(*required_params):
-    """Decorator to validate required parameters."""
+    """Decorator to validate required parameters.
+
+    Uses the single shared heuristic `is_path_like_key` from validators.py
+    so the IPC layer and handler layer cannot drift apart.
+    """
     def decorator(fn):
         @wraps(fn)
         def wrapper(params: dict[str, Any]) -> Any:
@@ -56,7 +37,7 @@ def validate_params(*required_params):
             for key, value in params.items():
                 if value is None:
                     continue
-                if not _looks_like_path_key(key):
+                if not is_path_like_key(key):
                     continue
                 if isinstance(value, list):
                     for f in value:
@@ -78,7 +59,9 @@ def _validate_path(path: str) -> None:
         raise ValueError(msg)
 
 
-# Legacy singleton for backward compatibility with existing frontend
+# Legacy singleton for backward compatibility with existing frontend.
+# New code should use the per-Job ProcessState inside JobManager instead.
+# See backend/core/jobs.py for context on the legacy single-job surface.
 process_state = ProcessState()
 
 

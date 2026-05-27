@@ -229,7 +229,7 @@ def convertir_a_preview(
 
     # Cache lookup
     from backend.core.preview_cache import get_preview_cache
-    
+
     resize_key = f"{resize[0]}x{resize[1]}" if resize and len(resize) == 2 else "none"
     cache_key = f"{ruta_origen}:{formato_salida}:{calidad}:{resize_key}"
     cache = get_preview_cache()
@@ -275,6 +275,6 @@ def convertir_a_preview(
         "height": str(orig_h),
         "orig_size_kb": str(orig_size_kb),
     }
-    
+
     cache.set(cache_key, result)
     return result

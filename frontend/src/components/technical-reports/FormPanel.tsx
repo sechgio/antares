@@ -69,25 +69,23 @@ export default function FormPanel({ report, hasChanges, busy, logoLeft, logoRigh
           <p className="tr-eyebrow">Editor</p>
           <h2>Informe #{report.metadata.informe_id}</h2>
         </div>
-        <span className={`tr-change-dot ${hasChanges ? 'dirty' : ''}`} />
-      </div>
-
-      <div className="tr-form-actions">
-        <button className="tr-primary" onClick={onSave} disabled={!hasChanges || busy}>
-          <Save size={15} />
-          Guardar
-        </button>
-        <button className="tr-danger tr-icon-button" onClick={onDelete} disabled={busy} aria-label="Eliminar informe" title="Eliminar informe">
-          <Trash2 size={15} />
-        </button>
+        <div className="tr-header-actions">
+          <span className={`tr-change-dot ${hasChanges ? 'dirty' : ''}`} title={hasChanges ? 'Cambios sin guardar' : 'Sin cambios'} />
+          <button className="tr-primary" onClick={onSave} disabled={!hasChanges || busy}>
+            <Save size={15} />
+            Guardar
+          </button>
+          <button className="tr-danger tr-icon-button" onClick={onDelete} disabled={busy} aria-label="Eliminar informe" title="Eliminar informe">
+            <Trash2 size={15} />
+          </button>
+        </div>
       </div>
 
       <div className="tr-form-scroll">
-        <section className="tr-section">
-          <h3>Logos</h3>
-          <div className="tr-logo-grid">
-            <LogoInput label="Izquierdo" value={logoLeft} onChange={(file) => onLogoChange('left', file)} />
-            <LogoInput label="Derecho" value={logoRight} onChange={(file) => onLogoChange('right', file)} />
+        <section className="tr-section tr-section-logos">
+          <div className="tr-logos-bar">
+            <LogoInput side="izq" value={logoLeft} onChange={(file) => onLogoChange('left', file)} />
+            <LogoInput side="der" value={logoRight} onChange={(file) => onLogoChange('right', file)} />
           </div>
         </section>
 
@@ -104,7 +102,10 @@ export default function FormPanel({ report, hasChanges, busy, logoLeft, logoRigh
         <section className="tr-section">
           <h3>Cabecera</h3>
           <Field label="C.S." value={report.header.cs} onChange={(value) => patchHeader('cs', value)} />
-          <Field label="Contratista" value={report.header.contratista} onChange={(value) => patchHeader('contratista', value)} />
+          <div className="tr-grid-2">
+            <Field label="Contratista" value={report.header.contratista} onChange={(value) => patchHeader('contratista', value)} />
+            <Field label="SGIO" value={report.header.sgio} onChange={(value) => patchHeader('sgio', value)} />
+          </div>
           <Field label="Código infraestructura" value={report.header.codigo_infraestructura} onChange={(value) => patchHeader('codigo_infraestructura', value)} />
           <Field label="Ubicación" value={report.header.ubicacion} onChange={(value) => patchHeader('ubicacion', value)} />
           <div className="tr-grid-2">
@@ -186,19 +187,20 @@ export default function FormPanel({ report, hasChanges, busy, logoLeft, logoRigh
   );
 }
 
-function LogoInput({ label, value, onChange }: { label: string; value: string | null; onChange: (file: File | null) => void }) {
+function LogoInput({ side, value, onChange }: { side: 'izq' | 'der'; value: string | null; onChange: (file: File | null) => void }) {
+  const title = side === 'izq' ? 'Logo izquierdo' : 'Logo derecho';
   return (
-    <div className="tr-logo-box">
-      <label className="tr-logo-input">
+    <div className="tr-logo-slot">
+      <label className="tr-logo-input" title={value ? `Cambiar ${title.toLowerCase()}` : `Subir ${title.toLowerCase()}`}>
         <input type="file" accept="image/*" onChange={(event) => onChange(event.target.files?.[0] || null)} />
         {value ? (
-          <img src={value} alt={`Logo ${label}`} />
+          <img src={value} alt={title} />
         ) : (
-          <div className="tr-logo-placeholder">
-            <Upload size={18} />
-            <span>{label}</span>
-          </div>
+          <span className="tr-logo-empty" aria-hidden>
+            <Upload size={13} />
+          </span>
         )}
+        <span className="tr-logo-side">{side}</span>
       </label>
       {value && (
         <button
@@ -208,9 +210,9 @@ function LogoInput({ label, value, onChange }: { label: string; value: string | 
             e.stopPropagation();
             onChange(null);
           }}
-          title="Quitar logo"
+          aria-label={`Quitar ${title.toLowerCase()}`}
         >
-          <X size={12} />
+          <X size={10} />
         </button>
       )}
     </div>

@@ -1,31 +1,14 @@
 import './technical-reports.css';
-import { ChevronLeft, ChevronRight, Download, FilePlus2, Files } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight, Download, FilePlus2, Files, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
 import DatabasePanel from './DatabasePanel';
 import FormPanel from './FormPanel';
 import PreviewPanel from './PreviewPanel';
 import { downloadBase64Pdf, fileToBase64, fileToDataUrl, technicalReportsApi } from './api';
-import { api } from '../../api';
+import { saveFeatureHistory } from '../../utils/history';
 import type { TechnicalReport, TechnicalReportListItem } from './types';
-
-async function saveToHistory(label: string, details: Record<string, unknown>, count = 1) {
-  try {
-    await api.historySave({
-      run_type: 'informe_tecnico',
-      files: [label],
-      options: details,
-      formato: label,
-      patron: '',
-      calidad: 0,
-      resize: null,
-      ok_count: count,
-      err_count: 0,
-    });
-  } catch {
-  }
-}
 
 export default function TechnicalReportsApp() {
   const { addToast } = useToast();
@@ -37,6 +20,7 @@ export default function TechnicalReportsApp() {
   const [busy, setBusy] = useState(false);
   const [logoLeft, setLogoLeft] = useState<string | null>(null);
   const [logoRight, setLogoRight] = useState<string | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const hasChanges = useMemo(() => Boolean(formData && JSON.stringify(formData) !== savedSnapshot), [formData, savedSnapshot]);
   const currentIndex = useMemo(() => reports.findIndex((report) => report.id === selectedId), [reports, selectedId]);
@@ -198,8 +182,9 @@ export default function TechnicalReportsApp() {
     try {
       const rendered = await technicalReportsApi.renderHtml({ report: formData, logo_left: logoLeft, logo_right: logoRight });
       const pdf = await technicalReportsApi.htmlToPdf({ html: rendered.html, filename: rendered.filename });
+      if (!pdf.pdf_base64) throw new Error('No se recibio el contenido del PDF generado.');
       downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
-      await saveToHistory(pdf.filename, { type: 'individual', reportId: formData.id });
+      await saveFeatureHistory('informe_tecnico', pdf.filename, { type: 'individual', reportId: formData.id });
       addToast({ message: 'PDF generado', type: 'success' });
     } catch (error) {
       addToast({ message: error instanceof Error ? error.message : 'No se pudo generar el PDF', type: 'error' });
@@ -214,8 +199,9 @@ export default function TechnicalReportsApp() {
     try {
       const rendered = await technicalReportsApi.renderConsolidatedHtml({ logo_left: logoLeft, logo_right: logoRight });
       const pdf = await technicalReportsApi.htmlToPdf({ html: rendered.html, filename: rendered.filename });
+      if (!pdf.pdf_base64) throw new Error('No se recibio el contenido del PDF generado.');
       downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
-      await saveToHistory(pdf.filename, { type: 'consolidado', count: rendered.count }, rendered.count);
+      await saveFeatureHistory('informe_tecnico', pdf.filename, { type: 'consolidado', count: rendered.count }, rendered.count);
       addToast({ message: `PDF consolidado generado (${rendered.count})`, type: 'success' });
     } catch (error) {
       addToast({ message: error instanceof Error ? error.message : 'No se pudo generar el consolidado', type: 'error' });
@@ -236,38 +222,59 @@ export default function TechnicalReportsApp() {
           <p className="tr-eyebrow">Herramienta</p>
           <h1>Informes técnicos</h1>
         </div>
-        <div className="tr-header-actions">
-          <button className="tr-secondary" onClick={() => goRelative(-1)} disabled={currentIndex <= 0 || busy} title="Anterior">
-            <ChevronLeft size={16} />
-          </button>
-          <span className="tr-counter">{selectedId ? `${currentIndex + 1} / ${reports.length}` : 'Sin selección'}</span>
-          <button className="tr-secondary" onClick={() => goRelative(1)} disabled={currentIndex < 0 || currentIndex >= reports.length - 1 || busy} title="Siguiente">
-            <ChevronRight size={16} />
-          </button>
-          <button className="tr-secondary" onClick={createReport} disabled={busy}>
-            <FilePlus2 size={16} />
-            Nuevo
-          </button>
-          <button className="tr-primary" onClick={exportCurrent} disabled={!formData || busy}>
-            <Download size={16} />
-            PDF
-          </button>
-          <button className="tr-secondary" onClick={exportConsolidated} disabled={reports.length === 0 || busy}>
-            <Files size={16} />
-            Consolidado
-          </button>
+        <div className="tr-header-toolbar">
+          <div className="tr-header-actions">
+            <button className="tr-secondary" disabled={busy} onClick={() => importInputRef.current?.click()}>
+              <Upload size={16} />
+              Importar
+            </button>
+            <button className="tr-secondary tr-icon-button" disabled={busy} onClick={() => void loadReports()} title="Recargar">
+              <RefreshCw size={16} />
+            </button>
+            <button className="tr-danger tr-icon-button" disabled={busy || reports.length === 0} onClick={() => void clearReports()} title="Eliminar todos">
+              <Trash2 size={16} />
+            </button>
+            <button className="tr-secondary" onClick={createReport} disabled={busy}>
+              <FilePlus2 size={16} />
+              Nuevo
+            </button>
+            <button className="tr-primary" onClick={exportCurrent} disabled={!formData || busy}>
+              <Download size={16} />
+              PDF
+            </button>
+            <button className="tr-secondary" onClick={exportConsolidated} disabled={reports.length === 0 || busy}>
+              <Files size={16} />
+              Consolidado
+            </button>
+          </div>
+          <div className="tr-header-nav">
+            <button className="tr-secondary tr-icon-button" onClick={() => goRelative(-1)} disabled={currentIndex <= 0 || busy} title="Anterior">
+              <ChevronLeft size={16} />
+            </button>
+            <span className="tr-counter">{selectedId ? `${currentIndex + 1} / ${reports.length}` : 'Sin selección'}</span>
+            <button className="tr-secondary tr-icon-button" onClick={() => goRelative(1)} disabled={currentIndex < 0 || currentIndex >= reports.length - 1 || busy} title="Siguiente">
+              <ChevronRight size={16} />
+            </button>
+          </div>
         </div>
+        <input
+          ref={importInputRef}
+          className="hidden"
+          type="file"
+          accept=".csv,.xlsx"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (file) void importFile(file);
+          }}
+        />
       </header>
 
       <div className="tr-workspace">
         <DatabasePanel
           reports={reports}
           selectedId={selectedId}
-          busy={busy}
           onSelect={selectReport}
-          onImport={importFile}
-          onReload={loadReports}
-          onClear={clearReports}
         />
         <PreviewPanel report={formData} logoLeft={logoLeft} logoRight={logoRight} />
         <FormPanel

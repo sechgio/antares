@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 1.27cm;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: #000;
+      font-family: Aptos, Arial, Helvetica, sans-serif;
+    }
+
+    .panel-page {
+      break-after: page;
+    }
+
+    .panel-page:last-child {
+      break-after: auto;
+    }
+
+    .panel-table {
+      width: 18.45cm;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    .panel-table td {
+      border: 0.48pt solid #000;
+      vertical-align: middle;
+      padding: 0 5.2pt;
+      line-height: 1.22;
+    }
+
+    .col-label {
+      width: 4.24cm;
+    }
+
+    .col-left-value {
+      width: 4.98cm;
+    }
+
+    .col-right-value {
+      width: 3.47cm;
+    }
+
+    .col-logo {
+      width: 5.76cm;
+    }
+
+    .row-title {
+      height: 1.05cm;
+    }
+
+    .row-meta-a {
+      height: 0.73cm;
+    }
+
+    .row-meta-b {
+      height: 0.77cm;
+    }
+
+    .row-meta-c {
+      height: 0.96cm;
+    }
+
+    .row-section {
+      height: 0.53cm;
+    }
+
+    .row-image {
+      height: 9.82cm;
+    }
+
+    .row-caption {
+      height: 1.4cm;
+    }
+
+    .row-caption-last {
+      height: 1.43cm;
+    }
+
+    .cell-title {
+      text-align: center;
+      font-size: 12pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      line-height: 1.3;
+    }
+
+    .cell-logo {
+      text-align: center;
+      vertical-align: middle;
+      overflow: hidden;
+    }
+
+    .logo-box {
+      width: 5.49cm;
+      height: 1.35cm;
+      margin: 0 auto;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-size: contain;
+    }
+
+    .cell-label {
+      font-size: 9pt;
+      font-weight: 700;
+      line-height: 1.1;
+      text-transform: uppercase;
+      white-space: nowrap;
+      overflow: hidden;
+      padding-top: 2pt;
+      padding-bottom: 2pt;
+    }
+
+    .cell-value {
+      color: #3BA9AF;
+      font-size: 9.5pt;
+      font-weight: 700;
+      line-height: 1.12;
+      padding-top: 2pt;
+      padding-bottom: 2pt;
+    }
+
+    .cell-section {
+      text-align: center;
+      font-size: 12pt;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .cell-photo {
+      padding: 0;
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    .cell-photo-inner {
+      width: 100%;
+      height: 9.82cm;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .cell-photo img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+    }
+
+    .cell-caption {
+      text-align: left;
+      font-size: 12pt;
+      font-weight: 400;
+      line-height: 1.05;
+      text-transform: none;
+      padding: 0 5.2pt;
+      overflow: hidden;
+    }
+
+    .placeholder {
+      color: #777;
+      font-size: 9pt;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  {% for panel in panels %}
+  <section class="panel-page">
+    <table class="panel-table">
+      <colgroup>
+        <col class="col-label">
+        <col class="col-left-value">
+        <col class="col-right-value">
+        <col class="col-logo">
+      </colgroup>
+      <tr class="row-title">
+        <td colspan="3" class="cell-title">
+          AVISO DE CORTE DEL SERVICIO DE AGUA POTABLE, POR TRABAJOS DE MEJORAMIENTO EN EL SISTEMA
+        </td>
+        <td rowspan="4" class="cell-logo">
+          {% if logo_center %}
+          <div class="logo-box" style="background-image: url('{{ logo_center|safe }}');"></div>
+          {% endif %}
+        </td>
+      </tr>
+      <tr class="row-meta-a">
+        <td class="cell-label">CUADRANTE AFECTADO</td>
+        <td colspan="2" class="cell-value">{{ panel.cuadrante }}</td>
+      </tr>
+      <tr class="row-meta-b">
+        <td class="cell-label">FECHA DE CORTE</td>
+        <td colspan="2" class="cell-value">{{ panel.fecha_corte }}</td>
+      </tr>
+      <tr class="row-meta-c">
+        <td class="cell-label">MOTIVO</td>
+        <td colspan="2" class="cell-value">{{ panel.motivo }}</td>
+      </tr>
+      <tr class="row-section">
+        <td colspan="4" class="cell-section">PANEL FOTOGRAFICO</td>
+      </tr>
+      {% for positions, caption_class in [([1, 2], "row-caption"), ([3, 4], "row-caption row-caption-last")] %}
+      <tr class="row-image">
+        {% for pos in positions %}
+        {% set ns = namespace(img=None) %}
+        {% for candidate in panel.imagenes %}
+        {% if candidate.position == pos %}
+        {% set ns.img = candidate %}
+        {% endif %}
+        {% endfor %}
+        <td colspan="2" class="cell-photo">
+          <div class="cell-photo-inner">
+            {% if ns.img and panel.image_uris.get(ns.img.filename) %}
+            <img src="{{ panel.image_uris.get(ns.img.filename) }}" alt="{{ ns.img.caption }}">
+            {% else %}
+            <span class="placeholder">Sin imagen</span>
+            {% endif %}
+          </div>
+        </td>
+        {% endfor %}
+      </tr>
+      <tr class="{{ caption_class }}">
+        {% for pos in positions %}
+        {% set ns = namespace(img=None) %}
+        {% for candidate in panel.imagenes %}
+        {% if candidate.position == pos %}
+        {% set ns.img = candidate %}
+        {% endif %}
+        {% endfor %}
+        <td colspan="2" class="cell-caption">
+          {% if ns.img %}
+          {{ ns.img.caption }}
+          {% else %}
+          IMAGEN N°{{ pos }}: (Indicar direccion segun lista de usuarios)
+          {% endif %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </table>
+  </section>
+  {% endfor %}
+</body>
+</html>

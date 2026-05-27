@@ -1,25 +1,26 @@
-import { useState } from 'react';
+import { useState, type ComponentType } from 'react';
 import { Camera, ClipboardList } from 'lucide-react';
 import BrandMark from '../brand/BrandMark';
+import { TAB_DEFINITIONS, type TabId } from '../../navigation';
 
 interface SidebarProps {
-  activeTab: string;
-  onTabChange: (tab: string) => void;
+  activeTab: TabId;
+  onTabChange: (tab: TabId) => void;
 }
 
-const tabs = [
-  { id: 'convert', icon: LightningIcon, label: 'Conversión', shortcut: '1' },
-  { id: 'formatos', icon: FilePdfIcon, label: 'Formatos PDF', shortcut: '3' },
-  { id: 'padron', icon: ScrollTextIcon, label: 'Generar Padrones', shortcut: '4' },
-  { id: 'volantes', icon: MegaphoneIcon, label: 'Generar Volantes', shortcut: '5' },
-  { id: 'reportesCampo', icon: Camera, label: 'Reportes de Campo', shortcut: '8' },
-  { id: 'technicalReports', icon: ClipboardList, label: 'Informes técnicos', shortcut: 'I' },
-  { id: 'imageOptimizer', icon: ImageOptimizerIcon, label: 'Optimizador', shortcut: '9' },
-  { id: 'previewPanel', icon: PreviewPanelIcon, label: 'Generador Reportes', shortcut: '0' },
-  { id: 'panelAvisoCorte', icon: PanelAvisoCorteIcon, label: 'Aviso de Corte', shortcut: '2' },
-  { id: 'history', icon: HistoryIcon, label: 'Historial', shortcut: '6' },
-  { id: 'appearance', icon: PaletteIcon, label: 'Apariencia', shortcut: '7' },
-];
+const ICONS: Record<TabId, ComponentType<{ className?: string }>> = {
+  convert: LightningIcon,
+  formatos: FilePdfIcon,
+  padron: ScrollTextIcon,
+  volantes: MegaphoneIcon,
+  reportesCampo: Camera,
+  technicalReports: ClipboardList,
+  imageOptimizer: ImageOptimizerIcon,
+  previewPanel: PreviewPanelIcon,
+  panelAvisoCorte: PanelAvisoCorteIcon,
+  history: HistoryIcon,
+  appearance: PaletteIcon,
+};
 
 function LightningIcon({ className }: { className?: string }) {
   return (
@@ -138,9 +139,9 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
 
       {/* Tabs */}
       <div className="flex flex-col gap-0.5 flex-1 py-2 px-2 min-h-0">
-        {tabs.map((t) => {
+        {TAB_DEFINITIONS.map((t) => {
           const isActive = activeTab === t.id;
-          const Icon = t.icon;
+          const Icon = ICONS[t.id];
           return (
             <button
               key={t.id}

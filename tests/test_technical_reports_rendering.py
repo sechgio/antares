@@ -15,6 +15,19 @@ def test_render_report_html_contains_report_fields() -> None:
     assert "page-container" in html
 
 
+def test_render_report_html_shows_sgio_next_to_contratista() -> None:
+    report = create_empty_report(3)
+    report["header"]["contratista"] = "ACCIONA"
+    report["header"]["sgio"] = "454654001"
+
+    html = render_report_html(report)
+
+    assert "CONTRATISTA" in html
+    assert "ACCIONA" in html
+    assert "SGIO" in html
+    assert "454654001" in html
+
+
 def test_render_report_html_preserves_red_critical_checks() -> None:
     report = create_empty_report(5)
     report["inspeccion"]["descarga"] = "critico"

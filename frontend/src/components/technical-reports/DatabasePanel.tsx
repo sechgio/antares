@@ -1,21 +1,16 @@
-import { RefreshCw, Search, Trash2, Upload } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { Search } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import type { TechnicalReportListItem } from './types';
 
 interface Props {
   reports: TechnicalReportListItem[];
   selectedId: string | null;
-  busy: boolean;
   onSelect: (id: string) => void;
-  onImport: (file: File) => void;
-  onReload: () => void;
-  onClear: () => void;
 }
 
-export default function DatabasePanel({ reports, selectedId, busy, onSelect, onImport, onReload, onClear }: Props) {
+export default function DatabasePanel({ reports, selectedId, onSelect }: Props) {
   const [query, setQuery] = useState('');
   const [cs, setCs] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const csOptions = useMemo(() => {
     return [...new Set(reports.map((report) => report.header.cs).filter(Boolean))].sort();
@@ -41,30 +36,6 @@ export default function DatabasePanel({ reports, selectedId, busy, onSelect, onI
           <p className="tr-eyebrow">Base local</p>
           <h2>{reports.length} informes</h2>
         </div>
-      </div>
-
-      <div className="tr-action-grid">
-        <button className="tr-primary" disabled={busy} onClick={() => inputRef.current?.click()}>
-          <Upload size={15} />
-          Importar
-        </button>
-        <button className="tr-secondary" disabled={busy} onClick={onReload} title="Recargar">
-          <RefreshCw size={15} />
-        </button>
-        <button className="tr-danger" disabled={busy || reports.length === 0} onClick={onClear} title="Eliminar todos">
-          <Trash2 size={15} />
-        </button>
-        <input
-          ref={inputRef}
-          className="hidden"
-          type="file"
-          accept=".csv,.xlsx"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = '';
-            if (file) onImport(file);
-          }}
-        />
       </div>
 
       <div className="tr-filter-block">

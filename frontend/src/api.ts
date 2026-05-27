@@ -193,6 +193,17 @@ export interface TechnicalReportsRenderBody {
   logo_right?: string | null;
 }
 
+export interface HtmlToPdfBody {
+  html: string;
+  filename: string;
+  localImagePaths?: Record<string, string>;
+  outputPath?: string;
+}
+
+export type HtmlToPdfResponse =
+  | { pdf_base64: string; filename: string; saved_path?: never }
+  | { pdf_base64?: never; filename: string; saved_path: string };
+
 export const api = {
   version: () => _invoke<{ version: string }>('version'),
   formats: () => _invoke<{ formats: string[] }>('formats'),
@@ -275,8 +286,8 @@ export const api = {
   templateGet: (name: string) => _invoke<{ name: string; content: string }>('template_get', { name }),
 
   // ─── Render HTML to PDF via Electron ─────────────────────────────────────
-  htmlToPdf: (body: { html: string; filename: string; localImagePaths?: Record<string, string> }) =>
-    _invoke<{ pdf_base64: string; filename: string }>('html_to_pdf', {
+  htmlToPdf: (body: HtmlToPdfBody) =>
+    _invoke<HtmlToPdfResponse>('html_to_pdf', {
       ...body,
       html: _sanitizeHtmlForPdf(body.html),
     }),

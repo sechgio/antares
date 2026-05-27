@@ -103,3 +103,15 @@ def test_xlsx_import_maps_recommendation_headers_to_sugerencias() -> None:
 
 def test_normalize_header_value_removes_accents_and_separators() -> None:
     assert normalize_header_value("Código de Infraestructura") == "codigoinfraestructura"
+
+
+def test_csv_import_maps_sgio_column() -> None:
+    content = (
+        b"Informe;Contratista;SGIO;Codigo Infraestructura;Tipo\n"
+        b"5;ACCIONA;454654001;RES-05;ELEVADO\n"
+    )
+
+    reports = import_reports_from_bytes("datos.csv", content)
+
+    assert reports[0]["header"]["contratista"] == "ACCIONA"
+    assert reports[0]["header"]["sgio"] == "454654001"

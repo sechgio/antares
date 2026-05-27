@@ -430,7 +430,8 @@ export function getStats(items: ImageItem[], settings: BatchSettings): ImageStat
 
 export function buildZipFilename(settings: BatchSettings): string {
   const raw = settings.export.zipName.trim().replace(/[\\/:*?"<>|]+/g, '-');
-  return `${raw || 'imagenes_optimizadas'}.zip`;
+  const name = raw || 'imagenes_optimizadas';
+  return name.toLowerCase().endsWith('.zip') ? name : `${name}.zip`;
 }
 
 export function createImageOverrides(presetId: PresetId | null = null) {

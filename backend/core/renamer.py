@@ -76,12 +76,12 @@ class RenamerEngine:
         seq_value = file_seq if file_seq is not None else str(self.secuencia).zfill(3)
 
         mapping: dict[str, str] = {"seq": seq_value, "ext": ext}
-        
+
         # Primero poblamos con los datos de la base de datos si existen
         if datos_bd:
             for k, v in datos_bd.items():
                 mapping[k] = str(v or "")
-        
+
         # Luego aseguramos que los campos configurados tengan al menos un valor vacío o el código
         field_names = get_field_names()
         first_field = field_names[0] if field_names else None

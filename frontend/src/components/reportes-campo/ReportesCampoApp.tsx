@@ -15,24 +15,7 @@ import { useToast } from '../../hooks/useToast';
 import type { HeaderMap, LogoData, PhotoFile, ReportType } from './types';
 import { chunkArray, CHUNK_SIZE, getReportConfig, getDefaultHeader, REPORT_TYPES } from './constants';
 import { exportReportPdf } from './utils/export';
-import { api } from '../../api';
-
-async function saveToHistory(label: string, details: Record<string, unknown>, count = 1) {
-  try {
-    await api.historySave({
-      run_type: 'reporte_campo',
-      files: [label],
-      options: details,
-      formato: label,
-      patron: '',
-      calidad: 0,
-      resize: null,
-      ok_count: count,
-      err_count: 0,
-    });
-  } catch {
-  }
-}
+import { saveFeatureHistory } from '../../utils/history';
 
 const TYPE_ICONS: Record<string, React.ReactNode> = {
     camera: <Camera size={14} />,
@@ -151,9 +134,10 @@ export default function ReportesCampoApp() {
         }
         setIsExporting(true);
         try {
-            await exportReportPdf(config, header, photos, logoLeft, logoRight);
-            await saveToHistory(`${config.label} - ${header.cs || 'sin CS'}`, { reportType: config.id, photos: photos.length, header }, photos.length);
-            addToast({ message: 'PDF exportado exitosamente.', type: 'success' });
+            const result = await exportReportPdf(config, header, photos, logoLeft, logoRight);
+            if (result.cancelled) return;
+            await saveFeatureHistory('reporte_campo', `${config.label} - ${header.cs || 'sin CS'}`, { reportType: config.id, photos: photos.length, header }, photos.length);
+            addToast({ message: `PDF guardado: ${result.filename || config.filename}`, type: 'success' });
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : 'Error al generar el PDF.';
             addToast({ message, type: 'error' });

@@ -1,57 +1,115 @@
 import React from 'react';
-import { createRoot } from 'react-dom/client';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { api } from '../../../api';
+import { fileToPdfImageSource } from '../../../utils/pdfAssets';
 import SheetPreview from '../components/SheetPreview';
 import { CHUNK_SIZE, chunkArray } from '../constants';
 import type { LogoData, PhotoFile, ReportTypeConfig } from '../types';
 
-const A4_WIDTH_MM = 210;
-const A4_HEIGHT_MM = 297;
-const PX_PER_MM = 3.7795;
-const RENDER_SCALE = 3;
+export interface ExportReportPdfResult {
+    cancelled?: boolean;
+    filename?: string;
+    savedPath?: string;
+}
 
-const waitForImages = async (scope: HTMLElement): Promise<void> => {
-    const images = Array.from(scope.querySelectorAll('img'));
-    await Promise.all(
-        images.map(
-            (image) =>
-                new Promise<void>((resolve) => {
-                    if (image.complete) {
-                        resolve();
-                        return;
-                    }
-                    image.addEventListener('load', () => resolve(), { once: true });
-                    image.addEventListener('error', () => resolve(), { once: true });
-                }),
-        ),
+async function preparePhotosForPdf(
+    photos: PhotoFile[],
+    localImagePaths: Record<string, string>,
+): Promise<PhotoFile[]> {
+    return Promise.all(
+        photos.map(async (photo, index) => ({
+            ...photo,
+            previewUrl: await fileToPdfImageSource(photo.file, `photo-${index}`, localImagePaths),
+        })),
     );
-};
+}
 
-const waitForFonts = async (): Promise<void> => {
-    if (document.fonts?.ready) {
-        await document.fonts.ready;
-    }
-};
+async function prepareLogoForPdf(
+    logo: LogoData | null,
+    key: string,
+    localImagePaths: Record<string, string>,
+): Promise<string | null> {
+    if (!logo) return null;
+    return fileToPdfImageSource(logo.file, key, localImagePaths);
+}
 
-const waitForReflow = (): Promise<void> =>
-    new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+export function buildReportPdfHtml({
+    config,
+    header,
+    photos,
+    logoLeft,
+    logoRight,
+}: {
+    config: ReportTypeConfig;
+    header: Record<string, string>;
+    photos: PhotoFile[];
+    logoLeft: string | null;
+    logoRight: string | null;
+}): string {
+    const pages = chunkArray(photos, CHUNK_SIZE);
+    const body = pages
+        .map((images, index) =>
+            renderToStaticMarkup(
+                React.createElement(
+                    'div',
+                    { className: 'report-page' },
+                    React.createElement(SheetPreview, {
+                        config,
+                        header,
+                        logoLeft,
+                        logoRight,
+                        images,
+                        pageNum: index + 1,
+                        totalPages: pages.length,
+                    }),
+                ),
+            ),
+        )
+        .join('\n');
 
-const rasterizePage = async (node: HTMLElement): Promise<string> => {
-    const { toJpeg } = await import('html-to-image');
-    const naturalWidth = node.scrollWidth || node.offsetWidth;
-    const targetWidth = Math.round(A4_WIDTH_MM * PX_PER_MM * RENDER_SCALE);
-    const pixelRatio = targetWidth / naturalWidth;
-
-    return toJpeg(node, {
-        quality: 0.94,
-        backgroundColor: '#ffffff',
-        pixelRatio,
-        width: naturalWidth,
-        height: node.scrollHeight || node.offsetHeight,
-        style: {
-            margin: '0',
-        },
-    });
-};
+    return `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4 portrait; margin: 0; }
+  html, body {
+    width: auto;
+    min-height: 100%;
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+    color: #000000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body { font-family: Arial, Helvetica, sans-serif; }
+  .report-page {
+    width: 210mm;
+    height: 297mm;
+    page-break-after: always;
+    break-after: page;
+    overflow: hidden;
+  }
+  .report-page:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+  .preview-paper-scope {
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+  }
+  img {
+    break-inside: avoid;
+  }
+</style>
+</head>
+<body>
+${body}
+</body>
+</html>`;
+}
 
 export async function exportReportPdf(
     config: ReportTypeConfig,
@@ -59,73 +117,48 @@ export async function exportReportPdf(
     photos: PhotoFile[],
     logoLeft: LogoData | null,
     logoRight: LogoData | null,
-): Promise<void> {
+): Promise<ExportReportPdfResult> {
     if (photos.length === 0) {
         throw new Error('No hay imagenes para exportar.');
     }
 
-    const { default: jsPDF } = await import('jspdf');
-    const container = document.createElement('div');
-    container.style.position = 'fixed';
-    container.style.left = '0';
-    container.style.top = '0';
-    container.style.zIndex = '-9999';
-    container.style.opacity = '0';
-    container.style.pointerEvents = 'none';
-    document.body.appendChild(container);
-
-    const root = createRoot(container);
-    const pages = chunkArray(photos, CHUNK_SIZE);
-
-    try {
-        root.render(
-            React.createElement(
-                React.Fragment,
-                null,
-                pages.map((images, index) =>
-                    React.createElement(
-                        'div',
-                        { key: index, 'data-export-page': 'true' },
-                        React.createElement(SheetPreview, {
-                            config,
-                            header,
-                            logoLeft: logoLeft?.url ?? null,
-                            logoRight: logoRight?.url ?? null,
-                            images,
-                            pageNum: index + 1,
-                            totalPages: pages.length,
-                        }),
-                    ),
-                ),
-            ),
-        );
-
-        await waitForReflow();
-        await waitForImages(container);
-        await waitForFonts();
-
-        const pageNodes = Array.from(container.querySelectorAll<HTMLElement>("[data-export-page='true']"));
-        if (pageNodes.length === 0) {
-            throw new Error('No hay paginas listas para exportar.');
-        }
-
-        const pdf = new jsPDF({
-            orientation: 'portrait',
-            unit: 'mm',
-            format: 'a4',
-        });
-
-        for (let index = 0; index < pageNodes.length; index += 1) {
-            const imageData = await rasterizePage(pageNodes[index]);
-            if (index > 0) {
-                pdf.addPage('a4', 'portrait');
-            }
-            pdf.addImage(imageData, 'JPEG', 0, 0, A4_WIDTH_MM, A4_HEIGHT_MM, undefined, 'MEDIUM');
-        }
-
-        pdf.save(config.filename);
-    } finally {
-        root.unmount();
-        document.body.removeChild(container);
+    const saveTarget = await api.dialogSave({
+        title: 'Guardar PDF',
+        defaultPath: config.filename,
+        filters: [
+            { name: 'PDF', extensions: ['pdf'] },
+            { name: 'Todos los archivos', extensions: ['*'] },
+        ],
+    });
+    const outputPath = saveTarget.paths[0];
+    if (!outputPath) {
+        return { cancelled: true };
     }
+
+    const localImagePaths: Record<string, string> = {};
+    const [pdfPhotos, pdfLogoLeft, pdfLogoRight] = await Promise.all([
+        preparePhotosForPdf(photos, localImagePaths),
+        prepareLogoForPdf(logoLeft, 'logo-left', localImagePaths),
+        prepareLogoForPdf(logoRight, 'logo-right', localImagePaths),
+    ]);
+
+    const html = buildReportPdfHtml({
+        config,
+        header,
+        photos: pdfPhotos,
+        logoLeft: pdfLogoLeft,
+        logoRight: pdfLogoRight,
+    });
+
+    const response = await api.htmlToPdf({
+        html,
+        filename: config.filename,
+        outputPath,
+        localImagePaths: Object.keys(localImagePaths).length > 0 ? localImagePaths : undefined,
+    });
+
+    return {
+        filename: response.filename,
+        savedPath: 'saved_path' in response ? response.saved_path : undefined,
+    };
 }
