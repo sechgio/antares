@@ -26,7 +26,7 @@ import {
   syncStaleState,
   downloadBlob,
 } from './utils';
-import { api } from '../../api';
+import { createStoredZipBlob } from './zip';
 import { saveFeatureHistory } from '../../utils/history';
 
 export default function ImageOptimizer() {
@@ -308,31 +308,16 @@ export default function ImageOptimizer() {
       return;
     }
 
-    // Backend ZIP creation via IPC
     try {
-      const filesBase64 = await Promise.all(
-        entries.map(async (entry) => {
-          const arrayBuffer = await entry.blob.arrayBuffer();
-          const bytes = new Uint8Array(arrayBuffer);
-          let binary = '';
-          for (let i = 0; i < bytes.length; i += 65536) {
-            binary += String.fromCharCode(...bytes.subarray(i, i + 65536));
-          }
-          return {
-            filename: nameMap.get(entry.item.id) || entry.item.originalName,
-            content_b64: btoa(binary),
-          };
-        })
+      const zipFilename = buildZipFilename(settingsRef.current);
+      const zipBlob = await createStoredZipBlob(
+        entries.map((entry) => ({
+          filename: nameMap.get(entry.item.id) || entry.item.originalName,
+          blob: entry.blob,
+        })),
+        zipFilename,
       );
-
-      const res = await api.imageOptimizerZip({
-        files: filesBase64,
-        zip_name: buildZipFilename(settingsRef.current),
-      });
-
-      const binary = Uint8Array.from(atob(res.zip_base64), (c) => c.charCodeAt(0));
-      const zipBlob = new Blob([binary], { type: 'application/zip' });
-      downloadBlob(zipBlob, res.filename);
+      downloadBlob(zipBlob, zipFilename);
       addToast(`ZIP generado con ${entries.length} archivo(s).`, 'success', 2400);
     } catch (error) {
       console.error('ZIP creation failed', error);

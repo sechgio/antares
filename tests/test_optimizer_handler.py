@@ -76,3 +76,27 @@ def test_image_optimizer_zip_deduplicates_colliding_archive_names() -> None:
 
     assert result["filename"] == "fotos.zip"
     assert _zip_names(result) == ["fotos/foto-2.jpg", "fotos/foto-3.JPG", "fotos/foto.jpg"]
+
+
+def test_image_optimizer_zip_can_write_many_files_directly_to_disk(tmp_path) -> None:
+    output_path = tmp_path / "lote.zip"
+    payload = {
+        "zip_name": "lote.zip",
+        "output_path": str(output_path),
+        "files": [
+            {
+                "filename": f"C:/lote/foto_{index:04}.jpg",
+                "content_b64": base64.b64encode(f"img-{index}".encode("ascii")).decode("ascii"),
+            }
+            for index in range(1000)
+        ],
+    }
+
+    result = image_optimizer_zip(payload)
+
+    assert result == {"filename": "lote.zip", "saved_path": str(output_path.resolve())}
+    with zipfile.ZipFile(output_path) as zip_file:
+        names = zip_file.namelist()
+        assert len(names) == 1000
+        assert names[0] == "lote/foto_0000.jpg"
+        assert zip_file.read("lote/foto_0999.jpg") == b"img-999"

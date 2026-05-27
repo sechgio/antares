@@ -28,7 +28,7 @@ declare global {
 }
 
 const IPC_TIMEOUT = 30_000;           // default timeout — most ops finish in <5s
-const IPC_LONG_TIMEOUT = 300_000;     // 5 min for heavy operations
+const IPC_LONG_TIMEOUT = 900_000;     // 15 min for large PDF/ZIP/image batches
 const IPC_MAX_RETRIES = 2;
 const IPC_RETRY_DELAY = 500;          // fast retry — backend is usually ready by the time we retry
 
@@ -204,6 +204,10 @@ export type HtmlToPdfResponse =
   | { pdf_base64: string; filename: string; saved_path?: never }
   | { pdf_base64?: never; filename: string; saved_path: string };
 
+export type FormatosGenerateResponse =
+  | { pdf_base64: string; filename: string; saved_path?: never }
+  | { pdf_base64?: never; filename: string; saved_path: string };
+
 export const api = {
   version: () => _invoke<{ version: string }>('version'),
   formats: () => _invoke<{ formats: string[] }>('formats'),
@@ -252,7 +256,7 @@ export const api = {
   applyPreset: (name: string) => _invoke<ThemeConfig>('theme_preset', { name }),
   resetTheme: () => _invoke<ThemeConfig>('theme_reset'),
 
-  historyList: (body?: { limit?: number; run_type?: string }) => _invoke<{ runs: unknown[] }>('history_list', body),
+  historyList: (body?: { limit?: number; offset?: number; run_type?: string }) => _invoke<{ runs: unknown[] }>('history_list', body),
   historyGet: (id: number) => _invoke<{ run: unknown }>('history_get', { id }),
   historyDelete: (id: number) => _invoke<{ deleted: boolean }>('history_delete', { id }),
   historySave: (body: {
@@ -269,8 +273,8 @@ export const api = {
 
   // ─── Formatos PDF ───────────────────────────────────────────────────────
   formatosList: () => _invoke<{ formats: FormatInfo[] }>('formatos_list'),
-  formatosGenerate: (body: { format_id: string; desde: number; hasta: number }) =>
-    _invoke<{ pdf_base64: string; filename: string }>('formatos_generate', body),
+  formatosGenerate: (body: { format_id: string; desde: number; hasta: number; output_path?: string }) =>
+    _invoke<FormatosGenerateResponse>('formatos_generate', body),
   formatosUpload: (body: { nombre: string; filename: string; content_b64: string; persisted?: boolean; filename_pattern?: string }) =>
     _invoke<{ format: FormatInfo }>('formatos_upload', body),
   formatosDelete: (format_id: string) => _invoke<{ deleted: boolean }>('formatos_delete', { format_id }),
@@ -278,8 +282,8 @@ export const api = {
     _invoke<{ format: FormatInfo }>('formatos_update_mapping', { format_id, mapping }),
 
   // ─── Image Optimizer ────────────────────────────────────────────────────
-  imageOptimizerZip: (body: { files: Array<{ filename: string; content_b64: string }>; zip_name: string }) =>
-    _invoke<{ zip_base64: string; filename: string }>('image_optimizer_zip', body),
+  imageOptimizerZip: (body: { files: Array<{ filename: string; content_b64: string }>; zip_name: string; output_path?: string }) =>
+    _invoke<{ zip_base64?: string; saved_path?: string; filename: string }>('image_optimizer_zip', body),
 
   // ─── Plantillas PreviewPanel ─────────────────────────────────────────────
   templatesList: () => _invoke<{ templates: Array<{ id: string; name: string; filename: string }> }>('templates_list'),

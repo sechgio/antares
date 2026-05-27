@@ -90,4 +90,16 @@ describe('image optimizer zip export', () => {
 
     expect(buildZipFilename(settings)).toBe('fotos_cliente.zip');
   });
+
+  it('keeps the backend-compatible zip filename sanitization', () => {
+    const settings: BatchSettings = {
+      ...DEFAULT_BATCH_SETTINGS,
+      export: {
+        mode: 'zip',
+        zipName: 'imagenes optimizadas cliente.zip',
+      },
+    };
+
+    expect(buildZipFilename(settings)).toBe('imagenes_optimizadas_cliente.zip');
+  });
 });

@@ -463,6 +463,15 @@ function Row({ label, value, valueClass = 'text-[var(--text-primary)]' }: { labe
     );
 }
 
+function buildGeneratedPdfName(selected: FormatInfo, desde: number, hasta: number): string {
+    const p = selected.mapping?.padding ?? 7;
+    const desdeS = pad(desde, p);
+    const hastaS = pad(hasta, p);
+    return desde === hasta
+        ? `${selected.id}_${desdeS}.pdf`
+        : `${selected.id}_${desdeS}-${hastaS}.pdf`;
+}
+
 export default function FormatosView() {
     const { addToast } = useToast();
     const { confirm } = useDialog();
@@ -534,6 +543,7 @@ export default function FormatosView() {
                     hasta: previewHasta,
                 });
                 if (previewAbort.current) return;
+                if (!res.pdf_base64) throw new Error('No se recibio el contenido de vista previa.');
                 const binary = safeBase64ToBytes(res.pdf_base64);
                 const blob = new Blob([binary], { type: 'application/pdf' });
                 setPreviewBlob(blob);
@@ -561,24 +571,32 @@ export default function FormatosView() {
         setLoading(true);
         setError(null);
         try {
+            const defaultName = buildGeneratedPdfName(selected, desde, hasta);
+            const saveTarget = await api.dialogSave({
+                title: 'Guardar PDF',
+                defaultPath: defaultName,
+                filters: [
+                    { name: 'PDF', extensions: ['pdf'] },
+                    { name: 'Todos los archivos', extensions: ['*'] },
+                ],
+            });
+            const outputPath = saveTarget.paths[0];
+            if (!outputPath) {
+                setLoading(false);
+                return;
+            }
             const res = await api.formatosGenerate({
                 format_id: selected.id,
                 desde,
                 hasta,
+                output_path: outputPath,
             });
-            const blob = new Blob([safeBase64ToBytes(res.pdf_base64)], { type: 'application/pdf' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            const p = selected.mapping?.padding ?? 7;
-            const desdeS = pad(desde, p);
-            const hastaS = pad(hasta, p);
-            a.download = desde === hasta
-                ? `${selected.id}_${desdeS}.pdf`
-                : `${selected.id}_${desdeS}-${hastaS}.pdf`;
-            a.click();
-            URL.revokeObjectURL(url);
-            addToast({ message: 'PDF generado correctamente', type: 'success' });
+            addToast({
+                message: res.saved_path
+                    ? `PDF guardado: ${res.filename || defaultName}`
+                    : 'PDF generado correctamente',
+                type: 'success',
+            });
             await saveFeatureHistory('formato', selected.nombre, { format_id: selected.id, desde, hasta }, hasta - desde + 1);
         } catch (e: any) {
             const msg = e?.message || String(e);

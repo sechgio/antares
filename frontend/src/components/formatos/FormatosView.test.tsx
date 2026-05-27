@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import FormatosView, { safeBase64ToBytes } from './FormatosView';
 import { DialogProvider } from '../../hooks/useDialog';
@@ -109,5 +109,48 @@ describe('FormatosView', () => {
     expect(() => safeBase64ToBytes('%%%')).toThrow('Datos base64 corruptos');
     expect(() => safeBase64ToBytes('A')).toThrow('Datos base64 corruptos');
     expect(Array.from(safeBase64ToBytes('JVBERi0='))).toEqual([37, 80, 68, 70, 45]);
+  });
+
+  it('saves generated PDFs directly to disk instead of downloading base64 through IPC', async () => {
+    const electronApi = window.electronAPI!;
+    const invoke = vi.spyOn(electronApi, 'invoke').mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+      if (method === 'formatos_list') {
+        return {
+          formats: [
+            {
+              id: 'simple-overlay',
+              nombre: 'Formato prueba',
+              origen: 'builtin',
+              enabled: true,
+              persisted: true,
+              strategy: 'simple_overlay',
+              mapping: null,
+              filename_pattern: '{n}.pdf',
+              max_pages: 500,
+              number_min: 1,
+              number_max: 9999999,
+              has_mapping: true,
+            },
+          ],
+        };
+      }
+      if (method === 'formatos_generate') {
+        if (params?.output_path) return { saved_path: params.output_path, filename: 'simple-overlay_0000001.pdf' };
+        return { pdf_base64: 'JVBERi0=', filename: 'preview.pdf' };
+      }
+      if (method === 'dialog_save') return { paths: ['C:\\tmp\\simple-overlay_0000001.pdf'] };
+      if (method === 'history_save') return { id: 1 };
+      return {};
+    });
+
+    renderFormatosView();
+
+    fireEvent.click(await screen.findByText('Generar PDF'));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('formatos_generate', expect.objectContaining({
+        output_path: 'C:\\tmp\\simple-overlay_0000001.pdf',
+      }));
+    });
   });
 });

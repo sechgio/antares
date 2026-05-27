@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+from pathlib import Path
 from typing import Any
 
 from backend.handlers.common import with_locale
@@ -21,6 +22,14 @@ def formatos_generate(params: dict[str, Any]) -> dict[str, str]:
     desde = int(params.get("desde", 1))
     hasta = int(params.get("hasta", 1))
     pdf_bytes, filename = generate_pdf(fmt_id, desde, hasta)
+    output_path = str(params.get("output_path") or "").strip()
+    if output_path:
+        destination = Path(output_path).expanduser().resolve()
+        if destination.suffix.lower() != ".pdf":
+            destination = destination.with_suffix(".pdf")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(pdf_bytes)
+        return {"saved_path": str(destination), "filename": destination.name}
     return {"pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"), "filename": filename}
 
 @with_locale

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import sys
 import threading
@@ -21,9 +22,10 @@ logger = logging.getLogger(__name__)
 
 _stdout_lock = threading.Lock()
 
-# Maximum allowed payload size for IPC messages (10MB)
-# Prevents buffer overflow and pipe blocking with large payloads
-_MAX_PAYLOAD_SIZE = 10 * 1024 * 1024
+# Maximum allowed JSON payload size for IPC messages. Large binary exports
+# should use direct-to-disk handlers, but previews and metadata can exceed the
+# old 10 MB ceiling on high-DPI assets.
+_MAX_PAYLOAD_SIZE = int(os.environ.get("ANTARES_IPC_MAX_PAYLOAD_SIZE", str(64 * 1024 * 1024)))
 
 
 def validate_method(method: str) -> bool:

@@ -6,6 +6,8 @@ import RunList, { HistoryRun, RunType } from './RunList';
 import RunDetail from './RunDetail';
 import { dispatchHistoryReexecute } from './historyEvents';
 
+const HISTORY_PAGE_SIZE = 50;
+
 const TYPE_FILTERS: { label: string; value: RunType | 'all' }[] = [
   { label: 'Todos', value: 'all' },
   { label: 'Conversión', value: 'conversion' },
@@ -25,21 +27,34 @@ export default function HistoryView() {
   const [selected, setSelected] = useState<HistoryRun | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeType, setActiveType] = useState<RunType | 'all'>('all');
+  const [loadingRuns, setLoadingRuns] = useState(false);
+  const [hasMoreRuns, setHasMoreRuns] = useState(false);
   const reqId = useRef(0);
 
-  const refresh = async () => {
+  const loadPage = async (reset: boolean) => {
     const id = ++reqId.current;
+    setLoadingRuns(true);
     try {
-      const params: { limit: number; run_type?: string } = { limit: 50 };
+      const offset = reset ? 0 : runs.length;
+      const params: { limit: number; offset: number; run_type?: string } = { limit: HISTORY_PAGE_SIZE + 1, offset };
       if (activeType !== 'all') params.run_type = activeType;
       const r = await api.historyList(params);
-      if (id === reqId.current) setRuns(r.runs as HistoryRun[]);
+      if (id !== reqId.current) return;
+      const page = (r.runs as HistoryRun[]).slice(0, HISTORY_PAGE_SIZE);
+      const nextRuns = reset ? page : [...runs, ...page];
+      setHasMoreRuns((r.runs as HistoryRun[]).length > HISTORY_PAGE_SIZE);
+      setRuns(nextRuns);
+      if (selected && !nextRuns.some((run) => run.id === selected.id)) setSelected(null);
     } catch {
       if (id === reqId.current) addToast({ message: 'Error cargando historial', type: 'error' });
+    } finally {
+      if (id === reqId.current) setLoadingRuns(false);
     }
   };
 
-  useEffect(() => { refresh(); }, [activeType]);
+  const refresh = () => loadPage(true);
+
+  useEffect(() => { loadPage(true); }, [activeType]);
 
   const filteredRuns = useMemo(() => {
     if (!searchQuery.trim()) return runs;
@@ -106,6 +121,20 @@ export default function HistoryView() {
       <div className="flex flex-1 min-h-0">
         <div className="w-[280px] shrink-0 border-r border-[var(--border-subtle)] overflow-y-auto">
           <RunList runs={filteredRuns} selected={selected} onSelect={setSelected} />
+          <div className="px-4 py-3">
+            {hasMoreRuns && (
+              <button
+                onClick={() => loadPage(false)}
+                disabled={loadingRuns}
+                className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:border-[var(--border-medium)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {loadingRuns ? 'Cargando...' : 'Cargar más'}
+              </button>
+            )}
+            {loadingRuns && runs.length === 0 && (
+              <p className="py-2 text-center text-xs text-[var(--text-muted)]">Cargando historial...</p>
+            )}
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto">
           {selected ? (

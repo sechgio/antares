@@ -429,7 +429,7 @@ export function getStats(items: ImageItem[], settings: BatchSettings): ImageStat
 }
 
 export function buildZipFilename(settings: BatchSettings): string {
-  const raw = settings.export.zipName.trim().replace(/[\\/:*?"<>|]+/g, '-');
+  const raw = settings.export.zipName.trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '_');
   const name = raw || 'imagenes_optimizadas';
   return name.toLowerCase().endsWith('.zip') ? name : `${name}.zip`;
 }

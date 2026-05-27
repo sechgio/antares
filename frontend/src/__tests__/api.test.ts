@@ -85,6 +85,25 @@ describe('API Client', () => {
     expect(result.saved_path).toBe('C:\\tmp\\reporte.pdf');
   });
 
+  it('should pass output path to formatos generator for direct saves', async () => {
+    mockInvoke.mockResolvedValue({ saved_path: 'C:\\tmp\\formato.pdf', filename: 'formato.pdf' });
+
+    const result = await api.formatosGenerate({
+      format_id: 'template-d',
+      desde: 1,
+      hasta: 500,
+      output_path: 'C:\\tmp\\formato.pdf',
+    });
+
+    expect(mockInvoke).toHaveBeenCalledWith('formatos_generate', {
+      format_id: 'template-d',
+      desde: 1,
+      hasta: 500,
+      output_path: 'C:\\tmp\\formato.pdf',
+    });
+    expect(result.saved_path).toBe('C:\\tmp\\formato.pdf');
+  });
+
   it('should call technical reports list with correct method', async () => {
     mockInvoke.mockResolvedValue({ reports: [] });
 

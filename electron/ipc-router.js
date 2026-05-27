@@ -34,7 +34,7 @@ let _attachedProcess = null;               // process instance we have listeners
 
 // Budgets
 const REQUEST_TIMEOUT_MS = 30_000;         // per-request response timeout — most ops finish in <5s
-const LONG_REQUEST_TIMEOUT_MS = 300_000;   // 5 min for heavy operations (conversion, PDF generation, ZIP)
+const LONG_REQUEST_TIMEOUT_MS = 900_000;   // 15 min for heavy operations (large PDF/ZIP batches)
 const STARTUP_WAIT_MS = 30_000;            // backend should start in <10s; 30s is a safe margin
 const MID_FLIGHT_RETRIES = 2;              // retries for transient mid-flight errors
 

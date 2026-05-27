@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import zipfile
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 
 from backend.handlers.common import with_locale
@@ -42,18 +43,16 @@ def _dedupe_archive_name(filename: str, seen: dict[str, int]) -> str:
     return f"{stem}{suffix}{dot}{extension}" if dot else f"{stem}{suffix}"
 
 
-@with_locale
-def image_optimizer_zip(params: dict[str, Any]) -> dict[str, str]:
-    files = params.get("files", [])
-    zip_name = params.get("zip_name", "imagenes_optimizadas")
-    if not files:
-        msg = "No files provided"
-        raise ValueError(msg)
+def _write_b64_zip_entry(zip_file: zipfile.ZipFile, archive_name: str, content_b64: str) -> None:
+    with zip_file.open(archive_name, "w") as target:
+        base64.decode(BytesIO(content_b64.encode("ascii")), target)
+
+
+def _write_optimizer_zip(files: list[dict[str, Any]], zip_name: str, target: BytesIO | Path) -> str:
     safe_zip_name = _safe_zip_filename(str(zip_name))
     safe_folder_name = _safe_zip_folder_name(str(zip_name))
     seen_names: dict[str, int] = {}
-    zip_buffer = BytesIO()
-    with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zip_file:
+    with zipfile.ZipFile(target, mode="w", compression=zipfile.ZIP_DEFLATED) as zip_file:
         for file_info in files:
             filename = file_info.get("filename", "file")
             content_b64 = file_info.get("content_b64", "")
@@ -61,7 +60,28 @@ def image_optimizer_zip(params: dict[str, Any]) -> dict[str, str]:
                 continue
             entry_filename = _safe_name(str(filename), "file")
             entry_filename = _dedupe_archive_name(entry_filename, seen_names)
-            zip_file.writestr(f"{safe_folder_name}/{entry_filename}", base64.b64decode(content_b64))
+            _write_b64_zip_entry(zip_file, f"{safe_folder_name}/{entry_filename}", str(content_b64))
+    return safe_zip_name
+
+
+@with_locale
+def image_optimizer_zip(params: dict[str, Any]) -> dict[str, str]:
+    files = params.get("files", [])
+    zip_name = params.get("zip_name", "imagenes_optimizadas")
+    if not files:
+        msg = "No files provided"
+        raise ValueError(msg)
+    output_path = str(params.get("output_path") or "").strip()
+    if output_path:
+        destination = Path(output_path).expanduser().resolve()
+        if destination.suffix.lower() != ".zip":
+            destination = destination.with_suffix(".zip")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        _write_optimizer_zip(files, str(zip_name), destination)
+        return {"saved_path": str(destination), "filename": destination.name}
+
+    zip_buffer = BytesIO()
+    safe_zip_name = _write_optimizer_zip(files, str(zip_name), zip_buffer)
     zip_buffer.seek(0)
     return {"zip_base64": base64.b64encode(zip_buffer.read()).decode("ascii"), "filename": safe_zip_name}
 
