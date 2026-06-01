@@ -653,15 +653,24 @@
                     <td>{{ report.valvulas.observaciones_desague }}</td>
                     <td>{{ report.valvulas.sugerencias_desague }}</td>
                 </tr>
+                {% set valvulas_diameter_rows = [
+                    report.valvulas.diametros,
+                    report.valvulas.impulsion,
+                    report.valvulas.aduccion,
+                    report.valvulas.bypass,
+                    report.valvulas.desague
+                ] %}
+                {% set valvulas_diameter_sizes = ['2', '3', '4', '6', '8', '10', '12'] %}
+                {% set valvulas_diameter_totals = sum_diameter_columns(valvulas_diameter_rows, valvulas_diameter_sizes) %}
                 <tr style="background:#d4d8dd">
                     <td class="row-label">TOTAL</td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
+                    <td class="center" style="font-weight:bold;">{{ valvulas_diameter_totals['2'] or '' }}</td>
+                    <td class="center" style="font-weight:bold;">{{ valvulas_diameter_totals['3'] or '' }}</td>
+                    <td class="center" style="font-weight:bold;">{{ valvulas_diameter_totals['4'] or '' }}</td>
+                    <td class="center" style="font-weight:bold;">{{ valvulas_diameter_totals['6'] or '' }}</td>
+                    <td class="center" style="font-weight:bold;">{{ valvulas_diameter_totals['8'] or '' }}</td>
+                    <td class="center" style="font-weight:bold;">{{ valvulas_diameter_totals['10'] or '' }}</td>
+                    <td class="center" style="font-weight:bold;">{{ valvulas_diameter_totals['12'] or '' }}</td>
                     <td class="center" style="font-weight:bold;">{{ report.valvulas.operativas }}</td>
                     <td class="center" style="font-weight:bold;">{{ report.valvulas.no_operativas }}</td>
                     <td></td>
@@ -763,15 +772,22 @@
                     <td class="center">{{ report.canastillas.observaciones_desague }}</td>
                     <td class="center">{{ report.canastillas.sugerencias_desague }}</td>
                 </tr>
+                {% set canastillas_diameter_rows = [
+                    report.canastillas.aduccion,
+                    report.canastillas.succion,
+                    report.canastillas.desague
+                ] %}
+                {% set canastillas_diameter_sizes = ['2', '3', '4', '6', '8', '10', '14'] %}
+                {% set canastillas_diameter_totals = sum_diameter_columns(canastillas_diameter_rows, canastillas_diameter_sizes) %}
                 <tr style="background:#d4d8dd">
                     <td class="row-label">TOTAL</td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
+                    <td class="center" style="font-weight:bold;">{{ canastillas_diameter_totals['2'] or '' }}</td>
+                    <td class="center" style="font-weight:bold;">{{ canastillas_diameter_totals['3'] or '' }}</td>
+                    <td class="center" style="font-weight:bold;">{{ canastillas_diameter_totals['4'] or '' }}</td>
+                    <td class="center" style="font-weight:bold;">{{ canastillas_diameter_totals['6'] or '' }}</td>
+                    <td class="center" style="font-weight:bold;">{{ canastillas_diameter_totals['8'] or '' }}</td>
+                    <td class="center" style="font-weight:bold;">{{ canastillas_diameter_totals['10'] or '' }}</td>
+                    <td class="center" style="font-weight:bold;">{{ canastillas_diameter_totals['14'] or '' }}</td>
                     <td class="center" style="font-weight:bold;">{{ report.canastillas.operativas }}</td>
                     <td class="center" style="font-weight:bold;">{{ report.canastillas.no_operativas }}</td>
                     <td></td>
@@ -796,12 +812,12 @@
             </thead>
             <tbody>
                 <tr>
-                    <td class="row-label">DIAMETRO</td>
+                    <td class="row-label">{{ report.medidas.etiqueta_diametro }}</td>
                     <td class="center">M</td>
                     <td class="center">{{ report.medidas.diametro }}</td>
                 </tr>
                 <tr>
-                    <td class="row-label">DIAMETRO INTERNO</td>
+                    <td class="row-label">{{ report.medidas.etiqueta_diametro_interno }}</td>
                     <td class="center">M</td>
                     <td class="center">{{ report.medidas.diametro_interno }}</td>
                 </tr>

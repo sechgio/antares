@@ -292,6 +292,13 @@
   gap: 8px;
 }
 
+.tr-medida-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  grid-column: 1 / -1;
+}
+
 .tr-grid-4 {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

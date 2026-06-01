@@ -1,5 +1,13 @@
 import { Save, Trash2, Upload, X } from 'lucide-react';
-import type { CanastillasData, CheckState, InspeccionDescripcion, TechnicalReport, ValvulasData } from './types';
+import {
+  DEFAULT_MEDIDA_LABEL_DIAMETRO,
+  DEFAULT_MEDIDA_LABEL_DIAMETRO_INTERNO,
+  type CanastillasData,
+  type CheckState,
+  type InspeccionDescripcion,
+  type TechnicalReport,
+  type ValvulasData,
+} from './types';
 
 const INSPECTION_ROWS: Array<[keyof InspeccionDescripcion, string, string, string]> = [
   ['caja_registro', 'Caja de registro', 'observaciones_caja_registro', 'sugerencias_caja_registro'],
@@ -172,7 +180,31 @@ export default function FormPanel({ report, hasChanges, busy, logoLeft, logoRigh
         <section className="tr-section">
           <h3>Medidas</h3>
           <div className="tr-grid-2">
-            {(['diametro', 'diametro_interno', 'altura_util', 'altura_total'] as const).map((key) => (
+            {([
+              ['etiqueta_diametro', 'diametro', 'Etiqueta (diámetro / largo)', DEFAULT_MEDIDA_LABEL_DIAMETRO],
+              ['etiqueta_diametro_interno', 'diametro_interno', 'Etiqueta (diámetro int. / ancho)', DEFAULT_MEDIDA_LABEL_DIAMETRO_INTERNO],
+            ] as const).map(([labelKey, valueKey, labelHint, defaultLabel]) => (
+              <div key={valueKey} className="tr-medida-pair">
+                <Field
+                  label={labelHint}
+                  value={report.medidas[labelKey] || defaultLabel}
+                  onChange={(value) =>
+                    patch({
+                      medidas: {
+                        ...report.medidas,
+                        [labelKey]: value.trim() || defaultLabel,
+                      },
+                    })
+                  }
+                />
+                <Field
+                  label="Cantidad (m)"
+                  value={report.medidas[valueKey]}
+                  onChange={(value) => patch({ medidas: { ...report.medidas, [valueKey]: value } })}
+                />
+              </div>
+            ))}
+            {(['altura_util', 'altura_total'] as const).map((key) => (
               <Field
                 key={key}
                 label={key.replace(/_/g, ' ')}

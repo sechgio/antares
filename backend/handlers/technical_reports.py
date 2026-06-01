@@ -111,16 +111,28 @@ def technical_reports_autocomplete_contratista(params: dict[str, Any]) -> dict[s
     cs = str(params.get("cs") or "").strip()
     return {"options": _db().get_unique_contratista(cs if cs else None)}
 
+def _resolve_report_for_render(params: dict[str, Any]) -> dict[str, Any]:
+    """Prefer the inline report payload from the editor over stale DB snapshots."""
+    report_payload = params.get("report")
+    report_id = str(params.get("id") or "").strip()
+
+    if isinstance(report_payload, dict) and report_payload:
+        return report_payload
+
+    if report_id:
+        stored = _db().get(report_id)
+        if isinstance(stored, dict):
+            return stored
+
+    msg = "Informe no encontrado: envíe el report actual o un id válido"
+    raise ValueError(msg)
+
+
 @with_locale
 def technical_reports_render_html(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.technical_reports.rendering import render_report_html
-    report = params.get("report")
-    report_id = str(params.get("id") or "")
-    if not isinstance(report, dict):
-        report = _db().get(report_id)
-    if not isinstance(report, dict):
-        msg = f"Informe no encontrado: {report_id}"
-        raise ValueError(msg)
+
+    report = _resolve_report_for_render(params)
     html = render_report_html(report, params.get("logo_left"), params.get("logo_right"))
     return {"html": html, "filename": f"informe_{report['id']}.pdf"}
 

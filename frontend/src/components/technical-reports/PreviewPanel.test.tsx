@@ -65,7 +65,14 @@ const report: TechnicalReport = {
     observaciones_desague: '',
     sugerencias_desague: '',
   },
-  medidas: { diametro: '', diametro_interno: '', altura_util: '', altura_total: '' },
+  medidas: {
+    diametro: '',
+    diametro_interno: '',
+    altura_util: '',
+    altura_total: '',
+    etiqueta_diametro: 'DIAMETRO',
+    etiqueta_diametro_interno: 'DIAMETRO INTERNO',
+  },
   observaciones: '',
   sugerencias: '',
   status: 'draft',
@@ -84,5 +91,54 @@ describe('PreviewPanel', () => {
 
     expect(screen.getByText('454654001')).toBeInTheDocument();
     expect(screen.getByText('ACCIONA')).toBeInTheDocument();
+  });
+
+  it('sums valve and basket quantities vertically by diameter in the total row', () => {
+    const reportWithTotals: TechnicalReport = {
+      ...report,
+      valvulas: {
+        ...report.valvulas,
+        impulsion: { ...report.valvulas.impulsion, '8': 1 },
+        aduccion: { ...report.valvulas.aduccion, '10': 1 },
+        bypass: { ...report.valvulas.bypass, '10': 1 },
+        desague: { ...report.valvulas.desague, '10': 1 },
+        diametros: { ...report.valvulas.diametros, '12': 1 },
+      },
+      canastillas: {
+        ...report.canastillas,
+        aduccion: { ...report.canastillas.aduccion, '10': 2 },
+        succion: { ...report.canastillas.succion, '8': 1 },
+        desague: { ...report.canastillas.desague, '14': 1 },
+      },
+    };
+
+    const { container } = render(<PreviewPanel report={reportWithTotals} logoLeft={null} logoRight={null} />);
+    const totalRows = Array.from(container.querySelectorAll('tr')).filter((row) => row.textContent?.includes('TOTAL'));
+
+    expect(totalRows[0]?.textContent).toMatch(/1.*3.*1/);
+    expect(totalRows[1]?.textContent).toMatch(/1.*2.*1/);
+  });
+
+  it('shows custom medida labels in the measures table', () => {
+    const reportWithLabels: TechnicalReport = {
+      ...report,
+      medidas: {
+        ...report.medidas,
+        etiqueta_diametro: 'LARGO',
+        etiqueta_diametro_interno: 'ANCHO',
+        diametro: '12',
+        diametro_interno: '8',
+      },
+    };
+
+    const { container } = render(<PreviewPanel report={reportWithLabels} logoLeft={null} logoRight={null} />);
+    const medidasTable = Array.from(container.querySelectorAll('table')).find((table) =>
+      table.textContent?.includes('Medidas'),
+    );
+
+    expect(medidasTable?.textContent).toContain('LARGO');
+    expect(medidasTable?.textContent).toContain('ANCHO');
+    expect(medidasTable?.textContent).toContain('12');
+    expect(medidasTable?.textContent).toContain('8');
   });
 });

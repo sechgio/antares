@@ -8,7 +8,7 @@ include = ["backend*"]
 
 [project]
 name = "hidro-convert-backend"
-version = "0.9.0"
+version = "0.10.0"
 description = "Backend for ANTARES - Image conversion and renaming"
 authors = [
     {name = "ANTARES", email = "dev@antares.app"},

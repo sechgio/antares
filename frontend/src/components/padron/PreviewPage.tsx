@@ -44,7 +44,7 @@ interface PreviewPageProps {
   totalPages: number;
   isFirstPage: boolean;
   isLastPage: boolean;
-  variant?: 'service-interruption' | 'volante-lurigancho';
+  variant?: 'service-interruption' | 'volante-lurigancho' | 'volanteo-lurigancho-v2';
 }
 
 export default function PreviewPage({
@@ -63,14 +63,17 @@ export default function PreviewPage({
     ? { item: '5%', name: '24%', address: '31%', time: '10%', firma: '30%' }
     : { item: '4%', name: '24%', address: '28%', time: '12%', firma: '32%' };
   const isLurigancho = variant === 'volante-lurigancho';
-  const showUpperLayout = !isLurigancho || isFirstPage;
-  const showCurrentVolanteo = !isLurigancho && isLastPage;
-  const showLuriganchoVolanteo = isLurigancho;
+  const isLuriganchoV2 = variant === 'volanteo-lurigancho-v2';
+  const isAnyLurigancho = isLurigancho || isLuriganchoV2;
+  const showUpperLayout = !isAnyLurigancho || isFirstPage;
+  const showCurrentVolanteo = !isAnyLurigancho && isLastPage;
+  const showLuriganchoVolanteo = isAnyLurigancho;
   const sheetClasses = [
     'vpad-sheet',
     orientation,
-    isLurigancho ? 'volante-lurigancho' : '',
-    isLurigancho && !isFirstPage ? 'is-followup' : '',
+    isAnyLurigancho ? 'volante-lurigancho' : '',
+    isLuriganchoV2 ? 'volanteo-lurigancho-v2' : '',
+    isAnyLurigancho && !isFirstPage ? 'is-followup' : '',
   ].filter(Boolean).join(' ');
 
   return (
@@ -188,9 +191,13 @@ export default function PreviewPage({
         </div>
       )}
 
-      <div className={isLurigancho ? 'vpad-sheet-folio-top' : 'vpad-sheet-foot'}>
-        {isLurigancho ? `${pageNumber} de ${totalPages}` : `Página ${pageNumber} de ${totalPages}`}
-      </div>
+      {isLuriganchoV2 ? (
+        <span className="vpad-sheet-folio-bottom">{pageNumber}</span>
+      ) : (
+        <div className={isLurigancho ? 'vpad-sheet-folio-top' : 'vpad-sheet-foot'}>
+          {isLurigancho ? `${pageNumber} de ${totalPages}` : `Página ${pageNumber} de ${totalPages}`}
+        </div>
+      )}
     </div>
   );
 }

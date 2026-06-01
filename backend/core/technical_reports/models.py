@@ -39,6 +39,8 @@ INSPECTION_TEXT_FIELDS = {
 
 VALVULA_DIAMETERS = ["2", "3", "4", "6", "8", "10", "12"]
 CANASTILLA_DIAMETERS = ["2", "3", "4", "6", "8", "10", "14"]
+DEFAULT_MEDIDA_LABEL_DIAMETRO = "DIAMETRO"
+DEFAULT_MEDIDA_LABEL_DIAMETRO_INTERNO = "DIAMETRO INTERNO"
 
 
 def report_id_from_number(value: int) -> str:
@@ -135,7 +137,25 @@ def default_medidas() -> dict[str, str]:
         "diametro_interno": "",
         "altura_util": "",
         "altura_total": "",
+        "etiqueta_diametro": DEFAULT_MEDIDA_LABEL_DIAMETRO,
+        "etiqueta_diametro_interno": DEFAULT_MEDIDA_LABEL_DIAMETRO_INTERNO,
     }
+
+
+def _normalize_medidas(source: Any) -> dict[str, str]:
+    medidas = default_medidas()
+    if not isinstance(source, dict):
+        return medidas
+    medidas.update({k: _safe_str(v, "") for k, v in source.items()})
+    medidas["etiqueta_diametro"] = _safe_str(
+        medidas.get("etiqueta_diametro"),
+        DEFAULT_MEDIDA_LABEL_DIAMETRO,
+    )
+    medidas["etiqueta_diametro_interno"] = _safe_str(
+        medidas.get("etiqueta_diametro_interno"),
+        DEFAULT_MEDIDA_LABEL_DIAMETRO_INTERNO,
+    )
+    return medidas
 
 
 def create_empty_report(informe_id: int) -> dict[str, Any]:
@@ -189,10 +209,7 @@ class TechnicalReport:
         report["inspeccion"] = _normalize_inspeccion(source.get("inspeccion"))
         report["valvulas"] = _normalize_valvulas(source.get("valvulas"))
         report["canastillas"] = _normalize_canastillas(source.get("canastillas"))
-        medidas = default_medidas()
-        if isinstance(source.get("medidas"), dict):
-            medidas.update({k: _safe_str(v, "") for k, v in source["medidas"].items()})
-        report["medidas"] = medidas
+        report["medidas"] = _normalize_medidas(source.get("medidas"))
         report["observaciones"] = _safe_str(source.get("observaciones"), "")
         report["sugerencias"] = _safe_str(source.get("sugerencias"), "")
         report["status"] = source.get("status") if source.get("status") in {"draft", "completed"} else "draft"

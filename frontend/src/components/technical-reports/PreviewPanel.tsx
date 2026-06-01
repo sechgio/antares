@@ -1,4 +1,9 @@
-import type { TechnicalReport } from './types';
+import { sumDiameterColumns } from './diameterTotals';
+import {
+  DEFAULT_MEDIDA_LABEL_DIAMETRO,
+  DEFAULT_MEDIDA_LABEL_DIAMETRO_INTERNO,
+  type TechnicalReport,
+} from './types';
 
 interface Props {
   report: TechnicalReport | null;
@@ -43,7 +48,14 @@ const EMPTY_REPORT: TechnicalReport = {
     observaciones_succion: '', sugerencias_succion: '',
     observaciones_desague: '', sugerencias_desague: '',
   },
-  medidas: { diametro: '', diametro_interno: '', altura_util: '', altura_total: '' },
+  medidas: {
+    diametro: '',
+    diametro_interno: '',
+    altura_util: '',
+    altura_total: '',
+    etiqueta_diametro: DEFAULT_MEDIDA_LABEL_DIAMETRO,
+    etiqueta_diametro_interno: DEFAULT_MEDIDA_LABEL_DIAMETRO_INTERNO,
+  },
   observaciones: '',
   sugerencias: '',
   status: 'draft',
@@ -224,8 +236,8 @@ export default function PreviewPanel({ report, logoLeft, logoRight }: Props) {
             <tr><th>Medidas</th><th className="center">U/M</th><th className="center">Cantidad</th></tr>
           </thead>
           <tbody>
-            <tr><th>DIAMETRO</th><td className="center">M</td><td className="center">{data.medidas.diametro}</td></tr>
-            <tr><th>DIAMETRO INTERNO</th><td className="center">M</td><td className="center">{data.medidas.diametro_interno}</td></tr>
+            <tr><th>{data.medidas.etiqueta_diametro}</th><td className="center">M</td><td className="center">{data.medidas.diametro}</td></tr>
+            <tr><th>{data.medidas.etiqueta_diametro_interno}</th><td className="center">M</td><td className="center">{data.medidas.diametro_interno}</td></tr>
             <tr><th>ALTURA UTIL</th><td className="center">M</td><td className="center">{data.medidas.altura_util}</td></tr>
             <tr><th>ALTURA TOTAL</th><td className="center">M</td><td className="center">{data.medidas.altura_total}</td></tr>
           </tbody>
@@ -278,6 +290,11 @@ function ReportDiameterTable({
   operativas: number;
   noOperativas: number;
 }) {
+  const diameterTotals = sumDiameterColumns(
+    rows.map(([, data]) => data),
+    diameters,
+  );
+
   return (
     <table className="tr-paper-table tr-paper-small">
       <colgroup>
@@ -322,7 +339,11 @@ function ReportDiameterTable({
         ))}
         <tr style={{ background: '#d4d8dd' }}>
           <th>TOTAL</th>
-          <td colSpan={diameters.length}></td>
+          {diameters.map((d) => (
+            <td key={d} className="center" style={{ fontWeight: 'bold' }}>
+              {diameterTotals[d] ? diameterTotals[d] : ''}
+            </td>
+          ))}
           <td className="center" style={{ fontWeight: 'bold' }}>{operativas}</td>
           <td className="center" style={{ fontWeight: 'bold' }}>{noOperativas}</td>
           <td></td>

@@ -5,6 +5,7 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from backend.core.technical_reports.diameter_totals import sum_diameter_columns
 from backend.core.technical_reports.models import TechnicalReport
 from backend.utils.paths import resource_path
 
@@ -18,15 +19,22 @@ def _templates_dir() -> Path:
 
 # Module-level singleton — avoids recreating Environment + losing template cache on each render.
 _jinja_env: Environment | None = None
+_jinja_template_mtime: float = 0.0
 
 
 def _environment() -> Environment:
-    global _jinja_env
-    if _jinja_env is None:
+    global _jinja_env, _jinja_template_mtime
+    templates_dir = _templates_dir()
+    template_file = templates_dir / "informe_tecnico.html"
+    template_mtime = template_file.stat().st_mtime if template_file.exists() else 0.0
+    if _jinja_env is None or template_mtime != _jinja_template_mtime:
         _jinja_env = Environment(
-            loader=FileSystemLoader(str(_templates_dir())),
+            loader=FileSystemLoader(str(templates_dir)),
             autoescape=select_autoescape(("html", "xml")),
+            auto_reload=True,
         )
+        _jinja_env.globals["sum_diameter_columns"] = sum_diameter_columns
+        _jinja_template_mtime = template_mtime
     return _jinja_env
 
 

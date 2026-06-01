@@ -78,12 +78,17 @@ export interface CanastillasData {
   sugerencias_desague: string;
 }
 
+export const DEFAULT_MEDIDA_LABEL_DIAMETRO = 'DIAMETRO';
+export const DEFAULT_MEDIDA_LABEL_DIAMETRO_INTERNO = 'DIAMETRO INTERNO';
+
 export interface MedidasData {
   [key: string]: string;
   diametro: string;
   diametro_interno: string;
   altura_util: string;
   altura_total: string;
+  etiqueta_diametro: string;
+  etiqueta_diametro_interno: string;
 }
 
 export interface TechnicalReport {

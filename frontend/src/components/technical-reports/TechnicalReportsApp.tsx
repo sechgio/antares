@@ -84,8 +84,9 @@ export default function TechnicalReportsApp() {
     if (!formData) return;
     setBusy(true);
     try {
-      await technicalReportsApi.update(formData.id, formData);
-      setSavedSnapshot(JSON.stringify(formData));
+      const saved = await technicalReportsApi.update(formData.id, formData);
+      setFormData(saved);
+      setSavedSnapshot(JSON.stringify(saved));
       await loadReports();
       addToast({ message: 'Informe guardado', type: 'success' });
     } catch (error) {
@@ -180,18 +181,31 @@ export default function TechnicalReportsApp() {
     if (!formData) return;
     setBusy(true);
     try {
-      const rendered = await technicalReportsApi.renderHtml({ report: formData, logo_left: logoLeft, logo_right: logoRight });
+      const reportForRender = hasChanges
+        ? await technicalReportsApi.update(formData.id, formData)
+        : formData;
+      if (hasChanges) {
+        setFormData(reportForRender);
+        setSavedSnapshot(JSON.stringify(reportForRender));
+        await loadReports();
+      }
+      const rendered = await technicalReportsApi.renderHtml({
+        id: reportForRender.id,
+        report: reportForRender,
+        logo_left: logoLeft,
+        logo_right: logoRight,
+      });
       const pdf = await technicalReportsApi.htmlToPdf({ html: rendered.html, filename: rendered.filename });
       if (!pdf.pdf_base64) throw new Error('No se recibio el contenido del PDF generado.');
       downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
-      await saveFeatureHistory('informe_tecnico', pdf.filename, { type: 'individual', reportId: formData.id });
-      addToast({ message: 'PDF generado', type: 'success' });
+      await saveFeatureHistory('informe_tecnico', pdf.filename, { type: 'individual', reportId: reportForRender.id });
+      addToast({ message: hasChanges ? 'Informe guardado y PDF generado' : 'PDF generado', type: 'success' });
     } catch (error) {
       addToast({ message: error instanceof Error ? error.message : 'No se pudo generar el PDF', type: 'error' });
     } finally {
       setBusy(false);
     }
-  }, [addToast, formData, logoLeft, logoRight]);
+  }, [addToast, formData, hasChanges, loadReports, logoLeft, logoRight]);
 
   const exportConsolidated = useCallback(async () => {
     if (reports.length === 0) return;

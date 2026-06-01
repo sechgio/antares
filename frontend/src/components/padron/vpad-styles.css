@@ -1063,6 +1063,32 @@
     font-size: 9px;
 }
 
+/* Volanteo Lurigancho V2 – hide top folio, use bottom sequential numbering */
+.vpad-sheet.volanteo-lurigancho-v2 .vpad-sheet-folio-top {
+    display: none;
+}
+
+.vpad-sheet-folio-bottom {
+    position: absolute;
+    right: 8mm;
+    bottom: 5mm;
+    font-size: 16px;
+    font-weight: 800;
+    color: #000;
+    white-space: nowrap;
+}
+
+.vpad-sheet.portrait .vpad-sheet-folio-bottom {
+    right: 10mm;
+    bottom: 5mm;
+    font-size: 14px;
+}
+
+.vpad-folio-active {
+    font-weight: 800;
+    color: #000;
+}
+
 /* Volanteo section (last page only) */
 .vpad-volanteo-section {
     margin-top: 8px;

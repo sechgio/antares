@@ -24,6 +24,33 @@ def test_import_file_handler_imports_csv(monkeypatch, tmp_path) -> None:
     assert HANDLERS["technical_reports_list"]({"summary": True})["reports"][0]["id"] == "RPT-0001"
 
 
+def test_render_html_prefers_inline_report_over_database(monkeypatch, tmp_path) -> None:
+    from backend.core.technical_reports import database as db_module
+    from backend.handlers.technical_reports import HANDLERS
+
+    monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "technical_reports.json")
+    stored = HANDLERS["technical_reports_create"]({})["report"]
+    stored["medidas"]["etiqueta_diametro"] = "DIAMETRO"
+    stored["medidas"]["etiqueta_diametro_interno"] = "DIAMETRO INTERNO"
+    stored["valvulas"]["aduccion"]["3"] = 3
+    HANDLERS["technical_reports_update"]({"id": stored["id"], "report": stored})
+
+    inline = dict(stored)
+    inline["medidas"]["etiqueta_diametro"] = "LARGO"
+    inline["medidas"]["etiqueta_diametro_interno"] = "ANCHO"
+    inline["valvulas"]["aduccion"]["4"] = 1
+    inline["valvulas"]["impulsion"]["4"] = 1
+    inline["valvulas"]["aduccion"]["3"] = 0
+    inline["valvulas"]["bypass"]["3"] = 0
+    inline["valvulas"]["desague"]["3"] = 0
+
+    result = HANDLERS["technical_reports_render_html"]({"id": stored["id"], "report": inline})
+
+    assert '<td class="row-label">LARGO</td>' in result["html"]
+    assert '<td class="row-label">ANCHO</td>' in result["html"]
+    assert 'font-weight:bold;">2</td>' in result["html"]
+
+
 def test_html_pdf_sanitizer_blocks_remote_and_local_resource_urls() -> None:
     html = """
     <html>

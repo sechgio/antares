@@ -15,7 +15,10 @@ export const technicalReportsApi = {
     const result = await api.technicalReportsCreate() as { report: TechnicalReport };
     return result.report;
   },
-  update: (id: string, report: TechnicalReport) => api.technicalReportsUpdate(id, report),
+  update: async (id: string, report: TechnicalReport) => {
+    const result = await api.technicalReportsUpdate(id, report) as { success: boolean; report: TechnicalReport };
+    return result.report;
+  },
   delete: (id: string) => api.technicalReportsDelete(id),
   clear: () => api.technicalReportsClear(),
   importFile: (filename: string, content_b64: string) => api.technicalReportsImportFile({ filename, content_b64 }),

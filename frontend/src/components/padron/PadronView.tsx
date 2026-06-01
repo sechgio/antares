@@ -121,8 +121,9 @@ export default function PadronView() {
   }, []);
 
   const isWaterCutNotice = outputFormat === 'water-cut-notice';
-  const previewVariant = outputFormat === 'volante-lurigancho'
-    ? 'volante-lurigancho'
+  const isAnyLurigancho = outputFormat === 'volante-lurigancho' || outputFormat === 'volanteo-lurigancho-v2';
+  const previewVariant = isAnyLurigancho
+    ? outputFormat
     : 'service-interruption';
   const rowsPerPage = isWaterCutNotice ? 39 : (orientation === 'landscape' ? 18 : 37);
   const maxItem = totalItemsCount;
@@ -184,10 +185,10 @@ export default function PadronView() {
 
   const servicePages = useMemo(
     () =>
-      outputFormat === 'volante-lurigancho'
+      isAnyLurigancho
         ? paginateLuriganchoItems(visibleItems, orientation)
         : chunkArray(visibleItems, rowsPerPage),
-    [orientation, outputFormat, rowsPerPage, visibleItems],
+    [isAnyLurigancho, orientation, rowsPerPage, visibleItems],
   );
 
   const waterCutPages = useMemo(
