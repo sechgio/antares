@@ -1,6 +1,7 @@
 export const TAB_DEFINITIONS = [
   { id: 'convert', label: 'Conversión', shortcut: 'Ctrl+1', shortcutKey: '1', fullBleed: false },
   { id: 'formatos', label: 'Formatos PDF', shortcut: 'Ctrl+3', shortcutKey: '3', fullBleed: true },
+  { id: 'sellador', label: 'Sellador', shortcut: 'Ctrl+Shift+S', shortcutKey: 's', shortcutShift: true, fullBleed: true },
   { id: 'padron', label: 'Generar Padrones', shortcut: 'Ctrl+4', shortcutKey: '4', fullBleed: true },
   { id: 'volantes', label: 'Generar Volantes', shortcut: 'Ctrl+5', shortcutKey: '5', fullBleed: true },
   { id: 'reportesCampo', label: 'Reportes de Campo', shortcut: 'Ctrl+8', shortcutKey: '8', fullBleed: true },

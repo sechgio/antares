@@ -1,6 +1,6 @@
 import Badge from '../ui/Badge';
 
-export type RunType = 'conversion' | 'formato' | 'padron' | 'volante' | 'image_optimizer' | 'reporte_campo' | 'panel_aviso_corte' | 'informe_tecnico';
+export type RunType = 'conversion' | 'formato' | 'sellador' | 'padron' | 'volante' | 'image_optimizer' | 'reporte_campo' | 'panel_aviso_corte' | 'informe_tecnico';
 
 export interface HistoryRun {
   id: number;
@@ -28,6 +28,7 @@ function safeJsonParse<T>(json: string, fallback: T): T {
 const RUN_TYPE_LABELS: Record<RunType, string> = {
   conversion: 'Conversión',
   formato: 'Formato',
+  sellador: 'Sellador',
   padron: 'Padrón',
   volante: 'Volante',
   image_optimizer: 'Imágenes',
@@ -39,6 +40,7 @@ const RUN_TYPE_LABELS: Record<RunType, string> = {
 const RUN_TYPE_COLORS: Record<RunType, string> = {
   conversion: 'text-[var(--accent-green)] border-[color:var(--accent-green)]/20 bg-[color:var(--accent-green)]/10',
   formato: 'text-[var(--accent-primary)] border-[color:var(--accent-primary)]/20 bg-[color:var(--accent-primary)]/10',
+  sellador: 'text-amber-400 border-amber-400/20 bg-amber-400/10',
   padron: 'text-[var(--accent-yellow)] border-[color:var(--accent-yellow)]/20 bg-[color:var(--accent-yellow)]/10',
   volante: 'text-[var(--accent-secondary)] border-[color:var(--accent-secondary)]/20 bg-[color:var(--accent-secondary)]/10',
   image_optimizer: 'text-purple-400 border-purple-400/20 bg-purple-400/10',

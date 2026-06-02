@@ -17,6 +17,7 @@ from backend.handlers.info import HANDLERS as INFO_HANDLERS
 from backend.handlers.jobs import HANDLERS as JOBS_HANDLERS
 from backend.handlers.optimizer import HANDLERS as OPTIMIZER_HANDLERS
 from backend.handlers.panel_aviso_corte import HANDLERS as PANEL_HANDLERS
+from backend.handlers.sellador import HANDLERS as SELLADOR_HANDLERS
 from backend.handlers.technical_reports import HANDLERS as TECH_REPORTS_HANDLERS
 from backend.handlers.templates import HANDLERS as TEMPLATES_HANDLERS
 from backend.handlers.theme import HANDLERS as THEME_HANDLERS
@@ -35,6 +36,7 @@ HANDLERS: dict[str, Callable[[dict[str, Any]], Any]] = {
     **TEMPLATES_HANDLERS,
     **PANEL_HANDLERS,
     **OPTIMIZER_HANDLERS,
+    **SELLADOR_HANDLERS,
     **JOBS_HANDLERS,
 }
 

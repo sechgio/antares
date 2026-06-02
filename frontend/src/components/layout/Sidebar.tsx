@@ -11,6 +11,7 @@ interface SidebarProps {
 const ICONS: Record<TabId, ComponentType<{ className?: string }>> = {
   convert: LightningIcon,
   formatos: FilePdfIcon,
+  sellador: StampIcon,
   padron: ScrollTextIcon,
   volantes: MegaphoneIcon,
   reportesCampo: Camera,
@@ -83,6 +84,17 @@ function FilePdfIcon({ className }: { className?: string }) {
       <path d="M9 15v-2" />
       <path d="M12 15v-6" />
       <path d="M15 15v-4" />
+    </svg>
+  );
+}
+
+function StampIcon({ className }: { className?: string }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M5 21h14" />
+      <path d="M6 17h12" />
+      <path d="M12 3l4 8H8l4-8z" />
+      <path d="M8 11h8v6H8z" />
     </svg>
   );
 }

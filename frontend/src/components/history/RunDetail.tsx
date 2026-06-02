@@ -14,6 +14,7 @@ function safeJsonParse<T>(json: string, fallback: T): T {
 const RUN_TYPE_LABELS: Record<RunType, string> = {
   conversion: 'Conversión',
   formato: 'Formato',
+  sellador: 'Sellador',
   padron: 'Padrón',
   volante: 'Volante',
   image_optimizer: 'Imágenes',
@@ -25,6 +26,7 @@ const RUN_TYPE_LABELS: Record<RunType, string> = {
 const RUN_TYPE_COLORS: Record<RunType, string> = {
   conversion: 'text-[var(--accent-green)]',
   formato: 'text-[var(--accent-primary)]',
+  sellador: 'text-amber-400',
   padron: 'text-[var(--accent-yellow)]',
   volante: 'text-[var(--accent-secondary)]',
   image_optimizer: 'text-purple-400',
@@ -76,6 +78,15 @@ export default function RunDetail({ run, onReexecute, onDelete }: RunDetailProps
         { label: 'Errores', value: run.err_count, color: run.err_count > 0 ? 'text-[var(--accent-red)]' : 'text-[var(--text-secondary)]' },
       ];
     }
+    if (type === 'sellador') {
+      const stampedPages = Array.isArray(options.stamped_pages) ? options.stamped_pages.join(', ') : '—';
+      return [
+        { label: 'Archivo', value: run.formato || 'PDF sellado' },
+        { label: 'Sellos', value: String(options.stamp_count ?? run.ok_count), color: 'text-amber-400' },
+        { label: 'Páginas', value: stampedPages },
+        { label: 'Semilla', value: String(options.seed ?? '—') },
+      ];
+    }
     // volante
     return [
       { label: 'Volantes', value: run.formato || 'Volantes' },
@@ -123,7 +134,7 @@ export default function RunDetail({ run, onReexecute, onDelete }: RunDetailProps
         </div>
       )}
 
-      {(type === 'formato' || type === 'padron' || type === 'volante' || type === 'image_optimizer') && Object.keys(options).length > 0 && (
+      {(type === 'formato' || type === 'padron' || type === 'volante' || type === 'image_optimizer' || type === 'sellador') && Object.keys(options).length > 0 && (
         <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-subtle)] p-4">
           <div className="eyebrow mb-2">Opciones</div>
           <div className="space-y-1.5">
@@ -144,6 +155,7 @@ export default function RunDetail({ run, onReexecute, onDelete }: RunDetailProps
              type === 'formato' ? `Páginas (${files.length})` :
              type === 'padron' ? `Ítems (${files.length})` :
              type === 'image_optimizer' ? `Imágenes (${files.length})` :
+             type === 'sellador' ? `Archivo (${files.length})` :
              `Registros (${files.length})`}
           </span>
         </div>

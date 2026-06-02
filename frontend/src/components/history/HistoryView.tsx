@@ -12,6 +12,7 @@ const TYPE_FILTERS: { label: string; value: RunType | 'all' }[] = [
   { label: 'Todos', value: 'all' },
   { label: 'Conversión', value: 'conversion' },
   { label: 'Formatos', value: 'formato' },
+  { label: 'Sellador', value: 'sellador' },
   { label: 'Padrón', value: 'padron' },
   { label: 'Volante', value: 'volante' },
   { label: 'Imágenes', value: 'image_optimizer' },

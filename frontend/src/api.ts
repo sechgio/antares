@@ -40,6 +40,8 @@ const LONG_RUNNING_METHODS = new Set([
   'scan_folder',
   'preview_image',
   'formatos_generate',
+  'sellador_apply',
+  'sellador_render_page',
   'image_optimizer_zip',
   'technical_reports_import_file',
   'technical_reports_render_consolidated_html',
@@ -280,6 +282,53 @@ export const api = {
   formatosDelete: (format_id: string) => _invoke<{ deleted: boolean }>('formatos_delete', { format_id }),
   formatosUpdateMapping: (format_id: string, mapping: VisualMapping) =>
     _invoke<{ format: FormatInfo }>('formatos_update_mapping', { format_id, mapping }),
+
+  // ─── Sellador ───────────────────────────────────────────────────────────
+  selladorInspectPdf: (body: { pdf_path: string }) =>
+    _invoke<{
+      filename: string;
+      page_count: number;
+      page_width: number;
+      page_height: number;
+    }>('sellador_inspect_pdf', body),
+  selladorRenderPage: (body: { pdf_path: string; page_num?: number; max_width?: number }) =>
+    _invoke<{
+      image_base64: string;
+      page_width: number;
+      page_height: number;
+      mime_type: string;
+    }>('sellador_render_page', body),
+  selladorApply: (body: {
+    pdf_b64?: string;
+    pdf_path?: string;
+    stamp_b64?: string;
+    stamp_path?: string;
+    stamp_count: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    seed?: number;
+    filename?: string;
+    output_path?: string;
+    stamp_placements?: Array<{
+      page_index: number;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }>;
+  }) => _invoke<{
+    pdf_base64?: string;
+    saved_path?: string;
+    filename: string;
+    stamp_count: number;
+    stamped_pages: number[];
+    page_assignments: number[];
+    seed: number;
+  }>('sellador_apply', body),
+  selladorPreviewPages: (body: { page_count: number; stamp_count: number; seed?: number }) =>
+    _invoke<{ page_assignments: number[]; stamped_pages: number[]; seed: number }>('sellador_preview_pages', body),
 
   // ─── Image Optimizer ────────────────────────────────────────────────────
   imageOptimizerZip: (body: { files: Array<{ filename: string; content_b64: string }>; zip_name: string; output_path?: string }) =>

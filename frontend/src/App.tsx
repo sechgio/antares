@@ -12,6 +12,7 @@ import { FULL_BLEED_TABS, TAB_DEFINITIONS, type TabId } from './navigation';
 
 const ConversionView = React.lazy(() => import('./components/conversion/ConversionView'));
 const FormatosView = React.lazy(() => import('./components/formatos/FormatosView'));
+const SelladorView = React.lazy(() => import('./components/sellador'));
 const PadronView = React.lazy(() => import('./components/padron/PadronView'));
 const VolantesView = React.lazy(() => import('./components/volantes/VolantesView'));
 const ReportesCampoView = React.lazy(() => import('./components/reportes-campo'));
@@ -25,6 +26,7 @@ const PanelAvisoCorteView = React.lazy(() => import('./components/panel-aviso-co
 const VIEWS: Record<TabId, React.LazyExoticComponent<React.ComponentType>> = {
   convert: ConversionView,
   formatos: FormatosView,
+  sellador: SelladorView,
   padron: PadronView,
   volantes: VolantesView,
   reportesCampo: ReportesCampoView,
@@ -71,6 +73,7 @@ function AppContent() {
   useKeyboardShortcut('k', openCommandPalette, { ctrl: true, preventDefault: true });
   useKeyboardShortcut('1', () => handleTabChange('convert'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('3', () => handleTabChange('formatos'), { ctrl: true, preventDefault: true });
+  useKeyboardShortcut('s', () => handleTabChange('sellador'), { ctrl: true, shift: true, preventDefault: true });
   useKeyboardShortcut('4', () => handleTabChange('padron'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('5', () => handleTabChange('volantes'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('6', () => handleTabChange('history'), { ctrl: true, preventDefault: true });
