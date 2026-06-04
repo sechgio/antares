@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ToastProvider } from '../../hooks/useToast';
 import PreviewPanelView from './PreviewPanelView';
@@ -42,5 +42,36 @@ describe('PreviewPanelView column mapping', () => {
     fireEvent.click(screen.getAllByTitle('Eliminar')[0]);
 
     expect(getMappingScrollContainer().scrollTop).toBe(96);
+  });
+
+  it('adds a custom column with Enter when the mapping select has focus', async () => {
+    const { container } = renderView();
+    const fileInput = container.querySelector('input[accept=".csv,.xlsx,.xls"]') as HTMLInputElement | null;
+
+    expect(fileInput).toBeTruthy();
+    fireEvent.change(fileInput!, {
+      target: {
+        files: [new File(['SGIO,OTRA\n1,2'], 'datos.csv', { type: 'text/csv' })],
+      },
+    });
+
+    await waitFor(() => expect(screen.getByText('1 registros cargados')).toBeInTheDocument());
+    fireEvent.click(screen.getByLabelText('Cerrar vista previa'));
+
+    fireEvent.click(screen.getByRole('button', { name: /Agregar Columna Personalizada/i }));
+
+    const nameInput = screen.getByPlaceholderText('Ej: FECHA CORTE');
+    fireEvent.change(nameInput, {
+      target: { value: 'SGIO EXTRA' },
+    });
+
+    const form = nameInput.closest('form');
+    expect(form).toBeTruthy();
+    const mappingSelect = within(form!).getByDisplayValue('-- Seleccionar Columna --') as HTMLSelectElement;
+
+    fireEvent.change(mappingSelect, { target: { value: 'SGIO' } });
+    fireEvent.keyDown(mappingSelect, { key: 'Enter', code: 'Enter' });
+
+    expect(await screen.findByText('SGIO EXTRA')).toBeInTheDocument();
   });
 });

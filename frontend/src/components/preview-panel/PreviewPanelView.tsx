@@ -357,6 +357,12 @@ export default function PreviewPanelView() {
     resetColumnModal();
   };
 
+  const handleCustomColumnKeyDown = (event: React.KeyboardEvent<HTMLFormElement>) => {
+    if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    addCustomColumn();
+  };
+
   const removeCustomColumn = (id: string) => {
     setCustomColumns(prev => prev.filter(c => c.id !== id));
     setMappings(prev => { const n = { ...prev }; delete n[id]; return n; });
@@ -834,19 +840,39 @@ export default function PreviewPanelView() {
 
         {/* Data Preview Modal */}
         {showDataPreview && data.length > 0 && (
-          <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-            <div className="bg-[var(--bg-surface)] border border-[var(--border-medium)] rounded-xl w-full max-w-4xl max-h-[80vh] flex flex-col shadow-2xl">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)]">
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-2 sm:p-4">
+            <div className="bg-[var(--bg-surface)] border border-[var(--border-medium)] rounded-xl w-full max-w-[1400px] max-h-[88vh] flex flex-col shadow-2xl">
+              <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--border-subtle)]">
                 <h3 className="text-[14px] font-semibold text-[var(--text-primary)]">Vista previa de datos ({data.length} registros)</h3>
-                <button onClick={() => setShowDataPreview(false)} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"><X size={18} /></button>
+                <button
+                  onClick={() => setShowDataPreview(false)}
+                  className="shrink-0 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                  title="Cerrar vista previa"
+                  aria-label="Cerrar vista previa"
+                >
+                  <X size={18} />
+                </button>
               </div>
-              <div className="flex-1 overflow-auto p-4">
-                <table className="w-full text-[11px]">
+              <div className="flex-1 overflow-y-auto overflow-x-hidden p-3">
+                <table className="w-full table-fixed border-collapse text-[10px] sm:text-[11px]">
+                  <colgroup>
+                    <col className="w-9" />
+                    {headers.map(h => <col key={h} />)}
+                    <col className="w-14" />
+                  </colgroup>
                   <thead>
                     <tr className="border-b border-[var(--border-medium)]">
-                      <th className="text-left py-1.5 px-2 text-[var(--text-secondary)] font-semibold">#</th>
-                      {headers.map(h => <th key={h} className="text-left py-1.5 px-2 text-[var(--text-secondary)] font-semibold whitespace-nowrap">{h}</th>)}
-                      <th className="text-left py-1.5 px-2 text-[var(--text-secondary)] font-semibold">Fotos</th>
+                      <th className="text-left py-1.5 px-1.5 text-[var(--text-secondary)] font-semibold">#</th>
+                      {headers.map(h => (
+                        <th
+                          key={h}
+                          className="text-left py-1.5 px-1.5 text-[var(--text-secondary)] font-semibold align-bottom whitespace-normal break-words leading-snug"
+                          title={h}
+                        >
+                          {h}
+                        </th>
+                      ))}
+                      <th className="text-left py-1.5 px-1.5 text-[var(--text-secondary)] font-semibold">Fotos</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -859,9 +885,20 @@ export default function PreviewPanelView() {
                           className={`border-b border-[var(--border-subtle)] cursor-pointer hover:bg-[var(--bg-elevated)] transition-colors ${selectedIndex === String(idx) ? 'bg-[var(--accent-primary)]/10' : ''}`}
                           onClick={() => { setSelectedIndex(String(idx)); setShowDataPreview(false); }}
                         >
-                          <td className="py-1.5 px-2 text-[var(--text-primary)] font-medium">{idx + 1}</td>
-                          {headers.map(h => <td key={h} className="py-1.5 px-2 text-[var(--text-secondary)] truncate max-w-[150px]">{String(row[h] ?? '')}</td>)}
-                          <td className="py-1.5 px-2">
+                          <td className="py-1.5 px-1.5 text-[var(--text-primary)] font-medium align-top">{idx + 1}</td>
+                          {headers.map(h => {
+                            const value = String(row[h] ?? '');
+                            return (
+                              <td
+                                key={h}
+                                className="py-1.5 px-1.5 text-[var(--text-secondary)] align-top whitespace-normal break-words leading-snug"
+                                title={value}
+                              >
+                                {value}
+                              </td>
+                            );
+                          })}
+                          <td className="py-1.5 px-1.5 align-top">
                             <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${photoCount > 0 ? 'bg-green-500/20 text-green-400' : 'bg-[var(--bg-elevated)] text-[var(--text-muted)]'}`}>
                               {photoCount} 📷
                             </span>
@@ -879,7 +916,14 @@ export default function PreviewPanelView() {
         {/* Custom Column Modal */}
         {showColumnModal && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-            <div className="bg-[var(--bg-surface)] border border-[var(--border-medium)] rounded-xl p-5 w-full max-w-md mx-4 shadow-2xl">
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                addCustomColumn();
+              }}
+              onKeyDown={handleCustomColumnKeyDown}
+              className="bg-[var(--bg-surface)] border border-[var(--border-medium)] rounded-xl p-5 w-full max-w-md mx-4 shadow-2xl"
+            >
               <h3 className="text-[var(--text-primary)] font-semibold text-sm mb-4 flex items-center gap-2">
                 <span>+</span> Agregar Columna Personalizada
               </h3>
@@ -902,10 +946,10 @@ export default function PreviewPanelView() {
                 </div>
               </div>
               <div className="flex gap-3 mt-4">
-                <button onClick={resetColumnModal} className="flex-1 border border-[var(--border-medium)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--text-secondary)] rounded-lg py-2 text-[12px] transition-colors">Cancelar</button>
-                <button onClick={addCustomColumn} className="flex-1 bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-[var(--text-on-accent)] rounded-lg py-2 text-[12px] font-semibold transition-colors">Agregar</button>
+                <button type="button" onClick={resetColumnModal} className="flex-1 border border-[var(--border-medium)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--text-secondary)] rounded-lg py-2 text-[12px] transition-colors">Cancelar</button>
+                <button type="submit" className="flex-1 bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-[var(--text-on-accent)] rounded-lg py-2 text-[12px] font-semibold transition-colors">Agregar</button>
               </div>
-            </div>
+            </form>
           </div>
         )}
 
