@@ -231,19 +231,22 @@ def importar_excel(excel_path: str) -> int:
     df = pd.read_excel(excel_path, dtype=str, engine="openpyxl")
     df.columns = _normalize_excel_columns(list(df.columns))
 
-    fields = load_fields()
+    existing_fields = {f["name"]: f for f in load_fields()}
+    fields = [
+        {
+            **existing_fields.get(column, {}),
+            "name": column,
+            "type": existing_fields.get(column, {}).get("type", "TEXT"),
+            "required": bool(existing_fields.get(column, {}).get("required", False)),
+            "unique": bool(existing_fields.get(column, {}).get("unique", False)),
+        }
+        for column in df.columns
+    ]
+    fields = save_fields(fields)
+    if not fields:
+        msg = f"El Excel no contiene columnas válidas para importar: {list(df.columns)}"
+        raise ValueError(msg)
     field_names = [f["name"] for f in fields]
-    new_columns = [c for c in df.columns if c not in field_names]
-    if new_columns:
-        fields = [
-            *fields,
-            *[
-                {"name": column, "type": "TEXT", "required": False, "unique": False}
-                for column in new_columns
-            ],
-        ]
-        save_fields(fields)
-        field_names = [f["name"] for f in fields]
 
     # Asegurar que el esquema de BD coincida con los campos, incluyendo columnas del Excel.
     init_db()
@@ -402,6 +405,9 @@ def buscar_por_columna(codigos: list[str], column: str) -> dict[str, dict[str, A
     with _db_lock:
         conn = _get_connection()
         cursor = conn.cursor()
+        field_names = set(get_field_names())
+        if safe_column not in field_names:
+            return {}
         unique_codes = list(set(str(c).strip() for c in codigos if c))
         if not unique_codes:
             return {}

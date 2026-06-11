@@ -36,7 +36,7 @@ describe('UpdateButton', () => {
     </DialogProvider>
   );
 
-  it('highlights the whole button with the active theme accent when an update is available', () => {
+  it('highlights the update status with a circular active theme badge when an update is available', () => {
     renderUpdateButton();
 
     act(() => {
@@ -44,8 +44,11 @@ describe('UpdateButton', () => {
     });
 
     const button = screen.getByRole('button', { name: 'Actualización disponible' });
-    expect(button).toHaveClass('bg-[var(--accent-primary)]');
-    expect(button).toHaveClass('text-[var(--text-on-accent)]');
+    expect(button).not.toHaveClass('bg-[var(--accent-primary)]');
+    const badge = screen.getByTestId('update-status-badge');
+    expect(badge).toHaveClass('rounded-full');
+    expect(badge).toHaveClass('bg-[var(--accent-primary)]');
+    expect(badge).toHaveClass('text-[var(--text-on-accent)]');
     expect(screen.queryByText(/Instalar/i)).not.toBeInTheDocument();
   });
 

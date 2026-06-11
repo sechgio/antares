@@ -42,6 +42,11 @@ export const buildColumnPresets = (columns: string[]): RenamePattern[] => {
   return presets;
 };
 
+export const pickSyncedKeyColumn = (current: string, columns: string[]) => {
+  if (current && columns.includes(current)) return current;
+  return columns[0] ?? '';
+};
+
 export const parsePositiveInt = (value: string) => {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;

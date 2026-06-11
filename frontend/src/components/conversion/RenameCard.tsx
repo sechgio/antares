@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Card from '../ui/Card';
 import Input from '../ui/Input';
 import Toggle from '../ui/Toggle';
@@ -27,6 +27,29 @@ interface RenameCardProps {
 }
 
 const fileNameFromPath = (path: string) => path.split(/[\\/]/).pop() || path;
+const RESERVED_PATTERN_KEYS = new Set(['seq', 'ext']);
+
+const getPatternColumns = (pattern: string) => {
+  const columns: string[] = [];
+  const re = /\{([^}]+)\}/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(pattern)) !== null) {
+    const key = match[1];
+    if (!RESERVED_PATTERN_KEYS.has(key) && !columns.includes(key)) columns.push(key);
+  }
+  return columns;
+};
+
+const sameArray = (a: string[], b: string[]) => (
+  a.length === b.length && a.every((value, index) => value === b[index])
+);
+
+const inferSeparator = (pattern: string, fallback: string) => {
+  if (pattern.includes('_')) return '_';
+  if (pattern.includes('-')) return '-';
+  if (pattern.includes(' ')) return ' ';
+  return fallback;
+};
 
 const exampleFromPath = (pattern: string, fields: string[], firstFile?: string) => {
   const originalName = firstFile ? fileNameFromPath(firstFile) : '1.jpg';
@@ -62,24 +85,42 @@ export default function RenameCard(props: RenameCardProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [selectedRenameCols, setSelectedRenameCols] = useState<string[]>([]);
   const [separator, setSeparator] = useState('_');
+  const hasExcel = dbColumns.length > 0;
+  const dbSyncRef = useRef<{ dbKey: string; keyColumn: string } | null>(null);
 
-  // Inicializar estado desde el patrón al montar el componente
   useEffect(() => {
-    const matches = patron.match(/\{([^}]+)\}/g);
-    if (matches) {
-      const cols = matches.map(m => m.replace(/[\{\}]/g, '')).filter(c => c !== 'seq' && c !== 'ext');
-      setSelectedRenameCols(cols);
-    }
-    // Intentar adivinar el separador
-    if (patron.includes('_')) setSeparator('_');
-    else if (patron.includes('-')) setSeparator('-');
-    else if (patron.includes(' ')) setSeparator(' ');
-  }, []);
+    setSeparator((prev) => inferSeparator(patron, prev));
 
-  const updatePatron = (cols: string[], sep: string) => {
-    const newPatron = cols.map(c => `{${c}}`).join(sep) + '{ext}';
+    const available = new Set(dbColumns);
+    const nextCols = getPatternColumns(patron).filter((col) => !hasExcel || available.has(col));
+    setSelectedRenameCols((prev) => (sameArray(prev, nextCols) ? prev : nextCols));
+  }, [dbColumns, hasExcel, patron]);
+
+  const updatePatron = useCallback((cols: string[], sep: string) => {
+    const newPatron = cols.length > 0
+      ? cols.map(c => `{${c}}`).join(sep) + '{ext}'
+      : '{seq}{ext}';
     onPatronChange(newPatron);
-  };
+  }, [onPatronChange]);
+
+  useEffect(() => {
+    if (!hasExcel || !usarRename) return;
+
+    const dbKey = dbColumns.join('\0');
+    const prev = dbSyncRef.current;
+    const dbContextChanged = !prev || prev.dbKey !== dbKey || prev.keyColumn !== keyColumn;
+    dbSyncRef.current = { dbKey, keyColumn };
+
+    if (!dbContextChanged) return;
+
+    const available = new Set(dbColumns);
+    const patternCols = getPatternColumns(patron);
+    if (patternCols.length === 0 || patternCols.every((col) => available.has(col))) return;
+
+    const validCols = patternCols.filter((col) => available.has(col));
+    const fallbackCols = Array.from(new Set([keyColumn, ...dbColumns].filter(Boolean))).slice(0, 2);
+    updatePatron(validCols.length > 0 ? validCols : fallbackCols, inferSeparator(patron, separator));
+  }, [dbColumns, hasExcel, keyColumn, patron, separator, updatePatron, usarRename]);
 
   const toggleCol = (col: string) => {
     const next = selectedRenameCols.includes(col)
@@ -100,7 +141,7 @@ export default function RenameCard(props: RenameCardProps) {
     : namingExample;
   const displayExample = keyColumn ? columnExample : namingExample;
 
-  const hasExcel = dbColumns.length > 0;
+  const variableFields = hasExcel ? dbColumns : fields;
 
   return (
     <Card className="space-y-5">
@@ -164,6 +205,7 @@ export default function RenameCard(props: RenameCardProps) {
                     const active = selectedRenameCols.includes(col);
                     return (
                       <button
+                        type="button"
                         key={col}
                         onClick={() => toggleCol(col)}
                         className={`px-3 py-2 rounded-lg border text-xs font-medium transition-all ${
@@ -193,6 +235,7 @@ export default function RenameCard(props: RenameCardProps) {
                     { id: '', label: 'Pegado' },
                   ].map((sep) => (
                     <button
+                      type="button"
                       key={sep.id}
                       onClick={() => changeSeparator(sep.id)}
                       className={`flex-1 py-2 rounded-lg border text-xs font-medium transition-all ${
@@ -211,6 +254,7 @@ export default function RenameCard(props: RenameCardProps) {
 
           <div className="pt-2">
             <button
+              type="button"
               onClick={() => setShowAdvanced(!showAdvanced)}
               className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-colors"
             >
@@ -231,8 +275,9 @@ export default function RenameCard(props: RenameCardProps) {
                 />
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {['seq', 'ext', ...fields].map(f => (
+                {['seq', 'ext', ...variableFields].map(f => (
                   <button
+                    type="button"
                     key={f}
                     onClick={() => onInsertVar(`{${f}}`)}
                     className="px-2 py-1 rounded bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[10px] font-mono"

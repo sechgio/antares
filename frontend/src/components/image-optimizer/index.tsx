@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FileDown, Loader2, Sparkles, Trash2, Upload } from 'lucide-react';
+import { ChevronDown, FileDown, Loader2, Sparkles, Trash2, Upload } from 'lucide-react';
 import CropEditor from './CropEditor';
 import PreviewWorkspace from './PreviewWorkspace';
 import QueuePanel from './QueuePanel';
@@ -42,6 +42,7 @@ export default function ImageOptimizer() {
   const [processingMessage, setProcessingMessage] = useState('');
   const [cropEditorItemId, setCropEditorItemId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'single'>('grid');
+  const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const itemsRef = useRef<ImageItem[]>([]);
   const settingsRef = useRef<BatchSettings>(settings);
@@ -53,6 +54,19 @@ export default function ImageOptimizer() {
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
+
+  useEffect(() => {
+    if (isProcessing) setDownloadMenuOpen(false);
+  }, [isProcessing]);
+
+  useEffect(() => {
+    if (!downloadMenuOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setDownloadMenuOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [downloadMenuOpen]);
 
   useEffect(() => {
     return () => {
@@ -284,30 +298,30 @@ export default function ImageOptimizer() {
     return null;
   }, []);
 
-  const downloadItems = useCallback(async (itemsToDownload: ImageItem[]) => {
-    if (itemsToDownload.length === 0) {
-      addToast('No hay archivos listos para descargar en este alcance.', 'info', 2200);
-      return;
-    }
+  type DownloadEntry = { item: ImageItem; blob: Blob };
+
+  const collectDownloadEntries = useCallback((itemsToDownload: ImageItem[]): DownloadEntry[] | null => {
+    if (itemsToDownload.length === 0) return null;
     const entries = itemsToDownload
       .map((item) => ({ item, blob: getResolvedBlob(item) }))
-      .filter((entry): entry is { item: ImageItem; blob: Blob } => !!entry.blob);
-    if (entries.length === 0) {
-      addToast('Todavia no hay resultados descargables.', 'info', 2200);
+      .filter((entry): entry is DownloadEntry => !!entry.blob);
+    return entries.length > 0 ? entries : null;
+  }, [getResolvedBlob]);
+
+  const downloadItemsAsZip = useCallback(async (itemsToDownload: ImageItem[]) => {
+    const entries = collectDownloadEntries(itemsToDownload);
+    if (!entries) {
+      addToast(
+        itemsToDownload.length === 0
+          ? 'No hay archivos listos para descargar en este alcance.'
+          : 'Todavia no hay resultados descargables.',
+        'info',
+        2200,
+      );
       return;
     }
 
     const nameMap = buildDownloadNameMap(entries.map((entry) => entry.item), settingsRef.current);
-
-    if (entries.length === 1) {
-      entries.forEach((entry, index) => {
-        const filename = nameMap.get(entry.item.id) || entry.item.originalName;
-        window.setTimeout(() => downloadBlob(entry.blob, filename), index * 120);
-      });
-      addToast(`Descargando ${entries.length} archivo(s).`, 'success', 2200);
-      return;
-    }
-
     try {
       const zipFilename = buildZipFilename(settingsRef.current);
       const zipBlob = await createStoredZipBlob(
@@ -324,7 +338,54 @@ export default function ImageOptimizer() {
       const message = error instanceof Error ? error.message : 'Error desconocido';
       addToast(`No se pudo generar el ZIP: ${message}.`, 'error', 4200);
     }
-  }, [addToast, getResolvedBlob]);
+  }, [addToast, collectDownloadEntries]);
+
+  const downloadItems = useCallback(async (itemsToDownload: ImageItem[]) => {
+    const entries = collectDownloadEntries(itemsToDownload);
+    if (!entries) {
+      addToast(
+        itemsToDownload.length === 0
+          ? 'No hay archivos listos para descargar en este alcance.'
+          : 'Todavia no hay resultados descargables.',
+        'info',
+        2200,
+      );
+      return;
+    }
+
+    const nameMap = buildDownloadNameMap(entries.map((entry) => entry.item), settingsRef.current);
+
+    if (entries.length === 1) {
+      const entry = entries[0];
+      const filename = nameMap.get(entry.item.id) || entry.item.originalName;
+      downloadBlob(entry.blob, filename);
+      addToast('Descargando 1 archivo.', 'success', 2200);
+      return;
+    }
+
+    await downloadItemsAsZip(itemsToDownload);
+  }, [addToast, collectDownloadEntries, downloadItemsAsZip]);
+
+  const downloadItemsIndividually = useCallback(async (itemsToDownload: ImageItem[]) => {
+    const entries = collectDownloadEntries(itemsToDownload);
+    if (!entries) {
+      addToast(
+        itemsToDownload.length === 0
+          ? 'No hay archivos listos para descargar en este alcance.'
+          : 'Todavia no hay resultados descargables.',
+        'info',
+        2200,
+      );
+      return;
+    }
+    const nameMap = buildDownloadNameMap(entries.map((entry) => entry.item), settingsRef.current);
+    const DELAY = 180;
+    entries.forEach((entry, index) => {
+      const filename = nameMap.get(entry.item.id) || entry.item.originalName;
+      window.setTimeout(() => downloadBlob(entry.blob, filename), index * DELAY);
+    });
+    addToast(`Descargando ${entries.length} archivo(s) individualmente.`, 'success', 2400);
+  }, [addToast, collectDownloadEntries]);
 
   const handleProcessScope = useCallback(async (scope: 'all' | 'selected') => {
     const targets = getProcessableItems(itemsRef.current, settingsRef.current, scope);
@@ -435,14 +496,61 @@ export default function ImageOptimizer() {
                 {isProcessing ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
                 {primaryActionLabel}
               </button>
-              <button
-                onClick={() => downloadItems(downloadableItems)}
-                disabled={isProcessing || downloadableItems.length === 0}
-                className="inline-flex items-center gap-2 rounded-full border border-emerald-500/35 bg-emerald-500/10 px-4 py-2 text-[10px] font-mono uppercase tracking-[0.15em] text-emerald-600 transition-colors hover:border-emerald-500/55 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:border-[var(--border-medium)] disabled:bg-[var(--bg-surface)] disabled:text-[var(--text-muted)]"
-              >
-                <FileDown size={13} />
-                Descargar
-              </button>
+              <div className="relative flex items-center">
+                <button
+                  type="button"
+                  onClick={() => downloadItems(downloadableItems)}
+                  disabled={isProcessing || downloadableItems.length === 0}
+                  className={`inline-flex items-center gap-2 border border-emerald-500/35 bg-emerald-500/10 px-4 py-2 text-[10px] font-mono uppercase tracking-[0.15em] text-emerald-600 transition-colors hover:border-emerald-500/55 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:border-[var(--border-medium)] disabled:bg-[var(--bg-surface)] disabled:text-[var(--text-muted)] ${downloadableItems.length > 1 ? 'rounded-l-full border-r-0' : 'rounded-full'}`}
+                >
+                  <FileDown size={13} />
+                  {downloadableItems.length > 1 ? 'Descargar ZIP' : 'Descargar'}
+                </button>
+                {downloadableItems.length > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setDownloadMenuOpen((v) => !v)}
+                      disabled={isProcessing || downloadableItems.length === 0}
+                      aria-expanded={downloadMenuOpen}
+                      aria-haspopup="menu"
+                      aria-label="Opciones de descarga"
+                      className="inline-flex items-center rounded-r-full border border-emerald-500/35 bg-emerald-500/10 px-1.5 py-2 text-emerald-600 transition-colors hover:border-emerald-500/55 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:border-[var(--border-medium)] disabled:bg-[var(--bg-surface)] disabled:text-[var(--text-muted)]"
+                    >
+                      <ChevronDown size={12} />
+                    </button>
+                    {downloadMenuOpen && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setDownloadMenuOpen(false)} />
+                        <div
+                          role="menu"
+                          className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface)] py-1 shadow-xl"
+                        >
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => { downloadItemsAsZip(downloadableItems); setDownloadMenuOpen(false); }}
+                            className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[11px] font-mono tracking-wide text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-elevated)]"
+                          >
+                            <FileDown size={13} className="text-emerald-500 shrink-0" />
+                            Descargar como ZIP
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => { downloadItemsIndividually(downloadableItems); setDownloadMenuOpen(false); }}
+                            className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[11px] font-mono tracking-wide text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-elevated)]"
+                          >
+                            <FileDown size={13} className="text-sky-500 shrink-0" />
+                            Descargar individual
+                            <span className="ml-auto text-[9px] text-[var(--text-muted)]">{downloadableItems.length} archivos</span>
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
               <button
                 onClick={handleClearAll}
                 disabled={isProcessing || items.length === 0}

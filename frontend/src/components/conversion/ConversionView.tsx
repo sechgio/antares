@@ -4,7 +4,8 @@ import { RenamePattern, DBRecord } from '../../types';
 import { useFileSelection } from '../../hooks/useFileSelection';
 import { useProcessRunner } from '../../hooks/useProcessRunner';
 import { useToast } from '../../hooks/useToast';
-import { buildDefaultPresets, isVideoByExt, DEFAULT_FORMATS, DEFAULT_FIELDS, DEFAULT_PATTERN, parsePositiveInt } from './helpers';
+import { useDialog } from '../../hooks/useDialog';
+import { buildDefaultPresets, isVideoByExt, DEFAULT_FORMATS, DEFAULT_FIELDS, DEFAULT_PATTERN, parsePositiveInt, pickSyncedKeyColumn } from './helpers';
 import ConversionPresets, { ConversionConfig } from './ConversionPresets';
 import Dropzone from './Dropzone';
 import FileGrid from './FileGrid';
@@ -42,6 +43,7 @@ export default function ConversionView() {
   const { selectedFile, setSelectedFile, selectedFiles, setSelectedFiles, handleFileClick, handleFileDoubleClick, selectAllFiles } = useFileSelection(files);
   const { status, running, pollStatus, startProcess, cancelProcess } = useProcessRunner();
   const { addToast } = useToast();
+  const { confirm } = useDialog();
 
   const namingPresets = useMemo(() => {
     return patterns.length > 0 ? patterns : buildDefaultPresets(fields);
@@ -51,8 +53,9 @@ export default function ConversionView() {
   const filesReady = files.length > 0;
   const optionsReady = !conversionEnabled || (Boolean(formato) && (!resizeEnabled || (resizeWidth !== null && resizeHeight !== null)));
   const renameReady = !usarRename || patron.trim().length > 0;
+  const keyColumnReady = !usarRename || dbColumns.length === 0 || (Boolean(keyColumn) && dbColumns.includes(keyColumn));
   const outputReady = destino.trim().length > 0;
-  const allReady = filesReady && optionsReady && renameReady && outputReady;
+  const allReady = filesReady && optionsReady && renameReady && keyColumnReady && outputReady;
 
   const currentConfig: ConversionConfig = useMemo(() => ({
     formato, calidad, conversionEnabled, resizeEnabled, resizeAncho, resizeAlto,
@@ -142,8 +145,11 @@ export default function ConversionView() {
 
       if (dbColumnsResult.status === 'fulfilled') {
         const r = dbColumnsResult.value;
-        setDbColumns(r.columns ?? []);
+        const columns = r.columns ?? [];
+        setDbColumns(columns);
         setDbRecords(r.records ?? []);
+        if (columns.length > 0) setFields(columns);
+        setKeyColumn((prev) => pickSyncedKeyColumn(prev, columns));
       }
     });
 
@@ -165,6 +171,15 @@ export default function ConversionView() {
   const importDatabaseExcel = async () => {
     const d = await api.dialogFiles();
     if (!d.paths.length) return;
+    if (dbColumns.length > 0 || dbRecords.length > 0) {
+      const proceed = await confirm({
+        title: 'Reemplazar base de datos',
+        description: 'La importación reemplazará las columnas configuradas y todos los registros actuales con los datos del Excel seleccionado.',
+        type: 'destructive',
+        confirmLabel: 'Importar',
+      });
+      if (!proceed) return;
+    }
     try {
       const result = await api.importExcel(d.paths[0]);
       await loadDbColumns();
@@ -178,10 +193,30 @@ export default function ConversionView() {
   const loadDbColumns = async () => {
     try {
       const result = await api.getDbColumns();
-      setDbColumns(result.columns);
+      const columns = result.columns ?? [];
+      setDbColumns(columns);
       setDbRecords(result.records);
+      if (columns.length > 0) setFields(columns);
+      setKeyColumn((prev) => pickSyncedKeyColumn(prev, columns));
     } catch (err) {
       console.error('Error loading DB columns:', err);
+    }
+  };
+
+  const generateDatabaseTemplate = async () => {
+    const d = await api.dialogSave({
+      title: 'Guardar plantilla de base de datos',
+      defaultPath: 'plantilla-base-datos.xlsx',
+      filters: [{ name: 'Excel', extensions: ['xlsx'] }],
+    });
+    if (!d.paths.length) return;
+    try {
+      const result = await api.generateTemplate(d.paths[0]);
+      const fileName = result.path.split(/[\\/]/).pop() || 'plantilla-base-datos.xlsx';
+      addToast({ message: `Plantilla guardada: ${fileName}`, type: 'success' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      addToast({ message: `Error generando plantilla: ${msg}`, type: 'error' });
     }
   };
 
@@ -302,6 +337,7 @@ export default function ConversionView() {
         onAddFiles={addFiles}
         onAddFolder={addFolder}
         onImportDatabase={importDatabaseExcel}
+        onGenerateTemplate={generateDatabaseTemplate}
         fileCount={files.length - videoFiles.size}
         videoCount={videoFiles.size}
         onClear={clearFiles}

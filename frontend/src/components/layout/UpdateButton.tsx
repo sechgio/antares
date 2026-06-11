@@ -93,6 +93,9 @@ export default function UpdateButton() {
   const isActive = update.status === 'checking' || update.status === 'downloading';
   const hasUpdate = update.status === 'available' || update.status === 'downloading' || update.status === 'ready';
   const isError = update.status === 'error';
+  const iconWrapClass = hasUpdate
+    ? 'flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[var(--text-on-accent)] transition-colors group-hover:bg-[var(--accent-primary-hover)]'
+    : 'flex h-5 w-5 items-center justify-center';
   const title =
     update.status === 'checking' ? 'Buscando actualización...' :
     update.status === 'available' ? 'Actualización disponible' :
@@ -112,16 +115,18 @@ export default function UpdateButton() {
       <button
         type="button"
         onClick={handleClick}
-        className={`app-titlebar-button flex h-full w-10 items-center justify-center text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] ${isActive ? 'pointer-events-none opacity-70' : ''} ${hasUpdate ? 'bg-[var(--accent-primary)] text-[var(--text-on-accent)] hover:bg-[var(--accent-primary-hover)] hover:text-[var(--text-on-accent)]' : ''} ${isError ? 'text-[var(--accent-red)]' : ''}`}
+        className={`app-titlebar-button group flex h-full w-10 items-center justify-center text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] ${isActive ? 'pointer-events-none opacity-70' : ''} ${isError ? 'text-[var(--accent-red)]' : ''}`}
         disabled={isActive}
         title={title}
         aria-label={ariaLabel}
       >
-        {update.status === 'checking' && <Loader2 size={14} strokeWidth={1.8} className="animate-spin" />}
-        {(update.status === 'available' || update.status === 'downloading') && <Download size={14} strokeWidth={1.8} />}
-        {update.status === 'ready' && <CheckCircle size={14} strokeWidth={1.8} />}
-        {update.status === 'error' && <AlertCircle size={14} strokeWidth={1.8} />}
-        {(update.status === 'idle' || update.status === 'up-to-date') && <Download size={14} strokeWidth={1.8} />}
+        <span className={iconWrapClass} data-testid={hasUpdate ? 'update-status-badge' : undefined}>
+          {update.status === 'checking' && <Loader2 size={14} strokeWidth={1.8} className="animate-spin" />}
+          {(update.status === 'available' || update.status === 'downloading') && <Download size={14} strokeWidth={1.8} />}
+          {update.status === 'ready' && <CheckCircle size={14} strokeWidth={1.8} />}
+          {update.status === 'error' && <AlertCircle size={14} strokeWidth={1.8} />}
+          {(update.status === 'idle' || update.status === 'up-to-date') && <Download size={14} strokeWidth={1.8} />}
+        </span>
       </button>
 
       {update.status === 'downloading' && (

@@ -7,7 +7,7 @@ garantizando aislamiento entre tests.
 import pytest
 
 from backend.core import database as db
-from backend.core.config_fields import save_fields
+from backend.core.config_fields import load_fields, save_fields
 
 
 @pytest.fixture
@@ -152,6 +152,20 @@ class TestBuscarPorCodigo:
         assert resultado["codigo"] == "1"
         assert resultado["nombre"] == "69466481"
 
+    def test_buscar_por_columna_obsoleta_retorna_vacio(self, db_path, monkeypatch, tmp_path) -> None:
+        config_path = tmp_path / "fields_config.json"
+        monkeypatch.setattr(
+            "backend.core.config_fields._config_file",
+            lambda: config_path,
+        )
+        save_fields([
+            {"name": "archivo", "type": "TEXT", "required": True},
+            {"name": "cliente", "type": "TEXT"},
+        ])
+        db.init_db()
+
+        assert db.buscar_por_columna(["IMG-001"], "codigo") == {}
+
 
 class TestImportarExcel:
     def test_importa_columnas_nuevas_del_excel_al_esquema(self, db_path, monkeypatch, tmp_path) -> None:
@@ -181,6 +195,30 @@ class TestImportarExcel:
             "nombre": "69466481",
             "modelo": "Modelo 2024",
         }]
+
+    def test_importacion_sincroniza_esquema_con_columnas_del_excel(self, db_path, monkeypatch, tmp_path) -> None:
+        config_path = tmp_path / "fields_config.json"
+        monkeypatch.setattr(
+            "backend.core.config_fields._config_file",
+            lambda: config_path,
+        )
+        save_fields([
+            {"name": "codigo", "type": "TEXT", "required": True},
+            {"name": "nombre", "type": "TEXT"},
+            {"name": "columna_obsoleta", "type": "TEXT"},
+        ])
+
+        pandas = pytest.importorskip("pandas")
+        excel_path = tmp_path / "nueva_base.xlsx"
+        pandas.DataFrame([
+            {"archivo": "IMG-001.jpg", "cliente": "Cliente Norte"},
+        ]).to_excel(excel_path, index=False)
+
+        imported = db.importar_excel(str(excel_path))
+
+        assert imported == 1
+        assert [f["name"] for f in load_fields()] == ["archivo", "cliente"]
+        assert db.obtener_todos() == [{"archivo": "IMG-001.jpg", "cliente": "Cliente Norte"}]
 
 
 class TestObtenerTodos:

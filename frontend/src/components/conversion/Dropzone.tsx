@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import Button from '../ui/Button';
-import { Folder, Images, Plus, RotateCcw, UploadCloud, FileImage, Film, Database } from 'lucide-react';
+import { Folder, Images, Plus, RotateCcw, UploadCloud, FileImage, Film, Database, FileSpreadsheet } from 'lucide-react';
 
 interface DropzoneProps {
   dragOver: boolean;
   onAddFiles: () => void;
   onAddFolder: () => void;
   onImportDatabase?: () => void;
+  onGenerateTemplate?: () => void;
   fileCount?: number;
   onClear?: () => void;
   videoCount?: number;
@@ -20,6 +21,7 @@ export default function Dropzone({
   onAddFiles,
   onAddFolder,
   onImportDatabase,
+  onGenerateTemplate,
   fileCount = 0,
   onClear,
   videoCount = 0,
@@ -99,6 +101,12 @@ export default function Dropzone({
             <Button variant="ghost" size="sm" onClick={onImportDatabase}>
               <Database className="h-3.5 w-3.5" />
               Base de datos
+            </Button>
+          )}
+          {onGenerateTemplate && (
+            <Button variant="ghost" size="sm" onClick={onGenerateTemplate}>
+              <FileSpreadsheet className="h-3.5 w-3.5" />
+              Plantilla
             </Button>
           )}
           <Button variant="ghost" size="sm" onClick={onAddFiles}>

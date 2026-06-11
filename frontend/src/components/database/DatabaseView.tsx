@@ -51,6 +51,15 @@ export default function DatabaseView() {
   const importExcel = async () => {
     const d = await api.dialogFiles();
     if (!d.paths.length) return;
+    if (records.length > 0) {
+      const proceed = await confirm({
+        title: 'Reemplazar base de datos',
+        description: 'La importación reemplazará las columnas configuradas y todos los registros actuales con los datos del Excel seleccionado.',
+        type: 'destructive',
+        confirmLabel: 'Importar',
+      });
+      if (!proceed) return;
+    }
     try {
       await api.importExcel(d.paths[0]);
       await refresh();
