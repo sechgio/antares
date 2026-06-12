@@ -5,7 +5,7 @@
 ## Features
 
 - **Conversión**: JPEG, PNG, WebP, BMP, TIFF, GIF, ICO, PDF
-- **Renombrado automático**: Patrones con SQLite
+- **Renombrado automático**: Patrones con SQLite o mapeo directo Excel (`ID` → `RENOMBRE`) con plantilla dedicada
 - **Procesamiento en lote**: Múltiples archivos con progreso en tiempo real
 - **Soporte de video**: MP4, AVI, MOV, MKV, WMV, FLV, WEBM
 - **PDF con correlativo**: 3 modos de generación

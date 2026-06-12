@@ -53,6 +53,7 @@ worktrees/
 
 # Local dev server scratch files
 .vite-brand.*
+scratch/_smoke*.db
 # AI tool configs (not project-specific)
 .claude/
 .codex/

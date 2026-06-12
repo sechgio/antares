@@ -25,6 +25,20 @@ export interface PreviewItem {
   en_bd: boolean;
 }
 
+export interface MappingCollision {
+  output: string;
+  sources: string[];
+}
+
+export interface MappingResult {
+  mapping: Record<string, string>;
+  totalEntries: number;
+  matchedFiles: number;
+  unmatchedFiles: string[];
+  orphanEntries: string[];
+  collisions: MappingCollision[];
+}
+
 export interface DBField {
   name: string;
   type: string;

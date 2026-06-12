@@ -468,6 +468,105 @@ def limpiar_base_datos() -> int:
     return count
 
 
+_MAPPING_ID_COL = "id"
+_MAPPING_RENAME_COLS = frozenset({"renombre", "rename"})
+
+
+def parse_id_rename_mapping(excel_path: str) -> dict[str, str]:
+    """Parsea un Excel de dos columnas (ID, RENOMBRE) en un dict de mapeo directo.
+
+    Args:
+        excel_path: Ruta al archivo .xlsx.
+
+    Returns:
+        Dict {ID.strip(): RENOMBRE_sanitizado.strip()}.
+
+    Raises:
+        ValueError: Si la estructura no es válida (columnas, duplicados, celdas vacías).
+        FileNotFoundError: Si el archivo no existe.
+        ImportError: Si pandas/openpyxl no están instalados.
+    """
+    try:
+        import pandas as pd  # type: ignore
+    except ImportError as exc:
+        msg = "pandas no está instalado. Ejecuta: pip install pandas openpyxl"
+        raise ImportError(msg) from exc
+
+    from backend.utils.validators import sanitizar_nombre
+
+    if not Path(excel_path).exists():
+        msg = f"No se encontró el archivo: {excel_path}"
+        raise FileNotFoundError(msg)
+
+    df = pd.read_excel(excel_path, dtype=str, engine="openpyxl")
+    df.columns = _normalize_excel_columns(list(df.columns))
+
+    if len(df.columns) != 2:
+        msg = (
+            f"El Excel de mapeo debe tener exactamente 2 columnas (ID y RENOMBRE). "
+            f"Columnas encontradas: {list(df.columns)}"
+        )
+        raise ValueError(msg)
+
+    col_set = set(df.columns)
+    if _MAPPING_ID_COL not in col_set or not col_set.intersection(_MAPPING_RENAME_COLS):
+        msg = (
+            "El Excel de mapeo debe contener las columnas ID y RENOMBRE "
+            f"(sin columnas extra). Columnas encontradas: {list(df.columns)}"
+        )
+        raise ValueError(msg)
+
+    rename_col = "renombre" if "renombre" in col_set else "rename"
+    result: dict[str, str] = {}
+    seen_ids: set[str] = set()
+
+    for row_idx, row in df.iterrows():
+        excel_row = int(row_idx) + 2  # encabezado + base 1
+        raw_id = row.get(_MAPPING_ID_COL)
+        raw_rename = row.get(rename_col)
+
+        if pd.isna(raw_id) or not str(raw_id).strip():
+            msg = f"ID vacío en la fila {excel_row} del Excel de mapeo"
+            raise ValueError(msg)
+        if pd.isna(raw_rename) or not str(raw_rename).strip():
+            msg = f"RENOMBRE vacío en la fila {excel_row} del Excel de mapeo"
+            raise ValueError(msg)
+
+        id_key = str(raw_id).strip()
+        if id_key in seen_ids:
+            msg = f"ID duplicado '{id_key}' en la fila {excel_row} del Excel de mapeo"
+            raise ValueError(msg)
+        seen_ids.add(id_key)
+
+        rename_val = sanitizar_nombre(str(raw_rename).strip())
+        if not rename_val:
+            msg = f"RENOMBRE inválido en la fila {excel_row} del Excel de mapeo"
+            raise ValueError(msg)
+        result[id_key] = rename_val
+
+    return result
+
+
+def generar_plantilla_mapeo_excel(ruta_salida: str) -> int:
+    """Genera plantilla Excel de mapeo directo ID → RENOMBRE."""
+    try:
+        import pandas as pd  # type: ignore
+    except ImportError as exc:
+        msg = "pandas no está instalado."
+        raise ImportError(msg) from exc
+
+    df = pd.DataFrame(
+        [
+            ["IMG_0001.jpg", "fachada_norte"],
+            ["IMG_0002.jpg", "fachada_sur"],
+            ["IMG_0003.jpg", "interior_sala"],
+        ],
+        columns=["ID", "RENOMBRE"],
+    )
+    df.to_excel(ruta_salida, index=False, engine="openpyxl")
+    return len(df)
+
+
 def generar_plantilla_excel(ruta_salida: str) -> int:
     """Genera un archivo Excel de plantilla con las columnas esperadas.
 

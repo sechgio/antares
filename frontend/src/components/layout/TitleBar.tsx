@@ -1,36 +1,16 @@
 import { Minus, Square, X } from 'lucide-react';
 import UpdateButton from './UpdateButton';
 
-const menuItems = ['Archivo', 'Editar', 'Ver', 'Ventana', 'Ayuda'];
-
 function handleWindowAction(action: 'minimizeWindow' | 'maximizeWindow' | 'closeWindow') {
   window.electronAPI?.[action]?.();
-}
-
-function handleMenuClick(index: number, element: HTMLElement) {
-  const rect = element.getBoundingClientRect();
-  window.electronAPI?.showAppMenu?.(index, { x: rect.left, y: rect.bottom });
 }
 
 export default function TitleBar() {
   return (
     <div
       data-testid="app-titlebar"
-      className="app-titlebar flex h-9 shrink-0 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-secondary)] select-none"
+      className="app-titlebar flex h-9 shrink-0 items-center justify-end border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-secondary)] select-none"
     >
-      <nav className="flex h-full items-center px-1" aria-label="Menu principal">
-        {menuItems.map((item, index) => (
-          <button
-            key={item}
-            type="button"
-            onClick={(event) => handleMenuClick(index, event.currentTarget)}
-            className="app-titlebar-button h-full px-3 text-[12px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-          >
-            {item}
-          </button>
-        ))}
-      </nav>
-
       <div className="app-titlebar-controls flex h-full items-stretch">
         <UpdateButton />
         <button

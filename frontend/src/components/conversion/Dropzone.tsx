@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import Button from '../ui/Button';
-import { Folder, Images, Plus, RotateCcw, UploadCloud, FileImage, Film, Database, FileSpreadsheet } from 'lucide-react';
+import { Folder, Images, Plus, RotateCcw, UploadCloud, FileImage, Film, Database, FileSpreadsheet, ArrowRightLeft } from 'lucide-react';
 
 interface DropzoneProps {
   dragOver: boolean;
   onAddFiles: () => void;
   onAddFolder: () => void;
   onImportDatabase?: () => void;
+  onLoadMapping?: () => void;
   onGenerateTemplate?: () => void;
+  onGenerateMappingTemplate?: () => void;
   fileCount?: number;
   onClear?: () => void;
   videoCount?: number;
@@ -21,7 +23,9 @@ export default function Dropzone({
   onAddFiles,
   onAddFolder,
   onImportDatabase,
+  onLoadMapping,
   onGenerateTemplate,
+  onGenerateMappingTemplate,
   fileCount = 0,
   onClear,
   videoCount = 0,
@@ -103,10 +107,22 @@ export default function Dropzone({
               Base de datos
             </Button>
           )}
+          {onLoadMapping && (
+            <Button variant="ghost" size="sm" onClick={onLoadMapping} className="text-[var(--accent-primary)]">
+              <ArrowRightLeft className="h-3.5 w-3.5" />
+              Cargar mapeo (ID → RENOMBRE)
+            </Button>
+          )}
           {onGenerateTemplate && (
             <Button variant="ghost" size="sm" onClick={onGenerateTemplate}>
               <FileSpreadsheet className="h-3.5 w-3.5" />
-              Plantilla
+              Plantilla BD
+            </Button>
+          )}
+          {onGenerateMappingTemplate && (
+            <Button variant="ghost" size="sm" onClick={onGenerateMappingTemplate}>
+              <ArrowRightLeft className="h-3.5 w-3.5" />
+              Plantilla mapeo
             </Button>
           )}
           <Button variant="ghost" size="sm" onClick={onAddFiles}>

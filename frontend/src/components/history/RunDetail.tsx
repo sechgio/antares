@@ -1,147 +1,78 @@
+import { useTranslation } from 'react-i18next';
 import Button from '../ui/Button';
-import type { HistoryRun, RunType } from './RunList';
+import {
+  formatRunStats,
+  getRunType,
+  safeJsonParse,
+  schemaOptionKeys,
+  type HistoryRunRow,
+} from './runTypes';
 
 interface RunDetailProps {
-  run: HistoryRun;
+  run: HistoryRunRow;
   onReexecute: () => void;
   onDelete: () => void;
 }
 
-function safeJsonParse<T>(json: string, fallback: T): T {
-  try { return JSON.parse(json) as T; } catch { return fallback; }
-}
-
-const RUN_TYPE_LABELS: Record<RunType, string> = {
-  conversion: 'Conversión',
-  formato: 'Formato',
-  sellador: 'Sellador',
-  padron: 'Padrón',
-  volante: 'Volante',
-  image_optimizer: 'Imágenes',
-  reporte_campo: 'Reporte Campo',
-  panel_aviso_corte: 'Panel Aviso',
-  informe_tecnico: 'Informe Técnico',
-};
-
-const RUN_TYPE_COLORS: Record<RunType, string> = {
-  conversion: 'text-[var(--accent-green)]',
-  formato: 'text-[var(--accent-primary)]',
-  sellador: 'text-amber-400',
-  padron: 'text-[var(--accent-yellow)]',
-  volante: 'text-[var(--accent-secondary)]',
-  image_optimizer: 'text-purple-400',
-  reporte_campo: 'text-orange-400',
-  panel_aviso_corte: 'text-rose-400',
-  informe_tecnico: 'text-cyan-400',
-};
-
 export default function RunDetail({ run, onReexecute, onDelete }: RunDetailProps) {
+  const { t } = useTranslation();
   const files = safeJsonParse<string[]>(run.files_json, []);
   const options = safeJsonParse<Record<string, unknown>>(run.options_json, {});
-  const type = (run.run_type || 'conversion') as RunType;
-
-  // Stats based on run type
-  const stats = (() => {
-    if (type === 'conversion') {
-      return [
-        { label: 'Formato', value: run.formato },
-        { label: 'Calidad', value: `${run.calidad}%` },
-        { label: 'Correctos', value: run.ok_count, color: 'text-[var(--accent-green)]' },
-        { label: 'Errores', value: run.err_count, color: run.err_count > 0 ? 'text-[var(--accent-red)]' : 'text-[var(--text-secondary)]' },
-      ];
-    }
-    if (type === 'formato') {
-      const desde = (options.desde as number) ?? '?';
-      const hasta = (options.hasta as number) ?? '?';
-      return [
-        { label: 'Formato PDF', value: run.formato },
-        { label: 'Desde', value: String(desde) },
-        { label: 'Hasta', value: String(hasta) },
-        { label: 'Páginas', value: `${files.length}`, color: 'text-[var(--accent-primary)]' },
-      ];
-    }
-    if (type === 'padron') {
-      return [
-        { label: 'Padrón', value: run.formato || 'Padrón' },
-        { label: 'Ítems', value: `${files.length}`, color: 'text-[var(--accent-yellow)]' },
-        { label: 'Correctos', value: run.ok_count, color: 'text-[var(--accent-green)]' },
-        { label: 'Errores', value: run.err_count, color: run.err_count > 0 ? 'text-[var(--accent-red)]' : 'text-[var(--text-secondary)]' },
-      ];
-    }
-    if (type === 'image_optimizer') {
-      const preset = (options.preset as string) ?? 'custom';
-      const scope = (options.scope as string) ?? 'all';
-      return [
-        { label: 'Preset', value: preset, color: 'text-purple-400' },
-        { label: 'Alcance', value: scope },
-        { label: 'Procesadas', value: run.ok_count, color: 'text-[var(--accent-green)]' },
-        { label: 'Errores', value: run.err_count, color: run.err_count > 0 ? 'text-[var(--accent-red)]' : 'text-[var(--text-secondary)]' },
-      ];
-    }
-    if (type === 'sellador') {
-      const stampedPages = Array.isArray(options.stamped_pages) ? options.stamped_pages.join(', ') : '—';
-      return [
-        { label: 'Archivo', value: run.formato || 'PDF sellado' },
-        { label: 'Sellos', value: String(options.stamp_count ?? run.ok_count), color: 'text-amber-400' },
-        { label: 'Páginas', value: stampedPages },
-        { label: 'Semilla', value: String(options.seed ?? '—') },
-      ];
-    }
-    // volante
-    return [
-      { label: 'Volantes', value: run.formato || 'Volantes' },
-      { label: 'Registros', value: `${files.length}`, color: 'text-[var(--accent-secondary)]' },
-      { label: 'Correctos', value: run.ok_count, color: 'text-[var(--accent-green)]' },
-      { label: 'Errores', value: run.err_count, color: run.err_count > 0 ? 'text-[var(--accent-red)]' : 'text-[var(--text-secondary)]' },
-    ];
-  })();
+  const meta = getRunType(run.run_type || 'conversion');
+  const stats = formatRunStats(run, t);
+  const allowedOptionKeys = schemaOptionKeys(meta);
+  const visibleOptions = Object.entries(options).filter(([key]) => allowedOptionKeys.has(key));
 
   return (
     <div className="p-8 space-y-6 animate-fade-in">
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <div className="eyebrow">DETALLE</div>
-            <span className={`text-[10px] font-semibold tracking-wider uppercase ${RUN_TYPE_COLORS[type]}`}>
-              {RUN_TYPE_LABELS[type]}
+            <div className="eyebrow">{t('history.detail')}</div>
+            <span className={`text-[10px] font-semibold tracking-wider uppercase ${meta.colorClass}`}>
+              {t(meta.labelKey)}
             </span>
           </div>
-          <h3 className="text-xl font-semibold text-[var(--text-primary)]">Ejecución #{run.id}</h3>
+          <h3 className="text-xl font-semibold text-[var(--text-primary)]">
+            {t('history.execution', { id: run.id })}
+          </h3>
         </div>
         <div className="flex gap-2">
-          {type === 'conversion' && (
-            <Button variant="primary" size="sm" onClick={onReexecute}>Re-ejecutar</Button>
+          {meta.reexecute && (
+            <Button variant="primary" size="sm" onClick={onReexecute}>{t('history.reexecute')}</Button>
           )}
-          <Button variant="ghost" size="sm" className="text-[var(--accent-red)] hover:text-[var(--accent-red)]" onClick={onDelete}>Eliminar</Button>
+          <Button variant="ghost" size="sm" className="text-[var(--accent-red)] hover:text-[var(--accent-red)]" onClick={onDelete}>
+            {t('history.delete')}
+          </Button>
         </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {stats.map((s) => (
-          <div key={s.label} className="bg-[var(--bg-surface)] rounded-xl p-4 border border-[var(--border-subtle)]">
-            <div className="eyebrow mb-2">{s.label}</div>
-            <div className={`text-lg font-semibold ${s.color || 'text-[var(--text-primary)]'}`}>{s.value}</div>
+        {stats.map((stat) => (
+          <div key={stat.label} className="bg-[var(--bg-surface)] rounded-xl p-4 border border-[var(--border-subtle)]">
+            <div className="eyebrow mb-2">{stat.label}</div>
+            <div className={`text-lg font-semibold ${stat.color || 'text-[var(--text-primary)]'}`}>{stat.value}</div>
           </div>
         ))}
       </div>
 
-      {type === 'conversion' && (
+      {meta.showPatron && (
         <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-subtle)] p-4">
-          <div className="eyebrow mb-2">Patrón de renombrado</div>
+          <div className="eyebrow mb-2">{t('history.pattern')}</div>
           <code className="text-sm text-[var(--text-primary)] font-mono bg-[var(--bg-elevated)] px-3 py-2 rounded-lg border border-[var(--border-subtle)] block truncate">
             {run.patron || '—'}
           </code>
         </div>
       )}
 
-      {(type === 'formato' || type === 'padron' || type === 'volante' || type === 'image_optimizer' || type === 'sellador') && Object.keys(options).length > 0 && (
+      {meta.showOptions && visibleOptions.length > 0 && (
         <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-subtle)] p-4">
-          <div className="eyebrow mb-2">Opciones</div>
+          <div className="eyebrow mb-2">{t('history.options')}</div>
           <div className="space-y-1.5">
-            {Object.entries(options).map(([k, v]) => (
-              <div key={k} className="flex items-center gap-2 text-sm">
-                <span className="text-[var(--text-muted)] font-mono text-[11px]">{k}:</span>
-                <span className="text-[var(--text-primary)] font-mono text-[11px]">{String(v)}</span>
+            {visibleOptions.map(([key, value]) => (
+              <div key={key} className="flex items-center gap-2 text-sm">
+                <span className="text-[var(--text-muted)] font-mono text-[11px]">{key}:</span>
+                <span className="text-[var(--text-primary)] font-mono text-[11px]">{String(value)}</span>
               </div>
             ))}
           </div>
@@ -150,20 +81,13 @@ export default function RunDetail({ run, onReexecute, onDelete }: RunDetailProps
 
       <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border-subtle)] overflow-hidden">
         <div className="px-4 py-3 border-b border-[var(--border-subtle)] flex items-center justify-between">
-          <span className="eyebrow">
-            {type === 'conversion' ? `Archivos (${files.length})` :
-             type === 'formato' ? `Páginas (${files.length})` :
-             type === 'padron' ? `Ítems (${files.length})` :
-             type === 'image_optimizer' ? `Imágenes (${files.length})` :
-             type === 'sellador' ? `Archivo (${files.length})` :
-             `Registros (${files.length})`}
-          </span>
+          <span className="eyebrow">{t(meta.fileListKey, { count: files.length })}</span>
         </div>
         <div className="p-2 max-h-64 overflow-y-auto">
           <div className="space-y-1">
-            {files.map((f, i) => (
-              <div key={i} className="text-xs text-[var(--text-secondary)] truncate px-3 py-2 rounded-lg bg-[var(--bg-elevated)] font-mono">
-                {f.split(/[\\/]/).pop()}
+            {files.map((filePath, index) => (
+              <div key={index} className="text-xs text-[var(--text-secondary)] truncate px-3 py-2 rounded-lg bg-[var(--bg-elevated)] font-mono">
+                {filePath.split(/[\\/]/).pop()}
               </div>
             ))}
           </div>

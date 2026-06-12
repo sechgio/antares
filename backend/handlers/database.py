@@ -14,6 +14,8 @@ from backend.core.database import (
     importar_excel,
     limpiar_base_datos,
     obtener_todos,
+    parse_id_rename_mapping,
+    generar_plantilla_mapeo_excel,
 )
 from backend.handlers.common import validate_params, with_locale
 
@@ -107,6 +109,43 @@ def db_fields_reset(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     return {"fields": result}
 
 @with_locale
+@validate_params("path")
+def db_parse_mapping(params: dict[str, Any]) -> dict[str, Any]:
+    """Parsea un Excel ID→RENOMBRE sin tocar la BD del catálogo."""
+    from backend.core.mapping_index import MappingIndex
+
+    excel_path = params.get("path", "")
+    mapping = parse_id_rename_mapping(excel_path)
+    files = params.get("files") or []
+    stats = MappingIndex(mapping).compute_stats(files)
+    return {"mapping": mapping, **stats}
+
+
+@with_locale
+@validate_params("path")
+def db_mapping_template(params: dict[str, Any]) -> dict[str, Any]:
+    path = params.get("path", "")
+    if path and not path.lower().endswith(".xlsx"):
+        path = path + ".xlsx"
+    generar_plantilla_mapeo_excel(path)
+    return {"path": path}
+
+
+@with_locale
+def db_validate_mapping(params: dict[str, Any]) -> dict[str, Any]:
+    """Valida un mapeo ya cargado contra una lista de archivos (sin releer Excel)."""
+    from backend.core.mapping_index import MappingIndex
+
+    mapping = params.get("mapping") or {}
+    if not isinstance(mapping, dict):
+        msg = "El mapeo debe ser un diccionario ID → RENOMBRE"
+        raise ValueError(msg)
+    files = params.get("files") or []
+    stats = MappingIndex(mapping).compute_stats(files)
+    return {"mapping": mapping, **stats}
+
+
+@with_locale
 def db_columns(params: dict[str, Any]) -> dict[str, Any]:
     """Retorna las columnas disponibles en la BD con datos de muestra."""
     from backend.core.database import obtener_todos
@@ -136,6 +175,9 @@ HANDLERS = {
     "db_fields": db_fields,
     "db_fields_update": db_fields_update,
     "db_fields_reset": db_fields_reset,
+    "db_parse_mapping": db_parse_mapping,
+    "db_mapping_template": db_mapping_template,
+    "db_validate_mapping": db_validate_mapping,
     "db_columns": db_columns,
     "rename_patterns_get": rename_patterns_get,
     "rename_patterns_update": rename_patterns_update,

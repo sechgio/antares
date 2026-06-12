@@ -1,55 +1,27 @@
+import { useTranslation } from 'react-i18next';
 import Badge from '../ui/Badge';
+import {
+  getRunType,
+  safeJsonParse,
+  type HistoryRunRow,
+  type RunTypeId,
+} from './runTypes';
 
-export type RunType = 'conversion' | 'formato' | 'sellador' | 'padron' | 'volante' | 'image_optimizer' | 'reporte_campo' | 'panel_aviso_corte' | 'informe_tecnico';
-
-export interface HistoryRun {
-  id: number;
-  run_type: RunType;
-  timestamp: string;
-  formato: string;
-  calidad: number;
-  ok_count: number;
-  err_count: number;
-  patron: string;
-  files_json: string;
-  options_json: string;
-}
+export type HistoryRun = HistoryRunRow;
+export type RunType = RunTypeId;
 
 interface RunListProps {
   runs: HistoryRun[];
   selected: HistoryRun | null;
   onSelect: (run: HistoryRun) => void;
+  selectedIds?: Set<number>;
+  onToggleSelect?: (id: number) => void;
 }
 
-function safeJsonParse<T>(json: string, fallback: T): T {
-  try { return JSON.parse(json) as T; } catch { return fallback; }
-}
+export default function RunList({ runs, selected, onSelect, selectedIds, onToggleSelect }: RunListProps) {
+  const { t } = useTranslation();
+  const showCheckboxes = Boolean(selectedIds && onToggleSelect);
 
-const RUN_TYPE_LABELS: Record<RunType, string> = {
-  conversion: 'Conversión',
-  formato: 'Formato',
-  sellador: 'Sellador',
-  padron: 'Padrón',
-  volante: 'Volante',
-  image_optimizer: 'Imágenes',
-  reporte_campo: 'Reporte Campo',
-  panel_aviso_corte: 'Panel Aviso',
-  informe_tecnico: 'Informe Técnico',
-};
-
-const RUN_TYPE_COLORS: Record<RunType, string> = {
-  conversion: 'text-[var(--accent-green)] border-[color:var(--accent-green)]/20 bg-[color:var(--accent-green)]/10',
-  formato: 'text-[var(--accent-primary)] border-[color:var(--accent-primary)]/20 bg-[color:var(--accent-primary)]/10',
-  sellador: 'text-amber-400 border-amber-400/20 bg-amber-400/10',
-  padron: 'text-[var(--accent-yellow)] border-[color:var(--accent-yellow)]/20 bg-[color:var(--accent-yellow)]/10',
-  volante: 'text-[var(--accent-secondary)] border-[color:var(--accent-secondary)]/20 bg-[color:var(--accent-secondary)]/10',
-  image_optimizer: 'text-purple-400 border-purple-400/20 bg-purple-400/10',
-  reporte_campo: 'text-orange-400 border-orange-400/20 bg-orange-400/10',
-  panel_aviso_corte: 'text-rose-400 border-rose-400/20 bg-rose-400/10',
-  informe_tecnico: 'text-cyan-400 border-cyan-400/20 bg-cyan-400/10',
-};
-
-export default function RunList({ runs, selected, onSelect }: RunListProps) {
   if (runs.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center p-6">
@@ -59,7 +31,7 @@ export default function RunList({ runs, selected, onSelect }: RunListProps) {
             <polyline points="14 2 14 8 20 8" />
           </svg>
         </div>
-        <p className="text-sm text-[var(--text-secondary)]">Aún no hay ejecuciones</p>
+        <p className="text-sm text-[var(--text-secondary)]">{t('history.noRuns')}</p>
       </div>
     );
   }
@@ -68,63 +40,60 @@ export default function RunList({ runs, selected, onSelect }: RunListProps) {
     <div className="divide-y divide-[var(--border-subtle)]">
       {runs.map((run) => {
         const fileCount = safeJsonParse<string[]>(run.files_json, []).length;
+        const options = safeJsonParse<Record<string, unknown>>(run.options_json, {});
+        const files = safeJsonParse<string[]>(run.files_json, []);
         const hasErrors = run.err_count > 0;
         const allErrors = run.ok_count === 0 && run.err_count > 0;
         const isSelected = selected?.id === run.id;
-        const type = (run.run_type || 'conversion') as RunType;
+        const isChecked = selectedIds?.has(run.id) ?? false;
+        const meta = getRunType(run.run_type || 'conversion');
+        const summary = meta.listSummary?.(run, files, options, t);
+
         return (
-          <button
+          <div
             key={run.id}
-            onClick={() => onSelect(run)}
-            className={`w-full text-left px-5 py-4 text-sm transition-all border-l-2 ${
+            className={`w-full text-left px-5 py-4 text-sm transition-all border-l-2 flex gap-2 ${
               isSelected
                 ? 'bg-[var(--bg-surface)] border-[var(--accent-primary)]'
                 : 'bg-transparent border-transparent hover:bg-[var(--bg-surface)]'
             }`}
           >
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="font-medium text-[13px] text-[var(--text-primary)]">{new Date(run.timestamp).toLocaleString()}</span>
-              <Badge variant={allErrors ? 'error' : hasErrors ? 'warning' : 'success'} className="text-[10px]">
-                {run.ok_count}/{run.ok_count + run.err_count}
-              </Badge>
-            </div>
-            <div className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
-              <span className={`px-1.5 py-0.5 rounded border text-[10px] font-medium ${RUN_TYPE_COLORS[type]}`}>
-                {RUN_TYPE_LABELS[type]}
-              </span>
-              {type === 'conversion' && (
-                <>
-                  <span className="px-1.5 py-0.5 rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[var(--text-secondary)]">{run.formato}</span>
-                  <span>{fileCount} archivos</span>
-                  <span>· {run.calidad}%</span>
-                </>
-              )}
-              {type === 'formato' && (
-                <>
-                  <span>{run.formato}</span>
-                  <span>· {fileCount} págs.</span>
-                </>
-              )}
-              {type === 'padron' && (
-                <>
-                  <span>Padrón</span>
-                  <span>· {fileCount} ítems</span>
-                </>
-              )}
-              {type === 'volante' && (
-                <>
-                  <span>Volantes</span>
-                  <span>· {fileCount} registros</span>
-                </>
-              )}
-              {type === 'image_optimizer' && (
-                <>
-                  <span>Imágenes</span>
-                  <span>· {fileCount} archivos</span>
-                </>
-              )}
-            </div>
-          </button>
+            {showCheckboxes && (
+              <input
+                type="checkbox"
+                checked={isChecked}
+                onChange={() => onToggleSelect?.(run.id)}
+                onClick={(e) => e.stopPropagation()}
+                aria-label={t('history.selection.toggle', { id: run.id })}
+                className="mt-1 h-3.5 w-3.5 accent-[var(--accent-primary)]"
+              />
+            )}
+            <button
+              type="button"
+              onClick={() => onSelect(run)}
+              className="flex-1 text-left"
+            >
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="font-medium text-[13px] text-[var(--text-primary)]">{new Date(run.timestamp).toLocaleString()}</span>
+                <Badge variant={allErrors ? 'error' : hasErrors ? 'warning' : 'success'} className="text-[10px]">
+                  {run.ok_count}/{run.ok_count + run.err_count}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
+                <span className={`px-1.5 py-0.5 rounded border text-[10px] font-medium ${meta.badgeClass}`}>
+                  {t(meta.labelKey)}
+                </span>
+                {summary?.parts.map((part, index) => (
+                  <span key={`${run.id}-summary-${index}`}>
+                    {index > 0 ? ' · ' : ''}{part}
+                  </span>
+                ))}
+                {!summary && fileCount > 0 && (
+                  <span>{t('history.list.files', { count: fileCount })}</span>
+                )}
+              </div>
+            </button>
+          </div>
         );
       })}
     </div>

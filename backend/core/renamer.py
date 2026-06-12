@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from backend.core.config_fields import get_field_names
+from backend.core.mapping_index import MappingIndex
 from backend.utils.validators import obtener_codigo_desde_nombre, sanitizar_nombre
 
 # Pre-compiled regex patterns for clean-up in aplicar()
@@ -45,12 +46,46 @@ class RenamerEngine:
         self.patron: str = patron
         self.secuencia: int = int(secuencia_inicial)
 
+    @staticmethod
+    def build_mapping_patron(mapping_keys: list[str]) -> str:
+        """Patrón interno de compatibilidad para modo mapeo directo."""
+        if not mapping_keys:
+            return "{renombre}{ext}"
+        return "{renombre}{ext}"
+
+    @staticmethod
+    def _lookup_file_mapping(
+        filename: str,
+        file_mapping: dict[str, str] | MappingIndex | None,
+    ) -> str | None:
+        """Busca un nombre nuevo en el mapeo directo (tolerante a extensión y mayúsculas)."""
+        if not file_mapping:
+            return None
+        if isinstance(file_mapping, MappingIndex):
+            return file_mapping.lookup(filename)
+
+        name = Path(filename).name
+        stem = Path(name).stem
+
+        if name in file_mapping:
+            return file_mapping[name]
+        if stem in file_mapping:
+            return file_mapping[stem]
+
+        lower_index = {key.lower(): value for key, value in file_mapping.items()}
+        if name.lower() in lower_index:
+            return lower_index[name.lower()]
+        if stem.lower() in lower_index:
+            return lower_index[stem.lower()]
+        return None
+
     def aplicar(
         self,
         ruta_origen: str | Path,
         datos_bd: dict[str, Any] | None = None,
         codigo_manual: str | None = None,
         file_seq: str | None = None,
+        file_mapping: dict[str, str] | MappingIndex | None = None,
     ) -> str:
         """Genera el nuevo nombre para un archivo.
 
@@ -66,6 +101,14 @@ class RenamerEngine:
         """
         ruta = Path(ruta_origen)
         ext = ruta.suffix.lower()
+
+        mapped_name = self._lookup_file_mapping(ruta.name, file_mapping or {})
+        if mapped_name is not None:
+            nombre_salida = sanitizar_nombre(mapped_name)
+            if not nombre_salida.lower().endswith(ext.lower()):
+                nombre_salida += ext
+            self.secuencia += 1
+            return nombre_salida
 
         codigo = codigo_manual or obtener_codigo_desde_nombre(ruta.name)
 
@@ -113,6 +156,7 @@ class RenamerEngine:
         lookup_fn: Callable[[str], dict[str, Any] | None] | None = None,
         codigos_manuales: dict[str, str] | None = None,
         file_seqs: dict[str, str] | None = None,
+        file_mapping: dict[str, str] | MappingIndex | None = None,
     ) -> list[tuple[str, str, bool]]:
         """Genera una vista previa del renombrado para un lote.
 
@@ -133,6 +177,12 @@ class RenamerEngine:
         try:
             for ruta in rutas:
                 ruta = Path(ruta)
+                if file_mapping:
+                    mapped = self._lookup_file_mapping(ruta.name, file_mapping)
+                    if mapped is not None:
+                        nombre_nuevo = self.aplicar(ruta, file_mapping=file_mapping)
+                        resultados.append((str(ruta), nombre_nuevo, True))
+                        continue
                 codigo = codigos_manuales.get(ruta.name, obtener_codigo_desde_nombre(ruta.name))
                 datos = lookup_fn(codigo) if lookup_fn else None
                 fseq = file_seqs.get(ruta.name)

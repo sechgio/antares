@@ -12,16 +12,12 @@ function renderTitleBar() {
 }
 
 describe('TitleBar', () => {
-  it('renders the Spanish app menu and themed titlebar container', () => {
+  it('renders the themed titlebar container', () => {
     renderTitleBar();
 
     const titlebar = screen.getByTestId('app-titlebar');
     expect(titlebar).toHaveClass('bg-[var(--bg-surface)]');
     expect(titlebar).toHaveClass('text-[var(--text-secondary)]');
-
-    for (const label of ['Archivo', 'Editar', 'Ver', 'Ventana', 'Ayuda']) {
-      expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
-    }
   });
 
   it('calls Electron window controls from the custom buttons', () => {
@@ -48,18 +44,4 @@ describe('TitleBar', () => {
     expect(closeWindow).toHaveBeenCalledTimes(1);
   });
 
-  it('opens Electron menus from the Spanish menu buttons', () => {
-    const showAppMenu = vi.fn(async () => ({}));
-    const electronAPI = window.electronAPI!;
-    window.electronAPI = {
-      ...electronAPI,
-      showAppMenu,
-    };
-
-    renderTitleBar();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Ver' }));
-
-    expect(showAppMenu).toHaveBeenCalledWith(2, expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }));
-  });
 });

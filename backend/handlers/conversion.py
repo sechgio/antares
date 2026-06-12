@@ -40,6 +40,7 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     use_filename_seq = params.get("use_filename_seq", True)
     use_column_rename = params.get("use_column_rename", False)
     key_column = params.get("key_column", "")
+    file_mapping = params.get("mapping") or None
     engine = RenamerEngine(patron, secuencia)
     file_seqs = {}
     codigos_manuales = {}
@@ -54,7 +55,19 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
         if use_filename_seq:
             file_seqs[p.name] = seq
 
-    if key_column:
+    collisions: list[dict[str, Any]] = []
+    if file_mapping:
+        from backend.core.mapping_index import MappingIndex
+
+        mapping_index = MappingIndex(file_mapping)
+        res = engine.preview_lote(
+            files,
+            codigos_manuales=codigos_manuales,
+            file_seqs=file_seqs,
+            file_mapping=mapping_index,
+        )
+        collisions = mapping_index.find_collisions(files)
+    elif key_column:
         # Buscamos por código parseado y por stem completo para máxima compatibilidad
         db_cache = buscar_por_columna(list(set(codigos_list + stems)), key_column)
         res: list[tuple[str, str, bool]] = []
@@ -83,7 +96,12 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
             return db_cache.get(codigo)
         res = engine.preview_lote(files, lookup_fn=lookup, codigos_manuales=codigos_manuales, file_seqs=file_seqs)
 
-    return {"preview": [{"origen": Path(orig).name, "nuevo": nuev, "en_bd": en_bd} for orig, nuev, en_bd in res]}
+    payload: dict[str, Any] = {
+        "preview": [{"origen": Path(orig).name, "nuevo": nuev, "en_bd": en_bd} for orig, nuev, en_bd in res],
+    }
+    if collisions:
+        payload["collisions"] = collisions
+    return payload
 
 
 @with_locale
@@ -199,6 +217,40 @@ def _run_conversion_job(job: Job) -> None:
         use_filename_seq = params.get("use_filename_seq", True)
         use_column_rename = params.get("use_column_rename", False)
         key_column = params.get("key_column", "")
+        file_mapping = params.get("mapping") or None
+        mapping_path = params.get("mapping_path") or ""
+        mapping_index = None
+
+        if mapping_path and not file_mapping:
+            from backend.core.database import parse_id_rename_mapping
+
+            file_mapping = parse_id_rename_mapping(mapping_path)
+
+        if file_mapping is not None:
+            if not isinstance(file_mapping, dict) or len(file_mapping) == 0:
+                log_message("El mapeo de renombrado está vacío o es inválido", "error", state=state)
+                _notify_complete(job, 0, len(params.get("files", [])))
+                return
+            for _key, value in file_mapping.items():
+                if not isinstance(value, str) or not value.strip():
+                    log_message("El mapeo contiene valores de RENOMBRE vacíos o inválidos", "error", state=state)
+                    _notify_complete(job, 0, len(params.get("files", [])))
+                    return
+            from backend.core.mapping_index import MappingIndex
+
+            mapping_index = MappingIndex(file_mapping)
+            collisions = mapping_index.find_collisions(files)
+            if collisions:
+                conflict = collisions[0]
+                log_message(
+                    f"Colisión de nombres de salida: '{conflict['output']}' "
+                    f"({len(conflict['sources'])} archivos). Corrige el Excel antes de continuar.",
+                    "error",
+                    state=state,
+                )
+                _notify_complete(job, 0, len(files))
+                return
+            log_message(f"Modo: Renombrado por mapeo directo ({len(file_mapping)} entradas)", "info", state=state)
 
         engine = RenamerEngine(patron, secuencia) if usar_rename else None
         try:
@@ -261,6 +313,7 @@ def _run_conversion_job(job: Job) -> None:
                     use_column_rename=use_column_rename,
                     global_offset=chunk_start,
                     key_column=key_column,
+                    mapping_index=mapping_index,
                 )
                 futures = []
                 for task in chunk_tasks:
@@ -356,9 +409,22 @@ def _run_conversion_job(job: Job) -> None:
         _notify_complete(job, ok_count, err_count)
 
         from backend.core.history import save_run
+        rename_source = "mapping" if mapping_index else ("catalog" if key_column else "none")
         save_run(
             files=[str(f) for f in files],
-            options={"formato": formato, "calidad": calidad, "conversion_enabled": conversion_enabled, "resize": str(resize) if resize else None, "keep_exif": keep_exif, "usar_rename": usar_rename, "use_column_rename": use_column_rename},
+            options={
+                "formato": formato,
+                "calidad": calidad,
+                "conversion_enabled": conversion_enabled,
+                "resize": str(resize) if resize else None,
+                "keep_exif": keep_exif,
+                "usar_rename": usar_rename,
+                "use_column_rename": use_column_rename,
+                "rename_source": rename_source,
+                "mapping_mode": mapping_index is not None,
+                "mapping_path": mapping_path or None,
+                "key_column": key_column or None,
+            },
             patron=patron, formato=formato, calidad=calidad,
             resize=str(resize) if resize else None, ok_count=ok_count, err_count=err_count,
         )
@@ -427,10 +493,13 @@ def _prepare_chunk_tasks(
     use_column_rename: bool = False,
     global_offset: int = 0,
     key_column: str = "",
+    mapping_index: Any | None = None,
 ) -> list[tuple[str, Path, bool]]:
     """Prepare one chunk of file work and batch only that chunk's DB lookup."""
     db_cache: dict[str, dict] = {}
-    if engine:
+    if engine and mapping_index:
+        pass
+    elif engine:
         if key_column:
             from backend.core.database import buscar_por_columna
             codigos = [parse_filename_parts(Path(f).name)[0] for f in chunk_files]
@@ -451,9 +520,14 @@ def _prepare_chunk_tasks(
         p = Path(fpath)
         is_video_file = es_video(p)
         if engine:
-            codigo, seq = parse_filename_parts(p.name)
-            stem = p.stem
-            if key_column:
+            if mapping_index:
+                if mapping_index.lookup(p.name) is not None:
+                    nuevo_nombre = engine.aplicar(p, file_mapping=mapping_index)
+                else:
+                    nuevo_nombre = p.name
+            elif key_column:
+                codigo, seq = parse_filename_parts(p.name)
+                stem = p.stem
                 # Intentamos buscar por el código parseado o por el stem completo
                 datos = db_cache.get(codigo) or db_cache.get(stem)
                 if datos:
@@ -462,10 +536,12 @@ def _prepare_chunk_tasks(
                 else:
                     nuevo_nombre = p.name
             elif use_column_rename:
+                codigo, seq = parse_filename_parts(p.name)
                 datos = db_cache.get(str(global_offset + idx))
                 fseq = seq if use_filename_seq else None
                 nuevo_nombre = engine.aplicar(p, datos_bd=datos, codigo_manual=codigo, file_seq=fseq)
             else:
+                codigo, seq = parse_filename_parts(p.name)
                 datos = db_cache.get(codigo)
                 fseq = seq if use_filename_seq else None
                 nuevo_nombre = engine.aplicar(p, datos_bd=datos, codigo_manual=codigo, file_seq=fseq)

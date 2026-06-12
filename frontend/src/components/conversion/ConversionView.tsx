@@ -1,11 +1,11 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { api } from '../../api';
-import { RenamePattern, DBRecord } from '../../types';
 import { useFileSelection } from '../../hooks/useFileSelection';
 import { useProcessRunner } from '../../hooks/useProcessRunner';
 import { useToast } from '../../hooks/useToast';
 import { useDialog } from '../../hooks/useDialog';
-import { buildDefaultPresets, isVideoByExt, DEFAULT_FORMATS, DEFAULT_FIELDS, DEFAULT_PATTERN, parsePositiveInt, pickSyncedKeyColumn } from './helpers';
+import { RenamePattern, DBRecord, PreviewItem } from '../../types';
+import { buildDefaultPresets, computeMappingStats, isVideoByExt, DEFAULT_FORMATS, DEFAULT_FIELDS, DEFAULT_PATTERN, parsePositiveInt, pickSyncedKeyColumn, type RenameSource } from './helpers';
 import ConversionPresets, { ConversionConfig } from './ConversionPresets';
 import Dropzone from './Dropzone';
 import FileGrid from './FileGrid';
@@ -39,7 +39,16 @@ export default function ConversionView() {
   const [dbColumns, setDbColumns] = useState<string[]>([]);
   const [dbRecords, setDbRecords] = useState<DBRecord[]>([]);
   const [keyColumn, setKeyColumn] = useState('');
+  const [renameSource, setRenameSource] = useState<RenameSource>('none');
+  const [mappingData, setMappingData] = useState<Record<string, string> | null>(null);
+  const [mappingPath, setMappingPath] = useState<string | null>(null);
+  const [renamePreview, setRenamePreview] = useState<PreviewItem[]>([]);
 
+  const mappingMode = renameSource === 'mapping';
+  const mappingResult = useMemo(
+    () => (mappingData ? computeMappingStats(mappingData, files) : null),
+    [mappingData, files],
+  );
   const { selectedFile, setSelectedFile, selectedFiles, setSelectedFiles, handleFileClick, handleFileDoubleClick, selectAllFiles } = useFileSelection(files);
   const { status, running, pollStatus, startProcess, cancelProcess } = useProcessRunner();
   const { addToast } = useToast();
@@ -52,10 +61,11 @@ export default function ConversionView() {
   const resizeHeight = resizeEnabled ? parsePositiveInt(resizeAlto) : null;
   const filesReady = files.length > 0;
   const optionsReady = !conversionEnabled || (Boolean(formato) && (!resizeEnabled || (resizeWidth !== null && resizeHeight !== null)));
-  const renameReady = !usarRename || patron.trim().length > 0;
-  const keyColumnReady = !usarRename || dbColumns.length === 0 || (Boolean(keyColumn) && dbColumns.includes(keyColumn));
+  const renameReady = !usarRename || mappingMode || patron.trim().length > 0;
+  const keyColumnReady = !usarRename || mappingMode || dbColumns.length === 0 || (Boolean(keyColumn) && dbColumns.includes(keyColumn));
+  const noMappingCollisions = !mappingMode || (mappingResult?.collisions.length ?? 0) === 0;
   const outputReady = destino.trim().length > 0;
-  const allReady = filesReady && optionsReady && renameReady && keyColumnReady && outputReady;
+  const allReady = filesReady && optionsReady && renameReady && keyColumnReady && noMappingCollisions && outputReady;
 
   const currentConfig: ConversionConfig = useMemo(() => ({
     formato, calidad, conversionEnabled, resizeEnabled, resizeAncho, resizeAlto,
@@ -79,7 +89,9 @@ export default function ConversionView() {
 
   useEffect(() => {
     return subscribeHistoryReexecute((run) => {
-        if (!run || typeof run !== 'object') return;
+      if (!run || typeof run !== 'object') return;
+
+      void (async () => {
         let f: string[] = [];
         let options: Record<string, unknown> = {};
         try {
@@ -88,13 +100,51 @@ export default function ConversionView() {
         try {
           options = JSON.parse(run.options_json || '{}') as Record<string, unknown>;
         } catch { /* keep default */ }
+
         setFiles(f);
         setFormato((options.formato as string) || 'JPEG');
         setCalidad((options.calidad as number) || 95);
         setConversionEnabled(options.conversion_enabled !== false);
+        setKeepExif(Boolean(options.keep_exif));
+
+        const isMappingRun = options.mapping_mode === true || options.rename_source === 'mapping';
+        const savedMappingPath = typeof options.mapping_path === 'string' ? options.mapping_path : '';
+
+        if (isMappingRun && savedMappingPath) {
+          try {
+            const result = await api.dbParseMapping(savedMappingPath, f);
+            setMappingPath(savedMappingPath);
+            setMappingData(result.mapping);
+            setRenameSource('mapping');
+            setPatron('{renombre}{ext}');
+            setUsarRename(true);
+            setNamingMode('custom');
+            if (options.resize) {
+              const parts = (options.resize as string).replace(/[()\[\]]/g, '').split(',');
+              if (parts.length === 2) {
+                setResizeAncho(parts[0].trim());
+                setResizeAlto(parts[1].trim());
+                setResizeEnabled(true);
+              }
+            }
+            return;
+          } catch {
+            addToast({
+              message: 'No se pudo restaurar el mapeo desde el historial. Vuelve a cargar el Excel de mapeo.',
+              type: 'error',
+            });
+          }
+        }
+
+        setMappingData(null);
+        setMappingPath(null);
         setPatron(run.patron || '');
         setUsarRename(options.usar_rename !== false && Boolean(run.patron));
         setNamingMode(options.usar_rename === false ? 'keep' : 'custom');
+        setRenameSource(options.rename_source === 'catalog' ? 'catalog' : 'none');
+        if (typeof options.key_column === 'string' && options.key_column) {
+          setKeyColumn(options.key_column);
+        }
         if (options.resize) {
           const parts = (options.resize as string).replace(/[()\[\]]/g, '').split(',');
           if (parts.length === 2) {
@@ -103,8 +153,9 @@ export default function ConversionView() {
             setResizeEnabled(true);
           }
         }
+      })();
     });
-  }, []);
+  }, [addToast]);
 
   useEffect(() => {
     let cancelled = false;
@@ -148,7 +199,10 @@ export default function ConversionView() {
         const columns = r.columns ?? [];
         setDbColumns(columns);
         setDbRecords(r.records ?? []);
-        if (columns.length > 0) setFields(columns);
+        if (columns.length > 0) {
+          setRenameSource('catalog');
+          setFields(columns);
+        }
         setKeyColumn((prev) => pickSyncedKeyColumn(prev, columns));
       }
     });
@@ -168,13 +222,22 @@ export default function ConversionView() {
     mergeFiles(r.paths);
   };
 
+  const clearMapping = useCallback(() => {
+    setMappingData(null);
+    setMappingPath(null);
+    setRenameSource(dbColumns.length > 0 ? 'catalog' : 'none');
+    setRenamePreview([]);
+  }, [dbColumns.length]);
+
   const importDatabaseExcel = async () => {
     const d = await api.dialogFiles();
     if (!d.paths.length) return;
-    if (dbColumns.length > 0 || dbRecords.length > 0) {
+    if (dbColumns.length > 0 || dbRecords.length > 0 || mappingMode) {
       const proceed = await confirm({
         title: 'Reemplazar base de datos',
-        description: 'La importación reemplazará las columnas configuradas y todos los registros actuales con los datos del Excel seleccionado.',
+        description: mappingMode
+          ? 'La importación reemplazará el mapeo activo y cargará el Excel al catálogo SQLite.'
+          : 'La importación reemplazará las columnas configuradas y todos los registros actuales con los datos del Excel seleccionado.',
         type: 'destructive',
         confirmLabel: 'Importar',
       });
@@ -182,13 +245,71 @@ export default function ConversionView() {
     }
     try {
       const result = await api.importExcel(d.paths[0]);
+      clearMapping();
       await loadDbColumns();
+      setRenameSource('catalog');
       addToast({ message: `Base de datos importada: ${result.imported} registros`, type: 'success' });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       addToast({ message: `Error importando Excel: ${msg}`, type: 'error' });
     }
   };
+
+  const loadMappingExcel = async () => {
+    const d = await api.dialogFiles();
+    if (!d.paths.length) return;
+    try {
+      const excelPath = d.paths[0];
+      const result = await api.dbParseMapping(excelPath, files);
+      setMappingPath(excelPath);
+      setMappingData(result.mapping);
+      setRenameSource('mapping');
+      setPatron('{renombre}{ext}');
+      setUsarRename(true);
+      setNamingMode('custom');
+      addToast({
+        message: `Mapeo cargado: ${result.matchedFiles} archivo${result.matchedFiles !== 1 ? 's' : ''} coincidirán`,
+        type: 'success',
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      addToast({ message: `Error cargando mapeo: ${msg}`, type: 'error' });
+    }
+  };
+
+  useEffect(() => {
+    if (!usarRename || files.length === 0) {
+      setRenamePreview([]);
+      return undefined;
+    }
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await api.preview(
+          mappingMode && mappingData
+            ? {
+                files,
+                patron: '{renombre}{ext}',
+                secuencia: 1,
+                use_filename_seq: false,
+                mapping: mappingData,
+              }
+            : {
+                files,
+                patron,
+                secuencia,
+                use_filename_seq: useFilenameSeq,
+                key_column: keyColumn || undefined,
+              },
+        );
+        setRenamePreview(result.preview);
+      } catch {
+        setRenamePreview([]);
+      }
+    }, 400);
+
+    return () => window.clearTimeout(timer);
+  }, [files, usarRename, mappingMode, mappingData, patron, secuencia, useFilenameSeq, keyColumn]);
 
   const loadDbColumns = async () => {
     try {
@@ -217,6 +338,23 @@ export default function ConversionView() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       addToast({ message: `Error generando plantilla: ${msg}`, type: 'error' });
+    }
+  };
+
+  const generateMappingTemplate = async () => {
+    const d = await api.dialogSave({
+      title: 'Guardar plantilla de mapeo ID → RENOMBRE',
+      defaultPath: 'plantilla-mapeo.xlsx',
+      filters: [{ name: 'Excel', extensions: ['xlsx'] }],
+    });
+    if (!d.paths.length) return;
+    try {
+      const result = await api.generateMappingTemplate(d.paths[0]);
+      const fileName = result.path.split(/[\\/]/).pop() || 'plantilla-mapeo.xlsx';
+      addToast({ message: `Plantilla de mapeo guardada: ${fileName}`, type: 'success' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      addToast({ message: `Error generando plantilla de mapeo: ${msg}`, type: 'error' });
     }
   };
 
@@ -268,7 +406,9 @@ export default function ConversionView() {
       resize_alto: parsePositiveInt(resizeAlto),
       keep_exif: keepExif, usar_rename: usarRename, patron, secuencia,
       use_filename_seq: useFilenameSeq,
-      key_column: keyColumn || undefined,
+      key_column: mappingMode ? undefined : (keyColumn || undefined),
+      mapping_path: mappingMode && mappingPath ? mappingPath : undefined,
+      mapping: mappingMode && !mappingPath ? mappingData ?? undefined : undefined,
     });
   };
 
@@ -337,7 +477,9 @@ export default function ConversionView() {
         onAddFiles={addFiles}
         onAddFolder={addFolder}
         onImportDatabase={importDatabaseExcel}
+        onLoadMapping={loadMappingExcel}
         onGenerateTemplate={generateDatabaseTemplate}
+        onGenerateMappingTemplate={generateMappingTemplate}
         fileCount={files.length - videoFiles.size}
         videoCount={videoFiles.size}
         onClear={clearFiles}
@@ -541,6 +683,10 @@ export default function ConversionView() {
             <RenameCard
               files={files}
               usarRename={usarRename}
+              mappingMode={mappingMode}
+              mappingResult={mappingResult}
+              renamePreview={renamePreview}
+              onClearMapping={clearMapping}
               namingMode={namingMode}
               onNamingModeChange={(mode) => {
                 const preset = namingPresets.find((p) => p.id === mode);

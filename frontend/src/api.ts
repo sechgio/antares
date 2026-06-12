@@ -3,9 +3,9 @@
  * en vez de HTTP fetch como en la arquitectura antigua (FastAPI+PyQt5).
  */
 
-import type { ProcessStatus, LogEntry, PreviewItem, DBField, RenamePattern, DBRecord, ThemeConfig, VisualMapping, FormatInfo, FormatOrigin, MappingStrategy } from './types';
+import type { ProcessStatus, LogEntry, PreviewItem, DBField, RenamePattern, DBRecord, ThemeConfig, VisualMapping, FormatInfo, FormatOrigin, MappingStrategy, MappingResult, MappingCollision } from './types';
 
-export type { ProcessStatus, LogEntry, PreviewItem, DBField, RenamePattern, DBRecord, ThemeConfig, VisualMapping, FormatInfo, FormatOrigin, MappingStrategy };
+export type { ProcessStatus, LogEntry, PreviewItem, DBField, RenamePattern, DBRecord, ThemeConfig, VisualMapping, FormatInfo, FormatOrigin, MappingStrategy, MappingResult, MappingCollision };
 
 // ─── Electron IPC bridge ───────────────────────────────────────────────────
 
@@ -159,6 +159,8 @@ export interface ProcessBody {
   use_filename_seq: boolean;
   use_column_rename?: boolean;
   key_column?: string;
+  mapping?: Record<string, string>;
+  mapping_path?: string;
 }
 
 export interface PreviewBody {
@@ -167,6 +169,7 @@ export interface PreviewBody {
   secuencia: number;
   use_filename_seq: boolean;
   key_column?: string;
+  mapping?: Record<string, string>;
 }
 
 export interface PreviewImageBody {
@@ -223,7 +226,7 @@ export const api = {
   getStatus: () => _invoke<ProcessStatus>('process_status'),
   cancelProcess: () => _invoke<{ cancelled: boolean }>('process_cancel'),
 
-  preview: (body: PreviewBody) => _invoke<{ preview: PreviewItem[] }>('preview', body),
+  preview: (body: PreviewBody) => _invoke<{ preview: PreviewItem[]; collisions?: MappingCollision[] }>('preview', body),
   previewImage: (body: PreviewImageBody) =>
     _invoke<{ preview: string; width: string; height: string; orig_size_kb: string }>('preview_image', body),
 
@@ -233,6 +236,7 @@ export const api = {
   importExcel: (path: string) => _invoke<{ imported: number }>('db_import', { path }),
   exportExcel: (path: string) => _invoke<{ exported: number }>('db_export', { path }),
   generateTemplate: (path: string) => _invoke<{ path: string }>('db_template', { path }),
+  generateMappingTemplate: (path: string) => _invoke<{ path: string }>('db_mapping_template', { path }),
   clearDatabase: () => _invoke<{ cleared: number }>('db_clear'),
   scanFolder: (folder: string) => _invoke<{ files: string[] }>('scan_folder', { folder }),
 
@@ -241,6 +245,10 @@ export const api = {
   resetFields: () => _invoke<{ fields: DBField[] }>('db_fields_reset'),
 
   getDbColumns: () => _invoke<{ columns: string[]; records: DBRecord[]; total: number }>('db_columns'),
+  dbParseMapping: (path: string, files?: string[]) =>
+    _invoke<MappingResult>('db_parse_mapping', { path, files: files ?? [] }),
+  dbValidateMapping: (mapping: Record<string, string>, files?: string[]) =>
+    _invoke<MappingResult>('db_validate_mapping', { mapping, files: files ?? [] }),
 
   getRenamePatterns: () => _invoke<{ patterns: RenamePattern[] }>('rename_patterns_get'),
   updateRenamePatterns: (patterns: RenamePattern[]) => _invoke<{ patterns: RenamePattern[] }>('rename_patterns_update', { patterns }),
@@ -258,9 +266,10 @@ export const api = {
   applyPreset: (name: string) => _invoke<ThemeConfig>('theme_preset', { name }),
   resetTheme: () => _invoke<ThemeConfig>('theme_reset'),
 
-  historyList: (body?: { limit?: number; offset?: number; run_type?: string }) => _invoke<{ runs: unknown[] }>('history_list', body),
+  historyList: (body?: { limit?: number; offset?: number; run_type?: string; date_from?: string; date_to?: string }) => _invoke<{ runs: unknown[] }>('history_list', body),
   historyGet: (id: number) => _invoke<{ run: unknown }>('history_get', { id }),
   historyDelete: (id: number) => _invoke<{ deleted: boolean }>('history_delete', { id }),
+  historyDeleteMany: (ids: number[]) => _invoke<{ deleted: number; requested: number }>('history_delete_many', { ids }),
   historySave: (body: {
     files: string[];
     options: Record<string, unknown>;
@@ -271,7 +280,25 @@ export const api = {
     ok_count?: number;
     err_count?: number;
     run_type: string;
+    duration_ms?: number;
   }) => _invoke<{ id: number }>('history_save', body),
+  historySchema: () => _invoke<{
+    run_types: Array<{
+      id: string;
+      label_key: string;
+      description_key: string;
+      color_token: string;
+      show_patron: boolean;
+      filter_group: string;
+      options_schema: Record<string, unknown>;
+      files_schema: Record<string, unknown>;
+      stats: Array<{ key: string; label_key: string; color_token: string | null }>;
+    }>;
+    all_run_types: string[];
+    current_version: string;
+  }>('history_schema', {}),
+  historyExport: (body?: { ids?: number[]; run_type?: string; date_from?: string; date_to?: string; limit?: number }) =>
+    _invoke<{ csv: string; count: number }>('history_export', body ?? {}),
 
   // ─── Formatos PDF ───────────────────────────────────────────────────────
   formatosList: () => _invoke<{ formats: FormatInfo[] }>('formatos_list'),
