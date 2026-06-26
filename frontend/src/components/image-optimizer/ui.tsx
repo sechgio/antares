@@ -72,8 +72,8 @@ export function SegmentedControl<T extends string>({
 export function BeforeAfterSlider({ before, after, alt }: { before: string; after: string; alt: string }) {
   const [position, setPosition] = useState(50);
   return (
-    <div className="space-y-4 w-full h-full">
-      <div className="relative h-full w-full overflow-hidden rounded-[20px] border border-[var(--border-medium)] bg-[var(--bg-surface)]">
+    <div className="flex h-full max-h-full w-full max-w-full flex-col gap-2">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
         <img src={before} alt={`${alt} original`} className="absolute inset-0 h-full w-full object-contain" />
         <div className="absolute inset-y-0 left-0 overflow-hidden" style={{ width: `${position}%` }}>
           <img src={after} alt={`${alt} resultado`} className="h-full w-full object-contain" />
@@ -81,10 +81,10 @@ export function BeforeAfterSlider({ before, after, alt }: { before: string; afte
         <div className="absolute inset-y-0" style={{ left: `calc(${position}% - 1px)` }}>
           <div className="h-full w-0.5 bg-[var(--accent-primary)] shadow-[0_0_12px_rgba(94,106,210,0.8)]" />
         </div>
-        <div className="absolute left-4 top-4 rounded-full border border-[var(--border-medium)] bg-[var(--bg-surface)]/80 px-3 py-1.5 text-[10px] font-mono uppercase tracking-widest text-[var(--text-primary)] backdrop-blur-md">
+        <div className="absolute left-3 top-3 rounded-md bg-[var(--bg-surface)]/80 px-2 py-1 text-[10px] font-mono uppercase tracking-[0.1em] text-[var(--text-primary)] backdrop-blur-md">
           Original
         </div>
-        <div className="absolute right-4 top-4 rounded-full border border-[var(--border-medium)] bg-[var(--bg-surface)]/80 px-3 py-1.5 text-[10px] font-mono uppercase tracking-widest text-[var(--accent-primary)] backdrop-blur-md">
+        <div className="absolute right-3 top-3 rounded-md bg-[var(--bg-surface)]/80 px-2 py-1 text-[10px] font-mono uppercase tracking-[0.1em] text-[var(--accent-primary)] backdrop-blur-md">
           Resultado
         </div>
       </div>
@@ -94,7 +94,7 @@ export function BeforeAfterSlider({ before, after, alt }: { before: string; afte
         max="100"
         value={position}
         onChange={(e) => setPosition(Number(e.target.value))}
-        className="w-full accent-[var(--text-primary)]"
+        className="w-full shrink-0 accent-[var(--text-primary)]"
         aria-label="Comparar antes y despues"
       />
     </div>
@@ -115,33 +115,123 @@ export function ItemSummary({ item }: { item: ImageItem }) {
     return 'Pendiente';
   }, [item]);
 
+  const weightValue = item.resultSize
+    ? `${formatBytes(item.originalSize)} / ${formatBytes(item.resultSize)}`
+    : formatBytes(item.originalSize);
+
+  const dimensionsValue = item.sourceWidth && item.sourceHeight
+    ? item.finalWidth && item.finalHeight
+      ? `${item.sourceWidth}x${item.sourceHeight} / ${item.finalWidth}x${item.finalHeight}`
+      : `${item.sourceWidth}x${item.sourceHeight}`
+    : 'Sin datos';
+
+  const savingsValue = item.resultSize ? `${reduction.toFixed(1)}%` : '--';
+
+  const stats = [
+    { label: 'Estado', value: statusLabel },
+    { label: 'Peso', value: weightValue },
+    { label: 'Dimensiones', value: dimensionsValue },
+    { label: 'Ahorro', value: savingsValue },
+  ];
+
   return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-      <div className="rounded-[16px] border border-[var(--border-medium)] bg-[var(--bg-surface)] p-4 transition-colors hover:bg-[var(--bg-elevated)]">
-        <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--text-muted)]">Estado</p>
-        <p className="mt-1.5 text-sm font-medium text-[var(--text-primary)]">{statusLabel}</p>
-      </div>
-      <div className="rounded-[16px] border border-[var(--border-medium)] bg-[var(--bg-surface)] p-4 transition-colors hover:bg-[var(--bg-elevated)]">
-        <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--text-muted)]">Peso</p>
-        <p className="mt-1.5 text-sm font-medium text-[var(--text-primary)]">
-          {formatBytes(item.originalSize)}
-          {item.resultSize ? <span className="text-[var(--text-muted)]"> / {formatBytes(item.resultSize)}</span> : null}
-        </p>
-      </div>
-      <div className="rounded-[16px] border border-[var(--border-medium)] bg-[var(--bg-surface)] p-4 transition-colors hover:bg-[var(--bg-elevated)]">
-        <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--text-muted)]">Dimensiones</p>
-        <p className="mt-1.5 text-sm font-medium text-[var(--text-primary)]">
-          {item.sourceWidth && item.sourceHeight ? `${item.sourceWidth}x${item.sourceHeight}` : 'Sin datos'}
-          {item.finalWidth && item.finalHeight ? <span className="text-[var(--text-muted)]"> / {item.finalWidth}x{item.finalHeight}</span> : null}
-        </p>
-      </div>
-      <div className="rounded-[16px] border border-[var(--border-medium)] bg-[var(--bg-surface)] p-4 transition-colors hover:bg-[var(--bg-elevated)]">
-        <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--text-muted)]">Ahorro</p>
-        <p className="mt-1.5 text-sm font-medium text-[var(--text-primary)]">{item.resultSize ? `${reduction.toFixed(1)}%` : '--'}</p>
-      </div>
+    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 py-2 sm:grid-cols-4 sm:gap-x-0 sm:divide-x sm:divide-[var(--border-medium)]/30">
+      {stats.map((stat) => (
+        <div key={stat.label} className="min-w-0 sm:px-4 first:sm:pl-0 last:sm:pr-0">
+          <p className="text-[10px] font-mono uppercase tracking-[0.1em] text-[var(--text-muted)]/60">{stat.label}</p>
+          <p className="mt-0.5 truncate font-mono text-[11px] text-[var(--text-primary)]" title={String(stat.value)}>
+            {stat.value}
+          </p>
+        </div>
+      ))}
     </div>
   );
 }
+
+const formControlClassName =
+  'w-full rounded-md border-0 border-b border-[var(--border-medium)]/50 bg-transparent px-0 py-1.5 text-[11px] font-mono text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--text-muted)]/40 focus:border-[var(--accent-primary)]/60';
+
+export function FormField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="block space-y-1">
+      <span className="text-[10px] font-mono uppercase tracking-[0.1em] text-[var(--text-muted)]/60">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+export function SettingSwitch({
+  checked,
+  onChange,
+  accentColor = 'var(--accent-primary)',
+  id,
+  'aria-label': ariaLabel,
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  accentColor?: string;
+  id?: string;
+  'aria-label'?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      id={id}
+      aria-checked={checked}
+      aria-label={ariaLabel}
+      onClick={() => onChange(!checked)}
+      className="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors duration-200"
+      style={checked ? { backgroundColor: accentColor } : { backgroundColor: 'var(--border-medium)' }}
+    >
+      <span
+        className={`inline-block h-3 w-3 transform rounded-full shadow-sm transition duration-200 ${checked ? 'translate-x-3 bg-white' : 'translate-x-0.5 bg-[var(--text-muted)]'}`}
+      />
+    </button>
+  );
+}
+
+export function SettingSwitchRow({
+  label,
+  labelClassName,
+  checked,
+  onChange,
+  accentColor,
+  switchId,
+}: {
+  label: string;
+  labelClassName?: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  accentColor?: string;
+  switchId: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 py-1">
+      <label
+        htmlFor={switchId}
+        className={`cursor-pointer text-[10px] font-mono uppercase tracking-[0.1em] ${labelClassName ?? 'text-[var(--text-muted)]/80'}`}
+      >
+        {label}
+      </label>
+      <SettingSwitch
+        id={switchId}
+        checked={checked}
+        onChange={onChange}
+        accentColor={accentColor}
+        aria-label={label}
+      />
+    </div>
+  );
+}
+
+export { formControlClassName };
 
 export function OperationSection({
   title,

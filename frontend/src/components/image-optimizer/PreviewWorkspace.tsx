@@ -1,7 +1,7 @@
-import { CheckCircle2, Crop, Download, Eye, Loader2, Sparkles, Trash2, Wand2 } from 'lucide-react';
+import { CheckCircle2, Crop, Download, Eye, Loader2, Sparkles, Trash2 } from 'lucide-react';
 import { BatchSettings, CropRectangle, ImageItem, PreviewTab, PresetId } from './types';
 import { BeforeAfterSlider, ItemSummary, ProgressBar } from './ui';
-import { IMAGE_OPTIMIZER_PRESETS } from './presets';
+import ItemOverridesPanel from './ItemOverridesPanel';
 
 interface PreviewWorkspaceProps {
   items: ImageItem[];
@@ -58,6 +58,9 @@ export default function PreviewWorkspace({
   onToggleExcluded,
   onClearPresetOverride,
 }: PreviewWorkspaceProps) {
+  const previewStageClass = 'flex min-h-0 flex-1 items-center justify-center overflow-hidden';
+  const previewImageClass = 'block max-h-full max-w-full object-contain';
+
   if (items.length === 0) {
     return (
       <section className="relative flex h-full flex-col items-center justify-center overflow-hidden rounded-[14px] border border-dashed border-[var(--border-medium)] bg-[var(--bg-surface)] px-6 text-center shadow-sm">
@@ -176,50 +179,52 @@ export default function PreviewWorkspace({
 
   return (
     <section className="flex h-full flex-col gap-3 overflow-hidden">
-      <div className="relative flex-1 overflow-hidden rounded-[14px] border border-[var(--border-medium)] bg-[var(--bg-surface)] p-4 shadow-sm flex flex-col gap-3">
+      <div className="relative flex-1 overflow-hidden rounded-[14px] border border-[var(--border-medium)] bg-[var(--bg-surface)] p-3 shadow-sm flex flex-col gap-2">
         {/* Item header */}
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between shrink-0">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between shrink-0">
           <div className="min-w-0 flex items-center gap-2">
             <div className="min-w-0">
-              <p className="truncate font-mono text-sm tracking-wide text-[var(--text-primary)]">{activeItemOutputName}</p>
+              <p className="truncate font-mono text-[13px] text-[var(--text-primary)]">{activeItemOutputName}</p>
               {activeItemOutputName !== activeItem.originalName && (
-                <p className="truncate text-[10px] font-mono text-[var(--text-muted)]">{activeItem.originalName}</p>
+                <p className="truncate text-[10px] font-mono text-[var(--text-muted)]/70">{activeItem.originalName}</p>
               )}
             </div>
-            {activeItem.status === 'completed' && !activeItem.stale ? <CheckCircle2 size={13} className="text-emerald-400 shrink-0" /> : null}
-            {activeItem.excluded && <span className="shrink-0 rounded-full border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[10px] font-mono text-red-400">Excluida</span>}
-            {activeItem.stale && <span className="shrink-0 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] font-mono text-amber-400">Stale</span>}
-            {activeItem.overrides.skipCompression && <span className="shrink-0 rounded-full border border-sky-500/20 bg-sky-500/10 px-2 py-0.5 text-[10px] font-mono text-sky-400">Skip Comp</span>}
-            {activeItem.overrides.presetId && <span className="shrink-0 rounded-full border border-violet-500/20 bg-violet-500/10 px-2 py-0.5 text-[10px] font-mono text-violet-400">Preset local</span>}
+            {activeItem.status === 'completed' && !activeItem.stale ? <CheckCircle2 size={12} className="text-emerald-400/80 shrink-0" /> : null}
+            {activeItem.excluded && <span className="shrink-0 text-[10px] font-mono text-red-400/70">Excluida</span>}
+            {activeItem.stale && <span className="shrink-0 text-[10px] font-mono text-amber-400/70">Stale</span>}
+            {activeItem.overrides.skipCompression && <span className="shrink-0 text-[10px] font-mono text-[var(--text-muted)]/70">Sin compresión</span>}
+            {activeItem.overrides.presetId && <span className="shrink-0 text-[10px] font-mono text-[var(--text-muted)]/70">Preset local</span>}
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={() => onViewModeChange('grid')}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-surface)] px-3 py-1.5 text-[11px] font-mono uppercase tracking-wider text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-mono uppercase tracking-[0.1em] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
             >
               ← Grid
             </button>
+            <span className="text-[var(--border-medium)]/50">|</span>
             <button
               onClick={() => onDownloadSingle(activeItem)}
               disabled={!activeItemDownloadable}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.07] bg-white/[0.03] px-3 py-1.5 text-[11px] font-mono uppercase tracking-wider text-zinc-400 transition-colors hover:bg-white/[0.07] hover:text-white disabled:pointer-events-none disabled:opacity-30"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-mono uppercase tracking-[0.1em] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)] disabled:pointer-events-none disabled:opacity-30"
             >
-              <Download size={12} />
+              <Download size={11} />
               Descargar
             </button>
+            <span className="text-[var(--border-medium)]/50">|</span>
             <button
               onClick={() => onRemoveItem(activeItem.id)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/10 px-3 py-1.5 text-[11px] font-mono uppercase tracking-wider text-red-500/60 transition-colors hover:bg-red-500/10 hover:text-red-400"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-mono uppercase tracking-[0.1em] text-[var(--text-muted)]/70 transition-colors hover:text-red-400/80"
             >
-              <Trash2 size={12} />
+              <Trash2 size={11} />
               Quitar
             </button>
           </div>
         </div>
 
         {/* Pill tab nav */}
-        <div className="flex items-center gap-3 shrink-0 border-b border-[var(--border-medium)] pb-3">
-          <div className="flex items-center gap-0.5 rounded-full border border-[var(--border-medium)] bg-[var(--bg-base)] p-1">
+        <div className="flex items-center gap-3 shrink-0 pb-1">
+          <div className="flex items-center gap-0.5">
             {([
               { value: 'original', label: 'Original' },
               { value: 'crop', label: 'Recorte' },
@@ -229,9 +234,9 @@ export default function PreviewWorkspace({
               <button
                 key={tab.value}
                 onClick={() => onChangePreviewTab(tab.value)}
-                className={`rounded-full px-3.5 py-1.5 text-[10px] font-mono uppercase tracking-[0.15em] transition-all ${previewTab === tab.value
-                  ? 'bg-[var(--text-primary)] text-[var(--bg-base)] font-semibold'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                className={`rounded-md px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.1em] transition-colors ${previewTab === tab.value
+                  ? 'bg-[var(--text-primary)] text-[var(--bg-base)]'
+                  : 'text-[var(--text-muted)]/70 hover:text-[var(--text-primary)]'
                   }`}
               >
                 {tab.label}
@@ -246,24 +251,19 @@ export default function PreviewWorkspace({
           )}
         </div>
 
-        <div className="custom-scrollbar min-h-0 flex-1 overflow-auto flex flex-col gap-4">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {previewTab === 'original' ? (
-            <div className="flex flex-col gap-3">
-              <div className="relative flex min-h-[200px] items-center justify-center overflow-hidden rounded-[12px] border border-[var(--border-medium)] bg-[var(--bg-base)]">
-                <img src={activeItem.preview} alt={activeItem.originalName} className="max-h-[30rem] w-auto object-contain" />
-              </div>
-              <div className="shrink-0">
-                <ItemSummary item={activeItem} />
-              </div>
+            <div className={previewStageClass}>
+              <img src={activeItem.preview} alt={activeItem.originalName} className={previewImageClass} />
             </div>
           ) : null}
 
           {previewTab === 'crop' ? (
             activeCropPreview && activeItemSettings.operations.cropEnabled && activeItemSettings.crop.aspectRatio !== 'original' ? (
-              <div className="flex flex-col gap-3">
-                <div className="relative flex min-h-[200px] items-center justify-center overflow-hidden rounded-[12px] border border-[var(--border-medium)] bg-[var(--bg-base)]">
-                  <div className="relative inline-block">
-                    <img src={activeItem.preview} alt={activeItem.originalName} className="max-h-[30rem] w-auto object-contain" />
+              <div className="flex min-h-0 flex-1 flex-col gap-2">
+                <div className={previewStageClass}>
+                  <div className="relative inline-block max-h-full max-w-full">
+                    <img src={activeItem.preview} alt={activeItem.originalName} className={previewImageClass} />
                     <div className="absolute inset-0 bg-black/60" />
                     <div
                       className="absolute border border-[var(--accent-primary)] shadow-[0_0_15px_rgba(94,106,210,0.2)]"
@@ -277,138 +277,79 @@ export default function PreviewWorkspace({
                     />
                   </div>
                 </div>
-                <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-[12px] border border-[var(--border-medium)] bg-[var(--bg-base)] p-3">
-                  <div className="text-[11px] font-mono text-[var(--text-muted)] uppercase tracking-widest flex items-center gap-2">
-                    Recorte efectivo <span className="text-[var(--text-primary)] bg-[var(--bg-surface)] px-1.5 py-0.5 rounded border border-[var(--border-medium)]">{activeCropPreview.width}x{activeCropPreview.height}</span>
-                  </div>
+                <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 py-1">
+                  <p className="text-[10px] font-mono uppercase tracking-[0.1em] text-[var(--text-muted)]/70">
+                    Recorte {activeCropPreview.width}x{activeCropPreview.height}
+                  </p>
                   <button
                     onClick={() => onOpenCropEditor()}
-                    className="inline-flex items-center gap-2 rounded-lg border border-[var(--accent-primary)]/20 bg-[var(--accent-primary)]/5 px-3 py-1.5 text-[11px] font-mono uppercase tracking-widest text-[var(--accent-primary)] transition-colors hover:bg-[var(--accent-primary)]/10"
+                    className="text-[10px] font-mono uppercase tracking-[0.1em] text-[var(--accent-primary)] transition-colors hover:text-[var(--accent-primary-hover)]"
                   >
-                    <Wand2 size={13} />
                     Ajustar manualmente
                   </button>
                 </div>
               </div>
             ) : (
-              <div className="flex h-full min-h-[16rem] flex-col items-center justify-center rounded-[12px] border border-dashed border-[var(--border-medium)] text-center">
-                <Crop size={22} className="mb-3 text-[var(--text-muted)]" />
-                <p className="font-mono text-[11px] uppercase tracking-widest text-[var(--text-muted)]">Sin recorte activo</p>
-                <p className="mt-2 max-w-[280px] text-[11px] font-mono leading-relaxed text-[var(--text-muted)]">Activa la operación de recorte y elige una relación para ver la máscara.</p>
+              <div className={`${previewStageClass} flex-col gap-2 text-center`}>
+                <Crop size={20} className="text-[var(--text-muted)]/60" />
+                <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-[var(--text-muted)]/70">Sin recorte activo</p>
+                <p className="max-w-[280px] text-[10px] font-mono leading-relaxed text-[var(--text-muted)]/60">Activa recorte y elige una relación para ver la máscara.</p>
               </div>
             )
           ) : null}
 
           {previewTab === 'result' ? (
             activeItemDownloadable ? (
-              <div className="flex flex-col gap-3">
-                <div className="relative flex min-h-[200px] items-center justify-center overflow-hidden rounded-[12px] border border-[var(--border-medium)] bg-[var(--bg-base)]">
+              <div className="flex min-h-0 flex-1 flex-col gap-2">
+                <div className={previewStageClass}>
                   <img
                     src={activeIsDirect ? activeItem.preview : activeItem.resultPreview || activeItem.preview}
                     alt={`${activeItem.originalName} resultado`}
-                    className="max-h-[30rem] w-auto object-contain"
+                    className={previewImageClass}
                   />
                 </div>
-                <div className="shrink-0 rounded-[12px] border border-[var(--border-medium)] bg-[var(--bg-base)] p-3 text-[11px] font-mono text-[var(--text-muted)] text-center tracking-wide">
+                <p className="shrink-0 text-center text-[10px] font-mono text-[var(--text-muted)]/60">
                   {activeIsDirect
                     ? 'Modo directo: se descargará el original con el nombre final.'
                     : 'Artefacto final disponible para descarga.'}
-                </div>
+                </p>
               </div>
             ) : (
-              <div className="flex h-full min-h-[16rem] flex-col items-center justify-center rounded-[12px] border border-dashed border-[var(--border-medium)] text-center">
-                <Sparkles size={22} className="mb-3 text-[var(--text-muted)]" />
-                <p className="font-mono text-[11px] uppercase tracking-widest text-[var(--text-muted)]">Aún no hay resultado</p>
-                <p className="mt-2 max-w-[280px] text-[11px] font-mono leading-relaxed text-[var(--text-muted)]">Procesa la imagen para obtener el preview final.</p>
+              <div className={`${previewStageClass} flex-col gap-2 text-center`}>
+                <Sparkles size={20} className="text-[var(--text-muted)]/60" />
+                <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-[var(--text-muted)]/70">Aún no hay resultado</p>
+                <p className="max-w-[280px] text-[10px] font-mono leading-relaxed text-[var(--text-muted)]/60">Procesa la imagen para obtener el preview final.</p>
               </div>
             )
           ) : null}
 
           {previewTab === 'compare' ? (
             activeItem.resultPreview && !activeIsDirect ? (
-              <div className="relative flex h-full min-h-[200px] items-center justify-center overflow-hidden rounded-[12px] border border-[var(--border-medium)] bg-[var(--bg-base)]">
+              <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
                 <BeforeAfterSlider before={activeItem.preview} after={activeItem.resultPreview} alt={activeItem.originalName} />
               </div>
             ) : (
-              <div className="flex h-full min-h-[16rem] flex-col items-center justify-center rounded-[12px] border border-dashed border-[var(--border-medium)] text-center">
-                <Eye size={22} className="mb-3 text-[var(--text-muted)]" />
-                <p className="font-mono text-[11px] uppercase tracking-widest text-[var(--text-muted)]">Comparación no disponible</p>
-                <p className="mt-2 max-w-[280px] text-[11px] font-mono leading-relaxed text-[var(--text-muted)]">Aparece cuando exista un resultado procesado distinto del original.</p>
+              <div className={`${previewStageClass} flex-col gap-2 text-center`}>
+                <Eye size={20} className="text-[var(--text-muted)]/60" />
+                <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-[var(--text-muted)]/70">Comparación no disponible</p>
+                <p className="max-w-[280px] text-[10px] font-mono leading-relaxed text-[var(--text-muted)]/60">Aparece cuando exista un resultado procesado distinto del original.</p>
               </div>
             )
           ) : null}
+        </div>
 
-          {/* Overrides & Summary — compact grid */}
-          <div className="grid gap-4 border-t border-[var(--border-medium)] pt-4 lg:grid-cols-[minmax(0,1fr)_15rem]">
-            <div className="rounded-[14px] border border-[var(--border-medium)] bg-[var(--bg-base)] p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <p className="text-[10px] font-mono uppercase tracking-widest text-[var(--text-muted)]">Ajustes de imagen</p>
-                {activeItem.overrides.presetId && (
-                  <button
-                    onClick={() => onClearPresetOverride(activeItem.id)}
-                    className="rounded-md border border-[var(--border-medium)] px-2 py-0.5 text-[10px] font-mono text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
-                  >
-                    Limpiar
-                  </button>
-                )}
-              </div>
-              <div className="grid gap-2.5 sm:grid-cols-2">
-                <label className="block space-y-1.5">
-                  <span className="text-[10px] font-mono uppercase tracking-widest text-[var(--text-muted)]">Nombre final</span>
-                  <input
-                    type="text"
-                    value={activeItem.overrides.customFilename}
-                    onChange={(e) => onUpdateCustomFilename(activeItem.id, e.target.value)}
-                    placeholder="Opcional"
-                    className="w-full rounded-lg border border-[var(--border-medium)] bg-[var(--bg-surface)] px-3 py-2 text-[11px] font-mono text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent-primary)]"
-                  />
-                </label>
-                <label className="block space-y-1.5">
-                  <span className="text-[10px] font-mono uppercase tracking-widest text-[var(--text-muted)]">Preset local</span>
-                  <select
-                    value={activeItem.overrides.presetId || ''}
-                    onChange={(e) => onUpdatePresetOverride(activeItem.id, (e.target.value || null) as PresetId | null)}
-                    className="w-full appearance-none rounded-lg border border-[var(--border-medium)] bg-[var(--bg-surface)] px-3 py-2 text-[11px] font-mono text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent-primary)]"
-                  >
-                    <option value="" className="bg-[var(--bg-base)]">Global (sin override)</option>
-                    {IMAGE_OPTIMIZER_PRESETS.map((preset) => (
-                      <option key={preset.id} value={preset.id} className="bg-[var(--bg-base)] text-[var(--text-primary)]">{preset.label}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="flex cursor-pointer items-center justify-between rounded-lg border border-[var(--border-medium)] bg-[var(--bg-surface)] px-3 py-2.5 transition-colors hover:bg-[var(--bg-elevated)]">
-                  <span className="text-[11px] font-mono text-[var(--text-primary)]">Omitir compresión</span>
-                  <input
-                    type="checkbox"
-                    checked={activeItem.overrides.skipCompression}
-                    onChange={(e) => onToggleSkipCompression(activeItem.id, e.target.checked)}
-                    className="h-3.5 w-3.5 rounded border-[var(--border-medium)] bg-[var(--bg-base)] text-[var(--accent-primary)] focus:ring-[var(--accent-primary)] focus:ring-offset-0"
-                  />
-                </label>
-                <label className="flex cursor-pointer items-center justify-between rounded-lg border border-[var(--border-medium)] bg-[var(--bg-surface)] px-3 py-2.5 transition-colors hover:bg-[var(--bg-elevated)]">
-                  <span className="text-[11px] font-mono text-red-400">Excluir del lote</span>
-                  <input
-                    type="checkbox"
-                    checked={activeItem.excluded}
-                    onChange={(e) => onToggleExcluded(activeItem.id, e.target.checked)}
-                    className="h-3.5 w-3.5 rounded border-[var(--border-medium)] bg-[var(--bg-base)] text-red-500 focus:ring-red-500 focus:ring-offset-0"
-                  />
-                </label>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2.5 rounded-[14px] border border-[var(--border-medium)] bg-[var(--bg-base)] p-4 text-[10px] font-mono uppercase tracking-widest text-[var(--text-muted)]">
-              <p className="text-[11px] text-[var(--text-primary)]">Salida estimada</p>
-              <p className="break-all rounded-lg border border-[var(--border-medium)] bg-[var(--bg-surface)] p-2 font-mono text-[11px] normal-case tracking-normal text-[var(--text-primary)]">{activeItemOutputName}</p>
-              <div className="space-y-1.5 pt-1">
-                <p className="flex items-center justify-between gap-2">Modo: <span className="text-right text-[var(--text-primary)] normal-case tracking-normal">{primaryActionLabel}</span></p>
-                <p className="flex items-center justify-between gap-2">Directa: <span className="text-right text-[var(--text-primary)] normal-case tracking-normal">{activeIsDirect ? 'Sí' : 'No'}</span></p>
-              </div>
-              {activeItem.error && (
-                <p className="rounded-lg border border-red-500/20 bg-red-500/5 px-2.5 py-2 text-[10px] font-mono normal-case tracking-normal text-red-400">{activeItem.error}</p>
-              )}
-            </div>
-          </div>
+        <div className="shrink-0 border-t border-[var(--border-medium)]/50 pt-1">
+          <ItemSummary item={activeItem} />
+          <ItemOverridesPanel
+            item={activeItem}
+            primaryActionLabel={primaryActionLabel}
+            isDirect={activeIsDirect}
+            onUpdateCustomFilename={onUpdateCustomFilename}
+            onUpdatePresetOverride={onUpdatePresetOverride}
+            onToggleSkipCompression={onToggleSkipCompression}
+            onToggleExcluded={onToggleExcluded}
+            onClearPresetOverride={onClearPresetOverride}
+          />
         </div>
       </div>
     </section>
