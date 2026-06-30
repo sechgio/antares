@@ -196,6 +196,5 @@ def path_param_violations(params: object, *, strict: bool = False) -> Iterator[t
                     continue
                 if _path_item_violates(item, strict=strict):
                     yield key, item
-        elif isinstance(value, str):
-            if _path_item_violates(value, strict=strict):
-                yield key, value
+        elif isinstance(value, str) and _path_item_violates(value, strict=strict):
+            yield key, value
