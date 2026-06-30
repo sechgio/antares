@@ -28,6 +28,7 @@ import {
   HelpCircle,
   X,
   FileSpreadsheet,
+  ChevronDown,
 } from 'lucide-react';
 import DatePicker from '../ui/DatePicker';
 import PreviewPage from './PreviewPage';
@@ -616,36 +617,17 @@ export default function PadronView() {
               </div>
 
               <div className="vpad-card">
-                <div className="vpad-field">
-                  <label htmlFor="vpad-output-format">Formato de salida</label>
-                  <select
-                    id="vpad-output-format"
-                    value={outputFormat}
-                    onChange={(e) => handleOutputFormatChange(e.target.value)}
-                  >
-                    {OUTPUT_FORMAT_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="vpad-field">
-                  <span>{isWaterCutNotice ? 'Cantidad total de registros' : 'Cantidad total de ítems'}</span>
-                  <input
-                    type="number"
-                    min={1}
-                    value={isWaterCutNotice ? waterCutTotalItemsCount : totalItemsCount}
-                    onChange={(e) =>
-                      isWaterCutNotice
-                        ? handleWaterCutTotalItemsChange(e.target.value)
-                        : handleTotalItemsChange(e.target.value)
-                    }
-                  />
-                </div>
                 {isWaterCutNotice ? (
-                  <div className="vpad-field-row vpad-field-row-two">
+                  <div className="vpad-field-row">
+                    <div className="vpad-field">
+                      <span>Total registros</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={waterCutTotalItemsCount}
+                        onChange={(e) => handleWaterCutTotalItemsChange(e.target.value)}
+                      />
+                    </div>
                     <div className="vpad-field">
                       <span>Registro inicial</span>
                       <input
@@ -684,17 +666,13 @@ export default function PadronView() {
                 ) : (
                   <div className="vpad-field-row">
                     <div className="vpad-field">
-                      <span>Orientación</span>
-                      <select
-                        value={orientation}
-                        onChange={(e) => handleOrientationChange(e.target.value)}
-                      >
-                        {ORIENTATION_OPTIONS.map((o) => (
-                          <option key={o.value} value={o.value}>
-                            {o.label}
-                          </option>
-                        ))}
-                      </select>
+                      <span>Total ítems</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={totalItemsCount}
+                        onChange={(e) => handleTotalItemsChange(e.target.value)}
+                      />
                     </div>
                     <div className="vpad-field">
                       <span>Item inicial</span>
@@ -887,6 +865,42 @@ export default function PadronView() {
               <FileSpreadsheet size={16} />
               Excel
             </button>
+            <div className="vpad-select-template-wrapper">
+              <label htmlFor="vpad-output-format" className="sr-only">Formato de salida</label>
+              <select
+                id="vpad-output-format"
+                className="vpad-select-template"
+                value={outputFormat}
+                onChange={(e) => handleOutputFormatChange(e.target.value)}
+                title="Seleccionar plantilla de salida"
+              >
+                {OUTPUT_FORMAT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={14} className="vpad-select-template-icon" />
+            </div>
+            {!isWaterCutNotice && (
+              <div className="vpad-select-template-wrapper">
+                <label htmlFor="vpad-orientation" className="sr-only">Orientación</label>
+                <select
+                  id="vpad-orientation"
+                  className="vpad-select-template"
+                  value={orientation}
+                  onChange={(e) => handleOrientationChange(e.target.value)}
+                  title="Seleccionar orientación"
+                >
+                  {ORIENTATION_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={14} className="vpad-select-template-icon" />
+              </div>
+            )}
             <button
               className="tutorial-trigger-btn"
               onClick={openTutorial}
