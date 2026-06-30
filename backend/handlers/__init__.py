@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from backend.handlers.common import (
-    log_message,
     process_state,
     reset_state,
 )
@@ -45,14 +44,6 @@ HANDLERS: dict[str, Callable[[dict[str, Any]], Any]] = {
 # Backward-compatible aliases for tests
 _state = process_state
 _reset_state = reset_state
-_log = log_message
 
 
-class Handlers:
-    """Legacy facade — delegates to feature-scoped modules."""
-    process_start = staticmethod(HANDLERS["process_start"])
-    process_status = staticmethod(HANDLERS["process_status"])
-    process_cancel = staticmethod(HANDLERS["process_cancel"])
-
-
-__all__ = ["HANDLERS", "Handlers", "_reset_state", "_state"]
+__all__ = ["HANDLERS", "_reset_state", "_state"]

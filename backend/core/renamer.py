@@ -62,13 +62,6 @@ class RenamerEngine:
         self._record_sequences: dict[str, int] = {}
 
     @staticmethod
-    def build_mapping_patron(mapping_keys: list[str]) -> str:
-        """Patrón interno de compatibilidad para modo mapeo directo."""
-        if not mapping_keys:
-            return "{renombre}{ext}"
-        return "{renombre}{ext}"
-
-    @staticmethod
     def _lookup_file_mapping(
         filename: str,
         file_mapping: dict[str, str] | MappingIndex | None,

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from datetime import datetime
 from typing import Any
 
@@ -217,7 +216,6 @@ def list_runs(
     params.extend([limit, offset])
     with _db_lock:
         conn = get_connection(db)
-        conn.row_factory = sqlite3.Row
         rows = conn.execute(sql, params).fetchall()
     return [dict(r) for r in rows]
 
@@ -231,7 +229,6 @@ def list_runs_by_ids(ids: list[int]) -> list[dict[str, Any]]:
     placeholders = ", ".join(["?"] * len(ids))
     with _db_lock:
         conn = get_connection(db)
-        conn.row_factory = sqlite3.Row
         rows = conn.execute(
             f"SELECT {_HISTORIAL_SELECT} FROM historial WHERE id IN ({placeholders}) "
             f"ORDER BY timestamp DESC",
@@ -248,7 +245,6 @@ def get_run(run_id: int) -> dict[str, Any] | None:
     db = get_db_path()
     with _db_lock:
         conn = get_connection(db)
-        conn.row_factory = sqlite3.Row
         row = conn.execute(
             f"SELECT {_HISTORIAL_SELECT} FROM historial WHERE id = ?",
             (run_id,),

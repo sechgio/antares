@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import os
 import threading
-import time
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
@@ -146,7 +145,6 @@ class WorkScheduler:
                 return False
             if self._heavy_slots.acquire(timeout=0.05):
                 return True
-            time.sleep(0)
 
     def metrics(self) -> dict[str, Any]:
         """Return internal queue/worker metrics for diagnostics."""

@@ -13,7 +13,7 @@ from concurrent.futures import ALL_COMPLETED, CancelledError, wait
 from pathlib import Path
 from typing import Any, cast
 
-from backend.core.converter import FORMATOS_SOPORTADOS, convertir_imagen, copiar_archivo, copiar_video, es_video
+from backend.core.converter import FORMATOS_SOPORTADOS, convertir_imagen, copiar_archivo, es_video
 from backend.core.jobs import (
     Job,
     get_job_manager,
@@ -87,6 +87,48 @@ def _apply_catalog_rename(
     )
 
 
+def _probe_key_columns(
+    files: list[str],
+    columns: list[str],
+    sample_size: int = 30,
+) -> tuple[str, int, list[tuple[str, int]], bool]:
+    """Shared core of key-column auto-detection.
+
+    Parses a sample of files into search keys (parsed codes + full stems),
+    then counts ``buscar_por_columna`` matches per column. Exceptions become
+    -1 so a broken column never wins. Returns ``(best_col, best_count,
+    per_column_counts, had_search_keys)``; ``best_col`` is ``columns[0]``
+    when nothing parses or every probe fails.
+    """
+    from backend.core.database import buscar_por_columna
+
+    sample_files = files[:sample_size]
+    codigos: list[str] = []
+    stems: list[str] = []
+    for f in sample_files:
+        p = Path(f)
+        code, _ = parse_filename_parts(p.name)
+        codigos.append(code)
+        stems.append(p.stem)
+    search_keys = list(set(codigos + stems))
+    if not search_keys:
+        return columns[0], -1, [], False
+
+    best_col = columns[0]
+    best_count = -1
+    per_column: list[tuple[str, int]] = []
+    for col in columns:
+        try:
+            count = len(buscar_por_columna(search_keys, col))
+        except Exception:
+            count = -1
+        per_column.append((col, count))
+        if count > best_count:
+            best_count = count
+            best_col = col
+    return best_col, best_count, per_column, True
+
+
 def _detect_best_key_column(
     files: list[str],
     db_columns: list[str],
@@ -100,11 +142,6 @@ def _detect_best_key_column(
     instead of 'nis'), which caused silent rename failures because
     buscar_por_columna found nothing in the wrong column.
 
-    Args:
-        files: List of file paths.
-        db_columns: Available DB columns to probe.
-        sample_size: Max files to probe (performance).
-
     Returns:
         Best matching column name, or the first column if none match.
     """
@@ -112,35 +149,9 @@ def _detect_best_key_column(
         return ""
     if len(db_columns) == 1:
         return db_columns[0]
-
-    from backend.core.database import buscar_por_columna
-
-    # Parse codes from a sample of files
-    sample_files = files[:sample_size]
-    codigos = []
-    stems = []
-    for f in sample_files:
-        p = Path(f)
-        code, _ = parse_filename_parts(p.name)
-        codigos.append(code)
-        stems.append(p.stem)
-
-    search_keys = list(set(codigos + stems))
-    if not search_keys:
-        return db_columns[0]
-
-    best_col = db_columns[0]
-    best_count = -1
-    for col in db_columns:
-        try:
-            matches = buscar_por_columna(search_keys, col)
-            count = len(matches)
-        except Exception:
-            count = -1
-        if count > best_count:
-            best_count = count
-            best_col = col
-
+    best_col, _best_count, _per_column, _had_keys = _probe_key_columns(
+        files, db_columns, sample_size=sample_size
+    )
     return best_col
 
 
@@ -164,39 +175,14 @@ def _resolve_key_column(
     if len(columns) == 1:
         return columns[0]
 
-    # Parse codes once and reuse for both best-detection and user comparison
-    from backend.core.database import buscar_por_columna
-
-    sample_files = files[:30]
-    codigos: list[str] = []
-    stems: list[str] = []
-    for f in sample_files:
-        p = Path(f)
-        code, _ = parse_filename_parts(p.name)
-        codigos.append(code)
-        stems.append(p.stem)
-    search_keys = list(set(codigos + stems))
-    if not search_keys:
-        return columns[0]
-
-    # Probe all columns in a single pass, remembering the user's count
-    best_col = columns[0]
-    best_count = -1
-    user_count = -1
-    for col in columns:
-        try:
-            count = len(buscar_por_columna(search_keys, col))
-        except Exception:
-            count = -1
-        if col == key_column:
-            user_count = count
-        if count > best_count:
-            best_count = count
-            best_col = col
-
+    best_col, best_count, per_column, had_keys = _probe_key_columns(files, columns)
+    if not had_keys:
+        return best_col
     # Keep the user's choice if it matches equally well as the best
-    if key_column and key_column in columns and user_count >= 0 and user_count >= best_count and user_count > 0:
-        return key_column
+    if key_column and key_column in columns:
+        user_count = dict(per_column).get(key_column, -1)
+        if user_count >= 0 and user_count >= best_count and user_count > 0:
+            return key_column
     return best_col
 
 
@@ -305,47 +291,40 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
         from backend.core.config_fields import get_field_names
 
         db_cols = get_field_names()
-        if db_cols and files:
-            auto_key = _detect_best_key_column(files, db_cols)
-            if auto_key:
-                db_cache = buscar_por_columna(list(set(codigos_list + stems)), auto_key)
-                with _engine_snapshot(engine):
-                    for f in files:
-                        p = Path(f)
-                        code = codigos_manuales[p.name]
-                        stem = p.stem
-                        datos = db_cache.get(code) or db_cache.get(stem)
-                        if datos:
-                            nombre_nuevo = _apply_catalog_rename(
-                                engine, f, datos, code, file_seqs[p.name], auto_key
-                            )
-                            res.append((f, nombre_nuevo, True))
-                        else:
-                            res.append((f, p.name, False))
-                auto_payload: dict[str, Any] = {
-                    "preview": [{"origen": Path(orig).name, "nuevo": nuev, "en_bd": en_bd} for orig, nuev, en_bd in res],
-                }
-                if collisions:
-                    auto_payload["collisions"] = collisions
-                return auto_payload
-
-        db_cache = buscar_lote_por_codigos(codigos_list)
-        def lookup(codigo: str) -> dict[str, Any] | None:
-            return db_cache.get(codigo)
-        sequence_groups = {}
-        for f in files:
-            name = Path(f).name
-            code = codigos_manuales[name]
-            datos = db_cache.get(code)
-            if datos:
-                sequence_groups[name] = _record_group_key(datos, "", code)
-        res = engine.preview_lote(
-            files,
-            lookup_fn=lookup,
-            codigos_manuales=codigos_manuales,
-            file_seqs=file_seqs,
-            sequence_groups=sequence_groups,
-        )
+        auto_key = _detect_best_key_column(files, db_cols) if (db_cols and files) else ""
+        if auto_key:
+            db_cache = buscar_por_columna(list(set(codigos_list + stems)), auto_key)
+            with _engine_snapshot(engine):
+                for f in files:
+                    p = Path(f)
+                    code = codigos_manuales[p.name]
+                    stem = p.stem
+                    datos = db_cache.get(code) or db_cache.get(stem)
+                    if datos:
+                        nombre_nuevo = _apply_catalog_rename(
+                            engine, f, datos, code, file_seqs[p.name], auto_key
+                        )
+                        res.append((f, nombre_nuevo, True))
+                    else:
+                        res.append((f, p.name, False))
+        else:
+            db_cache = buscar_lote_por_codigos(codigos_list)
+            def lookup(codigo: str) -> dict[str, Any] | None:
+                return db_cache.get(codigo)
+            sequence_groups = {}
+            for f in files:
+                name = Path(f).name
+                code = codigos_manuales[name]
+                datos = db_cache.get(code)
+                if datos:
+                    sequence_groups[name] = _record_group_key(datos, "", code)
+            res = engine.preview_lote(
+                files,
+                lookup_fn=lookup,
+                codigos_manuales=codigos_manuales,
+                file_seqs=file_seqs,
+                sequence_groups=sequence_groups,
+            )
 
     payload: dict[str, Any] = {
         "preview": [{"origen": Path(orig).name, "nuevo": nuev, "en_bd": en_bd} for orig, nuev, en_bd in res],
@@ -467,7 +446,6 @@ def _run_conversion_job(job: Job) -> None:
         patron = params.get("patron", "")
         secuencia = params.get("secuencia", 1)
         word_separator = params.get("word_separator", "_")
-        use_filename_seq = params.get("use_filename_seq", True)
         use_column_rename = params.get("use_column_rename", False)
         key_column = params.get("key_column", "")
         file_mapping = params.get("mapping") or None
@@ -565,9 +543,7 @@ def _run_conversion_job(job: Job) -> None:
                 with state._lock:
                     if state.cancel_requested:
                         raise CancelledError()
-                if is_video_file:
-                    copiar_video(fpath, out_path)
-                elif not conversion_enabled:
+                if is_video_file or not conversion_enabled:
                     copiar_archivo(fpath, out_path)
                 else:
                     convertir_imagen(fpath, out_path, formato, calidad, resize, keep_exif)
@@ -583,6 +559,7 @@ def _run_conversion_job(job: Job) -> None:
         _last_notify_time = 0.0
         _NOTIFY_INTERVAL = 0.5
         _min_progress_delta = 1  # Minimum progress change to trigger notification (1%)
+        futures: list = []
 
         try:
             for chunk_start in range(0, len(files), CHUNK_SIZE):
@@ -679,7 +656,7 @@ def _run_conversion_job(job: Job) -> None:
                         break
         finally:
             if cancelled:
-                wait(futures if "futures" in locals() else [], timeout=_CANCEL_GRACE_SECONDS, return_when=ALL_COMPLETED)
+                wait(futures, timeout=_CANCEL_GRACE_SECONDS, return_when=ALL_COMPLETED)
 
         with state._lock:
             state.running = False
@@ -767,7 +744,6 @@ def db_detect_key_column(params: dict[str, Any]) -> dict[str, Any]:
         return {"key_column": "", "matches": 0, "columns": []}
 
     from backend.core.config_fields import get_field_names
-    from backend.core.database import buscar_por_columna
 
     db_cols = get_field_names()
     if not db_cols:
@@ -776,38 +752,13 @@ def db_detect_key_column(params: dict[str, Any]) -> dict[str, Any]:
     if len(db_cols) == 1:
         return {"key_column": db_cols[0], "matches": 0, "columns": [{"name": db_cols[0], "matches": 0}]}
 
-    # Parse codes from a sample of files (30 is enough for detection)
-    sample_files = files[:30]
-    codigos: list[str] = []
-    stems: list[str] = []
-    for f in sample_files:
-        p = Path(f)
-        code, _ = parse_filename_parts(p.name)
-        codigos.append(code)
-        stems.append(p.stem)
-
-    search_keys = list(set(codigos + stems))
-    if not search_keys:
-        return {"key_column": db_cols[0], "matches": 0, "columns": []}
-
-    column_results: list[dict[str, Any]] = []
-    best_col = db_cols[0]
-    best_count = -1
-    for col in db_cols:
-        try:
-            matches = buscar_por_columna(search_keys, col)
-            count = len(matches)
-        except Exception:
-            count = -1
-        column_results.append({"name": col, "matches": count})
-        if count > best_count:
-            best_count = count
-            best_col = col
-
+    best_col, best_count, per_column, had_keys = _probe_key_columns(files, db_cols)
+    if not had_keys:
+        return {"key_column": best_col, "matches": 0, "columns": []}
     return {
         "key_column": best_col,
         "matches": best_count,
-        "columns": column_results,
+        "columns": [{"name": col, "matches": count} for col, count in per_column],
     }
 
 

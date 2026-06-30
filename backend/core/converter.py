@@ -46,28 +46,14 @@ PIL_FORMAT_MAP: dict[str, str] = {
     "JPG": "JPEG",
 }
 
+_LANCZOS = getattr(Image, "Resampling", Image).LANCZOS
+
 
 def es_video(ruta: str | Path) -> bool:
     """Detecta si un archivo es un video basado en su extensión."""
     ruta = Path(ruta)
     ext = ruta.suffix.lower()
     return ext in VIDEO_FORMATS.values()
-
-
-def copiar_video(
-    ruta_origen: str | Path,
-    ruta_destino: str | Path,
-) -> Path:
-    """Copia un archivo de video sin conversión (solo renombrado).
-
-    Equivalente a :func:`copiar_archivo`: los videos se copian sin reencoding,
-    preservando metadatos. Mantenido como alias semántico para el handler de
-    conversión, que distingue videos de imágenes en el dispatch.
-
-    Raises:
-        FileNotFoundError: Si el video origen no existe.
-    """
-    return copiar_archivo(ruta_origen, ruta_destino)
 
 
 def copiar_archivo(
@@ -172,7 +158,7 @@ def convertir_imagen(
             if rw <= 0 or rh <= 0:
                 msg = f"Dimensiones de resize inválidas ({rw}x{rh})"
                 raise ValueError(msg)
-            img = img.resize((rw, rh), getattr(Image, "Resampling", Image).LANCZOS)
+            img = img.resize((rw, rh), _LANCZOS)
 
         ruta_destino.parent.mkdir(parents=True, exist_ok=True)
         save_kwargs = _build_save_kwargs(formato, calidad, keep_exif, img)
@@ -215,11 +201,13 @@ def convertir_a_preview(
         msg = f"No se encontró: {ruta_origen}"
         raise FileNotFoundError(msg)
 
-    # Cache lookup
+    # Cache lookup — include st_mtime so an edited/replaced image invalidates
+    # the cached preview instead of serving stale bytes for the TTL window.
     from backend.core.preview_cache import get_preview_cache
 
+    stat = ruta_origen.stat()
     resize_key = f"{resize[0]}x{resize[1]}" if resize and len(resize) == 2 else "none"
-    cache_key = f"{ruta_origen}:{formato_salida}:{calidad}:{resize_key}"
+    cache_key = f"{ruta_origen}:{formato_salida}:{calidad}:{resize_key}:{int(stat.st_mtime)}"
     cache = get_preview_cache()
     cached_result = cache.get(cache_key)
     if cached_result:
@@ -230,16 +218,24 @@ def convertir_a_preview(
 
     with Image.open(ruta_origen) as source_img:
         orig_w, orig_h = source_img.size
-        orig_size_kb = round(ruta_origen.stat().st_size / 1024, 1)
+        orig_size_kb = round(stat.st_size / 1024, 1)
 
-        # Max preview size 400px on longest side
+        # Preview capped at 400px on longest side. When `resize` is provided it
+        # defines the target proportions, but the preview itself stays bounded
+        # so IPC payloads remain small — a 4000x3000 resize used to produce a
+        # 4000x3000 base64 preview (huge) upscaled from the <=400 intermediate
+        # step (blurry). One resize straight to the capped target is sharper.
         max_size = 400
-        longest = max(source_img.size)
+        if resize and isinstance(resize, (tuple, list)) and len(resize) == 2:
+            target_w, target_h = int(resize[0]), int(resize[1])
+        else:
+            target_w, target_h = source_img.size
+        longest = max(target_w, target_h)
         if longest == 0:
             raise ValueError("Imagen con dimensiones 0x0 no puede ser procesada")
         ratio = min(max_size / longest, 1.0)
-        preview_size = (int(source_img.width * ratio), int(source_img.height * ratio))
-        img: Image.Image = source_img.resize(preview_size, getattr(Image, "Resampling", Image).LANCZOS)
+        preview_size = (max(1, int(target_w * ratio)), max(1, int(target_h * ratio)))
+        img: Image.Image = source_img.resize(preview_size, _LANCZOS)
 
         if formato in _registry:
             info = _registry[formato]
@@ -247,16 +243,13 @@ def convertir_a_preview(
         elif img.mode != "RGB":
             img = img.convert("RGB")
 
-        if resize and isinstance(resize, (tuple, list)) and len(resize) == 2:
-            img = img.resize((int(resize[0]), int(resize[1])), getattr(Image, "Resampling", Image).LANCZOS)
-
         buffer = io.BytesIO()
         save_kwargs = _build_save_kwargs(formato, calidad, False, img)
         img.save(buffer, format=pil_formato, **save_kwargs)
         buffer.seek(0)
         data = base64.b64encode(buffer.read()).decode("ascii")
 
-    mime = "image/png" if pil_formato == "PNG" else f"image/{pil_formato.lower()}"
+    mime = f"image/{pil_formato.lower()}"
     result = {
         "preview": f"data:{mime};base64,{data}",
         "width": str(orig_w),

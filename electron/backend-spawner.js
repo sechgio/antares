@@ -29,7 +29,6 @@ const STATE = Object.freeze({
 
 const HANDSHAKE_TIMEOUT_MS = 30_000;    // single spawn attempt timeout
 const START_RETRY_LIMIT = 5;             // spawn retry count per start cycle
-const MAX_AUTO_RESTARTS = Infinity;      // keep recovering from transient failures while the app is open
 const MAX_RESTART_BACKOFF_SEC = 30;      // cap backoff at 30s
 const RESTART_RESET_MS = 60_000;         // time of stability before counter resets
 const STDERR_BUFFER_LINES = 30;          // rolling stderr tail
@@ -78,7 +77,8 @@ function getState() { return _state; }
 function getLastError() { return _lastError; }
 function getStderrTail() { return _stderrBuffer.join('\n'); }
 function getAutoRestartLimit() {
-  return Number.isFinite(MAX_AUTO_RESTARTS) ? MAX_AUTO_RESTARTS : null;
+  // ponytail: siempre ilimitado en runtime — el knob era dead config.
+  return null;
 }
 function getPendingRequestCount() { return _pendingRequestCount; }
 function incrementPendingRequests() { _pendingRequestCount++; }

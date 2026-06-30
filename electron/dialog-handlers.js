@@ -8,10 +8,6 @@ const { sanitizeHtmlForPdf } = require('../shared/html-sanitizer');
 const DIALOG_METHODS = new Set(['dialog_files', 'dialog_dest', 'dialog_save', 'dialog_folder']);
 const NATIVE_METHODS = new Set([...DIALOG_METHODS, 'html_to_pdf']);
 
-function _sanitizeHtmlForPdf(html) {
-  return sanitizeHtmlForPdf(html);
-}
-
 function _localImageEntries(rawPaths) {
   if (!rawPaths || typeof rawPaths !== 'object' || Array.isArray(rawPaths)) return [];
   const allowedExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif', '.tif', '.tiff', '.ico']);
@@ -168,7 +164,7 @@ async function renderHtmlToPdf(params = {}, electronModules = {}) {
     const htmlPath = path.join(tempDir, 'render.html');
     const htmlUrl = pathToFileURL(htmlPath).toString();
     allowedFileUrls.add(htmlUrl);
-    await fs.promises.writeFile(htmlPath, _sanitizeHtmlForPdf(htmlWithLocalImages), 'utf8');
+    await fs.promises.writeFile(htmlPath, sanitizeHtmlForPdf(htmlWithLocalImages), 'utf8');
 
     const didFinishLoad = new Promise((resolve, reject) => {
       pdfWindow.webContents.once('did-finish-load', resolve);
@@ -300,4 +296,4 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
   return { handled: true, result: resultFromOpenDialog(response) };
 }
 
-module.exports = { handleDialogCall, _sanitizeHtmlForPdf };
+module.exports = { handleDialogCall };

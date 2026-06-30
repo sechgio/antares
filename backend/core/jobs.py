@@ -114,22 +114,12 @@ class Job:
     def to_dict_detail(self) -> dict[str, Any]:
         """Serialize job detail (including logs) for IPC responses."""
         with self.state._lock:
-            summary = {
-                "id": self.id,
-                "job_type": self.job_type,
-                "running": self.state.running,
-                "progress": self.state.progress,
-                "total": self.state.total,
-                "current_file": self.state.current_file,
-                "ok_count": self.state.ok_count,
-                "err_count": self.state.err_count,
-                "cancel_requested": self.state.cancel_requested,
-                "created_at": self.created_at,
+            return {
+                **self.to_dict(),
                 "logs": [dict(log) for log in self.state.logs],
                 "params": self.params,
                 "result": self.result,
             }
-            return summary
 
 
 class JobManager:

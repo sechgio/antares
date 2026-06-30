@@ -1,6 +1,5 @@
 // Regression test: shared HTML sanitizer used by Electron and frontend.
 const { sanitizeHtmlForPdf } = require('../shared/html-sanitizer');
-const { _sanitizeHtmlForPdf } = require('../electron/dialog-handlers');
 
 let passed = 0;
 let failed = 0;
@@ -33,9 +32,7 @@ function run() {
   `;
 
   const shared = sanitizeHtmlForPdf(html);
-  const electron = _sanitizeHtmlForPdf(html);
 
-  assert(shared === electron, 'shared and electron wrappers produce identical output');
   assert(shared.includes('Content-Security-Policy'), 'sanitizer injects CSP meta tag');
   assert(!shared.toLowerCase().includes('<script'), 'sanitizer removes script tags');
   assert(!shared.toLowerCase().includes('<iframe'), 'sanitizer removes iframe tags');

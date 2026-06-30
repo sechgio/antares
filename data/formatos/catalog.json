@@ -83,39 +83,5 @@
     "number_min": 1,
     "number_max": 9999999,
     "has_mapping": true
-  },
-  {
-    "id": "upload-ec959497",
-    "nombre": "MB",
-    "origen": "uploaded",
-    "storage_path": "upload-ec959497_0000028.pdf",
-    "enabled": true,
-    "persisted": true,
-    "strategy": "visual_overlay",
-    "mapping": {
-      "page": 0,
-      "x": 681.4697674418605,
-      "y": 17.896330731300967,
-      "width": 56.326910299003316,
-      "height": 16.835937604965807,
-      "font_size": 12,
-      "font_name": "Helvetica-Bold",
-      "color_r": 0,
-      "color_g": 0,
-      "color_b": 0,
-      "padding": 7,
-      "blank_x": null,
-      "blank_y": null,
-      "blank_width": null,
-      "blank_height": null,
-      "redraw_top_border": false,
-      "redraw_ot_badge": false,
-      "blank_mcids": null
-    },
-    "filename_pattern": "upload-ec959497_{desde}.pdf",
-    "max_pages": 500,
-    "number_min": 1,
-    "number_max": 9999999,
-    "has_mapping": false
   }
 ]

@@ -47,6 +47,3 @@ class TestRenamerMapping:
         archivo.write_text("x")
         result = engine.aplicar(archivo, codigo_manual="X", file_mapping={})
         assert result == "X.jpg"
-
-    def test_build_mapping_patron(self) -> None:
-        assert RenamerEngine.build_mapping_patron(["a", "b"]) == "{renombre}{ext}"
