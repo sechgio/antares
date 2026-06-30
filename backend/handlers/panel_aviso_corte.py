@@ -92,7 +92,9 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
             export_mode="include_empty",
         )
         if output_path:
-            Path(output_path).write_bytes(docx_bytes)
+            out = Path(output_path)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(docx_bytes)
             return {
                 "pdf_base64": "",
                 "content_base64": "",
@@ -120,7 +122,9 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
         export_mode="include_empty",
     )
     if output_path:
-        Path(output_path).write_bytes(pdf_bytes)
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(pdf_bytes)
         return {
             "pdf_base64": "",
             "content_base64": "",

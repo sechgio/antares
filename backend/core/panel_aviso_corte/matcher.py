@@ -207,6 +207,13 @@ def match_image_to_row(rule: MatchRule, cell_value: str, filename: str, compiled
     stem, _ = os.path.splitext(filename)
     normalized_stem = _normalize(stem)
 
+    # Una celda clave vacía (o sólo whitespace) no debe matchear ninguna imagen:
+    # bajo prefix/contains, startswith('') y '' in stem son siempre True, así que
+    # una fila sin clave capturaría todas las imágenes no asignadas y robaría
+    # fotos que pertenecen a filas posteriores.
+    if not normalized_value:
+        return False
+
     if rule.strategy == "prefix":
         return match_prefix(normalized_value, normalized_stem)
     if rule.strategy == "contains":
@@ -235,7 +242,6 @@ def build_panels(
     panels: list[Panel] = []
     warnings: list[str] = []
     assigned_images: set[str] = set()
-    matched_image_names: set[str] = set()
     rows_without_images_keys: list[str] = []
     rows_with_images = 0
 
@@ -284,7 +290,6 @@ def build_panels(
                 continue
             if match_image_to_row(rule, cell_value, img_name, compiled):
                 matched_for_row.append(img_name)
-                matched_image_names.add(img_name)
 
         if not matched_for_row:
             if export_mode == "include_empty":
@@ -319,6 +324,10 @@ def build_panels(
             assigned_images.add(img_name)
             all_entries.append((img_name, direccion, row_idx))
 
+    # Empaqueta MAX_IMAGES_PER_PANEL entradas por Panel. Por diseño (ver
+    # test_render_pdf_fixture_keeps_four_images_per_page) un batch puede cruzar
+    # filas para llenar la hoja A4 con 4 fotos; la metadata del encabezado
+    # (cuadrante/fecha/motivo) se toma de la primera fila del batch.
     global_img_number = 0
     for batch_start in range(0, len(all_entries), MAX_IMAGES_PER_PANEL):
         batch = all_entries[batch_start:batch_start + MAX_IMAGES_PER_PANEL]
@@ -343,13 +352,18 @@ def build_panels(
         )
         panels.append(panel)
 
-    unmatched = [img for img in image_names if img not in matched_image_names]
+    # El summary se computa desde assigned_images (las imágenes que realmente
+    # terminaron en un panel), no desde el set de imágenes matcheadas: una
+    # imagen descartada por overflow que ninguna fila posterior reclamó no está
+    # en ningún panel, así que debe reportarse como unmatched — no como matched
+    # — o de lo contrario el conteo miente y la imagen desaparece silenciosamente.
+    unmatched = [img for img in image_names if img not in assigned_images]
     summary = MatchSummary(
         total_rows=len(source.rows),
         rows_with_images=rows_with_images,
         rows_without_images=len(source.rows) - rows_with_images,
         total_images=len(image_names),
-        matched_images=len(matched_image_names),
+        matched_images=len(assigned_images),
         unmatched_images=len(unmatched),
         unmatched_image_names=tuple(unmatched),
         rows_without_images_keys=tuple(rows_without_images_keys),

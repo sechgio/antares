@@ -7,6 +7,11 @@ import type { ProcessStatus, LogEntry, PreviewItem, DBField, RenamePattern, DBRe
 
 export type { ProcessStatus, LogEntry, PreviewItem, DBField, RenamePattern, DBRecord, ThemeConfig, VisualMapping, FormatInfo, FormatOrigin, MappingStrategy, MappingResult, MappingCollision };
 
+// Single source of truth for which methods get the extended IPC timeout.
+// Shared with electron/ipc-methods.js via shared/long-running-methods.json so
+// the renderer and main process cannot drift on timeout classification.
+import longRunningMethods from '../../shared/long-running-methods.json';
+
 // ─── Electron IPC bridge ───────────────────────────────────────────────────
 
 declare global {
@@ -30,52 +35,14 @@ declare global {
 
 const IPC_TIMEOUT = 30_000;           // default timeout — most ops finish in <5s
 const IPC_LONG_TIMEOUT = 900_000;     // 15 min for large PDF/ZIP/image batches
-const IPC_MAX_RETRIES = 2;
-const IPC_RETRY_DELAY = 500;          // fast retry — backend is usually ready by the time we retry
+// No frontend retry layer: the Electron main process (ipc-router._callBackend)
+// already waits for backend readiness and retries transient mid-flight failures
+// with waitForReady() between attempts. A second retry layer here multiplied
+// transient errors into up to 9 attempts and added blind latency on top of the
+// backend's informed recovery. The timeout race below stays as a backstop in
+// case the main process itself hangs before the backend timeout fires.
 
-const LONG_RUNNING_METHODS = new Set([
-  'process_start',
-  'db_import',
-  'db_export',
-  'db_clear',
-  'preview_image',
-  'formatos_generate',
-  'formatos_render_template_page',
-  'sellador_apply',
-  'sellador_inspect_pdf',
-  'sellador_render_page',
-  'image_optimizer_zip',
-  'image_optimizer_save_files',
-  'technical_reports_import_file',
-  'technical_reports_render_consolidated_html',
-  'panel_aviso_corte_parse_excel',
-  'technical_reports_render_html',
-  'panel_aviso_corte_render_pdf',
-  'panel_aviso_corte_compute_match',
-  'generar_ubicaciones',
-  'preview_ubicacion',
-  'html_to_pdf',
-]);
-
-const _delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-const _isRetryable = (err: unknown): boolean => {
-  if (!(err instanceof Error)) return false;
-  const msg = err.message.toLowerCase();
-  return (
-    msg.includes('backend no disponible') ||
-    msg.includes('todavía se está iniciando') ||
-    msg.includes('backend process exited') ||
-    msg.includes('backend process not available') ||
-    msg.includes('stdin write failed') ||
-    msg.includes('se cerró') ||
-    msg.includes('backend_starting') ||
-    msg.includes('backend_exited') ||
-    msg.includes('cerró inesperadamente') ||
-    msg.includes('backend fatal') ||
-    msg.includes('restarting')
-  );
-};
+const LONG_RUNNING_METHODS = new Set<string>(longRunningMethods);
 
 const _invoke = async <T>(method: string, params?: Record<string, unknown> | object): Promise<T> => {
   if (!window.electronAPI) {
@@ -83,27 +50,25 @@ const _invoke = async <T>(method: string, params?: Record<string, unknown> | obj
   }
 
   const timeoutMs = LONG_RUNNING_METHODS.has(method) ? IPC_LONG_TIMEOUT : IPC_TIMEOUT;
-  let lastError: Error | null = null;
-  for (let attempt = 0; attempt <= IPC_MAX_RETRIES; attempt++) {
-    try {
-      const result = await Promise.race([
-        window.electronAPI.invoke(method, params as Record<string, unknown>),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`IPC timeout: ${method}`)), timeoutMs)
-        ),
-      ]);
-      return result as T;
-    } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err));
-      if (_isRetryable(err) && attempt < IPC_MAX_RETRIES) {
-        console.warn(`[api] Retry ${attempt + 1}/${IPC_MAX_RETRIES} for "${method}": ${lastError.message}`);
-        await _delay(IPC_RETRY_DELAY * (attempt + 1));
-        continue;
-      }
-      throw lastError;
-    }
+  // Single attempt: retry logic lives in ipc-router._callBackend (main process),
+  // which can actually wait for the backend to recover. The timeout race is a
+  // backstop for the case where the main process never resolves the invoke.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const result = await Promise.race([
+      window.electronAPI.invoke(method, params as Record<string, unknown>),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`IPC timeout: ${method}`)), timeoutMs);
+      }),
+    ]);
+    return result as T;
+  } catch (err) {
+    throw err instanceof Error ? err : new Error(String(err));
+  } finally {
+    // Limpiar el timer en éxito: sin esto el closure del setTimeout vive hasta
+    // que dispara, goteando memoria en sesiones largas con muchos IPC calls.
+    if (timer) clearTimeout(timer);
   }
-  throw lastError || new Error('IPC call failed');
 };
 
 export function onNotify(callback: (method: string, params: unknown) => void) {

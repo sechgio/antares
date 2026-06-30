@@ -147,14 +147,20 @@ def init_db() -> None:
                         old_cols = []
                     cursor.execute("ALTER TABLE imagenes RENAME TO imagenes_old")
                     cursor.execute(_build_schema(fields))
-                    if old_rows:
+                    # Sólo se preservan filas si alguna columna vieja (no-id)
+                    # mapea al nuevo esquema. Sin solapamiento (p. ej.
+                    # nis/sgio → codigo/nombre/...) las filas viejas no llevan
+                    # dato útil al nuevo esquema y reinsertarlas generaría rows
+                    # de puros defaults/placeholder, además de chocar con UNIQUE.
+                    preserved_cols = [c for c in old_cols if c in expected_cols and c != "id"]
+                    if old_rows and preserved_cols:
                         new_col_names = [_validate_identifier(f["name"]) for f in fields]
                         placeholders = ", ".join(["?"] * len(new_col_names))
                         col_names = ", ".join(_qi(c) for c in new_col_names)
                         defaults = {"INTEGER": 0, "REAL": 0.0, "TEXT": "", "BLOB": b""}
                         try:
                             all_values: list[list[Any]] = []
-                            for row in old_rows:
+                            for i, row in enumerate(old_rows):
                                 row_dict = dict(zip(old_cols, row, strict=False))
                                 values: list[Any] = []
                                 for f in fields:
@@ -162,7 +168,21 @@ def init_db() -> None:
                                     if col in row_dict and row_dict[col] is not None:
                                         values.append(row_dict[col])
                                     elif f.get("required"):
-                                        values.append(defaults.get(f["type"], ""))
+                                        default = defaults.get(f["type"], "")
+                                        # Un campo required+unique sin dato de origen
+                                        # recibiría el mismo default en cada fila y
+                                        # chocaría con el UNIQUE al reinsertar >1 fila
+                                        # (p. ej. codigo="" en todas). Uniquificar por
+                                        # índice sólo en ese caso; el resto conserva el
+                                        # default constante original.
+                                        if f.get("unique") and len(old_rows) > 1:
+                                            if isinstance(default, str):
+                                                default = f"{default}{i}" if default else str(i)
+                                            elif isinstance(default, (int, float)):
+                                                default = default + i
+                                            else:
+                                                default = str(i)
+                                        values.append(default)
                                     else:
                                         values.append(None)
                                 values_list = values
@@ -177,6 +197,13 @@ def init_db() -> None:
                             cursor.execute("ALTER TABLE imagenes_old RENAME TO imagenes")
                             raise DatabaseError(f"Migración fallida, esquema anterior preservado: {exc}") from exc
                     else:
+                        if old_rows:
+                            logger.info(
+                                "Migración sin solapamiento de columnas (%s → %s): "
+                                "catálogo vaciado, no se preservaron filas viejas.",
+                                [c for c in old_cols if c != "id"],
+                                [f["name"] for f in fields],
+                            )
                         cursor.execute("DROP TABLE imagenes_old")
                 else:
                     defaults = {"INTEGER": "0", "REAL": "0.0", "TEXT": "''", "BLOB": "NULL"}
@@ -345,6 +372,31 @@ def buscar_por_codigo(codigo: str) -> dict[str, Any] | None:
         return dict(row) if row else None
 
 
+def _record_code_match(
+    result: dict[str, dict[str, Any]],
+    code_rowids: dict[str, int],
+    val: str,
+    row_id: int,
+    row_dict: dict[str, Any],
+) -> None:
+    """Map ``val -> row_dict`` with first-wins semantics.
+
+    Codes are expected to be unique across the catalog. If ``val`` was already
+    resolved to a *different* row, keep the first match and log the collision
+    instead of silently letting the last row win.
+    """
+    prev_id = code_rowids.get(val)
+    if prev_id is not None and prev_id != row_id:
+        logger.warning(
+            "Código duplicado en catálogo: %r coincide con varios "
+            "registros (rowid %s vs %s). Se conserva el primero.",
+            val, prev_id, row_id,
+        )
+        return
+    code_rowids[val] = row_id
+    result[val] = row_dict
+
+
 def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
     """Busca múltiples códigos en una sola operación de BD.
 
@@ -366,13 +418,18 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
         if not field_names:
             return {}
 
-        unique_codes = list(set(str(c).strip() for c in codigos if c))
-        if not unique_codes:
+        unique_codes_set = {str(c).strip() for c in codigos if c}
+        if not unique_codes_set:
             return {}
+        unique_codes = list(unique_codes_set)
 
         # Batch query: fetch all records where ANY field matches ANY of the codes.
         # Use chunks to avoid SQLite variable limit (999 per query).
         result: dict[str, dict[str, Any]] = {}
+        # Track which DB row each code was first resolved to, so collisions (the
+        # same code matching two distinct records) are logged instead of letting
+        # the last row win. Codes are expected to be unique.
+        code_rowids: dict[str, int] = {}
         # safe margin for SQLite param limit; clamp to >=1 so a schema with
         # >900 fields cannot produce CHUNK == 0 (range step of 0 -> ValueError).
         CHUNK = max(1, 900 // len(field_names))
@@ -383,14 +440,18 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
                 [f"{_qi(fn)} IN ({placeholders})" for fn in field_names]
             )
             params = chunk * len(field_names)
-            cursor.execute(f"SELECT * FROM imagenes WHERE {conditions}", params)
+            cursor.execute(
+                f"SELECT rowid AS __antares_rowid__, * FROM imagenes WHERE {conditions}",
+                params,
+            )
             for row in cursor.fetchall():
                 row_dict = dict(row)
+                row_id = row_dict.pop("__antares_rowid__")
                 # Map each matching field value back to the code
                 for fn in field_names:
                     val = str(row_dict.get(fn, "") or "").strip()
-                    if val and val in unique_codes:
-                        result[val] = row_dict
+                    if val and val in unique_codes_set:
+                        _record_code_match(result, code_rowids, val, row_id, row_dict)
         return result
 
 
@@ -413,24 +474,31 @@ def buscar_por_columna(codigos: list[str], column: str) -> dict[str, dict[str, A
         field_names = set(get_field_names())
         if safe_column not in field_names:
             return {}
-        unique_codes = list(set(str(c).strip() for c in codigos if c))
-        if not unique_codes:
+        unique_codes_set = {str(c).strip() for c in codigos if c}
+        if not unique_codes_set:
             return {}
+        unique_codes = list(unique_codes_set)
 
         result: dict[str, dict[str, Any]] = {}
+        # Track which DB row each code was first resolved to, so collisions (the
+        # same code matching two distinct records) are logged instead of letting
+        # the last row win. Codes are expected to be unique.
+        code_rowids: dict[str, int] = {}
         CHUNK = 900  # safe margin for SQLite param limit
         for i in range(0, len(unique_codes), CHUNK):
             chunk = unique_codes[i:i + CHUNK]
             placeholders = ", ".join(["?"] * len(chunk))
             cursor.execute(
-                f"SELECT * FROM imagenes WHERE {_qi(safe_column)} IN ({placeholders})",
+                f"SELECT rowid AS __antares_rowid__, * FROM imagenes "
+                f"WHERE {_qi(safe_column)} IN ({placeholders})",
                 chunk,
             )
             for row in cursor.fetchall():
                 row_dict = dict(row)
+                row_id = row_dict.pop("__antares_rowid__")
                 val = str(row_dict.get(safe_column, "") or "").strip()
-                if val and val in unique_codes:
-                    result[val] = row_dict
+                if val and val in unique_codes_set:
+                    _record_code_match(result, code_rowids, val, row_id, row_dict)
         return result
 
 
