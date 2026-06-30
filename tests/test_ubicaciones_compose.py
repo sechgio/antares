@@ -1,6 +1,7 @@
 """Tests de composición UBICACIONES (sin Playwright)."""
 
 from io import BytesIO
+from typing import cast
 
 import pytest
 from PIL import Image
@@ -15,10 +16,40 @@ from backend.handlers.ubicaciones import (
     _is_gutter_pixel,
     _map_cache_key,
     _map_capture_size,
-    _measure_footer_band_height,
     _normalize_map_screenshot,
+    _output_pdf_filename,
 )
 from backend.utils.paths import resource_path
+
+
+def _measure_footer_band_height(jpg_path: str) -> int:
+    """Mide la altura (px) de la banda negra principal en una plantilla JPG.
+
+    Helper de test (era shipped en prod): usa getpixel() por pixel, lento pero
+    suficiente para validar medidas de las plantillas de referencia una vez.
+    """
+    img = Image.open(jpg_path).convert("RGB")
+    w, h = img.size
+    black_rows: list[int] = []
+    step = max(1, w // 30)
+    for y in range(h):
+        total = sum(sum(cast(tuple[int, ...], img.getpixel((x, y)))) for x in range(0, w, step))
+        if (total / (w // step + 1)) < 100:
+            black_rows.append(y)
+    if not black_rows:
+        return 0
+    groups: list[tuple[int, int]] = []
+    start = black_rows[0]
+    prev = black_rows[0]
+    for y in black_rows[1:]:
+        if y == prev + 1:
+            prev = y
+        else:
+            groups.append((start, prev))
+            start = prev = y
+    groups.append((start, prev))
+    best_start, best_end = max(groups, key=lambda band: band[1] - band[0])
+    return best_end - best_start + 1
 
 
 def _fake_map_png(width: int, height: int, color: tuple[int, int, int] = (80, 120, 160)) -> bytes:
@@ -189,6 +220,29 @@ def test_map_cache_key_differs_by_resolution() -> None:
     preview_key = _map_cache_key(-12.0, -77.0, "vertical", preview=True)
     export_key = _map_cache_key(-12.0, -77.0, "vertical", preview=False)
     assert preview_key != export_key
+
+
+def test_output_pdf_filename_sanitizes_windows_invalid_chars() -> None:
+    """El nombre del PDF no debe contener caracteres inválidos en Windows
+    (:*?\"<>|) ni separadores de path — de lo contrario PIL.save levanta
+    OSError y aborta el batch entero de ubicaciones."""
+    invalid = set('<>:"/\\|?*')
+
+    # Casos con cada carácter inválido suelto.
+    assert _output_pdf_filename("A:B") == "A_B.pdf"
+    assert _output_pdf_filename("A?B*C") == "A_B_C.pdf"
+    assert _output_pdf_filename('A"B|C') == "A_B_C.pdf"
+    assert _output_pdf_filename("A<B>C") == "A_B_C.pdf"
+    assert _output_pdf_filename("A/B\\C") == "A_B_C.pdf"
+
+    # Un código válido no se altera.
+    assert _output_pdf_filename("RA-10") == "RA-10.pdf"
+
+    # Ningún caso produce un nombre con caracteres inválidos.
+    for cod in ["A:B", "A?B*C", 'A"B|C', "A<B>C", "A/B\\C", "RA-10", "ID 42"]:
+        name = _output_pdf_filename(cod)
+        assert not (invalid & set(name)), f"{name!r} still contains invalid chars"
+        assert name.endswith(".pdf")
 
 
 def test_compose_skips_resize_when_map_size_matches(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,6 +1,7 @@
 """Tests para el provider de mapas estáticos (reemplazo de Playwright)."""
 
 from io import BytesIO
+from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -102,3 +103,79 @@ def test_fetch_static_map_google_with_key(monkeypatch: pytest.MonkeyPatch) -> No
     assert "maps.googleapis.com" in called["url"]
     assert "key=TESTKEY" in called["url"]
     assert ub._screenshot_has_map_tiles(data)
+
+
+def test_handle_generar_ubicaciones_skips_non_numeric_coords(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Una fila con lat/lon no numérico debe skiparse, no crashar el batch.
+
+    El filtro histórico sólo rechazaba NaN (``pd.isna("abc")`` es False), así que
+    un texto en la columna de coordenadas pasaba y luego ``float(datos['lat'])``
+    levantaba ValueError dentro del worker, abortando todo el batch vía ex.map.
+    """
+    import openpyxl
+
+    monkeypatch.setattr(ub, "fetch_static_map", lambda *a, **k: _png_bytes((256, 256)))
+
+    xlsx = tmp_path / "coords.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["latitud", "longitud"])
+    ws.append([-12.0, -77.0])   # válida
+    ws.append(["abc", -77.0])   # lat no-numérica -> debe skiparse
+    wb.save(xlsx)
+
+    out_dir = tmp_path / "out"
+    result = ub.handle_generar_ubicaciones({
+        "excelPath": str(xlsx),
+        "outputDir": str(out_dir),
+        "formato": "vertical",
+        "consolidado": False,
+    })
+
+    assert result["success"] is True
+    assert result["data"]["generados"] == 1
+    pdfs = list(out_dir.glob("*.pdf"))
+    assert len(pdfs) == 1
+
+
+def test_handle_generar_ubicaciones_continues_after_row_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Una fila que falla al renderizar (IO, imagen corrupta, etc.) no debe
+    abortar el batch: las demás filas se procesan y se reporta el conteo de
+    fallidos. Antes el try/finally sin except dejaba que ex.map re-lanzara y
+    el handler devolvía success:False con archivos huérfanos."""
+    import openpyxl
+
+    monkeypatch.setattr(ub, "fetch_static_map", lambda *a, **k: _png_bytes((256, 256)))
+
+    xlsx = tmp_path / "coords.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["latitud", "longitud"])
+    ws.append([-12.0, -77.0])   # ID-1: ok
+    ws.append([-13.0, -78.0])   # ID-2: simulamos fallo de render
+    wb.save(xlsx)
+
+    real_gen = ub.generar_imagen_ubicacion
+
+    def flaky_gen(d, out_path, formato, map_opts=None):
+        if d["cod_componente"] == "ID-2":
+            raise OSError("simulated render failure")
+        return real_gen(d, out_path, formato, map_opts=map_opts)
+
+    monkeypatch.setattr(ub, "generar_imagen_ubicacion", flaky_gen)
+
+    out_dir = tmp_path / "out"
+    result = ub.handle_generar_ubicaciones({
+        "excelPath": str(xlsx),
+        "outputDir": str(out_dir),
+        "formato": "vertical",
+        "consolidado": False,
+    })
+
+    assert result["success"] is True
+    assert result["data"]["generados"] == 1
+    assert result["data"]["fallidos"] == 1
+    pdfs = [p.name for p in out_dir.glob("*.pdf")]
+    assert pdfs == ["ID-1.pdf"]
