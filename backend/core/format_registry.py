@@ -33,10 +33,6 @@ class FormatRegistry:
             "encoder": encoder,
         }
 
-    def get(self, name: str) -> dict[str, Any] | None:
-        """Get format info by name."""
-        return self._formats.get(name.upper())
-
     def list_formats(self) -> list[str]:
         """List all registered format names."""
         return list(self._formats.keys())
@@ -48,12 +44,8 @@ class FormatRegistry:
         return self._formats[name.upper()]
 
     def keys(self) -> list[str]:
-        """Return all registered format names (backward compatibility)."""
+        """Return all registered format names."""
         return list(self._formats.keys())
-
-    def values(self) -> list[dict[str, Any]]:
-        """Return all registered format info dicts (backward compatibility)."""
-        return list(self._formats.values())
 
 
 # Global registry instance initialized with defaults
