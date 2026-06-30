@@ -25,7 +25,25 @@ function resolveAllowedMethods() {
 
 const ALLOWED_RENDERER_METHODS = resolveAllowedMethods();
 
-const isDev = process.env?.NODE_ENV !== 'production';
+// NODE_ENV no es confiable en apps empaquetadas (Electron no lo setea por
+// defecto, así que los logs debug aparecían en producción). El marcador fiable
+// es `app.isPackaged`, pero el preload corre con sandbox: true y no tiene
+// acceso a `app` ni a `__dirname`, así que el main lo inyecta vía
+// additionalArguments (mismo canal que la allowlist). En contextos no
+// sandboxed (tests Node) sin la inyección, se cae al marcador asar.
+function resolveIsPackaged() {
+  const prefix = '--app-is-packaged=';
+  const argv = Array.isArray(process.argv) ? process.argv : [];
+  const arg = argv.find((a) => typeof a === 'string' && a.startsWith(prefix));
+  if (arg) return arg.slice(prefix.length) === '1';
+  try {
+    return typeof __dirname !== 'undefined' && /[\\/]app\.asar[\\/]/.test(__dirname);
+  } catch {
+    return false;
+  }
+}
+
+const isDev = process.env?.NODE_ENV !== 'production' && !resolveIsPackaged();
 
 if (isDev) {
   console.debug('[preload] Preload script executing...');

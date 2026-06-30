@@ -31,6 +31,9 @@ function createWindow(isDev) {
   // source of truth (still required by the main-process ipc-router, which is
   // the real security boundary).
   const allowedMethodsArg = `--allowed-ipc-methods=${JSON.stringify([...ALLOWED_RENDERER_METHODS])}`;
+  // `app.isPackaged` marcador fiable de build empaquetado, inyectado al preload
+  // (sandbox: true => sin acceso a `app` ni `__dirname` allá).
+  const isPackagedArg = `--app-is-packaged=${isDev ? '0' : '1'}`;
 
   mainWindow = new BrowserWindow({
     width, height, show: false, frame: false,
@@ -38,7 +41,7 @@ function createWindow(isDev) {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true, nodeIntegration: false, sandbox: true,
-      additionalArguments: [allowedMethodsArg],
+      additionalArguments: [allowedMethodsArg, isPackagedArg],
     },
   });
 
