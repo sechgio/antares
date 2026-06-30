@@ -13,6 +13,7 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const API_PATH = path.join(ROOT, 'frontend', 'src', 'api.ts');
 const ALLOWLIST_PATH = path.join(ROOT, 'electron', 'ipc-methods.js');
+const LONG_RUNNING_PATH = path.join(ROOT, 'shared', 'long-running-methods.json');
 
 function extractApiMethods(source) {
   const methods = new Set();
@@ -25,26 +26,12 @@ function extractApiMethods(source) {
   return methods;
 }
 
-function extractLongRunningMethods(source) {
-  const methods = new Set();
-  const blockRe = /const\s+LONG_RUNNING_METHODS\s*=\s*new\s+Set\(\[([\s\S]*?)\]\)/;
-  const match = source.match(blockRe);
-  if (match) {
-    const itemRe = /['"]([a-zA-Z0-9_]+)['"]/g;
-    let item;
-    while ((item = itemRe.exec(match[1])) !== null) {
-      methods.add(item[1]);
-    }
-  }
-  return methods;
-}
-
 function main() {
   const apiSource = fs.readFileSync(API_PATH, 'utf8');
   const allowlistModule = require(ALLOWLIST_PATH);
+  const longRunning = new Set(JSON.parse(fs.readFileSync(LONG_RUNNING_PATH, 'utf8')));
 
   const apiMethods = extractApiMethods(apiSource);
-  const apiLongRunning = extractLongRunningMethods(apiSource);
   const allowed = allowlistModule.ALLOWED_RENDERER_METHODS;
   const allowlistLongRunning = allowlistModule.LONG_RUNNING_METHODS;
 
@@ -52,7 +39,13 @@ function main() {
   const unexpectedInAllowlist = [...allowed].filter(
     (m) => !apiMethods.has(m) && !['jobs_cleanup', 'plugin_formats'].includes(m)
   );
-  const missingLongRunning = [...apiLongRunning].filter((m) => !allowlistLongRunning.has(m));
+  // Every long-running method must be a recognised allowed method, and the
+  // Electron allowlist must consume the shared JSON verbatim (no drift).
+  const longRunningNotAllowed = [...longRunning].filter((m) => !allowed.has(m));
+  const longRunningDrift = [
+    ...[...longRunning].filter((m) => !allowlistLongRunning.has(m)),
+    ...[...allowlistLongRunning].filter((m) => !longRunning.has(m)),
+  ];
 
   let failed = false;
 
@@ -63,9 +56,16 @@ function main() {
     failed = true;
   }
 
-  if (missingLongRunning.length > 0) {
+  if (longRunningNotAllowed.length > 0) {
     console.error(
-      `[FAIL] Métodos marcados como LONG_RUNNING en api.ts pero no en electron/ipc-methods.js:\n  - ${missingLongRunning.join('\n  - ')}`
+      `[FAIL] Métodos LONG_RUNNING (shared/long-running-methods.json) no presentes en ALLOWED_RENDERER_METHODS:\n  - ${longRunningNotAllowed.join('\n  - ')}`
+    );
+    failed = true;
+  }
+
+  if (longRunningDrift.length > 0) {
+    console.error(
+      `[FAIL] LONG_RUNNING_METHODS en electron/ipc-methods.js no coincide con shared/long-running-methods.json:\n  - ${longRunningDrift.join('\n  - ')}`
     );
     failed = true;
   }
@@ -78,7 +78,7 @@ function main() {
 
   if (!failed) {
     console.log(
-      `[PASS] Allowlist sincronizada: ${apiMethods.size} métodos de api.ts presentes; ${apiLongRunning.size} long-running alineados.`
+      `[PASS] Allowlist sincronizada: ${apiMethods.size} métodos de api.ts presentes; ${longRunning.size} long-running alineados.`
     );
     process.exit(0);
   }

@@ -1,0 +1,23 @@
+[
+  "process_start",
+  "db_import",
+  "db_export",
+  "db_clear",
+  "preview_image",
+  "formatos_generate",
+  "formatos_render_template_page",
+  "image_optimizer_zip",
+  "image_optimizer_save_files",
+  "sellador_apply",
+  "sellador_inspect_pdf",
+  "sellador_render_page",
+  "technical_reports_import_file",
+  "technical_reports_render_consolidated_html",
+  "panel_aviso_corte_parse_excel",
+  "technical_reports_render_html",
+  "panel_aviso_corte_render_pdf",
+  "panel_aviso_corte_compute_match",
+  "html_to_pdf",
+  "generar_ubicaciones",
+  "preview_ubicacion"
+]
