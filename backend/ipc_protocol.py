@@ -16,7 +16,7 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-from backend.utils.validators import is_path_like_key, is_safe_user_path
+from backend.utils.validators import path_param_violations
 
 logger = logging.getLogger(__name__)
 
@@ -38,32 +38,15 @@ def validate_method(method: str) -> bool:
 def validate_params(params: dict) -> bool:
     """Validate params dict for basic safety.
 
-    Uses the single shared heuristic (is_path_like_key) from validators.
-    This is defense-in-depth — the handler @validate_params decorator remains
-    the authoritative layer. We still apply the key-name heuristic here so that
-    handlers using non-canonical keys (e.g. ``output_path``) get an early
-    path-traversal screen at the IPC boundary.
+    Defense-in-depth: the handler ``@validate_params`` decorator remains the
+    authoritative layer, but we apply the same shared path-screening loop here
+    (``path_param_violations``) so handlers using non-canonical keys (e.g.
+    ``output_path``) — including those without the decorator — still get an
+    early path-traversal screen at the IPC boundary.
     """
     if not isinstance(params, dict):
         return False
-
-    for key, value in params.items():
-        if value is None:
-            continue
-        if not is_path_like_key(key):
-            continue
-        if isinstance(value, list):
-            for item in value:
-                if not is_safe_user_path(item):
-                    return False
-        elif isinstance(value, dict):
-            for item in value.values():
-                if not is_safe_user_path(item):
-                    return False
-        elif not is_safe_user_path(value):
-            return False
-
-    return True
+    return not any(path_param_violations(params, strict=False))
 
 
 # ─── IPC Protocol ────────────────────────────────────────────────────────────
