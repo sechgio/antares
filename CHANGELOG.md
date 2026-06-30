@@ -5,6 +5,30 @@ Todas las versiones notables de ANTARES se documentan aquí.
 Formato basado en [Keep a Changelog](https://keepachangelog.com/),
 y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
+## [0.10.14] — 2026-06-30
+
+### Fixed
+- **Scheduler (cancelación de jobs)**: Un heavy future cancelado antes de arrancar nunca llegaba al `finally` de `_wrapped`, filtrando el slot reservado y el contador `heavy_outstanding` para toda la sesión — cada cancelación de batch encogía `heavy_capacity` permanentemente. Añadido un `done_callback` que libera el slot sólo si `fut.cancelled()` (sin double-release contra el path del `finally`). Nuevo contador `heavy_cancelled` en métricas.
+- **Optimizador de imágenes (dedup de nombres)**: El loop que busca un nombre libre en disco estaba sin acotar; una carpeta de destino pre-poblada con miles de archivos colisionantes (`foto.jpg`, `foto-2.jpg`, …) lo hacía iterar indefinidamente. Acotado a `MAX_DEDUP_ATTEMPTS=1000`; al superarse se skipsea el archivo con motivo `no_free_slot` en vez de colgar.
+- **Optimizador de imágenes (sanitización de nombres)**: `_safe_name` ahora distingue modo strict (escritura a disco: colapsa separadores `\\/` y caracteres de control, strip de espacios/puntos finales) de lenient (entradas de zip), de modo que `image_optimizer_save_files` no puede escribir fuera de la carpeta destino ni craftear nombres reservados.
+- **Ubicaciones (nombre de PDF por fila)**: El nombre se construye vía `sanitizar_nombre`, así un `cod_componente` con caracteres inválidos en Windows (`:*?"<>|`) ya no produce `A:B.pdf` y hace que `PIL.save` levante `OSError` (Errno 22) abortando el batch entero.
+- **Ubicaciones (coordenadas no numéricas)**: `_coerce_coord` filtra lat/lon no numéricas antes de paralelizar; un texto como `"abc"` en la columna de coordenadas ya no pasa `pd.isna` para luego crashear `float()` dentro del worker y abortar el batch vía `ex.map`.
+- **Ubicaciones (aislamiento de fallos por fila)**: `_render_one` atrapa sus propias excepciones y devuelve `(ok, img)`, así una fila que falla al renderizar (IO, imagen corrupta) no aborta las demás ni el consolidado; el resultado reporta `fallidos`.
+- **Frontend (doble `process_start`)**: `useProcessRunner` ahora hace flip optimista de `running` antes del `await` y reset on error. `api.startProcess` puede bloquear ~30s mientras bootea el backend y el botón de start está gateado en `running`, por lo que setearlo después del await permitía que un segundo click encolara un segundo `process_start`.
+- **Frontend (delete en inputs)**: `ConversionView` ignora `Backspace`/`Delete` mientras el foco está en un `input`, `textarea`, `select` o `contentEditable`, de modo que editar el patrón de renombrado o los campos de resize ya no borra silenciosamente los archivos seleccionados. `doProcess` además es no-op si ya está corriendo.
+
+### Changed
+- **Validadores (path-traversal)**: Extraído `path_param_violations` en `backend/utils/validators.py` como única fuente de verdad para el screening de parámetros path-like. Lo consumen tanto `ipc_protocol.validate_params` (defense-in-depth) como el decorator `handlers.common.@validate_params`, evitando drift entre las dos capas. Modos strict/lenient preservan el comportamiento de cada call site.
+- **IPC / Electron (long-running methods)**: La lista `LONG_RUNNING_METHODS` sale de `electron/ipc-methods.js` a `shared/long-running-methods.json` para que el main process y el renderer compartan una única fuente de verdad. El test de allowlist ahora verifica que Electron consuma el JSON verbatim y que toda entrada sea un método permitido.
+- **Format Registry**: Eliminados los helpers `get`/`values` sin uso.
+- **Image Optimizer**: Inline del alias `cloneBatchSettings` → `cloneSettings`.
+- **UI**: Toolbars y headers unificados a 45px de altura across Ubicaciones, Formatos y Volantes.
+
+### Added
+- **Formatos (zoom)**: Slider de zoom con rango clampado (25–300%), step fino de 10 y input numérico editable, reemplazando los botones fijos de ±25%.
+- **Ubicaciones (panel de resultado)**: El panel muestra las filas omitidas por error (nota amber) y un estado "completado con errores" cuando todas las filas fallan.
+- **Fuente Inter**: Preconnect y carga de Inter desde Google Fonts en `index.html`.
+
 ## [0.10.13] — 2026-06-26
 
 ### Fixed
