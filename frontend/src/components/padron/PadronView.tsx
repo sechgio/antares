@@ -26,6 +26,8 @@ import {
   CheckCircle,
   PanelLeft,
   HelpCircle,
+  X,
+  FileSpreadsheet,
 } from 'lucide-react';
 import DatePicker from '../ui/DatePicker';
 import PreviewPage from './PreviewPage';
@@ -99,6 +101,7 @@ export default function PadronView() {
   const [previewPageOffset, setPreviewPageOffset] = useState(0);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
+  const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
 
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
@@ -606,74 +609,9 @@ export default function PadronView() {
       <aside className={`vpad-sidebar${sidebarVisible ? '' : ' collapsed'}`}>
         {sidebarVisible && (
           <div className="vpad-config-panel">
-            <section className="vpad-section">
-              <div className="vpad-section-header">
-                <span className="vpad-section-number">1</span>
-                <h3 className="vpad-section-title">Importar Excel</h3>
-              </div>
-
-              <label
-                className={`vpad-upload-zone vpad-btn-import${isImporting ? ' active' : ''}${importedFileName ? ' loaded' : ''}`}
-              >
-                <input
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  onChange={handleExcelUpload}
-                  disabled={isImporting}
-                />
-                {importedFileName ? (
-                  <>
-                    <div className="vpad-upload-icon vpad-upload-icon-loaded">
-                      <CheckCircle size={20} />
-                    </div>
-                    <div
-                      style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}
-                    >
-                      <span className="vpad-upload-text">{importedFileName}</span>
-                      <span className="vpad-upload-hint">{importStatus}</span>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="vpad-upload-icon">
-                      <Upload size={20} />
-                    </div>
-                    <div
-                      style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}
-                    >
-                      <span className="vpad-upload-text">
-                        {isImporting
-                          ? 'Procesando archivo...'
-                          : 'Selecciona o arrastra el archivo'}
-                      </span>
-                      <span className="vpad-upload-hint">
-                        Soporte para .xlsx, .xls, .csv
-                      </span>
-                    </div>
-                  </>
-                )}
-              </label>
-
-              {excelRecords.length > 1 && (
-                <div className="vpad-field">
-                  <span>Seleccionar registro</span>
-                  <select
-                    value={selectedRecordId}
-                    onChange={(e) => handleRecordSelect(e.target.value)}
-                  >
-                    {excelRecords.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </section>
-
             <section className="vpad-section vpad-section-format">
               <div className="vpad-section-header">
-                <span className="vpad-section-number">2</span>
+                <span className="vpad-section-number">1</span>
                 <h3 className="vpad-section-title">Formato de Salida</h3>
               </div>
 
@@ -799,7 +737,7 @@ export default function PadronView() {
 
             <section className="vpad-section vpad-section-data">
               <div className="vpad-section-header">
-                <span className="vpad-section-number">3</span>
+                <span className="vpad-section-number">2</span>
                 <h3 className="vpad-section-title">
                   {isWaterCutNotice ? 'Datos del aviso de corte' : 'Datos del Padrón'}
                 </h3>
@@ -939,15 +877,26 @@ export default function PadronView() {
               </button>
             </div>
           )}
-          <button
-            className="tutorial-trigger-btn"
-            onClick={openTutorial}
-            title="Ver tutorial de como usar Generar Padrones"
-            type="button"
-          >
-            <HelpCircle size={16} />
-            Como usar
-          </button>
+          <div className="vpad-toolbar-right">
+            <button
+              className="vpad-btn-excel"
+              onClick={() => setIsExcelModalOpen(true)}
+              title="Importar desde Excel"
+              type="button"
+            >
+              <FileSpreadsheet size={16} />
+              Excel
+            </button>
+            <button
+              className="tutorial-trigger-btn"
+              onClick={openTutorial}
+              title="Ver tutorial de como usar Generar Padrones"
+              type="button"
+            >
+              <HelpCircle size={16} />
+              Como usar
+            </button>
+          </div>
         </header>
 
         <div className="vpad-preview-scroll-container vpad-preview-pane">
@@ -989,6 +938,84 @@ export default function PadronView() {
         isOpen={isTutorialOpen}
         onClose={() => setIsTutorialOpen(false)}
       />
+      {isExcelModalOpen && (
+        <div 
+          className="vpad-excel-modal-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsExcelModalOpen(false);
+          }}
+        >
+          <div className="vpad-excel-modal">
+            <div className="vpad-excel-modal-header">
+              <h3 className="vpad-excel-modal-title">
+                <FileSpreadsheet size={18} style={{ color: 'var(--vpad-accent)' }} />
+                Importar Excel
+              </h3>
+              <button 
+                className="vpad-excel-modal-close"
+                onClick={() => setIsExcelModalOpen(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="vpad-excel-modal-body">
+              <label
+                className={`vpad-upload-zone vpad-btn-import${isImporting ? ' active' : ''}${importedFileName ? ' loaded' : ''}`}
+              >
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={handleExcelUpload}
+                  disabled={isImporting}
+                />
+                {importedFileName ? (
+                  <>
+                    <div className="vpad-upload-icon vpad-upload-icon-loaded">
+                      <CheckCircle size={20} />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span className="vpad-upload-text">{importedFileName}</span>
+                      <span className="vpad-upload-hint">{importStatus}</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="vpad-upload-icon">
+                      <Upload size={20} />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <span className="vpad-upload-text">
+                        {isImporting
+                          ? 'Procesando archivo...'
+                          : 'Selecciona o arrastra el archivo'}
+                      </span>
+                      <span className="vpad-upload-hint">
+                        Soporte para .xlsx, .xls, .csv
+                      </span>
+                    </div>
+                  </>
+                )}
+              </label>
+
+              {excelRecords.length > 1 && (
+                <div className="vpad-field">
+                  <span>Seleccionar registro</span>
+                  <select
+                    value={selectedRecordId}
+                    onChange={(e) => handleRecordSelect(e.target.value)}
+                  >
+                    {excelRecords.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

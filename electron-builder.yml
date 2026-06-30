@@ -1,6 +1,6 @@
 appId: com.antares.app
 productName: Antares
-copyright: Copyright © 2026 ANTARES
+copyright: Copyright © 2026 Antares
 directories:
   output: dist-electron
   buildResources: assets
@@ -83,7 +83,7 @@ win:
     - target: portable
       arch: [x64]
   icon: assets/icon.ico
-  legalTrademarks: "ANTARES"
+  legalTrademarks: "Antares"
   requestedExecutionLevel: asInvoker
   # Disabled because installers are not code-signed. Required for
   # electron-updater to accept new versions on unsigned Windows builds.
@@ -110,12 +110,12 @@ linux:
     - rpm
   category: Utility
   icon: assets/icon.png
-  maintainer: "ANTARES"
-  vendor: "ANTARES"
+  maintainer: "Antares"
+  vendor: "Antares"
 snap:
   grade: stable
   confinement: strict
-  summary: "Conversor y renombrador profesional de imágenes"
+  summary: "Antares"
   publish:
     provider: snapStore
 nsis:

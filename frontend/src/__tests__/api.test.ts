@@ -23,13 +23,13 @@ describe('API Client', () => {
     expect(result.version).toBe('0.3.6');
   });
 
-  it('should handle IPC errors after retries exhausted', async () => {
-    // The invoke rejects on every call (all retries fail)
+  it('should propagate IPC errors without frontend retries', async () => {
+    // Retry logic lives in the Electron main process (ipc-router._callBackend),
+    // so the frontend issues a single invoke and surfaces whatever it returns.
     mockInvoke.mockRejectedValue(new Error('Backend no disponible'));
-    
+
     await expect(api.version()).rejects.toThrow('Backend no disponible');
-    // With IPC_MAX_RETRIES = 2, expect 3 total attempts (0, 1, 2)
-    expect(mockInvoke).toHaveBeenCalledTimes(3);
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
   }, 30000);
 
   it('should validate response types', async () => {
@@ -127,6 +127,19 @@ describe('API Client', () => {
 
     expect(mockInvoke).toHaveBeenCalledWith('technical_reports_render_html', { id: 'RPT-0001' });
     expect(result.filename).toBe('informe_RPT-0001.pdf');
+  });
+
+  it('should clear the IPC timeout timer on success (no leak)', async () => {
+    // Fix: el timer del race de timeout debe limpiarse cuando el invoke
+    // resuelve, para no gotear closures en sesiones largas. Antes del fix
+    // clearTimeout nunca se llamaba en éxito.
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+    mockInvoke.mockResolvedValue({ version: '1' });
+
+    await api.version();
+
+    expect(clearTimeoutSpy).toHaveBeenCalled();
+    clearTimeoutSpy.mockRestore();
   });
 
   it('should call startProcess with correct params', async () => {

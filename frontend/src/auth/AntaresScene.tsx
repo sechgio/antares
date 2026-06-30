@@ -3,30 +3,28 @@ interface AntaresSceneProps {
 }
 
 export default function AntaresScene({ reducedMotion }: AntaresSceneProps) {
+  if (reducedMotion) {
+    return (
+      <img
+        className="at-login__video-media"
+        src="./sign-up-image.png"
+        alt=""
+        draggable={false}
+      />
+    );
+  }
+
   return (
-    <div className="at-scene-shell" aria-hidden="true">
-      <div className="at-scene-shell__gradient" />
-      {reducedMotion ? (
-        <img
-          className="at-scene-shell__poster"
-          src="./sign-up-image.png"
-          alt=""
-          draggable={false}
-        />
-      ) : (
-        <video
-          className="at-scene-shell__video"
-          autoPlay
-          loop
-          muted
-          playsInline
-          poster="./sign-up-image.png"
-          preload="auto"
-          aria-hidden="true"
-        >
-          <source src="./sign-up-video.mp4" type="video/mp4" />
-        </video>
-      )}
-    </div>
+    <video
+      className="at-login__video-media"
+      autoPlay
+      loop
+      muted
+      playsInline
+      poster="./sign-up-image.png"
+      preload="auto"
+    >
+      <source src="./sign-up-video.mp4" type="video/mp4" />
+    </video>
   );
 }

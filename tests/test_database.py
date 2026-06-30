@@ -166,6 +166,98 @@ class TestBuscarPorCodigo:
 
         assert db.buscar_por_columna(["IMG-001"], "codigo") == {}
 
+    def test_buscar_por_columna_duplicado_conserva_primero_y_avisa(
+        self, db_path, monkeypatch, tmp_path, caplog,
+    ) -> None:
+        """Dos registros con el mismo código en la columna clave no deben
+        silenciosamente dejar ganar al último: se conserva el primero y se
+        emite un warning que evidencia la colisión."""
+        config_path = tmp_path / "fields_config.json"
+        monkeypatch.setattr(
+            "backend.core.config_fields._config_file",
+            lambda: config_path,
+        )
+        save_fields([
+            {"name": "codigo", "type": "TEXT", "required": True},
+            {"name": "nombre", "type": "TEXT"},
+        ])
+        db.init_db()
+
+        import sqlite3
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("INSERT INTO imagenes (codigo, nombre) VALUES (?, ?)", ("DUP", "primero"))
+        conn.execute("INSERT INTO imagenes (codigo, nombre) VALUES (?, ?)", ("DUP", "segundo"))
+        conn.commit()
+        conn.close()
+
+        import logging
+        with caplog.at_level(logging.WARNING, logger="backend.core.database"):
+            resultado = db.buscar_por_columna(["DUP"], "codigo")
+
+        assert "DUP" in resultado
+        assert resultado["DUP"]["nombre"] == "primero"
+        assert any("DUP" in rec.message for rec in caplog.records)
+
+    def test_buscar_lote_por_codigos_duplicado_conserva_primero_y_avisa(
+        self, db_path, monkeypatch, tmp_path, caplog,
+    ) -> None:
+        """Mismo contrato que buscar_por_columna: ante un código que coincide
+        con dos registros distintos, gana el primero de forma determinista y
+        se registra un warning (no hay 'last wins' silencioso)."""
+        config_path = tmp_path / "fields_config.json"
+        monkeypatch.setattr(
+            "backend.core.config_fields._config_file",
+            lambda: config_path,
+        )
+        save_fields([
+            {"name": "codigo", "type": "TEXT", "required": True},
+            {"name": "nombre", "type": "TEXT"},
+        ])
+        db.init_db()
+
+        import sqlite3
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("INSERT INTO imagenes (codigo, nombre) VALUES (?, ?)", ("DUP", "primero"))
+        conn.execute("INSERT INTO imagenes (codigo, nombre) VALUES (?, ?)", ("DUP", "segundo"))
+        conn.commit()
+        conn.close()
+
+        import logging
+        with caplog.at_level(logging.WARNING, logger="backend.core.database"):
+            resultado = db.buscar_lote_por_codigos(["DUP"])
+
+        assert resultado["DUP"]["nombre"] == "primero"
+        assert any("DUP" in rec.message for rec in caplog.records)
+
+    def test_buscar_lote_por_codigos_mismo_registro_varios_campos_no_es_colision(
+        self, db_path, monkeypatch, tmp_path, caplog,
+    ) -> None:
+        """Un mismo registro cuyo código aparece en varios campos no debe
+        tratarse como colisión: el código mapea a ese único registro sin warning."""
+        config_path = tmp_path / "fields_config.json"
+        monkeypatch.setattr(
+            "backend.core.config_fields._config_file",
+            lambda: config_path,
+        )
+        save_fields([
+            {"name": "codigo", "type": "TEXT", "required": True},
+            {"name": "alias", "type": "TEXT"},
+        ])
+        db.init_db()
+
+        import sqlite3
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("INSERT INTO imagenes (codigo, alias) VALUES (?, ?)", ("X1", "X1"))
+        conn.commit()
+        conn.close()
+
+        import logging
+        with caplog.at_level(logging.WARNING, logger="backend.core.database"):
+            resultado = db.buscar_lote_por_codigos(["X1"])
+
+        assert resultado["X1"]["codigo"] == "X1"
+        assert not caplog.records
+
 
 class TestImportarExcel:
     def test_importa_columnas_nuevas_del_excel_al_esquema(self, db_path, monkeypatch, tmp_path) -> None:

@@ -12,7 +12,7 @@ import {
   ProcessingPlan,
   ResizeDimensions,
 } from './types';
-import { PRESET_BY_ID, cloneBatchSettings } from './presets';
+import { PRESET_BY_ID, cloneSettings } from './presets';
 
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -209,7 +209,7 @@ export function isDirectExportMode(settings: BatchSettings): boolean {
 }
 
 export function resolveSettingsForItem(baseSettings: BatchSettings, item: ImageItem): BatchSettings {
-  const next = cloneBatchSettings(baseSettings);
+  const next = cloneSettings(baseSettings);
   const presetId = item.overrides.presetId;
   if (presetId) {
     const preset = PRESET_BY_ID[presetId];

@@ -712,3 +712,54 @@
 }
 
 
+/* ── Zoom Slider (Formatos topbar) ─────────────────────────────── */
+.zoom-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 64px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-medium);
+  outline: none;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.zoom-slider:hover {
+  background: color-mix(in srgb, var(--border-medium) 60%, var(--accent-primary));
+}
+
+.zoom-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  border: 1.5px solid var(--bg-base);
+  box-shadow: 0 0 0 1px var(--accent-primary-glow);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.zoom-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.25);
+  box-shadow: 0 0 0 3px var(--accent-primary-glow);
+}
+
+.zoom-slider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  border: 1.5px solid var(--bg-base);
+  box-shadow: 0 0 0 1px var(--accent-primary-glow);
+  cursor: pointer;
+}
+
+.zoom-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-medium);
+}
+

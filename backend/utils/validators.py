@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 _EXTENSIONES_IMAGEN: set[str] = {
     ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif", ".gif", ".ico",
@@ -150,3 +152,49 @@ def is_path_like_key(key: str) -> bool:
     # re-check the suffix heuristic so camelCase path keys are screened too.
     snake = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", key).lower()
     return snake != lowered and any(snake.endswith(suffix) for suffix in PATH_KEY_SUFFIXES)
+
+
+def _path_item_violates(item: object, *, strict: bool) -> bool:
+    """Does a single path-collection item fail safety screening?"""
+    if strict:
+        # The handler decorator rejects empty/non-str items as "Invalid path"
+        # in addition to traversal attempts.
+        return not isinstance(item, str) or not item or not is_safe_user_path(item)
+    # The IPC boundary only screens for traversal; non-str/empty values pass.
+    return not is_safe_user_path(item)
+
+
+def path_param_violations(params: object, *, strict: bool = False) -> Iterator[tuple[str, Any]]:
+    """Yield ``(key, value)`` for each path-like param that fails screening.
+
+    Single source of truth for the screening loop shared by:
+    - ``backend.ipc_protocol.validate_params`` (defense-in-depth IPC boundary)
+    - ``backend.handlers.common.@validate_params`` (authoritative handler layer)
+
+    ``strict=False`` mirrors the IPC boundary: ``is_safe_user_path`` is the only
+    gate, so non-str / empty values pass (they are not traversal attempts).
+
+    ``strict=True`` mirrors the handler decorator: empty or non-str items inside
+    path collections (lists/dicts) are also flagged, and empty scalar strings
+    are flagged. Non-str *scalar* values are never flagged by either layer —
+    both only screen ``str`` scalars.
+    """
+    if not isinstance(params, dict):
+        return
+    for key, value in params.items():
+        if value is None:
+            continue
+        if not is_path_like_key(key):
+            continue
+        if isinstance(value, list):
+            for item in value:
+                if _path_item_violates(item, strict=strict):
+                    yield key, item
+        elif isinstance(value, dict):
+            for item in value.values():
+                if item is None:
+                    continue
+                if _path_item_violates(item, strict=strict):
+                    yield key, item
+        elif isinstance(value, str) and _path_item_violates(value, strict=strict):
+            yield key, value

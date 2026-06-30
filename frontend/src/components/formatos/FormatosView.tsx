@@ -191,7 +191,7 @@ function PdfMultiViewer({ blob, desde, total, padLen, zoom }: { blob: Blob | nul
 
     return (
         <div ref={containerRef} className="w-full h-full overflow-y-auto flex flex-col" style={{ scrollbarWidth: 'thin', scrollbarColor: 'var(--scrollbar-thumb) transparent' }}>
-            <div className="px-4 py-6 space-y-6 flex flex-col items-center flex-1">
+            <div className="px-4 pt-2 pb-6 space-y-6 flex flex-col items-center flex-1">
                 {pageImgs.map((p) => (
                     <div key={p.pageNum} className="relative mx-auto bg-white rounded-xl shadow-2xl shadow-black/50" style={{ width: `${(zoom / 100) * 100}%`, maxWidth: '100%' }}>
                         <img src={p.url} alt={`Página ${p.pageNum}`} className="w-full object-contain rounded-lg block" draggable={false} style={{ imageRendering: 'auto' }} loading="lazy" />
@@ -542,7 +542,10 @@ export default function FormatosView() {
     const [editMapping, setEditMapping] = useState<VisualMapping | null>(null);
     const [mappingBaseline, setMappingBaseline] = useState<VisualMapping | null>(null);
     const [zoom, setZoom] = useState(100);
-    const zoomStep = 25;
+    const zoomStep = 10;
+    const ZOOM_MIN = 25;
+    const ZOOM_MAX = 300;
+    const clampZoom = (v: number) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(v)));
 
     const selected = formats.find(f => f.id === selectedId) ?? null;
     const padLen = selected?.mapping?.padding ?? 7;
@@ -730,7 +733,7 @@ export default function FormatosView() {
                 <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle, color-mix(in srgb, var(--border-medium) 70%, transparent) 1px, transparent 1px)', backgroundSize: '28px 28px' }} />
 
                 {/* topbar */}
-                <div className="relative z-10 flex items-center justify-between px-6 py-3 border-b border-[var(--border-subtle)]">
+                <div className="relative z-10 flex h-[45px] items-center justify-between px-6 border-b border-[var(--border-subtle)]">
                     <div className="flex items-center gap-2.5">
                         <ScanLine size={13} className="text-[var(--accent-primary)]" />
                         <span className="text-[10px] tracking-[0.22em] uppercase text-[var(--text-muted)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
@@ -748,13 +751,40 @@ export default function FormatosView() {
                             {(mappingMode || previewBlob) && (
                                 <>
                                     <div className="w-px h-3 bg-[var(--border-subtle)] mx-0.5" />
-                                    <button onClick={() => setZoom(z => Math.max(50, z - zoomStep))} className="w-4 h-4 rounded bg-[var(--bg-base)] hover:bg-[var(--bg-input)] text-[var(--accent-primary)] text-[10px] font-bold flex items-center justify-center transition-colors leading-none">−</button>
-                                    <span className="text-[9px] text-[var(--accent-primary)] font-medium min-w-[28px] text-center">{zoom}%</span>
-                                    <button onClick={() => setZoom(z => Math.min(200, z + zoomStep))} className="w-4 h-4 rounded bg-[var(--bg-base)] hover:bg-[var(--bg-input)] text-[var(--accent-primary)] text-[10px] font-bold flex items-center justify-center transition-colors leading-none">+</button>
+                                    <button onClick={() => setZoom(z => clampZoom(z - zoomStep))} className="w-4 h-4 rounded bg-[var(--bg-base)] hover:bg-[var(--bg-input)] text-[var(--accent-primary)] text-[10px] font-bold flex items-center justify-center transition-colors leading-none">−</button>
+                                    <input
+                                        type="range"
+                                        min={ZOOM_MIN}
+                                        max={ZOOM_MAX}
+                                        step={1}
+                                        value={zoom}
+                                        onChange={e => setZoom(Number(e.target.value))}
+                                        className="zoom-slider"
+                                        title={`Zoom: ${zoom}%`}
+                                    />
+                                    <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        value={`${zoom}%`}
+                                        onChange={e => {
+                                            const raw = e.target.value.replace(/[^0-9]/g, '');
+                                            if (raw) setZoom(clampZoom(Number(raw)));
+                                        }}
+                                        onBlur={() => setZoom(clampZoom(zoom))}
+                                        onKeyDown={e => {
+                                            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                                            if (e.key === 'ArrowUp') { e.preventDefault(); setZoom(z => clampZoom(z + zoomStep)); }
+                                            if (e.key === 'ArrowDown') { e.preventDefault(); setZoom(z => clampZoom(z - zoomStep)); }
+                                        }}
+                                        className="w-[38px] text-center text-[9px] text-[var(--accent-primary)] font-medium bg-transparent outline-none border-b border-transparent hover:border-[var(--border-medium)] focus:border-[var(--accent-primary)] transition-colors"
+                                        title={`Zoom (${ZOOM_MIN}–${ZOOM_MAX}%)`}
+                                    />
+                                    <button onClick={() => setZoom(z => clampZoom(z + zoomStep))} className="w-4 h-4 rounded bg-[var(--bg-base)] hover:bg-[var(--bg-input)] text-[var(--accent-primary)] text-[10px] font-bold flex items-center justify-center transition-colors leading-none">+</button>
                                     <button onClick={() => setZoom(100)} className="text-[8px] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">reset</button>
                                 </>
                             )}
                         </div>
+
                         {previewBlob && previewPagesShown > 0 && (
                             <div className="flex items-center gap-1.5 border border-[var(--border-subtle)] rounded px-2.5 py-1 bg-[var(--bg-elevated)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
                                 <span className="text-[9px] tracking-wider text-[var(--text-muted)]">N°</span>

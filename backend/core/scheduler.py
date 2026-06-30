@@ -72,6 +72,7 @@ class WorkScheduler:
         self._heavy_active = 0
         self._heavy_rejected = 0
         self._heavy_cancelled_waits = 0
+        self._heavy_cancelled = 0
         self._heavy_submitted = 0
         self._heavy_completed = 0
 
@@ -123,7 +124,23 @@ class WorkScheduler:
                     self._heavy_completed += 1
                 self._heavy_slots.release()
 
-        return self._executor.submit(_wrapped)
+        future = self._executor.submit(_wrapped)
+
+        def _release_if_cancelled(fut: Future) -> None:
+            # If the future was cancelled before _wrapped started running, the
+            # finally above never executed, so the reserved slot and the
+            # outstanding counter would leak for the rest of the session (every
+            # batch cancellation permanently shrank heavy_capacity). fut.cancelled()
+            # is True only when the future never ran, so this never double-releases
+            # against the finally path.
+            if fut.cancelled():
+                with self._lock:
+                    self._heavy_outstanding -= 1
+                    self._heavy_cancelled += 1
+                self._heavy_slots.release()
+
+        future.add_done_callback(_release_if_cancelled)
+        return future
 
     def _acquire_heavy_slot(
         self,
@@ -160,6 +177,7 @@ class WorkScheduler:
                 "heavy_queued": queued,
                 "heavy_rejected": self._heavy_rejected,
                 "heavy_cancelled_waits": self._heavy_cancelled_waits,
+                "heavy_cancelled": self._heavy_cancelled,
                 "heavy_submitted": self._heavy_submitted,
                 "heavy_completed": self._heavy_completed,
             }

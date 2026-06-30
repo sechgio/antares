@@ -129,6 +129,45 @@ def _probe_key_columns(
     return best_col, best_count, per_column, True
 
 
+def _resolve_key_column(
+    key_column: str | None,
+    files: list[str],
+    db_columns: list[str] | None = None,
+    *,
+    sample_size: int = 30,
+) -> str:
+    """Resolve the effective key column, auto-detecting if needed.
+
+    Always probes all DB columns and picks the one with the most file-code
+    matches. This fixes the case where the user's provided key_column is a
+    valid column name but doesn't contain the file codes (e.g. 'nis' when
+    the codes are actually in 'sgio').
+
+    When ``key_column`` is falsy (auto-detect mode) the user-preference rule
+    is skipped and the best-scoring column is returned — this is the
+    behaviour ``_detect_best_key_column`` relies on.
+    """
+    from backend.core.config_fields import get_field_names
+
+    columns = db_columns if db_columns is not None else get_field_names()
+    if not columns:
+        return key_column  # type: ignore[return-value]
+    if len(columns) == 1:
+        return columns[0]
+
+    best_col, best_count, per_column, had_keys = _probe_key_columns(
+        files, columns, sample_size=sample_size
+    )
+    if not had_keys:
+        return best_col
+    # Keep the user's choice if it matches equally well as the best
+    if key_column and key_column in columns:
+        user_count = dict(per_column).get(key_column, -1)
+        if user_count >= 0 and user_count >= best_count and user_count > 0:
+            return key_column
+    return best_col
+
+
 def _detect_best_key_column(
     files: list[str],
     db_columns: list[str],
@@ -144,46 +183,11 @@ def _detect_best_key_column(
 
     Returns:
         Best matching column name, or the first column if none match.
+        Empty string when there are no DB columns to probe.
     """
     if not db_columns:
         return ""
-    if len(db_columns) == 1:
-        return db_columns[0]
-    best_col, _best_count, _per_column, _had_keys = _probe_key_columns(
-        files, db_columns, sample_size=sample_size
-    )
-    return best_col
-
-
-def _resolve_key_column(
-    key_column: str,
-    files: list[str],
-    db_columns: list[str] | None = None,
-) -> str:
-    """Resolve the effective key column, auto-detecting if needed.
-
-    Always probes all DB columns and picks the one with the most file-code
-    matches. This fixes the case where the user's provided key_column is a
-    valid column name but doesn't contain the file codes (e.g. 'nis' when
-    the codes are actually in 'sgio').
-    """
-    from backend.core.config_fields import get_field_names
-
-    columns = db_columns if db_columns is not None else get_field_names()
-    if not columns:
-        return key_column
-    if len(columns) == 1:
-        return columns[0]
-
-    best_col, best_count, per_column, had_keys = _probe_key_columns(files, columns)
-    if not had_keys:
-        return best_col
-    # Keep the user's choice if it matches equally well as the best
-    if key_column and key_column in columns:
-        user_count = dict(per_column).get(key_column, -1)
-        if user_count >= 0 and user_count >= best_count and user_count > 0:
-            return key_column
-    return best_col
+    return _resolve_key_column(None, files, db_columns, sample_size=sample_size)
 
 
 @with_locale
@@ -415,7 +419,19 @@ def process_cancel(params: dict[str, Any]) -> dict[str, Any]:
 @with_locale
 def preview_image(params: dict[str, Any]) -> dict[str, str]:
     from backend.core.converter import convertir_a_preview
-    return convertir_a_preview(params.get("path", ""), params.get("formato", "PNG"), params.get("calidad", 85), params.get("resize"))
+    # Coerción defensiva en el boundary: el frontend puede enviar calidad como
+    # string ("85") o path/formato como no-str, lo que rompería el core.
+    calidad = params.get("calidad", 85)
+    try:
+        calidad = int(calidad)
+    except (TypeError, ValueError):
+        calidad = 85
+    return convertir_a_preview(
+        str(params.get("path") or ""),
+        str(params.get("formato") or "PNG"),
+        calidad,
+        params.get("resize"),
+    )
 
 
 @with_locale
@@ -711,17 +727,13 @@ def _emit_progress_notifications(job_id: str, data: dict[str, Any], is_default: 
         })
 
 
-def _emit_complete_notifications(job: Job, ok_count: int, err_count: int) -> None:
+def _notify_complete(job: Job, ok_count: int, err_count: int) -> None:
     """Send modern job complete notification + legacy one when needed."""
     is_default = is_legacy_default_job(job.id)
     notif_data = {"ok_count": ok_count, "err_count": err_count, "job_id": job.id}
     send_notification(f"job.{job.id}.complete", notif_data)
     if is_default:
         send_notification("process.complete", {"ok_count": ok_count, "err_count": err_count})
-
-
-# Backwards-compatible alias (used internally by _run_conversion_job)
-_notify_complete = _emit_complete_notifications
 
 
 @with_locale

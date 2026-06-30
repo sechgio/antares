@@ -308,7 +308,7 @@ export const UbicacionesView: React.FC = () => {
       {/* ── Sidebar: Config ── */}
       <div className="w-[380px] flex flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-base)] overflow-hidden">
         {/* Title (fixed top) */}
-        <div className="shrink-0 flex items-center gap-2.5 px-5 h-12 border-b border-[var(--border-subtle)]">
+        <div className="shrink-0 flex items-center gap-2.5 px-5 h-[45px] border-b border-[var(--border-subtle)]">
           <MapPin size={18} className="text-[var(--accent-primary)] shrink-0" />
           <h2 className="text-sm font-semibold text-[var(--text-primary)]">Generador de Ubicaciones</h2>
         </div>
@@ -599,7 +599,7 @@ export const UbicacionesView: React.FC = () => {
 // ──────────────────────────────────────────────
 const EmptyPreviewPanel: React.FC<{ formato: string }> = ({ formato }) => (
   <div className="flex-1 flex flex-col overflow-hidden">
-    <div className="shrink-0 flex items-center gap-2.5 px-5 h-12 border-b border-[var(--border-subtle)] bg-[var(--bg-base)]">
+    <div className="shrink-0 flex items-center gap-2.5 px-5 h-[45px] border-b border-[var(--border-subtle)] bg-[var(--bg-base)]">
       <Eye size={18} className="text-[var(--accent-primary)] shrink-0" />
       <span className="text-sm font-semibold text-[var(--text-primary)]">Vista Previa de Plantilla</span>
     </div>
@@ -653,8 +653,8 @@ const RealPreviewPanel: React.FC<{
   onRefresh: () => void;
 }> = ({ preview, loading, error, rowIndex, totalFilas, isProcessing, onPrev, onNext, onRefresh }) => (
   <div className="flex-1 flex flex-col overflow-hidden">
-    {/* Toolbar — h-12 matches sidebar title bar for horizontal alignment */}
-    <div className="shrink-0 flex items-center justify-between px-5 h-12 border-b border-[var(--border-subtle)] bg-[var(--bg-base)]">
+    {/* Toolbar — h-[45px] matches sidebar title bar for horizontal alignment */}
+    <div className="shrink-0 flex items-center justify-between px-5 h-[45px] border-b border-[var(--border-subtle)] bg-[var(--bg-base)]">
       <div className="flex items-center gap-2.5">
         <Eye size={18} className="text-[var(--accent-primary)] shrink-0" />
         <span className="text-sm font-semibold text-[var(--text-primary)]">Vista Previa Real</span>
@@ -750,30 +750,44 @@ const RealPreviewPanel: React.FC<{
 // ──────────────────────────────────────────────
 // Result Panel
 // ──────────────────────────────────────────────
-const ResultPanel: React.FC<{ result: Result; outputDir: string }> = ({ result, outputDir }) => {
+export const ResultPanel: React.FC<{ result: Result; outputDir: string }> = ({ result, outputDir }) => {
   if (!result) return null;
 
   if (result.success) {
     const isConsolidado = result.data?.consolidado;
+    const generados = result.data?.generados ?? 0;
+    const fallidos = result.data?.fallidos ?? 0;
+    const allFailed = generados === 0 && fallidos > 0;
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8">
-        <div className="w-16 h-16 rounded-full bg-emerald-500/15 flex items-center justify-center mb-5">
-          <CheckCircle2 size={32} className="text-emerald-400" />
+        <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-5 ${allFailed ? 'bg-amber-500/15' : 'bg-emerald-500/15'}`}>
+          {allFailed ? (
+            <AlertCircle size={32} className="text-amber-400" />
+          ) : (
+            <CheckCircle2 size={32} className="text-emerald-400" />
+          )}
         </div>
-        <p className="text-lg font-semibold text-[var(--text-primary)] mb-1">Proceso completado</p>
+        <p className="text-lg font-semibold text-[var(--text-primary)] mb-1">
+          {allFailed ? 'Proceso completado con errores' : 'Proceso completado'}
+        </p>
         <p className="text-sm text-[var(--text-muted)] mb-5">
           {isConsolidado ? (
             <>
               Se generó <span className="font-bold text-emerald-400">1 PDF consolidado</span> con{' '}
-              <span className="font-bold text-emerald-400">{result.data?.generados} páginas</span>
+              <span className="font-bold text-emerald-400">{generados} páginas</span>
             </>
           ) : (
             <>
               Se generaron{' '}
-              <span className="font-bold text-emerald-400">{result.data?.generados} PDFs</span>
+              <span className="font-bold text-emerald-400">{generados} PDFs</span>
             </>
           )}
         </p>
+        {fallidos > 0 && (
+          <p className="text-sm text-amber-400 mb-5">
+            {fallidos} fila{fallidos !== 1 ? 's' : ''} omitida{fallidos !== 1 ? 's' : ''} por error
+          </p>
+        )}
         <div className="max-w-md w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
           <div className="flex items-center gap-2 mb-1.5">
             <Folder size={14} className="text-[var(--text-muted)] shrink-0" />

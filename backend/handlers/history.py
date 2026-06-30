@@ -26,6 +26,14 @@ _CSV_COLUMNS = [
 ]
 
 
+def _safe_int(value: Any) -> int | None:
+    """Coacciona defensiva: ids no numéricos devuelven None en vez de lanzar."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 @with_locale
 def history_list(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.history import list_runs
@@ -60,7 +68,11 @@ def history_delete(params: dict[str, Any]) -> dict[str, bool]:
 def history_delete_many(params: dict[str, Any]) -> dict[str, int]:
     from backend.core.history import delete_run
     ids = params.get("ids") or []
-    deleted = sum(1 for run_id in ids if delete_run(int(run_id)))
+    deleted = 0
+    for run_id in ids:
+        rid = _safe_int(run_id)
+        if rid is not None and delete_run(rid):
+            deleted += 1
     return {"deleted": deleted, "requested": len(ids)}
 
 
@@ -107,7 +119,8 @@ def history_export(params: dict[str, Any]) -> dict[str, Any]:
 
     ids = params.get("ids") or []
     if ids:
-        runs = list_runs_by_ids([int(x) for x in ids])
+        valid_ids = [rid for rid in (_safe_int(x) for x in ids) if rid is not None]
+        runs = list_runs_by_ids(valid_ids) if valid_ids else []
     else:
         runs = list_runs(
             run_type=params.get("run_type"),

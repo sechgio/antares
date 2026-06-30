@@ -21,12 +21,14 @@ from backend.core.panel_aviso_corte import (
     render_pdf,
 )
 from backend.core.panel_aviso_corte.errors import RenderingError
-from backend.core.panel_aviso_corte.models import MatchRule
+from backend.core.panel_aviso_corte.matcher import match_image_to_row
+from backend.core.panel_aviso_corte.models import ExcelSource, MatchRule
 from backend.core.panel_aviso_corte.rendering import ROW_HEIGHTS_CM
 
 _ROOT = Path(__file__).resolve().parents[2]
 _W_NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
 _WP_NS = {"wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"}
+_A_NS = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
 
 
 def _tiny_png() -> str:
@@ -231,6 +233,147 @@ def test_render_docx_limits_photo_height_to_image_row() -> None:
 
     assert photo_heights_emu
     assert max(photo_heights_emu) <= max_photo_height_emu
+
+
+def test_render_docx_applies_cover_crop_to_off_aspect_photo() -> None:
+    """Una foto con aspect ratio distinto al de la celda debe recibir un srcRect
+    de cover-crop en su blipFill; si no, se estira non-uniformemente al forzar
+    width+height fijos en add_picture (regresión del namespace de _apply_crop)."""
+    panel = Panel(
+        cuadrante="C001",
+        fecha_corte="2025-06-15",
+        motivo="Mantenimiento",
+        imagenes=(
+            PanelImageRef(filename="tall.png", caption="IMAGEN N°1: Calle 1", position=1),
+        ),
+        source_row_index=0,
+    )
+
+    docx_bytes, _ = render_docx(
+        panels=(panel,),
+        logos={},
+        images={"tall.png": _png_b64(600, 2000)},
+        export_mode="include_empty",
+    )
+
+    with ZipFile(BytesIO(docx_bytes)) as archive:
+        document_xml = archive.read("word/document.xml")
+    root = ET.fromstring(document_xml)
+
+    src_rects = root.findall(".//a:srcRect", _A_NS)
+    assert src_rects, "esperaba al menos un <a:srcRect> de cover-crop sobre la foto"
+    # La foto 600x2000 en celda 7.36x9.82cm -> cover scale cubre altura => sobra
+    # altura => recorte por abajo (b > 0), lados intactos (l == r == 0).
+    cropped = next((sr for sr in src_rects if int(sr.attrib.get("b", 0)) > 0), None)
+    assert cropped is not None, "esperaba un srcRect con recorte inferior (b > 0)"
+    assert cropped.attrib.get("l", "0") == "0"
+    assert cropped.attrib.get("r", "0") == "0"
+
+
+def test_match_image_to_row_empty_key_matches_nothing() -> None:
+    """Una celda clave vacía (o sólo whitespace) no debe matchear ninguna imagen.
+
+    Regresión de prefix/contains: ``startswith('')`` y ``'' in stem`` son siempre
+    True, así que una fila con clave vacía capturaba todas las imágenes no
+    asignadas y robaba fotos de filas posteriores.
+    """
+    for strategy in ("prefix", "contains"):
+        rule = MatchRule(key_column="ID", strategy=strategy)
+        assert match_image_to_row(rule, "", "1001.jpg") is False
+        assert match_image_to_row(rule, "   ", "1001.jpg") is False
+        # Sanity: la clave no-vacía sigue matcheando como antes.
+        assert match_image_to_row(rule, "1001", "1001.jpg") is True
+
+
+def test_build_panels_empty_key_row_does_not_steal_images() -> None:
+    """Una fila con la columna clave vacía no debe robar la imagen de otra fila."""
+    source = ExcelSource(
+        filename="test.xlsx",
+        columns=("ID", "DIRECCION"),
+        normalized_columns=("id", "direccion"),
+        rows=(
+            {"ID": "", "DIRECCION": "Calle vacía"},
+            {"ID": "1001", "DIRECCION": "Calle 1"},
+        ),
+    )
+    rule = MatchRule(key_column="ID", strategy="prefix")
+    result = build_panels(
+        source=source,
+        rule=rule,
+        image_names=["1001.jpg"],
+        address_column="DIRECCION",
+        export_mode="skip_empty",
+    )
+
+    assert len(result.panels) == 1
+    assert result.panels[0].source_row_index == 1
+    assert result.panels[0].imagenes[0].filename == "1001.jpg"
+
+
+def test_build_panels_overflow_images_reported_as_unmatched() -> None:
+    """Las imágenes que una fila descarta por exceder MAX_IMAGES_PER_PANEL y
+    ninguna fila posterior reclama deben reportarse como unmatched (no como
+    matched) — de lo contrario el summary dice "matched: 5" cuando sólo 4
+    imágenes aparecen en el export y la 5ta desaparece silenciosamente."""
+    source = ExcelSource(
+        filename="test.xlsx",
+        columns=("ID", "DIRECCION"),
+        normalized_columns=("id", "direccion"),
+        rows=(
+            {"ID": "1001", "DIRECCION": "Calle 1"},
+        ),
+    )
+    rule = MatchRule(key_column="ID", strategy="prefix")
+    images = ["1001_1.jpg", "1001_2.jpg", "1001_3.jpg", "1001_4.jpg", "1001_5.jpg"]
+    result = build_panels(
+        source=source,
+        rule=rule,
+        image_names=images,
+        address_column="DIRECCION",
+        export_mode="skip_empty",
+    )
+
+    panel_imgs = [ref.filename for panel in result.panels for ref in panel.imagenes]
+    assert "1001_5.jpg" not in panel_imgs
+    assert len(panel_imgs) == 4
+    # El summary debe reflejar lo que realmente fue a paneles.
+    assert result.summary.matched_images == 4
+    assert result.summary.unmatched_images == 1
+    assert "1001_5.jpg" in result.summary.unmatched_image_names
+    assert (
+        result.summary.matched_images + result.summary.unmatched_images
+        == result.summary.total_images
+    )
+
+
+def test_build_panels_overflow_reclaimed_by_later_row_stays_matched() -> None:
+    """Guard: una imagen descartada por overflow de una fila puede ser
+    reclamada legítimamente por una fila posterior más específica (prefix
+    jerárquico). En ese caso debe quedar en un panel y contarse como matched,
+    no descartarse."""
+    source = ExcelSource(
+        filename="test.xlsx",
+        columns=("ID", "DIRECCION"),
+        normalized_columns=("id", "direccion"),
+        rows=(
+            {"ID": "1001", "DIRECCION": "Calle 1"},
+            {"ID": "1001_5", "DIRECCION": "Calle 5"},
+        ),
+    )
+    rule = MatchRule(key_column="ID", strategy="prefix")
+    images = ["1001_1.jpg", "1001_2.jpg", "1001_3.jpg", "1001_4.jpg", "1001_5.jpg"]
+    result = build_panels(
+        source=source,
+        rule=rule,
+        image_names=images,
+        address_column="DIRECCION",
+        export_mode="skip_empty",
+    )
+
+    panel_imgs = [ref.filename for panel in result.panels for ref in panel.imagenes]
+    assert "1001_5.jpg" in panel_imgs
+    assert result.summary.matched_images == 5
+    assert result.summary.unmatched_images == 0
 
 
 def test_render_docx_fixture_keeps_four_images_without_internal_page_break() -> None:

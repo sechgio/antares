@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from backend.core.state import ProcessState
 from backend.utils.i18n import set_locale
-from backend.utils.validators import is_path_like_key, is_safe_user_path
+from backend.utils.validators import is_safe_user_path, path_param_violations
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -53,8 +53,10 @@ def parse_positive_int(value: Any, label: str, *, maximum: int | None = None) ->
 def validate_params(*required_params):
     """Decorator to validate required parameters.
 
-    Uses the single shared heuristic `is_path_like_key` from validators.py
-    so the IPC layer and handler layer cannot drift apart.
+    Path-traversal screening delegates to the single shared loop
+    ``path_param_violations`` from validators.py (strict mode) so the IPC
+    layer and handler layer cannot drift apart. ``_validate_path`` is still
+    invoked per violation to raise the original localised error messages.
     """
     def decorator(fn):
         @wraps(fn)
@@ -63,23 +65,8 @@ def validate_params(*required_params):
                 if param not in params or params[param] is None:
                     msg = f"Missing required parameter: {param}"
                     raise ValueError(msg)
-            for key, value in params.items():
-                if value is None:
-                    continue
-                if not is_path_like_key(key):
-                    continue
-                if isinstance(value, list):
-                    for f in value:
-                        _validate_path(f)
-                elif isinstance(value, dict):
-                    # Dict-of-paths (e.g. image_paths: {name: path}). Skip None
-                    # entries — handlers filter them before use.
-                    for f in value.values():
-                        if f is None:
-                            continue
-                        _validate_path(f)
-                elif isinstance(value, str):
-                    _validate_path(value)
+            for _key, value in path_param_violations(params, strict=True):
+                _validate_path(value)
             return fn(params)
         return wrapper
     return decorator

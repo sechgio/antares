@@ -223,6 +223,33 @@ def test_image_optimizer_save_files_dedupes_when_multiple_preexisting_files_coll
     assert (tmp_path / "foto-5.jpg").read_bytes() == b"new-b"
 
 
+def test_image_optimizer_save_files_skips_when_too_many_collisions_preexist(tmp_path) -> None:
+    # Safeguard for the bounded dedup loop: if the destination folder already
+    # holds MAX_DEDUP_ATTEMPTS+1 colliding files (foto.jpg, foto-2.jpg, ...
+    # foto-1001.jpg), the handler must skip the new file with a reason instead
+    # of iterating ~1000 times forever (or hanging on a pathological folder).
+    from backend.handlers.optimizer import MAX_DEDUP_ATTEMPTS
+
+    for index in range(MAX_DEDUP_ATTEMPTS + 1):
+        suffix = "" if index == 0 else f"-{index + 1}"
+        (tmp_path / f"foto{suffix}.jpg").write_bytes(b"old")
+
+    payload = {
+        "output_folder": str(tmp_path),
+        "files": [
+            {"filename": "foto.jpg", "content_b64": base64.b64encode(b"new").decode("ascii")},
+        ],
+    }
+
+    result = image_optimizer_save_files(payload)
+
+    assert result["saved_count"] == 0
+    assert result["skipped_count"] == 1
+    assert result["skipped"][0]["reason"] == "no_free_slot"
+    # None of the pre-existing files were overwritten.
+    assert (tmp_path / "foto.jpg").read_bytes() == b"old"
+
+
 def test_image_optimizer_save_files_skips_malformed_base64_instead_of_aborting(tmp_path) -> None:
     # Regression guard for the A4 fix: a malformed content_b64 used to raise
     # binascii.Error (sub-class of ValueError) which the `except OSError`

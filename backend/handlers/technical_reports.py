@@ -134,7 +134,7 @@ def technical_reports_render_html(params: dict[str, Any]) -> dict[str, Any]:
 
     report = _resolve_report_for_render(params)
     html = render_report_html(report, params.get("logo_left"), params.get("logo_right"))
-    return {"html": html, "filename": f"informe_{report['id']}.pdf"}
+    return {"html": html, "filename": f"informe_{report.get('id') or 'inline'}.pdf"}
 
 @with_locale
 def technical_reports_render_consolidated_html(params: dict[str, Any]) -> dict[str, Any]:

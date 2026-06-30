@@ -56,10 +56,10 @@ export default function UpdateButton() {
   }, []);
 
   const promptInstall = useCallback(async () => {
-    const versionLabel = update.version ? `ANTARES ${update.version}` : 'la nueva versión de ANTARES';
+    const versionLabel = update.version ? `Antares ${update.version}` : 'la nueva versión de Antares';
     const confirmed = await dialog.confirm({
       title: 'Actualización lista',
-      description: `${versionLabel} ya se descargó. Si instalas ahora, ANTARES se cerrará y volverá a abrirse automáticamente con la nueva versión.`,
+      description: `${versionLabel} ya se descargó. Si instalas ahora, Antares se cerrará y volverá a abrirse automáticamente con la nueva versión.`,
       confirmLabel: 'Reiniciar e instalar',
       cancelLabel: 'Más tarde',
     });

@@ -89,7 +89,7 @@ def _build_png_overlay_pdf(img: Image.Image, dpi: float = STAMP_EXPORT_DPI) -> b
         f"<< /Type /Page /Parent 2 0 R "
         f"/MediaBox [0 0 {width_pt:.4f} {height_pt:.4f}] "
         f"/Resources << /XObject << /Im1 4 0 R >> >> "
-        f"/Contents 7 0 R >>"
+        f"/Contents 6 0 R >>"
     )
     objects.append(_pdf_object(page_body.encode("ascii"), 3))
 
@@ -109,7 +109,7 @@ def _build_png_overlay_pdf(img: Image.Image, dpi: float = STAMP_EXPORT_DPI) -> b
     objects.append(_pdf_object(alpha_obj.encode("ascii") + b"stream\n" + alpha_stream + b"\nendstream", 5))
 
     content = f"q {width_pt:.4f} 0 0 {height_pt:.4f} 0 0 cm /Im1 Do Q\n".encode("ascii")
-    objects.append(_pdf_object(f"<< /Length {len(content)} >>\nstream\n".encode("ascii") + content + b"endstream", 7))
+    objects.append(_pdf_object(f"<< /Length {len(content)} >>\nstream\n".encode("ascii") + content + b"endstream", 6))
 
     pdf = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n"
     offsets: list[int] = []

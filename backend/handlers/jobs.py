@@ -64,6 +64,10 @@ def jobs_cleanup(params: dict[str, Any]) -> dict[str, Any]:
     """
     mgr = get_job_manager()
     max_remaining = params.get("max_remaining", 20)
+    try:
+        max_remaining = int(max_remaining)
+    except (TypeError, ValueError):
+        max_remaining = 20
     removed = mgr.cleanup_completed(max_remaining=max_remaining)
     return {"removed": removed}
 

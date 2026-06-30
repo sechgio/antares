@@ -50,7 +50,7 @@ def db_fields(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
 
 @with_locale
 def db_fields_update(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
-    fields = params.get("fields", [])
+    fields = params.get("fields") or []
     result = save_fields(fields)
     from backend.core.database import init_db
     init_db()
@@ -115,7 +115,7 @@ def rename_patterns_get(params: dict[str, Any]) -> dict[str, list[dict[str, Any]
 
 @with_locale
 def rename_patterns_update(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
-    return {"patterns": save_patterns(params.get("patterns", []))}
+    return {"patterns": save_patterns(params.get("patterns") or [])}
 
 @with_locale
 def rename_patterns_reset(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:

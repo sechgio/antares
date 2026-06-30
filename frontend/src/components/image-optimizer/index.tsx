@@ -7,7 +7,7 @@ import QueuePanel from './QueuePanel';
 import SettingsPanel from './SettingsPanel';
 import { PillPreset, ToastContainer } from './ui';
 import { createImageItem, processImageItem } from './pipeline';
-import { DEFAULT_BATCH_SETTINGS, IMAGE_OPTIMIZER_PRESETS, cloneBatchSettings } from './presets';
+import { DEFAULT_BATCH_SETTINGS, IMAGE_OPTIMIZER_PRESETS, cloneSettings } from './presets';
 import { BatchSettings, CropOffset, ImageItem, PresetId, Toast } from './types';
 import {
   arrayBufferToBase64,
@@ -148,7 +148,7 @@ export default function ImageOptimizer() {
   }, []);
 
   const updateSettings = useCallback((updater: (draft: BatchSettings) => void) => {
-    const draft = cloneBatchSettings(settingsRef.current);
+    const draft = cloneSettings(settingsRef.current);
     updater(draft);
     commitSettings(draft, null);
   }, [commitSettings]);
@@ -295,7 +295,7 @@ export default function ImageOptimizer() {
   const handleApplyGlobalPreset = useCallback((presetId: PresetId) => {
     const preset = IMAGE_OPTIMIZER_PRESETS.find((item) => item.id === presetId);
     if (!preset) return;
-    commitSettings(cloneBatchSettings(preset.settings), presetId);
+    commitSettings(cloneSettings(preset.settings), presetId);
     addToast(`Preset global aplicado: ${preset.label}.`, 'success', 2200);
   }, [addToast, commitSettings]);
 

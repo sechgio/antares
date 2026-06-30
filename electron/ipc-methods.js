@@ -36,31 +36,11 @@ const NATIVE_METHODS = [
   'html_to_pdf',
 ];
 
-// Methods with larger user payloads or slow rendering/import work. Kept next
-// to the allowlist so Electron routing metadata changes in one place.
-const LONG_RUNNING_METHODS = new Set([
-  'process_start',
-  'db_import',
-  'db_export',
-  'db_clear',
-  'preview_image',
-  'formatos_generate',
-  'formatos_render_template_page',
-  'image_optimizer_zip',
-  'image_optimizer_save_files',
-  'sellador_apply',
-  'sellador_inspect_pdf',
-  'sellador_render_page',
-  'technical_reports_import_file',
-  'technical_reports_render_consolidated_html',
-  'panel_aviso_corte_parse_excel',
-  'technical_reports_render_html',
-  'panel_aviso_corte_render_pdf',
-  'panel_aviso_corte_compute_match',
-  'html_to_pdf',
-  'generar_ubicaciones',
-  'preview_ubicacion',
-]);
+// Methods with larger user payloads or slow rendering/import work. The list
+// lives in shared/long-running-methods.json so the Electron main process and
+// the renderer (frontend/src/api.ts) share one source of truth and cannot
+// drift on which methods get the extended timeout.
+const LONG_RUNNING_METHODS = new Set(require('../shared/long-running-methods.json'));
 
 const ALLOWED_RENDERER_METHODS = new Set([...BACKEND_METHODS, ...NATIVE_METHODS]);
 

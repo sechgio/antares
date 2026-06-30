@@ -88,6 +88,49 @@ def _data_uri_from_bytes(content: bytes, default_mime: str = "image/png") -> str
     return f"data:{mime};base64,{b64}"
 
 
+def _valid_image_bytes(content: bytes) -> bool:
+    """Devuelve True si *content* decodifica como imagen válida (PIL)."""
+    try:
+        from PIL import Image
+
+        with Image.open(BytesIO(content)) as image:
+            image.verify()
+        return True
+    except Exception:
+        return False
+
+
+def _valid_b64_image(b64_string: str) -> bool:
+    """True si *b64_string* decodifica a bytes de imagen válidos."""
+    try:
+        content = base64.b64decode(b64_string, validate=True)
+    except Exception:
+        return False
+    return _valid_image_bytes(content)
+
+
+def _contain_fit_cm(
+    content: bytes, max_width_cm: float, max_height_cm: float,
+) -> tuple[float, float]:
+    """Escala la imagen para *contenerla* en (max_width, max_height) sin recortar.
+
+    Devuelve (ancho_cm, alto_cm) preservando la relación de aspecto. Un logo
+    cuadrado en una celda merged más alta que ancha deja de desbordar: se
+    ajusta al lado que primero toque el límite.
+    """
+    try:
+        from PIL import Image
+
+        with Image.open(BytesIO(content)) as image:
+            width_px, height_px = image.size
+    except Exception:
+        return max_width_cm, max_height_cm
+    if width_px <= 0 or height_px <= 0:
+        return max_width_cm, max_height_cm
+    scale = min(max_width_cm / width_px, max_height_cm / height_px)
+    return width_px * scale, height_px * scale
+
+
 def _serialize_image(ref: PanelImageRef) -> dict[str, Any]:
     return {
         "filename": ref.filename,
@@ -110,8 +153,11 @@ def _prepare_logos(logos: dict[str, str | None]) -> tuple[str | None, str | None
     """Devuelve (logo_left, logo_right, logo_center) como data URIs."""
     left_raw = logos.get("left")
     right_raw = logos.get("right")
-    left = _data_uri_from_b64(left_raw) if left_raw else None
-    right = _data_uri_from_b64(right_raw) if right_raw else None
+    # Validar que los logos decodifiquen a una imagen real; un logo corrupto
+    # abortaría todo el PDF consolidado (paridad con render_docx, que usa
+    # contextlib.suppress al decodificar).
+    left = _data_uri_from_b64(left_raw) if left_raw and _valid_b64_image(left_raw) else None
+    right = _data_uri_from_b64(right_raw) if right_raw and _valid_b64_image(right_raw) else None
     center = None
     if left and not right:
         center = left
@@ -145,13 +191,22 @@ def render_pdf(
 
     logo_left, logo_right, logo_center = _prepare_logos(logos)
 
+    # Validar cada imagen antes de entregarla a WeasyPrint: una sola imagen
+    # corrupta abortaría el PDF consolidado. Las inválidas se descartan y el
+    # template renderiza "Sin imagen" en su casilla (paridad con render_docx,
+    # que aísla con contextlib.suppress al decodificar).
     image_uris: dict[str, str] = {}
     for filename, raw_path in (image_paths or {}).items():
         path = Path(raw_path)
         if path.is_file():
-            image_uris[filename] = path.resolve().as_uri()
+            with contextlib.suppress(Exception):
+                if _valid_image_bytes(path.read_bytes()):
+                    image_uris[filename] = path.resolve().as_uri()
     for filename, b64 in images.items():
-        image_uris.setdefault(filename, _data_uri_from_b64(b64))
+        if filename in image_uris:
+            continue
+        if _valid_b64_image(b64):
+            image_uris[filename] = _data_uri_from_b64(b64)
 
     panels_data: list[dict[str, Any]] = []
     for panel in panels:
@@ -332,14 +387,20 @@ def render_docx(
         top, bottom, left, right = crop
         if top == 0 and bottom == 0 and left == 0 and right == 0:
             return
-        # Navigate to the a:blipFill element in the inline shape's XML
-        nsmap = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
+        # Navigate to the blipFill element in the inline shape's XML. python-docx
+        # serializes it under the *picture* namespace (pic:blipFill), not the
+        # drawingml/main one (a:) — searching a:blipFill always missed it and the
+        # srcRect crop was never applied, so photos were stretched to the cell.
+        nsmap = {
+            "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+            "pic": "http://schemas.openxmlformats.org/drawingml/2006/picture",
+        }
         blip_fill = inline_shape._inline.graphic.graphicData.find(
-            ".//a:blipFill", nsmap,
+            ".//pic:blipFill", nsmap,
         )
         if blip_fill is None:
             return
-        # Remove existing srcRect if any
+        # Remove existing srcRect if any (srcRect itself lives in the `a` ns)
         for old in blip_fill.findall("a:srcRect", nsmap):
             blip_fill.remove(old)
         from lxml import etree
@@ -380,6 +441,16 @@ def render_docx(
     elif right_raw:
         with contextlib.suppress(Exception):
             logo_bytes = base64.b64decode(right_raw, validate=True)
+
+    # Logo dimensions are identical for every panel (same logo, same merged
+    # cell), so fit the image once instead of re-opening it per panel.
+    logo_w = logo_h = 0.0
+    if logo_bytes:
+        logo_avail_w = LOGO_WIDTH_CM - 2 * (CELL_MARGIN_TWIPS / 567)
+        logo_avail_h = sum(
+            ROW_HEIGHTS_CM[k] for k in ("title", "meta_a", "meta_b", "meta_c")
+        )
+        logo_w, logo_h = _contain_fit_cm(logo_bytes, logo_avail_w, logo_avail_h)
 
     for pidx, panel in enumerate(panels):
         if pidx > 0:
@@ -459,7 +530,10 @@ def render_docx(
             p = logo_cell.paragraphs[0]
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             run = p.add_run()
-            run.add_picture(BytesIO(logo_bytes), width=Cm(LOGO_WIDTH_CM))
+            # La celda merged del logo ocupa la col 3 (LOGO_WIDTH_CM) a lo ancho
+            # y las filas title..meta_c a lo alto (~3.51cm); el contain-fit al
+            # espacio útil se calculó una vez antes del bucle de paneles.
+            run.add_picture(BytesIO(logo_bytes), width=Cm(logo_w), height=Cm(logo_h))
 
         # --- Rows 1-3: Label + Value ---
         data_items = [

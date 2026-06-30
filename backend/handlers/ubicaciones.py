@@ -5,9 +5,9 @@ import os
 import threading
 import time
 import urllib.error
-from concurrent.futures import ThreadPoolExecutor
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from typing import Any, cast
 
@@ -15,6 +15,7 @@ import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
 
 from backend.utils.paths import resource_path
+from backend.utils.validators import sanitizar_nombre
 
 logger = logging.getLogger(__name__)
 
@@ -741,6 +742,33 @@ def generar_imagen_ubicacion(
     final_img.convert("RGB").save(output_path, "PDF", resolution=300.0)
 
 
+def _output_pdf_filename(cod_componente: str) -> str:
+    """Construye el nombre de archivo PDF para un cod_componente.
+
+    Sanitiza los caracteres inválidos en Windows (:*?\"<>|) y los separadores
+    de path vía ``sanitizar_nombre``. Antes sólo se reemplazaban ``/`` y ``\\``,
+    por lo que un cod_componente como ``"A:B"`` producía ``A:B.pdf`` y
+    ``PIL.save`` levantaba OSError (Errno 22) en Windows, abortando el batch
+    entero de ubicaciones.
+    """
+    safe_stem = sanitizar_nombre(str(cod_componente)) or "ubicacion"
+    return f"{safe_stem}.pdf"
+
+
+def _coerce_coord(value: Any) -> float | None:
+    """Coerce una celda de lat/lon a ``float``, o ``None`` si falta o no es
+    numérica. ``pd.isna`` sólo rechaza NaN/None, no strings como ``"abc"``;
+    sin este guard el worker llamaba ``float(datos['lat'])`` y crasheaba con
+    ValueError, abortando el batch entero de ubicaciones.
+    """
+    if value is None or pd.isna(value):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _parse_excel_columns(df):
     """Detecta las columnas del Excel normalizando nombres."""
     df.columns = [str(c).strip().lower() for c in df.columns]
@@ -864,29 +892,40 @@ def handle_generar_ubicaciones(payload: dict) -> dict:
             return {"success": False, "error": "El Excel debe tener columnas 'latitud' y 'longitud'."}
 
         generados = 0
+        fallidos = 0
         consolidated_images: list[Image.Image] = []
 
         # Pre-extraer datos de filas válidas en el thread principal: preserva el
-        # orden de páginas del consolidado y filtra NaN antes de paralelizar.
+        # orden de páginas del consolidado y filtra NaN y coordenadas no
+        # numéricas antes de paralelizar (un float() que falle en el worker
+        # abortaría el batch entero vía ex.map).
         valid_rows: list[dict] = []
         for index, row in df.iterrows():
             datos = _extract_row_data(row, index, col_cod, col_dir, col_loc, col_dist, col_lat, col_lon)
-            if pd.isna(datos['lat']) or pd.isna(datos['lon']):
+            lat = _coerce_coord(datos["lat"])
+            lon = _coerce_coord(datos["lon"])
+            if lat is None or lon is None:
                 continue
+            datos["lat"] = lat
+            datos["lon"] = lon
             valid_rows.append(datos)
 
-        def _render_one(d: dict) -> Image.Image | None:
-            """Renderiza (y guarda en no-consolidado) una fila. Devuelve la imagen
-            RGB solo en modo consolidado; None en caso contrario."""
+        def _render_one(d: dict) -> tuple[bool, Image.Image | None]:
+            """Renderiza (y guarda en no-consolidado) una fila. Devuelve
+            ``(ok, img)``: img sólo en modo consolidado y ok. Una fila que
+            falle se aísla (no aborta el batch vía ex.map)."""
             logger.info(f"Procesando {d['cod_componente']} en {d['lat']}, {d['lon']}...")
             t0 = time.perf_counter()
             try:
                 if consolidado:
-                    return render_imagen_ubicacion(d, formato, map_opts=map_opts).convert("RGB")
-                out_filename = f"{d['cod_componente']}.pdf".replace("/", "_").replace("\\", "_")
+                    return (True, render_imagen_ubicacion(d, formato, map_opts=map_opts).convert("RGB"))
+                out_filename = _output_pdf_filename(d["cod_componente"])
                 out_path = os.path.join(output_dir, out_filename)
                 generar_imagen_ubicacion(d, out_path, formato, map_opts=map_opts)
-                return None
+                return (True, None)
+            except Exception:
+                logger.exception("Error renderizando ubicación %s; se omite", d["cod_componente"])
+                return (False, None)
             finally:
                 logger.info(
                     "Ubicacion %s renderizada en %.1fs",
@@ -899,11 +938,16 @@ def handle_generar_ubicaciones(payload: dict) -> dict:
             # ThreadPoolExecutor local: map() preserva orden de submission → orden
             # de páginas en el PDF consolidado. Las caches mutables ya están
             # protegidas por _cache_lock (mismo patrón que el daemon de prefetch).
+            # _render_one atrapa sus propias excepciones y devuelve (False, None),
+            # así que una fila que falle no aborta las demás ni el consolidado.
             with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="ubic-render") as ex:
-                for img in ex.map(_render_one, valid_rows):
-                    generados += 1
-                    if consolidado and img is not None:
-                        consolidated_images.append(img)
+                for ok, img in ex.map(_render_one, valid_rows):
+                    if ok:
+                        generados += 1
+                        if consolidado and img is not None:
+                            consolidated_images.append(img)
+                    else:
+                        fallidos += 1
 
         if consolidado and consolidated_images:
             consolidated_path = os.path.join(output_dir, "ubicaciones_consolidado.pdf")
@@ -923,6 +967,7 @@ def handle_generar_ubicaciones(payload: dict) -> dict:
             "success": True,
             "data": {
                 "generados": generados,
+                "fallidos": fallidos,
                 "outputDir": output_dir,
                 "consolidado": consolidado,
             },
