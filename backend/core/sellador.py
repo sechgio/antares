@@ -12,10 +12,6 @@ from pypdf import PdfReader, PdfWriter, Transformation
 STAMP_EXPORT_DPI = 300.0
 
 
-def _lcg_next(state: int) -> int:
-    return (1664525 * state + 1013904223) & 0xFFFFFFFF
-
-
 def effective_stamp_count(num_pages: int, stamp_count: int) -> int:
     if num_pages <= 0 or stamp_count <= 0:
         return 0
@@ -26,16 +22,12 @@ def distribute_stamp_pages(num_pages: int, stamp_count: int, seed: int | None = 
     """Return distinct 0-based page indices — at most one stamp per page."""
     count = effective_stamp_count(num_pages, stamp_count)
     if count <= 0:
-        effective_seed = seed if seed is not None else 0
-        return [], effective_seed
+        return [], seed if seed is not None else 0
     effective_seed = seed if seed is not None else random.randint(0, 2_147_483_647)
-    indices = list(range(num_pages))
-    state = effective_seed & 0xFFFFFFFF
-    for i in range(num_pages - 1, 0, -1):
-        state = _lcg_next(state)
-        j = state % (i + 1)
-        indices[i], indices[j] = indices[j], indices[i]
-    return indices[:count], effective_seed
+    # ponytail: random.Random.sample — sin reemplazo, determinista por seed.
+    # Reemplaza el LCG + Fisher-Yates a mano (mismo contrato, una línea).
+    indices = random.Random(effective_seed).sample(range(num_pages), count)
+    return indices, effective_seed
 
 
 def _validate_unique_stamp_pages(page_indices: list[int]) -> None:
@@ -163,13 +155,29 @@ def _apply_stamp_placements(
             raise ValueError(msg)
         by_page.setdefault(page_idx, []).append(placement)
 
+    # ponytail: cache por (width, height) — los placements pueden tener tamaños
+    # distintos (hasta MAX_STAMP_POSITIONS=8 en la UI), pero N sellos los comparten.
+    # Reuse el stamp_page dentro de cada grupo: K prepares en vez de N. La
+    # reusabilidad multi-merge la demuestra el path sin placements (mismo
+    # stamp_page pegado en N páginas sin deepcopy).
+    page_cache: dict[tuple[float, float], tuple[Any, float]] = {}
+
+    def _stamp_page_for(width: float, height: float) -> tuple[Any, float]:
+        key = (width, height)
+        cached = page_cache.get(key)
+        if cached is None:
+            stamp_img, _actual_w_pt, actual_h_pt = _prepare_stamp_image(stamp_bytes, width, height)
+            stamp_pdf_bytes = _stamp_image_to_pdf_page(stamp_img)
+            stamp_page = PdfReader(io.BytesIO(stamp_pdf_bytes)).pages[0]
+            cached = (stamp_page, actual_h_pt)
+            page_cache[key] = cached
+        return cached
+
     for page_idx, page in enumerate(writer.pages):
         for placement in by_page.get(page_idx, ()):
             width = float(placement["width"])
             height = float(placement["height"])
-            stamp_img, _actual_w_pt, actual_h_pt = _prepare_stamp_image(stamp_bytes, width, height)
-            stamp_pdf_bytes = _stamp_image_to_pdf_page(stamp_img)
-            stamp_page = PdfReader(io.BytesIO(stamp_pdf_bytes)).pages[0]
+            stamp_page, actual_h_pt = _stamp_page_for(width, height)
             _apply_stamp_to_page(
                 page,
                 stamp_page,

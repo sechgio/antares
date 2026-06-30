@@ -5,6 +5,7 @@ import os
 import threading
 import time
 import urllib.error
+from concurrent.futures import ThreadPoolExecutor
 import urllib.parse
 import urllib.request
 from io import BytesIO
@@ -16,6 +17,12 @@ from PIL import Image, ImageDraw, ImageFont
 from backend.utils.paths import resource_path
 
 logger = logging.getLogger(__name__)
+
+# ponytail: este módulo stay-as-is (~909 líneas, 1 feature completa).
+# Split en core/ubicaciones/ rechazado: tests parchean ub._http_get por globals del
+# módulo (test_ubicaciones_static_map.py L69/79/100); mudar la cadena HTTP a otro
+# módulo rompe esos 3 patches sin tocar tests. Reabrir cuando un 2do consumidor
+# necesite compose o map_provider aislados.
 
 # Layout medido desde assets/ubicaciones/vertical.jpg y Horizontal.jpg (300 DPI).
 # vertical.jpg es referencia visual a escala reducida; footer_h = altura de la banda negra.
@@ -68,6 +75,11 @@ _preview_excel_ctx: tuple[str, float] | None = None
 _cache_lock = threading.Lock()
 _MAX_MAP_CACHE = 40
 _MAX_COMPOSED_CACHE = 80
+# Filas procesadas en paralelo durante export batch. El cuello es red (OSM tiles
+# / Google Static), no CPU: 4 workers dan ~4x speedup manteniéndose cortés con la
+# política de uso de OSM. Local al handler (no usa submit_heavy del scheduler: el
+# handler ya corre en un slot heavy y anidar saturaría/deadlockearía el budget).
+_MAX_RENDER_WORKERS = 4
 _COORD_PRECISION = 5
 _MAP_CAPTURE_VERSION = 5  # incrementar al cambiar heurística de captura/caché
 _FOOTER_LAYOUT_VERSION = 2  # incrementar al cambiar footer_h o escalado de logo
@@ -467,8 +479,10 @@ def _get_cached_map_screenshot(
 ) -> bytes:
     """Fetch (or reuse) a static map image for (lat, lon). No browser process needed."""
     key = _map_cache_key(lat, lon, formato, preview=preview)
+    # El caché sólo guarda capturas que ya pasaron _screenshot_has_map_tiles
+    # (ver gate de escritura más abajo), así que no re-validamos en cada hit.
     cached = _map_screenshot_cache.get(key)
-    if cached is not None and _screenshot_has_map_tiles(cached):
+    if cached is not None:
         return cached
     cap_w, cap_h = _map_capture_size(formato, preview=preview)
     provider = _resolve_provider(map_opts)
@@ -844,8 +858,7 @@ def handle_generar_ubicaciones(payload: dict) -> dict:
 
         os.makedirs(output_dir, exist_ok=True)
 
-        df = pd.read_excel(excel_path, engine="openpyxl")
-        col_cod, col_dir, col_loc, col_dist, col_lat, col_lon = _parse_excel_columns(df)
+        df, (col_cod, col_dir, col_loc, col_dist, col_lat, col_lon) = _load_excel_data(excel_path)
 
         if col_lat is None:
             return {"success": False, "error": "El Excel debe tener columnas 'latitud' y 'longitud'."}
@@ -853,29 +866,44 @@ def handle_generar_ubicaciones(payload: dict) -> dict:
         generados = 0
         consolidated_images: list[Image.Image] = []
 
+        # Pre-extraer datos de filas válidas en el thread principal: preserva el
+        # orden de páginas del consolidado y filtra NaN antes de paralelizar.
+        valid_rows: list[dict] = []
         for index, row in df.iterrows():
             datos = _extract_row_data(row, index, col_cod, col_dir, col_loc, col_dist, col_lat, col_lon)
-
             if pd.isna(datos['lat']) or pd.isna(datos['lon']):
                 continue
+            valid_rows.append(datos)
 
-            logger.info(f"Procesando {datos['cod_componente']} en {datos['lat']}, {datos['lon']}...")
+        def _render_one(d: dict) -> Image.Image | None:
+            """Renderiza (y guarda en no-consolidado) una fila. Devuelve la imagen
+            RGB solo en modo consolidado; None en caso contrario."""
+            logger.info(f"Procesando {d['cod_componente']} en {d['lat']}, {d['lon']}...")
             t0 = time.perf_counter()
-
-            if consolidado:
-                final_img = render_imagen_ubicacion(datos, formato, map_opts=map_opts)
-                consolidated_images.append(final_img.convert("RGB"))
-            else:
-                out_filename = f"{datos['cod_componente']}.pdf".replace("/", "_").replace("\\", "_")
+            try:
+                if consolidado:
+                    return render_imagen_ubicacion(d, formato, map_opts=map_opts).convert("RGB")
+                out_filename = f"{d['cod_componente']}.pdf".replace("/", "_").replace("\\", "_")
                 out_path = os.path.join(output_dir, out_filename)
-                generar_imagen_ubicacion(datos, out_path, formato, map_opts=map_opts)
+                generar_imagen_ubicacion(d, out_path, formato, map_opts=map_opts)
+                return None
+            finally:
+                logger.info(
+                    "Ubicacion %s renderizada en %.1fs",
+                    d["cod_componente"],
+                    time.perf_counter() - t0,
+                )
 
-            logger.info(
-                "Ubicacion %s renderizada en %.1fs",
-                datos["cod_componente"],
-                time.perf_counter() - t0,
-            )
-            generados += 1
+        if valid_rows:
+            max_workers = min(_MAX_RENDER_WORKERS, len(valid_rows))
+            # ThreadPoolExecutor local: map() preserva orden de submission → orden
+            # de páginas en el PDF consolidado. Las caches mutables ya están
+            # protegidas por _cache_lock (mismo patrón que el daemon de prefetch).
+            with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="ubic-render") as ex:
+                for img in ex.map(_render_one, valid_rows):
+                    generados += 1
+                    if consolidado and img is not None:
+                        consolidated_images.append(img)
 
         if consolidado and consolidated_images:
             consolidated_path = os.path.join(output_dir, "ubicaciones_consolidado.pdf")

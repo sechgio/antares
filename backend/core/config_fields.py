@@ -87,8 +87,7 @@ def load_fields() -> list[dict[str, Any]]:
         cached_path, cached_data = _cached_fields
         if cached_path == path:
             return [dict(f) for f in cached_data]
-        # Path changed — cache is stale]
-    path = _config_file()
+        # Path changed — cache is stale, fall through to disk read below.
     if path.exists():
         try:
             with open(path, encoding="utf-8") as f:
@@ -157,5 +156,4 @@ def get_unique_fields() -> list[str]:
 
 def reset_to_defaults() -> list[dict[str, Any]]:
     """Restaura la configuración a los valores por defecto."""
-    result = save_fields(DEFAULT_FIELDS)
-    return result
+    return save_fields(DEFAULT_FIELDS)

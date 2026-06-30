@@ -1,7 +1,6 @@
 """Tests for IPC handlers."""
 
 from backend import handlers
-from backend.handlers import Handlers
 
 
 class TestProcessStart:
@@ -9,7 +8,7 @@ class TestProcessStart:
         handlers._reset_state()
 
     def test_returns_false_and_logs_when_no_files(self) -> None:
-        result = Handlers.process_start({"files": [], "destino": "out", "locale": "es"})
+        result = handlers.HANDLERS["process_start"]({"files": [], "destino": "out", "locale": "es"})
 
         assert result["started"] is False
         assert result["reason"] == "no_files"

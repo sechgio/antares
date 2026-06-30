@@ -39,11 +39,6 @@ const STARTUP_WAIT_MS = 30_000;            // backend should start in <10s; 30s 
 const MID_FLIGHT_RETRIES = 2;              // retries for transient mid-flight errors
 
 /**
- * Allowlist of backend method names that can be called via IPC.
- * Only these methods are forwarded to the Python backend — any other
- * method name is rejected immediately, preventing arbitrary calls.
- */
-/**
  * Attach stdout/close listeners to the current backend process if we haven't
  * already. Re-runs whenever the backend is restarted.
  */

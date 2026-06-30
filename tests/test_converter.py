@@ -4,12 +4,15 @@ Crea imágenes reales con Pillow para verificar conversiones,
 redimensiones y manejo de errores.
 """
 
+import base64
+import io
+import os
 from pathlib import Path
 
 import pytest
 from PIL import Image
 
-from backend.core.converter import convertir_imagen
+from backend.core.converter import convertir_a_preview, convertir_imagen
 from backend.core.format_registry import get_registry
 
 
@@ -106,3 +109,44 @@ class TestConvertirImagen:
 
         assert resultado == salida
         assert salida.read_text(encoding="utf-8") == "TXTIMG:RGB:100x100:77"
+
+
+class TestConvertirAPreview:
+    """Vista previa: cap de 400px (B1) y cache invalidada por mtime (B2)."""
+
+    def test_preview_cap_400px_con_resize_grande(self, tmp_path) -> None:
+        from backend.core.preview_cache import get_preview_cache
+
+        get_preview_cache().clear()
+        # Imagen grande; el resize pedido (4000x3000) excede el cap de 400px.
+        origen = tmp_path / "grande.png"
+        Image.new("RGB", (2000, 1500), color=(10, 20, 30)).save(origen)
+
+        resultado = convertir_a_preview(origen, "JPEG", calidad=85, resize=[4000, 3000])
+        assert resultado["width"] == "2000"
+        assert resultado["height"] == "1500"
+
+        _header, b64 = resultado["preview"].split(",", 1)
+        img = Image.open(io.BytesIO(base64.b64decode(b64)))
+        # El cap de 400px debe sostenerse aunque resize sea enorme.
+        assert max(img.size) <= 400, f"preview excede 400px: {img.size}"
+        # El aspect del resize (4:3) se respeta dentro del cap.
+        assert img.size == (400, 300)
+
+    def test_preview_cache_invalidada_por_mtime(self, tmp_path) -> None:
+        from backend.core.preview_cache import get_preview_cache
+
+        get_preview_cache().clear()
+        origen = tmp_path / "mut.png"
+        Image.new("RGB", (800, 600), color=(255, 0, 0)).save(origen)
+        os.utime(origen, (1_000_000, 1_000_000))
+
+        r1 = convertir_a_preview(origen, "PNG")
+        r2 = convertir_a_preview(origen, "PNG")
+        assert r2["preview"] == r1["preview"]  # cache hit: misma mtime
+
+        # Reescribir contenido y avanzar mtime -> cache miss, preview nueva.
+        Image.new("RGB", (800, 600), color=(0, 0, 255)).save(origen)
+        os.utime(origen, (2_000_000, 2_000_000))
+        r3 = convertir_a_preview(origen, "PNG")
+        assert r3["preview"] != r1["preview"], "preview stale tras editar imagen"

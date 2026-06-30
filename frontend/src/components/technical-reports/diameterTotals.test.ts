@@ -2,15 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { sumDiameterColumns } from './diameterTotals';
 
 describe('sumDiameterColumns', () => {
-  it('adds values vertically for each diameter', () => {
-    const totals = sumDiameterColumns(
-      [{ '8': 1, '10': 1 }, { '10': 1 }, { '12': 1, '10': 1 }],
-      ['2', '3', '4', '6', '8', '10', '12'],
-    );
+  it('sums diameter columns across rows', () => {
+    const rows = [
+      { '6"': 2, '8"': 1 },
+      { '6"': 3, '8"': 0 },
+    ];
+    const totals = sumDiameterColumns(rows, ['6"', '8"']);
+    expect(totals['6"']).toBe(5);
+    expect(totals['8"']).toBe(1);
+  });
 
-    expect(totals['8']).toBe(1);
-    expect(totals['10']).toBe(3);
-    expect(totals['12']).toBe(1);
-    expect(totals['2']).toBe(0);
+  it('returns 0 for empty rows', () => {
+    const totals = sumDiameterColumns([], ['6"']);
+    expect(totals['6"']).toBe(0);
   });
 });
