@@ -60,7 +60,7 @@ describe('UpdateButton', () => {
     });
 
     expect(await screen.findByRole('heading', { name: 'Actualización lista' })).toBeInTheDocument();
-    expect(screen.getByText(/ANTARES 0.6.8 ya se descargó/i)).toBeInTheDocument();
+    expect(screen.getByText(/Antares 0.6.8 ya se descargó/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Reiniciar e instalar' }));
 
