@@ -94,7 +94,7 @@
 
 /* HEADER */
 .vgen-header {
-    height: 44px;
+    height: 45px;
     background: var(--vgen-bg-panel);
     border-bottom: 1px solid var(--vgen-line);
     display: flex;

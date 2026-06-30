@@ -733,7 +733,7 @@ export default function FormatosView() {
                 <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle, color-mix(in srgb, var(--border-medium) 70%, transparent) 1px, transparent 1px)', backgroundSize: '28px 28px' }} />
 
                 {/* topbar */}
-                <div className="relative z-10 flex h-11 items-center justify-between px-6 border-b border-[var(--border-subtle)]">
+                <div className="relative z-10 flex h-[45px] items-center justify-between px-6 border-b border-[var(--border-subtle)]">
                     <div className="flex items-center gap-2.5">
                         <ScanLine size={13} className="text-[var(--accent-primary)]" />
                         <span className="text-[10px] tracking-[0.22em] uppercase text-[var(--text-muted)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
