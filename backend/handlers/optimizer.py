@@ -11,24 +11,39 @@ from typing import Any
 
 from backend.handlers.common import with_locale
 
+# Cap on how many on-disk collisions we walk past before giving up on a file.
+# Without it, a destination folder pre-populated with foto.jpg..foto-999.jpg
+# would make the dedup loop iterate ~999 times per colliding file. 1000 is far
+# above any realistic batch and turns a potential hang into a skipped file.
+MAX_DEDUP_ATTEMPTS = 1000
 
-def _safe_name(value: str, fallback: str) -> str:
+
+def _safe_name(value: str, fallback: str, *, strict: bool = False) -> str:
+    """Sanitize a basename, collapsing invalid chars to ``-``.
+
+    When ``strict`` is False (used for zip/archive entry names) only the
+    Windows-invalid set ``:*?"<>|`` is collapsed and the value is returned
+    as-is (minus a leading basename extraction).
+
+    When ``strict`` is True (used for writing files to disk via
+    ``image_optimizer_save_files``) the path separators ``\\/`` and control
+    characters (``ord < 32``) are also collapsed and trailing spaces/dots are
+    stripped — so the renderer cannot write outside the chosen destination
+    folder nor craft reserved names.
+    """
     safe = value.strip().replace("\\", "/").split("/")[-1].strip()
-    safe = "".join("-" if char in ':*?"<>|' else char for char in safe)
+    invalid = ':*?"<>|\\/' if strict else ':*?"<>|'
+    safe = "".join(
+        "-" if char in invalid or (strict and ord(char) < 32) else char for char in safe
+    )
+    if strict:
+        safe = safe.rstrip(" .")
     return safe or fallback
 
 
 def _safe_filename(value: str, fallback: str) -> str:
-    """Sanitize a basename for writing to disk.
-
-    Strips path separators, collapses invalid chars (Windows + POSIX), and
-    preserves the extension. Used by `image_optimizer_save_files` so the
-    renderer cannot write outside the chosen destination folder.
-    """
-    safe = value.strip().replace("\\", "/").split("/")[-1].strip()
-    safe = "".join("-" if char in ':*?"<>|\\/' or ord(char) < 32 else char for char in safe)
-    safe = safe.rstrip(" .") or fallback
-    return safe or fallback
+    """Strict basename sanitisation for writing to disk — see ``_safe_name``."""
+    return _safe_name(value, fallback, strict=True)
 
 
 def _safe_zip_filename(value: str) -> str:
@@ -142,9 +157,16 @@ def image_optimizer_save_files(params: dict[str, Any]) -> dict[str, Any]:
         # disk from a previous run. Loop until we find a name that's free
         # both in `seen` and on disk — a single retry is not enough when
         # multiple deduped files (foto.jpg, foto-2.jpg, ...) already exist.
-        while target.exists():
+        # The loop is bounded: if thousands of colliding files already occupy
+        # the folder, we skip instead of iterating indefinitely.
+        attempts = 0
+        while target.exists() and attempts < MAX_DEDUP_ATTEMPTS:
             archive_name = _dedupe_archive_name(safe_base, seen)
             target = destination / archive_name
+            attempts += 1
+        if target.exists():
+            skipped.append({"filename": safe_base, "reason": "no_free_slot"})
+            continue
 
         # Define tmp_target before the try block so the except handler can
         # safely reference it even if the open() call itself fails before
