@@ -1617,6 +1617,133 @@
     }
 }
 
-.vpad-preview-toolbar .tutorial-trigger-btn {
+.vpad-toolbar-right {
     margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.vpad-btn-excel {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.82rem;
+    border: 1px solid var(--vpad-accent);
+    color: var(--vpad-accent);
+    background: transparent;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    white-space: nowrap;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.vpad-btn-excel:hover {
+    background: var(--vpad-accent);
+    color: var(--vpad-on-accent);
+}
+
+.tutorial-trigger-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.82rem;
+    border: 1px solid var(--vpad-border);
+    color: var(--vpad-primary);
+    background: transparent;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    white-space: nowrap;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.tutorial-trigger-btn:hover {
+    background: var(--vpad-elevated);
+    border-color: var(--vpad-border-strong);
+}
+
+/* Excel Modal */
+.vpad-excel-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background-color: color-mix(in srgb, var(--vpad-base) 72%, transparent);
+    backdrop-filter: blur(4px);
+    animation: fadeIn 0.2s ease-out forwards;
+}
+
+.vpad-excel-modal {
+    background: var(--vpad-surface);
+    border: 1px solid var(--vpad-border-strong);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 400px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    animation: scaleIn 0.2s ease-out forwards;
+}
+
+.vpad-excel-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--vpad-border);
+}
+
+.vpad-excel-modal-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--vpad-primary);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.vpad-excel-modal-close {
+    background: transparent;
+    border: none;
+    color: var(--vpad-muted);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.vpad-excel-modal-close:hover {
+    background: var(--vpad-elevated);
+    color: var(--vpad-primary);
+}
+
+.vpad-excel-modal-body {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+    from { transform: scale(0.95); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
 }

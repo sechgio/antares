@@ -445,7 +445,7 @@ export default function ConversionView() {
   }, [files]);
 
   const doProcess = async () => {
-    if (!allReady) return;
+    if (!allReady || running) return;
     await startProcess({
       files, destino, formato, calidad,
       conversion_enabled: conversionEnabled,
@@ -487,10 +487,22 @@ export default function ConversionView() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedFiles.size > 0) {
-        e.preventDefault();
-        removeSelectedFiles();
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      if (selectedFiles.size === 0) return;
+      // Don't hijack Backspace/Delete while the user is editing a text field,
+      // a textarea, a select, or any contentEditable — otherwise fixing a typo
+      // in the rename pattern / resize fields silently deletes the selected files.
+      const t = e.target as HTMLElement | null;
+      if (
+        t instanceof HTMLInputElement ||
+        t instanceof HTMLTextAreaElement ||
+        t instanceof HTMLSelectElement ||
+        t?.isContentEditable
+      ) {
+        return;
       }
+      e.preventDefault();
+      removeSelectedFiles();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

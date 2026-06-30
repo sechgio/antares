@@ -36,7 +36,7 @@ export const DEFAULT_BATCH_SETTINGS: BatchSettings = {
   },
 };
 
-function cloneSettings(settings: BatchSettings): BatchSettings {
+export function cloneSettings(settings: BatchSettings): BatchSettings {
   return {
     operations: { ...settings.operations },
     crop: { ...settings.crop },
@@ -130,6 +130,3 @@ export const PRESET_BY_ID = IMAGE_OPTIMIZER_PRESETS.reduce<Record<string, Preset
   return acc;
 }, {});
 
-export function cloneBatchSettings(settings: BatchSettings): BatchSettings {
-  return cloneSettings(settings);
-}

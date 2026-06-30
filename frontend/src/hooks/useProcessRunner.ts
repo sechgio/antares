@@ -35,9 +35,18 @@ export function useProcessRunner() {
   }, []);
 
   const startProcess = useCallback(async (body: ProcessBody) => {
-    await api.startProcess(body);
+    // Flip running optimistically BEFORE the await: api.startProcess can block
+    // up to ~30s while the backend boots (waitForReady), and the start button
+    // is gated on `running`. Setting it after the await left the button enabled
+    // during that window, so a second click enqueued a second process_start.
     setRunning(true);
-    pollStatus();
+    try {
+      await api.startProcess(body);
+      pollStatus();
+    } catch (err) {
+      setRunning(false);
+      throw err;
+    }
   }, [pollStatus]);
 
   const cancelProcess = useCallback(async () => {
