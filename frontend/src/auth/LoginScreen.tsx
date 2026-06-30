@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { motion } from 'framer-motion';
 import {
   AlertCircle,
   ArrowRight,
@@ -14,55 +15,8 @@ import AntaresScene from './AntaresScene';
 import './login.css';
 
 type AppearanceMode = 'dark' | 'light';
-type AccentColor = 'orange' | 'red' | 'blue' | 'neutral';
 const HC_THEME_MODE_KEY = 'hc_theme_mode';
-const HC_ACCENT_KEY = 'hc_accent_color';
-
-interface AccentPalette {
-  base: string;
-  hover: string;
-  glow: string;
-  textOnAccent: string;
-  focusRing: string;
-}
-
-const ACCENT_PALETTES: Record<AccentColor, AccentPalette> = {
-  orange: {
-    base: '#f97316',
-    hover: '#ea580c',
-    glow: 'rgba(249, 115, 22, 0.25)',
-    textOnAccent: '#ffffff',
-    focusRing: 'rgba(249, 115, 22, 0.4)',
-  },
-  red: {
-    base: '#dc2626',
-    hover: '#b91c1c',
-    glow: 'rgba(220, 38, 38, 0.25)',
-    textOnAccent: '#ffffff',
-    focusRing: 'rgba(220, 38, 38, 0.4)',
-  },
-  blue: {
-    base: '#2563eb',
-    hover: '#1d4ed8',
-    glow: 'rgba(37, 99, 235, 0.25)',
-    textOnAccent: '#ffffff',
-    focusRing: 'rgba(37, 99, 235, 0.4)',
-  },
-  neutral: {
-    base: '#18181b',
-    hover: '#27272a',
-    glow: 'rgba(24, 24, 27, 0.2)',
-    textOnAccent: '#ffffff',
-    focusRing: 'rgba(24, 24, 27, 0.25)',
-  },
-};
-
-const ACCENT_OPTIONS: Array<{ id: AccentColor; label: string; preview: string }> = [
-  { id: 'orange', label: 'Naranja', preview: ACCENT_PALETTES.orange.base },
-  { id: 'red', label: 'Rojo', preview: ACCENT_PALETTES.red.base },
-  { id: 'blue', label: 'Azul', preview: ACCENT_PALETTES.blue.base },
-  { id: 'neutral', label: 'Negro', preview: ACCENT_PALETTES.neutral.base },
-];
+const MOTION_EASE = [0.16, 1, 0.3, 1] as const;
 
 function useReducedMotion() {
   const [reducedMotion, setReducedMotion] = useState(false);
@@ -79,7 +33,7 @@ function useReducedMotion() {
 }
 
 function readInitialAppearanceMode(): AppearanceMode {
-  if (typeof window === 'undefined') return 'dark';
+  if (typeof window === 'undefined') return 'light';
   try {
     const stored = window.localStorage.getItem(HC_THEME_MODE_KEY);
     if (stored === 'light' || stored === 'dark') return stored;
@@ -88,8 +42,7 @@ function readInitialAppearanceMode(): AppearanceMode {
   }
   const explicit = document.documentElement.dataset.themeMode;
   if (explicit === 'light' || explicit === 'dark') return explicit;
-  if (window.matchMedia?.('(prefers-color-scheme: light)').matches) return 'light';
-  return 'dark';
+  return 'light';
 }
 
 function applyAppearanceMode(mode: AppearanceMode) {
@@ -105,36 +58,17 @@ function applyAppearanceMode(mode: AppearanceMode) {
   }
 }
 
-function readInitialAccent(): AccentColor {
-  if (typeof window === 'undefined') return 'orange';
-  try {
-    const stored = window.localStorage.getItem(HC_ACCENT_KEY);
-    if (stored && stored in ACCENT_PALETTES) return stored as AccentColor;
-  } catch {
-    /* ignore */
-  }
-  return 'orange';
-}
+const fadeUp = (y: number, delay: number, duration: number) => ({
+  initial: { opacity: 0, y },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration, delay, ease: MOTION_EASE },
+});
 
-function applyAccentColor(accent: AccentColor) {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(HC_ACCENT_KEY, accent);
-  } catch {
-    /* ignore */
-  }
-}
-
-function getAccentStyle(accent: AccentColor): React.CSSProperties {
-  const palette = ACCENT_PALETTES[accent];
-  return {
-    '--at-accent': palette.base,
-    '--at-accent-hover': palette.hover,
-    '--at-accent-glow': palette.glow,
-    '--at-on-accent': palette.textOnAccent,
-    '--at-input-focus-shadow': `0 0 0 2px ${palette.focusRing}`,
-  } as React.CSSProperties;
-}
+const videoEnter = {
+  initial: { opacity: 0, scale: 1.05 },
+  animate: { opacity: 1, scale: 1 },
+  transition: { duration: 1.8, ease: MOTION_EASE },
+};
 
 export default function LoginScreen() {
   const { t } = useTranslation();
@@ -146,17 +80,12 @@ export default function LoginScreen() {
   const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>(
     () => readInitialAppearanceMode(),
   );
-  const [accentColor, setAccentColor] = useState<AccentColor>(() => readInitialAccent());
   const reducedMotion = useReducedMotion();
   const displayError = localError ?? error;
 
   useEffect(() => {
     applyAppearanceMode(appearanceMode);
   }, [appearanceMode]);
-
-  useEffect(() => {
-    applyAccentColor(accentColor);
-  }, [accentColor]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -176,14 +105,27 @@ export default function LoginScreen() {
     if (result.error) setLocalError(result.error);
   };
 
+  const animate = <P,>(props: P) =>
+    reducedMotion ? ({ initial: false } as const) : props;
+
   return (
-    <div
-      data-testid="login-screen"
-      className="at-login"
-      style={getAccentStyle(accentColor)}
-    >
-      <div className="at-access__mode at-access__mode--floating">
-        <div className="at-appearance">
+    <div data-testid="login-screen" className="at-login">
+      <motion.div className="at-login__video" aria-hidden="true" {...animate(videoEnter)}>
+        <AntaresScene reducedMotion={reducedMotion} />
+      </motion.div>
+
+      <motion.nav className="at-nav" {...animate(fadeUp(-16, 0, 0.8))}>
+        <div className="at-nav__left">
+          <div className="at-nav__brand">
+            <svg className="at-nav__brand-mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect x="5" y="5" width="11" height="11" rx="3" fill="currentColor" transform="rotate(-35 10.5 10.5)" />
+              <rect x="8" y="8" width="11" height="11" rx="3" fill="currentColor" transform="rotate(-35 13.5 13.5)" />
+            </svg>
+            <span className="at-nav__brand-name">Antares</span>
+          </div>
+        </div>
+
+        <div className="at-nav__right">
           <div className="at-mode-toggle" role="group" aria-label={t('auth.appearanceLabel')}>
             <button
               type="button"
@@ -201,35 +143,11 @@ export default function LoginScreen() {
             </button>
           </div>
 
-          <div className="at-accent-picker" role="group" aria-label="Color de acento">
-            {ACCENT_OPTIONS.map((option) => {
-              const isActive = option.id === accentColor;
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  className="at-accent-chip"
-                  aria-pressed={isActive}
-                  onClick={() => setAccentColor(option.id)}
-                  style={{
-                    '--chip-color': option.preview,
-                  } as React.CSSProperties}
-                >
-                  <span
-                    className="at-accent-chip__dot"
-                    style={{ background: option.preview }}
-                    aria-hidden="true"
-                  />
-                  <span className="at-accent-chip__label">{option.label}</span>
-                </button>
-              );
-            })}
-          </div>
         </div>
-      </div>
+      </motion.nav>
 
       <main className="at-access">
-        <div className="at-access__card">
+        <motion.div className="at-access__card" {...animate(fadeUp(20, 0.8, 0.8))}>
           <div className="at-access__header">
             <h1 className="at-access__title">{t('auth.signInTitle')}</h1>
             <p className="at-access__subtitle">{t('auth.continueMessage')}</p>
@@ -290,13 +208,16 @@ export default function LoginScreen() {
               </span>
             </button>
           </form>
-
-        </div>
+        </motion.div>
       </main>
 
-      <section className="at-visual" aria-label={t('auth.visualLabel')}>
-        <AntaresScene reducedMotion={reducedMotion} />
-      </section>
+      <motion.footer className="at-login__footer" {...animate(fadeUp(20, 0.5, 1))}>
+        <div className="at-login__footer-left">
+          <motion.h2 className="at-login__footer-heading" {...animate(fadeUp(20, 0.8, 0.8))}>
+            One Day-&gt;
+          </motion.h2>
+        </div>
+      </motion.footer>
     </div>
   );
 }
