@@ -16,6 +16,22 @@
 
 **Electron** · **React + TypeScript + Vite** · **TailwindCSS** · **Python** · **SQLite**
 
+## Estructura de directorios
+
+- `formatos/` (raíz) — Plantillas built-in read-only (PDFs base64). Empaquetadas con la app
+  vía `extraResources` (electron-builder). No se modifican en runtime.
+- `data/formatos/` — Datos editables por el usuario (uploads, catalog.json, mapping). Se
+  conservan entre actualizaciones. Separación deliberada con la capa built-in.
+- `backend/templates/` — Plantillas HTML de WeasyPrint para reportes (certificados, paneles,
+  volantes). Empaquetadas con PyInstaller.
+- `assets/` — Recursos gráficos (logos, iconos, imágenes de ubicaciones).
+- `shared/` — Código compartido entre electron y frontend (html-sanitizer).
+- `electron/` — Proceso main de Electron (IPC, ventana, auto-updater).
+- `frontend/` — Aplicación React + Vite.
+- `backend/` — API Python (core, handlers, utils) + base de datos.
+- `tests/` — Tests de backend (pytest) y de electron/frontend (node + vitest).
+- `scripts/` — Scripts de release, build, bump de versión, instalación de hooks.
+
 ## Requisitos
 
 - Python 3.10+ · Node.js 18+ · Windows 10/11
