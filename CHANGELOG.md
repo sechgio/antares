@@ -5,6 +5,16 @@ Todas las versiones notables de ANTARES se documentan aquí.
 Formato basado en [Keep a Changelog](https://keepachangelog.com/),
 y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
+## [0.10.15] — 2026-06-30
+
+### Added
+- **Evidencia Volanteo**: Nueva sección y generador para layouts de evidencia de volanteo con grid de imágenes autoajustables, preview interactivo, y descarga de reportes.
+- **Panel Aviso de Corte (TemplateSelector)**: Agregado un selector de plantilla compacto en la barra de herramientas para alternar configuraciones de visualización y exportación.
+- **Tests**: Pruebas de integración de backend y frontend para layouts de Evidencia Volanteo y renderizado.
+
+### Changed
+- **Padrón / Panel Aviso de Corte (Barra de herramientas)**: Relocalización de los selectores de formato de salida y orientación al toolbar para mayor consistencia estética con la altura unificada de 45px.
+
 ## [0.10.14] — 2026-06-30
 
 ### Fixed
