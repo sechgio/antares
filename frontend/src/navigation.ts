@@ -10,6 +10,7 @@ export const TAB_DEFINITIONS = [
   { id: 'previewPanel', label: 'Generador Reportes', commandLabel: 'Generador de Reportes', shortcut: 'Ctrl+0', shortcutKey: '0', fullBleed: true },
   { id: 'panelAvisoCorte', label: 'Aviso de Corte', shortcut: 'Ctrl+2', shortcutKey: '2', fullBleed: true },
   { id: 'ubicaciones', label: 'Ubicaciones', commandLabel: 'Herramienta de Ubicaciones', shortcut: 'Ctrl+U', shortcutKey: 'u', fullBleed: true },
+  { id: 'evidenciaVolanteo', label: 'Evidencia Volanteo', shortcut: 'Ctrl+Shift+V', shortcutKey: 'v', shortcutShift: true, fullBleed: true },
 ] as const;
 
 export type TabId = (typeof TAB_DEFINITIONS)[number]['id'];

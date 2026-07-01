@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: {{ page_margin_cm }}cm;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      color: #000;
+      font-family: Aptos, Arial, Helvetica, sans-serif;
+    }
+
+    .page {
+      width: {{ table_width_cm }}cm;
+      height: {{ table_height_cm }}cm;
+      overflow: hidden;
+      page-break-inside: avoid;
+    }
+
+    .page:not(:last-child) {
+      break-after: page;
+    }
+
+    .header-table, .photos-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    .header-table td, .photos-table td {
+      border: {{ border_pt }}pt solid #000;
+      vertical-align: middle;
+      padding: 0;
+      margin: 0;
+    }
+
+    /* ── Header: 2-row block with logos spanning both rows ── */
+
+    .row-header-title {
+      height: {{ header_title_height_cm }}cm;
+    }
+
+    .row-header-info {
+      height: {{ header_info_height_cm }}cm;
+    }
+
+    .logo-cell {
+      text-align: center;
+      vertical-align: middle;
+      padding: 2pt 4pt;
+    }
+
+    .title-cell {
+      text-align: center;
+      vertical-align: middle;
+      padding: 2pt 4pt;
+    }
+
+    .info-cell {
+      text-align: center;
+      vertical-align: middle;
+      padding: 3pt 5pt;
+    }
+
+    .logo-img {
+      max-width: {{ logo_max_width_cm }}cm;
+      max-height: {{ logo_max_height_cm }}cm;
+      object-fit: contain;
+      display: block;
+      margin: 0 auto;
+    }
+
+    .title-text {
+      font-size: {{ title_font_pt }}pt;
+      font-weight: bold;
+      text-transform: uppercase;
+      line-height: 1.25;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+      letter-spacing: 0.3pt;
+    }
+
+    .underlined-title-line {
+      display: block;
+      text-decoration: underline;
+      text-underline-offset: 1px;
+    }
+
+    .info-label {
+      font-weight: bold;
+      font-size: {{ info_font_pt }}pt;
+      text-transform: uppercase;
+      margin: 0 0 2pt 0;
+      display: block;
+      letter-spacing: 0.2pt;
+    }
+
+    .info-value {
+      font-weight: bold;
+      font-size: {{ info_font_pt }}pt;
+      text-transform: uppercase;
+      margin: 0;
+      display: block;
+      letter-spacing: 0.2pt;
+    }
+
+    /* ── Spacer between header and photos ── */
+
+    .gap-under-header {
+      height: {{ gap_under_header_cm }}cm;
+      width: 100%;
+    }
+
+    /* ── Gap row ── */
+
+    .row-gap {
+      height: {{ gap_height_cm }}cm;
+    }
+
+    .row-gap td {
+      border: {{ border_pt }}pt solid #000;
+      line-height: 0;
+      font-size: 0;
+    }
+
+    /* ── Photo rows ── */
+
+    .row-photo {
+      height: {{ photo_height_cm }}cm;
+    }
+
+    .photo-cell {
+      padding: 0;
+      overflow: hidden;
+      vertical-align: top;
+      line-height: 0;
+    }
+
+    .photo-img {
+      width: 100%;
+      height: {{ photo_height_cm }}cm;
+      object-fit: fill;
+      object-position: center;
+      display: block;
+    }
+
+    .empty-photo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: {{ photo_height_cm }}cm;
+      color: #bbb;
+      font-size: 8pt;
+      font-style: italic;
+      line-height: normal;
+    }
+  </style>
+</head>
+<body>
+  {% for page in pages %}
+  <div class="page">
+    <table class="header-table">
+      <colgroup>
+        <col style="width: {{ header_logo_width_cm }}cm;">
+        <col style="width: {{ header_title_width_cm }}cm;">
+        <col style="width: {{ header_logo_width_cm }}cm;">
+      </colgroup>
+      {# ── Header row 1: Logo left (rowspan 2) | Title | Logo right (rowspan 2) ── #}
+      <tr class="row-header-title">
+        <td class="logo-cell" rowspan="2">
+          {% if logo_left %}
+            <img class="logo-img" src="{{ logo_left }}" alt="">
+          {% endif %}
+        </td>
+        <td class="title-cell">
+          <p class="title-text">
+            {% for line in title.split('\n') %}
+              {% if line.strip() %}
+                <span class="underlined-title-line">{{ line.strip() }}</span>
+              {% endif %}
+            {% endfor %}
+          </p>
+        </td>
+        <td class="logo-cell" rowspan="2">
+          {% if logo_right %}
+            <img class="logo-img" src="{{ logo_right }}" alt="">
+          {% endif %}
+        </td>
+      </tr>
+      {# ── Header row 2: Cuadrante info (center cell only — logos span from above) ── #}
+      <tr class="row-header-info">
+        <td class="info-cell">
+          <span class="info-label">{{ cuadrante_label }}</span>
+          <span class="info-value">{{ page.cuadrante }}</span>
+        </td>
+      </tr>
+    </table>
+
+    <div class="gap-under-header"></div>
+
+    <table class="photos-table">
+      <colgroup>
+        <col style="width: {{ photo_width_cm }}cm;">
+        <col style="width: {{ photo_width_cm }}cm;">
+        <col style="width: {{ photo_width_cm }}cm;">
+      </colgroup>
+      {# ── First row of 3 photos ── #}
+      <tr class="row-photo">
+        {% for col in range(3) %}
+        {% set slot = page.slots[col] %}
+        <td class="photo-cell">
+          {% if slot and slot.uri %}
+            <img class="photo-img" src="{{ slot.uri }}" alt="">
+          {% else %}
+            <div class="empty-photo">Sin imagen</div>
+          {% endif %}
+        </td>
+        {% endfor %}
+      </tr>
+      {# ── Gap row — visible space in the middle of the page ── #}
+      <tr class="row-gap">
+        <td colspan="3"></td>
+      </tr>
+      {# ── Second row of 3 photos ── #}
+      <tr class="row-photo">
+        {% for col in range(3) %}
+        {% set slot = page.slots[3 + col] %}
+        <td class="photo-cell">
+          {% if slot and slot.uri %}
+            <img class="photo-img" src="{{ slot.uri }}" alt="">
+          {% else %}
+            <div class="empty-photo">Sin imagen</div>
+          {% endif %}
+        </td>
+        {% endfor %}
+      </tr>
+    </table>
+  </div>
+  {% endfor %}
+</body>
+</html>

@@ -279,6 +279,23 @@ const RUN_TYPES = {
       stat('err', 'history.stats.err', (run) => run.err_count, 'text-[var(--accent-red)]'),
     ],
   },
+  evidencia_volanteo: {
+    id: 'evidencia_volanteo',
+    labelKey: 'history.runTypes.evidenciaVolanteo',
+    descriptionKey: 'history.runTypes.evidenciaVolanteoDesc',
+    colorClass: 'text-teal-400',
+    badgeClass: 'text-teal-400 border-teal-400/20 bg-teal-400/10',
+    showPatron: false,
+    showOptions: true,
+    filterGroup: 'default' as const,
+    reexecute: false,
+    fileListKey: 'history.fileList.default',
+    stats: [
+      stat('format', 'history.stats.format', (_run, _files, options) => String(opt(options, 'format') ?? '—')),
+      stat('pages', 'history.stats.pages', (_run, _files, options) => String(opt(options, 'pages') ?? '—')),
+      stat('ok', 'history.stats.images', (run) => run.ok_count, 'text-teal-400'),
+    ],
+  },
   informe_tecnico: {
     id: 'informe_tecnico',
     labelKey: 'history.runTypes.informeTecnico',
@@ -367,7 +384,8 @@ export function schemaOptionKeys(meta: RunTypeMeta): Set<string> {
     volante: ['excel_path', 'plantilla'],
     image_optimizer: ['preset', 'scope', 'max_kb'],
     reporte_campo: ['cs', 'contratista'],
-    panel_aviso_corte: ['key_column', 'strategy'],
+    panel_aviso_corte: ['key_column', 'strategy', 'template'],
+    evidencia_volanteo: ['format', 'pages', 'images'],
     informe_tecnico: ['cs', 'contratista', 'status'],
   };
   return new Set(backendKeys[meta.id] ?? []);

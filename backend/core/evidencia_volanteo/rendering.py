@@ -1,0 +1,571 @@
+"""Renderizado de Evidencia Volanteo a PDF (WeasyPrint) y DOCX (python-docx)."""
+
+from __future__ import annotations
+
+import base64
+import contextlib
+import logging
+from datetime import datetime
+from io import BytesIO
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+
+from .errors import RenderingError
+from .layout import (
+    BORDER_PT,
+    CUADRANTE_LABEL,
+    EMPTY_CUADRANTE_PLACEHOLDER,
+    GAP_HEIGHT_CM,
+    GAP_UNDER_HEADER_CM,
+    HEADER_INFO_HEIGHT_CM,
+    HEADER_LOGO_WIDTH_CM,
+    HEADER_TITLE_HEIGHT_CM,
+    HEADER_TITLE_WIDTH_CM,
+    INFO_FONT_PT,
+    LOGO_MAX_HEIGHT_CM,
+    LOGO_MAX_WIDTH_CM,
+    PHOTO_COLS,
+    PHOTO_HEIGHT_CM,
+    PHOTO_ROWS,
+    PHOTO_WIDTH_CM,
+    TABLE_WIDTH_CM,
+    TITLE_FONT_PT,
+    layout_context,
+)
+
+if TYPE_CHECKING:
+    from .models import EvidenciaDocument
+
+logger = logging.getLogger(__name__)
+
+DOC_FONT = "Aptos"
+MAX_SLOTS = PHOTO_COLS * PHOTO_ROWS
+BORDER_SZ = str(int(BORDER_PT * 8))
+
+
+def _display_cuadrante(value: str) -> str:
+    stripped = value.strip()
+    if not stripped:
+        return EMPTY_CUADRANTE_PLACEHOLDER
+    return stripped.upper()
+
+
+def _table_borders_xml() -> str:
+    return (
+        '<w:tblBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        f'<w:top w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
+        f'<w:left w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
+        f'<w:bottom w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
+        f'<w:right w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
+        f'<w:insideH w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
+        f'<w:insideV w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
+        '</w:tblBorders>'
+    )
+
+
+def _resolve_template_dir() -> Path:
+    bundled = Path(__file__).resolve().parent.parent.parent / "templates"
+    if bundled.exists():
+        return bundled
+    return Path(__file__).resolve().parent.parent / "templates"
+
+
+_TEMPLATE_DIR = _resolve_template_dir()
+_jinja_env = Environment(
+    loader=FileSystemLoader(str(_TEMPLATE_DIR)),
+    autoescape=select_autoescape(["html", "xml"]),
+)
+
+
+def _data_uri_from_b64(b64_string: str) -> str:
+    if b64_string.startswith("data:"):
+        header_end = b64_string.find(",")
+        if header_end != -1:
+            b64_string = b64_string[header_end + 1 :]
+    mime = "image/png"
+    try:
+        sample = b64_string[:24] + "=" * ((4 - len(b64_string[:24]) % 4) % 4)
+        header = base64.b64decode(sample, validate=True)
+        if header.startswith(b"\xff\xd8"):
+            mime = "image/jpeg"
+        elif header.startswith(b"\x89PNG"):
+            mime = "image/png"
+        elif header.startswith(b"RIFF") and header[8:12] == b"WEBP":
+            mime = "image/webp"
+    except Exception:
+        pass
+    return f"data:{mime};base64,{b64_string}"
+
+
+def _valid_image_bytes(content: bytes) -> bool:
+    try:
+        from PIL import Image
+
+        with Image.open(BytesIO(content)) as image:
+            image.verify()
+        return True
+    except Exception:
+        return False
+
+
+def _valid_b64_image(b64_string: str) -> bool:
+    try:
+        content = base64.b64decode(b64_string, validate=True)
+    except Exception:
+        return False
+    return _valid_image_bytes(content)
+
+
+def _contain_fit_cm(content: bytes, max_width_cm: float, max_height_cm: float) -> tuple[float, float]:
+    try:
+        from PIL import Image
+
+        with Image.open(BytesIO(content)) as image:
+            width_px, height_px = image.size
+    except Exception:
+        return max_width_cm, max_height_cm
+    if width_px <= 0 or height_px <= 0:
+        return max_width_cm, max_height_cm
+    scale = min(max_width_cm / width_px, max_height_cm / height_px)
+    return width_px * scale, height_px * scale
+
+
+def _serialize_pages(
+    document: EvidenciaDocument,
+    image_uris: dict[str, str],
+) -> list[dict[str, Any]]:
+    pages_data: list[dict[str, Any]] = []
+    for page in document.pages:
+        slots: list[dict[str, Any] | None] = [None] * MAX_SLOTS
+        for ref in page.images:
+            if 1 <= ref.position <= MAX_SLOTS:
+                slots[ref.position - 1] = {
+                    "filename": ref.filename,
+                    "uri": image_uris.get(ref.filename),
+                }
+        page_cuadrante = page.cuadrante or document.cuadrante
+        pages_data.append({
+            "slots": slots,
+            "cuadrante": _display_cuadrante(page_cuadrante),
+        })
+    return pages_data
+
+
+def _build_image_uris(
+    images: dict[str, str],
+    image_paths: dict[str, str] | None,
+) -> dict[str, str]:
+    image_uris: dict[str, str] = {}
+    for filename, raw_path in (image_paths or {}).items():
+        path = Path(raw_path)
+        if path.is_file():
+            with contextlib.suppress(Exception):
+                if _valid_image_bytes(path.read_bytes()):
+                    image_uris[filename] = path.resolve().as_uri()
+    for filename, b64 in images.items():
+        if filename in image_uris:
+            continue
+        if _valid_b64_image(b64):
+            image_uris[filename] = _data_uri_from_b64(b64)
+    return image_uris
+
+
+def _prepare_logos(logos: dict[str, str | None]) -> tuple[str | None, str | None]:
+    left_raw = logos.get("left")
+    right_raw = logos.get("right")
+    left = _data_uri_from_b64(left_raw) if left_raw and _valid_b64_image(left_raw) else None
+    right = _data_uri_from_b64(right_raw) if right_raw and _valid_b64_image(right_raw) else None
+    return left, right
+
+
+def _default_filename(fmt: str) -> str:
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    ext = "docx" if fmt == "docx" else "pdf"
+    return f"evidencia_volanteo_{ts}.{ext}"
+
+
+def render_pdf_html(html_string: str) -> tuple[bytes, str]:
+    if not html_string.strip():
+        msg = "No hay HTML para exportar"
+        raise RenderingError(msg)
+    try:
+        from weasyprint import HTML
+
+        pdf_buffer = BytesIO()
+        HTML(string=html_string).write_pdf(pdf_buffer)
+        return pdf_buffer.getvalue(), _default_filename("pdf")
+    except RenderingError:
+        raise
+    except Exception as exc:
+        logger.exception("Error al generar PDF desde HTML de evidencia volanteo")
+        msg = f"Error al generar PDF: {exc}"
+        raise RenderingError(msg) from exc
+
+
+def render_pdf(
+    document: EvidenciaDocument,
+    logos: dict[str, str | None],
+    images: dict[str, str],
+    image_paths: dict[str, str] | None = None,
+) -> tuple[bytes, str]:
+    if not document.pages:
+        msg = "No hay páginas para exportar"
+        raise RenderingError(msg)
+
+    try:
+        template = _jinja_env.get_template("evidencia-volanteo.html")
+    except Exception as exc:
+        msg = f"Error al cargar plantilla: {exc}"
+        raise RenderingError(msg) from exc
+
+    logo_left, logo_right = _prepare_logos(logos)
+    image_uris = _build_image_uris(images, image_paths)
+    pages_data = _serialize_pages(document, image_uris)
+    filename = _default_filename("pdf")
+
+    context = {
+        "title": document.title,
+        "cuadrante": document.cuadrante,
+        "pages": pages_data,
+        "logo_left": logo_left,
+        "logo_right": logo_right,
+        **layout_context(),
+    }
+
+    try:
+        html_string = template.render(context)
+        from weasyprint import HTML
+
+        pdf_buffer = BytesIO()
+        HTML(string=html_string, base_url=str(_TEMPLATE_DIR)).write_pdf(pdf_buffer)
+        return pdf_buffer.getvalue(), filename
+    except RenderingError:
+        raise
+    except Exception as exc:
+        logger.exception("Error al generar PDF de evidencia volanteo")
+        msg = f"Error al generar PDF: {exc}"
+        raise RenderingError(msg) from exc
+
+
+def render_docx(
+    document: EvidenciaDocument,
+    logos: dict[str, str | None],
+    images: dict[str, str],
+    image_paths: dict[str, str] | None = None,
+) -> tuple[bytes, str]:
+    if not document.pages:
+        msg = "No hay páginas para exportar"
+        raise RenderingError(msg)
+
+    from docx import Document
+    from docx.enum.table import WD_TABLE_ALIGNMENT
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import qn
+    from docx.shared import Cm, Pt, RGBColor
+
+    def cm_to_twips(cm: float) -> int:
+        return round(cm * 567)
+
+    def set_cell_width(cell: Any, width_cm: float) -> None:
+        tc = cell._tc
+        tcPr = tc.get_or_add_tcPr()
+        for old in tcPr.findall(qn("w:tcW")):
+            tcPr.remove(old)
+        tcPr.append(parse_xml(
+            f'<w:tcW xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+            f'w:w="{cm_to_twips(width_cm)}" w:type="dxa"/>',
+        ))
+
+    def set_row_height(row: Any, height_cm: float) -> None:
+        tr = row._tr
+        trPr = tr.get_or_add_trPr()
+        for old in trPr.findall(qn("w:trHeight")):
+            trPr.remove(old)
+        trPr.append(parse_xml(
+            f'<w:trHeight xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+            f'w:val="{cm_to_twips(height_cm)}" w:hRule="exact"/>',
+        ))
+
+    def set_vertical_align(cell: Any, align: str) -> None:
+        tc = cell._tc
+        tcPr = tc.get_or_add_tcPr()
+        for old in tcPr.findall(qn("w:vAlign")):
+            tcPr.remove(old)
+        tcPr.append(parse_xml(
+            f'<w:vAlign xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+            f'w:val="{align}"/>',
+        ))
+
+    def format_run(run: Any, size_pt: float, *, bold: bool = False) -> None:
+        run.bold = bold
+        run.font.size = Pt(size_pt)
+        run.font.name = DOC_FONT
+        run._element.rPr.rFonts.set(qn("w:eastAsia"), DOC_FONT)
+
+    def reset_cell_paragraph(paragraph: Any, *, line_spacing: float = 1.0) -> None:
+        """Neutraliza los defaults heredados (10pt after, 1.15x) que desplazan/recortan
+        el contenido en celdas de altura exacta, replicando margin/padding 0 y
+        line-height 0 del preview y del HTML."""
+        pf = paragraph.paragraph_format
+        pf.space_before = Pt(0)
+        pf.space_after = Pt(0)
+        pf.line_spacing = line_spacing
+
+    def pt_to_twips(pt: float) -> int:
+        return round(pt * 20)
+
+    def set_cell_margins(
+        cell: Any,
+        *,
+        top_pt: float = 0,
+        left_pt: float = 0,
+        bottom_pt: float = 0,
+        right_pt: float = 0,
+    ) -> None:
+        tc = cell._tc
+        tcPr = tc.get_or_add_tcPr()
+        for old in tcPr.findall(qn("w:tcMar")):
+            tcPr.remove(old)
+        tcPr.append(parse_xml(
+            '<w:tcMar xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            f'<w:top w:w="{pt_to_twips(top_pt)}" w:type="dxa"/>'
+            f'<w:left w:w="{pt_to_twips(left_pt)}" w:type="dxa"/>'
+            f'<w:bottom w:w="{pt_to_twips(bottom_pt)}" w:type="dxa"/>'
+            f'<w:right w:w="{pt_to_twips(right_pt)}" w:type="dxa"/>'
+            '</w:tcMar>',
+        ))
+
+    def set_table_no_cell_margins(table: Any) -> None:
+        """Anula los margenes de celda por defecto (108 twips L/R) para que las
+        fotos llenen la celda exactamente, igual que padding 0 del preview/PDF."""
+        tblPr = table._tbl.tblPr
+        for old in tblPr.findall(qn("w:tblCellMar")):
+            tblPr.remove(old)
+        tblPr.append(parse_xml(
+            '<w:tblCellMar xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            '<w:top w:w="0" w:type="dxa"/>'
+            '<w:left w:w="0" w:type="dxa"/>'
+            '<w:bottom w:w="0" w:type="dxa"/>'
+            '<w:right w:w="0" w:type="dxa"/>'
+            '</w:tblCellMar>',
+        ))
+
+    def fill_image_size_cm(content: bytes, max_w: float, max_h: float) -> tuple[float, float, tuple[int, int, int, int]]:
+        return max_w, max_h, (0, 0, 0, 0)
+
+    doc = Document()
+    section = doc.sections[0]
+    section.page_height = Cm(29.7)
+    section.page_width = Cm(21.0)
+    section.top_margin = Cm(0.8)
+    section.bottom_margin = Cm(0.8)
+    section.left_margin = Cm(0.8)
+    section.right_margin = Cm(0.8)
+
+    image_bytes: dict[str, bytes] = {}
+    for filename, b64 in images.items():
+        with contextlib.suppress(Exception):
+            image_bytes[filename] = base64.b64decode(b64, validate=True)
+    for filename, raw_path in (image_paths or {}).items():
+        path = Path(raw_path)
+        if path.is_file() and filename not in image_bytes:
+            with contextlib.suppress(Exception):
+                image_bytes[filename] = path.read_bytes()
+
+    logo_left_bytes: bytes | None = None
+    logo_right_bytes: bytes | None = None
+    if logos.get("left"):
+        with contextlib.suppress(Exception):
+            logo_left_bytes = base64.b64decode(logos["left"], validate=True)
+    if logos.get("right"):
+        with contextlib.suppress(Exception):
+            logo_right_bytes = base64.b64decode(logos["right"], validate=True)
+
+    logo_left_dims = (
+        _contain_fit_cm(logo_left_bytes, LOGO_MAX_WIDTH_CM, LOGO_MAX_HEIGHT_CM)
+        if logo_left_bytes else (0.0, 0.0)
+    )
+    logo_right_dims = (
+        _contain_fit_cm(logo_right_bytes, LOGO_MAX_WIDTH_CM, LOGO_MAX_HEIGHT_CM)
+        if logo_right_bytes else (0.0, 0.0)
+    )
+
+    for page_idx, page in enumerate(document.pages):
+        # 1. Header Table: 2 rows x 3 cols
+        header_table = doc.add_table(rows=2, cols=3)
+        header_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        header_table.autofit = False
+        header_table.allow_autofit = False
+
+        if page_idx > 0:
+            first_cell = header_table.cell(0, 0)
+            pPr = first_cell.paragraphs[0]._p.get_or_add_pPr()
+            pPr.append(parse_xml(
+                '<w:pageBreakBefore xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
+            ))
+
+        # Set borders for header_table
+        tblPr = header_table._tbl.tblPr
+        for tag in ("w:tblBorders",):
+            existing = tblPr.find(qn(tag))
+            if existing is not None:
+                tblPr.remove(existing)
+        tblPr.append(parse_xml(_table_borders_xml()))
+        tblPr.append(parse_xml(
+            '<w:tblW xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+            f'w:w="{cm_to_twips(TABLE_WIDTH_CM)}" w:type="dxa"/>',
+        ))
+
+        # Set header column widths
+        header_widths = [HEADER_LOGO_WIDTH_CM, HEADER_TITLE_WIDTH_CM, HEADER_LOGO_WIDTH_CM]
+        grid = header_table._tbl.tblGrid
+        for col, width_cm in zip(grid.gridCol_lst, header_widths, strict=True):
+            col.set(qn("w:w"), str(cm_to_twips(width_cm)))
+
+        # Header heights
+        set_row_height(header_table.rows[0], HEADER_TITLE_HEIGHT_CM)
+        set_row_height(header_table.rows[1], HEADER_INFO_HEIGHT_CM)
+
+        # Merge logo cells vertically
+        header_table.cell(0, 0).merge(header_table.cell(1, 0))
+        header_table.cell(0, 2).merge(header_table.cell(1, 2))
+
+        # Populate Logo Left
+        merged_left = header_table.cell(0, 0)
+        set_cell_width(merged_left, HEADER_LOGO_WIDTH_CM)
+        set_cell_margins(merged_left, top_pt=2, left_pt=4, bottom_pt=2, right_pt=4)
+        set_vertical_align(merged_left, "center")
+        merged_left.paragraphs[0].clear()
+        reset_cell_paragraph(merged_left.paragraphs[0])
+        merged_left.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if logo_left_bytes:
+            run = merged_left.paragraphs[0].add_run()
+            run.add_picture(BytesIO(logo_left_bytes), width=Cm(logo_left_dims[0]), height=Cm(logo_left_dims[1]))
+
+        # Populate Title (with underline!)
+        title_cell = header_table.cell(0, 1)
+        set_cell_width(title_cell, HEADER_TITLE_WIDTH_CM)
+        set_cell_margins(title_cell, top_pt=2, left_pt=4, bottom_pt=2, right_pt=4)
+        set_vertical_align(title_cell, "center")
+        title_cell.paragraphs[0].clear()
+        reset_cell_paragraph(title_cell.paragraphs[0], line_spacing=1.25)
+        title_cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        title_lines = [line.strip() for line in document.title.upper().split('\n') if line.strip()]
+        for idx, line in enumerate(title_lines):
+            if idx > 0:
+                title_cell.paragraphs[0].add_run('\n')
+            run = title_cell.paragraphs[0].add_run(line)
+            format_run(run, TITLE_FONT_PT, bold=True)
+            run.underline = True
+
+        # Populate Logo Right
+        merged_right = header_table.cell(0, 2)
+        set_cell_width(merged_right, HEADER_LOGO_WIDTH_CM)
+        set_cell_margins(merged_right, top_pt=2, left_pt=4, bottom_pt=2, right_pt=4)
+        set_vertical_align(merged_right, "center")
+        merged_right.paragraphs[0].clear()
+        reset_cell_paragraph(merged_right.paragraphs[0])
+        merged_right.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if logo_right_bytes:
+            run = merged_right.paragraphs[0].add_run()
+            run.add_picture(BytesIO(logo_right_bytes), width=Cm(logo_right_dims[0]), height=Cm(logo_right_dims[1]))
+
+        # Populate Cuadrante (Label on line 1, value on line 2, centered)
+        info_cell = header_table.cell(1, 1)
+        set_cell_width(info_cell, HEADER_TITLE_WIDTH_CM)
+        set_cell_margins(info_cell, top_pt=3, left_pt=5, bottom_pt=3, right_pt=5)
+        set_vertical_align(info_cell, "center")
+        info_cell.paragraphs[0].clear()
+        reset_cell_paragraph(info_cell.paragraphs[0])
+        info_cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        label_run = info_cell.paragraphs[0].add_run(CUADRANTE_LABEL)
+        format_run(label_run, INFO_FONT_PT, bold=True)
+        info_cell.paragraphs[0].add_run('\n')
+        page_cuadrante = _display_cuadrante(page.cuadrante or document.cuadrante)
+        value_run = info_cell.paragraphs[0].add_run(page_cuadrante)
+        format_run(value_run, INFO_FONT_PT, bold=True)
+
+        # 2. Spacing between header and photos: párrafo con interlineado exacto = 0.4cm,
+        #    idéntico al div de altura 0.4cm del preview y del HTML.
+        spacer_p = doc.add_paragraph()
+        spacer_p.paragraph_format.space_before = Pt(0)
+        spacer_p.paragraph_format.space_after = Pt(0)
+        spacer_p.paragraph_format.line_spacing = Cm(GAP_UNDER_HEADER_CM)
+
+        # 3. Photos Table: 3 rows (photo row 1 + gap row + photo row 2) x 3 cols
+        photos_table = doc.add_table(rows=3, cols=PHOTO_COLS)
+        photos_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        photos_table.autofit = False
+        photos_table.allow_autofit = False
+        set_table_no_cell_margins(photos_table)
+
+        # Set borders for photos_table
+        tblPr = photos_table._tbl.tblPr
+        for tag in ("w:tblBorders",):
+            existing = tblPr.find(qn(tag))
+            if existing is not None:
+                tblPr.remove(existing)
+        tblPr.append(parse_xml(_table_borders_xml()))
+        tblPr.append(parse_xml(
+            '<w:tblW xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+            f'w:w="{cm_to_twips(TABLE_WIDTH_CM)}" w:type="dxa"/>',
+        ))
+
+        # Set photo column widths
+        photo_col_widths = [PHOTO_WIDTH_CM, PHOTO_WIDTH_CM, PHOTO_WIDTH_CM]
+        grid = photos_table._tbl.tblGrid
+        for col, width_cm in zip(grid.gridCol_lst, photo_col_widths, strict=True):
+            col.set(qn("w:w"), str(cm_to_twips(width_cm)))
+
+        # Set row heights
+        set_row_height(photos_table.rows[0], PHOTO_HEIGHT_CM)
+        set_row_height(photos_table.rows[1], GAP_HEIGHT_CM)
+        set_row_height(photos_table.rows[2], PHOTO_HEIGHT_CM)
+
+        # Merge gap cells
+        photos_table.cell(1, 0).merge(photos_table.cell(1, 2))
+        gap_cell = photos_table.cell(1, 0)
+        gap_cell.paragraphs[0].clear()
+        reset_cell_paragraph(gap_cell.paragraphs[0])
+        tc = gap_cell._tc
+        tcPr = tc.get_or_add_tcPr()
+        tcPr.append(parse_xml(
+            '<w:tcBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            f'<w:top w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
+            f'<w:bottom w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
+            f'<w:left w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
+            f'<w:right w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
+            '</w:tcBorders>',
+        ))
+
+        # Populate Photo Cells — contain + center, igual que SheetPreview y el HTML del PDF
+        slot_map = {ref.position: ref.filename for ref in page.images if 1 <= ref.position <= MAX_SLOTS}
+        for row_idx in range(PHOTO_ROWS):
+            table_row_idx = 0 if row_idx == 0 else 2
+            photo_row = photos_table.rows[table_row_idx]
+            for col_idx in range(PHOTO_COLS):
+                position = row_idx * PHOTO_COLS + col_idx + 1
+                cell = photo_row.cells[col_idx]
+                set_cell_width(cell, PHOTO_WIDTH_CM)
+                set_vertical_align(cell, "center")
+                cell.paragraphs[0].clear()
+                reset_cell_paragraph(cell.paragraphs[0])
+                cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                filename = slot_map.get(position)
+                content = image_bytes.get(filename or "")
+                if filename and content and _valid_image_bytes(content):
+                    w, h, _crop = fill_image_size_cm(content, PHOTO_WIDTH_CM, PHOTO_HEIGHT_CM)
+                    run = cell.paragraphs[0].add_run()
+                    run.add_picture(BytesIO(content), width=Cm(w), height=Cm(h))
+                else:
+                    run = cell.paragraphs[0].add_run("Sin imagen")
+                    format_run(run, 8)
+                    run.italic = True
+                    run.font.color.rgb = RGBColor(0xBB, 0xBB, 0xBB)
+
+    buffer = BytesIO()
+    doc.save(buffer)
+    return buffer.getvalue(), _default_filename("docx")

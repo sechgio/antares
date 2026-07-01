@@ -50,11 +50,11 @@ export default function ExcelImporter({ source, onSource }: Props) {
   return (
     <div className="flex flex-col gap-2">
       {source ? (
-        <div className="flex items-center gap-2.5 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2.5">
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-2.5 py-2">
           <CheckCircle2 size={15} className="text-emerald-500 shrink-0" />
           <div className="flex flex-col flex-1 min-w-0">
-            <span className="text-xs font-medium text-[var(--text-primary)] truncate">{source.filename}</span>
-            <span className="text-[11px] text-[var(--text-muted)]">{source.rows.length} filas · {source.columns.length} columnas</span>
+            <span className="text-[11px] font-medium text-[var(--text-primary)] truncate">{source.filename}</span>
+            <span className="text-[10px] text-[var(--text-muted)]">{source.rows.length} filas · {source.columns.length} columnas</span>
           </div>
           <button onClick={() => onSource(null)} className="p-1 rounded hover:bg-[var(--bg-elevated)] transition-colors">
             <X size={14} className="text-[var(--text-muted)]" />
@@ -64,14 +64,14 @@ export default function ExcelImporter({ source, onSource }: Props) {
         <button
           onClick={() => inputRef.current?.click()}
           disabled={loading}
-          className="flex items-center gap-2.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2.5 hover:border-[var(--accent-primary)]/50 transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2.5 py-2 hover:border-[var(--accent-primary)]/50 transition-colors disabled:opacity-50"
         >
           {loading ? (
             <Loader2 size={15} className="text-[var(--accent-primary)] animate-spin" />
           ) : (
             <FileSpreadsheet size={15} className="text-[var(--text-muted)]" />
           )}
-          <span className="text-xs font-medium text-[var(--text-primary)]">
+          <span className="text-[11px] font-medium text-[var(--text-primary)]">
             {loading ? 'Leyendo...' : 'Importar Excel (.xlsx)'}
           </span>
         </button>
@@ -103,7 +103,7 @@ export default function ExcelImporter({ source, onSource }: Props) {
               setError(err?.message || 'Error al descargar la plantilla');
             }
           }}
-          className="flex items-center justify-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs font-medium text-emerald-600 hover:bg-emerald-500/10 transition-colors"
+          className="flex items-center justify-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-2.5 py-1.5 text-[11px] font-medium text-emerald-600 hover:bg-emerald-500/10 transition-colors"
         >
           <Download size={14} className="shrink-0" />
           <span>Descargar plantilla de ejemplo</span>

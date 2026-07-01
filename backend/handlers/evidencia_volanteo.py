@@ -1,0 +1,79 @@
+"""Handlers IPC para Evidencia Volanteo."""
+
+from __future__ import annotations
+
+import base64
+from pathlib import Path
+from typing import Any
+
+from backend.core.evidencia_volanteo import deserialize_document, render_docx, render_pdf, render_pdf_html
+from backend.handlers.common import with_locale
+
+
+@with_locale
+def evidencia_volanteo_render(params: dict[str, Any]) -> dict[str, Any]:
+    fmt = str(params.get("format", "pdf")).lower()
+    output_path = str(params.get("output_path") or "").strip() or None
+
+    document = deserialize_document(params)
+    logos_raw = params.get("logos") or {}
+    logos = {
+        "left": logos_raw.get("left_b64") or None,
+        "right": logos_raw.get("right_b64") or None,
+    }
+    images = {str(k): str(v) for k, v in (params.get("images") or {}).items() if v is not None}
+    image_paths = {str(k): str(v) for k, v in (params.get("image_paths") or {}).items() if v is not None}
+
+    if fmt == "docx":
+        docx_bytes, filename = render_docx(document, logos, images, image_paths)
+        if output_path:
+            out = Path(output_path)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(docx_bytes)
+            return {
+                "pdf_base64": "",
+                "content_base64": "",
+                "saved_path": output_path,
+                "filename": out.name,
+                "format": "docx",
+                "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            }
+        encoded = base64.b64encode(docx_bytes).decode("ascii")
+        return {
+            "pdf_base64": encoded,
+            "content_base64": encoded,
+            "filename": filename,
+            "format": "docx",
+            "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        }
+
+    preview_html = str(params.get("html") or "").strip()
+    if preview_html:
+        pdf_bytes, filename = render_pdf_html(preview_html)
+    else:
+        pdf_bytes, filename = render_pdf(document, logos, images, image_paths)
+    if output_path:
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(pdf_bytes)
+        return {
+            "pdf_base64": "",
+            "content_base64": "",
+            "saved_path": output_path,
+            "filename": out.name,
+            "format": "pdf",
+            "mime_type": "application/pdf",
+        }
+    encoded = base64.b64encode(pdf_bytes).decode("ascii")
+    return {
+        "pdf_base64": encoded,
+        "content_base64": encoded,
+        "filename": filename,
+        "format": "pdf",
+        "mime_type": "application/pdf",
+    }
+
+
+HANDLERS = {
+    "evidencia_volanteo_render": evidencia_volanteo_render,
+}

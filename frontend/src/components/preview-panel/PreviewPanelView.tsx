@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  CheckCircle, AlertCircle, RotateCcw, ChevronLeft, ChevronRight,
+  CheckCircle, AlertCircle, RotateCcw, ChevronLeft, ChevronRight, ChevronDown,
   FileSpreadsheet, Image as ImageIcon, FileCode, Settings,
   Printer, Search, Table2, X, Download, Loader2,
 } from 'lucide-react';
@@ -40,6 +40,9 @@ interface StepProps {
   icon: React.ReactNode;
   children: React.ReactNode;
   disabled?: boolean;
+  badge?: React.ReactNode;
+  defaultOpen?: boolean;
+  status?: 'pending' | 'done';
 }
 
 const LOGO_LEFT_KEY = 'antares_preview_logo_left';
@@ -107,17 +110,40 @@ async function compressLogoForStorage(file: File): Promise<string> {
   }
 }
 
-function Step({ number, title, icon, children, disabled }: StepProps) {
+function Step({ number, title, icon, children, disabled, badge, defaultOpen = true, status = 'pending' }: StepProps) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const done = status === 'done';
+
   return (
-    <div className={`space-y-3 ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
-      <div className="flex items-center gap-2">
-        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[10px] font-bold text-[var(--text-on-accent)]">
-          {number}
+    <div className={`rounded-lg border transition-colors ${isOpen ? 'border-[var(--border-medium)] bg-[var(--bg-elevated)]' : 'border-[var(--border-subtle)] bg-transparent hover:border-[var(--border-medium)]'} ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(v => !v)}
+        aria-expanded={isOpen}
+        className="flex w-full items-center gap-2 px-2 py-2 group cursor-pointer select-none rounded-lg"
+      >
+        <span className={`inline-flex h-[20px] w-[20px] items-center justify-center rounded-full text-[10px] font-bold shrink-0 transition-colors ${done ? 'bg-[var(--accent-green)] text-white' : isOpen ? 'bg-[var(--accent-primary)] text-[var(--text-on-accent)]' : 'bg-[var(--accent-primary)]/15 text-[var(--accent-primary)] ring-1 ring-inset ring-[var(--accent-primary)]/30'}`}>
+          {done ? <CheckCircle size={12} /> : number}
         </span>
-        <span className="text-[12px] font-semibold text-[var(--text-primary)]">{title}</span>
-        <span className="text-[var(--text-secondary)]">{icon}</span>
+        <span className="text-[11px] font-semibold text-[var(--text-primary)] truncate">{title}</span>
+        <span className="text-[var(--text-muted)] shrink-0">{icon}</span>
+        {badge && <span className="ml-auto mr-1">{badge}</span>}
+        <ChevronDown
+          size={12}
+          className={`ml-auto text-[var(--text-muted)] transition-transform duration-200 shrink-0 ${isOpen ? 'rotate-0' : '-rotate-90'}`}
+        />
+      </button>
+      <div
+        ref={contentRef}
+        className="overflow-hidden transition-all duration-200 ease-in-out"
+        style={{
+          maxHeight: isOpen ? `${contentRef.current?.scrollHeight ?? 800}px` : '0px',
+          opacity: isOpen ? 1 : 0,
+        }}
+      >
+        <div className="px-2 pb-2 pt-0.5">{children}</div>
       </div>
-      <div className="pl-7">{children}</div>
     </div>
   );
 }
@@ -139,7 +165,7 @@ function SegmentedControl<T extends string>({
   'aria-label'?: string;
 }) {
   return (
-    <div role="group" aria-label={ariaLabel} className="flex gap-1 rounded-lg bg-[var(--bg-input)] p-1">
+    <div role="group" aria-label={ariaLabel} className="flex gap-0.5 rounded-md bg-[var(--bg-input)] p-0.5">
       {options.map((option) => {
         const active = value === option.value;
         return (
@@ -148,7 +174,7 @@ function SegmentedControl<T extends string>({
             type="button"
             onClick={() => onChange(option.value)}
             aria-pressed={active}
-            className={`flex-1 rounded-md px-2.5 py-2 text-[11px] font-medium transition-all duration-150 ${
+            className={`flex-1 rounded px-2 py-1.5 text-[10px] font-medium transition-all duration-150 ${
               active
                 ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-sm ring-1 ring-[var(--border-medium)]'
                 : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -444,7 +470,17 @@ export default function PreviewPanelView() {
     return unique.sort(naturalSortByName);
   }, [selectedIndex, data, idColumn, images]);
 
-  // ─── Navigation ───
+  // ─── Per-step completion (drives sidebar progress + status badges) ───
+  const stepStates = useMemo(() => [
+    !!(logoLeft || logoRight),
+    templateStatus === 'valid',
+    data.length > 0,
+    !!idColumn,
+    !requiresImages || images.length > 0,
+    data.length > 0 && (exportScope === 'all' || selectedIndex !== ''),
+  ], [logoLeft, logoRight, templateStatus, data.length, idColumn, requiresImages, images.length, exportScope, selectedIndex]);
+  const completedCount = stepStates.filter(Boolean).length;
+
   const canPrevRow = selectedIndex !== '' && parseInt(selectedIndex) > 0;
   const canNextRow = selectedIndex !== '' && parseInt(selectedIndex) < data.length - 1;
   const goToPrevRow = () => { if (canPrevRow) setSelectedIndex(String(parseInt(selectedIndex) - 1)); };
@@ -561,176 +597,201 @@ export default function PreviewPanelView() {
   return (
     <div className="flex h-full w-full bg-[var(--bg-base)] text-[var(--text-primary)] overflow-hidden">
       {/* Sidebar */}
-      <aside className={`flex flex-col bg-[var(--bg-surface)] border-r border-[var(--border-subtle)] transition-all duration-300 ${isFocusMode ? 'w-0 overflow-hidden opacity-0 border-none' : 'w-[380px]'}`}>
-        <div className="flex-1 overflow-y-auto p-4 space-y-5">
+      <aside className={`flex flex-col bg-[var(--bg-surface)] border-r border-[var(--border-subtle)] transition-all duration-300 ${isFocusMode ? 'w-0 overflow-hidden opacity-0 border-none' : 'w-[340px]'}`}>
+        {/* Sidebar header — identity + workflow progress */}
+        <div className="shrink-0 h-11 px-3 flex items-center border-b border-[var(--border-subtle)]">
+          <div className="flex items-center gap-2 w-full">
+            <div className="flex-1 flex gap-1" aria-hidden>
+              {stepStates.map((done, i) => (
+                <span key={i} className={`h-1 flex-1 rounded-full transition-colors duration-300 ${done ? 'bg-[var(--accent-green)]' : 'bg-[var(--border-medium)]'}`} />
+              ))}
+            </div>
+            <span className="text-[9px] font-semibold text-[var(--text-muted)] tabular-nums shrink-0 leading-none">{completedCount}/6</span>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5">
 
           {/* Step 0: Logos */}
-          <Step number="0" title="Logos y Cabecera" icon={<Settings size={14} />}>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="text-center">
-                <label className="block text-[10px] text-[var(--text-secondary)] mb-1">Logo Izq</label>
-                <div
-                  className="border border-dashed border-[var(--border-medium)] h-14 rounded-lg flex items-center justify-center cursor-pointer hover:bg-[var(--bg-elevated)] relative overflow-hidden"
-                  onClick={() => document.getElementById('logoLeftInput')?.click()}
-                >
-                  {logoLeft ? <img src={logoLeft} className="h-full object-contain" alt="Logo" /> : <span className="text-[10px] text-[var(--text-secondary)]">Subir Logo</span>}
-                </div>
-                <input id="logoLeftInput" type="file" hidden accept="image/*" onChange={e => handleLogoUpload(e, 'left')} />
-              </div>
-              <div className="text-center">
-                <label className="block text-[10px] text-[var(--text-secondary)] mb-1">Logo Der</label>
-                <div
-                  className="border border-dashed border-[var(--border-medium)] h-14 rounded-lg flex items-center justify-center cursor-pointer hover:bg-[var(--bg-elevated)] relative overflow-hidden"
-                  onClick={() => document.getElementById('logoRightInput')?.click()}
-                >
-                  {logoRight ? <img src={logoRight} className="h-full object-contain" alt="Logo" /> : <span className="text-[10px] text-[var(--text-secondary)]">Subir Logo</span>}
-                </div>
-                <input id="logoRightInput" type="file" hidden accept="image/*" onChange={e => handleLogoUpload(e, 'right')} />
-              </div>
+          <Step number="0" title="Logos y Cabecera" icon={<Settings size={12} />} defaultOpen={!!(logoLeft || logoRight)} status={stepStates[0] ? 'done' : 'pending'}>
+            <div className="grid grid-cols-2 gap-1.5">
+              {(['left', 'right'] as const).map(side => {
+                const logo = side === 'left' ? logoLeft : logoRight;
+                const inputId = side === 'left' ? 'logoLeftInput' : 'logoRightInput';
+                return (
+                  <div
+                    key={side}
+                    className="border border-dashed border-[var(--border-medium)] h-11 rounded-md flex items-center justify-center cursor-pointer hover:bg-[var(--bg-elevated)] relative overflow-hidden transition-colors"
+                    onClick={() => document.getElementById(inputId)?.click()}
+                  >
+                    {logo
+                      ? <img src={logo} className="h-full object-contain" alt={`Logo ${side}`} />
+                      : <span className="text-[9px] text-[var(--text-muted)]">{side === 'left' ? 'Logo Izq' : 'Logo Der'}</span>
+                    }
+                  </div>
+                );
+              })}
+              <input id="logoLeftInput" type="file" hidden accept="image/*" onChange={e => handleLogoUpload(e, 'left')} />
+              <input id="logoRightInput" type="file" hidden accept="image/*" onChange={e => handleLogoUpload(e, 'right')} />
             </div>
           </Step>
 
           {/* Step 1: Template */}
-          <Step number="1" title="Cargar Plantilla" icon={<FileCode size={14} />}>
-            <div className="space-y-2">
+          <Step
+            number="1"
+            title="Plantilla"
+            icon={<FileCode size={12} />}
+            badge={templateStatus === 'valid' ? <CheckCircle size={11} className="text-green-500" /> : templateStatus === 'invalid' ? <AlertCircle size={11} className="text-red-500" /> : null}
+            status={stepStates[1] ? 'done' : 'pending'}
+          >
+            <div className="space-y-1.5">
               <label className="block w-full cursor-pointer">
-                <div className={`border border-dashed rounded-lg p-2.5 text-center transition-colors ${templateStatus === 'valid' ? 'border-green-500 bg-green-500/10' : templateStatus === 'invalid' ? 'border-red-500 bg-red-500/10' : 'border-[var(--border-medium)] hover:bg-[var(--bg-elevated)]'}`}>
-                  <div className="flex items-center justify-center gap-2">
-                    {templateStatus === 'valid' && <CheckCircle size={14} className="text-green-500" />}
-                    {templateStatus === 'invalid' && <AlertCircle size={14} className="text-red-500" />}
-                    <span className={`text-[11px] ${templateStatus === 'valid' ? 'text-green-400' : templateStatus === 'invalid' ? 'text-red-400' : 'text-[var(--text-secondary)]'}`}>
-                      {customTemplate ? customTemplate.name : 'Subir Plantilla HTML'}
-                    </span>
-                  </div>
+                <div className={`border border-dashed rounded-md py-1.5 px-2 text-center transition-colors text-[10px] ${templateStatus === 'valid' ? 'border-green-500/50 bg-green-500/5 text-green-400' : templateStatus === 'invalid' ? 'border-red-500/50 bg-red-500/5 text-red-400' : 'border-[var(--border-medium)] hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)]'}`}>
+                  {customTemplate ? customTemplate.name : 'Subir Plantilla HTML'}
                 </div>
                 <input id="templateInput" type="file" hidden accept=".html" onChange={handleTemplateUpload} />
               </label>
 
-              <div>
-                <label className="block text-[10px] text-[var(--text-secondary)] mb-1">O seleccionar existente:</label>
-                <select
-                  className="w-full h-8 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-2 text-[11px] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]"
-                  onChange={e => handleBackendTemplateSelect(e.target.value)}
-                  value={availableTemplates.some(t => t.filename === customTemplate?.name) ? customTemplate?.name : ''}
-                >
-                  <option value="">{availableTemplates.length === 0 ? 'Sin plantillas' : '-- Elegir Plantilla --'}</option>
-                  {availableTemplates.map(t => <option key={t.id} value={t.filename}>{t.name}</option>)}
-                </select>
-              </div>
+              <select
+                className="w-full h-7 rounded-md border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-2 text-[10px] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]"
+                onChange={e => handleBackendTemplateSelect(e.target.value)}
+                value={availableTemplates.some(t => t.filename === customTemplate?.name) ? customTemplate?.name : ''}
+              >
+                <option value="">{availableTemplates.length === 0 ? 'Sin plantillas' : '-- Elegir Plantilla --'}</option>
+                {availableTemplates.map(t => <option key={t.id} value={t.filename}>{t.name}</option>)}
+              </select>
 
               {templateStatus === 'invalid' && templateError && (
-                <div className="text-[10px] text-red-400 px-1">⚠️ {templateError}</div>
+                <div className="text-[9px] text-red-400 px-0.5">⚠️ {templateError}</div>
               )}
 
-              <div className={`flex items-center justify-between p-2 rounded text-[10px] border ${customTemplate ? 'bg-green-500/10 border-green-500/30' : 'bg-[var(--bg-elevated)] border-[var(--border-medium)]'}`}>
-                <span className="text-[var(--text-secondary)]">Plantilla activa:</span>
-                <span className={customTemplate ? 'text-green-400 font-medium' : 'text-[var(--text-muted)]'}>
-                  {customTemplate ? customTemplate.name : 'Predeterminada'}
-                </span>
+              <div className="flex items-center justify-between gap-2">
+                <div className={`flex-1 flex items-center justify-between px-2 py-1 rounded-md text-[9px] border ${customTemplate ? 'bg-green-500/5 border-green-500/20' : 'bg-[var(--bg-elevated)] border-[var(--border-medium)]'}`}>
+                  <span className="text-[var(--text-muted)]">Activa:</span>
+                  <span className={customTemplate ? 'text-green-400 font-medium' : 'text-[var(--text-muted)]'}>
+                    {customTemplate ? customTemplate.name : 'Predeterminada'}
+                  </span>
+                </div>
+                {customTemplate && (
+                  <button onClick={handleResetTemplate} className="shrink-0 p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors" title="Usar Plantilla Predeterminada">
+                    <RotateCcw size={12} />
+                  </button>
+                )}
               </div>
 
-              {customTemplate && (
-                <button onClick={handleResetTemplate} className="w-full flex items-center justify-center gap-2 border border-dashed border-[var(--border-medium)] hover:border-[var(--text-secondary)] rounded-lg p-2 text-center hover:bg-[var(--bg-elevated)] transition-all text-[10px] text-[var(--text-secondary)]">
-                  <RotateCcw size={12} /> Usar Plantilla Predeterminada
-                </button>
-              )}
-
-              <div className={`flex items-center justify-between p-2 rounded border ${requiresImages ? 'bg-[var(--bg-elevated)] border-[var(--border-medium)]' : 'bg-amber-500/10 border-amber-500/30'}`}>
-                <div className="flex items-center gap-2">
-                  <ImageIcon size={12} className={requiresImages ? 'text-[var(--text-secondary)]' : 'text-amber-400'} />
-                  <span className="text-[10px] text-[var(--text-secondary)]">Requiere imágenes</span>
+              <div className="flex items-center justify-between px-2 py-1 rounded-md border border-[var(--border-medium)] bg-[var(--bg-elevated)]">
+                <div className="flex items-center gap-1.5">
+                  <ImageIcon size={10} className={requiresImages ? 'text-[var(--text-muted)]' : 'text-amber-400'} />
+                  <span className="text-[9px] text-[var(--text-muted)]">Requiere imágenes</span>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input type="checkbox" checked={requiresImages} onChange={e => setRequiresImages(e.target.checked)} className="sr-only peer" />
-                  <div className="w-8 h-4 bg-[var(--bg-base)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-green-600 border border-[var(--border-medium)]"></div>
+                  <div className="w-7 h-3.5 bg-[var(--bg-base)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-green-600 border border-[var(--border-medium)]"></div>
                 </label>
               </div>
             </div>
           </Step>
 
           {/* Step 2: Data */}
-          <Step number="2" title="Cargar Datos" icon={<FileSpreadsheet size={14} />}>
-            <label className="block w-full cursor-pointer">
-              <div
-                onDragOver={e => { e.preventDefault(); setDragStep2(true); }}
-                onDragEnter={e => { e.preventDefault(); setDragStep2(true); }}
-                onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragStep2(false); }}
-                onDrop={e => {
-                  e.preventDefault(); setDragStep2(false);
-                  const [file] = Array.from(e.dataTransfer.files || []);
-                  if (!file) return;
-                  const name = file.name.toLowerCase();
-                  if (name.endsWith('.csv') || name.endsWith('.xlsx') || name.endsWith('.xls')) {
-                    parseFile(file);
-                  }
-                }}
-                className={`border border-dashed rounded-lg p-3 text-center transition-colors ${dragStep2 ? 'border-[var(--accent-primary)] bg-[var(--bg-elevated)]' : 'border-[var(--border-medium)] hover:bg-[var(--bg-elevated)]'}`}
-              >
-                <span className={`text-[11px] ${dragStep2 ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>
-                  {dragStep2 ? 'Soltar aquí' : headers.length > 0 ? `${data.length} registros cargados` : 'Seleccionar Excel / CSV'}
-                </span>
-              </div>
-              <input type="file" hidden accept=".csv,.xlsx,.xls" onChange={handleFileUpload} />
-            </label>
-            {data.length > 0 && (
-              <button onClick={() => setShowDataPreview(true)} className="w-full mt-2 flex items-center justify-center gap-2 border border-[var(--border-medium)] hover:border-[var(--text-secondary)] rounded-lg p-2 text-center hover:bg-[var(--bg-elevated)] transition-all text-[11px] text-[var(--text-secondary)]">
-                <Table2 size={14} /> Ver Datos Cargados
-              </button>
-            )}
+          <Step
+            number="2"
+            title="Datos"
+            icon={<FileSpreadsheet size={12} />}
+            badge={data.length > 0 ? <span className="text-[9px] text-green-400 font-medium">{data.length}</span> : null}
+            status={stepStates[2] ? 'done' : 'pending'}
+          >
+            <div className="space-y-1.5">
+              <label className="block w-full cursor-pointer">
+                <div
+                  onDragOver={e => { e.preventDefault(); setDragStep2(true); }}
+                  onDragEnter={e => { e.preventDefault(); setDragStep2(true); }}
+                  onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragStep2(false); }}
+                  onDrop={e => {
+                    e.preventDefault(); setDragStep2(false);
+                    const [file] = Array.from(e.dataTransfer.files || []);
+                    if (!file) return;
+                    const name = file.name.toLowerCase();
+                    if (name.endsWith('.csv') || name.endsWith('.xlsx') || name.endsWith('.xls')) {
+                      parseFile(file);
+                    }
+                  }}
+                  className={`border border-dashed rounded-md py-1.5 text-center transition-colors ${dragStep2 ? 'border-[var(--accent-primary)] bg-[var(--bg-elevated)]' : 'border-[var(--border-medium)] hover:bg-[var(--bg-elevated)]'}`}
+                >
+                  <span className={`text-[10px] ${dragStep2 ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>
+                    {dragStep2 ? 'Soltar aquí' : headers.length > 0 ? `${data.length} registros cargados` : 'Seleccionar Excel / CSV'}
+                  </span>
+                </div>
+                <input type="file" hidden accept=".csv,.xlsx,.xls" onChange={handleFileUpload} />
+              </label>
+              {data.length > 0 && (
+                <button onClick={() => setShowDataPreview(true)} className="w-full flex items-center justify-center gap-1.5 border border-[var(--border-medium)] hover:border-[var(--text-secondary)] rounded-md py-1 text-center hover:bg-[var(--bg-elevated)] transition-all text-[10px] text-[var(--text-secondary)]">
+                  <Table2 size={12} /> Ver Datos
+                </button>
+              )}
+            </div>
           </Step>
 
           {/* Step 3: Mapping */}
-          <Step number="3" title="Mapeo de Columnas" icon={<Settings size={14} />} disabled={headers.length === 0}>
-            <div className="mb-2">
-              <label className="block text-[var(--text-secondary)] text-[11px] mb-1 font-semibold">Columna ID (Clave)</label>
-              <select
-                className="w-full h-8 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-2 text-[11px] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]"
-                value={idColumn}
-                onChange={e => setIdColumn(e.target.value)}
-              >
-                <option value="">-- Seleccionar ID --</option>
-                {headers.map(h => <option key={h} value={h}>{h}</option>)}
-              </select>
+          <Step number="3" title="Mapeo de Columnas" icon={<Settings size={12} />} disabled={headers.length === 0} defaultOpen={false} status={stepStates[3] ? 'done' : 'pending'}>
+            <div className="space-y-1.5">
+              <div>
+                <label className="block text-[var(--text-muted)] text-[9px] mb-0.5 font-semibold uppercase">Columna ID (Clave)</label>
+                <select
+                  className="w-full h-7 rounded-md border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-2 text-[10px] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]"
+                  value={idColumn}
+                  onChange={e => setIdColumn(e.target.value)}
+                >
+                  <option value="">-- Seleccionar ID --</option>
+                  {headers.map(h => <option key={h} value={h}>{h}</option>)}
+                </select>
+              </div>
+
+              <div className="space-y-1 max-h-40 overflow-y-auto pr-0.5">
+                {REPORT_FIELDS.map(field => (
+                  <div key={field.id} className="grid grid-cols-[80px_1fr] gap-1.5 items-center">
+                    <span className="text-[var(--text-muted)] text-[9px] uppercase font-medium truncate" title={field.label}>{field.label}</span>
+                    <select
+                      className={`h-[22px] rounded border bg-[var(--bg-elevated)] px-1 text-[9px] text-[var(--text-primary)] outline-none ${mappings[field.id] ? 'border-l-2 border-l-green-500 border-[var(--border-medium)]' : 'border-[var(--border-medium)]'}`}
+                      value={mappings[field.id] || ''}
+                      onChange={e => setMappings(prev => ({ ...prev, [field.id]: e.target.value }))}
+                    >
+                      <option value="">Ignorar</option>
+                      {headers.map(h => <option key={h} value={h}>{h}</option>)}
+                    </select>
+                  </div>
+                ))}
+
+                {customColumns.map(col => (
+                  <div key={col.id} className="grid grid-cols-[1fr_auto_auto] gap-1.5 items-center bg-[var(--bg-elevated)] rounded px-1.5 py-0.5">
+                    <span className="text-[var(--text-primary)] text-[9px] uppercase font-medium">{col.name}</span>
+                    <select
+                      className={`h-[22px] rounded border bg-[var(--bg-base)] px-1 text-[9px] text-[var(--text-primary)] outline-none ${mappings[col.id] ? 'border-l-2 border-l-[var(--accent-primary)]' : 'border-[var(--border-medium)]'}`}
+                      value={mappings[col.id] ?? col.mappedTo}
+                      onChange={e => setMappings(prev => ({ ...prev, [col.id]: e.target.value }))}
+                    >
+                      <option value="">Ignorar</option>
+                      {headers.map(h => <option key={h} value={h}>{h}</option>)}
+                    </select>
+                    <button onClick={() => removeCustomColumn(col.id)} className="text-red-400 hover:text-red-300 text-[9px] px-0.5 hover:bg-red-500/20 rounded transition-colors" title="Eliminar">✕</button>
+                  </div>
+                ))}
+              </div>
+
+              <button onClick={() => setShowColumnModal(true)} className="w-full border border-dashed border-[var(--border-medium)] hover:border-[var(--text-secondary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] rounded-md py-1 text-center hover:bg-[var(--bg-elevated)] transition-all flex items-center justify-center gap-1.5 text-[10px]">
+                + Columna Personalizada
+              </button>
             </div>
-
-            <div className="space-y-1.5 border-t border-[var(--border-subtle)] pt-2 max-h-48 overflow-y-auto pr-1">
-              {REPORT_FIELDS.map(field => (
-                <div key={field.id} className="grid grid-cols-[90px_1fr] gap-2 items-center">
-                  <span className="text-[var(--text-secondary)] text-[10px] uppercase font-medium truncate" title={field.label}>{field.label}</span>
-                  <select
-                    className={`h-6 rounded-md border bg-[var(--bg-elevated)] px-1.5 text-[10px] text-[var(--text-primary)] outline-none ${mappings[field.id] ? 'border-l-2 border-l-green-500 border-[var(--border-medium)]' : 'border-[var(--border-medium)]'}`}
-                    value={mappings[field.id] || ''}
-                    onChange={e => setMappings(prev => ({ ...prev, [field.id]: e.target.value }))}
-                  >
-                    <option value="">Ignorar</option>
-                    {headers.map(h => <option key={h} value={h}>{h}</option>)}
-                  </select>
-                </div>
-              ))}
-
-              {customColumns.map(col => (
-                <div key={col.id} className="grid grid-cols-[1fr_auto_auto] gap-2 items-center bg-[var(--bg-elevated)] rounded px-2 py-1">
-                  <span className="text-[var(--text-primary)] text-[10px] uppercase font-medium">{col.name}</span>
-                  <select
-                    className={`h-6 rounded-md border bg-[var(--bg-base)] px-1.5 text-[10px] text-[var(--text-primary)] outline-none ${mappings[col.id] ? 'border-l-2 border-l-[var(--accent-primary)]' : 'border-[var(--border-medium)]'}`}
-                    value={mappings[col.id] ?? col.mappedTo}
-                    onChange={e => setMappings(prev => ({ ...prev, [col.id]: e.target.value }))}
-                  >
-                    <option value="">Ignorar</option>
-                    {headers.map(h => <option key={h} value={h}>{h}</option>)}
-                  </select>
-                  <button onClick={() => removeCustomColumn(col.id)} className="text-red-400 hover:text-red-300 text-[10px] px-1 hover:bg-red-500/20 rounded transition-colors" title="Eliminar">✕</button>
-                </div>
-              ))}
-            </div>
-
-            <button onClick={() => setShowColumnModal(true)} className="w-full mt-2 border border-dashed border-[var(--text-secondary)] hover:border-[var(--text-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg p-2 text-center hover:bg-[var(--bg-elevated)] transition-all flex items-center justify-center gap-2 text-[11px]">
-              <span>+</span> Agregar Columna Personalizada
-            </button>
           </Step>
 
           {/* Step 4: Images */}
-          <Step number="4" title={requiresImages ? 'Cargar Imágenes' : 'Imágenes (Opcional)'} icon={<ImageIcon size={14} />} disabled={!idColumn || !requiresImages}>
+          <Step
+            number="4"
+            title={requiresImages ? 'Imágenes' : 'Imágenes (Opcional)'}
+            icon={<ImageIcon size={12} />}
+            disabled={!idColumn || !requiresImages}
+            badge={images.length > 0 ? <span className="text-[9px] text-green-400 font-medium">{images.length}</span> : null}
+            status={stepStates[4] ? 'done' : 'pending'}
+          >
             {requiresImages ? (
               <label className="block w-full cursor-pointer">
                 <div
@@ -742,108 +803,112 @@ export default function PreviewPanelView() {
                     const dropped = Array.from(e.dataTransfer.files || []).filter(f => f.type.startsWith('image/'));
                     if (dropped.length) setImages(prev => [...prev, ...dropped]);
                   }}
-                  className={`border border-dashed rounded-lg p-3 text-center transition-colors ${dragStep4 ? 'border-[var(--accent-primary)] bg-[var(--bg-elevated)]' : 'border-[var(--border-medium)] hover:bg-[var(--bg-elevated)]'}`}
+                  className={`border border-dashed rounded-md py-1.5 text-center transition-colors ${dragStep4 ? 'border-[var(--accent-primary)] bg-[var(--bg-elevated)]' : 'border-[var(--border-medium)] hover:bg-[var(--bg-elevated)]'}`}
                 >
-                  <span className={`text-[11px] ${dragStep4 ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>
+                  <span className={`text-[10px] ${dragStep4 ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>
                     {dragStep4 ? 'Soltar aquí' : images.length > 0 ? `${images.length} imágenes` : 'Subir Carpeta de Fotos'}
                   </span>
                 </div>
                 <input type="file" hidden multiple accept="image/*" onChange={handleImageUpload} />
               </label>
             ) : (
-              <div className="border border-dashed border-[var(--border-medium)] rounded-lg p-3 text-center bg-[var(--bg-elevated)]">
-                <span className="text-[var(--text-muted)] text-[11px]">No requerido para esta plantilla</span>
+              <div className="border border-dashed border-[var(--border-medium)] rounded-md py-1.5 text-center bg-[var(--bg-elevated)]">
+                <span className="text-[var(--text-muted)] text-[10px]">No requerido</span>
               </div>
             )}
           </Step>
 
           {/* Step 5: Select Record & Export */}
-          <Step number="5" title="Seleccionar y Exportar" icon={<Search size={14} />} disabled={requiresImages ? images.length === 0 : data.length === 0}>
-            <div className="relative mb-2">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" size={14} />
-              <input
-                type="text"
-                placeholder="Buscar orden..."
-                value={searchOrder}
-                onChange={e => {
-                  const term = e.target.value;
-                  setSearchOrder(term);
-                  if (term) {
-                    const matchIdx = data.findIndex((row, idx) => {
-                      const label = idColumn ? String(row[idColumn]) : `Fila ${idx + 1}`;
-                      return label.toLowerCase().includes(term.toLowerCase()) || String(idx + 1).includes(term);
-                    });
-                    if (matchIdx !== -1) setSelectedIndex(String(matchIdx));
-                  }
-                }}
-                className="w-full pl-8 pr-3 py-1.5 bg-[var(--bg-elevated)] border border-[var(--border-medium)] rounded-lg text-[var(--text-primary)] text-[12px] outline-none focus:border-[var(--accent-primary)] placeholder:text-[var(--text-muted)]"
-              />
-            </div>
-            <select
-              className="w-full h-8 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] text-[var(--text-primary)] font-semibold px-2 text-[12px] outline-none focus:border-[var(--accent-primary)] disabled:opacity-50"
-              value={selectedIndex}
-              onChange={e => setSelectedIndex(e.target.value)}
-              disabled={exportScope === 'all'}
-            >
-              <option value="">-- Seleccionar Fila --</option>
-              {data.map((row, idx) => (
-                <option key={idx} value={idx}>{idx + 1}. {idColumn ? String(row[idColumn]) : `Fila ${idx + 1}`}</option>
-              ))}
-            </select>
+          <Step number="5" title="Seleccionar y Exportar" icon={<Search size={12} />} disabled={requiresImages ? images.length === 0 : data.length === 0} status={stepStates[5] ? 'done' : 'pending'}>
+            <div className="space-y-1.5">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" size={12} />
+                <input
+                  type="text"
+                  placeholder="Buscar orden..."
+                  value={searchOrder}
+                  onChange={e => {
+                    const term = e.target.value;
+                    setSearchOrder(term);
+                    if (term) {
+                      const matchIdx = data.findIndex((row, idx) => {
+                        const label = idColumn ? String(row[idColumn]) : `Fila ${idx + 1}`;
+                        return label.toLowerCase().includes(term.toLowerCase()) || String(idx + 1).includes(term);
+                      });
+                      if (matchIdx !== -1) setSelectedIndex(String(matchIdx));
+                    }
+                  }}
+                  className="w-full pl-7 pr-2 py-1 bg-[var(--bg-elevated)] border border-[var(--border-medium)] rounded-md text-[var(--text-primary)] text-[10px] outline-none focus:border-[var(--accent-primary)] placeholder:text-[var(--text-muted)]"
+                />
+              </div>
+              <select
+                className="w-full h-7 rounded-md border border-[var(--border-medium)] bg-[var(--bg-elevated)] text-[var(--text-primary)] font-semibold px-2 text-[10px] outline-none focus:border-[var(--accent-primary)] disabled:opacity-50"
+                value={selectedIndex}
+                onChange={e => setSelectedIndex(e.target.value)}
+                disabled={exportScope === 'all'}
+              >
+                <option value="">-- Seleccionar Fila --</option>
+                {data.map((row, idx) => (
+                  <option key={idx} value={idx}>{idx + 1}. {idColumn ? String(row[idColumn]) : `Fila ${idx + 1}`}</option>
+                ))}
+              </select>
 
-            <div className="mt-3 space-y-3 border-t border-[var(--border-subtle)] pt-3">
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] font-medium text-[var(--text-muted)]">Alcance</span>
-                  <span className="text-[10px] text-[var(--text-muted)]">
-                    {exportScope === 'all' ? 'PDF consolidado' : 'PDF individual'}
-                  </span>
+              <div className="space-y-1.5 border-t border-[var(--border-subtle)] pt-1.5">
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-medium text-[var(--text-muted)]">Alcance</span>
+                    <span className="text-[9px] text-[var(--text-muted)]">
+                      {exportScope === 'all' ? 'Consolidado' : 'Individual'}
+                    </span>
+                  </div>
+                  <SegmentedControl
+                    aria-label="Alcance de exportación"
+                    value={exportScope}
+                    onChange={setExportScope}
+                    options={[
+                      { value: 'single', label: 'Solo actual' },
+                      { value: 'all', label: `Todo (${data.length})` },
+                    ]}
+                  />
                 </div>
-                <SegmentedControl
-                  aria-label="Alcance de exportación"
-                  value={exportScope}
-                  onChange={setExportScope}
-                  options={[
-                    { value: 'single', label: 'Solo actual' },
-                    { value: 'all', label: `Todo (${data.length})` },
-                  ]}
-                />
-              </div>
 
-              <div className="space-y-1.5">
-                <span className="text-[10px] font-medium text-[var(--text-muted)]">Calidad</span>
-                <SegmentedControl
-                  aria-label="Calidad del PDF"
-                  value={pdfQuality}
-                  onChange={setPdfQuality}
-                  options={[
-                    { value: 'high', label: 'Buena calidad' },
-                    { value: 'low', label: 'Baja calidad' },
-                  ]}
-                />
-              </div>
+                <div className="space-y-1">
+                  <span className="text-[9px] font-medium text-[var(--text-muted)]">Calidad</span>
+                  <SegmentedControl
+                    aria-label="Calidad del PDF"
+                    value={pdfQuality}
+                    onChange={setPdfQuality}
+                    options={[
+                      { value: 'high', label: 'Buena' },
+                      { value: 'low', label: 'Baja' },
+                    ]}
+                  />
+                </div>
 
-              <div className="space-y-2 pt-0.5">
-                <button
-                  onClick={handleDownloadPdf}
-                  disabled={(exportScope === 'single' && selectedIndex === '') || data.length === 0 || isPdfLoading}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--accent-primary)] p-2.5 text-[12px] font-semibold text-[var(--text-on-accent)] shadow-[0_0_0_1px_color-mix(in_srgb,var(--accent-primary)_40%,transparent)] transition-colors hover:bg-[var(--accent-primary-hover)] disabled:opacity-40"
-                >
-                  {isPdfLoading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-                  {isPdfLoading ? (pdfLoadingMessage || 'Generando PDF...') : exportScope === 'all' ? 'Descargar PDF Consolidado' : 'Descargar PDF'}
-                </button>
-                <button
-                  onClick={handlePrint}
-                  disabled={selectedIndex === '' || exportScope === 'all'}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-2 text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:border-[var(--border-active)] hover:text-[var(--text-primary)] disabled:opacity-40"
-                >
-                  <Printer size={14} /> Imprimir Vista Previa
-                </button>
+                <div className="space-y-1.5 pt-0.5">
+                  <button
+                    onClick={handleDownloadPdf}
+                    disabled={(exportScope === 'single' && selectedIndex === '') || data.length === 0 || isPdfLoading}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--accent-primary)] py-2 px-3 text-[11px] font-semibold text-[var(--text-on-accent)] shadow-[0_0_0_1px_color-mix(in_srgb,var(--accent-primary)_40%,transparent)] transition-colors hover:bg-[var(--accent-primary-hover)] disabled:opacity-40"
+                  >
+                    {isPdfLoading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                    {isPdfLoading ? (pdfLoadingMessage || 'Generando...') : exportScope === 'all' ? 'PDF Consolidado' : 'Descargar PDF'}
+                  </button>
+                  <button
+                    onClick={handlePrint}
+                    disabled={selectedIndex === '' || exportScope === 'all'}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-md border border-[var(--border-medium)] bg-[var(--bg-elevated)] py-1.5 text-[10px] font-medium text-[var(--text-secondary)] transition-colors hover:border-[var(--border-active)] hover:text-[var(--text-primary)] disabled:opacity-40"
+                  >
+                    <Printer size={12} /> Imprimir
+                  </button>
+                </div>
               </div>
             </div>
           </Step>
 
         </div>
+
+
       </aside>
 
       {/* Main Preview */}

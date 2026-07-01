@@ -10,9 +10,9 @@ interface Props {
 
 export default function HeaderForm({ value, onChange, disabled }: Props) {
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="grid grid-cols-2 gap-1.5">
       <div className="flex flex-col gap-1">
-        <label className="text-[11px] font-medium text-[var(--text-muted)]">Cuadrante *</label>
+        <label className="text-[10px] font-medium text-[var(--text-muted)] uppercase tracking-wide">Cuadrante *</label>
         <input
           aria-label={ARIA_LABELS.cuadranteInput}
           type="text"
@@ -24,7 +24,7 @@ export default function HeaderForm({ value, onChange, disabled }: Props) {
         />
       </div>
       <div className="flex flex-col gap-1">
-        <label className="text-[11px] font-medium text-[var(--text-muted)]">Fecha de Corte</label>
+        <label className="text-[10px] font-medium text-[var(--text-muted)] uppercase tracking-wide">Fecha de Corte</label>
         <DatePicker
           aria-label={ARIA_LABELS.fechaInput}
           value={value.fechaCorte}
@@ -34,7 +34,7 @@ export default function HeaderForm({ value, onChange, disabled }: Props) {
         />
       </div>
       <div className="flex flex-col gap-1 col-span-2">
-        <label className="text-[11px] font-medium text-[var(--text-muted)]">Motivo</label>
+        <label className="text-[10px] font-medium text-[var(--text-muted)] uppercase tracking-wide">Motivo</label>
         <input
           aria-label={ARIA_LABELS.motivoInput}
           type="text"

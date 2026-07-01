@@ -123,6 +123,17 @@ _PANEL_AVISO_CORTE_OPTIONS_SCHEMA: dict[str, Any] = {
     "properties": {
         "key_column": {"type": "string"},
         "strategy": {"type": "string"},
+        "template": {"type": "string"},
+    },
+}
+
+_EVIDENCIA_VOLANTEO_OPTIONS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": True,
+    "properties": {
+        "format": {"type": "string"},
+        "pages": {"type": "integer", "minimum": 1},
+        "images": {"type": "integer", "minimum": 0},
     },
 }
 
@@ -390,6 +401,27 @@ def _panel_aviso_corte_stats() -> tuple[StatField, ...]:
     )
 
 
+def _evidencia_volanteo_stats() -> tuple[StatField, ...]:
+    return (
+        StatField(
+            key="format",
+            label_key="history.stats.format",
+            resolve=lambda r: _opt(r, "format") or "—",
+        ),
+        StatField(
+            key="pages",
+            label_key="history.stats.pages",
+            resolve=lambda r: _opt(r, "pages") or "—",
+        ),
+        StatField(
+            key="ok",
+            label_key="history.stats.images",
+            resolve=lambda r: r.get("ok_count") or 0,
+            color_token="var(--accent-teal, #2dd4bf)",
+        ),
+    )
+
+
 def _informe_tecnico_stats() -> tuple[StatField, ...]:
     return (
         StatField(
@@ -523,6 +555,15 @@ RUN_TYPE_REGISTRY: dict[str, RunTypeMeta] = {
         options_schema=_PANEL_AVISO_CORTE_OPTIONS_SCHEMA,
         files_schema=_ANY_ARRAY,
         stats=_panel_aviso_corte_stats(),
+    ),
+    "evidencia_volanteo": RunTypeMeta(
+        id="evidencia_volanteo",
+        label_key="history.runTypes.evidenciaVolanteo",
+        description_key="history.runTypes.evidenciaVolanteoDesc",
+        color_token="var(--accent-teal, #2dd4bf)",
+        options_schema=_EVIDENCIA_VOLANTEO_OPTIONS_SCHEMA,
+        files_schema=_ANY_ARRAY,
+        stats=_evidencia_volanteo_stats(),
     ),
     "informe_tecnico": RunTypeMeta(
         id="informe_tecnico",
