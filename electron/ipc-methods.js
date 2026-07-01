@@ -26,6 +26,7 @@ const BACKEND_METHODS = [
   'templates_list', 'template_get',
   'generar_ubicaciones',
   'preview_ubicacion',
+  'evidencia_volanteo_render',
 ];
 
 const NATIVE_METHODS = [

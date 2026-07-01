@@ -15,6 +15,24 @@ export const MSG_CUADRANTE_REQUIRED = 'El campo Cuadrante Afectado es obligatori
 export const MSG_NO_PANELS = 'No hay paneles para exportar';
 export const MSG_REGEX_INVALID = (detail: string) => `Expresión regular inválida: ${detail}`;
 
+export type PanelTemplateId = 'aviso-corte-ad';
+
+export interface PanelTemplateOption {
+  id: PanelTemplateId;
+  label: string;
+  htmlTemplate: string;
+}
+
+export const PANEL_TEMPLATE_OPTIONS: PanelTemplateOption[] = [
+  { id: 'aviso-corte-ad', label: 'aviso corte ad', htmlTemplate: 'panel-aviso-corte.html' },
+];
+
+export const DEFAULT_PANEL_TEMPLATE: PanelTemplateId = 'aviso-corte-ad';
+
+export function getPanelTemplate(id: PanelTemplateId): PanelTemplateOption {
+  return PANEL_TEMPLATE_OPTIONS.find((t) => t.id === id) ?? PANEL_TEMPLATE_OPTIONS[0];
+}
+
 export const ARIA_LABELS = {
   cuadranteInput: 'Cuadrante Afectado',
   fechaInput: 'Fecha de Corte',
@@ -23,6 +41,7 @@ export const ARIA_LABELS = {
   logoRight: 'Logo derecho',
   imageUploader: 'Cargar imágenes',
   excelImporter: 'Importar Excel',
+  templateSelector: 'Plantilla de salida',
   matchKeyColumn: 'Columna clave',
   matchStrategy: 'Estrategia de emparejamiento',
   regexPattern: 'Patrón de expresión regular',

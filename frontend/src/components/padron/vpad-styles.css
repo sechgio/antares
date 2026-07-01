@@ -105,9 +105,9 @@
     align-items: center;
     justify-content: center;
     box-sizing: border-box;
-    height: 56px;
-    min-height: 56px;
-    max-height: 56px;
+    height: 45px;
+    min-height: 45px;
+    max-height: 45px;
     padding: 0 22px;
     border-bottom: 1px solid var(--vpad-border);
 }
@@ -162,7 +162,7 @@
     flex: 1 1 auto;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 20px 20px 12px;
+    padding: 14px 14px 8px;
     min-height: 0;
 }
 
@@ -184,32 +184,32 @@
 
 /* ---- Sections ---- */
 .vpad-section {
-    margin-bottom: 24px;
+    margin-bottom: 14px;
 }
 
 .vpad-section-header {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin-bottom: 14px;
+    gap: 8px;
+    margin-bottom: 8px;
 }
 
 .vpad-section-number {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
-    border-radius: 7px;
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
     background: var(--vpad-accent);
     color: var(--vpad-on-accent);
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     font-weight: 800;
     flex-shrink: 0;
 }
 
 .vpad-section-title {
-    font-size: 0.78rem;
+    font-size: 0.73rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -221,8 +221,8 @@
 .vpad-card {
     background: var(--vpad-elevated);
     border: 1px solid var(--vpad-border);
-    border-radius: 10px;
-    padding: 16px;
+    border-radius: 8px;
+    padding: 10px 12px;
 }
 
 /* ---- Upload Zone ---- */
@@ -297,8 +297,8 @@
 .vpad-field {
     display: flex;
     flex-direction: column;
-    gap: 5px;
-    margin-bottom: 12px;
+    gap: 3px;
+    margin-bottom: 8px;
 }
 
 .vpad-field:last-child {
@@ -307,10 +307,11 @@
 
 .vpad-field span,
 .vpad-field label {
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     font-weight: 600;
     color: var(--vpad-muted);
     letter-spacing: 0.01em;
+    line-height: 1.2;
 }
 
 .vpad-field input,
@@ -318,14 +319,14 @@
 .vpad-field textarea,
 .vpad-field .app-date-picker-trigger {
     width: 100%;
-    padding: 9px 12px;
+    padding: 6px 10px;
     border: 1px solid var(--vpad-border);
-    border-radius: 8px;
+    border-radius: 7px;
     background: var(--vpad-input);
     color: var(--vpad-primary);
     outline: none;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    font-size: 0.82rem;
+    font-size: 0.8rem;
     font-family: inherit;
 }
 
@@ -366,13 +367,13 @@
 
 .vpad-field textarea {
     resize: vertical;
-    min-height: 56px;
+    min-height: 44px;
 }
 
 .vpad-field-row {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
-    gap: 10px;
+    gap: 8px;
 }
 
 .vpad-field-row-two {
@@ -382,7 +383,7 @@
 .vpad-form-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 10px;
+    gap: 6px 8px;
 }
 
 .vpad-form-grid .wide {
@@ -391,11 +392,11 @@
 
 /* ---- Action Box (inside config panel) ---- */
 .vpad-action-box {
-    padding: 16px 20px;
+    padding: 12px 14px;
     border-top: 1px solid var(--vpad-border);
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
     flex-shrink: 0;
 }
 
@@ -410,11 +411,11 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    padding: 11px 20px;
+    gap: 6px;
+    padding: 9px 16px;
     border-radius: 8px;
     font-weight: 600;
-    font-size: 0.82rem;
+    font-size: 0.8rem;
     border: none;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     letter-spacing: 0.01em;
@@ -486,9 +487,9 @@
     align-items: center;
     gap: 12px;
     box-sizing: border-box;
-    height: 56px;
-    min-height: 56px;
-    max-height: 56px;
+    height: 45px;
+    min-height: 45px;
+    max-height: 45px;
     padding: 0 16px;
     background: #ffffff;
     border-bottom: 1px solid #e0e0e0;
@@ -1331,7 +1332,7 @@
         gap: 8px;
         padding: 8px 12px;
         height: auto;
-        min-height: 56px;
+        min-height: 45px;
     }
     .vpad-badges {
         order: 3;
@@ -1647,6 +1648,60 @@
     color: var(--vpad-on-accent);
 }
 
+.vpad-select-template-wrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.vpad-select-template {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 30px 6px 12px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.82rem;
+    border: 1px solid var(--vpad-accent);
+    color: var(--vpad-accent);
+    background: transparent;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    white-space: nowrap;
+    cursor: pointer;
+    font-family: inherit;
+    appearance: none;
+    outline: none;
+    height: 32px;
+    box-sizing: border-box;
+}
+
+.vpad-select-template:hover {
+    background: var(--vpad-accent);
+    color: var(--vpad-on-accent);
+}
+
+.vpad-select-template-icon {
+    position: absolute;
+    right: 10px;
+    pointer-events: none;
+    color: var(--vpad-accent);
+    transition: color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.vpad-select-template:hover + .vpad-select-template-icon {
+    color: var(--vpad-on-accent);
+}
+
+.vpad-select-template option {
+    background: var(--vpad-elevated);
+    color: var(--vpad-primary);
+}
+
+[data-theme="light"] .vpad-select-template option {
+    background: #ffffff;
+    color: #1f2937;
+}
+
 .tutorial-trigger-btn {
     display: inline-flex;
     align-items: center;
@@ -1656,18 +1711,21 @@
     border-radius: 6px;
     font-weight: 600;
     font-size: 0.82rem;
-    border: 1px solid var(--vpad-border);
-    color: var(--vpad-primary);
-    background: transparent;
+    border: 1px solid #d1d5db;
+    color: #374151;
+    background: #ffffff;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     white-space: nowrap;
     cursor: pointer;
     font-family: inherit;
+    height: 32px;
+    box-sizing: border-box;
 }
 
 .tutorial-trigger-btn:hover {
-    background: var(--vpad-elevated);
-    border-color: var(--vpad-border-strong);
+    background: #f9fafb;
+    border-color: #9ca3af;
+    color: #111827;
 }
 
 /* Excel Modal */

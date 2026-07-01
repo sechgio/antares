@@ -1,4 +1,5 @@
 import { api } from '../../../api';
+import { DEFAULT_PANEL_TEMPLATE, type PanelTemplateId } from '../constants';
 import { readFileAsBase64 } from './fileLoader';
 import type { LocalImage, PanelVM } from '../types';
 
@@ -35,6 +36,7 @@ export async function exportPanelDocument(
   logoRight: File | null,
   images: Map<string, LocalImage>,
   format: 'pdf' | 'docx' = 'pdf',
+  templateId: PanelTemplateId = DEFAULT_PANEL_TEMPLATE,
 ): Promise<{ filename: string }> {
   const logos: { left_b64?: string; right_b64?: string } = {};
   if (logoLeft) logos.left_b64 = await readFileAsBase64(logoLeft);
@@ -83,6 +85,7 @@ export async function exportPanelDocument(
         images: imagesBase64,
         image_paths: imagePaths,
         format,
+        template_id: templateId,
         output_path: outputPath,
       });
       return { filename: resp.filename || outputPath };
@@ -97,6 +100,7 @@ export async function exportPanelDocument(
     images: imagesBase64,
     image_paths: imagePaths,
     format,
+    template_id: templateId,
   });
 
   const content = resp.content_base64 || resp.pdf_base64;

@@ -53,8 +53,8 @@ export default function LogoPicker({ right, onRight }: Props) {
   }, [onRight]);
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-[11px] font-medium text-[var(--text-muted)]">Logo del panel</span>
+    <div className="flex flex-col gap-1">
+      <span className="text-[10px] font-medium text-[var(--text-muted)] uppercase tracking-wide">Logo del panel</span>
       <div
         role="button"
         tabIndex={0}
@@ -71,7 +71,7 @@ export default function LogoPicker({ right, onRight }: Props) {
         }`}
       >
         {right ? (
-          <div className="flex items-center gap-3 p-2.5">
+          <div className="flex items-center gap-2.5 p-2">
             <div className="w-10 h-10 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] flex items-center justify-center overflow-hidden shrink-0">
               <img src={right.objectUrl} alt="" className="w-full h-full object-contain p-0.5" />
             </div>
@@ -93,7 +93,7 @@ export default function LogoPicker({ right, onRight }: Props) {
             </button>
           </div>
         ) : (
-          <div className="flex items-center gap-3 p-2.5">
+          <div className="flex items-center gap-2.5 p-2">
             <div className={`w-10 h-10 rounded-md flex items-center justify-center shrink-0 transition-colors ${
               dragging ? 'bg-[var(--accent-primary)]/10' : 'bg-[var(--bg-surface)]'
             }`}>

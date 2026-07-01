@@ -23,7 +23,7 @@ from backend.core.panel_aviso_corte import (
 from backend.core.panel_aviso_corte.errors import RenderingError
 from backend.core.panel_aviso_corte.matcher import match_image_to_row
 from backend.core.panel_aviso_corte.models import ExcelSource, MatchRule
-from backend.core.panel_aviso_corte.rendering import ROW_HEIGHTS_CM
+from backend.core.panel_aviso_corte.rendering import ROW_HEIGHTS_CM, resolve_panel_template_file
 
 _ROOT = Path(__file__).resolve().parents[2]
 _W_NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
@@ -73,6 +73,16 @@ def _fixture_panels_and_images() -> tuple[tuple[Panel, ...], dict[str, str]]:
         for path in image_paths
     }
     return result.panels, images
+
+
+def test_resolve_panel_template_file_maps_aviso_corte_ad() -> None:
+    assert resolve_panel_template_file("aviso-corte-ad") == "panel-aviso-corte.html"
+    assert resolve_panel_template_file(None) == "panel-aviso-corte.html"
+
+
+def test_resolve_panel_template_file_rejects_unknown_template() -> None:
+    with pytest.raises(RenderingError, match="Plantilla desconocida"):
+        resolve_panel_template_file("missing-template")
 
 
 def test_render_pdf_empty_panels_raises() -> None:

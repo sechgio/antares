@@ -6,7 +6,7 @@ import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut';
 import { saveFeatureHistory } from '../../utils/history';
 import { usePanelSession } from './hooks/usePanelSession';
 import { exportPanelDocument } from './utils/exportPdf';
-import { MSG_CUADRANTE_REQUIRED, MSG_NO_PANELS } from './constants';
+import { DEFAULT_PANEL_TEMPLATE, MSG_CUADRANTE_REQUIRED, MSG_NO_PANELS, type PanelTemplateId } from './constants';
 import HeaderForm from './components/HeaderForm';
 import LogoPicker from './components/LogoPicker';
 import ImageUploader from './components/ImageUploader';
@@ -23,6 +23,7 @@ export default function PanelAvisoCorteApp() {
   const { addToast } = useToast();
   const { confirm } = useDialog();
   const [exportFormat, setExportFormat] = useState<'pdf' | 'docx'>('pdf');
+  const templateId: PanelTemplateId = DEFAULT_PANEL_TEMPLATE;
 
   const imagesMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -51,15 +52,16 @@ export default function PanelAvisoCorteApp() {
         session.logoRight?.file ?? null,
         imageMap,
         exportFormat,
+        templateId,
       );
-      await saveFeatureHistory('panel_aviso_corte', filename, { format: exportFormat, panels: session.previewPanels.length }, session.previewPanels.length);
+      await saveFeatureHistory('panel_aviso_corte', filename, { format: exportFormat, template: templateId, panels: session.previewPanels.length }, session.previewPanels.length);
       addToast({ message: `Exportado: ${filename}`, type: 'success' });
     } catch (e: any) {
       addToast({ message: e?.message || `Error al exportar ${exportFormat.toUpperCase()}`, type: 'error' });
     } finally {
       session.setIsExporting(false);
     }
-  }, [session, exportFormat, addToast]);
+  }, [session, exportFormat, templateId, addToast]);
 
   useKeyboardShortcut('Enter', handleExport, { ctrl: true, preventDefault: true });
 
@@ -78,28 +80,33 @@ export default function PanelAvisoCorteApp() {
   return (
     <div className="flex h-full overflow-hidden">
       <div className="w-[380px] min-w-[340px] flex flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-base)] overflow-y-auto">
-        <div className="flex flex-col gap-4 p-4">
-          <HeaderForm
-            value={session.headerForm}
-            onChange={session.setHeaderForm}
-            disabled={!!session.excelSource}
-          />
-          <LogoPicker
-            right={session.logoRight}
-            onRight={session.setLogoRight}
-          />
+        <div className="flex flex-col gap-3 p-3.5">
+          {/* ── Datos del panel ── */}
+          <div className="pac-sidebar-section">
+            <HeaderForm
+              value={session.headerForm}
+              onChange={session.setHeaderForm}
+              disabled={!!session.excelSource}
+            />
+            <LogoPicker
+              right={session.logoRight}
+              onRight={session.setLogoRight}
+            />
+          </div>
 
-          <hr className="border-[var(--border-subtle)]" />
+          {/* ── Archivos ── */}
+          <div className="pac-sidebar-section">
+            <ImageUploader
+              images={session.images}
+              onAdd={session.addImages}
+              onRemove={session.removeImage}
+              onClear={handleClearImages}
+            />
+            <ExcelImporter source={session.excelSource} onSource={session.setExcelSource} />
+          </div>
 
-          <ImageUploader
-            images={session.images}
-            onAdd={session.addImages}
-            onRemove={session.removeImage}
-            onClear={handleClearImages}
-          />
-          <ExcelImporter source={session.excelSource} onSource={session.setExcelSource} />
           {session.excelSource && (
-            <>
+            <div className="pac-sidebar-section">
               <MatchRuleEditor
                 rule={session.matchRule}
                 columns={session.excelSource.columns}
@@ -110,11 +117,11 @@ export default function PanelAvisoCorteApp() {
                 columns={session.excelSource.columns}
                 onChange={session.setAddressColumn}
               />
-            </>
+            </div>
           )}
 
           {/* ── Export controls ── */}
-          <div className="pac-sidebar-export__row mt-1">
+          <div className="pac-sidebar-export__row">
             <select
               aria-label="Formato de exportación"
               value={exportFormat}
@@ -140,14 +147,11 @@ export default function PanelAvisoCorteApp() {
           </div>
 
           {session.matchResult && (
-            <>
-              <hr className="border-[var(--border-subtle)]" />
-              <SummaryPanel
-                result={session.matchResult}
-                exportMode={session.exportMode}
-                onExportModeChange={session.setExportMode}
-              />
-            </>
+            <SummaryPanel
+              result={session.matchResult}
+              exportMode={session.exportMode}
+              onExportModeChange={session.setExportMode}
+            />
           )}
         </div>
 
@@ -182,6 +186,7 @@ export default function PanelAvisoCorteApp() {
           {currentPanel ? (
             <SheetPreview
               panel={currentPanel}
+              templateId={templateId}
               logoCenterUrl={logoCenterUrl}
               images={imagesMap}
             />
@@ -194,6 +199,7 @@ export default function PanelAvisoCorteApp() {
                 imagenes: [],
                 sourceRowIndex: null
               }}
+              templateId={templateId}
               logoCenterUrl={logoCenterUrl}
               images={imagesMap}
             />

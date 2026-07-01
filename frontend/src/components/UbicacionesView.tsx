@@ -308,7 +308,7 @@ export const UbicacionesView: React.FC = () => {
       {/* ── Sidebar: Config ── */}
       <div className="w-[380px] flex flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-base)] overflow-hidden">
         {/* Title (fixed top) */}
-        <div className="shrink-0 flex items-center gap-2.5 px-5 h-[45px] border-b border-[var(--border-subtle)]">
+        <div className="shrink-0 flex items-center gap-2.5 px-5 h-11 border-b border-[var(--border-subtle)]">
           <MapPin size={18} className="text-[var(--accent-primary)] shrink-0" />
           <h2 className="text-sm font-semibold text-[var(--text-primary)]">Generador de Ubicaciones</h2>
         </div>
@@ -599,7 +599,7 @@ export const UbicacionesView: React.FC = () => {
 // ──────────────────────────────────────────────
 const EmptyPreviewPanel: React.FC<{ formato: string }> = ({ formato }) => (
   <div className="flex-1 flex flex-col overflow-hidden">
-    <div className="shrink-0 flex items-center gap-2.5 px-5 h-[45px] border-b border-[var(--border-subtle)] bg-[var(--bg-base)]">
+    <div className="shrink-0 flex items-center gap-2.5 px-5 h-11 border-b border-[var(--border-subtle)] bg-[var(--bg-base)]">
       <Eye size={18} className="text-[var(--accent-primary)] shrink-0" />
       <span className="text-sm font-semibold text-[var(--text-primary)]">Vista Previa de Plantilla</span>
     </div>
@@ -653,8 +653,8 @@ const RealPreviewPanel: React.FC<{
   onRefresh: () => void;
 }> = ({ preview, loading, error, rowIndex, totalFilas, isProcessing, onPrev, onNext, onRefresh }) => (
   <div className="flex-1 flex flex-col overflow-hidden">
-    {/* Toolbar — h-[45px] matches sidebar title bar for horizontal alignment */}
-    <div className="shrink-0 flex items-center justify-between px-5 h-[45px] border-b border-[var(--border-subtle)] bg-[var(--bg-base)]">
+    {/* Toolbar — h-11 matches sidebar title bar for horizontal alignment */}
+    <div className="shrink-0 flex items-center justify-between px-5 h-11 border-b border-[var(--border-subtle)] bg-[var(--bg-base)]">
       <div className="flex items-center gap-2.5">
         <Eye size={18} className="text-[var(--accent-primary)] shrink-0" />
         <span className="text-sm font-semibold text-[var(--text-primary)]">Vista Previa Real</span>

@@ -162,26 +162,39 @@
   font-size: 9pt;
 }
 
+/* ── Sidebar section grouping ── */
+
+.pac-sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+}
+
 /* ── Sidebar export controls ── */
 
 .pac-sidebar-export__row {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: stretch;
 }
 
 .pac-sidebar-export__select {
   flex: 0 0 auto;
-  padding: 8px 10px;
+  padding: 7px 10px;
   border-radius: 8px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-elevated);
   color: var(--text-primary);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 600;
   cursor: pointer;
   transition: border-color 0.15s;
   outline: none;
+  letter-spacing: 0.02em;
 }
 
 .pac-sidebar-export__select:focus {
@@ -193,16 +206,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: 7px;
+  padding: 7px 14px;
   border-radius: 8px;
   border: none;
   background: var(--accent-primary);
   color: var(--text-on-accent);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   transition: opacity 0.15s, transform 0.1s;
+  letter-spacing: 0.01em;
 }
 
 .pac-sidebar-export__btn:hover:not(:disabled) {

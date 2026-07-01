@@ -19,5 +19,6 @@
   "panel_aviso_corte_compute_match",
   "html_to_pdf",
   "generar_ubicaciones",
-  "preview_ubicacion"
+  "preview_ubicacion",
+  "evidencia_volanteo_render"
 ]

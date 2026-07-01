@@ -1,0 +1,244 @@
+"""Tests de rendering PDF y DOCX para Evidencia Volanteo."""
+
+from __future__ import annotations
+
+from io import BytesIO
+
+import pytest
+from docx import Document
+from docx.oxml.ns import qn
+from pypdf import PdfReader
+
+from backend.core.evidencia_volanteo import (
+    EvidenciaDocument,
+    EvidenciaPage,
+    ImageRef,
+    RenderingError,
+    render_docx,
+    render_pdf,
+    render_pdf_html,
+)
+from backend.core.evidencia_volanteo.layout import BORDER_PT, EMPTY_CUADRANTE_PLACEHOLDER
+from backend.core.evidencia_volanteo.rendering import (
+    _build_image_uris,
+    _jinja_env,
+    _prepare_logos,
+    _serialize_pages,
+    layout_context,
+)
+
+
+def _tiny_png() -> str:
+    return (
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    )
+
+
+def _make_document() -> EvidenciaDocument:
+    return EvidenciaDocument(
+        title="EVIDENCIAS FOTOGRAFICAS DEL VOLANTEO",
+        cuadrante="AV EL SOL - DISTRITO CHORRILLOS",
+        pages=(
+            EvidenciaPage(images=(
+                ImageRef(filename="img1.jpg", position=1),
+                ImageRef(filename="img2.jpg", position=2),
+            )),
+        ),
+    )
+
+
+def test_render_pdf_empty_pages_raises() -> None:
+    doc = EvidenciaDocument(title="T", cuadrante="C", pages=())
+    with pytest.raises(RenderingError, match="No hay páginas"):
+        render_pdf(doc, {}, {})
+
+
+def test_render_docx_empty_pages_raises() -> None:
+    doc = EvidenciaDocument(title="T", cuadrante="C", pages=())
+    with pytest.raises(RenderingError, match="No hay páginas"):
+        render_docx(doc, {}, {})
+
+
+def test_render_pdf_success() -> None:
+    doc = _make_document()
+    images = {"img1.jpg": _tiny_png(), "img2.jpg": _tiny_png()}
+    pdf_bytes, filename = render_pdf(doc, {}, images)
+    assert filename.endswith(".pdf")
+    reader = PdfReader(BytesIO(pdf_bytes))
+    assert len(reader.pages) == 1
+
+
+def test_render_docx_success() -> None:
+    doc = _make_document()
+    images = {"img1.jpg": _tiny_png(), "img2.jpg": _tiny_png()}
+    docx_bytes, filename = render_docx(doc, {}, images)
+    assert filename.endswith(".docx")
+    assert len(docx_bytes) > 1000
+
+
+def test_render_pdf_with_logos() -> None:
+    doc = _make_document()
+    logos = {"left": _tiny_png(), "right": _tiny_png()}
+    pdf_bytes, _ = render_pdf(doc, logos, {})
+    assert len(pdf_bytes) > 500
+
+
+def test_render_pdf_per_page_cuadrante() -> None:
+    doc = EvidenciaDocument(
+        title="TEST",
+        cuadrante="",
+        pages=(
+            EvidenciaPage(images=(), cuadrante="ZONA A"),
+            EvidenciaPage(images=(), cuadrante="ZONA B"),
+        ),
+    )
+    pdf_bytes, _ = render_pdf(doc, {}, {})
+    reader = PdfReader(BytesIO(pdf_bytes))
+    assert len(reader.pages) == 2
+
+
+def test_docx_border_width_matches_preview() -> None:
+    doc = _make_document()
+    docx_bytes, _ = render_docx(doc, {}, {})
+    document = Document(BytesIO(docx_bytes))
+    expected_sz = str(int(BORDER_PT * 8))
+    for table in document.tables:
+        borders = table._tbl.tblPr.find(qn("w:tblBorders"))
+        assert borders is not None
+        top = borders.find(qn("w:top"))
+        assert top is not None
+        assert top.get(qn("w:sz")) == expected_sz
+
+
+def test_empty_cuadrante_shows_placeholder_in_docx() -> None:
+    doc = EvidenciaDocument(
+        title="TEST",
+        cuadrante="",
+        pages=(EvidenciaPage(images=(), cuadrante=""),),
+    )
+    docx_bytes, _ = render_docx(doc, {}, {})
+    document = Document(BytesIO(docx_bytes))
+    info_text = document.tables[0].cell(1, 1).paragraphs[0].text
+    assert EMPTY_CUADRANTE_PLACEHOLDER in info_text
+
+
+def test_pdf_html_cuadrante_matches_preview() -> None:
+    doc = EvidenciaDocument(
+        title="TEST",
+        cuadrante="",
+        pages=(EvidenciaPage(images=(), cuadrante="zona norte"),),
+    )
+    template = _jinja_env.get_template("evidencia-volanteo.html")
+    pages_data = _serialize_pages(doc, _build_image_uris({}, None))
+    html = template.render({
+        "title": doc.title,
+        "cuadrante": doc.cuadrante,
+        "pages": pages_data,
+        "logo_left": _prepare_logos({})[0],
+        "logo_right": _prepare_logos({})[1],
+        **layout_context(),
+    })
+    assert "ZONA NORTE" in html
+    assert "0.75pt solid #000" in html
+
+
+def test_empty_cuadrante_shows_placeholder_in_pdf_html() -> None:
+    doc = EvidenciaDocument(
+        title="TEST",
+        cuadrante="",
+        pages=(EvidenciaPage(images=(), cuadrante=""),),
+    )
+    template = _jinja_env.get_template("evidencia-volanteo.html")
+    pages_data = _serialize_pages(doc, _build_image_uris({}, None))
+    html = template.render({
+        "title": doc.title,
+        "cuadrante": doc.cuadrante,
+        "pages": pages_data,
+        "logo_left": None,
+        "logo_right": None,
+        **layout_context(),
+    })
+    assert EMPTY_CUADRANTE_PLACEHOLDER in html
+
+
+def test_render_pdf_html_from_preview_markup() -> None:
+    html = """<!DOCTYPE html><html><head><meta charset='utf-8'></head>
+    <body><div style='width:210mm;height:297mm'>Preview</div></body></html>"""
+    pdf_bytes, filename = render_pdf_html(html)
+    assert filename.endswith('.pdf')
+    assert pdf_bytes.startswith(b'%PDF')
+
+
+def test_render_pdf_html_six_images_one_a4_page() -> None:
+    tiny = _tiny_png()
+    data_uri = f"data:image/png;base64,{tiny}"
+    row1 = "".join(
+        f'<td style="border:0.75pt solid #000;height:12cm;overflow:hidden;padding:0">'
+        f'<img src="{data_uri}" style="width:100%;height:12cm;object-fit:contain;display:block;'
+        f'max-height:12cm"/></td>'
+        for _ in range(3)
+    )
+    row2 = "".join(
+        f'<td style="border:0.75pt solid #000;height:12cm;overflow:hidden;padding:0">'
+        f'<img src="{data_uri}" style="width:100%;height:12cm;object-fit:contain;display:block;'
+        f'max-height:12cm"/></td>'
+        for _ in range(3)
+    )
+    html = f"""<!DOCTYPE html><html><head><meta charset='utf-8'><style>
+    @page {{ size: A4 portrait; margin: 8mm; }}
+    .ev-sheet-page {{
+      width: 100%; height: 27.8cm; max-height: 27.8cm; overflow: hidden;
+      page-break-inside: avoid; page-break-after: always;
+    }}
+    </style></head><body>
+    <div class="ev-sheet-page"><table style="width:19.4cm;border-collapse:collapse;table-layout:fixed">
+    <tr style="height:12cm">{row1}</tr>
+    <tr style="height:0.6cm"><td colspan="3" style="border:0.75pt solid #000"></td></tr>
+    <tr style="height:12cm">{row2}</tr>
+    </table></div></body></html>"""
+    pdf_bytes, _ = render_pdf_html(html)
+    reader = PdfReader(BytesIO(pdf_bytes))
+    assert len(reader.pages) == 1
+
+
+def test_pdf_html_uses_contain_for_photos() -> None:
+    doc = _make_document()
+    template = _jinja_env.get_template("evidencia-volanteo.html")
+    pages_data = _serialize_pages(doc, _build_image_uris({"img1.jpg": _tiny_png()}, None))
+    html = template.render({
+        "title": doc.title,
+        "cuadrante": doc.cuadrante,
+        "pages": pages_data,
+        "logo_left": None,
+        "logo_right": None,
+        **layout_context(),
+    })
+    assert "object-fit: contain" in html
+    assert "object-position: center" in html
+
+
+def test_render_docx_includes_images() -> None:
+    doc = _make_document()
+    images = {"img1.jpg": _tiny_png(), "img2.jpg": _tiny_png()}
+    docx_bytes, _ = render_docx(doc, {}, images)
+    document = Document(BytesIO(docx_bytes))
+    photos_table = document.tables[1]
+    shapes = photos_table._element.findall(".//{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}inline")
+    assert len(shapes) >= 2
+
+
+def test_render_pdf_six_images_per_page() -> None:
+    images = {}
+    refs = []
+    for i in range(1, 7):
+        name = f"img{i}.jpg"
+        images[name] = _tiny_png()
+        refs.append(ImageRef(filename=name, position=i))
+    doc = EvidenciaDocument(
+        title="TEST",
+        cuadrante="ZONA",
+        pages=(EvidenciaPage(images=tuple(refs)),),
+    )
+    pdf_bytes, _ = render_pdf(doc, {}, images)
+    reader = PdfReader(BytesIO(pdf_bytes))
+    assert len(reader.pages) == 1

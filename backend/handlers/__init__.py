@@ -10,6 +10,7 @@ from backend.handlers.common import (
 )
 from backend.handlers.conversion import HANDLERS as CONVERSION_HANDLERS
 from backend.handlers.database import HANDLERS as DB_HANDLERS
+from backend.handlers.evidencia_volanteo import HANDLERS as EVIDENCIA_VOLANTEO_HANDLERS
 from backend.handlers.formatos import HANDLERS as FORMATOS_HANDLERS
 from backend.handlers.history import HANDLERS as HISTORY_HANDLERS
 from backend.handlers.info import HANDLERS as INFO_HANDLERS
@@ -39,6 +40,7 @@ HANDLERS: dict[str, Callable[[dict[str, Any]], Any]] = {
     **SELLADOR_HANDLERS,
     **JOBS_HANDLERS,
     **UBICACIONES_HANDLERS,
+    **EVIDENCIA_VOLANTEO_HANDLERS,
 }
 
 # Backward-compatible aliases for tests

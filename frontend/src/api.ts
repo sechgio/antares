@@ -417,9 +417,23 @@ export const api = {
     images: Record<string, string>;
     image_paths?: Record<string, string>;
     format?: string;
+    template_id?: string;
     output_path?: string;
   }) => _invoke<{ pdf_base64: string; content_base64?: string; saved_path?: string; filename: string; format?: string; mime_type?: string }>('panel_aviso_corte_render_pdf', body),
   panelAvisoCorteTemplate: (body: { path: string }) => _invoke<{ path: string }>('panel_aviso_corte_template', body),
+
+  // ─── Evidencia Volanteo ───────────────────────────────────────────────
+  evidenciaVolanteoRender: (body: {
+    title: string;
+    cuadrante: string;
+    pages: Array<{ cuadrante?: string; images: Array<{ filename: string; position: number }> }>;
+    logos: { left_b64?: string; right_b64?: string };
+    images: Record<string, string>;
+    image_paths?: Record<string, string>;
+    html?: string;
+    format?: string;
+    output_path?: string;
+  }) => _invoke<{ pdf_base64: string; content_base64?: string; saved_path?: string; filename: string; format?: string; mime_type?: string }>('evidencia_volanteo_render', body),
 
   // ─── Ubicaciones ──────────────────────────────────────────────────────
   previewUbicacion: (body: {

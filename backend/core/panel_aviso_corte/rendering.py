@@ -38,6 +38,22 @@ PHOTO_WIDTH_CM = 7.36
 PHOTO_HEIGHT_CM = ROW_HEIGHTS_CM["image"]
 LOGO_WIDTH_CM = 5.76
 
+PANEL_TEMPLATE_FILES: dict[str, str] = {
+    "aviso-corte-ad": "panel-aviso-corte.html",
+}
+DEFAULT_PANEL_TEMPLATE_ID = "aviso-corte-ad"
+
+
+def resolve_panel_template_file(template_id: str | None) -> str:
+    """Devuelve el nombre del archivo HTML Jinja2 para *template_id*."""
+    key = (template_id or "").strip() or DEFAULT_PANEL_TEMPLATE_ID
+    filename = PANEL_TEMPLATE_FILES.get(key)
+    if filename is None:
+        known = ", ".join(sorted(PANEL_TEMPLATE_FILES))
+        msg = f"Plantilla desconocida: {key!r}. Opciones: {known}"
+        raise RenderingError(msg)
+    return filename
+
 
 def _template_dir() -> Path:
     bundled = Path(__file__).resolve().parent.parent.parent / "templates"
@@ -176,16 +192,18 @@ def render_pdf(
     images: dict[str, str],
     export_mode: ExportMode,
     image_paths: dict[str, str] | None = None,
+    template_id: str | None = None,
 ) -> tuple[bytes, str]:
     """Renderiza un PDF consolidado con una p\u00e1gina por Panel."""
     if not panels:
         msg = "No hay paneles para exportar"
         raise RenderingError(msg)
 
+    template_file = resolve_panel_template_file(template_id)
     try:
-        template = _jinja_env.get_template("panel-aviso-corte.html")
+        template = _jinja_env.get_template(template_file)
     except Exception as exc:
-        logger.exception("No se pudo cargar la plantilla panel-aviso-corte.html")
+        logger.exception("No se pudo cargar la plantilla %s", template_file)
         msg = f"Error al cargar plantilla: {exc}"
         raise RenderingError(msg) from exc
 
@@ -255,8 +273,10 @@ def render_docx(
     images: dict[str, str],
     export_mode: ExportMode,
     image_paths: dict[str, str] | None = None,
+    template_id: str | None = None,
 ) -> tuple[bytes, str]:
     """Genera un documento Word (.docx) con tabla de 9 filas x 4 columnas con merges."""
+    resolve_panel_template_file(template_id)
     if not panels:
         msg = "No hay paneles para exportar"
         raise RenderingError(msg)
@@ -640,4 +660,10 @@ def render_docx(
     return out.getvalue(), filename
 
 
-__all__ = ["render_docx", "render_pdf"]
+__all__ = [
+    "DEFAULT_PANEL_TEMPLATE_ID",
+    "PANEL_TEMPLATE_FILES",
+    "render_docx",
+    "render_pdf",
+    "resolve_panel_template_file",
+]

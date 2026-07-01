@@ -1,16 +1,19 @@
+import { getPanelTemplate, type PanelTemplateId } from '../constants';
 import type { PanelVM } from '../types';
 
 interface Props {
   panel: PanelVM;
+  templateId: PanelTemplateId;
   logoCenterUrl: string | null;
   images: Map<string, string>;
 }
 
-export default function SheetPreview({ panel, logoCenterUrl, images }: Props) {
+export default function SheetPreview({ panel, templateId, logoCenterUrl, images }: Props) {
+  const template = getPanelTemplate(templateId);
   const getImage = (pos: number) => panel.imagenes.find((i) => i.position === pos);
 
   return (
-      <div className="pac-sheet">
+      <div className="pac-sheet" data-template={template.id} data-template-file={template.htmlTemplate}>
         <table className="pac-table">
           <colgroup>
             <col className="pac-col-label" />

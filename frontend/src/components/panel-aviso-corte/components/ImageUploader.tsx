@@ -47,16 +47,16 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
         onDrop={onDrop}
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
-        className={`cursor-pointer rounded-lg border-2 border-dashed px-4 py-4 flex items-center gap-3 transition-colors ${
+        className={`cursor-pointer rounded-lg border-2 border-dashed px-3 py-3 flex items-center gap-2.5 transition-colors ${
           isDragging ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/5' : 'border-[var(--border-subtle)] bg-[var(--bg-surface)] hover:border-[var(--accent-primary)]/50'
         }`}
       >
-        <div className="w-9 h-9 rounded-lg bg-[var(--bg-elevated)] flex items-center justify-center shrink-0">
-          <Upload size={16} className="text-[var(--text-muted)]" />
+        <div className="w-8 h-8 rounded-md bg-[var(--bg-elevated)] flex items-center justify-center shrink-0">
+          <Upload size={14} className="text-[var(--text-muted)]" />
         </div>
         <div className="flex flex-col">
-          <span className="text-xs font-medium text-[var(--text-primary)]">Arrastra imágenes o haz clic</span>
-          <span className="text-[11px] text-[var(--text-muted)]">PNG, JPG, WebP · admite lotes grandes</span>
+          <span className="text-[11px] font-medium text-[var(--text-primary)]">Arrastra imágenes o haz clic</span>
+          <span className="text-[10px] text-[var(--text-muted)]">PNG, JPG, WebP · admite lotes grandes</span>
         </div>
         {images.length > 0 && (
           <span className="ml-auto px-2 py-0.5 rounded-full bg-[var(--accent-primary)] text-white text-[11px] font-bold">

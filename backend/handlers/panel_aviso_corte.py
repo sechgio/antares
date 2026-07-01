@@ -75,6 +75,7 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
     images_raw = params.get("images") or {}
     image_paths_raw = params.get("image_paths") or {}
     fmt = str(params.get("format", "pdf")).lower()
+    template_id = str(params.get("template_id") or "").strip() or None
     output_path = str(params.get("output_path") or "").strip() or None
     if not panels_raw:
         msg = "panels es requerido"
@@ -90,6 +91,7 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
             images=images,
             image_paths=image_paths,
             export_mode="include_empty",
+            template_id=template_id,
         )
         if output_path:
             out = Path(output_path)
@@ -120,6 +122,7 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
         images=images,
         image_paths=image_paths,
         export_mode="include_empty",
+        template_id=template_id,
     )
     if output_path:
         out = Path(output_path)

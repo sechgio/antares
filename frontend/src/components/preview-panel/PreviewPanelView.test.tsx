@@ -58,7 +58,7 @@ describe('PreviewPanelView column mapping', () => {
     await waitFor(() => expect(screen.getByText('1 registros cargados')).toBeInTheDocument());
     fireEvent.click(screen.getByLabelText('Cerrar vista previa'));
 
-    fireEvent.click(screen.getByRole('button', { name: /Agregar Columna Personalizada/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Columna Personalizada/i }));
 
     const nameInput = screen.getByPlaceholderText('Ej: FECHA CORTE');
     fireEvent.change(nameInput, {

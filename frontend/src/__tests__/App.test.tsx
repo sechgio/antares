@@ -39,7 +39,7 @@ describe('App', () => {
 
   it('shows Generador Reportes tab by default', async () => {
     render(<App />);
-    expect(await screen.findByText('Cargar Plantilla', {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(await screen.findByText('Subir Plantilla HTML', {}, { timeout: 5000 })).toBeInTheDocument();
   });
 
   it('keeps conversion empty-state actions visible before files are selected', async () => {
