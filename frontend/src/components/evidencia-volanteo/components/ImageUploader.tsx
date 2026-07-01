@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Upload, X, Trash2, ImageIcon, ChevronDown, ChevronUp, Image as ImageIconSVG } from 'lucide-react';
+import { Upload, X, Trash2, ChevronDown, ChevronUp, Image as ImageIconSVG } from 'lucide-react';
 import { ACCEPTED_IMAGE_TYPES } from '../constants';
 import type { LocalImage } from '../types';
 

@@ -377,12 +377,14 @@ def render_docx(
 
     logo_left_bytes: bytes | None = None
     logo_right_bytes: bytes | None = None
-    if logos.get("left"):
+    left_b64 = logos.get("left")
+    if left_b64:
         with contextlib.suppress(Exception):
-            logo_left_bytes = base64.b64decode(logos["left"], validate=True)
-    if logos.get("right"):
+            logo_left_bytes = base64.b64decode(left_b64, validate=True)
+    right_b64 = logos.get("right")
+    if right_b64:
         with contextlib.suppress(Exception):
-            logo_right_bytes = base64.b64decode(logos["right"], validate=True)
+            logo_right_bytes = base64.b64decode(right_b64, validate=True)
 
     logo_left_dims = (
         _contain_fit_cm(logo_left_bytes, LOGO_MAX_WIDTH_CM, LOGO_MAX_HEIGHT_CM)
@@ -554,9 +556,9 @@ def render_docx(
                 cell.paragraphs[0].clear()
                 reset_cell_paragraph(cell.paragraphs[0])
                 cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-                filename = slot_map.get(position)
-                content = image_bytes.get(filename or "")
-                if filename and content and _valid_image_bytes(content):
+                slot_filename = slot_map.get(position)
+                content = image_bytes.get(slot_filename or "")
+                if slot_filename and content and _valid_image_bytes(content):
                     w, h, _crop = fill_image_size_cm(content, PHOTO_WIDTH_CM, PHOTO_HEIGHT_CM)
                     run = cell.paragraphs[0].add_run()
                     run.add_picture(BytesIO(content), width=Cm(w), height=Cm(h))
