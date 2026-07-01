@@ -64,8 +64,8 @@ import {
   paginateLuriganchoItems,
 } from './pdfHelpers';
 import type { ExcelRecord } from './data';
-import accionaLogoSrc from '../../assets/vpad-assets/logo_acciona.webp';
-import sedapalLogoSrc from '../../assets/vpad-assets/logo_sedapal.webp';
+import accionaLogoSrc from '../../assets/padron-assets/logo_acciona.webp';
+import sedapalLogoSrc from '../../assets/padron-assets/logo_sedapal.webp';
 import { saveFeatureHistory } from '../../utils/history';
 import './vpad-styles.css';
 
