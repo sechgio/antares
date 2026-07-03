@@ -1,6 +1,5 @@
-from concurrent.futures import Future
-
 import sys
+from concurrent.futures import Future
 
 from backend import main as backend_main
 
