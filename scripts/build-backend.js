@@ -8,7 +8,13 @@ const distDir = path.join(projectRoot, 'dist');
 const specFile = path.join(backendDir, 'backend.spec');
 const pyInstallerBuild = path.join(backendDir, 'build');
 const pyInstallerDist = path.join(backendDir, 'dist');
-const staleBackendNames = ['AntaresBackend.exe', 'HidroConvertBackend.exe'];
+const backendExeName = 'AntaresBackend.exe';
+const staleBackendNames = [backendExeName, 'HidroConvertBackend.exe'];
+
+if (process.platform !== 'win32') {
+  console.error('[build-backend] Antares only ships a Windows installer. Run this build on Windows.');
+  process.exit(1);
+}
 
 function assertInsideProject(targetPath) {
   const relative = path.relative(projectRoot, targetPath);
@@ -45,16 +51,14 @@ try {
       env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONDONTWRITEBYTECODE: '1' }
     }
   );
-  // PyInstaller puts output in backend/dist by default; move to project dist
-  const pyInstallerExe = path.join(pyInstallerDist, 'AntaresBackend.exe');
-  const targetExe = path.join(distDir, 'AntaresBackend.exe');
+  const pyInstallerExe = path.join(pyInstallerDist, backendExeName);
+  const targetExe = path.join(distDir, backendExeName);
 
-  if (fs.existsSync(pyInstallerExe)) {
-    fs.copyFileSync(pyInstallerExe, targetExe);
-    console.log(`[build-backend] Backend executable copied to ${targetExe}`);
-  } else {
-    console.warn('[build-backend] Warning: AntaresBackend.exe not found in expected location');
+  if (!fs.existsSync(pyInstallerExe)) {
+    throw new Error(`${backendExeName} not found in ${pyInstallerDist}`);
   }
+  fs.copyFileSync(pyInstallerExe, targetExe);
+  console.log(`[build-backend] Backend executable copied to ${targetExe}`);
   console.log('[build-backend] Backend build completed.');
 } catch (err) {
   console.error('[build-backend] Failed to build backend:', err.message);

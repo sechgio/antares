@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from backend.core.jobs import get_job_manager, resolve_job_id
+from backend.core.jobs import MAX_COMPLETED_JOBS, get_job_manager, resolve_job_id
 from backend.handlers.common import with_locale
 
 
@@ -60,14 +60,14 @@ def jobs_cleanup(params: dict[str, Any]) -> dict[str, Any]:
     """Remove completed/failed jobs from memory.
 
     Optional params:
-        max_remaining: Keep at most this many completed jobs (default 20)
+        max_remaining: Keep at most this many completed jobs (default MAX_COMPLETED_JOBS)
     """
     mgr = get_job_manager()
-    max_remaining = params.get("max_remaining", 20)
+    max_remaining = params.get("max_remaining", MAX_COMPLETED_JOBS)
     try:
         max_remaining = int(max_remaining)
     except (TypeError, ValueError):
-        max_remaining = 20
+        max_remaining = MAX_COMPLETED_JOBS
     removed = mgr.cleanup_completed(max_remaining=max_remaining)
     return {"removed": removed}
 

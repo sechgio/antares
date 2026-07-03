@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { renderHook, waitFor, act } from '@testing-library/react';
 import { useAuth, AuthProvider } from './AuthContext';
 import { supabase } from '../lib/supabase';
 
@@ -33,16 +33,6 @@ vi.mock('../lib/supabase', () => {
   };
 });
 
-function TestConsumer() {
-  const { user, loading } = useAuth();
-  return (
-    <div>
-      <div data-testid="loading">{String(loading)}</div>
-      <div data-testid="user">{user?.email ?? 'none'}</div>
-    </div>
-  );
-}
-
 describe('AuthProvider', () => {
   beforeEach(() => {
     // Only clear call history, not implementations (vitest 4 clearAllMocks resets impls)
@@ -58,15 +48,11 @@ describe('AuthProvider', () => {
   it('starts in loading state and resolves to no user when no session', async () => {
     (supabase.auth.getSession as any).mockResolvedValue({ data: { session: null }, error: null });
 
-    render(
-      <AuthProvider>
-        <TestConsumer />
-      </AuthProvider>,
-    );
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
 
     await waitFor(() => {
-      expect(screen.getByTestId('loading').textContent).toBe('false');
-      expect(screen.getByTestId('user').textContent).toBe('none');
+      expect(result.current.loading).toBe(false);
+      expect(result.current.user).toBeNull();
     });
   });
 
@@ -91,14 +77,38 @@ describe('AuthProvider', () => {
       })),
     });
 
-    render(
-      <AuthProvider>
-        <TestConsumer />
-      </AuthProvider>,
-    );
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
 
     await waitFor(() => {
-      expect(screen.getByTestId('user').textContent).toBe('a@b.com');
+      expect(result.current.user?.email).toBe('a@b.com');
     });
+  });
+
+  it('clears error on signOut after a failed signIn', async () => {
+    (supabase.auth.getSession as any).mockResolvedValue({ data: { session: null }, error: null });
+    (supabase.auth.signInWithPassword as any).mockResolvedValue({
+      error: { message: 'Invalid credentials' },
+    });
+    (supabase.auth.signOut as any).mockResolvedValue({ error: null });
+
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+
+    await waitFor(() => {
+      expect(result.current.error).toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.signIn('a@b.com', 'wrong');
+    });
+
+    await waitFor(() => {
+      expect(result.current.error).toBe('Invalid credentials');
+    });
+
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    expect(result.current.error).toBeNull();
   });
 });

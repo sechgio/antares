@@ -47,3 +47,36 @@ class TestRenamerMapping:
         archivo.write_text("x")
         result = engine.aplicar(archivo, codigo_manual="X", file_mapping={})
         assert result == "X.jpg"
+
+    def test_mapping_does_not_consume_secuencia(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo"])
+        engine = RenamerEngine("img_{seq}{ext}", secuencia_inicial=1)
+        mapped = tmp_path / "mapped.jpg"
+        mapped.write_text("x")
+
+        assert engine.aplicar(mapped, file_mapping={"mapped.jpg": "fachada"}) == "fachada.jpg"
+        assert engine.secuencia == 1
+
+        unmapped = tmp_path / "other.jpg"
+        unmapped.write_text("x")
+        assert engine.aplicar(unmapped) == "img_001.jpg"
+        assert engine.aplicar(unmapped) == "img_002.jpg"
+
+    def test_mixed_mapping_and_pattern_keeps_secuencia(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo"])
+        engine = RenamerEngine("img_{seq}{ext}", secuencia_inicial=1)
+        mapping = {f"mapped_{i}.jpg": f"fachada_{i}" for i in range(1, 6)}
+        results: list[str] = []
+
+        for i in range(1, 6):
+            archivo = tmp_path / f"mapped_{i}.jpg"
+            archivo.write_text("x")
+            results.append(engine.aplicar(archivo, file_mapping=mapping))
+
+        for i in range(1, 6):
+            archivo = tmp_path / f"pattern_{i}.jpg"
+            archivo.write_text("x")
+            results.append(engine.aplicar(archivo))
+
+        assert results[:5] == [f"fachada_{i}.jpg" for i in range(1, 6)]
+        assert results[5:] == [f"img_{i:03d}.jpg" for i in range(1, 6)]

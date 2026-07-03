@@ -37,7 +37,8 @@ describe('AutoIMGApp layout and navigation', () => {
   it('keeps sidebar panels visible when switching tabs', () => {
     render(<AutoIMGApp />);
     fireEvent.click(screen.getByRole('button', { name: 'Carpetas' }));
-    expect(screen.getByText('Credenciales OAuth')).toBeInTheDocument();
+    expect(screen.getByText('Conexión')).toBeInTheDocument();
+    expect(screen.getByText('OAuth')).toBeInTheDocument();
     expect(screen.getByText('Nueva carpeta')).toBeInTheDocument();
   });
 });

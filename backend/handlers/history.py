@@ -7,7 +7,7 @@ import io
 import json
 from typing import Any
 
-from backend.handlers.common import with_locale
+from backend.handlers.common import parse_positive_int, with_locale
 
 _CSV_COLUMNS = [
     "id",
@@ -51,10 +51,13 @@ def history_list(params: dict[str, Any]) -> dict[str, Any]:
 @with_locale
 def history_get(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.history import get_run
-    run = get_run(params.get("id", 0))
-    if run:
-        run["files"] = json.loads(run["files_json"])
-        run["options"] = json.loads(run["options_json"])
+    run_id = parse_positive_int(params.get("id"), "id")
+    run = get_run(run_id)
+    if run is None:
+        msg = f"Run not found: {run_id}"
+        raise ValueError(msg)
+    run["files"] = json.loads(run["files_json"])
+    run["options"] = json.loads(run["options_json"])
     return {"run": run}
 
 

@@ -108,6 +108,15 @@ HEAVY_METHODS = {
 }
 
 
+def _utf8_locale_candidates() -> list[str]:
+    """Return locale names to try for UTF-8 system encoding (platform-specific)."""
+    candidates = ["C.UTF-8", "en_US.UTF-8"]
+    if sys.platform == "win32":
+        # Bare "es-MX" is not a reliable Windows setlocale name; use explicit encoding suffixes.
+        candidates.extend(["es-MX.UTF-8", "Spanish_Mexico.UTF-8"])
+    return candidates
+
+
 def _validate_encoding() -> None:
     """Validate that system supports required encoding."""
     import os as _os
@@ -116,11 +125,8 @@ def _validate_encoding() -> None:
         _os.environ["PYTHONIOENCODING"] = "utf-8"
         _os.environ["PYTHONUTF8"] = "1"
 
-        utf8_locales = ["C.UTF-8", "en_US.UTF-8"]
-        if sys.platform == "win32":
-            utf8_locales.extend(["es-MX", "Spanish_Mexico.UTF-8"])
         locale_ok = False
-        for candidate in utf8_locales:
+        for candidate in _utf8_locale_candidates():
             try:
                 locale.setlocale(locale.LC_ALL, candidate)
                 locale_ok = True

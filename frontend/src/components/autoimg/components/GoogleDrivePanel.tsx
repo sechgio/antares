@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, FolderOpen, Loader2, Plus } from 'lucide-react';
+import { CheckCircle2, FolderOpen, HardDrive, Loader2, Plus } from 'lucide-react';
 import { api } from '../../../api';
 import type { DriveVerifyResult } from '../types';
 import { parseDriveFolderId } from '../utils/parseDriveFolderId';
-import { INPUT_CLASS, SectionCard } from './shared';
+import { INPUT_SM_CLASS, InlineMessage, SidebarSection, StatusChip } from './shared';
 
 interface GoogleDrivePanelProps {
   googleConnected: boolean;
@@ -33,7 +33,9 @@ export default function GoogleDrivePanel({ googleConnected, onFolderAdded }: Goo
     }
   }, [googleConnected]);
 
-  useEffect(() => { refreshDriveStatus(); }, [refreshDriveStatus]);
+  useEffect(() => {
+    refreshDriveStatus();
+  }, [refreshDriveStatus]);
 
   const handleVerify = async () => {
     if (!folderInput.trim()) return;
@@ -60,7 +62,7 @@ export default function GoogleDrivePanel({ googleConnected, onFolderAdded }: Goo
     setSuccess('');
     try {
       await api.autoimgFoldersAdd({ name, folder_id: verified.folder_id, activo: true });
-      setSuccess(`"${name}" agregada al registro`);
+      setSuccess(`"${name}" agregada`);
       setFolderInput('');
       setFolderName('');
       setVerified(null);
@@ -76,25 +78,22 @@ export default function GoogleDrivePanel({ googleConnected, onFolderAdded }: Goo
 
   if (!googleConnected) {
     return (
-      <SectionCard title="Google Drive">
-        <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
-          Conecta tu cuenta Google primero para acceder a carpetas en Compartidos.
+      <SidebarSection icon={HardDrive} title="Google Drive" muted>
+        <p className="text-[10px] leading-relaxed text-[var(--text-muted)]">
+          Conecta tu cuenta Google para acceder a carpetas compartidas.
         </p>
-      </SectionCard>
+      </SidebarSection>
     );
   }
 
   return (
-    <SectionCard title="Google Drive">
-      <div className="mb-3 flex items-center gap-2">
-        <span className={`h-1.5 w-1.5 rounded-full ${driveConnected ? 'bg-emerald-400' : 'bg-[var(--text-muted)]/40'}`} />
-        <span className="text-[11px] text-[var(--text-muted)]">
-          {driveConnected ? 'Drive listo · solo lectura' : 'Sin acceso a Drive'}
-        </span>
-      </div>
-
-      <p className="mb-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
-        Pega la URL o el ID de una carpeta de Compartidos para verificar el acceso.
+    <SidebarSection
+      icon={HardDrive}
+      title="Google Drive"
+      badge={driveConnected ? <StatusChip ok label="Listo" /> : undefined}
+    >
+      <p className="mb-2 text-[10px] text-[var(--text-muted)]">
+        URL o ID de carpeta en Compartidos.
       </p>
 
       <input
@@ -107,7 +106,7 @@ export default function GoogleDrivePanel({ googleConnected, onFolderAdded }: Goo
           setSuccess('');
         }}
         placeholder="URL o Folder ID"
-        className={`${INPUT_CLASS} font-mono text-xs`}
+        className={`${INPUT_SM_CLASS} font-mono`}
       />
       {parsedId && folderInput.includes('/') && (
         <p className="mt-1 truncate font-mono text-[10px] text-[var(--text-muted)]">ID: {parsedId}</p>
@@ -117,27 +116,29 @@ export default function GoogleDrivePanel({ googleConnected, onFolderAdded }: Goo
         type="button"
         onClick={handleVerify}
         disabled={loading || !folderInput.trim()}
-        className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--border-medium)] py-2.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] disabled:opacity-40"
+        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-[var(--border-medium)] bg-[var(--bg-base)] py-1.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-active)] hover:text-[var(--text-primary)] disabled:opacity-40"
       >
-        {loading ? <Loader2 size={14} className="animate-spin" /> : <FolderOpen size={14} />}
-        Probar conexión
+        {loading ? <Loader2 size={12} className="animate-spin" /> : <FolderOpen size={12} />}
+        Verificar acceso
       </button>
 
       {verified && (
-        <div className="mt-3 space-y-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/50 p-3">
+        <div className="mt-2.5 space-y-2 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)] p-2.5">
           <div className="flex items-start gap-2">
-            <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-emerald-400" />
+            <CheckCircle2 size={13} className="mt-0.5 shrink-0 text-emerald-400" />
             <div className="min-w-0">
-              <p className="truncate text-[12px] text-[var(--text-primary)]">{verified.name}</p>
-              <p className="text-[11px] text-[var(--text-muted)]">
-                {verified.image_count} imagen{verified.image_count !== 1 ? 'es' : ''} encontrada{verified.image_count !== 1 ? 's' : ''}
+              <p className="truncate text-[11px] text-[var(--text-primary)]">{verified.name}</p>
+              <p className="text-[10px] text-[var(--text-muted)]">
+                {verified.image_count} imagen{verified.image_count !== 1 ? 'es' : ''}
               </p>
             </div>
           </div>
           {verified.sample_files.length > 0 && (
-            <ul className="space-y-0.5 pl-5">
+            <ul className="space-y-0.5 border-t border-[var(--border-subtle)] pt-2">
               {verified.sample_files.map((file) => (
-                <li key={file} className="truncate font-mono text-[10px] text-[var(--text-muted)]">{file}</li>
+                <li key={file} className="truncate font-mono text-[10px] text-[var(--text-muted)]">
+                  {file}
+                </li>
               ))}
             </ul>
           )}
@@ -146,22 +147,22 @@ export default function GoogleDrivePanel({ googleConnected, onFolderAdded }: Goo
             value={folderName}
             onChange={(e) => setFolderName(e.target.value)}
             placeholder="Nombre en el registro"
-            className={`${INPUT_CLASS} text-xs`}
+            className={INPUT_SM_CLASS}
           />
           <button
             type="button"
             onClick={handleAddFolder}
             disabled={adding}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--text-primary)] py-2 text-[12px] font-medium text-[var(--bg-base)] transition-opacity hover:opacity-90 disabled:opacity-40"
+            className="flex w-full items-center justify-center gap-1.5 rounded-md bg-[var(--accent-primary)] py-1.5 text-[11px] font-medium text-[var(--text-on-accent)] transition-colors hover:bg-[var(--accent-primary-hover)] disabled:opacity-40"
           >
-            {adding ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+            {adding ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
             Agregar al registro
           </button>
         </div>
       )}
 
-      {error && <p className="mt-2 text-[11px] text-red-400">{error}</p>}
-      {success && <p className="mt-2 text-[11px] text-emerald-400/90">{success}</p>}
-    </SectionCard>
+      {error && <InlineMessage tone="error">{error}</InlineMessage>}
+      {success && <InlineMessage tone="success">{success}</InlineMessage>}
+    </SidebarSection>
   );
 }

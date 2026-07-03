@@ -5,6 +5,8 @@ Prove-It: El bug reportado era que {codigo}_{nombre}{ext} generaba
 nombre=2454514245 para codigo=1.
 """
 
+from pathlib import Path
+
 from backend.core.renamer import RenamerEngine
 
 
@@ -238,6 +240,51 @@ class TestRenamerEngine:
         assert engine.aplicar(archivo, datos_bd=fila_a, file_seq="7", sequence_group="4210502") == "69841274_001.jpg"
         assert engine.aplicar(archivo, datos_bd=fila_b, file_seq="9", sequence_group="4210544") == "69841278_001.jpg"
         assert engine.aplicar(archivo, datos_bd=fila_a, file_seq="1", sequence_group="4210502") == "69841274_002.jpg"
+
+    def test_preserve_original_name_sanitiza_caracteres_invalidos(self) -> None:
+        """El nombre conservado aplica la misma sanitización que aplicar()."""
+        assert RenamerEngine._preserve_original_name(Path("bad<>name.jpg")) == "bad__name.jpg"
+
+    def test_preview_lote_record_sin_match_sanitiza_nombre(self, monkeypatch, tmp_path) -> None:
+        """Sin coincidencia en BD, modo record conserva el nombre original sanitizado."""
+        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo"])
+        engine = RenamerEngine("{codigo}{ext}", sequence_mode="record")
+        archivo = tmp_path / "  spaced name  .jpg"
+        archivo.write_text("x")
+
+        preview = engine.preview_lote([archivo], lookup_fn=lambda _code: None)
+
+        assert preview == [(str(archivo), "spaced name.jpg", False)]
+
+    def test_preview_lote_mapeo_parcial_no_consume_contador_por_fila(self, monkeypatch, tmp_path) -> None:
+        """Mapeo parcial no debe consumir contadores de secuencia por fila."""
+        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["nis", "sgio"])
+        engine = RenamerEngine("{sgio}_{seq}{ext}", sequence_mode="record")
+        mapped = tmp_path / "mapped.jpg"
+        con_datos = tmp_path / "a.jpg"
+        sin_datos = tmp_path / "unmapped.jpg"
+        for archivo in (mapped, con_datos, sin_datos):
+            archivo.write_text("x")
+        fila = {"nis": "4210502", "sgio": "69841274"}
+
+        preview = engine.preview_lote(
+            [mapped, con_datos, sin_datos],
+            lookup_fn=lambda code: fila if code != "unmapped" else None,
+            codigos_manuales={
+                "mapped.jpg": "mapped",
+                "a.jpg": "a",
+                "unmapped.jpg": "unmapped",
+            },
+            file_mapping={"mapped.jpg": "custom_name"},
+            sequence_groups={"a.jpg": "4210502"},
+        )
+
+        assert [item[1] for item in preview] == [
+            "custom_name.jpg",
+            "69841274_001.jpg",
+            "unmapped.jpg",
+        ]
+        assert engine.aplicar(con_datos, datos_bd=fila, sequence_group="4210502") == "69841274_001.jpg"
 
     def test_preview_lote_restaura_contador_por_fila(self, monkeypatch, tmp_path) -> None:
         monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["nis", "sgio"])

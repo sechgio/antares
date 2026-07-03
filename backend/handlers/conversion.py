@@ -87,6 +87,59 @@ def _apply_catalog_rename(
     )
 
 
+def _resolve_catalog_datos(
+    f: str,
+    *,
+    db_cache: dict[str, dict[str, Any]] | None,
+    db_records: list[dict[str, Any]] | None,
+    index: int,
+    code: str,
+) -> dict[str, Any] | None:
+    """Resuelve los datos de catálogo para un archivo.
+
+    ``db_cache`` (búsqueda por código/stem) y ``db_records`` (índice posicional)
+    son mutuamente exclusivos: pasar uno solo.
+    """
+    if db_records is not None:
+        return db_records[index] if index < len(db_records) else None
+    if db_cache is not None:
+        return db_cache.get(code) or db_cache.get(Path(f).stem)
+    return None
+
+
+def _preview_with_db(
+    engine: RenamerEngine,
+    files: list[str],
+    codigos_manuales: dict[str, str],
+    file_seqs: dict[str, str],
+    *,
+    db_cache: dict[str, dict[str, Any]] | None,
+    db_records: list[dict[str, Any]] | None,
+    key_column: str,
+) -> list[tuple[str, str, bool]]:
+    """Aplica el renombre con catálogo a ``files`` dentro de un snapshot del engine."""
+    resultados: list[tuple[str, str, bool]] = []
+    with _engine_snapshot(engine):
+        for index, f in enumerate(files):
+            p = Path(f)
+            code = codigos_manuales[p.name]
+            datos = _resolve_catalog_datos(
+                f,
+                db_cache=db_cache,
+                db_records=db_records,
+                index=index,
+                code=code,
+            )
+            if datos:
+                nombre_nuevo = _apply_catalog_rename(
+                    engine, f, datos, code, file_seqs[p.name], key_column
+                )
+                resultados.append((f, nombre_nuevo, True))
+            else:
+                resultados.append((f, p.name, False))
+    return resultados
+
+
 def _probe_key_columns(
     files: list[str],
     columns: list[str],
@@ -259,36 +312,25 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
         key_column = resolved_key
         # Buscamos por código parseado y por stem completo para máxima compatibilidad
         db_cache = buscar_por_columna(list(set(codigos_list + stems)), key_column)
-        with _engine_snapshot(engine):
-            for f in files:
-                p = Path(f)
-                code = codigos_manuales[p.name]
-                stem = p.stem
-                datos = db_cache.get(code) or db_cache.get(stem)
-                if datos:
-                    nombre_nuevo = _apply_catalog_rename(
-                        engine, f, datos, code, file_seqs[p.name], key_column
-                    )
-                    res.append((f, nombre_nuevo, True))
-                else:
-                    res.append((f, p.name, False))
-    elif use_column_rename:
-        db_cache = {str(i): rec for i, rec in enumerate(obtener_todos(limit=len(files)))}
-        def lookup(codigo: str) -> dict[str, Any] | None:
-            idx = str(codigos_list.index(codigo)) if codigo in codigos_list else None
-            return db_cache.get(idx) if idx else None
-        sequence_groups: dict[str, str] = {}
-        for index, f in enumerate(files):
-            name = Path(f).name
-            datos = db_cache.get(str(index))
-            if datos:
-                sequence_groups[name] = _record_group_key(datos, "", codigos_manuales[name])
-        res = engine.preview_lote(
+        res = _preview_with_db(
+            engine,
             files,
-            lookup_fn=lookup,
-            codigos_manuales=codigos_manuales,
-            file_seqs=file_seqs,
-            sequence_groups=sequence_groups,
+            codigos_manuales,
+            file_seqs,
+            db_cache=db_cache,
+            db_records=None,
+            key_column=key_column,
+        )
+    elif use_column_rename:
+        db_records = obtener_todos(limit=len(files))
+        res = _preview_with_db(
+            engine,
+            files,
+            codigos_manuales,
+            file_seqs,
+            db_cache=None,
+            db_records=db_records,
+            key_column="",
         )
     else:
         # No key_column provided: try auto-detecting the best column first
@@ -298,19 +340,15 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
         auto_key = _detect_best_key_column(files, db_cols) if (db_cols and files) else ""
         if auto_key:
             db_cache = buscar_por_columna(list(set(codigos_list + stems)), auto_key)
-            with _engine_snapshot(engine):
-                for f in files:
-                    p = Path(f)
-                    code = codigos_manuales[p.name]
-                    stem = p.stem
-                    datos = db_cache.get(code) or db_cache.get(stem)
-                    if datos:
-                        nombre_nuevo = _apply_catalog_rename(
-                            engine, f, datos, code, file_seqs[p.name], auto_key
-                        )
-                        res.append((f, nombre_nuevo, True))
-                    else:
-                        res.append((f, p.name, False))
+            res = _preview_with_db(
+                engine,
+                files,
+                codigos_manuales,
+                file_seqs,
+                db_cache=db_cache,
+                db_records=None,
+                key_column=auto_key,
+            )
         else:
             db_cache = buscar_lote_por_codigos(codigos_list)
             def lookup(codigo: str) -> dict[str, Any] | None:

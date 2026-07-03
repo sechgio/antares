@@ -5,8 +5,11 @@ Thread-safety is verified separately in test_race_condition.py.
 """
 from __future__ import annotations
 
-from backend.core.jobs import DEFAULT_JOB_ID, Job, JobManager, resolve_job_id
+from unittest.mock import MagicMock, patch
+
+from backend.core.jobs import DEFAULT_JOB_ID, MAX_COMPLETED_JOBS, Job, JobManager, resolve_job_id
 from backend.core.state import ProcessState
+from backend.handlers.jobs import jobs_cleanup
 
 
 class TestResolveJobId:
@@ -127,3 +130,20 @@ class TestJobManager:
     def test_max_concurrent_custom(self):
         mgr = JobManager(max_concurrent=8)
         assert mgr.max_concurrent == 8
+
+
+class TestJobsCleanupHandler:
+    def test_defaults_to_max_completed_jobs(self):
+        mock_mgr = MagicMock()
+        mock_mgr.cleanup_completed.return_value = 3
+        with patch("backend.handlers.jobs.get_job_manager", return_value=mock_mgr):
+            result = jobs_cleanup({})
+        mock_mgr.cleanup_completed.assert_called_once_with(max_remaining=MAX_COMPLETED_JOBS)
+        assert result == {"removed": 3}
+
+    def test_invalid_max_remaining_falls_back_to_max_completed_jobs(self):
+        mock_mgr = MagicMock()
+        mock_mgr.cleanup_completed.return_value = 0
+        with patch("backend.handlers.jobs.get_job_manager", return_value=mock_mgr):
+            jobs_cleanup({"max_remaining": "not-a-number"})
+        mock_mgr.cleanup_completed.assert_called_once_with(max_remaining=MAX_COMPLETED_JOBS)

@@ -11,6 +11,7 @@ import SyncPanel from './components/SyncPanel';
 import LogsViewer from './components/LogsViewer';
 import ArrastreViewer from './components/ArrastreViewer';
 import AutoImgSidebarHeader from './components/AutoImgSidebarHeader';
+import { SidebarShell } from './components/shared';
 
 const TABS: { id: AutoImgTab; label: string }[] = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -89,28 +90,30 @@ export default function AutoIMGApp() {
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <aside className="flex w-[260px] min-w-[240px] shrink-0 flex-col border-r border-[var(--border-subtle)]">
-          <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
-            <GoogleAuthPanel
-              onAuthChange={(connected) => {
-                setGoogleConnected(connected);
-                refreshStatus();
-                if (connected) refreshBdImg();
-              }}
-              onSheetLinked={() => {
-                refreshStatus();
-                refreshBdImg();
-              }}
-            />
-            <GoogleDrivePanel
-              googleConnected={googleConnected}
-              onFolderAdded={refreshStatus}
-            />
+          <div className="flex-1 overflow-y-auto px-4 py-4">
+            <SidebarShell title="Conexión">
+              <GoogleAuthPanel
+                onAuthChange={(connected) => {
+                  setGoogleConnected(connected);
+                  refreshStatus();
+                  if (connected) refreshBdImg();
+                }}
+                onSheetLinked={() => {
+                  refreshStatus();
+                  refreshBdImg();
+                }}
+              />
+              <GoogleDrivePanel
+                googleConnected={googleConnected}
+                onFolderAdded={refreshStatus}
+              />
+            </SidebarShell>
           </div>
         </aside>
 
         <main className="min-h-0 min-w-0 flex-1 overflow-hidden p-5 md:p-6">
           {activeTab === 'dashboard' && (
-            <div className="flex h-full flex-col gap-5 overflow-y-auto">
+            <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden">
               <DashboardCards
                 total={status?.totalNis}
                 completos={status?.completos}
@@ -121,8 +124,10 @@ export default function AutoIMGApp() {
                 autoSync={status?.autoSync ?? false}
                 onAutoSyncChange={(enabled) => setStatus((s) => (s ? { ...s, autoSync: enabled } : s))}
                 onSynced={handleSynced}
+                lastSync={status?.lastSync}
+                sheetName={status?.sheetName}
               />
-              <div className="min-h-[280px] flex-1">
+              <div className="min-h-0 flex-1">
                 <BdImgTable rows={bdRows} />
               </div>
             </div>

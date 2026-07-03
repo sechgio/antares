@@ -1,6 +1,16 @@
 from concurrent.futures import Future
 
+import sys
+
 from backend import main as backend_main
+
+
+def test_utf8_locale_candidates_on_windows_exclude_bare_es_mx(monkeypatch) -> None:
+    monkeypatch.setattr(sys, "platform", "win32")
+    candidates = backend_main._utf8_locale_candidates()
+    assert "es-MX" not in candidates
+    assert "es-MX.UTF-8" in candidates
+    assert "Spanish_Mexico.UTF-8" in candidates
 
 
 def test_future_callback_logs_unhandled_handler_errors(monkeypatch) -> None:

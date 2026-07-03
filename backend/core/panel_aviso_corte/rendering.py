@@ -186,6 +186,12 @@ def _prepare_logos(logos: dict[str, str | None]) -> tuple[str | None, str | None
     return left, right, center
 
 
+def _panels_for_export(panels: tuple[Panel, ...], export_mode: ExportMode) -> tuple[Panel, ...]:
+    if export_mode == "include_empty":
+        return panels
+    return tuple(panel for panel in panels if panel.imagenes)
+
+
 def render_pdf(
     panels: tuple[Panel, ...],
     logos: dict[str, str | None],
@@ -195,6 +201,7 @@ def render_pdf(
     template_id: str | None = None,
 ) -> tuple[bytes, str]:
     """Renderiza un PDF consolidado con una p\u00e1gina por Panel."""
+    panels = _panels_for_export(panels, export_mode)
     if not panels:
         msg = "No hay paneles para exportar"
         raise RenderingError(msg)
@@ -277,6 +284,7 @@ def render_docx(
 ) -> tuple[bytes, str]:
     """Genera un documento Word (.docx) con tabla de 9 filas x 4 columnas con merges."""
     resolve_panel_template_file(template_id)
+    panels = _panels_for_export(panels, export_mode)
     if not panels:
         msg = "No hay paneles para exportar"
         raise RenderingError(msg)

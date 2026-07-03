@@ -34,6 +34,7 @@ import DatePicker from '../ui/DatePicker';
 import PreviewPage from './PreviewPage';
 import WaterCutNoticePage from './WaterCutNoticePage';
 import TutorialOverlay from './components/TutorialOverlay';
+import FolioControls from './components/FolioControls';
 import {
   HEADER_FIELDS,
   OUTPUT_FORMAT_OPTIONS,
@@ -67,6 +68,13 @@ import type { ExcelRecord } from './data';
 import accionaLogoSrc from '../../assets/padron-assets/logo_acciona.webp';
 import sedapalLogoSrc from '../../assets/padron-assets/logo_sedapal.webp';
 import { saveFeatureHistory } from '../../utils/history';
+import {
+  createDefaultFolioConfig,
+  getPageFolio,
+  resolvePhysicalFolios,
+  syncFolioEndWithPageCount,
+  type FolioConfig,
+} from './folio';
 import './vpad-styles.css';
 
 export { getRenderableExportSheets, paginateLuriganchoItems } from './pdfHelpers';
@@ -103,6 +111,7 @@ export default function PadronView() {
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
+  const [folioConfig, setFolioConfig] = useState<FolioConfig>(createDefaultFolioConfig);
 
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
@@ -206,6 +215,16 @@ export default function PadronView() {
 
   const activePagesCount = isWaterCutNotice ? waterCutPages.length : servicePages.length;
 
+  const physicalFolios = useMemo(
+    () =>
+      resolvePhysicalFolios(activePagesCount, {
+        folioStart: folioConfig.folioStart,
+        folioEnd: folioConfig.folioEnd ?? activePagesCount,
+        folioInverted: folioConfig.folioInverted,
+      }),
+    [activePagesCount, folioConfig],
+  );
+
   const previewPages = useMemo(() => {
     const start = Math.min(
       previewPageOffset,
@@ -223,6 +242,10 @@ export default function PadronView() {
   useEffect(() => {
     setPreviewPageOffset(0);
   }, [startItem, endItem, orientation, outputFormat, waterCutStartItem, waterCutEndItem]);
+
+  useEffect(() => {
+    setFolioConfig((prev) => syncFolioEndWithPageCount(prev, activePagesCount));
+  }, [activePagesCount]);
 
   const handleHeaderChange = useCallback((field: string, value: string) => {
     setHeaderData((prev) => ({ ...prev, [field]: value }));
@@ -247,6 +270,7 @@ export default function PadronView() {
     setSelectedRecordId('');
     setImportedFileName('');
     setImportStatus('');
+    setFolioConfig(createDefaultFolioConfig());
   }, []);
 
   const handleExcelUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -481,7 +505,7 @@ export default function PadronView() {
                     headerData={waterCutData}
                     items={pageItems as WaterCutItem[]}
                     sedapalLogo={logosBase64.sedapal || SEDAPAL_LOGO}
-                    pageNumber={batchStart + j + 1}
+                    pageNumber={getPageFolio(batchStart + j, physicalFolios)}
                     totalPages={exportPages.length}
                   />
                   ) : (
@@ -491,7 +515,7 @@ export default function PadronView() {
                       orientation={orientation}
                       accionaLogo={logosBase64.acciona || ACCIONA_LOGO}
                       sedapalLogo={logosBase64.sedapal || SEDAPAL_LOGO}
-                      pageNumber={batchStart + j + 1}
+                      pageNumber={getPageFolio(batchStart + j, physicalFolios)}
                       totalPages={exportPages.length}
                       isFirstPage={batchStart + j === 0}
                       isLastPage={batchStart + j === exportPages.length - 1}
@@ -596,6 +620,8 @@ export default function PadronView() {
     outputFormat,
     waterCutVisibleItems.length,
     visibleItems.length,
+    physicalFolios,
+    previewVariant,
   ]);
 
   const handlePrint = useCallback(() => window.print(), []);
@@ -856,6 +882,11 @@ export default function PadronView() {
             </div>
           )}
           <div className="vpad-toolbar-right">
+            <FolioControls
+              config={folioConfig}
+              totalPages={activePagesCount}
+              onChange={setFolioConfig}
+            />
             <button
               className="vpad-btn-excel"
               onClick={() => setIsExcelModalOpen(true)}
@@ -924,7 +955,7 @@ export default function PadronView() {
                       headerData={waterCutData}
                       items={pageItems as WaterCutItem[]}
                       sedapalLogo={logosBase64.sedapal || SEDAPAL_LOGO}
-                      pageNumber={globalIndex + 1}
+                      pageNumber={getPageFolio(globalIndex, physicalFolios)}
                       totalPages={activePagesCount}
                     />
                   ) : (
@@ -934,7 +965,7 @@ export default function PadronView() {
                       orientation={orientation}
                       accionaLogo={logosBase64.acciona || ACCIONA_LOGO}
                       sedapalLogo={logosBase64.sedapal || SEDAPAL_LOGO}
-                      pageNumber={globalIndex + 1}
+                      pageNumber={getPageFolio(globalIndex, physicalFolios)}
                       totalPages={activePagesCount}
                       isFirstPage={globalIndex === 0}
                       isLastPage={globalIndex === activePagesCount - 1}

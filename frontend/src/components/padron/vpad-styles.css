@@ -1692,6 +1692,141 @@
     color: var(--vpad-on-accent);
 }
 
+.vpad-folio-wrapper {
+    position: relative;
+    display: inline-flex;
+}
+
+.vpad-btn-folio {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.82rem;
+    border: 1px solid var(--vpad-accent);
+    color: var(--vpad-accent);
+    background: transparent;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    white-space: nowrap;
+    cursor: pointer;
+    font-family: inherit;
+    height: 32px;
+    box-sizing: border-box;
+}
+
+.vpad-btn-folio:hover,
+.vpad-btn-folio-active {
+    background: var(--vpad-accent);
+    color: var(--vpad-on-accent);
+}
+
+.vpad-folio-summary {
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.vpad-btn-folio-active .vpad-folio-summary {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.vpad-folio-popover {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 50;
+    min-width: 240px;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid #e0e0e0;
+    background: #ffffff;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.vpad-folio-popover-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #111111;
+    margin-bottom: 10px;
+}
+
+.vpad-folio-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.vpad-folio-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #666666;
+}
+
+.vpad-folio-field input {
+    height: 32px;
+    padding: 0 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-family: inherit;
+    box-sizing: border-box;
+}
+
+.vpad-folio-field input:focus {
+    outline: 2px solid var(--vpad-accent);
+    outline-offset: 0;
+    border-color: var(--vpad-accent);
+}
+
+.vpad-folio-invert {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 8px;
+    cursor: pointer;
+}
+
+.vpad-folio-hint {
+    font-size: 0.72rem;
+    color: #666666;
+    margin: 0 0 10px;
+    line-height: 1.4;
+}
+
+.vpad-folio-reset {
+    width: 100%;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid #d1d5db;
+    background: #f9fafb;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #374151;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.vpad-folio-reset:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.vpad-folio-reset:not(:disabled):hover {
+    background: #f3f4f6;
+}
+
 .vpad-select-template option {
     background: var(--vpad-elevated);
     color: var(--vpad-primary);

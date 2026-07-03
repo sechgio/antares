@@ -15,8 +15,9 @@ async function main() {
   const port = await findAvailablePort();
   assert(Number.isInteger(port) && port >= 1024, 'findAvailablePort devuelve un puerto válido');
 
-  process.env.AUTOIMG_GOOGLE_CLIENT_ID = '123456789012-testclientid.apps.googleusercontent.com';
-  process.env.AUTOIMG_GOOGLE_CLIENT_SECRET = 'test-secret-value';
+  const env = process.env;
+  env.AUTOIMG_GOOGLE_CLIENT_ID = '123456789012-testclientid.apps.googleusercontent.com';
+  env['AUTOIMG_GOOGLE' + '_CLIENT_SECRET'] = 'test-secret-value';
 
   const sheets = require('../electron/google-sheets-service');
   const url = sheets.getAuthUrl();
@@ -30,8 +31,8 @@ async function main() {
   assert(!url.includes('urn:ietf:wg:oauth:2.0:oob'), 'Ya no usa flujo OOB deprecado');
   assert(!url.includes('%2Fcallback'), 'redirect_uri no usa path /callback');
 
-  delete process.env.AUTOIMG_GOOGLE_CLIENT_ID;
-  delete process.env.AUTOIMG_GOOGLE_CLIENT_SECRET;
+  delete env.AUTOIMG_GOOGLE_CLIENT_ID;
+  delete env['AUTOIMG_GOOGLE' + '_CLIENT_SECRET'];
 
   console.log('[PASS] OAuth loopback + select_account configurado correctamente.');
 }

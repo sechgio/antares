@@ -151,7 +151,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     if (!supabase) return;
     await supabase.auth.signOut();
-    if (mountedRef.current) setUser(null);
+    if (mountedRef.current) {
+      setUser(null);
+      setError(null);
+    }
   }, []);
 
   return (

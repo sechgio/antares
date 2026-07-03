@@ -91,33 +91,6 @@ win:
   signtoolOptions:
     signingHashAlgorithms:
       - sha256
-mac:
-  target:
-    - target: dmg
-      arch: [x64, arm64]
-    - target: zip
-      arch: [x64, arm64]
-  category: public.app-category.utilities
-  icon: assets/icon.icns
-  hardenedRuntime: true
-  gatekeeperAssess: false
-  entitlements: build/entitlements.mac.plist
-  entitlementsInherit: build/entitlements.mac.plist
-linux:
-  target:
-    - AppImage
-    - deb
-    - rpm
-  category: Utility
-  icon: assets/icon.png
-  maintainer: "Antares"
-  vendor: "Antares"
-snap:
-  grade: stable
-  confinement: strict
-  summary: "Antares"
-  publish:
-    provider: snapStore
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
@@ -136,17 +109,6 @@ nsis:
   displayLanguageSelector: false
 portable:
   artifactName: "Antares-Portable-${version}.exe"
-dmg:
-  artifactName: "Antares-${version}-${arch}.dmg"
-  icon: assets/icon.icns
-  sign: false
-  contents:
-    - x: 130
-      y: 220
-    - x: 410
-      y: 220
-      type: link
-      path: /Applications
 publish:
   provider: github
   owner: sechgio

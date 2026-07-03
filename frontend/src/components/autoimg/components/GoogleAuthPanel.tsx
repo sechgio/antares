@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ExternalLink, Loader2, LogOut } from 'lucide-react';
+import { ExternalLink, KeyRound, Loader2, LogOut, Pencil, Sheet, User } from 'lucide-react';
 import { api, onNotify } from '../../../api';
-import { INPUT_CLASS, SectionCard } from './shared';
+import {
+  INPUT_SM_CLASS,
+  InlineMessage,
+  SidebarSection,
+  StatusChip,
+} from './shared';
 
 interface GoogleAuthPanelProps {
   onAuthChange?: (connected: boolean) => void;
@@ -11,6 +16,7 @@ interface GoogleAuthPanelProps {
 export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleAuthPanelProps) {
   const [oauthConfigured, setOauthConfigured] = useState(false);
   const [savedClientIdMasked, setSavedClientIdMasked] = useState('');
+  const [editingOAuth, setEditingOAuth] = useState(false);
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
   const [connected, setConnected] = useState(false);
@@ -28,6 +34,7 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
       const status = await api.autoimgOAuthConfigStatus();
       setOauthConfigured(status.configured);
       setSavedClientIdMasked(status.client_id_masked || '');
+      if (status.configured) setEditingOAuth(false);
     } catch {
       setOauthConfigured(false);
       setSavedClientIdMasked('');
@@ -167,158 +174,170 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
   };
 
   return (
-    <div className="space-y-4">
-      <SectionCard title="Credenciales OAuth">
-        {oauthConfigured && savedClientIdMasked ? (
+    <>
+      <SidebarSection
+        icon={KeyRound}
+        title="OAuth"
+        badge={oauthConfigured && !editingOAuth ? <StatusChip ok label="Listo" /> : undefined}
+      >
+        {oauthConfigured && !editingOAuth ? (
           <div className="space-y-2">
-            <p className="text-[11px] text-[var(--text-muted)]">Client ID configurado:</p>
-            <p className="truncate font-mono text-[10px] text-[var(--text-secondary)]">{savedClientIdMasked}</p>
+            <p className="truncate font-mono text-[10px] text-[var(--text-muted)]">{savedClientIdMasked}</p>
             <button
               type="button"
               onClick={() => {
-                setOauthConfigured(false);
+                setEditingOAuth(true);
                 setClientSecret('');
               }}
-              className="text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)]"
+              className="inline-flex items-center gap-1 text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)]"
             >
-              Cambiar credenciales
+              <Pencil size={10} />
+              Editar credenciales
             </button>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
             <input
               type="text"
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
               placeholder="Client ID"
-              className={`${INPUT_CLASS} font-mono text-xs`}
+              className={`${INPUT_SM_CLASS} font-mono`}
             />
             <input
               type="password"
               value={clientSecret}
               onChange={(e) => setClientSecret(e.target.value)}
               placeholder="Client Secret"
-              className={`${INPUT_CLASS} font-mono text-xs`}
+              className={`${INPUT_SM_CLASS} font-mono`}
             />
-            <button
-              type="button"
-              onClick={handleSaveOAuth}
-              disabled={loading || !clientId.trim() || !clientSecret.trim()}
-              className="w-full rounded-lg bg-[var(--text-primary)] py-2.5 text-[12px] font-medium text-[var(--bg-base)] transition-opacity hover:opacity-90 disabled:opacity-40"
-            >
-              {loading ? 'Guardando…' : 'Guardar credenciales'}
-            </button>
+            <div className="flex gap-2 pt-0.5">
+              <button
+                type="button"
+                onClick={handleSaveOAuth}
+                disabled={loading || !clientId.trim() || !clientSecret.trim()}
+                className="flex-1 rounded-md bg-[var(--accent-primary)] py-1.5 text-[11px] font-medium text-[var(--text-on-accent)] transition-colors hover:bg-[var(--accent-primary-hover)] disabled:opacity-40"
+              >
+                {loading ? 'Guardando…' : 'Guardar'}
+              </button>
+              {oauthConfigured && (
+                <button
+                  type="button"
+                  onClick={() => setEditingOAuth(false)}
+                  className="rounded-md px-2.5 py-1.5 text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)]"
+                >
+                  Cancelar
+                </button>
+              )}
+            </div>
           </div>
         )}
-      </SectionCard>
+      </SidebarSection>
 
-      <SectionCard title="Cuenta Google">
+      <SidebarSection
+        icon={User}
+        title="Cuenta Google"
+        badge={connected ? <StatusChip ok label="Activa" /> : undefined}
+        muted={!oauthConfigured}
+      >
         {!oauthConfigured ? (
-          <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
-            Guarda las credenciales OAuth antes de conectar tu cuenta.
+          <p className="text-[10px] leading-relaxed text-[var(--text-muted)]">
+            Configura OAuth para continuar.
           </p>
         ) : connected ? (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              <p className="truncate text-[12px] text-[var(--text-secondary)]">{email || 'Conectado'}</p>
+          <div className="space-y-2">
+            <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-2">
+              <p className="truncate text-[11px] text-[var(--text-primary)]">{email || 'Conectado'}</p>
             </div>
             <button
               type="button"
               onClick={handleDisconnect}
               disabled={loading}
-              className="flex w-full items-center justify-center gap-1.5 py-1.5 text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)] disabled:opacity-50"
+              className="inline-flex items-center gap-1 text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)] disabled:opacity-50"
             >
-              {loading ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />}
+              {loading ? <Loader2 size={10} className="animate-spin" /> : <LogOut size={10} />}
               Cerrar sesión
             </button>
           </div>
-        ) : (
-          <div className="space-y-3">
-            {awaitingAuth ? (
-              <>
-                <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
-                  Elige tu cuenta de Google en el navegador. Al terminar, volverás aquí automáticamente.
-                </p>
-                {authUrl && (
-                  <a
-                    href={authUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 break-all text-[11px] text-sky-400 underline-offset-2 hover:underline"
-                  >
-                    <ExternalLink size={12} className="shrink-0" />
-                    Abrir de nuevo en el navegador
-                  </a>
-                )}
-                {redirectUri && (
-                  <p className="text-[10px] leading-relaxed text-[var(--text-muted)]">
-                    Si Google pide URI de redirección, usa credencial tipo <strong className="font-medium">Aplicación de escritorio</strong>
-                    {' '}(no Web). URI: <span className="font-mono">{redirectUri}</span>
-                  </p>
-                )}
-                <div className="flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
-                  <Loader2 size={12} className="animate-spin shrink-0" />
-                  Esperando autorización…
-                </div>
-                <button
-                  type="button"
-                  onClick={handleCancelAuth}
-                  disabled={loading}
-                  className="w-full py-1.5 text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)] disabled:opacity-50"
-                >
-                  Cancelar
-                </button>
-              </>
-            ) : (
-              <>
-                <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
-                  Se abrirá Google en tu navegador para elegir la cuenta y autorizar Sheets y Drive.
-                </p>
-                <button
-                  type="button"
-                  onClick={handleStartAuth}
-                  disabled={loading}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--border-medium)] py-2.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] disabled:opacity-50"
-                >
-                  {loading ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />}
-                  Elegir cuenta en Google
-                </button>
-              </>
+        ) : awaitingAuth ? (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
+              <Loader2 size={11} className="animate-spin shrink-0" />
+              Esperando autorización en el navegador…
+            </div>
+            {authUrl && (
+              <a
+                href={authUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[10px] text-[var(--accent-primary-hover)] underline-offset-2 hover:underline"
+              >
+                <ExternalLink size={10} />
+                Reabrir enlace
+              </a>
             )}
+            {redirectUri && (
+              <p className="text-[10px] leading-relaxed text-[var(--text-muted)]">
+                URI de redirección:{' '}
+                <span className="break-all font-mono text-[var(--text-secondary)]">{redirectUri}</span>
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={handleCancelAuth}
+              disabled={loading}
+              className="text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)] disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-[10px] leading-relaxed text-[var(--text-muted)]">
+              Autoriza Sheets y Drive desde tu navegador.
+            </p>
+            <button
+              type="button"
+              onClick={handleStartAuth}
+              disabled={loading}
+              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-[var(--border-medium)] bg-[var(--bg-base)] py-2 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-active)] hover:text-[var(--text-primary)] disabled:opacity-50"
+            >
+              {loading ? <Loader2 size={12} className="animate-spin" /> : <ExternalLink size={12} />}
+              Conectar con Google
+            </button>
           </div>
         )}
-      </SectionCard>
+      </SidebarSection>
 
       {connected && (
-        <SectionCard title="Google Sheets">
-          <p className="mb-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
-            Pega el ID del Sheet maestro (catálogo BD_IMG).
-          </p>
-          <div className="flex gap-2">
+        <SidebarSection icon={Sheet} title="Google Sheets" badge={sheetName ? <StatusChip ok label="Vinculado" /> : undefined}>
+          <p className="mb-2 text-[10px] text-[var(--text-muted)]">ID del Sheet maestro (BD_IMG).</p>
+          <div className="flex gap-1.5">
             <input
               type="text"
               value={sheetId}
               onChange={(e) => setSheetId(e.target.value)}
-              placeholder="ID del Sheet"
-              className={`${INPUT_CLASS} flex-1 font-mono text-xs`}
+              placeholder="Sheet ID"
+              className={`${INPUT_SM_CLASS} min-w-0 flex-1 font-mono`}
             />
             <button
               type="button"
               onClick={handleOpenSheet}
               disabled={loading || !sheetId.trim()}
-              className="shrink-0 rounded-lg border border-[var(--border-medium)] px-3 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-40"
+              className="shrink-0 rounded-md border border-[var(--border-medium)] px-2.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-active)] hover:text-[var(--text-primary)] disabled:opacity-40"
             >
               Abrir
             </button>
           </div>
           {sheetName && (
-            <p className="mt-2 truncate text-[11px] text-[var(--text-muted)]">{sheetName}</p>
+            <p className="mt-1.5 truncate text-[10px] text-[var(--text-muted)]" title={sheetName}>
+              {sheetName}
+            </p>
           )}
-        </SectionCard>
+        </SidebarSection>
       )}
 
-      {error && <p className="text-[11px] text-red-400">{error}</p>}
-    </div>
+      {error && <div className="px-4 pb-3.5"><InlineMessage tone="error">{error}</InlineMessage></div>}
+    </>
   );
 }
