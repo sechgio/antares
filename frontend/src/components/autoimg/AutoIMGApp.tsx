@@ -58,30 +58,12 @@ export default function AutoIMGApp() {
   }, [refreshStatus, refreshBdImg]);
 
   return (
-    <div className="flex h-full overflow-hidden bg-[var(--bg-base)]">
-      <aside className="flex w-[260px] min-w-[240px] shrink-0 flex-col border-r border-[var(--border-subtle)]">
-        <AutoImgSidebarHeader connected={!!status?.connected} />
-        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
-          <GoogleAuthPanel
-            onAuthChange={(connected) => {
-              setGoogleConnected(connected);
-              refreshStatus();
-              if (connected) refreshBdImg();
-            }}
-            onSheetLinked={() => {
-              refreshStatus();
-              refreshBdImg();
-            }}
-          />
-          <GoogleDrivePanel
-            googleConnected={googleConnected}
-            onFolderAdded={refreshStatus}
-          />
+    <div className="flex h-full flex-col overflow-hidden bg-[var(--bg-base)]">
+      <div className="flex h-11 shrink-0 border-b border-[var(--border-subtle)]">
+        <div className="flex w-[260px] min-w-[240px] shrink-0 items-center border-r border-[var(--border-subtle)] px-5">
+          <AutoImgSidebarHeader connected={!!status?.connected} />
         </div>
-      </aside>
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <nav className="flex shrink-0 gap-6 overflow-x-auto border-b border-[var(--border-subtle)] px-6">
+        <nav className="flex min-w-0 flex-1 items-stretch gap-6 overflow-x-auto px-6">
           {TABS.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
@@ -89,7 +71,7 @@ export default function AutoIMGApp() {
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`relative shrink-0 py-3.5 text-[13px] transition-colors ${
+                className={`relative flex shrink-0 items-center text-[13px] transition-colors ${
                   isActive
                     ? 'font-medium text-[var(--text-primary)]'
                     : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
@@ -97,14 +79,36 @@ export default function AutoIMGApp() {
               >
                 {tab.label}
                 {isActive && (
-                  <span className="absolute inset-x-0 -bottom-px h-px bg-[var(--text-primary)]" />
+                  <span className="absolute inset-x-0 bottom-0 h-px bg-[var(--text-primary)]" />
                 )}
               </button>
             );
           })}
         </nav>
+      </div>
 
-        <main className="min-h-0 flex-1 overflow-hidden p-5 md:p-6">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <aside className="flex w-[260px] min-w-[240px] shrink-0 flex-col border-r border-[var(--border-subtle)]">
+          <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+            <GoogleAuthPanel
+              onAuthChange={(connected) => {
+                setGoogleConnected(connected);
+                refreshStatus();
+                if (connected) refreshBdImg();
+              }}
+              onSheetLinked={() => {
+                refreshStatus();
+                refreshBdImg();
+              }}
+            />
+            <GoogleDrivePanel
+              googleConnected={googleConnected}
+              onFolderAdded={refreshStatus}
+            />
+          </div>
+        </aside>
+
+        <main className="min-h-0 min-w-0 flex-1 overflow-hidden p-5 md:p-6">
           {activeTab === 'dashboard' && (
             <div className="flex h-full flex-col gap-5 overflow-y-auto">
               <DashboardCards

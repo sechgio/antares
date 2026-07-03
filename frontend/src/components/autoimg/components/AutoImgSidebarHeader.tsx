@@ -6,8 +6,7 @@ interface AutoImgSidebarHeaderProps {
 
 export default function AutoImgSidebarHeader({ connected = false }: AutoImgSidebarHeaderProps) {
   return (
-    <div className="border-b border-[var(--border-subtle)] px-5 py-5">
-      <div className="flex items-center justify-between gap-3">
+    <div className="flex w-full items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <h1 className="text-[15px] font-semibold tracking-tight text-[var(--text-primary)]">AutoIMG</h1>
           {connected ? (
@@ -25,7 +24,6 @@ export default function AutoImgSidebarHeader({ connected = false }: AutoImgSideb
           )}
         </div>
         <span className="text-[10px] font-medium tabular-nums text-[var(--text-muted)]">v4</span>
-      </div>
     </div>
   );
 }
