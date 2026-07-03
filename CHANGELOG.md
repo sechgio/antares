@@ -5,6 +5,27 @@ Todas las versiones notables de ANTARES se documentan aquí.
 Formato basado en [Keep a Changelog](https://keepachangelog.com/),
 y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
+## [0.10.16] — 2026-07-03
+
+### Added
+- **AutoIMG**: Nueva pestaña con sync Google Sheets/Drive, OAuth PKCE, escaneo multi-carpeta, dashboard, panel de arrastre y tests de regresión en `npm test`.
+- **Padrón (folios)**: Controles de folio inicio/fin con interpolación por página e inversión de rango.
+- **Conversión**: Mapeo de renombre de columnas Excel en el pipeline de conversión.
+- **Templates**: Variantes `certificados-sjl-blanco`, `certificados-sjl-guardamino` y `Certificado-sanidad-lugo`.
+- **Tests**: Regresión para backend spawner (restart manual, race auto-restart), CSP de Google Fonts, y renombre de columnas.
+
+### Changed
+- **AutoIMG**: Barra superior unificada (h-11) y sidebar de conexión OAuth/Sheets rediseñado.
+- **Frontend**: Renombrado `vgen-assets` → `volanteo-assets` y `vpad-assets` → `padron-assets`.
+- **Volantes**: Selector de hora con pasos de 1 minuto y rollover correcto al cruzar medianoche.
+- **Panel Aviso de Corte**: Routing de plantillas y reenvío de `export_mode`/`template_id` en export PDF/DOCX.
+- **Build**: Limpieza de `electron-builder.yml` y scripts de empaquetado.
+
+### Fixed
+- **Backend spawner**: Restart manual preempta ciclos de auto-restart; sin backends duplicados en condiciones de carrera.
+- **Renamer**: Mejoras en secuencia por fila, mapeo parcial y sanitización de nombres preservados.
+- **Historial / jobs**: Correcciones menores en handlers y exportación CSV.
+
 ## [0.10.15] — 2026-06-30
 
 ### Added
