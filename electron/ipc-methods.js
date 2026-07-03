@@ -37,13 +37,43 @@ const NATIVE_METHODS = [
   'html_to_pdf',
 ];
 
+const AUTOIMG_METHODS = [
+  'autoimg_oauth_config_status',
+  'autoimg_oauth_config_save',
+  'autoimg_sheets_auth_url',
+  'autoimg_sheets_auth_callback',
+  'autoimg_sheets_auth_cancel',
+  'autoimg_sheets_auth_status',
+  'autoimg_sheets_auth_revoke',
+  'autoimg_sheets_open',
+  'autoimg_sheets_get_config',
+  'autoimg_sheets_read_range',
+  'autoimg_sheets_write_range',
+  'autoimg_sheets_append_row',
+  'autoimg_drive_list_folder',
+  'autoimg_drive_scan_nis',
+  'autoimg_drive_verify_folder',
+  'autoimg_drive_status',
+  'autoimg_folders_list',
+  'autoimg_folders_add',
+  'autoimg_folders_remove',
+  'autoimg_folders_toggle',
+  'autoimg_scan_all',
+  'autoimg_scan_and_sync',
+  'autoimg_sync_to_sheet',
+  'autoimg_sync_from_sheet',
+  'autoimg_arrastre_list',
+  'autoimg_auto_sync_toggle',
+  'autoimg_status',
+];
+
 // Methods with larger user payloads or slow rendering/import work. The list
 // lives in shared/long-running-methods.json so the Electron main process and
 // the renderer (frontend/src/api.ts) share one source of truth and cannot
 // drift on which methods get the extended timeout.
 const LONG_RUNNING_METHODS = new Set(require('../shared/long-running-methods.json'));
 
-const ALLOWED_RENDERER_METHODS = new Set([...BACKEND_METHODS, ...NATIVE_METHODS]);
+const ALLOWED_RENDERER_METHODS = new Set([...BACKEND_METHODS, ...NATIVE_METHODS, ...AUTOIMG_METHODS]);
 
 module.exports = {
   BACKEND_METHODS,

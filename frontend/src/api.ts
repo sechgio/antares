@@ -419,6 +419,7 @@ export const api = {
     format?: string;
     template_id?: string;
     output_path?: string;
+    export_mode?: string;
   }) => _invoke<{ pdf_base64: string; content_base64?: string; saved_path?: string; filename: string; format?: string; mime_type?: string }>('panel_aviso_corte_render_pdf', body),
   panelAvisoCorteTemplate: (body: { path: string }) => _invoke<{ path: string }>('panel_aviso_corte_template', body),
 
@@ -452,4 +453,36 @@ export const api = {
     provider?: string;
     google_maps_key?: string;
   }) => _invoke<{ success: boolean; data?: unknown; error?: string }>('generar_ubicaciones', body),
+
+  // ─── AutoIMG (Google Sheets + Drive — Electron main) ───────────────────
+  autoimgOAuthConfigStatus: () => _invoke<{ configured: boolean; client_id_masked?: string }>('autoimg_oauth_config_status'),
+  autoimgOAuthConfigSave: (client_id: string, client_secret: string) =>
+    _invoke<{ success: boolean }>('autoimg_oauth_config_save', { client_id, client_secret }),
+  autoimgSheetsAuthUrl: () => _invoke<{ url: string; redirect_uri: string }>('autoimg_sheets_auth_url'),
+  autoimgSheetsAuthCallback: (code: string, redirect_uri?: string) =>
+    _invoke<{ success: boolean }>('autoimg_sheets_auth_callback', { code, redirect_uri }),
+  autoimgSheetsAuthCancel: () => _invoke<{ success: boolean }>('autoimg_sheets_auth_cancel'),
+  autoimgSheetsAuthStatus: () => _invoke<{ authenticated: boolean; email?: string }>('autoimg_sheets_auth_status'),
+  autoimgSheetsAuthRevoke: () => _invoke<{ success: boolean }>('autoimg_sheets_auth_revoke'),
+  autoimgSheetsOpen: (sheet_id: string) => _invoke<{ success: boolean; sheet_id?: string; name?: string; sheets?: string[] }>('autoimg_sheets_open', { sheet_id }),
+  autoimgSheetsGetConfig: () => _invoke<{ sheet_id: string; name: string; linked: boolean }>('autoimg_sheets_get_config'),
+  autoimgSheetsReadRange: (range: string) => _invoke<{ values: string[][] }>('autoimg_sheets_read_range', { range }),
+  autoimgSheetsWriteRange: (range: string, values: string[][]) => _invoke<{ updated: number }>('autoimg_sheets_write_range', { range, values }),
+  autoimgSheetsAppendRow: (range: string, values: string[]) => _invoke<{ row: number }>('autoimg_sheets_append_row', { range, values }),
+  autoimgDriveListFolder: (folder_id: string) => _invoke<{ files: Array<{ name: string; id: string; modifiedTime: string }> }>('autoimg_drive_list_folder', { folder_id }),
+  autoimgDriveScanNis: (folder_id: string, folder_name?: string) => _invoke<{ nis_map: Record<string, { count: number; files: unknown[] }> }>('autoimg_drive_scan_nis', { folder_id, folder_name }),
+  autoimgDriveVerifyFolder: (urlOrId: string) => _invoke<{ accessible: boolean; folder_id: string; name: string; image_count: number; sample_files: string[] }>('autoimg_drive_verify_folder', { url: urlOrId }),
+  autoimgDriveStatus: () => _invoke<{ connected: boolean }>('autoimg_drive_status'),
+  autoimgFoldersList: () => _invoke<{ folders: Array<{ name: string; folder_id: string; activo: boolean; ultimo_scan: string; cant_archivos: number }> }>('autoimg_folders_list'),
+  autoimgFoldersAdd: (body: { name: string; folder_id: string; activo: boolean }) => _invoke<{ success: boolean }>('autoimg_folders_add', body),
+  autoimgFoldersRemove: (body: { folder_id: string }) => _invoke<{ success: boolean }>('autoimg_folders_remove', body),
+  autoimgFoldersToggle: (body: { folder_id: string; activo: boolean }) => _invoke<{ success: boolean }>('autoimg_folders_toggle', body),
+  autoimgScanAll: () => _invoke<{ results: { folder_summary: Array<{ name: string; folder_id?: string; count: number; nis_found: number; error?: string }>; nis_results: Array<{ nis: string; count: number; folders: string[]; estado: string }> }; summary: { total: number; completos: number; faltantes: number; sobrantes: number; sin_sgio: number }; folders_failed: number }>('autoimg_scan_all'),
+  autoimgScanAndSync: () => _invoke<{ success: boolean; updated: number; new_rows: number; logs: string[]; folder_errors: number; scan: { results: { folder_summary: Array<{ name: string; count: number; nis_found: number; error?: string }>; nis_results: Array<{ nis: string; count: number; folders: string[]; estado: string }> }; summary: { total: number; completos: number; faltantes: number; sobrantes: number; sin_sgio: number }; folders_failed: number } }>('autoimg_scan_and_sync'),
+  autoimgSyncToSheet: () => _invoke<{ success: boolean; updated: number; new_rows: number; logs: string[] }>('autoimg_sync_to_sheet'),
+  autoimgSyncFromSheet: () => _invoke<{ success: boolean; rows: string[][]; arrastre?: Array<{ nis: string; sgio: string; motivo: string; fecha: string; observacion: string }> }>('autoimg_sync_from_sheet'),
+  autoimgArrastreList: () => _invoke<{ entries: Array<{ nis: string; sgio: string; motivo: string; fecha: string; observacion: string }> }>('autoimg_arrastre_list'),
+  autoimgAutoSyncToggle: (enabled: boolean) => _invoke<{ enabled: boolean }>('autoimg_auto_sync_toggle', { enabled }),
+  autoimgStatus: () => _invoke<{ connected: boolean; sheetName?: string; sheetId?: string; sheetLinked?: boolean; lastSync?: string; autoSync: boolean; totalNis?: number; completos?: number; faltantes?: number; sobrantes?: number; carpetasActivas?: number }>('autoimg_status'),
+
 };

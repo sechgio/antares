@@ -25,6 +25,7 @@ const TechnicalReportsView = React.lazy(() => import('./components/technical-rep
 const PanelAvisoCorteView = React.lazy(() => import('./components/panel-aviso-corte'));
 const UbicacionesView = React.lazy(() => import('./components/UbicacionesView').then(m => ({ default: m.UbicacionesView })));
 const EvidenciaVolanteoView = React.lazy(() => import('./components/evidencia-volanteo'));
+const AutoIMGView = React.lazy(() => import('./components/autoimg'));
 
 const VIEWS: Record<TabId, React.LazyExoticComponent<React.ComponentType>> = {
   convert: ConversionView,
@@ -39,6 +40,7 @@ const VIEWS: Record<TabId, React.LazyExoticComponent<React.ComponentType>> = {
   panelAvisoCorte: PanelAvisoCorteView,
   ubicaciones: UbicacionesView,
   evidenciaVolanteo: EvidenciaVolanteoView,
+  autoimg: AutoIMGView,
 };
 
 function ElectronOnlyNotice() {
@@ -137,6 +139,7 @@ function AppContent() {
   useKeyboardShortcut('2', () => handleTabChange('panelAvisoCorte'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('u', () => handleTabChange('ubicaciones'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('v', () => handleTabChange('evidenciaVolanteo'), { ctrl: true, shift: true, preventDefault: true });
+  useKeyboardShortcut('a', () => handleTabChange('autoimg'), { ctrl: true, shift: true, preventDefault: true });
   useKeyboardShortcut('i', () => handleTabChange('technicalReports'), { ctrl: true, shift: true, preventDefault: true });
 
   const commandItems = useMemo(
