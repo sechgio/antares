@@ -64,13 +64,18 @@ assert(backendBuild.includes('rmSync'), 'backend build should clean stale PyInst
 const packageJson = JSON.parse(readProjectFile('package.json'));
 assert(packageJson.scripts['clean:dist-electron'] === 'node scripts/clean-dist-electron.js', 'package scripts should expose a safe Electron output cleanup command');
 assert(packageJson.scripts['clean:after-package'] === 'node scripts/clean-after-package.js', 'package scripts should expose a post-package cleanup command');
-for (const scriptName of ['build:win', 'build:mac', 'build:linux', 'build:all', 'dist', 'dist:dir']) {
-  assert(packageJson.scripts[scriptName].includes('npm run clean:dist-electron && electron-builder'), `${scriptName} should clean stale Electron artifacts before packaging`);
-}
-for (const scriptName of ['build:win', 'build:mac', 'build:linux', 'build:all', 'dist']) {
-  assert(packageJson.scripts[scriptName].includes('npm run clean:after-package'), `${scriptName} should remove unpacked/staging artifacts after packaging`);
-}
+assert(packageJson.scripts['build:win'].includes('npm run clean:dist-electron && electron-builder'), 'build:win should clean stale Electron artifacts before packaging');
+assert(packageJson.scripts['build:win'].includes('npm run clean:after-package'), 'build:win should remove unpacked/staging artifacts after packaging');
+assert(packageJson.scripts['dist'] === 'npm run build:win', 'dist should delegate to the Windows-only build');
+assert(packageJson.scripts['dist:dir'].includes('npm run clean:dist-electron && electron-builder'), 'dist:dir should clean stale Electron artifacts before packaging');
+assert(packageJson.scripts['dist:dir'].includes('electron-builder --win --dir'), 'dist:dir should produce an unpacked Windows build');
 assert(!packageJson.scripts['dist:dir'].includes('npm run clean:after-package'), 'dist:dir should keep unpacked output for inspection');
+assert(!packageJson.scripts['build:mac'], 'build:mac should not exist (Windows-only installer)');
+assert(!packageJson.scripts['build:linux'], 'build:linux should not exist (Windows-only installer)');
+assert(!packageJson.scripts['build:all'], 'build:all should not exist (Windows-only installer)');
+assert(backendBuild.includes("process.platform !== 'win32'"), 'backend build should refuse non-Windows hosts');
+assert(!builderConfig.includes('\nmac:'), 'electron-builder should not define mac targets (Windows-only installer)');
+assert(!builderConfig.includes('\nlinux:'), 'electron-builder should not define linux targets (Windows-only installer)');
 
 const electronClean = readProjectFile('scripts', 'clean-dist-electron.js');
 assert(electronClean.includes('dist-electron'), 'Electron cleanup should target dist-electron only');

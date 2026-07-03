@@ -51,6 +51,41 @@ describe('volante lurigancho pagination', () => {
   });
 });
 
+describe('padron folio controls', () => {
+  function renderTwoPagePadron() {
+    render(<PadronView />);
+    fireEvent.change(screen.getByDisplayValue('18'), { target: { value: '36' } });
+  }
+
+  it('keeps default sequential numbering in preview', () => {
+    renderTwoPagePadron();
+    expect(screen.getByText('Página 1 de 2')).toBeInTheDocument();
+  });
+
+  it('applies inverted folio numbering in preview', () => {
+    renderTwoPagePadron();
+
+    fireEvent.click(screen.getByRole('button', { name: /Foleado/i }));
+    fireEvent.click(screen.getByLabelText(/Invertir orden/i));
+
+    expect(screen.getByText('Página 2 de 2')).toBeInTheDocument();
+  });
+
+  it('applies custom start folio in preview', () => {
+    renderTwoPagePadron();
+
+    fireEvent.click(screen.getByRole('button', { name: /Foleado/i }));
+
+    const desdeInput = screen.getByLabelText('Desde');
+    fireEvent.change(desdeInput, { target: { value: '2' } });
+
+    const hastaInput = screen.getByLabelText('Hasta');
+    fireEvent.change(hastaInput, { target: { value: '3' } });
+
+    expect(screen.getByText('Página 2 de 2')).toBeInTheDocument();
+  });
+});
+
 describe('padron PDF export guards', () => {
   it('only returns export sheets that have a measurable width', () => {
     const wrapper = document.createElement('div');

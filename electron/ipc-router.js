@@ -14,6 +14,7 @@
 const { ipcMain, dialog } = require('electron');
 const crypto = require('crypto');
 const { handleDialogCall } = require('./dialog-handlers');
+const { handleAutoimgCall } = require('./autoimg-handlers');
 const { ALLOWED_RENDERER_METHODS, LONG_RUNNING_METHODS } = require('./ipc-methods');
 const {
   getProcess,
@@ -214,6 +215,9 @@ function registerIpcHandlers() {
     const { BrowserWindow, session } = require('electron');
     const dialogResult = await handleDialogCall(method, params, dialog, win, { BrowserWindow, session });
     if (dialogResult.handled) return dialogResult.result;
+
+    const autoimgResult = await handleAutoimgCall(method, params);
+    if (autoimgResult.handled) return autoimgResult.result;
 
     return _callBackend(method, params);
   });

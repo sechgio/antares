@@ -95,6 +95,36 @@ def test_render_docx_empty_panels_raises() -> None:
         render_docx(panels=(), logos={}, images={}, export_mode="include_empty")
 
 
+def test_render_pdf_skip_empty_omits_panels_without_images() -> None:
+    empty_panel = Panel(
+        cuadrante="C002",
+        fecha_corte="2025-06-16",
+        motivo="Sin fotos",
+        imagenes=(),
+        source_row_index=1,
+    )
+    with pytest.raises(RenderingError, match="No hay paneles"):
+        render_pdf(panels=(empty_panel,), logos={}, images={}, export_mode="skip_empty")
+
+
+def test_render_pdf_include_empty_keeps_panels_without_images() -> None:
+    empty_panel = Panel(
+        cuadrante="C002",
+        fecha_corte="2025-06-16",
+        motivo="Sin fotos",
+        imagenes=(),
+        source_row_index=1,
+    )
+    pdf_bytes, filename = render_pdf(
+        panels=(empty_panel,),
+        logos={},
+        images={},
+        export_mode="include_empty",
+    )
+    assert pdf_bytes.startswith(b"%PDF")
+    assert filename.endswith(".pdf")
+
+
 def test_render_pdf_success() -> None:
     panel = _make_panel()
     images = {"img1.jpg": _tiny_png(), "img2.jpg": _tiny_png()}

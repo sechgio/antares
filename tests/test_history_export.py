@@ -130,3 +130,24 @@ def test_history_export_csv_drops_missing_gracefully(seeded_db) -> None:
     text = base64.b64decode(result["csv"]).decode("utf-8")
     rows = list(csv.DictReader(io.StringIO(text)))
     assert rows == []
+
+
+def test_history_get_returns_run_with_parsed_json(seeded_db) -> None:
+    _db_file, _runs = seeded_db
+    result = HANDLERS["history_get"]({"id": 1})
+    run = result["run"]
+    assert run["id"] == 1
+    assert isinstance(run["files"], list)
+    assert isinstance(run["options"], dict)
+
+
+def test_history_get_raises_for_missing_id(seeded_db) -> None:
+    _db_file, _runs = seeded_db
+    with pytest.raises(ValueError, match="Run not found: 999999"):
+        HANDLERS["history_get"]({"id": 999999})
+
+
+def test_history_get_rejects_invalid_id(seeded_db) -> None:
+    _db_file, _runs = seeded_db
+    with pytest.raises(ValueError, match="id inválido"):
+        HANDLERS["history_get"]({})

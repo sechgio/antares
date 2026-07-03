@@ -53,6 +53,7 @@ export default function PanelAvisoCorteApp() {
         imageMap,
         exportFormat,
         templateId,
+        session.exportMode,
       );
       await saveFeatureHistory('panel_aviso_corte', filename, { format: exportFormat, template: templateId, panels: session.previewPanels.length }, session.previewPanels.length);
       addToast({ message: `Exportado: ${filename}`, type: 'success' });

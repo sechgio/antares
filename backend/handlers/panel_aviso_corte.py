@@ -8,7 +8,7 @@ from typing import Any
 from backend.core.panel_aviso_corte import build_panels, parse_excel_bytes, render_docx, render_pdf
 from backend.core.panel_aviso_corte.models import MatchRule
 from backend.core.panel_aviso_corte.serialization import deserialize_panel
-from backend.handlers.common import with_locale
+from backend.handlers.common import validate_params, with_locale
 
 
 @with_locale
@@ -84,13 +84,14 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
     logos = {"left": logos_raw.get("left_b64") or None, "right": logos_raw.get("right_b64") or None}
     images = {str(k): str(v) for k, v in images_raw.items() if v is not None}
     image_paths = {str(k): str(v) for k, v in image_paths_raw.items() if v is not None}
+    export_mode = str(params.get("export_mode", "skip_empty"))
     if fmt == "docx":
         docx_bytes, filename = render_docx(
             panels=panels,
             logos=logos,
             images=images,
             image_paths=image_paths,
-            export_mode="include_empty",
+            export_mode=export_mode,  # type: ignore[arg-type]
             template_id=template_id,
         )
         if output_path:
@@ -121,7 +122,7 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
         logos=logos,
         images=images,
         image_paths=image_paths,
-        export_mode="include_empty",
+        export_mode=export_mode,  # type: ignore[arg-type]
         template_id=template_id,
     )
     if output_path:
@@ -146,10 +147,17 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 @with_locale
+@validate_params("path")
 def panel_aviso_corte_template(params: dict[str, Any]) -> dict[str, Any]:
-    path = params.get("path", "")
-    if path and not path.lower().endswith(".xlsx"):
-        path = path + ".xlsx"
+    path = str(params.get("path") or "").strip()
+    if not path:
+        msg = "path es requerido"
+        raise ValueError(msg)
+    if not path.lower().endswith(".xlsx"):
+        path = f"{path}.xlsx"
+
+    destination = Path(path).expanduser()
+    destination.parent.mkdir(parents=True, exist_ok=True)
 
     try:
         import pandas as pd  # type: ignore
@@ -176,8 +184,8 @@ def panel_aviso_corte_template(params: dict[str, Any]) -> dict[str, Any]:
     for i, row in enumerate(data):
         df.loc[i] = row
 
-    df.to_excel(path, index=False, engine="openpyxl")
-    return {"path": path}
+    df.to_excel(destination, index=False, engine="openpyxl")
+    return {"path": str(destination)}
 
 HANDLERS = {
     "panel_aviso_corte_parse_excel": panel_aviso_corte_parse_excel,

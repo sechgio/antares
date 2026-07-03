@@ -145,13 +145,8 @@ def is_path_like_key(key: str) -> bool:
     """
     if key in KNOWN_PATH_KEYS:
         return True
-    lowered = key.lower()
-    if any(lowered.endswith(suffix) for suffix in PATH_KEY_SUFFIXES):
-        return True
-    # camelCase variants (excelPath, outputDir, filePath) → snake_case, then
-    # re-check the suffix heuristic so camelCase path keys are screened too.
     snake = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", key).lower()
-    return snake != lowered and any(snake.endswith(suffix) for suffix in PATH_KEY_SUFFIXES)
+    return any(snake.endswith(suffix) for suffix in PATH_KEY_SUFFIXES)
 
 
 def _path_item_violates(item: object, *, strict: bool) -> bool:

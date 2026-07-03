@@ -95,10 +95,10 @@ export default function ExcelImporter({ source, onSource }: Props) {
                 defaultPath: 'AVISO_DE_CORTE_TEMPLATE.xlsx',
                 filters: [{ name: 'Excel', extensions: ['xlsx'] }],
               });
-              if (res.paths && res.paths.length > 0) {
-                await api.panelAvisoCorteTemplate({ path: res.paths[0] });
-                addToast({ message: 'Plantilla de Excel guardada', type: 'success' });
-              }
+              const savePath = res.paths?.[0]?.trim();
+              if (!savePath) return;
+              await api.panelAvisoCorteTemplate({ path: savePath });
+              addToast({ message: 'Plantilla de Excel guardada', type: 'success' });
             } catch (err: any) {
               setError(err?.message || 'Error al descargar la plantilla');
             }

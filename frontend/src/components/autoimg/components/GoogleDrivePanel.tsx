@@ -1,0 +1,168 @@
+import { useCallback, useEffect, useState } from 'react';
+import { CheckCircle2, FolderOpen, HardDrive, Loader2, Plus } from 'lucide-react';
+import { api } from '../../../api';
+import type { DriveVerifyResult } from '../types';
+import { parseDriveFolderId } from '../utils/parseDriveFolderId';
+import { INPUT_SM_CLASS, InlineMessage, SidebarSection, StatusChip } from './shared';
+
+interface GoogleDrivePanelProps {
+  googleConnected: boolean;
+  onFolderAdded?: () => void;
+}
+
+export default function GoogleDrivePanel({ googleConnected, onFolderAdded }: GoogleDrivePanelProps) {
+  const [driveConnected, setDriveConnected] = useState(false);
+  const [folderInput, setFolderInput] = useState('');
+  const [folderName, setFolderName] = useState('');
+  const [verified, setVerified] = useState<DriveVerifyResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const refreshDriveStatus = useCallback(async () => {
+    if (!googleConnected) {
+      setDriveConnected(false);
+      return;
+    }
+    try {
+      const status = await api.autoimgDriveStatus();
+      setDriveConnected(status.connected);
+    } catch {
+      setDriveConnected(false);
+    }
+  }, [googleConnected]);
+
+  useEffect(() => {
+    refreshDriveStatus();
+  }, [refreshDriveStatus]);
+
+  const handleVerify = async () => {
+    if (!folderInput.trim()) return;
+    setLoading(true);
+    setError('');
+    setSuccess('');
+    setVerified(null);
+    try {
+      const res = await api.autoimgDriveVerifyFolder(folderInput.trim());
+      setVerified(res);
+      if (!folderName.trim()) setFolderName(res.name);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo acceder a la carpeta');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddFolder = async () => {
+    if (!verified) return;
+    const name = folderName.trim() || verified.name;
+    setAdding(true);
+    setError('');
+    setSuccess('');
+    try {
+      await api.autoimgFoldersAdd({ name, folder_id: verified.folder_id, activo: true });
+      setSuccess(`"${name}" agregada`);
+      setFolderInput('');
+      setFolderName('');
+      setVerified(null);
+      onFolderAdded?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al agregar carpeta');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const parsedId = parseDriveFolderId(folderInput);
+
+  if (!googleConnected) {
+    return (
+      <SidebarSection icon={HardDrive} title="Google Drive" muted>
+        <p className="text-[10px] leading-relaxed text-[var(--text-muted)]">
+          Conecta tu cuenta Google para acceder a carpetas compartidas.
+        </p>
+      </SidebarSection>
+    );
+  }
+
+  return (
+    <SidebarSection
+      icon={HardDrive}
+      title="Google Drive"
+      badge={driveConnected ? <StatusChip ok label="Listo" /> : undefined}
+    >
+      <p className="mb-2 text-[10px] text-[var(--text-muted)]">
+        URL o ID de carpeta en Compartidos.
+      </p>
+
+      <input
+        type="text"
+        value={folderInput}
+        onChange={(e) => {
+          setFolderInput(e.target.value);
+          setVerified(null);
+          setError('');
+          setSuccess('');
+        }}
+        placeholder="URL o Folder ID"
+        className={`${INPUT_SM_CLASS} font-mono`}
+      />
+      {parsedId && folderInput.includes('/') && (
+        <p className="mt-1 truncate font-mono text-[10px] text-[var(--text-muted)]">ID: {parsedId}</p>
+      )}
+
+      <button
+        type="button"
+        onClick={handleVerify}
+        disabled={loading || !folderInput.trim()}
+        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-[var(--border-medium)] bg-[var(--bg-base)] py-1.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-active)] hover:text-[var(--text-primary)] disabled:opacity-40"
+      >
+        {loading ? <Loader2 size={12} className="animate-spin" /> : <FolderOpen size={12} />}
+        Verificar acceso
+      </button>
+
+      {verified && (
+        <div className="mt-2.5 space-y-2 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)] p-2.5">
+          <div className="flex items-start gap-2">
+            <CheckCircle2 size={13} className="mt-0.5 shrink-0 text-emerald-400" />
+            <div className="min-w-0">
+              <p className="truncate text-[11px] text-[var(--text-primary)]">{verified.name}</p>
+              <p className="text-[10px] text-[var(--text-muted)]">
+                {verified.image_count} imagen{verified.image_count !== 1 ? 'es' : ''}
+              </p>
+            </div>
+          </div>
+          {verified.sample_files.length > 0 && (
+            <ul className="space-y-0.5 border-t border-[var(--border-subtle)] pt-2">
+              {verified.sample_files.map((file) => (
+                <li key={file} className="truncate font-mono text-[10px] text-[var(--text-muted)]">
+                  {file}
+                </li>
+              ))}
+            </ul>
+          )}
+          <input
+            type="text"
+            value={folderName}
+            onChange={(e) => setFolderName(e.target.value)}
+            placeholder="Nombre en el registro"
+            className={INPUT_SM_CLASS}
+          />
+          <button
+            type="button"
+            onClick={handleAddFolder}
+            disabled={adding}
+            className="flex w-full items-center justify-center gap-1.5 rounded-md bg-[var(--accent-primary)] py-1.5 text-[11px] font-medium text-[var(--text-on-accent)] transition-colors hover:bg-[var(--accent-primary-hover)] disabled:opacity-40"
+          >
+            {adding ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+            Agregar al registro
+          </button>
+        </div>
+      )}
+
+      {error && <InlineMessage tone="error">{error}</InlineMessage>}
+      {success && <InlineMessage tone="success">{success}</InlineMessage>}
+    </SidebarSection>
+  );
+}

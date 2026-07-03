@@ -45,7 +45,8 @@ let _stderrBuffer = [];
 let _lastError = null;                   // { kind: 'fatal'|'transient', message, stderrTail }
 let _healthCheckTimer = null;            // periodic health check interval
 let _healthProbeInFlight = false;        // avoid overlapping liveness probes
-let _startInProgress = false;            // prevents concurrent start/restart cycles
+let _currentStart = null;                // { inProgress, abort } — active start/retry cycle
+let _autoRestartAbort = null;            // aborts in-flight auto-restart backoff when preempted
 let _manualRestartInProgress = false;    // synchronous claim for manualRestart() concurrency
 let _pendingRequestCount = 0;            // track in-flight IPC requests to avoid killing busy backend
 
@@ -142,6 +143,48 @@ function _recordStderr(chunk) {
   }
 }
 
+function _abortController(ac, reason) {
+  if (ac) ac.abort();
+  if (reason) console.warn(`[backend-spawner] ${reason}`);
+}
+
+function _clearStartCycle() {
+  _currentStart = null;
+}
+
+function _preemptStartCycle(reason) {
+  _abortController(
+    _currentStart?.abort,
+    reason ? `Preempted in-flight start cycle: ${reason}` : null,
+  );
+  _clearStartCycle();
+}
+
+function _clearAutoRestartCycle() {
+  _autoRestartAbort = null;
+}
+
+function _abortAutoRestart(reason) {
+  _abortController(
+    _autoRestartAbort,
+    reason ? `Aborted in-flight auto-restart: ${reason}` : null,
+  );
+  _clearAutoRestartCycle();
+}
+
+function _sleep(ms, signal) {
+  if (signal?.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    if (signal) {
+      signal.addEventListener('abort', () => {
+        clearTimeout(timer);
+        resolve();
+      }, { once: true });
+    }
+  });
+}
+
 function _classifyStartupError(rawMessage) {
   const msg = (rawMessage || '').toLowerCase();
   // Fatal = no point retrying: executable missing, python not installed.
@@ -162,7 +205,7 @@ async function startPythonBackend(isDev, attempt = 1) {
   // reset the flag and spawn a backend that outlives the app (zombie process).
   if (_isShuttingDown) {
     console.log('[backend-spawner] Shutdown requested, aborting start.');
-    _startInProgress = false;
+    _clearStartCycle();
     return;
   }
 
@@ -172,11 +215,11 @@ async function startPythonBackend(isDev, attempt = 1) {
     // the async retry backoff. Resetting it here would spawn a zombie backend
     // that outlives the app. manualRestart() resets it explicitly instead.
     _isShuttingDown = false;
-    if (_startInProgress) {
+    if (_currentStart?.inProgress) {
       console.warn('[backend-spawner] Start already in progress, skipping duplicate.');
       return;
     }
-    _startInProgress = true;
+    _currentStart = { inProgress: true, abort: new AbortController() };
     _state = STATE.STARTING;
     _lastError = null;
     _stderrBuffer = [];
@@ -184,26 +227,32 @@ async function startPythonBackend(isDev, attempt = 1) {
     _notifyRenderer('backend.starting', { attempt: 1, limit: START_RETRY_LIMIT });
   }
 
+  const cycleSignal = _currentStart?.abort?.signal;
+
   try {
     await _spawn(isDev);
-    if (_isShuttingDown) {
-      // A shutdown was requested while the spawn was in flight. The process
-      // already exists — kill it now so it cannot outlive the app.
-      console.log('[backend-spawner] Shutdown requested after spawn, aborting.');
+    if (_isShuttingDown || cycleSignal?.aborted) {
+      // A shutdown or preempt was requested while the spawn was in flight.
+      console.log('[backend-spawner] Start cycle aborted after spawn.');
       _forceKillProcess(pythonProcess);
       pythonProcess = null;
-      _startInProgress = false;
+      _clearStartCycle();
       return;
     }
     _state = STATE.READY;
     _lastError = null;
-    _startInProgress = false;
+    _clearStartCycle();
     _readyResolve?.();
     if (_restartResetTimer) clearTimeout(_restartResetTimer);
     _restartResetTimer = setTimeout(() => { _restartCount = 0; }, RESTART_RESET_MS);
     _startHealthCheck();
     _notifyRenderer('backend.ready', { version: _resolveAppVersion() });
   } catch (err) {
+    if (cycleSignal?.aborted) {
+      _clearStartCycle();
+      return;
+    }
+
     const kind = _classifyStartupError(err.message);
     const stderrTail = getStderrTail();
     _lastError = { kind, message: err.message, stderrTail };
@@ -214,7 +263,7 @@ async function startPythonBackend(isDev, attempt = 1) {
     // retrying because renderer availability matters more than giving up early.
     if (kind === 'fatal') {
       _state = STATE.FATAL;
-      _startInProgress = false;
+      _clearStartCycle();
       _readyReject?.(err);
       _notifyRenderer('backend.fatal', {
         message: err.message,
@@ -233,10 +282,10 @@ async function startPythonBackend(isDev, attempt = 1) {
       willRetry: true,
       nextRetrySec: backoffSec,
     });
-    await new Promise((r) => setTimeout(r, 1000 * backoffSec));
-    if (_isShuttingDown) {
-      console.log('[backend-spawner] Shutdown requested during retry delay, aborting start.');
-      _startInProgress = false;
+    await _sleep(1000 * backoffSec, cycleSignal);
+    if (_isShuttingDown || cycleSignal?.aborted) {
+      console.log('[backend-spawner] Start cycle aborted during retry delay.');
+      _clearStartCycle();
       return;
     }
     return startPythonBackend(isDev, attempt + 1);
@@ -370,11 +419,16 @@ function _stopHealthCheck() {
 }
 
 async function _autoRestart() {
-  if (_isShuttingDown) return;
-  if (_startInProgress) {
+  if (_isShuttingDown || _manualRestartInProgress) return;
+  if (_currentStart?.inProgress) {
     console.warn('[backend-spawner] Auto-restart skipped: start already in progress.');
     return;
   }
+
+  _abortAutoRestart();
+  _autoRestartAbort = new AbortController();
+  const restartSignal = _autoRestartAbort.signal;
+
   _restartCount++;
   console.warn(`[backend-spawner] Auto-restart attempt ${_restartCount} (unlimited)`);
 
@@ -387,12 +441,19 @@ async function _autoRestart() {
 
   // Exponential backoff with a cap so we don't spam too fast
   const backoffSec = Math.min(Math.pow(2, _restartCount - 1), MAX_RESTART_BACKOFF_SEC);
-  await new Promise((r) => setTimeout(r, 1000 * backoffSec));
-  if (_isShuttingDown) {
-    console.log('[backend-spawner] Shutdown requested during auto-restart backoff, aborting.');
-    _startInProgress = false;
+  await _sleep(1000 * backoffSec, restartSignal);
+  if (_isShuttingDown || _manualRestartInProgress || _currentStart?.inProgress || restartSignal.aborted) {
+    if (_isShuttingDown) {
+      console.log('[backend-spawner] Shutdown requested during auto-restart backoff, aborting.');
+    }
+    _clearAutoRestartCycle();
     return;
   }
+  if (isReady() && pythonProcess && !pythonProcess.killed) {
+    _clearAutoRestartCycle();
+    return;
+  }
+  _clearAutoRestartCycle();
   await startPythonBackend(_isDev);
 }
 
@@ -503,6 +564,8 @@ function _forceKillProcess(proc) {
 
 function killPython() {
   _isShuttingDown = true;
+  _preemptStartCycle();
+  _abortAutoRestart();
   _state = STATE.EXITED;
   _stopHealthCheck();
   if (_restartResetTimer) clearTimeout(_restartResetTimer);
@@ -518,12 +581,9 @@ async function manualRestart(isDev, { force = false } = {}) {
   if (!force && _state === STATE.READY && pythonProcess && !pythonProcess.killed) {
     return true;
   }
-  // Synchronous claim — both concurrent callers cannot pass this guard.
-  // _startInProgress alone is insufficient because it is only flipped inside
-  // startPythonBackend's `attempt === 1` branch, leaving a window where two
-  // manualRestart() calls both see it as false.
-  if (_manualRestartInProgress || _startInProgress) {
-    console.warn('[backend-spawner] Manual restart skipped: start already in progress.');
+  // Synchronous claim — concurrent manualRestart() calls cannot both pass.
+  if (_manualRestartInProgress) {
+    console.warn('[backend-spawner] Manual restart skipped: another manual restart is in progress.');
     return false;
   }
   _manualRestartInProgress = true;
@@ -536,16 +596,20 @@ async function manualRestart(isDev, { force = false } = {}) {
   }
 
   try {
+    // Abort any in-flight auto-start/retry so this restart cannot leave a stale
+    // start cycle that blocks all future restarts.
+    _preemptStartCycle('manual restart requested');
+    _abortAutoRestart('manual restart requested');
+
     // Kill any lingering process (handles Windows zombie processes)
     _forceKillProcess(pythonProcess);
     pythonProcess = null;
     _stopHealthCheck();
 
     // Re-check shutdown flag — killPython() may have been called concurrently
-    // between the guard above (linea 528) and this synchronous section.
+    // between the guard above and this synchronous section.
     if (_isShuttingDown) {
       console.warn('[backend-spawner] Manual restart aborted: shutdown arrived during cleanup.');
-      _manualRestartInProgress = false;
       return false;
     }
 
@@ -559,7 +623,6 @@ async function manualRestart(isDev, { force = false } = {}) {
     await startPythonBackend(isDev);
     return isReady();
   } finally {
-    _startInProgress = false;
     _manualRestartInProgress = false;
   }
 }

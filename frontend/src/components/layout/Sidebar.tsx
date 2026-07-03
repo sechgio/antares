@@ -28,6 +28,7 @@ const ICONS: Record<TabId, ComponentType<{ className?: string }>> = {
   panelAvisoCorte: PanelAvisoCorteIcon,
   ubicaciones: MapPinIcon,
   evidenciaVolanteo: EvidenciaVolanteoIcon,
+  autoimg: AutoIMGIcon,
 };
 
 function readStoredExpanded(): boolean {
@@ -139,6 +140,16 @@ function EvidenciaVolanteoIcon({ className }: { className?: string }) {
       <rect x="14" y="3" width="7" height="7" rx="1" />
       <rect x="3" y="14" width="7" height="7" rx="1" />
       <rect x="14" y="14" width="7" height="7" rx="1" />
+    </svg>
+  );
+}
+
+function AutoIMGIcon({ className }: { className?: string }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M21 12a9 9 0 1 1-3-6.7" />
+      <polyline points="21 3 21 9 15 9" />
+      <rect x="8" y="8" width="8" height="8" rx="1" />
     </svg>
   );
 }

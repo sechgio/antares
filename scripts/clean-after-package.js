@@ -5,8 +5,6 @@ const projectRoot = path.resolve(__dirname, '..');
 
 const targets = [
   path.join(projectRoot, 'dist-electron', 'win-unpacked'),
-  path.join(projectRoot, 'dist-electron', 'linux-unpacked'),
-  path.join(projectRoot, 'dist-electron', 'mac'),
   path.join(projectRoot, 'dist'),
   path.join(projectRoot, 'frontend', 'dist'),
   path.join(projectRoot, 'backend', 'build'),

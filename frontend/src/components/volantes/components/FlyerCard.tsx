@@ -107,7 +107,7 @@ export default function FlyerCard({
 
         <section className="flyer-panel">
           <div className="flyer-panel-body" style={{ overflow: "hidden" }}>
-            <span className="flyer-kicker">LIMPIEZA DE RESERVORIOS:</span>
+            <strong className="flyer-kicker">LIMPIEZA DE RESERVORIOS:</strong>
             <strong className={reservoirClassName}>{record.reservorio}</strong>
 
             <div className="flyer-section-label">Zonas afectadas:</div>

@@ -105,6 +105,11 @@ class TestIsPathLikeKey:
         assert is_path_like_key("filePath")
         assert is_path_like_key("inputDir")
 
+    def test_keys_mixed_case(self) -> None:
+        assert is_path_like_key("output_pathFile")
+        assert is_path_like_key("output_path_File")
+        assert is_path_like_key("_pathFile")
+
     def test_keys_no_path(self) -> None:
         assert not is_path_like_key("rowIndex")
         assert not is_path_like_key("formato")

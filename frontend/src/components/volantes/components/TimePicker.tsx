@@ -1,5 +1,12 @@
 import { useState, useRef, useEffect } from "react";
 import { ChevronUp, ChevronDown, Clock } from "lucide-react";
+import {
+  formatTimeParts,
+  MINUTE_STEP,
+  parseTimeString,
+  snapTimeToStep,
+  stepTime,
+} from "../utils/timeStep";
 
 interface TimePickerProps {
   value: string;
@@ -8,13 +15,21 @@ interface TimePickerProps {
   className?: string;
 }
 
-export default function TimePicker({ value, onChange, label, className = "" }: TimePickerProps) {
+export default function TimePicker({
+  value,
+  onChange,
+  label,
+  className = "",
+}: TimePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
+      if (
+        pickerRef.current &&
+        !pickerRef.current.contains(event.target as Node)
+      ) {
         setIsOpen(false);
       }
     };
@@ -32,39 +47,41 @@ export default function TimePicker({ value, onChange, label, className = "" }: T
     return `${hour12}:${minutes} ${ampm}`;
   };
 
-  const parseTime = (timeString: string) => {
-    if (!timeString) return { hours: 8, minutes: 0 };
-    const [hours, minutes] = timeString.split(":").map(Number);
-    return { hours: hours || 8, minutes: minutes || 0 };
-  };
-
-  const { hours, minutes } = parseTime(value);
+  const { hours, minutes } = parseTimeString(value);
 
   const handleHoursChange = (delta: number) => {
     const newHours = (hours + delta + 24) % 24;
-    const formatted = `${String(newHours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
-    onChange(formatted);
+    onChange(formatTimeParts({ hours: newHours, minutes }));
   };
 
-  const handleMinutesChange = (delta: number) => {
-    const newMinutes = (minutes + delta + 60) % 60;
-    const formatted = `${String(hours).padStart(2, "0")}:${String(newMinutes).padStart(2, "0")}`;
-    onChange(formatted);
+  const handleMinutesChange = (direction: 1 | -1) => {
+    onChange(formatTimeParts(stepTime({ hours, minutes }, direction)));
   };
 
   const handleNow = () => {
     const now = new Date();
-    const formatted = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-    onChange(formatted);
+    onChange(
+      formatTimeParts(
+        snapTimeToStep({
+          hours: now.getHours(),
+          minutes: now.getMinutes(),
+        }),
+      ),
+    );
     setIsOpen(false);
   };
 
   return (
     <div className={`vgen-time-picker ${className}`} ref={pickerRef}>
       {label && <label className="vgen-label-sm">{label}</label>}
-      <div className="vgen-time-picker-trigger" onClick={() => setIsOpen(!isOpen)}>
+      <div
+        className="vgen-time-picker-trigger"
+        onClick={() => setIsOpen(!isOpen)}
+      >
         <Clock className="vgen-time-picker-trigger-icon" size={16} />
-        <span className="vgen-time-picker-trigger-value">{formatTime(value)}</span>
+        <span className="vgen-time-picker-trigger-value">
+          {formatTime(value)}
+        </span>
       </div>
 
       {isOpen && (
@@ -76,6 +93,8 @@ export default function TimePicker({ value, onChange, label, className = "" }: T
                 <button
                   onClick={() => handleHoursChange(1)}
                   className="vgen-time-picker-btn"
+                  type="button"
+                  aria-label="Aumentar hora"
                 >
                   <ChevronUp size={18} />
                 </button>
@@ -85,6 +104,8 @@ export default function TimePicker({ value, onChange, label, className = "" }: T
                 <button
                   onClick={() => handleHoursChange(-1)}
                   className="vgen-time-picker-btn"
+                  type="button"
+                  aria-label="Disminuir hora"
                 >
                   <ChevronDown size={18} />
                 </button>
@@ -97,8 +118,10 @@ export default function TimePicker({ value, onChange, label, className = "" }: T
               <div className="vgen-time-picker-label">Min</div>
               <div className="vgen-time-picker-controls">
                 <button
-                  onClick={() => handleMinutesChange(10)}
+                  onClick={() => handleMinutesChange(1)}
                   className="vgen-time-picker-btn"
+                  type="button"
+                  aria-label={`Aumentar ${MINUTE_STEP} minutos`}
                 >
                   <ChevronUp size={18} />
                 </button>
@@ -106,8 +129,10 @@ export default function TimePicker({ value, onChange, label, className = "" }: T
                   {String(minutes).padStart(2, "0")}
                 </div>
                 <button
-                  onClick={() => handleMinutesChange(-10)}
+                  onClick={() => handleMinutesChange(-1)}
                   className="vgen-time-picker-btn"
+                  type="button"
+                  aria-label={`Disminuir ${MINUTE_STEP} minutos`}
                 >
                   <ChevronDown size={18} />
                 </button>
@@ -115,7 +140,11 @@ export default function TimePicker({ value, onChange, label, className = "" }: T
             </div>
           </div>
 
-          <button onClick={handleNow} className="vgen-time-picker-now">
+          <button
+            onClick={handleNow}
+            className="vgen-time-picker-now"
+            type="button"
+          >
             Ahora
           </button>
         </div>

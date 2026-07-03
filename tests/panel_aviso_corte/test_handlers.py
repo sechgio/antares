@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import base64
 
+import pytest
+
 from backend.handlers import panel_aviso_corte as handler_module
 
 
@@ -17,6 +19,52 @@ def _panel_payload() -> dict[str, object]:
         ],
         "source_row_index": 0,
     }
+
+
+def test_render_pdf_forwards_export_mode(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_render_pdf(*, panels, logos, images, image_paths, export_mode, template_id=None):  # type: ignore[no-untyped-def]
+        captured["export_mode"] = export_mode
+        return b"%PDF", "panel.pdf"
+
+    monkeypatch.setattr(handler_module, "render_pdf", fake_render_pdf)
+
+    handler_module.panel_aviso_corte_render_pdf(
+        {
+            "panels": [_panel_payload()],
+            "logos": {},
+            "images": {},
+            "image_paths": {},
+            "format": "pdf",
+            "export_mode": "skip_empty",
+        },
+    )
+
+    assert captured["export_mode"] == "skip_empty"
+
+
+def test_render_docx_forwards_export_mode(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_render_docx(*, panels, logos, images, image_paths, export_mode, template_id=None):  # type: ignore[no-untyped-def]
+        captured["export_mode"] = export_mode
+        return b"PK\x03\x04docx-bytes", "panel.docx"
+
+    monkeypatch.setattr(handler_module, "render_docx", fake_render_docx)
+
+    handler_module.panel_aviso_corte_render_pdf(
+        {
+            "panels": [_panel_payload()],
+            "logos": {},
+            "images": {},
+            "image_paths": {},
+            "format": "docx",
+            "export_mode": "include_empty",
+        },
+    )
+
+    assert captured["export_mode"] == "include_empty"
 
 
 def test_render_pdf_forwards_template_id(monkeypatch) -> None:
@@ -187,3 +235,35 @@ def test_render_docx_writes_to_disk_when_output_path_given(monkeypatch, tmp_path
     assert result["content_base64"] == ""
     assert result["filename"] == "output.docx"
     assert output_file.read_bytes() == b"PK\x03\x04docx-disk-content"
+
+
+@pytest.mark.parametrize("invalid_path", ["", "   "])
+def test_template_rejects_empty_path(invalid_path: str) -> None:
+    with pytest.raises(ValueError, match=r"path|Invalid path"):
+        handler_module.panel_aviso_corte_template({"path": invalid_path})
+
+
+def test_template_writes_excel_with_expected_columns(tmp_path) -> None:
+    output_file = tmp_path / "plantilla"
+
+    result = handler_module.panel_aviso_corte_template({"path": str(output_file)})
+
+    saved = tmp_path / "plantilla.xlsx"
+    assert result["path"] == str(saved)
+    assert saved.is_file()
+    assert saved.stat().st_size > 0
+
+    try:
+        import pandas as pd  # type: ignore
+    except ImportError:
+        pytest.skip("pandas no está instalado")
+
+    df = pd.read_excel(saved, engine="openpyxl")
+    assert list(df.columns) == [
+        "ID",
+        "DIRECCION",
+        "FECHA DE CORTE",
+        "CUADRANTE AFECTADO",
+        "MOTIVO",
+    ]
+    assert len(df) == 4

@@ -20,5 +20,9 @@
   "html_to_pdf",
   "generar_ubicaciones",
   "preview_ubicacion",
-  "evidencia_volanteo_render"
+  "evidencia_volanteo_render",
+  "autoimg_scan_all",
+  "autoimg_scan_and_sync",
+  "autoimg_sync_to_sheet",
+  "autoimg_sync_from_sheet"
 ]

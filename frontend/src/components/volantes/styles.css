@@ -957,14 +957,17 @@ textarea.vgen-input {
 .flyer-kicker {
     display: block;
     margin-bottom: calc(3px * var(--flyer-scale, 1));
+    font-weight: 700;
 }
 
-.flyer-panel-title {
+.flyer-panel-title,
+.flyer-panel-body > strong.flyer-panel-title {
     margin-bottom: calc(8px * var(--flyer-scale, 1));
     color: #0684cc;
     font-size: calc(15px * var(--flyer-scale, 1));
     line-height: 1.02;
     font-weight: 900;
+    font-synthesis-weight: auto;
     text-transform: uppercase;
 }
 
@@ -1245,12 +1248,14 @@ textarea.vgen-input {
     margin-bottom: calc(5px * var(--flyer-scale, 1));
 }
 
-.sheet-page.layout-two .flyer-panel-title {
+.sheet-page.layout-two .flyer-panel-title,
+.sheet-page.layout-two .flyer-panel-body > strong.flyer-panel-title {
     margin-bottom: calc(5px * var(--flyer-scale, 1));
     color: #0a7dc0;
     font-size: calc(18px * var(--flyer-scale, 1) * var(--reservoir-mult-2up, 1));
     line-height: 1.08;
     font-weight: 800;
+    font-synthesis-weight: auto;
     text-transform: uppercase;
 }
 
@@ -1517,12 +1522,14 @@ textarea.vgen-input {
     margin-bottom: calc(5px * var(--flyer-scale, 1));
 }
 
-.sheet-page.layout-three .flyer-panel-title {
+.sheet-page.layout-three .flyer-panel-title,
+.sheet-page.layout-three .flyer-panel-body > strong.flyer-panel-title {
     margin-bottom: calc(5px * var(--flyer-scale, 1));
     color: #0a7dc0;
     font-size: calc(18px * var(--flyer-scale, 1) * var(--reservoir-mult-3up, 1));
     line-height: 1.08;
     font-weight: 800;
+    font-synthesis-weight: auto;
     text-transform: uppercase;
 }
 

@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from backend.core.converter import convertir_a_preview, convertir_imagen
+from backend.core.converter import _build_save_kwargs, convertir_a_preview, convertir_imagen
 from backend.core.format_registry import get_registry
 
 
@@ -32,6 +32,18 @@ def imagen_rgba(tmp_path):
     img = Image.new("RGBA", (100, 100), color=(0, 255, 0, 128))
     img.save(ruta)
     return ruta
+
+
+class TestBuildSaveKwargs:
+    def test_jpeg_high_quality_includes_optimize(self) -> None:
+        img = Image.new("RGB", (10, 10))
+        kwargs = _build_save_kwargs("JPEG", 95, False, img)
+        assert kwargs == {"quality": 95, "optimize": True}
+
+    def test_webp_high_quality_omits_optimize(self) -> None:
+        img = Image.new("RGB", (10, 10))
+        kwargs = _build_save_kwargs("WEBP", 95, False, img)
+        assert kwargs == {"quality": 95}
 
 
 class TestObtenerFormatos:

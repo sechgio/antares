@@ -114,13 +114,10 @@ class RenamerEngine:
         ruta = Path(ruta_origen)
         ext = ruta.suffix.lower()
 
-        mapped_name = self._lookup_file_mapping(ruta.name, file_mapping or {})
-        if mapped_name is not None:
-            nombre_salida = sanitizar_nombre(mapped_name)
-            if not nombre_salida.lower().endswith(ext.lower()):
-                nombre_salida += ext
-            self.secuencia += 1
-            return nombre_salida
+        if file_mapping:
+            nombre_salida = self._resolve_mapped_output_name(ruta, file_mapping)
+            if nombre_salida is not None:
+                return nombre_salida
 
         codigo = codigo_manual or obtener_codigo_desde_nombre(ruta.name)
 
@@ -170,6 +167,35 @@ class RenamerEngine:
         self.secuencia += 1
         return nombre_salida
 
+    @staticmethod
+    def _preserve_original_name(ruta: Path) -> str:
+        """Conserva el nombre original aplicando la misma sanitización que ``aplicar()``."""
+        ext = ruta.suffix.lower()
+        stem = sanitizar_nombre(ruta.stem)
+        if not stem:
+            return sanitizar_nombre(ruta.name)
+        if ext and not stem.lower().endswith(ext):
+            return stem + ext
+        return stem
+
+    def _resolve_mapped_output_name(
+        self,
+        ruta: Path,
+        file_mapping: dict[str, str] | MappingIndex,
+    ) -> str | None:
+        """Resuelve el nombre mapeado sin mutar contadores internos del engine."""
+        if isinstance(file_mapping, MappingIndex):
+            return file_mapping.resolve_output_name(ruta.name)
+
+        mapped = self._lookup_file_mapping(ruta.name, file_mapping)
+        if mapped is None:
+            return None
+        ext = ruta.suffix.lower()
+        nombre_salida = sanitizar_nombre(mapped)
+        if not nombre_salida.lower().endswith(ext.lower()):
+            nombre_salida += ext
+        return nombre_salida
+
     def preview_lote(
         self,
         rutas: list[str | Path],
@@ -203,17 +229,16 @@ class RenamerEngine:
             for ruta in rutas:
                 ruta = Path(ruta)
                 if file_mapping:
-                    mapped = self._lookup_file_mapping(ruta.name, file_mapping)
-                    if mapped is not None:
-                        nombre_nuevo = self.aplicar(ruta, file_mapping=file_mapping)
-                        resultados.append((str(ruta), nombre_nuevo, True))
+                    mapped_name = self._resolve_mapped_output_name(ruta, file_mapping)
+                    if mapped_name is not None:
+                        resultados.append((str(ruta), mapped_name, True))
                         continue
                 codigo = codigos_manuales.get(ruta.name, obtener_codigo_desde_nombre(ruta.name))
                 datos = lookup_fn(codigo) if lookup_fn else None
                 if datos is None and self.sequence_mode == "record":
-                    # Sin coincidencia en BD: conservar nombre original y no
+                    # Sin coincidencia en BD: conservar nombre original sanitizado y no
                     # consumir contador de secuencia por fila.
-                    resultados.append((str(ruta), ruta.name, False))
+                    resultados.append((str(ruta), self._preserve_original_name(ruta), False))
                     continue
                 fseq = file_seqs.get(ruta.name)
                 group = sequence_groups.get(ruta.name)

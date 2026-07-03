@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoIMG v4 — Multi-carpeta + Google Sheets Flow</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1b23;
+    --elevated: #22232e;
+    --border: #2a2b3a;
+    --text: #e2e4f0;
+    --text-secondary: #8b8da3;
+    --text-muted: #5b5d73;
+    --accent: #5b8af5;
+    --accent-bg: rgba(91,138,245,0.12);
+    --green: #34d399;
+    --green-bg: rgba(52,211,153,0.12);
+    --red: #f87171;
+    --red-bg: rgba(248,113,113,0.12);
+    --yellow: #fbbf24;
+    --yellow-bg: rgba(251,191,36,0.12);
+    --purple: #a78bfa;
+    --purple-bg: rgba(167,139,250,0.12);
+    --cyan: #22d3ee;
+    --radius: 10px;
+    --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    line-height: 1.6;
+    padding: 0;
+  }
+  .container { max-width: 1140px; margin: 0 auto; padding: 0 24px; }
+
+  /* Header */
+  header {
+    background: linear-gradient(135deg, #1a1b23 0%, #22232e 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 56px 0 40px;
+    text-align: center;
+  }
+  header h1 { font-size: 2.6rem; font-weight: 700; letter-spacing: -0.02em; }
+  header h1 span { color: var(--green); }
+  header .subtitle { color: var(--text-secondary); font-size: 1.05rem; margin-top: 6px; }
+  .badge-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 18px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--elevated); border: 1px solid var(--border);
+    padding: 5px 14px; border-radius: 20px; font-size: 0.82rem; color: var(--text-secondary);
+  }
+  .badge .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot-green { background: var(--green); }
+  .dot-accent { background: var(--accent); }
+  .dot-purple { background: var(--purple); }
+  .dot-yellow { background: var(--yellow); }
+
+  /* Rules bar */
+  .rules-bar {
+    display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+    padding: 18px 0; border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .rule-chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 7px 16px; border-radius: 8px; font-size: 0.82rem; font-weight: 500;
+  }
+  .rule-chip.green { background: var(--green-bg); color: var(--green); }
+  .rule-chip.red { background: var(--red-bg); color: var(--red); }
+  .rule-chip.yellow { background: var(--yellow-bg); color: var(--yellow); }
+  .rule-chip.accent { background: var(--accent-bg); color: var(--accent); }
+  .rule-chip.purple { background: var(--purple-bg); color: var(--purple); }
+
+  /* Sections */
+  section { padding: 44px 0; border-bottom: 1px solid var(--border); }
+  section:last-child { border-bottom: none; }
+  h2 {
+    font-size: 1.5rem; font-weight: 600; margin-bottom: 22px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  h2 .emoji { font-size: 1.3rem; }
+  h3 { font-size: 1.1rem; font-weight: 600; margin: 26px 0 12px; color: var(--accent); }
+  h4 { font-size: 0.95rem; font-weight: 600; margin: 18px 0 8px; color: var(--text-secondary); }
+
+  /* Cards */
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 18px; margin-bottom: 14px;
+  }
+  .card-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+    gap: 12px; margin-bottom: 14px;
+  }
+
+  /* Flow steps */
+  .flow { display: flex; flex-direction: column; gap: 0; margin: 22px 0; position: relative; }
+  .flow-step {
+    display: flex; align-items: flex-start; gap: 16px;
+    padding: 13px 18px; position: relative;
+  }
+  .flow-step::before {
+    content: ''; position: absolute; left: 29px; top: 44px; bottom: -2px;
+    width: 2px; background: var(--border);
+  }
+  .flow-step:last-child::before { display: none; }
+  .flow-num {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--accent-bg); color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.8rem; font-weight: 700; flex-shrink: 0;
+    border: 1px solid var(--accent);
+  }
+  .flow-step.sheets .flow-num { background: var(--green-bg); color: var(--green); border-color: var(--green); }
+  .flow-step.drive .flow-num { background: var(--purple-bg); color: var(--purple); border-color: var(--purple); }
+  .flow-step.folder .flow-num { background: var(--yellow-bg); color: var(--yellow); border-color: var(--yellow); }
+  .flow-step.result .flow-num { background: var(--cyan); color: #0f1117; border-color: var(--cyan); }
+  .flow-content { flex: 1; }
+  .flow-content strong { display: block; font-size: 0.95rem; margin-bottom: 2px; }
+  .flow-content span { font-size: 0.82rem; color: var(--text-secondary); }
+  .flow-content .tag-sm {
+    display: inline-block; padding: 1px 8px; border-radius: 10px;
+    font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+    margin-right: 4px;
+  }
+  .flow-content .tag-sm.new { background: var(--yellow-bg); color: var(--yellow); }
+  .flow-content .tag-sm.core { background: var(--accent-bg); color: var(--accent); }
+  .flow-content .tag-sm.drive { background: var(--purple-bg); color: var(--purple); }
+  .flow-content .tag-sm.sheets { background: var(--green-bg); color: var(--green); }
+
+  /* Architecture layers */
+  .arch-layer { margin-bottom: 14px; }
+  .arch-layer-title {
+    font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-muted); margin-bottom: 8px;
+  }
+  .arch-blocks { display: flex; flex-wrap: wrap; gap: 7px; }
+  .arch-block {
+    background: var(--elevated); border: 1px solid var(--border); border-radius: 8px;
+    padding: 9px 14px; font-size: 0.8rem; position: relative;
+  }
+  .arch-block .label { display: block; font-weight: 500; }
+  .arch-block .sub { display: block; font-size: 0.68rem; color: var(--text-muted); margin-top: 1px; }
+  .arch-block.accent { border-color: var(--accent); background: var(--accent-bg); }
+  .arch-block.green { border-color: var(--green); background: var(--green-bg); }
+  .arch-block.drive { border-color: var(--purple); background: var(--purple-bg); }
+  .arch-block.sheets { border-color: var(--green); background: var(--green-bg); }
+  .arch-block.folder { border-color: var(--yellow); background: var(--yellow-bg); }
+  .arch-connector {
+    display: flex; align-items: center; gap: 8px; padding: 3px 16px;
+    font-size: 0.72rem; color: var(--text-muted);
+  }
+  .arch-connector .line { flex: 1; height: 1px; background: var(--border); }
+  .arch-connector .arrow { color: var(--text-muted); font-size: 0.7rem; }
+
+  /* Tables */
+  .table-wrap { overflow-x: auto; margin: 14px 0; border-radius: var(--radius); border: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th { background: var(--elevated); padding: 8px 12px; text-align: left; font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 7px 12px; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+
+  /* Code blocks */
+  .code-block {
+    background: #0d0e13; border: 1px solid var(--border); border-radius: 8px;
+    padding: 13px 16px; font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.75rem; line-height: 1.5; overflow-x: auto; margin: 10px 0;
+  }
+  .code-block .comment { color: #5b5d73; }
+  .code-block .key { color: var(--accent); }
+  .code-block .str { color: var(--green); }
+  .code-block .num { color: var(--yellow); }
+  .code-block .highlight { background: var(--yellow-bg); padding: 0 3px; border-radius: 2px; }
+
+  /* Tree view */
+  .tree { font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 0.8rem; line-height: 1.8; }
+  .tree .folder { color: var(--accent); }
+  .tree .file { color: var(--text-secondary); }
+  .tree .green { color: var(--green); }
+  .tree .red { color: var(--red); }
+  .tree .yellow { color: var(--yellow); }
+  .tree .highlight { background: var(--yellow-bg); padding: 0 3px; border-radius: 2px; }
+
+  /* Tags */
+  .tag {
+    display: inline-block; padding: 2px 10px; border-radius: 12px;
+    font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .tag.green { background: var(--green-bg); color: var(--green); }
+  .tag.red { background: var(--red-bg); color: var(--red); }
+  .tag.yellow { background: var(--yellow-bg); color: var(--yellow); }
+  .tag.accent { background: var(--accent-bg); color: var(--accent); }
+  .tag.purple { background: var(--purple-bg); color: var(--purple); }
+
+  /* Compare */
+  .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 14px 0; }
+  .compare-col { border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; }
+  .compare-col .header { padding: 11px 14px; font-weight: 600; font-size: 0.85rem; }
+  .compare-col .header.red { background: var(--red-bg); color: var(--red); }
+  .compare-col .header.green { background: var(--green-bg); color: var(--green); }
+  .compare-col .header.yellow { background: var(--yellow-bg); color: var(--yellow); }
+  .compare-col .body { padding: 12px 14px; font-size: 0.8rem; line-height: 1.8; color: var(--text-secondary); }
+  .compare-col .body .item { display: flex; gap: 8px; align-items: flex-start; }
+
+  /* Version chip */
+  .version-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 14px; border-radius: 20px;
+    background: var(--yellow-bg); color: var(--yellow);
+    border: 1px solid var(--yellow);
+    font-size: 0.78rem; font-weight: 600;
+    margin: 0 8px;
+  }
+
+  /* Sheet preview */
+  .sheet-preview {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    overflow: hidden; margin: 14px 0;
+  }
+  .sheet-preview .sheet-header {
+    background: var(--elevated); padding: 6px 14px; font-size: 0.75rem;
+    border-bottom: 1px solid var(--border);
+    display: flex; gap: 16px;
+  }
+  .sheet-preview .sheet-header span { color: var(--text-muted); }
+  .sheet-preview .sheet-header span.active { color: var(--green); font-weight: 600; }
+  .sheet-preview table { font-size: 0.72rem; }
+  .sheet-preview table th { font-size: 0.65rem; }
+
+  @media (max-width: 700px) {
+    header h1 { font-size: 1.6rem; }
+    .compare-grid { grid-template-columns: 1fr; }
+    .card-grid { grid-template-columns: 1fr; }
+    .flow-step { padding: 10px 12px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <h1>📊 <span>AutoIMG</span> v4</h1>
+    <p class="subtitle">Gestión multi-carpeta de imágenes vía Google Sheets — sin mover archivos</p>
+    <div class="badge-row">
+      <span class="badge"><span class="dot dot-accent"></span> ANTARES v3.x</span>
+      <span class="badge"><span class="dot dot-green"></span> Feature independiente</span>
+      <span class="badge"><span class="dot dot-yellow"></span> 📁 Multi-carpeta</span>
+      <span class="badge"><span class="dot dot-green"></span> 📊 Google Sheets API v4</span>
+      <span class="badge"><span class="dot dot-purple"></span> 🔗 Google Drive API v3</span>
+    </div>
+  </div>
+</header>
+
+<div class="rules-bar">
+  <span class="rule-chip red">❌ NO MODIFICAR Compartidos</span>
+  <span class="rule-chip green">✅ NO SUBIR archivos</span>
+  <span class="rule-chip green">✅ NO ELIMINAR originales</span>
+  <span class="rule-chip purple">☁️ Solo LEER metadata de Drive</span>
+  <span class="rule-chip green">📊 Solo ESCRIBIR en Sheets</span>
+</div>
+
+<div class="container">
+
+<!-- ═══ SECTION: FILOSOFÍA ═══ -->
+<section>
+  <h2><span class="emoji">🎯</span> Filosofía del diseño</h2>
+
+  <div class="compare-grid">
+    <div class="compare-col">
+      <div class="header red">🔴 ORIGEN — Google Drive Compartidos</div>
+      <div class="body">
+        <div class="item"><span>📖</span> Solo LECTURA de metadata</div>
+        <div class="item"><span>🚫</span> No se descargan archivos</div>
+        <div class="item"><span>🚫</span> No se elimina nada</div>
+        <div class="item"><span>🚫</span> No se modifica ningún nombre</div>
+        <div class="item"><span>🧐</span> Múltiples carpetas por técnico/fecha</div>
+        <div class="item" style="margin-top:10px;padding:8px 12px;background:var(--red-bg);border-radius:8px;font-size:0.76rem;color:var(--red)">
+          ⚠️ Espejo intacto de lo que subieron los usuarios
+        </div>
+      </div>
+    </div>
+    <div class="compare-col">
+      <div class="header green">🟢 DATOS — Google Sheets (Base de Datos)</div>
+      <div class="body">
+        <div class="item"><span>📊</span> Catálogo maestro NIS→SGIO→DESTINO</div>
+        <div class="item"><span>📁</span> Registro de N carpetas activas (FOLDERS)</div>
+        <div class="item"><span>✅</span> Estado de cada imagen (✅/⬜) por carpeta</div>
+        <div class="item"><span>🔢</span> Cantidad real sumando todas las carpetas</div>
+        <div class="item"><span>🧩</span> Deduplicación: mismo NIS en varias carpetas</div>
+        <div class="item"><span>📋</span> LOGS de cada operación</div>
+        <div class="item"><span>🌐</span> Accesible desde el navegador o desde la app</div>
+        <div class="item" style="margin-top:10px;padding:8px 12px;background:var(--green-bg);border-radius:8px;font-size:0.76rem;color:var(--green)">
+          ✅ Fuente única de verdad — editable desde la UI del Sheet
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="background:var(--accent-bg);border-color:var(--accent);">
+    <div style="display:flex;gap:12px;align-items:flex-start;">
+      <span style="font-size:2rem;">🔑</span>
+      <div>
+        <strong style="font-size:1.05rem;">La regla de oro (v4):</strong>
+        <div style="margin-top:6px;font-size:0.88rem;color:var(--text-secondary);line-height:1.7;">
+          <code style="background:var(--elevated);padding:2px 10px;border-radius:4px;color:var(--green);font-size:0.82rem;">
+            REGISTRAR(carpetas) → LEER(Drive multi-carpeta) → CONTAR → DEDUP → MATCH(NIS→SGIO) → ESCRIBIR(Google Sheets)
+          </code>
+          <br><br>
+          <strong>No se suben archivos a ningún lado.</strong> Las imágenes nunca salen de Compartidos.
+          Se lee su metadata (nombre, fecha) de <strong>todas las carpetas registradas</strong>, se deduplican NIS,
+          y se actualiza el Sheet como única fuente de verdad.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ SECTION: ESCENARIO REAL ═══ -->
+<section>
+  <h2><span class="emoji">📁</span> Escenario real: múltiples carpetas</h2>
+
+  <div class="card">
+    <div class="tree">
+      <span class="folder">📁 COMPARTIDOS (Google Drive)</span><br>
+      │<br>
+      ├── <span class="folder">📁 TECNICO_JUAN/</span>  <span class="yellow">← carpeta activa</span><br>
+      │&nbsp;&nbsp; ├── 4210801-1.jpg<br>
+      │&nbsp;&nbsp; ├── 4210801-2.jpg<br>
+      │&nbsp;&nbsp; └── 4210809-1.jpg<br>
+      │<br>
+      ├── <span class="folder">📁 TECNICO_PEDRO/</span>  <span class="yellow">← carpeta activa</span><br>
+      │&nbsp;&nbsp; ├── 4210833-1.jpg<br>
+      │&nbsp;&nbsp; ├── 4210833-2.jpg<br>
+      │&nbsp;&nbsp; ├── 4210833-3.jpg<br>
+      │&nbsp;&nbsp; └── 4210840-1.jpg<br>
+      │<br>
+      ├── <span class="folder">📁 FOTOS_NUEVAS_2026-06/</span>  <span class="yellow">← carpeta activa</span><br>
+      │&nbsp;&nbsp; ├── 4210901-1.jpg<br>
+      │&nbsp;&nbsp; ├── 4210901-2.jpg<br>
+      │&nbsp;&nbsp; └── 4210905-1.jpg<br>
+      │<br>
+      └── <span class="folder">📁 REVISIONES/</span>  <span class="red">← carpeta inactiva (desactivada)</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp; ├── 4210801-3.jpg  <span class="green">← mismo NIS que en TECNICO_JUAN</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp; └── 4210999-1.jpg<br>
+    </div>
+  </div>
+
+  <div class="card" style="border-left:3px solid var(--yellow);">
+    <strong>🧩 Reto: deduplicación de NIS entre carpetas</strong>
+    <div style="color:var(--text-secondary);font-size:0.85rem;margin-top:6px;line-height:1.7;">
+      El NIS <code style="background:var(--elevated);padding:1px 6px;border-radius:4px;">4210801</code> aparece en 
+      <strong>TECNICO_JUAN</strong> (2 imágenes) y <strong>REVISIONES</strong> (1 imagen).<br>
+      AutoIMG suma ambas: <strong>CANTIDAD = 3</strong>, <strong>ORIGEN = "TECNICO_JUAN; REVISIONES"</strong>.<br>
+      En BD_IMG solo hay <strong>1 fila</strong> para 4210801 — no se duplica el registro.
+    </div>
+  </div>
+</section>
+
+<!-- ═══ SECTION: FLUJO ═══ -->
+<section>
+  <h2><span class="emoji">🔀</span> Flujo completo (multi-carpeta)</h2>
+
+  <div class="flow">
+    <div class="flow-step sheets">
+      <div class="flow-num">0</div>
+      <div class="flow-content">
+        <strong>🔑 Autenticación Google</strong>
+        <span>OAuth2 → token guardado → refresh automático → acceso a Sheets + Drive</span>
+      </div>
+    </div>
+
+    <div class="flow-step sheets">
+      <div class="flow-num">1</div>
+      <div class="flow-content">
+        <strong>📊 Cargar Google Sheet</strong>
+        <span>Abrir "ACCIONA SJL - AutoIMG" → descargar BD_IMG + FOLDERS + CONFIG + LOGS a memoria</span>
+      </div>
+    </div>
+
+    <div class="flow-step folder">
+      <div class="flow-num">2</div>
+      <div class="flow-content">
+        <strong>📁 Gestionar carpetas activas</strong>
+        <span>FolderMgmt: agregar/quitar/desactivar carpetas. Cada carpeta tiene nombre + folderId + estado</span>
+        <span style="display:block;margin-top:4px;">
+          <span class="tag-sm new">NUEVO</span> Hoja FOLDERS en el Sheet guarda el registro persistente
+        </span>
+      </div>
+    </div>
+
+    <div class="flow-step drive">
+      <div class="flow-num">3</div>
+      <div class="flow-content">
+        <strong>🔍 Escaneas TODAS las carpetas activas</strong>
+        <span>Por cada folderId → files.list (solo metadata) → extraer NIS con regex → acumular</span>
+        <span style="display:block;margin-top:4px;">
+          <span class="tag-sm core">CORE</span> ScanAllFolders: itera N carpetas, emite progreso por carpeta
+        </span>
+      </div>
+    </div>
+
+    <div class="flow-step drive">
+      <div class="flow-num">4</div>
+      <div class="flow-content">
+        <strong>🧩 Deduplicar NIS entre carpetas</strong>
+        <span>Mismo NIS en 2+ carpetas → SUMAR cantidad → concatenar ORIGEN → una sola fila en BD_IMG</span>
+      </div>
+    </div>
+
+    <div class="flow-step drive">
+      <div class="flow-num">5</div>
+      <div class="flow-content">
+        <strong>🧪 Cruzar NIS vs BD_IMG</strong>
+        <span>Por cada NIS deduplicado → buscar en BD_IMG → preparar update o marcar "nuevo sin SGIO"</span>
+      </div>
+    </div>
+
+    <div class="flow-step sheets">
+      <div class="flow-num">6</div>
+      <div class="flow-content">
+        <strong>📤 Sincronizar con Google Sheet</strong>
+        <span>Batch write: BD_IMG (CANTIDAD, IMG_1/2/3, ESTADO, ORIGEN, ÚLTIMA_VERIFICACIÓN) + LOGS + RESUMEN</span>
+      </div>
+    </div>
+
+    <div class="flow-step sheets">
+      <div class="flow-num">7</div>
+      <div class="flow-content">
+        <strong>🔄 Sync continuo</strong>
+        <span>Cada N minutos → re-leer Sheet → detectar cambios externos → reflejar en UI</span>
+      </div>
+    </div>
+
+    <div class="flow-step result">
+      <div class="flow-num">✓</div>
+      <div class="flow-content">
+        <strong>✅ Resultado en UI</strong>
+        <span>Dashboard con métricas totales + detalle por carpeta + tabla coloreada + LOGS</span>
+        <span style="display:block;margin-top:4px;color:var(--green);font-weight:500;">🚫 NO se subieron archivos · Los originales están intactos</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ SECTION: ARQUITECTURA ═══ -->
+<section>
+  <h2><span class="emoji">🏗️</span> Arquitectura</h2>
+
+  <div class="card">
+    <div class="arch-layer">
+      <div class="arch-layer-title">🖥️ Renderer (React + TypeScript)</div>
+      <div class="arch-blocks">
+        <div class="arch-block accent"><span class="label">🔄 AutoIMGApp</span><span class="sub">Componente raíz del tab</span></div>
+        <div class="arch-block"><span class="label">🔑 GoogleAuthPanel</span><span class="sub">Conectar Google</span></div>
+        <div class="arch-block"><span class="label">📊 Dashboard</span><span class="sub">Cards de métricas</span></div>
+        <div class="arch-block"><span class="label">📋 BdImgTable</span><span class="sub">Tabla BD_IMG + colores</span></div>
+        <div class="arch-block folder"><span class="label">📁 FolderMgmt</span><span class="sub">Gestión de carpetas</span></div>
+        <div class="arch-block"><span class="label">🔍 ScannerPanel</span><span class="sub">Scan multi-carpeta</span></div>
+        <div class="arch-block"><span class="label">📤 SyncPanel</span><span class="sub">Sync to/from Sheet</span></div>
+        <div class="arch-block"><span class="label">📄 LogsViewer</span><span class="sub">Historial de LOGS</span></div>
+      </div>
+    </div>
+
+    <div class="arch-connector"><span class="line"></span><span class="arrow">⬇ IPC (contextBridge) ⬆</span><span class="line"></span></div>
+
+    <div class="arch-layer">
+      <div class="arch-layer-title">⚙️ Electron Main Process (Node.js)</div>
+      <div class="arch-blocks">
+        <div class="arch-block sheets"><span class="label">📊 GoogleSheetsService</span><span class="sub">OAuth2 · CRUD API v4 · batch writes</span></div>
+        <div class="arch-block drive"><span class="label">📁 DriveScanner</span><span class="sub">Listar metadata · scanAllFolders</span></div>
+        <div class="arch-block folder"><span class="label">📋 FolderRegistry</span><span class="sub">CRUD hoja FOLDERS</span></div>
+        <div class="arch-block"><span class="label">🧩 DedupEngine</span><span class="sub">Merge NIS multi-carpeta</span></div>
+        <div class="arch-block"><span class="label">🔄 SyncEngine</span><span class="sub">ScanAll → dedup → write</span></div>
+        <div class="arch-block"><span class="label">📋 Reporter</span><span class="sub">Generar LOGS + RESUMEN</span></div>
+      </div>
+    </div>
+
+    <div class="arch-connector"><span class="line"></span><span class="arrow">⬇ JSON-RPC (stdin/stdout) ⬆</span><span class="line"></span></div>
+
+    <div class="arch-layer">
+      <div class="arch-layer-title">🐍 Python Backend</div>
+      <div class="arch-blocks">
+        <div class="arch-block"><span class="label">handlers/autoimg.py</span><span class="sub">IPC wrapper (procesos pesados)</span></div>
+        <div class="arch-block"><span class="label">handlers/autoimg_sync.py</span><span class="sub">Batch sync + rate limit</span></div>
+      </div>
+    </div>
+
+    <div class="arch-connector"><span class="line"></span><span class="arrow">⬇ REST (Google APIs) ⬆</span><span class="line"></span></div>
+
+    <div class="arch-layer">
+      <div class="arch-layer-title">☁️ Google Cloud</div>
+      <div class="arch-blocks" style="gap:14px;">
+        <div class="arch-block drive" style="flex:1;min-width:180px;">
+          <span class="label" style="color:#f87171;">🔴 COMPARTIDOS</span>
+          <span class="sub">📁 TECNICO_JUAN · 📁 TECNICO_PEDRO · 📁 FOTOS_NUEVAS · 📁 ...</span>
+          <span class="sub" style="color:var(--red);margin-top:2px;">Solo LEER metadata · intacto</span>
+        </div>
+        <div class="arch-block sheets" style="flex:1;min-width:200px;">
+          <span class="label" style="color:#34d399;">📊 SHEETS (Base de Datos)</span>
+          <span class="sub">BD_IMG · FOLDERS · BD_ARRASTRE · LOGS · CONFIG · RESUMEN</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ SECTION: ESTRUCTURA DEL SHEET ═══ -->
+<section>
+  <h2><span class="emoji">📊</span> El Google Sheet: 6 hojas</h2>
+
+  <div class="sheet-preview">
+    <div class="sheet-header">
+      <span class="active">📋 BD_IMG</span>
+      <span class="active">📋 FOLDERS</span>
+      <span>📋 BD_ARRASTRE</span>
+      <span>📋 LOGS</span>
+      <span>📋 CONFIG</span>
+      <span>📋 RESUMEN</span>
+    </div>
+    <div style="padding:0 0 6px;">
+      <table>
+        <thead>
+          <tr>
+            <th>Hoja</th>
+            <th>Columnas</th>
+            <th>Propósito</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="tag green">BD_IMG</span></td>
+            <td>NIS · SGIO · DESTINO · IMG_1/2/3 · CANTIDAD · ESTADO · ORIGEN · VERIFICACIÓN · NOTAS</td>
+            <td>Catálogo maestro — 1 fila por NIS</td>
+          </tr>
+          <tr>
+            <td><span class="tag yellow">FOLDERS</span></td>
+            <td>NOMBRE · FOLDER_ID · ACTIVO · ÚLTIMO_SCAN · CANT_ARCHIVOS</td>
+            <td><strong>Registro de carpetas activas</strong></td>
+          </tr>
+          <tr>
+            <td><span class="tag purple">BD_ARRASTRE</span></td>
+            <td>NIS · SGIO · MOTIVO · FECHA</td>
+            <td>Casos especiales</td>
+          </tr>
+          <tr>
+            <td><span class="tag accent">LOGS</span></td>
+            <td>FECHA · ACCIÓN · DETALLE · USUARIO · DURACIÓN</td>
+            <td>Trazabilidad de operaciones</td>
+          </tr>
+          <tr>
+            <td><span class="tag">CONFIG</span></td>
+            <td>CLAVE · VALOR</td>
+            <td>Configuración global (intervalo, estrategia dedup)</td>
+          </tr>
+          <tr>
+            <td><span class="tag green">RESUMEN</span></td>
+            <td>MÉTRICA · VALOR · FECHA</td>
+            <td>Dashboard cachead</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card" style="border-left:3px solid var(--green);">
+      <div style="font-size:0.9rem;">
+        <span style="font-size:1.2rem;">🟢</span> <strong>CANTIDAD = 3</strong>
+        <div style="color:var(--text-secondary);margin-top:4px;font-size:0.8rem;">Completo — las 3 imágenes existen sumando todas las carpetas</div>
+      </div>
+    </div>
+    <div class="card" style="border-left:3px solid var(--red);">
+      <div style="font-size:0.9rem;">
+        <span style="font-size:1.2rem;">🔴</span> <strong>CANTIDAD &lt; 3</strong>
+        <div style="color:var(--text-secondary);margin-top:4px;font-size:0.8rem;">Faltante — el usuario subió menos de 3 fotos en total</div>
+      </div>
+    </div>
+    <div class="card" style="border-left:3px solid var(--yellow);">
+      <div style="font-size:0.9rem;">
+        <span style="font-size:1.2rem;">🟡</span> <strong>CANTIDAD &gt; 3</strong>
+        <div style="color:var(--text-secondary);margin-top:4px;font-size:0.8rem;">Sobrante — posible duplicado entre carpetas, revisar</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="border-left:3px solid var(--yellow);">
+    <strong>📁 FOLDERS — Ejemplo de registro</strong>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>NOMBRE</th><th>FOLDER_ID</th><th>ACTIVO</th><th>ÚLTIMO_SCAN</th><th>ARCHIVOS</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>TECNICO JUAN</td><td>1abc123...</td><td>✅</td><td>2026-07-02 14:30</td><td>42</td></tr>
+          <tr><td>TECNICO PEDRO</td><td>1def456...</td><td>✅</td><td>2026-07-02 14:00</td><td>38</td></tr>
+          <tr><td>FOTOS NUEVAS</td><td>1ghi789...</td><td>✅</td><td>2026-07-01 16:00</td><td>15</td></tr>
+          <tr><td style="color:var(--red);">REVISIONES</td><td>1jkl012...</td><td>❌</td><td>—</td><td>—</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ SECTION: LÓGICA ═══ -->
+<section>
+  <h2><span class="emoji">🧩</span> Lógica de procesamiento (multi-carpeta)</h2>
+
+  <div class="code-block">
+    <span class="comment">// Paso 0: Leer carpetas activas desde FOLDERS del Sheet</span><br>
+    <span class="key">folders</span> = Sheets.read(<span class="str">"FOLDERS!A:B"</span>)  <span class="comment">// solo las ACTIVAS</span><br>
+    <span class="comment">// → [{ name: "TECNICO_JUAN", folder_id: "1abc123..." }, ...]</span><br><br>
+
+    <span class="comment">// Paso 1: Escaneas TODAS las carpetas activas</span><br>
+    <span class="key">raw_results</span> = []<br>
+    <span class="key">for</span> folder <span class="key">in</span> folders:<br>
+    &nbsp;&nbsp;emit(<span class="str">"autoimg.scan.folder_start"</span>, { folder: folder.name, index: i, total: folders.length })<br>
+    &nbsp;&nbsp;<span class="key">archivos</span> = Drive.files.list({ q: <span class="str">"'{folder_id}' in parents and mimeType contains 'image'"</span> })<br>
+    &nbsp;&nbsp;<span class="key">for</span> archivo <span class="key">in</span> archivos:<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="key">nis</span> = regex(<span class="str">/\b(\d{7})\b/</span>, archivo.name)<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;raw_results.push({ nis, file: archivo.name, folder: folder.name })<br>
+    &nbsp;&nbsp;emit(<span class="str">"autoimg.scan.folder_done"</span>, { folder: folder.name, count: archivos.length })<br><br>
+
+    <span class="comment">// Paso 2: Deduplicar — agrupar por NIS, sumar carpetas</span><br>
+    <span class="key">nis_map</span> = {}<br>
+    <span class="key">for</span> r <span class="key">in</span> raw_results:<br>
+    &nbsp;&nbsp;nis_map[r.nis] = nis_map[r.nis] || { count: 0, folders: [], files: [] }<br>
+    &nbsp;&nbsp;nis_map[r.nis].count += 1<br>
+    &nbsp;&nbsp;<span class="highlight">nis_map[r.nis].folders.add(r.folder)</span>  <span class="comment">// ← dedup multi-carpeta</span><br>
+    &nbsp;&nbsp;nis_map[r.nis].files.push(r.file)<br><br>
+
+    <span class="comment">// Paso 3: Cruzar vs BD_IMG del Sheet</span><br>
+    <span class="key">sheet_data</span> = Sheets.read(<span class="str">"BD_IMG!A:M"</span>)<br>
+    <span class="key">for</span> each nis <span class="key">in</span> nis_map:<br>
+    &nbsp;&nbsp;<span class="key">match</span> = sheet_data.find(row => row.nis === nis)<br>
+    &nbsp;&nbsp;<span class="key">cantidad</span> = nis_map[nis].count<br>
+    &nbsp;&nbsp;<span class="key">origen</span> = nis_map[nis].folders.join(<span class="str">"; "</span>)<br>
+    &nbsp;&nbsp;<span class="key">if</span> match:<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="key">update</span> = {<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CANTIDAD: cantidad,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IMG_1: cantidad &gt;= 1 ? <span class="str">"✅"</span> : <span class="str">"⬜"</span>,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IMG_2: cantidad &gt;= 2 ? <span class="str">"✅"</span> : <span class="str">"⬜"</span>,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IMG_3: cantidad &gt;= 3 ? <span class="str">"✅"</span> : <span class="str">"⬜"</span>,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ESTADO: cantidad == 3 ? <span class="str">"🟢 COMPLETO"</span> : cantidad &lt; 3 ? <span class="str">"🔴 FALTANTE"</span> : <span class="str">"🟡 SOBRANTE"</span>,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="highlight">ORIGEN: origen,</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ÚLTIMA_VERIFICACIÓN: <span class="str">"2026-07-02 14:30"</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;}<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;Sheets.write(<span class="str">"BD_IMG!F"</span> + match.row, update)  <span class="comment">// batch write</span>
+  </div>
+
+  <div class="card" style="border-left:3px solid var(--purple);">
+    <strong>🔍 Solo metadata — nunca el contenido</strong>
+    <div style="color:var(--text-secondary);margin-top:4px;font-size:0.85rem;">
+      La app nunca descarga las imágenes. Solo lee:
+      <code style="background:var(--elevated);padding:1px 6px;border-radius:4px;">name</code>,
+      <code style="background:var(--elevated);padding:1px 6px;border-radius:4px;">modifiedTime</code>,
+      <code style="background:var(--elevated);padding:1px 6px;border-radius:4px;">id</code>.
+      Escaneas 1000 archivos en 3 carpetas toma ~5 segundos.
+      <span style="display:block;margin-top:4px;color:var(--green);font-weight:500;">
+        ✅ Solo 1 fila por NIS en BD_IMG, aunque aparezca en N carpetas.
+      </span>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ SECTION: SINCRONIZACIÓN ═══ -->
+<section>
+  <h2><span class="emoji">🔄</span> Sincronización bidireccional</h2>
+
+  <div class="card">
+    <div style="display:flex;gap:24px;flex-wrap:wrap;justify-content:center;padding:14px 0;">
+      <div style="text-align:center;flex:1;min-width:140px;">
+        <div style="font-size:2.5rem;">📊</div>
+        <div style="font-weight:600;margin-top:4px;">Google Sheets</div>
+        <div style="font-size:0.76rem;color:var(--text-muted);">Fuente de verdad</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px;justify-content:center;">
+        <span style="background:var(--accent-bg);color:var(--accent);padding:6px 16px;border-radius:20px;font-size:0.82rem;font-weight:600;">⬅️ LEER →</span>
+        <span style="background:var(--green-bg);color:var(--green);padding:6px 16px;border-radius:20px;font-size:0.82rem;font-weight:600;">⬅️ ESCRIBIR →</span>
+        <span style="background:var(--yellow-bg);color:var(--yellow);padding:6px 16px;border-radius:20px;font-size:0.78rem;font-weight:500;">🔄 DETECTAR CAMBIOS</span>
+      </div>
+      <div style="text-align:center;flex:1;min-width:140px;">
+        <div style="font-size:2.5rem;">🖥️</div>
+        <div style="font-weight:600;margin-top:4px;">ANTARES App</div>
+        <div style="font-size:0.76rem;color:var(--text-muted);">Escaneo + gestión</div>
+      </div>
+    </div>
+
+    <div class="card-grid">
+      <div style="background:var(--elevated);border-radius:8px;padding:12px;border:1px solid var(--border);">
+        <strong style="color:var(--green);">📤 App → Sheets</strong>
+        <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:4px;line-height:1.6;">
+          • CANTIDAD actualizada (suma de carpetas)<br>
+          • IMG_1/2/3 (✅/⬜)<br>
+          • ESTADO (🟢🔴🟡)<br>
+          • ORIGEN (carpetas donde apareció)<br>
+          • ÚLTIMA_VERIFICACIÓN<br>
+          • LOGS con detalle<br>
+          • RESUMEN actualizado
+        </div>
+      </div>
+      <div style="background:var(--elevated);border-radius:8px;padding:12px;border:1px solid var(--border);">
+        <strong style="color:var(--accent);">📥 Sheets → App</strong>
+        <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:4px;line-height:1.6;">
+          • Nuevos NIS agregados manualmente<br>
+          • SGIO editados en navegador<br>
+          • DESTINO corregido<br>
+          • Carpetas agregadas/quitas desde el Sheet<br>
+          • Configuraciones actualizadas<br>
+          • Notas y observaciones
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ SECTION: UI ═══ -->
+<section>
+  <h2><span class="emoji">🖥️</span> Vista previa de la UI</h2>
+
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;">
+    <div style="background:var(--elevated);padding:10px 16px;border-bottom:1px solid var(--border);display:flex;gap:18px;font-size:0.8rem;flex-wrap:wrap;">
+      <span style="color:var(--text-muted);">📊 Dashboard</span>
+      <span style="color:var(--text-muted);">📋 Padrón</span>
+      <span style="color:var(--text-muted);">📄 Evidencia Volanteo</span>
+      <span style="color:var(--green);font-weight:600;border-bottom:2px solid var(--green);padding-bottom:10px;">🔄 AutoIMG</span>
+      <span style="color:var(--text-muted);">🔧 Sellador</span>
+    </div>
+    <div style="padding:18px;">
+      <!-- Header -->
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+        <span style="background:var(--green-bg);color:var(--green);padding:5px 12px;border-radius:6px;font-size:0.8rem;">📊 ACCIONA SJL - AutoIMG</span>
+        <span class="tag green" style="font-size:0.72rem;">🟢 Conectado</span>
+        <span style="font-size:0.72rem;color:var(--yellow);padding:3px 10px;background:var(--yellow-bg);border-radius:12px;">📁 3 carpetas activas</span>
+        <span style="margin-left:auto;font-size:0.76rem;color:var(--text-muted);">Último sync: hace 2 min</span>
+      </div>
+
+      <!-- Internal tabs -->
+      <div style="display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:14px;">
+        <span style="padding:6px 12px;font-size:0.78rem;color:var(--green);font-weight:600;border-bottom:2px solid var(--green);">📊 Dashboard</span>
+        <span style="padding:6px 12px;font-size:0.78rem;color:var(--text-muted);">📋 BD_IMG</span>
+        <span style="padding:6px 12px;font-size:0.78rem;color:var(--text-muted);">📁 Carpetas</span>
+        <span style="padding:6px 12px;font-size:0.78rem;color:var(--text-muted);">🔍 Scan</span>
+        <span style="padding:6px 12px;font-size:0.78rem;color:var(--text-muted);">📄 Logs</span>
+      </div>
+
+      <!-- Cards -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;">
+        <div style="background:var(--elevated);border-radius:8px;padding:10px;border:1px solid var(--border);text-align:center;">
+          <div style="font-size:1.4rem;font-weight:700;">575</div>
+          <div style="font-size:0.72rem;color:var(--text-muted);">Total NIS</div>
+        </div>
+        <div style="background:var(--elevated);border-radius:8px;padding:10px;border:1px solid var(--green);text-align:center;">
+          <div style="font-size:1.4rem;font-weight:700;color:var(--green);">432</div>
+          <div style="font-size:0.72rem;color:var(--text-muted);">🟢 Completos</div>
+        </div>
+        <div style="background:var(--elevated);border-radius:8px;padding:10px;border:1px solid var(--red);text-align:center;">
+          <div style="font-size:1.4rem;font-weight:700;color:var(--red);">98</div>
+          <div style="font-size:0.72rem;color:var(--text-muted);">🔴 Faltantes</div>
+        </div>
+        <div style="background:var(--elevated);border-radius:8px;padding:10px;border:1px solid var(--yellow);text-align:center;">
+          <div style="font-size:1.4rem;font-weight:700;color:var(--yellow);">12</div>
+          <div style="font-size:0.72rem;color:var(--text-muted);">🟡 Sobrantes</div>
+        </div>
+      </div>
+
+      <!-- Action buttons -->
+      <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
+        <span style="background:var(--accent-bg);color:var(--accent);padding:6px 16px;border-radius:6px;font-size:0.8rem;">🔍 Escaneas TODO <small style="color:var(--text-muted);">(3 carpetas)</small></span>
+        <span style="background:var(--green-bg);color:var(--green);padding:6px 16px;border-radius:6px;font-size:0.8rem;">📤 Sync to Sheet</span>
+        <span style="background:var(--yellow-bg);color:var(--yellow);padding:6px 16px;border-radius:6px;font-size:0.78rem;">🔄 Auto ON</span>
+        <span style="margin-left:auto;font-size:0.76rem;color:var(--accent);text-decoration:underline;">🔗 Abrir Sheet</span>
+      </div>
+
+      <!-- BD_IMG table preview -->
+      <div style="background:#0d0e13;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+        <div style="padding:6px 12px;font-size:0.7rem;color:var(--text-muted);border-bottom:1px solid var(--border);display:flex;gap:12px;">
+          <span>📋 BD_IMG</span>
+          <span style="margin-left:auto;"><input type="text" placeholder="Buscar NIS..." disabled style="background:var(--elevated);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:0.68rem;color:var(--text-muted);width:120px;"></span>
+        </div>
+        <div style="padding:2px 12px 8px;">
+          <table style="font-size:0.72rem;">
+            <thead><tr>
+              <th>NIS</th><th>SGIO</th><th>DESTINO</th><th>1</th><th>2</th><th>3</th><th>C</th><th>ESTADO</th><th>ORIGEN</th>
+            </tr></thead>
+            <tbody>
+              <tr><td>4210801</td><td>69656525</td><td>DVD 03</td><td>✅</td><td>✅</td><td>✅</td><td style="color:var(--green);font-weight:600;">3</td><td><span class="tag green">🟢</span></td><td style="font-size:0.65rem;">JUAN; REVIS.</td></tr>
+              <tr><td>4210809</td><td>69656526</td><td>DVD 03</td><td>✅</td><td>✅</td><td>⬜</td><td style="color:var(--red);font-weight:600;">2</td><td><span class="tag red">🔴</span></td><td style="font-size:0.65rem;">JUAN</td></tr>
+              <tr><td>4210833</td><td>69656599</td><td>MAQ BALDE</td><td>✅</td><td>✅</td><td>✅</td><td style="color:var(--green);font-weight:600;">3</td><td><span class="tag green">🟢</span></td><td style="font-size:0.65rem;">PEDRO</td></tr>
+              <tr><td style="color:var(--yellow);">5596751</td><td style="color:var(--yellow);">—</td><td style="color:var(--yellow);">—</td><td>⬜</td><td>⬜</td><td>⬜</td><td style="color:var(--red);font-weight:600;">0</td><td><span class="tag yellow">🟡</span></td><td style="font-size:0.65rem;">FOTOS_NUEVAS</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Logs footer -->
+      <div style="margin-top:10px;display:flex;gap:8px;font-size:0.72rem;color:var(--text-muted);flex-wrap:wrap;">
+        <span style="background:var(--elevated);padding:4px 10px;border-radius:4px;border:1px solid var(--border);">📄 [14:30] SCAN_ALL · 3 carpetas · 95 NIS</span>
+        <span style="background:var(--elevated);padding:4px 10px;border-radius:4px;border:1px solid var(--border);">📄 [09:15] SYNC_TO_SHEET · 42 actualizados</span>
+        <span style="background:var(--elevated);padding:4px 10px;border-radius:4px;border:1px solid var(--border);">📄 [08:00] CARPETA_ADD · TECNICO PEDRO</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ SECTION: IPC API ═══ -->
+<section>
+  <h2><span class="emoji">🔌</span> API IPC — Métodos</h2>
+
+  <div class="code-block">
+    <span class="comment">// ─── Google Sheets Auth ──────────────────────────</span><br>
+    <span class="key">autoimg_sheets_auth_url</span>       → { url: string }<br>
+    <span class="key">autoimg_sheets_auth_callback</span>  → { success: boolean }<br>
+    <span class="key">autoimg_sheets_auth_status</span>    → { authenticated, email? }<br>
+    <span class="key">autoimg_sheets_auth_revoke</span>    → { success: boolean }<br><br>
+    <span class="comment">// ─── Google Sheets CRUD ─────────────────────────</span><br>
+    <span class="key">autoimg_sheets_open</span>           → open Sheet by ID<br>
+    <span class="key">autoimg_sheets_read_range</span>     → { values: any[][] }<br>
+    <span class="key">autoimg_sheets_write_range</span>    → { updated: number }<br>
+    <span class="key">autoimg_sheets_append_row</span>     → append to range<br><br>
+    <span class="comment">// ─── Drive Scanner ──────────────────────────────</span><br>
+    <span class="key">autoimg_drive_list_folder</span>    → list files (metadata only)<br>
+    <span class="key">autoimg_drive_scan_nis</span>       → scan + extract NIS from folder<br><br>
+    <span class="comment highlight">// ─── Gestión de Carpetas (v4 new) ─────────────────</span><br>
+    <span class="key">autoimg_folders_list</span>          → carpetas registradas<br>
+    <span class="key">autoimg_folders_add</span>           → agregar carpeta activa<br>
+    <span class="key">autoimg_folders_remove</span>        → quitar carpeta<br>
+    <span class="key">autoimg_folders_toggle</span>        → activar/desactivar<br><br>
+    <span class="comment highlight">// ─── Core Sync (v4 enhanced) ─────────────────────</span><br>
+    <span class="key">autoimg_scan_all</span>              → escanear TODAS las carpetas activas<br>
+    <span class="key">autoimg_sync_to_sheet</span>         → escribir resultados al Sheet<br>
+    <span class="key">autoimg_sync_from_sheet</span>       → leer Sheet → refrescar UI<br>
+    <span class="key">autoimg_auto_sync_toggle</span>      → ON/OFF auto-sync<br>
+    <span class="key">autoimg_status</span>                → estado general + métricas
+  </div>
+</section>
+
+<!-- ═══ SECTION: EVENTOS IPC ═══ -->
+<section>
+  <h2><span class="emoji">📡</span> Eventos IPC en vivo</h2>
+
+  <div class="code-block">
+    <span class="comment">// Durante el escaneo multi-carpeta:</span><br>
+    <span class="key">autoimg.scan.folder_start</span>   → { folder: <span class="str">"TECNICO_JUAN"</span>, index: 1, total: 3 }<br>
+    <span class="key">autoimg.scan.progress</span>      → { folder: <span class="str">"TECNICO_JUAN"</span>, current: 25, total: 42, file: <span class="str">"4210801-2.jpg"</span> }<br>
+    <span class="key">autoimg.scan.folder_done</span>    → { folder: <span class="str">"TECNICO_JUAN"</span>, count: 42, nis_found: 28 }<br>
+    <span class="key">autoimg.scan.all_done</span>       → { folders_scanned: 3, total_files: 95, total_nis: 38, unique_nis: 32 }<br><br>
+    <span class="comment">// Durante la sincronización:</span><br>
+    <span class="key">autoimg.sync.start</span>          → { action: <span class="str">"sync_to_sheet"</span> }<br>
+    <span class="key">autoimg.sync.progress</span>       → { row: 5, total: 32, nis: <span class="str">"4210801"</span>, status: <span class="str">"updated"</span> }<br>
+    <span class="key">autoimg.sync.complete</span>       → { updated: 28, new: 3, errors: 1, duration_ms: 4500 }<br><br>
+    <span class="comment">// Errores:</span><br>
+    <span class="key">autoimg.error</span>               → { code: <span class="str">"RATE_LIMIT"</span>, detail: <span class="str">"..."</span>, retry_in: 30 }<br>
+    <span class="key">autoimg.error</span>               → { code: <span class="str">"FOLDER_INVALID"</span>, folder: <span class="str">"1jkl012..."</span>, detail: <span class="str">"Folder not found"</span> }
+  </div>
+</section>
+
+<!-- ═══ SECTION: PLAN ═══ -->
+<section>
+  <h2><span class="emoji">📦</span> Plan de implementación</h2>
+
+  <div class="card-grid">
+    <div class="card" style="border-top:3px solid var(--accent);">
+      <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:4px;">Fase 0 · ~6h</div>
+      <div style="font-size:0.95rem;font-weight:600;margin-bottom:6px;">🏗️ Setup</div>
+      <div style="font-size:0.78rem;color:var(--text-secondary);line-height:1.6;">
+        Tab AutoIMG en sidebar<br>
+        Estructura autoimg/<br>
+        IPC methods + api.ts
+      </div>
+    </div>
+    <div class="card" style="border-top:3px solid var(--purple);">
+      <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:4px;">Fase 1 · ~30h</div>
+      <div style="font-size:0.95rem;font-weight:600;margin-bottom:6px;">🔌 Google APIs</div>
+      <div style="font-size:0.78rem;color:var(--text-secondary);line-height:1.6;">
+        OAuth2 + tokens<br>
+        Sheets API v4 (CRUD)<br>
+        Drive API (list)<br>
+        Rate limits + retry
+      </div>
+    </div>
+    <div class="card" style="border-top:3px solid var(--yellow);">
+      <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:4px;">Fase 2 · ~20h</div>
+      <div style="font-size:0.95rem;font-weight:600;margin-bottom:6px;">📁 Multi-Folder + Core</div>
+      <div style="font-size:0.78rem;color:var(--text-secondary);line-height:1.6;">
+        <span class="tag new" style="font-size:0.6rem;">NEW</span> FolderRegistry<br>
+        <span class="tag new" style="font-size:0.6rem;">NEW</span> scanAllFolders<br>
+        <span class="tag new" style="font-size:0.6rem;">NEW</span> DedupEngine<br>
+        Sync bidirectional
+      </div>
+    </div>
+    <div class="card" style="border-top:3px solid var(--green);">
+      <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:4px;">Fase 3 · ~24h</div>
+      <div style="font-size:0.95rem;font-weight:600;margin-bottom:6px;">🖥️ Frontend</div>
+      <div style="font-size:0.78rem;color:var(--text-secondary);line-height:1.6;">
+        Dashboard + BdImgTable<br>
+        <span class="tag new" style="font-size:0.6rem;">NEW</span> FolderMgmt<br>
+        ScannerPanel + SyncPanel<br>
+        LogsViewer
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="background:var(--elevated);border-color:var(--accent);">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+      <div>
+        <strong style="font-size:1.1rem;">Total: ~96 horas</strong>
+        <span style="font-size:0.8rem;color:var(--text-muted);margin-left:8px;">~5 semanas hábiles</span>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <span class="tag new" style="font-size:0.7rem;">📁 Multi-carpeta</span>
+        <span class="tag accent" style="font-size:0.7rem;">🧩 Dedup</span>
+        <span class="tag green" style="font-size:0.7rem;">📊 Sheets DB</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:8px;font-size:0.7rem;">
+    <div style="background:var(--elevated);padding:8px;border-radius:6px;text-align:center;border:1px solid var(--border);">
+      <strong>Sem 1</strong><br>
+      <span style="color:var(--accent);">▰▰▰▰▰▰▰▰░░</span><br>
+      Fase 0
+    </div>
+    <div style="background:var(--elevated);padding:8px;border-radius:6px;text-align:center;border:1px solid var(--border);">
+      <strong>Sem 2</strong><br>
+      <span style="color:var(--purple);">▰▰▰▰▰▰▰▰▰▰</span><br>
+      Fase 1
+    </div>
+    <div style="background:var(--elevated);padding:8px;border-radius:6px;text-align:center;border:1px solid var(--border);">
+      <strong>Sem 3</strong><br>
+      <span style="color:var(--yellow);">▰▰▰▰▰▰▰▰</span><br>
+      Fase 2
+    </div>
+    <div style="background:var(--elevated);padding:8px;border-radius:6px;text-align:center;border:1px solid var(--border);">
+      <strong>Sem 4</strong><br>
+      <span style="color:var(--green);">▰▰▰▰▰▰▰▰▰▰</span><br>
+      Fase 3
+    </div>
+    <div style="background:var(--elevated);padding:8px;border-radius:6px;text-align:center;border:1px solid var(--green);">
+      <strong>Sem 5</strong><br>
+      <span style="color:var(--green);">▰▰▰▰▰▰</span><br>
+      🎯 MVP
+    </div>
+  </div>
+</section>
+
+<!-- ═══ SECTION: CHECKLIST ═══ -->
+<section>
+  <h2><span class="emoji">✅</span> Checklist</h2>
+  <div class="card-grid" style="grid-template-columns:1fr;">
+    <div class="card">
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">
+        <span style="flex:1;min-width:180px;padding:7px 10px;background:var(--green-bg);color:var(--green);border-radius:8px;font-size:0.8rem;">✅ Feature independiente</span>
+        <span style="flex:1;min-width:180px;padding:7px 10px;background:var(--green-bg);color:var(--green);border-radius:8px;font-size:0.8rem;">✅ Google Sheets como BD</span>
+        <span style="flex:1;min-width:180px;padding:7px 10px;background:var(--green-bg);color:var(--green);border-radius:8px;font-size:0.8rem;">✅ No subir archivos</span>
+        <span style="flex:1;min-width:180px;padding:7px 10px;background:var(--green-bg);color:var(--green);border-radius:8px;font-size:0.8rem;">✅ No modificar originales</span>
+        <span style="flex:1;min-width:180px;padding:7px 10px;background:var(--yellow-bg);color:var(--yellow);border-radius:8px;font-size:0.8rem;"><strong>📁 Multi-carpeta</strong></span>
+        <span style="flex:1;min-width:180px;padding:7px 10px;background:var(--yellow-bg);color:var(--yellow);border-radius:8px;font-size:0.8rem;"><strong>🧩 Deduplicación NIS</strong></span>
+        <span style="flex:1;min-width:180px;padding:7px 10px;background:var(--green-bg);color:var(--green);border-radius:8px;font-size:0.8rem;">✅ Sync bidireccional</span>
+        <span style="flex:1;min-width:180px;padding:7px 10px;background:var(--accent-bg);color:var(--accent);border-radius:8px;font-size:0.8rem;">⬜ Crear proyecto Google Cloud</span>
+        <span style="flex:1;min-width:180px;padding:7px 10px;background:var(--accent-bg);color:var(--accent);border-radius:8px;font-size:0.8rem;">⬜ Crear Google Sheet</span>
+        <span style="flex:1;min-width:180px;padding:7px 10px;background:var(--yellow-bg);color:var(--yellow);border-radius:8px;font-size:0.8rem;">⬜ Probar con 3-5 reales</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer style="padding:36px 0;text-align:center;color:var(--text-muted);font-size:0.78rem;border-top:1px solid var(--border);">
+  <p style="margin-bottom:4px;">AutoIMG v4 — Multi-carpeta + Google Sheets Flow</p>
+  <p>Julio 2026 · ACCIONA San Juan de Lurigancho</p>
+  <p style="margin-top:10px;">
+    <span style="color:var(--purple);">🔴 Compartidos (multi-carpeta | solo lectura)</span>
+    <span style="margin:0 6px;">→</span>
+    <span style="color:var(--green);">📊 Google Sheets (BD maestra | FOLDERS | BD_IMG | LOGS)</span>
+  </p>
+  <p style="margin-top:8px;font-size:0.7rem;">
+    <span class="tag new">v4</span> Cambios: registro de carpetas · scan all folders · deduplicación · hoja FOLDERS · eventos IPC por carpeta
+  </p>
+</footer>
+
+</div><!-- /container -->
+</body>
+</html>

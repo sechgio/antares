@@ -37,6 +37,7 @@ export async function exportPanelDocument(
   images: Map<string, LocalImage>,
   format: 'pdf' | 'docx' = 'pdf',
   templateId: PanelTemplateId = DEFAULT_PANEL_TEMPLATE,
+  exportMode: 'skip_empty' | 'include_empty' = 'skip_empty',
 ): Promise<{ filename: string }> {
   const logos: { left_b64?: string; right_b64?: string } = {};
   if (logoLeft) logos.left_b64 = await readFileAsBase64(logoLeft);
@@ -87,6 +88,7 @@ export async function exportPanelDocument(
         format,
         template_id: templateId,
         output_path: outputPath,
+        export_mode: exportMode,
       });
       return { filename: resp.filename || outputPath };
     }
@@ -101,6 +103,7 @@ export async function exportPanelDocument(
     image_paths: imagePaths,
     format,
     template_id: templateId,
+    export_mode: exportMode,
   });
 
   const content = resp.content_base64 || resp.pdf_base64;

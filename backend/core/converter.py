@@ -99,8 +99,8 @@ def _build_save_kwargs(formato: str, calidad: int, keep_exif: bool, img: Image.I
     upper_fmt = formato.upper()
     if upper_fmt in ("JPEG", "JPG", "WEBP"):
         kwargs["quality"] = max(1, min(100, int(calidad)))
-        if calidad >= 90:
-            kwargs["optimize"] = True
+    if upper_fmt in ("JPEG", "JPG") and calidad >= 90:
+        kwargs["optimize"] = True
     if keep_exif and "exif" in img.info:
         kwargs["exif"] = img.info["exif"]
     return kwargs
