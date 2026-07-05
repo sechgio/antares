@@ -5,6 +5,28 @@ Todas las versiones notables de ANTARES se documentan aquí.
 Formato basado en [Keep a Changelog](https://keepachangelog.com/),
 y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
+## [0.10.17] — 2026-07-05
+
+### Added
+- **Ubicaciones**: Modo manual con pegado de coordenadas combinadas; 7 proveedores de mapa configurables (OSM, Google, Mapbox, MapTiler, Stadia, Geoapify, Thunderforest).
+- **Ubicaciones**: Panel de personalización de diseño en vivo (textos, pin, overlay, layout) con preview WYSIWYG.
+- **Ubicaciones**: Persistencia de sesión (carpeta destino, orientación, modo de entrada, datos manuales y estilos) en `localStorage`.
+- **Ubicaciones**: Utilidad `coords` y suite de tests `UbicacionesView.config-sync` para reactividad de preview.
+- **Petdex**: Mascota (`PetMascot`) y vista de configuración `PetdexView`.
+- **AutoIMG**: Soporte de pestañas en hojas Google Sheets y mejoras en sync engine, seguridad y fetch.
+- **Tests**: Regresiones de preview manual, parsing de coordenadas combinadas y nombres PDF duplicados.
+
+### Changed
+- **Ubicaciones**: Refactor del sidebar y preview con cola de requests, debounce por tipo de cambio y `recomposeOnly` para estilos.
+- **AutoIMG**: Barra superior y paneles de arrastre, carpetas y logs alineados al layout unificado.
+- **Settings**: Integración de Petdex en el modal de configuración.
+
+### Fixed
+- **Ubicaciones**: Columna combinada de coordenadas ya no devuelve `0,0` silencioso; soporta URLs de Google Maps.
+- **Ubicaciones**: Error explícito cuando no hay filas válidas; PDFs con `cod_componente` duplicado reciben sufijo (`_2`, `_3`).
+- **Ubicaciones**: Preview sincroniza `manualData` en tiempo real; cola de fetch respeta refetch de mapa al cambiar zoom/proveedor.
+- **Preview-panel**: Corrección menor en exportación PDF.
+
 ## [0.10.16] — 2026-07-03
 
 ### Added
