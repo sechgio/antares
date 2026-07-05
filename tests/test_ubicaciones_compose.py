@@ -265,3 +265,38 @@ def test_compose_skips_resize_when_map_size_matches(monkeypatch: pytest.MonkeyPa
         preview=False,
     )
     assert (out_w, map_h) not in resize_sizes
+
+
+def test_compose_custom_styles() -> None:
+    cap_w, cap_h = _map_capture_size("vertical", preview=True)
+    custom_styles = {
+        "texts": {
+            "cod_componente": {"fontSize": 150, "bold": False, "color": "#FF0000", "offsetX": 10, "offsetY": -20, "visible": True},
+            "direccion": {"visible": False},
+        },
+        "pin": {
+            "color": "#00FF00",
+            "scale": 0.20,
+            "offsetX": -5,
+            "offsetY": 15,
+            "visible": True,
+        },
+        "map": {
+            "overlayAlpha": 150,
+            "overlayColor": "#0000FF",
+        },
+        "layout": {
+            "yStart": 100,
+            "lineSpacing": 150,
+            "lineGap": 0.8,
+        }
+    }
+
+    img = _compose_ubicacion_image(
+        SAMPLE_DATOS,
+        "vertical",
+        _fake_map_png(cap_w, cap_h),
+        preview=True,
+        custom_styles=custom_styles,
+    )
+    assert img.size == _dimensions_for("vertical", preview=True)[:2]

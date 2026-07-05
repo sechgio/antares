@@ -14,6 +14,9 @@ function main() {
     buildFolderErrorSummary,
     formatFolderErrorScan,
     parseArrastreRows,
+    parseFoldersFromValues,
+    parseResumenMetrics,
+    configValueFromRows,
   } = require('../electron/autoimg-sync-engine');
   const {
     resolveNotasForSync,
@@ -48,6 +51,24 @@ function main() {
     countScanSinSgio(['4210801', '4210802', '4210803'], existing) === 2,
     'countScanSinSgio cuenta NIS del scan ausentes en BD_IMG',
   );
+
+  const folderRows = [
+    ['NOMBRE', 'FOLDER_ID', 'ACTIVO', 'ULTIMO_SCAN', 'CANT_ARCHIVOS'],
+    ['JUAN', 'abc123folder', '✅', '2026-07-03', '12'],
+    ['PEDRO', 'def456folder', '❌', '', '0'],
+  ];
+  const folders = parseFoldersFromValues(folderRows);
+  assert(folders.length === 2 && folders[0].activo && !folders[1].activo, 'parseFoldersFromValues parsea carpetas');
+
+  const metrics = parseResumenMetrics([
+    ['METRICA', 'VALOR', 'FECHA'],
+    ['TOTAL NIS', '42', '2026-07-03'],
+    ['🟢 COMPLETOS (3/3)', '10', '2026-07-03'],
+  ]);
+  assert(metrics.totalNis === 42 && metrics.completos === 10, 'parseResumenMetrics extrae métricas');
+
+  const configRows = [['Clave', 'Valor'], ['ULTIMO_SYNC', '2026-07-03 10:00:00']];
+  assert(configValueFromRows(configRows, 'ULTIMO_SYNC') === '2026-07-03 10:00:00', 'configValueFromRows lee CONFIG');
 
   const parsed = parseArrastreRows([
     ['NIS', 'SGIO', 'MOTIVO', 'FECHA', 'OBSERVACION'],

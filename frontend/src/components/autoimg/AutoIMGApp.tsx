@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../api';
-import type { AutoImgStatus, AutoImgTab } from './types';
+import type { ArrastreEntry, AutoImgFolder, AutoImgStatus, AutoImgTab } from './types';
 import GoogleAuthPanel from './components/GoogleAuthPanel';
 import GoogleDrivePanel from './components/GoogleDrivePanel';
 import DashboardCards from './components/DashboardCards';
@@ -22,41 +22,84 @@ const TABS: { id: AutoImgTab; label: string }[] = [
   { id: 'logs', label: 'Logs' },
 ];
 
+function statusFromBootstrap(data: Awaited<ReturnType<typeof api.autoimgBootstrap>>): AutoImgStatus {
+  return {
+    connected: data.connected,
+    sheetName: data.sheetName,
+    sheetId: data.sheetId,
+    sheetLinked: data.sheetLinked,
+    lastSync: data.lastSync,
+    autoSync: data.autoSync,
+    totalNis: data.totalNis,
+    completos: data.completos,
+    faltantes: data.faltantes,
+    sobrantes: data.sobrantes,
+    carpetasActivas: data.carpetasActivas,
+  };
+}
+
 export default function AutoIMGApp() {
   const [activeTab, setActiveTab] = useState<AutoImgTab>('dashboard');
   const [status, setStatus] = useState<AutoImgStatus | null>(null);
   const [bdRows, setBdRows] = useState<string[][]>([]);
+  const [logRows, setLogRows] = useState<string[][]>([]);
+  const [folders, setFolders] = useState<AutoImgFolder[]>([]);
+  const [arrastre, setArrastre] = useState<ArrastreEntry[]>([]);
   const [googleConnected, setGoogleConnected] = useState(false);
 
-  const refreshStatus = useCallback(async () => {
+  const loadBootstrap = useCallback(async (refresh = true) => {
     try {
-      setStatus(await api.autoimgStatus());
+      const data = await api.autoimgBootstrap(refresh);
+      setStatus(statusFromBootstrap(data));
+      setBdRows(data.bdRows);
+      setLogRows(data.logRows);
+      setFolders(data.folders);
+      setArrastre(data.arrastre);
+      setGoogleConnected(data.connected);
     } catch {
       setStatus(null);
     }
   }, []);
 
-  const refreshBdImg = useCallback(async () => {
+  const refreshFolders = useCallback(async () => {
     try {
-      const res = await api.autoimgSyncFromSheet();
-      setBdRows(res.rows);
+      const res = await api.autoimgFoldersList(true);
+      setFolders(res.folders);
+    } catch { /* sheet not ready */ }
+  }, []);
+
+  const refreshAfterFolderChange = useCallback(async () => {
+    await refreshFolders();
+    try {
+      setStatus(await api.autoimgStatus());
+    } catch { /* sheet not ready */ }
+  }, [refreshFolders]);
+
+  const refreshLogs = useCallback(async () => {
+    try {
+      const res = await api.autoimgLogsList(true);
+      setLogRows(res.values);
     } catch {
-      try {
-        const res = await api.autoimgSheetsReadRange('BD_IMG!A:M');
-        setBdRows(res.values);
-      } catch { /* not connected */ }
+      setLogRows([]);
+    }
+  }, []);
+
+  const refreshArrastre = useCallback(async () => {
+    try {
+      const res = await api.autoimgArrastreList(true);
+      setArrastre(res.entries);
+    } catch {
+      setArrastre([]);
     }
   }, []);
 
   useEffect(() => {
-    refreshStatus();
-    refreshBdImg();
-  }, [refreshStatus, refreshBdImg]);
+    loadBootstrap(true);
+  }, [loadBootstrap]);
 
   const handleSynced = useCallback(() => {
-    refreshStatus();
-    refreshBdImg();
-  }, [refreshStatus, refreshBdImg]);
+    loadBootstrap(true);
+  }, [loadBootstrap]);
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-[var(--bg-base)]">
@@ -95,17 +138,20 @@ export default function AutoIMGApp() {
               <GoogleAuthPanel
                 onAuthChange={(connected) => {
                   setGoogleConnected(connected);
-                  refreshStatus();
-                  if (connected) refreshBdImg();
+                  if (connected) loadBootstrap(true);
+                  else {
+                    setStatus(null);
+                    setBdRows([]);
+                    setLogRows([]);
+                    setFolders([]);
+                    setArrastre([]);
+                  }
                 }}
-                onSheetLinked={() => {
-                  refreshStatus();
-                  refreshBdImg();
-                }}
+                onSheetLinked={() => loadBootstrap(true)}
               />
               <GoogleDrivePanel
                 googleConnected={googleConnected}
-                onFolderAdded={refreshStatus}
+                onFolderAdded={refreshAfterFolderChange}
               />
             </SidebarShell>
           </div>
@@ -133,10 +179,20 @@ export default function AutoIMGApp() {
             </div>
           )}
           {activeTab === 'bdimg' && <div className="h-full"><BdImgTable rows={bdRows} /></div>}
-          {activeTab === 'arrastre' && <div className="h-full"><ArrastreViewer /></div>}
-          {activeTab === 'carpetas' && <FolderMgmt />}
+          {activeTab === 'arrastre' && (
+            <div className="h-full">
+              <ArrastreViewer entries={arrastre} onRefresh={refreshArrastre} />
+            </div>
+          )}
+          {activeTab === 'carpetas' && (
+            <FolderMgmt folders={folders} onFoldersChange={refreshAfterFolderChange} />
+          )}
           {activeTab === 'scan' && <ScannerPanel onSynced={handleSynced} />}
-          {activeTab === 'logs' && <LogsViewer />}
+          {activeTab === 'logs' && (
+            <div className="h-full">
+              <LogsViewer rows={logRows} onRefresh={refreshLogs} />
+            </div>
+          )}
         </main>
       </div>
     </div>

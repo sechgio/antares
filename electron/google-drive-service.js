@@ -72,6 +72,15 @@ async function scanNis(folderId, folderName = '') {
   return { nis_map: nis.buildNisMap(files, folderName) };
 }
 
+async function assertDriveFolder(input) {
+  const folderId = assertValidFolderId(input);
+  const meta = await _driveFetch(`files/${folderId}`, { fields: 'id,name,mimeType' });
+  if (meta.mimeType !== 'application/vnd.google-apps.folder') {
+    throw new Error('El ID no corresponde a una carpeta de Drive');
+  }
+  return { folder_id: meta.id, name: meta.name || '' };
+}
+
 async function verifyFolder(input) {
   const folderId = assertValidFolderId(input);
   const meta = await _driveFetch(`files/${folderId}`, { fields: 'id,name,mimeType' });
@@ -96,6 +105,7 @@ async function getDriveStatus() {
 module.exports = {
   listFolder,
   scanNis,
+  assertDriveFolder,
   verifyFolder,
   getDriveStatus,
   parseFolderId,

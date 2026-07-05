@@ -3,14 +3,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mockApi } = vi.hoisted(() => ({
   mockApi: {
-    autoimgStatus: vi.fn(async () => ({ connected: false, autoSync: false })),
-    autoimgSyncFromSheet: vi.fn(async () => ({ success: true, rows: [] })),
-    autoimgSheetsReadRange: vi.fn(async () => ({ values: [] })),
+    autoimgBootstrap: vi.fn(async () => ({
+      connected: false,
+      autoSync: false,
+      folders: [],
+      bdRows: [],
+      logRows: [],
+      arrastre: [],
+    })),
     autoimgOAuthConfigStatus: vi.fn(async () => ({ configured: false })),
     autoimgSheetsAuthStatus: vi.fn(async () => ({ authenticated: false })),
     autoimgSheetsGetConfig: vi.fn(async () => ({ sheet_id: '', name: '', linked: false })),
     autoimgFoldersList: vi.fn(async () => ({ folders: [] })),
     autoimgDriveStatus: vi.fn(async () => ({ connected: false })),
+    autoimgLogsList: vi.fn(async () => ({ values: [] })),
     autoimgArrastreList: vi.fn(async () => ({ entries: [] })),
   },
 }));
@@ -40,5 +46,10 @@ describe('AutoIMGApp layout and navigation', () => {
     expect(screen.getByText('Conexión')).toBeInTheDocument();
     expect(screen.getByText('OAuth')).toBeInTheDocument();
     expect(screen.getByText('Nueva carpeta')).toBeInTheDocument();
+  });
+
+  it('loads bootstrap once on mount', async () => {
+    render(<AutoIMGApp />);
+    expect(mockApi.autoimgBootstrap).toHaveBeenCalledWith(true);
   });
 });

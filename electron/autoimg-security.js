@@ -13,6 +13,9 @@ function maskClientId(clientId) {
 
 function sanitizeErrorMessage(message) {
   const text = String(message || '');
+  if (/429|RESOURCE_EXHAUSTED|Quota exceeded/i.test(text)) {
+    return 'Límite de consultas a Google Sheets alcanzado. Espera 1–2 minutos e intenta de nuevo.';
+  }
   if (SENSITIVE_PATTERNS.some((re) => re.test(text))) {
     return 'Error de autenticación o permisos con Google. Revisa credenciales OAuth y el acceso al Sheet.';
   }

@@ -26,6 +26,7 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
   const [awaitingAuth, setAwaitingAuth] = useState(false);
   const [sheetId, setSheetId] = useState('');
   const [sheetName, setSheetName] = useState('');
+  const [sheetNotice, setSheetNotice] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -160,10 +161,14 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
     if (!sheetId.trim()) return;
     setLoading(true);
     setError('');
+    setSheetNotice('');
     try {
       const res = await api.autoimgSheetsOpen(sheetId.trim());
       if (res.success) {
         setSheetName(res.name || sheetId);
+        if (res.created_tabs?.length) {
+          setSheetNotice(`Se crearon pestañas: ${res.created_tabs.join(', ')}`);
+        }
         onSheetLinked?.();
       }
     } catch (e) {
@@ -334,6 +339,7 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
               {sheetName}
             </p>
           )}
+          {sheetNotice && <InlineMessage tone="success">{sheetNotice}</InlineMessage>}
         </SidebarSection>
       )}
 

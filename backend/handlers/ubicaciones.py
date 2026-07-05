@@ -1,7 +1,10 @@
 import base64
+import hashlib
+import json
 import logging
 import math
 import os
+import re
 import threading
 import time
 import urllib.error
@@ -12,7 +15,7 @@ from io import BytesIO
 from typing import Any, cast
 
 import pandas as pd
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from backend.utils.paths import resource_path
 from backend.utils.validators import sanitizar_nombre
@@ -68,6 +71,7 @@ _font_cache: dict[tuple[str, int], ImageFont.FreeTypeFont | ImageFont.ImageFont]
 _footer_cache: dict[tuple[int, int, int], Image.Image | None] = {}
 _excel_cache: dict[str, tuple[float, pd.DataFrame, tuple[Any, ...]]] = {}
 _map_screenshot_cache: dict[tuple[Any, ...], bytes] = {}
+_map_screenshot_working_cache: dict[tuple[Any, ...], bytes] = {}
 _preview_composed_cache: dict[tuple[int, int, tuple[str, float], int, str], dict[str, Any]] = {}
 _preview_excel_ctx: tuple[str, float] | None = None
 # Guarda las caches mutadas desde el thread daemon de prefetch (B1): sin lock,
@@ -98,10 +102,35 @@ _MAP_PROVIDER_DEFAULT = "osm"
 # LANCZOS, so the map stays sharp enough under the dimming overlay + pin.
 _MAP_FETCH_MAX_DIM = 1024
 _OSM_TILE_SIZE = 256
-_OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+_XYZ_PROVIDERS = {
+    "osm": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    "mapbox": "https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/{z}/{x}/{y}?access_token={key}",
+    "maptiler": "https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key={key}",
+    "stadia": "https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}.png?api_key={key}",
+    "geoapify": "https://maps.geoapify.com/v1/tile/osm-carto/{z}/{x}/{y}.png?apiKey={key}",
+    "thunderforest": "https://tile.thunderforest.com/atlas/{z}/{x}/{y}.png?apikey={key}"
+}
 _GOOGLE_STATIC_URL = "https://maps.googleapis.com/maps/api/staticmap"
 _HTTP_USER_AGENT = "ANTARES/0.10 (ubicaciones static map; +https://github.com/sechgio/antares)"
 _HTTP_TIMEOUT = 12
+
+
+def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
+    """Convert '#RRGGBB' or '#RGB' to (R, G, B)."""
+    h = hex_str.lstrip("#")
+    if len(h) == 3:
+        h = h[0] * 2 + h[1] * 2 + h[2] * 2
+    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+
+def _colorize_pin(pin_rgba: Image.Image, target_rgb: tuple[int, int, int]) -> Image.Image:
+    """Tint the pin image to target_rgb preserving luminance and alpha."""
+    _r, _g, _b, a = pin_rgba.split()
+    gray = pin_rgba.convert("L")
+    colored = ImageOps.colorize(gray, black=(0, 0, 0), mid=target_rgb, white=(255, 255, 255))
+    colored = colored.convert("RGBA")
+    colored.putalpha(a)
+    return colored
 
 
 def _get_font(bold: bool, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -191,9 +220,43 @@ def _get_footer_image(width: int, height: int) -> Image.Image | None:
     return _footer_cache[key]
 
 
-def _map_cache_key(lat: float, lon: float, formato: str, *, preview: bool) -> tuple[Any, ...]:
+def _map_opts_fingerprint(map_opts: dict[str, Any] | None) -> tuple[Any, ...]:
+    """Identidad de capa/zoom/llave para invalidar cachés al cambiar proveedor."""
+    provider = _resolve_provider(map_opts)
+    zoom = int(map_opts["zoom"]) if map_opts and map_opts.get("zoom") is not None else _MAP_ZOOM
+    api_key = _resolve_api_key(map_opts) or ""
+    key_fp = "" if provider == "osm" or not api_key else hashlib.sha256(api_key.encode()).hexdigest()[:12]
+    return (provider, zoom, key_fp)
+
+
+def _composed_preview_key(
+    excel_ctx: Any,
+    row_index: int,
+    formato: str,
+    styles_hash: str,
+    map_opts: dict[str, Any] | None,
+) -> tuple[Any, ...]:
+    return (
+        _FOOTER_LAYOUT_VERSION,
+        _MAP_CAPTURE_VERSION,
+        excel_ctx,
+        row_index,
+        formato,
+        styles_hash,
+        _map_opts_fingerprint(map_opts),
+    )
+
+
+def _map_cache_key(
+    lat: float,
+    lon: float,
+    formato: str,
+    *,
+    preview: bool,
+    map_opts: dict[str, Any] | None = None,
+) -> tuple[Any, ...]:
     cap_w, cap_h = _map_capture_size(formato, preview=preview)
-    return (_MAP_CAPTURE_VERSION, *_coord_key(lat, lon), formato, cap_w, cap_h)
+    return (_MAP_CAPTURE_VERSION, *_coord_key(lat, lon), formato, cap_w, cap_h, *_map_opts_fingerprint(map_opts))
 
 
 def _screenshot_has_map_tiles(screenshot_bytes: bytes) -> bool:
@@ -288,10 +351,13 @@ def _resolve_provider(map_opts: dict[str, Any] | None) -> str:
     return os.environ.get("ANTARES_MAP_PROVIDER", _MAP_PROVIDER_DEFAULT).lower()
 
 
-def _resolve_google_key(map_opts: dict[str, Any] | None) -> str | None:
-    if map_opts and map_opts.get("google_maps_key"):
-        return str(map_opts["google_maps_key"])
-    return os.environ.get("ANTARES_GOOGLE_MAPS_KEY") or None
+def _resolve_api_key(map_opts: dict[str, Any] | None) -> str | None:
+    if map_opts:
+        if map_opts.get("api_key"):
+            return str(map_opts["api_key"])
+        if map_opts.get("google_maps_key"):
+            return str(map_opts["google_maps_key"])
+    return os.environ.get("ANTARES_MAPS_API_KEY") or os.environ.get("ANTARES_GOOGLE_MAPS_KEY") or None
 
 
 def _cap_fetch_size(width: int, height: int) -> tuple[int, int]:
@@ -331,8 +397,8 @@ def _lonlat_to_webmercator_pixel(lon: float, lat: float, zoom: int) -> tuple[flo
     return x, y
 
 
-def _fetch_osm_tiles_map(lat: float, lon: float, width: int, height: int, zoom: int) -> Image.Image:
-    """Compose OSM raster tiles centered on (lat, lon) into an RGB image of (width, height)."""
+def _fetch_xyz_tiles_map(lat: float, lon: float, width: int, height: int, zoom: int, url_template: str, api_key: str = "") -> Image.Image:
+    """Compose XYZ raster tiles centered on (lat, lon) into an RGB image of (width, height)."""
     cx, cy = _lonlat_to_webmercator_pixel(lon, lat, zoom)
     left = cx - width / 2
     top = cy - height / 2
@@ -345,20 +411,33 @@ def _fetch_osm_tiles_map(lat: float, lon: float, width: int, height: int, zoom: 
     rows = tile_y1 - tile_y0 + 1
     canvas = Image.new("RGB", (cols * _OSM_TILE_SIZE, rows * _OSM_TILE_SIZE), (218, 218, 218))
     headers = {"User-Agent": _HTTP_USER_AGENT}
+
+    tile_jobs: list[tuple[int, int, str]] = []
     for ty in range(tile_y0, tile_y1 + 1):
-        if ty < 0 or ty >= n:  # out of range near the poles
+        if ty < 0 or ty >= n:
             continue
         for tx in range(tile_x0, tile_x1 + 1):
-            tx_mod = tx % n  # wrap longitude
-            url = _OSM_TILE_URL.format(z=zoom, x=tx_mod, y=ty)
-            tile_bytes = _http_get(url, headers)
-            if not tile_bytes:
-                continue
-            try:
-                tile = Image.open(BytesIO(tile_bytes)).convert("RGB")
-                canvas.paste(tile, ((tx - tile_x0) * _OSM_TILE_SIZE, (ty - tile_y0) * _OSM_TILE_SIZE))
-            except Exception:
-                logger.debug("Tile decode failed for %s", url, exc_info=True)
+            tx_mod = tx % n
+            url = url_template.format(z=zoom, x=tx_mod, y=ty, key=urllib.parse.quote(api_key or ""))
+            tile_jobs.append((tx - tile_x0, ty - tile_y0, url))
+
+    def _download_tile(job: tuple[int, int, str]) -> tuple[int, int, Image.Image | None]:
+        col, row, url = job
+        tile_bytes = _http_get(url, headers)
+        if not tile_bytes:
+            return col, row, None
+        try:
+            return col, row, Image.open(BytesIO(tile_bytes)).convert("RGB")
+        except Exception:
+            logger.debug("Tile decode failed for %s", url, exc_info=True)
+            return col, row, None
+
+    max_workers = min(_MAX_RENDER_WORKERS, max(len(tile_jobs), 1))
+    with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="map-tile") as ex:
+        for col, row, tile in ex.map(_download_tile, tile_jobs):
+            if tile is not None:
+                canvas.paste(tile, (col * _OSM_TILE_SIZE, row * _OSM_TILE_SIZE))
+
     offset_x = round(left - tile_x0 * _OSM_TILE_SIZE)
     offset_y = round(top - tile_y0 * _OSM_TILE_SIZE)
     return canvas.crop((offset_x, offset_y, offset_x + width, offset_y + height))
@@ -392,7 +471,7 @@ def fetch_static_map(
     zoom: int = _MAP_ZOOM,
     *,
     provider: str = _MAP_PROVIDER_DEFAULT,
-    google_key: str | None = None,
+    api_key: str | None = None,
 ) -> bytes:
     """Return a PNG map image (capped fetch size) for (lat, lon) using the chosen provider.
 
@@ -401,12 +480,21 @@ def fetch_static_map(
     fetch_w, fetch_h = _cap_fetch_size(width, height)
     try:
         if provider == "google":
-            if not google_key:
-                logger.warning("Google Static Maps seleccionado pero falta ANTARES_GOOGLE_MAPS_KEY; usando fallback.")
+            if not api_key:
+                logger.warning("Google Static Maps seleccionado pero falta llave API; usando fallback.")
                 return _fallback_map_bytes(fetch_w, fetch_h)
-            img = _fetch_google_static_map(lat, lon, fetch_w, fetch_h, zoom, google_key)
+            img = _fetch_google_static_map(lat, lon, fetch_w, fetch_h, zoom, api_key)
         else:
-            img = _fetch_osm_tiles_map(lat, lon, fetch_w, fetch_h, zoom)
+            url_template = _XYZ_PROVIDERS.get(provider)
+            if not url_template:
+                logger.warning("Proveedor desconocido %s; haciendo fallback a OSM.", provider)
+                url_template = _XYZ_PROVIDERS["osm"]
+
+            # Most providers other than OSM require a key
+            if provider != "osm" and not api_key:
+                logger.warning("Proveedor %s requiere una llave API pero no se proporcionó. La petición de mapa probablemente fallará.", provider)
+
+            img = _fetch_xyz_tiles_map(lat, lon, fetch_w, fetch_h, zoom, url_template, api_key or "")
         img = img.resize((fetch_w, fetch_h), Image.Resampling.LANCZOS) if img.size != (fetch_w, fetch_h) else img
         buf = BytesIO()
         img.save(buf, format="PNG")
@@ -465,6 +553,20 @@ def _sync_excel_context(excel_path: str) -> tuple[str, float]:
     return ctx
 
 
+def _manual_preview_ctx(datos: dict) -> tuple[Any, ...]:
+    """Clave de caché única por fila manual (coords + textos)."""
+    lat = float(datos["lat"])
+    lon = float(datos["lon"])
+    return (
+        "manual",
+        *_coord_key(lat, lon),
+        str(datos.get("cod_componente", "")),
+        str(datos.get("direccion", "")),
+        str(datos.get("localidad", "")),
+        str(datos.get("distrito", "")),
+    )
+
+
 def _trim_cache(cache: dict, max_size: int) -> None:
     while len(cache) > max_size:
         del cache[next(iter(cache))]
@@ -479,7 +581,7 @@ def _get_cached_map_screenshot(
     map_opts: dict[str, Any] | None = None,
 ) -> bytes:
     """Fetch (or reuse) a static map image for (lat, lon). No browser process needed."""
-    key = _map_cache_key(lat, lon, formato, preview=preview)
+    key = _map_cache_key(lat, lon, formato, preview=preview, map_opts=map_opts)
     # El caché sólo guarda capturas que ya pasaron _screenshot_has_map_tiles
     # (ver gate de escritura más abajo), así que no re-validamos en cada hit.
     cached = _map_screenshot_cache.get(key)
@@ -487,10 +589,14 @@ def _get_cached_map_screenshot(
         return cached
     cap_w, cap_h = _map_capture_size(formato, preview=preview)
     provider = _resolve_provider(map_opts)
+    zoom = int(map_opts["zoom"]) if map_opts and map_opts.get("zoom") is not None else _MAP_ZOOM
     screenshot = fetch_static_map(
-        lat, lon, cap_w, cap_h, _MAP_ZOOM,
-        provider=provider, google_key=_resolve_google_key(map_opts),
+        lat, lon, cap_w, cap_h, zoom,
+        provider=provider, api_key=_resolve_api_key(map_opts),
     )
+    with _cache_lock:
+        _map_screenshot_working_cache[key] = screenshot
+        _trim_cache(_map_screenshot_working_cache, _MAX_MAP_CACHE)
     if _screenshot_has_map_tiles(screenshot):
         with _cache_lock:
             _map_screenshot_cache[key] = screenshot
@@ -528,8 +634,10 @@ def _compose_and_cache_preview(
     datos: dict,
     screenshot_bytes: bytes,
     total_filas: int,
+    custom_styles: dict | None = None,
+    map_opts: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    preview_img = _compose_ubicacion_image(datos, formato, screenshot_bytes, preview=True)
+    preview_img = _compose_ubicacion_image(datos, formato, screenshot_bytes, preview=True, custom_styles=custom_styles)
     data = _encode_preview_data(
         preview_img,
         datos,
@@ -537,8 +645,10 @@ def _compose_and_cache_preview(
         total_filas=total_filas,
         formato=formato,
     )
+    styles_hash = json.dumps(custom_styles, sort_keys=True) if custom_styles else ""
+    cache_key = _composed_preview_key(excel_ctx, row_index, formato, styles_hash, map_opts)
     with _cache_lock:
-        _preview_composed_cache[(_FOOTER_LAYOUT_VERSION, _MAP_CAPTURE_VERSION, excel_ctx, row_index, formato)] = data
+        _preview_composed_cache[cache_key] = data
         _trim_cache(_preview_composed_cache, _MAX_COMPOSED_CACHE)
     return data
 
@@ -551,17 +661,23 @@ def _prefetch_alternate_formato(
     lat: float,
     lon: float,
     total_filas: int,
+    custom_styles: dict | None = None,
+    map_opts: dict | None = None,
 ) -> None:
     """Pre-compone la orientación opuesta en background (solo Pillow, sin Playwright)."""
     try:
         alt = "horizontal" if formato == "vertical" else "vertical"
-        cache_key = (_FOOTER_LAYOUT_VERSION, _MAP_CAPTURE_VERSION, excel_ctx, row_index, alt)
+        styles_hash = json.dumps(custom_styles, sort_keys=True) if custom_styles else ""
+        cache_key = _composed_preview_key(excel_ctx, row_index, alt, styles_hash, map_opts)
         if cache_key in _preview_composed_cache:
             return
-        map_bytes = _map_screenshot_cache.get(_map_cache_key(lat, lon, alt, preview=True))
+        map_bytes = _map_screenshot_cache.get(_map_cache_key(lat, lon, alt, preview=True, map_opts=map_opts))
         if map_bytes is None:
             return
-        _compose_and_cache_preview(excel_ctx, row_index, alt, datos, map_bytes, total_filas)
+        _compose_and_cache_preview(
+            excel_ctx, row_index, alt, datos, map_bytes, total_filas,
+            custom_styles=custom_styles, map_opts=map_opts,
+        )
     except Exception:
         logger.debug("Prefetch orientación alterna falló", exc_info=True)
 
@@ -594,12 +710,25 @@ def _compose_ubicacion_image(
     screenshot_bytes: bytes,
     *,
     preview: bool = False,
+    custom_styles: dict | None = None,
 ) -> Image.Image:
     """Compone mapa + textos + pin + footer. Preview y export usan la misma lógica
-    escalada proporcionalmente (preview ≈ miniatura fiel del PDF exportado)."""
+    escalada proporcionalmente (preview ≈ miniatura fiel del PDF exportado).
+
+    ``custom_styles`` (optional) overrides text appearance (per-field fontSize,
+    bold, color, offsetX, offsetY, visible), pin (color, scale, offsets,
+    visible), overlay (alpha, color), and layout (yStart, lineSpacing, lineGap).
+    When ``None`` or empty, the original hardcoded defaults are used.
+    """
     spec = _REF_LAYOUT[formato]
     out_w, out_h, footer_height = _dimensions_for(formato, preview=preview)
     scale = out_w / int(spec["out_w"])
+
+    # ── Custom styles extraction ──
+    cs_texts = (custom_styles or {}).get("texts", {})
+    cs_pin = (custom_styles or {}).get("pin", {})
+    cs_map = (custom_styles or {}).get("map", {})
+    cs_layout = (custom_styles or {}).get("layout", {})
 
     final_img = Image.new("RGB", (out_w, out_h), _BG_RGB)
 
@@ -610,7 +739,9 @@ def _compose_ubicacion_image(
     if mapa.size != target_map_size:
         mapa = mapa.resize(target_map_size, resample)
 
-    overlay = Image.new("RGBA", (out_w, map_height), (*_BG_RGB, _MAP_OVERLAY_ALPHA))
+    overlay_alpha = cs_map.get("overlayAlpha", _MAP_OVERLAY_ALPHA)
+    overlay_color = _hex_to_rgb(cs_map["overlayColor"]) if "overlayColor" in cs_map else _BG_RGB
+    overlay = Image.new("RGBA", (out_w, map_height), (*overlay_color, overlay_alpha))
     mapa_con_overlay = Image.alpha_composite(mapa, overlay)
     final_img.paste(mapa_con_overlay.convert("RGB"), (0, 0))
 
@@ -624,86 +755,65 @@ def _compose_ubicacion_image(
     border_w = max(1, round(int(spec["border"]) * scale))
     draw.rectangle([0, 0, out_w - 1, out_h - 1], outline=(0, 0, 0), width=border_w)
 
-    font_large = _get_font(True, max(10, round(int(spec["font_large"]) * scale)))
-    font_medium = _get_font(True, max(8, round(int(spec["font_medium"]) * scale)))
-
+    # ── Text fields ──
     cod = str(datos.get("cod_componente", ""))
     dir_str = str(datos.get("direccion", ""))
     loc = str(datos.get("localidad", ""))
     dist = str(datos.get("distrito", ""))
 
-    y_start = round(int(spec["y_start"]) * scale)
-    line_spacing = round(int(spec["line_spacing"]) * scale)
-    line_gap = float(spec["line_gap"])
-    stroke_w_large = max(1, round(int(spec["stroke_large"]) * scale))
-    stroke_w_medium = max(1, round(int(spec["stroke_medium"]) * scale))
+    y_start = round(cs_layout.get("yStart", int(spec["y_start"])) * scale)
+    line_spacing = round(cs_layout.get("lineSpacing", int(spec["line_spacing"])) * scale)
+    line_gap = cs_layout.get("lineGap", float(spec["line_gap"]))
+
+    def _draw_field(field: str, text: str, default_size: int, y_pos: int, *, is_large: bool = False) -> None:
+        """Draw a single text field with per-field style overrides."""
+        ts = cs_texts.get(field, {})
+        if not ts.get("visible", True):
+            return
+        font_size = max(8, round(ts.get("fontSize", default_size) * scale))
+        bold = ts.get("bold", True)
+        color = _hex_to_rgb(ts["color"]) if "color" in ts else (0, 0, 0)
+        offset_x = round(ts.get("offsetX", 0) * scale)
+        offset_y = round(ts.get("offsetY", 0) * scale)
+        stroke_key = "stroke_large" if is_large else "stroke_medium"
+        stroke_w = max(1, round(int(spec[stroke_key]) * scale))
+        font = _get_font(bold, font_size)
+        bbox = draw.textbbox((0, 0), text, font=font)
+        w_text = bbox[2] - bbox[0]
+        x = (out_w - w_text) // 2 + offset_x
+        y = y_pos + offset_y
+        if field == "direccion" and w_text > out_w * 0.8:
+            x = int(out_w * 0.1) + offset_x
+        draw.text((x, y), text, fill=color, font=font, stroke_width=stroke_w, stroke_fill=(255, 255, 255))
 
     y_text = y_start
-    bbox_cod = draw.textbbox((0, 0), cod, font=font_large)
-    w_cod = bbox_cod[2] - bbox_cod[0]
-    draw.text(
-        ((out_w - w_cod) // 2, y_text),
-        cod,
-        fill=(0, 0, 0),
-        font=font_large,
-        stroke_width=stroke_w_large,
-        stroke_fill=(255, 255, 255),
-    )
+    _draw_field("cod_componente", cod, int(spec["font_large"]), y_text, is_large=True)
 
     y_text += line_spacing
-    bbox_dir = draw.textbbox((0, 0), dir_str, font=font_medium)
-    w_dir = bbox_dir[2] - bbox_dir[0]
-    if w_dir > out_w * 0.8:
-        draw.text(
-            (int(out_w * 0.1), y_text),
-            dir_str,
-            fill=(0, 0, 0),
-            font=font_medium,
-            stroke_width=stroke_w_medium,
-            stroke_fill=(255, 255, 255),
-        )
-    else:
-        draw.text(
-            ((out_w - w_dir) // 2, y_text),
-            dir_str,
-            fill=(0, 0, 0),
-            font=font_medium,
-            stroke_width=stroke_w_medium,
-            stroke_fill=(255, 255, 255),
-        )
+    _draw_field("direccion", dir_str, int(spec["font_medium"]), y_text)
 
     y_text += round(line_spacing * line_gap)
-    bbox_loc = draw.textbbox((0, 0), loc, font=font_medium)
-    w_loc = bbox_loc[2] - bbox_loc[0]
-    draw.text(
-        ((out_w - w_loc) // 2, y_text),
-        loc,
-        fill=(0, 0, 0),
-        font=font_medium,
-        stroke_width=stroke_w_medium,
-        stroke_fill=(255, 255, 255),
-    )
+    _draw_field("localidad", loc, int(spec["font_medium"]), y_text)
 
     y_text += round(line_spacing * line_gap)
-    bbox_dist = draw.textbbox((0, 0), dist, font=font_medium)
-    w_dist = bbox_dist[2] - bbox_dist[0]
-    draw.text(
-        ((out_w - w_dist) // 2, y_text),
-        dist,
-        fill=(0, 0, 0),
-        font=font_medium,
-        stroke_width=stroke_w_medium,
-        stroke_fill=(255, 255, 255),
-    )
+    _draw_field("distrito", dist, int(spec["font_medium"]), y_text)
 
-    pin = _get_pin_rgba()
-    if pin is not None:
-        new_pin_w = int(out_w * float(spec["pin_scale"]))
-        new_pin_h = int(pin.height * (new_pin_w / pin.width))
-        pin_resized = pin.resize((new_pin_w, new_pin_h), resample)
-        pin_x = (out_w - new_pin_w) // 2
-        pin_y = (map_height // 2) - int(new_pin_h * _PIN_TIP_RATIO)
-        final_img.paste(pin_resized, (pin_x, pin_y), mask=pin_resized)
+    # ── Pin ──
+    if cs_pin.get("visible", True):
+        pin = _get_pin_rgba()
+        if pin is not None:
+            pin_scale_val = cs_pin.get("scale", float(spec["pin_scale"]))
+            new_pin_w = max(1, int(out_w * pin_scale_val))
+            new_pin_h = max(1, int(pin.height * (new_pin_w / pin.width)))
+            pin_resized = pin.resize((new_pin_w, new_pin_h), resample)
+            pin_color_hex = cs_pin.get("color")
+            if pin_color_hex:
+                pin_resized = _colorize_pin(pin_resized, _hex_to_rgb(pin_color_hex))
+            pin_offset_x = round(cs_pin.get("offsetX", 0) * scale)
+            pin_offset_y = round(cs_pin.get("offsetY", 0) * scale)
+            pin_x = (out_w - new_pin_w) // 2 + pin_offset_x
+            pin_y = (map_height // 2) - int(new_pin_h * _PIN_TIP_RATIO) + pin_offset_y
+            final_img.paste(pin_resized, (pin_x, pin_y), mask=pin_resized)
 
     return final_img
 
@@ -714,21 +824,23 @@ def render_ubicacion(
     *,
     preview: bool = False,
     map_opts: dict[str, Any] | None = None,
+    custom_styles: dict | None = None,
 ) -> Image.Image:
     """Pipeline único: captura mapa + composición WYSIWYG (preview o export)."""
     lat = float(datos["lat"])
     lon = float(datos["lon"])
     screenshot_bytes = _get_cached_map_screenshot(lat, lon, formato, preview=preview, map_opts=map_opts)
-    return _compose_ubicacion_image(datos, formato, screenshot_bytes, preview=preview)
+    return _compose_ubicacion_image(datos, formato, screenshot_bytes, preview=preview, custom_styles=custom_styles)
 
 
 def render_imagen_ubicacion(
     datos: dict,
     formato: str,
     map_opts: dict[str, Any] | None = None,
+    custom_styles: dict | None = None,
 ) -> Image.Image:
     """Renderiza la imagen final A4 con mapa, textos, pin y footer."""
-    return render_ubicacion(datos, formato, preview=False, map_opts=map_opts)
+    return render_ubicacion(datos, formato, preview=False, map_opts=map_opts, custom_styles=custom_styles)
 
 
 def generar_imagen_ubicacion(
@@ -736,9 +848,10 @@ def generar_imagen_ubicacion(
     output_path: str,
     formato: str,
     map_opts: dict[str, Any] | None = None,
+    custom_styles: dict | None = None,
 ) -> None:
     """Genera la imagen y la guarda como PDF."""
-    final_img = render_imagen_ubicacion(datos, formato, map_opts=map_opts)
+    final_img = render_imagen_ubicacion(datos, formato, map_opts=map_opts, custom_styles=custom_styles)
     final_img.convert("RGB").save(output_path, "PDF", resolution=300.0)
 
 
@@ -753,6 +866,43 @@ def _output_pdf_filename(cod_componente: str) -> str:
     """
     safe_stem = sanitizar_nombre(str(cod_componente)) or "ubicacion"
     return f"{safe_stem}.pdf"
+
+
+_COMBINED_COORD_URL_PATTERNS = (
+    re.compile(r"[@?](-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)"),
+    re.compile(r"[?&]q=(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)"),
+    re.compile(r"[?&]center=(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)"),
+)
+
+
+def _parse_combined_coord_value(val: Any) -> tuple[float | None, float | None]:
+    """Extrae lat/lon de una celda combinada (par numérico o URL de mapas)."""
+    if val is None or pd.isna(val):
+        return None, None
+    text = str(val).strip()
+    if not text:
+        return None, None
+    for pattern in _COMBINED_COORD_URL_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            lat = _coerce_coord(match.group(1))
+            lon = _coerce_coord(match.group(2))
+            if lat is not None and lon is not None:
+                return lat, lon
+    parts = text.split(",")
+    if len(parts) < 2:
+        return None, None
+    return _coerce_coord(parts[0].strip()), _coerce_coord(parts[1].strip())
+
+
+def _unique_pdf_filename(cod_componente: str, used_stems: dict[str, int]) -> str:
+    """Asigna un nombre PDF único; añade sufijo numérico si el código se repite."""
+    stem = sanitizar_nombre(str(cod_componente)) or "ubicacion"
+    count = used_stems.get(stem, 0)
+    used_stems[stem] = count + 1
+    if count == 0:
+        return f"{stem}.pdf"
+    return f"{stem}_{count + 1}.pdf"
 
 
 def _coerce_coord(value: Any) -> float | None:
@@ -783,18 +933,9 @@ def _parse_excel_columns(df):
     if not col_lat or not col_lon:
         col_coord = next((c for c in df.columns if 'coord' in c or 'link' in c), None)
         if col_coord:
-            def parse_lat(val):
-                try:
-                    return float(str(val).split(',')[0].strip())
-                except Exception:
-                    return 0.0
-            def parse_lon(val):
-                try:
-                    return float(str(val).split(',')[1].strip())
-                except Exception:
-                    return 0.0
-            df['lat_tmp'] = df[col_coord].apply(parse_lat)
-            df['lon_tmp'] = df[col_coord].apply(parse_lon)
+            parsed = df[col_coord].apply(_parse_combined_coord_value)
+            df["lat_tmp"] = parsed.apply(lambda pair: pair[0])
+            df["lon_tmp"] = parsed.apply(lambda pair: pair[1])
             col_lat = 'lat_tmp'
             col_lon = 'lon_tmp'
         else:
@@ -817,54 +958,84 @@ def handle_preview_ubicacion(payload: dict) -> dict:
     """Genera vista previa WYSIWYG: compone igual que el PDF y reduce para pantalla."""
     try:
         excel_path = payload.get("excelPath")
+        manual_data = payload.get("manualData")
         formato = payload.get("formato", "vertical")
         row_index = payload.get("rowIndex", 0)
         recompose_only = bool(payload.get("recomposeOnly", False))
-        map_opts = {"provider": payload.get("provider"), "google_maps_key": payload.get("google_maps_key")}
+        map_opts = {
+            "provider": payload.get("provider"),
+            "zoom": payload.get("zoom"),
+            "api_key": payload.get("api_key")
+        }
+        custom_styles = payload.get("customStyles") or None
 
-        if not excel_path:
-            return {"success": False, "error": "Falta la ruta del Excel."}
+        if not excel_path and not manual_data:
+            return {"success": False, "error": "Falta la ruta del Excel o datos manuales."}
 
-        df, (col_cod, col_dir, col_loc, col_dist, col_lat, col_lon) = _load_excel_data(excel_path)
+        if manual_data:
+            datos = {
+                'cod_componente': str(manual_data.get('cod_componente', '')).strip(),
+                'direccion': str(manual_data.get('direccion', '')).strip(),
+                'localidad': str(manual_data.get('localidad', '')).strip(),
+                'distrito': str(manual_data.get('distrito', '')).strip(),
+                'lat': _coerce_coord(manual_data.get('lat')),
+                'lon': _coerce_coord(manual_data.get('lon')),
+            }
+            total_filas = 1
+            row_index = 0
+        else:
+            if not isinstance(excel_path, str) or not excel_path:
+                return {"success": False, "error": "Falta la ruta del Excel o datos manuales."}
+            df, (col_cod, col_dir, col_loc, col_dist, col_lat, col_lon) = _load_excel_data(excel_path)
+            total_filas = len(df)
 
-        if col_lat is None:
-            return {"success": False, "error": "El Excel debe tener columnas 'latitud' y 'longitud'."}
+            if col_lat is None:
+                return {"success": False, "error": "El Excel debe tener columnas 'latitud' y 'longitud'."}
 
-        if row_index >= len(df):
-            return {"success": False, "error": "No hay mas filas para previsualizar."}
+            if row_index >= total_filas:
+                return {"success": False, "error": "No hay mas filas para previsualizar.", "total_filas": total_filas}
 
-        row = df.iloc[row_index]
-        datos = _extract_row_data(row, row_index, col_cod, col_dir, col_loc, col_dist, col_lat, col_lon)
+            row = df.iloc[row_index]
+            datos = _extract_row_data(row, row_index, col_cod, col_dir, col_loc, col_dist, col_lat, col_lon)
+            excel_ctx = _sync_excel_context(excel_path)
 
-        if pd.isna(datos['lat']) or pd.isna(datos['lon']):
-            return {"success": False, "error": "La fila no tiene coordenadas validas."}
+        lat = _coerce_coord(datos["lat"])
+        lon = _coerce_coord(datos["lon"])
+        if lat is None or lon is None:
+            return {"success": False, "error": "La fila no tiene coordenadas validas.", "total_filas": total_filas}
+        datos["lat"] = lat
+        datos["lon"] = lon
 
-        lat = float(datos['lat'])
-        lon = float(datos['lon'])
-        excel_ctx = _sync_excel_context(excel_path)
-        composed_key = (_FOOTER_LAYOUT_VERSION, _MAP_CAPTURE_VERSION, excel_ctx, row_index, formato)
+        lat = float(lat)
+        lon = float(lon)
+        excel_ctx = _manual_preview_ctx(datos) if manual_data else excel_ctx
+        styles_hash = json.dumps(custom_styles, sort_keys=True) if custom_styles else ""
+        composed_key = _composed_preview_key(excel_ctx, row_index, formato, styles_hash, map_opts)
 
         cached_preview = _preview_composed_cache.get(composed_key)
         if cached_preview is not None:
             return {"success": True, "data": cached_preview}
 
         if recompose_only:
-            map_key = _map_cache_key(lat, lon, formato, preview=True)
-            cached_map = _map_screenshot_cache.get(map_key)
+            map_key = _map_cache_key(lat, lon, formato, preview=True, map_opts=map_opts)
+            cached_map = _map_screenshot_cache.get(map_key) or _map_screenshot_working_cache.get(map_key)
             if cached_map is not None:
                 data = _compose_and_cache_preview(
-                    excel_ctx, row_index, formato, datos, cached_map, len(df),
+                    excel_ctx, row_index, formato, datos, cached_map, total_filas,
+                    custom_styles=custom_styles, map_opts=map_opts,
                 )
                 return {"success": True, "data": data}
 
         screenshot_bytes = _get_cached_map_screenshot(lat, lon, formato, preview=True, map_opts=map_opts)
         data = _compose_and_cache_preview(
-            excel_ctx, row_index, formato, datos, screenshot_bytes, len(df),
+            excel_ctx, row_index, formato, datos, screenshot_bytes, total_filas,
+            custom_styles=custom_styles, map_opts=map_opts,
         )
 
         threading.Thread(
             target=_prefetch_alternate_formato,
-            args=(excel_ctx, row_index, formato, datos, lat, lon, len(df)),
+            args=(excel_ctx, row_index, formato, datos, lat, lon, total_filas),
+            kwargs={"custom_styles": custom_styles, "map_opts": map_opts},
             daemon=True,
         ).start()
 
@@ -876,39 +1047,64 @@ def handle_preview_ubicacion(payload: dict) -> dict:
 def handle_generar_ubicaciones(payload: dict) -> dict:
     try:
         excel_path = payload.get("excelPath")
+        manual_data = payload.get("manualData")
         output_dir = payload.get("outputDir")
         formato = payload.get("formato", "vertical")
         consolidado = payload.get("consolidado", False)
-        map_opts = {"provider": payload.get("provider"), "google_maps_key": payload.get("google_maps_key")}
+        map_opts = {
+            "provider": payload.get("provider"),
+            "zoom": payload.get("zoom"),
+            "api_key": payload.get("api_key")
+        }
+        custom_styles = payload.get("customStyles") or None
 
-        if not excel_path or not output_dir:
-            return {"success": False, "error": "Faltan rutas de entrada/salida."}
+        if not output_dir or (not excel_path and not manual_data):
+            return {"success": False, "error": "Faltan rutas de entrada/salida o datos manuales."}
 
         os.makedirs(output_dir, exist_ok=True)
 
-        df, (col_cod, col_dir, col_loc, col_dist, col_lat, col_lon) = _load_excel_data(excel_path)
+        valid_rows: list[dict] = []
 
-        if col_lat is None:
-            return {"success": False, "error": "El Excel debe tener columnas 'latitud' y 'longitud'."}
+        if manual_data:
+            datos = {
+                'cod_componente': str(manual_data.get('cod_componente', '')).strip(),
+                'direccion': str(manual_data.get('direccion', '')).strip(),
+                'localidad': str(manual_data.get('localidad', '')).strip(),
+                'distrito': str(manual_data.get('distrito', '')).strip(),
+                'lat': _coerce_coord(manual_data.get('lat')),
+                'lon': _coerce_coord(manual_data.get('lon')),
+            }
+            if pd.notna(datos["lat"]) and pd.notna(datos["lon"]):
+                valid_rows.append(datos)
+        else:
+            if not isinstance(excel_path, str) or not excel_path:
+                return {"success": False, "error": "Faltan rutas de entrada/salida o datos manuales."}
+            df, (col_cod, col_dir, col_loc, col_dist, col_lat, col_lon) = _load_excel_data(excel_path)
+
+            if col_lat is None:
+                return {"success": False, "error": "El Excel debe tener columnas 'latitud' y 'longitud'."}
+
+            for index, row in df.iterrows():
+                datos = _extract_row_data(row, index, col_cod, col_dir, col_loc, col_dist, col_lat, col_lon)
+                lat = _coerce_coord(datos["lat"])
+                lon = _coerce_coord(datos["lon"])
+                if lat is None or lon is None:
+                    continue
+                datos["lat"] = lat
+                datos["lon"] = lon
+                valid_rows.append(datos)
+
+        if not valid_rows:
+            return {"success": False, "error": "No hay filas con coordenadas validas para generar."}
+
+        if not consolidado:
+            used_stems: dict[str, int] = {}
+            for row_data in valid_rows:
+                row_data["_out_filename"] = _unique_pdf_filename(row_data["cod_componente"], used_stems)
 
         generados = 0
         fallidos = 0
         consolidated_images: list[Image.Image] = []
-
-        # Pre-extraer datos de filas válidas en el thread principal: preserva el
-        # orden de páginas del consolidado y filtra NaN y coordenadas no
-        # numéricas antes de paralelizar (un float() que falle en el worker
-        # abortaría el batch entero vía ex.map).
-        valid_rows: list[dict] = []
-        for index, row in df.iterrows():
-            datos = _extract_row_data(row, index, col_cod, col_dir, col_loc, col_dist, col_lat, col_lon)
-            lat = _coerce_coord(datos["lat"])
-            lon = _coerce_coord(datos["lon"])
-            if lat is None or lon is None:
-                continue
-            datos["lat"] = lat
-            datos["lon"] = lon
-            valid_rows.append(datos)
 
         def _render_one(d: dict) -> tuple[bool, Image.Image | None]:
             """Renderiza (y guarda en no-consolidado) una fila. Devuelve
@@ -918,10 +1114,9 @@ def handle_generar_ubicaciones(payload: dict) -> dict:
             t0 = time.perf_counter()
             try:
                 if consolidado:
-                    return (True, render_imagen_ubicacion(d, formato, map_opts=map_opts).convert("RGB"))
-                out_filename = _output_pdf_filename(d["cod_componente"])
-                out_path = os.path.join(output_dir, out_filename)
-                generar_imagen_ubicacion(d, out_path, formato, map_opts=map_opts)
+                    return (True, render_imagen_ubicacion(d, formato, map_opts=map_opts, custom_styles=custom_styles).convert("RGB"))
+                out_path = os.path.join(output_dir, d["_out_filename"])
+                generar_imagen_ubicacion(d, out_path, formato, map_opts=map_opts, custom_styles=custom_styles)
                 return (True, None)
             except Exception:
                 logger.exception("Error renderizando ubicación %s; se omite", d["cod_componente"])

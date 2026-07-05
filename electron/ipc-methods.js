@@ -63,6 +63,8 @@ const AUTOIMG_METHODS = [
   'autoimg_sync_to_sheet',
   'autoimg_sync_from_sheet',
   'autoimg_arrastre_list',
+  'autoimg_logs_list',
+  'autoimg_bootstrap',
   'autoimg_auto_sync_toggle',
   'autoimg_status',
 ];

@@ -4,26 +4,41 @@ import { api } from '../../../api';
 import type { ArrastreEntry } from '../types';
 import { EmptyState } from './shared';
 
-export default function ArrastreViewer() {
-  const [entries, setEntries] = useState<ArrastreEntry[]>([]);
+interface ArrastreViewerProps {
+  entries?: ArrastreEntry[];
+  onRefresh?: () => void | Promise<void>;
+}
+
+export default function ArrastreViewer({ entries: externalEntries, onRefresh }: ArrastreViewerProps) {
+  const [entries, setEntries] = useState<ArrastreEntry[]>(externalEntries ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    if (externalEntries) setEntries(externalEntries);
+  }, [externalEntries]);
+
+  const load = useCallback(async (force = false) => {
     setLoading(true);
     setError('');
     try {
-      const res = await api.autoimgArrastreList();
-      setEntries(res.entries);
+      if (onRefresh && force) {
+        await onRefresh();
+      } else if (!externalEntries) {
+        const res = await api.autoimgArrastreList(force);
+        setEntries(res.entries);
+      }
     } catch (e) {
-      setEntries([]);
+      if (!externalEntries) setEntries([]);
       setError(e instanceof Error ? e.message : 'Error al cargar BD_ARRASTRE');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [externalEntries, onRefresh]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (!externalEntries) load(false);
+  }, [externalEntries, load]);
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-xl border border-[var(--border-subtle)]">
@@ -31,7 +46,7 @@ export default function ArrastreViewer() {
         <span className="text-[12px] font-medium text-[var(--text-secondary)]">BD_ARRASTRE</span>
         <button
           type="button"
-          onClick={load}
+          onClick={() => load(true)}
           disabled={loading}
           className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] disabled:opacity-40"
         >

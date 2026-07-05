@@ -6,6 +6,20 @@ const BD_IMG_HEADER = [
   'ORIGEN_CARPETAS', 'ULTIMA_VERIFICACION', 'NOTAS',
 ];
 
+const AUTOIMG_SHEET_TABS = {
+  BD_IMG: BD_IMG_HEADER,
+  FOLDERS: ['NOMBRE', 'FOLDER_ID', 'ACTIVO', 'ULTIMO_SCAN', 'CANT_ARCHIVOS'],
+  BD_ARRASTRE: ['NIS', 'SGIO', 'MOTIVO', 'FECHA', 'OBSERVACION'],
+  LOGS: ['FECHA', 'ACCION', 'DETALLE', 'USUARIO', 'DURACION'],
+  CONFIG: ['Clave', 'Valor'],
+  RESUMEN: ['METRICA', 'VALOR', 'FECHA'],
+};
+
+function listMissingAutoImgTabs(existingTabNames) {
+  const existing = new Set((existingTabNames || []).map((name) => String(name || '').trim()));
+  return Object.keys(AUTOIMG_SHEET_TABS).filter((tab) => !existing.has(tab));
+}
+
 function resolveNotasForSync({ isNewRow, existingNotas, sgio }) {
   if (!isNewRow) return existingNotas || '';
   return !String(sgio || '').trim() ? 'NUEVO (sin SGIO)' : '';
@@ -75,6 +89,8 @@ function parseArrastreRows(values) {
 
 module.exports = {
   BD_IMG_HEADER,
+  AUTOIMG_SHEET_TABS,
+  listMissingAutoImgTabs,
   resolveNotasForSync,
   countSinSgioRows,
   countScanSinSgio,

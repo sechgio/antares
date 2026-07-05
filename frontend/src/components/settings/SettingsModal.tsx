@@ -1,11 +1,12 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { History, Palette, X, type LucideIcon } from 'lucide-react';
+import { History, Palette, X, Users, PawPrint, type LucideIcon } from 'lucide-react';
 import AppearanceView from './AppearanceView';
 import HistoryView from '../history/HistoryView';
 import PanelView from './PanelView';
-import { Users } from 'lucide-react';
 import { CONFIG_SECTION_DEFINITIONS, type ConfigSectionId } from '../../navigation';
+
+const PetdexView = React.lazy(() => import('./PetdexView'));
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ const SECTION_ICONS: Record<ConfigSectionId, LucideIcon> = {
   appearance: Palette,
   history: History,
   panel: Users,
+  petdex: PawPrint,
 };
 
 export default function SettingsModal({ isOpen, section, onSectionChange, onClose }: SettingsModalProps) {
@@ -47,16 +49,20 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
   }, [isOpen, onClose, section, onSectionChange]);
 
   useEffect(() => {
-    if (isOpen) {
-      const button = sectionButtonsRef.current[section];
-      button?.focus();
-    }
+    // Prevent auto-focusing the button to avoid showing the focus ring visually
+    // when opening the modal with a mouse.
   }, [isOpen, section]);
 
   const sections = useMemo(
     () => CONFIG_SECTION_DEFINITIONS.map((def) => ({
       ...def,
-      label: def.id === 'appearance' ? t('tab.appearance') : def.id === 'history' ? t('tab.history') : t('tab.panel'),
+      label: def.id === 'appearance'
+        ? t('tab.appearance')
+        : def.id === 'history'
+        ? t('tab.history')
+        : def.id === 'panel'
+        ? t('tab.panel')
+        : t('tab.petdex'),
       icon: SECTION_ICONS[def.id],
     })),
     [t],
@@ -73,7 +79,7 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
       ref={overlayRef}
       data-testid="settings-modal-overlay"
       className="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-6 animate-fade-in"
-      style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 72%, transparent)', backdropFilter: 'blur(6px)' }}
+      style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 85%, transparent)' }}
       onClick={handleOverlayClick}
     >
       <div
@@ -81,7 +87,7 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
         role="dialog"
         aria-modal="true"
         aria-label="Configuración"
-        className="relative flex h-full w-full max-w-[1380px] max-h-[900px] overflow-hidden rounded-2xl border border-[var(--border-medium)] bg-[var(--bg-base)] shadow-elevated animate-scale-in"
+        className="relative flex h-full w-full max-w-[1380px] max-h-[900px] overflow-hidden rounded-2xl border border-[var(--border-medium)] bg-[var(--bg-base)] animate-scale-in"
       >
         {/* Sidebar interno de secciones */}
         <aside
@@ -105,7 +111,7 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
                   onClick={() => onSectionChange(def.id)}
                   aria-current={isActive ? 'page' : undefined}
                   data-testid={`settings-section-${def.id}`}
-                  className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-medium transition-all duration-150 ${
+                  className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-medium transition-all duration-150 outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)] ${
                     isActive
                       ? 'bg-[var(--accent-primary-glow)] text-[var(--text-primary)]'
                       : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]'
@@ -139,14 +145,22 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
           <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] px-6">
             <div className="flex min-w-0 items-center gap-3">
               <h2 className="truncate text-[15px] font-semibold text-[var(--text-primary)]">
-                {section === 'appearance' ? t('tab.appearance') : section === 'history' ? t('tab.history') : t('tab.panel')}
+                {section === 'appearance'
+                  ? t('tab.appearance')
+                  : section === 'history'
+                  ? t('tab.history')
+                  : section === 'panel'
+                  ? t('tab.panel')
+                  : t('tab.petdex')}
               </h2>
               <span className="hidden text-[11px] font-medium text-[var(--text-muted)] sm:inline">
                 {section === 'appearance'
                   ? 'Personaliza el aspecto de la aplicación'
                   : section === 'history'
                   ? 'Revisa las ejecuciones anteriores'
-                  : 'Gestiona usuarios y permisos'}
+                  : section === 'panel'
+                  ? 'Gestiona usuarios y permisos'
+                  : 'Colecciona y activa mascotas animadas'}
               </span>
             </div>
             <button
@@ -175,6 +189,17 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
             {section === 'panel' && (
               <div className="h-full overflow-y-auto">
                 <PanelView />
+              </div>
+            )}
+            {section === 'petdex' && (
+              <div className="h-full overflow-y-auto">
+                <Suspense fallback={
+                  <div className="flex h-full items-center justify-center text-xs text-[var(--text-muted)]">
+                    Cargando Petdex...
+                  </div>
+                }>
+                  <PetdexView />
+                </Suspense>
               </div>
             )}
           </div>

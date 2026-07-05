@@ -5,10 +5,10 @@ export {
   imageToPdfDataUrl,
   imageToPdfSource,
   type PdfImageSource,
+  type PdfQuality,
 } from '../../utils/pdfAssets';
 
 export type PdfExportScope = 'single' | 'all';
-export type PdfQuality = 'high' | 'low';
 
 export interface PdfExportRow {
   row: Record<string, unknown>;

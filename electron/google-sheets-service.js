@@ -8,6 +8,7 @@ const {
 } = require('./autoimg-secure-storage');
 const { maskClientId } = require('./autoimg-security');
 const { fetchWithRetry } = require('./autoimg-google-fetch');
+const { AUTOIMG_SHEET_TABS, listMissingAutoImgTabs } = require('./autoimg-sheet-rows');
 const {
   findAvailablePort,
   startCallbackServer,
@@ -274,6 +275,48 @@ function parseSheetId(input) {
   return trimmed;
 }
 
+function _getTabNames() {
+  return (_sheetMeta?.sheets || []).map((s) => s.properties?.title).filter(Boolean);
+}
+
+async function _refreshSheetMeta() {
+  if (!_sheetId) return;
+  const res = await _apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${_sheetId}?fields=properties.title,sheets.properties`);
+  _sheetMeta = await res.json();
+}
+
+async function _createSheetTabs(tabNames) {
+  if (!_sheetId || !tabNames.length) return;
+  await _apiFetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${_sheetId}:batchUpdate`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requests: tabNames.map((title) => ({ addSheet: { properties: { title } } })),
+      }),
+    },
+  );
+}
+
+async function ensureAutoImgTabs() {
+  if (!_sheetId) return { created_tabs: [] };
+  const missing = listMissingAutoImgTabs(_getTabNames());
+  if (!missing.length) return { created_tabs: [] };
+
+  await _createSheetTabs(missing);
+  await _refreshSheetMeta();
+
+  for (const tabName of missing) {
+    const header = AUTOIMG_SHEET_TABS[tabName];
+    if (header?.length) {
+      await writeRange(`${tabName}!A1`, [header]);
+    }
+  }
+
+  return { created_tabs: missing };
+}
+
 async function openSpreadsheet(rawId) {
   const sheetId = parseSheetId(rawId);
   if (!sheetId) throw new Error('ID de Sheet inválido');
@@ -283,11 +326,13 @@ async function openSpreadsheet(rawId) {
   _sheetId = sheetId;
   _sheetMeta = data;
   saveSheetConfig(sheetId, name);
+  const { created_tabs } = await ensureAutoImgTabs();
   return {
     success: true,
     sheet_id: sheetId,
     name,
-    sheets: (data.sheets || []).map((s) => s.properties?.title).filter(Boolean),
+    sheets: _getTabNames(),
+    created_tabs,
   };
 }
 
@@ -301,7 +346,14 @@ function getStoredSheetConfig() {
 }
 
 async function restorePersistedSheet() {
-  if (_sheetId) return getStoredSheetConfig();
+  if (_sheetId) {
+    try {
+      await ensureAutoImgTabs();
+    } catch {
+      /* tab provisioning is best-effort on restore */
+    }
+    return getStoredSheetConfig();
+  }
   const stored = loadSheetConfig();
   if (!stored.sheet_id) return getStoredSheetConfig();
   const tokens = await getValidTokens();
@@ -322,12 +374,44 @@ function setSheetId(id) {
   _sheetId = id;
 }
 
+function _tabNameFromRange(range) {
+  const tab = String(range || '').split('!')[0] || '';
+  return tab.replace(/^'+|'+$/g, '');
+}
+
+function _tabNameFromResponse(range) {
+  const tab = String(range || '').split('!')[0] || '';
+  return tab.replace(/^'+|'+$/g, '');
+}
+
+function _mapBatchGetResult(ranges, valueRanges) {
+  const byRange = Object.fromEntries(ranges.map((range) => [range, []]));
+  for (const entry of valueRanges || []) {
+    const tab = _tabNameFromResponse(entry.range);
+    const key = ranges.find((range) => _tabNameFromRange(range) === tab);
+    if (key) byRange[key] = entry.values || [];
+  }
+  return byRange;
+}
+
 async function readRange(range) {
   if (!_sheetId) throw new Error('No hay Sheet abierto. Usa autoimg_sheets_open primero.');
   const encoded = encodeURIComponent(range);
   const res = await _apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${_sheetId}/values/${encoded}`);
   const data = await res.json();
   return { values: data.values || [] };
+}
+
+async function readRanges(ranges) {
+  if (!_sheetId) throw new Error('No hay Sheet abierto. Usa autoimg_sheets_open primero.');
+  if (!ranges.length) return {};
+  const qs = new URLSearchParams();
+  for (const range of ranges) qs.append('ranges', range);
+  const res = await _apiFetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${_sheetId}/values:batchGet?${qs.toString()}`,
+  );
+  const data = await res.json();
+  return _mapBatchGetResult(ranges, data.valueRanges);
 }
 
 async function writeRange(range, values) {
@@ -389,8 +473,10 @@ module.exports = {
   getSheetId,
   setSheetId,
   readRange,
+  readRanges,
   writeRange,
   appendRow,
   batchWriteRanges,
   getValidTokens,
+  ensureAutoImgTabs,
 };
