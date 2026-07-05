@@ -984,6 +984,8 @@ def handle_preview_ubicacion(payload: dict) -> dict:
             total_filas = 1
             row_index = 0
         else:
+            if not isinstance(excel_path, str) or not excel_path:
+                return {"success": False, "error": "Falta la ruta del Excel o datos manuales."}
             df, (col_cod, col_dir, col_loc, col_dist, col_lat, col_lon) = _load_excel_data(excel_path)
             total_filas = len(df)
 
@@ -1075,6 +1077,8 @@ def handle_generar_ubicaciones(payload: dict) -> dict:
             if pd.notna(datos["lat"]) and pd.notna(datos["lon"]):
                 valid_rows.append(datos)
         else:
+            if not isinstance(excel_path, str) or not excel_path:
+                return {"success": False, "error": "Faltan rutas de entrada/salida o datos manuales."}
             df, (col_cod, col_dir, col_loc, col_dist, col_lat, col_lon) = _load_excel_data(excel_path)
 
             if col_lat is None:
