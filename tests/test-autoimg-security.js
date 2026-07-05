@@ -49,6 +49,10 @@ function main() {
   assert(!sanitized.includes('SECRET123'), 'sanitizeErrorMessage debe redactar access_token');
   assert(!sanitized.includes('client_secret'), 'sanitizeErrorMessage debe redactar client_secret');
 
+  const rateLimited = sanitizeErrorMessage('Google API error (429): Quota exceeded for Read requests');
+  assert(rateLimited.includes('Límite de consultas'), 'sanitizeErrorMessage debe traducir error 429');
+  assert(!rateLimited.includes('472350177078'), 'sanitizeErrorMessage no debe exponer IDs de proyecto Google');
+
   // .gitignore cubre archivos locales de AutoIMG
   const gitignore = fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8');
   for (const entry of ['autoimg-oauth-config.json', 'autoimg-tokens.json', 'autoimg-sheet.json', '.env.local']) {

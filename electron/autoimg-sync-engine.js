@@ -12,6 +12,7 @@ const {
 } = require('./autoimg-sheet-rows');
 
 const BATCH_SIZE = 10;
+const CACHE_TTL_MS = 60_000;
 
 let _autoSyncEnabled = false;
 let _autoSyncTimer = null;
@@ -19,6 +20,8 @@ let _lastScanResults = null;
 let _cachedBdImg = [];
 let _cachedLogs = [];
 let _cachedBdArrastre = [];
+let _cachedFolders = [];
+let _cacheLoadedAt = 0;
 
 function emit(method, params) {
   const win = getMainWindow();
@@ -34,33 +37,111 @@ function _parseActivo(value) {
   return v === '✅' || v === 'SI' || v === 'TRUE' || v === '1' || v === 'ACTIVO';
 }
 
+function _isCacheFresh() {
+  return _cacheLoadedAt > 0 && Date.now() - _cacheLoadedAt < CACHE_TTL_MS;
+}
+
+function _touchCache() {
+  _cacheLoadedAt = Date.now();
+}
+
+function _configValueFromRows(values, key) {
+  for (let i = 1; i < (values || []).length; i++) {
+    if (String(values[i][0] || '').trim().toUpperCase() === key.toUpperCase()) {
+      return values[i][1] || '';
+    }
+  }
+  return '';
+}
+
+function _parseResumenMetrics(values) {
+  const metrics = {};
+  for (const row of values || []) {
+    const metricKey = String(row[0] || '');
+    if (metricKey === 'TOTAL NIS') metrics.totalNis = Number(row[1]) || 0;
+    if (metricKey.includes('COMPLETOS')) metrics.completos = Number(row[1]) || 0;
+    if (metricKey.includes('FALTANTES')) metrics.faltantes = Number(row[1]) || 0;
+    if (metricKey.includes('SOBRANTES')) metrics.sobrantes = Number(row[1]) || 0;
+  }
+  return metrics;
+}
+
+function _parseFoldersFromValues(values) {
+  if (!values?.length) return [];
+  const folders = [];
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    if (!row[1]) continue;
+    folders.push({
+      name: row[0] || '',
+      folder_id: row[1] || '',
+      activo: _parseActivo(row[2]),
+      ultimo_scan: row[3] || '',
+      cant_archivos: Number(row[4]) || 0,
+    });
+  }
+  return folders;
+}
+
+function _statusFieldsFromBatch(batch, sheetConfig) {
+  const configRows = batch['CONFIG!A:B'] || [];
+  const resumenRows = batch['RESUMEN!A:C'] || [];
+  const folderRows = batch['FOLDERS!A:E'] || [];
+  const metrics = _parseResumenMetrics(resumenRows);
+  const folders = _parseFoldersFromValues(folderRows);
+  return {
+    sheetName: sheetConfig.name || undefined,
+    sheetId: sheetConfig.sheet_id || undefined,
+    sheetLinked: sheetConfig.linked,
+    lastSync: _configValueFromRows(configRows, 'ULTIMO_SYNC') || undefined,
+    totalNis: metrics.totalNis,
+    completos: metrics.completos,
+    faltantes: metrics.faltantes,
+    sobrantes: metrics.sobrantes,
+    carpetasActivas: folders.filter((f) => f.activo).length,
+    folders,
+  };
+}
+
 async function _readConfigValue(key) {
   try {
-    const { values } = await sheets.readRange('CONFIG!A:B');
-    for (let i = 1; i < values.length; i++) {
-      if (String(values[i][0] || '').trim().toUpperCase() === key.toUpperCase()) {
-        return values[i][1] || '';
-      }
-    }
+    const batch = await sheets.readRanges(['CONFIG!A:B']);
+    return _configValueFromRows(batch['CONFIG!A:B'], key);
   } catch { /* sheet may not exist yet */ }
   return '';
 }
 
-async function _upsertConfigValue(key, value) {
+async function _upsertConfigValues(entries) {
+  const updates = Object.entries(entries).filter(([, value]) => value != null && value !== '');
+  if (!updates.length) return;
   try {
     const { values } = await sheets.readRange('CONFIG!A:B');
     const rows = values.length ? [...values] : [['Clave', 'Valor']];
-    let found = false;
-    for (let i = 1; i < rows.length; i++) {
-      if (String(rows[i][0] || '').trim().toUpperCase() === key.toUpperCase()) {
-        rows[i][1] = value;
-        found = true;
-        break;
+    for (const [key, value] of updates) {
+      let found = false;
+      for (let i = 1; i < rows.length; i++) {
+        if (String(rows[i][0] || '').trim().toUpperCase() === key.toUpperCase()) {
+          rows[i][1] = value;
+          found = true;
+          break;
+        }
       }
+      if (!found) rows.push([key, value]);
     }
-    if (!found) rows.push([key, value]);
     await sheets.writeRange('CONFIG!A:B', rows);
   } catch { /* CONFIG sheet may not exist yet */ }
+}
+
+async function _upsertConfigValue(key, value) {
+  await _upsertConfigValues({ [key]: value });
+}
+
+function _countActiveFolders(fValues) {
+  let count = 0;
+  for (let i = 1; i < fValues.length; i++) {
+    if (_parseActivo(fValues[i][2])) count += 1;
+  }
+  return count;
 }
 
 function buildFolderErrorSummary(folder, error) {
@@ -135,28 +216,21 @@ async function _ensureSheetId() {
   throw new Error('No hay Sheet configurado. Abre un Sheet con su ID primero.');
 }
 
-async function listFolders() {
+async function listFolders({ force = false } = {}) {
+  if (!force && _isCacheFresh()) {
+    return { folders: _cachedFolders, cached: true };
+  }
   await _ensureSheetId();
   const { values } = await sheets.readRange('FOLDERS!A:E');
-  if (!values.length) return { folders: [] };
-  const folders = [];
-  for (let i = 1; i < values.length; i++) {
-    const row = values[i];
-    if (!row[1]) continue;
-    folders.push({
-      name: row[0] || '',
-      folder_id: row[1] || '',
-      activo: _parseActivo(row[2]),
-      ultimo_scan: row[3] || '',
-      cant_archivos: Number(row[4]) || 0,
-    });
-  }
-  return { folders };
+  _cachedFolders = _parseFoldersFromValues(values);
+  _touchCache();
+  return { folders: _cachedFolders, cached: false };
 }
 
 async function addFolder({ name, folder_id, activo }) {
   await _ensureSheetId();
-  const safeFolderId = drive.assertValidFolderId(folder_id);
+  const verified = await drive.assertDriveFolder(folder_id);
+  const safeFolderId = verified.folder_id;
   await sheets.appendRow('FOLDERS!A:E', [
     name,
     safeFolderId,
@@ -164,7 +238,8 @@ async function addFolder({ name, folder_id, activo }) {
     '',
     0,
   ]);
-  return { success: true };
+  _cachedFolders = [];
+  return { success: true, folder_id: safeFolderId, drive_name: verified.name };
 }
 
 async function removeFolder({ folder_id }) {
@@ -175,6 +250,7 @@ async function removeFolder({ folder_id }) {
     if (values[i][1] !== folder_id) filtered.push(values[i]);
   }
   await sheets.writeRange('FOLDERS!A:E', filtered);
+  _cachedFolders = [];
   return { success: true };
 }
 
@@ -188,13 +264,14 @@ async function toggleFolder({ folder_id, activo }) {
     }
   }
   await sheets.writeRange('FOLDERS!A:E', values);
+  _cachedFolders = [];
   return { success: true };
 }
 
 async function scanAll() {
   await _ensureSheetId();
   const existingNis = await _loadExistingNisSet();
-  const { folders } = await listFolders();
+  const { folders } = await listFolders({ force: true });
   const active = folders.filter((f) => f.activo);
   const folderSummary = [];
   const nisMaps = [];
@@ -288,30 +365,49 @@ async function scanAndSync() {
   };
 }
 
-async function _loadArrastreCache() {
-  try {
-    const { values } = await sheets.readRange('BD_ARRASTRE!A:E');
-    _cachedBdArrastre = parseArrastreRows(values || []);
-  } catch {
-    _cachedBdArrastre = [];
-  }
-  return _cachedBdArrastre;
+async function _applySheetBatch(batch) {
+  _cachedBdImg = batch['BD_IMG!A:M'] || [];
+  _cachedLogs = batch['LOGS!A:E'] || [];
+  _cachedBdArrastre = parseArrastreRows(batch['BD_ARRASTRE!A:E'] || []);
+  _cachedFolders = _parseFoldersFromValues(batch['FOLDERS!A:E'] || []);
+  _touchCache();
+}
+
+async function _fetchSheetBatch(ranges) {
+  await _ensureSheetId();
+  return sheets.readRanges(ranges);
 }
 
 async function syncFromSheet() {
-  await _ensureSheetId();
-  const bd = await sheets.readRange('BD_IMG!A:M');
-  const logs = await sheets.readRange('LOGS!A:E');
-  _cachedBdImg = bd.values || [];
-  _cachedLogs = logs.values || [];
-  await _loadArrastreCache();
+  const batch = await _fetchSheetBatch(['BD_IMG!A:M', 'LOGS!A:E', 'BD_ARRASTRE!A:E']);
+  await _applySheetBatch({
+    'BD_IMG!A:M': batch['BD_IMG!A:M'],
+    'LOGS!A:E': batch['LOGS!A:E'],
+    'BD_ARRASTRE!A:E': batch['BD_ARRASTRE!A:E'],
+  });
   return { success: true, rows: _cachedBdImg, arrastre: _cachedBdArrastre };
 }
 
-async function listArrastre() {
+async function listLogs({ force = false } = {}) {
+  if (!force && _isCacheFresh()) {
+    return { values: _cachedLogs, cached: true };
+  }
   await _ensureSheetId();
-  const entries = await _loadArrastreCache();
-  return { entries };
+  const { values } = await sheets.readRange('LOGS!A:E');
+  _cachedLogs = values || [];
+  _touchCache();
+  return { values: _cachedLogs, cached: false };
+}
+
+async function listArrastre({ force = false } = {}) {
+  if (!force && _isCacheFresh()) {
+    return { entries: _cachedBdArrastre, cached: true };
+  }
+  await _ensureSheetId();
+  const { values } = await sheets.readRange('BD_ARRASTRE!A:E');
+  _cachedBdArrastre = parseArrastreRows(values || []);
+  _touchCache();
+  return { entries: _cachedBdArrastre, cached: false };
 }
 
 async function syncToSheet() {
@@ -370,8 +466,7 @@ async function syncToSheet() {
   const detail = `${_lastScanResults.folder_summary.length} carpetas · ${_lastScanResults.nis_results.length} NIS · ${updated} actualizados · ${newRows} nuevos`;
   await sheets.appendRow('LOGS!A:E', [_now(), 'SCAN_ALL_FOLDERS', detail, auth.email || '', durationSec]);
 
-  const { folders } = await listFolders();
-  const activeFolderCount = folders.filter((f) => f.activo).length;
+  const activeFolderCount = _countActiveFolders(fValues);
   const completos = _lastScanResults.nis_results.filter((r) => r.count === 3).length;
   const faltantes = _lastScanResults.nis_results.filter((r) => r.count < 3).length;
   const sobrantes = _lastScanResults.nis_results.filter((r) => r.count > 3).length;
@@ -391,60 +486,106 @@ async function syncToSheet() {
   await sheets.writeRange('RESUMEN!A:C', resumen);
 
   const syncTime = _now();
-  await _upsertConfigValue('ULTIMO_SYNC', syncTime);
   const sheetId = sheets.getSheetId();
-  if (sheetId) await _upsertConfigValue('SHEET_ID', sheetId);
-  if (auth.email) await _upsertConfigValue('USUARIO', auth.email);
+  await _upsertConfigValues({
+    ULTIMO_SYNC: syncTime,
+    ...(sheetId ? { SHEET_ID: sheetId } : {}),
+    ...(auth.email ? { USUARIO: auth.email } : {}),
+  });
 
   const folderErrors = (_lastScanResults.folder_summary || []).filter((s) => s.error).length;
   emit('autoimg.sync.complete', { updated, new: newRows, errors: folderErrors, duration_ms: Date.now() - start });
 
   _cachedBdImg = rows;
+  _cachedLogs = [];
+  _touchCache();
   return { success: true, updated, new_rows: newRows, logs: [detail] };
 }
 
 async function getStatus() {
   const auth = await sheets.getAuthStatus();
-  let sheetName;
-  let lastSync;
-  let totalNis;
-  let completos;
-  let faltantes;
-  let sobrantes;
-  let carpetasActivas;
+  const sheetConfig = sheets.getStoredSheetConfig();
+  let fields = {};
 
   try {
     await _ensureSheetId();
-    const meta = await sheets.openSpreadsheet(sheets.getSheetId());
-    sheetName = meta.name;
-    lastSync = await _readConfigValue('ULTIMO_SYNC');
-    const { values } = await sheets.readRange('RESUMEN!A:C');
-    for (const row of values) {
-      const key = String(row[0] || '');
-      if (key === 'TOTAL NIS') totalNis = Number(row[1]) || 0;
-      if (key.includes('COMPLETOS')) completos = Number(row[1]) || 0;
-      if (key.includes('FALTANTES')) faltantes = Number(row[1]) || 0;
-      if (key.includes('SOBRANTES')) sobrantes = Number(row[1]) || 0;
-    }
-    const { folders } = await listFolders();
-    carpetasActivas = folders.filter((f) => f.activo).length;
+    const batch = await _fetchSheetBatch(['CONFIG!A:B', 'RESUMEN!A:C', 'FOLDERS!A:E']);
+    fields = _statusFieldsFromBatch(batch, sheets.getStoredSheetConfig());
+    _cachedFolders = fields.folders || [];
+    _touchCache();
   } catch { /* sheet not configured yet */ }
-
-  const sheetConfig = sheets.getStoredSheetConfig();
 
   return {
     connected: auth.authenticated,
-    sheetName: sheetName || sheetConfig.name || undefined,
+    sheetName: fields.sheetName || sheetConfig.name || undefined,
+    sheetId: fields.sheetId || sheetConfig.sheet_id || undefined,
+    sheetLinked: fields.sheetLinked ?? sheetConfig.linked,
+    lastSync: fields.lastSync,
+    autoSync: _autoSyncEnabled,
+    totalNis: fields.totalNis,
+    completos: fields.completos,
+    faltantes: fields.faltantes,
+    sobrantes: fields.sobrantes,
+    carpetasActivas: fields.carpetasActivas,
+  };
+}
+
+async function bootstrap({ refresh = true } = {}) {
+  const auth = await sheets.getAuthStatus();
+  const sheetConfig = sheets.getStoredSheetConfig();
+  const base = {
+    connected: auth.authenticated,
+    sheetName: sheetConfig.name || undefined,
     sheetId: sheetConfig.sheet_id || undefined,
     sheetLinked: sheetConfig.linked,
-    lastSync,
     autoSync: _autoSyncEnabled,
-    totalNis,
-    completos,
-    faltantes,
-    sobrantes,
-    carpetasActivas,
+    folders: _cachedFolders,
+    bdRows: _cachedBdImg,
+    logRows: _cachedLogs,
+    arrastre: _cachedBdArrastre,
+    cached: false,
   };
+
+  if (!auth.authenticated) return base;
+
+  const useCache = !refresh && _isCacheFresh();
+  if (useCache) {
+    return { ...base, cached: true };
+  }
+
+  try {
+    await _ensureSheetId();
+    const batch = await _fetchSheetBatch([
+      'CONFIG!A:B',
+      'RESUMEN!A:C',
+      'FOLDERS!A:E',
+      'BD_IMG!A:M',
+      'LOGS!A:E',
+      'BD_ARRASTRE!A:E',
+    ]);
+    await _applySheetBatch(batch);
+    const fields = _statusFieldsFromBatch(batch, sheets.getStoredSheetConfig());
+    return {
+      connected: true,
+      sheetName: fields.sheetName || sheetConfig.name || undefined,
+      sheetId: fields.sheetId || sheetConfig.sheet_id || undefined,
+      sheetLinked: fields.sheetLinked ?? sheetConfig.linked,
+      lastSync: fields.lastSync,
+      autoSync: _autoSyncEnabled,
+      totalNis: fields.totalNis,
+      completos: fields.completos,
+      faltantes: fields.faltantes,
+      sobrantes: fields.sobrantes,
+      carpetasActivas: fields.carpetasActivas,
+      folders: _cachedFolders,
+      bdRows: _cachedBdImg,
+      logRows: _cachedLogs,
+      arrastre: _cachedBdArrastre,
+      cached: false,
+    };
+  } catch {
+    return base;
+  }
 }
 
 function setAutoSync(enabled) {
@@ -489,16 +630,21 @@ module.exports = {
   syncToSheet,
   syncFromSheet,
   getStatus,
+  bootstrap,
   setAutoSync,
   getCachedBdImg,
   getCachedLogs,
   getCachedBdArrastre,
   getLastScanResults,
   listArrastre,
+  listLogs,
   resolveNotasForSync,
   countSinSgioRows,
   countScanSinSgio,
   buildFolderErrorSummary,
   formatFolderErrorScan,
   parseArrastreRows,
+  parseFoldersFromValues: _parseFoldersFromValues,
+  parseResumenMetrics: _parseResumenMetrics,
+  configValueFromRows: _configValueFromRows,
 };

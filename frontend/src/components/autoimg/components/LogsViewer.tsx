@@ -3,23 +3,38 @@ import { Loader2 } from 'lucide-react';
 import { api } from '../../../api';
 import { EmptyState } from './shared';
 
-export default function LogsViewer() {
-  const [rows, setRows] = useState<string[][]>([]);
+interface LogsViewerProps {
+  rows?: string[][];
+  onRefresh?: () => void | Promise<void>;
+}
+
+export default function LogsViewer({ rows: externalRows, onRefresh }: LogsViewerProps) {
+  const [rows, setRows] = useState<string[][]>(externalRows ?? []);
   const [loading, setLoading] = useState(false);
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    if (externalRows) setRows(externalRows);
+  }, [externalRows]);
+
+  const load = useCallback(async (force = false) => {
     setLoading(true);
     try {
-      const res = await api.autoimgSheetsReadRange('LOGS!A:E');
-      setRows(res.values || []);
+      if (onRefresh && force) {
+        await onRefresh();
+      } else if (!externalRows) {
+        const res = await api.autoimgLogsList(force);
+        setRows(res.values || []);
+      }
     } catch {
-      setRows([]);
+      if (!externalRows) setRows([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [externalRows, onRefresh]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (!externalRows) load(false);
+  }, [externalRows, load]);
 
   const data = [...rows.slice(1)].reverse();
 
@@ -29,7 +44,7 @@ export default function LogsViewer() {
         <span className="text-[12px] font-medium text-[var(--text-secondary)]">Historial</span>
         <button
           type="button"
-          onClick={load}
+          onClick={() => load(true)}
           disabled={loading}
           className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] disabled:opacity-40"
         >

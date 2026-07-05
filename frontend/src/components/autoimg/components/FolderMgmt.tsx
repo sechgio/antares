@@ -5,27 +5,42 @@ import type { AutoImgFolder } from '../types';
 import { parseDriveFolderId } from '../utils/parseDriveFolderId';
 import { EmptyState, INPUT_CLASS, SectionCard } from './shared';
 
-export default function FolderMgmt() {
-  const [folders, setFolders] = useState<AutoImgFolder[]>([]);
+interface FolderMgmtProps {
+  folders?: AutoImgFolder[];
+  onFoldersChange?: () => void | Promise<void>;
+}
+
+export default function FolderMgmt({ folders: externalFolders, onFoldersChange }: FolderMgmtProps) {
+  const [folders, setFolders] = useState<AutoImgFolder[]>(externalFolders ?? []);
   const [name, setName] = useState('');
   const [folderId, setFolderId] = useState('');
   const [activo, setActivo] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     setLoading(true);
     setError('');
     try {
-      setFolders((await api.autoimgFoldersList()).folders);
+      if (onFoldersChange && force) {
+        await onFoldersChange();
+      } else {
+        setFolders((await api.autoimgFoldersList(force)).folders);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al cargar');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onFoldersChange]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (externalFolders) setFolders(externalFolders);
+  }, [externalFolders]);
+
+  useEffect(() => {
+    if (!externalFolders) load(false);
+  }, [externalFolders, load]);
 
   const resolvedFolderId = parseDriveFolderId(folderId) || folderId.trim();
 
@@ -36,7 +51,7 @@ export default function FolderMgmt() {
       await api.autoimgFoldersAdd({ name: name.trim(), folder_id: resolvedFolderId, activo });
       setName('');
       setFolderId('');
-      await load();
+      await load(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error');
     } finally {
@@ -48,7 +63,7 @@ export default function FolderMgmt() {
     setLoading(true);
     try {
       await api.autoimgFoldersToggle({ folder_id: folder.folder_id, activo: !folder.activo });
-      await load();
+      await load(true);
     } finally {
       setLoading(false);
     }
@@ -58,7 +73,7 @@ export default function FolderMgmt() {
     setLoading(true);
     try {
       await api.autoimgFoldersRemove({ folder_id: id });
-      await load();
+      await load(true);
     } finally {
       setLoading(false);
     }

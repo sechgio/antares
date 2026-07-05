@@ -26,6 +26,8 @@ const AUTOIMG_METHODS = new Set([
   'autoimg_sync_to_sheet',
   'autoimg_sync_from_sheet',
   'autoimg_arrastre_list',
+  'autoimg_logs_list',
+  'autoimg_bootstrap',
   'autoimg_auto_sync_toggle',
   'autoimg_status',
 ]);
@@ -125,7 +127,7 @@ async function handleAutoimgCall(method, params = {}) {
         return { handled: true, result: await drive.getDriveStatus() };
 
       case 'autoimg_folders_list':
-        return { handled: true, result: await engine.listFolders() };
+        return { handled: true, result: await engine.listFolders({ force: Boolean(params.force) }) };
 
       case 'autoimg_folders_add':
         return { handled: true, result: await engine.addFolder(params) };
@@ -149,7 +151,13 @@ async function handleAutoimgCall(method, params = {}) {
         return { handled: true, result: await engine.syncFromSheet() };
 
       case 'autoimg_arrastre_list':
-        return { handled: true, result: await engine.listArrastre() };
+        return { handled: true, result: await engine.listArrastre({ force: Boolean(params.force) }) };
+
+      case 'autoimg_logs_list':
+        return { handled: true, result: await engine.listLogs({ force: Boolean(params.force) }) };
+
+      case 'autoimg_bootstrap':
+        return { handled: true, result: await engine.bootstrap({ refresh: params.refresh !== false }) };
 
       case 'autoimg_auto_sync_toggle':
         return { handled: true, result: engine.setAutoSync(params.enabled) };

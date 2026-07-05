@@ -30,6 +30,14 @@ export interface AutoImgStatus {
   carpetasActivas?: number;
 }
 
+export interface AutoImgBootstrap extends AutoImgStatus {
+  folders: AutoImgFolder[];
+  bdRows: string[][];
+  logRows: string[][];
+  arrastre: ArrastreEntry[];
+  cached?: boolean;
+}
+
 export interface ScanFolderSummary {
   name: string;
   folder_id?: string;

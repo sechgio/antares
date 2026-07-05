@@ -3,6 +3,7 @@ import Sidebar from './components/layout/Sidebar';
 import TitleBar from './components/layout/TitleBar';
 import BackendStatusBar from './components/layout/BackendStatusBar';
 import SettingsModal from './components/settings/SettingsModal';
+import PetMascot from './components/layout/PetMascot';
 import { ToastProvider } from './hooks/useToast';
 import { DialogProvider } from './hooks/useDialog';
 import { useKeyboardShortcut } from './hooks/useKeyboardShortcut';
@@ -141,6 +142,7 @@ function AppContent() {
   useKeyboardShortcut('v', () => handleTabChange('evidenciaVolanteo'), { ctrl: true, shift: true, preventDefault: true });
   useKeyboardShortcut('a', () => handleTabChange('autoimg'), { ctrl: true, shift: true, preventDefault: true });
   useKeyboardShortcut('i', () => handleTabChange('technicalReports'), { ctrl: true, shift: true, preventDefault: true });
+  useKeyboardShortcut('d', () => openSettings('petdex'), { ctrl: true, shift: true, preventDefault: true });
 
   const commandItems = useMemo(
     () => [
@@ -191,6 +193,7 @@ function AppContent() {
       <Dialog />
       <ToastContainer />
       <BackendStatusBar />
+      <PetMascot />
     </div>
   );
 }

@@ -879,6 +879,7 @@ export default function PreviewPanelView() {
                     value={pdfQuality}
                     onChange={setPdfQuality}
                     options={[
+                      { value: 'max', label: 'Max' },
                       { value: 'high', label: 'Buena' },
                       { value: 'low', label: 'Baja' },
                     ]}

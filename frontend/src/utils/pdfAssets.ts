@@ -1,4 +1,4 @@
-export type PdfQuality = 'high' | 'low';
+export type PdfQuality = 'max' | 'high' | 'low';
 
 export interface PdfImageSource {
   src: string;
@@ -83,6 +83,9 @@ function compressImageForPdf(
 }
 
 export async function imageToPdfDataUrl(file: File, quality: PdfQuality): Promise<string> {
+  if (quality === 'max') {
+    return fileToDataUrl(file);
+  }
   if (quality === 'high') {
     try {
       return await compressImageForPdf(file, { maxSide: 2600, quality: 0.9 });
@@ -102,7 +105,7 @@ export async function imageToPdfSource(
   quality: PdfQuality,
   key: string,
 ): Promise<PdfImageSource> {
-  if (quality === 'high') {
+  if (quality === 'max' || quality === 'high') {
     const localPath = getElectronFilePath(file);
     if (localPath) {
       const token = buildLocalImageToken(key);

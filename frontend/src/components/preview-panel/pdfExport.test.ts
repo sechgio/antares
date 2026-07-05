@@ -95,4 +95,26 @@ describe('preview panel PDF export helpers', () => {
     expect(source.token).toBe(source.src);
     expect(source.localPath).toBe('C:\\tmp\\foto.jpg');
   });
+
+  it('uses local file references for max quality export when Electron exposes a path', async () => {
+    const source = await imageToPdfSource(
+      { name: 'foto.jpg', path: 'C:\\tmp\\foto.jpg' } as unknown as File,
+      'max',
+      'row-1-img-0',
+    );
+
+    expect(source.src).toBe(buildLocalImageToken('row-1-img-0'));
+    expect(source.token).toBe(source.src);
+    expect(source.localPath).toBe('C:\\tmp\\foto.jpg');
+  });
+
+  it('uses original file data URL for max quality without Electron path', async () => {
+    const content = 'original-image-bytes';
+    const file = new File([content], 'foto.jpg', { type: 'image/jpeg' });
+    const source = await imageToPdfSource(file, 'max', 'row-1-img-0');
+
+    expect(source.src).toMatch(/^data:image\/jpeg;base64,/);
+    expect(source.localPath).toBeUndefined();
+    expect(source.token).toBeUndefined();
+  });
 });
