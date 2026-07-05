@@ -225,10 +225,7 @@ def _map_opts_fingerprint(map_opts: dict[str, Any] | None) -> tuple[Any, ...]:
     provider = _resolve_provider(map_opts)
     zoom = int(map_opts["zoom"]) if map_opts and map_opts.get("zoom") is not None else _MAP_ZOOM
     api_key = _resolve_api_key(map_opts) or ""
-    if provider == "osm" or not api_key:
-        key_fp = ""
-    else:
-        key_fp = hashlib.sha256(api_key.encode()).hexdigest()[:12]
+    key_fp = "" if provider == "osm" or not api_key else hashlib.sha256(api_key.encode()).hexdigest()[:12]
     return (provider, zoom, key_fp)
 
 
@@ -492,11 +489,11 @@ def fetch_static_map(
             if not url_template:
                 logger.warning("Proveedor desconocido %s; haciendo fallback a OSM.", provider)
                 url_template = _XYZ_PROVIDERS["osm"]
-            
+
             # Most providers other than OSM require a key
             if provider != "osm" and not api_key:
                 logger.warning("Proveedor %s requiere una llave API pero no se proporcionó. La petición de mapa probablemente fallará.", provider)
-                
+
             img = _fetch_xyz_tiles_map(lat, lon, fetch_w, fetch_h, zoom, url_template, api_key or "")
         img = img.resize((fetch_w, fetch_h), Image.Resampling.LANCZOS) if img.size != (fetch_w, fetch_h) else img
         buf = BytesIO()
@@ -1065,7 +1062,7 @@ def handle_generar_ubicaciones(payload: dict) -> dict:
         os.makedirs(output_dir, exist_ok=True)
 
         valid_rows: list[dict] = []
-        
+
         if manual_data:
             datos = {
                 'cod_componente': str(manual_data.get('cod_componente', '')).strip(),
