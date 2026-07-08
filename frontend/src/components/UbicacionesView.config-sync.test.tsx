@@ -290,6 +290,44 @@ describe('UbicacionesView config sync', () => {
     expect(mockPreview).not.toHaveBeenCalled();
   });
 
+  it('loads manual preview on mount when coords are already saved', async () => {
+    localStorage.setItem('antares:ubicaciones:inputMode', 'manual');
+    localStorage.setItem(
+      'antares:ubicaciones:manualData',
+      JSON.stringify({
+        cod_componente: 'UBI-1',
+        direccion: 'Av. Test 1',
+        localidad: 'Loc',
+        distrito: 'Dist',
+        lat: '-12.0464',
+        lon: '-77.0428',
+      }),
+    );
+
+    renderView();
+
+    await waitFor(() => expect(mockPreview).toHaveBeenCalled());
+    const last = previewPayloads.at(-1)!;
+    expect(last.manualData).toMatchObject({ lat: '-12.0464', lon: '-77.0428' });
+    expect(last.excelPath).toBeNull();
+  });
+
+  it('shows loading then preview after entering both manual coords', async () => {
+    renderView();
+
+    fireEvent.click(screen.getByRole('button', { name: /Manual/i }));
+    mockPreview.mockClear();
+    previewPayloads.length = 0;
+
+    fireEvent.change(screen.getByPlaceholderText('-12.3456'), { target: { value: '-12.0464' } });
+    fireEvent.change(screen.getByPlaceholderText('-77.1234'), { target: { value: '-77.0428' } });
+
+    await waitFor(() => expect(mockPreview).toHaveBeenCalled());
+    await waitFor(() => {
+      expect(screen.getByAltText(/Ubicacion/i)).toBeInTheDocument();
+    });
+  });
+
   it('deep-merges partial customStyles from localStorage', () => {
     localStorage.setItem(
       'antares:ubicaciones:customStyles',

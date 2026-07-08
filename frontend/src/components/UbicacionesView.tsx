@@ -265,6 +265,8 @@ export const UbicacionesView: React.FC = () => {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stylePreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // softLoad only makes sense when we already have an image on screen
+  const hasPreviewRef = useRef(false);
 
   // Keep params ref up to date to avoid recreating fetchPreview
   const lastParamsRef = useRef({
@@ -345,6 +347,10 @@ export const UbicacionesView: React.FC = () => {
     localStorage.setItem(LS_MANUAL_DATA, JSON.stringify(manualData));
   }, [manualData]);
 
+  useEffect(() => {
+    hasPreviewRef.current = !!preview;
+  }, [preview]);
+
   const fetchPreview = useCallback(
     async (
       rowIndex: number,
@@ -372,14 +378,17 @@ export const UbicacionesView: React.FC = () => {
 
       const previewManualData = currentManualData;
       const myId = ++fetchIdRef.current;
-      const softLoad = options?.softLoad === true || options?.recomposeOnly === true;
+      // softLoad avoids spinner flicker when an image is already visible; on first
+      // load (or after clear) we must show the loading state or the panel stays blank.
+      const softLoad =
+        (options?.softLoad === true || options?.recomposeOnly === true) && hasPreviewRef.current;
       if (!softLoad) {
         setPreviewLoading(true);
       }
       setPreviewError(null);
       try {
         const resp = await api.previewUbicacion({
-          excelPath: path,
+          excelPath: path || null,
           formato: currentFormato,
           rowIndex,
           recomposeOnly: options?.recomposeOnly === true,
@@ -401,6 +410,7 @@ export const UbicacionesView: React.FC = () => {
           const respFormato = r.data?.formato;
           if (respFormato && respFormato !== currentFormato) return;
           setPreview(r.data ?? null);
+          hasPreviewRef.current = !!r.data;
           if (r.data?.total_filas) {
             setTotalFilas(r.data.total_filas);
           }
@@ -528,6 +538,7 @@ export const UbicacionesView: React.FC = () => {
   useEffect(() => {
     if (!excelPath && inputMode !== 'manual') {
       setPreview(null);
+      hasPreviewRef.current = false;
       setPreviewError(null);
       return;
     }
@@ -536,11 +547,26 @@ export const UbicacionesView: React.FC = () => {
     triggerPreviewFetch(previewRowIndex, { recomposeOnly: true, softLoad: true });
   }, [formato, excelPath, inputMode, previewRowIndex, triggerPreviewFetch]);
 
+  // Restaurar vista previa al montar en modo manual con coords ya guardadas
+  // (localStorage). Sin esto el panel queda en blanco aunque lat/lon existan.
+  useEffect(() => {
+    if (
+      inputMode === 'manual'
+      && isValidCoord(manualData.lat)
+      && isValidCoord(manualData.lon)
+    ) {
+      triggerPreviewFetch(0);
+    }
+    // Solo al montar: cambios posteriores los manejan handleManualChange / mode switch
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const loadExcelFile = useCallback(
     (file: File) => {
       setExcelFile(file);
       setResult(null);
       setPreview(null);
+      hasPreviewRef.current = false;
       setPreviewRowIndex(0);
       const path = window.electronAPI?.getPathForFile?.(file) || '';
       if (!path) return;
@@ -573,6 +599,7 @@ export const UbicacionesView: React.FC = () => {
     setExcelFile(null);
     setExcelPath('');
     setPreview(null);
+    hasPreviewRef.current = false;
     setPreviewError(null);
     setPreviewLoading(false);
     setResult(null);
@@ -685,6 +712,8 @@ export const UbicacionesView: React.FC = () => {
   );
 
   const handleManualChange = (field: keyof typeof manualData, value: string) => {
+    // Volver al panel de preview si aún se muestra el resultado de una generación previa
+    setResult(null);
     if (field === 'lat') {
       const parsed = parseCombinedCoords(value);
       if (parsed) {
@@ -695,6 +724,10 @@ export const UbicacionesView: React.FC = () => {
         });
         if (isValidCoord(parsed.lat) && isValidCoord(parsed.lon)) {
           scheduleMapPreview(true);
+        } else {
+          setPreview(null);
+          hasPreviewRef.current = false;
+          setPreviewError(null);
         }
         lonInputRef.current?.focus();
         return;
@@ -711,6 +744,10 @@ export const UbicacionesView: React.FC = () => {
       const nextLon = field === 'lon' ? value : manualData.lon;
       if (isValidCoord(nextLat) && isValidCoord(nextLon)) {
         scheduleMapPreview(false);
+      } else {
+        setPreview(null);
+        hasPreviewRef.current = false;
+        setPreviewError(null);
       }
       return;
     }
@@ -761,14 +798,18 @@ export const UbicacionesView: React.FC = () => {
               <SegmentedControl
                 value={inputMode}
                 onChange={(v) => {
-                  setInputMode(v as 'excel' | 'manual');
-                  if (v === 'excel' && excelPath) {
+                  const nextMode = v as 'excel' | 'manual';
+                  setInputMode(nextMode);
+                  lastParamsRef.current = { ...lastParamsRef.current, inputMode: nextMode };
+                  setResult(null);
+                  if (nextMode === 'excel' && excelPath) {
                     schedulePreview(previewRowIndex);
-                  } else if (v === 'manual') {
+                  } else if (nextMode === 'manual') {
                     if (isValidCoord(manualData.lat) && isValidCoord(manualData.lon)) {
                       schedulePreview(0);
                     } else {
                       setPreview(null);
+                      hasPreviewRef.current = false;
                       setPreviewError(null);
                     }
                   }
@@ -1507,27 +1548,31 @@ const RealPreviewPanel: React.FC<{
         <span className="text-sm font-semibold text-[var(--text-primary)]">Vista Previa Real</span>
       </div>
 
-      {inputMode === 'excel' && totalFilas > 0 && (
+      {(inputMode === 'excel' ? totalFilas > 0 : true) && (
         <div className="flex items-center gap-1">
-          <button
-            onClick={onPrev}
-            disabled={rowIndex === 0 || loading}
-            aria-label="Fila anterior"
-            className="p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--text-muted)]"
-          >
-            <ChevronLeft size={16} />
-          </button>
-          <span className="text-[11px] text-[var(--text-muted)] tabular-nums min-w-[3rem] text-center">
-            {rowIndex + 1} / {totalFilas}
-          </span>
-          <button
-            onClick={onNext}
-            disabled={rowIndex >= totalFilas - 1 || loading}
-            aria-label="Fila siguiente"
-            className="p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--text-muted)]"
-          >
-            <ChevronRight size={16} />
-          </button>
+          {inputMode === 'excel' && totalFilas > 0 && (
+            <>
+              <button
+                onClick={onPrev}
+                disabled={rowIndex === 0 || loading}
+                aria-label="Fila anterior"
+                className="p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--text-muted)]"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <span className="text-[11px] text-[var(--text-muted)] tabular-nums min-w-[3rem] text-center">
+                {rowIndex + 1} / {totalFilas}
+              </span>
+              <button
+                onClick={onNext}
+                disabled={rowIndex >= totalFilas - 1 || loading}
+                aria-label="Fila siguiente"
+                className="p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--text-muted)]"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </>
+          )}
           <button
             onClick={onRefresh}
             disabled={loading}
@@ -1551,6 +1596,13 @@ const RealPreviewPanel: React.FC<{
           </div>
           <p className="text-sm font-medium text-[var(--accent-red)]">Error en vista previa</p>
           <p className="text-xs text-[var(--text-muted)] text-center break-words leading-relaxed">{error}</p>
+          <button
+            type="button"
+            onClick={onRefresh}
+            className="mt-1 text-[11px] font-medium text-[var(--accent-primary)] hover:underline"
+          >
+            Reintentar
+          </button>
         </div>
       ) : preview ? (
         <div className="flex flex-col items-center gap-4 w-full h-full relative">
@@ -1605,7 +1657,16 @@ const RealPreviewPanel: React.FC<{
             </div>
           )}
         </div>
-      ) : null}
+      ) : (
+        <div className="flex flex-col items-center gap-3 max-w-xs text-center">
+          <MapPin size={28} className="text-[var(--text-muted)]" />
+          <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+            {inputMode === 'manual'
+              ? 'Ingresa latitud y longitud válidas para ver la vista previa del mapa.'
+              : 'Carga un Excel para ver la vista previa real del resultado.'}
+          </p>
+        </div>
+      )}
     </div>
   </div>
   );
