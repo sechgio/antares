@@ -1,9 +1,10 @@
 const crypto = require('crypto');
 const { loadTokens, saveTokens, clearTokens } = require('./autoimg-token-storage');
-const { loadSheetConfig, saveSheetConfig, clearSheetConfig } = require('./autoimg-sheet-storage');
+const { loadSheetConfig, saveSheetConfig } = require('./autoimg-sheet-storage');
 const {
   readSecureJson,
   writeSecureJson,
+  clearSecureJson,
   migratePlaintextJson,
 } = require('./autoimg-secure-storage');
 const { maskClientId } = require('./autoimg-security');
@@ -14,19 +15,35 @@ const {
   startCallbackServer,
   stopCallbackServer,
 } = require('./autoimg-oauth-flow');
+const {
+  setActiveUser,
+  clearActiveUser,
+  getActiveUserPublic,
+  maskEmail,
+} = require('./autoimg-user-scope');
 
 const OAUTH_CONFIG_FILE = 'autoimg-oauth-config.json';
 const OAUTH_CONFIG_NS = 'oauth';
 
 const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
-  'https://www.googleapis.com/auth/drive.readonly',
+  // Full Drive (not readonly): required to copy/rename images into a destination folder.
+  'https://www.googleapis.com/auth/drive',
   'https://www.googleapis.com/auth/userinfo.email',
 ].join(' ');
+
+/** Mensaje cuando Google invalida el refresh token (revocado, caducado o secret cambiado). */
+const REAUTH_REQUIRED_MESSAGE =
+  'La sesión de Google expiró o fue revocada. Vuelve a conectar tu cuenta con "Conectar con Google".';
 
 let _pendingRedirectUri = null;
 let _pendingCodeVerifier = null;
 let _oauthFlowPromise = null;
+
+function isInvalidGrantResponse(body) {
+  const text = String(body || '');
+  return /invalid_grant/i.test(text) || /Token has been expired or revoked/i.test(text);
+}
 
 function _generateCodeVerifier() {
   return crypto.randomBytes(32).toString('base64url');
@@ -106,8 +123,16 @@ function _requireConfig() {
   return cfg;
 }
 
+function _clearSessionTokens() {
+  clearTokens();
+}
+
 async function _refreshAccessToken(tokens) {
   const cfg = _requireConfig();
+  if (!tokens?.refresh_token) {
+    _clearSessionTokens();
+    throw new Error(REAUTH_REQUIRED_MESSAGE);
+  }
   const body = new URLSearchParams({
     client_id: cfg.clientId,
     client_secret: cfg.clientSecret,
@@ -117,20 +142,48 @@ async function _refreshAccessToken(tokens) {
   const res = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', body });
   if (!res.ok) {
     const err = await res.text();
+    if (isInvalidGrantResponse(err)) {
+      _clearSessionTokens();
+      throw new Error(REAUTH_REQUIRED_MESSAGE);
+    }
     throw new Error(`No se pudo refrescar el token: ${err}`);
   }
   const data = await res.json();
-  const updated = { ...tokens, access_token: data.access_token, expiry_date: Date.now() + (data.expires_in || 3600) * 1000 };
+  const updated = {
+    ...tokens,
+    access_token: data.access_token,
+    // Google may omit refresh_token on refresh; keep the existing one.
+    refresh_token: data.refresh_token || tokens.refresh_token,
+    expiry_date: Date.now() + (data.expires_in || 3600) * 1000,
+  };
   saveTokens(updated);
   return updated;
 }
 
 async function getValidTokens() {
   let tokens = loadTokens();
-  if (!tokens?.access_token) return null;
+  if (!tokens) return null;
+
+  const hasAccess = Boolean(tokens.access_token);
+  const hasRefresh = Boolean(tokens.refresh_token);
+  if (!hasAccess && !hasRefresh) return null;
+
   const expiresSoon = !tokens.expiry_date || tokens.expiry_date < Date.now() + 60_000;
-  if (expiresSoon && tokens.refresh_token) {
-    tokens = await _refreshAccessToken(tokens);
+  const needsRefresh = !hasAccess || expiresSoon;
+
+  if (needsRefresh) {
+    if (!hasRefresh) {
+      _clearSessionTokens();
+      return null;
+    }
+    try {
+      tokens = await _refreshAccessToken(tokens);
+    } catch (err) {
+      if (err instanceof Error && err.message === REAUTH_REQUIRED_MESSAGE) {
+        return null;
+      }
+      throw err;
+    }
   }
   return tokens;
 }
@@ -143,7 +196,8 @@ function _buildAuthUrl(redirectUri, codeChallenge) {
     response_type: 'code',
     scope: SCOPES,
     access_type: 'offline',
-    prompt: 'select_account',
+    // consent forces a new refresh_token (select_account alone often reuses an old grant).
+    prompt: 'select_account consent',
     code_challenge: codeChallenge,
     code_challenge_method: 'S256',
   });
@@ -214,24 +268,81 @@ async function exchangeCode(code, redirectUri) {
     code_verifier: codeVerifier,
   });
   const res = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', body });
-  if (!res.ok) throw new Error(`Error OAuth: ${await res.text()}`);
+  if (!res.ok) {
+    const errBody = await res.text();
+    if (isInvalidGrantResponse(errBody)) {
+      throw new Error(REAUTH_REQUIRED_MESSAGE);
+    }
+    throw new Error(`Error OAuth: ${errBody}`);
+  }
   const data = await res.json();
+  const previous = loadTokens() || {};
   const tokens = {
     access_token: data.access_token,
-    refresh_token: data.refresh_token,
+    // Re-auth sometimes omits refresh_token; keep prior only if still present in response path.
+    // Prefer the new one. If Google omitted it after consent, fall back to previous.
+    refresh_token: data.refresh_token || previous.refresh_token,
     expiry_date: Date.now() + (data.expires_in || 3600) * 1000,
   };
+  if (!tokens.refresh_token) {
+    throw new Error(
+      'Google no devolvió un refresh token. Revoca el acceso de la app en myaccount.google.com/permissions y vuelve a conectar.',
+    );
+  }
+  // Save under anonymous scope first, then bind to Google email (per-user storage).
   saveTokens(tokens);
+  await _bindSessionToGoogleUser(tokens);
   return tokens;
 }
 
+/** Resuelve email de Google y mueve tokens/prefs al almacén de ese usuario. */
+async function _bindSessionToGoogleUser(tokens) {
+  if (!tokens?.access_token) return null;
+  try {
+    const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    });
+    if (!res.ok) return null;
+    const info = await res.json();
+    const email = info?.email;
+    if (!email) return null;
+    setActiveUser(email);
+    // Re-write tokens under user-scoped path; wipe anonymous leftover.
+    saveTokens(tokens);
+    clearSecureJson('autoimg/anonymous/tokens.json');
+    clearSecureJson('autoimg-tokens.json');
+    return email;
+  } catch {
+    return null;
+  }
+}
+
 async function getAuthStatus() {
-  const tokens = await getValidTokens();
+  let tokens;
+  try {
+    tokens = await getValidTokens();
+  } catch {
+    return { authenticated: false };
+  }
   if (!tokens) return { authenticated: false };
   try {
     const res = await _apiFetch('https://www.googleapis.com/oauth2/v2/userinfo');
     const info = await res.json();
-    return { authenticated: true, email: info.email || undefined };
+    const email = info.email || undefined;
+    if (email) {
+      setActiveUser(email);
+      // Ensure tokens live under this user (covers process restart with only tokens loaded)
+      saveTokens({
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        expiry_date: tokens.expiry_date,
+      });
+    }
+    return {
+      authenticated: true,
+      email,
+      email_masked: email ? maskEmail(email) : undefined,
+    };
   } catch {
     return { authenticated: false };
   }
@@ -243,8 +354,9 @@ async function revokeAuth() {
   if (tokens?.access_token) {
     await fetch(`https://oauth2.googleapis.com/revoke?token=${tokens.access_token}`, { method: 'POST' }).catch(() => {});
   }
+  // Solo tokens del usuario activo. Sheet/carpetas quedan en autoimg/users/<hash>/.
   clearTokens();
-  clearSheetConfig();
+  clearActiveUser();
   _sheetId = null;
   _sheetMeta = null;
   return { success: true };
@@ -252,13 +364,20 @@ async function revokeAuth() {
 
 async function _apiFetch(url, options = {}) {
   const tokens = await getValidTokens();
-  if (!tokens) throw new Error('No autenticado con Google');
+  if (!tokens) throw new Error('No autenticado con Google. Conecta tu cuenta en AutoIMG.');
   const headers = { ...(options.headers || {}), Authorization: `Bearer ${tokens.access_token}` };
   const res = await fetchWithRetry(url, { ...options, headers });
   if (res.status === 401 && tokens.refresh_token) {
-    const refreshed = await _refreshAccessToken(tokens);
-    headers.Authorization = `Bearer ${refreshed.access_token}`;
-    return fetchWithRetry(url, { ...options, headers });
+    try {
+      const refreshed = await _refreshAccessToken(tokens);
+      headers.Authorization = `Bearer ${refreshed.access_token}`;
+      return fetchWithRetry(url, { ...options, headers });
+    } catch (err) {
+      if (err instanceof Error && err.message === REAUTH_REQUIRED_MESSAGE) {
+        throw err;
+      }
+      throw err;
+    }
   }
   if (!res.ok) {
     const err = await res.text();
@@ -325,6 +444,7 @@ async function openSpreadsheet(rawId) {
   const name = data.properties?.title || '';
   _sheetId = sheetId;
   _sheetMeta = data;
+  // Persist locally — survives logout / token revoke / app restart
   saveSheetConfig(sheetId, name);
   const { created_tabs } = await ensureAutoImgTabs();
   return {
@@ -368,10 +488,6 @@ async function restorePersistedSheet() {
 
 function getSheetId() {
   return _sheetId;
-}
-
-function setSheetId(id) {
-  _sheetId = id;
 }
 
 function _tabNameFromRange(range) {
@@ -471,12 +587,15 @@ module.exports = {
   getStoredSheetConfig,
   restorePersistedSheet,
   getSheetId,
-  setSheetId,
   readRange,
   readRanges,
   writeRange,
   appendRow,
   batchWriteRanges,
   getValidTokens,
+  refreshAccessToken: _refreshAccessToken,
   ensureAutoImgTabs,
+  isInvalidGrantResponse,
+  REAUTH_REQUIRED_MESSAGE,
+  getActiveUserPublic,
 };

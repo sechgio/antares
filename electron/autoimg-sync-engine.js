@@ -1,21 +1,41 @@
 const sheets = require('./google-sheets-service');
 const drive = require('./google-drive-service');
 const { getMainWindow } = require('./window-manager');
+const { OperationCancelledError, mapWithConcurrency } = require('./autoimg-concurrency');
+const { scanActiveFolders } = require('./autoimg-scan-folders');
+const { buildNisMetaMap, buildRenameJobs, uniqueDestinos } = require('./autoimg-rename');
+const {
+  saveLocalFolders,
+  loadLocalFolders,
+  saveRenameDest,
+  loadRenameDest,
+} = require('./autoimg-local-prefs');
 const {
   BD_IMG_HEADER,
-  resolveNotasForSync,
   countSinSgioRows,
+  countBdImgEstadoMetrics,
   countScanSinSgio,
-  findNisRowIndex,
-  buildScanResultRow,
+  applyScanResultsToRows,
   parseArrastreRows,
+  parseFoldersFromValues,
+  parseResumenMetrics,
+  configValueFromRows,
+  countActiveFolders,
 } = require('./autoimg-sheet-rows');
 
-const BATCH_SIZE = 10;
+const ROWS_PER_RANGE = 50;
+const RANGES_PER_API_BATCH = 50;
 const CACHE_TTL_MS = 60_000;
+const AUTO_SYNC_CONFIG_KEY = 'AUTO_SYNC';
+const RENAME_DEST_CONFIG_KEY = 'RENAME_DEST_FOLDER_ID';
+const AUTO_SYNC_INTERVAL_MS = 5 * 60_000;
+const RENAME_COPY_CONCURRENCY = 3;
 
 let _autoSyncEnabled = false;
 let _autoSyncTimer = null;
+let _activeOperation = null;
+let _cancelRequested = false;
+const CANCELLABLE_OPERATIONS = new Set(['scan', 'scan_sync', 'sync_to', 'rename']);
 let _lastScanResults = null;
 let _cachedBdImg = [];
 let _cachedLogs = [];
@@ -32,11 +52,6 @@ function _now() {
   return new Date().toLocaleString('es-PE', { hour12: false });
 }
 
-function _parseActivo(value) {
-  const v = String(value || '').trim().toUpperCase();
-  return v === '✅' || v === 'SI' || v === 'TRUE' || v === '1' || v === 'ACTIVO';
-}
-
 function _isCacheFresh() {
   return _cacheLoadedAt > 0 && Date.now() - _cacheLoadedAt < CACHE_TTL_MS;
 }
@@ -45,59 +60,91 @@ function _touchCache() {
   _cacheLoadedAt = Date.now();
 }
 
-function _configValueFromRows(values, key) {
-  for (let i = 1; i < (values || []).length; i++) {
-    if (String(values[i][0] || '').trim().toUpperCase() === key.toUpperCase()) {
-      return values[i][1] || '';
+function _invalidateCache() {
+  _cacheLoadedAt = 0;
+}
+
+function _parseAutoSyncConfig(value) {
+  const v = String(value || '').trim().toLowerCase();
+  return v === 'true' || v === '1' || v === 'si' || v === 'yes';
+}
+
+function _throwIfCancelled() {
+  if (_cancelRequested) throw new OperationCancelledError();
+}
+
+async function _runLocked(operation, fn) {
+  if (_activeOperation) {
+    throw new Error(`Ya hay una operación en curso (${_activeOperation}). Espera a que termine.`);
+  }
+  _activeOperation = operation;
+  _cancelRequested = false;
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof OperationCancelledError || _cancelRequested) {
+      emit('autoimg.operation.cancelled', { operation });
+      throw new Error('Operación cancelada por el usuario');
     }
+    throw err;
+  } finally {
+    _activeOperation = null;
+    _cancelRequested = false;
   }
-  return '';
 }
 
-function _parseResumenMetrics(values) {
-  const metrics = {};
-  for (const row of values || []) {
-    const metricKey = String(row[0] || '');
-    if (metricKey === 'TOTAL NIS') metrics.totalNis = Number(row[1]) || 0;
-    if (metricKey.includes('COMPLETOS')) metrics.completos = Number(row[1]) || 0;
-    if (metricKey.includes('FALTANTES')) metrics.faltantes = Number(row[1]) || 0;
-    if (metricKey.includes('SOBRANTES')) metrics.sobrantes = Number(row[1]) || 0;
+function cancelOperation() {
+  if (!_activeOperation) return { success: false, reason: 'no_operation' };
+  if (!CANCELLABLE_OPERATIONS.has(_activeOperation)) {
+    return { success: false, reason: 'not_cancellable', operation: _activeOperation };
   }
-  return metrics;
+  _cancelRequested = true;
+  return { success: true, operation: _activeOperation };
 }
 
-function _parseFoldersFromValues(values) {
-  if (!values?.length) return [];
-  const folders = [];
-  for (let i = 1; i < values.length; i++) {
-    const row = values[i];
-    if (!row[1]) continue;
-    folders.push({
-      name: row[0] || '',
-      folder_id: row[1] || '',
-      activo: _parseActivo(row[2]),
-      ultimo_scan: row[3] || '',
-      cant_archivos: Number(row[4]) || 0,
+function getOperationStatus() {
+  return { active: _activeOperation, cancellable: CANCELLABLE_OPERATIONS.has(_activeOperation) };
+}
+
+function _applyAutoSyncTimer(enabled) {
+  const next = Boolean(enabled);
+  if (next === _autoSyncEnabled && (!next || _autoSyncTimer)) return;
+  _autoSyncEnabled = next;
+  if (_autoSyncTimer) {
+    clearInterval(_autoSyncTimer);
+    _autoSyncTimer = null;
+  }
+  if (!_autoSyncEnabled) return;
+  _autoSyncTimer = setInterval(() => {
+    if (_activeOperation) return;
+    syncFromSheet().catch((err) => {
+      emit('autoimg.error', { code: 'AUTO_SYNC', detail: err.message });
     });
-  }
-  return folders;
+  }, AUTO_SYNC_INTERVAL_MS);
+}
+
+function _restoreAutoSyncFromConfig(configRows) {
+  const value = configValueFromRows(configRows, AUTO_SYNC_CONFIG_KEY);
+  if (!value) return;
+  _applyAutoSyncTimer(_parseAutoSyncConfig(value));
 }
 
 function _statusFieldsFromBatch(batch, sheetConfig) {
   const configRows = batch['CONFIG!A:B'] || [];
   const resumenRows = batch['RESUMEN!A:C'] || [];
   const folderRows = batch['FOLDERS!A:E'] || [];
-  const metrics = _parseResumenMetrics(resumenRows);
-  const folders = _parseFoldersFromValues(folderRows);
+  const metrics = parseResumenMetrics(resumenRows);
+  const folders = parseFoldersFromValues(folderRows);
   return {
     sheetName: sheetConfig.name || undefined,
     sheetId: sheetConfig.sheet_id || undefined,
     sheetLinked: sheetConfig.linked,
-    lastSync: _configValueFromRows(configRows, 'ULTIMO_SYNC') || undefined,
+    lastSync: configValueFromRows(configRows, 'ULTIMO_SYNC') || undefined,
     totalNis: metrics.totalNis,
     completos: metrics.completos,
     faltantes: metrics.faltantes,
     sobrantes: metrics.sobrantes,
+    sinSgio: metrics.sinSgio,
     carpetasActivas: folders.filter((f) => f.activo).length,
     folders,
   };
@@ -106,7 +153,7 @@ function _statusFieldsFromBatch(batch, sheetConfig) {
 async function _readConfigValue(key) {
   try {
     const batch = await sheets.readRanges(['CONFIG!A:B']);
-    return _configValueFromRows(batch['CONFIG!A:B'], key);
+    return configValueFromRows(batch['CONFIG!A:B'], key);
   } catch { /* sheet may not exist yet */ }
   return '';
 }
@@ -130,18 +177,6 @@ async function _upsertConfigValues(entries) {
     }
     await sheets.writeRange('CONFIG!A:B', rows);
   } catch { /* CONFIG sheet may not exist yet */ }
-}
-
-async function _upsertConfigValue(key, value) {
-  await _upsertConfigValues({ [key]: value });
-}
-
-function _countActiveFolders(fValues) {
-  let count = 0;
-  for (let i = 1; i < fValues.length; i++) {
-    if (_parseActivo(fValues[i][2])) count += 1;
-  }
-  return count;
 }
 
 function buildFolderErrorSummary(folder, error) {
@@ -208,37 +243,79 @@ async function _ensureSheetId() {
   if (sheets.getSheetId()) return sheets.getSheetId();
   await sheets.restorePersistedSheet();
   if (sheets.getSheetId()) return sheets.getSheetId();
-  const sheetId = await _readConfigValue('SHEET_ID');
+  // Fallbacks: CONFIG sheet (if another path left it) then local secure storage
+  let sheetId = '';
+  try {
+    sheetId = await _readConfigValue('SHEET_ID');
+  } catch { /* not linked yet */ }
+  if (!sheetId) {
+    const stored = sheets.getStoredSheetConfig?.() || {};
+    sheetId = stored.sheet_id || '';
+  }
   if (sheetId) {
     await sheets.openSpreadsheet(sheetId);
+    // Mirror into CONFIG for sheet-level portability
+    try {
+      await _upsertConfigValues({ SHEET_ID: sheetId });
+    } catch { /* optional */ }
     return sheetId;
   }
   throw new Error('No hay Sheet configurado. Abre un Sheet con su ID primero.');
+}
+
+function _persistFoldersLocal(folders) {
+  try {
+    saveLocalFolders(folders);
+  } catch { /* disk full / permissions — non-fatal */ }
 }
 
 async function listFolders({ force = false } = {}) {
   if (!force && _isCacheFresh()) {
     return { folders: _cachedFolders, cached: true };
   }
-  await _ensureSheetId();
-  const { values } = await sheets.readRange('FOLDERS!A:E');
-  _cachedFolders = _parseFoldersFromValues(values);
-  _touchCache();
-  return { folders: _cachedFolders, cached: false };
+  try {
+    await _ensureSheetId();
+    const { values } = await sheets.readRange('FOLDERS!A:E');
+    _cachedFolders = parseFoldersFromValues(values);
+    _persistFoldersLocal(_cachedFolders);
+    _touchCache();
+    return { folders: _cachedFolders, cached: false };
+  } catch (err) {
+    // Offline / unauthenticated: serve last known local mirror so IDs are not "lost"
+    const local = loadLocalFolders();
+    if (local.length) {
+      _cachedFolders = local;
+      return { folders: local, cached: true, offline: true };
+    }
+    throw err;
+  }
 }
 
 async function addFolder({ name, folder_id, activo }) {
   await _ensureSheetId();
   const verified = await drive.assertDriveFolder(folder_id);
   const safeFolderId = verified.folder_id;
-  await sheets.appendRow('FOLDERS!A:E', [
-    name,
-    safeFolderId,
-    activo ? '✅' : '❌',
-    '',
-    0,
-  ]);
-  _cachedFolders = [];
+  const folderName = name || verified.name || safeFolderId;
+
+  // Avoid duplicate rows for the same folder_id
+  const { values } = await sheets.readRange('FOLDERS!A:E');
+  const rows = values.length ? [...values] : [['NOMBRE', 'FOLDER_ID', 'ACTIVO', 'ULTIMO_SCAN', 'CANT_ARCHIVOS']];
+  let found = false;
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][1] || '').trim() === safeFolderId) {
+      rows[i][0] = folderName;
+      rows[i][2] = activo ? '✅' : '❌';
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    rows.push([folderName, safeFolderId, activo ? '✅' : '❌', '', 0]);
+  }
+  await sheets.writeRange('FOLDERS!A:E', rows);
+  _cachedFolders = parseFoldersFromValues(rows);
+  _persistFoldersLocal(_cachedFolders);
+  _invalidateCache();
   return { success: true, folder_id: safeFolderId, drive_name: verified.name };
 }
 
@@ -250,7 +327,9 @@ async function removeFolder({ folder_id }) {
     if (values[i][1] !== folder_id) filtered.push(values[i]);
   }
   await sheets.writeRange('FOLDERS!A:E', filtered);
-  _cachedFolders = [];
+  _cachedFolders = parseFoldersFromValues(filtered);
+  _persistFoldersLocal(_cachedFolders);
+  _invalidateCache();
   return { success: true };
 }
 
@@ -264,61 +343,32 @@ async function toggleFolder({ folder_id, activo }) {
     }
   }
   await sheets.writeRange('FOLDERS!A:E', values);
-  _cachedFolders = [];
+  _cachedFolders = parseFoldersFromValues(values);
+  _persistFoldersLocal(_cachedFolders);
+  _invalidateCache();
   return { success: true };
 }
 
-async function scanAll() {
+async function _scanAllCore() {
   await _ensureSheetId();
+  _throwIfCancelled();
   const existingNis = await _loadExistingNisSet();
   const { folders } = await listFolders({ force: true });
   const active = folders.filter((f) => f.activo);
-  const folderSummary = [];
-  const nisMaps = [];
-  let totalFiles = 0;
-  let foldersFailed = 0;
 
-  for (let i = 0; i < active.length; i++) {
-    const folder = active[i];
-    emit('autoimg.scan.folder_start', { folder: folder.name, index: i + 1, total: active.length });
+  const {
+    folderSummary,
+    nisMaps,
+    totalFiles,
+    foldersFailed,
+  } = await scanActiveFolders(active, {
+    drive,
+    emit,
+    shouldCancel: _throwIfCancelled,
+    buildFolderErrorSummary,
+  });
 
-    try {
-      const files = await drive.listFolder(folder.folder_id);
-      const nisMap = drive.buildNisMap(files, folder.name);
-
-      for (let j = 0; j < files.length; j++) {
-        emit('autoimg.scan.progress', {
-          folder: folder.name,
-          current: j + 1,
-          total: files.length,
-          file: files[j].name,
-        });
-      }
-
-      const nisFound = Object.keys(nisMap).length;
-      folderSummary.push({ name: folder.name, folder_id: folder.folder_id, count: files.length, nis_found: nisFound });
-      emit('autoimg.scan.folder_done', { folder: folder.name, count: files.length, nis_found: nisFound });
-      nisMaps.push(nisMap);
-      totalFiles += files.length;
-    } catch (err) {
-      foldersFailed += 1;
-      const failed = buildFolderErrorSummary(folder, err);
-      folderSummary.push(failed);
-      emit('autoimg.scan.folder_error', {
-        folder: folder.name,
-        error: failed.error,
-        index: i + 1,
-        total: active.length,
-      });
-      emit('autoimg.scan.folder_done', {
-        folder: folder.name,
-        count: 0,
-        nis_found: 0,
-        error: failed.error,
-      });
-    }
-  }
-
+  _throwIfCancelled();
   await _markFolderErrorsInSheet(folderSummary);
 
   const dedupStrategy = drive.parseDedupStrategy(await _readConfigValue('DEDUP_STRATEGY'));
@@ -352,24 +402,31 @@ async function scanAll() {
   };
 }
 
+async function scanAll() {
+  return _runLocked('scan', () => _scanAllCore());
+}
+
 async function scanAndSync() {
-  const scanResult = await scanAll();
-  const syncResult = await syncToSheet();
-  return {
-    success: syncResult.success,
-    updated: syncResult.updated,
-    new_rows: syncResult.new_rows,
-    logs: syncResult.logs,
-    scan: scanResult,
-    folder_errors: scanResult.folders_failed,
-  };
+  return _runLocked('scan_sync', async () => {
+    const scanResult = await _scanAllCore();
+    const syncResult = await _syncToSheetCore();
+    return {
+      success: syncResult.success,
+      updated: syncResult.updated,
+      new_rows: syncResult.new_rows,
+      logs: syncResult.logs,
+      scan: scanResult,
+      folder_errors: scanResult.folders_failed,
+    };
+  });
 }
 
 async function _applySheetBatch(batch) {
   _cachedBdImg = batch['BD_IMG!A:M'] || [];
   _cachedLogs = batch['LOGS!A:E'] || [];
   _cachedBdArrastre = parseArrastreRows(batch['BD_ARRASTRE!A:E'] || []);
-  _cachedFolders = _parseFoldersFromValues(batch['FOLDERS!A:E'] || []);
+  _cachedFolders = parseFoldersFromValues(batch['FOLDERS!A:E'] || []);
+  if (_cachedFolders.length) _persistFoldersLocal(_cachedFolders);
   _touchCache();
 }
 
@@ -379,13 +436,16 @@ async function _fetchSheetBatch(ranges) {
 }
 
 async function syncFromSheet() {
-  const batch = await _fetchSheetBatch(['BD_IMG!A:M', 'LOGS!A:E', 'BD_ARRASTRE!A:E']);
-  await _applySheetBatch({
-    'BD_IMG!A:M': batch['BD_IMG!A:M'],
-    'LOGS!A:E': batch['LOGS!A:E'],
-    'BD_ARRASTRE!A:E': batch['BD_ARRASTRE!A:E'],
+  return _runLocked('sync_from', async () => {
+    const batch = await _fetchSheetBatch(['BD_IMG!A:M', 'LOGS!A:E', 'BD_ARRASTRE!A:E']);
+    await _applySheetBatch({
+      'BD_IMG!A:M': batch['BD_IMG!A:M'],
+      'LOGS!A:E': batch['LOGS!A:E'],
+      'BD_ARRASTRE!A:E': batch['BD_ARRASTRE!A:E'],
+    });
+    emit('autoimg.sync.from_complete', { rows: _cachedBdImg.length });
+    return { success: true, rows: _cachedBdImg, arrastre: _cachedBdArrastre };
   });
-  return { success: true, rows: _cachedBdImg, arrastre: _cachedBdArrastre };
 }
 
 async function listLogs({ force = false } = {}) {
@@ -410,47 +470,34 @@ async function listArrastre({ force = false } = {}) {
   return { entries: _cachedBdArrastre, cached: false };
 }
 
-async function syncToSheet() {
+async function _syncToSheetCore() {
   await _ensureSheetId();
   const start = Date.now();
 
   if (!_lastScanResults) {
-    await scanAll();
+    await _scanAllCore();
   }
 
   const { values: bdValues } = await sheets.readRange('BD_IMG!A:M');
-  const rows = bdValues.length ? [...bdValues] : [BD_IMG_HEADER];
-
-  let updated = 0;
-  let newRows = 0;
-  const updates = [];
   const verification = _now();
+  const { rows, updated, newRows } = applyScanResultsToRows(
+    bdValues.length ? bdValues : [BD_IMG_HEADER],
+    _lastScanResults.nis_results,
+    verification,
+  );
+  const updates = [];
 
-  for (const result of _lastScanResults.nis_results) {
-    const idx = findNisRowIndex(rows, result.nis);
-    const rowData = buildScanResultRow({ scanResult: result, rows, verification });
-
-    if (idx > 0) {
-      rows[idx] = rowData;
-      updated += 1;
-    } else {
-      rows.push(rowData);
-      newRows += 1;
-    }
-  }
-
-  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-    const chunk = rows.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < rows.length; i += ROWS_PER_RANGE) {
+    const chunk = rows.slice(i, i + ROWS_PER_RANGE);
     const startRow = i + 1;
     const endRow = startRow + chunk.length - 1;
     updates.push({ range: `BD_IMG!A${startRow}:M${endRow}`, values: chunk });
   }
 
-  let cellsUpdated = 0;
-  for (let i = 0; i < updates.length; i += 1) {
-    const batch = updates.slice(i, i + 1);
-    const res = await sheets.batchWriteRanges(batch);
-    cellsUpdated += res.updated;
+  for (let i = 0; i < updates.length; i += RANGES_PER_API_BATCH) {
+    _throwIfCancelled();
+    const batch = updates.slice(i, i + RANGES_PER_API_BATCH);
+    await sheets.batchWriteRanges(batch);
   }
 
   const folderRows = await sheets.readRange('FOLDERS!A:E');
@@ -466,11 +513,8 @@ async function syncToSheet() {
   const detail = `${_lastScanResults.folder_summary.length} carpetas · ${_lastScanResults.nis_results.length} NIS · ${updated} actualizados · ${newRows} nuevos`;
   await sheets.appendRow('LOGS!A:E', [_now(), 'SCAN_ALL_FOLDERS', detail, auth.email || '', durationSec]);
 
-  const activeFolderCount = _countActiveFolders(fValues);
-  const completos = _lastScanResults.nis_results.filter((r) => r.count === 3).length;
-  const faltantes = _lastScanResults.nis_results.filter((r) => r.count < 3).length;
-  const sobrantes = _lastScanResults.nis_results.filter((r) => r.count > 3).length;
-  const totalNis = Math.max(0, rows.length - 1);
+  const activeFolderCount = countActiveFolders(fValues);
+  const { totalNis, completos, faltantes, sobrantes } = countBdImgEstadoMetrics(rows);
   const sinSgio = countSinSgioRows(rows);
   const timestamp = _now();
   const resumen = [
@@ -497,9 +541,12 @@ async function syncToSheet() {
   emit('autoimg.sync.complete', { updated, new: newRows, errors: folderErrors, duration_ms: Date.now() - start });
 
   _cachedBdImg = rows;
-  _cachedLogs = [];
-  _touchCache();
+  _invalidateCache();
   return { success: true, updated, new_rows: newRows, logs: [detail] };
+}
+
+async function syncToSheet() {
+  return _runLocked('sync_to', () => _syncToSheetCore());
 }
 
 async function getStatus() {
@@ -512,6 +559,7 @@ async function getStatus() {
     const batch = await _fetchSheetBatch(['CONFIG!A:B', 'RESUMEN!A:C', 'FOLDERS!A:E']);
     fields = _statusFieldsFromBatch(batch, sheets.getStoredSheetConfig());
     _cachedFolders = fields.folders || [];
+    _restoreAutoSyncFromConfig(batch['CONFIG!A:B'] || []);
     _touchCache();
   } catch { /* sheet not configured yet */ }
 
@@ -526,6 +574,7 @@ async function getStatus() {
     completos: fields.completos,
     faltantes: fields.faltantes,
     sobrantes: fields.sobrantes,
+    sinSgio: fields.sinSgio,
     carpetasActivas: fields.carpetasActivas,
   };
 }
@@ -533,13 +582,15 @@ async function getStatus() {
 async function bootstrap({ refresh = true } = {}) {
   const auth = await sheets.getAuthStatus();
   const sheetConfig = sheets.getStoredSheetConfig();
+  // Prefer in-memory cache; if empty, surface locally persisted folders
+  const foldersForUi = _cachedFolders.length ? _cachedFolders : loadLocalFolders();
   const base = {
     connected: auth.authenticated,
     sheetName: sheetConfig.name || undefined,
     sheetId: sheetConfig.sheet_id || undefined,
     sheetLinked: sheetConfig.linked,
     autoSync: _autoSyncEnabled,
-    folders: _cachedFolders,
+    folders: foldersForUi,
     bdRows: _cachedBdImg,
     logRows: _cachedLogs,
     arrastre: _cachedBdArrastre,
@@ -565,6 +616,7 @@ async function bootstrap({ refresh = true } = {}) {
     ]);
     await _applySheetBatch(batch);
     const fields = _statusFieldsFromBatch(batch, sheets.getStoredSheetConfig());
+    _restoreAutoSyncFromConfig(batch['CONFIG!A:B'] || []);
     return {
       connected: true,
       sheetName: fields.sheetName || sheetConfig.name || undefined,
@@ -576,6 +628,7 @@ async function bootstrap({ refresh = true } = {}) {
       completos: fields.completos,
       faltantes: fields.faltantes,
       sobrantes: fields.sobrantes,
+      sinSgio: fields.sinSgio,
       carpetasActivas: fields.carpetasActivas,
       folders: _cachedFolders,
       bdRows: _cachedBdImg,
@@ -588,36 +641,180 @@ async function bootstrap({ refresh = true } = {}) {
   }
 }
 
-function setAutoSync(enabled) {
-  _autoSyncEnabled = Boolean(enabled);
-  if (_autoSyncTimer) {
-    clearInterval(_autoSyncTimer);
-    _autoSyncTimer = null;
-  }
-  if (_autoSyncEnabled) {
-    _autoSyncTimer = setInterval(() => {
-      syncFromSheet().catch((err) => {
-        emit('autoimg.error', { code: 'AUTO_SYNC', detail: err.message });
-      });
-    }, 5 * 60_000);
-  }
+async function setAutoSync(enabled) {
+  const next = Boolean(enabled);
+  _applyAutoSyncTimer(next);
+  try {
+    await _upsertConfigValues({ [AUTO_SYNC_CONFIG_KEY]: next ? 'true' : 'false' });
+  } catch { /* CONFIG sheet may not exist yet */ }
   return { enabled: _autoSyncEnabled };
 }
 
-function getCachedBdImg() {
-  return _cachedBdImg;
+/**
+ * Escanea carpetas activas, resuelve NIS→SGIO+DESTINO desde BD_IMG y copia
+ * las imágenes a subcarpetas (por DESTINO) bajo un parent raíz, con nombre
+ * {SGIO}_{n}.ext. El original no se mueve ni se borra.
+ *
+ * @param {string} dest_folder_id Parent raíz donde se crean carpetas DESTINO
+ */
+async function _renameExportCore({ dest_folder_id, only_completos = true } = {}) {
+  await _ensureSheetId();
+  _throwIfCancelled();
+
+  const rootMeta = await drive.assertDriveFolder(dest_folder_id);
+  const rootFolderId = rootMeta.folder_id;
+
+  // A=NIS, B=SGIO, C=DESTINO
+  const { values: bdValues } = await sheets.readRange('BD_IMG!A:C');
+  const nisMeta = buildNisMetaMap(bdValues);
+
+  // Re-scan to ensure file IDs + slots are fresh
+  const scan = await _scanAllCore();
+  _throwIfCancelled();
+
+  const { jobs, skipped } = buildRenameJobs(scan.results.nis_results, nisMeta, {
+    onlyCompletos: only_completos !== false,
+  });
+
+  // Pre-create / resolve DESTINO subfolders under root
+  const destinoNames = uniqueDestinos(jobs);
+  const destinoFolderIds = new Map();
+  const foldersCreated = [];
+  for (const name of destinoNames) {
+    _throwIfCancelled();
+    const sub = await drive.findOrCreateSubfolder(rootFolderId, name);
+    destinoFolderIds.set(name, sub.folder_id);
+    if (sub.created) foldersCreated.push(name);
+    emit('autoimg.rename.folder', {
+      name,
+      folder_id: sub.folder_id,
+      created: sub.created,
+    });
+  }
+
+  emit('autoimg.rename.plan', {
+    total_jobs: jobs.length,
+    skipped: skipped.length,
+    dest_folder_id: rootFolderId,
+    dest_name: rootMeta.name,
+    destinos: destinoNames.length,
+    folders_created: foldersCreated.length,
+  });
+
+  const copied = [];
+  const failed = [];
+  let done = 0;
+
+  await mapWithConcurrency(
+    jobs,
+    RENAME_COPY_CONCURRENCY,
+    async (job) => {
+      _throwIfCancelled();
+      const targetFolderId = destinoFolderIds.get(job.destino);
+      try {
+        if (!targetFolderId) {
+          throw new Error(`Sin carpeta para DESTINO "${job.destino}"`);
+        }
+        const res = await drive.copyFileToFolder(job.fileId, targetFolderId, job.toName);
+        copied.push({
+          nis: job.nis,
+          sgio: job.sgio,
+          destino: job.destino,
+          slot: job.slot,
+          from: job.fromName,
+          to: job.toName,
+          folder: job.destino,
+          file_id: res.id || '',
+        });
+      } catch (err) {
+        failed.push({
+          nis: job.nis,
+          sgio: job.sgio,
+          destino: job.destino,
+          from: job.fromName,
+          to: job.toName,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } finally {
+        done += 1;
+        emit('autoimg.rename.progress', {
+          current: done,
+          total: jobs.length,
+          last: `${job.destino}/${job.toName}`,
+        });
+      }
+    },
+    { shouldCancel: () => _cancelRequested },
+  );
+
+  await _upsertConfigValues({ [RENAME_DEST_CONFIG_KEY]: rootFolderId });
+  try {
+    saveRenameDest(rootFolderId, rootMeta.name);
+  } catch { /* local prefs best-effort */ }
+
+  const detail =
+    `Renombre SGIO → ${rootMeta.name}/{DESTINO}: ${copied.length} copiadas` +
+    (foldersCreated.length ? `, ${foldersCreated.length} carpeta(s) nuevas` : '') +
+    (failed.length ? `, ${failed.length} error(es)` : '') +
+    (skipped.length ? `, ${skipped.length} omitida(s)` : '');
+
+  try {
+    await sheets.appendRow('LOGS!A:E', [_now(), 'RENAME_SGIO', detail, '', '']);
+  } catch { /* LOGS optional */ }
+
+  emit('autoimg.rename.complete', {
+    copied: copied.length,
+    failed: failed.length,
+    skipped: skipped.length,
+    dest_folder_id: rootFolderId,
+    folders_created: foldersCreated.length,
+  });
+
+  return {
+    success: failed.length === 0,
+    dest_folder_id: rootFolderId,
+    dest_name: rootMeta.name,
+    destinos: destinoNames,
+    folders_created: foldersCreated,
+    copied,
+    failed,
+    skipped,
+    planned: jobs.length,
+    scan_summary: scan.summary,
+  };
 }
 
-function getCachedLogs() {
-  return _cachedLogs;
+async function persistSheetIdConfig(sheetId) {
+  const id = String(sheetId || '').trim();
+  if (!id) return { success: false };
+  await _upsertConfigValues({ SHEET_ID: id });
+  return { success: true };
 }
 
-function getCachedBdArrastre() {
-  return _cachedBdArrastre;
+async function renameExport(params = {}) {
+  // Persist root folder id immediately so a failed run still remembers the choice
+  if (params?.dest_folder_id) {
+    try {
+      saveRenameDest(String(params.dest_folder_id), '');
+    } catch { /* ignore */ }
+  }
+  return _runLocked('rename', () => _renameExportCore(params));
 }
 
-function getLastScanResults() {
-  return _lastScanResults;
+async function getRenameDestConfig() {
+  let folderId = '';
+  try {
+    folderId = (await _readConfigValue(RENAME_DEST_CONFIG_KEY)) || '';
+  } catch { /* sheet unavailable */ }
+  const local = loadRenameDest();
+  if (!folderId && local.folder_id) folderId = local.folder_id;
+  // Keep local mirror in sync when sheet has the value
+  if (folderId && folderId !== local.folder_id) {
+    try {
+      saveRenameDest(folderId, local.name || '');
+    } catch { /* ignore */ }
+  }
+  return { folder_id: folderId, name: local.name || '' };
 }
 
 module.exports = {
@@ -629,22 +826,16 @@ module.exports = {
   scanAndSync,
   syncToSheet,
   syncFromSheet,
+  renameExport,
+  getRenameDestConfig,
+  persistSheetIdConfig,
   getStatus,
   bootstrap,
   setAutoSync,
-  getCachedBdImg,
-  getCachedLogs,
-  getCachedBdArrastre,
-  getLastScanResults,
+  cancelOperation,
+  getOperationStatus,
   listArrastre,
   listLogs,
-  resolveNotasForSync,
-  countSinSgioRows,
-  countScanSinSgio,
   buildFolderErrorSummary,
   formatFolderErrorScan,
-  parseArrastreRows,
-  parseFoldersFromValues: _parseFoldersFromValues,
-  parseResumenMetrics: _parseResumenMetrics,
-  configValueFromRows: _configValueFromRows,
 };

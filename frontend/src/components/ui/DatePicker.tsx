@@ -9,7 +9,7 @@ export interface DatePickerProps {
   className?: string;
   disabled?: boolean;
   clearable?: boolean;
-  size?: 'sm' | 'md';
+  size?: 'sm' | 'md' | 'lg';
   'aria-label'?: string;
 }
 
@@ -128,9 +128,12 @@ export default function DatePicker({
   const selectedDate = parseIsoDate(value);
   const today = new Date();
   const days = getCalendarDays(currentMonth);
-  const triggerSizeClass = size === 'sm'
-    ? 'app-date-picker-trigger-sm'
-    : 'app-date-picker-trigger-md';
+  const triggerSizeClass =
+    size === 'sm'
+      ? 'app-date-picker-trigger-sm'
+      : size === 'lg'
+        ? 'app-date-picker-trigger-lg'
+        : 'app-date-picker-trigger-md';
 
   const handleSelect = (date: Date) => {
     onChange(toIsoDateLocal(date));
@@ -167,7 +170,11 @@ export default function DatePicker({
         aria-expanded={isOpen}
         aria-controls={popupId}
       >
-        <Calendar className="app-date-picker-trigger-icon" size={size === 'sm' ? 13 : 15} strokeWidth={2} />
+        <Calendar
+          className="app-date-picker-trigger-icon"
+          size={size === 'sm' ? 13 : size === 'lg' ? 16 : 15}
+          strokeWidth={2}
+        />
         <span className={`app-date-picker-trigger-value ${value ? '' : 'is-placeholder'}`}>
           {formatDisplayDate(value, placeholder)}
         </span>

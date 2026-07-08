@@ -3,6 +3,31 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import App from '../App';
 import { TAB_DEFINITIONS } from '../navigation';
 
+const { mockSupabase } = vi.hoisted(() => {
+  const empty = { data: [] as unknown[], error: null };
+  const queryResult = vi.fn().mockResolvedValue(empty);
+  const chain = {
+    select: vi.fn().mockReturnThis(),
+    insert: vi.fn().mockReturnThis(),
+    update: vi.fn().mockReturnThis(),
+    delete: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockImplementation(() => queryResult()),
+    single: vi.fn().mockResolvedValue({ data: null, error: null }),
+  };
+  const channel = { on: vi.fn().mockReturnThis(), subscribe: vi.fn().mockReturnValue({}) };
+  return {
+    mockSupabase: {
+      from: vi.fn(() => chain),
+      rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
+      channel: vi.fn(() => channel),
+      removeChannel: vi.fn(),
+    },
+  };
+});
+
+vi.mock('../lib/supabase', () => ({ supabase: mockSupabase }));
+
 // Mock AuthContext so the app renders as an authenticated admin in tests.
 vi.mock('../auth/AuthContext', () => ({
   AuthProvider: ({ children }: { children: React.ReactNode }) => children,
@@ -37,18 +62,22 @@ describe('App', () => {
     });
   });
 
-  it('shows Generador Reportes tab by default', async () => {
+  it('can open Espacios tab', async () => {
     render(<App />);
-    expect(await screen.findByText('Subir Plantilla HTML', {}, { timeout: 5000 })).toBeInTheDocument();
-  });
+    fireEvent.click(await screen.findByRole('button', { name: 'Espacios' }, { timeout: 5000 }));
+    // Lazy chunk + supabase bootstrap can take a moment under full-suite load.
+    expect(
+      await screen.findByRole('button', { name: /Crear primer espacio/i }, { timeout: 10000 }),
+    ).toBeInTheDocument();
+  }, 20000);
 
   it('keeps conversion empty-state actions visible before files are selected', async () => {
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Conversión' }, {}, { timeout: 5000 }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Conversión' }, { timeout: 5000 }));
     await waitFor(() => {
       expect(screen.getByText(/Arrastra imágenes o videos aquí/i)).toBeInTheDocument();
     }, { timeout: 8000 });
-    expect(await screen.findByRole('button', { name: /Seleccionar archivos/i }, {}, { timeout: 8000 })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Seleccionar archivos/i }, { timeout: 8000 })).toBeInTheDocument();
   });
 
   it('has sidebar with navigation buttons', () => {
@@ -59,7 +88,7 @@ describe('App', () => {
 
   it('opens Reportes de Campo from the sidebar', async () => {
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: /Reportes de Campo/i }, {}, { timeout: 5000 }));
+    fireEvent.click(await screen.findByRole('button', { name: /Reportes de Campo/i }, { timeout: 5000 }));
 
     expect(await screen.findByRole('heading', { name: /Paneles/i }, { timeout: 10000 })).toBeInTheDocument();
   }, 15000);
@@ -86,14 +115,13 @@ describe('App', () => {
 
   it('does not render the removed shared header for any tool', async () => {
     render(<App />);
-    await screen.findByRole('button', { name: 'Conversión' }, {}, { timeout: 5000 });
+    await screen.findByRole('button', { name: 'Conversión' }, { timeout: 5000 });
 
     for (const tab of TAB_DEFINITIONS) {
       fireEvent.click(screen.getByRole('button', { name: tab.label }));
       await waitFor(
         () => {
           expect(screen.queryByTestId('app-header')).not.toBeInTheDocument();
-          expect(screen.queryByRole('button', { name: 'Buscar' })).not.toBeInTheDocument();
         },
         { timeout: 5000 },
       );

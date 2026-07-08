@@ -487,6 +487,48 @@ export const api = {
   autoimgScanAndSync: () => _invoke<{ success: boolean; updated: number; new_rows: number; logs: string[]; folder_errors: number; scan: { results: { folder_summary: Array<{ name: string; count: number; nis_found: number; error?: string }>; nis_results: Array<{ nis: string; count: number; folders: string[]; estado: string }> }; summary: { total: number; completos: number; faltantes: number; sobrantes: number; sin_sgio: number }; folders_failed: number } }>('autoimg_scan_and_sync'),
   autoimgSyncToSheet: () => _invoke<{ success: boolean; updated: number; new_rows: number; logs: string[] }>('autoimg_sync_to_sheet'),
   autoimgSyncFromSheet: () => _invoke<{ success: boolean; rows: string[][]; arrastre?: Array<{ nis: string; sgio: string; motivo: string; fecha: string; observacion: string }> }>('autoimg_sync_from_sheet'),
+  autoimgRenameExport: (body: { dest_folder_id: string; only_completos?: boolean }) =>
+    _invoke<{
+      success: boolean;
+      dest_folder_id: string;
+      dest_name: string;
+      destinos: string[];
+      folders_created: string[];
+      planned: number;
+      copied: Array<{
+        nis: string;
+        sgio: string;
+        destino?: string;
+        slot: number;
+        from: string;
+        to: string;
+        folder?: string;
+        file_id: string;
+      }>;
+      failed: Array<{
+        nis: string;
+        sgio: string;
+        destino?: string;
+        from: string;
+        to: string;
+        error: string;
+      }>;
+      skipped: Array<{
+        nis: string;
+        sgio?: string;
+        destino?: string;
+        reason: string;
+        detail?: string;
+      }>;
+      scan_summary?: {
+        total: number;
+        completos: number;
+        faltantes: number;
+        sobrantes: number;
+        sin_sgio: number;
+      };
+    }>('autoimg_rename_export', body),
+  autoimgRenameDestConfig: () => _invoke<{ folder_id: string }>('autoimg_rename_dest_config'),
   autoimgArrastreList: (force = false) => _invoke<{ entries: Array<{ nis: string; sgio: string; motivo: string; fecha: string; observacion: string }>; cached?: boolean }>('autoimg_arrastre_list', { force }),
   autoimgLogsList: (force = false) => _invoke<{ values: string[][]; cached?: boolean }>('autoimg_logs_list', { force }),
   autoimgBootstrap: (refresh = true) => _invoke<{
@@ -500,6 +542,7 @@ export const api = {
     completos?: number;
     faltantes?: number;
     sobrantes?: number;
+    sinSgio?: number;
     carpetasActivas?: number;
     folders: Array<{ name: string; folder_id: string; activo: boolean; ultimo_scan: string; cant_archivos: number }>;
     bdRows: string[][];
@@ -507,6 +550,8 @@ export const api = {
     arrastre: Array<{ nis: string; sgio: string; motivo: string; fecha: string; observacion: string }>;
   }>('autoimg_bootstrap', { refresh }),
   autoimgAutoSyncToggle: (enabled: boolean) => _invoke<{ enabled: boolean }>('autoimg_auto_sync_toggle', { enabled }),
-  autoimgStatus: () => _invoke<{ connected: boolean; sheetName?: string; sheetId?: string; sheetLinked?: boolean; lastSync?: string; autoSync: boolean; totalNis?: number; completos?: number; faltantes?: number; sobrantes?: number; carpetasActivas?: number }>('autoimg_status'),
+  autoimgCancelOperation: () => _invoke<{ success: boolean; operation?: string; reason?: string }>('autoimg_cancel_operation'),
+  autoimgOperationStatus: () => _invoke<{ active: string | null; cancellable: boolean }>('autoimg_operation_status'),
+  autoimgStatus: () => _invoke<{ connected: boolean; sheetName?: string; sheetId?: string; sheetLinked?: boolean; lastSync?: string; autoSync: boolean; totalNis?: number; completos?: number; faltantes?: number; sobrantes?: number; sinSgio?: number; carpetasActivas?: number }>('autoimg_status'),
 
 };

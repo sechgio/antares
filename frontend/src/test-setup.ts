@@ -8,6 +8,24 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
+// jsdom does not implement matchMedia; EspaciosWelcome / LoginScreen need it.
+if (typeof window.matchMedia !== 'function') {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    configurable: true,
+    value: (query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  });
+}
+
 const defaultTheme = {
   name: 'Precision Linear', bg: '#0A0D12', bg_secondary: '#111522',
   fg: '#FFFFFF', fg_muted: '#7C8494', accent: '#5E6AD2',

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ComponentType } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Camera, ClipboardList, LogOut, PanelLeft } from 'lucide-react';
+import { Camera, ClipboardList, FolderKanban, LogOut, PanelLeft } from 'lucide-react';
 import BrandMark from '../brand/BrandMark';
 import { TAB_DEFINITIONS, type TabId } from '../../navigation';
 import { useAuth } from '../../auth/AuthContext';
@@ -16,6 +16,7 @@ interface SidebarProps {
 }
 
 const ICONS: Record<TabId, ComponentType<{ className?: string }>> = {
+  espacios: FolderKanban,
   convert: LightningIcon,
   formatos: FilePdfIcon,
   sellador: StampIcon,

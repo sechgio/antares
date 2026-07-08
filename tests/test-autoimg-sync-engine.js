@@ -10,19 +10,19 @@ function assert(condition, message) {
 }
 
 function main() {
+  const { buildFolderErrorSummary, formatFolderErrorScan } = require('../electron/autoimg-sync-engine');
   const {
-    buildFolderErrorSummary,
-    formatFolderErrorScan,
+    resolveNotasForSync,
+    countSinSgioRows,
+    countBdImgEstadoMetrics,
+    countScanSinSgio,
+    buildNisRowIndexMap,
+    applyScanResultsToRows,
+    buildScanResultRow,
     parseArrastreRows,
     parseFoldersFromValues,
     parseResumenMetrics,
     configValueFromRows,
-  } = require('../electron/autoimg-sync-engine');
-  const {
-    resolveNotasForSync,
-    countSinSgioRows,
-    countScanSinSgio,
-    buildScanResultRow,
   } = require('../electron/autoimg-sheet-rows');
 
   assert(
@@ -65,6 +65,12 @@ function main() {
     ['TOTAL NIS', '42', '2026-07-03'],
     ['🟢 COMPLETOS (3/3)', '10', '2026-07-03'],
   ]);
+  const metricsWithSinSgio = parseResumenMetrics([
+    ['METRICA', 'VALOR', 'FECHA'],
+    ['TOTAL NIS', '42', '2026-07-03'],
+    ['SIN SGIO', '7', '2026-07-03'],
+  ]);
+  assert(metricsWithSinSgio.totalNis === 42 && metricsWithSinSgio.sinSgio === 7, 'parseResumenMetrics extrae sinSgio');
   assert(metrics.totalNis === 42 && metrics.completos === 10, 'parseResumenMetrics extrae métricas');
 
   const configRows = [['Clave', 'Valor'], ['ULTIMO_SYNC', '2026-07-03 10:00:00']];
@@ -86,6 +92,21 @@ function main() {
     verification: '2026-07-03',
   });
   assert(built[0] === '4210802' && built[12] === 'NUEVO (sin SGIO)', 'buildScanResultRow marca NIS nuevo sin SGIO');
+
+  const nisMap = buildNisRowIndexMap(rows);
+  assert(nisMap.get('4210999') === 1, 'buildNisRowIndexMap indexa filas por NIS');
+  const builtWithIndex = buildScanResultRow({
+    scanResult: { nis: '4210999', count: 3, folders: ['JUAN'] },
+    rows,
+    verification: '2026-07-03',
+    rowIndex: nisMap.get('4210999'),
+  });
+  assert(builtWithIndex[0] === '4210999' && builtWithIndex[1] === '11111111', 'buildScanResultRow usa rowIndex precalculado');
+
+  const applied = applyScanResultsToRows(rows, [
+    { nis: '4210802', count: 2, folders: ['JUAN'] },
+  ], '2026-07-03');
+  assert(applied.newRows === 1 && applied.updated === 0, 'applyScanResultsToRows agrega NIS nuevo');
 
   const drive = require('../electron/google-drive-service');
   const m1 = drive.buildNisMap(
@@ -114,6 +135,22 @@ function main() {
     formatFolderErrorScan('ERROR: ya marcado') === 'ERROR: ya marcado',
     'formatFolderErrorScan no duplica prefijo',
   );
+
+  const mergedRows = [
+    ['NIS', 'SGIO', 'DESTINO', 'NOMBRE', 'DIRECCION', 'IMG_1', 'IMG_2', 'IMG_3', 'CANTIDAD', 'ESTADO'],
+    ['4210801', '1', '', '', '', '✅', '✅', '✅', '3', '🟢 COMPLETO'],
+    ['4210802', '', '', '', '', '✅', '✅', '⬜', '2', '🔴 FALTANTE'],
+    ['4210803', '3', '', '', '', '✅', '✅', '✅', '4', '🟡 SOBRANTE'],
+  ];
+  const fromRows = countBdImgEstadoMetrics(mergedRows);
+  assert(fromRows.totalNis === 3, 'countBdImgEstadoMetrics cuenta TOTAL NIS desde BD_IMG');
+  assert(fromRows.completos === 1 && fromRows.faltantes === 1 && fromRows.sobrantes === 1,
+    'countBdImgEstadoMetrics deriva completos/faltantes/sobrantes desde CANTIDAD de todas las filas');
+
+  const scanOnly = [{ nis: '4210802', count: 2, folders: ['JUAN'] }];
+  const scanCompletos = scanOnly.filter((r) => r.count === 3).length;
+  assert(scanCompletos !== fromRows.completos,
+    'métricas solo-scan divergen de BD_IMG mergeado (regresión RESUMEN)');
 
   console.log('[PASS] AutoIMG sync-engine helpers OK.');
 }

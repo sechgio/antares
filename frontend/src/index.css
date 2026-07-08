@@ -281,6 +281,11 @@
     font-size: 12px;
   }
 
+  .app-date-picker-trigger-lg {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+  }
+
   .app-date-picker-trigger-icon {
     flex-shrink: 0;
     color: var(--text-muted);
@@ -302,7 +307,7 @@
     position: absolute;
     top: calc(100% + 6px);
     left: 0;
-    z-index: 60;
+    z-index: 100;
     width: min(100%, 292px);
     padding: 14px;
     border: 1px solid var(--border-subtle);

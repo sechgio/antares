@@ -1,4 +1,6 @@
 import base64
+import contextlib
+import errno
 import hashlib
 import json
 import logging
@@ -1044,6 +1046,75 @@ def handle_preview_ubicacion(payload: dict) -> dict:
         logger.exception("Error generando preview de ubicacion")
         return {"success": False, "error": str(e)}
 
+_CONSOLIDATED_PDF_NAME = "ubicaciones_consolidado.pdf"
+
+
+def _consolidated_pdf_permission_error(path: str) -> PermissionError:
+    return PermissionError(
+        f"No se pudo guardar el PDF consolidado en '{path}'. "
+        "Cierra el archivo si está abierto en un visor PDF o en el Explorador de Windows e intenta de nuevo."
+    )
+
+
+def _is_destination_locked(err: OSError) -> bool:
+    """True when the destination file is locked/in-use (Windows sharing violation or EACCES)."""
+    if getattr(err, "errno", None) in (13, getattr(errno, "EACCES", 13)):
+        return True
+    winerror = getattr(err, "winerror", None)
+    return winerror in (32, 33)  # ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION
+
+
+def _save_consolidated_pdf(images: list[Image.Image], output_dir: str) -> str:
+    """Guarda páginas como PDF multi-hoja. Escribe primero a un temporal y
+    reemplaza atómicamente para evitar PDFs parciales. Si el destino está
+    bloqueado (p. ej. abierto en Edge/Adobe), intenta un nombre alternativo."""
+    if not images:
+        raise ValueError("No hay imágenes para guardar en el PDF consolidado.")
+
+    first_img = images[0]
+    append_imgs = images[1:] if len(images) > 1 else []
+    base_path = os.path.join(output_dir, _CONSOLIDATED_PDF_NAME)
+    tmp_path = base_path + ".antares-tmp"
+
+    try:
+        first_img.save(
+            tmp_path,
+            "PDF",
+            resolution=300.0,
+            save_all=True,
+            append_images=append_imgs,
+        )
+    except Exception:
+        if os.path.exists(tmp_path):
+            with contextlib.suppress(OSError):
+                os.remove(tmp_path)
+        raise
+
+    candidates = [base_path] + [
+        os.path.join(output_dir, f"ubicaciones_consolidado_{n}.pdf")
+        for n in range(2, 51)
+    ]
+    last_err: OSError | None = None
+    for dest in candidates:
+        try:
+            os.replace(tmp_path, dest)
+            return dest
+        except OSError as err:
+            last_err = err
+            if not _is_destination_locked(err):
+                break
+
+    with contextlib.suppress(OSError):
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+    if last_err is not None and _is_destination_locked(last_err):
+        raise _consolidated_pdf_permission_error(base_path) from last_err
+    if last_err is not None:
+        raise last_err
+    raise _consolidated_pdf_permission_error(base_path)
+
+
 def handle_generar_ubicaciones(payload: dict) -> dict:
     try:
         excel_path = payload.get("excelPath")
@@ -1144,18 +1215,9 @@ def handle_generar_ubicaciones(payload: dict) -> dict:
                     else:
                         fallidos += 1
 
+        consolidated_path: str | None = None
         if consolidado and consolidated_images:
-            consolidated_path = os.path.join(output_dir, "ubicaciones_consolidado.pdf")
-            # Save first image, append the rest as additional pages
-            first_img = consolidated_images[0]
-            append_imgs = consolidated_images[1:] if len(consolidated_images) > 1 else []
-            first_img.save(
-                consolidated_path,
-                "PDF",
-                resolution=300.0,
-                save_all=True,
-                append_images=append_imgs,
-            )
+            consolidated_path = _save_consolidated_pdf(consolidated_images, output_dir)
             logger.info(f"PDF consolidado generado: {consolidated_path} ({generados} paginas)")
 
         return {
@@ -1165,6 +1227,7 @@ def handle_generar_ubicaciones(payload: dict) -> dict:
                 "fallidos": fallidos,
                 "outputDir": output_dir,
                 "consolidado": consolidado,
+                "consolidatedPath": consolidated_path,
             },
         }
     except Exception as e:

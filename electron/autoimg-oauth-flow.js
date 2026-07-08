@@ -124,14 +124,9 @@ function startCallbackServer(port, { onCode, onDenied, onTimeout }) {
   });
 }
 
-async function waitForOAuthCallback(port, handlers) {
-  await startCallbackServer(port, handlers);
-}
-
 module.exports = {
   findAvailablePort,
   startCallbackServer,
   stopCallbackServer,
-  waitForOAuthCallback,
   FLOW_TIMEOUT_MS,
 };

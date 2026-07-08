@@ -36,4 +36,22 @@ describe('UbicacionesView ResultPanel', () => {
     expect(screen.getByText('1 PDF consolidado')).toBeInTheDocument();
     expect(screen.getByText('4 páginas')).toBeInTheDocument();
   });
+
+  it('shows consolidatedPath filename when fallback name was used', () => {
+    render(
+      <ResultPanel
+        result={{
+          success: true,
+          data: {
+            generados: 2,
+            fallidos: 0,
+            consolidado: true,
+            consolidatedPath: 'C:\\salida\\ubicaciones_consolidado_2.pdf',
+          },
+        }}
+        outputDir={outputDir}
+      />,
+    );
+    expect(screen.getByText(/ubicaciones_consolidado_2\.pdf/)).toBeInTheDocument();
+  });
 });

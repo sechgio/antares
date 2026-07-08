@@ -1,5 +1,6 @@
 """Tests para el provider de mapas estáticos (reemplazo de Playwright)."""
 
+import os
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
@@ -343,6 +344,60 @@ def test_handle_generar_ubicaciones_applies_custom_styles_and_map_opts(
     assert map_opts["provider"] == "osm"
     assert map_opts["zoom"] == 16
     assert custom_styles == styles
+
+
+def test_save_consolidated_pdf_falls_back_when_default_locked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Si ubicaciones_consolidado.pdf está bloqueado, guardar en nombre alternativo."""
+    images = [Image.new("RGB", (10, 10), (1, 2, 3))]
+    original_replace = os.replace
+
+    def fake_replace(src: str, dst: str) -> None:
+        if dst.endswith("ubicaciones_consolidado.pdf"):
+            raise PermissionError(13, "Permission denied", dst)
+        original_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", fake_replace)
+
+    saved_path = ub._save_consolidated_pdf(images, str(tmp_path))
+
+    assert saved_path.endswith("ubicaciones_consolidado_2.pdf")
+    assert (tmp_path / "ubicaciones_consolidado_2.pdf").is_file()
+
+
+def test_save_consolidated_pdf_falls_back_on_windows_sharing_violation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """WinError 32 (archivo en uso) también debe probar ubicaciones_consolidado_2.pdf."""
+    images = [Image.new("RGB", (10, 10), (1, 2, 3))]
+    original_replace = os.replace
+
+    def fake_replace(src: str, dst: str) -> None:
+        if dst.endswith("ubicaciones_consolidado.pdf"):
+            err = OSError(0, "The process cannot access the file")
+            err.winerror = 32  # type: ignore[attr-defined]
+            raise err
+        original_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", fake_replace)
+
+    saved_path = ub._save_consolidated_pdf(images, str(tmp_path))
+
+    assert saved_path.endswith("ubicaciones_consolidado_2.pdf")
+    assert (tmp_path / "ubicaciones_consolidado_2.pdf").is_file()
+
+
+def test_save_consolidated_pdf_raises_clear_error_when_all_paths_locked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    def always_denied(_src: str, _dst: str) -> None:
+        raise PermissionError(13, "Permission denied", _dst)
+
+    monkeypatch.setattr(os, "replace", always_denied)
+
+    with pytest.raises(PermissionError, match="Cierra el archivo"):
+        ub._save_consolidated_pdf([Image.new("RGB", (10, 10))], str(tmp_path))
 
 
 def test_preview_composed_cache_differs_by_formato() -> None:

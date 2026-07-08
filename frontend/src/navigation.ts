@@ -1,4 +1,5 @@
 export const TAB_DEFINITIONS = [
+  { id: 'espacios', label: 'Espacios', commandLabel: 'Espacios', shortcut: 'Ctrl+Shift+E', shortcutKey: 'e', shortcutShift: true, fullBleed: true },
   { id: 'convert', label: 'Conversión', shortcut: 'Ctrl+1', shortcutKey: '1', fullBleed: false },
   { id: 'formatos', label: 'Formatos PDF', shortcut: 'Ctrl+3', shortcutKey: '3', fullBleed: true },
   { id: 'sellador', label: 'Sellador', shortcut: 'Ctrl+Shift+S', shortcutKey: 's', shortcutShift: true, fullBleed: true },
