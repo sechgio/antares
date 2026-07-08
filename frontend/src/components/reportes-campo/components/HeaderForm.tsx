@@ -1,8 +1,17 @@
 import React, { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Variants } from 'framer-motion';
-import { ChevronDown, Upload, X, FileText, MapPin, Briefcase, Image as ImageIcon } from 'lucide-react';
+import { ChevronDown, Upload, X, FileText, MapPin, Briefcase, Image as ImageIcon, Minus, Plus, RotateCcw } from 'lucide-react';
 import type { FieldDef, LogoData, ReportTypeConfig } from '../types';
+import {
+    DEFAULT_TITULO_COLOR,
+    DEFAULT_TITULO_SIZE_PX,
+    TITULO_COLOR_KEY,
+    TITULO_SIZE_KEY,
+    TITULO_SIZE_OPTIONS,
+    resolveTituloStyle,
+    stepTituloSize,
+} from '../utils/tituloStyle';
 
 interface HeaderFormProps {
     config: ReportTypeConfig;
@@ -101,6 +110,12 @@ export default function HeaderForm({
 
     const generalesTotal = (tituloField ? 1 : 0) + otherGenerales.length;
     const generalesFilled = filledCount(generalesFields?.fields ?? []);
+    const tituloStyle = resolveTituloStyle(header);
+    const tituloStyleIsCustom =
+        tituloStyle.fontSizePx !== DEFAULT_TITULO_SIZE_PX || tituloStyle.color !== DEFAULT_TITULO_COLOR;
+    const sizePresets = TITULO_SIZE_OPTIONS as readonly number[];
+    const canDecreaseSize = tituloStyle.fontSizePx > sizePresets[0];
+    const canIncreaseSize = tituloStyle.fontSizePx < sizePresets[sizePresets.length - 1];
 
     return (
         <>
@@ -132,6 +147,75 @@ export default function HeaderForm({
                                             onChange={(e) => onFieldChange(tituloField.key, e.target.value)}
                                             placeholder={config.defaultTitulo}
                                         />
+                                        <div className="rcampo-titulo-toolbar" data-testid="titulo-style-controls">
+                                            <div className="rcampo-titulo-stepper" title="Tamaño del título">
+                                                <button
+                                                    type="button"
+                                                    className="rcampo-titulo-step"
+                                                    disabled={!canDecreaseSize}
+                                                    aria-label="Reducir tamaño del título"
+                                                    onClick={() =>
+                                                        onFieldChange(
+                                                            TITULO_SIZE_KEY,
+                                                            String(stepTituloSize(tituloStyle.fontSizePx, -1)),
+                                                        )
+                                                    }
+                                                >
+                                                    <Minus size={11} strokeWidth={2.5} />
+                                                </button>
+                                                <span className="rcampo-titulo-size-value" aria-live="polite">
+                                                    {tituloStyle.fontSizePx}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    className="rcampo-titulo-step"
+                                                    disabled={!canIncreaseSize}
+                                                    aria-label="Aumentar tamaño del título"
+                                                    onClick={() =>
+                                                        onFieldChange(
+                                                            TITULO_SIZE_KEY,
+                                                            String(stepTituloSize(tituloStyle.fontSizePx, 1)),
+                                                        )
+                                                    }
+                                                >
+                                                    <Plus size={11} strokeWidth={2.5} />
+                                                </button>
+                                            </div>
+
+                                            <span className="rcampo-titulo-sep" aria-hidden="true" />
+
+                                            <label className="rcampo-titulo-chip rcampo-titulo-chip-color" title="Color del título">
+                                                <span
+                                                    className="rcampo-titulo-swatch"
+                                                    style={{ backgroundColor: tituloStyle.color }}
+                                                />
+                                                <input
+                                                    type="color"
+                                                    className="rcampo-titulo-color-native"
+                                                    value={tituloStyle.color}
+                                                    onChange={(e) => onFieldChange(TITULO_COLOR_KEY, e.target.value.toUpperCase())}
+                                                    aria-label="Color del título"
+                                                />
+                                            </label>
+
+                                            {tituloStyleIsCustom && (
+                                                <>
+                                                    <span className="rcampo-titulo-sep" aria-hidden="true" />
+                                                    <button
+                                                        type="button"
+                                                        className="rcampo-titulo-reset"
+                                                        title="Restablecer estilo"
+                                                        aria-label="Restablecer estilo del título"
+                                                        onClick={() => {
+                                                            onFieldChange(TITULO_SIZE_KEY, String(DEFAULT_TITULO_SIZE_PX));
+                                                            onFieldChange(TITULO_COLOR_KEY, DEFAULT_TITULO_COLOR);
+                                                        }}
+                                                    >
+                                                        <RotateCcw size={11} strokeWidth={2.25} />
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
                                     </div>
                                 )}
 
