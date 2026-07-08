@@ -64,17 +64,20 @@ describe('App', () => {
 
   it('can open Espacios tab', async () => {
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Espacios' }, {}, { timeout: 5000 }));
-    expect(await screen.findByText(/Organiza tu trabajo en espacios|Crea tu primer proyecto/i, {}, { timeout: 5000 })).toBeInTheDocument();
-  });
+    fireEvent.click(await screen.findByRole('button', { name: 'Espacios' }, { timeout: 5000 }));
+    // Lazy chunk + supabase bootstrap can take a moment under full-suite load.
+    expect(
+      await screen.findByRole('button', { name: /Crear primer espacio/i }, { timeout: 10000 }),
+    ).toBeInTheDocument();
+  }, 20000);
 
   it('keeps conversion empty-state actions visible before files are selected', async () => {
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Conversión' }, {}, { timeout: 5000 }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Conversión' }, { timeout: 5000 }));
     await waitFor(() => {
       expect(screen.getByText(/Arrastra imágenes o videos aquí/i)).toBeInTheDocument();
     }, { timeout: 8000 });
-    expect(await screen.findByRole('button', { name: /Seleccionar archivos/i }, {}, { timeout: 8000 })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Seleccionar archivos/i }, { timeout: 8000 })).toBeInTheDocument();
   });
 
   it('has sidebar with navigation buttons', () => {
@@ -85,7 +88,7 @@ describe('App', () => {
 
   it('opens Reportes de Campo from the sidebar', async () => {
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: /Reportes de Campo/i }, {}, { timeout: 5000 }));
+    fireEvent.click(await screen.findByRole('button', { name: /Reportes de Campo/i }, { timeout: 5000 }));
 
     expect(await screen.findByRole('heading', { name: /Paneles/i }, { timeout: 10000 })).toBeInTheDocument();
   }, 15000);
@@ -112,7 +115,7 @@ describe('App', () => {
 
   it('does not render the removed shared header for any tool', async () => {
     render(<App />);
-    await screen.findByRole('button', { name: 'Conversión' }, {}, { timeout: 5000 });
+    await screen.findByRole('button', { name: 'Conversión' }, { timeout: 5000 });
 
     for (const tab of TAB_DEFINITIONS) {
       fireEvent.click(screen.getByRole('button', { name: tab.label }));
