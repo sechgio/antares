@@ -23,7 +23,6 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
   const [connected, setConnected] = useState(false);
   const [email, setEmail] = useState('');
   const [authUrl, setAuthUrl] = useState('');
-  const [redirectUri, setRedirectUri] = useState('');
   const [awaitingAuth, setAwaitingAuth] = useState(false);
   const [sheetId, setSheetId] = useState('');
   const [sheetName, setSheetName] = useState('');
@@ -117,11 +116,9 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
     setLoading(true);
     setError('');
     setAuthUrl('');
-    setRedirectUri('');
     try {
-      const { url, redirect_uri } = await api.autoimgSheetsAuthUrl();
+      const { url } = await api.autoimgSheetsAuthUrl();
       setAuthUrl(url);
-      setRedirectUri(redirect_uri);
       setAwaitingAuth(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error de autenticación');
@@ -138,7 +135,6 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
     } finally {
       setAwaitingAuth(false);
       setAuthUrl('');
-      setRedirectUri('');
       setLoading(false);
     }
   };
@@ -147,10 +143,13 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
     setLoading(true);
     try {
       await api.autoimgSheetsAuthRevoke();
-      setSheetName('');
+      // Cerrar sesión: limpia UI. Sheet/carpetas de este usuario quedan en disco
+      // cifrados bajo su hash; se restauran al volver a conectar con el mismo Google.
       setEmail('');
+      setSheetId('');
+      setSheetName('');
+      setSheetNotice('');
       setAuthUrl('');
-      setRedirectUri('');
       setAwaitingAuth(false);
       await refreshStatus();
     } finally {
@@ -170,7 +169,7 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
       if (res.success) {
         setSheetName(res.name || sheetId);
         if (res.created_tabs?.length) {
-          setSheetNotice(`Se crearon pestañas: ${res.created_tabs.join(', ')}`);
+          setSheetNotice(`Pestañas creadas: ${res.created_tabs.join(', ')}`);
         }
         onSheetLinked?.();
       }
@@ -189,23 +188,20 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
         badge={oauthConfigured && !editingOAuth ? <StatusChip ok label="Listo" /> : undefined}
       >
         {oauthConfigured && !editingOAuth ? (
-          <div className="space-y-2">
-            <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-2">
-              <p className="text-[9px] uppercase tracking-wider text-[var(--text-muted)]">Client ID</p>
-              <p className="mt-0.5 truncate font-mono text-[10px] text-[var(--text-secondary)]">
-                {savedClientIdMasked}
-              </p>
-            </div>
+          <div className="flex items-center gap-2">
+            <p className="min-w-0 flex-1 truncate font-mono text-[10px] text-[var(--text-muted)]">
+              {savedClientIdMasked}
+            </p>
             <button
               type="button"
               onClick={() => {
                 setEditingOAuth(true);
                 setClientSecret('');
               }}
-              className="inline-flex items-center gap-1 text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)]"
+              className="inline-flex shrink-0 items-center gap-1 text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)]"
             >
               <Pencil size={10} />
-              Editar credenciales
+              Editar
             </button>
           </div>
         ) : (
@@ -224,7 +220,7 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
               placeholder="Client Secret"
               className={`${INPUT_SM_CLASS} font-mono`}
             />
-            <div className="flex gap-2 pt-0.5">
+            <div className="flex gap-2">
               <button
                 type="button"
                 onClick={handleSaveOAuth}
@@ -254,29 +250,27 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
         muted={!oauthConfigured}
       >
         {!oauthConfigured ? (
-          <p className="text-[10px] leading-relaxed text-[var(--text-muted)]">
-            Configura OAuth para continuar.
-          </p>
+          <p className="text-[10px] text-[var(--text-muted)]">Guarda OAuth primero.</p>
         ) : connected ? (
-          <div className="space-y-2">
-            <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-2">
-              <p className="truncate text-[11px] text-[var(--text-primary)]">{email || 'Conectado'}</p>
-            </div>
+          <div className="flex items-center gap-2">
+            <p className="min-w-0 flex-1 truncate text-[11px] text-[var(--text-primary)]">
+              {email || 'Conectado'}
+            </p>
             <button
               type="button"
               onClick={handleDisconnect}
               disabled={loading}
-              className="inline-flex items-center gap-1 text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)] disabled:opacity-50"
+              className="inline-flex shrink-0 items-center gap-1 text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)] disabled:opacity-50"
             >
               {loading ? <Loader2 size={10} className="animate-spin" /> : <LogOut size={10} />}
-              Cerrar sesión
+              Salir
             </button>
           </div>
         ) : awaitingAuth ? (
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
-              <Loader2 size={11} className="animate-spin shrink-0" />
-              Esperando autorización en el navegador…
+              <Loader2 size={11} className="shrink-0 animate-spin" />
+              Esperando autorización…
             </div>
             {authUrl && (
               <a
@@ -289,12 +283,6 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
                 Reabrir enlace
               </a>
             )}
-            {redirectUri && (
-              <p className="text-[10px] leading-relaxed text-[var(--text-muted)]">
-                URI de redirección:{' '}
-                <span className="break-all font-mono text-[var(--text-secondary)]">{redirectUri}</span>
-              </p>
-            )}
             <button
               type="button"
               onClick={handleCancelAuth}
@@ -305,34 +293,30 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
             </button>
           </div>
         ) : (
-          <div className="space-y-2">
-            <p className="text-[10px] leading-relaxed text-[var(--text-muted)]">
-              Autoriza Sheets y Drive desde el navegador. Si la sesión expiró o se revocó, vuelve a conectar aquí.
-            </p>
-            <button
-              type="button"
-              onClick={handleStartAuth}
-              disabled={loading}
-              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-[var(--border-medium)] bg-[var(--bg-base)] py-2 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-active)] hover:text-[var(--text-primary)] disabled:opacity-50"
-            >
-              {loading ? <Loader2 size={12} className="animate-spin" /> : <ExternalLink size={12} />}
-              Conectar con Google
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleStartAuth}
+            disabled={loading}
+            className="flex w-full items-center justify-center gap-1.5 rounded-md border border-[var(--border-medium)] bg-[var(--bg-base)] py-2 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-active)] hover:text-[var(--text-primary)] disabled:opacity-50"
+          >
+            {loading ? <Loader2 size={12} className="animate-spin" /> : <ExternalLink size={12} />}
+            Conectar con Google
+          </button>
         )}
       </SidebarSection>
 
       {connected && (
-        <SidebarSection icon={Sheet} title="Google Sheets" badge={sheetName ? <StatusChip ok label="Vinculado" /> : undefined}>
-          <p className="mb-2 text-[10px] leading-relaxed text-[var(--text-muted)]">
-            Sheet maestro del padrón (BD_IMG).
-          </p>
+        <SidebarSection
+          icon={Sheet}
+          title="Sheet"
+          badge={sheetName ? <StatusChip ok label="Vinculado" /> : undefined}
+        >
           <div className="flex gap-1.5">
             <input
               type="text"
               value={sheetId}
               onChange={(e) => setSheetId(e.target.value)}
-              placeholder="Sheet ID"
+              placeholder="URL o ID del Sheet"
               className={`${INPUT_SM_CLASS} min-w-0 flex-1 font-mono`}
             />
             <button
@@ -341,12 +325,9 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
               disabled={loading || !resolvedSheetId}
               className="shrink-0 rounded-md border border-[var(--border-medium)] px-2.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-active)] hover:text-[var(--text-primary)] disabled:opacity-40"
             >
-              Abrir
+              Vincular
             </button>
           </div>
-          {resolvedSheetId && sheetId.includes('/') && (
-            <p className="mt-1 truncate font-mono text-[10px] text-[var(--text-muted)]">ID: {resolvedSheetId}</p>
-          )}
           {sheetName && (
             <p className="mt-1.5 truncate text-[10px] text-[var(--text-muted)]" title={sheetName}>
               {sheetName}
@@ -356,7 +337,11 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
         </SidebarSection>
       )}
 
-      {error && <div className="px-4 pb-3.5"><InlineMessage tone="error">{error}</InlineMessage></div>}
+      {error && (
+        <div className="px-4 pb-3">
+          <InlineMessage tone="error">{error}</InlineMessage>
+        </div>
+      )}
     </>
   );
 }

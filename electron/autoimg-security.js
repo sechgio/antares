@@ -39,8 +39,21 @@ function assertNoSecretInObject(obj, path = 'root') {
   if (!obj || typeof obj !== 'object') return;
   for (const [key, value] of Object.entries(obj)) {
     const keyLower = key.toLowerCase();
-    if (keyLower.includes('secret') || keyLower === 'refresh_token' || keyLower === 'access_token') {
+    if (
+      keyLower.includes('secret')
+      || keyLower === 'refresh_token'
+      || keyLower === 'access_token'
+      || keyLower === 'client_secret'
+      || keyLower === 'id_token'
+      || keyLower === 'private_key'
+    ) {
       throw new Error(`Respuesta IPC expone dato sensible en ${path}.${key}`);
+    }
+    // No devolver email completo en objetos anidados de config (solo status de auth)
+    if (typeof value === 'string' && value.length > 40) {
+      if (/ya29\.|1\/\/|GOCSPX-/i.test(value)) {
+        throw new Error(`Respuesta IPC parece incluir token en ${path}.${key}`);
+      }
     }
     if (value && typeof value === 'object') {
       assertNoSecretInObject(value, `${path}.${key}`);

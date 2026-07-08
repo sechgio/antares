@@ -51,14 +51,24 @@ async function handleAutoimgCall(method, params = {}) {
         sheets.cancelBrowserOAuthFlow();
         return { handled: true, result: { success: true } };
 
-      case 'autoimg_sheets_auth_status':
-        return { handled: true, result: await sheets.getAuthStatus() };
+      case 'autoimg_sheets_auth_status': {
+        const result = await sheets.getAuthStatus();
+        assertNoSecretInObject(result);
+        return { handled: true, result };
+      }
 
       case 'autoimg_sheets_auth_revoke':
         return { handled: true, result: await sheets.revokeAuth() };
 
-      case 'autoimg_sheets_open':
-        return { handled: true, result: await sheets.openSpreadsheet(params.sheet_id || params.url || '') };
+      case 'autoimg_sheets_open': {
+        const result = await sheets.openSpreadsheet(params.sheet_id || params.url || '');
+        if (result?.sheet_id) {
+          try {
+            await engine.persistSheetIdConfig(result.sheet_id);
+          } catch { /* CONFIG tab optional */ }
+        }
+        return { handled: true, result };
+      }
 
       case 'autoimg_sheets_get_config':
         return { handled: true, result: await sheets.restorePersistedSheet() };
@@ -118,6 +128,18 @@ async function handleAutoimgCall(method, params = {}) {
 
       case 'autoimg_sync_from_sheet':
         return { handled: true, result: await engine.syncFromSheet() };
+
+      case 'autoimg_rename_export':
+        return {
+          handled: true,
+          result: await engine.renameExport({
+            dest_folder_id: params.dest_folder_id || params.folder_id || params.url || '',
+            only_completos: params.only_completos !== false,
+          }),
+        };
+
+      case 'autoimg_rename_dest_config':
+        return { handled: true, result: await engine.getRenameDestConfig() };
 
       case 'autoimg_arrastre_list':
         return { handled: true, result: await engine.listArrastre({ force: Boolean(params.force) }) };

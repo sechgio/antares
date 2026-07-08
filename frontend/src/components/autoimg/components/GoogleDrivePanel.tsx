@@ -74,28 +74,17 @@ export default function GoogleDrivePanel({ googleConnected, onFolderAdded }: Goo
     }
   };
 
-  const parsedId = parseDriveFolderId(folderInput);
+  // No placeholder section when disconnected — cuenta Google is the gate.
+  if (!googleConnected) return null;
 
-  if (!googleConnected) {
-    return (
-      <SidebarSection icon={HardDrive} title="Google Drive" muted>
-        <p className="text-[10px] leading-relaxed text-[var(--text-muted)]">
-          Conecta tu cuenta Google para acceder a carpetas compartidas.
-        </p>
-      </SidebarSection>
-    );
-  }
+  const parsedId = parseDriveFolderId(folderInput);
 
   return (
     <SidebarSection
       icon={HardDrive}
-      title="Google Drive"
+      title="Drive"
       badge={driveConnected ? <StatusChip ok label="Listo" /> : undefined}
     >
-      <p className="mb-2 text-[10px] leading-relaxed text-[var(--text-muted)]">
-        URL o ID de carpeta compartida a inventariar.
-      </p>
-
       <input
         type="text"
         value={folderInput}
@@ -105,7 +94,7 @@ export default function GoogleDrivePanel({ googleConnected, onFolderAdded }: Goo
           setError('');
           setSuccess('');
         }}
-        placeholder="URL o Folder ID"
+        placeholder="URL o ID de carpeta"
         className={`${INPUT_SM_CLASS} font-mono`}
       />
       {parsedId && folderInput.includes('/') && (
@@ -119,13 +108,13 @@ export default function GoogleDrivePanel({ googleConnected, onFolderAdded }: Goo
         className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-[var(--border-medium)] bg-[var(--bg-base)] py-1.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-active)] hover:text-[var(--text-primary)] disabled:opacity-40"
       >
         {loading ? <Loader2 size={12} className="animate-spin" /> : <FolderOpen size={12} />}
-        Verificar acceso
+        Verificar
       </button>
 
       {verified && (
         <div className="mt-2.5 space-y-2 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)] p-2.5">
           <div className="flex items-start gap-2">
-            <CheckCircle2 size={13} className="mt-0.5 shrink-0 text-emerald-400" />
+            <CheckCircle2 size={13} className="mt-0.5 shrink-0 text-[var(--accent-green)]" />
             <div className="min-w-0">
               <p className="truncate text-[11px] text-[var(--text-primary)]">{verified.name}</p>
               <p className="text-[10px] text-[var(--text-muted)]">
@@ -133,15 +122,6 @@ export default function GoogleDrivePanel({ googleConnected, onFolderAdded }: Goo
               </p>
             </div>
           </div>
-          {verified.sample_files.length > 0 && (
-            <ul className="space-y-0.5 border-t border-[var(--border-subtle)] pt-2">
-              {verified.sample_files.map((file) => (
-                <li key={file} className="truncate font-mono text-[10px] text-[var(--text-muted)]">
-                  {file}
-                </li>
-              ))}
-            </ul>
-          )}
           <input
             type="text"
             value={folderName}
@@ -156,7 +136,7 @@ export default function GoogleDrivePanel({ googleConnected, onFolderAdded }: Goo
             className="flex w-full items-center justify-center gap-1.5 rounded-md bg-[var(--accent-primary)] py-1.5 text-[11px] font-medium text-[var(--text-on-accent)] transition-colors hover:bg-[var(--accent-primary-hover)] disabled:opacity-40"
           >
             {adding ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
-            Agregar al registro
+            Agregar
           </button>
         </div>
       )}

@@ -1,8 +1,15 @@
 const sheets = require('./google-sheets-service');
 const drive = require('./google-drive-service');
 const { getMainWindow } = require('./window-manager');
-const { OperationCancelledError } = require('./autoimg-concurrency');
+const { OperationCancelledError, mapWithConcurrency } = require('./autoimg-concurrency');
 const { scanActiveFolders } = require('./autoimg-scan-folders');
+const { buildNisMetaMap, buildRenameJobs, uniqueDestinos } = require('./autoimg-rename');
+const {
+  saveLocalFolders,
+  loadLocalFolders,
+  saveRenameDest,
+  loadRenameDest,
+} = require('./autoimg-local-prefs');
 const {
   BD_IMG_HEADER,
   countSinSgioRows,
@@ -20,13 +27,15 @@ const ROWS_PER_RANGE = 50;
 const RANGES_PER_API_BATCH = 50;
 const CACHE_TTL_MS = 60_000;
 const AUTO_SYNC_CONFIG_KEY = 'AUTO_SYNC';
+const RENAME_DEST_CONFIG_KEY = 'RENAME_DEST_FOLDER_ID';
 const AUTO_SYNC_INTERVAL_MS = 5 * 60_000;
+const RENAME_COPY_CONCURRENCY = 3;
 
 let _autoSyncEnabled = false;
 let _autoSyncTimer = null;
 let _activeOperation = null;
 let _cancelRequested = false;
-const CANCELLABLE_OPERATIONS = new Set(['scan', 'scan_sync', 'sync_to']);
+const CANCELLABLE_OPERATIONS = new Set(['scan', 'scan_sync', 'sync_to', 'rename']);
 let _lastScanResults = null;
 let _cachedBdImg = [];
 let _cachedLogs = [];
@@ -234,36 +243,78 @@ async function _ensureSheetId() {
   if (sheets.getSheetId()) return sheets.getSheetId();
   await sheets.restorePersistedSheet();
   if (sheets.getSheetId()) return sheets.getSheetId();
-  const sheetId = await _readConfigValue('SHEET_ID');
+  // Fallbacks: CONFIG sheet (if another path left it) then local secure storage
+  let sheetId = '';
+  try {
+    sheetId = await _readConfigValue('SHEET_ID');
+  } catch { /* not linked yet */ }
+  if (!sheetId) {
+    const stored = sheets.getStoredSheetConfig?.() || {};
+    sheetId = stored.sheet_id || '';
+  }
   if (sheetId) {
     await sheets.openSpreadsheet(sheetId);
+    // Mirror into CONFIG for sheet-level portability
+    try {
+      await _upsertConfigValues({ SHEET_ID: sheetId });
+    } catch { /* optional */ }
     return sheetId;
   }
   throw new Error('No hay Sheet configurado. Abre un Sheet con su ID primero.');
+}
+
+function _persistFoldersLocal(folders) {
+  try {
+    saveLocalFolders(folders);
+  } catch { /* disk full / permissions — non-fatal */ }
 }
 
 async function listFolders({ force = false } = {}) {
   if (!force && _isCacheFresh()) {
     return { folders: _cachedFolders, cached: true };
   }
-  await _ensureSheetId();
-  const { values } = await sheets.readRange('FOLDERS!A:E');
-  _cachedFolders = parseFoldersFromValues(values);
-  _touchCache();
-  return { folders: _cachedFolders, cached: false };
+  try {
+    await _ensureSheetId();
+    const { values } = await sheets.readRange('FOLDERS!A:E');
+    _cachedFolders = parseFoldersFromValues(values);
+    _persistFoldersLocal(_cachedFolders);
+    _touchCache();
+    return { folders: _cachedFolders, cached: false };
+  } catch (err) {
+    // Offline / unauthenticated: serve last known local mirror so IDs are not "lost"
+    const local = loadLocalFolders();
+    if (local.length) {
+      _cachedFolders = local;
+      return { folders: local, cached: true, offline: true };
+    }
+    throw err;
+  }
 }
 
 async function addFolder({ name, folder_id, activo }) {
   await _ensureSheetId();
   const verified = await drive.assertDriveFolder(folder_id);
   const safeFolderId = verified.folder_id;
-  await sheets.appendRow('FOLDERS!A:E', [
-    name,
-    safeFolderId,
-    activo ? '✅' : '❌',
-    '',
-    0,
-  ]);
+  const folderName = name || verified.name || safeFolderId;
+
+  // Avoid duplicate rows for the same folder_id
+  const { values } = await sheets.readRange('FOLDERS!A:E');
+  const rows = values.length ? [...values] : [['NOMBRE', 'FOLDER_ID', 'ACTIVO', 'ULTIMO_SCAN', 'CANT_ARCHIVOS']];
+  let found = false;
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][1] || '').trim() === safeFolderId) {
+      rows[i][0] = folderName;
+      rows[i][2] = activo ? '✅' : '❌';
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    rows.push([folderName, safeFolderId, activo ? '✅' : '❌', '', 0]);
+  }
+  await sheets.writeRange('FOLDERS!A:E', rows);
+  _cachedFolders = parseFoldersFromValues(rows);
+  _persistFoldersLocal(_cachedFolders);
   _invalidateCache();
   return { success: true, folder_id: safeFolderId, drive_name: verified.name };
 }
@@ -276,6 +327,8 @@ async function removeFolder({ folder_id }) {
     if (values[i][1] !== folder_id) filtered.push(values[i]);
   }
   await sheets.writeRange('FOLDERS!A:E', filtered);
+  _cachedFolders = parseFoldersFromValues(filtered);
+  _persistFoldersLocal(_cachedFolders);
   _invalidateCache();
   return { success: true };
 }
@@ -290,6 +343,8 @@ async function toggleFolder({ folder_id, activo }) {
     }
   }
   await sheets.writeRange('FOLDERS!A:E', values);
+  _cachedFolders = parseFoldersFromValues(values);
+  _persistFoldersLocal(_cachedFolders);
   _invalidateCache();
   return { success: true };
 }
@@ -371,6 +426,7 @@ async function _applySheetBatch(batch) {
   _cachedLogs = batch['LOGS!A:E'] || [];
   _cachedBdArrastre = parseArrastreRows(batch['BD_ARRASTRE!A:E'] || []);
   _cachedFolders = parseFoldersFromValues(batch['FOLDERS!A:E'] || []);
+  if (_cachedFolders.length) _persistFoldersLocal(_cachedFolders);
   _touchCache();
 }
 
@@ -526,13 +582,15 @@ async function getStatus() {
 async function bootstrap({ refresh = true } = {}) {
   const auth = await sheets.getAuthStatus();
   const sheetConfig = sheets.getStoredSheetConfig();
+  // Prefer in-memory cache; if empty, surface locally persisted folders
+  const foldersForUi = _cachedFolders.length ? _cachedFolders : loadLocalFolders();
   const base = {
     connected: auth.authenticated,
     sheetName: sheetConfig.name || undefined,
     sheetId: sheetConfig.sheet_id || undefined,
     sheetLinked: sheetConfig.linked,
     autoSync: _autoSyncEnabled,
-    folders: _cachedFolders,
+    folders: foldersForUi,
     bdRows: _cachedBdImg,
     logRows: _cachedLogs,
     arrastre: _cachedBdArrastre,
@@ -592,6 +650,173 @@ async function setAutoSync(enabled) {
   return { enabled: _autoSyncEnabled };
 }
 
+/**
+ * Escanea carpetas activas, resuelve NIS→SGIO+DESTINO desde BD_IMG y copia
+ * las imágenes a subcarpetas (por DESTINO) bajo un parent raíz, con nombre
+ * {SGIO}_{n}.ext. El original no se mueve ni se borra.
+ *
+ * @param {string} dest_folder_id Parent raíz donde se crean carpetas DESTINO
+ */
+async function _renameExportCore({ dest_folder_id, only_completos = true } = {}) {
+  await _ensureSheetId();
+  _throwIfCancelled();
+
+  const rootMeta = await drive.assertDriveFolder(dest_folder_id);
+  const rootFolderId = rootMeta.folder_id;
+
+  // A=NIS, B=SGIO, C=DESTINO
+  const { values: bdValues } = await sheets.readRange('BD_IMG!A:C');
+  const nisMeta = buildNisMetaMap(bdValues);
+
+  // Re-scan to ensure file IDs + slots are fresh
+  const scan = await _scanAllCore();
+  _throwIfCancelled();
+
+  const { jobs, skipped } = buildRenameJobs(scan.results.nis_results, nisMeta, {
+    onlyCompletos: only_completos !== false,
+  });
+
+  // Pre-create / resolve DESTINO subfolders under root
+  const destinoNames = uniqueDestinos(jobs);
+  const destinoFolderIds = new Map();
+  const foldersCreated = [];
+  for (const name of destinoNames) {
+    _throwIfCancelled();
+    const sub = await drive.findOrCreateSubfolder(rootFolderId, name);
+    destinoFolderIds.set(name, sub.folder_id);
+    if (sub.created) foldersCreated.push(name);
+    emit('autoimg.rename.folder', {
+      name,
+      folder_id: sub.folder_id,
+      created: sub.created,
+    });
+  }
+
+  emit('autoimg.rename.plan', {
+    total_jobs: jobs.length,
+    skipped: skipped.length,
+    dest_folder_id: rootFolderId,
+    dest_name: rootMeta.name,
+    destinos: destinoNames.length,
+    folders_created: foldersCreated.length,
+  });
+
+  const copied = [];
+  const failed = [];
+  let done = 0;
+
+  await mapWithConcurrency(
+    jobs,
+    RENAME_COPY_CONCURRENCY,
+    async (job) => {
+      _throwIfCancelled();
+      const targetFolderId = destinoFolderIds.get(job.destino);
+      try {
+        if (!targetFolderId) {
+          throw new Error(`Sin carpeta para DESTINO "${job.destino}"`);
+        }
+        const res = await drive.copyFileToFolder(job.fileId, targetFolderId, job.toName);
+        copied.push({
+          nis: job.nis,
+          sgio: job.sgio,
+          destino: job.destino,
+          slot: job.slot,
+          from: job.fromName,
+          to: job.toName,
+          folder: job.destino,
+          file_id: res.id || '',
+        });
+      } catch (err) {
+        failed.push({
+          nis: job.nis,
+          sgio: job.sgio,
+          destino: job.destino,
+          from: job.fromName,
+          to: job.toName,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } finally {
+        done += 1;
+        emit('autoimg.rename.progress', {
+          current: done,
+          total: jobs.length,
+          last: `${job.destino}/${job.toName}`,
+        });
+      }
+    },
+    { shouldCancel: () => _cancelRequested },
+  );
+
+  await _upsertConfigValues({ [RENAME_DEST_CONFIG_KEY]: rootFolderId });
+  try {
+    saveRenameDest(rootFolderId, rootMeta.name);
+  } catch { /* local prefs best-effort */ }
+
+  const detail =
+    `Renombre SGIO → ${rootMeta.name}/{DESTINO}: ${copied.length} copiadas` +
+    (foldersCreated.length ? `, ${foldersCreated.length} carpeta(s) nuevas` : '') +
+    (failed.length ? `, ${failed.length} error(es)` : '') +
+    (skipped.length ? `, ${skipped.length} omitida(s)` : '');
+
+  try {
+    await sheets.appendRow('LOGS!A:E', [_now(), 'RENAME_SGIO', detail, '', '']);
+  } catch { /* LOGS optional */ }
+
+  emit('autoimg.rename.complete', {
+    copied: copied.length,
+    failed: failed.length,
+    skipped: skipped.length,
+    dest_folder_id: rootFolderId,
+    folders_created: foldersCreated.length,
+  });
+
+  return {
+    success: failed.length === 0,
+    dest_folder_id: rootFolderId,
+    dest_name: rootMeta.name,
+    destinos: destinoNames,
+    folders_created: foldersCreated,
+    copied,
+    failed,
+    skipped,
+    planned: jobs.length,
+    scan_summary: scan.summary,
+  };
+}
+
+async function persistSheetIdConfig(sheetId) {
+  const id = String(sheetId || '').trim();
+  if (!id) return { success: false };
+  await _upsertConfigValues({ SHEET_ID: id });
+  return { success: true };
+}
+
+async function renameExport(params = {}) {
+  // Persist root folder id immediately so a failed run still remembers the choice
+  if (params?.dest_folder_id) {
+    try {
+      saveRenameDest(String(params.dest_folder_id), '');
+    } catch { /* ignore */ }
+  }
+  return _runLocked('rename', () => _renameExportCore(params));
+}
+
+async function getRenameDestConfig() {
+  let folderId = '';
+  try {
+    folderId = (await _readConfigValue(RENAME_DEST_CONFIG_KEY)) || '';
+  } catch { /* sheet unavailable */ }
+  const local = loadRenameDest();
+  if (!folderId && local.folder_id) folderId = local.folder_id;
+  // Keep local mirror in sync when sheet has the value
+  if (folderId && folderId !== local.folder_id) {
+    try {
+      saveRenameDest(folderId, local.name || '');
+    } catch { /* ignore */ }
+  }
+  return { folder_id: folderId, name: local.name || '' };
+}
+
 module.exports = {
   listFolders,
   addFolder,
@@ -601,6 +826,9 @@ module.exports = {
   scanAndSync,
   syncToSheet,
   syncFromSheet,
+  renameExport,
+  getRenameDestConfig,
+  persistSheetIdConfig,
   getStatus,
   bootstrap,
   setAutoSync,

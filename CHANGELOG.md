@@ -5,6 +5,26 @@ Todas las versiones notables de ANTARES se documentan aquí.
 Formato basado en [Keep a Changelog](https://keepachangelog.com/),
 y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
+## [0.10.18] — 2026-07-08
+
+### Added
+- **AutoIMG**: Export de renombre NIS (7 dígitos) → SGIO (8 dígitos) con subcarpetas por columna DESTINO de BD_IMG; panel `Renombrar` y APIs `autoimg_rename_export` / `autoimg_rename_dest_config`.
+- **AutoIMG**: Aislamiento de datos por usuario Google (scope SHA-256 del email en `userData/autoimg/users/`).
+- **AutoIMG**: Preferencias locales por usuario (carpetas de escaneo y carpeta raíz de renombre) sin tokens ni secrets.
+- **Tests**: Suites de regresión para NIS, rename, local prefs y user scope.
+
+### Changed
+- **AutoIMG**: Parsing NIS más robusto (`6553447_1`, `6553447-3C`, etc.) y slots serializables para IPC.
+- **AutoIMG**: Sync engine endurecido (cache de carpetas/logs, RESUMEN desde filas BD_IMG fusionadas, cancelación de operaciones largas).
+- **AutoIMG**: UI simplificada — eliminado `SetupWizard`; paneles de auth, dashboard y sync alineados al flujo actual.
+- **Gitignore**: Exclusión de prefs/tokens AutoIMG y carpeta `autoimg/` local.
+
+### Fixed
+- **Ubicaciones**: Preview en modo manual restaura mapa al montar con lat/lon guardadas; spinner en primer fetch y refresh/retry sin romper export.
+- **Ubicaciones**: Retry de guardado consolidado ante WinError 32 (PDF lock en Windows).
+- **Espacios / Login**: Ignora fetches obsoletos; restaura tema de la app tras login.
+- **AutoIMG**: Invalidación de cache de carpetas/logs tras mutaciones; mirror local de FOLDERS offline.
+
 ## [0.10.17] — 2026-07-05
 
 ### Added

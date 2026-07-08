@@ -3,24 +3,23 @@ import {
   ClipboardList,
   FolderOpen,
   LayoutDashboard,
-  Radar,
   ScrollText,
   Table2,
+  Tag,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api, onNotify } from '../../api';
 import type { ArrastreEntry, AutoImgFolder, AutoImgStatus, AutoImgTab } from './types';
 import GoogleAuthPanel from './components/GoogleAuthPanel';
 import GoogleDrivePanel from './components/GoogleDrivePanel';
-import DashboardCards from './components/DashboardCards';
 import BdImgTable from './components/BdImgTable';
 import FolderMgmt from './components/FolderMgmt';
-import ScannerPanel from './components/ScannerPanel';
+import RenameExportPanel from './components/RenameExportPanel';
 import SyncPanel from './components/SyncPanel';
+import SyncActions from './components/SyncActions';
 import LogsViewer from './components/LogsViewer';
 import ArrastreViewer from './components/ArrastreViewer';
 import AutoImgSidebarHeader from './components/AutoImgSidebarHeader';
-import SetupWizard, { isSetupComplete } from './components/SetupWizard';
 import { SidebarShell } from './components/shared';
 
 const TABS: { id: AutoImgTab; label: string; icon: LucideIcon; hint: string }[] = [
@@ -28,7 +27,7 @@ const TABS: { id: AutoImgTab; label: string; icon: LucideIcon; hint: string }[] 
   { id: 'bdimg', label: 'Padrón', icon: Table2, hint: 'BD_IMG' },
   { id: 'arrastre', label: 'Arrastre', icon: ClipboardList, hint: 'Casos manuales' },
   { id: 'carpetas', label: 'Carpetas', icon: FolderOpen, hint: 'Fuentes Drive' },
-  { id: 'scan', label: 'Escaneo', icon: Radar, hint: 'Detectar imágenes' },
+  { id: 'renombrar', label: 'Renombrar', icon: Tag, hint: 'NIS → SGIO en carpeta destino' },
   { id: 'logs', label: 'Logs', icon: ScrollText, hint: 'Historial' },
 ];
 
@@ -59,15 +58,11 @@ export default function AutoIMGApp() {
   const [googleConnected, setGoogleConnected] = useState(false);
   const [bootstrapError, setBootstrapError] = useState('');
   const [globalError, setGlobalError] = useState('');
-  const [oauthConfigured, setOauthConfigured] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<{ error?: string; result?: string }>({});
 
   const loadBootstrap = useCallback(async (refresh = true) => {
     try {
-      const [data, oauth] = await Promise.all([
-        api.autoimgBootstrap(refresh),
-        api.autoimgOAuthConfigStatus(),
-      ]);
-      setOauthConfigured(oauth.configured);
+      const data = await api.autoimgBootstrap(refresh);
       setStatus(statusFromBootstrap(data));
       setBdRows(data.bdRows);
       setLogRows(data.logRows);
@@ -154,61 +149,54 @@ export default function AutoIMGApp() {
     loadBootstrap(true);
   }, [loadBootstrap]);
 
-  const setupProps = {
-    oauthConfigured,
-    connected: googleConnected,
-    sheetLinked: !!status?.sheetLinked,
-    folderCount: folders.length,
-    lastSync: status?.lastSync,
-    onRefresh: () => loadBootstrap(true),
-  };
-  const showSetupWizard = !isSetupComplete(setupProps);
-
   return (
     <div className="flex h-full flex-col overflow-hidden bg-[var(--bg-base)]">
-      {/* Top bar: brand + workspace nav */}
       <div className="flex h-12 shrink-0 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/80">
         <div className="flex w-[280px] min-w-[240px] shrink-0 items-center border-r border-[var(--border-subtle)] px-4">
           <AutoImgSidebarHeader
-            connected={!!status?.connected}
+            connected={!!status?.connected || googleConnected}
             sheetName={status?.sheetName}
-            lastSync={status?.lastSync}
           />
         </div>
-        <nav
-          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-3"
-          aria-label="Secciones de AutoIMG"
-        >
-          {TABS.map((tab) => {
-            const isActive = activeTab === tab.id;
-            const Icon = tab.icon;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                title={tab.hint}
-                className={`relative flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-[12px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)] ${
-                  isActive
-                    ? 'bg-[var(--bg-elevated)] font-medium text-[var(--text-primary)] shadow-[inset_0_0_0_1px_var(--border-medium)]'
-                    : 'text-[var(--text-muted)] hover:bg-[var(--bg-elevated)]/50 hover:text-[var(--text-secondary)]'
-                }`}
-              >
-                <Icon
-                  size={14}
-                  strokeWidth={isActive ? 2 : 1.75}
-                  className={isActive ? 'text-[var(--accent-primary-hover)]' : ''}
-                />
-                {tab.label}
-              </button>
-            );
-          })}
-        </nav>
+        <div className="flex min-w-0 flex-1 items-center">
+          <nav
+            className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-3"
+            aria-label="Secciones de AutoIMG"
+          >
+            {TABS.map((tab) => {
+              const isActive = activeTab === tab.id;
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  title={tab.hint}
+                  className={`relative flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-[12px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)] ${
+                    isActive
+                      ? 'bg-[var(--bg-elevated)] font-medium text-[var(--text-primary)] shadow-[inset_0_0_0_1px_var(--border-medium)]'
+                      : 'text-[var(--text-muted)] hover:bg-[var(--bg-elevated)]/50 hover:text-[var(--text-secondary)]'
+                  }`}
+                >
+                  <Icon
+                    size={14}
+                    strokeWidth={isActive ? 2 : 1.75}
+                    className={isActive ? 'text-[var(--accent-primary-hover)]' : ''}
+                  />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </nav>
+          <SyncActions
+            onSynced={handleSynced}
+            onStatus={setSyncStatus}
+          />
+        </div>
       </div>
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {/* Connection rail */}
-        <aside className="flex w-[280px] min-w-[240px] shrink-0 flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-surface)]/30">
+        <aside className="flex w-[280px] min-w-[240px] shrink-0 flex-col border-r border-[var(--border-subtle)]">
           <div className="flex-1 overflow-y-auto px-3 py-4">
             <SidebarShell title="Conexión">
               <GoogleAuthPanel
@@ -220,20 +208,6 @@ export default function AutoIMGApp() {
                 onFolderAdded={refreshAfterFolderChange}
               />
             </SidebarShell>
-
-            {status?.carpetasActivas != null && (
-              <div className="mt-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3.5 py-3">
-                <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]">
-                  Fuentes activas
-                </p>
-                <p className="mt-1 text-[20px] font-light tabular-nums tracking-tight text-[var(--text-primary)]">
-                  {status.carpetasActivas}
-                  <span className="ml-1.5 text-[11px] font-normal text-[var(--text-muted)]">
-                    carpeta{status.carpetasActivas === 1 ? '' : 's'}
-                  </span>
-                </p>
-              </div>
-            )}
           </div>
         </aside>
 
@@ -243,22 +217,19 @@ export default function AutoIMGApp() {
               {bootstrapError || globalError}
             </div>
           )}
-          {showSetupWizard && <SetupWizard {...setupProps} />}
           {activeTab === 'dashboard' && (
-            <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden">
-              <DashboardCards
+            <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
+              <SyncPanel
+                autoSync={status?.autoSync ?? false}
+                onAutoSyncChange={(enabled) => setStatus((s) => (s ? { ...s, autoSync: enabled } : s))}
+                lastSync={status?.lastSync}
+                sheetName={status?.sheetName}
                 total={status?.totalNis}
                 completos={status?.completos}
                 faltantes={status?.faltantes}
                 sobrantes={status?.sobrantes}
                 sinSgio={status?.sinSgio}
-              />
-              <SyncPanel
-                autoSync={status?.autoSync ?? false}
-                onAutoSyncChange={(enabled) => setStatus((s) => (s ? { ...s, autoSync: enabled } : s))}
-                onSynced={handleSynced}
-                lastSync={status?.lastSync}
-                sheetName={status?.sheetName}
+                statusMessage={syncStatus}
               />
               <div className="min-h-0 flex-1">
                 <BdImgTable rows={bdRows} />
@@ -278,7 +249,9 @@ export default function AutoIMGApp() {
           {activeTab === 'carpetas' && (
             <FolderMgmt folders={folders} onFoldersChange={refreshAfterFolderChange} />
           )}
-          {activeTab === 'scan' && <ScannerPanel onSynced={handleSynced} />}
+          {activeTab === 'renombrar' && (
+            <RenameExportPanel onDone={() => loadBootstrap(true)} />
+          )}
           {activeTab === 'logs' && (
             <div className="h-full">
               <LogsViewer rows={logRows} onRefresh={refreshLogs} />

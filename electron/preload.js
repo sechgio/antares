@@ -53,7 +53,12 @@ try {
   contextBridge.exposeInMainWorld('electronAPI', {
     invoke: (method, params = {}) => {
       if (typeof method !== 'string' || !ALLOWED_RENDERER_METHODS.has(method)) {
-        return Promise.reject(new Error(`IPC method not allowed: ${method}`));
+        // Main process is the real gate; this preload copy is fixed at window create.
+        // Stale Electron processes (frontend HMR without full app restart) surface here.
+        const hint = method.startsWith('autoimg_')
+          ? ' Cierra todas las ventanas de Antares y vuelve a abrir la app (el preload IPC no se recarga con Vite).'
+          : '';
+        return Promise.reject(new Error(`IPC method not allowed: ${method}.${hint}`));
       }
       return ipcRenderer.invoke('ipc-call', method, params);
     },

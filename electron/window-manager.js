@@ -30,7 +30,11 @@ function createWindow(isDev) {
   // trusted data into a sandboxed preload. ipc-methods.js stays the single
   // source of truth (still required by the main-process ipc-router, which is
   // the real security boundary).
-  const allowedMethodsArg = `--allowed-ipc-methods=${JSON.stringify([...ALLOWED_RENDERER_METHODS])}`;
+  // Re-resolve from the shared module so createWindow always gets the current Set
+  // (including methods added after this file was first required in long-lived tooling).
+  const { ALLOWED_RENDERER_METHODS: allowedNow } = require('./ipc-methods');
+  const allowedList = [...allowedNow];
+  const allowedMethodsArg = `--allowed-ipc-methods=${JSON.stringify(allowedList)}`;
   // `app.isPackaged` marcador fiable de build empaquetado, inyectado al preload
   // (sandbox: true => sin acceso a `app` ni `__dirname` allá).
   const isPackagedArg = `--app-is-packaged=${isDev ? '0' : '1'}`;

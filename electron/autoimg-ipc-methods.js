@@ -24,6 +24,8 @@ const AUTOIMG_METHODS = new Set([
   'autoimg_scan_and_sync',
   'autoimg_sync_to_sheet',
   'autoimg_sync_from_sheet',
+  'autoimg_rename_export',
+  'autoimg_rename_dest_config',
   'autoimg_arrastre_list',
   'autoimg_logs_list',
   'autoimg_bootstrap',

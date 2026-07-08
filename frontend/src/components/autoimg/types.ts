@@ -1,4 +1,4 @@
-export type AutoImgTab = 'dashboard' | 'bdimg' | 'arrastre' | 'carpetas' | 'scan' | 'logs';
+export type AutoImgTab = 'dashboard' | 'bdimg' | 'arrastre' | 'carpetas' | 'renombrar' | 'logs';
 
 export interface ArrastreEntry {
   nis: string;

@@ -1,18 +1,33 @@
 const { readSecureJson, writeSecureJson, clearSecureJson } = require('./autoimg-secure-storage');
+const { scopedFilename, scopedNamespace, getActiveUserKey } = require('./autoimg-user-scope');
 
-const FILE = 'autoimg-tokens.json';
-const NS = 'tokens';
+function _paths() {
+  return {
+    file: scopedFilename('tokens.json'),
+    ns: scopedNamespace('tokens'),
+  };
+}
 
 function loadTokens() {
-  return readSecureJson(FILE, NS);
+  // Solo el scope del usuario activo (o anonymous). Sin fallback a legacy
+  // para no mezclar tokens entre cuentas.
+  const { file, ns } = _paths();
+  return readSecureJson(file, ns);
 }
 
 function saveTokens(tokens) {
-  writeSecureJson(FILE, NS, tokens);
+  const safe = {
+    access_token: tokens?.access_token,
+    refresh_token: tokens?.refresh_token,
+    expiry_date: tokens?.expiry_date,
+  };
+  const { file, ns } = _paths();
+  writeSecureJson(file, ns, safe);
 }
 
 function clearTokens() {
-  clearSecureJson(FILE);
+  const { file } = _paths();
+  clearSecureJson(file);
 }
 
 module.exports = { loadTokens, saveTokens, clearTokens };

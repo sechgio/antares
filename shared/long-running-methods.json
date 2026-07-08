@@ -24,5 +24,6 @@
   "autoimg_scan_all",
   "autoimg_scan_and_sync",
   "autoimg_sync_to_sheet",
-  "autoimg_sync_from_sheet"
+  "autoimg_sync_from_sheet",
+  "autoimg_rename_export"
 ]

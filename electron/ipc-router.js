@@ -207,7 +207,10 @@ async function _callBackend(method, params) {
 function registerIpcHandlers() {
   ipcMain.handle('ipc-call', async (event, method, params) => {
     if (typeof method !== 'string' || !ALLOWED_RENDERER_METHODS.has(method)) {
-      throw new Error(`IPC method not allowed: ${method}`);
+      const hint = typeof method === 'string' && method.startsWith('autoimg_')
+        ? ' Reinicia Antares por completo para recargar la allowlist IPC de Electron.'
+        : '';
+      throw new Error(`IPC method not allowed: ${method}.${hint}`);
     }
 
     // Dialog / native methods are handled in Electron main without touching Python.

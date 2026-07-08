@@ -1,9 +1,10 @@
 const crypto = require('crypto');
 const { loadTokens, saveTokens, clearTokens } = require('./autoimg-token-storage');
-const { loadSheetConfig, saveSheetConfig, clearSheetConfig } = require('./autoimg-sheet-storage');
+const { loadSheetConfig, saveSheetConfig } = require('./autoimg-sheet-storage');
 const {
   readSecureJson,
   writeSecureJson,
+  clearSecureJson,
   migratePlaintextJson,
 } = require('./autoimg-secure-storage');
 const { maskClientId } = require('./autoimg-security');
@@ -14,13 +15,20 @@ const {
   startCallbackServer,
   stopCallbackServer,
 } = require('./autoimg-oauth-flow');
+const {
+  setActiveUser,
+  clearActiveUser,
+  getActiveUserPublic,
+  maskEmail,
+} = require('./autoimg-user-scope');
 
 const OAUTH_CONFIG_FILE = 'autoimg-oauth-config.json';
 const OAUTH_CONFIG_NS = 'oauth';
 
 const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
-  'https://www.googleapis.com/auth/drive.readonly',
+  // Full Drive (not readonly): required to copy/rename images into a destination folder.
+  'https://www.googleapis.com/auth/drive',
   'https://www.googleapis.com/auth/userinfo.email',
 ].join(' ');
 
@@ -281,8 +289,32 @@ async function exchangeCode(code, redirectUri) {
       'Google no devolvió un refresh token. Revoca el acceso de la app en myaccount.google.com/permissions y vuelve a conectar.',
     );
   }
+  // Save under anonymous scope first, then bind to Google email (per-user storage).
   saveTokens(tokens);
+  await _bindSessionToGoogleUser(tokens);
   return tokens;
+}
+
+/** Resuelve email de Google y mueve tokens/prefs al almacén de ese usuario. */
+async function _bindSessionToGoogleUser(tokens) {
+  if (!tokens?.access_token) return null;
+  try {
+    const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    });
+    if (!res.ok) return null;
+    const info = await res.json();
+    const email = info?.email;
+    if (!email) return null;
+    setActiveUser(email);
+    // Re-write tokens under user-scoped path; wipe anonymous leftover.
+    saveTokens(tokens);
+    clearSecureJson('autoimg/anonymous/tokens.json');
+    clearSecureJson('autoimg-tokens.json');
+    return email;
+  } catch {
+    return null;
+  }
 }
 
 async function getAuthStatus() {
@@ -296,7 +328,21 @@ async function getAuthStatus() {
   try {
     const res = await _apiFetch('https://www.googleapis.com/oauth2/v2/userinfo');
     const info = await res.json();
-    return { authenticated: true, email: info.email || undefined };
+    const email = info.email || undefined;
+    if (email) {
+      setActiveUser(email);
+      // Ensure tokens live under this user (covers process restart with only tokens loaded)
+      saveTokens({
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        expiry_date: tokens.expiry_date,
+      });
+    }
+    return {
+      authenticated: true,
+      email,
+      email_masked: email ? maskEmail(email) : undefined,
+    };
   } catch {
     return { authenticated: false };
   }
@@ -308,8 +354,9 @@ async function revokeAuth() {
   if (tokens?.access_token) {
     await fetch(`https://oauth2.googleapis.com/revoke?token=${tokens.access_token}`, { method: 'POST' }).catch(() => {});
   }
+  // Solo tokens del usuario activo. Sheet/carpetas quedan en autoimg/users/<hash>/.
   clearTokens();
-  clearSheetConfig();
+  clearActiveUser();
   _sheetId = null;
   _sheetMeta = null;
   return { success: true };
@@ -397,6 +444,7 @@ async function openSpreadsheet(rawId) {
   const name = data.properties?.title || '';
   _sheetId = sheetId;
   _sheetMeta = data;
+  // Persist locally — survives logout / token revoke / app restart
   saveSheetConfig(sheetId, name);
   const { created_tabs } = await ensureAutoImgTabs();
   return {
@@ -549,4 +597,5 @@ module.exports = {
   ensureAutoImgTabs,
   isInvalidGrantResponse,
   REAUTH_REQUIRED_MESSAGE,
+  getActiveUserPublic,
 };

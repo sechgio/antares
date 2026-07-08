@@ -171,9 +171,9 @@ export const INPUT_SM_CLASS =
 
 export function SidebarShell({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
-      <div className="border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)]/40 px-4 py-2.5">
-        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">
+    <div className="overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+      <div className="border-b border-[var(--border-subtle)] px-3.5 py-2">
+        <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]">
           {title}
         </p>
       </div>
@@ -196,9 +196,9 @@ export function SidebarSection({
   children: ReactNode;
 }) {
   return (
-    <section className={`px-4 py-3.5 ${muted ? 'opacity-55' : ''}`}>
-      <div className="mb-2.5 flex items-center gap-2">
-        <Icon size={13} className="shrink-0 text-[var(--text-muted)]" strokeWidth={1.75} />
+    <section className={`px-3.5 py-3 ${muted ? 'opacity-50' : ''}`}>
+      <div className="mb-2 flex items-center gap-2">
+        <Icon size={12} className="shrink-0 text-[var(--text-muted)]" strokeWidth={1.75} />
         <span className="text-[11px] font-medium text-[var(--text-secondary)]">{title}</span>
         {badge && <span className="ml-auto shrink-0">{badge}</span>}
       </div>
@@ -256,11 +256,7 @@ export function CoverageRail({
   sinSgio?: number;
 }) {
   if (total <= 0) {
-    return (
-      <div className="h-2 overflow-hidden rounded-full bg-[var(--bg-elevated)] ring-1 ring-inset ring-[var(--border-subtle)]">
-        <div className="h-full w-0" />
-      </div>
-    );
+    return <div className="h-px w-full bg-[var(--border-medium)]" aria-hidden />;
   }
 
   const segments = [
@@ -272,14 +268,14 @@ export function CoverageRail({
 
   return (
     <div
-      className="flex h-2 overflow-hidden rounded-full bg-[var(--bg-elevated)] ring-1 ring-inset ring-[var(--border-subtle)]"
+      className="flex h-1 w-full overflow-hidden rounded-full bg-[var(--border-subtle)]"
       role="img"
       aria-label={`Cobertura: ${completos} completos, ${faltantes} faltantes, ${sobrantes} sobrantes`}
     >
       {segments.map((seg) => (
         <div
           key={seg.key}
-          className="h-full min-w-[2px] transition-all duration-500"
+          className="h-full min-w-px transition-[width] duration-500 ease-out"
           style={{
             width: `${(seg.value / total) * 100}%`,
             backgroundColor: seg.color,
