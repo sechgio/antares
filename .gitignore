@@ -71,6 +71,7 @@ AGENTS.md
 CLAUDE.md
 .githooks/*
 !.githooks/pre-push
+!.githooks/pre-commit
 docs/
 
 # Ruff cache

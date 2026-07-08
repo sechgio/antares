@@ -13,6 +13,8 @@ interface SpaceSidebarProps {
   onAddProyecto: () => void;
   onDeleteEspacio: (id: string) => void;
   onDeleteProyecto: (id: string) => void;
+  onRenameEspacio: (id: string, name: string) => void;
+  onRenameProyecto: (id: string, name: string) => void;
   onEspacioColorChange: (id: string, color: string) => void;
   onProyectoColorChange: (id: string, color: string) => void;
 }
@@ -28,11 +30,13 @@ export default function SpaceSidebar({
   onAddProyecto,
   onDeleteEspacio,
   onDeleteProyecto,
+  onRenameEspacio,
+  onRenameProyecto,
   onEspacioColorChange,
   onProyectoColorChange,
 }: SpaceSidebarProps) {
   return (
-    <aside className="flex h-full w-60 shrink-0 flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
+    <aside className="flex h-full min-h-0 w-60 shrink-0 flex-col overflow-hidden border-r border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
       <div className="shrink-0 border-b border-[var(--border-subtle)] px-2.5 py-2.5">
         <ul className="flex flex-col gap-1.5">
           {espacios.map((espacio, index) => (
@@ -44,7 +48,9 @@ export default function SpaceSidebar({
               isActive={activeEspacioId === espacio.id}
               onSelect={() => onSelectEspacio(espacio.id)}
               onColorChange={(color) => onEspacioColorChange(espacio.id, color)}
+              onRename={(name) => onRenameEspacio(espacio.id, name)}
               onDelete={() => onDeleteEspacio(espacio.id)}
+              renameLabel={`Renombrar espacio ${espacio.name}`}
               deleteLabel={`Eliminar espacio ${espacio.name}`}
             />
           ))}
@@ -101,7 +107,9 @@ export default function SpaceSidebar({
               isFavorite={proyecto.is_favorite}
               onSelect={() => onSelectProyecto(proyecto.id)}
               onColorChange={(color) => onProyectoColorChange(proyecto.id, color)}
+              onRename={(name) => onRenameProyecto(proyecto.id, name)}
               onDelete={() => onDeleteProyecto(proyecto.id)}
+              renameLabel={`Renombrar proyecto ${proyecto.name}`}
               deleteLabel={`Eliminar proyecto ${proyecto.name}`}
             />
           ))}

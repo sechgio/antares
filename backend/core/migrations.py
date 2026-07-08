@@ -1,4 +1,4 @@
-"""Versioned, idempotent SQLite schema migrations for ANTARES.
+"""Versioned, idempotent SQLite schema migrations for Antares.
 
 Each migration is identified by a unique string id (e.g. ``"001_historial_baseline"``).
 Applied migrations are recorded in the ``_schema_migrations`` table. Re-running a

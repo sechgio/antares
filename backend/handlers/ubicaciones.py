@@ -113,7 +113,7 @@ _XYZ_PROVIDERS = {
     "thunderforest": "https://tile.thunderforest.com/atlas/{z}/{x}/{y}.png?apikey={key}"
 }
 _GOOGLE_STATIC_URL = "https://maps.googleapis.com/maps/api/staticmap"
-_HTTP_USER_AGENT = "ANTARES/0.10 (ubicaciones static map; +https://github.com/sechgio/antares)"
+_HTTP_USER_AGENT = "Antares/0.10 (ubicaciones static map; +https://github.com/sechgio/antares)"
 _HTTP_TIMEOUT = 12
 
 

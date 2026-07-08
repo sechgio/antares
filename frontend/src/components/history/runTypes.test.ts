@@ -19,6 +19,7 @@ const BACKEND_RUN_TYPES = [
   'reporte_campo',
   'panel_aviso_corte',
   'informe_tecnico',
+  'ficha_tecnica',
 ];
 
 function makeRun(runType: string, overrides: Partial<HistoryRunRow> = {}): HistoryRunRow {

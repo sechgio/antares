@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Regenera todos los assets de marca de ANTARES desde los maestros en antares/.
+Regenera todos los assets de marca de Antares desde los maestros en antares/.
 
 Maestros:
   antares/favicon1.png  -> logo oscuro
@@ -26,7 +26,7 @@ from PIL import Image
 
 # ── Rutas ──────────────────────────────────────────────────────────────────
 PROJECT = Path(__file__).resolve().parent.parent
-ANTARES = PROJECT / "antares"
+BRAND_DIR = PROJECT / "antares"
 PUBLIC = PROJECT / "frontend" / "public"
 ASSETS = PROJECT / "assets"
 ICONS_PNG = ASSETS / "icons" / "png"
@@ -80,7 +80,7 @@ def monogram_svg(bg: str, fg: str) -> str:
         f'<svg xmlns="http://www.w3.org/2000/svg" '
         f'viewBox="0 0 {MONOGRAM_CANVAS} {MONOGRAM_CANVAS}" '
         f'width="{MONOGRAM_CANVAS}" height="{MONOGRAM_CANVAS}" '
-        f'role="img" aria-label="ANTARES app icon">\n'
+        f'role="img" aria-label="Antares app icon">\n'
         f'  <rect x="0" y="0" width="{MONOGRAM_CANVAS}" height="{MONOGRAM_CANVAS}" '
         f'rx="{CORNER_RADIUS}" ry="{CORNER_RADIUS}" fill="{bg}"/>\n'
         f'  <text x="{MONOGRAM_CANVAS // 2}" y="{FONT_Y}" '
@@ -122,7 +122,7 @@ def write_logo_svgs(light_img: Image.Image, dark_img: Image.Image):
     # Unificado con switch por prefers-color-scheme
     svg_combined = (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" '
-        f'width="{w}" height="{h}" role="img" aria-label="ANTARES logo">\n'
+        f'width="{w}" height="{h}" role="img" aria-label="Antares logo">\n'
         f'  <style>\n'
         f'    .antares-light {{ display: block; }}\n'
         f'    .antares-dark  {{ display: none; }}\n'
@@ -140,7 +140,7 @@ def write_logo_svgs(light_img: Image.Image, dark_img: Image.Image):
 
     svg_light_only = (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" '
-        f'width="{w}" height="{h}" role="img" aria-label="ANTARES logo">\n'
+        f'width="{w}" height="{h}" role="img" aria-label="Antares logo">\n'
         f'  <image href="data:image/png;base64,{b64_light}" '
         f'width="{w}" height="{h}"/>\n'
         f'</svg>\n'
@@ -148,7 +148,7 @@ def write_logo_svgs(light_img: Image.Image, dark_img: Image.Image):
 
     svg_dark_only = (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" '
-        f'width="{w}" height="{h}" role="img" aria-label="ANTARES logo">\n'
+        f'width="{w}" height="{h}" role="img" aria-label="Antares logo">\n'
         f'  <image href="data:image/png;base64,{b64_dark}" '
         f'width="{w}" height="{h}"/>\n'
         f'</svg>\n'
@@ -313,12 +313,12 @@ def cleanup_old_assets():
 # ── Main ───────────────────────────────────────────────────────────────────
 def main():
     print("=" * 60)
-    print("ANTARES Brand Asset Regenerator")
+    print("Antares Brand Asset Regenerator")
     print("=" * 60)
 
     # Cargar maestros
-    favicon_dark = load_and_trim(ANTARES / "favicon1.png")
-    favicon_light = load_and_trim(ANTARES / "favicon2.png")
+    favicon_dark = load_and_trim(BRAND_DIR / "favicon1.png")
+    favicon_light = load_and_trim(BRAND_DIR / "favicon2.png")
 
     # Escalar logos a altura uniforme
     logo_dark = resize_to_height(favicon_dark, LOGO_TARGET_HEIGHT)

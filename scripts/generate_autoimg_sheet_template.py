@@ -48,7 +48,7 @@ def _build_instructions(wb: openpyxl.Workbook) -> None:
         ("Plantilla AUTOIMG — Sheet maestro", ""),
         ("", ""),
         ("Uso", "Sube este archivo a Google Drive y ábrelo como Google Sheet, o crea un Sheet vacío y copia cada pestaña con los mismos nombres y columnas."),
-        ("Vincular en ANTARES", "AutoIMG → panel lateral → Google Sheets → pegar URL/ID del Sheet → Abrir. La app crea pestañas faltantes automáticamente."),
+        ("Vincular en Antares", "AutoIMG → panel lateral → Google Sheets → pegar URL/ID del Sheet → Abrir. La app crea pestañas faltantes automáticamente."),
         ("", ""),
         ("Pestañas obligatorias (6)", "BD_IMG, FOLDERS, BD_ARRASTRE, LOGS, CONFIG, RESUMEN"),
         ("BD_IMG", "Padrón de NIS (7 dígitos en nombres de imagen). El escaneo actualiza IMG_1..3, CANTIDAD, ESTADO y ORIGEN_CARPETAS."),

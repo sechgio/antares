@@ -27,6 +27,7 @@ const PanelAvisoCorteView = React.lazy(() => import('./components/panel-aviso-co
 const UbicacionesView = React.lazy(() => import('./components/UbicacionesView').then(m => ({ default: m.UbicacionesView })));
 const EvidenciaVolanteoView = React.lazy(() => import('./components/evidencia-volanteo'));
 const AutoIMGView = React.lazy(() => import('./components/autoimg'));
+const FichasTecnicasView = React.lazy(() => import('./components/fichas-tecnicas'));
 const EspaciosView = React.lazy(() => import('./components/espacios'));
 
 const VIEWS: Record<TabId, React.LazyExoticComponent<React.ComponentType>> = {
@@ -44,6 +45,7 @@ const VIEWS: Record<TabId, React.LazyExoticComponent<React.ComponentType>> = {
   ubicaciones: UbicacionesView,
   evidenciaVolanteo: EvidenciaVolanteoView,
   autoimg: AutoIMGView,
+  fichasTecnicas: FichasTecnicasView,
 };
 
 function ElectronOnlyNotice() {
@@ -144,6 +146,7 @@ function AppContent() {
   useKeyboardShortcut('u', () => handleTabChange('ubicaciones'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('v', () => handleTabChange('evidenciaVolanteo'), { ctrl: true, shift: true, preventDefault: true });
   useKeyboardShortcut('a', () => handleTabChange('autoimg'), { ctrl: true, shift: true, preventDefault: true });
+  useKeyboardShortcut('f', () => handleTabChange('fichasTecnicas'), { ctrl: true, shift: true, preventDefault: true });
   useKeyboardShortcut('i', () => handleTabChange('technicalReports'), { ctrl: true, shift: true, preventDefault: true });
   useKeyboardShortcut('d', () => openSettings('petdex'), { ctrl: true, shift: true, preventDefault: true });
 
@@ -179,7 +182,8 @@ function AppContent() {
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
           <main className="flex-1 overflow-hidden relative">
             <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">Cargando...</div>}>
-              <div className={`h-full overflow-y-auto ${isFullBleed ? '' : 'px-6 py-4'}`}>
+              {/* Full-bleed tools own their scroll; padded tools scroll in this shell. */}
+              <div className={`h-full min-h-0 ${isFullBleed ? 'overflow-hidden' : 'overflow-y-auto px-6 py-4'}`}>
                 <ActiveView />
               </div>
             </Suspense>

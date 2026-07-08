@@ -147,6 +147,30 @@ export default function EspaciosApp() {
     [sync, addToast],
   );
 
+  const handleRenameEspacio = useCallback(
+    async (id: string, name: string) => {
+      try {
+        await sync.patchEspacio(id, { name });
+        addToast({ message: 'Espacio renombrado', type: 'success' });
+      } catch (err) {
+        addToast({ message: err instanceof Error ? err.message : 'Error al renombrar espacio', type: 'error' });
+      }
+    },
+    [sync, addToast],
+  );
+
+  const handleRenameProyecto = useCallback(
+    async (id: string, name: string) => {
+      try {
+        await sync.patchProyecto(id, { name });
+        addToast({ message: 'Proyecto renombrado', type: 'success' });
+      } catch (err) {
+        addToast({ message: err instanceof Error ? err.message : 'Error al renombrar proyecto', type: 'error' });
+      }
+    },
+    [sync, addToast],
+  );
+
   if (sync.loading) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3">
@@ -161,7 +185,11 @@ export default function EspaciosApp() {
       <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
         <p className="text-sm text-[var(--accent-red)]">{sync.error}</p>
         <p className="max-w-md text-xs leading-relaxed text-[var(--text-muted)]">
-          Verifica la conexión a Supabase y que la migración <code className="text-[var(--text-secondary)]">0003_espacios</code> esté aplicada.
+          Verifica la conexión a Supabase y que las migraciones{' '}
+          <code className="text-[var(--text-secondary)]">0003_espacios</code>
+          {' '}y{' '}
+          <code className="text-[var(--text-secondary)]">0005_espacios_active_user_fix</code>
+          {' '}estén aplicadas (<code className="text-[var(--text-secondary)]">pwsh scripts/supabase-db-push.ps1</code>).
         </p>
         <button
           type="button"
@@ -178,7 +206,9 @@ export default function EspaciosApp() {
   const hasEspacios = sync.espacios.length > 0;
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[var(--bg-base)]">
+    // overflow-hidden + min-h-0 on every flex level so the main pane keeps a
+    // real height inside App's full-bleed shell (otherwise Welcome/views collapse).
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--bg-base)]">
       <div className="flex h-11 shrink-0 border-b border-[var(--border-subtle)]">
         <div className="flex w-60 shrink-0 items-center justify-between border-r border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3">
           <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
@@ -212,7 +242,7 @@ export default function EspaciosApp() {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         <SpaceSidebar
           espacios={sync.espacios}
           proyectos={sync.proyectos}
@@ -224,11 +254,13 @@ export default function EspaciosApp() {
           onAddProyecto={() => setCreateModal('proyecto')}
           onDeleteEspacio={(id) => void handleDeleteEspacio(id)}
           onDeleteProyecto={(id) => void handleDeleteProyecto(id)}
+          onRenameEspacio={(id, name) => void handleRenameEspacio(id, name)}
+          onRenameProyecto={(id, name) => void handleRenameProyecto(id, name)}
           onEspacioColorChange={(id, color) => void handleEspacioColorChange(id, color)}
           onProyectoColorChange={(id, color) => void handleProyectoColorChange(id, color)}
         />
 
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {!hasEspacios ? (
             <EspaciosWelcome onCreateEspacio={() => setCreateModal('espacio')} />
           ) : (
@@ -253,7 +285,7 @@ export default function EspaciosApp() {
                 </>
               )}
 
-              <div className="flex min-h-0 flex-1">
+              <div className="flex min-h-0 flex-1 overflow-hidden">
                 <div className="min-h-0 flex-1 overflow-y-auto py-2">
                   {!sync.activeProyecto ? (
                     <EmptyState

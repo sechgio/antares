@@ -1,5 +1,5 @@
 #!/usr/bin/env pwsh
-# Aplica migraciones locales al proyecto Supabase remoto.
+# Aplica migraciones locales al proyecto Supabase remoto de Antares.
 # Requiere (una vez): https://supabase.com/dashboard/account/tokens
 #
 #   $env:SUPABASE_ACCESS_TOKEN = "sbp_..."

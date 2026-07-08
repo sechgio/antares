@@ -1,1 +1,1 @@
-"""Backend IPC nativo para ANTARES."""
+"""Backend IPC nativo para Antares."""

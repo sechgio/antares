@@ -1,10 +1,10 @@
 import { ListTodo, Trash2 } from 'lucide-react';
 import EmptyState from '../EmptyState';
+import StatusPicker from '../StatusPicker';
 import type { Tarea, TeamMember } from '../../types';
 import { formatDisplayDate } from '../../utils/dates';
 import { isOverdue } from '../../utils/filters';
 import { memberLabel } from '../../utils/members';
-import { STATUS_COLORS, STATUS_LABELS, STATUS_OPTIONS } from '../../utils/statusConfig';
 
 interface ListViewProps {
   tareas: Tarea[];
@@ -56,21 +56,12 @@ export default function ListView({ tareas, members, onStatusChange, onDelete, on
                   )}
                 </td>
                 <td className="px-4 py-3">
-                  <select
+                  <StatusPicker
                     value={tarea.status}
-                    onChange={(e) => onStatusChange(tarea.id, e.target.value as Tarea['status'])}
-                    aria-label={`Cambiar estado de ${tarea.title}`}
-                    className="rounded-full border px-2.5 py-1 text-[11px] font-medium outline-none transition-colors hover:opacity-90 focus:ring-1 focus:ring-[var(--accent-primary)]"
-                    style={{
-                      color: STATUS_COLORS[tarea.status],
-                      background: `color-mix(in srgb, ${STATUS_COLORS[tarea.status]} 14%, transparent)`,
-                      borderColor: `color-mix(in srgb, ${STATUS_COLORS[tarea.status]} 28%, transparent)`,
-                    }}
-                  >
-                    {STATUS_OPTIONS.map((s) => (
-                      <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-                    ))}
-                  </select>
+                    onChange={(status) => onStatusChange(tarea.id, status)}
+                    label={`Cambiar estado de ${tarea.title}`}
+                    size="sm"
+                  />
                 </td>
                 <td className="px-4 py-3 text-[var(--text-secondary)]">{memberLabel(members, tarea.assignee_id)}</td>
                 <td className={`px-4 py-3 ${overdue ? 'font-medium text-[var(--accent-red)]' : 'text-[var(--text-secondary)]'}`}>

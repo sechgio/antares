@@ -1,4 +1,4 @@
-# ANTARES
+# Antares
 
 > Conversor y renombrador profesional de imágenes.
 

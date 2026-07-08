@@ -3,9 +3,9 @@ import { useState } from 'react';
 import Button from '../../ui/Button';
 import DatePicker from '../../ui/DatePicker';
 import Input from '../../ui/Input';
-import type { TareaInput, TeamMember } from '../types';
-import { STATUS_LABELS, STATUS_OPTIONS } from '../utils/statusConfig';
+import type { TareaInput, TareaStatus, TeamMember } from '../types';
 import ModalShell from './ModalShell';
+import StatusPicker from './StatusPicker';
 
 const FIELD_CLASS =
   'w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--text-muted)] focus:border-[var(--accent-primary)] focus:shadow-[0_0_0_3px_var(--accent-primary-glow)]';
@@ -20,7 +20,7 @@ interface TaskFormProps {
 export default function TaskForm({ open, members, onClose, onSubmit }: TaskFormProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [status, setStatus] = useState<TareaInput['status']>('todo');
+  const [status, setStatus] = useState<TareaStatus>('todo');
   const [assigneeId, setAssigneeId] = useState<string>('');
   const [dueDate, setDueDate] = useState('');
   const [saving, setSaving] = useState(false);
@@ -114,17 +114,14 @@ export default function TaskForm({ open, members, onClose, onSubmit }: TaskFormP
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">Estado</label>
-            <select
+            <StatusPicker
               value={status}
-              onChange={(e) => setStatus(e.target.value as TareaInput['status'])}
+              onChange={setStatus}
               disabled={saving}
-              className={FIELD_CLASS}
-              aria-label="Estado inicial"
-            >
-              {STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-              ))}
-            </select>
+              size="md"
+              label="Estado inicial"
+              className="w-full [&_button]:w-full [&_button]:justify-between"
+            />
           </div>
           <div>
             <label className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">Asignado</label>

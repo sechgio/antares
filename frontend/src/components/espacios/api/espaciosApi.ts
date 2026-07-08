@@ -6,17 +6,29 @@ function requireClient() {
   return supabase;
 }
 
+/** Supabase returns plain { message, code, ... } objects, not Error instances. */
+function throwOnError(error: { message?: string; code?: string } | null): void {
+  if (!error) return;
+  const code = error.code ? ` [${error.code}]` : '';
+  throw new Error((error.message || 'Error de Supabase') + code);
+}
+
+function requireData<T>(data: T | null, action: string): T {
+  if (data == null) throw new Error(`${action}: respuesta vacía de Supabase`);
+  return data;
+}
+
 export async function fetchEspacios(): Promise<Espacio[]> {
   const client = requireClient();
   const { data, error } = await client.from('espacios').select('*').order('name');
-  if (error) throw error;
+  throwOnError(error);
   return data ?? [];
 }
 
 export async function deleteEspacio(id: string): Promise<void> {
   const client = requireClient();
   const { error } = await client.from('espacios').delete().eq('id', id);
-  if (error) throw error;
+  throwOnError(error);
 }
 
 export async function createEspacio(name: string, userId: string, color?: string): Promise<Espacio> {
@@ -26,8 +38,8 @@ export async function createEspacio(name: string, userId: string, color?: string
     .insert({ name, created_by: userId, color: color ?? null })
     .select('*')
     .single();
-  if (error) throw error;
-  return data;
+  throwOnError(error);
+  return requireData(data, 'Crear espacio');
 }
 
 export async function updateEspacio(
@@ -36,8 +48,8 @@ export async function updateEspacio(
 ): Promise<Espacio> {
   const client = requireClient();
   const { data, error } = await client.from('espacios').update(patch).eq('id', id).select('*').single();
-  if (error) throw error;
-  return data;
+  throwOnError(error);
+  return requireData(data, 'Actualizar espacio');
 }
 
 export async function fetchProyectos(espacioId: string): Promise<Proyecto[]> {
@@ -47,7 +59,7 @@ export async function fetchProyectos(espacioId: string): Promise<Proyecto[]> {
     .select('*')
     .eq('espacio_id', espacioId)
     .order('name');
-  if (error) throw error;
+  throwOnError(error);
   return data ?? [];
 }
 
@@ -58,14 +70,14 @@ export async function createProyecto(espacioId: string, name: string, color?: st
     .insert({ espacio_id: espacioId, name, color: color ?? null })
     .select('*')
     .single();
-  if (error) throw error;
-  return data;
+  throwOnError(error);
+  return requireData(data, 'Crear proyecto');
 }
 
 export async function deleteProyecto(id: string): Promise<void> {
   const client = requireClient();
   const { error } = await client.from('proyectos').delete().eq('id', id);
-  if (error) throw error;
+  throwOnError(error);
 }
 
 export async function updateProyecto(
@@ -74,8 +86,8 @@ export async function updateProyecto(
 ): Promise<Proyecto> {
   const client = requireClient();
   const { data, error } = await client.from('proyectos').update(patch).eq('id', id).select('*').single();
-  if (error) throw error;
-  return data;
+  throwOnError(error);
+  return requireData(data, 'Actualizar proyecto');
 }
 
 export async function fetchTareas(proyectoId: string): Promise<Tarea[]> {
@@ -86,7 +98,7 @@ export async function fetchTareas(proyectoId: string): Promise<Tarea[]> {
     .eq('proyecto_id', proyectoId)
     .order('sort_order')
     .order('created_at');
-  if (error) throw error;
+  throwOnError(error);
   return data ?? [];
 }
 
@@ -107,26 +119,26 @@ export async function createTarea(proyectoId: string, input: TareaInput, userId:
     })
     .select('*')
     .single();
-  if (error) throw error;
-  return data;
+  throwOnError(error);
+  return requireData(data, 'Crear tarea');
 }
 
 export async function updateTarea(id: string, patch: Partial<TareaInput & Pick<Tarea, 'status'>>): Promise<Tarea> {
   const client = requireClient();
   const { data, error } = await client.from('tareas').update(patch).eq('id', id).select('*').single();
-  if (error) throw error;
-  return data;
+  throwOnError(error);
+  return requireData(data, 'Actualizar tarea');
 }
 
 export async function deleteTarea(id: string): Promise<void> {
   const client = requireClient();
   const { error } = await client.from('tareas').delete().eq('id', id);
-  if (error) throw error;
+  throwOnError(error);
 }
 
 export async function fetchTeamMembers(): Promise<TeamMember[]> {
   const client = requireClient();
   const { data, error } = await client.rpc('team_list_members');
-  if (error) throw error;
+  throwOnError(error);
   return data ?? [];
 }

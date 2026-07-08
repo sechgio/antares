@@ -247,4 +247,28 @@ describe('useEspaciosSync', () => {
     expect(result.current.activeProyectoId).toBe('proy-b');
     await waitFor(() => expect(result.current.tareas).toEqual([tareaB]));
   });
+
+  it('addEspacio throws when user is not authenticated instead of silent no-op', async () => {
+    const { result } = renderHook(() => useEspaciosSync(undefined));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await expect(
+      act(async () => {
+        await result.current.addEspacio('Nuevo');
+      }),
+    ).rejects.toThrow(/iniciar sesión/i);
+  });
+
+  it('nested loadProyectos failure does not set fatal full-page error', async () => {
+    fetchProyectos.mockRejectedValueOnce(new Error('proyectos down'));
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await waitFor(() => expect(result.current.espacios).toEqual([espacioA, espacioB]));
+
+    // Wait a tick for the nested load to fail
+    await waitFor(() => expect(result.current.proyectos).toEqual([]));
+    expect(result.current.error).toBeNull();
+  });
 });

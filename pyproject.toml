@@ -9,9 +9,9 @@ include = ["backend*"]
 [project]
 name = "hidro-convert-backend"
 version = "0.10.18"
-description = "Backend for ANTARES - Image conversion and renaming"
+description = "Backend for Antares - Image conversion and renaming"
 authors = [
-    {name = "ANTARES", email = "dev@antares.app"},
+    {name = "Antares", email = "dev@antares.app"},
 ]
 readme = "README.md"
 requires-python = ">=3.10"

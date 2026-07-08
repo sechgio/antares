@@ -318,6 +318,22 @@ const RUN_TYPES = {
       stat('ok', 'history.stats.ok', (run) => run.ok_count, 'text-cyan-400'),
     ],
   },
+  ficha_tecnica: {
+    id: 'ficha_tecnica',
+    labelKey: 'history.runTypes.fichaTecnica',
+    descriptionKey: 'history.runTypes.fichaTecnicaDesc',
+    colorClass: 'text-teal-400',
+    badgeClass: 'text-teal-400 border-teal-400/20 bg-teal-400/10',
+    showPatron: false,
+    showOptions: true,
+    filterGroup: 'default' as const,
+    reexecute: false,
+    fileListKey: 'history.fileList.default',
+    stats: [
+      stat('type', 'history.stats.status', (_run, _files, options) => String(opt(options, 'type') ?? '—')),
+      stat('ok', 'history.stats.ok', (run) => run.ok_count, 'text-teal-400'),
+    ],
+  },
 } as const satisfies Record<string, RunTypeMeta>;
 
 export { RUN_TYPES };
@@ -387,6 +403,7 @@ export function schemaOptionKeys(meta: RunTypeMeta): Set<string> {
     panel_aviso_corte: ['key_column', 'strategy', 'template'],
     evidencia_volanteo: ['format', 'pages', 'images'],
     informe_tecnico: ['cs', 'contratista', 'status'],
+    ficha_tecnica: ['type', 'fichaId', 'count'],
   };
   return new Set(backendKeys[meta.id] ?? []);
 }

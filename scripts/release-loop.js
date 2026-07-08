@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * ANTARES Release Pipeline Loop
+ * Antares Release Pipeline Loop
  * ==============================
  *
  * Flujo de 8 pasos para releases automatizados y seguros.
@@ -294,7 +294,7 @@ function main() {
 
   const mode = isShip ? '🚀 SHIP MODE (real)' : '🔍 DRY-RUN (sin side effects)';
   console.log(`\n════════════════════════════════════════════`);
-  console.log(`  ANTARES Release Pipeline Loop`);
+  console.log(`  Antares Release Pipeline Loop`);
   console.log(`  ${mode}`);
   console.log(`════════════════════════════════════════════\n`);
 

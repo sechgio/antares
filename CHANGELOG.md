@@ -1,6 +1,6 @@
 # Changelog
 
-Todas las versiones notables de ANTARES se documentan aquí.
+Todas las versiones notables de Antares se documentan aquí.
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/),
 y este proyecto sigue [Semantic Versioning](https://semver.org/).

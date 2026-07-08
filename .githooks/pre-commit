@@ -1,0 +1,69 @@
+#!/bin/sh
+# Bloquea commits que incluyan credenciales locales o archivos .env con secretos.
+
+blocked_paths=""
+secret_hits=""
+
+is_blocked_env_path() {
+  case "$1" in
+    */.env.local|*/.env.*.local|.env.local|.env.*.local)
+      case "$1" in
+        */.env.example|*/.env.*.example|.env.example|.env.*.example) return 1 ;;
+      esac
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+while IFS= read -r file; do
+  [ -n "$file" ] || continue
+  if is_blocked_env_path "$file"; then
+    blocked_paths="${blocked_paths}
+  - ${file}"
+  fi
+done <<EOF
+$(git diff --cached --name-only --diff-filter=ACMR)
+EOF
+
+if [ -n "$blocked_paths" ]; then
+  echo ""
+  echo "✗ Commit bloqueado: archivos de entorno local no deben versionarse."
+  echo "$blocked_paths"
+  echo ""
+  echo "  Usa frontend/.env.example como plantilla (sin valores reales)."
+  echo ""
+  exit 1
+fi
+
+while IFS= read -r file; do
+  [ -n "$file" ] || continue
+  case "$file" in
+    tests/test-autoimg-security.js) continue ;;
+    */.env.example|.env.example)
+      if git diff --cached -- "$file" | grep -Eiq 'sb_publishable_[A-Za-z0-9_]+|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}|https://[a-z0-9]{20}\.supabase\.co'; then
+        secret_hits="${secret_hits}
+  - ${file}"
+      fi
+      continue
+      ;;
+  esac
+  if git diff --cached -- "$file" | grep -Eiq 'sb_publishable_[A-Za-z0-9_]+|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}'; then
+    secret_hits="${secret_hits}
+  - ${file}"
+  fi
+done <<EOF
+$(git diff --cached --name-only --diff-filter=ACMR)
+EOF
+
+if [ -n "$secret_hits" ]; then
+  echo ""
+  echo "✗ Commit bloqueado: posibles credenciales Supabase en cambios staged."
+  echo "$secret_hits"
+  echo ""
+  echo "  Guarda claves solo en frontend/.env.local (gitignored)."
+  echo ""
+  exit 1
+fi
+
+exit 0

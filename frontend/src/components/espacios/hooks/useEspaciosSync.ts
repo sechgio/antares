@@ -26,6 +26,15 @@ function mergeById<T extends { id: string }>(items: T[], item: T, eventType: str
   return next;
 }
 
+function errorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (err && typeof err === 'object' && 'message' in err) {
+    const msg = (err as { message?: unknown }).message;
+    if (typeof msg === 'string' && msg) return msg;
+  }
+  return fallback;
+}
+
 export function useEspaciosSync(userId: string | undefined) {
   const [espacios, setEspacios] = useState<Espacio[]>([]);
   const [proyectos, setProyectos] = useState<Proyecto[]>([]);
@@ -36,10 +45,21 @@ export function useEspaciosSync(userId: string | undefined) {
   const [error, setError] = useState<string | null>(null);
   const proyectosRequestRef = useRef(0);
   const tareasRequestRef = useRef(0);
+  const activeEspacioIdRef = useRef<string | null>(null);
+  const activeProyectoIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    activeEspacioIdRef.current = activeEspacioId;
+  }, [activeEspacioId]);
+
+  useEffect(() => {
+    activeProyectoIdRef.current = activeProyectoId;
+  }, [activeProyectoId]);
 
   const loadEspacios = useCallback(async () => {
     const data = await fetchEspacios();
     setEspacios(data);
+    setError(null);
     setActiveEspacioId((prev) => prev ?? data[0]?.id ?? null);
     return data;
   }, []);
@@ -72,9 +92,10 @@ export function useEspaciosSync(userId: string | undefined) {
     try {
       const espaciosData = await fetchEspacios();
       setEspacios(espaciosData);
+      const currentEspacioId = activeEspacioIdRef.current;
       const espacioId =
-        activeEspacioId && espaciosData.some((e) => e.id === activeEspacioId)
-          ? activeEspacioId
+        currentEspacioId && espaciosData.some((e) => e.id === currentEspacioId)
+          ? currentEspacioId
           : (espaciosData[0]?.id ?? null);
       setActiveEspacioId(espacioId);
 
@@ -87,9 +108,10 @@ export function useEspaciosSync(userId: string | undefined) {
 
       const proyectosData = await fetchProyectos(espacioId);
       setProyectos(proyectosData);
+      const currentProyectoId = activeProyectoIdRef.current;
       const proyectoId =
-        activeProyectoId && proyectosData.some((p) => p.id === activeProyectoId)
-          ? activeProyectoId
+        currentProyectoId && proyectosData.some((p) => p.id === currentProyectoId)
+          ? currentProyectoId
           : (proyectosData[0]?.id ?? null);
       setActiveProyectoId(proyectoId);
 
@@ -101,17 +123,17 @@ export function useEspaciosSync(userId: string | undefined) {
       const tareasData = await fetchTareas(proyectoId);
       setTareas(tareasData);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al cargar ESPACIOS');
+      setError(errorMessage(err, 'Error al cargar ESPACIOS'));
     } finally {
       setLoading(false);
     }
-  }, [activeEspacioId, activeProyectoId]);
+  }, []);
 
   useEffect(() => {
     setLoading(true);
     setError(null);
     loadEspacios()
-      .catch((err) => setError(err instanceof Error ? err.message : 'Error al cargar ESPACIOS'))
+      .catch((err) => setError(errorMessage(err, 'Error al cargar ESPACIOS')))
       .finally(() => setLoading(false));
   }, [loadEspacios]);
 
@@ -122,9 +144,17 @@ export function useEspaciosSync(userId: string | undefined) {
       setTareas([]);
       return;
     }
+    // Clear nested data immediately so UI never shows stale proyecto/tareas.
     setTareas([]);
     void loadProyectos(activeEspacioId).catch((err) => {
-      setError(err instanceof Error ? err.message : 'Error al cargar proyectos');
+      // Nested load failures must not replace the whole Espacios screen with a
+      // fatal error — keep the sidebar usable and surface an empty project list.
+      console.error('[espacios] loadProyectos failed:', errorMessage(err, 'Error al cargar proyectos'));
+      if (activeEspacioIdRef.current === activeEspacioId) {
+        setProyectos([]);
+        setActiveProyectoId(null);
+        setTareas([]);
+      }
     });
   }, [activeEspacioId, loadProyectos]);
 
@@ -135,7 +165,10 @@ export function useEspaciosSync(userId: string | undefined) {
     }
     setTareas([]);
     void loadTareas(activeProyectoId).catch((err) => {
-      setError(err instanceof Error ? err.message : 'Error al cargar tareas');
+      console.error('[espacios] loadTareas failed:', errorMessage(err, 'Error al cargar tareas'));
+      if (activeProyectoIdRef.current === activeProyectoId) {
+        setTareas([]);
+      }
     });
   }, [activeProyectoId, loadTareas]);
 
@@ -179,27 +212,46 @@ export function useEspaciosSync(userId: string | undefined) {
 
   const addEspacio = useCallback(
     async (name: string) => {
-      if (!userId) return;
+      if (!userId) {
+        throw new Error('Debes iniciar sesión para crear espacios');
+      }
       const color = pickDefaultColor(espacios.length);
       const espacio = await createEspacio(name, userId, color);
+      if (!espacio?.id) {
+        throw new Error('No se pudo crear el espacio (respuesta vacía de Supabase)');
+      }
       setEspacios((prev) => [...prev, espacio].sort((a, b) => a.name.localeCompare(b.name)));
       setActiveEspacioId(espacio.id);
+      setError(null);
     },
     [userId, espacios.length],
   );
 
   const addProyecto = useCallback(async (name: string) => {
-    if (!activeEspacioId) return;
+    if (!activeEspacioId) {
+      throw new Error('Selecciona un espacio antes de crear un proyecto');
+    }
     const color = pickDefaultColor(proyectos.length + 2);
     const proyecto = await createProyecto(activeEspacioId, name, color);
+    if (!proyecto?.id) {
+      throw new Error('No se pudo crear el proyecto (respuesta vacía de Supabase)');
+    }
     setProyectos((prev) => [...prev, proyecto].sort((a, b) => a.name.localeCompare(b.name)));
     setActiveProyectoId(proyecto.id);
   }, [activeEspacioId, proyectos.length]);
 
   const addTarea = useCallback(
     async (input: TareaInput) => {
-      if (!activeProyectoId || !userId) return;
+      if (!activeProyectoId) {
+        throw new Error('Selecciona un proyecto antes de crear una tarea');
+      }
+      if (!userId) {
+        throw new Error('Debes iniciar sesión para crear tareas');
+      }
       const tarea = await createTarea(activeProyectoId, input, userId);
+      if (!tarea?.id) {
+        throw new Error('No se pudo crear la tarea (respuesta vacía de Supabase)');
+      }
       setTareas((prev) => [...prev, tarea]);
     },
     [activeProyectoId, userId],
@@ -265,7 +317,10 @@ export function useEspaciosSync(userId: string | undefined) {
   );
 
   const patchEspacio = useCallback(async (id: string, patch: Partial<Pick<Espacio, 'name' | 'color'>>) => {
-    setEspacios((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));
+    setEspacios((prev) => {
+      const next = prev.map((e) => (e.id === id ? { ...e, ...patch } : e));
+      return patch.name !== undefined ? [...next].sort((a, b) => a.name.localeCompare(b.name)) : next;
+    });
     try {
       await updateEspacio(id, patch);
     } catch (err) {
@@ -275,7 +330,10 @@ export function useEspaciosSync(userId: string | undefined) {
   }, [loadEspacios]);
 
   const patchProyecto = useCallback(async (id: string, patch: Partial<Pick<Proyecto, 'name' | 'color' | 'is_favorite'>>) => {
-    setProyectos((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+    setProyectos((prev) => {
+      const next = prev.map((p) => (p.id === id ? { ...p, ...patch } : p));
+      return patch.name !== undefined ? [...next].sort((a, b) => a.name.localeCompare(b.name)) : next;
+    });
     try {
       await updateProyecto(id, patch);
     } catch (err) {

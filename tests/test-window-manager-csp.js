@@ -35,6 +35,8 @@ function run() {
   for (const csp of [devCsp, prodCsp]) {
     assert(csp.includes('https://fonts.googleapis.com'), 'style-src allows fonts.googleapis.com');
     assert(csp.includes('https://fonts.gstatic.com'), 'font-src allows fonts.gstatic.com');
+    assert(csp.includes('https://*.supabase.co'), 'connect-src allows Supabase HTTPS');
+    assert(csp.includes('wss://*.supabase.co'), 'connect-src allows Supabase Realtime WSS');
   }
 
   console.log(`\n${passed} passed, ${failed} failed`);

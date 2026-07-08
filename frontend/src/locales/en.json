@@ -132,6 +132,8 @@
   "history.runTypes.evidenciaVolanteoDesc": "Photographic flyer evidence",
   "history.runTypes.informeTecnico": "Technical Report",
   "history.runTypes.informeTecnicoDesc": "Technical reports",
+  "history.runTypes.fichaTecnica": "Technical Sheet",
+  "history.runTypes.fichaTecnicaDesc": "Activity evaluation technical sheets",
   "history.runTypes._unknown": "Unknown",
   "history.stats.format": "Format",
   "history.stats.quality": "Quality",

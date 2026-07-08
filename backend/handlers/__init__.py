@@ -11,6 +11,7 @@ from backend.handlers.common import (
 from backend.handlers.conversion import HANDLERS as CONVERSION_HANDLERS
 from backend.handlers.database import HANDLERS as DB_HANDLERS
 from backend.handlers.evidencia_volanteo import HANDLERS as EVIDENCIA_VOLANTEO_HANDLERS
+from backend.handlers.fichas_tecnicas import HANDLERS as FICHAS_TECNICAS_HANDLERS
 from backend.handlers.formatos import HANDLERS as FORMATOS_HANDLERS
 from backend.handlers.history import HANDLERS as HISTORY_HANDLERS
 from backend.handlers.info import HANDLERS as INFO_HANDLERS
@@ -34,6 +35,7 @@ HANDLERS: dict[str, Callable[[dict[str, Any]], Any]] = {
     **FORMATOS_HANDLERS,
     **HISTORY_HANDLERS,
     **TECH_REPORTS_HANDLERS,
+    **FICHAS_TECNICAS_HANDLERS,
     **TEMPLATES_HANDLERS,
     **PANEL_HANDLERS,
     **OPTIMIZER_HANDLERS,

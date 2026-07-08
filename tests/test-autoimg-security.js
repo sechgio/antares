@@ -64,6 +64,21 @@ function main() {
   assert(!tracked.includes('frontend/.env.local'), 'frontend/.env.local no debe estar en git');
   assert(!tracked.includes('.env.local'), '.env.local no debe estar en git');
 
+  for (const examplePath of ['frontend/.env.example', '.env.example']) {
+    const abs = path.join(ROOT, examplePath);
+    if (!fs.existsSync(abs)) continue;
+    const text = fs.readFileSync(abs, 'utf8');
+    assert(!/sb_publishable_[A-Za-z0-9_]+/.test(text), `${examplePath} no debe contener publishable keys reales`);
+    assert(!/eyJ[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{20,}/.test(text), `${examplePath} no debe contener JWT reales`);
+    assert(!/https:\/\/[a-z0-9]{20}\.supabase\.co/.test(text), `${examplePath} no debe contener project ref real`);
+  }
+
+  const preCommitHook = path.join(ROOT, '.githooks', 'pre-commit');
+  assert(fs.existsSync(preCommitHook), '.githooks/pre-commit debe existir');
+  const preCommit = fs.readFileSync(preCommitHook, 'utf8');
+  assert(preCommit.includes('.env.local'), 'pre-commit debe bloquear .env.local');
+  assert(preCommit.includes('sb_publishable_'), 'pre-commit debe bloquear publishable keys');
+
   // Barrido de secretos en archivos versionados (excluye ejemplos y tests de redacción)
   const secretPatterns = [
     /client_secret\s*[:=]\s*['"][a-zA-Z0-9_\-]{8,}['"]/i,

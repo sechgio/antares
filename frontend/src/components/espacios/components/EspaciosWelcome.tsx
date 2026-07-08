@@ -63,11 +63,17 @@ function useReducedMotion() {
   return reduced;
 }
 
-function fadeUp(delay: number) {
+/**
+ * Enter animation without opacity fade.
+ * Opacity 0→1 is unsafe: if the animation never commits (tab switch, reduced-motion
+ * edge cases, StrictMode remount), the whole welcome panel stays invisible.
+ */
+function fadeUp(delay: number, reducedMotion: boolean) {
+  if (reducedMotion) return { initial: false as const };
   return {
-    initial: { opacity: 0, y: 16 },
-    animate: { opacity: 1, y: 0 },
-    transition: { duration: 0.55, delay, ease: MOTION_EASE },
+    initial: { y: 12 },
+    animate: { y: 0 },
+    transition: { duration: 0.45, delay, ease: MOTION_EASE },
   };
 }
 
@@ -218,7 +224,7 @@ function GanttPreview() {
   );
 }
 
-function PreviewContent({ view }: { view: PreviewView }) {
+function PreviewContent({ view, reducedMotion }: { view: PreviewView; reducedMotion: boolean }) {
   const content = {
     list: <ListPreview />,
     board: <BoardPreview />,
@@ -230,9 +236,9 @@ function PreviewContent({ view }: { view: PreviewView }) {
     <AnimatePresence mode="wait">
       <motion.div
         key={view}
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -6 }}
+        initial={reducedMotion ? false : { y: 6 }}
+        animate={{ y: 0 }}
+        exit={reducedMotion ? undefined : { y: -6 }}
         transition={{ duration: 0.25, ease: MOTION_EASE }}
         className="flex min-h-0 flex-1 flex-col"
       >
@@ -245,18 +251,19 @@ function PreviewContent({ view }: { view: PreviewView }) {
 interface PreviewMockupProps {
   activeView: PreviewView;
   onViewChange: (view: PreviewView) => void;
+  reducedMotion: boolean;
 }
 
-function PreviewMockup({ activeView, onViewChange }: PreviewMockupProps) {
+function PreviewMockup({ activeView, onViewChange, reducedMotion }: PreviewMockupProps) {
   return (
     <div className="relative mx-auto w-full max-w-lg select-none" aria-hidden>
       <div className="absolute -inset-6 rounded-[2rem] bg-[var(--accent-primary)]/10 blur-3xl" />
       <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-[var(--accent-secondary)]/8 blur-2xl" />
 
       <motion.div
-        initial={{ opacity: 0, y: 20, scale: 0.97 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.7, delay: 0.15, ease: MOTION_EASE }}
+        initial={reducedMotion ? false : { y: 16, scale: 0.98 }}
+        animate={{ y: 0, scale: 1 }}
+        transition={{ duration: 0.55, delay: 0.1, ease: MOTION_EASE }}
         className="relative overflow-hidden rounded-2xl border border-[var(--border-medium)] bg-[var(--bg-elevated)] shadow-[0_32px_64px_color-mix(in_srgb,var(--bg-base)_70%,transparent),0_0_0_1px_color-mix(in_srgb,var(--accent-primary)_12%,transparent)]"
       >
         <div className="flex items-center gap-1.5 border-b border-[var(--border-subtle)] px-4 py-2.5">
@@ -288,7 +295,7 @@ function PreviewMockup({ activeView, onViewChange }: PreviewMockupProps) {
                 );
               })}
             </div>
-            <PreviewContent view={activeView} />
+            <PreviewContent view={activeView} reducedMotion={reducedMotion} />
           </div>
         </div>
       </motion.div>
@@ -318,7 +325,10 @@ export default function EspaciosWelcome({ onCreateEspacio }: EspaciosWelcomeProp
   }, [autoRotate, reducedMotion]);
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <div
+      data-testid="espacios-welcome"
+      className="relative flex h-full min-h-0 flex-1 flex-col overflow-y-auto"
+    >
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="lg-aurora-blob lg-aurora-blob--indigo opacity-60" />
         <div className="lg-aurora-blob lg-aurora-blob--teal opacity-40" />
@@ -335,7 +345,7 @@ export default function EspaciosWelcome({ onCreateEspacio }: EspaciosWelcomeProp
 
       <section className="relative border-b border-[var(--border-subtle)] px-6 py-10 lg:px-10 lg:py-16">
         <div className="relative mx-auto grid max-w-6xl items-center gap-10 lg:grid-cols-[1fr_1.15fr] lg:gap-16">
-          <motion.div {...fadeUp(0)} className="space-y-7">
+          <motion.div {...fadeUp(0, reducedMotion)} className="space-y-7">
             <div className="inline-flex items-center gap-2 rounded-full border border-[var(--accent-primary)]/30 bg-[var(--accent-primary)]/10 px-3.5 py-1.5 text-xs font-medium text-[var(--accent-primary-hover)]">
               <Sparkles className="h-3.5 w-3.5" />
               Gestión de proyectos
@@ -370,20 +380,24 @@ export default function EspaciosWelcome({ onCreateEspacio }: EspaciosWelcomeProp
             </div>
           </motion.div>
 
-          <PreviewMockup activeView={activeView} onViewChange={handleViewChange} />
+          <PreviewMockup
+            activeView={activeView}
+            onViewChange={handleViewChange}
+            reducedMotion={reducedMotion}
+          />
         </div>
       </section>
 
       <section className="relative px-6 py-10 lg:px-10">
         <div className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-[1.1fr_1fr]">
-          <motion.div {...fadeUp(0.2)}>
+          <motion.div {...fadeUp(0.2, reducedMotion)}>
             <h2 className="mb-6 text-sm font-semibold text-[var(--text-primary)]">Empieza en 3 pasos</h2>
             <div className="relative space-y-3">
               <div className="absolute bottom-4 left-[18px] top-4 hidden w-px bg-gradient-to-b from-[var(--accent-primary)]/40 via-[var(--accent-secondary)]/30 to-[var(--accent-blue)]/40 sm:block" />
               {STEPS.map((item, index) => (
                 <motion.div
                   key={item.step}
-                  {...fadeUp(0.25 + index * 0.08)}
+                  {...fadeUp(0.25 + index * 0.08, reducedMotion)}
                   className="group relative flex gap-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/80 p-4 backdrop-blur-sm transition-all hover:border-[var(--border-medium)] hover:bg-[var(--bg-elevated)]"
                 >
                   <span
@@ -413,7 +427,7 @@ export default function EspaciosWelcome({ onCreateEspacio }: EspaciosWelcomeProp
             </div>
           </motion.div>
 
-          <motion.div {...fadeUp(0.3)}>
+          <motion.div {...fadeUp(0.3, reducedMotion)}>
             <h2 className="mb-6 text-sm font-semibold text-[var(--text-primary)]">Vistas disponibles</h2>
             <div className="grid grid-cols-2 gap-3">
               {VIEWS.map((view) => {
