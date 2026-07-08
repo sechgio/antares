@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ExternalLink, KeyRound, Loader2, LogOut, Pencil, Sheet, User } from 'lucide-react';
 import { api, onNotify } from '../../../api';
+import { parseSheetId } from '../utils/parseSheetId';
 import {
   INPUT_SM_CLASS,
   InlineMessage,
@@ -157,13 +158,15 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
     }
   };
 
+  const resolvedSheetId = parseSheetId(sheetId);
+
   const handleOpenSheet = async () => {
-    if (!sheetId.trim()) return;
+    if (!resolvedSheetId) return;
     setLoading(true);
     setError('');
     setSheetNotice('');
     try {
-      const res = await api.autoimgSheetsOpen(sheetId.trim());
+      const res = await api.autoimgSheetsOpen(resolvedSheetId);
       if (res.success) {
         setSheetName(res.name || sheetId);
         if (res.created_tabs?.length) {
@@ -187,7 +190,12 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
       >
         {oauthConfigured && !editingOAuth ? (
           <div className="space-y-2">
-            <p className="truncate font-mono text-[10px] text-[var(--text-muted)]">{savedClientIdMasked}</p>
+            <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-2">
+              <p className="text-[9px] uppercase tracking-wider text-[var(--text-muted)]">Client ID</p>
+              <p className="mt-0.5 truncate font-mono text-[10px] text-[var(--text-secondary)]">
+                {savedClientIdMasked}
+              </p>
+            </div>
             <button
               type="button"
               onClick={() => {
@@ -299,7 +307,7 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
         ) : (
           <div className="space-y-2">
             <p className="text-[10px] leading-relaxed text-[var(--text-muted)]">
-              Autoriza Sheets y Drive desde tu navegador.
+              Autoriza Sheets y Drive desde el navegador. Si la sesión expiró o se revocó, vuelve a conectar aquí.
             </p>
             <button
               type="button"
@@ -316,7 +324,9 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
 
       {connected && (
         <SidebarSection icon={Sheet} title="Google Sheets" badge={sheetName ? <StatusChip ok label="Vinculado" /> : undefined}>
-          <p className="mb-2 text-[10px] text-[var(--text-muted)]">ID del Sheet maestro (BD_IMG).</p>
+          <p className="mb-2 text-[10px] leading-relaxed text-[var(--text-muted)]">
+            Sheet maestro del padrón (BD_IMG).
+          </p>
           <div className="flex gap-1.5">
             <input
               type="text"
@@ -328,12 +338,15 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
             <button
               type="button"
               onClick={handleOpenSheet}
-              disabled={loading || !sheetId.trim()}
+              disabled={loading || !resolvedSheetId}
               className="shrink-0 rounded-md border border-[var(--border-medium)] px-2.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-active)] hover:text-[var(--text-primary)] disabled:opacity-40"
             >
               Abrir
             </button>
           </div>
+          {resolvedSheetId && sheetId.includes('/') && (
+            <p className="mt-1 truncate font-mono text-[10px] text-[var(--text-muted)]">ID: {resolvedSheetId}</p>
+          )}
           {sheetName && (
             <p className="mt-1.5 truncate text-[10px] text-[var(--text-muted)]" title={sheetName}>
               {sheetName}

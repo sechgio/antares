@@ -84,7 +84,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
       resolverRef.current = resolve;
       setOptions({
         ...opts,
-        type: 'confirm',
+        type: opts.type ?? 'confirm',
         onConfirm: () => {
           resolve(true);
           closeDialog();

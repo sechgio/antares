@@ -27,8 +27,10 @@ const PanelAvisoCorteView = React.lazy(() => import('./components/panel-aviso-co
 const UbicacionesView = React.lazy(() => import('./components/UbicacionesView').then(m => ({ default: m.UbicacionesView })));
 const EvidenciaVolanteoView = React.lazy(() => import('./components/evidencia-volanteo'));
 const AutoIMGView = React.lazy(() => import('./components/autoimg'));
+const EspaciosView = React.lazy(() => import('./components/espacios'));
 
 const VIEWS: Record<TabId, React.LazyExoticComponent<React.ComponentType>> = {
+  espacios: EspaciosView,
   convert: ConversionView,
   formatos: FormatosView,
   sellador: SelladorView,
@@ -127,6 +129,7 @@ function AppContent() {
   const closeCommandPalette = useCallback(() => setCommandOpen(false), []);
 
   useKeyboardShortcut('k', openCommandPalette, { ctrl: true, preventDefault: true });
+  useKeyboardShortcut('e', () => handleTabChange('espacios'), { ctrl: true, shift: true, preventDefault: true });
   useKeyboardShortcut('1', () => handleTabChange('convert'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('3', () => handleTabChange('formatos'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('s', () => handleTabChange('sellador'), { ctrl: true, shift: true, preventDefault: true });

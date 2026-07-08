@@ -16,6 +16,9 @@ function sanitizeErrorMessage(message) {
   if (/429|RESOURCE_EXHAUSTED|Quota exceeded/i.test(text)) {
     return 'Límite de consultas a Google Sheets alcanzado. Espera 1–2 minutos e intenta de nuevo.';
   }
+  if (/invalid_grant|Token has been expired or revoked|sesión de Google expiró|REAUTH/i.test(text)) {
+    return 'La sesión de Google expiró o fue revocada. Vuelve a conectar tu cuenta con "Conectar con Google".';
+  }
   if (SENSITIVE_PATTERNS.some((re) => re.test(text))) {
     return 'Error de autenticación o permisos con Google. Revisa credenciales OAuth y el acceso al Sheet.';
   }

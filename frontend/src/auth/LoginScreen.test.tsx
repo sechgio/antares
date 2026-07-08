@@ -33,6 +33,7 @@ describe('LoginScreen', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockWideViewport();
+    window.localStorage.removeItem('hc_login_appearance_mode');
     document.documentElement.dataset.themeMode = 'dark';
     document.documentElement.classList.remove('theme-light');
     document.documentElement.classList.add('theme-dark');
@@ -41,6 +42,8 @@ describe('LoginScreen', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    window.localStorage.removeItem('hc_login_appearance_mode');
+    window.localStorage.removeItem('hc_theme_mode');
     document.documentElement.dataset.themeMode = '';
     document.documentElement.classList.remove('theme-light', 'theme-dark');
   });
@@ -78,24 +81,43 @@ describe('LoginScreen', () => {
     expect(screen.queryByText(/privacidad/i)).not.toBeInTheDocument();
   });
 
-  it('renders the appearance mode toggle with light and dark buttons', () => {
+  it('renders the appearance mode toggle with light mode selected by default', () => {
     render(<LoginScreen />);
     const darkButton = screen.getByRole('button', { name: /oscuro/i });
     const lightButton = screen.getByRole('button', { name: /claro/i });
     expect(darkButton).toBeInTheDocument();
     expect(lightButton).toBeInTheDocument();
-    expect(darkButton.getAttribute('aria-pressed')).toBe('true');
+    expect(lightButton.getAttribute('aria-pressed')).toBe('true');
+    expect(darkButton.getAttribute('aria-pressed')).toBe('false');
+    expect(document.documentElement.dataset.themeMode).toBe('light');
+  });
+
+  it('ignores the global app theme and defaults to light mode', () => {
+    window.localStorage.setItem('hc_theme_mode', 'dark');
+    render(<LoginScreen />);
+    expect(screen.getByRole('button', { name: /claro/i }).getAttribute('aria-pressed')).toBe('true');
+    expect(document.documentElement.dataset.themeMode).toBe('light');
   });
 
   it('persists the chosen mode in localStorage and updates the DOM', () => {
     render(<LoginScreen />);
-    const lightButton = screen.getByRole('button', { name: /claro/i });
+    const darkButton = screen.getByRole('button', { name: /oscuro/i });
     act(() => {
-      fireEvent.click(lightButton);
+      fireEvent.click(darkButton);
     });
-    expect(setItemSpy).toHaveBeenCalledWith('hc_theme_mode', 'light');
+    expect(setItemSpy).toHaveBeenCalledWith('hc_login_appearance_mode', 'dark');
+    expect(document.documentElement.dataset.themeMode).toBe('dark');
+    expect(document.documentElement.classList.contains('theme-dark')).toBe(true);
+    expect(document.documentElement.classList.contains('theme-light')).toBe(false);
+  });
+
+  it('restores hc_theme_mode on unmount after login screen applied light', () => {
+    window.localStorage.setItem('hc_theme_mode', 'dark');
+    const { unmount } = render(<LoginScreen />);
     expect(document.documentElement.dataset.themeMode).toBe('light');
-    expect(document.documentElement.classList.contains('theme-light')).toBe(true);
-    expect(document.documentElement.classList.contains('theme-dark')).toBe(false);
+    unmount();
+    expect(document.documentElement.dataset.themeMode).toBe('dark');
+    expect(document.documentElement.classList.contains('theme-dark')).toBe(true);
+    expect(document.documentElement.classList.contains('theme-light')).toBe(false);
   });
 });

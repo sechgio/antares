@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowDownToLine, ArrowUpFromLine, Loader2, RefreshCw, Timer } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpFromLine, Loader2, RefreshCw, Square, Timer } from 'lucide-react';
 import { api, onNotify } from '../../../api';
-import { SectionCard } from './shared';
+import { ActionButton, SectionCard } from './shared';
 
 interface SyncPanelProps {
   autoSync: boolean;
@@ -33,6 +33,10 @@ export default function SyncPanel({
 
   useEffect(() => {
     return onNotify((method, params) => {
+      if (method === 'autoimg.operation.cancelled') {
+        setSyncing(null);
+        setError('Operación cancelada');
+      }
       if (method !== 'autoimg.sync.complete' || !params || typeof params !== 'object') return;
       const p = params as Record<string, unknown>;
       const updated = Number(p.updated) || 0;
@@ -103,16 +107,29 @@ export default function SyncPanel({
     }
   }, [autoSync, onAutoSyncChange]);
 
+  const handleCancel = useCallback(async () => {
+    try {
+      const res = await api.autoimgCancelOperation();
+      if (!res.success) setError('No hay operación activa para cancelar');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo cancelar');
+    }
+  }, []);
+
   const busy = syncing !== null || togglingAuto;
+  const canCancel = syncing === 'scan-sync' || syncing === 'to';
 
   const autoSyncToggle = (
-    <label className="flex cursor-pointer items-center gap-2">
-      <span className="text-[11px] text-[var(--text-muted)]">Auto-sync</span>
+    <label
+      className="flex cursor-pointer items-center gap-2"
+      title="Lee el Sheet cada 5 min (no re-escanea Drive)"
+    >
+      <span className="text-[11px] text-[var(--text-muted)]">Auto-leer Sheet</span>
       <button
         type="button"
         role="switch"
         aria-checked={autoSync}
-        aria-label="Auto-sync periódico"
+        aria-label="Actualizar desde Sheet cada 5 minutos"
         disabled={busy}
         onClick={handleAutoSyncToggle}
         className={`relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-40 ${
@@ -129,56 +146,70 @@ export default function SyncPanel({
   );
 
   return (
-    <SectionCard title="Sincronización" action={autoSyncToggle}>
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
+    <SectionCard
+      title="Operaciones"
+      subtitle="Escanea Drive para detectar fotos nuevas. Escribe o lee el Sheet sin re-escanear."
+      action={autoSyncToggle}
+    >
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <ActionButton
+            variant="primary"
             onClick={handleScanAndSync}
             disabled={busy}
-            className="inline-flex items-center gap-2 rounded-lg bg-[var(--accent-primary)] px-4 py-2 text-[12px] font-medium text-[var(--text-on-accent)] transition-colors hover:bg-[var(--accent-primary-hover)] disabled:opacity-40"
+            className="w-full justify-center px-4 py-2.5 sm:w-auto sm:justify-start"
           >
             {syncing === 'scan-sync' ? (
               <Loader2 size={14} className="animate-spin" />
             ) : (
               <RefreshCw size={14} strokeWidth={2} />
             )}
-            {syncing === 'scan-sync' ? 'Escaneando…' : 'Escanear y sincronizar'}
-          </button>
+            {syncing === 'scan-sync' ? 'Escaneando y escribiendo…' : 'Escanear y sincronizar'}
+          </ActionButton>
 
-          <button
-            type="button"
-            onClick={handleSyncTo}
-            disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-medium)] px-3 py-2 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-active)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)] disabled:opacity-40"
-          >
-            {syncing === 'to' ? <Loader2 size={13} className="animate-spin" /> : <ArrowUpFromLine size={13} />}
-            {syncing === 'to' ? 'Escribiendo…' : 'Escribir al Sheet'}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <ActionButton variant="secondary" onClick={handleSyncTo} disabled={busy}>
+              {syncing === 'to' ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <ArrowUpFromLine size={13} />
+              )}
+              {syncing === 'to' ? 'Escribiendo…' : 'Escribir al Sheet'}
+            </ActionButton>
 
-          <button
-            type="button"
-            onClick={handleSyncFrom}
-            disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-medium)] px-3 py-2 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-active)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)] disabled:opacity-40"
-          >
-            {syncing === 'from' ? <Loader2 size={13} className="animate-spin" /> : <ArrowDownToLine size={13} />}
-            {syncing === 'from' ? 'Leyendo…' : 'Leer del Sheet'}
-          </button>
+            <ActionButton variant="secondary" onClick={handleSyncFrom} disabled={busy}>
+              {syncing === 'from' ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <ArrowDownToLine size={13} />
+              )}
+              {syncing === 'from' ? 'Leyendo…' : 'Leer del Sheet'}
+            </ActionButton>
+
+            {canCancel && (
+              <ActionButton variant="danger" onClick={handleCancel}>
+                <Square size={12} />
+                Cancelar
+              </ActionButton>
+            )}
+          </div>
         </div>
 
         {(lastSync || sheetName) && (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[var(--text-muted)] lg:justify-end">
+          <div className="flex shrink-0 flex-col gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] px-3.5 py-2.5 text-[11px] text-[var(--text-muted)] lg:min-w-[200px]">
             {sheetName && (
-              <span className="max-w-[180px] truncate" title={sheetName}>
-                {sheetName}
-              </span>
+              <div>
+                <p className="text-[9px] uppercase tracking-wider text-[var(--text-muted)]">Sheet</p>
+                <p className="mt-0.5 max-w-[220px] truncate text-[var(--text-secondary)]" title={sheetName}>
+                  {sheetName}
+                </p>
+              </div>
             )}
             {lastSync && (
-              <span className="inline-flex items-center gap-1.5">
+              <div className="inline-flex items-center gap-1.5">
                 <Timer size={12} className="shrink-0 opacity-60" />
-                {lastSync}
-              </span>
+                <span>Último sync: {lastSync}</span>
+              </div>
             )}
           </div>
         )}
@@ -188,8 +219,8 @@ export default function SyncPanel({
         <div
           className={`mt-3 rounded-lg px-3 py-2 text-[11px] ${
             error
-              ? 'border border-red-500/20 bg-red-500/5 text-red-400'
-              : 'border border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-muted)]'
+              ? 'border border-[color-mix(in_srgb,var(--accent-red)_25%,transparent)] bg-[color-mix(in_srgb,var(--accent-red)_8%,transparent)] text-[var(--accent-red)]'
+              : 'border border-[var(--border-subtle)] bg-[var(--bg-base)] text-[var(--text-muted)]'
           }`}
         >
           {error || lastResult}

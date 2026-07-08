@@ -37,37 +37,7 @@ const NATIVE_METHODS = [
   'html_to_pdf',
 ];
 
-const AUTOIMG_METHODS = [
-  'autoimg_oauth_config_status',
-  'autoimg_oauth_config_save',
-  'autoimg_sheets_auth_url',
-  'autoimg_sheets_auth_callback',
-  'autoimg_sheets_auth_cancel',
-  'autoimg_sheets_auth_status',
-  'autoimg_sheets_auth_revoke',
-  'autoimg_sheets_open',
-  'autoimg_sheets_get_config',
-  'autoimg_sheets_read_range',
-  'autoimg_sheets_write_range',
-  'autoimg_sheets_append_row',
-  'autoimg_drive_list_folder',
-  'autoimg_drive_scan_nis',
-  'autoimg_drive_verify_folder',
-  'autoimg_drive_status',
-  'autoimg_folders_list',
-  'autoimg_folders_add',
-  'autoimg_folders_remove',
-  'autoimg_folders_toggle',
-  'autoimg_scan_all',
-  'autoimg_scan_and_sync',
-  'autoimg_sync_to_sheet',
-  'autoimg_sync_from_sheet',
-  'autoimg_arrastre_list',
-  'autoimg_logs_list',
-  'autoimg_bootstrap',
-  'autoimg_auto_sync_toggle',
-  'autoimg_status',
-];
+const { AUTOIMG_METHODS } = require('./autoimg-ipc-methods');
 
 // Methods with larger user payloads or slow rendering/import work. The list
 // lives in shared/long-running-methods.json so the Electron main process and

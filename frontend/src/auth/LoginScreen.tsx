@@ -15,7 +15,7 @@ import AntaresScene from './AntaresScene';
 import './login.css';
 
 type AppearanceMode = 'dark' | 'light';
-const HC_THEME_MODE_KEY = 'hc_theme_mode';
+const HC_LOGIN_APPEARANCE_KEY = 'hc_login_appearance_mode';
 const MOTION_EASE = [0.16, 1, 0.3, 1] as const;
 
 function useReducedMotion() {
@@ -35,13 +35,11 @@ function useReducedMotion() {
 function readInitialAppearanceMode(): AppearanceMode {
   if (typeof window === 'undefined') return 'light';
   try {
-    const stored = window.localStorage.getItem(HC_THEME_MODE_KEY);
+    const stored = window.localStorage.getItem(HC_LOGIN_APPEARANCE_KEY);
     if (stored === 'light' || stored === 'dark') return stored;
   } catch {
     /* ignore */
   }
-  const explicit = document.documentElement.dataset.themeMode;
-  if (explicit === 'light' || explicit === 'dark') return explicit;
   return 'light';
 }
 
@@ -52,7 +50,23 @@ function applyAppearanceMode(mode: AppearanceMode) {
   root.classList.toggle('theme-light', mode === 'light');
   root.classList.toggle('theme-dark', mode === 'dark');
   try {
-    window.localStorage.setItem(HC_THEME_MODE_KEY, mode);
+    window.localStorage.setItem(HC_LOGIN_APPEARANCE_KEY, mode);
+  } catch {
+    /* ignore */
+  }
+}
+
+const HC_THEME_MODE_KEY = 'hc_theme_mode';
+
+function restoreAppThemeMode() {
+  if (typeof document === 'undefined' || typeof window === 'undefined') return;
+  try {
+    const mode = window.localStorage.getItem(HC_THEME_MODE_KEY);
+    if (mode !== 'light' && mode !== 'dark') return;
+    const root = document.documentElement;
+    root.dataset.themeMode = mode;
+    root.classList.toggle('theme-light', mode === 'light');
+    root.classList.toggle('theme-dark', mode === 'dark');
   } catch {
     /* ignore */
   }
@@ -77,15 +91,23 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
-  const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>(
-    () => readInitialAppearanceMode(),
-  );
+  const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>(() => {
+    const mode = readInitialAppearanceMode();
+    applyAppearanceMode(mode);
+    return mode;
+  });
   const reducedMotion = useReducedMotion();
   const displayError = localError ?? error;
 
   useEffect(() => {
     applyAppearanceMode(appearanceMode);
   }, [appearanceMode]);
+
+  useEffect(() => {
+    return () => {
+      restoreAppThemeMode();
+    };
+  }, []);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();

@@ -1,36 +1,5 @@
 const { getMainWindow } = require('./window-manager');
-
-const AUTOIMG_METHODS = new Set([
-  'autoimg_oauth_config_status',
-  'autoimg_oauth_config_save',
-  'autoimg_sheets_auth_url',
-  'autoimg_sheets_auth_callback',
-  'autoimg_sheets_auth_cancel',
-  'autoimg_sheets_auth_status',
-  'autoimg_sheets_auth_revoke',
-  'autoimg_sheets_open',
-  'autoimg_sheets_get_config',
-  'autoimg_sheets_read_range',
-  'autoimg_sheets_write_range',
-  'autoimg_sheets_append_row',
-  'autoimg_drive_list_folder',
-  'autoimg_drive_scan_nis',
-  'autoimg_drive_verify_folder',
-  'autoimg_drive_status',
-  'autoimg_folders_list',
-  'autoimg_folders_add',
-  'autoimg_folders_remove',
-  'autoimg_folders_toggle',
-  'autoimg_scan_all',
-  'autoimg_scan_and_sync',
-  'autoimg_sync_to_sheet',
-  'autoimg_sync_from_sheet',
-  'autoimg_arrastre_list',
-  'autoimg_logs_list',
-  'autoimg_bootstrap',
-  'autoimg_auto_sync_toggle',
-  'autoimg_status',
-]);
+const { AUTOIMG_METHODS } = require('./autoimg-ipc-methods');
 
 const sheets = require('./google-sheets-service');
 const drive = require('./google-drive-service');
@@ -160,7 +129,13 @@ async function handleAutoimgCall(method, params = {}) {
         return { handled: true, result: await engine.bootstrap({ refresh: params.refresh !== false }) };
 
       case 'autoimg_auto_sync_toggle':
-        return { handled: true, result: engine.setAutoSync(params.enabled) };
+        return { handled: true, result: await engine.setAutoSync(params.enabled) };
+
+      case 'autoimg_cancel_operation':
+        return { handled: true, result: engine.cancelOperation() };
+
+      case 'autoimg_operation_status':
+        return { handled: true, result: engine.getOperationStatus() };
 
       case 'autoimg_status':
         return { handled: true, result: await engine.getStatus() };

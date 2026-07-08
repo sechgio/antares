@@ -92,8 +92,8 @@ export default function GoogleDrivePanel({ googleConnected, onFolderAdded }: Goo
       title="Google Drive"
       badge={driveConnected ? <StatusChip ok label="Listo" /> : undefined}
     >
-      <p className="mb-2 text-[10px] text-[var(--text-muted)]">
-        URL o ID de carpeta en Compartidos.
+      <p className="mb-2 text-[10px] leading-relaxed text-[var(--text-muted)]">
+        URL o ID de carpeta compartida a inventariar.
       </p>
 
       <input

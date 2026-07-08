@@ -1,4 +1,4 @@
-const { getValidTokens } = require('./google-sheets-service');
+const { getValidTokens, refreshAccessToken } = require('./google-sheets-service');
 const { fetchWithRetry } = require('./autoimg-google-fetch');
 const nis = require('./autoimg-nis');
 
@@ -10,7 +10,7 @@ const DRIVE_SHARED_PARAMS = {
   includeItemsFromAllDrives: 'true',
 };
 
-async function _driveFetch(path, params = {}) {
+async function _driveFetch(path, params = {}, retried = false) {
   const tokens = await getValidTokens();
   if (!tokens) throw new Error('No autenticado con Google');
   const qs = new URLSearchParams({ ...DRIVE_SHARED_PARAMS, ...params });
@@ -18,6 +18,10 @@ async function _driveFetch(path, params = {}) {
   const res = await fetchWithRetry(url, {
     headers: { Authorization: `Bearer ${tokens.access_token}` },
   }, { rateLimitMessage: 'Rate limit excedido en Drive API' });
+  if (res.status === 401 && !retried && tokens.refresh_token) {
+    await refreshAccessToken(tokens);
+    return _driveFetch(path, params, true);
+  }
   if (!res.ok) throw new Error(`Drive API error (${res.status}): ${await res.text()}`);
   return res.json();
 }
@@ -38,17 +42,13 @@ function parseFolderId(input) {
   return null;
 }
 
-function normalizeFolderId(input) {
-  return parseFolderId(input);
-}
-
 function assertValidFolderId(input) {
-  const id = normalizeFolderId(input);
+  const id = parseFolderId(input);
   if (!id) throw new Error('ID de carpeta de Drive inválido');
   return id;
 }
 
-async function listFolder(folderId) {
+async function listFolder(folderId, { onPage } = {}) {
   const safeId = assertValidFolderId(folderId);
   const files = [];
   let pageToken = '';
@@ -59,8 +59,16 @@ async function listFolder(folderId) {
       pageSize: '200',
       ...(pageToken ? { pageToken } : {}),
     });
-    for (const f of data.files || []) {
+    const pageFiles = data.files || [];
+    for (const f of pageFiles) {
       files.push({ id: f.id, name: f.name, modifiedTime: f.modifiedTime });
+    }
+    if (onPage) {
+      onPage({
+        pageFiles,
+        totalSoFar: files.length,
+        hasMore: Boolean(data.nextPageToken),
+      });
     }
     pageToken = data.nextPageToken || '';
   } while (pageToken);
@@ -109,7 +117,6 @@ module.exports = {
   verifyFolder,
   getDriveStatus,
   parseFolderId,
-  normalizeFolderId,
   assertValidFolderId,
   ...nis,
 };

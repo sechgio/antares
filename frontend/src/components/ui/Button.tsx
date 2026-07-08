@@ -3,6 +3,8 @@ import React from 'react';
 interface ButtonProps {
   variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
   size?: 'sm' | 'md' | 'lg';
+  type?: 'button' | 'submit' | 'reset';
+  form?: string;
   onClick?: () => void;
   disabled?: boolean;
   className?: string;
@@ -12,6 +14,8 @@ interface ButtonProps {
 export default function Button({
   variant = 'primary',
   size = 'md',
+  type = 'button',
+  form,
   onClick,
   disabled = false,
   className = '',
@@ -32,6 +36,8 @@ export default function Button({
 
   return (
     <button
+      type={type}
+      form={form}
       onClick={onClick}
       disabled={disabled}
       className={`inline-flex items-center justify-center gap-2 rounded-full transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] ${sizeClasses[size]} ${variants[variant]} ${className}`}

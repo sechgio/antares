@@ -500,6 +500,7 @@ export const api = {
     completos?: number;
     faltantes?: number;
     sobrantes?: number;
+    sinSgio?: number;
     carpetasActivas?: number;
     folders: Array<{ name: string; folder_id: string; activo: boolean; ultimo_scan: string; cant_archivos: number }>;
     bdRows: string[][];
@@ -507,6 +508,8 @@ export const api = {
     arrastre: Array<{ nis: string; sgio: string; motivo: string; fecha: string; observacion: string }>;
   }>('autoimg_bootstrap', { refresh }),
   autoimgAutoSyncToggle: (enabled: boolean) => _invoke<{ enabled: boolean }>('autoimg_auto_sync_toggle', { enabled }),
-  autoimgStatus: () => _invoke<{ connected: boolean; sheetName?: string; sheetId?: string; sheetLinked?: boolean; lastSync?: string; autoSync: boolean; totalNis?: number; completos?: number; faltantes?: number; sobrantes?: number; carpetasActivas?: number }>('autoimg_status'),
+  autoimgCancelOperation: () => _invoke<{ success: boolean; operation?: string; reason?: string }>('autoimg_cancel_operation'),
+  autoimgOperationStatus: () => _invoke<{ active: string | null; cancellable: boolean }>('autoimg_operation_status'),
+  autoimgStatus: () => _invoke<{ connected: boolean; sheetName?: string; sheetId?: string; sheetLinked?: boolean; lastSync?: string; autoSync: boolean; totalNis?: number; completos?: number; faltantes?: number; sobrantes?: number; sinSgio?: number; carpetasActivas?: number }>('autoimg_status'),
 
 };

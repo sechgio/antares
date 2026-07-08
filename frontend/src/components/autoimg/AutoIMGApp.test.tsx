@@ -1,17 +1,19 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mockApi } = vi.hoisted(() => ({
   mockApi: {
     autoimgBootstrap: vi.fn(async () => ({
-      connected: false,
+      connected: true,
+      sheetLinked: true,
+      lastSync: '2026-07-03',
       autoSync: false,
-      folders: [],
+      folders: [{ name: 'Test', folder_id: 'abc', activo: true, ultimo_scan: '', cant_archivos: 0 }],
       bdRows: [],
       logRows: [],
       arrastre: [],
     })),
-    autoimgOAuthConfigStatus: vi.fn(async () => ({ configured: false })),
+    autoimgOAuthConfigStatus: vi.fn(async () => ({ configured: true })),
     autoimgSheetsAuthStatus: vi.fn(async () => ({ authenticated: false })),
     autoimgSheetsGetConfig: vi.fn(async () => ({ sheet_id: '', name: '', linked: false })),
     autoimgFoldersList: vi.fn(async () => ({ folders: [] })),
@@ -33,15 +35,20 @@ describe('AutoIMGApp layout and navigation', () => {
     vi.clearAllMocks();
   });
 
-  it('renders unified header and tab buttons in the top bar', () => {
+  it('renders unified header and tab buttons in the top bar', async () => {
     render(<AutoIMGApp />);
-    expect(screen.getByRole('heading', { name: 'AutoIMG' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'AutoIMG' })).toBeInTheDocument();
+    });
     expect(screen.getByRole('button', { name: 'Dashboard' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Logs' })).toBeInTheDocument();
   });
 
-  it('keeps sidebar panels visible when switching tabs', () => {
+  it('keeps sidebar panels visible when switching tabs', async () => {
     render(<AutoIMGApp />);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Carpetas' })).toBeInTheDocument();
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Carpetas' }));
     expect(screen.getByText('Conexión')).toBeInTheDocument();
     expect(screen.getByText('OAuth')).toBeInTheDocument();
@@ -50,6 +57,8 @@ describe('AutoIMGApp layout and navigation', () => {
 
   it('loads bootstrap once on mount', async () => {
     render(<AutoIMGApp />);
-    expect(mockApi.autoimgBootstrap).toHaveBeenCalledWith(true);
+    await waitFor(() => {
+      expect(mockApi.autoimgBootstrap).toHaveBeenCalledWith(true);
+    });
   });
 });

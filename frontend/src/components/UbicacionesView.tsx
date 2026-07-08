@@ -1662,6 +1662,11 @@ export const ResultPanel: React.FC<{ result: Result; outputDir: string }> = ({ r
           <p className="text-xs font-mono text-[var(--text-secondary)] break-all leading-relaxed">
             {result.data?.outputDir || outputDir}
           </p>
+          {isConsolidado && result.data?.consolidatedPath && (
+            <p className="text-xs font-mono text-[var(--text-secondary)] break-all leading-relaxed mt-2">
+              {String(result.data.consolidatedPath).split(/[/\\]/).pop()}
+            </p>
+          )}
         </div>
       </div>
     );

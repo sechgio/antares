@@ -691,14 +691,14 @@ const PreviewPanel = forwardRef<HTMLIFrameElement, PreviewPanelProps>(
 
     if (!renderedHtml) {
       return (
-        <div className={`flex-1 p-4 overflow-auto flex justify-center items-start ${bgClass}`}>
+        <div className={`flex-1 p-2 overflow-auto flex justify-center items-start ${bgClass}`}>
           <div className="text-[var(--text-muted)] text-sm">Seleccione datos y una plantilla para ver la vista previa</div>
         </div>
       );
     }
 
     return (
-      <div className={`flex-1 p-4 overflow-auto flex justify-center items-start ${bgClass}`}>
+      <div className={`flex-1 p-2 overflow-auto flex justify-center items-start ${bgClass}`}>
         <iframe
           ref={ref}
           srcDoc={renderedHtml}

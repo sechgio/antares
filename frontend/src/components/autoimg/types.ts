@@ -27,6 +27,7 @@ export interface AutoImgStatus {
   completos?: number;
   faltantes?: number;
   sobrantes?: number;
+  sinSgio?: number;
   carpetasActivas?: number;
 }
 
