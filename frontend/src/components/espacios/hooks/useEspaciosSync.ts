@@ -374,6 +374,27 @@ export function useEspaciosSync(userId: string | undefined) {
     }
   }, [activeProyectoId, loadTareas]);
 
+  /** Local-only remove (for undoable delete). Pair with commitDeleteTarea / restoreTarea. */
+  const softRemoveTarea = useCallback((id: string) => {
+    setTareas((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const restoreTarea = useCallback((tarea: Tarea) => {
+    setTareas((prev) => {
+      if (prev.some((t) => t.id === tarea.id)) return prev;
+      return [...prev, tarea].sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at));
+    });
+  }, []);
+
+  const commitDeleteTarea = useCallback(async (id: string) => {
+    try {
+      await deleteTarea(id);
+    } catch (err) {
+      if (activeProyectoId) await loadTareas(activeProyectoId);
+      throw err;
+    }
+  }, [activeProyectoId, loadTareas]);
+
   const addBoardColumn = useCallback(
     async (input: BoardColumnInput) => {
       if (!activeProyectoId) {
@@ -538,6 +559,9 @@ export function useEspaciosSync(userId: string | undefined) {
     removeBoardColumn,
     patchTarea,
     removeTarea,
+    softRemoveTarea,
+    restoreTarea,
+    commitDeleteTarea,
     patchEspacio,
     patchProyecto,
     removeEspacio,

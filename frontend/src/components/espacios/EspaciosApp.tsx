@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
+import BulkActionBar from './components/BulkActionBar';
 import CreateNameModal from './components/CreateNameModal';
 import EmptyState from './components/EmptyState';
 import EspaciosWelcome from './components/EspaciosWelcome';
@@ -18,7 +19,14 @@ import ListView from './components/views/ListView';
 import TableView from './components/views/TableView';
 import { useEspaciosSync } from './hooks/useEspaciosSync';
 import { useTeamMembers } from './hooks/useTeamMembers';
-import { DEFAULT_FILTERS, type Tarea, type TareaFilters, type TareaInput, type VistaType } from './types';
+import {
+  DEFAULT_FILTERS,
+  type Tarea,
+  type TareaFilters,
+  type TareaInput,
+  type TareaStatus,
+  type VistaType,
+} from './types';
 import { computeTaskStats, countActiveFilters, filterTareas } from './utils/filters';
 import {
   consumeEspaciosFocusTarget,
@@ -52,12 +60,16 @@ export default function EspaciosApp() {
   const [createModal, setCreateModal] = useState<CreateModal>(null);
   const [sidebarWidth, setSidebarWidth] = useState(readStoredSidebarWidth);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const sidebarWidthRef = useRef(sidebarWidth);
   const resizeStartXRef = useRef(0);
   const resizeStartWidthRef = useRef(ESPACIOS_SIDEBAR_DEFAULT_WIDTH);
   const pendingProyectoIdRef = useRef<string | null>(null);
   const pendingTareaIdRef = useRef<string | null>(null);
   const membersErrorToastedRef = useRef(false);
+  const pendingDeletesRef = useRef<
+    Map<string, { tarea: Tarea; timer: ReturnType<typeof setTimeout> }>
+  >(new Map());
   sidebarWidthRef.current = sidebarWidth;
 
   const { setActiveEspacioId, setActiveProyectoId, proyectos, tareas } = sync;
@@ -65,6 +77,26 @@ export default function EspaciosApp() {
   const handleViewChange = useCallback((view: VistaType) => {
     setActiveView(view);
     writeEspaciosPrefs({ activeView: view });
+    setSelectedIds(new Set());
+  }, []);
+
+  // Clear selection when project changes; flush pending deletes on unmount.
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [sync.activeProyectoId]);
+
+  useEffect(() => {
+    const pending = pendingDeletesRef.current;
+    return () => {
+      for (const { timer, tarea } of pending.values()) {
+        clearTimeout(timer);
+        void sync.commitDeleteTarea(tarea.id).catch(() => {
+          /* best-effort commit on unmount */
+        });
+      }
+      pending.clear();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on unmount
   }, []);
 
   // Surface non-fatal nested load failures without blanking the whole module.
@@ -260,28 +292,168 @@ export default function EspaciosApp() {
     [sync, confirm, addToast],
   );
 
+  const scheduleDeleteWithUndo = useCallback(
+    (snapshots: Tarea[]) => {
+      if (snapshots.length === 0) return;
+
+      for (const tarea of snapshots) {
+        const existing = pendingDeletesRef.current.get(tarea.id);
+        if (existing) clearTimeout(existing.timer);
+        sync.softRemoveTarea(tarea.id);
+        setSelectedIds((prev) => {
+          if (!prev.has(tarea.id)) return prev;
+          const next = new Set(prev);
+          next.delete(tarea.id);
+          return next;
+        });
+
+        const timer = setTimeout(() => {
+          pendingDeletesRef.current.delete(tarea.id);
+          void sync.commitDeleteTarea(tarea.id).catch((err) => {
+            sync.restoreTarea(tarea);
+            addToast({
+              message: err instanceof Error ? err.message : 'No se pudo eliminar la tarea',
+              type: 'error',
+            });
+          });
+        }, 6000);
+        pendingDeletesRef.current.set(tarea.id, { tarea, timer });
+      }
+
+      const label =
+        snapshots.length === 1
+          ? `«${snapshots[0].title}» eliminada`
+          : `${snapshots.length} tareas eliminadas`;
+
+      addToast({
+        message: label,
+        type: 'success',
+        duration: 6000,
+        action: {
+          label: 'Deshacer',
+          onClick: () => {
+            for (const tarea of snapshots) {
+              const entry = pendingDeletesRef.current.get(tarea.id);
+              if (entry) {
+                clearTimeout(entry.timer);
+                pendingDeletesRef.current.delete(tarea.id);
+              }
+              sync.restoreTarea(tarea);
+            }
+          },
+        },
+      });
+    },
+    [sync, addToast],
+  );
+
   const handleDeleteTask = useCallback(
     async (tarea: Tarea) => {
       const ok = await confirm({
         title: 'Eliminar tarea',
-        description: `¿Eliminar «${tarea.title}»? Esta acción no se puede deshacer.`,
+        description: `¿Eliminar «${tarea.title}»? Podrás deshacerlo unos segundos.`,
         confirmLabel: 'Eliminar',
         cancelLabel: 'Cancelar',
         type: 'destructive',
       });
       if (!ok) return;
-      try {
-        await sync.removeTarea(tarea.id);
-        addToast({ message: 'Tarea eliminada', type: 'success' });
-      } catch (err) {
-        addToast({
-          message: err instanceof Error ? err.message : 'Error al eliminar tarea',
-          type: 'error',
+      scheduleDeleteWithUndo([tarea]);
+    },
+    [confirm, scheduleDeleteWithUndo],
+  );
+
+  const handleToggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleToggleSelectAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      const visible = filteredTareas;
+      if (visible.length === 0) return prev;
+      const allOn = visible.every((t) => prev.has(t.id));
+      if (allOn) return new Set();
+      return new Set(visible.map((t) => t.id));
+    });
+  }, [filteredTareas]);
+
+  const handleBulkStatus = useCallback(
+    (status: TareaStatus) => {
+      const ids = [...selectedIds];
+      if (ids.length === 0) return;
+      for (const id of ids) {
+        void sync.patchTarea(id, { status }).catch((err) => {
+          addToast({
+            message: err instanceof Error ? err.message : 'No se pudo actualizar el estado',
+            type: 'error',
+          });
         });
       }
+      setSelectedIds(new Set());
+      addToast({
+        message:
+          ids.length === 1
+            ? 'Estado actualizado'
+            : `Estado actualizado en ${ids.length} tareas`,
+        type: 'success',
+      });
     },
-    [sync, confirm, addToast],
+    [selectedIds, sync, addToast],
   );
+
+  const handleBulkDelete = useCallback(async () => {
+    const snapshots = sync.tareas.filter((t) => selectedIds.has(t.id));
+    if (snapshots.length === 0) return;
+    const ok = await confirm({
+      title: 'Eliminar tareas',
+      description: `¿Eliminar ${snapshots.length} tarea${snapshots.length === 1 ? '' : 's'}? Podrás deshacerlo unos segundos.`,
+      confirmLabel: 'Eliminar',
+      cancelLabel: 'Cancelar',
+      type: 'destructive',
+    });
+    if (!ok) return;
+    scheduleDeleteWithUndo(snapshots);
+  }, [sync.tareas, selectedIds, confirm, scheduleDeleteWithUndo]);
+
+  // Local shortcuts when not typing in a field: N nueva, / buscar, 1–5 vistas.
+  useEffect(() => {
+    const views: VistaType[] = ['list', 'board', 'table', 'calendar', 'gantt'];
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const tag = target.tagName;
+      const typing =
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        target.isContentEditable;
+      if (typing) return;
+      if (taskFormOpen || createModal) return;
+      if (!sync.activeProyecto) return;
+
+      if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault();
+        openTaskForm();
+        return;
+      }
+      if (e.key === '/') {
+        e.preventDefault();
+        document.querySelector<HTMLInputElement>('input[aria-label="Buscar tareas"]')?.focus();
+        return;
+      }
+      if (e.key >= '1' && e.key <= '5') {
+        e.preventDefault();
+        handleViewChange(views[Number(e.key) - 1]);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [sync.activeProyecto, taskFormOpen, createModal, openTaskForm, handleViewChange]);
 
   const handleCreate = useCallback(
     async (name: string) => {
@@ -585,6 +757,15 @@ export default function EspaciosApp() {
                     onClear={() => setFilters(DEFAULT_FILTERS)}
                     onAddTask={() => openTaskForm()}
                   />
+                  {(activeView === 'list' || activeView === 'table') && selectedIds.size > 0 && (
+                    <BulkActionBar
+                      count={selectedIds.size}
+                      columns={sync.boardColumns}
+                      onClear={() => setSelectedIds(new Set())}
+                      onBulkStatus={handleBulkStatus}
+                      onBulkDelete={() => void handleBulkDelete()}
+                    />
+                  )}
                 </>
               )}
 

@@ -12,6 +12,9 @@ interface TableViewProps {
   tareas: Tarea[];
   members: TeamMember[];
   columns?: BoardColumn[];
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  onToggleSelectAll?: () => void;
   onStatusChange: (id: string, status: TareaStatus) => void;
   onComplete: (tarea: Tarea) => void;
   onEdit?: (tarea: Tarea) => void;
@@ -67,6 +70,9 @@ export default function TableView({
   tareas,
   members,
   columns = [],
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectAll,
   onStatusChange,
   onComplete,
   onEdit,
@@ -75,6 +81,9 @@ export default function TableView({
 }: TableViewProps) {
   const [sortKey, setSortKey] = useState<SortKey>('title');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const selectable = Boolean(onToggleSelect);
+  const allSelected = selectable && tareas.length > 0 && tareas.every((t) => selectedIds?.has(t.id));
+  const someSelected = selectable && tareas.some((t) => selectedIds?.has(t.id));
 
   const sorted = useMemo(() => {
     const list = [...tareas];
@@ -137,6 +146,20 @@ export default function TableView({
         <table className="w-full min-w-[920px] border-collapse text-left text-sm">
           <thead className="sticky top-0 z-10 bg-[var(--bg-elevated)]">
             <tr className="border-b border-[var(--border-subtle)] text-[11px] uppercase tracking-wide">
+              {selectable && (
+                <th className="w-10 px-2 py-2.5 text-center">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = someSelected && !allSelected;
+                    }}
+                    onChange={() => onToggleSelectAll?.()}
+                    aria-label="Seleccionar todas las tareas"
+                    className="h-3.5 w-3.5 rounded border-[var(--border-subtle)] accent-[var(--accent-primary)]"
+                  />
+                </th>
+              )}
               <th className="w-10 px-2 py-2.5 text-center font-medium text-[var(--text-muted)]">#</th>
               <th className="w-10 px-2 py-2.5" aria-label="Completar" />
               <th className="min-w-[220px] px-3 py-2.5">
@@ -189,14 +212,26 @@ export default function TableView({
               const overdue = isOverdue(tarea, columns);
               const done = columnIsDone(columns, tarea.status);
               const priority = priorityMeta(tarea, columns);
+              const selected = selectedIds?.has(tarea.id) ?? false;
 
               return (
                 <tr
                   key={tarea.id}
                   className={`border-b border-[var(--border-subtle)] transition-colors hover:bg-[var(--bg-elevated)]/60 ${
                     overdue && !done ? 'bg-[var(--accent-red)]/[0.03]' : ''
-                  }`}
+                  } ${selected ? 'bg-[var(--accent-primary)]/[0.06]' : ''}`}
                 >
+                  {selectable && (
+                    <td className="px-2 py-2.5 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => onToggleSelect?.(tarea.id)}
+                        aria-label={`Seleccionar ${tarea.title}`}
+                        className="h-3.5 w-3.5 rounded border-[var(--border-subtle)] accent-[var(--accent-primary)]"
+                      />
+                    </td>
+                  )}
                   <td className="px-2 py-2.5 text-center text-xs tabular-nums text-[var(--text-muted)]">
                     {index + 1}
                   </td>

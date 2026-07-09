@@ -10,6 +10,9 @@ interface ListViewProps {
   tareas: Tarea[];
   members: TeamMember[];
   columns?: BoardColumn[];
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  onToggleSelectAll?: () => void;
   onStatusChange: (id: string, status: Tarea['status']) => void;
   onEdit?: (tarea: Tarea) => void;
   onDelete: (id: string) => void;
@@ -20,6 +23,9 @@ export default function ListView({
   tareas,
   members,
   columns = [],
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectAll,
   onStatusChange,
   onEdit,
   onDelete,
@@ -37,11 +43,29 @@ export default function ListView({
     );
   }
 
+  const selectable = Boolean(onToggleSelect);
+  const allSelected = selectable && tareas.length > 0 && tareas.every((t) => selectedIds?.has(t.id));
+  const someSelected = selectable && tareas.some((t) => selectedIds?.has(t.id));
+
   return (
     <div className="overflow-x-auto px-2">
       <table className="w-full min-w-[720px] text-left text-sm">
         <thead>
           <tr className="border-b border-[var(--border-subtle)] text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
+            {selectable && (
+              <th className="w-10 px-3 py-3">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  ref={(el) => {
+                    if (el) el.indeterminate = someSelected && !allSelected;
+                  }}
+                  onChange={() => onToggleSelectAll?.()}
+                  aria-label="Seleccionar todas las tareas"
+                  className="h-3.5 w-3.5 rounded border-[var(--border-subtle)] accent-[var(--accent-primary)]"
+                />
+              </th>
+            )}
             <th className="px-4 py-3 font-medium">Tarea</th>
             <th className="px-4 py-3 font-medium">Estado</th>
             <th className="px-4 py-3 font-medium">Asignado</th>
@@ -52,13 +76,25 @@ export default function ListView({
         <tbody>
           {tareas.map((tarea) => {
             const overdue = isOverdue(tarea, columns);
+            const selected = selectedIds?.has(tarea.id) ?? false;
             return (
               <tr
                 key={tarea.id}
                 className={`border-b border-[var(--border-subtle)] transition-colors hover:bg-[var(--bg-elevated)]/50 ${
                   overdue ? 'bg-[var(--accent-red)]/[0.03]' : ''
-                }`}
+                } ${selected ? 'bg-[var(--accent-primary)]/[0.06]' : ''}`}
               >
+                {selectable && (
+                  <td className="px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={() => onToggleSelect?.(tarea.id)}
+                      aria-label={`Seleccionar ${tarea.title}`}
+                      className="h-3.5 w-3.5 rounded border-[var(--border-subtle)] accent-[var(--accent-primary)]"
+                    />
+                  </td>
+                )}
                 <td className="px-4 py-3">
                   <button
                     type="button"
