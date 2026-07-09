@@ -160,9 +160,12 @@ class FichaTecnica:
         base = create_empty_ficha(1)
         ficha_id = _safe_str(source.get("id")) or base["id"]
 
-        servicio_src = source.get("servicio") if isinstance(source.get("servicio"), dict) else {}
-        tratamiento_src = source.get("tratamiento") if isinstance(source.get("tratamiento"), dict) else {}
-        obs_src = source.get("obs_rec") if isinstance(source.get("obs_rec"), dict) else {}
+        servicio_raw = source.get("servicio")
+        servicio_src: dict[str, Any] = servicio_raw if isinstance(servicio_raw, dict) else {}
+        tratamiento_raw = source.get("tratamiento")
+        tratamiento_src: dict[str, Any] = tratamiento_raw if isinstance(tratamiento_raw, dict) else {}
+        obs_raw = source.get("obs_rec")
+        obs_src: dict[str, Any] = obs_raw if isinstance(obs_raw, dict) else {}
 
         status = _safe_str(source.get("status"), "draft")
         if status not in STATUS_VALUES:

@@ -46,10 +46,7 @@ def deserialize_document(raw: dict[str, Any]) -> EvidenciaDocument:
         if isinstance(item, dict)
     )
     label_raw = raw.get("cuadrante_label")
-    if label_raw is None:
-        cuadrante_label = CUADRANTE_LABEL
-    else:
-        cuadrante_label = str(label_raw).strip() or CUADRANTE_LABEL
+    cuadrante_label = CUADRANTE_LABEL if label_raw is None else str(label_raw).strip() or CUADRANTE_LABEL
     return EvidenciaDocument(
         title=str(raw.get("title", "")).strip(),
         cuadrante=fallback_cuadrante,

@@ -95,7 +95,7 @@ def test_render_html_template_and_inline(monkeypatch, tmp_path) -> None:
     assert "FICHA TÉCNICA DE EVALUACIÓN DE ACTIVIDADES" in template["html"]
     assert template["filename"] == "plantilla_ficha_tecnica.pdf"
     assert "NOMBRE DEL CLIENTE" in template["html"]
-    # Single-page A4, mirror of PreviewPanel (210×297 mm)
+    # Single-page A4, mirror of PreviewPanel (210x297 mm)
     assert "height: 297mm" in template["html"]
     assert "width: 210mm" in template["html"]
     assert "size: A4 portrait" in template["html"]

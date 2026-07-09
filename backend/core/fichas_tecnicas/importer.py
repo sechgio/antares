@@ -68,6 +68,8 @@ def parse_csv_bytes(content: bytes) -> list[dict[str, Any]]:
 def parse_xlsx_bytes(content: bytes) -> list[dict[str, Any]]:
     workbook = load_workbook(io.BytesIO(content), data_only=True)
     sheet = workbook.active
+    if sheet is None:
+        return []
     all_rows = list(sheet.iter_rows(values_only=False))
     if not all_rows:
         return []
