@@ -389,4 +389,50 @@ describe('useEspaciosSync', () => {
       expect(result.current.proyectos.map((p) => p.id).sort()).toEqual(['proy-a', 'proy-new']);
     });
   });
+
+  it('keeps soft-deleted tasks hidden when loadTareas reconciles from server', async () => {
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+    await waitFor(() => expect(result.current.tareas).toEqual([tareaA]));
+
+    act(() => {
+      result.current.softRemoveTarea('tarea-a');
+    });
+    expect(result.current.tareas).toEqual([]);
+
+    const created = { ...tareaA, id: 'tarea-new', title: 'Nueva' };
+    createTarea.mockResolvedValue(created);
+    // Server still has the soft-deleted row until the undo timer commits.
+    fetchTareas.mockResolvedValueOnce([tareaA, created]);
+
+    await act(async () => {
+      await result.current.addTarea({ title: 'Nueva' });
+    });
+
+    expect(result.current.tareas.some((t) => t.id === 'tarea-a')).toBe(false);
+    expect(result.current.tareas.some((t) => t.id === 'tarea-new')).toBe(true);
+  });
+
+  it('restoreTarea does not inject a task into a different active project', async () => {
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+    await waitFor(() => expect(result.current.tareas).toEqual([tareaA]));
+
+    act(() => {
+      result.current.softRemoveTarea('tarea-a');
+    });
+
+    // Switch espacio so the active project becomes proy-b (different from tareaA).
+    await act(async () => {
+      result.current.setActiveEspacioId('esp-b');
+    });
+    await waitFor(() => expect(result.current.activeEspacioId).toBe('esp-b'));
+    await waitFor(() => expect(result.current.activeProyectoId).toBe('proy-b'));
+    await waitFor(() => expect(result.current.tareas).toEqual([tareaB]));
+
+    act(() => {
+      result.current.restoreTarea(tareaA);
+    });
+
+    expect(result.current.tareas.some((t) => t.id === 'tarea-a')).toBe(false);
+    expect(result.current.tareas).toEqual([tareaB]);
+  });
 });
