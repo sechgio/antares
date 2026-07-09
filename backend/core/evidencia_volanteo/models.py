@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from .layout import CUADRANTE_LABEL
 
 MAX_IMAGES_PER_PAGE = 6
 MAX_LOGO_BYTES = 5 * 1024 * 1024
@@ -26,3 +28,5 @@ class EvidenciaDocument:
     title: str
     cuadrante: str
     pages: tuple[EvidenciaPage, ...]
+    cuadrante_label: str = field(default=CUADRANTE_LABEL)
+    show_cuadrante_label: bool = True

@@ -232,6 +232,8 @@ def render_pdf(
         "logo_left": logo_left,
         "logo_right": logo_right,
         **layout_context(),
+        "cuadrante_label": document.cuadrante_label or CUADRANTE_LABEL,
+        "show_cuadrante_label": document.show_cuadrante_label,
     }
 
     try:
@@ -475,7 +477,7 @@ def render_docx(
             run = merged_right.paragraphs[0].add_run()
             run.add_picture(BytesIO(logo_right_bytes), width=Cm(logo_right_dims[0]), height=Cm(logo_right_dims[1]))
 
-        # Populate Cuadrante (Label on line 1, value on line 2, centered)
+        # Populate Cuadrante (optional label on line 1, value on line 2, centered)
         info_cell = header_table.cell(1, 1)
         set_cell_width(info_cell, HEADER_TITLE_WIDTH_CM)
         set_cell_margins(info_cell, top_pt=3, left_pt=5, bottom_pt=3, right_pt=5)
@@ -483,9 +485,11 @@ def render_docx(
         info_cell.paragraphs[0].clear()
         reset_cell_paragraph(info_cell.paragraphs[0])
         info_cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        label_run = info_cell.paragraphs[0].add_run(CUADRANTE_LABEL)
-        format_run(label_run, INFO_FONT_PT, bold=True)
-        info_cell.paragraphs[0].add_run('\n')
+        resolved_label = (document.cuadrante_label or CUADRANTE_LABEL).strip()
+        if document.show_cuadrante_label and resolved_label:
+            label_run = info_cell.paragraphs[0].add_run(resolved_label)
+            format_run(label_run, INFO_FONT_PT, bold=True)
+            info_cell.paragraphs[0].add_run("\n")
         page_cuadrante = _display_cuadrante(page.cuadrante or document.cuadrante)
         value_run = info_cell.paragraphs[0].add_run(page_cuadrante)
         format_run(value_run, INFO_FONT_PT, bold=True)

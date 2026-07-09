@@ -1,9 +1,14 @@
 import { Plus, Trash2, MapPin } from 'lucide-react';
+import { DEFAULT_CUADRANTE_LABEL } from '../constants';
 import type { CuadranteRange } from '../types';
 
 interface Props {
   ranges: CuadranteRange[];
   totalPages: number;
+  cuadranteLabel: string;
+  showCuadranteLabel: boolean;
+  onCuadranteLabelChange: (value: string) => void;
+  onShowCuadranteLabelChange: (value: boolean) => void;
   onChange: (ranges: CuadranteRange[]) => void;
   onAdd: () => void;
 }
@@ -16,7 +21,16 @@ function updateRange(
   return ranges.map((r) => (r.id === id ? { ...r, ...patch } : r));
 }
 
-export default function CuadranteRangesEditor({ ranges, totalPages, onChange, onAdd }: Props) {
+export default function CuadranteRangesEditor({
+  ranges,
+  totalPages,
+  cuadranteLabel,
+  showCuadranteLabel,
+  onCuadranteLabelChange,
+  onShowCuadranteLabelChange,
+  onChange,
+  onAdd,
+}: Props) {
   const maxPage = Math.max(1, totalPages);
 
   return (
@@ -36,6 +50,31 @@ export default function CuadranteRangesEditor({ ranges, totalPages, onChange, on
           <Plus size={12} />
           Agregar
         </button>
+      </div>
+
+      <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3 flex flex-col gap-2.5">
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={showCuadranteLabel}
+            onChange={(e) => onShowCuadranteLabelChange(e.target.checked)}
+            className="rounded border-[var(--border-subtle)] text-[var(--accent-primary)] focus:ring-[var(--accent-primary)]"
+          />
+          <span className="text-[11px] font-medium text-[var(--text-secondary)]">
+            Mostrar etiqueta en el documento
+          </span>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] font-medium text-[var(--text-muted)]">Texto de la etiqueta</span>
+          <input
+            type="text"
+            value={cuadranteLabel}
+            onChange={(e) => onCuadranteLabelChange(e.target.value)}
+            disabled={!showCuadranteLabel}
+            placeholder={DEFAULT_CUADRANTE_LABEL}
+            className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)] focus:border-[var(--accent-primary)] transition-shadow disabled:opacity-50 disabled:cursor-not-allowed"
+          />
+        </label>
       </div>
 
       <div className="flex flex-col gap-3">

@@ -40,4 +40,32 @@ describe('buildExportHtml', () => {
     const sheetCount = (html.match(/preview-paper-scope bg-white text-black ev-sheet-page/g) ?? []).length;
     expect(sheetCount).toBe(2);
   });
+
+  it('permite etiqueta personalizada y ocultarla', () => {
+    const withCustom = buildExportHtml(
+      DEFAULT_TITLE,
+      [createDefaultRange(1, 1, 'AV EL SOL')],
+      [],
+      {},
+      null,
+      null,
+      'ZONA INTERVENIDA:',
+      true,
+    );
+    expect(withCustom).toContain('ZONA INTERVENIDA:');
+    expect(withCustom).not.toContain('CUADRANTE AFECTADO:');
+
+    const hidden = buildExportHtml(
+      DEFAULT_TITLE,
+      [createDefaultRange(1, 1, 'AV EL SOL')],
+      [],
+      {},
+      null,
+      null,
+      'CUADRANTE AFECTADO:',
+      false,
+    );
+    expect(hidden).not.toContain('CUADRANTE AFECTADO:');
+    expect(hidden).toContain('AV EL SOL');
+  });
 });
