@@ -152,12 +152,11 @@ def convertir_imagen(
 
         # Bake EXIF Orientation into pixels so phone photos are upright even
         # when keep_exif is False (default) or the destination strips tags.
-        transposed = ImageOps.exif_transpose(source_img)
-        if transposed is not None:
-            source_img = transposed
+        # Use a separate Image variable: exif_transpose returns Image, not ImageFile.
+        working: Image.Image = ImageOps.exif_transpose(source_img) or source_img
 
         info = _registry[formato]
-        img: Image.Image = _ensure_mode(source_img, info["modes"])
+        img: Image.Image = _ensure_mode(working, info["modes"])
 
         if resize and isinstance(resize, (tuple, list)) and len(resize) == 2:
             rw, rh = int(resize[0]), int(resize[1])
@@ -224,11 +223,9 @@ def convertir_a_preview(
 
     with Image.open(ruta_origen) as source_img:
         # Match convertir_imagen: bake Orientation so preview is upright.
-        transposed = ImageOps.exif_transpose(source_img)
-        if transposed is not None:
-            source_img = transposed
+        working: Image.Image = ImageOps.exif_transpose(source_img) or source_img
 
-        orig_w, orig_h = source_img.size
+        orig_w, orig_h = working.size
         orig_size_kb = round(stat.st_size / 1024, 1)
 
         # Preview capped at 400px on longest side. When `resize` is provided it
@@ -240,13 +237,13 @@ def convertir_a_preview(
         if resize and isinstance(resize, (tuple, list)) and len(resize) == 2:
             target_w, target_h = int(resize[0]), int(resize[1])
         else:
-            target_w, target_h = source_img.size
+            target_w, target_h = working.size
         longest = max(target_w, target_h)
         if longest == 0:
             raise ValueError("Imagen con dimensiones 0x0 no puede ser procesada")
         ratio = min(max_size / longest, 1.0)
         preview_size = (max(1, int(target_w * ratio)), max(1, int(target_h * ratio)))
-        img: Image.Image = source_img.resize(preview_size, _LANCZOS)
+        img: Image.Image = working.resize(preview_size, _LANCZOS)
 
         if formato in _registry:
             info = _registry[formato]
