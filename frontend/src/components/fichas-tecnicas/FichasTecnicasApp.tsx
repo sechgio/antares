@@ -73,15 +73,21 @@ export default function FichasTecnicasApp() {
     applyFicha(null);
   }, [applyFicha]);
 
+  const busyCountRef = useRef(0);
+  const selectGenRef = useRef(0);
+
   const withBusy = useCallback(
     async (fn: () => Promise<void>, fallbackError: string) => {
+      // Nested/overlapping calls must not clear busy while a later op still runs.
+      busyCountRef.current += 1;
       setBusy(true);
       try {
         await fn();
       } catch (error) {
         addToast({ message: formatIpcError(error, fallbackError), type: 'error' });
       } finally {
-        setBusy(false);
+        busyCountRef.current = Math.max(0, busyCountRef.current - 1);
+        if (busyCountRef.current === 0) setBusy(false);
       }
     },
     [addToast],
@@ -136,8 +142,10 @@ export default function FichasTecnicasApp() {
           }
         }
       }
+      const gen = ++selectGenRef.current;
       await withBusy(async () => {
         const ficha = normalizeFicha(await fichasTecnicasApi.get(id));
+        if (gen !== selectGenRef.current) return;
         applyFicha(ficha);
       }, 'No se pudo abrir la ficha');
     },

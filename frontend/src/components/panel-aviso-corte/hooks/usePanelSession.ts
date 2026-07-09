@@ -191,6 +191,8 @@ export function usePanelSession(): PanelSession {
     [_findColumnValue]
   );
 
+  const matchTokenRef = useRef(0);
+
   const computeMatch = useCallback(async () => {
     const src = excelRef.current;
     if (!src) {
@@ -207,6 +209,7 @@ export function usePanelSession(): PanelSession {
       setMatchResult(null);
       return;
     }
+    const token = ++matchTokenRef.current;
     try {
       const resp = await api.panelAvisoCorteComputeMatch({
         rows: src.rows,
@@ -217,6 +220,8 @@ export function usePanelSession(): PanelSession {
         image_names: imgs.map((i) => i.file.name),
         export_mode: exportModeRef.current,
       });
+      // Ignore stale responses when the user changed rules/images quickly.
+      if (token !== matchTokenRef.current) return;
       const panels = (resp.panels as any[]).map((p: any) => ({
         cuadrante: p.cuadrante || '',
         fechaCorte: p.fecha_corte || '',
@@ -245,6 +250,7 @@ export function usePanelSession(): PanelSession {
       });
       setCurrentPageIndex(0);
     } catch (e: any) {
+      if (token !== matchTokenRef.current) return;
       setErrors([e?.message || 'Error en emparejamiento']);
       setMatchResult(null);
     }
