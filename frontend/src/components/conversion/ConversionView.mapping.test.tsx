@@ -24,6 +24,7 @@ vi.mock('../../api', () => ({ api: mockApi, onNotify: () => () => {} }));
 
 vi.mock('../history/historyEvents', () => ({
   subscribeHistoryReexecute: () => () => {},
+  takePendingHistoryReexecute: () => null,
 }));
 
 import ConversionView from './ConversionView';

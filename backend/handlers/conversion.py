@@ -728,6 +728,7 @@ def _run_conversion_job(job: Job) -> None:
 
         from backend.core.history import save_run
         rename_source = "mapping" if mapping_index else ("catalog" if key_column else "none")
+        sequence_mode = _resolve_sequence_mode(params)
         save_run(
             files=[str(f) for f in files],
             options={
@@ -744,6 +745,12 @@ def _run_conversion_job(job: Job) -> None:
                 "id_column": mapping_id_column or None,
                 "rename_column": mapping_rename_column or None,
                 "key_column": key_column or None,
+                # Restored by History → Reejecutar so conversion matches the original run.
+                "destino": destino or None,
+                "secuencia": secuencia,
+                "word_separator": word_separator,
+                "use_filename_seq": params.get("use_filename_seq", True),
+                "sequence_mode": sequence_mode,
             },
             patron=patron, formato=formato, calidad=calidad,
             resize=str(resize) if resize else None, ok_count=ok_count, err_count=err_count,

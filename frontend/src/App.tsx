@@ -1,4 +1,4 @@
-import React, { useState, Suspense, useMemo, useCallback } from 'react';
+import React, { useState, Suspense, useMemo, useCallback, useEffect } from 'react';
 import Sidebar from './components/layout/Sidebar';
 import TitleBar from './components/layout/TitleBar';
 import BackendStatusBar from './components/layout/BackendStatusBar';
@@ -13,6 +13,7 @@ import CommandPalette from './components/ui/CommandPalette';
 import { DEFAULT_TAB, FULL_BLEED_TABS, TAB_DEFINITIONS, CONFIG_SECTION_DEFINITIONS, type TabId, type ConfigSectionId } from './navigation';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import LoginScreen from './auth/LoginScreen';
+import { subscribeHistoryReexecute } from './components/history/historyEvents';
 
 const ConversionView = React.lazy(() => import('./components/conversion/ConversionView'));
 const FormatosView = React.lazy(() => import('./components/formatos/FormatosView'));
@@ -149,6 +150,16 @@ function AppContent() {
   useKeyboardShortcut('f', () => handleTabChange('fichasTecnicas'), { ctrl: true, shift: true, preventDefault: true });
   useKeyboardShortcut('i', () => handleTabChange('technicalReports'), { ctrl: true, shift: true, preventDefault: true });
   useKeyboardShortcut('d', () => openSettings('petdex'), { ctrl: true, shift: true, preventDefault: true });
+
+  // History "Reejecutar" only has a listener inside ConversionView, which is
+  // unmounted when another tab is active. Switch to convert so the pending
+  // payload (or the live event) can be applied.
+  useEffect(() => {
+    return subscribeHistoryReexecute(() => {
+      setActiveTab('convert');
+      setSettingsOpen(false);
+    });
+  }, []);
 
   const commandItems = useMemo(
     () => [

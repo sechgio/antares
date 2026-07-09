@@ -14,7 +14,11 @@ import RenameCard from './RenameCard';
 import SegmentedProgressBar from './SegmentedProgressBar';
 import Button from '../ui/Button';
 import { Image, Film, FolderOpen, ArrowRight, CheckCircle2, AlertTriangle, AlertCircle, Play, Square } from 'lucide-react';
-import { subscribeHistoryReexecute } from '../history/historyEvents';
+import {
+  subscribeHistoryReexecute,
+  takePendingHistoryReexecute,
+} from '../history/historyEvents';
+import type { HistoryRun } from '../history/RunList';
 
 export default function ConversionView() {
   const [files, setFiles] = useState<string[]>([]);
@@ -90,80 +94,107 @@ export default function ConversionView() {
     setNamingMode(config.namingMode);
   }, []);
 
-  useEffect(() => {
-    return subscribeHistoryReexecute((run) => {
-      if (!run || typeof run !== 'object') return;
+  const applyHistoryRun = useCallback((run: HistoryRun) => {
+    if (!run || typeof run !== 'object') return;
 
-      void (async () => {
-        let f: string[] = [];
-        let options: Record<string, unknown> = {};
+    void (async () => {
+      let f: string[] = [];
+      let options: Record<string, unknown> = {};
+      try {
+        f = JSON.parse(run.files_json || '[]') as string[];
+      } catch { /* keep default */ }
+      try {
+        options = JSON.parse(run.options_json || '{}') as Record<string, unknown>;
+      } catch { /* keep default */ }
+
+      setFiles(f);
+      setFormato((options.formato as string) || 'JPEG');
+      // Use nullish coalescing so calidad=0 is preserved if ever stored.
+      setCalidad(typeof options.calidad === 'number' ? options.calidad : 95);
+      setConversionEnabled(options.conversion_enabled !== false);
+      setKeepExif(Boolean(options.keep_exif));
+
+      if (typeof options.destino === 'string' && options.destino.trim()) {
+        setDestino(options.destino);
+      }
+      if (typeof options.secuencia === 'number' && Number.isFinite(options.secuencia)) {
+        setSecuencia(Math.max(1, Math.floor(options.secuencia)));
+      } else if (typeof options.secuencia === 'string' && options.secuencia.trim()) {
+        const n = Number.parseInt(options.secuencia, 10);
+        if (Number.isFinite(n)) setSecuencia(Math.max(1, n));
+      }
+      if (typeof options.word_separator === 'string') {
+        setWordSeparator(options.word_separator);
+      }
+      if (typeof options.use_filename_seq === 'boolean') {
+        setUseFilenameSeq(options.use_filename_seq);
+      } else if (options.sequence_mode === 'global') {
+        setUseFilenameSeq(false);
+      } else if (options.sequence_mode === 'record' || options.sequence_mode === 'filename') {
+        setUseFilenameSeq(true);
+      }
+
+      const applyResize = () => {
+        if (!options.resize) return;
+        const parts = String(options.resize).replace(/[()[\]]/g, '').split(',');
+        if (parts.length === 2) {
+          setResizeAncho(parts[0].trim());
+          setResizeAlto(parts[1].trim());
+          setResizeEnabled(true);
+        }
+      };
+
+      const isMappingRun = options.mapping_mode === true || options.rename_source === 'mapping';
+      const savedMappingPath = typeof options.mapping_path === 'string' ? options.mapping_path : '';
+
+      if (isMappingRun && savedMappingPath) {
         try {
-          f = JSON.parse(run.files_json || '[]') as string[];
-        } catch { /* keep default */ }
-        try {
-          options = JSON.parse(run.options_json || '{}') as Record<string, unknown>;
-        } catch { /* keep default */ }
-
-        setFiles(f);
-        setFormato((options.formato as string) || 'JPEG');
-        setCalidad((options.calidad as number) || 95);
-        setConversionEnabled(options.conversion_enabled !== false);
-        setKeepExif(Boolean(options.keep_exif));
-
-        const isMappingRun = options.mapping_mode === true || options.rename_source === 'mapping';
-        const savedMappingPath = typeof options.mapping_path === 'string' ? options.mapping_path : '';
-
-        if (isMappingRun && savedMappingPath) {
-          try {
-            const savedIdColumn = typeof options.id_column === 'string' ? options.id_column : '';
-            const savedRenameColumn = typeof options.rename_column === 'string' ? options.rename_column : '';
-            const result = await api.dbParseMapping(savedMappingPath, f, savedIdColumn, savedRenameColumn);
-            setMappingPath(savedMappingPath);
-            setMappingData(result.mapping);
-            setMappingColumns(result.columns ?? []);
-            setMappingIdColumn(result.id_column ?? savedIdColumn);
-            setMappingRenameColumn(result.rename_column ?? savedRenameColumn);
-            setRenameSource('mapping');
-            setPatron('{renombre}{ext}');
-            setUsarRename(true);
-            setNamingMode('custom');
-            if (options.resize) {
-              const parts = (options.resize as string).replace(/[()\[\]]/g, '').split(',');
-              if (parts.length === 2) {
-                setResizeAncho(parts[0].trim());
-                setResizeAlto(parts[1].trim());
-                setResizeEnabled(true);
-              }
-            }
-            return;
-          } catch {
-            addToast({
-              message: 'No se pudo restaurar el mapeo desde el historial. Vuelve a cargar el Excel de mapeo.',
-              type: 'error',
-            });
-          }
+          const savedIdColumn = typeof options.id_column === 'string' ? options.id_column : '';
+          const savedRenameColumn = typeof options.rename_column === 'string' ? options.rename_column : '';
+          const result = await api.dbParseMapping(savedMappingPath, f, savedIdColumn, savedRenameColumn);
+          setMappingPath(savedMappingPath);
+          setMappingData(result.mapping);
+          setMappingColumns(result.columns ?? []);
+          setMappingIdColumn(result.id_column ?? savedIdColumn);
+          setMappingRenameColumn(result.rename_column ?? savedRenameColumn);
+          setRenameSource('mapping');
+          setPatron('{renombre}{ext}');
+          setUsarRename(true);
+          setNamingMode('custom');
+          applyResize();
+          return;
+        } catch {
+          addToast({
+            message: 'No se pudo restaurar el mapeo desde el historial. Vuelve a cargar el Excel de mapeo.',
+            type: 'error',
+          });
         }
+      }
 
-        setMappingData(null);
-        setMappingPath(null);
-        setPatron(run.patron || '');
-        setUsarRename(options.usar_rename !== false && Boolean(run.patron));
-        setNamingMode(options.usar_rename === false ? 'keep' : 'custom');
-        setRenameSource(options.rename_source === 'catalog' ? 'catalog' : 'none');
-        if (typeof options.key_column === 'string' && options.key_column) {
-          setKeyColumn(options.key_column);
-        }
-        if (options.resize) {
-          const parts = (options.resize as string).replace(/[()\[\]]/g, '').split(',');
-          if (parts.length === 2) {
-            setResizeAncho(parts[0].trim());
-            setResizeAlto(parts[1].trim());
-            setResizeEnabled(true);
-          }
-        }
-      })();
-    });
+      setMappingData(null);
+      setMappingPath(null);
+      setPatron(run.patron || '');
+      setUsarRename(options.usar_rename !== false && Boolean(run.patron));
+      setNamingMode(options.usar_rename === false ? 'keep' : 'custom');
+      setRenameSource(options.rename_source === 'catalog' ? 'catalog' : 'none');
+      if (typeof options.key_column === 'string' && options.key_column) {
+        setKeyColumn(options.key_column);
+      }
+      applyResize();
+    })();
   }, [addToast]);
+
+  useEffect(() => {
+    // Consume payload buffered while ConversionView was unmounted (other tab).
+    const pending = takePendingHistoryReexecute();
+    if (pending) applyHistoryRun(pending);
+
+    return subscribeHistoryReexecute((run) => {
+      // Live event while mounted: drop buffer so remount does not re-apply.
+      takePendingHistoryReexecute();
+      applyHistoryRun(run);
+    });
+  }, [applyHistoryRun]);
 
   useEffect(() => {
     let cancelled = false;
