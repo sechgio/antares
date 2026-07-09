@@ -113,6 +113,13 @@ HEAVY_METHODS = {
     "evidencia_volanteo_render",
 }
 
+# Handlers that must answer on the IPC reader thread. Health probes and UI
+# status polls must never wait behind a saturated ThreadPoolExecutor.
+SYNC_METHODS = frozenset({
+    "version",
+    "process_status",
+})
+
 
 def _utf8_locale_candidates() -> list[str]:
     """Return locale names to try for UTF-8 system encoding (platform-specific)."""
@@ -241,7 +248,13 @@ def main() -> None:
                     continue  # Parse error, already responded
 
                 if msg.method in HANDLERS:
-                    _submit_handler(HANDLERS[msg.method], msg.params, msg.id, msg.method)
+                    handler = HANDLERS[msg.method]
+                    if msg.method in SYNC_METHODS:
+                        # Answer immediately so liveness checks stay green while
+                        # heavy conversion/PDF work occupies the scheduler pool.
+                        _dispatch(handler, msg.params, msg.id, msg.method)
+                    else:
+                        _submit_handler(handler, msg.params, msg.id, msg.method)
                 else:
                     send_response(None, msg.id, error=f"Método desconocido: {msg.method}")
                 _consecutive_errors = 0

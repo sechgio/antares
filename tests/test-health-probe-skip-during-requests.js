@@ -1,6 +1,6 @@
 // Regression test: health probe must NOT restart the backend when there are
-// in-flight IPC requests. A timeout during active work is a false positive —
-// the backend is busy, not dead.
+// in-flight IPC requests OR recent conversion/job progress. A timeout during
+// active work is a false positive — the backend is busy, not dead.
 const { EventEmitter } = require('events');
 const childProcess = require('child_process');
 
@@ -109,6 +109,9 @@ async function run() {
     incrementPendingRequests,
     decrementPendingRequests,
     getPendingRequestCount,
+    noteJobActivity,
+    clearJobActivity,
+    hasRecentJobActivity,
   } = require('../electron/backend-spawner.js');
 
   try {
@@ -133,7 +136,19 @@ async function run() {
     decrementPendingRequests();
     assert(getPendingRequestCount() === 0, 'Pending count should be 0 after decrement');
 
-    // Now run health check again with NO pending requests — this time it SHOULD restart
+    // Simulate a conversion job that already released process_start IPC but still
+    // emits progress — health must not kill the backend mid-batch.
+    noteJobActivity();
+    assert(hasRecentJobActivity(), 'Job activity should be marked recent');
+    await runHealthCheckOnce();
+    await flushAsyncTurns(5);
+    assert(getState() === 'ready', 'Backend should stay ready during recent job activity');
+    assert(spawnCount === 1, 'Should NOT restart while job activity is recent');
+
+    clearJobActivity();
+    assert(!hasRecentJobActivity(), 'Job activity cleared');
+
+    // Now run health check with no pending requests and no job activity — SHOULD restart
     await runHealthCheckOnce();
     const restarted = await waitFor(() => spawnCount >= 2 && getState() === 'ready');
     assert(restarted, 'Backend SHOULD restart when no requests are in flight');

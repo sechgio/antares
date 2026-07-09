@@ -63,3 +63,11 @@ def test_heavy_methods_include_fichas_and_evidencia() -> None:
     assert "fichas_tecnicas_render_html" in backend_main.HEAVY_METHODS
     assert "fichas_tecnicas_render_consolidated_html" in backend_main.HEAVY_METHODS
     assert "evidencia_volanteo_render" in backend_main.HEAVY_METHODS
+
+
+def test_sync_methods_are_liveness_safe() -> None:
+    """version/process_status stay off the pool so health probes never starve."""
+    assert "version" in backend_main.SYNC_METHODS
+    assert "process_status" in backend_main.SYNC_METHODS
+    # Sync methods must remain cheap — never also classified as heavy work.
+    assert backend_main.SYNC_METHODS.isdisjoint(backend_main.HEAVY_METHODS)
