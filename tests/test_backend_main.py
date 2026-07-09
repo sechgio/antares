@@ -46,5 +46,20 @@ def test_dispatch_uses_heavy_scheduler_for_heavy_methods(monkeypatch) -> None:
 
     backend_main._submit_handler(lambda _params: {}, {}, "1", "db_import")
     backend_main._submit_handler(lambda _params: {}, {}, "2", "version")
+    backend_main._submit_handler(lambda _params: {}, {}, "3", "fichas_tecnicas_render_html")
+    backend_main._submit_handler(lambda _params: {}, {}, "4", "evidencia_volanteo_render")
 
-    assert calls == [("heavy", "db_import"), ("light", "version")]
+    assert calls == [
+        ("heavy", "db_import"),
+        ("light", "version"),
+        ("heavy", "fichas_tecnicas_render_html"),
+        ("heavy", "evidencia_volanteo_render"),
+    ]
+
+
+def test_heavy_methods_include_fichas_and_evidencia() -> None:
+    """Long PDF/import handlers must not run on the light pool."""
+    assert "fichas_tecnicas_import_file" in backend_main.HEAVY_METHODS
+    assert "fichas_tecnicas_render_html" in backend_main.HEAVY_METHODS
+    assert "fichas_tecnicas_render_consolidated_html" in backend_main.HEAVY_METHODS
+    assert "evidencia_volanteo_render" in backend_main.HEAVY_METHODS
