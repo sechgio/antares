@@ -36,15 +36,17 @@ def test_dedupe_suffixes_colliding_out_paths() -> None:
     assert all("Colisión de salida" in msg for msg in logs)
 
 
-def test_dedupe_is_case_insensitive_on_windows_style_paths() -> None:
+def test_dedupe_is_case_insensitive() -> None:
+    # Forward slashes keep pathlib consistent on Windows and Linux CI.
     tasks = [
-        ("x.jpg", Path(r"C:\Out\Photo.JPG"), False),
-        ("y.jpg", Path(r"C:\Out\photo.jpg"), False),
+        ("x.jpg", Path("out/Photo.JPG"), False),
+        ("y.jpg", Path("out/photo.jpg"), False),
     ]
     reserved: set[str] = set()
     result = _dedupe_chunk_out_paths(tasks, reserved)
-    assert result[0][1] == Path(r"C:\Out\Photo.JPG")
-    assert result[1][1].name.lower().startswith("photo-2")
+    assert result[0][1] == Path("out/Photo.JPG")
+    assert result[1][1] == Path("out/Photo-2.JPG")
+    assert _out_path_key(result[0][1]) != _out_path_key(result[1][1])
 
 
 def test_dedupe_spans_chunks_via_shared_reserved_set() -> None:
