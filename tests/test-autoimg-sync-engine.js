@@ -104,9 +104,14 @@ function main() {
   assert(builtWithIndex[0] === '4210999' && builtWithIndex[1] === '11111111', 'buildScanResultRow usa rowIndex precalculado');
 
   const applied = applyScanResultsToRows(rows, [
-    { nis: '4210802', count: 2, folders: ['JUAN'] },
+    { nis: '4210802', count: 2, folders: ['JUAN'] }, // fuera del padrón → ignorado
+    { nis: '4210999', count: 1, folders: ['JUAN'] }, // en padrón → actualiza
   ], '2026-07-03');
-  assert(applied.newRows === 1 && applied.updated === 0, 'applyScanResultsToRows agrega NIS nuevo');
+  assert(applied.newRows === 0, 'applyScanResultsToRows no inserta NIS fuera del padrón');
+  assert(applied.updated === 1 && applied.matched === 1, 'applyScanResultsToRows solo actualiza NIS del padrón');
+  assert(applied.unmatchedScan === 1, 'applyScanResultsToRows cuenta NIS de carpeta fuera del padrón');
+  assert(applied.rows.length === 2, 'applyScanResultsToRows conserva solo header + filas del padrón');
+  assert(applied.rows[1][0] === '4210999' && applied.rows[1][8] === '1', 'applyScanResultsToRows actualiza CANTIDAD del padrón');
 
   const drive = require('../electron/google-drive-service');
   const m1 = drive.buildNisMap(
