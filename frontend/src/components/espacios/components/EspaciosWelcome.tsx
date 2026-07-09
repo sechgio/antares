@@ -7,6 +7,7 @@ import {
   LayoutList,
   Plus,
   Sparkles,
+  Table2,
   Zap,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -17,7 +18,7 @@ interface EspaciosWelcomeProps {
   onCreateEspacio: () => void;
 }
 
-type PreviewView = 'list' | 'board' | 'calendar' | 'gantt';
+type PreviewView = 'list' | 'board' | 'table' | 'calendar' | 'gantt';
 
 const MOTION_EASE = [0.16, 1, 0.3, 1] as const;
 
@@ -43,13 +44,14 @@ const STEPS = [
 ] as const;
 
 const VIEWS: { id: PreviewView; icon: LucideIcon; label: string; description: string; color: string }[] = [
-  { id: 'list', icon: LayoutList, label: 'Lista', description: 'Tabla ordenable', color: 'var(--accent-primary)' },
+  { id: 'list', icon: LayoutList, label: 'Lista', description: 'Vista simple', color: 'var(--accent-primary)' },
   { id: 'board', icon: Columns3, label: 'Tablero', description: 'Kanban visual', color: 'var(--accent-secondary)' },
+  { id: 'table', icon: Table2, label: 'Tabla', description: 'Filas y columnas', color: 'var(--accent-green)' },
   { id: 'calendar', icon: Calendar, label: 'Calendario', description: 'Por fechas', color: 'var(--accent-blue)' },
   { id: 'gantt', icon: GanttChart, label: 'Gantt', description: 'Línea de tiempo', color: 'var(--accent-yellow)' },
 ];
 
-const PREVIEW_ROTATION: PreviewView[] = ['list', 'board', 'calendar', 'gantt'];
+const PREVIEW_ROTATION: PreviewView[] = ['list', 'board', 'table', 'calendar', 'gantt'];
 
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false);
@@ -105,10 +107,10 @@ function SidebarMock() {
 
 function ListPreview() {
   const rows = [
-    { status: 'En curso', color: 'var(--accent-blue)', width: '72%' },
-    { status: 'Por hacer', color: 'var(--text-muted)', width: '58%' },
-    { status: 'Hecho', color: 'var(--accent-green)', width: '84%' },
-    { status: 'En curso', color: 'var(--accent-blue)', width: '65%' },
+    { status: 'En curso', color: '#5F55EE', width: '72%' },
+    { status: 'Pendiente', color: '#87909E', width: '58%' },
+    { status: 'Completados', color: '#0F9D58', width: '84%' },
+    { status: 'En curso', color: '#5F55EE', width: '65%' },
   ];
   return (
     <div className="flex flex-1 flex-col gap-1 p-1">
@@ -139,26 +141,71 @@ function BoardPreview() {
   return (
     <div className="flex flex-1 gap-1.5 p-1">
       {[
-        { label: 'Por hacer', color: 'var(--text-muted)', count: 3 },
-        { label: 'En curso', color: 'var(--accent-blue)', count: 2 },
-        { label: 'Hecho', color: 'var(--accent-green)', count: 4 },
+        { label: 'Pendiente', color: '#87909E', count: 3, filled: false },
+        { label: 'En curso', color: '#5F55EE', count: 2, filled: true },
+        { label: 'Completados', color: '#0F9D58', count: 1, filled: true },
+        { label: 'Urgente', color: '#EF4444', count: 1, filled: false },
       ].map((col) => (
-        <div key={col.label} className="flex min-w-0 flex-1 flex-col rounded-md bg-[var(--bg-base)] p-1.5">
-          <div className="mb-1.5 flex items-center justify-between">
-            <span className="text-[8px] font-medium" style={{ color: col.color }}>
-              {col.label}
+        <div
+          key={col.label}
+          className="flex min-w-0 flex-1 flex-col rounded-lg p-1.5"
+          style={{ background: `color-mix(in srgb, ${col.color} 12%, var(--bg-base))` }}
+        >
+          <div className="mb-1.5 flex items-center">
+            <span
+              className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-[7px] font-bold uppercase"
+              style={
+                col.filled
+                  ? { background: col.color, color: '#fff' }
+                  : { color: col.color, background: `color-mix(in srgb, ${col.color} 16%, transparent)` }
+              }
+            >
+              {col.label} {col.count}
             </span>
-            <span className="text-[7px] text-[var(--text-muted)]">{col.count}</span>
           </div>
           {Array.from({ length: Math.min(col.count, 2) }).map((_, i) => (
             <div
               key={i}
-              className="mb-1 rounded border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-1.5"
+              className="mb-1 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-1.5 shadow-sm"
             >
               <div className="mb-1 h-1 w-3/4 rounded-full bg-[var(--border-medium)]" />
               <div className="h-1 w-1/2 rounded-full bg-[var(--border-subtle)]" />
             </div>
           ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TablePreview() {
+  const rows = [
+    { status: 'En curso', color: '#5F55EE', flag: '#F59E0B' },
+    { status: 'Pendiente', color: '#87909E', flag: '#87909E' },
+    { status: 'Urgente', color: '#EF4444', flag: '#EF4444' },
+    { status: 'Completados', color: '#0F9D58', flag: '#87909E' },
+  ];
+  return (
+    <div className="flex flex-1 flex-col gap-1 p-1.5">
+      <div className="mb-0.5 flex gap-1 border-b border-[var(--border-subtle)] px-1 pb-1">
+        {['#', 'Name', 'Estado', 'Fecha', 'Prior.'].map((col) => (
+          <span key={col} className="flex-1 text-[6px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+            {col}
+          </span>
+        ))}
+      </div>
+      {rows.map((row, i) => (
+        <div key={i} className="flex items-center gap-1 rounded bg-[var(--bg-base)] px-1 py-1">
+          <span className="w-2 text-[6px] text-[var(--text-muted)]">{i + 1}</span>
+          <span className="h-1 flex-[2] rounded-full bg-[var(--border-medium)]" />
+          <span
+            className="flex-1 rounded px-0.5 py-0.5 text-center text-[6px] font-bold uppercase"
+            style={{ color: row.color, background: `color-mix(in srgb, ${row.color} 16%, transparent)` }}
+          >
+            {row.status.slice(0, 4)}
+          </span>
+          <span className="h-1 flex-1 rounded-full bg-[var(--border-subtle)]" />
+          <span className="h-1.5 w-1.5 rounded-sm" style={{ background: row.flag }} />
         </div>
       ))}
     </div>
@@ -228,6 +275,7 @@ function PreviewContent({ view, reducedMotion }: { view: PreviewView; reducedMot
   const content = {
     list: <ListPreview />,
     board: <BoardPreview />,
+    table: <TablePreview />,
     calendar: <CalendarPreview />,
     gantt: <GanttPreview />,
   }[view];

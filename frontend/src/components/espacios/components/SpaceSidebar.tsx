@@ -19,6 +19,7 @@ interface SpaceSidebarProps {
   onProyectoColorChange: (id: string, color: string) => void;
 }
 
+/** Nav list only — width/border live on the parent column so header + body stay aligned. */
 export default function SpaceSidebar({
   espacios,
   proyectos,
@@ -36,7 +37,7 @@ export default function SpaceSidebar({
   onProyectoColorChange,
 }: SpaceSidebarProps) {
   return (
-    <aside className="flex h-full min-h-0 w-60 shrink-0 flex-col overflow-hidden border-r border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="shrink-0 border-b border-[var(--border-subtle)] px-2.5 py-2.5">
         <ul className="flex flex-col gap-1.5">
           {espacios.map((espacio, index) => (
@@ -103,7 +104,7 @@ export default function SpaceSidebar({
               color={proyecto.color}
               colorIndex={index + 2}
               isActive={activeProyectoId === proyecto.id}
-              icon={<FolderKanban className="h-4 w-4 shrink-0 opacity-70" />}
+              icon={<FolderKanban className="h-3.5 w-3.5 shrink-0 opacity-70" />}
               isFavorite={proyecto.is_favorite}
               onSelect={() => onSelectProyecto(proyecto.id)}
               onColorChange={(color) => onProyectoColorChange(proyecto.id, color)}
@@ -136,6 +137,6 @@ export default function SpaceSidebar({
           )}
         </ul>
       </div>
-    </aside>
+    </div>
   );
 }

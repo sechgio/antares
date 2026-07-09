@@ -115,7 +115,7 @@ export default function SidebarNavItem({
                 }
               }}
               aria-label={renameLabel}
-              className="w-full rounded-md border border-[var(--border-medium)] bg-[var(--bg-input)] px-1.5 py-0.5 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary)]/30"
+              className="w-full rounded-md border border-[var(--border-medium)] bg-[var(--bg-input)] px-1.5 py-0.5 text-[10px] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary)]/30"
             />
           </form>
         ) : (
@@ -128,11 +128,11 @@ export default function SidebarNavItem({
             }}
             aria-current={isActive ? 'true' : undefined}
             title="Doble clic para renombrar"
-            className="relative z-[1] flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left text-sm"
+            className="relative z-[1] flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-[10px]"
           >
             {icon}
             <span
-              className={`min-w-0 flex-1 truncate pr-1 ${
+              className={`min-w-0 flex-1 truncate pr-1 leading-snug ${
                 isActive ? 'font-medium text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'
               }`}
             >

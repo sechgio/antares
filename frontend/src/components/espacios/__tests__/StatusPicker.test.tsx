@@ -12,14 +12,14 @@ describe('StatusPicker', () => {
     expect(listbox).toBeInTheDocument();
     expect(listbox.parentElement).toBe(document.body);
 
-    fireEvent.click(screen.getByRole('option', { name: /En progreso/i }));
+    fireEvent.click(screen.getByRole('option', { name: /En curso/i }));
     expect(onChange).toHaveBeenCalledWith('in_progress');
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
   });
 
   it('shows current label on the trigger', () => {
     render(<StatusPicker value="done" onChange={vi.fn()} />);
-    expect(screen.getByRole('button', { name: /Estado: Hecho/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Estado: Completados/i })).toBeInTheDocument();
   });
 
   it('closes on Escape', () => {

@@ -1,7 +1,7 @@
-import { ListTodo, Trash2 } from 'lucide-react';
+import { ListTodo, Pencil, Trash2 } from 'lucide-react';
 import EmptyState from '../EmptyState';
 import StatusPicker from '../StatusPicker';
-import type { Tarea, TeamMember } from '../../types';
+import type { BoardColumn, Tarea, TeamMember } from '../../types';
 import { formatDisplayDate } from '../../utils/dates';
 import { isOverdue } from '../../utils/filters';
 import { memberLabel } from '../../utils/members';
@@ -9,12 +9,22 @@ import { memberLabel } from '../../utils/members';
 interface ListViewProps {
   tareas: Tarea[];
   members: TeamMember[];
+  columns?: BoardColumn[];
   onStatusChange: (id: string, status: Tarea['status']) => void;
+  onEdit?: (tarea: Tarea) => void;
   onDelete: (id: string) => void;
   onAddTask?: () => void;
 }
 
-export default function ListView({ tareas, members, onStatusChange, onDelete, onAddTask }: ListViewProps) {
+export default function ListView({
+  tareas,
+  members,
+  columns = [],
+  onStatusChange,
+  onEdit,
+  onDelete,
+  onAddTask,
+}: ListViewProps) {
   if (tareas.length === 0) {
     return (
       <EmptyState
@@ -41,7 +51,7 @@ export default function ListView({ tareas, members, onStatusChange, onDelete, on
         </thead>
         <tbody>
           {tareas.map((tarea) => {
-            const overdue = isOverdue(tarea);
+            const overdue = isOverdue(tarea, columns);
             return (
               <tr
                 key={tarea.id}
@@ -50,14 +60,24 @@ export default function ListView({ tareas, members, onStatusChange, onDelete, on
                 }`}
               >
                 <td className="px-4 py-3">
-                  <div className="font-medium text-[var(--text-primary)]">{tarea.title}</div>
-                  {tarea.description && (
-                    <div className="mt-0.5 line-clamp-1 text-xs text-[var(--text-muted)]">{tarea.description}</div>
-                  )}
+                  <button
+                    type="button"
+                    className="text-left"
+                    onClick={() => onEdit?.(tarea)}
+                    onDoubleClick={() => onEdit?.(tarea)}
+                  >
+                    <div className="font-medium text-[var(--text-primary)] hover:text-[var(--accent-primary)]">
+                      {tarea.title}
+                    </div>
+                    {tarea.description && (
+                      <div className="mt-0.5 line-clamp-1 text-xs text-[var(--text-muted)]">{tarea.description}</div>
+                    )}
+                  </button>
                 </td>
                 <td className="px-4 py-3">
                   <StatusPicker
                     value={tarea.status}
+                    columns={columns}
                     onChange={(status) => onStatusChange(tarea.id, status)}
                     label={`Cambiar estado de ${tarea.title}`}
                     size="sm"
@@ -68,14 +88,28 @@ export default function ListView({ tareas, members, onStatusChange, onDelete, on
                   {formatDisplayDate(tarea.due_date)}
                 </td>
                 <td className="px-4 py-3">
-                  <button
-                    type="button"
-                    onClick={() => onDelete(tarea.id)}
-                    className="rounded-md p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-red)]"
-                    aria-label={`Eliminar ${tarea.title}`}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  <div className="flex items-center justify-end gap-0.5">
+                    {onEdit && (
+                      <button
+                        type="button"
+                        onClick={() => onEdit(tarea)}
+                        className="rounded-md p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                        aria-label={`Editar ${tarea.title}`}
+                        title="Editar"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => onDelete(tarea.id)}
+                      className="rounded-md p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-red)]"
+                      aria-label={`Eliminar ${tarea.title}`}
+                      title="Eliminar"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             );

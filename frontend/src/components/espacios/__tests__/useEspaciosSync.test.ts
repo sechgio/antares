@@ -73,6 +73,10 @@ const tareaB: Tarea = {
 const fetchEspacios = vi.fn();
 const fetchProyectos = vi.fn();
 const fetchTareas = vi.fn();
+const fetchBoardColumns = vi.fn();
+const createTarea = vi.fn();
+const createProyecto = vi.fn();
+const createBoardColumn = vi.fn();
 const deleteEspacio = vi.fn();
 const deleteProyecto = vi.fn();
 
@@ -80,9 +84,13 @@ vi.mock('../api/espaciosApi', () => ({
   fetchEspacios: (...args: unknown[]) => fetchEspacios(...args),
   fetchProyectos: (...args: unknown[]) => fetchProyectos(...args),
   fetchTareas: (...args: unknown[]) => fetchTareas(...args),
+  fetchBoardColumns: (...args: unknown[]) => fetchBoardColumns(...args),
   createEspacio: vi.fn(),
-  createProyecto: vi.fn(),
-  createTarea: vi.fn(),
+  createProyecto: (...args: unknown[]) => createProyecto(...args),
+  createTarea: (...args: unknown[]) => createTarea(...args),
+  createBoardColumn: (...args: unknown[]) => createBoardColumn(...args),
+  updateBoardColumn: vi.fn(),
+  deleteBoardColumn: vi.fn(),
   updateProyecto: vi.fn(),
   updateTarea: vi.fn(),
   deleteEspacio: (...args: unknown[]) => deleteEspacio(...args),
@@ -91,7 +99,10 @@ vi.mock('../api/espaciosApi', () => ({
 }));
 
 vi.mock('../api/realtime', () => ({
-  subscribeEspaciosSync: vi.fn(() => null),
+  subscribeEspaciosSync: vi.fn((_e, _p, _onChange, onStatus) => {
+    onStatus?.('live');
+    return null;
+  }),
   unsubscribeEspaciosSync: vi.fn(),
 }));
 
@@ -100,6 +111,7 @@ import { useEspaciosSync } from '../hooks/useEspaciosSync';
 describe('useEspaciosSync', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     fetchEspacios.mockResolvedValue([espacioA, espacioB]);
     fetchProyectos.mockImplementation(async (espacioId: string) =>
       espacioId === 'esp-a' ? [proyectoA] : [proyectoB],
@@ -107,6 +119,7 @@ describe('useEspaciosSync', () => {
     fetchTareas.mockImplementation(async (proyectoId: string) =>
       proyectoId === 'proy-a' ? [tareaA] : [tareaB],
     );
+    fetchBoardColumns.mockResolvedValue([]);
   });
 
   it('reloadAll loads nested data using ids resolved by loadEspacios, not stale closure', async () => {
@@ -127,6 +140,35 @@ describe('useEspaciosSync', () => {
     expect(fetchProyectos).toHaveBeenCalledWith('esp-a');
     expect(fetchTareas).toHaveBeenCalledWith('proy-a');
     expect(result.current.tareas).toEqual([tareaA]);
+  });
+
+  it('prefers persisted espacio/proyecto when still present in the server list', async () => {
+    localStorage.setItem(
+      'antares.espacios.prefs',
+      JSON.stringify({ activeEspacioId: 'esp-b', activeProyectoId: 'proy-b', activeView: 'board' }),
+    );
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await waitFor(() => expect(result.current.activeEspacioId).toBe('esp-b'));
+    await waitFor(() => expect(result.current.activeProyectoId).toBe('proy-b'));
+    expect(result.current.tareas).toEqual([tareaB]);
+  });
+
+  it('surfaces nested load failures as non-fatal warning', async () => {
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    fetchProyectos.mockRejectedValueOnce(new Error('proyectos down'));
+    await act(async () => {
+      result.current.setActiveEspacioId('esp-b');
+    });
+
+    await waitFor(() => expect(result.current.warning).toBe('proyectos down'));
+    act(() => {
+      result.current.clearWarning();
+    });
+    expect(result.current.warning).toBeNull();
   });
 
   it('reloadAll loads proyectos and tareas for the active espacio after initial fetch', async () => {
@@ -270,5 +312,81 @@ describe('useEspaciosSync', () => {
     // Wait a tick for the nested load to fail
     await waitFor(() => expect(result.current.proyectos).toEqual([]));
     expect(result.current.error).toBeNull();
+  });
+
+  it('does not drop a newly created tarea when an in-flight loadTareas resolves later', async () => {
+    let resolveSlowTareas: (value: Tarea[]) => void = () => {};
+    const created: Tarea = {
+      ...tareaA,
+      id: 'tarea-new',
+      title: 'Creada durante load',
+    };
+
+    // 1st call: initial project load (stale if it finishes after create)
+    // 2nd call: reconcile load after create (server includes the new row)
+    fetchTareas
+      .mockImplementationOnce(
+        () =>
+          new Promise<Tarea[]>((resolve) => {
+            resolveSlowTareas = resolve;
+          }),
+      )
+      .mockImplementationOnce(async () => [tareaA, created]);
+
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+    await waitFor(() => expect(result.current.activeProyectoId).toBe('proy-a'));
+
+    createTarea.mockResolvedValue(created);
+
+    await act(async () => {
+      await result.current.addTarea({ title: 'Creada durante load' });
+    });
+    expect(result.current.tareas.some((t) => t.id === 'tarea-new')).toBe(true);
+
+    await act(async () => {
+      resolveSlowTareas([tareaA]);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.tareas.map((t) => t.id).sort()).toEqual(['tarea-a', 'tarea-new']);
+    });
+  });
+
+  it('does not drop a newly created proyecto when an in-flight loadProyectos resolves later', async () => {
+    let resolveSlowProyectos: (value: Proyecto[]) => void = () => {};
+    const created: Proyecto = {
+      ...proyectoA,
+      id: 'proy-new',
+      name: 'Proyecto nuevo',
+    };
+
+    fetchProyectos
+      .mockImplementationOnce(
+        () =>
+          new Promise<Proyecto[]>((resolve) => {
+            resolveSlowProyectos = resolve;
+          }),
+      )
+      .mockImplementationOnce(async () => [proyectoA, created]);
+
+    const { result } = renderHook(() => useEspaciosSync('user-1'));
+    await waitFor(() => expect(result.current.activeEspacioId).toBe('esp-a'));
+
+    createProyecto.mockResolvedValue(created);
+
+    await act(async () => {
+      await result.current.addProyecto('Proyecto nuevo');
+    });
+    expect(result.current.proyectos.some((p) => p.id === 'proy-new')).toBe(true);
+
+    await act(async () => {
+      resolveSlowProyectos([proyectoA]);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.proyectos.map((p) => p.id).sort()).toEqual(['proy-a', 'proy-new']);
+    });
   });
 });

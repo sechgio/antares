@@ -1,24 +1,12 @@
 import { Check, ChevronDown } from 'lucide-react';
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { BoardColumn, TareaStatus } from '../types';
-import {
-  columnColor,
-  columnLabel,
-  columnSoft,
-  fallbackBoardColumns,
-  pickerColumns,
-} from '../utils/statusConfig';
 
-interface StatusPickerProps {
-  value: TareaStatus;
-  onChange: (status: TareaStatus) => void;
-  columns?: BoardColumn[];
-  label?: string;
-  disabled?: boolean;
-  /** Compact chip for table cells; default is form-sized. */
-  size?: 'sm' | 'md';
-  className?: string;
+export interface SelectPickerOption {
+  value: string;
+  label: string;
+  /** Optional accent dot (e.g. status color). */
+  color?: string;
 }
 
 interface MenuPosition {
@@ -27,17 +15,30 @@ interface MenuPosition {
   minWidth: number;
 }
 
-const MENU_GAP = 6;
+interface SelectPickerProps {
+  value: string;
+  options: SelectPickerOption[];
+  onChange: (value: string) => void;
+  'aria-label': string;
+  className?: string;
+  disabled?: boolean;
+}
 
-export default function StatusPicker({
+const MENU_GAP = 6;
+const MENU_EST_HEIGHT = 200;
+
+/**
+ * Compact filter dropdown — same visual language as StatusPicker/DatePicker
+ * (portal menu, soft elevation, token colors) instead of native OS selects.
+ */
+export default function SelectPicker({
   value,
+  options,
   onChange,
-  columns: columnsProp,
-  label,
-  disabled = false,
-  size = 'sm',
+  'aria-label': ariaLabel,
   className = '',
-}: StatusPickerProps) {
+  disabled = false,
+}: SelectPickerProps) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<MenuPosition | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -45,22 +46,16 @@ export default function StatusPicker({
   const menuId = useId();
   const finishedRef = useRef(false);
 
-  const columns = useMemo(
-    () => (columnsProp && columnsProp.length > 0 ? columnsProp : fallbackBoardColumns('local')),
-    [columnsProp],
-  );
-  const options = useMemo(() => pickerColumns(columns), [columns]);
-
-  const color = columnColor(columns, value);
-  const soft = columnSoft(columns, value);
-  const displayLabel = columnLabel(columns, value);
+  const selected = options.find((o) => o.value === value) ?? options[0];
+  const isFiltered = selected && selected.value !== options[0]?.value;
 
   const updatePosition = useCallback(() => {
     const trigger = triggerRef.current;
     if (!trigger) return;
+
     const rect = trigger.getBoundingClientRect();
-    const menuHeight = menuRef.current?.offsetHeight ?? 180;
-    const menuWidth = Math.max(rect.width, 168);
+    const menuHeight = menuRef.current?.offsetHeight ?? MENU_EST_HEIGHT;
+    const menuWidth = Math.max(rect.width, 176);
     const spaceBelow = window.innerHeight - rect.bottom;
     const openUp = spaceBelow < menuHeight + MENU_GAP && rect.top > spaceBelow;
 
@@ -110,14 +105,12 @@ export default function StatusPicker({
     };
   }, [open, updatePosition]);
 
-  const pick = (status: TareaStatus) => {
+  const pick = (next: string) => {
     if (finishedRef.current) return;
     finishedRef.current = true;
-    onChange(status);
+    onChange(next);
     setOpen(false);
   };
-
-  const isSm = size === 'sm';
 
   return (
     <div className={`relative inline-flex ${className}`}>
@@ -125,28 +118,29 @@ export default function StatusPicker({
         ref={triggerRef}
         type="button"
         disabled={disabled}
-        aria-label={label ?? `Estado: ${displayLabel}`}
+        aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         onClick={() => !disabled && setOpen((v) => !v)}
-        className={`group inline-flex items-center gap-1.5 rounded-full border font-medium outline-none transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${
-          isSm ? 'px-2.5 py-1 text-[11px]' : 'px-3 py-1.5 text-sm'
-        } focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]/35`}
-        style={{
-          color,
-          background: soft,
-          borderColor: `color-mix(in srgb, ${color} 32%, transparent)`,
-        }}
+        className={`group inline-flex h-8 max-w-[200px] items-center gap-1.5 rounded-full border bg-[var(--bg-elevated)] pl-2.5 pr-2 text-xs outline-none transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${
+          open
+            ? 'border-[var(--accent-primary)] text-[var(--text-primary)] shadow-[0_0_0_3px_var(--accent-primary-glow)]'
+            : isFiltered
+              ? 'border-[var(--border-medium)] text-[var(--text-primary)] hover:border-[var(--accent-primary)]/50'
+              : 'border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)]'
+        } focus-visible:border-[var(--accent-primary)] focus-visible:shadow-[0_0_0_3px_var(--accent-primary-glow)]`}
       >
-        <span
-          className={`shrink-0 rounded-full ${isSm ? 'h-1.5 w-1.5' : 'h-2 w-2'}`}
-          style={{ backgroundColor: color, boxShadow: `0 0 0 2px color-mix(in srgb, ${color} 22%, transparent)` }}
-          aria-hidden
-        />
-        <span className="whitespace-nowrap">{displayLabel}</span>
+        {selected?.color && (
+          <span
+            className="h-1.5 w-1.5 shrink-0 rounded-full"
+            style={{ backgroundColor: selected.color }}
+            aria-hidden
+          />
+        )}
+        <span className="min-w-0 flex-1 truncate font-medium">{selected?.label ?? '—'}</span>
         <ChevronDown
-          className={`shrink-0 opacity-60 transition-transform duration-150 ${isSm ? 'h-3 w-3' : 'h-3.5 w-3.5'} ${
+          className={`h-3 w-3 shrink-0 text-[var(--text-muted)] transition-transform duration-150 ${
             open ? 'rotate-180' : ''
           }`}
           aria-hidden
@@ -159,7 +153,7 @@ export default function StatusPicker({
             ref={menuRef}
             id={menuId}
             role="listbox"
-            aria-label="Seleccionar estado"
+            aria-label={ariaLabel}
             className="fixed z-[200] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-1 shadow-[0_12px_40px_color-mix(in_srgb,var(--bg-base)_55%,transparent),0_0_0_1px_color-mix(in_srgb,var(--border-medium)_40%,transparent)]"
             style={
               position
@@ -168,34 +162,49 @@ export default function StatusPicker({
             }
             onMouseDown={(e) => e.stopPropagation()}
           >
-            {options.map((col) => {
-              const selected = col.key === value;
+            {options.map((opt) => {
+              const isSelected = opt.value === value;
               return (
                 <button
-                  key={col.key}
+                  key={opt.value}
                   type="button"
                   role="option"
-                  aria-selected={selected}
-                  onClick={() => pick(col.key)}
+                  aria-selected={isSelected}
+                  onClick={() => pick(opt.value)}
                   className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[12px] transition-colors duration-100 ${
-                    selected
-                      ? 'bg-[var(--bg-base)] text-[var(--text-primary)]'
+                    isSelected
+                      ? 'bg-[color-mix(in_srgb,var(--accent-primary)_12%,transparent)] text-[var(--text-primary)]'
                       : 'text-[var(--text-secondary)] hover:bg-[var(--bg-base)]/70 hover:text-[var(--text-primary)]'
                   }`}
                 >
-                  <span
-                    className="h-2 w-2 shrink-0 rounded-full"
-                    style={{
-                      backgroundColor: col.color,
-                      boxShadow: selected
-                        ? `0 0 0 3px color-mix(in srgb, ${col.color} 22%, transparent)`
-                        : undefined,
-                    }}
-                    aria-hidden
-                  />
-                  <span className="min-w-0 flex-1 font-medium">{col.name}</span>
-                  {selected && (
-                    <Check className="h-3.5 w-3.5 shrink-0 text-[var(--text-primary)]" strokeWidth={2.5} aria-hidden />
+                  {opt.color ? (
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full"
+                      style={{
+                        backgroundColor: opt.color,
+                        boxShadow: isSelected
+                          ? `0 0 0 3px color-mix(in srgb, ${opt.color} 22%, transparent)`
+                          : undefined,
+                      }}
+                      aria-hidden
+                    />
+                  ) : (
+                    <span
+                      className={`h-2 w-2 shrink-0 rounded-full border ${
+                        isSelected
+                          ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]'
+                          : 'border-[var(--border-medium)] bg-transparent'
+                      }`}
+                      aria-hidden
+                    />
+                  )}
+                  <span className="min-w-0 flex-1 font-medium">{opt.label}</span>
+                  {isSelected && (
+                    <Check
+                      className="h-3.5 w-3.5 shrink-0 text-[var(--accent-primary)]"
+                      strokeWidth={2.5}
+                      aria-hidden
+                    />
                   )}
                 </button>
               );

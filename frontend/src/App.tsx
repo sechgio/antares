@@ -173,7 +173,10 @@ function AppContent() {
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]">
-      <TitleBar onOpenSettings={openAppearanceSettings} />
+      <TitleBar
+        onOpenSettings={openAppearanceSettings}
+        onOpenEspacios={() => handleTabChange('espacios')}
+      />
       <div className="flex min-h-0 flex-1">
         <Sidebar
           activeTab={activeTab}
