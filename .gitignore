@@ -116,8 +116,9 @@ supabase/.env
 supabase/.env.*
 !supabase/.env.example
 
-# Cursor local plugin settings (puede referenciar proyectos/credenciales)
+# Cursor local plugin settings / rules (pueden referenciar proyectos/credenciales)
 .cursor/settings.json
+.cursor/rules/
 
 # AutoIMG — credenciales, tokens y config local (userData / copias accidentales)
 # Nunca versionar: OAuth secrets, tokens, sheet IDs, prefs por usuario.

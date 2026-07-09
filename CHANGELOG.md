@@ -5,6 +5,28 @@ Todas las versiones notables de Antares se documentan aquí.
 Formato basado en [Keep a Changelog](https://keepachangelog.com/),
 y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
+## [0.10.19] — 2026-07-08
+
+### Added
+- **Fichas Técnicas**: nueva herramienta (backend, plantillas, UI e IPC) para generación de fichas técnicas.
+- **Espacios**: multi-selección en list/table con `BulkActionBar`, soft-delete con undo toast y atajos de teclado.
+- **Espacios**: columnas de tablero personalizadas, notificaciones de vencimiento y mejoras de board/calendar/gantt.
+- **Evidencia Volanteo**: etiqueta de cuadrante editable u ocultable en preview, PDF y DOCX (con persistencia de sesión).
+- **Reportes de campo**: personalización de tamaño y color del título en preview y PDF.
+
+### Changed
+- **Fichas Técnicas**: preview A4 simplificado, lectura de DB sin re-normalizar de más y limpieza de IPC muerto.
+- **Espacios**: endurecimiento de sync (carreras create-vs-load), handlers de selección en list/table y flush seguro de delete.
+- **Gitignore**: reglas locales de Cursor (`.cursor/rules/`) e ignorado de secrets de Supabase.
+
+### Fixed
+- **Espacios**: selección multi-vista cableada; `commitDelete` estable al desmontar; columnas `is_done` custom respetadas en overdue/notificaciones.
+- **Evidencia Volanteo / Reportes**: regresiones cubiertas con tests de etiqueta de cuadrante y estilo de título.
+
+### Security
+- Detección pre-commit ampliada para tokens `sbp`, service role keys, DB passwords y JWTs anon reales.
+- Ignorado de `supabase/.env` y settings locales de Cursor; tests de seguridad alineados.
+
 ## [0.10.18] — 2026-07-08
 
 ### Added
