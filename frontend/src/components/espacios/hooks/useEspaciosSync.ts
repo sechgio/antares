@@ -24,6 +24,7 @@ import {
   type RealtimeStatus,
 } from '../api/realtime';
 import type { BoardColumn, BoardColumnInput, Espacio, Proyecto, Tarea, TareaInput } from '../types';
+import { emitDueNotificationsInvalidate } from '../utils/dueNotificationsBus';
 import { readEspaciosPrefs, writeEspaciosPrefs } from '../utils/sessionPrefs';
 import { fallbackBoardColumns } from '../utils/statusConfig';
 
@@ -346,6 +347,7 @@ export function useEspaciosSync(userId: string | undefined) {
         throw new Error('No se pudo crear la tarea (respuesta vacía de Supabase)');
       }
       setTareas((prev) => (prev.some((t) => t.id === tarea.id) ? prev : [...prev, tarea]));
+      emitDueNotificationsInvalidate();
       // Reconcile: supersede any in-flight load that started before this create.
       void loadTareas(proyectoId).catch((err) => {
         console.error('[espacios] reconcile loadTareas failed:', errorMessage(err, 'Error al cargar tareas'));
@@ -358,6 +360,7 @@ export function useEspaciosSync(userId: string | undefined) {
     setTareas((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
     try {
       await updateTarea(id, patch);
+      emitDueNotificationsInvalidate();
     } catch (err) {
       if (activeProyectoId) await loadTareas(activeProyectoId);
       throw err;
@@ -368,6 +371,7 @@ export function useEspaciosSync(userId: string | undefined) {
     setTareas((prev) => prev.filter((t) => t.id !== id));
     try {
       await deleteTarea(id);
+      emitDueNotificationsInvalidate();
     } catch (err) {
       if (activeProyectoId) await loadTareas(activeProyectoId);
       throw err;
@@ -377,6 +381,7 @@ export function useEspaciosSync(userId: string | undefined) {
   /** Local-only remove (for undoable delete). Pair with commitDeleteTarea / restoreTarea. */
   const softRemoveTarea = useCallback((id: string) => {
     setTareas((prev) => prev.filter((t) => t.id !== id));
+    emitDueNotificationsInvalidate();
   }, []);
 
   const restoreTarea = useCallback((tarea: Tarea) => {
@@ -384,11 +389,13 @@ export function useEspaciosSync(userId: string | undefined) {
       if (prev.some((t) => t.id === tarea.id)) return prev;
       return [...prev, tarea].sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at));
     });
+    emitDueNotificationsInvalidate();
   }, []);
 
   const commitDeleteTarea = useCallback(async (id: string) => {
     try {
       await deleteTarea(id);
+      emitDueNotificationsInvalidate();
     } catch (err) {
       if (activeProyectoId) await loadTareas(activeProyectoId);
       throw err;
@@ -432,6 +439,8 @@ export function useEspaciosSync(userId: string | undefined) {
       );
       try {
         await updateBoardColumn(id, patch);
+        // is_done changes affect which statuses count as open for due notifications.
+        if (patch.is_done !== undefined) emitDueNotificationsInvalidate();
       } catch (err) {
         if (activeProyectoId) await loadBoardColumns(activeProyectoId);
         throw err;

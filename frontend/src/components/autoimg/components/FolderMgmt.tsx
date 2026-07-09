@@ -62,18 +62,28 @@ export default function FolderMgmt({ folders: externalFolders, onFoldersChange }
     }
   };
 
+  /** Agregar no exige un Verificar previo: el backend ya valida el folder en Drive. */
   const handleAdd = async () => {
-    if (!verified) return;
-    const folderName = name.trim() || verified.name;
+    if (!resolvedFolderId) return;
     setLoading(true);
+    setError('');
     try {
-      await api.autoimgFoldersAdd({ name: folderName, folder_id: verified.folder_id, activo });
+      let folderName = name.trim();
+      let id = verified?.folder_id || resolvedFolderId;
+      // Si no hay nombre, verificar una vez para rellenar desde Drive.
+      if (!folderName) {
+        const res = verified ?? (await api.autoimgDriveVerifyFolder(resolvedFolderId));
+        if (!verified) setVerified(res);
+        folderName = res.name || id;
+        id = res.folder_id || id;
+      }
+      await api.autoimgFoldersAdd({ name: folderName, folder_id: id, activo });
       setName('');
       setFolderId('');
       setVerified(null);
       await load(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error');
+      setError(e instanceof Error ? e.message : 'Error al agregar carpeta');
     } finally {
       setLoading(false);
     }
@@ -240,7 +250,11 @@ export default function FolderMgmt({ folders: externalFolders, onFoldersChange }
                 'Verificar'
               )}
             </ActionButton>
-            <ActionButton variant="solid" onClick={handleAdd} disabled={loading || !verified}>
+            <ActionButton
+              variant="solid"
+              onClick={handleAdd}
+              disabled={loading || verifying || !resolvedFolderId}
+            >
               Agregar
             </ActionButton>
           </div>
