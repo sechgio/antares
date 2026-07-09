@@ -99,17 +99,23 @@ async function main() {
   const rows = [
     BD_IMG_HEADER,
     ['4210999', '11111111', 'DVD', 'X', '', '', '', '', '', '', '', '', ''],
+    ['4210888', '22222222', 'DVD', 'Y', '', '', '', '', '', '', '', '', ''], // en padrón, sin imágenes en scan
   ];
   const applied = applyScanResultsToRows(rows, [
-    { nis: '4210801', count: 2, folders: ['CARPETA_A'] },
-    { nis: '4210999', count: 3, folders: ['CARPETA_B'] },
+    { nis: '4210801', count: 2, folders: ['CARPETA_A'] }, // fuera del padrón → ignorado
+    { nis: '4210999', count: 3, folders: ['CARPETA_B'] }, // en padrón → actualiza
   ], '2026-07-06');
 
-  assert(applied.updated === 1, 'applyScanResultsToRows actualiza filas existentes');
-  assert(applied.newRows === 1, 'applyScanResultsToRows agrega filas nuevas');
-  assert(applied.rows.length === 3, 'applyScanResultsToRows conserva header + filas');
-  assert(applied.rows[2][0] === '4210801', 'applyScanResultsToRows inserta NIS nuevo');
-  assert(applied.rows[2][12] === 'NUEVO (sin SGIO)', 'applyScanResultsToRows marca NIS nuevo sin SGIO');
+  assert(applied.updated === 2, 'applyScanResultsToRows actualiza todas las filas del padrón');
+  assert(applied.matched === 1, 'applyScanResultsToRows cuenta coincidencias con el escaneo');
+  assert(applied.notFound === 1, 'applyScanResultsToRows marca filas del padrón sin imágenes');
+  assert(applied.newRows === 0, 'applyScanResultsToRows no agrega filas nuevas desde el escaneo');
+  assert(applied.unmatchedScan === 1, 'applyScanResultsToRows reporta NIS de carpeta fuera del padrón');
+  assert(applied.rows.length === 3, 'applyScanResultsToRows conserva header + filas del padrón');
+  assert(applied.rows[1][0] === '4210999' && applied.rows[1][8] === '3', 'actualiza CANTIDAD del NIS encontrado');
+  assert(applied.rows[1][1] === '11111111', 'conserva SGIO del padrón');
+  assert(applied.rows[2][0] === '4210888' && applied.rows[2][8] === '0', 'NIS del padrón sin imágenes queda en 0');
+  assert(!applied.rows.some((r) => r[0] === '4210801'), 'no inserta NIS que no están en el padrón');
 
   const engine = require('../electron/autoimg-sync-engine');
   assert(engine.cancelOperation().success === false, 'cancelOperation sin operación activa devuelve false');

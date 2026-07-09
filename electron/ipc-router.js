@@ -25,6 +25,8 @@ const {
   manualRestart,
   incrementPendingRequests,
   decrementPendingRequests,
+  noteJobActivity,
+  clearJobActivity,
   STATE,
 } = require('./backend-spawner');
 const { getMainWindow, buildAppMenu } = require('./window-manager');
@@ -93,6 +95,19 @@ function _ensureListeners() {
         const msg = JSON.parse(line);
         // Notification (no `id`): forward to renderer
         if (msg.method && msg.params !== undefined && msg.id === undefined) {
+          // Track conversion/job progress so health checks do not force-restart
+          // the backend while process_start has already returned (no pending IPC).
+          if (
+            msg.method === 'process.progress'
+            || (typeof msg.method === 'string' && /^job\..+\.progress$/.test(msg.method))
+          ) {
+            noteJobActivity();
+          } else if (
+            msg.method === 'process.complete'
+            || (typeof msg.method === 'string' && /^job\..+\.complete$/.test(msg.method))
+          ) {
+            clearJobActivity();
+          }
           const win = getMainWindow();
           if (win && !win.isDestroyed()) win.webContents.send('ipc-notify', msg.method, msg.params);
           continue;

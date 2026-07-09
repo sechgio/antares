@@ -87,6 +87,28 @@ class TestConvertirImagen:
         with Image.open(salida) as img:
             assert "exif" in img.info
 
+    def test_aplica_exif_transpose(self, tmp_path, monkeypatch) -> None:
+        """Phone photos store Orientation tags; pixels must be baked upright."""
+        from PIL import ImageOps
+
+        from backend.core import converter
+
+        origen = tmp_path / "oriented.jpg"
+        Image.new("RGB", (20, 10), color=(255, 0, 0)).save(origen, "JPEG")
+        salida = tmp_path / "out.jpg"
+
+        calls: list[bool] = []
+        original = ImageOps.exif_transpose
+
+        def spy(img: Image.Image) -> Image.Image | None:
+            calls.append(True)
+            return original(img)
+
+        monkeypatch.setattr(converter.ImageOps, "exif_transpose", spy)
+        convertir_imagen(origen, salida, "JPEG")
+        assert calls, "exif_transpose must run during conversion"
+        assert salida.exists()
+
     def test_calidad_limitada_rango(self, imagen_rgb, tmp_path) -> None:
         salida = tmp_path / "salida.jpg"
         convertir_imagen(imagen_rgb, salida, "JPEG", calidad=150)

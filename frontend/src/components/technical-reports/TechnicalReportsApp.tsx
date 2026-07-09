@@ -20,6 +20,7 @@ export default function TechnicalReportsApp() {
   const [busy, setBusy] = useState(false);
   const [logoLeft, setLogoLeft] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const selectGenRef = useRef(0);
 
   const hasChanges = useMemo(() => Boolean(formData && JSON.stringify(formData) !== savedSnapshot), [formData, savedSnapshot]);
 
@@ -49,16 +50,19 @@ export default function TechnicalReportsApp() {
       });
       if (!proceed) return;
     }
+    const gen = ++selectGenRef.current;
     setBusy(true);
     try {
       const report = await technicalReportsApi.get(id);
+      if (gen !== selectGenRef.current) return;
       setSelectedId(id);
       setFormData(report);
       setSavedSnapshot(JSON.stringify(report));
     } catch (error) {
+      if (gen !== selectGenRef.current) return;
       addToast({ message: error instanceof Error ? error.message : 'No se pudo abrir el informe', type: 'error' });
     } finally {
-      setBusy(false);
+      if (gen === selectGenRef.current) setBusy(false);
     }
   }, [addToast, dialog, hasChanges]);
 

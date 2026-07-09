@@ -480,7 +480,7 @@ async function _syncToSheetCore() {
 
   const { values: bdValues } = await sheets.readRange('BD_IMG!A:M');
   const verification = _now();
-  const { rows, updated, newRows } = applyScanResultsToRows(
+  const { rows, updated, newRows, matched, notFound, unmatchedScan } = applyScanResultsToRows(
     bdValues.length ? bdValues : [BD_IMG_HEADER],
     _lastScanResults.nis_results,
     verification,
@@ -510,7 +510,14 @@ async function _syncToSheetCore() {
 
   const auth = await sheets.getAuthStatus();
   const durationSec = ((Date.now() - start) / 1000).toFixed(1);
-  const detail = `${_lastScanResults.folder_summary.length} carpetas · ${_lastScanResults.nis_results.length} NIS · ${updated} actualizados · ${newRows} nuevos`;
+  // El padrón (BD_IMG) manda: no se agregan NIS del escaneo. Log informativo.
+  const detail = [
+    `${_lastScanResults.folder_summary.length} carpetas`,
+    `${_lastScanResults.nis_results.length} NIS en carpetas`,
+    `${matched ?? updated} del padrón actualizados`,
+    `${notFound || 0} del padrón sin imágenes`,
+    `${unmatchedScan || 0} fuera del padrón (ignorados)`,
+  ].join(' · ');
   await sheets.appendRow('LOGS!A:E', [_now(), 'SCAN_ALL_FOLDERS', detail, auth.email || '', durationSec]);
 
   const activeFolderCount = countActiveFolders(fValues);

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import time
+from collections.abc import Callable
 from concurrent.futures import ALL_COMPLETED, CancelledError, wait
 from pathlib import Path
 from typing import Any, cast
@@ -614,6 +615,8 @@ def _run_conversion_job(job: Job) -> None:
         _NOTIFY_INTERVAL = 0.5
         _min_progress_delta = 1  # Minimum progress change to trigger notification (1%)
         futures: list = []
+        # Track output paths across chunks so same-name collisions never overwrite.
+        reserved_out_paths: set[str] = set()
 
         try:
             for chunk_start in range(0, len(files), CHUNK_SIZE):
@@ -632,6 +635,11 @@ def _run_conversion_job(job: Job) -> None:
                     global_offset=chunk_start,
                     key_column=key_column,
                     mapping_index=mapping_index,
+                )
+                chunk_tasks = _dedupe_chunk_out_paths(
+                    chunk_tasks,
+                    reserved_out_paths,
+                    log=lambda msg: log_message(msg, "warn", state=state),
                 )
                 futures = []
                 for task in chunk_tasks:
@@ -728,6 +736,7 @@ def _run_conversion_job(job: Job) -> None:
 
         from backend.core.history import save_run
         rename_source = "mapping" if mapping_index else ("catalog" if key_column else "none")
+        sequence_mode = _resolve_sequence_mode(params)
         save_run(
             files=[str(f) for f in files],
             options={
@@ -744,6 +753,12 @@ def _run_conversion_job(job: Job) -> None:
                 "id_column": mapping_id_column or None,
                 "rename_column": mapping_rename_column or None,
                 "key_column": key_column or None,
+                # Restored by History → Reejecutar so conversion matches the original run.
+                "destino": destino or None,
+                "secuencia": secuencia,
+                "word_separator": word_separator,
+                "use_filename_seq": params.get("use_filename_seq", True),
+                "sequence_mode": sequence_mode,
             },
             patron=patron, formato=formato, calidad=calidad,
             resize=str(resize) if resize else None, ok_count=ok_count, err_count=err_count,
@@ -906,3 +921,49 @@ def _prepare_chunk_tasks(
                 out_path = Path(destino) / (p.stem + ext_dest)
         tasks.append((fpath, out_path, is_video_file))
     return tasks
+
+
+def _out_path_key(path: Path) -> str:
+    """Normalize output paths for collision detection (Windows-safe)."""
+    return str(path).replace("\\", "/").casefold()
+
+
+def _dedupe_chunk_out_paths(
+    tasks: list[tuple[str, Path, bool]],
+    reserved: set[str],
+    *,
+    log: Callable[[str], None] | None = None,
+) -> list[tuple[str, Path, bool]]:
+    """Ensure each task writes to a unique path within the batch.
+
+    Mapping mode already fails the job on collisions; catalog / plain rename can
+    still map two inputs to the same destination and silently overwrite. Auto-suffix
+    (``name-2.ext``) preserves both files without changing unique renames.
+    """
+    if not tasks:
+        return tasks
+
+    result: list[tuple[str, Path, bool]] = []
+    for fpath, out_path, is_video_file in tasks:
+        key = _out_path_key(out_path)
+        if key not in reserved:
+            reserved.add(key)
+            result.append((fpath, out_path, is_video_file))
+            continue
+
+        stem = out_path.stem
+        suffix = out_path.suffix
+        parent = out_path.parent
+        n = 2
+        candidate = parent / f"{stem}-{n}{suffix}"
+        while _out_path_key(candidate) in reserved:
+            n += 1
+            candidate = parent / f"{stem}-{n}{suffix}"
+        reserved.add(_out_path_key(candidate))
+        if log is not None:
+            log(
+                f"Colisión de salida: '{out_path.name}' ya reservado; "
+                f"'{Path(fpath).name}' se guardará como '{candidate.name}'"
+            )
+        result.append((fpath, candidate, is_video_file))
+    return result

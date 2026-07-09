@@ -75,32 +75,46 @@ function buildNisRowIndexMap(values) {
   return map;
 }
 
+/**
+ * Fusiona el escaneo con el padrón BD_IMG.
+ * BD_IMG es la fuente de verdad: solo se actualizan filas cuyo NIS ya está
+ * en la hoja. NIS detectados en carpetas pero ausentes del padrón se ignoran
+ * (no se insertan filas nuevas). Filas del padrón sin imágenes en el escaneo
+ * quedan con CANTIDAD 0 y ESTADO FALTANTE.
+ */
 function applyScanResultsToRows(rows, nisResults, verification) {
   const nextRows = rows.length ? [...rows] : [BD_IMG_HEADER];
   const nisIndex = buildNisRowIndexMap(nextRows);
-  let updated = 0;
-  let newRows = 0;
-
+  const scanByNis = new Map();
   for (const result of nisResults) {
-    const idx = nisIndex.get(result.nis) ?? -1;
-    const rowData = buildScanResultRow({
+    const nis = String(result?.nis || '').trim();
+    if (nis) scanByNis.set(nis, result);
+  }
+
+  let updated = 0;
+  let matched = 0;
+  let notFound = 0;
+
+  for (const [nis, idx] of nisIndex) {
+    const result = scanByNis.get(nis) || { nis, count: 0, folders: [] };
+    nextRows[idx] = buildScanResultRow({
       scanResult: result,
       rows: nextRows,
       verification,
       rowIndex: idx,
     });
-
-    if (idx > 0) {
-      nextRows[idx] = rowData;
-      updated += 1;
-    } else {
-      nextRows.push(rowData);
-      nisIndex.set(result.nis, nextRows.length - 1);
-      newRows += 1;
-    }
+    updated += 1;
+    if (scanByNis.has(nis)) matched += 1;
+    else notFound += 1;
   }
 
-  return { rows: nextRows, updated, newRows };
+  let unmatchedScan = 0;
+  for (const nis of scanByNis.keys()) {
+    if (!nisIndex.has(nis)) unmatchedScan += 1;
+  }
+
+  // newRows siempre 0: el padrón no se amplía desde el escaneo
+  return { rows: nextRows, updated, newRows: 0, matched, notFound, unmatchedScan };
 }
 
 function buildScanResultRow({ scanResult, rows, verification, rowIndex }) {

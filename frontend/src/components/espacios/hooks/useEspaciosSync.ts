@@ -63,6 +63,8 @@ export function useEspaciosSync(userId: string | undefined) {
   const columnsRequestRef = useRef(0);
   const activeEspacioIdRef = useRef<string | null>(null);
   const activeProyectoIdRef = useRef<string | null>(null);
+  /** Soft-deleted task ids waiting for undo timer / hard delete commit. */
+  const pendingDeleteIdsRef = useRef<Set<string>>(new Set());
   const prefs = useRef(readEspaciosPrefs());
 
   useEffect(() => {
@@ -115,7 +117,9 @@ export function useEspaciosSync(userId: string | undefined) {
     const requestId = ++tareasRequestRef.current;
     const data = await fetchTareas(proyectoId);
     if (requestId !== tareasRequestRef.current) return data;
-    setTareas(data);
+    // Never re-inject soft-deleted tasks while undo window is open.
+    const pending = pendingDeleteIdsRef.current;
+    setTareas(pending.size ? data.filter((t) => !pending.has(t.id)) : data);
     setWarning(null);
     return data;
   }, []);
@@ -274,6 +278,8 @@ export function useEspaciosSync(userId: string | undefined) {
           const tarea = (row ?? old) as unknown as Tarea | null;
           if (!tarea) return;
           if (tarea.proyecto_id !== activeProyectoId && eventType !== 'DELETE') return;
+          // Soft-deleted tasks must stay hidden until undo or hard commit.
+          if (eventType !== 'DELETE' && pendingDeleteIdsRef.current.has(tarea.id)) return;
           setTareas((prev) => mergeById(prev, tarea, eventType));
         }
         if (table === 'board_columns') {
@@ -380,11 +386,18 @@ export function useEspaciosSync(userId: string | undefined) {
 
   /** Local-only remove (for undoable delete). Pair with commitDeleteTarea / restoreTarea. */
   const softRemoveTarea = useCallback((id: string) => {
+    pendingDeleteIdsRef.current.add(id);
     setTareas((prev) => prev.filter((t) => t.id !== id));
     emitDueNotificationsInvalidate();
   }, []);
 
   const restoreTarea = useCallback((tarea: Tarea) => {
+    pendingDeleteIdsRef.current.delete(tarea.id);
+    // Only re-inject into the UI when viewing the task's project (avoid
+    // painting a project-A task into project B after a space switch).
+    if (activeProyectoIdRef.current && tarea.proyecto_id !== activeProyectoIdRef.current) {
+      return;
+    }
     setTareas((prev) => {
       if (prev.some((t) => t.id === tarea.id)) return prev;
       return [...prev, tarea].sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at));
@@ -395,8 +408,10 @@ export function useEspaciosSync(userId: string | undefined) {
   const commitDeleteTarea = useCallback(async (id: string) => {
     try {
       await deleteTarea(id);
+      pendingDeleteIdsRef.current.delete(id);
       emitDueNotificationsInvalidate();
     } catch (err) {
+      pendingDeleteIdsRef.current.delete(id);
       if (activeProyectoId) await loadTareas(activeProyectoId);
       throw err;
     }

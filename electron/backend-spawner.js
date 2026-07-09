@@ -49,6 +49,11 @@ let _currentStart = null;                // { inProgress, abort } — active sta
 let _autoRestartAbort = null;            // aborts in-flight auto-restart backoff when preempted
 let _manualRestartInProgress = false;    // synchronous claim for manualRestart() concurrency
 let _pendingRequestCount = 0;            // track in-flight IPC requests to avoid killing busy backend
+// Background jobs (conversion, etc.) finish their process_start IPC quickly but
+// keep working. Progress notifications refresh this timestamp so a health-probe
+// timeout during a long job does not force-restart the backend.
+let _lastJobActivityAt = 0;
+const JOB_ACTIVITY_GRACE_MS = 60_000;
 
 // Promise-based readiness gate; resolves when state === READY,
 // rejects when state === FATAL.
@@ -84,6 +89,23 @@ function getAutoRestartLimit() {
 function getPendingRequestCount() { return _pendingRequestCount; }
 function incrementPendingRequests() { _pendingRequestCount++; }
 function decrementPendingRequests() { if (_pendingRequestCount > 0) _pendingRequestCount--; }
+
+/**
+ * Mark that the backend is doing background job work (conversion progress, etc.).
+ * Called from the IPC router when process/job progress notifications arrive.
+ */
+function noteJobActivity() {
+  _lastJobActivityAt = Date.now();
+}
+
+function clearJobActivity() {
+  _lastJobActivityAt = 0;
+}
+
+function hasRecentJobActivity(windowMs = JOB_ACTIVITY_GRACE_MS) {
+  if (!_lastJobActivityAt) return false;
+  return (Date.now() - _lastJobActivityAt) < windowMs;
+}
 
 /**
  * Wait until the backend is ready. Resolves true when ready, false when it
@@ -381,11 +403,21 @@ async function runHealthCheckOnce() {
       console.log(`[backend-spawner] Health probe timed out but ${_pendingRequestCount} request(s) in flight — skipping restart (backend is busy, not dead).`);
       return;
     }
+    // Conversion jobs release the process_start IPC immediately but keep running.
+    // Progress notifications mark recent activity so we don't kill mid-batch.
+    if (hasRecentJobActivity()) {
+      console.log('[backend-spawner] Health probe timed out but a job was recently active — skipping restart (backend is busy, not dead).');
+      return;
+    }
     // Re-check synchronously immediately before triggering a restart: a new
     // request could have arrived between the probe failing and this point
     // (await boundaries are scheduling points). Avoid killing it mid-flight.
     if (_pendingRequestCount > 0) {
       console.log(`[backend-spawner] Pending request arrived during probe failure handling — skipping restart.`);
+      return;
+    }
+    if (hasRecentJobActivity()) {
+      console.log('[backend-spawner] Job activity arrived during probe failure handling — skipping restart.');
       return;
     }
     const message = `Backend no responde al chequeo de salud: ${err.message}`;
@@ -642,5 +674,8 @@ module.exports = {
   incrementPendingRequests,
   decrementPendingRequests,
   getPendingRequestCount,
+  noteJobActivity,
+  clearJobActivity,
+  hasRecentJobActivity,
   STATE,
 };

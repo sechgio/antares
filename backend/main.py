@@ -84,6 +84,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Keep aligned with shared/long-running-methods.json for Python-handled methods.
+# (html_to_pdf / autoimg_* run in Electron and are intentionally absent here.)
 HEAVY_METHODS = {
     "db_import",
     "db_export",
@@ -100,12 +102,23 @@ HEAVY_METHODS = {
     "technical_reports_import_file",
     "technical_reports_render_html",
     "technical_reports_render_consolidated_html",
+    "fichas_tecnicas_import_file",
+    "fichas_tecnicas_render_html",
+    "fichas_tecnicas_render_consolidated_html",
     "panel_aviso_corte_parse_excel",
     "panel_aviso_corte_compute_match",
     "panel_aviso_corte_render_pdf",
     "generar_ubicaciones",
     "preview_ubicacion",
+    "evidencia_volanteo_render",
 }
+
+# Handlers that must answer on the IPC reader thread. Health probes and UI
+# status polls must never wait behind a saturated ThreadPoolExecutor.
+SYNC_METHODS = frozenset({
+    "version",
+    "process_status",
+})
 
 
 def _utf8_locale_candidates() -> list[str]:
@@ -235,7 +248,13 @@ def main() -> None:
                     continue  # Parse error, already responded
 
                 if msg.method in HANDLERS:
-                    _submit_handler(HANDLERS[msg.method], msg.params, msg.id, msg.method)
+                    handler = HANDLERS[msg.method]
+                    if msg.method in SYNC_METHODS:
+                        # Answer immediately so liveness checks stay green while
+                        # heavy conversion/PDF work occupies the scheduler pool.
+                        _dispatch(handler, msg.params, msg.id, msg.method)
+                    else:
+                        _submit_handler(handler, msg.params, msg.id, msg.method)
                 else:
                     send_response(None, msg.id, error=f"Método desconocido: {msg.method}")
                 _consecutive_errors = 0
