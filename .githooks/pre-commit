@@ -12,6 +12,15 @@ is_blocked_env_path() {
       esac
       return 0
       ;;
+    supabase/.env|supabase/.env.*|*/supabase/.env|*/supabase/.env.*)
+      case "$1" in
+        */.env.example|*/.env.*.example) return 1 ;;
+      esac
+      return 0
+      ;;
+    .cursor/settings.json|*/.cursor/settings.json)
+      return 0
+      ;;
   esac
   return 1
 }
@@ -41,14 +50,14 @@ while IFS= read -r file; do
   case "$file" in
     tests/test-autoimg-security.js) continue ;;
     */.env.example|.env.example)
-      if git diff --cached -- "$file" | grep -Eiq 'sb_publishable_[A-Za-z0-9_]+|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}|https://[a-z0-9]{20}\.supabase\.co'; then
+      if git diff --cached -- "$file" | grep -Eiq 'sb_publishable_[A-Za-z0-9_]+|sbp_[A-Za-z0-9]{10,}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}|https://[a-z0-9]{20}\.supabase\.co|SUPABASE_SERVICE_ROLE_KEY\s*[=:]\s*[^$\s]{8,}|SUPABASE_DB_PASSWORD\s*[=:]\s*[^$\s]{4,}'; then
         secret_hits="${secret_hits}
   - ${file}"
       fi
       continue
       ;;
   esac
-  if git diff --cached -- "$file" | grep -Eiq 'sb_publishable_[A-Za-z0-9_]+|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}'; then
+  if git diff --cached -- "$file" | grep -Eiq 'sb_publishable_[A-Za-z0-9_]+|sbp_[A-Za-z0-9]{10,}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}|SUPABASE_SERVICE_ROLE_KEY\s*[=:]\s*[^$\s]{8,}|SUPABASE_DB_PASSWORD\s*[=:]\s*[^$\s]{4,}|VITE_SUPABASE_ANON_KEY\s*[=:]\s*eyJ'; then
     secret_hits="${secret_hits}
   - ${file}"
   fi
