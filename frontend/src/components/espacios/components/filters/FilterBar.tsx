@@ -95,7 +95,10 @@ export default function FilterBar({
         </button>
       )}
 
-      <span className="px-1 text-[11px] tabular-nums text-[var(--text-muted)]">
+      <span
+        className="px-1 text-[11px] tabular-nums text-[var(--text-muted)]"
+        title="Atajos: N nueva · / buscar · 1–5 vistas"
+      >
         {resultCount} {resultCount === 1 ? 'tarea' : 'tareas'}
       </span>
 

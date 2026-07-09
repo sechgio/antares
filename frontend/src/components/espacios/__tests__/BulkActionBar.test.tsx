@@ -68,7 +68,7 @@ describe('BulkActionBar', () => {
     fireEvent.click(screen.getByRole('button', { name: /Eliminar/i }));
     expect(onBulkDelete).toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: /Quitar selección/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Limpiar selección/i }));
     expect(onClear).toHaveBeenCalled();
   });
 });

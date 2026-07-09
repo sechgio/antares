@@ -85,18 +85,20 @@ export default function EspaciosApp() {
     setSelectedIds(new Set());
   }, [sync.activeProyectoId]);
 
+  const commitDeleteRef = useRef(sync.commitDeleteTarea);
+  commitDeleteRef.current = sync.commitDeleteTarea;
+
   useEffect(() => {
     const pending = pendingDeletesRef.current;
     return () => {
       for (const { timer, tarea } of pending.values()) {
         clearTimeout(timer);
-        void sync.commitDeleteTarea(tarea.id).catch(() => {
+        void commitDeleteRef.current(tarea.id).catch(() => {
           /* best-effort commit on unmount */
         });
       }
       pending.clear();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on unmount
   }, []);
 
   // Surface non-fatal nested load failures without blanking the whole module.
@@ -797,6 +799,9 @@ export default function EspaciosApp() {
                     tareas={filteredTareas}
                     members={members}
                     columns={sync.boardColumns}
+                    selectedIds={selectedIds}
+                    onToggleSelect={handleToggleSelect}
+                    onToggleSelectAll={handleToggleSelectAll}
                     onStatusChange={(id, status) => {
                       void sync.patchTarea(id, { status }).catch((err) => {
                         addToast({
@@ -840,6 +845,9 @@ export default function EspaciosApp() {
                     tareas={filteredTareas}
                     members={members}
                     columns={sync.boardColumns}
+                    selectedIds={selectedIds}
+                    onToggleSelect={handleToggleSelect}
+                    onToggleSelectAll={handleToggleSelectAll}
                     onStatusChange={(id, status) => {
                       void sync.patchTarea(id, { status }).catch((err) => {
                         addToast({
