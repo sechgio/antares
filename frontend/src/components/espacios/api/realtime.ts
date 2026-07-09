@@ -75,6 +75,42 @@ export function subscribeEspaciosSync(
   });
 }
 
+/**
+ * Global realtime for the titlebar due-notifications bell.
+ * Listens to all tareas / board_columns the user can see (RLS-scoped).
+ * Callers should debounce their refresh handler.
+ */
+export function subscribeDueNotifications(
+  onChange: () => void,
+  onStatus?: (status: RealtimeStatus) => void,
+): RealtimeChannel | null {
+  if (!supabase) {
+    onStatus?.('offline');
+    return null;
+  }
+
+  let channel = supabase.channel('due-notifications');
+
+  channel = channel
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'tareas' },
+      () => onChange(),
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'board_columns' },
+      () => onChange(),
+    );
+
+  onStatus?.('connecting');
+  return channel.subscribe((status) => {
+    if (status === 'SUBSCRIBED') onStatus?.('live');
+    else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') onStatus?.('error');
+    else if (status === 'CLOSED') onStatus?.('offline');
+  });
+}
+
 export function unsubscribeEspaciosSync(channel: RealtimeChannel | null): void {
   if (!supabase || !channel) return;
   void supabase.removeChannel(channel);
