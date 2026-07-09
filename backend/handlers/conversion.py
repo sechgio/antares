@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import contextlib
 import time
+from collections.abc import Callable
 from concurrent.futures import ALL_COMPLETED, CancelledError, wait
 from pathlib import Path
-from collections.abc import Callable
 from typing import Any, cast
 
 from backend.core.converter import FORMATOS_SOPORTADOS, convertir_imagen, copiar_archivo, es_video
