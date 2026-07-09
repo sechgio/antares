@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * ANTARES PR Fix Loop (auto-correction + auto-merge with guard)
+ * Antares PR Fix Loop (auto-correction + auto-merge with guard)
  * =============================================================
  *
  * Loop que se dispara cuando un PR falla CI (lint, typecheck, tests).
@@ -201,7 +201,7 @@ function applyFrontendPrettierFix() {
 // En modo --ship local, lanzamos el subagent worker con los logs.
 function invokeDroidFixer(logs, prNumber) {
   const prompt = [
-    'Goal: Corrige los errores de CI del PR #' + prNumber + ' de ANTARES.',
+    'Goal: Corrige los errores de CI del PR #' + prNumber + ' de Antares.',
     '',
     'REGLAS OBLIGATORIAS:',
     '1. NO elimines codigo existente. Si necesitas silenciar un lint, usa # noqa, no borres.',
@@ -423,7 +423,7 @@ function main() {
     : '🔍 DRY-RUN (sin side effects)';
 
   console.log('\n════════════════════════════════════════════');
-  console.log('  ANTARES PR Fix Loop (auto-correction + auto-merge guard)');
+  console.log('  Antares PR Fix Loop (auto-correction + auto-merge guard)');
   console.log(`  ${mode}`);
   console.log('════════════════════════════════════════════\n');
 

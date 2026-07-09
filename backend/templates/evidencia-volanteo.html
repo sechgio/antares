@@ -199,7 +199,9 @@
       {# ── Header row 2: Cuadrante info (center cell only — logos span from above) ── #}
       <tr class="row-header-info">
         <td class="info-cell">
+          {% if show_cuadrante_label | default(true) and cuadrante_label %}
           <span class="info-label">{{ cuadrante_label }}</span>
+          {% endif %}
           <span class="info-value">{{ page.cuadrante }}</span>
         </td>
       </tr>

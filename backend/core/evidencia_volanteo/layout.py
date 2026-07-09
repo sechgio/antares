@@ -57,5 +57,6 @@ def layout_context() -> dict[str, float | str]:
         "info_font_pt": INFO_FONT_PT,
         "border_pt": BORDER_PT,
         "cuadrante_label": CUADRANTE_LABEL,
+        "show_cuadrante_label": True,
         "empty_cuadrante_placeholder": EMPTY_CUADRANTE_PLACEHOLDER,
     }

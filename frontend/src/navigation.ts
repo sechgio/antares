@@ -13,6 +13,7 @@ export const TAB_DEFINITIONS = [
   { id: 'ubicaciones', label: 'Ubicaciones', commandLabel: 'Herramienta de Ubicaciones', shortcut: 'Ctrl+U', shortcutKey: 'u', fullBleed: true },
   { id: 'evidenciaVolanteo', label: 'Evidencia Volanteo', shortcut: 'Ctrl+Shift+V', shortcutKey: 'v', shortcutShift: true, fullBleed: true },
   { id: 'autoimg', label: 'AutoIMG', shortcut: 'Ctrl+Shift+A', shortcutKey: 'a', shortcutShift: true, fullBleed: true },
+  { id: 'fichasTecnicas', label: 'Fichas Técnicas', shortcut: 'Ctrl+Shift+F', shortcutKey: 'f', shortcutShift: true, fullBleed: true },
 ] as const;
 
 export type TabId = (typeof TAB_DEFINITIONS)[number]['id'];

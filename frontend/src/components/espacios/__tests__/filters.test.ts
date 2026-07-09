@@ -6,7 +6,7 @@ import {
   countUnscheduled,
   filterTareas,
 } from '../utils/filters';
-import type { Tarea } from '../types';
+import type { BoardColumn, Tarea } from '../types';
 import { DEFAULT_FILTERS } from '../types';
 
 const baseTarea: Tarea = {
@@ -24,6 +24,33 @@ const baseTarea: Tarea = {
   updated_at: '',
 };
 
+const customDoneColumns: BoardColumn[] = [
+  {
+    id: 'c1',
+    proyecto_id: 'p1',
+    key: 'todo',
+    name: 'Pendiente',
+    color: '#888',
+    sort_order: 0,
+    is_done: false,
+    is_system: true,
+    created_at: '',
+    updated_at: '',
+  },
+  {
+    id: 'c2',
+    proyecto_id: 'p1',
+    key: 'entregado',
+    name: 'Entregado',
+    color: '#0f0',
+    sort_order: 1,
+    is_done: true,
+    is_system: false,
+    created_at: '',
+    updated_at: '',
+  },
+];
+
 describe('filterTareas', () => {
   it('excludes closed tasks by default', () => {
     const tareas = [
@@ -31,6 +58,18 @@ describe('filterTareas', () => {
       { ...baseTarea, id: '2', status: 'closed' as const },
     ];
     expect(filterTareas(tareas, DEFAULT_FILTERS)).toHaveLength(1);
+  });
+
+  it('excludes custom is_done statuses when showClosed is false', () => {
+    const tareas = [
+      { ...baseTarea, id: '1', status: 'todo' },
+      { ...baseTarea, id: '2', status: 'entregado' },
+      { ...baseTarea, id: '3', status: 'done' },
+    ];
+    expect(filterTareas(tareas, DEFAULT_FILTERS, customDoneColumns)).toHaveLength(1);
+    expect(
+      filterTareas(tareas, { ...DEFAULT_FILTERS, showClosed: true }, customDoneColumns),
+    ).toHaveLength(3);
   });
 
   it('filters by search query', () => {

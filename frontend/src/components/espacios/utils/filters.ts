@@ -1,9 +1,15 @@
-import type { Tarea, TareaFilters } from '../types';
+import type { BoardColumn, Tarea, TareaFilters } from '../types';
 import { localTodayString } from './dates';
+import { columnIsDone } from './statusConfig';
 
-export function filterTareas(tareas: Tarea[], filters: TareaFilters): Tarea[] {
+export function filterTareas(
+  tareas: Tarea[],
+  filters: TareaFilters,
+  columns: BoardColumn[] = [],
+): Tarea[] {
   return tareas.filter((t) => {
-    if (!filters.showClosed && t.status === 'closed') return false;
+    // Hide done/closed columns unless the user opts in (works with custom is_done keys).
+    if (!filters.showClosed && columnIsDone(columns, t.status)) return false;
     if (filters.status !== 'all' && t.status !== filters.status) return false;
     if (filters.assigneeId !== 'all' && t.assignee_id !== filters.assigneeId) return false;
     if (filters.search.trim()) {
@@ -16,17 +22,17 @@ export function filterTareas(tareas: Tarea[], filters: TareaFilters): Tarea[] {
   });
 }
 
-export function isOverdue(tarea: Tarea): boolean {
-  if (!tarea.due_date || tarea.status === 'closed' || tarea.status === 'done') return false;
+export function isOverdue(tarea: Tarea, columns: BoardColumn[] = []): boolean {
+  if (!tarea.due_date || columnIsDone(columns, tarea.status)) return false;
   return tarea.due_date < localTodayString();
 }
 
-export function countUnscheduled(tareas: Tarea[]): number {
-  return tareas.filter((t) => t.status !== 'closed' && !t.due_date).length;
+export function countUnscheduled(tareas: Tarea[], columns: BoardColumn[] = []): number {
+  return tareas.filter((t) => !columnIsDone(columns, t.status) && !t.due_date).length;
 }
 
-export function countOverdue(tareas: Tarea[]): number {
-  return tareas.filter(isOverdue).length;
+export function countOverdue(tareas: Tarea[], columns: BoardColumn[] = []): number {
+  return tareas.filter((t) => isOverdue(t, columns)).length;
 }
 
 export function countActiveFilters(filters: TareaFilters): number {
@@ -47,9 +53,9 @@ export interface TaskStats {
   progress: number;
 }
 
-export function computeTaskStats(tareas: Tarea[]): TaskStats {
-  const open = tareas.filter((t) => t.status !== 'closed' && t.status !== 'done');
-  const completed = tareas.filter((t) => t.status === 'done' || t.status === 'closed');
+export function computeTaskStats(tareas: Tarea[], columns: BoardColumn[] = []): TaskStats {
+  const completed = tareas.filter((t) => columnIsDone(columns, t.status));
+  const open = tareas.filter((t) => !columnIsDone(columns, t.status));
   const total = tareas.length;
   const progress = total === 0 ? 0 : Math.round((completed.length / total) * 100);
 
@@ -57,8 +63,8 @@ export function computeTaskStats(tareas: Tarea[]): TaskStats {
     total,
     open: open.length,
     completed: completed.length,
-    overdue: countOverdue(tareas),
-    unscheduled: countUnscheduled(tareas),
+    overdue: countOverdue(tareas, columns),
+    unscheduled: countUnscheduled(tareas, columns),
     progress,
   };
 }

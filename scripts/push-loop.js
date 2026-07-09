@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * ANTARES Push Pipeline Loop (PR-first)
+ * Antares Push Pipeline Loop (PR-first)
  * ======================================
  *
  * Flujo para enviar cambios siempre mediante Pull Request — nunca push directo a main.
@@ -288,7 +288,7 @@ function main() {
   const mode = options.isShip ? '🚀 SHIP MODE (PR real)' : '🔍 DRY-RUN (sin side effects)';
 
   console.log('\n════════════════════════════════════════════');
-  console.log('  ANTARES Push Pipeline Loop (PR-first)');
+  console.log('  Antares Push Pipeline Loop (PR-first)');
   console.log(`  ${mode}`);
   console.log('════════════════════════════════════════════\n');
 

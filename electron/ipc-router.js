@@ -15,7 +15,6 @@ const { ipcMain, dialog } = require('electron');
 const crypto = require('crypto');
 const { handleDialogCall } = require('./dialog-handlers');
 const { handleAutoimgCall } = require('./autoimg-handlers');
-const { ALLOWED_RENDERER_METHODS, LONG_RUNNING_METHODS } = require('./ipc-methods');
 const {
   getProcess,
   isReady,
@@ -32,6 +31,39 @@ const { getMainWindow, buildAppMenu } = require('./window-manager');
 
 const _pendingRequests = new Map();
 let _attachedProcess = null;               // process instance we have listeners on
+
+/**
+ * Resolve IPC allowlist (+ long-running set).
+ * In unpackaged/dev builds, bust require cache so new methods in ipc-methods.js
+ * are picked up without a full Electron restart (Vite HMR does not reload main).
+ */
+function _loadIpcMethods() {
+  const isPackaged = (() => {
+    try {
+      return require('electron').app.isPackaged;
+    } catch {
+      return false;
+    }
+  })();
+  if (!isPackaged) {
+    for (const rel of ['./ipc-methods', './autoimg-ipc-methods', '../shared/long-running-methods.json']) {
+      try {
+        delete require.cache[require.resolve(rel)];
+      } catch {
+        // ignore missing modules
+      }
+    }
+  }
+  return require('./ipc-methods');
+}
+
+function _getAllowedMethods() {
+  return _loadIpcMethods().ALLOWED_RENDERER_METHODS;
+}
+
+function _getLongRunningMethods() {
+  return _loadIpcMethods().LONG_RUNNING_METHODS;
+}
 
 // Budgets
 const REQUEST_TIMEOUT_MS = 30_000;         // per-request response timeout — most ops finish in <5s
@@ -96,7 +128,7 @@ function _ensureListeners() {
 }
 
 function _getTimeoutForMethod(method) {
-  return LONG_RUNNING_METHODS.has(method) ? LONG_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
+  return _getLongRunningMethods().has(method) ? LONG_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
 }
 
 function _sendRequest(method, params) {
@@ -206,10 +238,8 @@ async function _callBackend(method, params) {
 
 function registerIpcHandlers() {
   ipcMain.handle('ipc-call', async (event, method, params) => {
-    if (typeof method !== 'string' || !ALLOWED_RENDERER_METHODS.has(method)) {
-      const hint = typeof method === 'string' && method.startsWith('autoimg_')
-        ? ' Reinicia Antares por completo para recargar la allowlist IPC de Electron.'
-        : '';
+    if (typeof method !== 'string' || !_getAllowedMethods().has(method)) {
+      const hint = ' Reinicia Antares por completo (cierra todas las ventanas) para recargar la allowlist IPC.';
       throw new Error(`IPC method not allowed: ${method}.${hint}`);
     }
 

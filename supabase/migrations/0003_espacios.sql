@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS public.tareas (
   title text NOT NULL,
   description text,
   status text NOT NULL DEFAULT 'todo'
-    CHECK (status IN ('todo', 'in_progress', 'done', 'closed')),
+    CHECK (status IN ('todo', 'in_progress', 'done', 'urgent', 'closed')),
   assignee_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   start_date date,
   due_date date,

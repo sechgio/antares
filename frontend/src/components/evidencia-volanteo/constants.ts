@@ -10,6 +10,8 @@ export const ACCEPTED_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp'];
 export const DEFAULT_TITLE =
   'EVIDENCIAS FOTOGRÁFICAS DEL VOLANTEO\nCORTE DE SERVICIO';
 
+export const DEFAULT_CUADRANTE_LABEL = 'CUADRANTE AFECTADO:';
+
 export const MSG_LOGO_TOO_LARGE = 'El logo supera el tamaño máximo de 5 MB';
 export const MSG_LOGO_INVALID = 'Archivo de logo inválido';
 export const MSG_IMAGE_TOO_LARGE = (name: string) => `La imagen ${name} excede el tamaño máximo de 15 MB`;

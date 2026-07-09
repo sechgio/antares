@@ -1,4 +1,10 @@
 import type { ReportTypeConfig } from './types';
+import {
+    DEFAULT_TITULO_COLOR,
+    DEFAULT_TITULO_SIZE_PX,
+    TITULO_COLOR_KEY,
+    TITULO_SIZE_KEY,
+} from './utils/tituloStyle';
 
 function formatDateDisplay(isoDate: string): string {
     if (!isoDate || !isoDate.trim()) return '';
@@ -143,5 +149,7 @@ export function getDefaultHeader(config: ReportTypeConfig): Record<string, strin
     for (const field of config.fields) {
         header[field.key] = field.key === 'titulo' ? config.defaultTitulo : '';
     }
+    header[TITULO_SIZE_KEY] = String(DEFAULT_TITULO_SIZE_PX);
+    header[TITULO_COLOR_KEY] = DEFAULT_TITULO_COLOR;
     return header;
 }

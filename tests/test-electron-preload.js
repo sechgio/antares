@@ -58,13 +58,13 @@ async function run() {
     assert(invokeCalls[1][0] === 'ipc-call', 'db_columns should be forwarded through ipc-call');
     assert(invokeCalls[1][1] === 'db_columns', 'db_columns should stay allowlisted');
 
-    let rejected = false;
-    try {
-      await exposedApi.invoke('totally_unknown_method');
-    } catch (err) {
-      rejected = /not allowed/i.test(err.message);
-    }
-    assert(rejected, 'unknown methods should be rejected');
+    // Preload now forwards all method names to main (main process is the real gate).
+    // Unknown methods are still forwarded so a stale preload allowlist cannot block
+    // newly-added methods like fichas_tecnicas_* before main can authorize them.
+    invokeCalls.length = 0;
+    await exposedApi.invoke('totally_unknown_method');
+    assert(invokeCalls[0][0] === 'ipc-call', 'unknown methods should still be forwarded to main');
+    assert(invokeCalls[0][1] === 'totally_unknown_method', 'unknown method name should be preserved');
   } finally {
     Module._load = originalLoad;
     delete global.window;

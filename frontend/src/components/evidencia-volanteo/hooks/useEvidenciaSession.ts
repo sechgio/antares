@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ACCEPTED_IMAGE_TYPES,
+  DEFAULT_CUADRANTE_LABEL,
   DEFAULT_TITLE,
   IMAGES_PER_PAGE,
   MAX_IMAGE_BYTES,
@@ -30,6 +31,8 @@ function revokeLogo(logo: LogoAsset | null) {
 
 export function useEvidenciaSession() {
   const [title, setTitleState] = useState(DEFAULT_TITLE);
+  const [cuadranteLabel, setCuadranteLabelState] = useState(DEFAULT_CUADRANTE_LABEL);
+  const [showCuadranteLabel, setShowCuadranteLabelState] = useState(true);
   const [cuadranteRanges, setCuadranteRangesState] = useState<CuadranteRange[]>(() => [createDefaultRange()]);
   const [logoLeft, setLogoLeftState] = useState<LogoAsset | null>(null);
   const [logoRight, setLogoRightState] = useState<LogoAsset | null>(null);
@@ -62,12 +65,14 @@ export function useEvidenciaSession() {
 
   const buildSession = useCallback((): EvidenciaSession => ({
     title,
+    cuadranteLabel,
+    showCuadranteLabel,
     cuadranteRanges,
     logoLeft,
     logoRight,
     images,
     updatedAt: Date.now(),
-  }), [title, cuadranteRanges, logoLeft, logoRight, images]);
+  }), [title, cuadranteLabel, showCuadranteLabel, cuadranteRanges, logoLeft, logoRight, images]);
 
   useEffect(() => {
     let cancelled = false;
@@ -77,6 +82,8 @@ export function useEvidenciaSession() {
       if (stored) {
         const restored = storedToSession(stored);
         setTitleState(restored.title);
+        setCuadranteLabelState(restored.cuadranteLabel);
+        setShowCuadranteLabelState(restored.showCuadranteLabel);
         setCuadranteRangesState(restored.cuadranteRanges);
         setLogoLeftState(restored.logoLeft);
         setLogoRightState(restored.logoRight);
@@ -122,6 +129,10 @@ export function useEvidenciaSession() {
   const currentCuadrante = resolveCuadranteForPage(currentPageIndex + 1, cuadranteRanges);
 
   const setTitle = useCallback((value: string) => setTitleState(value), []);
+
+  const setCuadranteLabel = useCallback((value: string) => setCuadranteLabelState(value), []);
+
+  const setShowCuadranteLabel = useCallback((value: boolean) => setShowCuadranteLabelState(value), []);
 
   const setCuadranteRanges = useCallback((ranges: CuadranteRange[]) => {
     setCuadranteRangesState(ranges);
@@ -193,6 +204,8 @@ export function useEvidenciaSession() {
 
   return {
     title,
+    cuadranteLabel,
+    showCuadranteLabel,
     cuadranteRanges,
     currentCuadrante,
     logoLeft,
@@ -204,6 +217,8 @@ export function useEvidenciaSession() {
     totalPages,
     isExporting,
     setTitle,
+    setCuadranteLabel,
+    setShowCuadranteLabel,
     setCuadranteRanges,
     addCuadranteRange,
     setLogo,

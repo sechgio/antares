@@ -8,6 +8,9 @@ export type RealtimeHandler = (payload: {
   old: Record<string, unknown> | null;
 }) => void;
 
+/** Connection health for UI badge. */
+export type RealtimeStatus = 'idle' | 'connecting' | 'live' | 'error' | 'offline';
+
 function onTable(table: string, onChange: RealtimeHandler) {
   return (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
     onChange({
@@ -23,8 +26,12 @@ export function subscribeEspaciosSync(
   espacioId: string | null,
   proyectoId: string | null,
   onChange: RealtimeHandler,
+  onStatus?: (status: RealtimeStatus) => void,
 ): RealtimeChannel | null {
-  if (!supabase) return null;
+  if (!supabase) {
+    onStatus?.('offline');
+    return null;
+  }
 
   let channel = supabase.channel(`espacios-sync:${espacioId ?? 'none'}:${proyectoId ?? 'none'}`);
 
@@ -48,9 +55,24 @@ export function subscribeEspaciosSync(
       { event: '*', schema: 'public', table: 'tareas', filter: `proyecto_id=eq.${proyectoId}` },
       onTable('tareas', onChange),
     );
+    channel = channel.on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'board_columns',
+        filter: `proyecto_id=eq.${proyectoId}`,
+      },
+      onTable('board_columns', onChange),
+    );
   }
 
-  return channel.subscribe();
+  onStatus?.('connecting');
+  return channel.subscribe((status) => {
+    if (status === 'SUBSCRIBED') onStatus?.('live');
+    else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') onStatus?.('error');
+    else if (status === 'CLOSED') onStatus?.('offline');
+  });
 }
 
 export function unsubscribeEspaciosSync(channel: RealtimeChannel | null): void {

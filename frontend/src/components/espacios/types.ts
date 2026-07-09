@@ -1,6 +1,7 @@
-export type TareaStatus = 'todo' | 'in_progress' | 'done' | 'closed';
+/** Free-form status key matching board_columns.key (defaults: todo, in_progress, …). */
+export type TareaStatus = string;
 
-export type VistaType = 'list' | 'board' | 'calendar' | 'gantt';
+export type VistaType = 'list' | 'board' | 'table' | 'calendar' | 'gantt';
 
 export interface Espacio {
   id: string;
@@ -19,6 +20,25 @@ export interface Proyecto {
   is_favorite: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface BoardColumn {
+  id: string;
+  proyecto_id: string;
+  key: string;
+  name: string;
+  color: string;
+  sort_order: number;
+  is_done: boolean;
+  is_system: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BoardColumnInput {
+  name: string;
+  color?: string;
+  is_done?: boolean;
 }
 
 export interface Tarea {

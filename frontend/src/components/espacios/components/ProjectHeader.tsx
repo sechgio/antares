@@ -1,14 +1,48 @@
 import { Star } from 'lucide-react';
+import type { RealtimeStatus } from '../api/realtime';
 import type { Proyecto } from '../types';
 import type { TaskStats } from '../utils/filters';
+import StatsPanel from './StatsPanel';
 
 interface ProjectHeaderProps {
   proyecto: Proyecto | null;
   stats: TaskStats | null;
+  filteredCount?: number;
+  totalCount?: number;
+  realtimeStatus?: RealtimeStatus;
   onToggleFavorite: () => void;
 }
 
-export default function ProjectHeader({ proyecto, stats, onToggleFavorite }: ProjectHeaderProps) {
+function RealtimeBadge({ status }: { status: RealtimeStatus }) {
+  if (status === 'idle' || status === 'offline') return null;
+
+  const config =
+    status === 'live'
+      ? { label: 'En vivo', dot: 'bg-emerald-500', title: 'Sincronización en tiempo real activa' }
+      : status === 'connecting'
+        ? { label: 'Conectando…', dot: 'bg-amber-400 animate-pulse', title: 'Conectando a sincronización en vivo' }
+        : { label: 'Sin sync', dot: 'bg-[var(--accent-red)]', title: 'No se pudo conectar al tiempo real' };
+
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-muted)]"
+      title={config.title}
+      aria-label={config.title}
+    >
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${config.dot}`} aria-hidden />
+      {config.label}
+    </span>
+  );
+}
+
+export default function ProjectHeader({
+  proyecto,
+  stats,
+  filteredCount,
+  totalCount,
+  realtimeStatus = 'idle',
+  onToggleFavorite,
+}: ProjectHeaderProps) {
   if (!proyecto) {
     return null;
   }
@@ -26,26 +60,15 @@ export default function ProjectHeader({ proyecto, stats, onToggleFavorite }: Pro
           >
             <Star className={`h-4 w-4 ${proyecto.is_favorite ? 'fill-amber-400 text-amber-400' : ''}`} />
           </button>
+          <RealtimeBadge status={realtimeStatus} />
         </div>
 
-        {stats && stats.total > 0 && (
-          <div className="flex items-center gap-3 text-xs text-[var(--text-muted)]">
-            <span>
-              <span className="font-medium text-[var(--text-primary)]">{stats.open}</span> abiertas
-            </span>
-            <span className="h-3 w-px bg-[var(--border-subtle)]" aria-hidden />
-            <span>
-              <span className="font-medium text-[var(--accent-green,#22c55e)]">{stats.completed}</span> completadas
-            </span>
-            {stats.overdue > 0 && (
-              <>
-                <span className="h-3 w-px bg-[var(--border-subtle)]" aria-hidden />
-                <span className="text-[var(--accent-red)]">
-                  <span className="font-medium">{stats.overdue}</span> atrasadas
-                </span>
-              </>
-            )}
-          </div>
+        {stats && (
+          <StatsPanel
+            stats={stats}
+            filteredCount={filteredCount ?? stats.total}
+            totalCount={totalCount ?? stats.total}
+          />
         )}
       </div>
     </div>

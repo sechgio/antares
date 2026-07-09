@@ -1,7 +1,7 @@
 import React from 'react';
 import { GRID_COLUMNS, GRID_ROWS } from '../constants';
+import { DEFAULT_CUADRANTE_LABEL } from '../constants';
 import {
-  CUADRANTE_LABEL,
   EMPTY_CUADRANTE_PLACEHOLDER,
   GAP_HEIGHT_CM,
   GAP_UNDER_HEADER_CM,
@@ -27,6 +27,10 @@ export type SheetPreviewVariant = 'screen' | 'export';
 interface Props {
   title: string;
   cuadrante: string;
+  /** Etiqueta superior del bloque de cuadrante. Por defecto DEFAULT_CUADRANTE_LABEL. */
+  cuadranteLabel?: string;
+  /** Si false, no se muestra la etiqueta (solo el valor). */
+  showCuadranteLabel?: boolean;
   logoLeft: string | null;
   logoRight: string | null;
   images: LocalImage[];
@@ -45,6 +49,8 @@ const cellBase: React.CSSProperties = {
 export default function SheetPreview({
   title,
   cuadrante,
+  cuadranteLabel = DEFAULT_CUADRANTE_LABEL,
+  showCuadranteLabel = true,
   logoLeft,
   logoRight,
   images,
@@ -60,6 +66,9 @@ export default function SheetPreview({
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
+
+  const resolvedLabel = (cuadranteLabel || DEFAULT_CUADRANTE_LABEL).trim();
+  const shouldShowLabel = showCuadranteLabel && resolvedLabel.length > 0;
 
   return (
     <div
@@ -171,18 +180,20 @@ export default function SheetPreview({
                 verticalAlign: 'middle',
               }}
             >
-              <span
-                style={{
-                  fontWeight: 'bold',
-                  fontSize: `${INFO_FONT_PT}pt`,
-                  textTransform: 'uppercase',
-                  display: 'block',
-                  marginBottom: '2pt',
-                  letterSpacing: '0.2pt',
-                }}
-              >
-                {CUADRANTE_LABEL}
-              </span>
+              {shouldShowLabel && (
+                <span
+                  style={{
+                    fontWeight: 'bold',
+                    fontSize: `${INFO_FONT_PT}pt`,
+                    textTransform: 'uppercase',
+                    display: 'block',
+                    marginBottom: '2pt',
+                    letterSpacing: '0.2pt',
+                  }}
+                >
+                  {resolvedLabel}
+                </span>
+              )}
               <span
                 style={{
                   fontWeight: 'bold',

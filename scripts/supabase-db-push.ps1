@@ -1,5 +1,5 @@
 #!/usr/bin/env pwsh
-# Aplica migraciones locales al proyecto Supabase remoto.
+# Aplica migraciones locales al proyecto Supabase remoto de Antares.
 # Requiere (una vez): https://supabase.com/dashboard/account/tokens
 #
 #   $env:SUPABASE_ACCESS_TOKEN = "sbp_..."
@@ -12,7 +12,12 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $Root
 
-$projectId = if ($env:SUPABASE_PROJECT_ID) { $env:SUPABASE_PROJECT_ID } else { "yoyxclndjevkzzclhdcv" }
+$allowedProjectId = "yoyxclndjevkzzclhdcv"
+$projectId = if ($env:SUPABASE_PROJECT_ID) { $env:SUPABASE_PROJECT_ID } else { $allowedProjectId }
+
+if ($projectId -ne $allowedProjectId) {
+  Write-Error "Proyecto Supabase no autorizado: $projectId. Solo se permite: $allowedProjectId"
+}
 
 if (-not $env:SUPABASE_ACCESS_TOKEN) {
   Write-Error "Falta SUPABASE_ACCESS_TOKEN. Crear en: https://supabase.com/dashboard/account/tokens"

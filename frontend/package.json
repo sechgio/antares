@@ -1,7 +1,7 @@
 {
   "name": "antares-frontend",
   "private": true,
-  "version": "0.10.18",
+  "version": "0.10.19",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -22,7 +22,6 @@
     "@types/react-window": "^1.8.8",
     "date-fns": "^4.4.0",
     "framer-motion": "^12.38.0",
-    "gantt-task-react": "^0.3.9",
     "html-to-image": "^1.11.13",
     "i18next": "^26.0.8",
     "jspdf": "^4.2.1",

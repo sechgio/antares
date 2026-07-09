@@ -7,6 +7,8 @@ describe('evidencia-volanteo storage', () => {
   it('round-trips session metadata without images', () => {
     const session: EvidenciaSession = {
       title: 'EVIDENCIAS TEST',
+      cuadranteLabel: 'SECTOR AFECTADO:',
+      showCuadranteLabel: false,
       cuadranteRanges: [{ id: 'r1', fromPage: 1, toPage: 1, cuadrante: 'CHORRILLOS' }],
       logoLeft: null,
       logoRight: null,
@@ -16,8 +18,23 @@ describe('evidencia-volanteo storage', () => {
     const stored = sessionToStored(session);
     const restored = storedToSession(stored);
     expect(restored.title).toBe(session.title);
+    expect(restored.cuadranteLabel).toBe('SECTOR AFECTADO:');
+    expect(restored.showCuadranteLabel).toBe(false);
     expect(restored.cuadranteRanges[0].cuadrante).toBe('CHORRILLOS');
     expect(restored.images).toHaveLength(0);
+  });
+
+  it('defaults cuadrante label options for legacy sessions', () => {
+    const restored = storedToSession({
+      title: 'LEGACY',
+      cuadranteRanges: [{ id: 'r1', fromPage: 1, toPage: 1, cuadrante: 'ZONA' }],
+      logoLeft: null,
+      logoRight: null,
+      images: [],
+      updatedAt: 1,
+    });
+    expect(restored.cuadranteLabel).toBe('CUADRANTE AFECTADO:');
+    expect(restored.showCuadranteLabel).toBe(true);
   });
 
   it('chunks images into pages of six', () => {

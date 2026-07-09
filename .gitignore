@@ -71,6 +71,7 @@ AGENTS.md
 CLAUDE.md
 .githooks/*
 !.githooks/pre-push
+!.githooks/pre-commit
 docs/
 
 # Ruff cache
@@ -109,6 +110,15 @@ frontend/stats.html
 !frontend/.env.example
 frontend/.env.local
 frontend/.env.*.local
+
+# Supabase CLI — tokens, DB password, linked project secrets
+supabase/.env
+supabase/.env.*
+!supabase/.env.example
+
+# Cursor local plugin settings / rules (pueden referenciar proyectos/credenciales)
+.cursor/settings.json
+.cursor/rules/
 
 # AutoIMG — credenciales, tokens y config local (userData / copias accidentales)
 # Nunca versionar: OAuth secrets, tokens, sheet IDs, prefs por usuario.

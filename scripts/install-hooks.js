@@ -17,6 +17,7 @@ try {
     stdio: 'inherit',
   });
   console.log(`✓ Git hooks instalados desde ${hooksPath}`);
+  console.log('  pre-commit: bloquea .env.local y credenciales Supabase');
   console.log('  pre-push: bloquea push directo a main');
 } catch (err) {
   console.error('✗ No se pudieron instalar hooks:', err.message);

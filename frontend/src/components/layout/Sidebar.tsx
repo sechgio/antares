@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ComponentType } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Camera, ClipboardList, FolderKanban, LogOut, PanelLeft } from 'lucide-react';
+import { Camera, ClipboardList, FileText, FolderKanban, LogOut, PanelLeft } from 'lucide-react';
 import BrandMark from '../brand/BrandMark';
 import { TAB_DEFINITIONS, type TabId } from '../../navigation';
 import { useAuth } from '../../auth/AuthContext';
@@ -30,6 +30,7 @@ const ICONS: Record<TabId, ComponentType<{ className?: string }>> = {
   ubicaciones: MapPinIcon,
   evidenciaVolanteo: EvidenciaVolanteoIcon,
   autoimg: AutoIMGIcon,
+  fichasTecnicas: FileText,
 };
 
 function readStoredExpanded(): boolean {

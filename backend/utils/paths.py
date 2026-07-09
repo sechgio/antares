@@ -25,9 +25,9 @@ def resource_path(relative_path: str) -> Path:
 def user_data_path(relative_path: str) -> Path:
     """
     Resuelve una ruta writable para datos de usuario (BD, logs, etc.).
-    En Windows: %LOCALAPPDATA%\\ANTARES
-    En macOS: ~/Library/Application Support/ANTARES
-    En Linux: ~/.local/share/ANTARES
+    En Windows: %LOCALAPPDATA%\\Antares
+    En macOS: ~/Library/Application Support/Antares
+    En Linux: ~/.local/share/Antares
     """
     app_name = "Antares"
     if sys.platform == "win32":

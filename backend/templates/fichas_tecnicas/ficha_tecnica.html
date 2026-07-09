@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ficha Técnica de Evaluación de Actividades</title>
+    <style>
+        /*
+         * Espejo 1:1 de frontend PreviewPanel.tsx — misma tipografía, bordes,
+         * paddings y estructura. Una hoja A4 exacta por ficha.
+         */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        @page {
+            size: A4 portrait;
+            margin: 0;
+        }
+
+        html,
+        body {
+            width: 210mm;
+            margin: 0;
+            padding: 0;
+            background: #ffffff;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+
+        /* Papel A4 = .ficha-preview-container en PreviewPanel */
+        .container {
+            width: 210mm;
+            height: 297mm;
+            max-height: 297mm;
+            margin: 0;
+            padding: 8px;
+            background-color: #ffffff;
+            font-family: 'Segoe UI', Calibri, Arial, sans-serif;
+            font-size: 7.5pt;
+            line-height: 1.15;
+            color: #333333;
+            box-sizing: border-box;
+            overflow: hidden;
+            page-break-after: always;
+            page-break-inside: avoid;
+            break-after: page;
+            break-inside: avoid;
+        }
+
+        .container:last-child {
+            page-break-after: auto;
+            break-after: auto;
+        }
+
+        /* Marco interior con borde = div border 2px padding 12px del preview */
+        .sheet {
+            border: 2px solid #333;
+            padding: 12px;
+            height: 100%;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .sheet-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ── Header ── */
+        .header {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 10px;
+            gap: 4px;
+        }
+
+        .logo {
+            background: #ffffff;
+            padding: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            min-width: 200px;
+            min-height: 40px;
+            flex-shrink: 0;
+        }
+
+        .logo img {
+            max-width: 180px;
+            max-height: 40px;
+            object-fit: contain;
+            display: block;
+        }
+
+        /* Título + número en la misma línea; O.S.N° debajo del número */
+        .header-main {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .header-title-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .main-title {
+            flex: 1;
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+            text-align: center;
+            white-space: nowrap;
+            line-height: 1.2;
+        }
+
+        .form-number-value {
+            color: #c41e3a;
+            font-size: 16px;
+            font-weight: bold;
+            line-height: 1.2;
+            letter-spacing: 0.5px;
+            flex-shrink: 0;
+            text-align: right;
+            min-width: 52px;
+        }
+
+        .form-number-field {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 6px;
+            margin-top: 3px;
+        }
+
+        .form-number-label {
+            font-size: 9px;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+
+        .form-number-box {
+            border: 1px solid #333;
+            width: 110px;
+            height: 20px;
+            background: #ffffff;
+            box-sizing: border-box;
+        }
+
+        .logo-right {
+            max-width: 100px;
+            max-height: 36px;
+            object-fit: contain;
+            margin-top: 4px;
+            margin-left: auto;
+            display: block;
+        }
+
+        /* ── Info rows ── */
+        .info-row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 6px;
+        }
+
+        .info-field {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            min-width: 0;
+        }
+
+        .info-field.full {
+            flex: 1;
+        }
+
+        .info-field.half {
+            flex: 0.5;
+        }
+
+        .info-field label {
+            font-weight: bold;
+            font-size: 9px;
+            white-space: nowrap;
+        }
+
+        .info-field .value {
+            border-bottom: 1px solid #333;
+            flex: 1;
+            padding: 2px 4px;
+            font-size: 9px;
+            min-width: 0;
+        }
+
+        /* ── Sections ── */
+        .section {
+            border: 2px solid #333;
+            margin-bottom: 8px;
+        }
+
+        .section-header {
+            background: #e0e0e0;
+            padding: 4px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 10px;
+            border-bottom: 2px solid #333;
+        }
+
+        .two-columns {
+            display: flex;
+        }
+
+        .two-columns > div {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .two-columns > div:first-child {
+            border-right: 2px solid #333;
+        }
+
+        /* Servicio */
+        .service-list {
+            padding: 4px;
+        }
+
+        .service-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+            font-size: 9px;
+        }
+
+        .checkbox {
+            width: 16px;
+            height: 11px;
+            border: 1px solid #333;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 8px;
+            background: white;
+            color: black;
+            flex-shrink: 0;
+        }
+
+        .checkbox.checked {
+            background: #00a0b0;
+            color: white;
+        }
+
+        .diagnostic-area {
+            padding: 8px;
+            min-height: 70px;
+            font-size: 9px;
+        }
+
+        .text-area {
+            padding: 4px;
+            min-height: 40px;
+            font-size: 9px;
+        }
+
+        .text-area.tall {
+            min-height: 50px;
+        }
+
+        /* Tratamiento */
+        .treatment-grid {
+            display: flex;
+            padding: 4px 12px;
+        }
+
+        .treatment-col {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding-right: 12px;
+        }
+
+        .treatment-col:last-child {
+            padding-right: 4px;
+            padding-left: 16px;
+        }
+
+        /* Texto a la izquierda; cuadro alineado a la derecha de la columna */
+        .treatment-row {
+            display: flex;
+            align-items: center;
+            font-size: 9px;
+        }
+
+        .treatment-row > span:first-child {
+            flex-shrink: 0;
+        }
+
+        .treatment-row .checkbox {
+            margin-left: auto;
+            flex-shrink: 0;
+        }
+
+        .treatment-otros {
+            display: flex;
+            align-items: center;
+            font-size: 9px;
+        }
+
+        /* Productos */
+        .productos-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .productos-table th,
+        .productos-table td {
+            border: 1px solid #333;
+            padding: 4px;
+            font-size: 8px;
+            text-align: center;
+        }
+
+        .productos-table th {
+            background: #f5f5f5;
+            font-weight: bold;
+        }
+
+        .productos-table th.th-venc {
+            font-size: 7px;
+        }
+
+        /* Personal */
+        .personal-grid {
+            display: flex;
+            border-bottom: 2px solid #333;
+        }
+
+        .personal-col {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .personal-col:first-child {
+            border-right: 1.5px solid #333;
+        }
+
+        .personal-row {
+            padding: 3px 6px;
+            font-size: 8px;
+            min-height: 18px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .personal-row:last-child {
+            border-bottom: none;
+        }
+
+        .time-row {
+            display: flex;
+            border-top: 2px solid #333;
+        }
+
+        .time-field {
+            flex: 1;
+            padding: 4px;
+            border-right: 1px solid #333;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            min-width: 0;
+        }
+
+        .time-field:last-child {
+            border-right: none;
+        }
+
+        .time-field label {
+            font-weight: bold;
+            font-size: 9px;
+            white-space: nowrap;
+        }
+
+        .time-field .value {
+            border-bottom: 1px solid #333;
+            flex: 1;
+            font-size: 9px;
+            min-width: 0;
+        }
+
+        /* Obs / Rec */
+        .obs-rec {
+            display: flex;
+        }
+
+        .obs-rec > div {
+            flex: 1;
+            padding: 4px;
+            min-width: 0;
+        }
+
+        .obs-rec > div:first-child {
+            border-right: 1px solid #333;
+        }
+
+        .obs-rec-header {
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 4px;
+            font-size: 9px;
+        }
+
+        .obs-item {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 3px;
+        }
+
+        .obs-item > span {
+            font-size: 9px;
+            flex-shrink: 0;
+        }
+
+        .obs-item .value {
+            flex: 1;
+            border-bottom: 1px solid #333;
+            font-size: 9px;
+            min-width: 0;
+        }
+
+        /* Satisfacción */
+        .satisfaction {
+            display: flex;
+            justify-content: space-around;
+            padding: 8px;
+        }
+
+        .satisfaction-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 9px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            color: #333;
+        }
+
+        .satisfaction-item.selected {
+            font-weight: bold;
+            background: #262626;
+            color: #ffffff;
+        }
+
+        .satisfaction-emoji {
+            font-size: 14px;
+            line-height: 1;
+        }
+
+        /* Firmas + footer anclados al pie del marco (llena la hoja) */
+        .sheet-foot {
+            flex: 0 0 auto;
+            margin-top: auto;
+        }
+
+        .signatures {
+            display: flex;
+            justify-content: space-around;
+            margin: 28px 0 10px 0;
+        }
+
+        .signature {
+            text-align: center;
+        }
+
+        .signature-line {
+            width: 130px;
+            border-top: 1px solid #333;
+            margin-bottom: 4px;
+        }
+
+        .signature-label {
+            font-size: 8px;
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 15px;
+            padding-top: 8px;
+            font-size: 8px;
+            color: #00a0b0;
+        }
+
+        .footer-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .footer-center {
+            text-align: center;
+        }
+
+        .footer-center-row {
+            margin-bottom: 2px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+        }
+
+        .footer-center-row:last-child {
+            margin-bottom: 0;
+        }
+    </style>
+</head>
+
+<body>
+    {% for ficha in fichas %}
+    <div class="container">
+        <div class="sheet">
+            <div class="sheet-body">
+                <!-- Header: título y número en la misma línea; O.S.N° debajo del número -->
+                <div class="header">
+                    <div class="logo">
+                        {% if logo_left %}
+                        <img src="{{ logo_left }}" alt="Logo">
+                        {% endif %}
+                    </div>
+                    <div class="header-main">
+                        <div class="header-title-row">
+                            <div class="main-title">FICHA TÉCNICA DE EVALUACIÓN DE ACTIVIDADES</div>
+                            <div class="form-number-value">{{ ficha.os_numero|format_os_display }}</div>
+                        </div>
+                        <div class="form-number-field">
+                            <span class="form-number-label">O.S.N°</span>
+                            <div class="form-number-box"></div>
+                        </div>
+                        {% if logo_right %}
+                        <img class="logo-right" src="{{ logo_right }}" alt="Logo derecho">
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Client Info -->
+                <div class="info-row">
+                    <div class="info-field full">
+                        <label>Cliente :</label>
+                        <div class="value">{{ ficha.cliente }}</div>
+                    </div>
+                    <div class="info-field half">
+                        <label>Fecha :</label>
+                        <div class="value">{{ ficha.fecha|format_fecha_display }}</div>
+                    </div>
+                </div>
+                <div class="info-row">
+                    <div class="info-field full">
+                        <label>Dirección :</label>
+                        <div class="value">{{ ficha.direccion }}</div>
+                    </div>
+                    <div class="info-field half">
+                        <label>Distrito :</label>
+                        <div class="value">{{ ficha.distrito }}</div>
+                    </div>
+                </div>
+
+                <!-- Service and Diagnostic -->
+                <div class="section">
+                    <div class="two-columns">
+                        <div>
+                            <div class="section-header">SERVICIO A EFECTUAR</div>
+                            <div class="service-list">
+                                <div class="service-row">
+                                    <span>1. DESINFECCIÓN</span>
+                                    <span class="checkbox {% if ficha.servicio.desinfeccion %}checked{% endif %}">{% if ficha.servicio.desinfeccion %}X{% endif %}</span>
+                                </div>
+                                <div class="service-row">
+                                    <span>2. LIMPIEZA DE AMBIENTES</span>
+                                    <span class="checkbox {% if ficha.servicio.limpieza_ambientes %}checked{% endif %}">{% if ficha.servicio.limpieza_ambientes %}X{% endif %}</span>
+                                </div>
+                                <div class="service-row">
+                                    <span>3. LIMPIEZA DE POZOS SÉPTICOS</span>
+                                    <span class="checkbox {% if ficha.servicio.limpieza_pozos_septicos %}checked{% endif %}">{% if ficha.servicio.limpieza_pozos_septicos %}X{% endif %}</span>
+                                </div>
+                                <div class="service-row">
+                                    <span>4. LIMPIEZA Y DESINFECCIÓN DE RESERVORIOS DE AGUA</span>
+                                    <span class="checkbox {% if ficha.servicio.limpieza_reservorios %}checked{% endif %}">{% if ficha.servicio.limpieza_reservorios %}X{% endif %}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="section-header">DIAGNÓSTICO DEL ÁREA A TRATAR</div>
+                            <div class="diagnostic-area">{{ ficha.diagnostico_area }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sanitary Condition -->
+                <div class="section">
+                    <div class="section-header">CONDICIÓN SANITARIA DE LA ZONA CIRCUNDANTE</div>
+                    <div class="text-area">{{ ficha.condicion_sanitaria }}</div>
+                </div>
+
+                <!-- Treatment Types -->
+                <div class="section">
+                    <div class="section-header">TIPOS DE TRATAMIENTO</div>
+                    <div class="treatment-grid">
+                        <div class="treatment-col">
+                            <div class="treatment-row">
+                                <span>Pulverizado</span>
+                                <span class="checkbox {% if ficha.tratamiento.pulverizado %}checked{% endif %}">{% if ficha.tratamiento.pulverizado %}X{% endif %}</span>
+                            </div>
+                            <div class="treatment-row">
+                                <span>Atomizado</span>
+                                <span class="checkbox {% if ficha.tratamiento.atomizado %}checked{% endif %}">{% if ficha.tratamiento.atomizado %}X{% endif %}</span>
+                            </div>
+                            <div class="treatment-otros">
+                                <span>Otros: {{ ficha.tratamiento.otros }}</span>
+                            </div>
+                        </div>
+                        <div class="treatment-col">
+                            <div class="treatment-row">
+                                <span>Thermonebulizado</span>
+                                <span class="checkbox {% if ficha.tratamiento.thermonebulizado %}checked{% endif %}">{% if ficha.tratamiento.thermonebulizado %}X{% endif %}</span>
+                            </div>
+                            <div class="treatment-row">
+                                <span>Nebulizado ULV</span>
+                                <span class="checkbox {% if ficha.tratamiento.nebulizado_ulv %}checked{% endif %}">{% if ficha.tratamiento.nebulizado_ulv %}X{% endif %}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Products Table -->
+                <div class="section">
+                    <div class="section-header">PRODUCTOS QUÍMICOS Y/O BIOLÓGICOS UTILIZADOS</div>
+                    <table class="productos-table">
+                        <thead>
+                            <tr>
+                                <th>PRODUCTO</th>
+                                <th>COMPOSICIÓN</th>
+                                <th>LOTE</th>
+                                <th class="th-venc">FECHA DE<br>VENCIMIENTO</th>
+                                <th>UNIDAD</th>
+                                <th>CONCENTRACIÓN</th>
+                                <th>CANTIDAD</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for producto in ficha.productos %}
+                            <tr>
+                                <td>{{ producto.producto }}</td>
+                                <td>{{ producto.composicion }}</td>
+                                <td>{{ producto.lote }}</td>
+                                <td>{{ producto.fecha_vencimiento }}</td>
+                                <td>{{ producto.unidad }}</td>
+                                <td>{{ producto.concentracion }}</td>
+                                <td>{{ producto.cantidad|format_cantidad }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Corrective Actions -->
+                <div class="section">
+                    <div class="section-header">ACCIONES CORRECTIVAS</div>
+                    <div class="text-area tall">{{ ficha.acciones_correctivas }}</div>
+                </div>
+
+                <!-- Treated Areas -->
+                <div class="section">
+                    <div class="section-header">ÁREAS TRATADAS</div>
+                    <div class="text-area tall">{{ ficha.areas_tratadas }}</div>
+                </div>
+
+                <!-- Technical Staff -->
+                <div class="section">
+                    <div class="section-header">PERSONAL TÉCNICO</div>
+                    <div class="personal-grid">
+                        <div class="personal-col">
+                            <div class="personal-row">{{ ficha.personal_tecnico[0] }}</div>
+                            <div class="personal-row">{{ ficha.personal_tecnico[1] }}</div>
+                            <div class="personal-row">{{ ficha.personal_tecnico[2] }}</div>
+                        </div>
+                        <div class="personal-col">
+                            <div class="personal-row">{{ ficha.personal_tecnico[3] }}</div>
+                            <div class="personal-row">{{ ficha.personal_tecnico[4] }}</div>
+                            <div class="personal-row">{{ ficha.personal_tecnico[5] }}</div>
+                        </div>
+                    </div>
+                    <div class="time-row">
+                        <div class="time-field">
+                            <label>HORA INICIO :</label>
+                            <div class="value">{{ ficha.hora_inicio }}</div>
+                        </div>
+                        <div class="time-field">
+                            <label>HORA TÉRMINO :</label>
+                            <div class="value">{{ ficha.hora_termino }}</div>
+                        </div>
+                        <div class="time-field">
+                            <label>N° CERTIFICADO :</label>
+                            <div class="value">{{ ficha.numero_certificado }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Observations and Recommendations -->
+                <div class="section">
+                    <div class="obs-rec">
+                        <div>
+                            <div class="obs-rec-header">OBSERVACIONES</div>
+                            <div class="obs-item"><span>a)</span>
+                                <div class="value">{{ ficha.obs_rec.observacion_a }}</div>
+                            </div>
+                            <div class="obs-item"><span>b)</span>
+                                <div class="value">{{ ficha.obs_rec.observacion_b }}</div>
+                            </div>
+                            <div class="obs-item"><span>c)</span>
+                                <div class="value">{{ ficha.obs_rec.observacion_c }}</div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="obs-rec-header">RECOMENDACIONES</div>
+                            <div class="obs-item"><span>a)</span>
+                                <div class="value">{{ ficha.obs_rec.recomendacion_a }}</div>
+                            </div>
+                            <div class="obs-item"><span>b)</span>
+                                <div class="value">{{ ficha.obs_rec.recomendacion_b }}</div>
+                            </div>
+                            <div class="obs-item"><span>c)</span>
+                                <div class="value">{{ ficha.obs_rec.recomendacion_c }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Satisfaction -->
+                <div class="section" style="margin-bottom: 0;">
+                    <div class="section-header">EVALUACIÓN DE SATISFACCIÓN DEL CLIENTE</div>
+                    <div class="satisfaction">
+                        <div class="satisfaction-item {% if ficha.satisfaccion == 'muy_satisfecho' %}selected{% endif %}">
+                            <span class="satisfaction-emoji">😊</span>
+                            <span>Muy Satisfecho</span>
+                        </div>
+                        <div class="satisfaction-item {% if ficha.satisfaccion == 'satisfecho' %}selected{% endif %}">
+                            <span class="satisfaction-emoji">🙂</span>
+                            <span>Satisfecho</span>
+                        </div>
+                        <div class="satisfaction-item {% if ficha.satisfaccion == 'regular' %}selected{% endif %}">
+                            <span class="satisfaction-emoji">😐</span>
+                            <span>Regular</span>
+                        </div>
+                        <div class="satisfaction-item {% if ficha.satisfaccion == 'insatisfecho' %}selected{% endif %}">
+                            <span class="satisfaction-emoji">🙁</span>
+                            <span>Insatisfecho</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sheet-foot">
+                <!-- Signatures -->
+                <div class="signatures">
+                    <div class="signature">
+                        <div class="signature-line"></div>
+                        <div class="signature-label">Responsable de Servicio</div>
+                    </div>
+                    <div class="signature">
+                        <div class="signature-line"></div>
+                        <div class="signature-label">Cliente</div>
+                    </div>
+                    <div class="signature">
+                        <div class="signature-line"></div>
+                        <div class="signature-label">Director Técnico</div>
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="footer">
+                    <div class="footer-item">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="#00a0a0" stroke="#00a0a0" stroke-width="2">
+                            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                            <circle cx="12" cy="10" r="3" fill="white"></circle>
+                        </svg>
+                        <span>Mz J1 lote 20. Urb. Los Precursores. Surco. Lima</span>
+                    </div>
+                    <div class="footer-center">
+                        <div class="footer-center-row">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#00a0a0" stroke-width="2">
+                                <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+                                <path d="M22 6l-10 7L2 6"></path>
+                            </svg>
+                            <span>operaciones@hidroserviciosaa.com.pe</span>
+                        </div>
+                        <div class="footer-center-row">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#00a0a0" stroke-width="2">
+                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                            </svg>
+                            <span>+51 946 803 367</span>
+                        </div>
+                    </div>
+                    <div class="footer-item">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#00a0a0" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="2" y1="12" x2="22" y2="12"></line>
+                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                        </svg>
+                        <span>www.hidroserviciosaa.com.pe/</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</body>
+
+</html>

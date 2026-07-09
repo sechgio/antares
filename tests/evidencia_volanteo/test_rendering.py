@@ -122,6 +122,36 @@ def test_empty_cuadrante_shows_placeholder_in_docx() -> None:
     assert EMPTY_CUADRANTE_PLACEHOLDER in info_text
 
 
+def test_docx_custom_cuadrante_label() -> None:
+    doc = EvidenciaDocument(
+        title="TEST",
+        cuadrante="ZONA A",
+        pages=(EvidenciaPage(images=(), cuadrante="ZONA A"),),
+        cuadrante_label="SECTOR INTERVENIDO:",
+        show_cuadrante_label=True,
+    )
+    docx_bytes, _ = render_docx(doc, {}, {})
+    document = Document(BytesIO(docx_bytes))
+    info_text = document.tables[0].cell(1, 1).paragraphs[0].text
+    assert "SECTOR INTERVENIDO:" in info_text
+    assert "CUADRANTE AFECTADO:" not in info_text
+    assert "ZONA A" in info_text
+
+
+def test_docx_hides_cuadrante_label_when_disabled() -> None:
+    doc = EvidenciaDocument(
+        title="TEST",
+        cuadrante="ZONA B",
+        pages=(EvidenciaPage(images=(), cuadrante="ZONA B"),),
+        show_cuadrante_label=False,
+    )
+    docx_bytes, _ = render_docx(doc, {}, {})
+    document = Document(BytesIO(docx_bytes))
+    info_text = document.tables[0].cell(1, 1).paragraphs[0].text
+    assert "CUADRANTE AFECTADO:" not in info_text
+    assert "ZONA B" in info_text
+
+
 def test_pdf_html_cuadrante_matches_preview() -> None:
     doc = EvidenciaDocument(
         title="TEST",
@@ -159,6 +189,43 @@ def test_empty_cuadrante_shows_placeholder_in_pdf_html() -> None:
         **layout_context(),
     })
     assert EMPTY_CUADRANTE_PLACEHOLDER in html
+
+
+def test_pdf_html_custom_and_hidden_cuadrante_label() -> None:
+    doc = EvidenciaDocument(
+        title="TEST",
+        cuadrante="",
+        pages=(EvidenciaPage(images=(), cuadrante="zona norte"),),
+        cuadrante_label="AREA AFECTADA:",
+        show_cuadrante_label=True,
+    )
+    template = _jinja_env.get_template("evidencia-volanteo.html")
+    pages_data = _serialize_pages(doc, _build_image_uris({}, None))
+    html = template.render({
+        "title": doc.title,
+        "cuadrante": doc.cuadrante,
+        "pages": pages_data,
+        "logo_left": None,
+        "logo_right": None,
+        **layout_context(),
+        "cuadrante_label": doc.cuadrante_label,
+        "show_cuadrante_label": doc.show_cuadrante_label,
+    })
+    assert "AREA AFECTADA:" in html
+    assert "CUADRANTE AFECTADO:" not in html
+
+    html_hidden = template.render({
+        "title": doc.title,
+        "cuadrante": doc.cuadrante,
+        "pages": pages_data,
+        "logo_left": None,
+        "logo_right": None,
+        **layout_context(),
+        "cuadrante_label": "CUADRANTE AFECTADO:",
+        "show_cuadrante_label": False,
+    })
+    assert "CUADRANTE AFECTADO:" not in html_hidden
+    assert "ZONA NORTE" in html_hidden
 
 
 def test_render_pdf_html_from_preview_markup() -> None:

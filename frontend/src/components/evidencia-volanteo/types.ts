@@ -18,6 +18,10 @@ export interface CuadranteRange {
 
 export interface EvidenciaSession {
   title: string;
+  /** Etiqueta del bloque de cuadrante en el documento (p. ej. "CUADRANTE AFECTADO:"). */
+  cuadranteLabel: string;
+  /** Si false, la etiqueta no se renderiza (el valor del cuadrante sí). */
+  showCuadranteLabel: boolean;
   cuadranteRanges: CuadranteRange[];
   logoLeft: LogoAsset | null;
   logoRight: LogoAsset | null;
@@ -41,6 +45,8 @@ export interface StoredImage {
 export interface StoredSession {
   title: string;
   cuadrante?: string;
+  cuadranteLabel?: string;
+  showCuadranteLabel?: boolean;
   cuadranteRanges?: CuadranteRange[];
   logoLeft: StoredLogo | null;
   logoRight: StoredLogo | null;

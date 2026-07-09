@@ -1,3 +1,4 @@
+import { DEFAULT_CUADRANTE_LABEL } from '../constants';
 import type { EvidenciaSession, LocalImage, LogoAsset, StoredImage, StoredLogo, StoredSession } from '../types';
 import { migrateLegacyCuadrante } from './cuadranteRanges';
 
@@ -54,6 +55,8 @@ function storedToImage(stored: StoredImage): LocalImage {
 export function sessionToStored(session: EvidenciaSession): StoredSession {
   return {
     title: session.title,
+    cuadranteLabel: session.cuadranteLabel,
+    showCuadranteLabel: session.showCuadranteLabel,
     cuadranteRanges: session.cuadranteRanges,
     logoLeft: session.logoLeft ? logoToStored(session.logoLeft) : null,
     logoRight: session.logoRight ? logoToStored(session.logoRight) : null,
@@ -65,6 +68,8 @@ export function sessionToStored(session: EvidenciaSession): StoredSession {
 export function storedToSession(stored: StoredSession): EvidenciaSession {
   return {
     title: stored.title,
+    cuadranteLabel: stored.cuadranteLabel?.trim() ? stored.cuadranteLabel : DEFAULT_CUADRANTE_LABEL,
+    showCuadranteLabel: stored.showCuadranteLabel !== false,
     cuadranteRanges: migrateLegacyCuadrante(stored.cuadrante, stored.cuadranteRanges),
     logoLeft: stored.logoLeft ? storedToLogo(stored.logoLeft) : null,
     logoRight: stored.logoRight ? storedToLogo(stored.logoRight) : null,

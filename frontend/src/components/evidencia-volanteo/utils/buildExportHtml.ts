@@ -1,6 +1,6 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { IMAGES_PER_PAGE } from '../constants';
+import { DEFAULT_CUADRANTE_LABEL, IMAGES_PER_PAGE } from '../constants';
 import SheetPreview from '../components/SheetPreview';
 import { PAGE_MARGIN_MM, PHOTO_HEIGHT_CM, TABLE_HEIGHT_CM } from '../layout';
 import type { CuadranteRange, LocalImage } from '../types';
@@ -17,6 +17,8 @@ export function buildExportHtml(
   imageDataUris: Record<string, string>,
   logoLeftUri: string | null,
   logoRightUri: string | null,
+  cuadranteLabel: string = DEFAULT_CUADRANTE_LABEL,
+  showCuadranteLabel: boolean = true,
 ): string {
   const pages: LocalImage[][] = [];
   if (images.length === 0) {
@@ -42,6 +44,8 @@ export function buildExportHtml(
       React.createElement(SheetPreview, {
         title,
         cuadrante: resolveCuadranteForPage(pageNum, cuadranteRanges),
+        cuadranteLabel,
+        showCuadranteLabel,
         logoLeft: logoLeftUri,
         logoRight: logoRightUri,
         images: previewImages,

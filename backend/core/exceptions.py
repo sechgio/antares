@@ -1,4 +1,4 @@
-"""Excepciones personalizadas del dominio de ANTARES."""
+"""Excepciones personalizadas del dominio de Antares."""
 
 
 class AntaresError(Exception):

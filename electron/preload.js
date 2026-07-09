@@ -52,13 +52,19 @@ if (isDev) {
 try {
   contextBridge.exposeInMainWorld('electronAPI', {
     invoke: (method, params = {}) => {
-      if (typeof method !== 'string' || !ALLOWED_RENDERER_METHODS.has(method)) {
-        // Main process is the real gate; this preload copy is fixed at window create.
-        // Stale Electron processes (frontend HMR without full app restart) surface here.
-        const hint = method.startsWith('autoimg_')
-          ? ' Cierra todas las ventanas de Antares y vuelve a abrir la app (el preload IPC no se recarga con Vite).'
-          : '';
-        return Promise.reject(new Error(`IPC method not allowed: ${method}.${hint}`));
+      // Always forward to the main process. The real security gate lives in
+      // ipc-router (which re-reads ipc-methods.js in unpackaged/dev builds).
+      // A stale preload allowlist (window created before new methods were added)
+      // used to reject valid methods before main could allow them — that broke
+      // tools like fichas_tecnicas_* after Vite HMR without a full Electron restart.
+      if (typeof method !== 'string' || !method) {
+        return Promise.reject(new Error('IPC method not allowed: invalid method name.'));
+      }
+      // Soft warn for unknown methods when we still have an injected list, but do not block.
+      if (ALLOWED_RENDERER_METHODS.size > 0 && !ALLOWED_RENDERER_METHODS.has(method) && isDev) {
+        console.warn(
+          `[preload] method "${method}" not in window-create allowlist; forwarding to main (may require Electron restart if main is also stale)`,
+        );
       }
       return ipcRenderer.invoke('ipc-call', method, params);
     },

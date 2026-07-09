@@ -9,6 +9,7 @@ import {
     savePanel,
     storedToPanel,
 } from '../utils/storage';
+import { isTituloStyleKey } from '../utils/tituloStyle';
 
 function createPanelId(): string {
     return `panel-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -30,6 +31,8 @@ export function createEmptyPanel(config: ReportTypeConfig): CampoPanel {
 }
 
 const SAVE_DEBOUNCE_MS = 400;
+/** Style tweaks (size/color) shouldn't thrash IndexedDB with full photo blobs. */
+const STYLE_SAVE_DEBOUNCE_MS = 900;
 
 export function useCampoPanels(config: ReportTypeConfig) {
     const [panels, setPanels] = useState<CampoPanel[]>(() => [createEmptyPanel(config)]);
@@ -76,13 +79,15 @@ export function useCampoPanels(config: ReportTypeConfig) {
         }
     }, []);
 
-    const scheduleSave = useCallback((panel: CampoPanel) => {
+    const scheduleSave = useCallback((panel: CampoPanel, debounceMs = SAVE_DEBOUNCE_MS) => {
         if (!panel) return;
         cancelPendingSave(panel.id);
         const timer = setTimeout(() => {
             saveTimersRef.current.delete(panel.id);
-            void savePanel(panelToStored(panel, reportType));
-        }, SAVE_DEBOUNCE_MS);
+            // Read latest panel from ref so rapid style edits only write once.
+            const latest = panelsRef.current.find((p) => p.id === panel.id) ?? panel;
+            void savePanel(panelToStored(latest, reportType));
+        }, debounceMs);
         saveTimersRef.current.set(panel.id, timer);
     }, [cancelPendingSave, reportType]);
 
@@ -162,15 +167,27 @@ export function useCampoPanels(config: ReportTypeConfig) {
 
     const updateHeader = useCallback((key: string, value: string) => {
         if (!selectedPanelId) return;
+        const styleOnly = isTituloStyleKey(key);
+        let updated: CampoPanel | null = null;
+
         setPanels((prev) =>
             prev.map((panel) => {
                 if (panel.id !== selectedPanelId) return panel;
+                if (panel.header[key] === value) return panel;
                 const header = { ...panel.header, [key]: value };
-                const updated = { ...panel, header, label: derivePanelLabel(header) };
-                scheduleSave(updated);
+                updated = {
+                    ...panel,
+                    header,
+                    // Style keys don't affect the panel list label.
+                    label: styleOnly ? panel.label : derivePanelLabel(header),
+                };
                 return updated;
             }),
         );
+
+        if (updated) {
+            scheduleSave(updated, styleOnly ? STYLE_SAVE_DEBOUNCE_MS : SAVE_DEBOUNCE_MS);
+        }
     }, [selectedPanelId, scheduleSave]);
 
     const addPhotos = useCallback((files: FileList | null) => {

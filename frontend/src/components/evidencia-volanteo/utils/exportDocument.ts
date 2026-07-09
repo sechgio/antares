@@ -1,5 +1,5 @@
 import { api } from '../../../api';
-import { IMAGES_PER_PAGE } from '../constants';
+import { DEFAULT_CUADRANTE_LABEL, IMAGES_PER_PAGE } from '../constants';
 import type { CuadranteRange, LocalImage, LogoAsset } from '../types';
 import { buildExportHtml, imageExportKey } from './buildExportHtml';
 import { resolveCuadranteForPage } from './cuadranteRanges';
@@ -51,6 +51,8 @@ export async function exportEvidenciaDocument(
   logoLeft: LogoAsset | null,
   logoRight: LogoAsset | null,
   format: 'pdf' | 'docx' = 'pdf',
+  cuadranteLabel: string = DEFAULT_CUADRANTE_LABEL,
+  showCuadranteLabel: boolean = true,
 ): Promise<{ filename: string }> {
   const logos: { left_b64?: string; right_b64?: string } = {};
   if (logoLeft) logos.left_b64 = await readFileAsBase64(logoLeft.file);
@@ -86,13 +88,26 @@ export async function exportEvidenciaDocument(
   const payload = {
     title,
     cuadrante: '',
+    cuadrante_label: cuadranteLabel,
+    show_cuadrante_label: showCuadranteLabel,
     pages,
     logos,
     images: imagesBase64,
     image_paths: imagePaths,
     format,
     ...(format === 'pdf'
-      ? { html: buildExportHtml(title, cuadranteRanges, images, imageDataUris, logoLeftUri, logoRightUri) }
+      ? {
+          html: buildExportHtml(
+            title,
+            cuadranteRanges,
+            images,
+            imageDataUris,
+            logoLeftUri,
+            logoRightUri,
+            cuadranteLabel,
+            showCuadranteLabel,
+          ),
+        }
       : {}),
   };
 

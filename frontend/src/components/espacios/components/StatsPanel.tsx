@@ -7,7 +7,7 @@ interface StatsPanelProps {
   totalCount: number;
 }
 
-function StatRow({
+function StatItem({
   icon: Icon,
   label,
   value,
@@ -26,49 +26,57 @@ function StatRow({
         : 'text-[var(--text-primary)]';
 
   return (
-    <div className="flex items-center justify-between gap-2 py-1.5">
-      <span className="flex items-center gap-2 text-[var(--text-muted)]">
-        <Icon className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
-        {label}
-      </span>
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-[var(--text-muted)]">
+      <Icon className="h-3.5 w-3.5 shrink-0 opacity-80" strokeWidth={1.75} aria-hidden />
+      <span>{label}</span>
       <span className={`tabular-nums font-medium ${toneClass}`}>{value}</span>
-    </div>
+    </span>
   );
 }
 
+function Divider() {
+  return <span className="h-3 w-px shrink-0 bg-[var(--border-subtle)]" aria-hidden />;
+}
+
+/** Compact horizontal stats bar (same metrics as the old sidebar). */
 export default function StatsPanel({ stats, filteredCount, totalCount }: StatsPanelProps) {
   return (
-    <aside className="hidden w-52 shrink-0 border-l border-[var(--border-subtle)] bg-[var(--bg-elevated)]/30 px-4 py-4 lg:block">
-      <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-        Resumen
-      </h3>
-
-      <div className="mb-4">
-        <div className="mb-1.5 flex items-center justify-between text-xs">
-          <span className="text-[var(--text-muted)]">Progreso</span>
-          <span className="font-medium text-[var(--text-primary)]">{stats.progress}%</span>
-        </div>
-        <div className="h-1.5 overflow-hidden rounded-full bg-[var(--bg-input)]">
-          <div
-            className="h-full rounded-full bg-[var(--accent-primary)] transition-all duration-300"
+    <div
+      className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5"
+      role="group"
+      aria-label="Resumen del proyecto"
+    >
+      <span className="inline-flex items-center gap-2 whitespace-nowrap text-xs text-[var(--text-muted)]">
+        <span>Progreso</span>
+        <span className="tabular-nums font-medium text-[var(--text-primary)]">{stats.progress}%</span>
+        <span className="h-1.5 w-16 overflow-hidden rounded-full bg-[var(--bg-input)] sm:w-20">
+          <span
+            className="block h-full rounded-full bg-[var(--accent-primary)] transition-all duration-300"
             style={{ width: `${stats.progress}%` }}
           />
-        </div>
-      </div>
+        </span>
+      </span>
 
-      <div className="space-y-0.5 text-xs">
-        <StatRow icon={ListTodo} label="Total" value={stats.total} />
-        <StatRow icon={Circle} label="Abiertas" value={stats.open} />
-        <StatRow icon={CheckCircle2} label="Completadas" value={stats.completed} tone="success" />
-        <StatRow icon={AlertCircle} label="Atrasadas" value={stats.overdue} tone="warning" />
-        <StatRow icon={CalendarOff} label="Sin fecha" value={stats.unscheduled} />
-      </div>
+      <Divider />
+
+      <StatItem icon={ListTodo} label="Total" value={stats.total} />
+      <Divider />
+      <StatItem icon={Circle} label="Abiertas" value={stats.open} />
+      <Divider />
+      <StatItem icon={CheckCircle2} label="Completadas" value={stats.completed} tone="success" />
+      <Divider />
+      <StatItem icon={AlertCircle} label="Atrasadas" value={stats.overdue} tone="warning" />
+      <Divider />
+      <StatItem icon={CalendarOff} label="Sin fecha" value={stats.unscheduled} />
 
       {filteredCount !== totalCount && (
-        <p className="mt-4 border-t border-[var(--border-subtle)] pt-3 text-[11px] text-[var(--text-muted)]">
-          Mostrando {filteredCount} de {totalCount} tareas
-        </p>
+        <>
+          <Divider />
+          <span className="whitespace-nowrap text-[11px] text-[var(--text-muted)]">
+            Mostrando {filteredCount} de {totalCount}
+          </span>
+        </>
       )}
-    </aside>
+    </div>
   );
 }

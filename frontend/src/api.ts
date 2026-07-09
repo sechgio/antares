@@ -170,6 +170,26 @@ export interface TechnicalReportsRenderBody {
   logo_right?: string | null;
 }
 
+export interface FichasTecnicasListBody {
+  cliente?: string;
+  distrito?: string;
+  status?: string;
+  summary?: boolean;
+}
+
+export interface FichasTecnicasImportBody {
+  filename: string;
+  content_b64: string;
+}
+
+export interface FichasTecnicasRenderBody {
+  id?: string;
+  ficha?: unknown;
+  template?: boolean;
+  logo_left?: string | null;
+  logo_right?: string | null;
+}
+
 export interface HtmlToPdfBody {
   html: string;
   filename: string;
@@ -399,6 +419,26 @@ export const api = {
   technicalReportsRenderConsolidatedHtml: (body?: { report_ids?: string[]; logo_left?: string | null; logo_right?: string | null }) =>
     _invoke<{ html: string; filename: string; count: number }>('technical_reports_render_consolidated_html', body),
 
+  // ─── Fichas Técnicas ───────────────────────────────────────────────────
+  fichasTecnicasList: (body?: FichasTecnicasListBody) =>
+    _invoke<{ fichas: unknown[]; total: number }>('fichas_tecnicas_list', body),
+  fichasTecnicasGet: (id: string) =>
+    _invoke<{ ficha: unknown }>('fichas_tecnicas_get', { id }),
+  fichasTecnicasCreate: (ficha?: unknown) =>
+    _invoke<{ success: boolean; ficha: unknown }>('fichas_tecnicas_create', ficha ? { ficha } : {}),
+  fichasTecnicasUpdate: (id: string, ficha: unknown) =>
+    _invoke<{ success: boolean; ficha: unknown }>('fichas_tecnicas_update', { id, ficha }),
+  fichasTecnicasDelete: (id: string) =>
+    _invoke<{ success: boolean; deleted_id: string }>('fichas_tecnicas_delete', { id }),
+  fichasTecnicasClear: () =>
+    _invoke<{ success: boolean; deleted_count: number; message: string }>('fichas_tecnicas_clear'),
+  fichasTecnicasImportFile: (body: FichasTecnicasImportBody) =>
+    _invoke<{ success: boolean; message: string; deleted_count: number; imported_count: number; total_rows_in_file: number }>('fichas_tecnicas_import_file', body),
+  fichasTecnicasRenderHtml: (body: FichasTecnicasRenderBody) =>
+    _invoke<{ html: string; filename: string }>('fichas_tecnicas_render_html', body),
+  fichasTecnicasRenderConsolidatedHtml: (body?: { ficha_ids?: string[]; logo_left?: string | null; logo_right?: string | null }) =>
+    _invoke<{ html: string; filename: string; count: number }>('fichas_tecnicas_render_consolidated_html', body),
+
   // ─── Panel Aviso de Corte ──────────────────────────────────────────────
   panelAvisoCorteParseExcel: (body: { xlsx_b64: string; filename: string }) =>
     _invoke<{ columns: string[]; normalizedColumns: string[]; rows: Array<Record<string, string>>; warnings: string[] }>('panel_aviso_corte_parse_excel', body),
@@ -427,6 +467,8 @@ export const api = {
   evidenciaVolanteoRender: (body: {
     title: string;
     cuadrante: string;
+    cuadrante_label?: string;
+    show_cuadrante_label?: boolean;
     pages: Array<{ cuadrante?: string; images: Array<{ filename: string; position: number }> }>;
     logos: { left_b64?: string; right_b64?: string };
     images: Record<string, string>;

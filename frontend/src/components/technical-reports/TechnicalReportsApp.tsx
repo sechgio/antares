@@ -1,5 +1,5 @@
 import './technical-reports.css';
-import { ChevronLeft, ChevronRight, Download, FilePlus2, Files, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { Download, FilePlus2, Files, RefreshCw, Trash2, Upload } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
@@ -19,11 +19,9 @@ export default function TechnicalReportsApp() {
   const [savedSnapshot, setSavedSnapshot] = useState<string>('');
   const [busy, setBusy] = useState(false);
   const [logoLeft, setLogoLeft] = useState<string | null>(null);
-  const [logoRight, setLogoRight] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const hasChanges = useMemo(() => Boolean(formData && JSON.stringify(formData) !== savedSnapshot), [formData, savedSnapshot]);
-  const currentIndex = useMemo(() => reports.findIndex((report) => report.id === selectedId), [reports, selectedId]);
 
   const loadReports = useCallback(async () => {
     setBusy(true);
@@ -162,16 +160,14 @@ export default function TechnicalReportsApp() {
     }
   }, [addToast, loadReports]);
 
-  const changeLogo = useCallback(async (side: 'left' | 'right', file: File | null) => {
+  const changeLogo = useCallback(async (file: File | null) => {
     if (!file) {
-      if (side === 'left') setLogoLeft(null);
-      else setLogoRight(null);
+      setLogoLeft(null);
       return;
     }
     try {
       const url = await fileToDataUrl(file);
-      if (side === 'left') setLogoLeft(url);
-      else setLogoRight(url);
+      setLogoLeft(url);
     } catch (error) {
       addToast({ message: error instanceof Error ? error.message : 'No se pudo cargar el logo', type: 'error' });
     }
@@ -193,7 +189,7 @@ export default function TechnicalReportsApp() {
         id: reportForRender.id,
         report: reportForRender,
         logo_left: logoLeft,
-        logo_right: logoRight,
+        logo_right: null,
       });
       const pdf = await technicalReportsApi.htmlToPdf({ html: rendered.html, filename: rendered.filename });
       if (!pdf.pdf_base64) throw new Error('No se recibio el contenido del PDF generado.');
@@ -205,13 +201,13 @@ export default function TechnicalReportsApp() {
     } finally {
       setBusy(false);
     }
-  }, [addToast, formData, hasChanges, loadReports, logoLeft, logoRight]);
+  }, [addToast, formData, hasChanges, loadReports, logoLeft]);
 
   const exportConsolidated = useCallback(async () => {
     if (reports.length === 0) return;
     setBusy(true);
     try {
-      const rendered = await technicalReportsApi.renderConsolidatedHtml({ logo_left: logoLeft, logo_right: logoRight });
+      const rendered = await technicalReportsApi.renderConsolidatedHtml({ logo_left: logoLeft, logo_right: null });
       const pdf = await technicalReportsApi.htmlToPdf({ html: rendered.html, filename: rendered.filename });
       if (!pdf.pdf_base64) throw new Error('No se recibio el contenido del PDF generado.');
       downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
@@ -222,12 +218,7 @@ export default function TechnicalReportsApp() {
     } finally {
       setBusy(false);
     }
-  }, [addToast, logoLeft, logoRight, reports.length]);
-
-  const goRelative = (direction: -1 | 1) => {
-    const next = reports[currentIndex + direction];
-    if (next) void selectReport(next.id);
-  };
+  }, [addToast, logoLeft, reports.length]);
 
   return (
     <div className="tr-app">
@@ -258,15 +249,6 @@ export default function TechnicalReportsApp() {
               Consolidado
             </button>
           </div>
-          <div className="tr-header-nav">
-            <button className="tr-secondary tr-icon-button" onClick={() => goRelative(-1)} disabled={currentIndex <= 0 || busy} title="Anterior">
-              <ChevronLeft size={16} />
-            </button>
-            <span className="tr-counter">{selectedId ? `${currentIndex + 1} / ${reports.length}` : 'Sin selección'}</span>
-            <button className="tr-secondary tr-icon-button" onClick={() => goRelative(1)} disabled={currentIndex < 0 || currentIndex >= reports.length - 1 || busy} title="Siguiente">
-              <ChevronRight size={16} />
-            </button>
-          </div>
         </div>
         <input
           ref={importInputRef}
@@ -287,13 +269,12 @@ export default function TechnicalReportsApp() {
           selectedId={selectedId}
           onSelect={selectReport}
         />
-        <PreviewPanel report={formData} logoLeft={logoLeft} logoRight={logoRight} />
+        <PreviewPanel report={formData} logoLeft={logoLeft} logoRight={null} />
         <FormPanel
           report={formData}
           hasChanges={hasChanges}
           busy={busy}
           logoLeft={logoLeft}
-          logoRight={logoRight}
           onChange={setFormData}
           onSave={saveReport}
           onDelete={deleteReport}

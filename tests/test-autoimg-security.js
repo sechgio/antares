@@ -64,18 +64,49 @@ function main() {
   assert(!tracked.includes('frontend/.env.local'), 'frontend/.env.local no debe estar en git');
   assert(!tracked.includes('.env.local'), '.env.local no debe estar en git');
 
+  for (const examplePath of ['frontend/.env.example', '.env.example']) {
+    const abs = path.join(ROOT, examplePath);
+    if (!fs.existsSync(abs)) continue;
+    const text = fs.readFileSync(abs, 'utf8');
+    assert(!/sb_publishable_[A-Za-z0-9_]+/.test(text), `${examplePath} no debe contener publishable keys reales`);
+    assert(!/eyJ[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{20,}/.test(text), `${examplePath} no debe contener JWT reales`);
+    assert(!/https:\/\/[a-z0-9]{20}\.supabase\.co/.test(text), `${examplePath} no debe contener project ref real`);
+  }
+
+  const preCommitHook = path.join(ROOT, '.githooks', 'pre-commit');
+  assert(fs.existsSync(preCommitHook), '.githooks/pre-commit debe existir');
+  const preCommit = fs.readFileSync(preCommitHook, 'utf8');
+  assert(preCommit.includes('.env.local'), 'pre-commit debe bloquear .env.local');
+  assert(preCommit.includes('sb_publishable_'), 'pre-commit debe bloquear publishable keys');
+  assert(preCommit.includes('sbp_'), 'pre-commit debe bloquear access tokens Supabase');
+
+  // Supabase: archivos locales sensibles no versionados
+  for (const entry of ['supabase/.env', 'supabase/.env.local', '.cursor/settings.json']) {
+    assert(gitignore.includes(entry) || gitignore.includes('supabase/.env'), `.gitignore debe cubrir ${entry}`);
+  }
+  assert(!tracked.includes('supabase/.env'), 'supabase/.env no debe estar en git');
+  assert(!tracked.includes('supabase/.env.local'), 'supabase/.env.local no debe estar en git');
+  assert(!tracked.includes('.cursor/settings.json'), '.cursor/settings.json no debe estar en git');
+
   // Barrido de secretos en archivos versionados (excluye ejemplos y tests de redacción)
   const secretPatterns = [
     /client_secret\s*[:=]\s*['"][a-zA-Z0-9_\-]{8,}['"]/i,
     /AUTOIMG_GOOGLE_CLIENT_SECRET\s*=\s*\S+/,
     /refresh_token\s*[:=]\s*['"][a-zA-Z0-9_\-\.]{10,}['"]/i,
     /sb_publishable_[a-zA-Z0-9_]+/,
+    /sbp_[a-zA-Z0-9]{10,}/,
+    /SUPABASE_SERVICE_ROLE_KEY\s*[:=]\s*['"]?[a-zA-Z0-9_\-]{20,}/i,
+    /SUPABASE_DB_PASSWORD\s*[:=]\s*['"]?[^\s'"]{4,}/i,
+    /VITE_SUPABASE_ANON_KEY\s*=\s*eyJ/i,
     /eyJ[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{20,}/,
   ];
   const allowPaths = new Set([
     'frontend/.env.example',
     '.env.example',
     'tests/test-autoimg-security.js',
+    '.githooks/pre-commit',
+    'scripts/supabase-db-push.ps1',
+    '.cursor/rules/supabase-project.mdc',
     'electron/google-sheets-service.js',
     'electron/autoimg-handlers.js',
     'frontend/src/api.ts',
@@ -98,7 +129,7 @@ function main() {
   }
   assert(hits.length === 0, `Posibles secretos en archivos versionados:\n  - ${hits.join('\n  - ')}`);
 
-  console.log('[PASS] AutoIMG security: IPC redactado, gitignore y barrido de secretos OK.');
+  console.log('[PASS] Security: IPC redactado, gitignore Supabase/AutoIMG y barrido de secretos OK.');
 }
 
 main();

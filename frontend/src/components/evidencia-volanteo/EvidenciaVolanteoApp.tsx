@@ -50,6 +50,8 @@ export default function EvidenciaVolanteoApp() {
         session.logoLeft,
         session.logoRight,
         exportFormat,
+        session.cuadranteLabel,
+        session.showCuadranteLabel,
       );
       if (!filename) return;
       await saveFeatureHistory(
@@ -134,6 +136,8 @@ export default function EvidenciaVolanteoApp() {
           <SheetPreview
             title={session.title}
             cuadrante={session.currentCuadrante}
+            cuadranteLabel={session.cuadranteLabel}
+            showCuadranteLabel={session.showCuadranteLabel}
             logoLeft={session.logoLeft?.objectUrl ?? null}
             logoRight={session.logoRight?.objectUrl ?? null}
             images={session.currentPageImages}
@@ -155,6 +159,10 @@ export default function EvidenciaVolanteoApp() {
           <CuadranteRangesEditor
             ranges={session.cuadranteRanges}
             totalPages={session.totalPages}
+            cuadranteLabel={session.cuadranteLabel}
+            showCuadranteLabel={session.showCuadranteLabel}
+            onCuadranteLabelChange={session.setCuadranteLabel}
+            onShowCuadranteLabelChange={session.setShowCuadranteLabel}
             onChange={session.setCuadranteRanges}
             onAdd={session.addCuadranteRange}
           />

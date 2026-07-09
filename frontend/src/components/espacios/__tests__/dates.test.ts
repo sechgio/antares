@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { formatDisplayDate, toLocalDateString } from '../utils/dates';
+import {
+  addDaysToIsoDate,
+  daysBetweenIsoDates,
+  formatDisplayDate,
+  formatRelativeDate,
+  toLocalDateString,
+} from '../utils/dates';
 
 describe('toLocalDateString', () => {
   it('formats the local calendar day', () => {
@@ -16,6 +22,19 @@ describe('toLocalDateString', () => {
   });
 });
 
+describe('addDaysToIsoDate / daysBetweenIsoDates', () => {
+  it('adds calendar days without UTC shift', () => {
+    expect(addDaysToIsoDate('2026-07-08', 3)).toBe('2026-07-11');
+    expect(addDaysToIsoDate('2026-07-30', 3)).toBe('2026-08-02');
+  });
+
+  it('computes signed day deltas', () => {
+    expect(daysBetweenIsoDates('2026-07-08', '2026-07-05')).toBe(-3);
+    expect(daysBetweenIsoDates('2026-07-08', '2026-07-08')).toBe(0);
+    expect(daysBetweenIsoDates('2026-07-08', '2026-07-11')).toBe(3);
+  });
+});
+
 describe('formatDisplayDate', () => {
   it('formats ISO dates for display', () => {
     expect(formatDisplayDate('2026-03-15')).toMatch(/15/);
@@ -24,5 +43,21 @@ describe('formatDisplayDate', () => {
 
   it('returns dash for null', () => {
     expect(formatDisplayDate(null)).toBe('—');
+  });
+});
+
+describe('formatRelativeDate', () => {
+  const today = '2026-03-15';
+
+  it('returns relative Spanish labels', () => {
+    expect(formatRelativeDate('2026-03-15', today)).toBe('Hoy');
+    expect(formatRelativeDate('2026-03-14', today)).toBe('Ayer');
+    expect(formatRelativeDate('2026-03-16', today)).toBe('Mañana');
+    expect(formatRelativeDate('2026-03-12', today)).toBe('Hace 3 días');
+    expect(formatRelativeDate('2026-03-18', today)).toBe('En 3 días');
+  });
+
+  it('returns dash for null', () => {
+    expect(formatRelativeDate(null, today)).toBe('—');
   });
 });

@@ -1,4 +1,5 @@
 import { Minus, Square, X, Settings } from 'lucide-react';
+import TaskNotificationsBell from './TaskNotificationsBell';
 import UpdateButton from './UpdateButton';
 
 function handleWindowAction(action: 'minimizeWindow' | 'maximizeWindow' | 'closeWindow') {
@@ -7,15 +8,17 @@ function handleWindowAction(action: 'minimizeWindow' | 'maximizeWindow' | 'close
 
 interface TitleBarProps {
   onOpenSettings?: () => void;
+  onOpenEspacios?: () => void;
 }
 
-export default function TitleBar({ onOpenSettings }: TitleBarProps) {
+export default function TitleBar({ onOpenSettings, onOpenEspacios }: TitleBarProps) {
   return (
     <div
       data-testid="app-titlebar"
       className="app-titlebar flex h-9 shrink-0 items-center justify-end border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-secondary)] select-none"
     >
       <div className="app-titlebar-controls flex h-full items-stretch">
+        <TaskNotificationsBell onOpenEspacios={onOpenEspacios} />
         <UpdateButton />
         {onOpenSettings && (
           <button
