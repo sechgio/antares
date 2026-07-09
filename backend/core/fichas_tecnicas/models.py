@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 from datetime import datetime
 from typing import Any
 
@@ -47,15 +46,7 @@ def _normalize_satisfaccion(value: Any) -> str:
     if value is None:
         return ""
     val = str(value).strip().lower().replace(" ", "_")
-    if val in SATISFACCION_VALUES:
-        return val
-    mapping = {
-        "muy_satisfecho": "muy_satisfecho",
-        "satisfecho": "satisfecho",
-        "regular": "regular",
-        "insatisfecho": "insatisfecho",
-    }
-    return mapping.get(val, "")
+    return val if val in SATISFACCION_VALUES else ""
 
 
 def empty_producto() -> dict[str, str]:
@@ -231,10 +222,6 @@ class FichaTecnica:
             "fecha": normalized["fecha"],
             "status": normalized["status"],
         }
-
-    @staticmethod
-    def clone(ficha: dict[str, Any]) -> dict[str, Any]:
-        return deepcopy(FichaTecnica.normalize(ficha))
 
 
 def template_placeholder_ficha() -> dict[str, Any]:

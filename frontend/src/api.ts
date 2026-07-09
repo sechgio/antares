@@ -434,10 +434,6 @@ export const api = {
     _invoke<{ success: boolean; deleted_count: number; message: string }>('fichas_tecnicas_clear'),
   fichasTecnicasImportFile: (body: FichasTecnicasImportBody) =>
     _invoke<{ success: boolean; message: string; deleted_count: number; imported_count: number; total_rows_in_file: number }>('fichas_tecnicas_import_file', body),
-  fichasTecnicasAutocompleteCliente: () =>
-    _invoke<{ options: string[] }>('fichas_tecnicas_autocomplete_cliente'),
-  fichasTecnicasAutocompleteDistrito: () =>
-    _invoke<{ options: string[] }>('fichas_tecnicas_autocomplete_distrito'),
   fichasTecnicasRenderHtml: (body: FichasTecnicasRenderBody) =>
     _invoke<{ html: string; filename: string }>('fichas_tecnicas_render_html', body),
   fichasTecnicasRenderConsolidatedHtml: (body?: { ficha_ids?: string[]; logo_left?: string | null; logo_right?: string | null }) =>

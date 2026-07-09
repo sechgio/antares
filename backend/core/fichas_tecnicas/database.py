@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 import threading
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -71,13 +72,14 @@ class FichasTecnicasDB:
         tmp_path.replace(self.db_path)
 
     def get_all(self) -> list[dict[str, Any]]:
+        # Items are normalized on write/load; deepcopy avoids shared mutation.
         with self._lock:
-            return [FichaTecnica.normalize(item) for item in self._items.values()]
+            return [deepcopy(item) for item in self._items.values()]
 
     def get(self, ficha_id: str) -> dict[str, Any] | None:
         with self._lock:
             item = self._items.get(str(ficha_id))
-            return FichaTecnica.normalize(item) if item else None
+            return deepcopy(item) if item else None
 
     def create(self, ficha: dict[str, Any] | None = None) -> dict[str, Any]:
         with self._lock:
@@ -92,7 +94,7 @@ class FichasTecnicasDB:
                 normalized = create_empty_ficha(n)
             self._items[normalized["id"]] = normalized
             self._save()
-            return normalized
+            return deepcopy(normalized)
 
     def update(self, ficha_id: str, ficha: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
@@ -105,7 +107,7 @@ class FichasTecnicasDB:
             normalized = FichaTecnica.normalize(payload)
             self._items[str(ficha_id)] = normalized
             self._save()
-            return normalized
+            return deepcopy(normalized)
 
     def delete(self, ficha_id: str) -> bool:
         with self._lock:
@@ -121,17 +123,10 @@ class FichasTecnicasDB:
             self._save()
             return count
 
-    def replace_all(self, fichas: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def replace_all(self, fichas: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
         with self._lock:
+            deleted_count = len(self._items)
             imported = [FichaTecnica.normalize(f) for f in fichas]
             self._items = {f["id"]: f for f in imported}
             self._save()
-            return imported
-
-    def get_unique_clientes(self) -> list[str]:
-        with self._lock:
-            return sorted({f.get("cliente", "") for f in self._items.values() if f.get("cliente")})
-
-    def get_unique_distritos(self) -> list[str]:
-        with self._lock:
-            return sorted({f.get("distrito", "") for f in self._items.values() if f.get("distrito")})
+            return [deepcopy(f) for f in imported], deleted_count

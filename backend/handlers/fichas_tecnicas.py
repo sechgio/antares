@@ -91,9 +91,7 @@ def fichas_tecnicas_import_file(params: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(msg)
     content = base64.b64decode(content_b64)
     imported_rows = import_fichas_from_bytes(filename, content)
-    db = _db()
-    deleted_count = len(db.get_all())
-    imported = db.replace_all(imported_rows)
+    imported, deleted_count = _db().replace_all(imported_rows)
     return {
         "success": True,
         "message": f"{len(imported)} fichas importadas",
@@ -101,16 +99,6 @@ def fichas_tecnicas_import_file(params: dict[str, Any]) -> dict[str, Any]:
         "imported_count": len(imported),
         "total_rows_in_file": len(imported_rows),
     }
-
-
-@with_locale
-def fichas_tecnicas_autocomplete_cliente(params: dict[str, Any]) -> dict[str, Any]:
-    return {"options": _db().get_unique_clientes()}
-
-
-@with_locale
-def fichas_tecnicas_autocomplete_distrito(params: dict[str, Any]) -> dict[str, Any]:
-    return {"options": _db().get_unique_distritos()}
 
 
 def _resolve_ficha_for_render(params: dict[str, Any]) -> dict[str, Any]:
@@ -171,8 +159,6 @@ HANDLERS = {
     "fichas_tecnicas_delete": fichas_tecnicas_delete,
     "fichas_tecnicas_clear": fichas_tecnicas_clear,
     "fichas_tecnicas_import_file": fichas_tecnicas_import_file,
-    "fichas_tecnicas_autocomplete_cliente": fichas_tecnicas_autocomplete_cliente,
-    "fichas_tecnicas_autocomplete_distrito": fichas_tecnicas_autocomplete_distrito,
     "fichas_tecnicas_render_html": fichas_tecnicas_render_html,
     "fichas_tecnicas_render_consolidated_html": fichas_tecnicas_render_consolidated_html,
 }

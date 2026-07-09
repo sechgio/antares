@@ -2,7 +2,7 @@
  * Preview A4 — layout espejo de sech-gio/frontend/src/features/fichas-tecnicas/PreviewPanel.tsx
  * Logos llegan como data-URL (string) en Antares (no File).
  */
-import type { FichaTecnica } from './types';
+import { normalizeFichaForPreview, type FichaTecnica } from './types';
 
 interface Props {
   ficha: FichaTecnica | null;
@@ -10,66 +10,7 @@ interface Props {
 }
 
 export default function PreviewPanel({ ficha, logoLeft }: Props) {
-  const fichaData = ficha;
-  const logoLeftUrl = logoLeft;
-
-  // Valores por defecto para datos vacíos o incompletos (igual sech-gio)
-  const defaultServicio = {
-    desinfeccion: false,
-    limpieza_ambientes: false,
-    limpieza_pozos_septicos: false,
-    limpieza_reservorios: false,
-  };
-
-  const defaultTratamiento = {
-    pulverizado: false,
-    atomizado: false,
-    thermonebulizado: false,
-    nebulizado_ulv: false,
-    otros: '',
-  };
-
-  const defaultObsRec = {
-    observacion_a: '',
-    observacion_b: '',
-    observacion_c: '',
-    recomendacion_a: '',
-    recomendacion_b: '',
-    recomendacion_c: '',
-  };
-
-  const defaultProductos = [
-    { producto: '', composicion: '', lote: '', fecha_vencimiento: '', unidad: '', concentracion: '', cantidad: '' },
-    { producto: '', composicion: '', lote: '', fecha_vencimiento: '', unidad: '', concentracion: '', cantidad: '' },
-    { producto: '', composicion: '', lote: '', fecha_vencimiento: '', unidad: '', concentracion: '', cantidad: '' },
-    { producto: '', composicion: '', lote: '', fecha_vencimiento: '', unidad: '', concentracion: '', cantidad: '' },
-  ];
-
-  const data = {
-    os_numero: fichaData?.os_numero || '',
-    cliente: fichaData?.cliente || '',
-    fecha: fichaData?.fecha || '',
-    direccion: fichaData?.direccion || '',
-    distrito: fichaData?.distrito || '',
-    servicio: { ...defaultServicio, ...(fichaData?.servicio || {}) },
-    diagnostico_area: fichaData?.diagnostico_area || '',
-    condicion_sanitaria: fichaData?.condicion_sanitaria || '',
-    tratamiento: { ...defaultTratamiento, ...(fichaData?.tratamiento || {}) },
-    productos:
-      Array.isArray(fichaData?.productos) && fichaData.productos.length > 0
-        ? fichaData.productos
-        : defaultProductos,
-    acciones_correctivas: fichaData?.acciones_correctivas || '',
-    areas_tratadas: fichaData?.areas_tratadas || '',
-    personal_tecnico: Array.isArray(fichaData?.personal_tecnico)
-      ? fichaData.personal_tecnico
-      : ['', '', '', '', '', ''],
-    hora_inicio: fichaData?.hora_inicio || '',
-    hora_termino: fichaData?.hora_termino || '',
-    numero_certificado: fichaData?.numero_certificado || '',
-    obs_rec: { ...defaultObsRec, ...(fichaData?.obs_rec || {}) },
-    satisfaccion: fichaData?.satisfaccion || '',
-  };
+  const data = normalizeFichaForPreview(ficha);
 
   return (
     <div
@@ -79,7 +20,7 @@ export default function PreviewPanel({ ficha, logoLeft }: Props) {
       <div
         id="ficha-tecnica-preview"
         data-testid="ficha-preview-paper"
-        data-template={fichaData ? 'false' : 'true'}
+        data-template={ficha ? 'false' : 'true'}
         className="ficha-preview-container mx-auto shadow-lg"
         style={{
           width: '210mm',
@@ -123,9 +64,9 @@ export default function PreviewPanel({ ficha, logoLeft }: Props) {
                 flexShrink: 0,
               }}
             >
-              {logoLeftUrl ? (
+              {logoLeft ? (
                 <img
-                  src={logoLeftUrl}
+                  src={logoLeft}
                   alt="Logo"
                   style={{ maxWidth: '180px', maxHeight: '40px', objectFit: 'contain' }}
                 />
@@ -532,9 +473,7 @@ export default function PreviewPanel({ ficha, logoLeft }: Props) {
             </div>
             <div style={{ display: 'flex', borderBottom: '2px solid #333' }}>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', borderRight: '1.5px solid #333' }}>
-                {(Array.isArray(data.personal_tecnico) ? data.personal_tecnico : ['', '', '', '', '', ''])
-                  .slice(0, 3)
-                  .map((persona, idx) => (
+                {data.personal_tecnico.slice(0, 3).map((persona, idx) => (
                     <div
                       key={idx}
                       style={{
@@ -549,9 +488,7 @@ export default function PreviewPanel({ ficha, logoLeft }: Props) {
                   ))}
               </div>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                {(Array.isArray(data.personal_tecnico) ? data.personal_tecnico : ['', '', '', '', '', ''])
-                  .slice(3, 6)
-                  .map((persona, idx) => (
+                {data.personal_tecnico.slice(3, 6).map((persona, idx) => (
                     <div
                       key={idx + 3}
                       style={{

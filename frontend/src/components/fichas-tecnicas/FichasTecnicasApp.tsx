@@ -63,12 +63,33 @@ export default function FichasTecnicasApp() {
     [fichas, selectedId],
   );
 
+  const applyFicha = useCallback((ficha: FichaTecnica | null) => {
+    setSelectedId(ficha?.id ?? null);
+    setFormData(ficha);
+    setSavedSnapshot(ficha ? JSON.stringify(ficha) : '');
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    applyFicha(null);
+  }, [applyFicha]);
+
+  const withBusy = useCallback(
+    async (fn: () => Promise<void>, fallbackError: string) => {
+      setBusy(true);
+      try {
+        await fn();
+      } catch (error) {
+        addToast({ message: formatIpcError(error, fallbackError), type: 'error' });
+      } finally {
+        setBusy(false);
+      }
+    },
+    [addToast],
+  );
+
   useEffect(() => {
     try {
-      localStorage.setItem(
-        DRAFT_KEY,
-        JSON.stringify({ selectedId, formData }),
-      );
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ selectedId, formData }));
     } catch {
       // ignore storage failures
     }
@@ -86,23 +107,13 @@ export default function FichasTecnicasApp() {
   }, []);
 
   const loadFichas = useCallback(async () => {
-    setBusy(true);
-    try {
-      const result = await fichasTecnicasApi.list(true);
-      setFichas(result.fichas || []);
-    } catch (error) {
-      addToast({
-        message: formatIpcError(error, 'No se pudieron cargar las fichas'),
-        type: 'error',
-      });
-    } finally {
-      setBusy(false);
-    }
-  }, [addToast]);
+    const result = await fichasTecnicasApi.list(true);
+    setFichas(result.fichas || []);
+  }, []);
 
   useEffect(() => {
-    void loadFichas();
-  }, [loadFichas]);
+    void withBusy(loadFichas, 'No se pudieron cargar las fichas');
+  }, [loadFichas, withBusy]);
 
   const selectFicha = useCallback(
     async (id: string) => {
@@ -116,74 +127,41 @@ export default function FichasTecnicasApp() {
         if (!proceed) return;
         if (formData) {
           try {
-            const saved = await fichasTecnicasApi.update(formData.id, formData);
-            setFormData(saved);
-            setSavedSnapshot(JSON.stringify(saved));
+            const saved = normalizeFicha(await fichasTecnicasApi.update(formData.id, formData));
+            applyFicha(saved);
             await loadFichas();
           } catch (error) {
-            addToast({
-              message: error instanceof Error ? error.message : 'No se pudo guardar',
-              type: 'error',
-            });
+            addToast({ message: formatIpcError(error, 'No se pudo guardar'), type: 'error' });
             return;
           }
         }
       }
-      setBusy(true);
-      try {
+      await withBusy(async () => {
         const ficha = normalizeFicha(await fichasTecnicasApi.get(id));
-        setSelectedId(id);
-        setFormData(ficha);
-        setSavedSnapshot(JSON.stringify(ficha));
-      } catch (error) {
-        addToast({
-          message: formatIpcError(error, 'No se pudo abrir la ficha'),
-          type: 'error',
-        });
-      } finally {
-        setBusy(false);
-      }
+        applyFicha(ficha);
+      }, 'No se pudo abrir la ficha');
     },
-    [addToast, dialog, formData, hasChanges, loadFichas],
+    [addToast, applyFicha, dialog, formData, hasChanges, loadFichas, withBusy],
   );
 
   const createFicha = useCallback(async () => {
-    setBusy(true);
-    try {
+    await withBusy(async () => {
       const ficha = normalizeFicha(await fichasTecnicasApi.create());
       await loadFichas();
-      setSelectedId(ficha.id);
-      setFormData(ficha);
-      setSavedSnapshot(JSON.stringify(ficha));
+      applyFicha(ficha);
       addToast({ message: 'Ficha creada', type: 'success' });
-    } catch (error) {
-      addToast({
-        message: formatIpcError(error, 'No se pudo crear la ficha'),
-        type: 'error',
-      });
-    } finally {
-      setBusy(false);
-    }
-  }, [addToast, loadFichas]);
+    }, 'No se pudo crear la ficha');
+  }, [addToast, applyFicha, loadFichas, withBusy]);
 
   const saveFicha = useCallback(async () => {
     if (!formData) return;
-    setBusy(true);
-    try {
+    await withBusy(async () => {
       const saved = normalizeFicha(await fichasTecnicasApi.update(formData.id, formData));
-      setFormData(saved);
-      setSavedSnapshot(JSON.stringify(saved));
+      applyFicha(saved);
       await loadFichas();
       addToast({ message: 'Ficha guardada', type: 'success' });
-    } catch (error) {
-      addToast({
-        message: formatIpcError(error, 'No se pudo guardar'),
-        type: 'error',
-      });
-    } finally {
-      setBusy(false);
-    }
-  }, [addToast, formData, loadFichas]);
+    }, 'No se pudo guardar');
+  }, [addToast, applyFicha, formData, loadFichas, withBusy]);
 
   const deleteFicha = useCallback(async () => {
     if (!selectedId) return;
@@ -195,23 +173,13 @@ export default function FichasTecnicasApp() {
       type: 'destructive',
     });
     if (!confirmed) return;
-    setBusy(true);
-    try {
+    await withBusy(async () => {
       await fichasTecnicasApi.delete(selectedId);
-      setSelectedId(null);
-      setFormData(null);
-      setSavedSnapshot('');
+      clearSelection();
       await loadFichas();
       addToast({ message: 'Ficha eliminada', type: 'success' });
-    } catch (error) {
-      addToast({
-        message: error instanceof Error ? error.message : 'No se pudo eliminar',
-        type: 'error',
-      });
-    } finally {
-      setBusy(false);
-    }
-  }, [addToast, dialog, loadFichas, selectedId]);
+    }, 'No se pudo eliminar');
+  }, [addToast, clearSelection, dialog, loadFichas, selectedId, withBusy]);
 
   const clearFichas = useCallback(async () => {
     const confirmed = await dialog.confirm({
@@ -222,50 +190,30 @@ export default function FichasTecnicasApp() {
       type: 'destructive',
     });
     if (!confirmed) return;
-    setBusy(true);
-    try {
+    await withBusy(async () => {
       await fichasTecnicasApi.clear();
       setFichas([]);
-      setSelectedId(null);
-      setFormData(null);
-      setSavedSnapshot('');
+      clearSelection();
       try {
         localStorage.removeItem(DRAFT_KEY);
       } catch {
         // ignore
       }
       addToast({ message: 'Base de fichas limpiada', type: 'success' });
-    } catch (error) {
-      addToast({
-        message: error instanceof Error ? error.message : 'No se pudo limpiar la base',
-        type: 'error',
-      });
-    } finally {
-      setBusy(false);
-    }
-  }, [addToast, dialog]);
+    }, 'No se pudo limpiar la base');
+  }, [addToast, clearSelection, dialog, withBusy]);
 
   const importFile = useCallback(
     async (file: File) => {
-      setBusy(true);
-      try {
+      await withBusy(async () => {
         const content = await fileToBase64(file);
         const result = await fichasTecnicasApi.importFile(file.name, content);
-        setSelectedId(null);
-        setFormData(null);
-        setSavedSnapshot('');
+        clearSelection();
         await loadFichas();
         addToast({ message: `${result.imported_count} fichas importadas`, type: 'success' });
-      } catch (error) {
-        addToast({
-          message: error instanceof Error ? error.message : 'No se pudo importar el archivo',
-          type: 'error',
-        });
-      } finally {
-        setBusy(false);
-      }
+      }, 'No se pudo importar el archivo');
     },
-    [addToast, loadFichas],
+    [addToast, clearSelection, loadFichas, withBusy],
   );
 
   const changeLogo = useCallback(
@@ -275,26 +223,20 @@ export default function FichasTecnicasApp() {
         return;
       }
       try {
-        const url = await fileToDataUrl(file);
-        setLogoLeft(url);
+        setLogoLeft(await fileToDataUrl(file));
       } catch (error) {
-        addToast({
-          message: error instanceof Error ? error.message : 'No se pudo cargar el logo',
-          type: 'error',
-        });
+        addToast({ message: formatIpcError(error, 'No se pudo cargar el logo'), type: 'error' });
       }
     },
     [addToast],
   );
 
   const exportCurrent = useCallback(async () => {
-    setBusy(true);
-    try {
+    await withBusy(async () => {
       if (!formData) {
         const rendered = await fichasTecnicasApi.renderHtml({
           template: true,
           logo_left: logoLeft,
-          logo_right: null,
         });
         const pdf = await fichasTecnicasApi.htmlToPdf({ html: rendered.html, filename: rendered.filename });
         if (!pdf.pdf_base64) throw new Error('No se recibió el contenido del PDF generado.');
@@ -305,18 +247,16 @@ export default function FichasTecnicasApp() {
       }
 
       const fichaForRender = hasChanges
-        ? await fichasTecnicasApi.update(formData.id, formData)
+        ? normalizeFicha(await fichasTecnicasApi.update(formData.id, formData))
         : formData;
       if (hasChanges) {
-        setFormData(fichaForRender);
-        setSavedSnapshot(JSON.stringify(fichaForRender));
+        applyFicha(fichaForRender);
         await loadFichas();
       }
       const rendered = await fichasTecnicasApi.renderHtml({
         id: fichaForRender.id,
         ficha: fichaForRender,
         logo_left: logoLeft,
-        logo_right: null,
       });
       const pdf = await fichasTecnicasApi.htmlToPdf({ html: rendered.html, filename: rendered.filename });
       if (!pdf.pdf_base64) throw new Error('No se recibió el contenido del PDF generado.');
@@ -329,15 +269,8 @@ export default function FichasTecnicasApp() {
         message: hasChanges ? 'Ficha guardada y PDF generado' : 'PDF generado',
         type: 'success',
       });
-    } catch (error) {
-      addToast({
-        message: error instanceof Error ? error.message : 'No se pudo generar el PDF',
-        type: 'error',
-      });
-    } finally {
-      setBusy(false);
-    }
-  }, [addToast, formData, hasChanges, loadFichas, logoLeft]);
+    }, 'No se pudo generar el PDF');
+  }, [addToast, applyFicha, formData, hasChanges, loadFichas, logoLeft, withBusy]);
 
   const exportConsolidated = useCallback(async () => {
     if (fichas.length === 0) return;
@@ -348,12 +281,8 @@ export default function FichasTecnicasApp() {
       cancelLabel: 'Cancelar',
     });
     if (!confirmed) return;
-    setBusy(true);
-    try {
-      const rendered = await fichasTecnicasApi.renderConsolidatedHtml({
-        logo_left: logoLeft,
-        logo_right: null,
-      });
+    await withBusy(async () => {
+      const rendered = await fichasTecnicasApi.renderConsolidatedHtml({ logo_left: logoLeft });
       const pdf = await fichasTecnicasApi.htmlToPdf({ html: rendered.html, filename: rendered.filename });
       if (!pdf.pdf_base64) throw new Error('No se recibió el contenido del PDF generado.');
       downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
@@ -364,15 +293,8 @@ export default function FichasTecnicasApp() {
         rendered.count,
       );
       addToast({ message: `PDF consolidado generado (${rendered.count})`, type: 'success' });
-    } catch (error) {
-      addToast({
-        message: error instanceof Error ? error.message : 'No se pudo generar el consolidado',
-        type: 'error',
-      });
-    } finally {
-      setBusy(false);
-    }
-  }, [addToast, dialog, fichas.length, logoLeft]);
+    }, 'No se pudo generar el consolidado');
+  }, [addToast, dialog, fichas.length, logoLeft, withBusy]);
 
   const goRelative = (direction: -1 | 1) => {
     const next = fichas[currentIndex + direction];
@@ -398,7 +320,7 @@ export default function FichasTecnicasApp() {
               type="button"
               className="tr-secondary tr-icon-button"
               disabled={busy}
-              onClick={() => void loadFichas()}
+              onClick={() => void withBusy(loadFichas, 'No se pudieron cargar las fichas')}
               title="Recargar"
             >
               <RefreshCw size={16} />
