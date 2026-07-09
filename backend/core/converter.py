@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 from typing import cast
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 from backend.core.format_registry import get_registry
 
@@ -150,6 +150,12 @@ def convertir_imagen(
             msg = f"Imagen con dimensiones inválidas ({source_img.width}x{source_img.height}): {ruta_origen}"
             raise ValueError(msg)
 
+        # Bake EXIF Orientation into pixels so phone photos are upright even
+        # when keep_exif is False (default) or the destination strips tags.
+        transposed = ImageOps.exif_transpose(source_img)
+        if transposed is not None:
+            source_img = transposed
+
         info = _registry[formato]
         img: Image.Image = _ensure_mode(source_img, info["modes"])
 
@@ -217,6 +223,11 @@ def convertir_a_preview(
     pil_formato = PIL_FORMAT_MAP.get(formato, formato)
 
     with Image.open(ruta_origen) as source_img:
+        # Match convertir_imagen: bake Orientation so preview is upright.
+        transposed = ImageOps.exif_transpose(source_img)
+        if transposed is not None:
+            source_img = transposed
+
         orig_w, orig_h = source_img.size
         orig_size_kb = round(stat.st_size / 1024, 1)
 
