@@ -52,7 +52,8 @@ describe('AutoIMGApp layout and navigation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Carpetas' }));
     expect(screen.getByText('Conexión')).toBeInTheDocument();
     expect(screen.getByText('OAuth')).toBeInTheDocument();
-    expect(screen.getByText('Nueva carpeta')).toBeInTheDocument();
+    expect(screen.getByText('Carpetas registradas')).toBeInTheDocument();
+    expect(screen.getByText('Test')).toBeInTheDocument();
   });
 
   it('renders coverage status next to scan actions in the header', async () => {
