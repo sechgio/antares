@@ -105,7 +105,7 @@ export function FolderPreviewStrip({
   folderName: string;
 }) {
   const status = state?.status ?? 'loading';
-  const thumbs = status === 'ready' ? state.thumbs : [];
+  const thumbs = state?.status === 'ready' ? state.thumbs : [];
   const visibleThumbs = thumbs.filter((t) => t.dataUrl);
 
   if (status === 'ready' && visibleThumbs.length === 0) {
