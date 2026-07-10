@@ -3,7 +3,6 @@ import { GRID_COLUMNS, GRID_ROWS } from '../constants';
 import { DEFAULT_CUADRANTE_LABEL } from '../constants';
 import {
   EMPTY_CUADRANTE_PLACEHOLDER,
-  GAP_HEIGHT_CM,
   GAP_UNDER_HEADER_CM,
   HEADER_INFO_HEIGHT_CM,
   HEADER_LOGO_WIDTH_CM,
@@ -13,10 +12,11 @@ import {
   LOGO_MAX_HEIGHT_CM,
   LOGO_MAX_WIDTH_CM,
   PAGE_MARGIN_MM,
+  PHOTO_GAP_CM,
   PHOTO_HEIGHT_CM,
+  PHOTO_TABLE_COLS,
   PHOTO_WIDTH_CM,
   SHEET_BORDER,
-  TABLE_HEIGHT_CM,
   TABLE_WIDTH_CM,
   TITLE_FONT_PT,
 } from '../layout';
@@ -74,12 +74,13 @@ export default function SheetPreview({
     <div
       className={`preview-paper-scope bg-white text-black${isExport ? ' ev-sheet-page' : ''}`}
       style={{
+        // Export: mismo ancho útil A4 que la preview; altura automática (sin clip).
         width: isExport ? `${TABLE_WIDTH_CM}cm` : '210mm',
-        height: isExport ? `${TABLE_HEIGHT_CM}cm` : '297mm',
+        height: isExport ? 'auto' : '297mm',
         padding: isExport ? 0 : `${PAGE_MARGIN_MM}mm`,
         fontFamily: 'Aptos, Arial, Helvetica, sans-serif',
         boxSizing: 'border-box',
-        overflow: 'hidden',
+        overflow: isExport ? 'visible' : 'hidden',
         pageBreakInside: isExport ? 'avoid' : undefined,
         breakInside: isExport ? 'avoid-page' : undefined,
         boxShadow: isExport ? 'none' : '0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)',
@@ -178,6 +179,10 @@ export default function SheetPreview({
                 textAlign: 'center',
                 padding: '3pt 5pt',
                 verticalAlign: 'middle',
+                overflow: 'hidden',
+                maxWidth: `${HEADER_TITLE_WIDTH_CM}cm`,
+                wordBreak: 'break-word',
+                overflowWrap: 'anywhere',
               }}
             >
               {shouldShowLabel && (
@@ -189,6 +194,8 @@ export default function SheetPreview({
                     display: 'block',
                     marginBottom: '2pt',
                     letterSpacing: '0.2pt',
+                    overflowWrap: 'anywhere',
+                    wordBreak: 'break-word',
                   }}
                 >
                   {resolvedLabel}
@@ -201,6 +208,9 @@ export default function SheetPreview({
                   textTransform: 'uppercase',
                   display: 'block',
                   letterSpacing: '0.2pt',
+                  overflowWrap: 'anywhere',
+                  wordBreak: 'break-word',
+                  maxWidth: '100%',
                 }}
               >
                 {cuadrante.trim() || EMPTY_CUADRANTE_PLACEHOLDER}
@@ -213,72 +223,128 @@ export default function SheetPreview({
       {/* Spacer between header and photos */}
       <div style={{ height: `${GAP_UNDER_HEADER_CM}cm`, width: '100%' }} />
 
-      {/* ── Photos Table ── */}
+      {/* ── Photos: un marco exterior + gutters blancos uniformes ── */}
       <table
         style={{
           width: `${TABLE_WIDTH_CM}cm`,
           borderCollapse: 'collapse',
           tableLayout: 'fixed',
+          border: SHEET_BORDER,
         }}
       >
         <colgroup>
-          <col style={{ width: `${PHOTO_WIDTH_CM}cm` }} />
-          <col style={{ width: `${PHOTO_WIDTH_CM}cm` }} />
-          <col style={{ width: `${PHOTO_WIDTH_CM}cm` }} />
+          <col style={{ width: `${PHOTO_GAP_CM}cm` }} />
+          {Array.from({ length: GRID_COLUMNS }).map((_, col) => (
+            <React.Fragment key={col}>
+              <col style={{ width: `${PHOTO_WIDTH_CM}cm` }} />
+              <col style={{ width: `${PHOTO_GAP_CM}cm` }} />
+            </React.Fragment>
+          ))}
         </colgroup>
         <tbody>
+          <tr>
+            <td
+              colSpan={PHOTO_TABLE_COLS}
+              style={{
+                padding: 0,
+                border: 'none',
+                height: `${PHOTO_GAP_CM}cm`,
+                lineHeight: 0,
+                fontSize: 0,
+              }}
+            >
+              &nbsp;
+            </td>
+          </tr>
           {Array.from({ length: GRID_ROWS }).map((_, row) => (
             <React.Fragment key={row}>
-              {row > 0 && (
-                <tr style={{ height: `${GAP_HEIGHT_CM}cm` }}>
-                  <td colSpan={3} style={{ ...cellBase }} />
-                </tr>
-              )}
               <tr style={{ height: `${PHOTO_HEIGHT_CM}cm` }}>
+                <td
+                  style={{
+                    padding: 0,
+                    border: 'none',
+                    width: `${PHOTO_GAP_CM}cm`,
+                    height: `${PHOTO_HEIGHT_CM}cm`,
+                    lineHeight: 0,
+                    fontSize: 0,
+                  }}
+                >
+                  &nbsp;
+                </td>
                 {Array.from({ length: GRID_COLUMNS }).map((__, col) => {
                   const slot = slots[row * GRID_COLUMNS + col];
                   return (
-                    <td
-                      key={col}
-                      style={{
-                        ...cellBase,
-                        overflow: 'hidden',
-                        verticalAlign: 'top',
-                        lineHeight: 0,
-                      }}
-                    >
-                      {slot ? (
-                        <img
-                          src={slot.objectUrl}
-                          alt=""
-                          style={{
-                            width: '100%',
-                            height: `${PHOTO_HEIGHT_CM}cm`,
-                            objectFit: 'fill',
-                            objectPosition: 'center',
-                            display: 'block',
-                          }}
-                        />
-                      ) : (
-                        <div
-                          style={{
-                            width: '100%',
-                            height: `${PHOTO_HEIGHT_CM}cm`,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: '#bbb',
-                            fontSize: '8pt',
-                            fontStyle: 'italic',
-                            lineHeight: 'normal',
-                          }}
-                        >
-                          Sin imagen
-                        </div>
-                      )}
-                    </td>
+                    <React.Fragment key={col}>
+                      <td
+                        style={{
+                          padding: 0,
+                          border: 'none',
+                          overflow: 'hidden',
+                          verticalAlign: 'top',
+                          lineHeight: 0,
+                          width: `${PHOTO_WIDTH_CM}cm`,
+                          height: `${PHOTO_HEIGHT_CM}cm`,
+                        }}
+                      >
+                        {slot ? (
+                          <img
+                            src={slot.objectUrl}
+                            alt=""
+                            style={{
+                              width: '100%',
+                              height: `${PHOTO_HEIGHT_CM}cm`,
+                              objectFit: 'fill',
+                              objectPosition: 'center',
+                              display: 'block',
+                            }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: '100%',
+                              height: `${PHOTO_HEIGHT_CM}cm`,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: '#bbb',
+                              fontSize: '8pt',
+                              fontStyle: 'italic',
+                              lineHeight: 'normal',
+                            }}
+                          >
+                            Sin imagen
+                          </div>
+                        )}
+                      </td>
+                      <td
+                        style={{
+                          padding: 0,
+                          border: 'none',
+                          width: `${PHOTO_GAP_CM}cm`,
+                          height: `${PHOTO_HEIGHT_CM}cm`,
+                          lineHeight: 0,
+                          fontSize: 0,
+                        }}
+                      >
+                        &nbsp;
+                      </td>
+                    </React.Fragment>
                   );
                 })}
+              </tr>
+              <tr>
+                <td
+                  colSpan={PHOTO_TABLE_COLS}
+                  style={{
+                    padding: 0,
+                    border: 'none',
+                    height: `${PHOTO_GAP_CM}cm`,
+                    lineHeight: 0,
+                    fontSize: 0,
+                  }}
+                >
+                  &nbsp;
+                </td>
               </tr>
             </React.Fragment>
           ))}

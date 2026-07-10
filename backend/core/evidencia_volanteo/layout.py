@@ -5,26 +5,42 @@ from __future__ import annotations
 PAGE_MARGIN_CM = 0.8
 PAGE_WIDTH_CM = 21.0
 PAGE_HEIGHT_CM = 29.7
-TABLE_WIDTH_CM = round(PAGE_WIDTH_CM - 2 * PAGE_MARGIN_CM, 2) # 19.4 cm
-CONTENT_HEIGHT_CM = round(PAGE_HEIGHT_CM - 2 * PAGE_MARGIN_CM, 2) # 28.1 cm
+TABLE_WIDTH_CM = round(PAGE_WIDTH_CM - 2 * PAGE_MARGIN_CM, 2)  # 19.4 cm
+CONTENT_HEIGHT_CM = round(PAGE_HEIGHT_CM - 2 * PAGE_MARGIN_CM, 2)  # 28.1 cm
 
 # Encabezado: logos a los lados (rowspan 2), título + cuadrante en el centro.
 HEADER_TITLE_HEIGHT_CM = 1.5
 HEADER_INFO_HEIGHT_CM = 1.3
-HEADER_TOTAL_HEIGHT_CM = round(HEADER_TITLE_HEIGHT_CM + HEADER_INFO_HEIGHT_CM, 2) # 2.8 cm
+HEADER_TOTAL_HEIGHT_CM = round(HEADER_TITLE_HEIGHT_CM + HEADER_INFO_HEIGHT_CM, 2)  # 2.8 cm
 GAP_UNDER_HEADER_CM = 0.4
-GAP_HEIGHT_CM = 0.6
+# Gutters uniformes dentro de un solo marco exterior (estética panel).
+PHOTO_GAP_CM = 0.1
 PHOTO_COLS = 3
 PHOTO_ROWS = 2
+# gap | foto | gap | foto | gap | foto | gap
+PHOTO_GAP_COLS = PHOTO_COLS + 1
+PHOTO_TABLE_COLS = PHOTO_COLS + PHOTO_GAP_COLS  # 7
+# gap | foto | gap | foto | gap
+PHOTO_GAP_ROWS = PHOTO_ROWS + 1
+PHOTO_TABLE_ROWS = PHOTO_ROWS + PHOTO_GAP_ROWS  # 5
+GAP_HEIGHT_CM = PHOTO_GAP_CM
 
 # Anchos de columnas del encabezado (independientes del grid de fotos)
 HEADER_LOGO_WIDTH_CM = 4.2
-HEADER_TITLE_WIDTH_CM = round(TABLE_WIDTH_CM - 2 * HEADER_LOGO_WIDTH_CM, 2) # 11.0 cm
+HEADER_TITLE_WIDTH_CM = round(TABLE_WIDTH_CM - 2 * HEADER_LOGO_WIDTH_CM, 2)  # 11.0 cm
 
-# Anchos y altos del grid de fotos (3 columnas iguales)
-PHOTO_WIDTH_CM = round(TABLE_WIDTH_CM / PHOTO_COLS, 2) # 6.47 cm
+PHOTO_WIDTH_CM = round(
+    (TABLE_WIDTH_CM - PHOTO_GAP_COLS * PHOTO_GAP_CM) / PHOTO_COLS,
+    2,
+)  # 6.33 cm
 PHOTO_HEIGHT_CM = 11.5
-TABLE_HEIGHT_CM = round(HEADER_TOTAL_HEIGHT_CM + GAP_UNDER_HEADER_CM + GAP_HEIGHT_CM + PHOTO_ROWS * PHOTO_HEIGHT_CM, 2)
+TABLE_HEIGHT_CM = round(
+    HEADER_TOTAL_HEIGHT_CM
+    + GAP_UNDER_HEADER_CM
+    + PHOTO_GAP_ROWS * PHOTO_GAP_CM
+    + PHOTO_ROWS * PHOTO_HEIGHT_CM,
+    2,
+)
 
 LOGO_MAX_WIDTH_CM = 3.8
 LOGO_MAX_HEIGHT_CM = 2.2
@@ -49,6 +65,7 @@ def layout_context() -> dict[str, float | str]:
         "header_title_width_cm": HEADER_TITLE_WIDTH_CM,
         "gap_under_header_cm": GAP_UNDER_HEADER_CM,
         "gap_height_cm": GAP_HEIGHT_CM,
+        "photo_gap_cm": PHOTO_GAP_CM,
         "photo_width_cm": PHOTO_WIDTH_CM,
         "photo_height_cm": PHOTO_HEIGHT_CM,
         "logo_max_width_cm": LOGO_MAX_WIDTH_CM,

@@ -2,7 +2,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { DEFAULT_CUADRANTE_LABEL, IMAGES_PER_PAGE } from '../constants';
 import SheetPreview from '../components/SheetPreview';
-import { PAGE_MARGIN_MM, PHOTO_HEIGHT_CM, TABLE_HEIGHT_CM } from '../layout';
+import { PAGE_MARGIN_MM, TABLE_WIDTH_CM } from '../layout';
 import type { CuadranteRange, LocalImage } from '../types';
 import { resolveCuadranteForPage } from './cuadranteRanges';
 
@@ -63,12 +63,22 @@ export function buildExportHtml(
   <style>
     @page { size: A4 portrait; margin: ${PAGE_MARGIN_MM}mm; }
     * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; color: #000; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      color: #000;
+      background: #fff;
+      font-family: Aptos, Arial, Helvetica, sans-serif;
+    }
+    .preview-paper-scope,
     .ev-sheet-page {
-      width: 100%;
-      height: ${TABLE_HEIGHT_CM}cm;
-      max-height: ${TABLE_HEIGHT_CM}cm;
-      overflow: hidden;
+      background: #fff;
+      color: #000;
+    }
+    /* Sin height/overflow fijos: evita cortar el borde inferior del panel */
+    .ev-sheet-page {
+      width: ${TABLE_WIDTH_CM}cm;
+      overflow: visible;
       page-break-inside: avoid;
       break-inside: avoid-page;
       page-break-after: always;
@@ -81,10 +91,10 @@ export function buildExportHtml(
     .ev-sheet-page table {
       page-break-inside: avoid;
       break-inside: avoid-page;
+      border-collapse: collapse;
     }
     .ev-sheet-page img {
-      max-width: 100%;
-      max-height: ${PHOTO_HEIGHT_CM}cm;
+      display: block;
       page-break-inside: avoid;
       break-inside: avoid-page;
     }

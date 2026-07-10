@@ -95,6 +95,7 @@ export async function exportEvidenciaDocument(
     images: imagesBase64,
     image_paths: imagePaths,
     format,
+    // PDF: HTML de SheetPreview. Word: DOCX nativo editable (sin html).
     ...(format === 'pdf'
       ? {
           html: buildExportHtml(

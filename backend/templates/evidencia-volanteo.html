@@ -19,8 +19,7 @@
 
     .page {
       width: {{ table_width_cm }}cm;
-      height: {{ table_height_cm }}cm;
-      overflow: hidden;
+      overflow: visible;
       page-break-inside: avoid;
     }
 
@@ -28,17 +27,31 @@
       break-after: page;
     }
 
-    .header-table, .photos-table {
+    .header-table {
       width: 100%;
       border-collapse: collapse;
       table-layout: fixed;
     }
 
-    .header-table td, .photos-table td {
+    .header-table td {
       border: {{ border_pt }}pt solid #000;
       vertical-align: middle;
       padding: 0;
       margin: 0;
+    }
+
+    .photos-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      border: {{ border_pt }}pt solid #000;
+    }
+
+    .photos-table td {
+      vertical-align: middle;
+      padding: 0;
+      margin: 0;
+      border: none;
     }
 
     /* ── Header: 2-row block with logos spanning both rows ── */
@@ -67,6 +80,10 @@
       text-align: center;
       vertical-align: middle;
       padding: 3pt 5pt;
+      overflow: hidden;
+      max-width: {{ header_title_width_cm }}cm;
+      word-break: break-word;
+      overflow-wrap: anywhere;
     }
 
     .logo-img {
@@ -101,6 +118,8 @@
       margin: 0 0 2pt 0;
       display: block;
       letter-spacing: 0.2pt;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .info-value {
@@ -110,6 +129,9 @@
       margin: 0;
       display: block;
       letter-spacing: 0.2pt;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     /* ── Spacer between header and photos ── */
@@ -119,14 +141,22 @@
       width: 100%;
     }
 
-    /* ── Gap row ── */
+    /* ── Gap row / gap columns (sin borde — solo aire alrededor de cada foto) ── */
 
     .row-gap {
-      height: {{ gap_height_cm }}cm;
+      height: {{ photo_gap_cm }}cm;
     }
 
     .row-gap td {
-      border: {{ border_pt }}pt solid #000;
+      border: none;
+      line-height: 0;
+      font-size: 0;
+    }
+
+    .col-gap {
+      width: {{ photo_gap_cm }}cm;
+      padding: 0;
+      border: none;
       line-height: 0;
       font-size: 0;
     }
@@ -142,6 +172,7 @@
       overflow: hidden;
       vertical-align: top;
       line-height: 0;
+      border: none;
     }
 
     .photo-img {
@@ -211,31 +242,21 @@
 
     <table class="photos-table">
       <colgroup>
-        <col style="width: {{ photo_width_cm }}cm;">
-        <col style="width: {{ photo_width_cm }}cm;">
-        <col style="width: {{ photo_width_cm }}cm;">
+        <col style="width: {{ photo_gap_cm }}cm;">
+        {% for col in range(3) %}
+          <col style="width: {{ photo_width_cm }}cm;">
+          <col style="width: {{ photo_gap_cm }}cm;">
+        {% endfor %}
       </colgroup>
-      {# ── First row of 3 photos ── #}
-      <tr class="row-photo">
-        {% for col in range(3) %}
-        {% set slot = page.slots[col] %}
-        <td class="photo-cell">
-          {% if slot and slot.uri %}
-            <img class="photo-img" src="{{ slot.uri }}" alt="">
-          {% else %}
-            <div class="empty-photo">Sin imagen</div>
-          {% endif %}
-        </td>
-        {% endfor %}
-      </tr>
-      {# ── Gap row — visible space in the middle of the page ── #}
+      {# Un marco exterior + gutters uniformes: gap|foto|gap|foto|gap|foto|gap #}
       <tr class="row-gap">
-        <td colspan="3"></td>
+        <td colspan="7" style="height: {{ photo_gap_cm }}cm; line-height: 0; font-size: 0;">&nbsp;</td>
       </tr>
-      {# ── Second row of 3 photos ── #}
+      {% for row in range(2) %}
       <tr class="row-photo">
+        <td class="col-gap" style="height: {{ photo_height_cm }}cm;">&nbsp;</td>
         {% for col in range(3) %}
-        {% set slot = page.slots[3 + col] %}
+        {% set slot = page.slots[row * 3 + col] %}
         <td class="photo-cell">
           {% if slot and slot.uri %}
             <img class="photo-img" src="{{ slot.uri }}" alt="">
@@ -243,8 +264,13 @@
             <div class="empty-photo">Sin imagen</div>
           {% endif %}
         </td>
+        <td class="col-gap" style="height: {{ photo_height_cm }}cm;">&nbsp;</td>
         {% endfor %}
       </tr>
+      <tr class="row-gap">
+        <td colspan="7" style="height: {{ photo_gap_cm }}cm; line-height: 0; font-size: 0;">&nbsp;</td>
+      </tr>
+      {% endfor %}
     </table>
   </div>
   {% endfor %}

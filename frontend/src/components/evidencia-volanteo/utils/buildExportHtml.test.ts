@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_TITLE } from '../constants';
-import { PAGE_MARGIN_MM, TABLE_HEIGHT_CM, TITLE_FONT_PT, PHOTO_HEIGHT_CM } from '../layout';
+import { PAGE_MARGIN_MM, PHOTO_GAP_CM, PHOTO_HEIGHT_CM, PHOTO_TABLE_COLS, TABLE_WIDTH_CM, TITLE_FONT_PT } from '../layout';
 import type { LocalImage } from '../types';
 import { createDefaultRange } from './cuadranteRanges';
 import { buildExportHtml, imageExportKey } from './buildExportHtml';
@@ -27,8 +27,30 @@ describe('buildExportHtml', () => {
     expect(html).toContain('AV EL SOL');
     expect(html).toContain('EVIDENCIAS FOTOGRÁFICAS DEL VOLANTEO');
     expect(html).toContain(`margin: ${PAGE_MARGIN_MM}mm`);
-    expect(html).toContain(`height: ${TABLE_HEIGHT_CM}cm`);
+    expect(html).toContain(`width: ${TABLE_WIDTH_CM}cm`);
     expect(html).toContain('ev-sheet-page');
+    expect(html).toContain('overflow: visible');
+    expect(html).not.toContain('overflow: hidden');
+    expect(html).toContain(`width:${PHOTO_GAP_CM}cm`);
+    expect(html).toMatch(new RegExp(`colspan=["']${PHOTO_TABLE_COLS}["']`, 'i'));
+    expect(html).toContain('overflow-wrap:anywhere');
+    expect(html).toContain('word-break:break-word');
+  });
+
+  it('mantiene el cuadrante largo dentro de la celda central', () => {
+    const longCuadrante = `QWSADD${'D'.repeat(80)}`;
+    const html = buildExportHtml(
+      DEFAULT_TITLE,
+      [createDefaultRange(1, 1, longCuadrante)],
+      [],
+      {},
+      null,
+      null,
+    );
+    expect(html).toContain(longCuadrante);
+    expect(html).toContain('overflow-wrap:anywhere');
+    expect(html).toContain('word-break:break-word');
+    expect(html).toMatch(/max-width:\s*11(?:\.0)?cm/);
   });
 
   it('agrupa 6 imágenes por hoja A4', () => {
