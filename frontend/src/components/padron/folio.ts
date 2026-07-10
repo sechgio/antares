@@ -15,17 +15,25 @@ export function createDefaultFolioConfig(): FolioConfig {
   };
 }
 
+/** Last folio when numbering `totalPages` sheets starting at `folioStart`. */
+export function expectedFolioEnd(folioStart: number, totalPages: number): number {
+  if (totalPages <= 0) return folioStart;
+  return folioStart + totalPages - 1;
+}
+
+/**
+ * One unique consecutive folio per sheet.
+ * Non-inverted: folioStart, folioStart+1, … (totalPages values).
+ * Inverted: folioEnd, folioEnd-1, … down for totalPages values.
+ */
 export function resolvePhysicalFolios(
   totalPages: number,
   config: { folioStart: number; folioEnd: number; folioInverted: boolean },
 ): number[] {
   if (totalPages <= 0) return [];
   const first = config.folioInverted ? config.folioEnd : config.folioStart;
-  const last = config.folioInverted ? config.folioStart : config.folioEnd;
-  if (totalPages === 1) return [first];
-  return Array.from({ length: totalPages }, (_, i) =>
-    Math.round(first + (i * (last - first)) / (totalPages - 1)),
-  );
+  const direction = config.folioInverted ? -1 : 1;
+  return Array.from({ length: totalPages }, (_, i) => first + i * direction);
 }
 
 export function getPageFolio(pageIndex: number, folios: number[]): number {
@@ -35,17 +43,20 @@ export function getPageFolio(pageIndex: number, folios: number[]): number {
   return pageIndex + 1;
 }
 
+function isAutoSyncedEnd(config: FolioConfig): boolean {
+  if (config.folioEnd === null) return true;
+  if (config.syncedPageCount === null) return false;
+  return config.folioEnd === expectedFolioEnd(config.folioStart, config.syncedPageCount);
+}
+
 export function syncFolioEndWithPageCount(
   prev: FolioConfig,
   totalPages: number,
 ): FolioConfig {
-  const wasAuto =
-    prev.folioEnd === null ||
-    (prev.syncedPageCount !== null && prev.folioEnd === prev.syncedPageCount);
-  if (!wasAuto) return prev;
+  if (!isAutoSyncedEnd(prev)) return prev;
   return {
     ...prev,
-    folioEnd: totalPages > 0 ? totalPages : null,
+    folioEnd: totalPages > 0 ? expectedFolioEnd(prev.folioStart, totalPages) : null,
     syncedPageCount: totalPages > 0 ? totalPages : null,
   };
 }
@@ -54,10 +65,10 @@ export function isDefaultFolioConfig(
   config: FolioConfig,
   totalPages: number,
 ): boolean {
-  const effectiveEnd = config.folioEnd ?? totalPages;
+  const effectiveEnd = config.folioEnd ?? expectedFolioEnd(config.folioStart, totalPages);
   return (
     config.folioStart === 1 &&
-    effectiveEnd === totalPages &&
+    effectiveEnd === expectedFolioEnd(1, totalPages) &&
     !config.folioInverted
   );
 }
@@ -69,7 +80,7 @@ export function formatFolioSummary(
   if (totalPages <= 0) return '';
   const folios = resolvePhysicalFolios(totalPages, {
     folioStart: config.folioStart,
-    folioEnd: config.folioEnd ?? totalPages,
+    folioEnd: config.folioEnd ?? expectedFolioEnd(config.folioStart, totalPages),
     folioInverted: config.folioInverted,
   });
   const first = folios[0];
