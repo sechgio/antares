@@ -1,9 +1,17 @@
 import { forwardRef, useEffect, useRef, useState } from "react";
 import FlyerCard from "./FlyerCard";
-import type { BrandConfig, FlyerRecord, LayoutMode } from "../types";
+import type {
+  BrandConfig,
+  FlyerEncabezados,
+  FlyerHeading,
+  FlyerRecord,
+  LayoutMode,
+} from "../types";
 
 interface SheetPreviewProps {
   brand: BrandConfig;
+  heading: FlyerHeading;
+  encabezados: FlyerEncabezados;
   exportMode?: boolean;
   layoutMode: LayoutMode;
   records: FlyerRecord[];
@@ -39,7 +47,7 @@ const buildPages = (
 
 const SheetPreview = forwardRef<HTMLDivElement, SheetPreviewProps>(
   function SheetPreview(
-    { brand, exportMode = false, layoutMode, records },
+    { brand, heading, encabezados, exportMode = false, layoutMode, records },
     forwardedRef,
   ) {
     const pages = buildPages(records, layoutMode, exportMode);
@@ -126,7 +134,13 @@ const SheetPreview = forwardRef<HTMLDivElement, SheetPreviewProps>(
                   className="sheet-flyer-slot"
                   key={`${record.id}-copy-${copyIndex}`}
                 >
-                  <FlyerCard brand={brand} record={record} scale={scale} />
+                  <FlyerCard
+                    brand={brand}
+                    encabezados={encabezados}
+                    heading={heading}
+                    record={record}
+                    scale={scale}
+                  />
                 </div>
               ))}
             </section>

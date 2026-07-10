@@ -18,7 +18,13 @@ from backend.core.evidencia_volanteo import (
     render_pdf,
     render_pdf_html,
 )
-from backend.core.evidencia_volanteo.layout import BORDER_PT, EMPTY_CUADRANTE_PLACEHOLDER
+from backend.core.evidencia_volanteo.layout import (
+    BORDER_PT,
+    EMPTY_CUADRANTE_PLACEHOLDER,
+    PHOTO_GAP_CM,
+    PHOTO_TABLE_COLS,
+    PHOTO_TABLE_ROWS,
+)
 from backend.core.evidencia_volanteo.rendering import (
     _build_image_uris,
     _jinja_env,
@@ -102,12 +108,49 @@ def test_docx_border_width_matches_preview() -> None:
     docx_bytes, _ = render_docx(doc, {}, {})
     document = Document(BytesIO(docx_bytes))
     expected_sz = str(int(BORDER_PT * 8))
-    for table in document.tables:
-        borders = table._tbl.tblPr.find(qn("w:tblBorders"))
-        assert borders is not None
-        top = borders.find(qn("w:top"))
-        assert top is not None
-        assert top.get(qn("w:sz")) == expected_sz
+    # Header table keeps table-level borders
+    header_borders = document.tables[0]._tbl.tblPr.find(qn("w:tblBorders"))
+    assert header_borders is not None
+    top = header_borders.find(qn("w:top"))
+    assert top is not None
+    assert top.get(qn("w:sz")) == expected_sz
+    # Spacer (sin bordes) + panel de fotos (solo marco exterior)
+    assert len(document.tables) >= 3
+    spacer_borders = document.tables[1]._tbl.tblPr.find(qn("w:tblBorders"))
+    assert spacer_borders is not None
+    assert spacer_borders.find(qn("w:top")).get(qn("w:val")) == "nil"
+    photos_borders = document.tables[2]._tbl.tblPr.find(qn("w:tblBorders"))
+    assert photos_borders is not None
+    assert photos_borders.find(qn("w:top")).get(qn("w:sz")) == expected_sz
+    assert photos_borders.find(qn("w:insideH")).get(qn("w:val")) == "nil"
+    # Marco exterior en celdas del perímetro (Word ignora tblBorders si tcBorders=nil)
+    corner = document.tables[2].cell(0, 0)._tc.tcPr.find(qn("w:tcBorders"))
+    assert corner is not None
+    assert corner.find(qn("w:top")).get(qn("w:val")) == "single"
+    assert corner.find(qn("w:left")).get(qn("w:val")) == "single"
+    assert corner.find(qn("w:top")).get(qn("w:sz")) == expected_sz
+    inner_photo = document.tables[2].cell(1, 1)._tc.tcPr.find(qn("w:tcBorders"))
+    assert inner_photo is not None
+    assert inner_photo.find(qn("w:top")).get(qn("w:val")) == "nil"
+    assert inner_photo.find(qn("w:left")).get(qn("w:val")) == "nil"
+
+
+def test_docx_info_row_grows_for_long_cuadrante() -> None:
+    """hRule=exact recortaba el texto; atLeast permite ver el cuadrante completo."""
+    long_value = "QWSADD" + ("D" * 80)
+    doc = EvidenciaDocument(
+        title="TEST",
+        cuadrante="",
+        pages=(EvidenciaPage(images=(), cuadrante=long_value),),
+    )
+    docx_bytes, _ = render_docx(doc, {}, {})
+    document = Document(BytesIO(docx_bytes))
+    info_height = document.tables[0].rows[1]._tr.trPr.find(qn("w:trHeight"))
+    assert info_height is not None
+    assert info_height.get(qn("w:hRule")) == "atLeast"
+    info_text = document.tables[0].cell(1, 1).paragraphs[0].text.replace("\u200b", "")
+    assert long_value.upper() in info_text or long_value in info_text
+
 
 
 def test_empty_cuadrante_shows_placeholder_in_docx() -> None:
@@ -236,6 +279,22 @@ def test_render_pdf_html_from_preview_markup() -> None:
     assert pdf_bytes.startswith(b'%PDF')
 
 
+def test_docx_long_cuadrante_stays_editable_text() -> None:
+    long_value = "QWSADD" + ("D" * 80)
+    doc = EvidenciaDocument(
+        title="TEST",
+        cuadrante="",
+        pages=(EvidenciaPage(images=(), cuadrante=long_value),),
+    )
+    docx_bytes, _ = render_docx(doc, {}, {})
+    document = Document(BytesIO(docx_bytes))
+    info_text = document.tables[0].cell(1, 1).paragraphs[0].text
+    assert "QWSADD" in info_text
+    assert info_text.replace("\u200b", "").endswith("D" * 10)
+    # DOCX nativo: tablas editables (header + spacer + fotos), no página rasterizada
+    assert len(document.tables) == 3
+
+
 def test_render_pdf_html_six_images_one_a4_page() -> None:
     tiny = _tiny_png()
     data_uri = f"data:image/png;base64,{tiny}"
@@ -280,16 +339,40 @@ def test_pdf_html_uses_contain_for_photos() -> None:
         "logo_right": None,
         **layout_context(),
     })
-    assert "object-fit: contain" in html
+    assert "object-fit: fill" in html
     assert "object-position: center" in html
 
 
-def test_render_docx_includes_images() -> None:
+def test_pdf_html_has_horizontal_photo_gaps() -> None:
+    doc = _make_document()
+    template = _jinja_env.get_template("evidencia-volanteo.html")
+    pages_data = _serialize_pages(doc, _build_image_uris({}, None))
+    html = template.render({
+        "title": doc.title,
+        "cuadrante": doc.cuadrante,
+        "pages": pages_data,
+        "logo_left": None,
+        "logo_right": None,
+        **layout_context(),
+    })
+    assert f'colspan="{PHOTO_TABLE_COLS}"' in html
+    assert "col-gap" in html
+    assert f"width: {PHOTO_GAP_CM}cm" in html or f"width: {PHOTO_GAP_CM}cm;" in html
+
+
+def test_docx_photos_table_has_gap_columns() -> None:
+    doc = _make_document()
+    docx_bytes, _ = render_docx(doc, {}, {})
+    document = Document(BytesIO(docx_bytes))
+    photos_table = document.tables[2]
+    assert len(photos_table.columns) == PHOTO_TABLE_COLS
+    assert len(photos_table.rows) == PHOTO_TABLE_ROWS
+
     doc = _make_document()
     images = {"img1.jpg": _tiny_png(), "img2.jpg": _tiny_png()}
     docx_bytes, _ = render_docx(doc, {}, images)
     document = Document(BytesIO(docx_bytes))
-    photos_table = document.tables[1]
+    photos_table = document.tables[2]
     shapes = photos_table._element.findall(".//{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}inline")
     assert len(shapes) >= 2
 

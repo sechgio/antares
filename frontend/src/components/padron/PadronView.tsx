@@ -70,6 +70,7 @@ import sedapalLogoSrc from '../../assets/padron-assets/logo_sedapal.webp';
 import { saveFeatureHistory } from '../../utils/history';
 import {
   createDefaultFolioConfig,
+  expectedFolioEnd,
   getPageFolio,
   resolvePhysicalFolios,
   syncFolioEndWithPageCount,
@@ -219,7 +220,9 @@ export default function PadronView() {
     () =>
       resolvePhysicalFolios(activePagesCount, {
         folioStart: folioConfig.folioStart,
-        folioEnd: folioConfig.folioEnd ?? activePagesCount,
+        folioEnd:
+          folioConfig.folioEnd ??
+          expectedFolioEnd(folioConfig.folioStart, activePagesCount),
         folioInverted: folioConfig.folioInverted,
       }),
     [activePagesCount, folioConfig],

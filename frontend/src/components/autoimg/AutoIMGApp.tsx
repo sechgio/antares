@@ -188,6 +188,18 @@ export default function AutoIMGApp() {
               );
             })}
           </nav>
+          <SyncPanel
+            autoSync={status?.autoSync ?? false}
+            onAutoSyncChange={(enabled) => setStatus((s) => (s ? { ...s, autoSync: enabled } : s))}
+            lastSync={status?.lastSync}
+            sheetName={status?.sheetName}
+            total={status?.totalNis}
+            completos={status?.completos}
+            faltantes={status?.faltantes}
+            sobrantes={status?.sobrantes}
+            sinSgio={status?.sinSgio}
+            statusMessage={syncStatus}
+          />
           <SyncActions
             onSynced={handleSynced}
             onStatus={setSyncStatus}
@@ -218,22 +230,8 @@ export default function AutoIMGApp() {
             </div>
           )}
           {activeTab === 'dashboard' && (
-            <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
-              <SyncPanel
-                autoSync={status?.autoSync ?? false}
-                onAutoSyncChange={(enabled) => setStatus((s) => (s ? { ...s, autoSync: enabled } : s))}
-                lastSync={status?.lastSync}
-                sheetName={status?.sheetName}
-                total={status?.totalNis}
-                completos={status?.completos}
-                faltantes={status?.faltantes}
-                sobrantes={status?.sobrantes}
-                sinSgio={status?.sinSgio}
-                statusMessage={syncStatus}
-              />
-              <div className="min-h-0 flex-1">
-                <BdImgTable rows={bdRows} />
-              </div>
+            <div className="h-full min-h-0 overflow-hidden">
+              <BdImgTable rows={bdRows} />
             </div>
           )}
           {activeTab === 'bdimg' && (

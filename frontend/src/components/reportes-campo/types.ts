@@ -79,3 +79,11 @@ export interface StoredPanel {
     updatedAt: number;
     photos: StoredPhoto[];
 }
+
+/** Logos de sesión por plantilla (compartidos entre paneles del mismo tipo). */
+export interface StoredBranding {
+    reportType: ReportType;
+    logoLeft: StoredPhoto | null;
+    logoRight: StoredPhoto | null;
+    updatedAt: number;
+}

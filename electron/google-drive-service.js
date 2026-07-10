@@ -194,11 +194,86 @@ async function getDriveStatus() {
   return { connected: !!tokens };
 }
 
+const PREVIEW_LIMIT = 4;
+const PREVIEW_TTL_MS = 10 * 60 * 1000;
+/** @type {Map<string, { at: number, result: { folder_id: string, thumbs: Array<{ id: string, name: string, dataUrl: string | null }> } }>} */
+const previewCache = new Map();
+
+function shrinkThumbnailUrl(url) {
+  const raw = String(url || '');
+  if (!raw) return raw;
+  if (/=s\d+$/.test(raw)) return raw.replace(/=s\d+$/, '=s96');
+  if (/=w\d+/.test(raw)) return raw.replace(/=w\d+(-h\d+)?/, '=s96');
+  return `${raw}=s96`;
+}
+
+async function fetchThumbnailDataUrl(thumbnailLink, accessToken) {
+  const url = shrinkThumbnailUrl(thumbnailLink);
+  let res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  // Some googleusercontent links reject Bearer; retry without auth.
+  if (res.status === 401 || res.status === 403) {
+    res = await fetch(url);
+  }
+  if (!res.ok) throw new Error(`Thumb HTTP ${res.status}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length > 250_000) throw new Error('Thumb demasiado grande');
+  const mime = (res.headers.get('content-type') || 'image/jpeg').split(';')[0];
+  return `data:${mime};base64,${buf.toString('base64')}`;
+}
+
+/**
+ * Preview rápido: hasta 4 miniaturas (no lista toda la carpeta).
+ * Cache en memoria por folder_id.
+ */
+async function previewFolder(input, { limit = PREVIEW_LIMIT, force = false } = {}) {
+  const folderId = assertValidFolderId(input);
+  const cached = previewCache.get(folderId);
+  if (!force && cached && Date.now() - cached.at < PREVIEW_TTL_MS) {
+    return cached.result;
+  }
+
+  const tokens = await getValidTokens();
+  if (!tokens) throw new Error('No autenticado con Google');
+
+  const pageSize = Math.min(Math.max(1, Number(limit) || PREVIEW_LIMIT), PREVIEW_LIMIT);
+  const data = await _driveFetch('files', {
+    q: `'${folderId}' in parents and trashed=false and ${IMAGE_QUERY}`,
+    fields: 'files(id,name,thumbnailLink)',
+    pageSize: String(pageSize),
+  });
+  const files = (data.files || []).slice(0, pageSize);
+
+  const thumbs = await Promise.all(
+    files.map(async (f) => {
+      if (!f.thumbnailLink) return { id: f.id, name: f.name || '', dataUrl: null };
+      try {
+        const dataUrl = await fetchThumbnailDataUrl(f.thumbnailLink, tokens.access_token);
+        return { id: f.id, name: f.name || '', dataUrl };
+      } catch {
+        return { id: f.id, name: f.name || '', dataUrl: null };
+      }
+    }),
+  );
+
+  const result = { folder_id: folderId, thumbs };
+  previewCache.set(folderId, { at: Date.now(), result });
+  return result;
+}
+
+function invalidateFolderPreview(folderId) {
+  const id = String(folderId || '').trim();
+  if (id) previewCache.delete(id);
+}
+
 module.exports = {
   listFolder,
   scanNis,
   assertDriveFolder,
   verifyFolder,
+  previewFolder,
+  invalidateFolderPreview,
   copyFileToFolder,
   findOrCreateSubfolder,
   escapeDriveQueryValue,

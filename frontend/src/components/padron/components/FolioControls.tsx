@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Hash } from 'lucide-react';
 import {
   createDefaultFolioConfig,
+  expectedFolioEnd,
   formatFolioSummary,
   isDefaultFolioConfig,
   resolvePhysicalFolios,
@@ -28,7 +29,8 @@ export default function FolioControls({
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
-  const effectiveEnd = config.folioEnd ?? totalPages;
+  const effectiveEnd =
+    config.folioEnd ?? expectedFolioEnd(config.folioStart, totalPages);
   const folios = resolvePhysicalFolios(totalPages, {
     folioStart: config.folioStart,
     folioEnd: effectiveEnd,
@@ -41,21 +43,26 @@ export default function FolioControls({
 
   const handleStartChange = useCallback(
     (value: string) => {
+      const folioStart = parsePositiveInt(value, config.folioStart);
       onChange({
         ...config,
-        folioStart: parsePositiveInt(value, config.folioStart),
-        syncedPageCount: config.syncedPageCount,
+        folioStart,
+        folioEnd: expectedFolioEnd(folioStart, Math.max(totalPages, 1)),
+        syncedPageCount: totalPages > 0 ? totalPages : null,
       });
     },
-    [config, onChange],
+    [config, onChange, totalPages],
   );
 
   const handleEndChange = useCallback(
     (value: string) => {
       const parsed = parsePositiveInt(value, effectiveEnd);
+      const pages = Math.max(totalPages, 1);
+      const folioStart = Math.max(1, parsed - pages + 1);
       onChange({
         ...config,
-        folioEnd: parsed,
+        folioStart,
+        folioEnd: expectedFolioEnd(folioStart, pages),
         syncedPageCount: totalPages > 0 ? totalPages : null,
       });
     },

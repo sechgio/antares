@@ -68,8 +68,13 @@ export function useCampoPanels(config: ReportTypeConfig) {
     }, [panels]);
 
     const reportType = config.id;
+    const reportTypeRef = useRef(reportType);
+    reportTypeRef.current = reportType;
+
     const loadedTypeRef = useRef<string | null>(null);
     const saveTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+    /** Panel ids with a pending debounced write (may outlive the timer map briefly). */
+    const dirtyIdsRef = useRef<Set<string>>(new Set());
 
     const cancelPendingSave = useCallback((id: string) => {
         const timer = saveTimersRef.current.get(id);
@@ -79,17 +84,38 @@ export function useCampoPanels(config: ReportTypeConfig) {
         }
     }, []);
 
+    const persistPanelNow = useCallback((panel: CampoPanel, type: ReportTypeConfig['id']) => {
+        dirtyIdsRef.current.delete(panel.id);
+        void savePanel(panelToStored(panel, type));
+    }, []);
+
+    /** Flush debounced writes immediately (tab switch / unmount / type change). */
+    const flushPendingSaves = useCallback((type: ReportTypeConfig['id'] = reportTypeRef.current) => {
+        const ids = new Set<string>([
+            ...saveTimersRef.current.keys(),
+            ...dirtyIdsRef.current,
+        ]);
+        saveTimersRef.current.forEach((timer) => clearTimeout(timer));
+        saveTimersRef.current.clear();
+        for (const id of ids) {
+            const panel = panelsRef.current.find((p) => p.id === id);
+            if (panel) persistPanelNow(panel, type);
+            else dirtyIdsRef.current.delete(id);
+        }
+    }, [persistPanelNow]);
+
     const scheduleSave = useCallback((panel: CampoPanel, debounceMs = SAVE_DEBOUNCE_MS) => {
         if (!panel) return;
+        dirtyIdsRef.current.add(panel.id);
         cancelPendingSave(panel.id);
         const timer = setTimeout(() => {
             saveTimersRef.current.delete(panel.id);
             // Read latest panel from ref so rapid style edits only write once.
             const latest = panelsRef.current.find((p) => p.id === panel.id) ?? panel;
-            void savePanel(panelToStored(latest, reportType));
+            persistPanelNow(latest, reportTypeRef.current);
         }, debounceMs);
         saveTimersRef.current.set(panel.id, timer);
-    }, [cancelPendingSave, reportType]);
+    }, [cancelPendingSave, persistPanelNow]);
 
     // Carga por plantilla: al montar y al cambiar de tipo (config.id).
     // Reemplaza al resetSession() que antes borraba todo al cambiar de plantilla.
@@ -103,6 +129,8 @@ export function useCampoPanels(config: ReportTypeConfig) {
         } else if (loadedTypeRef.current === type) {
             return;
         } else {
+            // Flush under the previous template id before swapping panels.
+            flushPendingSaves(loadedTypeRef.current as ReportTypeConfig['id']);
             loadedTypeRef.current = type;
         }
 
@@ -134,15 +162,14 @@ export function useCampoPanels(config: ReportTypeConfig) {
         return () => {
             cancelled = true;
         };
-    }, [reportType, config]);
+    }, [reportType, config, flushPendingSaves]);
 
-    // Limpieza de timers y URLs al desmontar.
+    // Flush pending debounced writes on unmount (tab switch drops the view).
     useEffect(() => {
         return () => {
-            saveTimersRef.current.forEach((timer) => clearTimeout(timer));
-            saveTimersRef.current.clear();
+            flushPendingSaves();
         };
-    }, []);
+    }, [flushPendingSaves]);
 
     const resetSession = useCallback(() => {
         setPanels((prev) => {
@@ -241,6 +268,7 @@ export function useCampoPanels(config: ReportTypeConfig) {
 
     const deletePanel = useCallback((id: string) => {
         cancelPendingSave(id);
+        dirtyIdsRef.current.delete(id);
         void deleteStoredPanel(id);
         setPanels((prev) => {
             const target = prev.find((panel) => panel.id === id);

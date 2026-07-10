@@ -1,5 +1,7 @@
-import { useState, useRef, useEffect } from "react";
-import { ChevronLeft, ChevronRight, Calendar } from "lucide-react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { Calendar, ChevronLeft, ChevronRight } from "lucide-react";
+import { useAnchoredPopover } from "../hooks/useAnchoredPopover";
 
 interface DatePickerProps {
   value: string;
@@ -8,56 +10,61 @@ interface DatePickerProps {
   className?: string;
 }
 
-export default function DatePicker({ value, onChange, label, className = "" }: DatePickerProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [currentMonth, setCurrentMonth] = useState(new Date());
-  const pickerRef = useRef<HTMLDivElement>(null);
+const WEEK_DAYS = ["D", "L", "M", "M", "J", "V", "S"];
+const MONTH_NAMES = [
+  "Ene", "Feb", "Mar", "Abr", "May", "Jun",
+  "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
+];
+
+function formatDate(dateString: string): string {
+  if (!dateString) return "Seleccionar fecha";
+  const date = new Date(`${dateString}T00:00:00`);
+  return date.toLocaleDateString("es-ES", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
+function buildMonthDays(month: Date): Array<Date | null> {
+  const year = month.getFullYear();
+  const monthIndex = month.getMonth();
+  const firstDay = new Date(year, monthIndex, 1).getDay();
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const days: Array<Date | null> = [];
+  for (let i = 0; i < firstDay; i += 1) days.push(null);
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    days.push(new Date(year, monthIndex, day));
+  }
+  return days;
+}
+
+export default function DatePicker({
+  value,
+  onChange,
+  label,
+  className = "",
+}: DatePickerProps) {
+  const [currentMonth, setCurrentMonth] = useState(() =>
+    value ? new Date(`${value}T00:00:00`) : new Date(),
+  );
+  const { isOpen, position, triggerRef, popupRef, toggle, close, updatePosition } =
+    useAnchoredPopover({
+      estimatedHeight: 300,
+      estimatedWidth: 260,
+      align: "start",
+    });
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    if (value) {
-      const date = new Date(value + "T00:00:00");
-      setCurrentMonth(date);
-    }
+    if (!value) return;
+    setCurrentMonth(new Date(`${value}T00:00:00`));
   }, [value]);
 
-  const formatDate = (dateString: string) => {
-    if (!dateString) return "Seleccionar fecha";
-    const date = new Date(dateString + "T00:00:00");
-    return date.toLocaleDateString("es-ES", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  };
+  useEffect(() => {
+    if (isOpen) updatePosition();
+  }, [isOpen, currentMonth, updatePosition]);
 
-  const getDaysInMonth = (date: Date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-    const daysInMonth = lastDay.getDate();
-    const startingDayOfWeek = firstDay.getDay();
-
-    const days = [];
-    for (let i = 0; i < startingDayOfWeek; i++) {
-      days.push(null);
-    }
-    for (let i = 1; i <= daysInMonth; i++) {
-      days.push(new Date(year, month, i));
-    }
-    return days;
-  };
+  const days = buildMonthDays(currentMonth);
 
   const isToday = (date: Date) => {
     const today = new Date();
@@ -70,7 +77,7 @@ export default function DatePicker({ value, onChange, label, className = "" }: D
 
   const isSelected = (date: Date) => {
     if (!value) return false;
-    const selected = new Date(value + "T00:00:00");
+    const selected = new Date(`${value}T00:00:00`);
     return (
       date.getDate() === selected.getDate() &&
       date.getMonth() === selected.getMonth() &&
@@ -78,88 +85,125 @@ export default function DatePicker({ value, onChange, label, className = "" }: D
     );
   };
 
-  const handleDateClick = (date: Date) => {
-    const formatted = date.toISOString().split("T")[0];
-    onChange(formatted);
-    setIsOpen(false);
+  const selectDate = (date: Date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    onChange(`${y}-${m}-${d}`);
+    close();
   };
 
-  const handlePrevMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1));
-  };
-
-  const handleNextMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1));
-  };
-
-  const handleToday = () => {
+  const selectToday = () => {
     const today = new Date();
-    const formatted = today.toISOString().split("T")[0];
-    onChange(formatted);
+    selectDate(today);
     setCurrentMonth(today);
-    setIsOpen(false);
   };
-
-  const weekDays = ["D", "L", "M", "M", "J", "V", "S"];
-  const monthNames = [
-    "Ene", "Feb", "Mar", "Abr", "May", "Jun",
-    "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"
-  ];
-
-  const days = getDaysInMonth(currentMonth);
 
   return (
-    <div className={`vgen-date-picker ${className}`} ref={pickerRef}>
+    <div className={`vgen-date-picker ${className}`}>
       {label && <label className="vgen-label-sm">{label}</label>}
-      <div className="vgen-date-picker-trigger" onClick={() => setIsOpen(!isOpen)}>
-        <Calendar className="vgen-date-picker-trigger-icon" size={16} />
+      <button
+        ref={triggerRef}
+        type="button"
+        className={`vgen-date-picker-trigger${isOpen ? " is-open" : ""}`}
+        onClick={toggle}
+        aria-expanded={isOpen}
+      >
+        <Calendar className="vgen-date-picker-trigger-icon" size={13} />
         <span className="vgen-date-picker-trigger-value">{formatDate(value)}</span>
-      </div>
+      </button>
 
-      {isOpen && (
-        <div className="vgen-date-picker-popup">
-          <div className="vgen-date-picker-header">
-            <button onClick={handlePrevMonth} className="vgen-date-picker-nav">
-              <ChevronLeft size={18} />
+      {isOpen &&
+        position &&
+        createPortal(
+          <div
+            ref={popupRef}
+            className="vgen-date-picker-popup"
+            role="dialog"
+            aria-label="Elegir fecha"
+            style={{
+              top: position.top,
+              left: position.left,
+              width: position.width,
+            }}
+          >
+            <div className="vgen-date-picker-header">
+              <button
+                type="button"
+                className="vgen-date-picker-nav"
+                onClick={() =>
+                  setCurrentMonth(
+                    new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1),
+                  )
+                }
+                aria-label="Mes anterior"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <span className="vgen-date-picker-month">
+                {MONTH_NAMES[currentMonth.getMonth()]} {currentMonth.getFullYear()}
+              </span>
+              <button
+                type="button"
+                className="vgen-date-picker-nav"
+                onClick={() =>
+                  setCurrentMonth(
+                    new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1),
+                  )
+                }
+                aria-label="Mes siguiente"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+
+            <div className="vgen-date-picker-weekdays">
+              {WEEK_DAYS.map((day, index) => (
+                <div key={`${day}-${index}`} className="vgen-date-picker-weekday">
+                  {day}
+                </div>
+              ))}
+            </div>
+
+            <div className="vgen-date-picker-days">
+              {days.map((date, index) => {
+                if (!date) {
+                  return (
+                    <div
+                      key={`empty-${index}`}
+                      className="vgen-date-picker-day empty"
+                    />
+                  );
+                }
+                return (
+                  <button
+                    key={`${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`}
+                    type="button"
+                    onClick={() => selectDate(date)}
+                    className={[
+                      "vgen-date-picker-day",
+                      isSelected(date) ? "selected" : "",
+                      isToday(date) ? "today" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                  >
+                    {date.getDate()}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              className="vgen-date-picker-today"
+              onClick={selectToday}
+            >
+              Hoy
             </button>
-            <span className="vgen-date-picker-month">
-              {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
-            </span>
-            <button onClick={handleNextMonth} className="vgen-date-picker-nav">
-              <ChevronRight size={18} />
-            </button>
-          </div>
-
-          <div className="vgen-date-picker-weekdays">
-            {weekDays.map((day) => (
-              <div key={day} className="vgen-date-picker-weekday">
-                {day}
-              </div>
-            ))}
-          </div>
-
-          <div className="vgen-date-picker-days">
-            {days.map((date, index) => {
-              if (!date) {
-                return <div key={`empty-${index}`} className="vgen-date-picker-day empty" />;
-              }
-              return (
-                <button
-                  key={date.toISOString()}
-                  onClick={() => handleDateClick(date)}
-                  className={`vgen-date-picker-day ${isSelected(date) ? "selected" : ""} ${isToday(date) ? "today" : ""}`}
-                >
-                  {date.getDate()}
-                </button>
-              );
-            })}
-          </div>
-
-          <button onClick={handleToday} className="vgen-date-picker-today">
-            Hoy
-          </button>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

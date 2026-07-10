@@ -36,13 +36,6 @@ export default function SyncPanel({
 
   const completionPct = total > 0 ? Math.round((completos / total) * 100) : 0;
 
-  const legend = [
-    { label: 'Completos', value: completos, color: 'var(--accent-green)' },
-    { label: 'Faltantes', value: faltantes, color: 'var(--accent-red)' },
-    { label: 'Sobrantes', value: sobrantes, color: 'var(--accent-yellow)' },
-    { label: 'Sin SGIO', value: sinSgio, color: 'var(--accent-primary)' },
-  ].filter((item) => item.value > 0);
-
   useEffect(() => {
     return onNotify((method, params) => {
       if (method !== 'autoimg.sync.complete' || !params || typeof params !== 'object') return;
@@ -74,100 +67,84 @@ export default function SyncPanel({
 
   const displayError = statusMessage?.error || error;
   const displayResult = statusMessage?.result || notifyResult;
+  const statusText = displayError || displayResult;
 
   return (
-    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-3">
-      <div className="flex items-baseline justify-between gap-4">
-        <p className="min-w-0 text-[13px] text-[var(--text-secondary)]">
-          {total > 0 ? (
-            <>
-              <span className="tabular-nums text-[var(--text-primary)]">{fmt(completos)}</span>
-              <span className="text-[var(--text-muted)]"> / {fmt(total)}</span>
-              <span className="ml-1.5 text-[var(--text-muted)]">completos</span>
-            </>
-          ) : (
-            <span className="text-[var(--text-muted)]">Sin datos de cobertura</span>
-          )}
-        </p>
-        <div className="flex shrink-0 items-center gap-3">
-          {lastSync && (
-            <span
-              className="hidden text-[11px] text-[var(--text-muted)] sm:inline"
-              title={sheetName || undefined}
-            >
-              {lastSync}
-            </span>
-          )}
-          {total > 0 && (
-            <span className="text-[13px] tabular-nums tracking-tight text-[var(--text-primary)]">
+    <div
+      className="flex h-full min-w-0 max-w-[min(380px,38vw)] shrink items-center gap-2.5 border-r border-[var(--border-subtle)] px-3"
+      role="status"
+      aria-label="Cobertura y auto-sync"
+      title={statusText || undefined}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <p
+            className={`min-w-0 truncate text-[11px] leading-none ${
+              displayError ? 'text-[var(--accent-red)]' : 'text-[var(--text-secondary)]'
+            }`}
+          >
+            {displayError ? (
+              <span className="truncate">{displayError}</span>
+            ) : total > 0 ? (
+              <>
+                <span className="tabular-nums text-[var(--text-primary)]">{fmt(completos)}</span>
+                <span className="text-[var(--text-muted)]"> / {fmt(total)}</span>
+              </>
+            ) : (
+              <span className="text-[var(--text-muted)]">Sin datos de cobertura</span>
+            )}
+          </p>
+          {!displayError && total > 0 && (
+            <span className="shrink-0 text-[11px] tabular-nums leading-none tracking-tight text-[var(--text-primary)]">
               {completionPct}
               <span className="text-[var(--text-muted)]">%</span>
             </span>
           )}
-          <label
-            className="flex cursor-pointer items-center gap-1.5"
-            title="Lee el Sheet cada 5 min (no re-escanea Drive)"
+        </div>
+        <div className="mt-1.5">
+          <CoverageRail
+            total={total}
+            completos={completos}
+            faltantes={faltantes}
+            sobrantes={sobrantes}
+            sinSgio={sinSgio}
+          />
+        </div>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-2">
+        {lastSync && (
+          <span
+            className="hidden text-[10px] text-[var(--text-muted)] 2xl:inline"
+            title={sheetName || undefined}
           >
-            <span className="text-[10px] text-[var(--text-muted)]">Auto</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={autoSync}
-              aria-label="Actualizar desde Sheet cada 5 minutos"
-              disabled={togglingAuto}
-              onClick={handleAutoSyncToggle}
-              className={`relative h-4 w-7 shrink-0 rounded-full transition-colors disabled:opacity-40 ${
-                autoSync ? 'bg-[var(--accent-green)]' : 'bg-[var(--border-medium)]'
-              }`}
-            >
-              <span
-                className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform ${
-                  autoSync ? 'translate-x-3.5' : 'translate-x-0.5'
-                }`}
-              />
-            </button>
-          </label>
-        </div>
-      </div>
-
-      <div className="mt-2.5">
-        <CoverageRail
-          total={total}
-          completos={completos}
-          faltantes={faltantes}
-          sobrantes={sobrantes}
-          sinSgio={sinSgio}
-        />
-      </div>
-
-      {legend.length > 0 && (
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-          {legend.map((item) => (
-            <span
-              key={item.label}
-              className="inline-flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]"
-            >
-              <span
-                className="h-1 w-1 rounded-full"
-                style={{ backgroundColor: item.color }}
-                aria-hidden
-              />
-              {item.label}
-              <span className="tabular-nums text-[var(--text-secondary)]">{fmt(item.value)}</span>
-            </span>
-          ))}
-        </div>
-      )}
-
-      {(displayError || displayResult) && (
-        <p
-          className={`mt-2 text-[11px] ${
-            displayError ? 'text-[var(--accent-red)]' : 'text-[var(--text-muted)]'
-          }`}
+            {lastSync}
+          </span>
+        )}
+        <label
+          className="flex cursor-pointer items-center gap-1.5 active:opacity-80"
+          title="Lee el Sheet cada 5 min (no re-escanea Drive)"
         >
-          {displayError || displayResult}
-        </p>
-      )}
+          <span className="text-[10px] tracking-wide text-[var(--text-muted)]">Auto</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={autoSync}
+            aria-label="Actualizar desde Sheet cada 5 minutos"
+            disabled={togglingAuto}
+            onClick={handleAutoSyncToggle}
+            className={`relative h-4 w-7 shrink-0 rounded-full transition-colors duration-200 ease-out disabled:opacity-40 ${
+              autoSync ? 'bg-[var(--accent-green)]' : 'bg-[var(--border-medium)]'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${
+                autoSync ? 'translate-x-3.5' : 'translate-x-0.5'
+              }`}
+            />
+          </button>
+        </label>
+      </div>
     </div>
   );
 }

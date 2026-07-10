@@ -1,13 +1,17 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { getReportConfig } from '../constants';
+import { getReportConfig, REPORT_TYPES } from '../constants';
 import { createEmptyPanel } from '../hooks/useCampoPanels';
 import {
+    brandingToStored,
+    logoDataToStored,
     panelToStored,
     photoFileToStored,
+    storedToBrandingLogos,
+    storedToLogoData,
     storedToPanel,
     storedToPhotoFile,
 } from './storage';
-import type { PhotoFile } from '../types';
+import type { LogoData, PhotoFile } from '../types';
 
 describe('photoFileToStored / storedToPhotoFile', () => {
     beforeEach(() => {
@@ -40,6 +44,57 @@ describe('photoFileToStored / storedToPhotoFile', () => {
         expect(restored.file.name).toBe('foto.jpg');
         expect(restored.file.type).toBe('image/jpeg');
         expect(restored.previewUrl).toBe('blob:foto.jpg');
+    });
+});
+
+describe('logo / branding serialization', () => {
+    beforeEach(() => {
+        vi.stubGlobal('URL', {
+            createObjectURL: vi.fn((blob: Blob) => `blob:${(blob as File).name ?? 'logo'}`),
+            revokeObjectURL: vi.fn(),
+        });
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('round-trips logos left and right', () => {
+        const left: LogoData = {
+            file: new File(['L'], 'left.png', { type: 'image/png' }),
+            url: 'blob:old-left',
+        };
+        const right: LogoData = {
+            file: new File(['R'], 'right.jpg', { type: 'image/jpeg' }),
+            url: 'blob:old-right',
+        };
+
+        const storedLeft = logoDataToStored(left, 'left');
+        const storedRight = logoDataToStored(right, 'right');
+        expect(storedLeft.id).toBe('logo-left');
+        expect(storedRight.name).toBe('right.jpg');
+
+        const restoredLeft = storedToLogoData(storedLeft);
+        const restoredRight = storedToLogoData(storedRight);
+        expect(restoredLeft.file.name).toBe('left.png');
+        expect(restoredRight.file.type).toBe('image/jpeg');
+    });
+
+    it('round-trips branding for each report type including null logos', () => {
+        for (const config of REPORT_TYPES) {
+            const left: LogoData = {
+                file: new File(['x'], `${config.id}-left.png`, { type: 'image/png' }),
+                url: 'blob:l',
+            };
+            const stored = brandingToStored(config.id, left, null);
+            expect(stored.reportType).toBe(config.id);
+            expect(stored.logoLeft?.name).toBe(`${config.id}-left.png`);
+            expect(stored.logoRight).toBeNull();
+
+            const logos = storedToBrandingLogos(stored);
+            expect(logos.logoLeft?.file.name).toBe(`${config.id}-left.png`);
+            expect(logos.logoRight).toBeNull();
+        }
     });
 });
 
@@ -77,7 +132,37 @@ describe('panelToStored / storedToPanel', () => {
         expect(restored.photos).toHaveLength(2);
         expect(restored.photos[0].file.name).toBe('1.jpg');
         expect(restored.photos[1].file.type).toBe('image/png');
-        // El header restaurado es una copia, no la misma referencia.
         expect(restored.header).not.toBe(stored.header);
+    });
+
+    it('round-trips every field section for all 3 plantillas', () => {
+        for (const config of REPORT_TYPES) {
+            const panel = createEmptyPanel(config);
+            for (const field of config.fields) {
+                panel.header[field.key] = `val-${field.section ?? 'generales'}-${field.key}`;
+            }
+            panel.header.tituloSize = '22';
+            panel.header.tituloColor = '#AABBCC';
+
+            const stored = panelToStored(panel, config.id);
+            const restored = storedToPanel(stored);
+
+            const bySection = {
+                generales: config.fields.filter((f) => (f.section ?? 'generales') === 'generales'),
+                localizacion: config.fields.filter((f) => f.section === 'localizacion'),
+                trabajo: config.fields.filter((f) => f.section === 'trabajo'),
+            };
+
+            for (const [section, fields] of Object.entries(bySection)) {
+                for (const field of fields) {
+                    expect(
+                        restored.header[field.key],
+                        `${config.id}.${section}.${field.key}`,
+                    ).toBe(`val-${section}-${field.key}`);
+                }
+            }
+            expect(restored.header.tituloSize).toBe('22');
+            expect(restored.header.tituloColor).toBe('#AABBCC');
+        }
     });
 });

@@ -52,7 +52,18 @@ describe('AutoIMGApp layout and navigation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Carpetas' }));
     expect(screen.getByText('Conexión')).toBeInTheDocument();
     expect(screen.getByText('OAuth')).toBeInTheDocument();
-    expect(screen.getByText('Nueva carpeta')).toBeInTheDocument();
+    expect(screen.getByText('Carpetas registradas')).toBeInTheDocument();
+    expect(screen.getByText('Test')).toBeInTheDocument();
+  });
+
+  it('renders coverage status next to scan actions in the header', async () => {
+    render(<AutoIMGApp />);
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'AutoIMG' })).toBeInTheDocument();
+    });
+    expect(screen.getByRole('status', { name: 'Cobertura y auto-sync' })).toBeInTheDocument();
+    expect(screen.getByRole('toolbar', { name: 'Operaciones de sincronización' })).toBeInTheDocument();
+    expect(screen.getByText('Sin datos de cobertura')).toBeInTheDocument();
   });
 
   it('loads bootstrap once on mount', async () => {

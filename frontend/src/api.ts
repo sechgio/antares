@@ -520,6 +520,11 @@ export const api = {
   autoimgDriveListFolder: (folder_id: string) => _invoke<{ files: Array<{ name: string; id: string; modifiedTime: string }> }>('autoimg_drive_list_folder', { folder_id }),
   autoimgDriveScanNis: (folder_id: string, folder_name?: string) => _invoke<{ nis_map: Record<string, { count: number; files: unknown[] }> }>('autoimg_drive_scan_nis', { folder_id, folder_name }),
   autoimgDriveVerifyFolder: (urlOrId: string) => _invoke<{ accessible: boolean; folder_id: string; name: string; image_count: number; sample_files: string[] }>('autoimg_drive_verify_folder', { url: urlOrId }),
+  autoimgDriveFolderPreview: (folder_id: string, force = false) =>
+    _invoke<{
+      folder_id: string;
+      thumbs: Array<{ id: string; name: string; dataUrl: string | null }>;
+    }>('autoimg_drive_folder_preview', { folder_id, force }),
   autoimgDriveStatus: () => _invoke<{ connected: boolean }>('autoimg_drive_status'),
   autoimgFoldersList: (force = false) => _invoke<{ folders: Array<{ name: string; folder_id: string; activo: boolean; ultimo_scan: string; cant_archivos: number }>; cached?: boolean }>('autoimg_folders_list', { force }),
   autoimgFoldersAdd: (body: { name: string; folder_id: string; activo: boolean }) => _invoke<{ success: boolean }>('autoimg_folders_add', body),

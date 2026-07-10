@@ -17,7 +17,6 @@ from .layout import (
     BORDER_PT,
     CUADRANTE_LABEL,
     EMPTY_CUADRANTE_PLACEHOLDER,
-    GAP_HEIGHT_CM,
     GAP_UNDER_HEADER_CM,
     HEADER_INFO_HEIGHT_CM,
     HEADER_LOGO_WIDTH_CM,
@@ -27,8 +26,11 @@ from .layout import (
     LOGO_MAX_HEIGHT_CM,
     LOGO_MAX_WIDTH_CM,
     PHOTO_COLS,
+    PHOTO_GAP_CM,
     PHOTO_HEIGHT_CM,
     PHOTO_ROWS,
+    PHOTO_TABLE_COLS,
+    PHOTO_TABLE_ROWS,
     PHOTO_WIDTH_CM,
     TABLE_WIDTH_CM,
     TITLE_FONT_PT,
@@ -52,6 +54,14 @@ def _display_cuadrante(value: str) -> str:
     return stripped.upper()
 
 
+def _breakable_text(value: str, chunk: int = 20) -> str:
+    """Inserta saltos opcionales para que Word envuelva tokens largos sin espacios."""
+    if len(value) <= chunk or any(ch.isspace() for ch in value):
+        return value
+    zwsp = "\u200b"
+    return zwsp.join(value[i : i + chunk] for i in range(0, len(value), chunk))
+
+
 def _table_borders_xml() -> str:
     return (
         '<w:tblBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
@@ -61,6 +71,67 @@ def _table_borders_xml() -> str:
         f'<w:right w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
         f'<w:insideH w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
         f'<w:insideV w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
+        '</w:tblBorders>'
+    )
+
+
+def _photos_table_borders_xml() -> str:
+    """Solo marco exterior del panel; sin líneas internas."""
+    return (
+        '<w:tblBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        f'<w:top w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
+        f'<w:left w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
+        f'<w:bottom w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
+        f'<w:right w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
+        '<w:insideH w:val="nil"/>'
+        '<w:insideV w:val="nil"/>'
+        '</w:tblBorders>'
+    )
+
+
+def _nil_cell_borders_xml() -> str:
+    return (
+        '<w:tcBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        '<w:top w:val="nil"/>'
+        '<w:bottom w:val="nil"/>'
+        '<w:left w:val="nil"/>'
+        '<w:right w:val="nil"/>'
+        '</w:tcBorders>'
+    )
+
+
+def _cell_borders_xml(
+    *,
+    top: bool = False,
+    bottom: bool = False,
+    left: bool = False,
+    right: bool = False,
+) -> str:
+    """Bordes de celda. En Word tcBorders anula tblBorders: el marco exterior
+    del panel de fotos debe pintarse en las celdas del perímetro."""
+    def side(name: str, on: bool) -> str:
+        if on:
+            return (
+                f'<w:{name} w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
+            )
+        return f'<w:{name} w:val="nil"/>'
+
+    return (
+        '<w:tcBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        f'{side("top", top)}{side("left", left)}{side("bottom", bottom)}{side("right", right)}'
+        '</w:tcBorders>'
+    )
+
+
+def _nil_table_borders_xml() -> str:
+    return (
+        '<w:tblBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        '<w:top w:val="nil"/>'
+        '<w:left w:val="nil"/>'
+        '<w:bottom w:val="nil"/>'
+        '<w:right w:val="nil"/>'
+        '<w:insideH w:val="nil"/>'
+        '<w:insideV w:val="nil"/>'
         '</w:tblBorders>'
     )
 
@@ -281,14 +352,15 @@ def render_docx(
             f'w:w="{cm_to_twips(width_cm)}" w:type="dxa"/>',
         ))
 
-    def set_row_height(row: Any, height_cm: float) -> None:
+    def set_row_height(row: Any, height_cm: float, *, rule: str = "exact") -> None:
+        """rule='exact' fija altura; 'atLeast' permite crecer (p. ej. cuadrante multilínea)."""
         tr = row._tr
         trPr = tr.get_or_add_trPr()
         for old in trPr.findall(qn("w:trHeight")):
             trPr.remove(old)
         trPr.append(parse_xml(
             f'<w:trHeight xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
-            f'w:val="{cm_to_twips(height_cm)}" w:hRule="exact"/>',
+            f'w:val="{cm_to_twips(height_cm)}" w:hRule="{rule}"/>',
         ))
 
     def set_vertical_align(cell: Any, align: str) -> None:
@@ -422,6 +494,11 @@ def render_docx(
             '<w:tblW xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
             f'w:w="{cm_to_twips(TABLE_WIDTH_CM)}" w:type="dxa"/>',
         ))
+        tblPr.append(parse_xml(
+            '<w:tblLayout xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+            'w:type="fixed"/>',
+        ))
+        set_table_no_cell_margins(header_table)
 
         # Set header column widths
         header_widths = [HEADER_LOGO_WIDTH_CM, HEADER_TITLE_WIDTH_CM, HEADER_LOGO_WIDTH_CM]
@@ -429,9 +506,9 @@ def render_docx(
         for col, width_cm in zip(grid.gridCol_lst, header_widths, strict=True):
             col.set(qn("w:w"), str(cm_to_twips(width_cm)))
 
-        # Header heights
+        # Header heights — info usa atLeast: exact recorta el cuadrante multilínea en Word
         set_row_height(header_table.rows[0], HEADER_TITLE_HEIGHT_CM)
-        set_row_height(header_table.rows[1], HEADER_INFO_HEIGHT_CM)
+        set_row_height(header_table.rows[1], HEADER_INFO_HEIGHT_CM, rule="atLeast")
 
         # Merge logo cells vertically
         header_table.cell(0, 0).merge(header_table.cell(1, 0))
@@ -490,87 +567,160 @@ def render_docx(
             label_run = info_cell.paragraphs[0].add_run(resolved_label)
             format_run(label_run, INFO_FONT_PT, bold=True)
             info_cell.paragraphs[0].add_run("\n")
-        page_cuadrante = _display_cuadrante(page.cuadrante or document.cuadrante)
+        page_cuadrante = _breakable_text(_display_cuadrante(page.cuadrante or document.cuadrante))
         value_run = info_cell.paragraphs[0].add_run(page_cuadrante)
         format_run(value_run, INFO_FONT_PT, bold=True)
 
-        # 2. Spacing between header and photos: párrafo con interlineado exacto = 0.4cm,
-        #    idéntico al div de altura 0.4cm del preview y del HTML.
-        spacer_p = doc.add_paragraph()
-        spacer_p.paragraph_format.space_before = Pt(0)
-        spacer_p.paragraph_format.space_after = Pt(0)
-        spacer_p.paragraph_format.line_spacing = Cm(GAP_UNDER_HEADER_CM)
+        # 2. Spacer = tabla 1x1 sin bordes (fiable en Word; line-spacing no lo es)
+        spacer = doc.add_table(rows=1, cols=1)
+        spacer.alignment = WD_TABLE_ALIGNMENT.CENTER
+        spacer.autofit = False
+        spacer.allow_autofit = False
+        set_table_no_cell_margins(spacer)
+        sp_pr = spacer._tbl.tblPr
+        for tag in ("w:tblBorders",):
+            existing = sp_pr.find(qn(tag))
+            if existing is not None:
+                sp_pr.remove(existing)
+        sp_pr.append(parse_xml(_nil_table_borders_xml()))
+        sp_pr.append(parse_xml(
+            '<w:tblW xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+            f'w:w="{cm_to_twips(TABLE_WIDTH_CM)}" w:type="dxa"/>',
+        ))
+        sp_pr.append(parse_xml(
+            '<w:tblLayout xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+            'w:type="fixed"/>',
+        ))
+        spacer._tbl.tblGrid.gridCol_lst[0].set(qn("w:w"), str(cm_to_twips(TABLE_WIDTH_CM)))
+        set_row_height(spacer.rows[0], GAP_UNDER_HEADER_CM)
+        sp_cell = spacer.cell(0, 0)
+        set_cell_width(sp_cell, TABLE_WIDTH_CM)
+        set_cell_margins(sp_cell)
+        sp_cell.paragraphs[0].clear()
+        reset_cell_paragraph(sp_cell.paragraphs[0])
+        tc_pr = sp_cell._tc.get_or_add_tcPr()
+        for old in tc_pr.findall(qn("w:tcBorders")):
+            tc_pr.remove(old)
+        tc_pr.append(parse_xml(_nil_cell_borders_xml()))
 
-        # 3. Photos Table: 3 rows (photo row 1 + gap row + photo row 2) x 3 cols
-        photos_table = doc.add_table(rows=3, cols=PHOTO_COLS)
+        # 3. Photos: mismo grid que SheetPreview + marco exterior
+        photos_table = doc.add_table(rows=PHOTO_TABLE_ROWS, cols=PHOTO_TABLE_COLS)
         photos_table.alignment = WD_TABLE_ALIGNMENT.CENTER
         photos_table.autofit = False
         photos_table.allow_autofit = False
         set_table_no_cell_margins(photos_table)
 
-        # Set borders for photos_table
         tblPr = photos_table._tbl.tblPr
         for tag in ("w:tblBorders",):
             existing = tblPr.find(qn(tag))
             if existing is not None:
                 tblPr.remove(existing)
-        tblPr.append(parse_xml(_table_borders_xml()))
+        tblPr.append(parse_xml(_photos_table_borders_xml()))
         tblPr.append(parse_xml(
             '<w:tblW xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
             f'w:w="{cm_to_twips(TABLE_WIDTH_CM)}" w:type="dxa"/>',
         ))
+        tblPr.append(parse_xml(
+            '<w:tblLayout xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+            'w:type="fixed"/>',
+        ))
 
-        # Set photo column widths
-        photo_col_widths = [PHOTO_WIDTH_CM, PHOTO_WIDTH_CM, PHOTO_WIDTH_CM]
+        photo_col_widths: list[float] = [PHOTO_GAP_CM]
+        for _ in range(PHOTO_COLS):
+            photo_col_widths.append(PHOTO_WIDTH_CM)
+            photo_col_widths.append(PHOTO_GAP_CM)
         grid = photos_table._tbl.tblGrid
         for col, width_cm in zip(grid.gridCol_lst, photo_col_widths, strict=True):
             col.set(qn("w:w"), str(cm_to_twips(width_cm)))
 
-        # Set row heights
-        set_row_height(photos_table.rows[0], PHOTO_HEIGHT_CM)
-        set_row_height(photos_table.rows[1], GAP_HEIGHT_CM)
-        set_row_height(photos_table.rows[2], PHOTO_HEIGHT_CM)
+        set_row_height(photos_table.rows[0], PHOTO_GAP_CM)
+        set_row_height(photos_table.rows[1], PHOTO_HEIGHT_CM)
+        set_row_height(photos_table.rows[2], PHOTO_GAP_CM)
+        set_row_height(photos_table.rows[3], PHOTO_HEIGHT_CM)
+        set_row_height(photos_table.rows[4], PHOTO_GAP_CM)
 
-        # Merge gap cells
-        photos_table.cell(1, 0).merge(photos_table.cell(1, 2))
-        gap_cell = photos_table.cell(1, 0)
-        gap_cell.paragraphs[0].clear()
-        reset_cell_paragraph(gap_cell.paragraphs[0])
-        tc = gap_cell._tc
-        tcPr = tc.get_or_add_tcPr()
-        tcPr.append(parse_xml(
-            '<w:tcBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-            f'<w:top w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
-            f'<w:bottom w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
-            f'<w:left w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
-            f'<w:right w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
-            '</w:tcBorders>',
-        ))
+        def _set_cell_frame(
+            cell: Any,
+            *,
+            top: bool = False,
+            bottom: bool = False,
+            left: bool = False,
+            right: bool = False,
+        ) -> None:
+            tcPr = cell._tc.get_or_add_tcPr()
+            for old in tcPr.findall(qn("w:tcBorders")):
+                tcPr.remove(old)
+            tcPr.append(parse_xml(_cell_borders_xml(top=top, bottom=bottom, left=left, right=right)))
 
-        # Populate Photo Cells — contain + center, igual que SheetPreview y el HTML del PDF
+        def _style_empty_gap_cell(
+            cell: Any,
+            width_cm: float,
+            *,
+            top: bool = False,
+            bottom: bool = False,
+            left: bool = False,
+            right: bool = False,
+        ) -> None:
+            set_cell_width(cell, width_cm)
+            set_cell_margins(cell)
+            set_vertical_align(cell, "center")
+            cell.paragraphs[0].clear()
+            reset_cell_paragraph(cell.paragraphs[0])
+            run = cell.paragraphs[0].add_run("")
+            format_run(run, 1)
+            _set_cell_frame(cell, top=top, bottom=bottom, left=left, right=right)
+
+        # Filas gap + marco exterior en perímetro (tcBorders; tblBorders solo no basta en Word)
+        last_col = PHOTO_TABLE_COLS - 1
+        for gap_row_idx in (0, 2, 4):
+            gap_row = photos_table.rows[gap_row_idx]
+            for col_idx, width_cm in enumerate(photo_col_widths):
+                _style_empty_gap_cell(
+                    gap_row.cells[col_idx],
+                    width_cm,
+                    top=gap_row_idx == 0,
+                    bottom=gap_row_idx == 4,
+                    left=col_idx == 0,
+                    right=col_idx == last_col,
+                )
+
         slot_map = {ref.position: ref.filename for ref in page.images if 1 <= ref.position <= MAX_SLOTS}
         for row_idx in range(PHOTO_ROWS):
-            table_row_idx = 0 if row_idx == 0 else 2
+            table_row_idx = 1 if row_idx == 0 else 3
             photo_row = photos_table.rows[table_row_idx]
             for col_idx in range(PHOTO_COLS):
+                table_col_idx = col_idx * 2 + 1
                 position = row_idx * PHOTO_COLS + col_idx + 1
-                cell = photo_row.cells[col_idx]
+                cell = photo_row.cells[table_col_idx]
                 set_cell_width(cell, PHOTO_WIDTH_CM)
-                set_vertical_align(cell, "center")
+                set_cell_margins(cell)
+                set_vertical_align(cell, "top")
                 cell.paragraphs[0].clear()
                 reset_cell_paragraph(cell.paragraphs[0])
                 cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                _set_cell_frame(cell)  # interiores sin borde
                 slot_filename = slot_map.get(position)
                 content = image_bytes.get(slot_filename or "")
                 if slot_filename and content and _valid_image_bytes(content):
-                    w, h, _crop = fill_image_size_cm(content, PHOTO_WIDTH_CM, PHOTO_HEIGHT_CM)
                     run = cell.paragraphs[0].add_run()
-                    run.add_picture(BytesIO(content), width=Cm(w), height=Cm(h))
+                    run.add_picture(
+                        BytesIO(content),
+                        width=Cm(PHOTO_WIDTH_CM),
+                        height=Cm(PHOTO_HEIGHT_CM),
+                    )
                 else:
                     run = cell.paragraphs[0].add_run("Sin imagen")
                     format_run(run, 8)
                     run.italic = True
                     run.font.color.rgb = RGBColor(0xBB, 0xBB, 0xBB)
+
+            for gap_col_idx in range(0, PHOTO_TABLE_COLS, 2):
+                _style_empty_gap_cell(
+                    photo_row.cells[gap_col_idx],
+                    PHOTO_GAP_CM,
+                    left=gap_col_idx == 0,
+                    right=gap_col_idx == last_col,
+                )
 
     buffer = BytesIO()
     doc.save(buffer)
