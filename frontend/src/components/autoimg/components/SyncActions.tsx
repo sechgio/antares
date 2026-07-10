@@ -85,7 +85,7 @@ export default function SyncActions({ onSynced, onStatus }: SyncActionsProps) {
     'inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[11px] transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]';
 
   return (
-    <div className="flex shrink-0 items-center gap-1 pr-3" role="toolbar" aria-label="Operaciones de sincronización">
+    <div className="flex shrink-0 items-center gap-1 px-3" role="toolbar" aria-label="Operaciones de sincronización">
       <button
         type="button"
         onClick={handleScanAndSync}

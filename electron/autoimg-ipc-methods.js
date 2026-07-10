@@ -15,6 +15,7 @@ const AUTOIMG_METHODS = new Set([
   'autoimg_drive_list_folder',
   'autoimg_drive_scan_nis',
   'autoimg_drive_verify_folder',
+  'autoimg_drive_folder_preview',
   'autoimg_drive_status',
   'autoimg_folders_list',
   'autoimg_folders_add',

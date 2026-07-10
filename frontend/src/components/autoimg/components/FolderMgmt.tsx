@@ -1,13 +1,167 @@
 import { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, FolderOpen, Loader2, Trash2 } from 'lucide-react';
+import { CheckCircle2, FolderOpen, Loader2, Plus, Trash2 } from 'lucide-react';
 import { api } from '../../../api';
 import type { AutoImgFolder, DriveVerifyResult } from '../types';
 import { parseDriveFolderId } from '../utils/parseDriveFolderId';
-import { ActionButton, EmptyState, INPUT_CLASS, SectionCard } from './shared';
+import { ActionButton, INPUT_CLASS } from './shared';
+import { FolderPreviewStrip, useFolderPreviews } from './FolderPreviewStrip';
 
 interface FolderMgmtProps {
   folders?: AutoImgFolder[];
   onFoldersChange?: () => void | Promise<void>;
+}
+
+function Switch({
+  checked,
+  onChange,
+  disabled,
+  label,
+  title,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  disabled?: boolean;
+  label: string;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      title={title}
+      disabled={disabled}
+      onClick={onChange}
+      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200 ease-out active:scale-[0.97] disabled:opacity-40 ${
+        checked ? 'bg-[var(--accent-green)]' : 'bg-[var(--border-medium)]'
+      }`}
+    >
+      <span
+        className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${
+          checked ? 'translate-x-4' : 'translate-x-0.5'
+        }`}
+      />
+    </button>
+  );
+}
+
+function AddFolderForm({
+  name,
+  folderId,
+  activo,
+  verified,
+  resolvedFolderId,
+  loading,
+  verifying,
+  error,
+  compact,
+  onNameChange,
+  onFolderIdChange,
+  onActivoChange,
+  onVerify,
+  onAdd,
+}: {
+  name: string;
+  folderId: string;
+  activo: boolean;
+  verified: DriveVerifyResult | null;
+  resolvedFolderId: string;
+  loading: boolean;
+  verifying: boolean;
+  error: string;
+  compact?: boolean;
+  onNameChange: (v: string) => void;
+  onFolderIdChange: (v: string) => void;
+  onActivoChange: () => void;
+  onVerify: () => void;
+  onAdd: () => void;
+}) {
+  return (
+    <div className={compact ? 'space-y-3' : 'space-y-4'}>
+      <div className="space-y-3">
+        <label className="block">
+          <span className="mb-1.5 block text-[11px] font-medium tracking-wide text-[var(--text-muted)]">
+            Nombre
+          </span>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => onNameChange(e.target.value)}
+            placeholder="Nombre descriptivo"
+            className={`${INPUT_CLASS} text-[13px]`}
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-[11px] font-medium tracking-wide text-[var(--text-muted)]">
+            Carpeta de Drive
+          </span>
+          <input
+            type="text"
+            value={folderId}
+            onChange={(e) => onFolderIdChange(e.target.value)}
+            placeholder="URL o Folder ID de Drive"
+            className={`${INPUT_CLASS} font-mono text-[12px]`}
+          />
+        </label>
+        {verified && (
+          <p className="flex items-center gap-1.5 text-[11px] text-[var(--accent-green)]">
+            <CheckCircle2 size={12} strokeWidth={2} />
+            {verified.name} · {verified.image_count} imagen(es)
+          </p>
+        )}
+        {resolvedFolderId && folderId.includes('/') && (
+          <p className="truncate font-mono text-[10px] text-[var(--text-muted)]">
+            ID: {resolvedFolderId}
+          </p>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <Switch
+            checked={activo}
+            onChange={onActivoChange}
+            disabled={loading}
+            label="Activar al agregar"
+          />
+          <span className="text-[12px] text-[var(--text-secondary)]">Activar al agregar</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <ActionButton
+            variant="secondary"
+            onClick={onVerify}
+            disabled={loading || verifying || !resolvedFolderId}
+            className="px-3 py-2 text-[12px]"
+          >
+            {verifying ? (
+              <>
+                <Loader2 size={13} className="animate-spin" />
+                Verificando…
+              </>
+            ) : (
+              'Verificar'
+            )}
+          </ActionButton>
+          <ActionButton
+            variant="solid"
+            onClick={onAdd}
+            disabled={loading || verifying || !resolvedFolderId}
+            className="px-3.5 py-2 text-[12px]"
+          >
+            <Plus size={13} strokeWidth={2.25} />
+            Agregar
+          </ActionButton>
+        </div>
+      </div>
+
+      {error && (
+        <p className="rounded-lg border border-[color-mix(in_srgb,var(--accent-red)_25%,transparent)] bg-[color-mix(in_srgb,var(--accent-red)_8%,transparent)] px-2.5 py-1.5 text-[11px] text-[var(--accent-red)]">
+          {error}
+        </p>
+      )}
+    </div>
+  );
 }
 
 export default function FolderMgmt({ folders: externalFolders, onFoldersChange }: FolderMgmtProps) {
@@ -44,6 +198,9 @@ export default function FolderMgmt({ folders: externalFolders, onFoldersChange }
     if (!externalFolders) load(false);
   }, [externalFolders, load]);
 
+  const folderIds = folders.map((f) => f.folder_id);
+  const { previews, invalidate: invalidatePreview } = useFolderPreviews(folderIds);
+
   const resolvedFolderId = parseDriveFolderId(folderId) || folderId.trim();
 
   const handleVerify = async () => {
@@ -70,7 +227,6 @@ export default function FolderMgmt({ folders: externalFolders, onFoldersChange }
     try {
       let folderName = name.trim();
       let id = verified?.folder_id || resolvedFolderId;
-      // Si no hay nombre, verificar una vez para rellenar desde Drive.
       if (!folderName) {
         const res = verified ?? (await api.autoimgDriveVerifyFolder(resolvedFolderId));
         if (!verified) setVerified(res);
@@ -103,6 +259,7 @@ export default function FolderMgmt({ folders: externalFolders, onFoldersChange }
     setLoading(true);
     try {
       await api.autoimgFoldersRemove({ folder_id: id });
+      invalidatePreview(id);
       await load(true);
     } finally {
       setLoading(false);
@@ -110,54 +267,99 @@ export default function FolderMgmt({ folders: externalFolders, onFoldersChange }
   };
 
   const activeCount = folders.filter((f) => f.activo).length;
+  const isEmpty = folders.length === 0;
+  const formProps = {
+    name,
+    folderId,
+    activo,
+    verified,
+    resolvedFolderId,
+    loading,
+    verifying,
+    error,
+    onNameChange: setName,
+    onFolderIdChange: (v: string) => {
+      setFolderId(v);
+      setVerified(null);
+    },
+    onActivoChange: () => setActivo((a) => !a),
+    onVerify: handleVerify,
+    onAdd: handleAdd,
+  };
 
-  return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto">
-      <div className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
-        <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-4 py-3">
-          <div>
-            <p className="text-[12px] font-medium text-[var(--text-primary)]">Carpetas registradas</p>
-            <p className="mt-0.5 text-[10px] text-[var(--text-muted)]">
-              Fuentes de Drive que se incluyen en el escaneo
+  if (loading && isEmpty) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Loader2 size={20} className="animate-spin text-[var(--text-muted)]" />
+      </div>
+    );
+  }
+
+  if (isEmpty) {
+    return (
+      <div className="flex h-full min-h-0 flex-col items-center justify-center overflow-y-auto px-4 py-8">
+        <div className="w-full max-w-[440px]">
+          <div className="mb-6 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-[1.1rem] border border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-muted)] shadow-[0_1px_0_rgba(255,255,255,0.6)_inset]">
+              <FolderOpen size={20} strokeWidth={1.5} />
+            </div>
+            <h2 className="text-[15px] font-medium tracking-tight text-[var(--text-primary)]">
+              Sin carpetas
+            </h2>
+            <p className="mx-auto mt-1.5 max-w-[320px] text-[12px] leading-relaxed text-[var(--text-muted)]">
+              Agrega una carpeta de Drive compartida para empezar a escanear imágenes.
             </p>
           </div>
-          {folders.length > 0 && (
-            <span className="rounded-md bg-[var(--bg-elevated)] px-2 py-1 font-mono text-[10px] tabular-nums text-[var(--text-muted)]">
-              {activeCount}/{folders.length} activas
-            </span>
-          )}
+
+          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]/90 p-5 shadow-[0_1px_0_rgba(255,255,255,0.5)_inset] backdrop-blur-sm">
+            <p className="mb-4 text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--text-muted)]">
+              Nueva carpeta
+            </p>
+            <AddFolderForm {...formProps} />
+          </div>
+
+          <p className="mt-4 text-center text-[11px] text-[var(--text-muted)]">
+            También desde Google Drive en la barra lateral
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto">
+      <div className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]/90 backdrop-blur-sm">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-4 py-3">
+          <div>
+            <p className="text-[12px] font-medium tracking-tight text-[var(--text-primary)]">
+              Carpetas registradas
+            </p>
+            <p className="mt-0.5 text-[10px] text-[var(--text-muted)]">
+              Fuentes de Drive incluidas en el escaneo
+            </p>
+          </div>
+          <span className="rounded-md bg-[var(--bg-elevated)] px-2 py-1 text-[10px] tabular-nums text-[var(--text-muted)]">
+            {activeCount}/{folders.length} activas
+          </span>
         </div>
 
-        {loading && !folders.length ? (
-          <div className="flex justify-center py-12">
-            <Loader2 size={20} className="animate-spin text-[var(--text-muted)]" />
-          </div>
-        ) : folders.length > 0 ? (
-          <div className="divide-y divide-[var(--border-subtle)]">
-            {folders.map((f) => (
-              <div
-                key={f.folder_id}
-                className={`flex items-center gap-3 px-4 py-3 transition-opacity ${
-                  f.activo ? '' : 'opacity-55'
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => handleToggle(f)}
+        <div className="divide-y divide-[var(--border-subtle)]">
+          {folders.map((f) => (
+            <div
+              key={f.folder_id}
+              className={`px-4 py-3 transition-opacity duration-200 ${
+                f.activo ? '' : 'opacity-50'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Switch
+                  checked={f.activo}
+                  onChange={() => handleToggle(f)}
                   disabled={loading}
-                  className={`relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-40 ${
-                    f.activo ? 'bg-[var(--accent-green)]' : 'bg-[var(--border-medium)]'
-                  }`}
+                  label={f.activo ? `Desactivar ${f.name}` : `Activar ${f.name}`}
                   title={f.activo ? 'Desactivar' : 'Activar'}
-                  aria-label={f.activo ? `Desactivar ${f.name}` : `Activar ${f.name}`}
-                >
-                  <span
-                    className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
-                      f.activo ? 'translate-x-4' : 'translate-x-0.5'
-                    }`}
-                  />
-                </button>
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-muted)]">
+                />
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-muted)]">
                   <FolderOpen size={14} strokeWidth={1.75} />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -165,7 +367,7 @@ export default function FolderMgmt({ folders: externalFolders, onFoldersChange }
                   <p className="truncate font-mono text-[10px] text-[var(--text-muted)]">{f.folder_id}</p>
                 </div>
                 <div className="shrink-0 text-right">
-                  <p className="font-mono text-[12px] tabular-nums text-[var(--text-secondary)]">
+                  <p className="text-[12px] tabular-nums text-[var(--text-secondary)]">
                     {f.cant_archivos || '—'}
                   </p>
                   <p className="text-[9px] uppercase tracking-wider text-[var(--text-muted)]">archivos</p>
@@ -174,93 +376,26 @@ export default function FolderMgmt({ folders: externalFolders, onFoldersChange }
                   type="button"
                   onClick={() => handleRemove(f.folder_id)}
                   disabled={loading}
-                  className="shrink-0 rounded-lg p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[color-mix(in_srgb,var(--accent-red)_10%,transparent)] hover:text-[var(--accent-red)] disabled:opacity-40"
+                  className="shrink-0 rounded-lg p-1.5 text-[var(--text-muted)] transition-colors duration-150 active:scale-[0.97] hover:bg-[color-mix(in_srgb,var(--accent-red)_10%,transparent)] hover:text-[var(--accent-red)] disabled:opacity-40"
                   aria-label={`Eliminar ${f.name}`}
                 >
                   <Trash2 size={14} />
                 </button>
               </div>
-            ))}
-          </div>
-        ) : (
-          <EmptyState
-            icon={FolderOpen}
-            title="Sin carpetas"
-            description="Agrega una carpeta de Drive compartida para empezar a escanear imágenes."
-          />
-        )}
+              <div className="pl-[5.75rem]">
+                <FolderPreviewStrip state={previews[f.folder_id]} folderName={f.name} />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
-      <SectionCard
-        title="Nueva carpeta"
-        subtitle="También puedes agregar carpetas desde el panel Google Drive en la barra lateral."
-      >
-        <div className="space-y-2">
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Nombre descriptivo"
-            className={`${INPUT_CLASS} text-xs`}
-          />
-          <input
-            type="text"
-            value={folderId}
-            onChange={(e) => {
-              setFolderId(e.target.value);
-              setVerified(null);
-            }}
-            placeholder="URL o Folder ID de Drive"
-            className={`${INPUT_CLASS} font-mono text-xs`}
-          />
-          {verified && (
-            <p className="flex items-center gap-1.5 text-[11px] text-[var(--accent-green)]">
-              <CheckCircle2 size={12} />
-              {verified.name} · {verified.image_count} imagen(es)
-            </p>
-          )}
-          {resolvedFolderId && folderId.includes('/') && (
-            <p className="truncate font-mono text-[10px] text-[var(--text-muted)]">
-              ID: {resolvedFolderId}
-            </p>
-          )}
-        </div>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-          <label className="flex cursor-pointer items-center gap-2 text-[11px] text-[var(--text-muted)]">
-            <input
-              type="checkbox"
-              checked={activo}
-              onChange={(e) => setActivo(e.target.checked)}
-              className="rounded accent-[var(--accent-primary)]"
-            />
-            Activar al agregar
-          </label>
-          <div className="flex gap-2">
-            <ActionButton
-              variant="secondary"
-              onClick={handleVerify}
-              disabled={loading || verifying || !resolvedFolderId}
-            >
-              {verifying ? (
-                <>
-                  <Loader2 size={14} className="animate-spin" />
-                  Verificando…
-                </>
-              ) : (
-                'Verificar'
-              )}
-            </ActionButton>
-            <ActionButton
-              variant="solid"
-              onClick={handleAdd}
-              disabled={loading || verifying || !resolvedFolderId}
-            >
-              Agregar
-            </ActionButton>
-          </div>
-        </div>
-        {error && <p className="mt-2 text-[11px] text-[var(--accent-red)]">{error}</p>}
-      </SectionCard>
+      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]/90 p-4 backdrop-blur-sm">
+        <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--text-muted)]">
+          Agregar carpeta
+        </p>
+        <AddFolderForm {...formProps} compact />
+      </div>
     </div>
   );
 }

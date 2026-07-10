@@ -102,6 +102,14 @@ async function handleAutoimgCall(method, params = {}) {
       case 'autoimg_drive_verify_folder':
         return { handled: true, result: await drive.verifyFolder(params.folder_id || params.url || '') };
 
+      case 'autoimg_drive_folder_preview': {
+        const folderId = drive.assertValidFolderId(params.folder_id || params.url || '');
+        return {
+          handled: true,
+          result: await drive.previewFolder(folderId, { force: Boolean(params.force) }),
+        };
+      }
+
       case 'autoimg_drive_status':
         return { handled: true, result: await drive.getDriveStatus() };
 
@@ -111,8 +119,12 @@ async function handleAutoimgCall(method, params = {}) {
       case 'autoimg_folders_add':
         return { handled: true, result: await engine.addFolder(params) };
 
-      case 'autoimg_folders_remove':
-        return { handled: true, result: await engine.removeFolder(params) };
+      case 'autoimg_folders_remove': {
+        const folderId = typeof params.folder_id === 'string' ? params.folder_id : '';
+        const result = await engine.removeFolder(params);
+        if (folderId) drive.invalidateFolderPreview(folderId);
+        return { handled: true, result };
+      }
 
       case 'autoimg_folders_toggle':
         return { handled: true, result: await engine.toggleFolder(params) };

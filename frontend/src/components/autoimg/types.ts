@@ -67,6 +67,17 @@ export interface ScanSummary {
   sin_sgio: number;
 }
 
+export interface DriveFolderThumb {
+  id: string;
+  name: string;
+  dataUrl: string | null;
+}
+
+export interface DriveFolderPreview {
+  folder_id: string;
+  thumbs: DriveFolderThumb[];
+}
+
 export interface DriveVerifyResult {
   accessible: boolean;
   folder_id: string;
