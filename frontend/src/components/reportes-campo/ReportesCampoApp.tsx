@@ -16,9 +16,10 @@ import PhotoManager from './components/PhotoManager';
 import PanelList from './components/PanelList';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
-import type { LogoData, ReportType } from './types';
+import type { ReportType } from './types';
 import { chunkArray, CHUNK_SIZE, getReportConfig, REPORT_TYPES } from './constants';
 import { useCampoPanels } from './hooks/useCampoPanels';
+import { useCampoBranding } from './hooks/useCampoBranding';
 import {
     buildIndividualFilename,
     exportConsolidatedReportPdf,
@@ -55,8 +56,7 @@ export default function ReportesCampoApp() {
         deletePanel,
     } = useCampoPanels(config);
 
-    const [logoLeft, setLogoLeft] = useState<LogoData | null>(null);
-    const [logoRight, setLogoRight] = useState<LogoData | null>(null);
+    const { logoLeft, logoRight, setLogo, removeLogo } = useCampoBranding(reportType);
     const [currentPage, setCurrentPage] = useState(0);
     const [isExporting, setIsExporting] = useState(false);
     const [isDraggingImages, setIsDraggingImages] = useState(false);
@@ -95,29 +95,6 @@ export default function ReportesCampoApp() {
         selectPanel(id);
         setCurrentPage(0);
     }, [selectPanel]);
-
-    const handleLogoChange = useCallback((side: 'left' | 'right', files: FileList | null) => {
-        if (!files?.[0]) return;
-        const file = files[0];
-        const url = URL.createObjectURL(file);
-        if (side === 'left') {
-            if (logoLeft) URL.revokeObjectURL(logoLeft.url);
-            setLogoLeft({ file, url });
-        } else {
-            if (logoRight) URL.revokeObjectURL(logoRight.url);
-            setLogoRight({ file, url });
-        }
-    }, [logoLeft, logoRight]);
-
-    const handleLogoRemove = useCallback((side: 'left' | 'right') => {
-        if (side === 'left') {
-            if (logoLeft) URL.revokeObjectURL(logoLeft.url);
-            setLogoLeft(null);
-        } else {
-            if (logoRight) URL.revokeObjectURL(logoRight.url);
-            setLogoRight(null);
-        }
-    }, [logoLeft, logoRight]);
 
     const handleDragOver = useCallback((e: React.DragEvent) => {
         e.preventDefault();
@@ -331,8 +308,8 @@ export default function ReportesCampoApp() {
                                     onFieldChange={updateHeader}
                                     logoLeft={logoLeft}
                                     logoRight={logoRight}
-                                    onLogoChange={handleLogoChange}
-                                    onLogoRemove={handleLogoRemove}
+                                    onLogoChange={setLogo}
+                                    onLogoRemove={removeLogo}
                                 />
 
                                 <PhotoManager

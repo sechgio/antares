@@ -1,4 +1,13 @@
-import type { CampoPanel, HeaderMap, PhotoFile, ReportType, StoredPanel, StoredPhoto } from '../types';
+import type {
+    CampoPanel,
+    HeaderMap,
+    LogoData,
+    PhotoFile,
+    ReportType,
+    StoredBranding,
+    StoredPanel,
+    StoredPhoto,
+} from '../types';
 
 // ─── Disponibilidad ──────────────────────────────────────────────────────────
 // jsdom (tests) y navegadores sin Electron pueden no exponer IndexedDB. En ese
@@ -31,6 +40,25 @@ export function storedToPhotoFile(stored: StoredPhoto): PhotoFile {
     };
 }
 
+export function logoDataToStored(logo: LogoData, side: 'left' | 'right'): StoredPhoto {
+    return {
+        id: `logo-${side}`,
+        name: logo.file.name,
+        type: logo.file.type,
+        blob: logo.file,
+    };
+}
+
+export function storedToLogoData(stored: StoredPhoto): LogoData {
+    const file = new File([stored.blob], stored.name, {
+        type: stored.type || 'application/octet-stream',
+    });
+    return {
+        file,
+        url: URL.createObjectURL(file),
+    };
+}
+
 export function panelToStored(panel: CampoPanel, reportType: ReportType): StoredPanel {
     return {
         id: panel.id,
@@ -53,12 +81,50 @@ export function storedToPanel(stored: StoredPanel): CampoPanel {
     };
 }
 
+export function brandingToStored(
+    reportType: ReportType,
+    logoLeft: LogoData | null,
+    logoRight: LogoData | null,
+): StoredBranding {
+    return {
+        reportType,
+        logoLeft: logoLeft ? logoDataToStored(logoLeft, 'left') : null,
+        logoRight: logoRight ? logoDataToStored(logoRight, 'right') : null,
+        updatedAt: Date.now(),
+    };
+}
+
+export function storedToBrandingLogos(stored: StoredBranding | null): {
+    logoLeft: LogoData | null;
+    logoRight: LogoData | null;
+} {
+    if (!stored) return { logoLeft: null, logoRight: null };
+    return {
+        logoLeft: stored.logoLeft ? storedToLogoData(stored.logoLeft) : null,
+        logoRight: stored.logoRight ? storedToLogoData(stored.logoRight) : null,
+    };
+}
+
 // ─── Wrapper IndexedDB ───────────────────────────────────────────────────────
 
 const DB_NAME = 'antares_reportes_campo';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE = 'panels';
+const BRANDING_STORE = 'branding';
 const TYPE_INDEX = 'by_type';
+
+/** Serializes writes so a remount load never races ahead of an in-flight put. */
+let writeChain: Promise<void> = Promise.resolve();
+
+function enqueueWrite(op: () => Promise<void>): Promise<void> {
+    writeChain = writeChain.then(op, op);
+    return writeChain;
+}
+
+/** Await pending puts/deletes before reading (used by loaders). */
+export async function waitForPendingWrites(): Promise<void> {
+    await writeChain;
+}
 
 function openDb(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
@@ -69,6 +135,9 @@ function openDb(): Promise<IDBDatabase> {
                 const store = db.createObjectStore(STORE, { keyPath: 'id' });
                 store.createIndex(TYPE_INDEX, 'reportType', { unique: false });
             }
+            if (!db.objectStoreNames.contains(BRANDING_STORE)) {
+                db.createObjectStore(BRANDING_STORE, { keyPath: 'reportType' });
+            }
         };
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
@@ -77,6 +146,7 @@ function openDb(): Promise<IDBDatabase> {
 
 export async function loadPanelsByType(reportType: ReportType): Promise<StoredPanel[]> {
     if (!isPersistenceAvailable()) return [];
+    await waitForPendingWrites();
     const db = await openDb();
     return new Promise<StoredPanel[]>((resolve, reject) => {
         const tx = db.transaction(STORE, 'readonly');
@@ -93,44 +163,76 @@ export async function loadPanelsByType(reportType: ReportType): Promise<StoredPa
 
 export async function savePanel(stored: StoredPanel): Promise<void> {
     if (!isPersistenceAvailable()) return;
-    const db = await openDb();
-    await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(STORE, 'readwrite');
-        tx.objectStore(STORE).put(stored);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-        tx.onabort = () => reject(tx.error);
+    return enqueueWrite(async () => {
+        const db = await openDb();
+        await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(STORE, 'readwrite');
+            tx.objectStore(STORE).put(stored);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error);
+        });
     });
 }
 
 export async function deleteStoredPanel(id: string): Promise<void> {
     if (!isPersistenceAvailable()) return;
-    const db = await openDb();
-    await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(STORE, 'readwrite');
-        tx.objectStore(STORE).delete(id);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-        tx.onabort = () => reject(tx.error);
+    return enqueueWrite(async () => {
+        const db = await openDb();
+        await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(STORE, 'readwrite');
+            tx.objectStore(STORE).delete(id);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error);
+        });
     });
 }
 
 export async function clearPanelsByType(reportType: ReportType): Promise<void> {
     if (!isPersistenceAvailable()) return;
+    return enqueueWrite(async () => {
+        const db = await openDb();
+        await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(STORE, 'readwrite');
+            const index = tx.objectStore(STORE).index(TYPE_INDEX);
+            const request = index.openCursor(IDBKeyRange.only(reportType));
+            request.onsuccess = () => {
+                const cursor = request.result;
+                if (cursor) {
+                    cursor.delete();
+                    cursor.continue();
+                }
+            };
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error);
+        });
+    });
+}
+
+export async function loadBranding(reportType: ReportType): Promise<StoredBranding | null> {
+    if (!isPersistenceAvailable()) return null;
+    await waitForPendingWrites();
     const db = await openDb();
-    await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(STORE, 'readwrite');
-        const index = tx.objectStore(STORE).index(TYPE_INDEX);
-        const request = index.openCursor(IDBKeyRange.only(reportType));
-        request.onsuccess = () => {
-            const cursor = request.result;
-            if (cursor) {
-                cursor.delete();
-                cursor.continue();
-            }
-        };
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-        tx.onabort = () => reject(tx.error);
+    return new Promise<StoredBranding | null>((resolve, reject) => {
+        const tx = db.transaction(BRANDING_STORE, 'readonly');
+        const request = tx.objectStore(BRANDING_STORE).get(reportType);
+        request.onsuccess = () => resolve((request.result as StoredBranding | undefined) ?? null);
+        request.onerror = () => reject(request.error);
+    });
+}
+
+export async function saveBranding(stored: StoredBranding): Promise<void> {
+    if (!isPersistenceAvailable()) return;
+    return enqueueWrite(async () => {
+        const db = await openDb();
+        await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(BRANDING_STORE, 'readwrite');
+            tx.objectStore(BRANDING_STORE).put(stored);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error);
+        });
     });
 }
