@@ -31,6 +31,17 @@ export interface BrandConfig {
   logoDerecho: string | null;
 }
 
+export interface FlyerHeading {
+  titulo: string;
+  subtitulo: string;
+}
+
+export interface FlyerEncabezados {
+  limpiezaReservorios: string;
+  zonasAfectadas: string;
+  detalleZonas: string;
+}
+
 export interface ImportResult {
   records: FlyerRecord[];
   warnings: string[];

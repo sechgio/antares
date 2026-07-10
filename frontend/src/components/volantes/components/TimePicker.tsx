@@ -1,11 +1,12 @@
-import { useState, useRef, useEffect } from "react";
-import { ChevronUp, ChevronDown, Clock } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
+import { Clock } from "lucide-react";
+import { useAnchoredPopover } from "../hooks/useAnchoredPopover";
 import {
   formatTimeParts,
   MINUTE_STEP,
   parseTimeString,
   snapTimeToStep,
-  stepTime,
 } from "../utils/timeStep";
 
 interface TimePickerProps {
@@ -13,6 +14,63 @@ interface TimePickerProps {
   onChange: (value: string) => void;
   label?: string;
   className?: string;
+  /** Prefer popup alignment when near the right edge of the sidebar. */
+  align?: "start" | "end" | "center";
+}
+
+const HOURS = Array.from({ length: 24 }, (_, i) => i);
+const MINUTES = Array.from(
+  { length: Math.floor(60 / MINUTE_STEP) },
+  (_, i) => i * MINUTE_STEP,
+);
+
+function formatDisplayTime(timeString: string): string {
+  if (!timeString) return "Seleccionar hora";
+  const [hoursText, minutes] = timeString.split(":");
+  const hour = Number.parseInt(hoursText, 10);
+  const ampm = hour >= 12 ? "PM" : "AM";
+  const hour12 = hour % 12 || 12;
+  return `${hour12}:${minutes} ${ampm}`;
+}
+
+function ScrollList({
+  items,
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  items: number[];
+  value: number;
+  onChange: (next: number) => void;
+  ariaLabel: string;
+}) {
+  const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const selected = list.querySelector<HTMLElement>("[data-selected='true']");
+    selected?.scrollIntoView({ block: "center" });
+  }, [value]);
+
+  return (
+    <div className="vgen-time-list" aria-label={ariaLabel} ref={listRef}>
+      {items.map((item) => {
+        const selected = item === value;
+        return (
+          <button
+            key={item}
+            type="button"
+            data-selected={selected ? "true" : "false"}
+            className={`vgen-time-list-item${selected ? " is-selected" : ""}`}
+            onClick={() => onChange(item)}
+          >
+            {String(item).padStart(2, "0")}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 export default function TimePicker({
@@ -20,42 +78,22 @@ export default function TimePicker({
   onChange,
   label,
   className = "",
+  align = "start",
 }: TimePickerProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const pickerRef = useRef<HTMLDivElement>(null);
+  const { hours, minutes } = parseTimeString(value);
+  const { isOpen, position, triggerRef, popupRef, toggle, close, updatePosition } =
+    useAnchoredPopover({
+      estimatedHeight: 220,
+      estimatedWidth: 148,
+      align,
+    });
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        pickerRef.current &&
-        !pickerRef.current.contains(event.target as Node)
-      ) {
-        setIsOpen(false);
-      }
-    };
+    if (isOpen) updatePosition();
+  }, [isOpen, hours, minutes, updatePosition]);
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const formatTime = (timeString: string) => {
-    if (!timeString) return "Seleccionar hora";
-    const [hours, minutes] = timeString.split(":");
-    const hour = parseInt(hours, 10);
-    const ampm = hour >= 12 ? "PM" : "AM";
-    const hour12 = hour % 12 || 12;
-    return `${hour12}:${minutes} ${ampm}`;
-  };
-
-  const { hours, minutes } = parseTimeString(value);
-
-  const handleHoursChange = (delta: number) => {
-    const newHours = (hours + delta + 24) % 24;
-    onChange(formatTimeParts({ hours: newHours, minutes }));
-  };
-
-  const handleMinutesChange = (direction: 1 | -1) => {
-    onChange(formatTimeParts(stepTime({ hours, minutes }, direction)));
+  const commit = (nextHours: number, nextMinutes: number) => {
+    onChange(formatTimeParts({ hours: nextHours, minutes: nextMinutes }));
   };
 
   const handleNow = () => {
@@ -68,87 +106,66 @@ export default function TimePicker({
         }),
       ),
     );
-    setIsOpen(false);
+    close();
   };
 
   return (
-    <div className={`vgen-time-picker ${className}`} ref={pickerRef}>
+    <div className={`vgen-time-picker ${className}`}>
       {label && <label className="vgen-label-sm">{label}</label>}
-      <div
-        className="vgen-time-picker-trigger"
-        onClick={() => setIsOpen(!isOpen)}
+      <button
+        ref={triggerRef}
+        type="button"
+        className={`vgen-time-picker-trigger${isOpen ? " is-open" : ""}`}
+        onClick={toggle}
+        aria-expanded={isOpen}
       >
-        <Clock className="vgen-time-picker-trigger-icon" size={16} />
+        <Clock className="vgen-time-picker-trigger-icon" size={13} />
         <span className="vgen-time-picker-trigger-value">
-          {formatTime(value)}
+          {formatDisplayTime(value)}
         </span>
-      </div>
+      </button>
 
-      {isOpen && (
-        <div className="vgen-time-picker-popup">
-          <div className="vgen-time-picker-content">
-            <div className="vgen-time-picker-column">
-              <div className="vgen-time-picker-label">Hora</div>
-              <div className="vgen-time-picker-controls">
-                <button
-                  onClick={() => handleHoursChange(1)}
-                  className="vgen-time-picker-btn"
-                  type="button"
-                  aria-label="Aumentar hora"
-                >
-                  <ChevronUp size={18} />
-                </button>
-                <div className="vgen-time-picker-value">
-                  {String(hours).padStart(2, "0")}
-                </div>
-                <button
-                  onClick={() => handleHoursChange(-1)}
-                  className="vgen-time-picker-btn"
-                  type="button"
-                  aria-label="Disminuir hora"
-                >
-                  <ChevronDown size={18} />
-                </button>
-              </div>
-            </div>
-
-            <div className="vgen-time-picker-separator">:</div>
-
-            <div className="vgen-time-picker-column">
-              <div className="vgen-time-picker-label">Min</div>
-              <div className="vgen-time-picker-controls">
-                <button
-                  onClick={() => handleMinutesChange(1)}
-                  className="vgen-time-picker-btn"
-                  type="button"
-                  aria-label={`Aumentar ${MINUTE_STEP} minutos`}
-                >
-                  <ChevronUp size={18} />
-                </button>
-                <div className="vgen-time-picker-value">
-                  {String(minutes).padStart(2, "0")}
-                </div>
-                <button
-                  onClick={() => handleMinutesChange(-1)}
-                  className="vgen-time-picker-btn"
-                  type="button"
-                  aria-label={`Disminuir ${MINUTE_STEP} minutos`}
-                >
-                  <ChevronDown size={18} />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <button
-            onClick={handleNow}
-            className="vgen-time-picker-now"
-            type="button"
+      {isOpen &&
+        position &&
+        createPortal(
+          <div
+            ref={popupRef}
+            className="vgen-time-picker-popup"
+            role="dialog"
+            aria-label="Elegir hora"
+            style={{
+              top: position.top,
+              left: position.left,
+              width: position.width,
+            }}
           >
-            Ahora
-          </button>
-        </div>
-      )}
+            <div className="vgen-time-picker-lists">
+              <ScrollList
+                items={HOURS}
+                value={hours}
+                onChange={(next) => commit(next, minutes)}
+                ariaLabel="Hora"
+              />
+              <span className="vgen-time-picker-colon" aria-hidden="true">
+                :
+              </span>
+              <ScrollList
+                items={MINUTES}
+                value={minutes}
+                onChange={(next) => commit(hours, next)}
+                ariaLabel="Minutos"
+              />
+            </div>
+            <button
+              type="button"
+              className="vgen-time-picker-now"
+              onClick={handleNow}
+            >
+              Ahora
+            </button>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

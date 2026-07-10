@@ -1,10 +1,12 @@
-import type { BrandConfig, FlyerRecord } from "../types";
-import { FLYER_ASSETS } from "../constants";
+import type { BrandConfig, FlyerEncabezados, FlyerHeading, FlyerRecord } from "../types";
+import { DEFAULT_ENCABEZADOS, DEFAULT_HEADING, FLYER_ASSETS } from "../constants";
 import { formatFlyerDateLine } from "../utils/format";
 
 interface FlyerCardProps {
   record: FlyerRecord;
   brand: BrandConfig;
+  heading?: FlyerHeading;
+  encabezados?: FlyerEncabezados;
   scale?: number;
 }
 
@@ -52,6 +54,8 @@ const buildCardStyle = (record: FlyerRecord, scale: number): Record<string, stri
 export default function FlyerCard({
   record,
   brand,
+  heading = DEFAULT_HEADING,
+  encabezados = DEFAULT_ENCABEZADOS,
   scale = 1
 }: FlyerCardProps) {
   const reservoirClassName =
@@ -94,8 +98,8 @@ export default function FlyerCard({
 
       <div className="flyer-hero">
         <section className="flyer-title-band">
-          <h1>Trabajos de mejoramiento</h1>
-          <p>del reservorio de agua potable</p>
+          <h1>{heading.titulo}</h1>
+          <p>{heading.subtitulo}</p>
         </section>
 
         <section className="flyer-district-pill">DISTRITO {record.distrito}</section>
@@ -107,17 +111,17 @@ export default function FlyerCard({
 
         <section className="flyer-panel">
           <div className="flyer-panel-body" style={{ overflow: "hidden" }}>
-            <strong className="flyer-kicker">LIMPIEZA DE RESERVORIOS:</strong>
+            <strong className="flyer-kicker">{encabezados.limpiezaReservorios}</strong>
             <strong className={reservoirClassName}>{record.reservorio}</strong>
 
-            <div className="flyer-section-label">Zonas afectadas:</div>
+            <div className="flyer-section-label">{encabezados.zonasAfectadas}</div>
 
             <div className="flyer-sector-line">
               {record.sector ? <strong>{record.sector}</strong> : null}
             </div>
 
             <div className="flyer-detail-title">
-              Detalle de zonas o cuadrante afectado
+              {encabezados.detalleZonas}
             </div>
 
             <p className={zonesClassName}>{record.zonasAfectadas}</p>

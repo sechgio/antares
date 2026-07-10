@@ -54,6 +54,17 @@ export const DEFAULT_BRAND = {
   logoDerecho: logoSedapal,
 } as const;
 
+export const DEFAULT_HEADING = {
+  titulo: "Trabajos de mejoramiento",
+  subtitulo: "del reservorio de agua potable",
+} as const;
+
+export const DEFAULT_ENCABEZADOS = {
+  limpiezaReservorios: "LIMPIEZA DE RESERVORIOS:",
+  zonasAfectadas: "Zonas afectadas:",
+  detalleZonas: "Detalle de zonas o cuadrante afectado",
+} as const;
+
 export const FLYER_ASSETS = {
   footerLogo: logoAcciona,
   aquafono: aquafono,
