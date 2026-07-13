@@ -60,6 +60,23 @@ class MappingIndex:
         file_stem = Path(file_name).stem
         return file_stem == id_key or file_stem.lower() in {stem_key, key_lower}
 
+    def _id_matches_any_file(
+        self,
+        id_key: str,
+        *,
+        names: set[str],
+        names_lower: set[str],
+        stems: set[str],
+        stems_lower: set[str],
+    ) -> bool:
+        """Same membership rules as ``_id_matches_file`` over prebuilt sets."""
+        key_lower = id_key.lower()
+        stem_key = Path(id_key).stem.lower()
+        if id_key in names or key_lower in names_lower:
+            return True
+        # file_stem == id_key  OR  file_stem.lower() in {stem_key, key_lower}
+        return id_key in stems or stem_key in stems_lower or key_lower in stems_lower
+
     def compute_stats(self, file_paths: list[str]) -> dict[str, Any]:
         """Calcula coincidencias, huérfanos y colisiones sin releer Excel."""
         file_names = [Path(f).name for f in file_paths if f]
@@ -68,8 +85,20 @@ class MappingIndex:
             if self.lookup(name) is not None:
                 matched_names.append(name)
 
+        names = set(file_names)
+        names_lower = {n.lower() for n in file_names}
+        stems = {Path(n).stem for n in file_names}
+        stems_lower = {Path(n).stem.lower() for n in file_names}
         orphan_entries = [
-            id_key for id_key in self.raw if not any(self._id_matches_file(id_key, name) for name in file_names)
+            id_key
+            for id_key in self.raw
+            if not self._id_matches_any_file(
+                id_key,
+                names=names,
+                names_lower=names_lower,
+                stems=stems,
+                stems_lower=stems_lower,
+            )
         ]
         collisions = self.find_collisions(file_paths)
 

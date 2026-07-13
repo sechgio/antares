@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from backend.utils.html_sanitizer import sanitize_html_for_pdf
+from backend.utils.pdf_html import write_pdf_sanitized
 
 from .errors import RenderingError
 from .layout import (
@@ -259,26 +259,12 @@ def _default_filename(fmt: str) -> str:
     return f"evidencia_volanteo_{ts}.{ext}"
 
 
-def _deny_external_url_fetcher(url: str, **kwargs: Any) -> Any:
-    """Allow only data: URIs; deny all other fetches (defense in depth)."""
-    from weasyprint.urls import URLFetcherResponse, default_url_fetcher  # type: ignore[import-untyped]
-
-    if str(url).strip().lower().startswith("data:"):
-        return default_url_fetcher(url, **kwargs)
-    return URLFetcherResponse(url, body=b"")
-
-
 def render_pdf_html(html_string: str) -> tuple[bytes, str]:
     if not html_string.strip():
         msg = "No hay HTML para exportar"
         raise RenderingError(msg)
     try:
-        from weasyprint import HTML
-
-        html_string = sanitize_html_for_pdf(html_string)
-        pdf_buffer = BytesIO()
-        HTML(string=html_string, url_fetcher=_deny_external_url_fetcher).write_pdf(pdf_buffer)
-        return pdf_buffer.getvalue(), _default_filename("pdf")
+        return write_pdf_sanitized(html_string), _default_filename("pdf")
     except RenderingError:
         raise
     except Exception as exc:
@@ -321,11 +307,8 @@ def render_pdf(
 
     try:
         html_string = template.render(context)
-        from weasyprint import HTML
-
-        pdf_buffer = BytesIO()
-        HTML(string=html_string, base_url=str(_TEMPLATE_DIR)).write_pdf(pdf_buffer)
-        return pdf_buffer.getvalue(), filename
+        # Images/logos are already data-URIs; do not open base_url file/http fetch.
+        return write_pdf_sanitized(html_string), filename
     except RenderingError:
         raise
     except Exception as exc:

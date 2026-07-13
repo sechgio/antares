@@ -71,3 +71,8 @@ def test_sync_methods_are_liveness_safe() -> None:
     assert "process_status" in backend_main.SYNC_METHODS
     # Sync methods must remain cheap — never also classified as heavy work.
     assert backend_main.SYNC_METHODS.isdisjoint(backend_main.HEAVY_METHODS)
+
+
+def test_process_start_is_not_heavy() -> None:
+    """Start only spawns a job thread; must not consume heavy slots."""
+    assert "process_start" not in backend_main.HEAVY_METHODS

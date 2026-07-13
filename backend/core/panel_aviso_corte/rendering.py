@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from backend.utils.pdf_html import write_pdf_sanitized
+
 from .errors import RenderingError
 
 if TYPE_CHECKING:
@@ -261,11 +263,8 @@ def render_pdf(
         raise RenderingError(msg) from exc
 
     try:
-        from weasyprint import HTML
-
-        pdf_buffer = BytesIO()
-        HTML(string=html_string, base_url=str(_template_dir())).write_pdf(pdf_buffer)
-        pdf_bytes = pdf_buffer.getvalue()
+        # Logos/images are data-URIs; deny open base_url/network fetch.
+        pdf_bytes = write_pdf_sanitized(html_string)
     except Exception as exc:
         logger.exception("WeasyPrint fall\u00f3 al generar el PDF")
         msg = f"Error al generar PDF: {exc}"

@@ -39,6 +39,10 @@ assert(spec.includes("'pandas'") && spec.includes('collect_submodules'), 'PyInst
 assert(spec.includes("'openpyxl'") && spec.includes('collect_submodules'), 'PyInstaller should collect all openpyxl submodules via collect_submodules');
 assert(spec.includes("'weasyprint'") && spec.includes('collect_submodules'), 'PyInstaller should collect all weasyprint submodules via collect_submodules');
 assert(spec.includes("'docx'") && spec.includes('collect_submodules'), 'PyInstaller should collect all python-docx submodules via collect_submodules');
+assert(
+  (spec.includes("'fitz'") || spec.includes("'pymupdf'")) && spec.includes('collect_submodules'),
+  'PyInstaller should collect pymupdf/fitz for sellador page raster previews',
+);
 assert(spec.includes("'ssl'"), 'PyInstaller should include ssl for WeasyPrint HTTPSHandler');
 assert(spec.includes("strip=False"), 'PyInstaller must not strip binaries (corrupts ssl DLLs on Windows)');
 assert(spec.includes("backend/templates"), 'PyInstaller should bundle backend HTML templates for report generator');

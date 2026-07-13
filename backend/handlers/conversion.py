@@ -8,6 +8,7 @@ See backend/core/jobs.py for the full explanation of the legacy layer.
 from __future__ import annotations
 
 import contextlib
+import logging
 import threading
 import time
 from collections.abc import Callable
@@ -33,6 +34,8 @@ try:
     import psutil
 except ImportError:
     psutil = None  # type: ignore[assignment]
+
+logger = logging.getLogger(__name__)
 
 _CANCEL_GRACE_SECONDS = 0.25
 # Keep Electron health probe (JOB_ACTIVITY_GRACE_MS=60s) from force-restarting
@@ -359,43 +362,28 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
             key_column="",
         )
     else:
-        # No key_column provided: try auto-detecting the best column first
-        from backend.core.config_fields import get_field_names
+        # Empty key_column: match process path (buscar_lote_por_codigos across
+        # all fields). Do NOT auto-detect a single column here — that made
+        # preview disagree with on-disk rename results.
+        db_cache = buscar_lote_por_codigos(codigos_list)
 
-        db_cols = get_field_names()
-        detect_fields, probe = _preview_detect_fields(files, db_cols) if db_cols else ({}, None)
-        auto_key = (
-            _resolve_key_column(None, files, db_cols, probe_result=probe) if (db_cols and files) else ""
+        def lookup(codigo: str) -> dict[str, Any] | None:
+            return db_cache.get(codigo)
+
+        sequence_groups = {}
+        for f in files:
+            name = Path(f).name
+            code = codigos_manuales[name]
+            datos = db_cache.get(code)
+            if datos:
+                sequence_groups[name] = _record_group_key(datos, "", code)
+        res = engine.preview_lote(
+            files,
+            lookup_fn=lookup,
+            codigos_manuales=codigos_manuales,
+            file_seqs=file_seqs,
+            sequence_groups=sequence_groups,
         )
-        if auto_key:
-            db_cache = buscar_por_columna(list(set(codigos_list + stems)), auto_key)
-            res = _preview_with_db(
-                engine,
-                files,
-                codigos_manuales,
-                file_seqs,
-                db_cache=db_cache,
-                db_records=None,
-                key_column=auto_key,
-            )
-        else:
-            db_cache = buscar_lote_por_codigos(codigos_list)
-            def lookup(codigo: str) -> dict[str, Any] | None:
-                return db_cache.get(codigo)
-            sequence_groups = {}
-            for f in files:
-                name = Path(f).name
-                code = codigos_manuales[name]
-                datos = db_cache.get(code)
-                if datos:
-                    sequence_groups[name] = _record_group_key(datos, "", code)
-            res = engine.preview_lote(
-                files,
-                lookup_fn=lookup,
-                codigos_manuales=codigos_manuales,
-                file_seqs=file_seqs,
-                sequence_groups=sequence_groups,
-            )
 
     payload: dict[str, Any] = {
         "preview": [{"origen": Path(orig).name, "nuevo": nuev, "en_bd": en_bd} for orig, nuev, en_bd in res],
@@ -448,17 +436,39 @@ def process_start(params: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _slim_process_status(job: Job) -> dict[str, Any]:
+    """Status payload for polling: full logs/result, no bulk files list."""
+    with job.state._lock:
+        logs = [dict(log) for log in job.state.logs]
+    summary = job.to_dict()
+    raw_params = job.params or {}
+    files = raw_params.get("files") or []
+    file_count = len(files) if isinstance(files, list) else 0
+    return {
+        **summary,
+        "logs": logs,
+        "result": job.result,
+        "params": {
+            "file_count": file_count,
+            "destino": raw_params.get("destino"),
+            "formato": raw_params.get("formato"),
+        },
+    }
+
+
 @with_locale
 def process_status(params: dict[str, Any]) -> dict[str, Any]:
     """Get status of a conversion job.
 
     Accepts optional job_id. Falls back to "default" for backward compat.
+    Omits the full start-time ``files`` list so large batches do not block the
+    IPC reader thread (SYNC_METHODS). Use ``jobs_get`` for full detail.
     """
     job_id = resolve_job_id(params)
     mgr = get_job_manager()
     job = mgr.get_job(job_id)
     if job:
-        return job.to_dict_detail()
+        return _slim_process_status(job)
     # Legacy fallback: return empty state if no job exists
     return {
         "running": False,
@@ -516,6 +526,7 @@ def _run_conversion_job(job: Job) -> None:
     params = job.params
     job_id = job.id
     is_default = is_legacy_default_job(job_id)
+    notified = False
 
     stop_heartbeat = threading.Event()
     heartbeat_thread: threading.Thread | None = None
@@ -529,288 +540,309 @@ def _run_conversion_job(job: Job) -> None:
             _emit_heartbeat(job_id, is_default)
 
     try:
-        heartbeat_thread = threading.Thread(
-            target=_heartbeat_loop,
-            name=f"job-heartbeat-{job_id}",
-            daemon=True,
-        )
-        heartbeat_thread.start()
+        try:
+            heartbeat_thread = threading.Thread(
+                target=_heartbeat_loop,
+                name=f"job-heartbeat-{job_id}",
+                daemon=True,
+            )
+            heartbeat_thread.start()
 
-        set_locale(params.get("locale", "es"))
-        files = params.get("files", [])
-        destino = params.get("destino", "")
-        formato = params.get("formato", "JPEG")
-        calidad = params.get("calidad", 95)
-        conversion_enabled = params.get("conversion_enabled", True)
-        resize_ancho = params.get("resize_ancho")
-        resize_alto = params.get("resize_alto")
-        keep_exif = params.get("keep_exif", False)
-        usar_rename = params.get("usar_rename", True)
-        patron = params.get("patron", "")
-        secuencia = params.get("secuencia", 1)
-        word_separator = params.get("word_separator", "_")
-        use_column_rename = params.get("use_column_rename", False)
-        key_column = params.get("key_column", "")
-        file_mapping = params.get("mapping") or None
-        mapping_path = params.get("mapping_path") or ""
-        mapping_id_column = params.get("id_column") or None
-        mapping_rename_column = params.get("rename_column") or None
-        mapping_index = None
+            set_locale(params.get("locale", "es"))
+            files = params.get("files", [])
+            destino = params.get("destino", "")
+            formato = params.get("formato", "JPEG")
+            calidad = params.get("calidad", 95)
+            conversion_enabled = params.get("conversion_enabled", True)
+            resize_ancho = params.get("resize_ancho")
+            resize_alto = params.get("resize_alto")
+            keep_exif = params.get("keep_exif", False)
+            usar_rename = params.get("usar_rename", True)
+            patron = params.get("patron", "")
+            secuencia = params.get("secuencia", 1)
+            word_separator = params.get("word_separator", "_")
+            use_column_rename = params.get("use_column_rename", False)
+            key_column = params.get("key_column", "")
+            file_mapping = params.get("mapping") or None
+            mapping_path = params.get("mapping_path") or ""
+            mapping_id_column = params.get("id_column") or None
+            mapping_rename_column = params.get("rename_column") or None
+            mapping_index = None
 
-        # Auto-detect the best key column if rename is enabled without mapping
-        # and the provided key_column is empty or not in the DB schema.
-        # Only run auto-detection when key_column is explicitly provided to
-        # preserve the legacy fallback path (buscar_lote_por_codigos) that
-        # matches across all fields.
-        if usar_rename and not file_mapping and not mapping_path and files and key_column:
-            from backend.core.config_fields import get_field_names
+            # Auto-detect the best key column if rename is enabled without mapping
+            # and the provided key_column is empty or not in the DB schema.
+            # Only run auto-detection when key_column is explicitly provided to
+            # preserve the legacy fallback path (buscar_lote_por_codigos) that
+            # matches across all fields.
+            if usar_rename and not file_mapping and not mapping_path and files and key_column:
+                from backend.core.config_fields import get_field_names
 
-            db_cols = get_field_names()
-            if db_cols:
-                original_key = key_column
-                key_column = _resolve_key_column(key_column, files, db_cols)
-                if key_column != original_key:
+                db_cols = get_field_names()
+                if db_cols:
+                    original_key = key_column
+                    key_column = _resolve_key_column(key_column, files, db_cols)
+                    if key_column != original_key:
+                        log_message(
+                            f"Columna ID auto-detectada: '{key_column}' "
+                            f"(original: '{original_key or '(vacío)'}')",
+                            "info",
+                            state=state,
+                        )
+
+            if mapping_path and not file_mapping:
+                from backend.core.database import parse_id_rename_mapping
+
+                file_mapping = parse_id_rename_mapping(
+                    mapping_path,
+                    id_column=mapping_id_column,
+                    rename_column=mapping_rename_column,
+                )
+
+            if file_mapping is not None:
+                if not isinstance(file_mapping, dict) or len(file_mapping) == 0:
+                    log_message("El mapeo de renombrado está vacío o es inválido", "error", state=state)
+                    _notify_complete(job, 0, len(params.get("files", [])))
+                    notified = True
+                    return
+                for _key, value in file_mapping.items():
+                    if not isinstance(value, str) or not value.strip():
+                        log_message("El mapeo contiene valores de RENOMBRE vacíos o inválidos", "error", state=state)
+                        _notify_complete(job, 0, len(params.get("files", [])))
+                        notified = True
+                        return
+                from backend.core.mapping_index import MappingIndex
+
+                mapping_index = MappingIndex(file_mapping)
+                collisions = mapping_index.find_collisions(files)
+                if collisions:
+                    conflict = collisions[0]
                     log_message(
-                        f"Columna ID auto-detectada: '{key_column}' "
-                        f"(original: '{original_key or '(vacío)'}')",
-                        "info",
+                        f"Colisión de nombres de salida: '{conflict['output']}' "
+                        f"({len(conflict['sources'])} archivos). Corrige el Excel antes de continuar.",
+                        "error",
                         state=state,
                     )
-
-        if mapping_path and not file_mapping:
-            from backend.core.database import parse_id_rename_mapping
-
-            file_mapping = parse_id_rename_mapping(
-                mapping_path,
-                id_column=mapping_id_column,
-                rename_column=mapping_rename_column,
-            )
-
-        if file_mapping is not None:
-            if not isinstance(file_mapping, dict) or len(file_mapping) == 0:
-                log_message("El mapeo de renombrado está vacío o es inválido", "error", state=state)
-                _notify_complete(job, 0, len(params.get("files", [])))
-                return
-            for _key, value in file_mapping.items():
-                if not isinstance(value, str) or not value.strip():
-                    log_message("El mapeo contiene valores de RENOMBRE vacíos o inválidos", "error", state=state)
-                    _notify_complete(job, 0, len(params.get("files", [])))
+                    _notify_complete(job, 0, len(files))
+                    notified = True
                     return
-            from backend.core.mapping_index import MappingIndex
+                log_message(f"Modo: Renombrado por mapeo directo ({len(file_mapping)} entradas)", "info", state=state)
 
-            mapping_index = MappingIndex(file_mapping)
-            collisions = mapping_index.find_collisions(files)
-            if collisions:
-                conflict = collisions[0]
-                log_message(
-                    f"Colisión de nombres de salida: '{conflict['output']}' "
-                    f"({len(conflict['sources'])} archivos). Corrige el Excel antes de continuar.",
-                    "error",
-                    state=state,
+            engine = (
+                RenamerEngine(
+                    patron,
+                    secuencia,
+                    separador=word_separator,
+                    sequence_mode=_resolve_sequence_mode(params),
                 )
-                _notify_complete(job, 0, len(files))
-                return
-            log_message(f"Modo: Renombrado por mapeo directo ({len(file_mapping)} entradas)", "info", state=state)
-
-        engine = (
-            RenamerEngine(
-                patron,
-                secuencia,
-                separador=word_separator,
-                sequence_mode=_resolve_sequence_mode(params),
+                if usar_rename
+                else None
             )
-            if usar_rename
-            else None
-        )
-        try:
-            rw = int(resize_ancho) if resize_ancho is not None else None
-            rh = int(resize_alto) if resize_alto is not None else None
-            resize = (rw, rh) if rw and rh and rw > 0 and rh > 0 else None
-        except (ValueError, TypeError):
-            resize = None
-
-        if conversion_enabled and formato not in FORMATOS_SOPORTADOS:
-            log_message(f"Formato no soportado: {formato}", "error", state=state)
-            _notify_complete(job, 0, len(files))
-            return
-
-        ext_dest = FORMATOS_SOPORTADOS[formato]["ext"] if conversion_enabled else None
-        total = len(files)
-
-        completed = 0
-
-        def _process_one(task: tuple[str, Path, bool]) -> tuple[bool, str, str]:
-            fpath, out_path, is_video_file = task
-            p = Path(fpath)
             try:
-                with state._lock:
-                    if state.cancel_requested:
-                        raise CancelledError()
-                if is_video_file or not conversion_enabled:
-                    copiar_archivo(fpath, out_path)
-                else:
-                    convertir_imagen(fpath, out_path, formato, calidad, resize, keep_exif)
-                return (True, out_path.name, "")
-            except CancelledError:
-                raise
-            except Exception as e:
-                return (False, p.name, str(e))
+                rw = int(resize_ancho) if resize_ancho is not None else None
+                rh = int(resize_alto) if resize_alto is not None else None
+                resize = (rw, rh) if rw and rh and rw > 0 and rh > 0 else None
+            except (ValueError, TypeError):
+                resize = None
 
-        CHUNK_SIZE = _calculate_chunk_size()
-        scheduler = get_scheduler()
-        cancelled = False
-        _last_notify_time = 0.0
-        _NOTIFY_INTERVAL = 0.5
-        _min_progress_delta = 1  # Minimum progress change to trigger notification (1%)
-        futures: list = []
-        # Track output paths across chunks so same-name collisions never overwrite.
-        reserved_out_paths: set[str] = set()
+            if conversion_enabled and formato not in FORMATOS_SOPORTADOS:
+                log_message(f"Formato no soportado: {formato}", "error", state=state)
+                _notify_complete(job, 0, len(files))
+                notified = True
+                return
 
-        try:
-            for chunk_start in range(0, len(files), CHUNK_SIZE):
-                if cancelled:
-                    break
-                chunk_end = min(chunk_start + CHUNK_SIZE, len(files))
-                chunk_files = files[chunk_start:chunk_end]
-                chunk_tasks = _prepare_chunk_tasks(
-                    chunk_files,
-                    destino=destino,
-                    engine=engine,
-                    conversion_enabled=conversion_enabled,
-                    ext_dest=ext_dest,
-                    lookup_fn=buscar_lote_por_codigos,
-                    use_column_rename=use_column_rename,
-                    global_offset=chunk_start,
-                    key_column=key_column,
-                    mapping_index=mapping_index,
-                )
-                chunk_tasks = _dedupe_chunk_out_paths(
-                    chunk_tasks,
-                    reserved_out_paths,
-                    log=lambda msg: log_message(msg, "warn", state=state),
-                )
-                futures = []
-                for task in chunk_tasks:
-                    future = scheduler.submit_heavy(
-                        _process_one,
-                        task,
-                        block=True,
-                        cancel_check=lambda: state.cancel_requested,
-                    )
-                    if future is None:
-                        cancelled = True
+            ext_dest = FORMATOS_SOPORTADOS[formato]["ext"] if conversion_enabled else None
+            total = len(files)
+
+            completed = 0
+
+            def _process_one(task: tuple[str, Path, bool]) -> tuple[bool, str, str]:
+                fpath, out_path, is_video_file = task
+                p = Path(fpath)
+                try:
+                    with state._lock:
+                        if state.cancel_requested:
+                            raise CancelledError()
+                    if is_video_file or not conversion_enabled:
+                        copiar_archivo(fpath, out_path)
+                    else:
+                        convertir_imagen(fpath, out_path, formato, calidad, resize, keep_exif)
+                    return (True, out_path.name, "")
+                except CancelledError:
+                    raise
+                except Exception as e:
+                    return (False, p.name, str(e))
+
+            CHUNK_SIZE = _calculate_chunk_size()
+            scheduler = get_scheduler()
+            cancelled = False
+            _last_notify_time = 0.0
+            _NOTIFY_INTERVAL = 0.5
+            _min_progress_delta = 1  # Minimum progress change to trigger notification (1%)
+            futures: list = []
+            # Track output paths across chunks so same-name collisions never overwrite.
+            reserved_out_paths: set[str] = set()
+
+            try:
+                for chunk_start in range(0, len(files), CHUNK_SIZE):
+                    if cancelled:
                         break
-                    futures.append(future)
+                    chunk_end = min(chunk_start + CHUNK_SIZE, len(files))
+                    chunk_files = files[chunk_start:chunk_end]
+                    chunk_tasks = _prepare_chunk_tasks(
+                        chunk_files,
+                        destino=destino,
+                        engine=engine,
+                        conversion_enabled=conversion_enabled,
+                        ext_dest=ext_dest,
+                        lookup_fn=buscar_lote_por_codigos,
+                        use_column_rename=use_column_rename,
+                        global_offset=chunk_start,
+                        key_column=key_column,
+                        mapping_index=mapping_index,
+                    )
+                    chunk_tasks = _dedupe_chunk_out_paths(
+                        chunk_tasks,
+                        reserved_out_paths,
+                        log=lambda msg: log_message(msg, "warn", state=state),
+                    )
+                    futures = []
+                    for task in chunk_tasks:
+                        future = scheduler.submit_heavy(
+                            _process_one,
+                            task,
+                            block=True,
+                            cancel_check=lambda: state.cancel_requested,
+                        )
+                        if future is None:
+                            cancelled = True
+                            break
+                        futures.append(future)
 
-                if cancelled:
-                    for future in futures:
-                        future.cancel()
-                    wait(futures, timeout=_CANCEL_GRACE_SECONDS, return_when=ALL_COMPLETED)
-                    break
+                    if cancelled:
+                        for future in futures:
+                            future.cancel()
+                        wait(futures, timeout=_CANCEL_GRACE_SECONDS, return_when=ALL_COMPLETED)
+                        break
 
-                with state._lock:
-                    if state.cancel_requested:
-                        cancelled = True
-                        log_message(t("info.process_cancelled"), "warn", state=state)
-                if cancelled:
-                    for future in futures:
-                        future.cancel()
-                    wait(futures, timeout=_CANCEL_GRACE_SECONDS, return_when=ALL_COMPLETED)
-                    break
-
-                for future in futures:
-                    if future.cancelled():
-                        continue
-                    try:
-                        success, name, error = future.result()
-                    except CancelledError:
-                        continue
-                    completed += 1
                     with state._lock:
-                        if success:
-                            state.ok_count += 1
-                            log_message(f"{'Renombrado' if not conversion_enabled else 'Procesado'}: {name}", "ok", state=state)
-                        else:
-                            state.err_count += 1
-                            log_message(t("error.process_failed", file=name, error=error), "error", state=state)
-                        old_progress = state.progress
-                        state.progress = int((completed / total) * 100)
-                        state.current_file = name
-                        progress = state.progress
-                        current_file = state.current_file
-                        ok_count = state.ok_count
-                        err_count = state.err_count
-                        progress_delta = progress - old_progress
-
-                    now = time.time()
-                    is_last = completed == total
-                    # Adaptive throttling: notify if enough time passed OR significant progress change
-                    should_notify = is_last or (now - _last_notify_time >= _NOTIFY_INTERVAL) or (progress_delta >= _min_progress_delta)
-                    if should_notify:
-                        _last_notify_time = now
-                        notif_data = {
-                            "progress": progress, "current_file": current_file,
-                            "ok_count": ok_count, "err_count": err_count,
-                            "job_id": job_id,
-                        }
-                        _emit_progress_notifications(job_id, notif_data, is_default)
-
-                    # Check cancellation between completions
-                    with state._lock:
-                        if state.cancel_requested and not cancelled:
+                        if state.cancel_requested:
                             cancelled = True
                             log_message(t("info.process_cancelled"), "warn", state=state)
                     if cancelled:
-                        for pending in futures:
-                            pending.cancel()
+                        for future in futures:
+                            future.cancel()
+                        wait(futures, timeout=_CANCEL_GRACE_SECONDS, return_when=ALL_COMPLETED)
                         break
-        finally:
+
+                    for future in futures:
+                        if future.cancelled():
+                            continue
+                        try:
+                            success, name, error = future.result()
+                        except CancelledError:
+                            continue
+                        completed += 1
+                        with state._lock:
+                            if success:
+                                state.ok_count += 1
+                                log_message(f"{'Renombrado' if not conversion_enabled else 'Procesado'}: {name}", "ok", state=state)
+                            else:
+                                state.err_count += 1
+                                log_message(t("error.process_failed", file=name, error=error), "error", state=state)
+                            old_progress = state.progress
+                            state.progress = int((completed / total) * 100)
+                            state.current_file = name
+                            progress = state.progress
+                            current_file = state.current_file
+                            ok_count = state.ok_count
+                            err_count = state.err_count
+                            progress_delta = progress - old_progress
+
+                        now = time.time()
+                        is_last = completed == total
+                        # Adaptive throttling: notify if enough time passed OR significant progress change
+                        should_notify = is_last or (now - _last_notify_time >= _NOTIFY_INTERVAL) or (progress_delta >= _min_progress_delta)
+                        if should_notify:
+                            _last_notify_time = now
+                            notif_data = {
+                                "progress": progress, "current_file": current_file,
+                                "ok_count": ok_count, "err_count": err_count,
+                                "job_id": job_id,
+                            }
+                            _emit_progress_notifications(job_id, notif_data, is_default)
+
+                        # Check cancellation between completions
+                        with state._lock:
+                            if state.cancel_requested and not cancelled:
+                                cancelled = True
+                                log_message(t("info.process_cancelled"), "warn", state=state)
+                        if cancelled:
+                            for pending in futures:
+                                pending.cancel()
+                            break
+            finally:
+                if cancelled:
+                    wait(futures, timeout=_CANCEL_GRACE_SECONDS, return_when=ALL_COMPLETED)
+
+            with state._lock:
+                state.running = False
+                state.progress = 100 if not cancelled else state.progress
+                ok_count = state.ok_count
+                err_count = state.err_count
+
+            job.result = {"ok_count": ok_count, "err_count": err_count, "cancelled": cancelled}
+
             if cancelled:
-                wait(futures, timeout=_CANCEL_GRACE_SECONDS, return_when=ALL_COMPLETED)
+                log_message(t("info.process_cancelled"), "warn", state=state)
+            else:
+                log_message(t("info.process_complete", ok=ok_count, err=err_count), "info", state=state)
+            _notify_complete(job, ok_count, err_count)
+            notified = True
 
-        with state._lock:
-            state.running = False
-            state.progress = 100 if not cancelled else state.progress
-            ok_count = state.ok_count
-            err_count = state.err_count
-
-        job.result = {"ok_count": ok_count, "err_count": err_count, "cancelled": cancelled}
-
-        if cancelled:
-            log_message(t("info.process_cancelled"), "warn", state=state)
-        else:
-            log_message(t("info.process_complete", ok=ok_count, err=err_count), "info", state=state)
-        _notify_complete(job, ok_count, err_count)
-
-        from backend.core.history import save_run
-        rename_source = "mapping" if mapping_index else ("catalog" if key_column else "none")
-        sequence_mode = _resolve_sequence_mode(params)
-        save_run(
-            files=[str(f) for f in files],
-            options={
-                "formato": formato,
-                "calidad": calidad,
-                "conversion_enabled": conversion_enabled,
-                "resize": str(resize) if resize else None,
-                "keep_exif": keep_exif,
-                "usar_rename": usar_rename,
-                "use_column_rename": use_column_rename,
-                "rename_source": rename_source,
-                "mapping_mode": mapping_index is not None,
-                "mapping_path": mapping_path or None,
-                "id_column": mapping_id_column or None,
-                "rename_column": mapping_rename_column or None,
-                "key_column": key_column or None,
-                # Restored by History → Reejecutar so conversion matches the original run.
-                "destino": destino or None,
-                "secuencia": secuencia,
-                "word_separator": word_separator,
-                "use_filename_seq": params.get("use_filename_seq", True),
-                "sequence_mode": sequence_mode,
-            },
-            patron=patron, formato=formato, calidad=calidad,
-            resize=str(resize) if resize else None, ok_count=ok_count, err_count=err_count,
-        )
+            from backend.core.history import save_run
+            rename_source = "mapping" if mapping_index else ("catalog" if key_column else "none")
+            sequence_mode = _resolve_sequence_mode(params)
+            save_run(
+                files=[str(f) for f in files],
+                options={
+                    "formato": formato,
+                    "calidad": calidad,
+                    "conversion_enabled": conversion_enabled,
+                    "resize": str(resize) if resize else None,
+                    "keep_exif": keep_exif,
+                    "usar_rename": usar_rename,
+                    "use_column_rename": use_column_rename,
+                    "rename_source": rename_source,
+                    "mapping_mode": mapping_index is not None,
+                    "mapping_path": mapping_path or None,
+                    "id_column": mapping_id_column or None,
+                    "rename_column": mapping_rename_column or None,
+                    "key_column": key_column or None,
+                    # Restored by History → Reejecutar so conversion matches the original run.
+                    "destino": destino or None,
+                    "secuencia": secuencia,
+                    "word_separator": word_separator,
+                    "use_filename_seq": params.get("use_filename_seq", True),
+                    "sequence_mode": sequence_mode,
+                },
+                patron=patron, formato=formato, calidad=calidad,
+                resize=str(resize) if resize else None, ok_count=ok_count, err_count=err_count,
+            )
+        except Exception as exc:
+            if not notified:
+                files = params.get("files", []) or []
+                err_count = len(files) if files else 1
+                error_msg = f"{type(exc).__name__}: {exc}"
+                logger.exception("Conversion job %s failed: %s", job_id, error_msg)
+                log_message(error_msg, "error", state=state)
+                job.result = {
+                    "ok_count": 0,
+                    "err_count": err_count,
+                    "cancelled": False,
+                    "error": error_msg,
+                }
+                _notify_complete(job, 0, err_count)
+                notified = True
     finally:
         stop_heartbeat.set()
         if heartbeat_thread is not None:

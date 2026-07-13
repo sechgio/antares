@@ -34,6 +34,7 @@ class TestConfigFields:
         save_fields(custom)
 
         assert config_path.exists()
+        assert not config_path.with_suffix(config_path.suffix + ".tmp").exists()
         loaded = load_fields()
         assert loaded[0]["name"] == "sku"
         assert loaded[0]["required"] is True

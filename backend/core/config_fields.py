@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 
 from backend.utils.paths import cached_config_path
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +116,17 @@ def load_fields() -> list[dict[str, Any]]:
     return defaults
 
 
+def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    """Write JSON via temp file + os.replace so crashes cannot leave empty files."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp_path, "w", encoding="utf-8") as file:
+        json.dump(payload, file, indent=2, ensure_ascii=False)
+        file.flush()
+        os.fsync(file.fileno())
+    os.replace(tmp_path, path)
+
+
 def save_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Guarda la configuración de campos en disco."""
     path = _config_file()
@@ -133,8 +143,7 @@ def save_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "required": bool(f.get("required", False)),
                 "unique": bool(f.get("unique", False)),
             })
-    with open(path, "w", encoding="utf-8") as file:
-        json.dump({"fields": validated}, file, indent=2, ensure_ascii=False)
+    _atomic_write_json(path, {"fields": validated})
     _invalidate_fields_cache()
     return validated
 

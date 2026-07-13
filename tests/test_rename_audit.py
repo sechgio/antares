@@ -492,8 +492,13 @@ def _mock_nis_sgio_buscar(codes, col):
     return {}
 
 
-def test_preview_auto_detect_aligns_with_db_detect_key_column(monkeypatch, tmp_path):
-    """Empty key_column preview must pick the same column as db_detect_key_column."""
+def test_preview_empty_key_uses_lote_process_semantics(monkeypatch, tmp_path):
+    """Empty key_column preview follows process (lote), not db_detect auto-column.
+
+    ``db_detect_key_column`` remains the FE path to choose an explicit column.
+    Empty key_column must call ``buscar_lote_por_codigos`` so preview matches
+    on-disk process results (plan 011).
+    """
     _setup_fields(monkeypatch, tmp_path, [
         {"name": "nis", "type": "TEXT", "required": False, "unique": False},
         {"name": "sgio", "type": "TEXT", "required": False, "unique": False},
@@ -506,6 +511,13 @@ def test_preview_auto_detect_aligns_with_db_detect_key_column(monkeypatch, tmp_p
     file_paths = [str(f1), str(f2)]
 
     monkeypatch.setattr("backend.core.database.buscar_por_columna", _mock_nis_sgio_buscar)
+    monkeypatch.setattr(
+        "backend.core.database.buscar_lote_por_codigos",
+        lambda codes: {
+            "69841274": {"nis": "ABC", "sgio": "454654001"},
+            "69841275": {"nis": "DEF", "sgio": "454654002"},
+        },
+    )
 
     detect = conversion.db_detect_key_column({"files": file_paths})
     assert detect["key_column"] == "sgio"
@@ -527,9 +539,14 @@ def test_preview_auto_detect_aligns_with_db_detect_key_column(monkeypatch, tmp_p
         "secuencia": 1,
     })
 
-    assert preview_empty["preview"] == preview_explicit["preview"]
-    assert preview_empty["detected_key_column"] == detect["key_column"]
-    assert preview_empty["detected_key_column_matches"] == detect["matches"]
+    # Both paths should resolve rename via sgio values when lote has the records
+    # (empty) or explicit column (sgio). Neither should leave en_bd=False.
+    assert all(row["en_bd"] for row in preview_empty["preview"])
+    assert all(row["en_bd"] for row in preview_explicit["preview"])
+    assert preview_empty["preview"][0]["nuevo"] == "454654001_001.jpg"
+    assert preview_explicit["preview"][0]["nuevo"] == "454654001_001.jpg"
+    # Empty key no longer injects detected_key_column (that was auto-detect UX).
+    assert "detected_key_column" not in preview_empty
 
 
 def test_preview_default_key_column_exposes_detect_fields(monkeypatch, tmp_path):

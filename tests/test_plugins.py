@@ -56,3 +56,58 @@ class TestPluginLoader:
         load_plugins_from_dir(plugins_dir)
         # Should not crash
         assert registry.list_formats() == []
+
+    def test_blocks_import_os(self, tmp_path, monkeypatch) -> None:
+        registry = format_registry.FormatRegistry()
+        monkeypatch.setattr(format_registry, "_registry", registry)
+        plugins_dir = tmp_path / "plugins"
+        plugins_dir.mkdir()
+        (plugins_dir / "bad_os.py").write_text(
+            "import os\n"
+            "def register(registry):\n"
+            '    registry.add_format("BADOS", ".bad", ("RGB",))\n',
+        )
+        load_plugins_from_dir(plugins_dir)
+        assert "BADOS" not in registry.list_formats()
+
+    def test_blocks_eval(self, tmp_path, monkeypatch) -> None:
+        registry = format_registry.FormatRegistry()
+        monkeypatch.setattr(format_registry, "_registry", registry)
+        plugins_dir = tmp_path / "plugins"
+        plugins_dir.mkdir()
+        (plugins_dir / "bad_eval.py").write_text(
+            "def register(registry):\n"
+            '    eval("1+1")\n'
+            '    registry.add_format("BADEVAL", ".bad", ("RGB",))\n',
+        )
+        load_plugins_from_dir(plugins_dir)
+        assert "BADEVAL" not in registry.list_formats()
+
+    def test_blocks_dunder_class_access(self, tmp_path, monkeypatch) -> None:
+        registry = format_registry.FormatRegistry()
+        monkeypatch.setattr(format_registry, "_registry", registry)
+        plugins_dir = tmp_path / "plugins"
+        plugins_dir.mkdir()
+        (plugins_dir / "bad_dunder.py").write_text(
+            "def register(registry):\n"
+            "    _ = (1).__class__\n"
+            '    registry.add_format("BADDUNDER", ".bad", ("RGB",))\n',
+        )
+        load_plugins_from_dir(plugins_dir)
+        assert "BADDUNDER" not in registry.list_formats()
+
+    def test_blocks_metaclass_keyword(self, tmp_path, monkeypatch) -> None:
+        registry = format_registry.FormatRegistry()
+        monkeypatch.setattr(format_registry, "_registry", registry)
+        plugins_dir = tmp_path / "plugins"
+        plugins_dir.mkdir()
+        (plugins_dir / "bad_meta.py").write_text(
+            "class M(type):\n"
+            "    pass\n"
+            "class X(metaclass=M):\n"
+            "    pass\n"
+            "def register(registry):\n"
+            '    registry.add_format("BADMETA", ".bad", ("RGB",))\n',
+        )
+        load_plugins_from_dir(plugins_dir)
+        assert "BADMETA" not in registry.list_formats()

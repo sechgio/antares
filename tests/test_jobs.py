@@ -69,6 +69,31 @@ class TestJob:
         assert len(d["logs"]) == 1
         assert d["params"] == {"files": ["a.jpg"]}
 
+    def test_process_status_omits_files_list(self):
+        from backend.core.jobs import get_job_manager
+        from backend.handlers.conversion import process_status
+
+        mgr = get_job_manager()
+        files = [f"C:/tmp/{i}.jpg" for i in range(50)]
+        job = Job(
+            id="status_slim",
+            job_type="conversion",
+            state=ProcessState(running=True, progress=10, ok_count=1, err_count=0),
+            params={"files": files, "destino": "C:/out", "formato": "JPEG"},
+        )
+        job.state.logs.append({"message": "hi", "tag": "info"})
+        mgr._jobs["status_slim"] = job
+
+        status = process_status({"job_id": "status_slim"})
+        assert status["running"] is True
+        assert status["progress"] == 10
+        assert status["ok_count"] == 1
+        assert len(status["logs"]) == 1
+        assert "files" not in (status.get("params") or {})
+        assert status["params"]["file_count"] == 50
+        assert status["params"]["destino"] == "C:/out"
+        del mgr._jobs["status_slim"]
+
     def test_to_dict_shows_not_running_by_default(self):
         job = Job(id="idle", job_type="conversion")
         d = job.to_dict()

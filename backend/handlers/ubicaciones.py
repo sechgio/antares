@@ -371,6 +371,25 @@ def _cap_fetch_size(width: int, height: int) -> tuple[int, int]:
     return max(1, round(width * scale)), max(1, round(height * scale))
 
 
+def _redact_url_for_log(url: str) -> str:
+    """Strip map API secrets from URLs before logging (query keys like key/token)."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if not parsed.query:
+            return url
+        pairs = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+        redacted: list[tuple[str, str]] = []
+        sensitive = {"key", "access_token", "api_key", "token", "apikey"}
+        for name, value in pairs:
+            if name.lower() in sensitive:
+                redacted.append((name, "***"))
+            else:
+                redacted.append((name, value))
+        return urllib.parse.urlunparse(parsed._replace(query=urllib.parse.urlencode(redacted)))
+    except Exception:
+        return "<url redacted>"
+
+
 def _http_get(url: str, headers: dict[str, str], timeout: int = _HTTP_TIMEOUT) -> bytes | None:
     """HTTP GET returning body bytes, or None on any network/HTTP error."""
     try:
@@ -378,7 +397,7 @@ def _http_get(url: str, headers: dict[str, str], timeout: int = _HTTP_TIMEOUT) -
         with urllib.request.urlopen(req, timeout=timeout) as resp:  # trusted map endpoints
             return cast(bytes, resp.read())
     except (urllib.error.URLError, OSError, TimeoutError) as exc:
-        logger.debug("HTTP GET failed for %s: %s", url, exc)
+        logger.debug("HTTP GET failed for %s: %s", _redact_url_for_log(url), exc)
         return None
 
 
@@ -431,7 +450,7 @@ def _fetch_xyz_tiles_map(lat: float, lon: float, width: int, height: int, zoom: 
         try:
             return col, row, Image.open(BytesIO(tile_bytes)).convert("RGB")
         except Exception:
-            logger.debug("Tile decode failed for %s", url, exc_info=True)
+            logger.debug("Tile decode failed for %s", _redact_url_for_log(url), exc_info=True)
             return col, row, None
 
     max_workers = min(_MAX_RENDER_WORKERS, max(len(tile_jobs), 1))
