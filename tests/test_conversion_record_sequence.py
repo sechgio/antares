@@ -40,7 +40,7 @@ def test_preview_reinicia_secuencia_por_fila_en_orden_del_lote(monkeypatch, tmp_
         "4210502": {"nis": "4210502", "sgio": "69841274"},
         "4210544": {"nis": "4210544", "sgio": "69841278"},
     }
-    monkeypatch.setattr(conversion, "_resolve_key_column", lambda key, _files, _columns: key)
+    monkeypatch.setattr(conversion, "_resolve_key_column", lambda key, _files, _columns, **_kw: key)
     monkeypatch.setattr("backend.core.config_fields.get_field_names", lambda: ["nis", "sgio"])
     monkeypatch.setattr(
         "backend.core.database.buscar_por_columna",
@@ -108,7 +108,7 @@ def test_conversion_mantiene_secuencia_por_fila_entre_bloques(monkeypatch, tmp_p
     monkeypatch.setattr(conversion, "es_video", lambda _path: False)
     monkeypatch.setattr(conversion, "copiar_archivo", lambda *_args: None)
     monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 2)
-    monkeypatch.setattr(conversion, "_resolve_key_column", lambda key, _files, _columns: key)
+    monkeypatch.setattr(conversion, "_resolve_key_column", lambda key, _files, _columns, **_kw: key)
     monkeypatch.setattr(conversion, "_notify_complete", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **_kwargs: None)
     monkeypatch.setattr("backend.core.config_fields.get_field_names", lambda: ["nis", "sgio"])
@@ -150,7 +150,7 @@ def test_preview_archivo_sin_fila_conserva_nombre_y_no_consume_contador(monkeypa
     rows = {
         "4210502": {"nis": "4210502", "sgio": "69841274"},
     }
-    monkeypatch.setattr(conversion, "_resolve_key_column", lambda key, _files, _columns: key)
+    monkeypatch.setattr(conversion, "_resolve_key_column", lambda key, _files, _columns, **_kw: key)
     monkeypatch.setattr("backend.core.config_fields.get_field_names", lambda: ["nis", "sgio"])
     monkeypatch.setattr(
         "backend.core.database.buscar_por_columna",
