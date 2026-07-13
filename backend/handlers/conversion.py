@@ -8,6 +8,7 @@ See backend/core/jobs.py for the full explanation of the legacy layer.
 from __future__ import annotations
 
 import contextlib
+import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ALL_COMPLETED, CancelledError, wait
@@ -34,6 +35,9 @@ except ImportError:
     psutil = None  # type: ignore[assignment]
 
 _CANCEL_GRACE_SECONDS = 0.25
+# Keep Electron health probe (JOB_ACTIVITY_GRACE_MS=60s) from force-restarting
+# during long single-file conversions that emit no progress until complete.
+_HEARTBEAT_INTERVAL_SECONDS = 15.0
 
 _SEQUENCE_MODES = {"record", "global", "filename"}
 
@@ -513,7 +517,25 @@ def _run_conversion_job(job: Job) -> None:
     job_id = job.id
     is_default = is_legacy_default_job(job_id)
 
+    stop_heartbeat = threading.Event()
+    heartbeat_thread: threading.Thread | None = None
+
+    def _heartbeat_loop() -> None:
+        # Wait first so quick-abort paths never emit; then pulse while running.
+        while not stop_heartbeat.wait(_HEARTBEAT_INTERVAL_SECONDS):
+            with state._lock:
+                if not state.running:
+                    break
+            _emit_heartbeat(job_id, is_default)
+
     try:
+        heartbeat_thread = threading.Thread(
+            target=_heartbeat_loop,
+            name=f"job-heartbeat-{job_id}",
+            daemon=True,
+        )
+        heartbeat_thread.start()
+
         set_locale(params.get("locale", "es"))
         files = params.get("files", [])
         destino = params.get("destino", "")
@@ -790,8 +812,19 @@ def _run_conversion_job(job: Job) -> None:
             resize=str(resize) if resize else None, ok_count=ok_count, err_count=err_count,
         )
     finally:
+        stop_heartbeat.set()
+        if heartbeat_thread is not None:
+            heartbeat_thread.join(timeout=1.0)
         with state._lock:
             state.running = False
+
+
+def _emit_heartbeat(job_id: str, is_default: bool) -> None:
+    """Tell Electron the conversion job is still alive (no fake progress %)."""
+    payload = {"running": True, "job_id": job_id}
+    send_notification(f"job.{job_id}.heartbeat", payload)
+    if is_default:
+        send_notification("process.heartbeat", payload)
 
 
 def _emit_progress_notifications(job_id: str, data: dict[str, Any], is_default: bool) -> None:
