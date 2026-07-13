@@ -70,8 +70,8 @@ class TestJob:
         assert d["params"] == {"files": ["a.jpg"]}
 
     def test_process_status_omits_files_list(self):
-        from backend.handlers.conversion import process_status
         from backend.core.jobs import get_job_manager
+        from backend.handlers.conversion import process_status
 
         mgr = get_job_manager()
         files = [f"C:/tmp/{i}.jpg" for i in range(50)]
