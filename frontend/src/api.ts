@@ -240,7 +240,9 @@ export const api = {
     _invoke<{ paths: string[]; folder?: string }>('dialog_folder', params),
   dialogSave: (params?: { title?: string; defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }) => _invoke<{ paths: string[] }>('dialog_save', params),
 
-  startProcess: (body: ProcessBody) => _invoke<{ started: boolean }>('process_start', body),
+  startProcess: (body: ProcessBody) =>
+    _invoke<{ started: boolean; reason?: string; job_id?: string }>('process_start', body),
+
   getStatus: () => _invoke<ProcessStatus>('process_status'),
   cancelProcess: () => _invoke<{ cancelled: boolean }>('process_cancel'),
 
