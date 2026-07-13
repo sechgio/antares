@@ -96,11 +96,13 @@ function _ensureListeners() {
         const msg = JSON.parse(line);
         // Notification (no `id`): forward to renderer
         if (msg.method && msg.params !== undefined && msg.id === undefined) {
-          // Track conversion/job progress so health checks do not force-restart
+          // Track conversion/job liveness so health checks do not force-restart
           // the backend while process_start has already returned (no pending IPC).
+          // Heartbeats fire while a single file is still converting (no progress yet).
           if (
             msg.method === 'process.progress'
-            || (typeof msg.method === 'string' && /^job\..+\.progress$/.test(msg.method))
+            || msg.method === 'process.heartbeat'
+            || (typeof msg.method === 'string' && /^job\..+\.(progress|heartbeat)$/.test(msg.method))
           ) {
             noteJobActivity();
           } else if (

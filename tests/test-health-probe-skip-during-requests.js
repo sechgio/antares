@@ -1,6 +1,10 @@
 // Regression test: health probe must NOT restart the backend when there are
-// in-flight IPC requests OR recent conversion/job progress. A timeout during
+// in-flight IPC requests OR recent conversion/job activity. A timeout during
 // active work is a false positive — the backend is busy, not dead.
+//
+// Job activity is marked via noteJobActivity() from ipc-router when it receives
+// process.progress / process.heartbeat / job.*.progress / job.*.heartbeat.
+// Heartbeats use the same noteJobActivity path as progress (no separate spawner API).
 const { EventEmitter } = require('events');
 const childProcess = require('child_process');
 
@@ -137,13 +141,22 @@ async function run() {
     assert(getPendingRequestCount() === 0, 'Pending count should be 0 after decrement');
 
     // Simulate a conversion job that already released process_start IPC but still
-    // emits progress — health must not kill the backend mid-batch.
+    // emits progress/heartbeat — health must not kill the backend mid-batch.
+    // (ipc-router maps process.heartbeat / job.*.heartbeat to the same noteJobActivity.)
     noteJobActivity();
-    assert(hasRecentJobActivity(), 'Job activity should be marked recent');
+    assert(hasRecentJobActivity(), 'Job activity should be marked recent (progress or heartbeat)');
     await runHealthCheckOnce();
     await flushAsyncTurns(5);
     assert(getState() === 'ready', 'Backend should stay ready during recent job activity');
     assert(spawnCount === 1, 'Should NOT restart while job activity is recent');
+
+    // Second pulse (as if another heartbeat arrived) still holds the grace window.
+    noteJobActivity();
+    assert(hasRecentJobActivity(), 'Repeated heartbeat/progress still marks activity recent');
+    await runHealthCheckOnce();
+    await flushAsyncTurns(5);
+    assert(getState() === 'ready', 'Backend should stay ready after repeated job activity');
+    assert(spawnCount === 1, 'Should NOT restart after repeated noteJobActivity');
 
     clearJobActivity();
     assert(!hasRecentJobActivity(), 'Job activity cleared');
@@ -151,7 +164,7 @@ async function run() {
     // Now run health check with no pending requests and no job activity — SHOULD restart
     await runHealthCheckOnce();
     const restarted = await waitFor(() => spawnCount >= 2 && getState() === 'ready');
-    assert(restarted, 'Backend SHOULD restart when no requests are in flight');
+    assert(restarted, 'Backend SHOULD restart when no requests are in flight and no job activity');
 
   } finally {
     killPython();
