@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { api } from '../../api';
+import { api, type PreviewBody } from '../../api';
 import { useFileSelection } from '../../hooks/useFileSelection';
 import { useProcessRunner } from '../../hooks/useProcessRunner';
 import { useToast } from '../../hooks/useToast';
@@ -353,12 +353,28 @@ export default function ConversionView() {
 
   const sequenceMode = useFilenameSeq ? 'record' : 'global';
 
-  // Preview debounce: increased to 600ms and guarded by a cancellation token
-  // so rapid file additions don't stack multiple backend calls.
+  // Preview debounce (600ms) + token ignore + single-flight queue so rapid
+  // changes never stack concurrent api.preview calls on the Python process.
   const previewToken = useRef(0);
+  const previewInFlightRef = useRef(false);
+  const previewQueuedArgsRef = useRef<{ body: PreviewBody; token: number } | null>(null);
+  // After auto-detect applies setKeyColumn, skip the effect re-run that would
+  // otherwise fire an identical second preview (keyColumn is still in deps so
+  // manual UI changes re-fetch).
+  const skipPreviewForKeyOnlyRef = useRef(false);
+
+  // Bump token on unmount so late in-flight results never setState.
+  useEffect(() => () => { previewToken.current += 1; }, []);
+
   useEffect(() => {
     if (!usarRename || files.length === 0) {
       setRenamePreview([]);
+      previewQueuedArgsRef.current = null;
+      return undefined;
+    }
+
+    if (skipPreviewForKeyOnlyRef.current) {
+      skipPreviewForKeyOnlyRef.current = false;
       return undefined;
     }
 
@@ -368,42 +384,62 @@ export default function ConversionView() {
     const PREVIEW_SAMPLE_LIMIT = 200;
     const previewFiles = files.length > PREVIEW_SAMPLE_LIMIT ? files.slice(0, PREVIEW_SAMPLE_LIMIT) : files;
 
-    const timer = window.setTimeout(async () => {
+    const body: PreviewBody = mappingMode && mappingData
+      ? {
+          files: previewFiles,
+          patron: '{renombre}{ext}',
+          secuencia: 1,
+          use_filename_seq: false,
+          mapping: mappingData,
+        }
+      : {
+          files: previewFiles,
+          patron,
+          secuencia,
+          use_filename_seq: useFilenameSeq,
+          key_column: keyColumn || undefined,
+          word_separator: wordSeparator,
+          sequence_mode: sequenceMode,
+        };
+
+    const runPreview = async (requestBody: PreviewBody, requestToken: number): Promise<void> => {
+      previewInFlightRef.current = true;
       try {
-        const result = await api.preview(
-          mappingMode && mappingData
-            ? {
-                files: previewFiles,
-                patron: '{renombre}{ext}',
-                secuencia: 1,
-                use_filename_seq: false,
-                mapping: mappingData,
-              }
-            : {
-                files: previewFiles,
-                patron,
-                secuencia,
-                use_filename_seq: useFilenameSeq,
-                key_column: keyColumn || undefined,
-                word_separator: wordSeparator,
-                sequence_mode: sequenceMode,
-              },
-        );
-        if (token !== previewToken.current) return; // a newer change superseded us
+        const result = await api.preview(requestBody);
+        if (requestToken !== previewToken.current) return;
         setRenamePreview(result.preview);
         if (
           !mappingMode
           && dbColumns.length > 1
           && result.detected_key_column
           && (result.detected_key_column_matches ?? 0) > 0
-          && result.detected_key_column !== keyColumn
+          && result.detected_key_column !== (requestBody.key_column ?? '')
         ) {
+          skipPreviewForKeyOnlyRef.current = true;
           setKeyColumn(result.detected_key_column);
         }
       } catch {
-        if (token !== previewToken.current) return;
+        if (requestToken !== previewToken.current) return;
         setRenamePreview([]);
+      } finally {
+        previewInFlightRef.current = false;
+        const queued = previewQueuedArgsRef.current;
+        if (queued && queued.token === previewToken.current) {
+          previewQueuedArgsRef.current = null;
+          void runPreview(queued.body, queued.token);
+        } else if (queued && queued.token !== previewToken.current) {
+          // Superseded by a newer effect schedule — drop stale queue entry.
+          previewQueuedArgsRef.current = null;
+        }
       }
+    };
+
+    const timer = window.setTimeout(() => {
+      if (previewInFlightRef.current) {
+        previewQueuedArgsRef.current = { body, token };
+        return;
+      }
+      void runPreview(body, token);
     }, 600);
 
     return () => window.clearTimeout(timer);
