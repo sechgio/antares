@@ -1,5 +1,9 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { safeBase64ToBytes } from '../formatos/base64';
+import {
+  MAX_PREVIEW_PIXEL_WIDTH,
+  MIN_PREVIEW_PIXEL_WIDTH,
+} from './previewDpi';
 import type { PdfPageSize } from './utils';
 
 let pdfjsLib: typeof import('pdfjs-dist') | null = null;
@@ -43,8 +47,10 @@ export async function renderPdfPageToDataUrl(
 ): Promise<{ url: string; pageSize: PdfPageSize }> {
   const page = await pdf.getPage(pageNum);
   const unscaled = page.getViewport({ scale: 1 });
-  const minScale = 2800 / unscaled.width;
-  const scale = Math.min(Math.max((containerW / unscaled.width) * dpr, minScale), 4);
+  // Display-path caps from previewDpi (preview only; export apply is separate).
+  const minScale = MIN_PREVIEW_PIXEL_WIDTH / unscaled.width;
+  const maxScale = MAX_PREVIEW_PIXEL_WIDTH / unscaled.width;
+  const scale = Math.min(Math.max((containerW / unscaled.width) * dpr, minScale), maxScale);
   const viewport = page.getViewport({ scale });
 
   const canvas = document.createElement('canvas');

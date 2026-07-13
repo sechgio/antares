@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
 import { api } from '../../api';
+import { createLruMap } from './lruMap';
 import type { PdfPageSize } from './utils';
 import { loadPdfDocument, renderPdfPageToDataUrl } from './pdfjs';
 import { selladorPreviewDpr, selladorPreviewPixelWidth } from './previewDpi';
@@ -17,8 +18,9 @@ interface PdfPagePreviewProps {
 
 const DEFAULT_WIDTH = 900;
 const WIDTH_BUCKET = 80;
-const RENDER_CACHE_VERSION = 'hd-v2';
-const renderCache = new Map<string, string>();
+const RENDER_CACHE_VERSION = 'disp-v1';
+const RENDER_CACHE_MAX = 32;
+const renderCache = createLruMap<string, string>(RENDER_CACHE_MAX);
 
 function bucketRenderWidth(width: number): number {
   const clamped = Math.max(width, 320);
