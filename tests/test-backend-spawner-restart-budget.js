@@ -1,5 +1,5 @@
-// Regression test: transient crashes must keep recovering instead of ending in
-// a fatal state after an arbitrary restart budget is exhausted.
+// Regression test: persistent crashes must exhaust the auto-restart budget and
+// enter FATAL; manualRestart must clear FATAL and allow a fresh start.
 const { EventEmitter } = require('events');
 const childProcess = require('child_process');
 
@@ -31,7 +31,7 @@ async function waitFor(predicate, maxTurns = 5000) {
 }
 
 async function run() {
-  console.log('Testing backend spawner transient recovery...\n');
+  console.log('Testing backend spawner restart budget exhaustion...\n');
 
   const backendCommandPath = require.resolve('../electron/backend-command.js');
   require.cache[backendCommandPath] = {
@@ -59,24 +59,25 @@ async function run() {
     fakeProcess.stderr = new EventEmitter();
     fakeProcess.stdin = new EventEmitter();
     fakeProcess.stdin.end = () => {};
+    fakeProcess.stdin.write = () => true;
     fakeProcess.killed = false;
-    fakeProcess.pid = 10000 + spawnCount;
+    fakeProcess.pid = 40000 + spawnCount;
     fakeProcess.kill = () => {
       fakeProcess.killed = true;
     };
 
     process.nextTick(() => {
-      fakeProcess.stdout.emit('data', Buffer.from('{"jsonrpc":"2.0","method":"ready","params":{"status":"ok"}}\n'));
-      if (spawnCount === 1) {
-        setImmediate(() => fakeProcess.emit('close', 1, null));
-      }
+      fakeProcess.stdout.emit(
+        'data',
+        Buffer.from('{"jsonrpc":"2.0","method":"ready","params":{"status":"ok"}}\n'),
+      );
     });
 
     return fakeProcess;
   };
 
   global.setTimeout = (fn, delay, ...args) => {
-    if (delay === 30_000 || delay === 60_000) {
+    if (delay === 60_000) {
       const timer = { fn, delay, args };
       inertTimers.add(timer);
       return timer;
@@ -91,7 +92,7 @@ async function run() {
     return originalClearTimeout(timer);
   };
   global.setInterval = (fn, delay, ...args) => {
-    activeInterval = originalSetInterval(fn, delay, ...args);
+    activeInterval = { fn, delay, args };
     return activeInterval;
   };
   global.clearInterval = (timer) => {
@@ -101,16 +102,55 @@ async function run() {
 
   const backendSpawnerPath = require.resolve('../electron/backend-spawner.js');
   delete require.cache[backendSpawnerPath];
-  const { startPythonBackend, getState, getAutoRestartLimit, killPython } = require('../electron/backend-spawner.js');
+  const {
+    startPythonBackend,
+    manualRestart,
+    getProcess,
+    getState,
+    getAutoRestartLimit,
+    getLastError,
+    killPython,
+    STATE,
+  } = require('../electron/backend-spawner.js');
+
+  const limit = getAutoRestartLimit();
+
+  async function crashReadyBackend() {
+    const proc = getProcess();
+    if (!proc) return false;
+    proc.emit('close', 1, null);
+    return true;
+  }
 
   try {
     await startPythonBackend(true);
-    await new Promise((resolve) => originalSetTimeout(resolve, 300));
-    const recoveredAfterCrash = await waitFor(() => spawnCount >= 2 && getState() === 'ready');
+    assert(getState() === STATE.READY, 'Backend should start ready');
 
-    assert(typeof getAutoRestartLimit() === 'number' && getAutoRestartLimit() > 0, 'Auto-restart budget should be a positive finite limit');
-    assert(recoveredAfterCrash, 'Transient crashes should trigger a fresh backend spawn');
-    assert(getState() === 'ready', 'Spawner should recover to ready after a transient crash');
+    for (let i = 0; i < limit; i++) {
+      const crashed = await crashReadyBackend();
+      assert(crashed, `Should crash backend on attempt ${i + 1}`);
+      const recovered = await waitFor(() => getState() === STATE.READY, 10000);
+      assert(recovered, `Backend should recover to ready after crash ${i + 1}`);
+    }
+
+    const crashedBeforeFatal = await crashReadyBackend();
+    assert(crashedBeforeFatal, 'Should crash backend one final time to exhaust budget');
+    const hitFatal = await waitFor(() => getState() === STATE.FATAL, 10000);
+    const spawnCountAtFatal = spawnCount;
+
+    assert(typeof limit === 'number' && limit > 0, 'Auto-restart limit should be a positive number');
+    assert(hitFatal, 'Persistent crashes should eventually enter FATAL state');
+    assert(getLastError()?.kind === 'fatal', 'Last error should be classified as fatal');
+    assert(spawnCountAtFatal === limit + 1, `Should spawn exactly limit+1 times before FATAL (got ${spawnCountAtFatal}, limit ${limit})`);
+
+    await flushAsyncTurns(20);
+    assert(spawnCount === spawnCountAtFatal, 'No further spawns should occur after budget exhaustion');
+    assert(getState() === STATE.FATAL, 'Spawner should remain fatal until manual restart');
+
+    const recovered = await manualRestart(true, { force: true });
+    assert(recovered, 'manualRestart should recover after FATAL');
+    assert(getState() === STATE.READY, 'Spawner should return to ready after manualRestart');
+    assert(spawnCount === spawnCountAtFatal + 1, 'manualRestart should spawn exactly one fresh backend');
   } finally {
     killPython();
     childProcess.spawn = originalSpawn;
