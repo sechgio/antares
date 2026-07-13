@@ -147,6 +147,15 @@ _INFORME_TECNICO_OPTIONS_SCHEMA: dict[str, Any] = {
     },
 }
 
+_FICHA_TECNICA_OPTIONS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": True,
+    "properties": {
+        "type": {"type": "string"},
+        "fichaId": {},
+    },
+}
+
 # Empty schema used as a permissive fallback (accepts anything). Used for
 # the generic "unknown" entry and as a marker that no validation is desired.
 _ANY_OBJECT: dict[str, Any] = {"type": "object", "additionalProperties": True}
@@ -448,6 +457,22 @@ def _informe_tecnico_stats() -> tuple[StatField, ...]:
     )
 
 
+def _ficha_tecnica_stats() -> tuple[StatField, ...]:
+    return (
+        StatField(
+            key="type",
+            label_key="history.stats.status",
+            resolve=lambda r: _opt(r, "type") or "—",
+        ),
+        StatField(
+            key="ok",
+            label_key="history.stats.ok",
+            resolve=lambda r: r.get("ok_count") or 0,
+            color_token="var(--accent-teal, #2dd4bf)",
+        ),
+    )
+
+
 # ─── Helpers used by stats builders ────────────────────────────────────────
 
 def _opt(run: dict[str, Any], key: str) -> Any:
@@ -573,6 +598,15 @@ RUN_TYPE_REGISTRY: dict[str, RunTypeMeta] = {
         options_schema=_INFORME_TECNICO_OPTIONS_SCHEMA,
         files_schema=_ANY_ARRAY,
         stats=_informe_tecnico_stats(),
+    ),
+    "ficha_tecnica": RunTypeMeta(
+        id="ficha_tecnica",
+        label_key="history.runTypes.fichaTecnica",
+        description_key="history.runTypes.fichaTecnicaDesc",
+        color_token="var(--accent-teal, #2dd4bf)",
+        options_schema=_FICHA_TECNICA_OPTIONS_SCHEMA,
+        files_schema=_ANY_ARRAY,
+        stats=_ficha_tecnica_stats(),
     ),
 }
 

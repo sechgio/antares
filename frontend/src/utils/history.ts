@@ -18,6 +18,7 @@ export async function saveFeatureHistory(
       ok_count: count,
       err_count: 0,
     });
-  } catch {
+  } catch (err) {
+    console.error('historySave failed', err);
   }
 }

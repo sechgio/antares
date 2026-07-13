@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockApi } = vi.hoisted(() => ({
+const { mockApi, notifyState } = vi.hoisted(() => ({
   mockApi: {
     autoimgBootstrap: vi.fn(async () => ({
       connected: true,
@@ -21,11 +21,19 @@ const { mockApi } = vi.hoisted(() => ({
     autoimgLogsList: vi.fn(async () => ({ values: [] })),
     autoimgArrastreList: vi.fn(async () => ({ entries: [] })),
   },
+  notifyState: {
+    callback: null as ((method: string, params?: unknown) => void) | null,
+  },
 }));
 
 vi.mock('../../api', () => ({
   api: mockApi,
-  onNotify: () => () => {},
+  onNotify: (cb: (method: string, params?: unknown) => void) => {
+    notifyState.callback = cb;
+    return () => {
+      notifyState.callback = null;
+    };
+  },
 }));
 
 import AutoIMGApp from './AutoIMGApp';
@@ -33,6 +41,7 @@ import AutoIMGApp from './AutoIMGApp';
 describe('AutoIMGApp layout and navigation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    notifyState.callback = null;
   });
 
   it('renders unified header and tab buttons in the top bar', async () => {
@@ -70,6 +79,63 @@ describe('AutoIMGApp layout and navigation', () => {
     render(<AutoIMGApp />);
     await waitFor(() => {
       expect(mockApi.autoimgBootstrap).toHaveBeenCalledWith(true);
+    });
+  });
+});
+
+describe('AutoIMGApp bootstrap stale guard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    notifyState.callback = null;
+  });
+
+  it('ignores stale bootstrap responses when a newer request completes first', async () => {
+    type BootstrapData = Awaited<ReturnType<typeof mockApi.autoimgBootstrap>>;
+    let resolveSlow!: (value: BootstrapData) => void;
+    const slowPromise = new Promise<BootstrapData>((resolve) => {
+      resolveSlow = resolve;
+    });
+
+    const staleBootstrap: BootstrapData = {
+      connected: true,
+      sheetLinked: true,
+      lastSync: '',
+      autoSync: false,
+      folders: [{ name: 'Stale', folder_id: 'old', activo: true, ultimo_scan: '', cant_archivos: 0 }],
+      bdRows: [],
+      logRows: [],
+      arrastre: [],
+    };
+    const freshBootstrap: BootstrapData = {
+      connected: true,
+      sheetLinked: true,
+      lastSync: '2026-07-03',
+      autoSync: false,
+      folders: [{ name: 'Fresh', folder_id: 'new', activo: true, ultimo_scan: '', cant_archivos: 0 }],
+      bdRows: [],
+      logRows: [],
+      arrastre: [],
+    };
+
+    mockApi.autoimgBootstrap
+      .mockImplementationOnce(() => slowPromise)
+      .mockImplementationOnce(async () => freshBootstrap);
+
+    render(<AutoIMGApp />);
+    await waitFor(() => {
+      expect(notifyState.callback).toBeTruthy();
+    });
+    notifyState.callback!('autoimg.sync.from_complete');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Carpetas' }));
+    await waitFor(() => {
+      expect(screen.getByText('Fresh')).toBeInTheDocument();
+    });
+
+    resolveSlow(staleBootstrap);
+    await waitFor(() => {
+      expect(screen.queryByText('Stale')).not.toBeInTheDocument();
+      expect(screen.getByText('Fresh')).toBeInTheDocument();
     });
   });
 });

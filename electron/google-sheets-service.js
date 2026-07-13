@@ -352,7 +352,11 @@ async function revokeAuth() {
   cancelBrowserOAuthFlow();
   const tokens = loadTokens();
   if (tokens?.access_token) {
-    await fetch(`https://oauth2.googleapis.com/revoke?token=${tokens.access_token}`, { method: 'POST' }).catch(() => {});
+    await fetch('https://oauth2.googleapis.com/revoke', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `token=${encodeURIComponent(tokens.access_token)}`,
+    }).catch(() => {});
   }
   // Solo tokens del usuario activo. Sheet/carpetas quedan en autoimg/users/<hash>/.
   clearTokens();

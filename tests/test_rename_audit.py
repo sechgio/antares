@@ -476,3 +476,93 @@ def test_db_detect_key_column_single_column(monkeypatch, tmp_path):
 
     result = conversion.db_detect_key_column({"files": [str(f)]})
     assert result["key_column"] == "codigo"
+
+
+# ─── Characterization: preview auto-detect aligns with db_detect ──────────
+
+
+def _mock_nis_sgio_buscar(codes, col):
+    if col == "nis":
+        return {}
+    if col == "sgio":
+        return {
+            "69841274": {"nis": "ABC", "sgio": "454654001"},
+            "69841275": {"nis": "DEF", "sgio": "454654002"},
+        }
+    return {}
+
+
+def test_preview_auto_detect_aligns_with_db_detect_key_column(monkeypatch, tmp_path):
+    """Empty key_column preview must pick the same column as db_detect_key_column."""
+    _setup_fields(monkeypatch, tmp_path, [
+        {"name": "nis", "type": "TEXT", "required": False, "unique": False},
+        {"name": "sgio", "type": "TEXT", "required": False, "unique": False},
+    ])
+
+    f1 = tmp_path / "69841274_001.jpg"
+    f2 = tmp_path / "69841275_001.jpg"
+    f1.write_text("x")
+    f2.write_text("x")
+    file_paths = [str(f1), str(f2)]
+
+    monkeypatch.setattr("backend.core.database.buscar_por_columna", _mock_nis_sgio_buscar)
+
+    detect = conversion.db_detect_key_column({"files": file_paths})
+    assert detect["key_column"] == "sgio"
+    assert detect["matches"] == 2
+
+    preview_empty = conversion.preview({
+        "files": file_paths,
+        "patron": "{sgio}{sep}{seq}{ext}",
+        "word_separator": "_",
+        "use_filename_seq": True,
+        "secuencia": 1,
+    })
+    preview_explicit = conversion.preview({
+        "files": file_paths,
+        "patron": "{sgio}{sep}{seq}{ext}",
+        "word_separator": "_",
+        "key_column": detect["key_column"],
+        "use_filename_seq": True,
+        "secuencia": 1,
+    })
+
+    assert preview_empty["preview"] == preview_explicit["preview"]
+    assert preview_empty["detected_key_column"] == detect["key_column"]
+    assert preview_empty["detected_key_column_matches"] == detect["matches"]
+
+
+def test_preview_default_key_column_exposes_detect_fields(monkeypatch, tmp_path):
+    """Wrong default key_column preview exposes the same detect metadata as db_detect."""
+    _setup_fields(monkeypatch, tmp_path, [
+        {"name": "nis", "type": "TEXT", "required": False, "unique": False},
+        {"name": "sgio", "type": "TEXT", "required": False, "unique": False},
+    ])
+
+    f = tmp_path / "69841274_001.jpg"
+    f.write_text("x")
+    file_paths = [str(f)]
+
+    monkeypatch.setattr("backend.core.database.buscar_por_columna", _mock_nis_sgio_buscar)
+
+    detect = conversion.db_detect_key_column({"files": file_paths})
+    preview = conversion.preview({
+        "files": file_paths,
+        "patron": "{sgio}{sep}{seq}{ext}",
+        "word_separator": "_",
+        "key_column": "nis",
+        "use_filename_seq": True,
+        "secuencia": 1,
+    })
+    preview_resolved = conversion.preview({
+        "files": file_paths,
+        "patron": "{sgio}{sep}{seq}{ext}",
+        "word_separator": "_",
+        "key_column": detect["key_column"],
+        "use_filename_seq": True,
+        "secuencia": 1,
+    })
+
+    assert preview["preview"] == preview_resolved["preview"]
+    assert preview["detected_key_column"] == detect["key_column"]
+    assert preview["detected_key_column_matches"] == detect["matches"]

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, FolderOpen, Loader2, Square, Tag } from 'lucide-react';
 import { api, onNotify } from '../../../api';
 import type { DriveVerifyResult } from '../types';
@@ -58,18 +58,30 @@ export default function RenameExportPanel({ onDone }: RenameExportPanelProps) {
     });
   }, []);
 
+  const verifyRequestRef = useRef(0);
+  const folderInputRef = useRef(folderInput);
+  folderInputRef.current = folderInput;
+
   const resolvedId = parseDriveFolderId(folderInput) || folderInput.trim();
 
   const handleVerify = useCallback(async () => {
     if (!resolvedId) return;
+    const folderIdAtStart = resolvedId;
+    const requestId = ++verifyRequestRef.current;
     setVerifying(true);
     setError('');
     setVerified(null);
     setResult(null);
     try {
-      const res = await api.autoimgDriveVerifyFolder(resolvedId);
+      const res = await api.autoimgDriveVerifyFolder(folderIdAtStart);
+      const folderIdNow =
+        parseDriveFolderId(folderInputRef.current) || folderInputRef.current.trim();
+      if (requestId !== verifyRequestRef.current || folderIdAtStart !== folderIdNow) return;
       setVerified(res);
     } catch (e) {
+      const folderIdNow =
+        parseDriveFolderId(folderInputRef.current) || folderInputRef.current.trim();
+      if (requestId !== verifyRequestRef.current || folderIdAtStart !== folderIdNow) return;
       setError(e instanceof Error ? e.message : 'No se pudo verificar la carpeta');
     } finally {
       setVerifying(false);
@@ -155,6 +167,7 @@ export default function RenameExportPanel({ onDone }: RenameExportPanelProps) {
           type="text"
           value={folderInput}
           onChange={(e) => {
+            verifyRequestRef.current += 1;
             setFolderInput(e.target.value);
             setVerified(null);
             setResult(null);
