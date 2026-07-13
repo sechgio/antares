@@ -112,6 +112,34 @@ const LS_FORMATO = 'antares:ubicaciones:formato';
 const LS_OUTPUT_MODE = 'antares:ubicaciones:outputMode';
 const LS_INPUT_MODE = 'antares:ubicaciones:inputMode';
 const LS_MANUAL_DATA = 'antares:ubicaciones:manualData';
+const LS_API_KEYS = 'antares:ubicaciones:apiKeys';
+const LS_GOOGLE_MAPS_KEY = 'antares:ubicaciones:googleMapsKey';
+
+function clearPlaintextApiKeys(): void {
+  localStorage.removeItem(LS_API_KEYS);
+  localStorage.removeItem(LS_GOOGLE_MAPS_KEY);
+}
+
+function readPlaintextApiKeys(): Record<string, string> {
+  try {
+    const saved = localStorage.getItem(LS_API_KEYS);
+    if (saved) {
+      const parsed: unknown = JSON.parse(saved);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const out: Record<string, string> = {};
+        for (const [k, v] of Object.entries(parsed)) {
+          if (typeof v === 'string' && v.trim()) out[k] = v;
+        }
+        return out;
+      }
+    }
+    const oldGoogleKey = localStorage.getItem(LS_GOOGLE_MAPS_KEY);
+    if (oldGoogleKey) return { google: oldGoogleKey };
+  } catch {
+    // Corrupt plaintext — treat as empty and let the user re-enter.
+  }
+  return {};
+}
 
 const DEFAULT_MANUAL_DATA = {
   cod_componente: '',
@@ -243,17 +271,8 @@ export const UbicacionesView: React.FC = () => {
     }
   });
 
-  const [apiKeys, setApiKeys] = useState<Record<string, string>>(() => {
-    try {
-      const saved = localStorage.getItem('antares:ubicaciones:apiKeys');
-      if (saved) return JSON.parse(saved);
-      const oldGoogleKey = localStorage.getItem('antares:ubicaciones:googleMapsKey');
-      if (oldGoogleKey) return { google: oldGoogleKey };
-      return {};
-    } catch {
-      return {};
-    }
-  });
+  const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+  const apiKeysHydratedRef = useRef(false);
 
   // Design custom styles state
   const [customStyles, setCustomStyles] = useState<CustomStyles>(loadCustomStylesFromStorage);
@@ -300,6 +319,43 @@ export const UbicacionesView: React.FC = () => {
   }, [excelPath, inputMode, manualData, formato, outputDir, outputMode, customStyles, provider, zoom, apiKeys, previewRowIndex]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { keys: secureKeys } = await api.ubicacionesKeysGet();
+        if (cancelled) return;
+
+        if (secureKeys && Object.keys(secureKeys).length > 0) {
+          setApiKeys(secureKeys);
+          clearPlaintextApiKeys();
+          return;
+        }
+
+        const migrated = readPlaintextApiKeys();
+        if (Object.keys(migrated).length > 0) {
+          await api.ubicacionesKeysSet(migrated);
+          clearPlaintextApiKeys();
+          if (!cancelled) setApiKeys(migrated);
+        }
+      } catch (err) {
+        // Keep plaintext in UI so maps still work; retry secure write on next mount.
+        const fallback = readPlaintextApiKeys();
+        if (!cancelled && Object.keys(fallback).length > 0) {
+          setApiKeys(fallback);
+        }
+        console.error('Failed to load/migrate ubicaciones API keys', err);
+      } finally {
+        if (!cancelled) apiKeysHydratedRef.current = true;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       if (stylePreviewTimerRef.current) clearTimeout(stylePreviewTimerRef.current);
@@ -320,7 +376,13 @@ export const UbicacionesView: React.FC = () => {
   }, [provider]);
 
   useEffect(() => {
-    localStorage.setItem('antares:ubicaciones:apiKeys', JSON.stringify(apiKeys));
+    if (!apiKeysHydratedRef.current) return;
+    const timer = setTimeout(() => {
+      api.ubicacionesKeysSet(apiKeys).catch((err) => {
+        console.error('Failed to persist ubicaciones API keys', err);
+      });
+    }, 300);
+    return () => clearTimeout(timer);
   }, [apiKeys]);
 
   useEffect(() => {

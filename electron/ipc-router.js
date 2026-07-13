@@ -15,6 +15,7 @@ const { ipcMain, dialog } = require('electron');
 const crypto = require('crypto');
 const { handleDialogCall } = require('./dialog-handlers');
 const { handleAutoimgCall } = require('./autoimg-handlers');
+const { handleUbicacionesCall } = require('./ubicaciones-handlers');
 const {
   getProcess,
   isReady,
@@ -48,7 +49,7 @@ function _loadIpcMethods() {
     }
   })();
   if (!isPackaged) {
-    for (const rel of ['./ipc-methods', './autoimg-ipc-methods', '../shared/long-running-methods.json']) {
+    for (const rel of ['./ipc-methods', './autoimg-ipc-methods', './ubicaciones-ipc-methods', '../shared/long-running-methods.json']) {
       try {
         delete require.cache[require.resolve(rel)];
       } catch {
@@ -266,6 +267,9 @@ function registerIpcHandlers() {
 
     const autoimgResult = await handleAutoimgCall(method, params);
     if (autoimgResult.handled) return autoimgResult.result;
+
+    const ubicacionesResult = await handleUbicacionesCall(method, params);
+    if (ubicacionesResult.handled) return ubicacionesResult.result;
 
     return _callBackend(method, params);
   });
