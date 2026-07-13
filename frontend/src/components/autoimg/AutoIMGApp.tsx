@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ClipboardList,
   FolderOpen,
@@ -59,10 +59,13 @@ export default function AutoIMGApp() {
   const [bootstrapError, setBootstrapError] = useState('');
   const [globalError, setGlobalError] = useState('');
   const [syncStatus, setSyncStatus] = useState<{ error?: string; result?: string }>({});
+  const bootstrapRequestRef = useRef(0);
 
   const loadBootstrap = useCallback(async (refresh = true) => {
+    const requestId = ++bootstrapRequestRef.current;
     try {
       const data = await api.autoimgBootstrap(refresh);
+      if (requestId !== bootstrapRequestRef.current) return;
       setStatus(statusFromBootstrap(data));
       setBdRows(data.bdRows);
       setLogRows(data.logRows);
@@ -71,6 +74,7 @@ export default function AutoIMGApp() {
       setGoogleConnected(data.connected);
       setBootstrapError('');
     } catch (e) {
+      if (requestId !== bootstrapRequestRef.current) return;
       setStatus(null);
       const msg = e instanceof Error ? e.message : 'Error al cargar AutoIMG';
       setBootstrapError(msg);
