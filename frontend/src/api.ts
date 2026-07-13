@@ -151,6 +151,13 @@ export interface DbDetectKeyColumnResult {
   columns: Array<{ name: string; matches: number }>;
 }
 
+export interface PreviewResult {
+  preview: PreviewItem[];
+  collisions?: MappingCollision[];
+  detected_key_column?: string;
+  detected_key_column_matches?: number;
+}
+
 export interface TechnicalReportsListBody {
   cs?: string;
   contratista?: string;
@@ -237,7 +244,7 @@ export const api = {
   getStatus: () => _invoke<ProcessStatus>('process_status'),
   cancelProcess: () => _invoke<{ cancelled: boolean }>('process_cancel'),
 
-  preview: (body: PreviewBody) => _invoke<{ preview: PreviewItem[]; collisions?: MappingCollision[] }>('preview', body),
+  preview: (body: PreviewBody) => _invoke<PreviewResult>('preview', body),
   previewImage: (body: PreviewImageBody) =>
     _invoke<{ preview: string; width: string; height: string; orig_size_kb: string }>('preview_image', body),
 

@@ -391,6 +391,15 @@ export default function ConversionView() {
         );
         if (token !== previewToken.current) return; // a newer change superseded us
         setRenamePreview(result.preview);
+        if (
+          !mappingMode
+          && dbColumns.length > 1
+          && result.detected_key_column
+          && (result.detected_key_column_matches ?? 0) > 0
+          && result.detected_key_column !== keyColumn
+        ) {
+          setKeyColumn(result.detected_key_column);
+        }
       } catch {
         if (token !== previewToken.current) return;
         setRenamePreview([]);
@@ -398,32 +407,7 @@ export default function ConversionView() {
     }, 600);
 
     return () => window.clearTimeout(timer);
-  }, [files, usarRename, mappingMode, mappingData, patron, secuencia, useFilenameSeq, keyColumn, wordSeparator, sequenceMode]);
-
-  // Auto-detect the best key column when files are added and a DB is loaded.
-  // This fixes the common case where the default key column (first column)
-  // doesn't contain the file codes, causing silent rename failures.
-  // Only sends a sample of files to avoid large IPC payloads.
-  const keyDetectToken = useRef(0);
-  useEffect(() => {
-    if (mappingMode || files.length === 0 || dbColumns.length <= 1) return;
-    const token = ++keyDetectToken.current;
-    // The backend only samples the first 50 files anyway, so we can send
-    // a small sample instead of the full array to reduce IPC payload size.
-    const sampleFiles = files.length > 50 ? files.slice(0, 50) : files;
-    const timer = window.setTimeout(async () => {
-      try {
-        const result = await api.dbDetectKeyColumn(sampleFiles);
-        if (token !== keyDetectToken.current) return;
-        if (result.key_column && result.matches > 0 && result.key_column !== keyColumn) {
-          setKeyColumn(result.key_column);
-        }
-      } catch {
-        // ignore — keep the default key column
-      }
-    }, 800);
-    return () => window.clearTimeout(timer);
-  }, [files, dbColumns, mappingMode, keyColumn]);
+  }, [files, usarRename, mappingMode, mappingData, patron, secuencia, useFilenameSeq, keyColumn, wordSeparator, sequenceMode, dbColumns.length]);
 
   const loadDbColumns = async () => {
     try {

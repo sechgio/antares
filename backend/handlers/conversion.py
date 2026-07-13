@@ -189,6 +189,7 @@ def _resolve_key_column(
     db_columns: list[str] | None = None,
     *,
     sample_size: int = 30,
+    probe_result: tuple[str, int, list[tuple[str, int]], bool] | None = None,
 ) -> str:
     """Resolve the effective key column, auto-detecting if needed.
 
@@ -209,9 +210,9 @@ def _resolve_key_column(
     if len(columns) == 1:
         return columns[0]
 
-    best_col, best_count, per_column, had_keys = _probe_key_columns(
-        files, columns, sample_size=sample_size
-    )
+    if probe_result is None:
+        probe_result = _probe_key_columns(files, columns, sample_size=sample_size)
+    best_col, best_count, per_column, had_keys = probe_result
     if not had_keys:
         return best_col
     # Keep the user's choice if it matches equally well as the best
@@ -242,6 +243,23 @@ def _detect_best_key_column(
     if not db_columns:
         return ""
     return _resolve_key_column(None, files, db_columns, sample_size=sample_size)
+
+
+def _preview_detect_fields(
+    files: list[str],
+    db_cols: list[str],
+) -> tuple[dict[str, Any], tuple[str, int, list[tuple[str, int]], bool] | None]:
+    """Additive preview metadata mirroring db_detect_key_column for multi-column DBs."""
+    if len(db_cols) <= 1:
+        return {}, None
+    probe = _probe_key_columns(files, db_cols)
+    best_col, best_count, _, had_keys = probe
+    if not had_keys:
+        return {"detected_key_column": best_col, "detected_key_column_matches": 0}, probe
+    return {
+        "detected_key_column": best_col,
+        "detected_key_column_matches": best_count,
+    }, probe
 
 
 @with_locale
@@ -289,6 +307,7 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
 
     collisions: list[dict[str, Any]] = []
     res: list[tuple[str, str, bool]] = []
+    detect_fields: dict[str, Any] = {}
     if file_mapping:
         from backend.core.mapping_index import MappingIndex
 
@@ -304,7 +323,9 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
         # Auto-detect the best key column if the provided one is invalid
         from backend.core.config_fields import get_field_names
 
-        resolved_key = _resolve_key_column(key_column, files, get_field_names())
+        db_cols = get_field_names()
+        detect_fields, probe = _preview_detect_fields(files, db_cols) if db_cols else ({}, None)
+        resolved_key = _resolve_key_column(key_column, files, db_cols, probe_result=probe)
         if resolved_key != key_column:
             log_message(
                 f"Columna ID '{key_column}' no encontrada en BD, usando '{resolved_key}'",
@@ -338,7 +359,10 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
         from backend.core.config_fields import get_field_names
 
         db_cols = get_field_names()
-        auto_key = _detect_best_key_column(files, db_cols) if (db_cols and files) else ""
+        detect_fields, probe = _preview_detect_fields(files, db_cols) if db_cols else ({}, None)
+        auto_key = (
+            _resolve_key_column(None, files, db_cols, probe_result=probe) if (db_cols and files) else ""
+        )
         if auto_key:
             db_cache = buscar_por_columna(list(set(codigos_list + stems)), auto_key)
             res = _preview_with_db(
@@ -372,6 +396,8 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     payload: dict[str, Any] = {
         "preview": [{"origen": Path(orig).name, "nuevo": nuev, "en_bd": en_bd} for orig, nuev, en_bd in res],
     }
+    if detect_fields:
+        payload.update(detect_fields)
     if collisions:
         payload["collisions"] = collisions
     return payload
