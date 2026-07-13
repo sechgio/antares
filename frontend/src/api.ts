@@ -244,7 +244,9 @@ export const api = {
   localThumbnail: (body: { path: string; maxEdge?: number }) =>
     _invoke<{ dataUrl: string }>('local_thumbnail', body),
 
-  startProcess: (body: ProcessBody) => _invoke<{ started: boolean }>('process_start', body),
+  startProcess: (body: ProcessBody) =>
+    _invoke<{ started: boolean; reason?: string; job_id?: string }>('process_start', body),
+
   getStatus: () => _invoke<ProcessStatus>('process_status'),
   cancelProcess: () => _invoke<{ cancelled: boolean }>('process_cancel'),
 

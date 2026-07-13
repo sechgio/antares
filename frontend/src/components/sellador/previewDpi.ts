@@ -1,5 +1,7 @@
-const MIN_PREVIEW_PIXEL_WIDTH = 2800;
-const MAX_PREVIEW_PIXEL_WIDTH = 6144;
+/** Display-only raster floor (~readable on-screen, not print-DPI). */
+export const MIN_PREVIEW_PIXEL_WIDTH = 900;
+/** Display-only raster ceiling to bound canvas / backend preview cost. */
+export const MAX_PREVIEW_PIXEL_WIDTH = 2048;
 
 /** Effective DPR for Electron on Windows (often reports 1.0 at 125–150% scaling). */
 function effectiveDevicePixelRatio(): number {
@@ -8,14 +10,19 @@ function effectiveDevicePixelRatio(): number {
   return Math.max(reported, 1.5);
 }
 
-/** CSS width → raster width for sharp on-screen PDF previews. */
-export function selladorPreviewPixelWidth(cssWidth: number): number {
-  const clamped = Math.max(cssWidth, 400);
+/**
+ * Display-oriented scale factor for on-screen PDF previews.
+ * Uses min(dpr, 2) * 1.5 so Windows 125–150% stays sharp without multi-megapixel canvases.
+ * Export/apply geometry does NOT use this — preview only.
+ */
+export function selladorPreviewDpr(): number {
   const dpr = effectiveDevicePixelRatio();
-  const scaled = Math.round(clamped * dpr * 2.5);
-  return Math.min(Math.max(scaled, MIN_PREVIEW_PIXEL_WIDTH), MAX_PREVIEW_PIXEL_WIDTH);
+  return Math.min(Math.min(dpr, 2) * 1.5, 3);
 }
 
-export function selladorPreviewDpr(): number {
-  return Math.min(effectiveDevicePixelRatio() * 2.5, 4);
+/** CSS width → raster width for sharp on-screen PDF previews (clamped to display caps). */
+export function selladorPreviewPixelWidth(cssWidth: number): number {
+  const clamped = Math.max(cssWidth, 400);
+  const scaled = Math.round(clamped * selladorPreviewDpr());
+  return Math.min(Math.max(scaled, MIN_PREVIEW_PIXEL_WIDTH), MAX_PREVIEW_PIXEL_WIDTH);
 }

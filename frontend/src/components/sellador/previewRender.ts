@@ -1,12 +1,19 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { api } from '../../api';
+import { createLruMap } from './lruMap';
 import { loadPdfDocument } from './pdfjs';
-import { selladorPreviewPixelWidth } from './previewDpi';
+import {
+  MAX_PREVIEW_PIXEL_WIDTH,
+  MIN_PREVIEW_PIXEL_WIDTH,
+  selladorPreviewDpr,
+  selladorPreviewPixelWidth,
+} from './previewDpi';
 import type { PdfPageSize, StampRect } from './utils';
 
 const WIDTH_BUCKET = 80;
-const OTHER_PAGES_CACHE_VERSION = 'hd-v2';
-const otherPagesRenderCache = new Map<string, string>();
+const OTHER_PAGES_CACHE_VERSION = 'disp-v1';
+const OTHER_PAGES_CACHE_MAX = 32;
+const otherPagesRenderCache = createLruMap<string, string>(OTHER_PAGES_CACHE_MAX);
 
 function bucketContainerWidth(width: number): number {
   const clamped = Math.max(width, 320);
@@ -71,11 +78,11 @@ export async function renderPageWithStampFromPdf(
 ): Promise<string> {
   const page = await pdf.getPage(pageNum);
   const unscaled = page.getViewport({ scale: 1 });
-  const dpr = typeof window !== 'undefined'
-    ? Math.min(Math.max(window.devicePixelRatio || 1, 1.5) * 2.5, 4)
-    : 2.5;
-  const minScale = 2800 / unscaled.width;
-  const scale = Math.min(Math.max((containerW / unscaled.width) * dpr, minScale), 4);
+  // Align client canvas with previewDpi display caps (same as backend max_width path).
+  const dpr = selladorPreviewDpr();
+  const minScale = MIN_PREVIEW_PIXEL_WIDTH / unscaled.width;
+  const maxScale = MAX_PREVIEW_PIXEL_WIDTH / unscaled.width;
+  const scale = Math.min(Math.max((containerW / unscaled.width) * dpr, minScale), maxScale);
   const viewport = page.getViewport({ scale });
 
   const canvas = document.createElement('canvas');

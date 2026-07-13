@@ -3,6 +3,17 @@ import { api, onNotify } from '../api';
 import { ProcessStatus } from '../types';
 import type { ProcessBody } from '../api';
 
+function emptyStatus(): ProcessStatus {
+  return {
+    running: false,
+    progress: 0,
+    current_file: '',
+    ok_count: 0,
+    err_count: 0,
+    logs: [],
+  };
+}
+
 export function useProcessRunner() {
   const [status, setStatus] = useState<ProcessStatus | null>(null);
   const [running, setRunning] = useState(false);
@@ -17,6 +28,13 @@ export function useProcessRunner() {
 
   useEffect(() => {
     const unsub = onNotify((method, params) => {
+      // Backend lifecycle: handle before params filter so empty/undefined params still reset.
+      if (method === 'backend.restarting' || method === 'backend.fatal' || method === 'backend.error') {
+        setRunning(false);
+        setStatus((prev) => (prev ? { ...prev, running: false } : prev));
+        return;
+      }
+
       if (!params || typeof params !== 'object' || Array.isArray(params)) return;
       const p = params as Record<string, unknown>;
       const safeKeys = new Set(['running', 'progress', 'current_file', 'ok_count', 'err_count', 'logs']);
@@ -25,9 +43,10 @@ export function useProcessRunner() {
         if (safeKeys.has(k)) filtered[k] = v;
       }
       if (method === 'process.progress') {
-        setStatus((prev) => prev ? { ...prev, ...filtered } as ProcessStatus : null);
+        setStatus((prev) => ({ ...(prev ?? emptyStatus()), ...filtered, running: true } as ProcessStatus));
+        setRunning(true);
       } else if (method === 'process.complete') {
-        setStatus((prev) => prev ? { ...prev, running: false, progress: 100, ...filtered } as ProcessStatus : null);
+        setStatus((prev) => ({ ...(prev ?? emptyStatus()), ...filtered, running: false, progress: 100 } as ProcessStatus));
         setRunning(false);
       }
     });
@@ -40,11 +59,19 @@ export function useProcessRunner() {
     // is gated on `running`. Setting it after the await left the button enabled
     // during that window, so a second click enqueued a second process_start.
     setRunning(true);
+    setStatus((prev) => ({ ...(prev ?? emptyStatus()), running: true, progress: 0 }));
     try {
-      await api.startProcess(body);
-      pollStatus();
+      const result = await api.startProcess(body);
+      if (!result?.started) {
+        setRunning(false);
+        setStatus((prev) => (prev ? { ...prev, running: false } : emptyStatus()));
+        return result;
+      }
+      await pollStatus();
+      return result;
     } catch (err) {
       setRunning(false);
+      setStatus((prev) => (prev ? { ...prev, running: false } : null));
       throw err;
     }
   }, [pollStatus]);
