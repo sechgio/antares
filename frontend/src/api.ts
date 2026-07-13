@@ -501,6 +501,9 @@ export const api = {
     customStyles?: Record<string, unknown>;
     manualData?: Record<string, any>;
   }) => _invoke<{ success: boolean; data?: unknown; error?: string }>('generar_ubicaciones', body),
+  ubicacionesKeysGet: () => _invoke<{ keys: Record<string, string> }>('ubicaciones_keys_get'),
+  ubicacionesKeysSet: (keys: Record<string, string>) =>
+    _invoke<{ keys: Record<string, string> }>('ubicaciones_keys_set', { keys }),
 
   // ─── AutoIMG (Google Sheets + Drive — Electron main) ───────────────────
   autoimgOAuthConfigStatus: () => _invoke<{ configured: boolean; client_id_masked?: string }>('autoimg_oauth_config_status'),

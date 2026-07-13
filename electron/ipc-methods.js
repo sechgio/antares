@@ -42,6 +42,7 @@ const NATIVE_METHODS = [
 ];
 
 const { AUTOIMG_METHODS } = require('./autoimg-ipc-methods');
+const { UBICACIONES_METHODS } = require('./ubicaciones-ipc-methods');
 
 // Methods with larger user payloads or slow rendering/import work. The list
 // lives in shared/long-running-methods.json so the Electron main process and
@@ -49,7 +50,7 @@ const { AUTOIMG_METHODS } = require('./autoimg-ipc-methods');
 // drift on which methods get the extended timeout.
 const LONG_RUNNING_METHODS = new Set(require('../shared/long-running-methods.json'));
 
-const ALLOWED_RENDERER_METHODS = new Set([...BACKEND_METHODS, ...NATIVE_METHODS, ...AUTOIMG_METHODS]);
+const ALLOWED_RENDERER_METHODS = new Set([...BACKEND_METHODS, ...NATIVE_METHODS, ...AUTOIMG_METHODS, ...UBICACIONES_METHODS]);
 
 module.exports = {
   BACKEND_METHODS,

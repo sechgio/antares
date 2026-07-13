@@ -243,17 +243,8 @@ export const UbicacionesView: React.FC = () => {
     }
   });
 
-  const [apiKeys, setApiKeys] = useState<Record<string, string>>(() => {
-    try {
-      const saved = localStorage.getItem('antares:ubicaciones:apiKeys');
-      if (saved) return JSON.parse(saved);
-      const oldGoogleKey = localStorage.getItem('antares:ubicaciones:googleMapsKey');
-      if (oldGoogleKey) return { google: oldGoogleKey };
-      return {};
-    } catch {
-      return {};
-    }
-  });
+  const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+  const apiKeysHydratedRef = useRef(false);
 
   // Design custom styles state
   const [customStyles, setCustomStyles] = useState<CustomStyles>(loadCustomStylesFromStorage);
@@ -300,6 +291,47 @@ export const UbicacionesView: React.FC = () => {
   }, [excelPath, inputMode, manualData, formato, outputDir, outputMode, customStyles, provider, zoom, apiKeys, previewRowIndex]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { keys: secureKeys } = await api.ubicacionesKeysGet();
+        if (cancelled) return;
+
+        if (secureKeys && Object.keys(secureKeys).length > 0) {
+          setApiKeys(secureKeys);
+          apiKeysHydratedRef.current = true;
+          return;
+        }
+
+        let migrated: Record<string, string> = {};
+        const saved = localStorage.getItem('antares:ubicaciones:apiKeys');
+        if (saved) {
+          migrated = JSON.parse(saved);
+        } else {
+          const oldGoogleKey = localStorage.getItem('antares:ubicaciones:googleMapsKey');
+          if (oldGoogleKey) migrated = { google: oldGoogleKey };
+        }
+
+        if (Object.keys(migrated).length > 0) {
+          await api.ubicacionesKeysSet(migrated);
+          localStorage.removeItem('antares:ubicaciones:apiKeys');
+          localStorage.removeItem('antares:ubicaciones:googleMapsKey');
+          if (!cancelled) setApiKeys(migrated);
+        }
+      } catch {
+        // Fall back to empty keys; user can re-enter if migration failed.
+      } finally {
+        if (!cancelled) apiKeysHydratedRef.current = true;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       if (stylePreviewTimerRef.current) clearTimeout(stylePreviewTimerRef.current);
@@ -320,7 +352,11 @@ export const UbicacionesView: React.FC = () => {
   }, [provider]);
 
   useEffect(() => {
-    localStorage.setItem('antares:ubicaciones:apiKeys', JSON.stringify(apiKeys));
+    if (!apiKeysHydratedRef.current) return;
+    const timer = setTimeout(() => {
+      api.ubicacionesKeysSet(apiKeys).catch(() => {});
+    }, 300);
+    return () => clearTimeout(timer);
   }, [apiKeys]);
 
   useEffect(() => {

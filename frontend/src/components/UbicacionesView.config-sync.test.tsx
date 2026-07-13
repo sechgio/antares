@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const previewPayloads: Record<string, unknown>[] = [];
 const generatePayloads: Record<string, unknown>[] = [];
 
-const { mockPreview, mockGenerate } = vi.hoisted(() => ({
+const { mockPreview, mockGenerate, mockKeysGet, mockKeysSet } = vi.hoisted(() => ({
   mockPreview: vi.fn(async (body: Record<string, unknown>) => {
     previewPayloads.push(body);
     return {
@@ -25,12 +25,16 @@ const { mockPreview, mockGenerate } = vi.hoisted(() => ({
     generatePayloads.push(body);
     return { success: true, data: { generados: 1, fallidos: 0, consolidado: body.consolidado } };
   }),
+  mockKeysGet: vi.fn(async () => ({ keys: {} })),
+  mockKeysSet: vi.fn(async (keys: Record<string, string>) => ({ keys })),
 }));
 
 vi.mock('../api', () => ({
   api: {
     previewUbicacion: mockPreview,
     generarUbicaciones: mockGenerate,
+    ubicacionesKeysGet: mockKeysGet,
+    ubicacionesKeysSet: mockKeysSet,
   },
 }));
 
