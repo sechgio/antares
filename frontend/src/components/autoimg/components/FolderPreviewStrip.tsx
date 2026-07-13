@@ -5,14 +5,26 @@ import type { DriveFolderThumb } from '../types';
 
 const SLOT_COUNT = 4;
 const CONCURRENCY = 2;
+const SESSION_CACHE_MAX = 30;
 
 type PreviewState =
   | { status: 'idle' | 'loading' }
   | { status: 'ready'; thumbs: DriveFolderThumb[] }
   | { status: 'error' };
 
-/** Cache de sesión en el renderer — evita re-pedir al cambiar de tab. */
+/** Cache de sesión en el renderer — evita re-pedir al cambiar de tab. LRU max SESSION_CACHE_MAX. */
 const sessionCache = new Map<string, DriveFolderThumb[]>();
+
+function setSessionCache(folderId: string, thumbs: DriveFolderThumb[]) {
+  // Refresh insertion order on hit-then-set so LRU deletes the oldest Map key.
+  if (sessionCache.has(folderId)) sessionCache.delete(folderId);
+  sessionCache.set(folderId, thumbs);
+  while (sessionCache.size > SESSION_CACHE_MAX) {
+    const oldest = sessionCache.keys().next().value;
+    if (oldest === undefined) break;
+    sessionCache.delete(oldest);
+  }
+}
 
 async function mapWithConcurrency<T>(
   items: T[],
@@ -70,7 +82,7 @@ export function useFolderPreviews(folderIds: string[]) {
       try {
         const res = await api.autoimgDriveFolderPreview(folderId);
         if (cancelled.current) return;
-        sessionCache.set(folderId, res.thumbs);
+        setSessionCache(folderId, res.thumbs);
         setPreviews((prev) => ({
           ...prev,
           [folderId]: { status: 'ready', thumbs: res.thumbs },
