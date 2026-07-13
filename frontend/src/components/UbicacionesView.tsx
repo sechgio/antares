@@ -112,6 +112,34 @@ const LS_FORMATO = 'antares:ubicaciones:formato';
 const LS_OUTPUT_MODE = 'antares:ubicaciones:outputMode';
 const LS_INPUT_MODE = 'antares:ubicaciones:inputMode';
 const LS_MANUAL_DATA = 'antares:ubicaciones:manualData';
+const LS_API_KEYS = 'antares:ubicaciones:apiKeys';
+const LS_GOOGLE_MAPS_KEY = 'antares:ubicaciones:googleMapsKey';
+
+function clearPlaintextApiKeys(): void {
+  localStorage.removeItem(LS_API_KEYS);
+  localStorage.removeItem(LS_GOOGLE_MAPS_KEY);
+}
+
+function readPlaintextApiKeys(): Record<string, string> {
+  try {
+    const saved = localStorage.getItem(LS_API_KEYS);
+    if (saved) {
+      const parsed: unknown = JSON.parse(saved);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const out: Record<string, string> = {};
+        for (const [k, v] of Object.entries(parsed)) {
+          if (typeof v === 'string' && v.trim()) out[k] = v;
+        }
+        return out;
+      }
+    }
+    const oldGoogleKey = localStorage.getItem(LS_GOOGLE_MAPS_KEY);
+    if (oldGoogleKey) return { google: oldGoogleKey };
+  } catch {
+    // Corrupt plaintext — treat as empty and let the user re-enter.
+  }
+  return {};
+}
 
 const DEFAULT_MANUAL_DATA = {
   cod_componente: '',
@@ -300,27 +328,23 @@ export const UbicacionesView: React.FC = () => {
 
         if (secureKeys && Object.keys(secureKeys).length > 0) {
           setApiKeys(secureKeys);
-          apiKeysHydratedRef.current = true;
+          clearPlaintextApiKeys();
           return;
         }
 
-        let migrated: Record<string, string> = {};
-        const saved = localStorage.getItem('antares:ubicaciones:apiKeys');
-        if (saved) {
-          migrated = JSON.parse(saved);
-        } else {
-          const oldGoogleKey = localStorage.getItem('antares:ubicaciones:googleMapsKey');
-          if (oldGoogleKey) migrated = { google: oldGoogleKey };
-        }
-
+        const migrated = readPlaintextApiKeys();
         if (Object.keys(migrated).length > 0) {
           await api.ubicacionesKeysSet(migrated);
-          localStorage.removeItem('antares:ubicaciones:apiKeys');
-          localStorage.removeItem('antares:ubicaciones:googleMapsKey');
+          clearPlaintextApiKeys();
           if (!cancelled) setApiKeys(migrated);
         }
-      } catch {
-        // Fall back to empty keys; user can re-enter if migration failed.
+      } catch (err) {
+        // Keep plaintext in UI so maps still work; retry secure write on next mount.
+        const fallback = readPlaintextApiKeys();
+        if (!cancelled && Object.keys(fallback).length > 0) {
+          setApiKeys(fallback);
+        }
+        console.error('Failed to load/migrate ubicaciones API keys', err);
       } finally {
         if (!cancelled) apiKeysHydratedRef.current = true;
       }
@@ -354,7 +378,9 @@ export const UbicacionesView: React.FC = () => {
   useEffect(() => {
     if (!apiKeysHydratedRef.current) return;
     const timer = setTimeout(() => {
-      api.ubicacionesKeysSet(apiKeys).catch(() => {});
+      api.ubicacionesKeysSet(apiKeys).catch((err) => {
+        console.error('Failed to persist ubicaciones API keys', err);
+      });
     }, 300);
     return () => clearTimeout(timer);
   }, [apiKeys]);

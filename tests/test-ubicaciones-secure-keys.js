@@ -19,6 +19,26 @@ function main() {
     failed = true;
   }
 
+  if (!/function clearPlaintextApiKeys\(/.test(source)) {
+    console.error('[FAIL] UbicacionesView missing clearPlaintextApiKeys helper');
+    failed = true;
+  }
+
+  if (!/clearPlaintextApiKeys\(\)/.test(source)) {
+    console.error('[FAIL] UbicacionesView never calls clearPlaintextApiKeys');
+    failed = true;
+  }
+
+  if (/ubicacionesKeysSet\([^)]*\)\.catch\(\(\)\s*=>\s*\{\s*\}\)/.test(source)) {
+    console.error('[FAIL] UbicacionesView still swallows ubicacionesKeysSet errors silently');
+    failed = true;
+  }
+
+  if (!/Failed to persist ubicaciones API keys/.test(source)) {
+    console.error('[FAIL] UbicacionesView missing persist error logging');
+    failed = true;
+  }
+
   const { encryptPayload, decryptPayload } = require(path.join(ROOT, 'electron', 'autoimg-secure-storage'));
   const { FILE, NS, getUbicacionesApiKeys, setUbicacionesApiKeys } = require(path.join(ROOT, 'electron', 'ubicaciones-secure-keys'));
 
