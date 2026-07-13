@@ -28,7 +28,7 @@ const STATE = Object.freeze({
 });
 
 const HANDSHAKE_TIMEOUT_MS = 30_000;    // single spawn attempt timeout
-const START_RETRY_LIMIT = 5;             // spawn retry count per start cycle
+const AUTO_RESTART_LIMIT = 8;            // max consecutive auto-restarts before FATAL
 const MAX_RESTART_BACKOFF_SEC = 30;      // cap backoff at 30s
 const RESTART_RESET_MS = 60_000;         // time of stability before counter resets
 const STDERR_BUFFER_LINES = 30;          // rolling stderr tail
@@ -47,6 +47,7 @@ let _healthCheckTimer = null;            // periodic health check interval
 let _healthProbeInFlight = false;        // avoid overlapping liveness probes
 let _currentStart = null;                // { inProgress, abort } — active start/retry cycle
 let _autoRestartAbort = null;            // aborts in-flight auto-restart backoff when preempted
+let _autoRestartInProgress = false;      // synchronous claim for _autoRestart() concurrency
 let _manualRestartInProgress = false;    // synchronous claim for manualRestart() concurrency
 let _pendingRequestCount = 0;            // track in-flight IPC requests to avoid killing busy backend
 // Background jobs (conversion, etc.) finish their process_start IPC quickly but
@@ -83,8 +84,7 @@ function getState() { return _state; }
 function getLastError() { return _lastError; }
 function getStderrTail() { return _stderrBuffer.join('\n'); }
 function getAutoRestartLimit() {
-  // ponytail: siempre ilimitado en runtime — el knob era dead config.
-  return null;
+  return AUTO_RESTART_LIMIT;
 }
 function getPendingRequestCount() { return _pendingRequestCount; }
 function incrementPendingRequests() { _pendingRequestCount++; }
@@ -207,6 +207,22 @@ function _sleep(ms, signal) {
   });
 }
 
+function _enterFatalFromRestartBudget(message) {
+  const stderrTail = getStderrTail();
+  const fatalMessage = message || `Backend auto-restart budget exhausted (${getAutoRestartLimit()} attempts)`;
+  _lastError = { kind: 'fatal', message: fatalMessage, stderrTail };
+  _state = STATE.FATAL;
+  _clearStartCycle();
+  _abortAutoRestart();
+  _stopHealthCheck();
+  _readyReject?.(new Error(fatalMessage));
+  _notifyRenderer('backend.fatal', {
+    message: fatalMessage,
+    stderrTail,
+    attempts: _restartCount,
+  });
+}
+
 function _classifyStartupError(rawMessage) {
   const msg = (rawMessage || '').toLowerCase();
   // Fatal = no point retrying: executable missing, python not installed.
@@ -246,7 +262,7 @@ async function startPythonBackend(isDev, attempt = 1) {
     _lastError = null;
     _stderrBuffer = [];
     _resetReadyGate();
-    _notifyRenderer('backend.starting', { attempt: 1, limit: START_RETRY_LIMIT });
+    _notifyRenderer('backend.starting', { attempt: 1, limit: getAutoRestartLimit() });
   }
 
   const cycleSignal = _currentStart?.abort?.signal;
@@ -261,9 +277,9 @@ async function startPythonBackend(isDev, attempt = 1) {
       _clearStartCycle();
       return;
     }
-    _state = STATE.READY;
     _lastError = null;
     _clearStartCycle();
+    _state = STATE.READY;
     _readyResolve?.();
     if (_restartResetTimer) clearTimeout(_restartResetTimer);
     _restartResetTimer = setTimeout(() => { _restartCount = 0; }, RESTART_RESET_MS);
@@ -295,7 +311,18 @@ async function startPythonBackend(isDev, attempt = 1) {
       return;
     }
 
-    // Never give up on transient failures — keep retrying with increasing backoff.
+    if (attempt >= getAutoRestartLimit()) {
+      _state = STATE.FATAL;
+      _clearStartCycle();
+      _readyReject?.(err);
+      _notifyRenderer('backend.fatal', {
+        message: err.message,
+        stderrTail,
+        attempts: attempt,
+      });
+      return;
+    }
+
     const backoffSec = Math.min(Math.pow(2, attempt - 1), MAX_RESTART_BACKOFF_SEC);
     _notifyRenderer('backend.error', {
       message: err.message,
@@ -451,42 +478,52 @@ function _stopHealthCheck() {
 }
 
 async function _autoRestart() {
-  if (_isShuttingDown || _manualRestartInProgress) return;
+  if (_isShuttingDown || _manualRestartInProgress || _autoRestartInProgress) return;
+  if (_state === STATE.FATAL) return;
   if (_currentStart?.inProgress) {
     console.warn('[backend-spawner] Auto-restart skipped: start already in progress.');
     return;
   }
+  if (_restartCount >= getAutoRestartLimit()) {
+    _enterFatalFromRestartBudget();
+    return;
+  }
 
-  _abortAutoRestart();
-  _autoRestartAbort = new AbortController();
-  const restartSignal = _autoRestartAbort.signal;
+  _autoRestartInProgress = true;
+  try {
+    _abortAutoRestart();
+    _autoRestartAbort = new AbortController();
+    const restartSignal = _autoRestartAbort.signal;
 
-  _restartCount++;
-  console.warn(`[backend-spawner] Auto-restart attempt ${_restartCount} (unlimited)`);
+    _restartCount++;
+    console.warn(`[backend-spawner] Auto-restart attempt ${_restartCount}/${getAutoRestartLimit()}`);
 
-  _state = STATE.STARTING;
-  _resetReadyGate();
-  _notifyRenderer('backend.restarting', {
-    attempt: _restartCount,
-    limit: null,
-  });
+    _state = STATE.STARTING;
+    _resetReadyGate();
+    _notifyRenderer('backend.restarting', {
+      attempt: _restartCount,
+      limit: getAutoRestartLimit(),
+    });
 
-  // Exponential backoff with a cap so we don't spam too fast
-  const backoffSec = Math.min(Math.pow(2, _restartCount - 1), MAX_RESTART_BACKOFF_SEC);
-  await _sleep(1000 * backoffSec, restartSignal);
-  if (_isShuttingDown || _manualRestartInProgress || _currentStart?.inProgress || restartSignal.aborted) {
-    if (_isShuttingDown) {
-      console.log('[backend-spawner] Shutdown requested during auto-restart backoff, aborting.');
+    // Exponential backoff with a cap so we don't spam too fast
+    const backoffSec = Math.min(Math.pow(2, _restartCount - 1), MAX_RESTART_BACKOFF_SEC);
+    await _sleep(1000 * backoffSec, restartSignal);
+    if (_isShuttingDown || _manualRestartInProgress || _currentStart?.inProgress || restartSignal.aborted) {
+      if (_isShuttingDown) {
+        console.log('[backend-spawner] Shutdown requested during auto-restart backoff, aborting.');
+      }
+      _clearAutoRestartCycle();
+      return;
+    }
+    if (isReady() && pythonProcess && !pythonProcess.killed) {
+      _clearAutoRestartCycle();
+      return;
     }
     _clearAutoRestartCycle();
-    return;
+    await startPythonBackend(_isDev);
+  } finally {
+    _autoRestartInProgress = false;
   }
-  if (isReady() && pythonProcess && !pythonProcess.killed) {
-    _clearAutoRestartCycle();
-    return;
-  }
-  _clearAutoRestartCycle();
-  await startPythonBackend(_isDev);
 }
 
 function _spawn(isDev) {
@@ -520,7 +557,7 @@ function _spawn(isDev) {
     }
     _state = wasReady ? STATE.EXITED : _state;
 
-    if (wasReady && !_isShuttingDown) {
+    if (wasReady && !_isShuttingDown && _state !== STATE.FATAL) {
       // Unexpected crash after being healthy → try to restart.
       _autoRestart().catch((err) => console.error('[backend-spawner] Auto-restart failed:', err));
     }
@@ -648,6 +685,8 @@ async function manualRestart(isDev, { force = false } = {}) {
     // Reset ANY state so startPythonBackend can proceed — even if previously fatal.
     _state = STATE.IDLE;
     _restartCount = 0;
+    if (_restartResetTimer) clearTimeout(_restartResetTimer);
+    _restartResetTimer = null;
     _lastError = null;
     _stderrBuffer = [];
     _isShuttingDown = false;
