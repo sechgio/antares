@@ -220,6 +220,95 @@ async function run() {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
 
+  // ─── local_thumbnail (Path A) ─────────────────────────────────────────────
+  console.log('\nTesting local_thumbnail path validation and nativeImage path...\n');
+  const { assertSafeLocalPath } = require('../electron/local-thumbnail.js');
+
+  let rejectedRelative = false;
+  try {
+    assertSafeLocalPath('relative/photo.jpg');
+  } catch (err) {
+    rejectedRelative = /absolute|invalid path/i.test(err.message);
+  }
+  assert(rejectedRelative, 'assertSafeLocalPath should reject relative paths');
+
+  let rejectedEmpty = false;
+  try {
+    assertSafeLocalPath('   ');
+  } catch (err) {
+    rejectedEmpty = /invalid path/i.test(err.message);
+  }
+  assert(rejectedEmpty, 'assertSafeLocalPath should reject empty paths');
+
+  let rejectedNullByte = false;
+  try {
+    assertSafeLocalPath((process.platform === 'win32' ? 'C:\\tmp\\a\0.jpg' : '/tmp/a\0.jpg'));
+  } catch (err) {
+    rejectedNullByte = /invalid path/i.test(err.message);
+  }
+  assert(rejectedNullByte, 'assertSafeLocalPath should reject null-byte paths');
+
+  let rejectedMissing = false;
+  try {
+    assertSafeLocalPath(process.platform === 'win32' ? 'C:\\definitely-missing-antares-thumb-xyz.jpg' : '/tmp/definitely-missing-antares-thumb-xyz.jpg');
+  } catch (err) {
+    rejectedMissing = /not a file/i.test(err.message);
+  }
+  assert(rejectedMissing, 'assertSafeLocalPath should reject non-existent files');
+
+  const thumbTempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'antares-thumb-test-'));
+  try {
+    const imgPath = path.join(thumbTempDir, 'tiny.jpg');
+    await fs.promises.writeFile(imgPath, Buffer.from([0xff, 0xd8, 0xff, 0xd9])); // minimal JPEG marker pair
+
+    const fakeNativeImage = {
+      createThumbnailFromPath: async () => {
+        throw new Error('createThumbnailFromPath unavailable in test');
+      },
+      createFromPath: (p) => {
+        assert(p === path.resolve(imgPath), 'createFromPath should receive resolved absolute path');
+        return {
+          isEmpty: () => false,
+          getSize: () => ({ width: 800, height: 600 }),
+          resize: ({ width, height }) => ({
+            isEmpty: () => false,
+            getSize: () => ({ width, height }),
+            toJPEG: (q) => {
+              assert(q === 60, 'toJPEG quality should be 60');
+              return Buffer.from('fake-jpeg');
+            },
+          }),
+          toJPEG: () => Buffer.from('fake-jpeg-full'),
+        };
+      },
+    };
+
+    const thumb = await handleDialogCall(
+      'local_thumbnail',
+      { path: imgPath, maxEdge: 256 },
+      dialog,
+      win,
+      { nativeImage: fakeNativeImage },
+    );
+    assert(thumb.handled === true, 'local_thumbnail should be handled by Electron');
+    assert(
+      thumb.result.dataUrl === `data:image/jpeg;base64,${Buffer.from('fake-jpeg').toString('base64')}`,
+      'local_thumbnail should return a JPEG data URL',
+    );
+
+    let badPathHandled = false;
+    try {
+      await handleDialogCall('local_thumbnail', { path: '../etc/passwd' }, dialog, win, {
+        nativeImage: fakeNativeImage,
+      });
+    } catch (err) {
+      badPathHandled = /absolute|invalid path/i.test(err.message);
+    }
+    assert(badPathHandled, 'local_thumbnail should reject relative path params');
+  } finally {
+    await fs.promises.rm(thumbTempDir, { recursive: true, force: true });
+  }
+
   console.log(`\n${'='.repeat(50)}`);
   console.log(`Results: ${passed} passed, ${failed} failed`);
   console.log('='.repeat(50));
