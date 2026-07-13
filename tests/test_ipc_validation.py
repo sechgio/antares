@@ -14,8 +14,18 @@ def test_invalid_method() -> None:
         IPCMessage({"id": "1", "method": "../../../etc/passwd", "params": {}})
 
 def test_missing_required_params() -> None:
-    """Test that missing required params are handled."""
-    # This will be caught by the decorator later
+    """Handler @validate_params rejects missing or null required keys."""
+    from backend.handlers.common import validate_params as require_params
+
+    @require_params("files")
+    def handler(params: dict) -> str:
+        return "ok"
+
+    with pytest.raises(ValueError, match="Missing required parameter: files"):
+        handler({})
+    with pytest.raises(ValueError, match="Missing required parameter: files"):
+        handler({"files": None})
+    assert handler({"files": ["a.jpg"]}) == "ok"
 
 def test_path_traversal() -> None:
     """Test path traversal detection."""
