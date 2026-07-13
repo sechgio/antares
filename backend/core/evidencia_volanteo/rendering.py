@@ -261,7 +261,7 @@ def _default_filename(fmt: str) -> str:
 
 def _deny_external_url_fetcher(url: str, **kwargs: Any) -> Any:
     """Allow only data: URIs; deny all other fetches (defense in depth)."""
-    from weasyprint.urls import URLFetcherResponse, default_url_fetcher
+    from weasyprint.urls import URLFetcherResponse, default_url_fetcher  # type: ignore[import-untyped]
 
     if str(url).strip().lower().startswith("data:"):
         return default_url_fetcher(url, **kwargs)
