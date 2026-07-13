@@ -72,6 +72,17 @@ class TestValidateRunPayload:
         with pytest.raises(ValidationError):
             validate_run_payload("conversion", {"calidad": 250}, ["x.jpg"])
 
+    def test_ficha_tecnica_plantilla_payload(self) -> None:
+        validate_run_payload("ficha_tecnica", {"type": "plantilla"}, ["x.pdf"])
+
+    def test_ficha_tecnica_individual_payload(self) -> None:
+        validate_run_payload("ficha_tecnica", {"type": "individual", "fichaId": "abc"}, ["x.pdf"])
+
+    def test_ficha_tecnica_in_registry_payload(self) -> None:
+        payload = registry_payload()
+        ids = {rt["id"] for rt in payload["run_types"]}
+        assert "ficha_tecnica" in ids
+
 
 class TestHandlerIntegration:
     def test_history_schema_handler_is_registered(self) -> None:
