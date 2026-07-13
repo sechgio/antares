@@ -44,7 +44,7 @@ _hidden = [
 # miss dynamically-loaded ones (pandas._config.localization caused a startup
 # crash in v0.10.10/v0.10.11 — see CHANGELOG).
 for _pkg in ('pandas', 'openpyxl', 'weasyprint', 'PIL', 'lxml', 'pypdf',
-             'jinja2', 'jsonschema', 'docx'):
+             'jinja2', 'jsonschema', 'docx', 'fitz', 'pymupdf'):
     _hidden += collect_submodules(_pkg)
 
 # psutil has optional platform-specific binary extensions; collect them too.

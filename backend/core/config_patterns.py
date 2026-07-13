@@ -5,13 +5,11 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 
-from backend.core.config_fields import get_field_names
+from backend.core.config_fields import _atomic_write_json, get_field_names
 from backend.utils.paths import cached_config_path
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -94,8 +92,7 @@ def save_patterns(patterns: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "label": str(p["label"]),
                 "pattern": pattern,
             })
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump({"patterns": validated}, f, indent=2, ensure_ascii=False)
+    _atomic_write_json(path, {"patterns": validated})
     _cached_patterns = validated
     return validated
 

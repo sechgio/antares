@@ -84,14 +84,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Keep aligned with shared/long-running-methods.json for Python-handled methods.
+# Keep aligned with shared/long-running-methods.json for Python-handled methods
+# that perform heavy work in the handler itself.
 # (html_to_pdf / autoimg_* run in Electron and are intentionally absent here.)
+# process_start only spawns a JobManager thread and returns — it must stay off
+# HEAVY so a saturated heavy budget cannot reject new jobs. Actual conversion
+# work still uses submit_heavy inside the job. FE/Electron may still list
+# process_start in long-running-methods.json for timeout classification.
 HEAVY_METHODS = {
     "db_import",
     "db_export",
     "db_clear",
     "preview_image",
-    "process_start",
     "formatos_generate",
     "formatos_render_template_page",
     "image_optimizer_zip",

@@ -104,3 +104,45 @@ def test_conversion_cancel_releases_visible_state_without_waiting_for_slow_worke
     assert elapsed < 0.5
     assert job.state.running is False
     assert job.result == {"ok_count": 0, "err_count": 0, "cancelled": True}
+
+
+def test_conversion_job_notifies_complete_on_unexpected_error(monkeypatch) -> None:
+    """Unexpected exceptions must still emit complete so the UI does not hang."""
+    completes: list[tuple[int, int]] = []
+
+    def fake_notify(job, ok, err):  # type: ignore[no-untyped-def]
+        completes.append((ok, err))
+
+    monkeypatch.setattr(conversion, "_notify_complete", fake_notify)
+    monkeypatch.setattr(conversion, "es_video", lambda _path: False)
+    monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 1)
+
+    def boom(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        raise RuntimeError("mapping exploded")
+
+    monkeypatch.setattr(
+        "backend.core.database.parse_id_rename_mapping",
+        boom,
+    )
+
+    job = Job(
+        id="err",
+        job_type="conversion",
+        params={
+            "files": ["C:/tmp/a.jpg", "C:/tmp/b.jpg"],
+            "destino": "C:/out",
+            "formato": "JPEG",
+            "usar_rename": True,
+            "mapping_path": "C:/maps/map.xlsx",
+        },
+    )
+    conversion._run_conversion_job(job)
+
+    assert job.state.running is False
+    assert len(completes) == 1
+    assert completes[0] == (0, 2)
+    assert job.result is not None
+    assert job.result["ok_count"] == 0
+    assert job.result["err_count"] == 2
+    assert job.result["cancelled"] is False
+    assert "RuntimeError" in str(job.result.get("error", ""))

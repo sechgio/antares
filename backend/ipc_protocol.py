@@ -146,6 +146,18 @@ def read_message() -> IPCMessage | None:
         line = sys.stdin.readline()
         if not line:
             return None  # EOF — pipe closed
+        # Mirror outbound _MAX_PAYLOAD_SIZE so a huge line cannot OOM the process.
+        try:
+            line_bytes = len(line.encode("utf-8"))
+        except UnicodeEncodeError:
+            line_bytes = len(line)
+        if line_bytes > _MAX_PAYLOAD_SIZE:
+            logger.error(
+                "Inbound IPC payload too large: %d bytes (max: %d)",
+                line_bytes,
+                _MAX_PAYLOAD_SIZE,
+            )
+            return _SKIP  # type: ignore[return-value]
         data = json.loads(line)
         # Try to recover an id from the partially-parsed payload so the
         # frontend can correlate the error response with the original request.

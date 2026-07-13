@@ -71,6 +71,36 @@ def test_parse_errors_skip_without_orphan_response(monkeypatch) -> None:
     assert stdout.getvalue() == ""
 
 
+def test_inbound_payload_over_max_is_skipped(monkeypatch) -> None:
+    """Oversized stdin lines must not be json.loads'd (OOM hygiene)."""
+    monkeypatch.setattr(ipc_protocol, "_MAX_PAYLOAD_SIZE", 64)
+    stdin = io.StringIO('{"jsonrpc":"2.0","id":"1","method":"version","params":{}}\n')
+    # Force a line larger than the patched max.
+    big = "x" * 200 + "\n"
+    stdin = io.StringIO(big)
+    stdout = io.StringIO()
+    monkeypatch.setattr(ipc_protocol.sys, "stdin", stdin)
+    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
+
+    result = ipc_protocol.read_message()
+
+    assert result is ipc_protocol._SKIP
+    assert stdout.getvalue() == ""
+
+
+def test_inbound_payload_under_max_still_parses(monkeypatch) -> None:
+    monkeypatch.setattr(ipc_protocol, "_MAX_PAYLOAD_SIZE", 10_000)
+    stdin = io.StringIO('{"jsonrpc":"2.0","id":"1","method":"version","params":{}}\n')
+    stdout = io.StringIO()
+    monkeypatch.setattr(ipc_protocol.sys, "stdin", stdin)
+    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
+
+    result = ipc_protocol.read_message()
+
+    assert isinstance(result, IPCMessage)
+    assert result.method == "version"
+
+
 def test_invalid_message_with_known_id_sends_error(monkeypatch) -> None:
     """If the JSON parses but the message is invalid, an error response is
     sent using the original request id so the frontend can correlate it."""
