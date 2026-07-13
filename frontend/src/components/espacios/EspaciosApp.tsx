@@ -1,5 +1,5 @@
 import { ChevronRight, FolderKanban, Loader2, Plus, RefreshCw, SearchX } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
@@ -13,10 +13,11 @@ import SpaceSidebar from './components/SpaceSidebar';
 import TaskForm from './components/TaskForm';
 import ViewTabs from './components/ViewTabs';
 import BoardView from './components/views/BoardView';
-import CalendarView from './components/views/CalendarView';
 import GanttView from './components/views/GanttView';
 import ListView from './components/views/ListView';
 import TableView from './components/views/TableView';
+
+const CalendarView = lazy(() => import('./components/views/CalendarView'));
 import { useEspaciosSync } from './hooks/useEspaciosSync';
 import { useTeamMembers } from './hooks/useTeamMembers';
 import {
@@ -865,29 +866,38 @@ export default function EspaciosApp() {
                     onAddTask={() => openTaskForm()}
                   />
                 ) : activeView === 'calendar' ? (
-                  <CalendarView
-                    tareas={filteredTareas}
-                    columns={sync.boardColumns}
-                    onDateChange={(id, dueDate) => {
-                      void sync.patchTarea(id, { due_date: dueDate }).catch((err) => {
-                        addToast({
-                          message: err instanceof Error ? err.message : 'No se pudo actualizar la fecha',
-                          type: 'error',
+                  <Suspense
+                    fallback={
+                      <div className="flex h-full flex-col items-center justify-center gap-3">
+                        <Loader2 className="h-6 w-6 animate-spin text-[var(--accent-primary)]" />
+                        <p className="text-sm text-[var(--text-muted)]">Cargando calendario...</p>
+                      </div>
+                    }
+                  >
+                    <CalendarView
+                      tareas={filteredTareas}
+                      columns={sync.boardColumns}
+                      onDateChange={(id, dueDate) => {
+                        void sync.patchTarea(id, { due_date: dueDate }).catch((err) => {
+                          addToast({
+                            message: err instanceof Error ? err.message : 'No se pudo actualizar la fecha',
+                            type: 'error',
+                          });
                         });
-                      });
-                    }}
-                    onDatesChange={(id, startDate, dueDate) => {
-                      void sync.patchTarea(id, { start_date: startDate, due_date: dueDate }).catch((err) => {
-                        addToast({
-                          message: err instanceof Error ? err.message : 'No se pudo actualizar la fecha',
-                          type: 'error',
+                      }}
+                      onDatesChange={(id, startDate, dueDate) => {
+                        void sync.patchTarea(id, { start_date: startDate, due_date: dueDate }).catch((err) => {
+                          addToast({
+                            message: err instanceof Error ? err.message : 'No se pudo actualizar la fecha',
+                            type: 'error',
+                          });
                         });
-                      });
-                    }}
-                    onAddTask={() => openTaskForm()}
-                    onAddTaskOnDate={(dueDate) => openTaskForm({ dueDate })}
-                    onEditTask={openEditTask}
-                  />
+                      }}
+                      onAddTask={() => openTaskForm()}
+                      onAddTaskOnDate={(dueDate) => openTaskForm({ dueDate })}
+                      onEditTask={openEditTask}
+                    />
+                  </Suspense>
                 ) : (
                   <GanttView
                     tareas={filteredTareas}
