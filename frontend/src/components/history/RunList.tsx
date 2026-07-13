@@ -42,9 +42,9 @@ export default function RunList({ runs, selected, onSelect, selectedIds, onToggl
   return (
     <div className="divide-y divide-[var(--border-subtle)]">
       {runs.map((run) => {
-        const fileCount = safeJsonParse<string[]>(run.files_json, []).length;
-        const options = safeJsonParse<Record<string, unknown>>(run.options_json, {});
         const files = safeJsonParse<string[]>(run.files_json, []);
+        const fileCount = files.length;
+        const options = safeJsonParse<Record<string, unknown>>(run.options_json, {});
         const hasErrors = run.err_count > 0;
         const allErrors = run.ok_count === 0 && run.err_count > 0;
         const total = run.ok_count + run.err_count;
