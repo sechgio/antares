@@ -64,6 +64,11 @@ class LRUCache<K, V> {
 
 const previewCache = new LRUCache<string, PreviewCacheEntry>(50, 2 * 60 * 1000);
 
+/** Exposed for tests so each suite can start with a clean cache. */
+export function __clearImagePreviewCacheForTests(): void {
+  previewCache.clear();
+}
+
 function cacheKey(path: string, formato: string, calidad: number, resize: string): string {
   return `${path}::${formato}::${calidad}::${resize}`;
 }
@@ -74,36 +79,58 @@ export default function ImagePreview({ path, formato, calidad, resizeAncho, resi
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [zoomed, setZoomed] = useState(false);
+
+  // Generation id is the real guard for stale results. AbortController does not
+  // cancel IPC work — it only documents intent; genRef prevents applying stale UI state.
+  const genRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const inFlightRef = useRef(false);
+  const pendingRef = useRef(false);
+  const paramsRef = useRef({ path, formato, calidad, resizeAncho, resizeAlto });
+  paramsRef.current = { path, formato, calidad, resizeAncho, resizeAlto };
 
-  const generatePreview = useCallback(async () => {
-    if (!path) return;
+  const runPreview = useCallback(async () => {
+    const {
+      path: p,
+      formato: fmt,
+      calidad: q,
+      resizeAncho: ra,
+      resizeAlto: rh,
+    } = paramsRef.current;
+    if (!p) return;
 
-    const resize = resizeAncho && resizeAlto
-      ? [parseInt(resizeAncho), parseInt(resizeAlto)]
-      : null;
+    const resize = ra && rh ? [parseInt(ra), parseInt(rh)] : null;
     const resizeStr = resize ? `${resize[0]}x${resize[1]}` : 'none';
-    const key = cacheKey(path, formato, calidad, resizeStr);
+    const key = cacheKey(p, fmt, q, resizeStr);
 
-    // Check cache first
+    // Check cache first — hits short-circuit network entirely.
     const cached = previewCache.get(key);
     if (cached) {
       setPreview(cached.preview);
       setMeta({ width: cached.width, height: cached.height, orig_size_kb: cached.orig_size_kb });
       setError(null);
+      setLoading(false);
       return;
     }
 
-    // Cancel previous request
+    // Single-flight: coalesce concurrent requests to the latest params.
+    if (inFlightRef.current) {
+      pendingRef.current = true;
+      return;
+    }
+
+    const gen = ++genRef.current;
+    // Optional AbortController — does NOT cancel IPC; only pairs with gen guard.
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
+    inFlightRef.current = true;
     setLoading(true);
     setError(null);
     try {
-      const r = await api.previewImage({ path, formato, calidad, resize });
-      if (controller.signal.aborted) return;
+      const r = await api.previewImage({ path: p, formato: fmt, calidad: q, resize });
+      if (gen !== genRef.current || controller.signal.aborted) return;
       setPreview(r.preview);
       setMeta({ width: r.width, height: r.height, orig_size_kb: r.orig_size_kb });
       previewCache.set(key, {
@@ -113,29 +140,40 @@ export default function ImagePreview({ path, formato, calidad, resizeAncho, resi
         orig_size_kb: r.orig_size_kb,
       });
     } catch (err) {
-      if (controller.signal.aborted) return;
+      if (gen !== genRef.current || controller.signal.aborted) return;
       setPreview(null);
       setMeta(null);
       setError(err instanceof Error ? err.message : 'Error generando preview');
     } finally {
-      if (!controller.signal.aborted) setLoading(false);
+      inFlightRef.current = false;
+      if (gen === genRef.current) setLoading(false);
+      if (pendingRef.current) {
+        pendingRef.current = false;
+        void runPreview();
+      }
     }
-  }, [path, formato, calidad, resizeAncho, resizeAlto]);
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      if (!cancelled) generatePreview();
-    }, 250);
+    const timer = window.setTimeout(() => {
+      void runPreview();
+    }, 450);
     return () => {
-      cancelled = true;
       clearTimeout(timer);
+      // Supersede any in-flight apply; do not cancel IPC (not supported).
+      genRef.current += 1;
       if (abortRef.current) {
         abortRef.current.abort();
         abortRef.current = null;
       }
     };
-  }, [path, formato, calidad, resizeAncho, resizeAlto]);
+  }, [path, formato, calidad, resizeAncho, resizeAlto, runPreview]);
+
+  // On unmount, drop any pending drain so we don't setState after unmount.
+  useEffect(() => () => {
+    genRef.current += 1;
+    pendingRef.current = false;
+  }, []);
 
   const originalSrc = path.startsWith('file://') ? path : `file://${path}`;
   const displayFormat = formato.toUpperCase();
@@ -205,7 +243,7 @@ export default function ImagePreview({ path, formato, calidad, resizeAncho, resi
                 <div className="flex flex-col items-center gap-2 text-center px-4">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-accent-red"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                   <span className="text-accent-red text-xs">{error}</span>
-                  <button onClick={generatePreview} className="text-xs text-accent hover:underline">Reintentar</button>
+                  <button onClick={() => { void runPreview(); }} className="text-xs text-accent hover:underline">Reintentar</button>
                 </div>
               )}
             </div>
