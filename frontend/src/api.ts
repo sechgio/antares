@@ -240,6 +240,10 @@ export const api = {
     _invoke<{ paths: string[]; folder?: string }>('dialog_folder', params),
   dialogSave: (params?: { title?: string; defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }) => _invoke<{ paths: string[] }>('dialog_save', params),
 
+  /** Display-size local thumbnail via Electron nativeImage (Path A). On failure, callers fall back to file://. */
+  localThumbnail: (body: { path: string; maxEdge?: number }) =>
+    _invoke<{ dataUrl: string }>('local_thumbnail', body),
+
   startProcess: (body: ProcessBody) => _invoke<{ started: boolean }>('process_start', body),
   getStatus: () => _invoke<ProcessStatus>('process_status'),
   cancelProcess: () => _invoke<{ cancelled: boolean }>('process_cancel'),

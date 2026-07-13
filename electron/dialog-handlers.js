@@ -4,9 +4,10 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 
 const { sanitizeHtmlForPdf } = require('../shared/html-sanitizer');
+const { createLocalThumbnail } = require('./local-thumbnail');
 
 const DIALOG_METHODS = new Set(['dialog_files', 'dialog_dest', 'dialog_save', 'dialog_folder']);
-const NATIVE_METHODS = new Set([...DIALOG_METHODS, 'html_to_pdf']);
+const NATIVE_METHODS = new Set([...DIALOG_METHODS, 'html_to_pdf', 'local_thumbnail']);
 
 function _localImageEntries(rawPaths) {
   if (!rawPaths || typeof rawPaths !== 'object' || Array.isArray(rawPaths)) return [];
@@ -243,6 +244,18 @@ async function renderHtmlToPdf(params = {}, electronModules = {}) {
 async function handleDialogCall(method, params = {}, dialog, window, electronModules = {}) {
   if (!NATIVE_METHODS.has(method)) {
     return { handled: false };
+  }
+
+  if (method === 'local_thumbnail') {
+    // Path A: display-size thumbs via nativeImage. On any failure the renderer
+    // falls back to file:// full path — never blank cards.
+    const { nativeImage } = electronModules;
+    const result = await createLocalThumbnail(
+      params && params.path,
+      params && params.maxEdge,
+      nativeImage,
+    );
+    return { handled: true, result };
   }
 
   if (method === 'html_to_pdf') {

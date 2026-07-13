@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { getLocalThumbnail } from '../utils/localThumb';
 
 interface ThumbnailProps {
   path: string;
@@ -6,21 +7,27 @@ interface ThumbnailProps {
   variant?: 'compact' | 'card';
 }
 
+function toFileUrl(filePath: string): string {
+  return filePath.startsWith('file://') ? filePath : `file://${filePath}`;
+}
+
 export default function Thumbnail({ path, size = 48, variant = 'compact' }: ThumbnailProps) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const [inView, setInView] = useState(false);
+  /** Final img src: data URL thumb when available, else file:// full path. */
+  const [displaySrc, setDisplaySrc] = useState<string | null>(null);
   const isCard = variant === 'card';
   const containerRef = useRef<HTMLDivElement>(null);
 
   const filename = useMemo(() => path.split(/[\\/]/).pop() || path, [path]);
   const ext = useMemo(() => filename.split('.').pop()?.toUpperCase() ?? '', [filename]);
-  const src = useMemo(() => path.startsWith('file://') ? path : `file://${path}`, [path]);
+  const fileFallback = useMemo(() => toFileUrl(path), [path]);
 
   const handleLoad = useCallback(() => setLoaded(true), []);
   const handleError = useCallback(() => { setError(true); setLoaded(true); }, []);
 
-  // Lazy-load: only set the img src when the thumbnail is near the viewport.
+  // Lazy-load: only request thumbs / set img src when near the viewport.
   // This prevents the renderer from opening hundreds of file:// handles
   // simultaneously when a large batch of images is loaded.
   useEffect(() => {
@@ -38,6 +45,27 @@ export default function Thumbnail({ path, size = 48, variant = 'compact' }: Thum
     return () => observer.disconnect();
   }, [inView]);
 
+  // When in view: try display-size thumb; on any failure fall back to file://.
+  useEffect(() => {
+    if (!inView) return;
+    let cancelled = false;
+    setLoaded(false);
+    setError(false);
+    setDisplaySrc(null);
+
+    const localPath = path.startsWith('file://') ? path.replace(/^file:\/\//, '') : path;
+
+    getLocalThumbnail(localPath, 256).then((thumb) => {
+      if (cancelled) return;
+      // Always set a usable src — thumb data URL or today's file:// behavior.
+      setDisplaySrc(thumb || fileFallback);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [inView, path, fileFallback]);
+
   return (
     <div
       ref={containerRef}
@@ -54,9 +82,9 @@ export default function Thumbnail({ path, size = 48, variant = 'compact' }: Thum
         </div>
       )}
 
-      {inView && !error ? (
+      {inView && displaySrc && !error ? (
         <img
-          src={src}
+          src={displaySrc}
           alt=""
           loading="lazy"
           className={`h-full w-full object-cover transition-all duration-300 group-hover:scale-105 ${
