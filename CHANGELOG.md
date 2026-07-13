@@ -5,6 +5,46 @@ Todas las versiones notables de Antares se documentan aquí.
 Formato basado en [Keep a Changelog](https://keepachangelog.com/),
 y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
+## [0.10.20] — 2026-07-13
+
+### Added
+- **AutoIMG**: Chrome de cobertura compacto junto a acciones de escaneo; rediseño del tab Carpetas; previews de hasta 4 thumbnails de Drive por carpeta (sin escaneo completo).
+- **Volantes**: Título y encabezados editables a nivel de sesión; sidebar más denso estilo Apple; date/time pickers con portales anclados exclusivos (sin recorte ni solapamiento).
+- **Historial**: Tipo de run `ficha_tecnica` registrado para reejecución y listado.
+- **Brand / UI**: Nuevo set de iconos de app y favicons con cache-busting; favicons dinámicos claro/oscuro según el tema del sistema.
+- **Conversión**: Thumbnails a tamaño de display vía IPC nativo Electron (`local_thumbnail` / `nativeImage`), con LRU(200), concurrencia 3 y fallback a full-res/`file://`.
+- **Backend (fiabilidad)**: Olas improve 007–017 — job complete siempre en error, `process_start` en light lane, payloads `process_status` reducidos, writes atómicos de config JSON, pymupdf en PyInstaller, cap de payload IPC inbound, paridad preview/process en `key_column` vacío, sanitize WeasyPrint unificado y stats de orphans O(1) en mapping.
+- **Tests**: Paridad key-column preview/process, plugins/formatos characterization, IPC params faltantes, health-probe mid-flight en `npm test`, redaction de URLs de mapas, sanitize PDF HTML y portable out-path dedupe en Linux CI.
+
+### Changed
+- **Conversión**: Single-flight en rename preview (debounce 600ms + cola in-flight); metadata `detected_key_column` en preview evita un segundo IPC de detect; coalescing de `preview_image` (debounce 450ms, generation guard, single-flight).
+- **Sellador**: Preview raster acotado (DPI MIN 900 / MAX 2048, dpr cap) y caches LRU max 32 (`otherPagesRenderCache`, `PdfPagePreview`).
+- **Espacios**: Lazy-load de la vista calendario.
+- **Historial**: Parse de JSON de run una sola vez por fila.
+- **AutoIMG**: Cache LRU de previews de carpetas.
+- **Deps**: Pillow elevado a `>=12.3.0`.
+- **Docs**: Auth, env setup y alcance de módulos documentados.
+
+### Fixed
+- **Backend / conversión**: Heartbeats de job para que el health probe no mate conversiones largas; health probe responde `version`/`process_status` en el hilo IPC; budget de auto-restart acotado antes de FATAL; trabajo pesado de fichas/evidencia en el heavy pool.
+- **Frontend / process runner**: Bookkeeping de UI endurecido (merges seed-safe, honor `{ started: false }`, reset en restarting/fatal/error).
+- **Conversión**: Sin sobrescritura silenciosa al colisionar nombres de salida (sufijo `-2`, `-3`…); orientación EXIF aplicada antes de convert/preview.
+- **Historial**: Reejecutar desde cualquier pestaña restaura destino, secuencia, `word_separator` y modo de secuencia.
+- **UI**: Respuestas obsoletas de match/select ignoradas bajo navegación rápida (panel, reportes técnicos, fichas).
+- **AutoIMG**: Bootstrap y verify de Drive ignoran respuestas stale; bootstrap como método long-running (timeout 15m); agregar carpetas Drive sin verify previo; sync de escaneo solo actualiza filas del padrón BD_IMG (no inserta NIS nuevos); fixes de tipos en `PreviewState` y tests de Carpetas.
+- **Espacios**: Soft-delete no resucita tareas durante la ventana de undo; undo acotado al proyecto activo; notificaciones de vencimiento con Supabase realtime (menos polling).
+- **Evidencia Volanteo**: Export Word alineado al preview (gutter grid, bordes de celda, altura de fila `atLeast` para cuadrante largo).
+- **Reportes de campo**: Persistencia de todos los campos y logos al cambiar de pestaña (flush IndexedDB + branding store).
+- **Padrón**: Folios únicos consecutivos entre hojas; `Hasta` sincronizado a `Desde+pages-1` (sin duplicados con offset/inversión).
+
+### Security
+- **Ubicaciones**: API keys de mapas (Google/Mapbox/MapTiler) en almacenamiento cifrado de Electron; migración única desde `localStorage` y borrado del plaintext residual.
+- **Evidencia**: HTML sanitizado antes de WeasyPrint.
+- **Logs**: Redacción de API keys de mapas en URLs.
+- **IPC**: Cap de tamaño en payloads inbound.
+- **Auth / Supabase**: Columnas de privilegio en `user_profiles` protegidas por trigger; revoke de token Google vía body POST.
+- **PDF**: Sanitize de paths en todos los renders WeasyPrint.
+
 ## [0.10.19] — 2026-07-08
 
 ### Added
