@@ -496,24 +496,6 @@ def process_cancel(params: dict[str, Any]) -> dict[str, Any]:
 
 
 @with_locale
-def preview_image(params: dict[str, Any]) -> dict[str, str]:
-    from backend.core.converter import convertir_a_preview
-    # Coerción defensiva en el boundary: el frontend puede enviar calidad como
-    # string ("85") o path/formato como no-str, lo que rompería el core.
-    calidad = params.get("calidad", 85)
-    try:
-        calidad = int(calidad)
-    except (TypeError, ValueError):
-        calidad = 85
-    return convertir_a_preview(
-        str(params.get("path") or ""),
-        str(params.get("formato") or "PNG"),
-        calidad,
-        params.get("resize"),
-    )
-
-
-@with_locale
 def is_video(params: dict[str, Any]) -> dict[str, bool]:
     return {"is_video": es_video(params.get("path", ""))}
 
@@ -741,6 +723,10 @@ def _run_conversion_job(job: Job) -> None:
                             success, name, error = future.result()
                         except CancelledError:
                             continue
+                        with state._lock:
+                            if state.cancel_requested:
+                                cancelled = True
+                                continue
                         completed += 1
                         with state._lock:
                             if success:
@@ -796,38 +782,45 @@ def _run_conversion_job(job: Job) -> None:
                 log_message(t("info.process_cancelled"), "warn", state=state)
             else:
                 log_message(t("info.process_complete", ok=ok_count, err=err_count), "info", state=state)
-            _notify_complete(job, ok_count, err_count)
+            with state._lock:
+                final_progress = state.progress
+            _notify_complete(job, ok_count, err_count, cancelled=cancelled, progress=final_progress)
             notified = True
 
             from backend.core.history import save_run
             rename_source = "mapping" if mapping_index else ("catalog" if key_column else "none")
             sequence_mode = _resolve_sequence_mode(params)
-            save_run(
-                files=[str(f) for f in files],
-                options={
-                    "formato": formato,
-                    "calidad": calidad,
-                    "conversion_enabled": conversion_enabled,
-                    "resize": str(resize) if resize else None,
-                    "keep_exif": keep_exif,
-                    "usar_rename": usar_rename,
-                    "use_column_rename": use_column_rename,
-                    "rename_source": rename_source,
-                    "mapping_mode": mapping_index is not None,
-                    "mapping_path": mapping_path or None,
-                    "id_column": mapping_id_column or None,
-                    "rename_column": mapping_rename_column or None,
-                    "key_column": key_column or None,
-                    # Restored by History → Reejecutar so conversion matches the original run.
-                    "destino": destino or None,
-                    "secuencia": secuencia,
-                    "word_separator": word_separator,
-                    "use_filename_seq": params.get("use_filename_seq", True),
-                    "sequence_mode": sequence_mode,
-                },
-                patron=patron, formato=formato, calidad=calidad,
-                resize=str(resize) if resize else None, ok_count=ok_count, err_count=err_count,
-            )
+            try:
+                save_run(
+                    files=[str(f) for f in files],
+                    options={
+                        "formato": formato,
+                        "calidad": calidad,
+                        "conversion_enabled": conversion_enabled,
+                        "resize": str(resize) if resize else None,
+                        "keep_exif": keep_exif,
+                        "usar_rename": usar_rename,
+                        "use_column_rename": use_column_rename,
+                        "rename_source": rename_source,
+                        "mapping_mode": mapping_index is not None,
+                        "mapping_path": mapping_path or None,
+                        "id_column": mapping_id_column or None,
+                        "rename_column": mapping_rename_column or None,
+                        "key_column": key_column or None,
+                        # Restored by History → Reejecutar so conversion matches the original run.
+                        "destino": destino or None,
+                        "secuencia": secuencia,
+                        "word_separator": word_separator,
+                        "use_filename_seq": params.get("use_filename_seq", True),
+                        "sequence_mode": sequence_mode,
+                        "cancelled": cancelled,
+                    },
+                    patron=patron, formato=formato, calidad=calidad,
+                    resize=str(resize) if resize else None, ok_count=ok_count, err_count=err_count,
+                )
+            except Exception:
+                logger.exception("Failed to save conversion history for job %s", job_id)
+                log_message("No se pudo guardar el historial de la conversión", "warn", state=state)
         except Exception as exc:
             if not notified:
                 files = params.get("files", []) or []
@@ -841,7 +834,7 @@ def _run_conversion_job(job: Job) -> None:
                     "cancelled": False,
                     "error": error_msg,
                 }
-                _notify_complete(job, 0, err_count)
+                _notify_complete(job, 0, err_count, cancelled=False, progress=0)
                 notified = True
     finally:
         stop_heartbeat.set()
@@ -871,13 +864,35 @@ def _emit_progress_notifications(job_id: str, data: dict[str, Any], is_default: 
         })
 
 
-def _notify_complete(job: Job, ok_count: int, err_count: int) -> None:
+def _notify_complete(
+    job: Job,
+    ok_count: int,
+    err_count: int,
+    *,
+    cancelled: bool = False,
+    progress: int | None = None,
+) -> None:
     """Send modern job complete notification + legacy one when needed."""
     is_default = is_legacy_default_job(job.id)
-    notif_data = {"ok_count": ok_count, "err_count": err_count, "job_id": job.id}
+    final_progress = 100 if not cancelled else (progress if progress is not None else 0)
+    notif_data = {
+        "ok_count": ok_count,
+        "err_count": err_count,
+        "job_id": job.id,
+        "cancelled": cancelled,
+        "progress": final_progress,
+    }
     send_notification(f"job.{job.id}.complete", notif_data)
     if is_default:
-        send_notification("process.complete", {"ok_count": ok_count, "err_count": err_count})
+        send_notification(
+            "process.complete",
+            {
+                "ok_count": ok_count,
+                "err_count": err_count,
+                "cancelled": cancelled,
+                "progress": final_progress,
+            },
+        )
 
 
 @with_locale
@@ -923,7 +938,6 @@ HANDLERS = {
     "process_start": process_start,
     "process_status": process_status,
     "process_cancel": process_cancel,
-    "preview_image": preview_image,
     "is_video": is_video,
     "db_detect_key_column": db_detect_key_column,
 }
@@ -1019,26 +1033,34 @@ def _out_path_key(path: Path) -> str:
     return str(path).replace("\\", "/").casefold()
 
 
+_MAX_OUT_PATH_DEDUP_ATTEMPTS = 10_000
+
+
+def _path_is_taken(path: Path, reserved: set[str]) -> bool:
+    """True if path is reserved in-batch or already exists on disk."""
+    return _out_path_key(path) in reserved or path.exists()
+
+
 def _dedupe_chunk_out_paths(
     tasks: list[tuple[str, Path, bool]],
     reserved: set[str],
     *,
     log: Callable[[str], None] | None = None,
 ) -> list[tuple[str, Path, bool]]:
-    """Ensure each task writes to a unique path within the batch.
+    """Ensure each task writes to a unique path within the batch and on disk.
 
     Mapping mode already fails the job on collisions; catalog / plain rename can
     still map two inputs to the same destination and silently overwrite. Auto-suffix
     (``name-2.ext``) preserves both files without changing unique renames.
+    Also avoids overwriting pre-existing files from a previous run.
     """
     if not tasks:
         return tasks
 
     result: list[tuple[str, Path, bool]] = []
     for fpath, out_path, is_video_file in tasks:
-        key = _out_path_key(out_path)
-        if key not in reserved:
-            reserved.add(key)
+        if not _path_is_taken(out_path, reserved):
+            reserved.add(_out_path_key(out_path))
             result.append((fpath, out_path, is_video_file))
             continue
 
@@ -1047,13 +1069,16 @@ def _dedupe_chunk_out_paths(
         parent = out_path.parent
         n = 2
         candidate = parent / f"{stem}-{n}{suffix}"
-        while _out_path_key(candidate) in reserved:
+        attempts = 0
+        while _path_is_taken(candidate, reserved) and attempts < _MAX_OUT_PATH_DEDUP_ATTEMPTS:
             n += 1
+            attempts += 1
             candidate = parent / f"{stem}-{n}{suffix}"
         reserved.add(_out_path_key(candidate))
         if log is not None:
+            reason = "ya existe en disco" if out_path.exists() else "ya reservado"
             log(
-                f"Colisión de salida: '{out_path.name}' ya reservado; "
+                f"Colisión de salida: '{out_path.name}' {reason}; "
                 f"'{Path(fpath).name}' se guardará como '{candidate.name}'"
             )
         result.append((fpath, candidate, is_video_file))

@@ -24,6 +24,7 @@ export function useFileSelection(files: string[]) {
       }
       return next;
     });
+    setSelectedFile((prev) => (prev == null || filesSet.has(prev) ? prev : null));
   }, [filesSet]);
 
   const handleFileClick = useCallback((e: React.MouseEvent, path: string) => {

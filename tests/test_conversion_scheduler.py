@@ -110,7 +110,7 @@ def test_conversion_job_notifies_complete_on_unexpected_error(monkeypatch) -> No
     """Unexpected exceptions must still emit complete so the UI does not hang."""
     completes: list[tuple[int, int]] = []
 
-    def fake_notify(job, ok, err):  # type: ignore[no-untyped-def]
+    def fake_notify(job, ok, err, **_kwargs):  # type: ignore[no-untyped-def]
         completes.append((ok, err))
 
     monkeypatch.setattr(conversion, "_notify_complete", fake_notify)
