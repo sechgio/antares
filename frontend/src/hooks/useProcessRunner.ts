@@ -37,7 +37,7 @@ export function useProcessRunner() {
 
       if (!params || typeof params !== 'object' || Array.isArray(params)) return;
       const p = params as Record<string, unknown>;
-      const safeKeys = new Set(['running', 'progress', 'current_file', 'ok_count', 'err_count', 'logs']);
+      const safeKeys = new Set(['running', 'progress', 'current_file', 'ok_count', 'err_count', 'logs', 'cancelled']);
       const filtered: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(p)) {
         if (safeKeys.has(k)) filtered[k] = v;
@@ -46,7 +46,14 @@ export function useProcessRunner() {
         setStatus((prev) => ({ ...(prev ?? emptyStatus()), ...filtered, running: true } as ProcessStatus));
         setRunning(true);
       } else if (method === 'process.complete') {
-        setStatus((prev) => ({ ...(prev ?? emptyStatus()), ...filtered, running: false, progress: 100 } as ProcessStatus));
+        const cancelled = p.cancelled === true;
+        setStatus((prev) => {
+          const base = prev ?? emptyStatus();
+          const progress = cancelled
+            ? (typeof filtered.progress === 'number' ? filtered.progress as number : base.progress)
+            : (typeof filtered.progress === 'number' ? filtered.progress as number : 100);
+          return { ...base, ...filtered, running: false, progress } as ProcessStatus;
+        });
         setRunning(false);
       }
     });
@@ -63,6 +70,10 @@ export function useProcessRunner() {
     try {
       const result = await api.startProcess(body);
       if (!result?.started) {
+        if (result?.reason === 'already_running') {
+          await pollStatus();
+          return result;
+        }
         setRunning(false);
         setStatus((prev) => (prev ? { ...prev, running: false } : emptyStatus()));
         return result;

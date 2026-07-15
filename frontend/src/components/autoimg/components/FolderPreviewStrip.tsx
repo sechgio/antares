@@ -52,10 +52,10 @@ export function useFolderPreviews(folderIds: string[]) {
     return init;
   });
   const idsKey = folderIds.join('|');
-  const cancelled = useRef(false);
+  const reqGen = useRef(0);
 
   useEffect(() => {
-    cancelled.current = false;
+    const gen = ++reqGen.current;
     const ids = idsKey ? idsKey.split('|').filter(Boolean) : [];
     if (!ids.length) return;
 
@@ -81,24 +81,20 @@ export function useFolderPreviews(folderIds: string[]) {
     void mapWithConcurrency(pending, CONCURRENCY, async (folderId) => {
       try {
         const res = await api.autoimgDriveFolderPreview(folderId);
-        if (cancelled.current) return;
+        if (gen !== reqGen.current) return;
         setSessionCache(folderId, res.thumbs);
         setPreviews((prev) => ({
           ...prev,
           [folderId]: { status: 'ready', thumbs: res.thumbs },
         }));
       } catch {
-        if (cancelled.current) return;
+        if (gen !== reqGen.current) return;
         setPreviews((prev) => ({
           ...prev,
           [folderId]: { status: 'error' },
         }));
       }
     });
-
-    return () => {
-      cancelled.current = true;
-    };
   }, [idsKey]);
 
   const invalidate = (folderId: string) => {

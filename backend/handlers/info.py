@@ -14,7 +14,7 @@ def version(params: dict[str, Any]) -> dict[str, str]:
 @with_locale
 def formats(params: dict[str, Any]) -> dict[str, list[str]]:
     from backend.core.converter import FORMATOS_SOPORTADOS
-    return {"formats": list(FORMATOS_SOPORTADOS.keys())}
+    return {"formats": FORMATOS_SOPORTADOS.list_formats()}
 
 HANDLERS = {
     "version": version,

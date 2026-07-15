@@ -690,6 +690,14 @@ async function manualRestart(isDev, { force = false } = {}) {
     _lastError = null;
     _stderrBuffer = [];
     _isShuttingDown = false;
+    clearJobActivity();
+
+    // Kill-and-replace: tell the UI to drop in-flight job state (unlike cold start).
+    _notifyRenderer('backend.restarting', {
+      reason: force ? 'forced' : 'manual',
+      attempt: 1,
+      limit: getAutoRestartLimit(),
+    });
 
     await startPythonBackend(isDev);
     return isReady();

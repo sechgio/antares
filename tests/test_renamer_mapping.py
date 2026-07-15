@@ -80,3 +80,36 @@ class TestRenamerMapping:
 
         assert results[:5] == [f"fachada_{i}.jpg" for i in range(1, 6)]
         assert results[5:] == [f"img_{i:03d}.jpg" for i in range(1, 6)]
+
+    def test_preview_lote_unmapped_preserves_original(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo"])
+        engine = RenamerEngine("img_{seq}{ext}", secuencia_inicial=1)
+        mapped = tmp_path / "mapped.jpg"
+        orphan = tmp_path / "orphan_1.jpg"
+        mapped.write_text("x")
+        orphan.write_text("x")
+
+        preview = engine.preview_lote(
+            [mapped, orphan],
+            file_mapping={"mapped.jpg": "fachada"},
+        )
+
+        assert preview[0][1] == "fachada.jpg"
+        assert preview[0][2] is True
+        assert preview[1][1] == "orphan_1.jpg"
+        assert preview[1][2] is False
+
+    def test_preview_lote_empty_patron_unmapped_not_extension_only(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo"])
+        engine = RenamerEngine("")
+        orphan = tmp_path / "orphan.jpg"
+        orphan.write_text("x")
+
+        preview = engine.preview_lote(
+            [orphan],
+            file_mapping={"other.jpg": "renamed"},
+        )
+
+        assert preview == [(str(orphan), "orphan.jpg", False)]

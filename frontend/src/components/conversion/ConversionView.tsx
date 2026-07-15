@@ -60,6 +60,8 @@ export default function ConversionView() {
   const { status, running, pollStatus, startProcess, cancelProcess } = useProcessRunner();
   const { addToast } = useToast();
   const { confirm } = useDialog();
+  const defaultsLockedRef = useRef(false);
+  const applyHistoryGenRef = useRef(0);
 
   const namingPresets = useMemo(() => {
     return patterns.length > 0 ? patterns : buildDefaultPresets(fields);
@@ -97,6 +99,9 @@ export default function ConversionView() {
   const applyHistoryRun = useCallback((run: HistoryRun) => {
     if (!run || typeof run !== 'object') return;
 
+    defaultsLockedRef.current = true;
+    const gen = ++applyHistoryGenRef.current;
+
     void (async () => {
       let f: string[] = [];
       let options: Record<string, unknown> = {};
@@ -106,6 +111,8 @@ export default function ConversionView() {
       try {
         options = JSON.parse(run.options_json || '{}') as Record<string, unknown>;
       } catch { /* keep default */ }
+
+      if (gen !== applyHistoryGenRef.current) return;
 
       setFiles(f);
       setFormato((options.formato as string) || 'JPEG');
@@ -152,6 +159,7 @@ export default function ConversionView() {
           const savedIdColumn = typeof options.id_column === 'string' ? options.id_column : '';
           const savedRenameColumn = typeof options.rename_column === 'string' ? options.rename_column : '';
           const result = await api.dbParseMapping(savedMappingPath, f, savedIdColumn, savedRenameColumn);
+          if (gen !== applyHistoryGenRef.current) return;
           setMappingPath(savedMappingPath);
           setMappingData(result.mapping);
           setMappingColumns(result.columns ?? []);
@@ -164,6 +172,7 @@ export default function ConversionView() {
           applyResize();
           return;
         } catch {
+          if (gen !== applyHistoryGenRef.current) return;
           addToast({
             message: 'No se pudo restaurar el mapeo desde el historial. Vuelve a cargar el Excel de mapeo.',
             type: 'error',
@@ -171,6 +180,7 @@ export default function ConversionView() {
         }
       }
 
+      if (gen !== applyHistoryGenRef.current) return;
       setMappingData(null);
       setMappingPath(null);
       setPatron(run.patron || '');
@@ -219,13 +229,17 @@ export default function ConversionView() {
         const names = r.fields.map((f) => f.name);
         const effectiveNames = names.length ? names : DEFAULT_FIELDS;
         setFields(effectiveNames);
-        const defaultPat = effectiveNames.length >= 2 ? `{${effectiveNames[0]}}_${effectiveNames[1]}_{seq}{ext}` : `{${effectiveNames[0]}}_{seq}{ext}`;
-        setPatron(defaultPat);
-        setNamingMode(effectiveNames.length >= 2 ? 'code_name' : 'code_seq');
-      } else {
+        if (!defaultsLockedRef.current) {
+          const defaultPat = effectiveNames.length >= 2 ? `{${effectiveNames[0]}}_${effectiveNames[1]}_{seq}{ext}` : `{${effectiveNames[0]}}_{seq}{ext}`;
+          setPatron(defaultPat);
+          setNamingMode(effectiveNames.length >= 2 ? 'code_name' : 'code_seq');
+        }
+      } else if (!defaultsLockedRef.current) {
         setFields(DEFAULT_FIELDS);
         setPatron(DEFAULT_PATTERN);
         setNamingMode('code_name');
+      } else {
+        setFields(DEFAULT_FIELDS);
       }
 
       if (patternsResult.status === 'fulfilled') {
@@ -239,7 +253,9 @@ export default function ConversionView() {
         setDbColumns(columns);
         setDbRecords(r.records ?? []);
         if (columns.length > 0) {
-          setRenameSource('catalog');
+          if (!defaultsLockedRef.current) {
+            setRenameSource('catalog');
+          }
           setFields(columns);
         }
         setKeyColumn((prev) => pickSyncedKeyColumn(prev, columns));
@@ -497,21 +513,34 @@ export default function ConversionView() {
 
   const doProcess = async () => {
     if (!allReady || running) return;
-    await startProcess({
-      files, destino, formato, calidad,
-      conversion_enabled: conversionEnabled,
-      resize_ancho: parsePositiveInt(resizeAncho),
-      resize_alto: parsePositiveInt(resizeAlto),
-      keep_exif: keepExif, usar_rename: usarRename, patron, secuencia,
-      word_separator: wordSeparator,
-      use_filename_seq: useFilenameSeq,
-      key_column: mappingMode ? undefined : (keyColumn || undefined),
-      mapping_path: mappingMode && mappingPath ? mappingPath : undefined,
-      mapping: mappingMode && !mappingPath ? mappingData ?? undefined : undefined,
-      id_column: mappingMode ? mappingIdColumn || undefined : undefined,
-      rename_column: mappingMode ? mappingRenameColumn || undefined : undefined,
-      sequence_mode: sequenceMode,
-    });
+    try {
+      const result = await startProcess({
+        files, destino, formato, calidad,
+        conversion_enabled: conversionEnabled,
+        resize_ancho: parsePositiveInt(resizeAncho),
+        resize_alto: parsePositiveInt(resizeAlto),
+        keep_exif: keepExif, usar_rename: usarRename, patron, secuencia,
+        word_separator: wordSeparator,
+        use_filename_seq: useFilenameSeq,
+        key_column: mappingMode ? undefined : (keyColumn || undefined),
+        mapping_path: mappingMode && mappingPath ? mappingPath : undefined,
+        mapping: mappingMode && !mappingPath ? mappingData ?? undefined : undefined,
+        id_column: mappingMode ? mappingIdColumn || undefined : undefined,
+        rename_column: mappingMode ? mappingRenameColumn || undefined : undefined,
+        sequence_mode: sequenceMode,
+      });
+      if (result && result.started === false) {
+        const reason = result.reason ?? 'unknown';
+        const messages: Record<string, string> = {
+          no_files: 'No hay archivos para procesar',
+          no_destination: 'Selecciona una carpeta de destino',
+          already_running: 'Ya hay un proceso en curso',
+        };
+        addToast({ message: messages[reason] ?? `No se pudo iniciar: ${reason}`, type: reason === 'already_running' ? 'info' : 'error' });
+      }
+    } catch (err) {
+      addToast({ message: err instanceof Error ? err.message : String(err), type: 'error' });
+    }
   };
 
   const removeFile = (path: string) => {

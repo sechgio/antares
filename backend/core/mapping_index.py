@@ -15,13 +15,46 @@ class MappingIndex:
         self.raw = dict(file_mapping)
         self._exact: dict[str, str] = {}
         self._lower: dict[str, str] = {}
+        self.stem_conflicts: list[str] = []
+        self._conflicted_stems: set[str] = set()
+        self._conflicted_stems_lower: set[str] = set()
+
         for key, value in file_mapping.items():
             if not key:
                 continue
             self._exact[key] = value
-            self._exact[Path(key).stem] = value
             self._lower[key.lower()] = value
-            self._lower[Path(key).stem.lower()] = value
+
+        stem_to_values: dict[str, set[str]] = {}
+        stem_lower_to_values: dict[str, set[str]] = {}
+        for key, value in file_mapping.items():
+            if not key:
+                continue
+            stem = Path(key).stem
+            if not stem:
+                continue
+            stem_to_values.setdefault(stem, set()).add(value)
+            stem_lower_to_values.setdefault(stem.lower(), set()).add(value)
+
+        for stem, values in stem_to_values.items():
+            if len(values) != 1:
+                self.stem_conflicts.append(stem)
+                self._conflicted_stems.add(stem)
+                self._conflicted_stems_lower.add(stem.lower())
+                continue
+            value = next(iter(values))
+            if stem not in self._exact:
+                self._exact[stem] = value
+
+        for stem_l, values in stem_lower_to_values.items():
+            if len(values) != 1:
+                self._conflicted_stems_lower.add(stem_l)
+                if stem_l not in {c.lower() for c in self.stem_conflicts}:
+                    self.stem_conflicts.append(stem_l)
+                continue
+            value = next(iter(values))
+            if stem_l not in self._lower:
+                self._lower[stem_l] = value
 
     def lookup(self, filename: str) -> str | None:
         """Devuelve el valor RENOMBRE crudo (sin extensión garantizada)."""
@@ -31,10 +64,13 @@ class MappingIndex:
         stem = Path(name).stem
         if name in self._exact:
             return self._exact[name]
-        if stem in self._exact:
-            return self._exact[stem]
         if name.lower() in self._lower:
             return self._lower[name.lower()]
+        # Stem fallback is disabled when multiple keys disagree on that stem.
+        if stem in self._conflicted_stems or stem.lower() in self._conflicted_stems_lower:
+            return None
+        if stem in self._exact:
+            return self._exact[stem]
         if stem.lower() in self._lower:
             return self._lower[stem.lower()]
         return None
