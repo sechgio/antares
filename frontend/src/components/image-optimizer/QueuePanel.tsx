@@ -116,7 +116,7 @@ export default function QueuePanel({
           <span>{includedCount} incluidas</span>
           {pendingCount > 0 && <span>{pendingCount} pendientes</span>}
           {downloadableItems.length > 0 && (
-            <span className="text-emerald-400">{downloadableItems.length} listas</span>
+            <span className="text-[var(--accent-green)]">{downloadableItems.length} listas</span>
           )}
         </div>
         {/* Batch actions - compact */}
@@ -125,7 +125,7 @@ export default function QueuePanel({
             <button onClick={onApplyPresetToSelection} className="rounded-md border border-[var(--border-medium)] px-2 py-1 text-[10px] font-mono text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:border-[var(--border-medium)] transition-colors">Preset</button>
             <button onClick={onReprocessSelected} className="rounded-md border border-[var(--border-medium)] px-2 py-1 text-[10px] font-mono text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:border-[var(--border-medium)] transition-colors">Reprocesar</button>
             <button onClick={onToggleExcludeSelected} className="rounded-md border border-[var(--border-medium)] px-2 py-1 text-[10px] font-mono text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:border-[var(--border-medium)] transition-colors">Excluir</button>
-            <button onClick={onRemoveSelected} className="rounded-md border border-red-500/25 px-2 py-1 text-[10px] font-mono text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors">Quitar</button>
+            <button onClick={onRemoveSelected} className="rounded-md border border-[var(--accent-red)]/25 px-2 py-1 text-[10px] font-mono text-[var(--accent-red)] hover:bg-[var(--accent-red)]/10 hover:opacity-90 transition-colors">Quitar</button>
           </div>
         )}
       </header>
@@ -140,12 +140,12 @@ export default function QueuePanel({
             const hasResult = item.status === 'completed' && !!item.resultSize;
             const itemSettings = resolveSettingsForItem(settings, item);
 
-            const statusColor = item.excluded ? '#52525b'
-              : item.status === 'error' ? '#ef4444'
-                : item.stale ? '#f59e0b'
-                  : item.status === 'completed' ? '#10b981'
-                    : item.status === 'processing' ? '#3b82f6'
-                      : '#3f3f46';
+            const statusColor = item.excluded ? 'var(--text-muted)'
+              : item.status === 'error' ? 'var(--accent-red)'
+                : item.stale ? 'var(--accent-yellow)'
+                  : item.status === 'completed' ? 'var(--accent-green)'
+                    : item.status === 'processing' ? 'var(--accent-blue)'
+                      : 'var(--text-muted)';
 
             return (
               <div
@@ -183,7 +183,7 @@ export default function QueuePanel({
                     </div>
                   )}
                   {item.status === 'processing' && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+                    <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 60%, transparent)' }}>
                       <Loader2 size={12} className="animate-spin text-[var(--text-primary)]" />
                     </div>
                   )}
@@ -196,7 +196,7 @@ export default function QueuePanel({
                   <p className="text-[10px] font-mono text-[var(--text-muted)] leading-tight">
                     {formatBytes(item.originalSize)}
                     {hasResult && item.resultSize && (
-                      <span className="text-emerald-500">{' -> '}{formatBytes(item.resultSize)}</span>
+                      <span className="text-[var(--accent-green)]">{' -> '}{formatBytes(item.resultSize)}</span>
                     )}
                   </p>
                 </div>
@@ -221,7 +221,7 @@ export default function QueuePanel({
                     </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); onRemoveItem(item.id); }}
-                      className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-red-500/10 hover:text-red-400 transition-colors"
+                      className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--accent-red)]/10 hover:text-[var(--accent-red)] transition-colors"
                       title="Quitar"
                     >
                       <Trash2 size={11} />

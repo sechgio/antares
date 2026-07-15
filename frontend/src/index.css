@@ -10,6 +10,7 @@
   --accent-primary-hover: #8B93FF;
   --accent-primary-glow: rgba(94, 106, 210, 0.28);
   --text-on-accent: #FFFFFF;
+  --text-on-danger: #FFFFFF;
   --accent-secondary: #22C7A9;
   --accent-orange: var(--accent-primary);
   --accent-orange-hover: var(--accent-primary-hover);
@@ -26,6 +27,39 @@
   --selection-bg: rgba(94, 106, 210, 0.35);
   --selection-fg: #FFFFFF;
   --ease-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);
+  /* Motion tokens (Emil Kowalski / improve-animations) */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* shadcn semantic tokens → Antares theme vars */
+  --background: var(--bg-base);
+  --foreground: var(--text-primary);
+  --card: var(--bg-surface);
+  --card-foreground: var(--text-primary);
+  --popover: var(--bg-surface);
+  --popover-foreground: var(--text-primary);
+  --primary: var(--accent-primary);
+  --primary-foreground: var(--text-on-accent);
+  --secondary: var(--bg-elevated);
+  --secondary-foreground: var(--text-primary);
+  --muted: var(--bg-elevated);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--bg-elevated);
+  --accent-foreground: var(--text-primary);
+  --destructive: var(--accent-red);
+  --border: var(--border-subtle);
+  --input: var(--bg-input);
+  --ring: var(--accent-primary);
+  --radius: 0.625rem;
+  --sidebar: var(--bg-base);
+  --sidebar-foreground: var(--text-primary);
+  --sidebar-primary: var(--accent-primary);
+  --sidebar-primary-foreground: var(--text-on-accent);
+  --sidebar-accent: var(--bg-elevated);
+  --sidebar-accent-foreground: var(--text-primary);
+  --sidebar-border: var(--border-subtle);
+  --sidebar-ring: var(--accent-primary);
 
   --mc-canvas: #0A0A0A;
   --mc-lifted: #1A1A1A;
@@ -716,7 +750,6 @@
   }
 }
 
-
 /* ── Zoom Slider (Formatos topbar) ─────────────────────────────── */
 .zoom-slider {
   -webkit-appearance: none;
@@ -767,4 +800,3 @@
   border-radius: 2px;
   background: var(--border-medium);
 }
-

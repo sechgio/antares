@@ -91,7 +91,7 @@ export default function CuadranteRangesEditor({
                 <button
                   type="button"
                   onClick={() => onChange(ranges.filter((r) => r.id !== range.id))}
-                  className="p-1 text-[var(--text-muted)] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="p-1 text-[var(--text-muted)] hover:text-[var(--accent-red)] opacity-0 group-hover:opacity-100 transition-opacity"
                   aria-label="Eliminar rango"
                 >
                   <Trash2 size={13} />

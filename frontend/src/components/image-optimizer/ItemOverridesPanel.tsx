@@ -80,10 +80,10 @@ export default function ItemOverridesPanel({
         <SettingSwitchRow
           switchId={excludeId}
           label="Excluir del lote"
-          labelClassName={item.excluded ? 'text-red-400/80' : 'text-[var(--text-muted)]/80'}
+          labelClassName={item.excluded ? 'text-[var(--accent-red)]/80' : 'text-[var(--text-muted)]/80'}
           checked={item.excluded}
           onChange={(value) => onToggleExcluded(item.id, value)}
-          accentColor="#EF4444"
+          accentColor="var(--accent-red)"
         />
 
         <p className="text-[10px] font-mono text-[var(--text-muted)]/60 sm:ml-auto">
@@ -94,7 +94,7 @@ export default function ItemOverridesPanel({
       </div>
 
       {item.error ? (
-        <p className="text-[10px] font-mono leading-relaxed text-red-400/80">{item.error}</p>
+        <p className="text-[10px] font-mono leading-relaxed text-[var(--accent-red)]/80">{item.error}</p>
       ) : null}
     </div>
   );

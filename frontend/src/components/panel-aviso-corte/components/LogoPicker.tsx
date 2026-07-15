@@ -86,7 +86,7 @@ export default function LogoPicker({ right, onRight }: Props) {
             <button
               type="button"
               onClick={handleRemove}
-              className="p-1 rounded-md text-[var(--text-muted)] hover:text-red-400 hover:bg-red-500/10 transition-colors shrink-0"
+              className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[var(--accent-red)]/10 transition-colors shrink-0"
               aria-label="Quitar logo"
             >
               <X size={13} />
@@ -125,7 +125,7 @@ export default function LogoPicker({ right, onRight }: Props) {
         <p
           role="alert"
           aria-live="polite"
-          className="text-[11px] text-red-400"
+          className="text-[11px] text-[var(--accent-red)]"
         >
           {errorMessage}
         </p>

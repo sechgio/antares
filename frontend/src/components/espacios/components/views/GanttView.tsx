@@ -49,7 +49,7 @@ const BAR_HEIGHT = 26;
 const HEADER_WEEK_H = 28;
 const HEADER_DAY_H = 36;
 const MIN_LANES = 4;
-const OVERDUE_COLOR = '#EF4444';
+const OVERDUE_COLOR = 'var(--accent-red)';
 
 const DATE_SHORT = new Intl.DateTimeFormat('es', { day: 'numeric', month: 'short' });
 
@@ -611,7 +611,7 @@ export default function GanttView({
                     <span
                       className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] leading-none ${
                         day.isToday
-                          ? 'bg-[var(--accent-red)] font-semibold text-white'
+                          ? 'bg-[var(--accent-red)] font-semibold text-[var(--text-on-accent)]'
                           : 'font-medium text-[var(--text-secondary)]'
                       }`}
                     >

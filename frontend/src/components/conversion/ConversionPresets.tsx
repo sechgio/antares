@@ -234,7 +234,7 @@ export default function ConversionPresets({ currentConfig, onLoadConfig, classNa
               <button
                 onClick={handleSave}
                 disabled={!saveName.trim()}
-                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-[var(--accent-primary)] text-white disabled:opacity-40 hover:bg-[var(--accent-primary-hover)] transition-colors"
+                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-[var(--accent-primary)] text-[var(--text-on-accent)] disabled:opacity-40 hover:bg-[var(--accent-primary-hover)] transition-colors"
               >
                 <Save className="h-3.5 w-3.5" />
                 Guardar configuración

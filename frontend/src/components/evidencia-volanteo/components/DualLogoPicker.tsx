@@ -39,11 +39,11 @@ function LogoSlot({
         {logo ? (
           <>
             <img src={logo.objectUrl} alt="" className="w-full h-full object-contain p-2" />
-            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+            <div className="absolute inset-0 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 60%, transparent)' }}>
                <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); onRemove(); }}
-                  className="p-1.5 rounded-full bg-white/10 text-white hover:bg-red-500 transition-colors"
+                  className="p-1.5 rounded-full bg-[var(--text-primary)]/10 text-[var(--text-primary)] hover:bg-[var(--accent-red)] hover:text-[var(--text-on-accent)] transition-colors"
                   aria-label={`Quitar ${label}`}
                >
                  <X size={14} />
@@ -105,8 +105,8 @@ export default function DualLogoPicker({ logoLeft, logoRight, onLogoChange, erro
         onChange={(e) => handleFile('right', e.target.files?.[0] ?? null)}
       />
       {errorMessage && (
-        <div className="px-2 py-1.5 rounded-md bg-red-500/10 border border-red-500/20">
-           <p role="alert" className="text-[10px] text-red-500 font-medium">{errorMessage}</p>
+        <div className="px-2 py-1.5 rounded-md bg-[var(--accent-red)]/10 border border-[var(--accent-red)]/20">
+           <p role="alert" className="text-[10px] text-[var(--accent-red)] font-medium">{errorMessage}</p>
         </div>
       )}
     </div>

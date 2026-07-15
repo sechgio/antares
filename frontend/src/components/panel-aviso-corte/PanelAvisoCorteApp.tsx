@@ -157,12 +157,12 @@ export default function PanelAvisoCorteApp() {
         </div>
 
         {session.errors.length > 0 && (
-          <div className="mt-auto px-4 py-2 border-t border-[var(--border-subtle)] bg-red-500/5">
+          <div className="mt-auto px-4 py-2 border-t border-[var(--border-subtle)] bg-[var(--accent-red)]/5">
             <div className="flex items-start gap-2">
-              <AlertTriangle size={13} className="text-red-500 mt-0.5 shrink-0" />
+              <AlertTriangle size={13} className="text-[var(--accent-red)] mt-0.5 shrink-0" />
               <div className="flex flex-col gap-0.5 flex-1">
                 {session.errors.map((err, i) => (
-                  <span key={i} className="text-[11px] text-red-500">{err}</span>
+                  <span key={i} className="text-[11px] text-[var(--accent-red)]">{err}</span>
                 ))}
                 <button className="text-[11px] text-[var(--text-muted)] self-start hover:underline" onClick={session.clearErrors}>Descartar</button>
               </div>

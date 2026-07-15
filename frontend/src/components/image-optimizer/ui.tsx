@@ -10,9 +10,9 @@ export function ToastContainer({ toasts, removeToast }: { toasts: Toast[]; remov
         <div
           key={toast.id}
           className={`flex items-center gap-2 rounded-[20px] border px-4 py-3 shadow-lg backdrop-blur-xl ${toast.type === 'error'
-            ? 'border-red-500/20 bg-red-950/90 text-red-300'
+            ? 'border-[var(--accent-red)]/20 bg-[var(--accent-red)]/10 text-[var(--accent-red)]'
             : toast.type === 'success'
-              ? 'border-emerald-500/20 bg-emerald-950/90 text-emerald-300'
+              ? 'border-[var(--accent-green)]/20 bg-[var(--accent-green)]/10 text-[var(--accent-green)]'
               : 'border-[var(--border-medium)] bg-[var(--bg-elevated)] text-[var(--text-primary)]'
             }`}
         >

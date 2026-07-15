@@ -31,7 +31,7 @@ interface CalendarViewProps {
   onEditTask?: (tarea: Tarea) => void;
 }
 
-const OVERDUE_COLOR = '#EF4444';
+const OVERDUE_COLOR = 'var(--accent-red)';
 
 const WEEKDAY_LONG = new Intl.DateTimeFormat('es', { weekday: 'long' });
 const DAY_MONTH = new Intl.DateTimeFormat('es', { day: 'numeric', month: 'short' });

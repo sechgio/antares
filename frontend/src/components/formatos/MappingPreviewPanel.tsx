@@ -263,8 +263,11 @@ export default function MappingPreviewPanel({
               />
             </div>
             <div
-              className="pointer-events-none absolute bottom-3 right-3 rounded border border-[var(--accent-primary)]/25 bg-black/80 px-2 py-1"
-              style={{ fontFamily: "'Roboto Mono', monospace" }}
+              className="pointer-events-none absolute bottom-3 right-3 rounded border border-[var(--accent-primary)]/25 px-2 py-1"
+              style={{
+                backgroundColor: 'color-mix(in srgb, var(--bg-base) 80%, transparent)',
+                fontFamily: "'Roboto Mono', monospace",
+              }}
             >
               <span className="text-[8px] text-[var(--text-muted)]">Pág. </span>
               <span className="text-[10px] font-medium tracking-widest text-[var(--accent-primary)]">{pageNum}</span>

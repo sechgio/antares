@@ -67,14 +67,20 @@ export default function CommandPalette({ isOpen, onClose, items }: CommandPalett
   return (
     <div
       className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh] animate-fade-in"
-      style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 66%, transparent)', backdropFilter: 'blur(4px)' }}
+      style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 85%, transparent)', backdropFilter: 'blur(6px)' }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-xl bg-dark-surface border border-bdr-medium rounded-2xl shadow-elevated overflow-hidden animate-scale-in">
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-bdr-subtle">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-txt-muted shrink-0">
+      <div
+        className="w-full max-w-xl overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-base)] animate-scale-in"
+        style={{
+          boxShadow:
+            '0 24px 48px color-mix(in srgb, var(--bg-base) 55%, transparent), 0 0 0 1px color-mix(in srgb, var(--border-subtle) 80%, transparent)',
+        }}
+      >
+        <div className="flex items-center gap-3 border-b border-[var(--border-subtle)] px-4 py-3">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-[var(--text-muted)]">
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
           <input
@@ -83,14 +89,14 @@ export default function CommandPalette({ isOpen, onClose, items }: CommandPalett
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Buscar acción..."
-            className="flex-1 bg-transparent text-txt-primary text-base outline-none placeholder:text-txt-muted"
+            className="flex-1 bg-transparent text-base text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
           />
-          <span className="text-xs text-txt-muted bg-dark-elevated px-2 py-1 rounded border border-bdr-subtle">ESC</span>
+          <span className="rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2 py-1 text-xs text-[var(--text-muted)]">ESC</span>
         </div>
 
         <div className="max-h-[50vh] overflow-y-auto py-2">
           {filtered.length === 0 && (
-            <div className="px-4 py-8 text-center text-sm text-txt-muted">
+            <div className="px-4 py-8 text-center text-sm text-[var(--text-muted)]">
               No se encontraron resultados
             </div>
           )}
@@ -100,13 +106,13 @@ export default function CommandPalette({ isOpen, onClose, items }: CommandPalett
               onClick={() => { item.action(); onClose(); }}
               onMouseEnter={() => setSelectedIndex(index)}
               className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
-                index === selectedIndex ? 'bg-[var(--accent-primary-glow)]' : 'hover:bg-dark-elevated'
+                index === selectedIndex ? 'bg-[var(--accent-primary-glow)]' : 'hover:bg-[var(--bg-surface)]'
               }`}
             >
-              {item.icon && <span className="text-txt-muted shrink-0">{item.icon}</span>}
-              <span className="flex-1 text-sm text-txt-primary truncate">{item.label}</span>
+              {item.icon && <span className="shrink-0 text-[var(--text-muted)]">{item.icon}</span>}
+              <span className="flex-1 truncate text-sm text-[var(--text-primary)]">{item.label}</span>
               {item.shortcut && (
-                <span className="text-[11px] text-txt-muted bg-dark-elevated px-1.5 py-0.5 rounded border border-bdr-subtle shrink-0">
+                <span className="shrink-0 rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-1.5 py-0.5 text-[11px] text-[var(--text-muted)]">
                   {item.shortcut}
                 </span>
               )}
@@ -114,12 +120,12 @@ export default function CommandPalette({ isOpen, onClose, items }: CommandPalett
           ))}
         </div>
 
-        <div className="px-4 py-2 border-t border-bdr-subtle flex items-center gap-4 text-[11px] text-txt-muted">
+        <div className="flex items-center gap-4 border-t border-[var(--border-subtle)] px-4 py-2 text-[11px] text-[var(--text-muted)]">
           <span className="flex items-center gap-1">
-            <kbd className="bg-dark-elevated border border-bdr-subtle rounded px-1">↑↓</kbd> navegar
+            <kbd className="rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-1">↑↓</kbd> navegar
           </span>
           <span className="flex items-center gap-1">
-            <kbd className="bg-dark-elevated border border-bdr-subtle rounded px-1">↵</kbd> seleccionar
+            <kbd className="rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-1">↵</kbd> seleccionar
           </span>
         </div>
       </div>

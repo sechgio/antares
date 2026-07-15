@@ -129,10 +129,10 @@ export default function CropEditor({ image, aspectRatio, cropOrigin, onClose, on
         >
           <div className="relative inline-block">
             <img src={image.preview} alt={image.originalName} className="max-h-[64vh] w-auto select-none" draggable={false} />
-            <div className="pointer-events-none absolute inset-0 bg-black/70" />
+            <div className="pointer-events-none absolute inset-0" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 70%, transparent)' }} />
             <div
               className="absolute cursor-grab border-[3px] border-[var(--accent-primary)] active:cursor-grabbing"
-              style={{ ...cropBoxStyle, boxShadow: '0 0 0 9999px rgba(0,0,0,0.7), 0 0 20px rgba(94,106,210,0.3)' }}
+              style={{ ...cropBoxStyle, boxShadow: '0 0 0 9999px color-mix(in srgb, var(--bg-base) 70%, transparent), 0 0 20px var(--accent-primary-glow)' }}
               onMouseDown={handleMouseDown}
             >
               <div
@@ -144,15 +144,15 @@ export default function CropEditor({ image, aspectRatio, cropOrigin, onClose, on
                 }}
               />
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <div className="rounded-full bg-black/60 p-2.5 shadow-lg backdrop-blur-sm">
+                <div className="rounded-full p-2.5 shadow-lg backdrop-blur-sm" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 60%, transparent)' }}>
                   <Move size={20} className="text-[var(--text-primary)]" />
                 </div>
               </div>
               <div className="absolute inset-0 pointer-events-none">
-                <div className="absolute left-1/3 top-0 bottom-0 w-px bg-white/25" />
-                <div className="absolute left-2/3 top-0 bottom-0 w-px bg-white/25" />
-                <div className="absolute top-1/3 left-0 right-0 h-px bg-white/25" />
-                <div className="absolute top-2/3 left-0 right-0 h-px bg-white/25" />
+                <div className="absolute left-1/3 top-0 bottom-0 w-px bg-[var(--text-primary)]/25" />
+                <div className="absolute left-2/3 top-0 bottom-0 w-px bg-[var(--text-primary)]/25" />
+                <div className="absolute top-1/3 left-0 right-0 h-px bg-[var(--text-primary)]/25" />
+                <div className="absolute top-2/3 left-0 right-0 h-px bg-[var(--text-primary)]/25" />
               </div>
             </div>
           </div>

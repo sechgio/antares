@@ -87,7 +87,11 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
         role="dialog"
         aria-modal="true"
         aria-label="Configuración"
-        className="relative flex h-full w-full max-w-[1380px] max-h-[900px] overflow-hidden rounded-2xl border border-[var(--border-medium)] bg-[var(--bg-base)] animate-scale-in"
+        className="relative flex h-full w-full max-w-[1380px] max-h-[900px] overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-base)] animate-scale-in"
+        style={{
+          boxShadow:
+            '0 24px 48px color-mix(in srgb, var(--bg-base) 55%, transparent), 0 0 0 1px color-mix(in srgb, var(--border-subtle) 80%, transparent)',
+        }}
       >
         {/* Sidebar interno de secciones */}
         <aside

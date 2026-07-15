@@ -353,7 +353,7 @@ export default function RenameCard(props: RenameCardProps) {
               {/* Paso 1: Columna ID */}
               <div className="space-y-2.5">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-primary)] text-white text-[10px] font-bold">1</div>
+                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[var(--text-on-accent)] text-[10px] font-bold">1</div>
                   <label className="text-xs font-bold text-[var(--text-primary)]">¿Qué columna identifica a tus archivos?</label>
                 </div>
                 <div className="grid grid-cols-1 gap-2">
@@ -379,7 +379,7 @@ export default function RenameCard(props: RenameCardProps) {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
-                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-primary)] text-white text-[10px] font-bold">2</div>
+                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[var(--text-on-accent)] text-[10px] font-bold">2</div>
                     <label className="text-xs font-bold text-[var(--text-primary)]">Columna renombre</label>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -392,7 +392,7 @@ export default function RenameCard(props: RenameCardProps) {
                           onClick={() => toggleCol(col)}
                           className={`px-3 py-2 rounded-lg border text-xs font-medium transition-all ${
                             active
-                              ? 'bg-[var(--accent-primary)] text-white border-[var(--accent-primary)] shadow-sm'
+                              ? 'bg-[var(--accent-primary)] text-[var(--text-on-accent)] border-[var(--accent-primary)] shadow-sm'
                               : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:border-[var(--border-medium)]'
                           }`}
                         >
@@ -405,7 +405,7 @@ export default function RenameCard(props: RenameCardProps) {
 
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
-                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-primary)] text-white text-[10px] font-bold">3</div>
+                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[var(--text-on-accent)] text-[10px] font-bold">3</div>
                     <label className="text-xs font-bold text-[var(--text-primary)]">Secuencia</label>
                   </div>
                   <div className="space-y-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/40 p-3">
@@ -446,7 +446,7 @@ export default function RenameCard(props: RenameCardProps) {
               {/* Paso 4: Separador */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-primary)] text-white text-[10px] font-bold">4</div>
+                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[var(--text-on-accent)] text-[10px] font-bold">4</div>
                   <label className="text-xs font-bold text-[var(--text-primary)]">Separador</label>
                 </div>
                 <div className="flex gap-2">

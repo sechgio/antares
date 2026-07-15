@@ -884,8 +884,8 @@ export const UbicacionesView: React.FC = () => {
 
               {inputMode === 'excel' ? (
                 excelFile ? (
-                  <div className="flex items-center gap-2 rounded-lg border border-emerald-500/25 bg-emerald-500/[0.06] px-3 py-2 transition-all mt-1">
-                    <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+                  <div className="flex items-center gap-2 rounded-lg border border-[var(--accent-green)]/25 bg-[var(--accent-green)]/[0.06] px-3 py-2 transition-all mt-1">
+                    <CheckCircle2 size={14} className="text-[var(--accent-green)] shrink-0" />
                     <span className="text-[11px] font-medium text-[var(--text-primary)] truncate flex-1">
                       {excelFile.name}
                     </span>
@@ -1012,13 +1012,13 @@ export const UbicacionesView: React.FC = () => {
                 onClick={handleSelectOutputDir}
                 className={`flex items-center gap-2 w-full rounded-lg border px-3 py-2 text-left transition-all duration-200 ${
                   outputDir
-                    ? 'border-emerald-500/25 bg-emerald-500/[0.06]'
+                    ? 'border-[var(--accent-green)]/25 bg-[var(--accent-green)]/[0.06]'
                     : 'border-[var(--border-subtle)] bg-[var(--bg-surface)] hover:border-[var(--border-medium)] hover:bg-[var(--bg-elevated)]'
                 }`}
               >
                 <Folder
                   size={14}
-                  className={`shrink-0 ${outputDir ? 'text-emerald-400' : 'text-[var(--text-muted)]'}`}
+                  className={`shrink-0 ${outputDir ? 'text-[var(--accent-green)]' : 'text-[var(--text-muted)]'}`}
                 />
                 <div className="flex flex-col min-w-0 flex-1">
                   <span
@@ -1127,7 +1127,7 @@ export const UbicacionesView: React.FC = () => {
                                       [f.key]: { ...s.texts[f.key], visible: !s.texts[f.key].visible }
                                     }
                                   }))}
-                                  className={`w-5 h-5 rounded flex items-center justify-center transition-all ${style.visible ? 'bg-emerald-500/15 text-emerald-400' : 'bg-[var(--bg-input)] text-[var(--text-muted)]'}`}
+                                  className={`w-5 h-5 rounded flex items-center justify-center transition-all ${style.visible ? 'bg-[var(--accent-green)]/15 text-[var(--accent-green)]' : 'bg-[var(--bg-input)] text-[var(--text-muted)]'}`}
                                 ><Eye size={9} /></button>
                               </div>
                             </div>
@@ -1217,7 +1217,7 @@ export const UbicacionesView: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => updateStyle(s => ({ ...s, pin: { ...s.pin, visible: !s.pin.visible } }))}
-                          className={`w-5 h-5 rounded flex items-center justify-center transition-all ${customStyles.pin.visible !== false ? 'bg-emerald-500/15 text-emerald-400' : 'bg-[var(--bg-input)] text-[var(--text-muted)]'}`}
+                          className={`w-5 h-5 rounded flex items-center justify-center transition-all ${customStyles.pin.visible !== false ? 'bg-[var(--accent-green)]/15 text-[var(--accent-green)]' : 'bg-[var(--bg-input)] text-[var(--text-muted)]'}`}
                         >
                           <Eye size={9} />
                         </button>
@@ -1747,11 +1747,11 @@ export const ResultPanel: React.FC<{ result: Result; outputDir: string }> = ({ r
     const allFailed = generados === 0 && fallidos > 0;
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8">
-        <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-5 ${allFailed ? 'bg-amber-500/15' : 'bg-emerald-500/15'}`}>
+        <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-5 ${allFailed ? 'bg-[var(--accent-yellow)]/15' : 'bg-[var(--accent-green)]/15'}`}>
           {allFailed ? (
             <AlertCircle size={32} className="text-amber-400" />
           ) : (
-            <CheckCircle2 size={32} className="text-emerald-400" />
+            <CheckCircle2 size={32} className="text-[var(--accent-green)]" />
           )}
         </div>
         <p className="text-lg font-semibold text-[var(--text-primary)] mb-1">
@@ -1760,13 +1760,13 @@ export const ResultPanel: React.FC<{ result: Result; outputDir: string }> = ({ r
         <p className="text-sm text-[var(--text-muted)] mb-5">
           {isConsolidado ? (
             <>
-              Se generó <span className="font-bold text-emerald-400">1 PDF consolidado</span> con{' '}
-              <span className="font-bold text-emerald-400">{generados} páginas</span>
+              Se generó <span className="font-bold text-[var(--accent-green)]">1 PDF consolidado</span> con{' '}
+              <span className="font-bold text-[var(--accent-green)]">{generados} páginas</span>
             </>
           ) : (
             <>
               Se generaron{' '}
-              <span className="font-bold text-emerald-400">{generados} PDFs</span>
+              <span className="font-bold text-[var(--accent-green)]">{generados} PDFs</span>
             </>
           )}
         </p>

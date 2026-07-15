@@ -79,12 +79,12 @@ export default function PreviewWorkspace({
           <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
             {items.map((item) => {
               const outputName = downloadNameMap.get(item.id) || item.originalName;
-              const statusColor = item.excluded ? '#52525b'
-                : item.status === 'error' ? '#ef4444'
-                  : item.stale ? '#f59e0b'
-                    : item.status === 'completed' ? '#10b981'
-                      : item.status === 'processing' ? '#3b82f6'
-                        : '#3f3f46';
+              const statusColor = item.excluded ? 'var(--text-muted)'
+                : item.status === 'error' ? 'var(--accent-red)'
+                  : item.stale ? 'var(--accent-yellow)'
+                    : item.status === 'completed' ? 'var(--accent-green)'
+                      : item.status === 'processing' ? 'var(--accent-blue)'
+                        : 'var(--text-muted)';
               const thumb = item.resultPreview || item.preview;
 
               return (
@@ -111,7 +111,8 @@ export default function PreviewWorkspace({
                           e.stopPropagation();
                           onOpenCropEditor(item.id);
                         }}
-                        className="flex h-6 w-6 items-center justify-center rounded-md bg-black/70 text-[var(--text-primary)] transition-colors hover:bg-emerald-500/80 hover:text-white"
+                        className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-primary)] transition-colors hover:bg-[var(--accent-green)] hover:text-[var(--text-on-accent)]"
+                        style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 70%, transparent)' }}
                         title="Ajustar recorte"
                       >
                         <Crop size={11} />
@@ -119,7 +120,7 @@ export default function PreviewWorkspace({
                     </div>
 
                     {item.status === 'processing' && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                      <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 50%, transparent)' }}>
                         <Loader2 size={16} className="animate-spin text-[var(--text-primary)]" />
                       </div>
                     )}
@@ -149,7 +150,7 @@ export default function PreviewWorkspace({
                           const i = Math.floor(Math.log(bytes) / Math.log(k));
                           return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
                         })()}
-                        {item.resultSize != null ? <span className="text-emerald-500"> → {(() => {
+                        {item.resultSize != null ? <span className="text-[var(--accent-green)]"> → {(() => {
                           const bytes = item.resultSize;
                           if (bytes === 0) return '0 B';
                           const k = 1024;
@@ -189,9 +190,9 @@ export default function PreviewWorkspace({
                 <p className="truncate text-[10px] font-mono text-[var(--text-muted)]/70">{activeItem.originalName}</p>
               )}
             </div>
-            {activeItem.status === 'completed' && !activeItem.stale ? <CheckCircle2 size={12} className="text-emerald-400/80 shrink-0" /> : null}
-            {activeItem.excluded && <span className="shrink-0 text-[10px] font-mono text-red-400/70">Excluida</span>}
-            {activeItem.stale && <span className="shrink-0 text-[10px] font-mono text-amber-400/70">Stale</span>}
+            {activeItem.status === 'completed' && !activeItem.stale ? <CheckCircle2 size={12} className="text-[var(--accent-green)]/80 shrink-0" /> : null}
+            {activeItem.excluded && <span className="shrink-0 text-[10px] font-mono text-[var(--accent-red)]/70">Excluida</span>}
+            {activeItem.stale && <span className="shrink-0 text-[10px] font-mono text-[var(--accent-yellow)]/70">Stale</span>}
             {activeItem.overrides.skipCompression && <span className="shrink-0 text-[10px] font-mono text-[var(--text-muted)]/70">Sin compresión</span>}
             {activeItem.overrides.presetId && <span className="shrink-0 text-[10px] font-mono text-[var(--text-muted)]/70">Preset local</span>}
           </div>
@@ -214,7 +215,7 @@ export default function PreviewWorkspace({
             <span className="text-[var(--border-medium)]/50">|</span>
             <button
               onClick={() => onRemoveItem(activeItem.id)}
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-mono uppercase tracking-[0.1em] text-[var(--text-muted)]/70 transition-colors hover:text-red-400/80"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-mono uppercase tracking-[0.1em] text-[var(--text-muted)]/70 transition-colors hover:text-[var(--accent-red)]/80"
             >
               <Trash2 size={11} />
               Quitar
@@ -264,15 +265,15 @@ export default function PreviewWorkspace({
                 <div className={previewStageClass}>
                   <div className="relative inline-block max-h-full max-w-full">
                     <img src={activeItem.preview} alt={activeItem.originalName} className={previewImageClass} />
-                    <div className="absolute inset-0 bg-black/60" />
+                    <div className="absolute inset-0" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 60%, transparent)' }} />
                     <div
-                      className="absolute border border-[var(--accent-primary)] shadow-[0_0_15px_rgba(94,106,210,0.2)]"
+                      className="absolute border border-[var(--accent-primary)] shadow-[0_0_15px_var(--accent-primary-glow)]"
                       style={{
                         left: `${(activeCropPreview.offsetX / activeItem.sourceWidth!) * 100}%`,
                         top: `${(activeCropPreview.offsetY / activeItem.sourceHeight!) * 100}%`,
                         width: `${(activeCropPreview.width / activeItem.sourceWidth!) * 100}%`,
                         height: `${(activeCropPreview.height / activeItem.sourceHeight!) * 100}%`,
-                        boxShadow: '0 0 0 9999px rgba(0,0,0,0.6)',
+                        boxShadow: '0 0 0 9999px color-mix(in srgb, var(--bg-base) 60%, transparent)',
                       }}
                     />
                   </div>

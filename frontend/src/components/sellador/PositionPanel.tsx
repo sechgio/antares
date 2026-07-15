@@ -74,7 +74,7 @@ export default function PositionPanel({
                     onRemovePosition(index);
                   }
                 }}
-                className="rounded-full p-0.5 hover:bg-red-500/20 hover:text-red-400"
+                className="rounded-full p-0.5 hover:bg-[var(--accent-red)]/20 hover:text-[var(--accent-red)]"
                 aria-label={`Eliminar ${pos.name}`}
               >
                 <Trash2 size={10} />

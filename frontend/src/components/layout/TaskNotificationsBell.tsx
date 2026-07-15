@@ -16,9 +16,9 @@ interface MenuPosition {
 }
 
 const URGENCY_DOT: Record<DueUrgency, string> = {
-  overdue: '#EF4444',
-  today: '#F59E0B',
-  soon: '#5F55EE',
+  overdue: 'var(--accent-red)',
+  today: 'var(--accent-yellow)',
+  soon: 'var(--accent-primary)',
 };
 
 const URGENCY_LABEL: Record<DueUrgency, string> = {
@@ -110,7 +110,7 @@ export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificati
         <Bell size={14} strokeWidth={1.8} />
         {count > 0 && (
           <span
-            className="absolute right-1.5 top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[var(--accent-red)] px-0.5 text-[9px] font-semibold leading-none text-white"
+            className="absolute right-1.5 top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[var(--accent-red)] px-0.5 text-[9px] font-semibold leading-none text-[var(--text-on-accent)]"
             aria-hidden
           >
             {badgeLabel}
@@ -125,7 +125,7 @@ export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificati
             id={panelId}
             role="dialog"
             aria-label="Tareas cercanas a vencer"
-            className="fixed z-[220] w-[320px] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] shadow-[0_16px_48px_color-mix(in_srgb,var(--bg-base)_60%,transparent),0_0_0_1px_color-mix(in_srgb,var(--border-medium)_40%,transparent)]"
+            className="fixed z-[220] w-[320px] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] shadow-[0_16px_48px_color-mix(in_srgb,var(--bg-base)_60%,transparent),0_0_0_1px_color-mix(in_srgb,var(--border-subtle)_80%,transparent)]"
             style={
               position
                 ? { top: position.top, right: position.right }
@@ -195,9 +195,9 @@ export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificati
                       <span
                         className={
                           item.urgency === 'overdue'
-                            ? 'font-medium text-[#EF4444]'
+                            ? 'font-medium text-[var(--accent-red)]'
                             : item.urgency === 'today'
-                              ? 'font-medium text-[#F59E0B]'
+                              ? 'font-medium text-[var(--accent-yellow)]'
                               : undefined
                         }
                       >

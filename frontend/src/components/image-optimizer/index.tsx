@@ -663,7 +663,7 @@ export default function ImageOptimizer() {
                   type="button"
                   onClick={() => { downloadItems(downloadableItems); closeDownloadMenu(); }}
                   disabled={isProcessing || downloadableItems.length === 0}
-                  className={`inline-flex items-center gap-2 border border-emerald-500/35 bg-emerald-500/10 px-4 py-2 text-[10px] font-mono uppercase tracking-[0.15em] text-emerald-600 transition-colors hover:border-emerald-500/55 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:border-[var(--border-medium)] disabled:bg-[var(--bg-surface)] disabled:text-[var(--text-muted)] ${downloadableItems.length > 0 ? 'rounded-l-full border-r-0' : 'rounded-full'}`}
+                  className={`inline-flex items-center gap-2 border border-[var(--accent-green)]/35 bg-[var(--accent-green)]/10 px-4 py-2 text-[10px] font-mono uppercase tracking-[0.15em] text-[var(--accent-green)] transition-colors hover:border-[var(--accent-green)]/55 hover:bg-[var(--accent-green)]/20 disabled:cursor-not-allowed disabled:border-[var(--border-medium)] disabled:bg-[var(--bg-surface)] disabled:text-[var(--text-muted)] ${downloadableItems.length > 0 ? 'rounded-l-full border-r-0' : 'rounded-full'}`}
                 >
                   <FileDown size={13} />
                   {downloadableItems.length > 1 ? 'Descargar ZIP' : 'Descargar'}
@@ -676,7 +676,7 @@ export default function ImageOptimizer() {
                     aria-expanded={downloadMenuOpen}
                     aria-haspopup="menu"
                     aria-label="Opciones de descarga"
-                    className="inline-flex items-center rounded-r-full border border-emerald-500/35 bg-emerald-500/10 px-1.5 py-2 text-emerald-600 transition-colors hover:border-emerald-500/55 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:border-[var(--border-medium)] disabled:bg-[var(--bg-surface)] disabled:text-[var(--text-muted)]"
+                    className="inline-flex items-center rounded-r-full border border-[var(--accent-green)]/35 bg-[var(--accent-green)]/10 px-1.5 py-2 text-[var(--accent-green)] transition-colors hover:border-[var(--accent-green)]/55 hover:bg-[var(--accent-green)]/20 disabled:cursor-not-allowed disabled:border-[var(--border-medium)] disabled:bg-[var(--bg-surface)] disabled:text-[var(--text-muted)]"
                   >
                     <ChevronDown size={12} className={`transition-transform ${downloadMenuOpen ? 'rotate-180' : ''}`} />
                   </button>
@@ -697,7 +697,7 @@ export default function ImageOptimizer() {
                         onClick={() => { downloadItemsAsZip(downloadableItems); closeDownloadMenu(); }}
                         className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[11px] font-mono tracking-wide text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-elevated)]"
                       >
-                        <FileDown size={13} className="text-emerald-500 shrink-0" />
+                        <FileDown size={13} className="text-[var(--accent-green)] shrink-0" />
                         Descargar como ZIP
                         <span className="ml-auto text-[9px] text-[var(--text-muted)]">{downloadableItems.length} archivos</span>
                       </button>
@@ -719,7 +719,7 @@ export default function ImageOptimizer() {
               <button
                 onClick={handleClearAll}
                 disabled={isProcessing || items.length === 0}
-                className="inline-flex items-center gap-2 rounded-full border border-[var(--border-medium)] px-4 py-2 text-[10px] font-mono uppercase tracking-[0.15em] text-[var(--text-muted)] transition-colors hover:border-red-500/30 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-30"
+                className="inline-flex items-center gap-2 rounded-full border border-[var(--border-medium)] px-4 py-2 text-[10px] font-mono uppercase tracking-[0.15em] text-[var(--text-muted)] transition-colors hover:border-[var(--accent-red)]/30 hover:text-[var(--accent-red)] disabled:cursor-not-allowed disabled:opacity-30"
               >
                 <Trash2 size={13} />
                 Limpiar

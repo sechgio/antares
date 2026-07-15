@@ -27,8 +27,8 @@ type SortDir = 'asc' | 'desc';
 
 /** Priority derived from status/overdue (no separate DB field). */
 function priorityMeta(tarea: Tarea, columns: BoardColumn[] = []): { label: string; color: string } | null {
-  if (tarea.status === 'urgent') return { label: 'Urgente', color: '#EF4444' };
-  if (isOverdue(tarea, columns)) return { label: 'Alta', color: '#F59E0B' };
+  if (tarea.status === 'urgent') return { label: 'Urgente', color: 'var(--accent-red)' };
+  if (isOverdue(tarea, columns)) return { label: 'Alta', color: 'var(--accent-yellow)' };
   if (tarea.status === 'in_progress' || tarea.status === 'todo') {
     return { label: 'Normal', color: '#87909E' };
   }
@@ -241,7 +241,7 @@ export default function TableView({
                       onClick={() => onComplete(tarea)}
                       className={`flex h-5 w-5 items-center justify-center rounded-full border transition-colors ${
                         done
-                          ? 'border-[var(--accent-green,#22c55e)] bg-[var(--accent-green,#22c55e)] text-white'
+                          ? 'border-[var(--accent-green)] bg-[var(--accent-green)] text-[var(--text-on-accent)]'
                           : 'border-[var(--border-medium)] text-transparent hover:border-[var(--accent-primary)] hover:text-[var(--accent-primary)]'
                       }`}
                       aria-label={done ? `Reabrir «${tarea.title}»` : `Completar «${tarea.title}»`}

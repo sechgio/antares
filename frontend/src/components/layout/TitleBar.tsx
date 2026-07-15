@@ -55,7 +55,7 @@ export default function TitleBar({ onOpenSettings, onOpenEspacios }: TitleBarPro
           aria-label="Cerrar"
           title="Cerrar"
           onClick={() => handleWindowAction('closeWindow')}
-          className="app-titlebar-button flex w-12 items-center justify-center text-[var(--text-secondary)] transition-colors hover:bg-[var(--accent-red)] hover:text-white"
+          className="app-titlebar-button flex w-12 items-center justify-center text-[var(--text-secondary)] transition-colors hover:bg-[var(--accent-red)] hover:text-[var(--text-on-accent)]"
         >
           <X size={15} strokeWidth={1.8} />
         </button>

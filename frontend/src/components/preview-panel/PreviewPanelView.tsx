@@ -123,7 +123,7 @@ function Step({ number, title, icon, children, disabled, badge, defaultOpen = tr
         aria-expanded={isOpen}
         className="flex w-full items-center gap-2 px-2 py-2 group cursor-pointer select-none rounded-lg"
       >
-        <span className={`inline-flex h-[20px] w-[20px] items-center justify-center rounded-full text-[10px] font-bold shrink-0 transition-colors ${done ? 'bg-[var(--accent-green)] text-white' : isOpen ? 'bg-[var(--accent-primary)] text-[var(--text-on-accent)]' : 'bg-[var(--accent-primary)]/15 text-[var(--accent-primary)] ring-1 ring-inset ring-[var(--accent-primary)]/30'}`}>
+        <span className={`inline-flex h-[20px] w-[20px] items-center justify-center rounded-full text-[10px] font-bold shrink-0 transition-colors ${done ? 'bg-[var(--accent-green)] text-[var(--text-on-accent)]' : isOpen ? 'bg-[var(--accent-primary)] text-[var(--text-on-accent)]' : 'bg-[var(--accent-primary)]/15 text-[var(--accent-primary)] ring-1 ring-inset ring-[var(--accent-primary)]/30'}`}>
           {done ? <CheckCircle size={12} /> : number}
         </span>
         <span className="text-[11px] font-semibold text-[var(--text-primary)] truncate">{title}</span>
@@ -641,12 +641,12 @@ export default function PreviewPanelView() {
             number="1"
             title="Plantilla"
             icon={<FileCode size={12} />}
-            badge={templateStatus === 'valid' ? <CheckCircle size={11} className="text-green-500" /> : templateStatus === 'invalid' ? <AlertCircle size={11} className="text-red-500" /> : null}
+            badge={templateStatus === 'valid' ? <CheckCircle size={11} className="text-[var(--accent-green)]" /> : templateStatus === 'invalid' ? <AlertCircle size={11} className="text-[var(--accent-red)]" /> : null}
             status={stepStates[1] ? 'done' : 'pending'}
           >
             <div className="space-y-1.5">
               <label className="block w-full cursor-pointer">
-                <div className={`border border-dashed rounded-md py-1.5 px-2 text-center transition-colors text-[10px] ${templateStatus === 'valid' ? 'border-green-500/50 bg-green-500/5 text-green-400' : templateStatus === 'invalid' ? 'border-red-500/50 bg-red-500/5 text-red-400' : 'border-[var(--border-medium)] hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)]'}`}>
+                <div className={`border border-dashed rounded-md py-1.5 px-2 text-center transition-colors text-[10px] ${templateStatus === 'valid' ? 'border-[var(--accent-green)]/50 bg-[var(--accent-green)]/5 text-[var(--accent-green)]' : templateStatus === 'invalid' ? 'border-[var(--accent-red)]/50 bg-[var(--accent-red)]/5 text-[var(--accent-red)]' : 'border-[var(--border-medium)] hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)]'}`}>
                   {customTemplate ? customTemplate.name : 'Subir Plantilla HTML'}
                 </div>
                 <input id="templateInput" type="file" hidden accept=".html" onChange={handleTemplateUpload} />
@@ -662,13 +662,13 @@ export default function PreviewPanelView() {
               </select>
 
               {templateStatus === 'invalid' && templateError && (
-                <div className="text-[9px] text-red-400 px-0.5">⚠️ {templateError}</div>
+                <div className="text-[9px] text-[var(--accent-red)] px-0.5">⚠️ {templateError}</div>
               )}
 
               <div className="flex items-center justify-between gap-2">
-                <div className={`flex-1 flex items-center justify-between px-2 py-1 rounded-md text-[9px] border ${customTemplate ? 'bg-green-500/5 border-green-500/20' : 'bg-[var(--bg-elevated)] border-[var(--border-medium)]'}`}>
+                <div className={`flex-1 flex items-center justify-between px-2 py-1 rounded-md text-[9px] border ${customTemplate ? 'bg-[var(--accent-green)]/5 border-[var(--accent-green)]/20' : 'bg-[var(--bg-elevated)] border-[var(--border-medium)]'}`}>
                   <span className="text-[var(--text-muted)]">Activa:</span>
-                  <span className={customTemplate ? 'text-green-400 font-medium' : 'text-[var(--text-muted)]'}>
+                  <span className={customTemplate ? 'text-[var(--accent-green)] font-medium' : 'text-[var(--text-muted)]'}>
                     {customTemplate ? customTemplate.name : 'Predeterminada'}
                   </span>
                 </div>
@@ -686,7 +686,7 @@ export default function PreviewPanelView() {
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input type="checkbox" checked={requiresImages} onChange={e => setRequiresImages(e.target.checked)} className="sr-only peer" />
-                  <div className="w-7 h-3.5 bg-[var(--bg-base)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-green-600 border border-[var(--border-medium)]"></div>
+                  <div className="w-7 h-3.5 bg-[var(--bg-base)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-[var(--text-on-accent)] after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-[var(--text-primary)] after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-[var(--accent-green)] border border-[var(--border-medium)]"></div>
                 </label>
               </div>
             </div>
@@ -697,7 +697,7 @@ export default function PreviewPanelView() {
             number="2"
             title="Datos"
             icon={<FileSpreadsheet size={12} />}
-            badge={data.length > 0 ? <span className="text-[9px] text-green-400 font-medium">{data.length}</span> : null}
+            badge={data.length > 0 ? <span className="text-[9px] text-[var(--accent-green)] font-medium">{data.length}</span> : null}
             status={stepStates[2] ? 'done' : 'pending'}
           >
             <div className="space-y-1.5">
@@ -772,7 +772,7 @@ export default function PreviewPanelView() {
                       <option value="">Ignorar</option>
                       {headers.map(h => <option key={h} value={h}>{h}</option>)}
                     </select>
-                    <button onClick={() => removeCustomColumn(col.id)} className="text-red-400 hover:text-red-300 text-[9px] px-0.5 hover:bg-red-500/20 rounded transition-colors" title="Eliminar">✕</button>
+                    <button onClick={() => removeCustomColumn(col.id)} className="text-[var(--accent-red)] hover:opacity-80 text-[9px] px-0.5 hover:bg-[var(--accent-red)]/20 rounded transition-colors" title="Eliminar">✕</button>
                   </div>
                 ))}
               </div>
@@ -789,7 +789,7 @@ export default function PreviewPanelView() {
             title={requiresImages ? 'Imágenes' : 'Imágenes (Opcional)'}
             icon={<ImageIcon size={12} />}
             disabled={!idColumn || !requiresImages}
-            badge={images.length > 0 ? <span className="text-[9px] text-green-400 font-medium">{images.length}</span> : null}
+            badge={images.length > 0 ? <span className="text-[9px] text-[var(--accent-green)] font-medium">{images.length}</span> : null}
             status={stepStates[4] ? 'done' : 'pending'}
           >
             {requiresImages ? (
@@ -928,8 +928,14 @@ export default function PreviewPanelView() {
 
         {/* Data Preview Modal */}
         {showDataPreview && data.length > 0 && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-2 sm:p-4">
-            <div className="bg-[var(--bg-surface)] border border-[var(--border-medium)] rounded-xl w-full max-w-[1400px] max-h-[88vh] flex flex-col shadow-2xl">
+          <div className="fixed inset-0 flex items-center justify-center z-50 p-2 sm:p-4" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 85%, transparent)', backdropFilter: 'blur(6px)' }}>
+            <div
+              className="bg-[var(--bg-base)] border border-[var(--border-subtle)] rounded-xl w-full max-w-[1400px] max-h-[88vh] flex flex-col"
+              style={{
+                boxShadow:
+                  '0 24px 48px color-mix(in srgb, var(--bg-base) 55%, transparent), 0 0 0 1px color-mix(in srgb, var(--border-subtle) 80%, transparent)',
+              }}
+            >
               <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--border-subtle)]">
                 <h3 className="text-[14px] font-semibold text-[var(--text-primary)]">Vista previa de datos ({data.length} registros)</h3>
                 <button
@@ -987,7 +993,7 @@ export default function PreviewPanelView() {
                             );
                           })}
                           <td className="py-1.5 px-1.5 align-top">
-                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${photoCount > 0 ? 'bg-green-500/20 text-green-400' : 'bg-[var(--bg-elevated)] text-[var(--text-muted)]'}`}>
+                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${photoCount > 0 ? 'bg-[var(--accent-green)]/20 text-[var(--accent-green)]' : 'bg-[var(--bg-elevated)] text-[var(--text-muted)]'}`}>
                               {photoCount} 📷
                             </span>
                           </td>
@@ -1003,20 +1009,24 @@ export default function PreviewPanelView() {
 
         {/* Custom Column Modal */}
         {showColumnModal && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 85%, transparent)', backdropFilter: 'blur(6px)' }}>
             <form
               onSubmit={(event) => {
                 event.preventDefault();
                 addCustomColumn();
               }}
               onKeyDown={handleCustomColumnKeyDown}
-              className="bg-[var(--bg-surface)] border border-[var(--border-medium)] rounded-xl p-5 w-full max-w-md mx-4 shadow-2xl"
+              className="bg-[var(--bg-base)] border border-[var(--border-subtle)] rounded-xl p-5 w-full max-w-md mx-4"
+              style={{
+                boxShadow:
+                  '0 24px 48px color-mix(in srgb, var(--bg-base) 55%, transparent), 0 0 0 1px color-mix(in srgb, var(--border-subtle) 80%, transparent)',
+              }}
             >
               <h3 className="text-[var(--text-primary)] font-semibold text-sm mb-4 flex items-center gap-2">
                 <span>+</span> Agregar Columna Personalizada
               </h3>
               {columnError && (
-                <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-[11px] rounded-lg p-2 mb-3 flex items-center gap-2">
+                <div className="bg-[var(--accent-red)]/10 border border-[var(--accent-red)]/30 text-[var(--accent-red)] text-[11px] rounded-lg p-2 mb-3 flex items-center gap-2">
                   <AlertCircle size={14} /> {columnError}
                 </div>
               )}
@@ -1050,10 +1060,10 @@ export default function PreviewPanelView() {
             <button onClick={goToNextRow} disabled={!canNextRow} className={`fixed right-4 top-1/2 -translate-y-1/2 p-2 transition-colors z-[100] ${!canNextRow ? 'text-[var(--text-muted)] opacity-30 cursor-not-allowed' : 'text-[var(--accent-primary)] hover:opacity-100 opacity-70'}`}>
               <ChevronRight size={64} strokeWidth={1.5} />
             </button>
-            <div className="fixed top-4 right-4 z-[100] text-[var(--text-muted)] text-[10px] font-mono pointer-events-none select-none bg-black/40 px-3 py-1 rounded-full">
+            <div className="fixed top-4 right-4 z-[100] text-[var(--text-muted)] text-[10px] font-mono pointer-events-none select-none px-3 py-1 rounded-full" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 40%, transparent)' }}>
               MODO FOCUS (CTRL + .)
             </div>
-            <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] text-[var(--text-muted)] text-sm font-mono bg-black/40 px-4 py-2 rounded-full">
+            <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] text-[var(--text-muted)] text-sm font-mono px-4 py-2 rounded-full" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 40%, transparent)' }}>
               {selectedIndex !== '' ? `${parseInt(selectedIndex) + 1} / ${data.length}` : 'Sin registro seleccionado'}
             </div>
           </>

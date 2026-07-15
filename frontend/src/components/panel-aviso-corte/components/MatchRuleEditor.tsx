@@ -63,7 +63,7 @@ export default function MatchRuleEditor({ rule, columns, onChange }: Props) {
             onChange={(e) => onChange({ ...rule, regexPattern: e.target.value })}
             placeholder="(?P&lt;clave&gt;...)"
           />
-          {regexInvalid && <span className="text-xs text-red-500">{regexInvalid}</span>}
+          {regexInvalid && <span className="text-xs text-[var(--accent-red)]">{regexInvalid}</span>}
         </div>
       )}
     </div>

@@ -18,7 +18,7 @@ export default function Toggle({ checked, onChange, id, 'aria-label': ariaLabel 
       style={{ backgroundColor: checked ? 'var(--accent-primary)' : 'var(--bg-input)' }}
     >
       <span
-        className="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+        className="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-[var(--text-on-accent)] shadow ring-0 transition duration-200 ease-in-out"
         style={{ transform: checked ? 'translateX(16px)' : 'translateX(0)' }}
       />
     </button>

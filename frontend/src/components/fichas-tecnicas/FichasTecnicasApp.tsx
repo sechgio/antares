@@ -406,7 +406,7 @@ export default function FichasTecnicasApp() {
         <>
           <button
             type="button"
-            className="fixed left-3 top-1/2 z-50 -translate-y-1/2 rounded-full bg-[#c41e3a] p-3 text-white shadow-lg disabled:opacity-40"
+            className="fixed left-3 top-1/2 z-50 -translate-y-1/2 rounded-full bg-[var(--accent-red)] p-3 text-[var(--text-on-accent)] shadow-lg disabled:opacity-40"
             disabled={currentIndex <= 0 || busy}
             onClick={() => goRelative(-1)}
             title="Anterior (modo focus)"
@@ -415,7 +415,7 @@ export default function FichasTecnicasApp() {
           </button>
           <button
             type="button"
-            className="fixed right-3 top-1/2 z-50 -translate-y-1/2 rounded-full bg-[#c41e3a] p-3 text-white shadow-lg disabled:opacity-40"
+            className="fixed right-3 top-1/2 z-50 -translate-y-1/2 rounded-full bg-[var(--accent-red)] p-3 text-[var(--text-on-accent)] shadow-lg disabled:opacity-40"
             disabled={currentIndex < 0 || currentIndex >= fichas.length - 1 || busy}
             onClick={() => goRelative(1)}
             title="Siguiente (modo focus)"

@@ -48,7 +48,7 @@ export default function SummaryPanel({ result, exportMode, onExportModeChange }:
       {result.warnings.length > 0 && (
         <div className="pac-summary__section">
           {result.warnings.map((w, i) => (
-            <span key={i} className="text-[10px] leading-snug text-amber-600">{w}</span>
+            <span key={i} className="text-[10px] leading-snug text-[var(--accent-yellow)]">{w}</span>
           ))}
         </div>
       )}

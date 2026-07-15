@@ -62,8 +62,8 @@ function ElectronOnlyNotice() {
         </p>
         <div className="mt-6 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-4 text-left text-xs font-mono">
           <div className="mb-2 font-sans font-semibold text-[var(--text-primary)]">Diagnóstico:</div>
-          <div>Es Electron: <span className={isElectron ? 'text-green-400' : 'text-red-400'}>{isElectron ? 'Sí' : 'No'}</span></div>
-          <div>electronAPI: <span className={hasAPI ? 'text-green-400' : 'text-red-400'}>{hasAPI ? 'Disponible' : 'No disponible'}</span></div>
+          <div>Es Electron: <span className={isElectron ? 'text-[var(--accent-green)]' : 'text-[var(--accent-red)]'}>{isElectron ? 'Sí' : 'No'}</span></div>
+          <div>electronAPI: <span className={hasAPI ? 'text-[var(--accent-green)]' : 'text-[var(--accent-red)]'}>{hasAPI ? 'Disponible' : 'No disponible'}</span></div>
           <div className="mt-2 text-[var(--text-muted)]">
             {isElectron && !hasAPI && 'El preload script no se ejecutó correctamente.'}
             {!isElectron && 'Abriendo desde navegador, no desde Electron.'}

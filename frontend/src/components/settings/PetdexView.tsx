@@ -327,8 +327,8 @@ export default function PetdexView() {
           <div
             className={`ml-auto flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] ${
               catalogStatus.tone === 'ok'
-                ? 'text-emerald-600 bg-emerald-500/10'
-                : 'text-amber-500 bg-amber-500/10'
+                ? 'text-[var(--accent-green)] bg-[var(--accent-green)]/10'
+                : 'text-[var(--accent-yellow)] bg-[var(--accent-yellow)]/10'
             }`}
           >
             {catalogStatus.tone === 'ok' ? <Check size={11} /> : <AlertCircle size={11} />}
