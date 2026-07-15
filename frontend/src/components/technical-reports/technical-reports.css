@@ -212,9 +212,7 @@
 /* ── Fichas técnicas: panel de base de datos ───────────────────────────── */
 
 .ft-db {
-  background:
-    radial-gradient(ellipse 120% 80% at 0% 0%, color-mix(in srgb, var(--accent-primary) 6%, transparent), transparent 55%),
-    var(--bg-surface);
+  background: var(--bg-surface);
 }
 
 .ft-db-header {
@@ -223,7 +221,7 @@
   gap: 10px;
   padding: 12px 12px 10px;
   border-bottom: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--bg-elevated) 35%, transparent);
+  background: var(--bg-surface);
 }
 
 .ft-db-header-top {
@@ -396,29 +394,15 @@
   min-width: 0;
   margin: 0;
   padding: 10px 10px 10px 11px;
-  border: 1px solid transparent;
+  border: 1px solid var(--border-subtle);
   border-radius: 10px;
-  background: transparent;
+  background: var(--bg-elevated);
   color: var(--text-primary);
   text-align: left;
   cursor: pointer;
-  animation: ft-db-card-in 0.32s var(--ease-smooth) both;
   transition:
-    background 0.16s ease,
-    border-color 0.16s ease,
-    box-shadow 0.16s ease,
-    transform 0.16s ease;
-}
-
-@keyframes ft-db-card-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+    background 0.14s ease,
+    border-color 0.14s ease;
 }
 
 .ft-db-card::before {
@@ -430,21 +414,17 @@
   width: 3px;
   border-radius: 999px;
   background: transparent;
-  transition: background 0.16s ease;
+  transition: background 0.14s ease;
 }
 
 .ft-db-card:hover {
-  background: color-mix(in srgb, var(--bg-elevated) 75%, transparent);
-  border-color: var(--border-subtle);
-  transform: translateX(1px);
+  background: color-mix(in srgb, var(--bg-elevated) 92%, var(--text-muted));
+  border-color: var(--border-medium);
 }
 
 .ft-db-card.is-active {
-  background: color-mix(in srgb, var(--accent-primary) 9%, var(--bg-surface));
-  border-color: color-mix(in srgb, var(--accent-primary) 32%, var(--border-subtle));
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--accent-primary) 10%, transparent),
-    0 8px 20px color-mix(in srgb, #000 28%, transparent);
+  background: color-mix(in srgb, var(--accent-primary) 8%, var(--bg-elevated));
+  border-color: color-mix(in srgb, var(--accent-primary) 28%, var(--border-subtle));
 }
 
 .ft-db-card.is-active::before {
