@@ -48,3 +48,14 @@ class TestMappingIndex:
         assert len(collisions) == 1
         assert collisions[0]["output"] == "mismo.jpg"
         assert set(collisions[0]["sources"]) == {"A.jpg", "B.jpg"}
+
+    def test_stem_conflict_does_not_last_write_wins(self) -> None:
+        index = MappingIndex({
+            "123.jpg": "a",
+            "123": "b",
+        })
+        assert index.lookup("123.jpg") == "a"
+        assert index.lookup("123") == "b"
+        # Ambiguous stem must not silently pick the last writer for other extensions.
+        assert index.lookup("123.png") is None
+        assert "123" in index.stem_conflicts or any(c.lower() == "123" for c in index.stem_conflicts)

@@ -80,8 +80,32 @@ describe('useProcessRunner', () => {
     expect(result.current.running).toBe(true);
   });
 
-  it('clears running on soft start failure { started: false }', async () => {
+  it('clears running on soft start failure no_files', async () => {
+    mockApi.startProcess.mockResolvedValue({ started: false, reason: 'no_files' });
+
+    const { result } = renderHook(() => useProcessRunner());
+    await act(async () => Promise.resolve());
+
+    let returned: { started: boolean; reason?: string } | undefined;
+    await act(async () => {
+      returned = await result.current.startProcess(emptyProcessBody);
+    });
+
+    expect(returned).toEqual({ started: false, reason: 'no_files' });
+    expect(result.current.running).toBe(false);
+    expect(result.current.status?.running).toBe(false);
+  });
+
+  it('resyncs via pollStatus on already_running soft failure', async () => {
     mockApi.startProcess.mockResolvedValue({ started: false, reason: 'already_running' });
+    mockApi.getStatus.mockResolvedValue({
+      running: true,
+      progress: 33,
+      current_file: 'mid.jpg',
+      ok_count: 1,
+      err_count: 0,
+      logs: [],
+    });
 
     const { result } = renderHook(() => useProcessRunner());
     await act(async () => Promise.resolve());
@@ -92,8 +116,9 @@ describe('useProcessRunner', () => {
     });
 
     expect(returned).toEqual({ started: false, reason: 'already_running' });
-    expect(result.current.running).toBe(false);
-    expect(result.current.status?.running).toBe(false);
+    expect(mockApi.getStatus).toHaveBeenCalled();
+    expect(result.current.running).toBe(true);
+    expect(result.current.status?.progress).toBe(33);
   });
 
   it('clears running and rethrows on hard start failure', async () => {
@@ -192,6 +217,33 @@ describe('useProcessRunner', () => {
     expect(result.current.status?.ok_count).toBe(5);
     expect(result.current.status?.err_count).toBe(0);
     expect(result.current.status?.current_file).toBe('last.jpg');
+  });
+
+  it('does not force progress 100 on cancelled process.complete', async () => {
+    const { result } = renderHook(() => useProcessRunner());
+    await act(async () => Promise.resolve());
+
+    act(() => {
+      notifyCallback?.('process.progress', {
+        progress: 40,
+        current_file: 'mid.jpg',
+        ok_count: 2,
+        err_count: 0,
+      });
+    });
+    expect(result.current.running).toBe(true);
+
+    act(() => {
+      notifyCallback?.('process.complete', {
+        cancelled: true,
+        progress: 40,
+        ok_count: 2,
+        err_count: 0,
+      });
+    });
+
+    expect(result.current.running).toBe(false);
+    expect(result.current.status?.progress).toBe(40);
   });
 
   it('sets running=true optimistically before startProcess resolves', async () => {

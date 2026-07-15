@@ -257,7 +257,7 @@ class TestRenamerEngine:
         assert preview == [(str(archivo), "spaced name.jpg", False)]
 
     def test_preview_lote_mapeo_parcial_no_consume_contador_por_fila(self, monkeypatch, tmp_path) -> None:
-        """Mapeo parcial no debe consumir contadores de secuencia por fila."""
+        """Mapeo parcial conserva original en unmapped (paridad con process) y no gasta seq."""
         monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["nis", "sgio"])
         engine = RenamerEngine("{sgio}_{seq}{ext}", sequence_mode="record")
         mapped = tmp_path / "mapped.jpg"
@@ -279,11 +279,14 @@ class TestRenamerEngine:
             sequence_groups={"a.jpg": "4210502"},
         )
 
+        # Process keeps original name when mapping is active and file is unmapped.
         assert [item[1] for item in preview] == [
             "custom_name.jpg",
-            "69841274_001.jpg",
+            "a.jpg",
             "unmapped.jpg",
         ]
+        assert [item[2] for item in preview] == [True, False, False]
+        # Catalog rename outside mapping mode still works and starts seq at 001.
         assert engine.aplicar(con_datos, datos_bd=fila, sequence_group="4210502") == "69841274_001.jpg"
 
     def test_preview_lote_restaura_contador_por_fila(self, monkeypatch, tmp_path) -> None:

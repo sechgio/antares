@@ -233,6 +233,8 @@ class RenamerEngine:
                     if mapped_name is not None:
                         resultados.append((str(ruta), mapped_name, True))
                         continue
+                    resultados.append((str(ruta), self._preserve_original_name(ruta), False))
+                    continue
                 codigo = codigos_manuales.get(ruta.name, obtener_codigo_desde_nombre(ruta.name))
                 datos = lookup_fn(codigo) if lookup_fn else None
                 if datos is None and self.sequence_mode == "record":

@@ -51,6 +51,21 @@ def test_dedupe_is_case_insensitive() -> None:
     assert _out_path_key(result[0][1]) == _out_path_key(Path("out/photo.jpg"))
 
 
+def test_dedupe_suffixes_when_destination_exists_on_disk(tmp_path) -> None:
+    existing = tmp_path / "a.jpg"
+    existing.write_bytes(b"old")
+    tasks = [
+        ("src/new.jpg", tmp_path / "a.jpg", False),
+    ]
+    logs: list[str] = []
+    reserved: set[str] = set()
+    result = _dedupe_chunk_out_paths(tasks, reserved, log=logs.append)
+    assert result[0][1] == tmp_path / "a-2.jpg"
+    assert existing.exists()
+    assert existing.read_bytes() == b"old"
+    assert logs and "existe en disco" in logs[0]
+
+
 def test_dedupe_spans_chunks_via_shared_reserved_set() -> None:
     reserved: set[str] = set()
     chunk1 = _dedupe_chunk_out_paths(

@@ -133,7 +133,10 @@ function _ensureListeners() {
   });
 
   proc.on('close', () => {
+    // Ignore late close from a process that was already replaced by a restart.
+    if (_attachedProcess !== proc) return;
     _attachedProcess = null;
+    clearJobActivity();
     for (const [, entry] of _pendingRequests) {
       clearTimeout(entry.timeout);
       entry.reject(new Error('Backend process exited while waiting for response'));

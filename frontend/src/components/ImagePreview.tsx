@@ -99,7 +99,13 @@ export default function ImagePreview({ path, formato, calidad, resizeAncho, resi
     } = paramsRef.current;
     if (!p) return;
 
-    const resize = ra && rh ? [parseInt(ra), parseInt(rh)] : null;
+    const parsePositiveInt = (value: string) => {
+      const parsed = Number(value);
+      return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+    };
+    const rw = parsePositiveInt(ra);
+    const rhInt = parsePositiveInt(rh);
+    const resize = rw != null && rhInt != null ? [rw, rhInt] : null;
     const resizeStr = resize ? `${resize[0]}x${resize[1]}` : 'none';
     const key = cacheKey(p, fmt, q, resizeStr);
 
