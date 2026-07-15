@@ -43,9 +43,6 @@ class FormatRegistry:
     def __getitem__(self, name: str) -> dict[str, Any]:
         return self._formats[name.upper()]
 
-    def keys(self) -> list[str]:
-        """Return all registered format names."""
-        return list(self._formats.keys())
 
 
 # Global registry instance initialized with defaults

@@ -138,12 +138,6 @@ export interface PreviewBody {
   sequence_mode?: SequenceMode;
 }
 
-export interface PreviewImageBody {
-  path: string;
-  formato: string;
-  calidad: number;
-  resize?: number[] | null;
-}
 
 export interface DbDetectKeyColumnResult {
   key_column: string;
@@ -251,8 +245,6 @@ export const api = {
   cancelProcess: () => _invoke<{ cancelled: boolean }>('process_cancel'),
 
   preview: (body: PreviewBody) => _invoke<PreviewResult>('preview', body),
-  previewImage: (body: PreviewImageBody) =>
-    _invoke<{ preview: string; width: string; height: string; orig_size_kb: string }>('preview_image', body),
 
   isVideo: (path: string) => _invoke<{ is_video: boolean }>('is_video', { path }),
 
@@ -306,21 +298,6 @@ export const api = {
     run_type: string;
     duration_ms?: number;
   }) => _invoke<{ id: number }>('history_save', body),
-  historySchema: () => _invoke<{
-    run_types: Array<{
-      id: string;
-      label_key: string;
-      description_key: string;
-      color_token: string;
-      show_patron: boolean;
-      filter_group: string;
-      options_schema: Record<string, unknown>;
-      files_schema: Record<string, unknown>;
-      stats: Array<{ key: string; label_key: string; color_token: string | null }>;
-    }>;
-    all_run_types: string[];
-    current_version: string;
-  }>('history_schema', {}),
   historyExport: (body?: { ids?: number[]; run_type?: string; date_from?: string; date_to?: string; limit?: number }) =>
     _invoke<{ csv: string; count: number }>('history_export', body ?? {}),
 
@@ -387,8 +364,6 @@ export const api = {
     page_assignments: number[];
     seed: number;
   }>('sellador_apply', body),
-  selladorPreviewPages: (body: { page_count: number; stamp_count: number; seed?: number }) =>
-    _invoke<{ page_assignments: number[]; stamped_pages: number[]; seed: number }>('sellador_preview_pages', body),
 
   // ─── Image Optimizer ────────────────────────────────────────────────────
   imageOptimizerZip: (body: { files: Array<{ filename: string; content_b64: string }>; zip_name: string; output_path?: string }) =>
@@ -421,8 +396,6 @@ export const api = {
     _invoke<{ success: boolean; deleted_count: number; message: string }>('technical_reports_clear'),
   technicalReportsImportFile: (body: TechnicalReportsImportBody) =>
     _invoke<{ success: boolean; message: string; deleted_count: number; imported_count: number; total_rows_in_file: number }>('technical_reports_import_file', body),
-  technicalReportsVariables: () =>
-    _invoke<{ variables: Array<{ key: string; label: string; category: string }> }>('technical_reports_variables'),
   technicalReportsAutocompleteCs: () =>
     _invoke<{ options: string[] }>('technical_reports_autocomplete_cs'),
   technicalReportsAutocompleteContratista: (cs?: string) =>
@@ -546,7 +519,6 @@ export const api = {
   autoimgFoldersAdd: (body: { name: string; folder_id: string; activo: boolean }) => _invoke<{ success: boolean }>('autoimg_folders_add', body),
   autoimgFoldersRemove: (body: { folder_id: string }) => _invoke<{ success: boolean }>('autoimg_folders_remove', body),
   autoimgFoldersToggle: (body: { folder_id: string; activo: boolean }) => _invoke<{ success: boolean }>('autoimg_folders_toggle', body),
-  autoimgScanAll: () => _invoke<{ results: { folder_summary: Array<{ name: string; folder_id?: string; count: number; nis_found: number; error?: string }>; nis_results: Array<{ nis: string; count: number; folders: string[]; estado: string }> }; summary: { total: number; completos: number; faltantes: number; sobrantes: number; sin_sgio: number }; folders_failed: number }>('autoimg_scan_all'),
   autoimgScanAndSync: () => _invoke<{ success: boolean; updated: number; new_rows: number; logs: string[]; folder_errors: number; scan: { results: { folder_summary: Array<{ name: string; count: number; nis_found: number; error?: string }>; nis_results: Array<{ nis: string; count: number; folders: string[]; estado: string }> }; summary: { total: number; completos: number; faltantes: number; sobrantes: number; sin_sgio: number }; folders_failed: number } }>('autoimg_scan_and_sync'),
   autoimgSyncToSheet: () => _invoke<{ success: boolean; updated: number; new_rows: number; logs: string[] }>('autoimg_sync_to_sheet'),
   autoimgSyncFromSheet: () => _invoke<{ success: boolean; rows: string[][]; arrastre?: Array<{ nis: string; sgio: string; motivo: string; fecha: string; observacion: string }> }>('autoimg_sync_from_sheet'),

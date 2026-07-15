@@ -87,6 +87,7 @@ describe('FormPanel', () => {
         hasChanges={false}
         busy={false}
         logoLeft={null}
+        logoRight={null}
         onChange={vi.fn()}
         onSave={vi.fn()}
         onDelete={vi.fn()}

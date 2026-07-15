@@ -47,8 +47,7 @@ Object.defineProperty(window, 'electronAPI', {
       if (method === 'theme_presets') return { presets: ['Precision Linear'] };
       if (method === 'history_list') return { runs: [] };
       if (method === 'technical_reports_list') return { reports: [] };
-      if (method === 'templates_list') return { templates: [] };
-      if (method === 'jobs_list') return { jobs: [] };
+      if (method === 'templates_list') return { templates: [] };
       return {};
     },
     onNotify: () => () => {},

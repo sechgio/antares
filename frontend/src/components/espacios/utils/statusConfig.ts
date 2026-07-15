@@ -29,15 +29,6 @@ export const STATUS_COLORS: Record<BuiltinTareaStatus, string> = {
   closed: '#64748B',
 };
 
-/** Soft surfaces behind status chips / board columns. */
-export const STATUS_SOFT: Record<BuiltinTareaStatus, string> = {
-  todo: 'color-mix(in srgb, #87909E 14%, transparent)',
-  in_progress: 'color-mix(in srgb, #5F55EE 12%, transparent)',
-  done: 'color-mix(in srgb, #0F9D58 12%, transparent)',
-  urgent: 'color-mix(in srgb, #EF4444 12%, transparent)',
-  closed: 'color-mix(in srgb, #64748B 12%, transparent)',
-};
-
 /** Filled header pills (white text on solid). */
 export const STATUS_PILL_FILLED: Record<BuiltinTareaStatus, boolean> = {
   todo: false,
@@ -46,18 +37,6 @@ export const STATUS_PILL_FILLED: Record<BuiltinTareaStatus, boolean> = {
   urgent: false,
   closed: false,
 };
-
-/** @deprecated Prefer STATUS_COLORS — kept for existing board borders. */
-export const STATUS_ACCENT: Record<BuiltinTareaStatus, string> = STATUS_COLORS;
-
-/**
- * Estados principales del flujo (selector, filtros y tablero).
- * Orden: Pendiente → En curso → Completados → Urgente
- */
-export const STATUS_OPTIONS: BuiltinTareaStatus[] = ['todo', 'in_progress', 'done', 'urgent'];
-
-/** Columnas del tablero por defecto (siempre visibles). */
-export const BOARD_STATUS_OPTIONS: BuiltinTareaStatus[] = STATUS_OPTIONS;
 
 /** Todos los valores built-in válidos (incluye legacy closed). */
 export const ALL_STATUS_VALUES: BuiltinTareaStatus[] = [
@@ -81,11 +60,6 @@ export const DEFAULT_BOARD_COLUMN_DEFS: Omit<
 
 export function isBuiltinStatus(value: string): value is BuiltinTareaStatus {
   return (ALL_STATUS_VALUES as string[]).includes(value);
-}
-
-/** @deprecated Use isBuiltinStatus — kept for call sites that validate free-form keys. */
-export function isTareaStatus(value: string): value is TareaStatus {
-  return value.length > 0;
 }
 
 export function columnDropId(status: TareaStatus): string {

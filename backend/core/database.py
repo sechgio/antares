@@ -354,22 +354,6 @@ def exportar_excel(excel_path: str) -> int:
     return len(df)
 
 
-def buscar_por_codigo(codigo: str) -> dict[str, Any] | None:
-    """Busca un registro por código o por cualquier campo de texto exacto.
-    Optimizado con una sola query usando OR en lugar de múltiples queries."""
-    with _db_lock:
-        conn = _get_connection()
-        cursor = conn.cursor()
-        field_names = [_validate_identifier(fn) for fn in get_field_names()]
-        if not field_names:
-            return None
-        search_value = str(codigo).strip()
-
-        # Single query with OR instead of multiple queries (identifiers are quoted for safety)
-        conditions = " OR ".join([f"{_qi(fn)} = ?" for fn in field_names])
-        cursor.execute(f"SELECT * FROM imagenes WHERE {conditions} LIMIT 1", [search_value] * len(field_names))
-        row = cursor.fetchone()
-        return dict(row) if row else None
 
 
 def _record_code_match(

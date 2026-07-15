@@ -59,13 +59,13 @@ class TestInitDb:
         ])
         db.init_db()
 
-        registro = db.buscar_por_codigo("1")
-        assert registro is not None
-        assert registro["codigo"] == "1"
-        assert registro["nombre"] == "Test"
+        lote = db.buscar_lote_por_codigos(["1"])
+        assert "1" in lote
+        assert lote["1"]["codigo"] == "1"
+        assert lote["1"]["nombre"] == "Test"
 
 
-class TestBuscarPorCodigo:
+class TestBuscarLotePorCodigos:
     def test_encuentra_registro(self, db_path, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"
         monkeypatch.setattr(
@@ -84,12 +84,12 @@ class TestBuscarPorCodigo:
         conn.commit()
         conn.close()
 
-        resultado = db.buscar_por_codigo("ABC")
-        assert resultado is not None
-        assert resultado["codigo"] == "ABC"
-        assert resultado["nombre"] == "Producto"
+        resultado = db.buscar_lote_por_codigos(["ABC"])
+        assert "ABC" in resultado
+        assert resultado["ABC"]["codigo"] == "ABC"
+        assert resultado["ABC"]["nombre"] == "Producto"
 
-    def test_no_encuentra_retorna_none(self, db_path, monkeypatch, tmp_path) -> None:
+    def test_no_encuentra_retorna_vacio(self, db_path, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"
         monkeypatch.setattr(
             "backend.core.config_fields._config_file",
@@ -100,7 +100,7 @@ class TestBuscarPorCodigo:
         ])
         db.init_db()
 
-        assert db.buscar_por_codigo("NO_EXISTE") is None
+        assert db.buscar_lote_por_codigos(["NO_EXISTE"]) == {}
 
     def test_strip_en_busqueda(self, db_path, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"
@@ -119,10 +119,9 @@ class TestBuscarPorCodigo:
         conn.commit()
         conn.close()
 
-        # La búsqueda hace strip del código de entrada
-        resultado = db.buscar_por_codigo("  XYZ  ")
-        assert resultado is not None
-        assert resultado["codigo"] == "XYZ"
+        resultado = db.buscar_lote_por_codigos(["  XYZ  "])
+        assert "XYZ" in resultado
+        assert resultado["XYZ"]["codigo"] == "XYZ"
 
     def test_busca_por_cualquier_campo_texto_si_codigo_no_coincide(self, db_path, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"
@@ -146,11 +145,11 @@ class TestBuscarPorCodigo:
         conn.commit()
         conn.close()
 
-        resultado = db.buscar_por_codigo("69466481")
+        resultado = db.buscar_lote_por_codigos(["69466481"])
 
-        assert resultado is not None
-        assert resultado["codigo"] == "1"
-        assert resultado["nombre"] == "69466481"
+        assert "69466481" in resultado
+        assert resultado["69466481"]["codigo"] == "1"
+        assert resultado["69466481"]["nombre"] == "69466481"
 
     def test_buscar_por_columna_obsoleta_retorna_vacio(self, db_path, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"

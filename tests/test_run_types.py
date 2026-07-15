@@ -84,15 +84,13 @@ class TestValidateRunPayload:
         assert "ficha_tecnica" in ids
 
 
-class TestHandlerIntegration:
-    def test_history_schema_handler_is_registered(self) -> None:
-        from backend.handlers.history import HANDLERS
+class TestRegistryPayload:
+    def test_registry_payload_shape(self) -> None:
+        from backend.core.run_types import registry_payload
 
-        assert "history_schema" in HANDLERS
-        result = HANDLERS["history_schema"]({})
+        result = registry_payload()
         assert "run_types" in result
         assert "all_run_types" in result
-        assert "current_version" in result
 
 
 class TestHistoryConstants:

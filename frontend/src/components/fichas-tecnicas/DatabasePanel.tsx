@@ -112,7 +112,7 @@ export default function DatabasePanel({ fichas, selectedId, onSelect }: Props) {
       </div>
 
       <div className="ft-db-list" role="list">
-        {filtered.map((ficha, index) => {
+        {filtered.map((ficha) => {
           const code = ficha.os_numero || ficha.id;
           const cliente = ficha.cliente?.trim() || 'Sin cliente';
           const direccion = ficha.direccion?.trim() || '';
@@ -129,7 +129,6 @@ export default function DatabasePanel({ fichas, selectedId, onSelect }: Props) {
               type="button"
               role="listitem"
               className={`ft-db-card ${isActive ? 'is-active' : ''} ${isDone ? 'is-done' : 'is-draft'}`}
-              style={{ animationDelay: `${Math.min(index, 12) * 28}ms` }}
               onClick={() => onSelect(ficha.id)}
               title={[cliente, code, location, fecha].filter(Boolean).join(' — ')}
             >

@@ -9,7 +9,7 @@ Maestros:
 Genera:
   - Monograma cuadrado SVG vectorial puro (icon-mark*.svg)
   - Logos horizontales SVG con PNGs embebidos (logo*.svg)
-  - Favicons y iconos de app (.ico, .icns, .png multi-tamaño)
+  - Favicons y iconos de app (Windows .ico + frontend/public PNG multi-tamaño)
 
 Limpia assets antiguos incorrectos.
 """
@@ -168,8 +168,7 @@ def write_monogram_rasters(master: Image.Image):
     # Icono base 512x512
     icon_512 = master.resize((ICON_PNG_SIZE, ICON_PNG_SIZE), Image.Resampling.LANCZOS)
     icon_512.save(PUBLIC / "icon.png", format="PNG", optimize=True)
-    icon_512.save(ASSETS / "icon.png", format="PNG", optimize=True)
-    print(f"      icon.png ({ICON_PNG_SIZE}x{ICON_PNG_SIZE})")
+    print(f"      public/icon.png ({ICON_PNG_SIZE}x{ICON_PNG_SIZE})")
 
     # Favicons PNG individuales
     for size in FAVICON_PNG_SIZES:
@@ -243,7 +242,12 @@ def cleanup_old_assets():
         ICONS_PNG.rmdir()
         print("      Removed assets/icons/png/")
 
-    # Borrar mac/ y win/ si existen (redundantes, usamos assets/icon.icns)
+    # Borrar mac/ y win/ si existen (redundantes; packaging solo usa assets/icon.ico)
+    for orphan_icon in ("icon.icns", "icon.png"):
+        p = ASSETS / orphan_icon
+        if p.exists():
+            p.unlink()
+            print(f"      Removed assets/{orphan_icon}")
     if ICONS_MAC.exists():
         for f in ICONS_MAC.glob("*"):
             f.unlink()
@@ -337,13 +341,10 @@ def main():
     # 3. Rasteres favicon/icon
     write_monogram_rasters(monogram_master)
 
-    # 4. .ico
+    # 4. .ico (Windows packaging + favicon)
     write_ico(monogram_master)
 
-    # 5. .icns
-    write_icns(monogram_master)
-
-    # 6. Limpieza
+    # 5. Limpieza (no generamos .icns / assets/icon.png — app es Windows-only)
     cleanup_old_assets()
 
     print("\n[OK] Assets regenerados correctamente.")

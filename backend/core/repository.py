@@ -5,7 +5,7 @@ import contextlib
 import logging
 import sqlite3
 import threading
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -51,19 +51,3 @@ def close_connection() -> None:
             _db_conn = None
             _db_conn_path = None
 
-
-def execute_query(db_path: Path, sql: str, params: tuple = ()) -> list[dict[str, Any]]:
-    """Execute a SELECT query and return rows as dicts."""
-    with _db_lock:
-        conn = get_connection(db_path)
-        rows = conn.execute(sql, params).fetchall()
-    return [dict(r) for r in rows]
-
-
-def execute_write(db_path: Path, sql: str, params: tuple = ()) -> int:
-    """Execute a write query and return lastrowid or rowcount."""
-    with _db_lock:
-        conn = get_connection(db_path)
-        cursor = conn.execute(sql, params)
-        conn.commit()
-        return cursor.lastrowid or cursor.rowcount

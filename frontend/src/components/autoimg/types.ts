@@ -39,33 +39,6 @@ export interface AutoImgBootstrap extends AutoImgStatus {
   cached?: boolean;
 }
 
-export interface ScanFolderSummary {
-  name: string;
-  folder_id?: string;
-  count: number;
-  nis_found: number;
-  error?: string;
-}
-
-export interface ScanNisResult {
-  nis: string;
-  count: number;
-  folders: string[];
-  estado: string;
-}
-
-export interface ScanResults {
-  folder_summary: ScanFolderSummary[];
-  nis_results: ScanNisResult[];
-}
-
-export interface ScanSummary {
-  total: number;
-  completos: number;
-  faltantes: number;
-  sobrantes: number;
-  sin_sgio: number;
-}
 
 export interface DriveFolderThumb {
   id: string;

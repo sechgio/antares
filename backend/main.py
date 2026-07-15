@@ -95,7 +95,6 @@ HEAVY_METHODS = {
     "db_import",
     "db_export",
     "db_clear",
-    "preview_image",
     "formatos_generate",
     "formatos_render_template_page",
     "image_optimizer_zip",

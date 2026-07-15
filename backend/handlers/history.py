@@ -93,21 +93,7 @@ def history_save(params: dict[str, Any]) -> dict[str, Any]:
     return {"id": run_id}
 
 
-@with_locale
-def history_schema(params: dict[str, Any]) -> dict[str, Any]:
-    """Return the run type registry as a JSON-serializable payload.
 
-    The frontend can use this to render dynamic filters / labels and detect
-    when the backend has new run types the UI does not yet know about.
-    """
-    from backend.core.run_types import registry_payload
-    from backend.version import __version__
-    payload = registry_payload()
-    payload["current_version"] = __version__
-    return payload
-
-
-@with_locale
 def history_export(params: dict[str, Any]) -> dict[str, Any]:
     """Export historial rows to CSV. Returns ``{"csv": base64, "count": N}``.
 
@@ -169,6 +155,5 @@ HANDLERS = {
     "history_delete": history_delete,
     "history_delete_many": history_delete_many,
     "history_save": history_save,
-    "history_schema": history_schema,
     "history_export": history_export,
 }

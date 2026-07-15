@@ -2,11 +2,10 @@
 from __future__ import annotations
 
 import base64
-import random
 from pathlib import Path
 from typing import Any
 
-from backend.core.sellador import apply_sellador, distribute_stamp_pages
+from backend.core.sellador import apply_sellador
 from backend.core.sellador_io import resolve_pdf_bytes, resolve_stamp_bytes
 from backend.core.sellador_preview import inspect_pdf_path, render_pdf_page_preview
 from backend.handlers.common import parse_positive_int, with_locale
@@ -142,23 +141,9 @@ def sellador_apply(params: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
-@with_locale
-def sellador_preview_pages(params: dict[str, Any]) -> dict[str, Any]:
-    page_count = parse_positive_int(params.get("page_count"), "Cantidad de páginas")
-    stamp_count = parse_positive_int(params.get("stamp_count"), "Cantidad de sellos")
-    seed = _parse_seed(params.get("seed"))
-    effective_seed = seed if seed is not None else random.randint(0, 2_147_483_647)
-    page_indices, _ = distribute_stamp_pages(page_count, stamp_count, effective_seed)
-    return {
-        "page_assignments": [page + 1 for page in page_indices],
-        "stamped_pages": [page + 1 for page in sorted(set(page_indices))],
-        "seed": effective_seed,
-    }
-
 
 HANDLERS = {
     "sellador_inspect_pdf": sellador_inspect_pdf,
     "sellador_render_page": sellador_render_page,
     "sellador_apply": sellador_apply,
-    "sellador_preview_pages": sellador_preview_pages,
 }

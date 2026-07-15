@@ -37,7 +37,7 @@ function main() {
 
   const missingFromAllowlist = [...apiMethods].filter((m) => !allowed.has(m));
   const unexpectedInAllowlist = [...allowed].filter(
-    (m) => !apiMethods.has(m) && !['jobs_cleanup', 'plugin_formats'].includes(m)
+    (m) => !apiMethods.has(m) && !['autoimg_scan_all'].includes(m)
   );
   // Every long-running method must be a recognised allowed method, and the
   // Electron allowlist must consume the shared JSON verbatim (no drift).

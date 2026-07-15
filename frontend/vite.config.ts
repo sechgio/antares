@@ -21,13 +21,7 @@ const sharedHtmlSanitizerPlugin = {
 export default defineConfig(({ mode }) => ({
   plugins: [
     sharedHtmlSanitizerPlugin,
-    react({
-      babel: {
-        plugins: mode === 'production'
-          ? [['babel-plugin-transform-react-remove-prop-types', { removeImport: true }]]
-          : [],
-      },
-    }),
+    react(),
     mode === 'analyze' && visualizer({ open: true, gzipSize: true, brotliSize: true }),
   ],
   base: mode === 'development' ? '/' : './',
