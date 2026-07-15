@@ -1,36 +1,12 @@
 """Tests para utilidades de validación."""
 
 from backend.utils.validators import (
-    es_imagen,
     is_path_like_key,
     is_safe_user_path,
     obtener_codigo_desde_nombre,
     parse_filename_parts,
     sanitizar_nombre,
 )
-
-
-class TestEsImagen:
-    def test_extensiones_soportadas(self) -> None:
-        assert es_imagen("foto.jpg")
-        assert es_imagen("foto.jpeg")
-        assert es_imagen("foto.png")
-        assert es_imagen("foto.webp")
-        assert es_imagen("foto.bmp")
-        assert es_imagen("foto.tiff")
-        assert es_imagen("foto.tif")
-        assert es_imagen("foto.gif")
-        assert es_imagen("foto.ico")
-
-    def test_no_es_imagen(self) -> None:
-        assert not es_imagen("documento.txt")
-        assert not es_imagen("archivo.exe")
-        assert not es_imagen("sin_extension")
-        assert not es_imagen("foto.pdf")
-
-    def test_mayusculas_minusculas(self) -> None:
-        assert es_imagen("FOTO.JPG")
-        assert es_imagen("Foto.Png")
 
 
 class TestSanitizarNombre:

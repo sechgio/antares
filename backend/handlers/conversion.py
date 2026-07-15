@@ -495,25 +495,7 @@ def process_cancel(params: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-@with_locale
-def preview_image(params: dict[str, Any]) -> dict[str, str]:
-    from backend.core.converter import convertir_a_preview
-    # Coerción defensiva en el boundary: el frontend puede enviar calidad como
-    # string ("85") o path/formato como no-str, lo que rompería el core.
-    calidad = params.get("calidad", 85)
-    try:
-        calidad = int(calidad)
-    except (TypeError, ValueError):
-        calidad = 85
-    return convertir_a_preview(
-        str(params.get("path") or ""),
-        str(params.get("formato") or "PNG"),
-        calidad,
-        params.get("resize"),
-    )
 
-
-@with_locale
 def is_video(params: dict[str, Any]) -> dict[str, bool]:
     return {"is_video": es_video(params.get("path", ""))}
 
@@ -923,7 +905,6 @@ HANDLERS = {
     "process_start": process_start,
     "process_status": process_status,
     "process_cancel": process_cancel,
-    "preview_image": preview_image,
     "is_video": is_video,
     "db_detect_key_column": db_detect_key_column,
 }

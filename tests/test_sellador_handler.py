@@ -12,7 +12,6 @@ from backend.core.sellador import _prepare_stamp_image, apply_sellador, distribu
 from backend.handlers.sellador import (
     sellador_apply,
     sellador_inspect_pdf,
-    sellador_preview_pages,
     sellador_render_page,
 )
 
@@ -111,11 +110,11 @@ def test_sellador_apply_can_write_to_disk(tmp_path) -> None:
     assert output_path.stat().st_size > 0
 
 
-def test_sellador_preview_pages_matches_distribution() -> None:
-    preview = sellador_preview_pages({"page_count": 6, "stamp_count": 4, "seed": 555})
-    core_pages, _ = distribute_stamp_pages(6, 4, 555)
-    assert preview["page_assignments"] == [page + 1 for page in core_pages]
-    assert preview["seed"] == 555
+def test_distribute_stamp_pages_is_deterministic() -> None:
+    pages_a, _ = distribute_stamp_pages(6, 4, 555)
+    pages_b, _ = distribute_stamp_pages(6, 4, 555)
+    assert pages_a == pages_b
+    assert len(pages_a) == 4
 
 
 def test_sellador_inspect_pdf_reads_from_path(tmp_path) -> None:

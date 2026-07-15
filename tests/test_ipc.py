@@ -119,8 +119,4 @@ class TestIPC:
         msg = resp["error"]["message"]
         assert "desconocido" in msg.lower() or "unknown" in msg.lower()
 
-    def test_plugin_formats(self, backend_process) -> None:
-        resp = _rpc_call(backend_process, "plugin_formats", {})
-        assert "result" in resp
-        formats = resp["result"]["formats"]
-        assert "JPEG" in formats
+

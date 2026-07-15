@@ -90,19 +90,7 @@ def technical_reports_import_file(params: dict[str, Any]) -> dict[str, Any]:
     imported = db.replace_all(reports)
     return {"success": True, "message": f"{len(imported)} informes importados", "deleted_count": deleted_count, "imported_count": len(imported), "total_rows_in_file": len(reports)}
 
-@with_locale
-def technical_reports_variables(params: dict[str, Any]) -> dict[str, Any]:
-    return {"variables": [
-        {"key": "metadata.informe_id", "label": "Numero de informe", "category": "Identificadores"},
-        {"key": "header.cs", "label": "Centro de servicio", "category": "Infraestructura"},
-        {"key": "header.codigo_infraestructura", "label": "Codigo de infraestructura", "category": "Infraestructura"},
-        {"key": "inspeccion.caja_registro", "label": "Caja de registro", "category": "Inspeccion"},
-        {"key": "valvulas.operativas", "label": "Valvulas operativas", "category": "Valvulas"},
-        {"key": "canastillas.operativas", "label": "Canastillas operativas", "category": "Canastillas"},
-        {"key": "medidas.altura_total", "label": "Altura total", "category": "Medidas"},
-    ]}
 
-@with_locale
 def technical_reports_autocomplete_cs(params: dict[str, Any]) -> dict[str, Any]:
     return {"options": _db().get_unique_cs()}
 
@@ -159,7 +147,6 @@ HANDLERS = {
     "technical_reports_delete": technical_reports_delete,
     "technical_reports_clear": technical_reports_clear,
     "technical_reports_import_file": technical_reports_import_file,
-    "technical_reports_variables": technical_reports_variables,
     "technical_reports_autocomplete_cs": technical_reports_autocomplete_cs,
     "technical_reports_autocomplete_contratista": technical_reports_autocomplete_contratista,
     "technical_reports_render_html": technical_reports_render_html,

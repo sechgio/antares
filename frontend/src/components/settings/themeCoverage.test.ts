@@ -11,7 +11,7 @@ function readSource(path: string) {
 describe('global appearance coverage', () => {
   it('keeps database and conversion chrome on appearance tokens instead of fixed shell colors', () => {
     const files = [
-      'components/conversion/PreviewDrawer.tsx',
+      'components/conversion/OptionsCard.tsx',
       'components/history/HistoryView.tsx',
       'components/history/RunList.tsx',
       'components/history/RunDetail.tsx',

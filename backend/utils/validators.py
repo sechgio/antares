@@ -7,22 +7,6 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-_EXTENSIONES_IMAGEN: set[str] = {
-    ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif", ".gif", ".ico",
-}
-
-
-def es_imagen(ruta: str | Path) -> bool:
-    """Verifica si la ruta corresponde a una imagen soportada.
-
-    Args:
-        ruta: Ruta del archivo a validar.
-
-    Returns:
-        True si la extensión está en el conjunto de formatos soportados.
-    """
-    return Path(ruta).suffix.lower() in _EXTENSIONES_IMAGEN
-
 
 def is_safe_user_path(value: object) -> bool:
     """Return whether a user-provided path string avoids traversal patterns."""
