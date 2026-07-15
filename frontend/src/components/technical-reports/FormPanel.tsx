@@ -43,13 +43,14 @@ interface Props {
   hasChanges: boolean;
   busy: boolean;
   logoLeft: string | null;
+  logoRight: string | null;
   onChange: (report: TechnicalReport) => void;
   onSave: () => void;
   onDelete: () => void;
-  onLogoChange: (file: File | null) => void;
+  onLogoChange: (side: 'left' | 'right', file: File | null) => void;
 }
 
-export default function FormPanel({ report, hasChanges, busy, logoLeft, onChange, onSave, onDelete, onLogoChange }: Props) {
+export default function FormPanel({ report, hasChanges, busy, logoLeft, logoRight, onChange, onSave, onDelete, onLogoChange }: Props) {
   if (!report) {
     return (
       <aside className="tr-panel tr-form">
@@ -90,7 +91,10 @@ export default function FormPanel({ report, hasChanges, busy, logoLeft, onChange
 
       <div className="tr-form-scroll">
         <section className="tr-section tr-section-logos">
-          <LogoInput value={logoLeft} onChange={onLogoChange} />
+          <div className="tr-logos-bar">
+            <LogoInput side="izq" value={logoLeft} onChange={(file) => onLogoChange('left', file)} />
+            <LogoInput side="der" value={logoRight} onChange={(file) => onLogoChange('right', file)} />
+          </div>
         </section>
 
         <section className="tr-section">
@@ -215,15 +219,16 @@ export default function FormPanel({ report, hasChanges, busy, logoLeft, onChange
   );
 }
 
-function LogoInput({ value, onChange }: { value: string | null; onChange: (file: File | null) => void }) {
+function LogoInput({ side, value, onChange }: { side: 'izq' | 'der'; value: string | null; onChange: (file: File | null) => void }) {
+  const title = side === 'izq' ? 'Logo izquierdo' : 'Logo derecho';
   return (
     <div className={`tr-logo-chip${value ? ' tr-logo-chip--filled' : ''}`}>
-      <label className="tr-logo-chip-hit" title={value ? 'Cambiar logo' : 'Subir logo'}>
+      <label className="tr-logo-chip-hit" title={value ? `Cambiar ${title.toLowerCase()}` : `Subir ${title.toLowerCase()}`}>
         <span className={`tr-logo-chip-thumb${value ? '' : ' tr-logo-chip-thumb--empty'}`}>
-          {value ? <img src={value} alt="" /> : <Upload size={13} strokeWidth={2} />}
+          {value ? <img src={value} alt={title} /> : <Upload size={13} strokeWidth={2} />}
         </span>
         <span className="tr-logo-chip-meta">
-          <span className="tr-logo-chip-label">Logo</span>
+          <span className="tr-logo-chip-label">Logo {side}</span>
           <span className="tr-logo-chip-hint">{value ? 'Clic para cambiar' : 'PNG · JPG · WebP'}</span>
         </span>
         <input
@@ -244,8 +249,8 @@ function LogoInput({ value, onChange }: { value: string | null; onChange: (file:
             e.stopPropagation();
             onChange(null);
           }}
-          aria-label="Quitar logo"
-          title="Quitar logo"
+          aria-label={`Quitar ${title.toLowerCase()}`}
+          title={`Quitar ${title.toLowerCase()}`}
         >
           <X size={12} strokeWidth={2.25} />
         </button>

@@ -885,16 +885,23 @@
   gap: 8px;
 }
 
-/* Compact logo chip — single-row control, no tall dropzone */
+/* Compact logo chips — dual-row control, no tall dropzone */
 .tr-section-logos {
   padding: 6px 0 10px;
   gap: 0;
+}
+
+.tr-logos-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }
 
 .tr-logo-chip {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   min-height: 36px;
   padding: 4px 4px 4px 4px;
   border: 1px solid var(--border-subtle);

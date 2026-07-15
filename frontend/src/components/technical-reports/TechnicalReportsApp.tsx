@@ -19,6 +19,7 @@ export default function TechnicalReportsApp() {
   const [savedSnapshot, setSavedSnapshot] = useState<string>('');
   const [busy, setBusy] = useState(false);
   const [logoLeft, setLogoLeft] = useState<string | null>(null);
+  const [logoRight, setLogoRight] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const selectGenRef = useRef(0);
 
@@ -164,14 +165,16 @@ export default function TechnicalReportsApp() {
     }
   }, [addToast, loadReports]);
 
-  const changeLogo = useCallback(async (file: File | null) => {
+  const changeLogo = useCallback(async (side: 'left' | 'right', file: File | null) => {
     if (!file) {
-      setLogoLeft(null);
+      if (side === 'left') setLogoLeft(null);
+      else setLogoRight(null);
       return;
     }
     try {
       const url = await fileToDataUrl(file);
-      setLogoLeft(url);
+      if (side === 'left') setLogoLeft(url);
+      else setLogoRight(url);
     } catch (error) {
       addToast({ message: error instanceof Error ? error.message : 'No se pudo cargar el logo', type: 'error' });
     }
@@ -193,7 +196,7 @@ export default function TechnicalReportsApp() {
         id: reportForRender.id,
         report: reportForRender,
         logo_left: logoLeft,
-        logo_right: null,
+        logo_right: logoRight,
       });
       const pdf = await technicalReportsApi.htmlToPdf({ html: rendered.html, filename: rendered.filename });
       if (!pdf.pdf_base64) throw new Error('No se recibio el contenido del PDF generado.');
@@ -205,13 +208,13 @@ export default function TechnicalReportsApp() {
     } finally {
       setBusy(false);
     }
-  }, [addToast, formData, hasChanges, loadReports, logoLeft]);
+  }, [addToast, formData, hasChanges, loadReports, logoLeft, logoRight]);
 
   const exportConsolidated = useCallback(async () => {
     if (reports.length === 0) return;
     setBusy(true);
     try {
-      const rendered = await technicalReportsApi.renderConsolidatedHtml({ logo_left: logoLeft, logo_right: null });
+      const rendered = await technicalReportsApi.renderConsolidatedHtml({ logo_left: logoLeft, logo_right: logoRight });
       const pdf = await technicalReportsApi.htmlToPdf({ html: rendered.html, filename: rendered.filename });
       if (!pdf.pdf_base64) throw new Error('No se recibio el contenido del PDF generado.');
       downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
@@ -222,7 +225,7 @@ export default function TechnicalReportsApp() {
     } finally {
       setBusy(false);
     }
-  }, [addToast, logoLeft, reports.length]);
+  }, [addToast, logoLeft, logoRight, reports.length]);
 
   return (
     <div className="tr-app">
@@ -273,12 +276,13 @@ export default function TechnicalReportsApp() {
           selectedId={selectedId}
           onSelect={selectReport}
         />
-        <PreviewPanel report={formData} logoLeft={logoLeft} logoRight={null} />
+        <PreviewPanel report={formData} logoLeft={logoLeft} logoRight={logoRight} />
         <FormPanel
           report={formData}
           hasChanges={hasChanges}
           busy={busy}
           logoLeft={logoLeft}
+          logoRight={logoRight}
           onChange={setFormData}
           onSave={saveReport}
           onDelete={deleteReport}
