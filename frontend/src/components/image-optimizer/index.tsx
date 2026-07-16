@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircle, ChevronDown, FileDown, FolderOpen, Loader2, Sparkles, Trash2, Upload } from 'lucide-react';
+import { AlertCircle, ChevronDown, FileDown, FolderOpen, Loader2, Sparkles, Trash2 } from 'lucide-react';
 import CropEditor from './CropEditor';
 import PreviewWorkspace from './PreviewWorkspace';
 import QueuePanel from './QueuePanel';
 import SettingsPanel from './SettingsPanel';
-import { PillPreset, ToastContainer } from './ui';
+import { glassToolbarClass, PillPreset, ToastContainer } from './ui';
 import { createImageItem, processImageItem } from './pipeline';
 import { DEFAULT_BATCH_SETTINGS, IMAGE_OPTIMIZER_PRESETS, cloneSettings } from './presets';
 import { BatchSettings, CropOffset, ImageItem, PresetId, Toast } from './types';
@@ -48,6 +48,7 @@ export default function ImageOptimizer() {
   const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
   const [downloadMenuPosition, setDownloadMenuPosition] = useState<{ top: number; right: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const downloadMenuAnchorRef = useRef<HTMLDivElement>(null);
   const itemsRef = useRef<ImageItem[]>([]);
   const settingsRef = useRef<BatchSettings>(settings);
@@ -232,7 +233,11 @@ export default function ImageOptimizer() {
     e.stopPropagation();
     if (e.type === 'dragenter' || e.type === 'dragover') {
       setIsDragActive(true);
-    } else if (e.type === 'dragleave') {
+      return;
+    }
+    if (e.type === 'dragleave') {
+      const next = e.relatedTarget as Node | null;
+      if (next && rootRef.current?.contains(next)) return;
       setIsDragActive(false);
     }
   }, []);
@@ -616,145 +621,151 @@ export default function ImageOptimizer() {
   const activeItemDownloadable = activeItem ? !!getResolvedBlob(activeItem) : false;
   const activeIsDirect = activeItem ? isItemDirectExport(activeItem, settings) : false;
 
-  return (
-    <div className="flex h-full flex-col px-2 py-2 text-[var(--text-primary)] overflow-hidden bg-[var(--bg-base)]">
-      <ToastContainer toasts={toasts} removeToast={removeToast} />
+  const toolbarBtn =
+    'inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[10px] font-medium transition-[color,background-color,opacity,transform] duration-100 ease-out active:scale-[0.96] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40';
 
-      <div className="flex h-full w-full flex-col gap-3 overflow-hidden">
-        <section className="relative shrink-0 overflow-hidden rounded-[14px] border border-[var(--border-medium)] bg-[var(--bg-surface)] px-5 py-3 shadow-sm">
-          <div className="flex flex-wrap items-center gap-3 xl:flex-nowrap">
-            <div className="flex min-w-0 flex-1 items-center gap-4 overflow-hidden">
-              <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto no-scrollbar">
-                {IMAGE_OPTIMIZER_PRESETS.map((preset) => (
-                  <PillPreset
-                    key={preset.id}
-                    label={preset.label}
-                    accentClassName={preset.accentClassName}
-                    active={activePresetId === preset.id}
-                    onClick={() => handleApplyGlobalPreset(preset.id as PresetId)}
-                  />
-                ))}
-              </div>
+  return (
+    <div
+      ref={rootRef}
+      className={`relative flex h-full flex-col overflow-hidden bg-[var(--bg-base)] px-1.5 py-1.5 text-[var(--text-primary)] antialiased transition-[box-shadow] duration-150 ${
+        isDragActive ? 'shadow-[inset_0_0_0_2px_var(--accent-blue)]' : ''
+      }`}
+      onDragEnter={handleDrag}
+      onDragLeave={handleDrag}
+      onDragOver={handleDrag}
+      onDrop={handleDrop}
+    >
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept="image/jpeg,image/png,image/webp,image/avif,image/bmp,.jpg,.jpeg,.png,.webp,.avif,.bmp"
+        className="hidden"
+        onChange={handleFileInput}
+      />
+
+      <div className="flex h-full w-full flex-col gap-2 overflow-hidden">
+        <section className={`relative shrink-0 overflow-hidden px-2.5 py-1.5 ${glassToolbarClass}`}>
+          <div className="flex flex-wrap items-center gap-2 xl:flex-nowrap">
+            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto no-scrollbar">
+              {IMAGE_OPTIMIZER_PRESETS.map((preset) => (
+                <PillPreset
+                  key={preset.id}
+                  label={preset.label}
+                  accentClassName={preset.accentClassName}
+                  active={activePresetId === preset.id}
+                  onClick={() => handleApplyGlobalPreset(preset.id as PresetId)}
+                />
+              ))}
             </div>
-            <div className="flex w-full flex-wrap items-center justify-end gap-2 xl:w-auto xl:flex-nowrap">
-              <button
-                type="button"
-                aria-label="Elegir carpeta de destino"
-                onClick={handlePickOutputFolder}
-                disabled={isProcessing}
-                className="inline-flex min-w-0 max-w-[min(12rem,100%)] items-center gap-2 rounded-full border border-[var(--border-medium)] bg-[var(--bg-surface)] px-4 py-2 text-[10px] font-mono uppercase tracking-[0.12em] text-[var(--text-muted)] transition-colors hover:border-[var(--text-primary)]/30 hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <FolderOpen size={13} className="shrink-0" />
-                <span className="truncate">{outputFolderLabel}</span>
-                {!settings.export.outputFolder.trim() && (
-                  <AlertCircle size={12} className="shrink-0 text-[var(--accent-yellow)]" />
-                )}
-              </button>
-              <button
-                onClick={() => handleProcessScope(activeScope)}
-                disabled={isProcessing || stats.includedCount === 0}
-                className="inline-flex items-center gap-2 rounded-full border border-[var(--border-medium)] bg-[var(--text-primary)] px-4 py-2 text-[10px] font-mono uppercase tracking-[0.15em] text-[var(--bg-base)] transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
-              >
-                {isProcessing ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-                {primaryActionLabel}
-              </button>
-              <div ref={downloadMenuAnchorRef} className="relative flex items-center">
+
+            <div className="flex w-full flex-wrap items-center justify-end gap-1.5 xl:w-auto xl:flex-nowrap">
+              <div className="flex flex-wrap items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => { downloadItems(downloadableItems); closeDownloadMenu(); }}
-                  disabled={isProcessing || downloadableItems.length === 0}
-                  className={`inline-flex items-center gap-2 border border-emerald-500/35 bg-emerald-500/10 px-4 py-2 text-[10px] font-mono uppercase tracking-[0.15em] text-emerald-600 transition-colors hover:border-emerald-500/55 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:border-[var(--border-medium)] disabled:bg-[var(--bg-surface)] disabled:text-[var(--text-muted)] ${downloadableItems.length > 0 ? 'rounded-l-full border-r-0' : 'rounded-full'}`}
+                  aria-label="Elegir carpeta de destino"
+                  onClick={handlePickOutputFolder}
+                  disabled={isProcessing}
+                  className={`${toolbarBtn} max-w-[min(11rem,100%)] border border-[var(--border-medium)] bg-[var(--bg-input)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]`}
                 >
-                  <FileDown size={13} />
-                  {downloadableItems.length > 1 ? 'Descargar ZIP' : 'Descargar'}
+                  <FolderOpen size={12} className="shrink-0" />
+                  <span className="truncate">{outputFolderLabel}</span>
+                  {!settings.export.outputFolder.trim() && (
+                    <AlertCircle size={11} className="shrink-0 text-[var(--accent-yellow)]" />
+                  )}
                 </button>
-                {downloadableItems.length > 0 && (
+              </div>
+
+              <div className="mx-0.5 hidden h-4 w-px bg-[var(--border-medium)] xl:block" aria-hidden="true" />
+
+              <div className="flex flex-wrap items-center gap-1">
+                <button
+                  onClick={() => handleProcessScope(activeScope)}
+                  disabled={isProcessing || stats.includedCount === 0}
+                  className={`${toolbarBtn} bg-[var(--text-primary)] text-[var(--bg-base)] hover:opacity-90 disabled:opacity-30`}
+                >
+                  {isProcessing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                  {primaryActionLabel}
+                </button>
+                <div
+                  ref={downloadMenuAnchorRef}
+                  className={`relative flex h-7 items-stretch overflow-hidden rounded-full border ${downloadableItems.length > 0 && !isProcessing
+                    ? 'border-[var(--accent-green)]/40 bg-[var(--accent-green)]/12'
+                    : 'border-[var(--border-medium)] bg-[var(--bg-input)]'
+                    }`}
+                >
                   <button
                     type="button"
-                    onClick={toggleDownloadMenu}
+                    onClick={() => { downloadItems(downloadableItems); closeDownloadMenu(); }}
                     disabled={isProcessing || downloadableItems.length === 0}
-                    aria-expanded={downloadMenuOpen}
-                    aria-haspopup="menu"
-                    aria-label="Opciones de descarga"
-                    className="inline-flex items-center rounded-r-full border border-emerald-500/35 bg-emerald-500/10 px-1.5 py-2 text-emerald-600 transition-colors hover:border-emerald-500/55 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:border-[var(--border-medium)] disabled:bg-[var(--bg-surface)] disabled:text-[var(--text-muted)]"
+                    className={`inline-flex h-full items-center gap-1.5 px-2.5 text-[10px] font-medium transition-[opacity,transform] duration-100 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40 ${downloadableItems.length > 0 && !isProcessing ? 'text-[var(--accent-green)]' : 'text-[var(--text-secondary)]'}`}
                   >
-                    <ChevronDown size={12} className={`transition-transform ${downloadMenuOpen ? 'rotate-180' : ''}`} />
+                    <FileDown size={12} />
+                    {downloadableItems.length > 1 ? 'ZIP' : 'Descargar'}
                   </button>
-                )}
-              </div>
-              {downloadMenuOpen && downloadMenuPosition && createPortal(
-                <>
-                  <div className="fixed inset-0 z-[120]" onClick={closeDownloadMenu} aria-hidden="true" />
-                  <div
-                    role="menu"
-                    style={{ top: downloadMenuPosition.top, right: downloadMenuPosition.right }}
-                    className="fixed z-[130] w-56 overflow-hidden rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface)] py-1 shadow-xl"
-                  >
-                    {downloadableItems.length > 1 && (
+                  {downloadableItems.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={toggleDownloadMenu}
+                      disabled={isProcessing || downloadableItems.length === 0}
+                      aria-expanded={downloadMenuOpen}
+                      aria-haspopup="menu"
+                      aria-label="Opciones de descarga"
+                      className="inline-flex h-full items-center border-l border-[var(--accent-green)]/30 px-1.5 text-[var(--accent-green)] transition-transform duration-100 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <ChevronDown size={11} className={`transition-transform duration-100 ${downloadMenuOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                  )}
+                </div>
+                {downloadMenuOpen && downloadMenuPosition && createPortal(
+                  <>
+                    <div className="fixed inset-0 z-[120]" onClick={closeDownloadMenu} aria-hidden="true" />
+                    <div
+                      role="menu"
+                      style={{ top: downloadMenuPosition.top, right: downloadMenuPosition.right }}
+                      className="fixed z-[130] w-52 overflow-hidden rounded-xl border border-[var(--border-medium)] bg-[var(--bg-elevated)] py-0.5 shadow-lg"
+                    >
+                      {downloadableItems.length > 1 && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => { downloadItemsAsZip(downloadableItems); closeDownloadMenu(); }}
+                          className="flex h-8 w-full items-center gap-2 px-3 text-left text-[11px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-input)]"
+                        >
+                          <FileDown size={12} className="shrink-0 text-[var(--accent-green)]" />
+                          Descargar como ZIP
+                          <span className="ml-auto font-mono text-[9px] tabular-nums text-[var(--text-secondary)]">{downloadableItems.length}</span>
+                        </button>
+                      )}
                       <button
                         type="button"
                         role="menuitem"
-                        onClick={() => { downloadItemsAsZip(downloadableItems); closeDownloadMenu(); }}
-                        className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[11px] font-mono tracking-wide text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-elevated)]"
+                        onClick={() => { downloadItemsIndividually(downloadableItems); closeDownloadMenu(); }}
+                        className="flex h-8 w-full items-center gap-2 px-3 text-left text-[11px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-input)]"
                       >
-                        <FileDown size={13} className="text-emerald-500 shrink-0" />
-                        Descargar como ZIP
-                        <span className="ml-auto text-[9px] text-[var(--text-muted)]">{downloadableItems.length} archivos</span>
+                        <FileDown size={12} className="shrink-0 text-sky-500" />
+                        Descargar individual a carpeta
+                        <span className="ml-auto font-mono text-[9px] tabular-nums text-[var(--text-secondary)]">{downloadableItems.length}</span>
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => { downloadItemsIndividually(downloadableItems); closeDownloadMenu(); }}
-                      className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[11px] font-mono tracking-wide text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-elevated)]"
-                    >
-                      <FileDown size={13} className="text-sky-500 shrink-0" />
-                      Descargar individual a carpeta
-                      <span className="ml-auto text-[9px] text-[var(--text-muted)]">{downloadableItems.length} archivo{downloadableItems.length === 1 ? '' : 's'}</span>
-                    </button>
-                  </div>
-                </>,
-                document.body,
-              )}
-              <button
-                onClick={handleClearAll}
-                disabled={isProcessing || items.length === 0}
-                className="inline-flex items-center gap-2 rounded-full border border-[var(--border-medium)] px-4 py-2 text-[10px] font-mono uppercase tracking-[0.15em] text-[var(--text-muted)] transition-colors hover:border-red-500/30 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-30"
-              >
-                <Trash2 size={13} />
-                Limpiar
-              </button>
-              <div
-                className={`group relative flex min-w-[12rem] cursor-pointer items-center gap-2 rounded-full border px-4 py-2 transition-colors duration-200 ${isDragActive
-                  ? 'border-[var(--accent-primary)]/40 bg-[var(--accent-primary)]/8'
-                  : 'border-dashed border-[var(--border-medium)] bg-[var(--bg-surface)] hover:border-[var(--text-muted)] hover:bg-[var(--bg-elevated)]'
-                  }`}
-                onDragEnter={handleDrag}
-                onDragLeave={handleDrag}
-                onDragOver={handleDrag}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    fileInputRef.current?.click();
-                  }
-                }}
-              >
-                <input ref={fileInputRef} type="file" multiple accept="image/jpeg,image/png,image/webp,image/avif,image/bmp" onChange={handleFileInput} className="hidden" />
-                <Upload size={12} className={`shrink-0 transition-colors ${isDragActive ? 'text-[var(--accent-primary)]' : 'text-[var(--text-muted)] group-hover:text-[var(--text-primary)]'}`} />
-                <span className="flex-1 text-[10px] font-mono uppercase tracking-widest text-[var(--text-muted)] transition-colors group-hover:text-[var(--text-primary)]">
-                  {isDragActive ? 'Suelta aqui' : 'Agregar imagenes'}
-                </span>
-                <span className="hidden text-[9px] font-mono tracking-wider text-[var(--text-muted)] opacity-50 sm:inline">JPG · PNG · WEBP · AVIF · BMP</span>
+                    </div>
+                  </>,
+                  document.body,
+                )}
+                <button
+                  onClick={handleClearAll}
+                  disabled={isProcessing || items.length === 0}
+                  className={`${toolbarBtn} border border-[var(--border-medium)] bg-[var(--bg-input)] text-[var(--text-secondary)] hover:border-[var(--accent-red)]/40 hover:text-[var(--accent-red)] disabled:opacity-30`}
+                >
+                  <Trash2 size={12} />
+                  Limpiar
+                </button>
               </div>
-
             </div>
           </div>
         </section>
 
-        <div className="grid flex-1 min-h-0 gap-3 pb-2 xl:grid-cols-[240px_minmax(0,1fr)_280px]">
+        <div className="grid min-h-0 flex-1 gap-2 pb-1 xl:grid-cols-[220px_minmax(0,1fr)_260px]">
           <SettingsPanel
             settings={settings}
             previewNames={previewNames}
@@ -790,6 +801,12 @@ export default function ImageOptimizer() {
             onToggleSkipCompression={handleToggleSkipCompression}
             onToggleExcluded={handleToggleExcluded}
             onClearPresetOverride={handleClearPresetOverride}
+            onAddClick={() => fileInputRef.current?.click()}
+            isDragActive={isDragActive}
+            onDragEnter={handleDrag}
+            onDragLeave={handleDrag}
+            onDragOver={handleDrag}
+            onDrop={handleDrop}
           />
 
           <QueuePanel
@@ -830,8 +847,8 @@ export default function ImageOptimizer() {
 
       {
         isProcessing ? (
-          <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border border-[var(--border-medium)] bg-[var(--bg-surface)]/95 px-4 py-2 text-sm font-mono text-[var(--text-primary)] shadow-2xl backdrop-blur">
-            <Loader2 size={16} className="animate-spin" />
+          <div className="fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-3 py-1.5 text-[12px] tabular-nums text-[var(--text-primary)] shadow-lg">
+            <Loader2 size={14} className="animate-spin text-[var(--accent-primary)]" />
             {processingMessage || `Procesando ${processableItems.length} imagen(es)`}
           </div>
         ) : null

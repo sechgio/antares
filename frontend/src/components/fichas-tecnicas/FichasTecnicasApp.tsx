@@ -1,4 +1,5 @@
 import '../technical-reports/technical-reports.css';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { ChevronLeft, ChevronRight, Download, FilePlus2, Files, RefreshCw, Trash2, Upload } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDialog } from '../../hooks/useDialog';
@@ -310,7 +311,7 @@ export default function FichasTecnicasApp() {
   };
 
   return (
-    <div className="tr-app">
+    <div className="tr-app ft-app">
       <header className="tr-header">
         <h1>FICHAS TÉCNICAS</h1>
         <div className="tr-header-toolbar">
@@ -324,38 +325,44 @@ export default function FichasTecnicasApp() {
               <Upload size={16} />
               Importar
             </button>
-            <button
-              type="button"
-              className="tr-secondary tr-icon-button"
-              disabled={busy}
-              onClick={() => void withBusy(loadFichas, 'No se pudieron cargar las fichas')}
-              title="Recargar"
-            >
-              <RefreshCw size={16} />
-            </button>
-            <button
-              type="button"
-              className="tr-danger tr-icon-button"
-              disabled={busy || fichas.length === 0}
-              onClick={() => void clearFichas()}
-              title="Eliminar todas"
-            >
-              <Trash2 size={16} />
-            </button>
+            <WithHoverTooltip label="Recargar" placement="bottom">
+              <button
+                type="button"
+                className="tr-secondary tr-icon-button"
+                disabled={busy}
+                onClick={() => void withBusy(loadFichas, 'No se pudieron cargar las fichas')}
+              >
+                <RefreshCw size={16} />
+              </button>
+            </WithHoverTooltip>
+            <WithHoverTooltip label="Eliminar todas" placement="bottom">
+              <button
+                type="button"
+                className="tr-danger tr-icon-button"
+                disabled={busy || fichas.length === 0}
+                onClick={() => void clearFichas()}
+              >
+                <Trash2 size={16} />
+              </button>
+            </WithHoverTooltip>
             <button type="button" className="tr-secondary" onClick={() => void createFicha()} disabled={busy}>
               <FilePlus2 size={16} />
               Nuevo
             </button>
-            <button
-              type="button"
-              className="tr-primary"
-              onClick={() => void exportCurrent()}
-              disabled={busy}
-              title={formData ? 'Generar PDF de la ficha actual' : 'Generar PDF de la plantilla en blanco'}
+            <WithHoverTooltip
+              label={formData ? 'Generar PDF de la ficha actual' : 'Generar PDF de la plantilla en blanco'}
+              placement="bottom"
             >
-              <Download size={16} />
-              {formData ? 'PDF' : 'Plantilla PDF'}
-            </button>
+              <button
+                type="button"
+                className="tr-primary"
+                onClick={() => void exportCurrent()}
+                disabled={busy}
+              >
+                <Download size={16} />
+                {formData ? 'PDF' : 'Plantilla PDF'}
+              </button>
+            </WithHoverTooltip>
             <button
               type="button"
               className="tr-secondary"
@@ -404,24 +411,26 @@ export default function FichasTecnicasApp() {
 
       {focusMode && (
         <>
-          <button
-            type="button"
-            className="fixed left-3 top-1/2 z-50 -translate-y-1/2 rounded-full bg-[#c41e3a] p-3 text-white shadow-lg disabled:opacity-40"
-            disabled={currentIndex <= 0 || busy}
-            onClick={() => goRelative(-1)}
-            title="Anterior (modo focus)"
-          >
-            <ChevronLeft size={28} />
-          </button>
-          <button
-            type="button"
-            className="fixed right-3 top-1/2 z-50 -translate-y-1/2 rounded-full bg-[#c41e3a] p-3 text-white shadow-lg disabled:opacity-40"
-            disabled={currentIndex < 0 || currentIndex >= fichas.length - 1 || busy}
-            onClick={() => goRelative(1)}
-            title="Siguiente (modo focus)"
-          >
-            <ChevronRight size={28} />
-          </button>
+          <WithHoverTooltip label="Anterior (modo focus)" placement="bottom">
+            <button
+              type="button"
+              className="fixed left-3 top-1/2 z-50 -translate-y-1/2 rounded-full bg-[var(--accent-red)] p-3 text-[var(--text-on-accent)] shadow-lg disabled:opacity-40"
+              disabled={currentIndex <= 0 || busy}
+              onClick={() => goRelative(-1)}
+            >
+              <ChevronLeft size={28} />
+            </button>
+          </WithHoverTooltip>
+          <WithHoverTooltip label="Siguiente (modo focus)" placement="bottom">
+            <button
+              type="button"
+              className="fixed right-3 top-1/2 z-50 -translate-y-1/2 rounded-full bg-[var(--accent-red)] p-3 text-[var(--text-on-accent)] shadow-lg disabled:opacity-40"
+              disabled={currentIndex < 0 || currentIndex >= fichas.length - 1 || busy}
+              onClick={() => goRelative(1)}
+            >
+              <ChevronRight size={28} />
+            </button>
+          </WithHoverTooltip>
         </>
       )}
     </div>

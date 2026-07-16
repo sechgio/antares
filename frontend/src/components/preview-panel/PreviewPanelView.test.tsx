@@ -39,7 +39,7 @@ describe('PreviewPanelView column mapping', () => {
     fireEvent.scroll(scrollContainer, { target: { scrollTop: 96 } });
     Object.defineProperty(scrollContainer, 'scrollTop', { value: 96, configurable: true, writable: true });
 
-    fireEvent.click(screen.getAllByTitle('Eliminar')[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Eliminar' })[0]);
 
     expect(getMappingScrollContainer().scrollTop).toBe(96);
   });

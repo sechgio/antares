@@ -1,9 +1,9 @@
 {
-  "RPT-0001": {
-    "id": "RPT-0001",
+  "RPT-0002": {
+    "id": "RPT-0002",
     "metadata": {
-      "informe_id": 1,
-      "dia": 19,
+      "informe_id": 2,
+      "dia": 15,
       "mes": "ENERO",
       "anio": 2026,
       "pagina": "1 de 2"
@@ -172,6 +172,6 @@
     "observaciones": "",
     "sugerencias": "",
     "status": "draft",
-    "last_modified": "2026-06-19T15:43:21.605080"
+    "last_modified": "2026-07-15T12:29:49.305109"
   }
 }

@@ -195,7 +195,7 @@ function PdfMultiViewer({ blob, desde, total, padLen, zoom }: { blob: Blob | nul
                 {pageImgs.map((p) => (
                     <div key={p.pageNum} className="relative mx-auto bg-white rounded-xl shadow-2xl shadow-black/50" style={{ width: `${(zoom / 100) * 100}%`, maxWidth: '100%' }}>
                         <img src={p.url} alt={`Página ${p.pageNum}`} className="w-full object-contain rounded-lg block" draggable={false} style={{ imageRendering: 'auto' }} loading="lazy" />
-                        <div className="absolute bottom-3 right-3 flex items-center gap-1.5 bg-black/80 border border-[var(--accent-primary)]/25 rounded px-2 py-1" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                        <div className="absolute bottom-3 right-3 flex items-center gap-1.5 border border-[var(--accent-primary)]/25 rounded px-2 py-1" style={{ fontFamily: "'Roboto Mono', monospace", backgroundColor: 'color-mix(in srgb, var(--bg-base) 80%, transparent)' }}>
                             <span className="text-[8px] text-[var(--text-muted)]">N°</span>
                             <span className="text-[10px] font-medium text-[var(--accent-primary)] tracking-widest">{pad(desde + p.pageNum - 1, padLen)}</span>
                         </div>
@@ -391,8 +391,15 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
-            <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl w-[380px] p-6 space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 85%, transparent)' }} onClick={onClose}>
+            <div
+              className="w-[380px] space-y-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-6"
+              style={{
+                boxShadow:
+                  '0 24px 48px color-mix(in srgb, var(--bg-base) 55%, transparent), 0 0 0 1px color-mix(in srgb, var(--border-subtle) 80%, transparent)',
+              }}
+              onClick={e => e.stopPropagation()}
+            >
                 <div className="flex items-center justify-between">
                     <h3 className="text-sm font-semibold text-[var(--text-primary)]">Subir Formato PDF</h3>
                     <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"><X size={16} /></button>
@@ -447,7 +454,7 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
                         onClick={() => setPersisted(!persisted)}
                         className={`relative w-9 h-5 rounded-full transition-colors ${persisted ? 'bg-[var(--accent-primary)]' : 'bg-[var(--border-medium)]'}`}
                     >
-                        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${persisted ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-[var(--text-on-accent)] shadow transition-transform ${persisted ? 'translate-x-4' : 'translate-x-0.5'}`} />
                     </button>
                     <span className="text-[11px] text-[var(--text-secondary)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
                         {persisted ? 'Persistente' : 'Temporal (se pierde al cerrar)'}
@@ -455,9 +462,9 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
                 </div>
 
                 {error && (
-                    <div className="flex items-start gap-2 bg-red-950/30 border border-red-900/40 rounded-md p-2.5">
-                        <AlertCircle size={11} className="text-red-400 mt-0.5 flex-shrink-0" />
-                        <p className="text-[11px] text-red-400" style={{ fontFamily: "'Roboto Mono', monospace" }}>{error}</p>
+                    <div className="flex items-start gap-2 bg-[var(--accent-red)]/10 border border-[var(--accent-red)]/30 rounded-md p-2.5">
+                        <AlertCircle size={11} className="text-[var(--accent-red)] mt-0.5 flex-shrink-0" />
+                        <p className="text-[11px] text-[var(--accent-red)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>{error}</p>
                     </div>
                 )}
 
@@ -873,7 +880,7 @@ export default function FormatosView() {
                                     {f.origen === 'uploaded' && (
                                         <button
                                             onClick={e => { e.stopPropagation(); handleDelete(f.id); }}
-                                            className="opacity-0 group-hover:opacity-100 text-[var(--text-muted)] hover:text-red-400 transition-all"
+                                            className="opacity-0 group-hover:opacity-100 text-[var(--text-muted)] hover:text-[var(--accent-red)] transition-all"
                                         >
                                             <Trash2 size={12} />
                                         </button>
@@ -914,7 +921,7 @@ export default function FormatosView() {
                                         </span>
                                     </div>
                                     {!selected.has_mapping && selected.strategy === 'visual_overlay' && (
-                                        <span className="text-[8px] text-red-400 tracking-wider" style={{ fontFamily: "'Roboto Mono', monospace" }}>requerido</span>
+                                        <span className="text-[8px] text-[var(--accent-red)] tracking-wider" style={{ fontFamily: "'Roboto Mono', monospace" }}>requerido</span>
                                     )}
                                     {selected.strategy === 'simple_overlay' && (
                                         <span className="text-[8px] text-[var(--accent-primary)]/50 tracking-wider" style={{ fontFamily: "'Roboto Mono', monospace" }}>opcional</span>
@@ -986,11 +993,11 @@ export default function FormatosView() {
                                 <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] divide-y divide-[var(--border-subtle)]">
                                     <Row label="Formato" value={selected.nombre} />
                                     <Row label="Tipo" value={total === 1 ? 'Individual' : 'Consolidado'} />
-                                    <Row label="Páginas" value={total > maxPages ? `${total} ✗` : String(total)} valueClass={total > maxPages ? 'text-red-400' : 'text-[var(--accent-primary)]'} />
+                                    <Row label="Páginas" value={total > maxPages ? `${total} ✗` : String(total)} valueClass={total > maxPages ? 'text-[var(--accent-red)]' : 'text-[var(--accent-primary)]'} />
                                     <Row label="Correlativo" value={total > 1 ? `${pad(desde, padLen)} → ${pad(hasta, padLen)}` : pad(desde, padLen)} />
-                                    {total > maxPages && <Row label="Límite" value={`máx. ${maxPages}`} valueClass="text-red-400/70" />}
+                                    {total > maxPages && <Row label="Límite" value={`máx. ${maxPages}`} valueClass="text-[var(--accent-red)]/70" />}
                                     {!canGenerate && selected.strategy === 'visual_overlay' && (
-                                        <Row label="Estado" value="Mapping requerido" valueClass="text-red-400" />
+                                        <Row label="Estado" value="Mapping requerido" valueClass="text-[var(--accent-red)]" />
                                     )}
                                 </div>
                             </section>
@@ -999,9 +1006,9 @@ export default function FormatosView() {
 
                     {/* ─ Error ─ */}
                     {error && (
-                        <div className="flex items-start gap-2 bg-red-950/30 border border-red-900/40 rounded-md p-3">
-                            <AlertCircle size={11} className="text-red-400 mt-0.5 flex-shrink-0" />
-                            <p className="text-[11px] text-red-400 leading-relaxed" style={{ fontFamily: "'Roboto Mono', monospace" }}>{error}</p>
+                        <div className="flex items-start gap-2 bg-[var(--accent-red)]/10 border border-[var(--accent-red)]/30 rounded-md p-3">
+                            <AlertCircle size={11} className="text-[var(--accent-red)] mt-0.5 flex-shrink-0" />
+                            <p className="text-[11px] text-[var(--accent-red)] leading-relaxed" style={{ fontFamily: "'Roboto Mono', monospace" }}>{error}</p>
                         </div>
                     )}
                 </div>

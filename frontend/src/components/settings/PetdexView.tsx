@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Search, Check, AlertCircle, RefreshCw, ChevronLeft, ChevronRight, PawPrint } from 'lucide-react';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import Toggle from '../ui/Toggle';
 
 interface Pet {
@@ -327,8 +328,8 @@ export default function PetdexView() {
           <div
             className={`ml-auto flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] ${
               catalogStatus.tone === 'ok'
-                ? 'text-emerald-600 bg-emerald-500/10'
-                : 'text-amber-500 bg-amber-500/10'
+                ? 'text-[var(--accent-green)] bg-[var(--accent-green)]/10'
+                : 'text-[var(--accent-yellow)] bg-[var(--accent-yellow)]/10'
             }`}
           >
             {catalogStatus.tone === 'ok' ? <Check size={11} /> : <AlertCircle size={11} />}
@@ -380,15 +381,17 @@ export default function PetdexView() {
           ))}
         </div>
 
-        <button
-          type="button"
-          onClick={fetchManifest}
-          title="Recargar catálogo"
-          disabled={loading}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[var(--border-medium)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-40"
-        >
-          <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-        </button>
+        <WithHoverTooltip label="Recargar catálogo" placement="bottom">
+          <button
+            type="button"
+            onClick={fetchManifest}
+            aria-label="Recargar catálogo"
+            disabled={loading}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[var(--border-medium)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-40"
+          >
+            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+          </button>
+        </WithHoverTooltip>
 
         {!loading && pets.length > 0 && (
           <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">

@@ -11,6 +11,13 @@ export interface HeaderField {
   shortLabel?: string;
   required: boolean;
   wide?: boolean;
+  /** Full-width stacked row (label above control) inside an inset group */
+  stacked?: boolean;
+}
+
+export interface FieldGroup {
+  title: string;
+  fields: HeaderField[];
 }
 
 export interface HeaderData {
@@ -71,25 +78,84 @@ export const ORIENTATION_OPTIONS = [
   { value: 'portrait' as Orientation, label: 'Vertical', rowsPerPage: 37 },
 ];
 
-export const HEADER_FIELDS: HeaderField[] = [
-  { key: 'centro', label: 'Centro de servicio', required: true },
-  { key: 'servicioAfectado', label: 'Servicio afectado', required: true },
-  { key: 'motivoInterrupcion', label: 'Motivo de la interrupción', required: false },
-  { key: 'fechaInicio', label: 'Fecha y hora del inicio de la interrupción del servicio', shortLabel: 'Fecha interrupción', required: true },
-  { key: 'horaInicio', label: 'Hora inicio', required: true },
-  { key: 'fechaPrevista', label: 'Fecha y hora prevista del restablecimiento del servicio', shortLabel: 'Fecha restablecimiento', required: true },
-  { key: 'horaPrevista', label: 'Hora prevista', required: true },
-  { key: 'distrito', label: 'Distrito(s)', required: true },
-  { key: 'sector', label: 'Sector(es)', required: true },
-  { key: 'subsectores', label: 'Subsector(es) o código(s) de abastecimiento', shortLabel: 'Código abastecimiento', required: true },
-  { key: 'estructura', label: 'Estructura de almacenamiento', shortLabel: 'Estructura', required: true },
-  { key: 'fechaTrabajo', label: 'Fecha de trabajo', required: true },
-  { key: 'fechaComunicacion', label: 'Fecha de comunicación', required: true, wide: true },
-  { key: 'localidades', label: 'Localidades afectadas', required: false, wide: true },
-  { key: 'areaAfectada', label: 'Área afectada', required: false, wide: true },
-  { key: 'codigoServicio', label: 'C.P.S.', required: false, wide: true },
-  { key: 'descripcionServicio', label: 'Descripción del servicio', required: false, wide: true },
+export const HEADER_FIELD_GROUPS: FieldGroup[] = [
+  {
+    title: 'Interrupción',
+    fields: [
+      { key: 'centro', label: 'Centro de servicio', required: true },
+      { key: 'servicioAfectado', label: 'Servicio afectado', required: true },
+      { key: 'motivoInterrupcion', label: 'Motivo de la interrupción', required: false },
+      {
+        key: 'fechaInicio',
+        label: 'Fecha y hora del inicio de la interrupción del servicio',
+        shortLabel: 'Fecha interrupción',
+        required: true,
+      },
+      { key: 'horaInicio', label: 'Hora inicio', required: true },
+      {
+        key: 'fechaPrevista',
+        label: 'Fecha y hora prevista del restablecimiento del servicio',
+        shortLabel: 'Fecha restablecimiento',
+        required: true,
+      },
+      { key: 'horaPrevista', label: 'Hora prevista', required: true },
+    ],
+  },
+  {
+    title: 'Ubicación',
+    fields: [
+      { key: 'distrito', label: 'Distrito(s)', required: true },
+      { key: 'sector', label: 'Sector(es)', required: true },
+      {
+        key: 'subsectores',
+        label: 'Subsector(es) o código(s) de abastecimiento',
+        shortLabel: 'Código abastecimiento',
+        required: true,
+      },
+      {
+        key: 'estructura',
+        label: 'Estructura de almacenamiento',
+        shortLabel: 'Estructura',
+        required: true,
+      },
+    ],
+  },
+  {
+    title: 'Comunicación',
+    fields: [
+      { key: 'fechaTrabajo', label: 'Fecha de trabajo', required: true },
+      { key: 'fechaComunicacion', label: 'Fecha de comunicación', required: true, wide: true },
+      {
+        key: 'localidades',
+        label: 'Localidades afectadas',
+        required: false,
+        wide: true,
+        stacked: true,
+      },
+      {
+        key: 'areaAfectada',
+        label: 'Área afectada',
+        required: false,
+        wide: true,
+        stacked: true,
+      },
+    ],
+  },
+  {
+    title: 'Servicio',
+    fields: [
+      { key: 'codigoServicio', label: 'C.P.S.', required: false, wide: true },
+      {
+        key: 'descripcionServicio',
+        label: 'Descripción del servicio',
+        required: false,
+        wide: true,
+      },
+    ],
+  },
 ];
+
+export const HEADER_FIELDS: HeaderField[] = HEADER_FIELD_GROUPS.flatMap((g) => g.fields);
 
 export const DATE_FIELDS = new Set(['fechaInicio', 'fechaPrevista', 'fechaTrabajo', 'fechaComunicacion']);
 export const WATER_CUT_DATE_FIELDS = new Set(['fechaCorte', 'fecha']);
@@ -102,12 +168,25 @@ export const ITEM_COLUMNS = [
   { key: 'firmaSuministro', label: 'Firma del usuario / N° medidor / suministro' },
 ];
 
-export const WATER_CUT_FIELDS: HeaderField[] = [
-  { key: 'cuadranteAfectado', label: 'Cuadrante afectado', required: true },
-  { key: 'fechaCorte', label: 'Fecha de corte', required: true },
-  { key: 'horarioCorte', label: 'Horario de corte de servicio', required: true, wide: true },
-  { key: 'motivo', label: 'Motivo', required: true, wide: true },
+export const WATER_CUT_FIELD_GROUPS: FieldGroup[] = [
+  {
+    title: 'Aviso de corte',
+    fields: [
+      { key: 'cuadranteAfectado', label: 'Cuadrante afectado', required: true },
+      { key: 'fechaCorte', label: 'Fecha de corte', required: true },
+      {
+        key: 'horarioCorte',
+        label: 'Horario de corte de servicio',
+        required: true,
+        wide: true,
+        stacked: true,
+      },
+      { key: 'motivo', label: 'Motivo', required: true, wide: true, stacked: true },
+    ],
+  },
 ];
+
+export const WATER_CUT_FIELDS: HeaderField[] = WATER_CUT_FIELD_GROUPS.flatMap((g) => g.fields);
 
 export const FIELD_ALIASES: Record<string, string[]> = {
   centro: ['centro de servicio', 'centro', 'centro servicio'],

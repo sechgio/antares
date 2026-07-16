@@ -34,7 +34,7 @@ export default React.memo(function FileCard({ path, selected, isPrimary, onClick
       <div className="relative aspect-square bg-[var(--bg-elevated)] overflow-hidden">
         <Thumbnail path={path} variant="card" />
 
-        <div className="absolute right-2 bottom-2 px-1.5 py-0.5 rounded-md bg-black/60 backdrop-blur-sm text-[9px] font-bold text-white/90 uppercase tracking-wide">
+        <div className="absolute right-2 bottom-2 px-1.5 py-0.5 rounded-md backdrop-blur-sm text-[9px] font-bold text-[var(--text-primary)]/90 uppercase tracking-wide" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 60%, transparent)' }}>
           {ext.replace('.', '')}
         </div>
 
@@ -48,11 +48,12 @@ export default React.memo(function FileCard({ path, selected, isPrimary, onClick
           className={`absolute left-2 top-2 flex h-5.5 w-5.5 items-center justify-center rounded-full border-2 transition-all duration-200 ${
             selected
               ? 'bg-[var(--accent-primary)] border-[var(--accent-primary)]'
-              : 'bg-black/50 border-white/40 group-hover:border-white/80 group-hover:bg-black/60'
+              : 'border-[var(--text-primary)]/40 group-hover:border-[var(--text-primary)]/80'
           } ${isVideo ? 'left-auto right-2 top-8' : ''}`}
+          style={selected ? undefined : { backgroundColor: 'color-mix(in srgb, var(--bg-base) 50%, transparent)' }}
         >
           {selected && (
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-[var(--text-on-accent)]" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="20 6 9 17 4 12" />
             </svg>
           )}
@@ -60,9 +61,10 @@ export default React.memo(function FileCard({ path, selected, isPrimary, onClick
 
         <button
           onClick={onRemove}
-          className={`absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-all duration-200 hover:bg-[var(--accent-red)] shadow-sm ${
+          className={`absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full text-[var(--text-primary)] backdrop-blur-sm transition-all duration-200 hover:bg-[var(--accent-red)] hover:text-[var(--text-on-accent)] shadow-sm ${
             showRemove || isPrimary ? 'opacity-100' : 'opacity-0'
           }`}
+          style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 60%, transparent)' }}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>

@@ -450,7 +450,7 @@ export default function SelladorView() {
                       {pdfPath ? ' · lectura directa' : null}
                     </p>
                   </div>
-                  <button type="button" onClick={clearPdf} className="text-[var(--text-muted)] hover:text-red-400">
+                  <button type="button" onClick={clearPdf} className="text-[var(--text-muted)] hover:text-[var(--accent-red)]">
                     <X size={14} />
                   </button>
                 </div>
@@ -489,7 +489,7 @@ export default function SelladorView() {
                 <div className="space-y-2">
                   <div className="flex items-start justify-between gap-2">
                     <p className="truncate text-sm">{stampFile.name}</p>
-                    <button type="button" onClick={clearStamp} className="text-[var(--text-muted)] hover:text-red-400">
+                    <button type="button" onClick={clearStamp} className="text-[var(--text-muted)] hover:text-[var(--accent-red)]">
                       <X size={14} />
                     </button>
                   </div>

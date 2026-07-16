@@ -34,7 +34,7 @@ describe('SidebarNavItem rename', () => {
 
   it('starts rename on double click', () => {
     const { props } = renderItem();
-    fireEvent.doubleClick(screen.getByTitle('Doble clic para renombrar'));
+    fireEvent.doubleClick(screen.getByRole('button', { name: 'RESERSERVO' }));
     const input = screen.getByRole('textbox', { name: /Renombrar proyecto RESERSERVO/i });
     fireEvent.change(input, { target: { value: 'RESERVORIO NORTE' } });
     fireEvent.blur(input);

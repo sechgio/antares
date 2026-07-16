@@ -1,3 +1,4 @@
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { ChevronRight, FolderKanban, Loader2, Plus, RefreshCw, SearchX } from 'lucide-react';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
@@ -666,15 +667,16 @@ export default function EspaciosApp() {
           <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
             Espacios
           </span>
-          <button
-            type="button"
-            onClick={() => setCreateModal('espacio')}
-            className="rounded-md p-1 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-base)] hover:text-[var(--text-primary)]"
-            aria-label="Nuevo espacio"
-            title="Nuevo espacio"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
+          <WithHoverTooltip label="Nuevo espacio" placement="right">
+            <button
+              type="button"
+              onClick={() => setCreateModal('espacio')}
+              className="rounded-md p-1 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-base)] hover:text-[var(--text-primary)]"
+              aria-label="Nuevo espacio"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </WithHoverTooltip>
         </div>
         <SpaceSidebar
           espacios={sync.espacios}
@@ -694,26 +696,31 @@ export default function EspaciosApp() {
         />
 
         {/* Hit target over the right border (no extra layout gap). Pointer capture = reliable drag. */}
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-valuenow={sidebarWidth}
-          aria-valuemin={ESPACIOS_SIDEBAR_MIN_WIDTH}
-          aria-valuemax={ESPACIOS_SIDEBAR_MAX_WIDTH}
-          aria-label="Cambiar tamaño del panel lateral"
-          title="Arrastrar para cambiar tamaño · Doble clic para restablecer"
-          className={`absolute inset-y-0 -right-1 z-30 w-3 cursor-col-resize touch-none select-none ${
-            isResizingSidebar ? 'bg-[var(--accent-primary)]/25' : 'bg-transparent hover:bg-[var(--accent-primary)]/15'
-          }`}
-          onPointerDown={handleSidebarPointerDown}
-          onPointerMove={handleSidebarPointerMove}
-          onPointerUp={handleSidebarPointerUp}
-          onPointerCancel={handleSidebarPointerUp}
-          onDoubleClick={(e) => {
-            e.preventDefault();
-            handleSidebarResizeReset();
-          }}
-        />
+        <WithHoverTooltip
+          label="Arrastrar para cambiar tamaño · Doble clic para restablecer"
+          placement="right"
+          className="absolute inset-y-0 -right-1 z-30 w-3"
+        >
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-valuenow={sidebarWidth}
+            aria-valuemin={ESPACIOS_SIDEBAR_MIN_WIDTH}
+            aria-valuemax={ESPACIOS_SIDEBAR_MAX_WIDTH}
+            aria-label="Cambiar tamaño del panel lateral"
+            className={`h-full w-full cursor-col-resize touch-none select-none ${
+              isResizingSidebar ? 'bg-[var(--accent-primary)]/25' : 'bg-transparent hover:bg-[var(--accent-primary)]/15'
+            }`}
+            onPointerDown={handleSidebarPointerDown}
+            onPointerMove={handleSidebarPointerMove}
+            onPointerUp={handleSidebarPointerUp}
+            onPointerCancel={handleSidebarPointerUp}
+            onDoubleClick={(e) => {
+              e.preventDefault();
+              handleSidebarResizeReset();
+            }}
+          />
+        </WithHoverTooltip>
       </div>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">

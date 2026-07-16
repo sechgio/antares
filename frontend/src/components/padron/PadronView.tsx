@@ -28,18 +28,21 @@ import {
   HelpCircle,
   X,
   FileSpreadsheet,
-  ChevronDown,
 } from 'lucide-react';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import DatePicker from '../ui/DatePicker';
 import PreviewPage from './PreviewPage';
 import WaterCutNoticePage from './WaterCutNoticePage';
 import TutorialOverlay from './components/TutorialOverlay';
 import FolioControls from './components/FolioControls';
+import FolioMenuSelect from './components/FolioMenuSelect';
 import {
   HEADER_FIELDS,
+  HEADER_FIELD_GROUPS,
   OUTPUT_FORMAT_OPTIONS,
   ORIENTATION_OPTIONS,
   WATER_CUT_FIELDS,
+  WATER_CUT_FIELD_GROUPS,
   DATE_FIELDS,
   WATER_CUT_DATE_FIELDS,
   toDisplayDate,
@@ -49,6 +52,7 @@ import {
   createInitialItems,
   createInitialWaterCutItems,
   type HeaderData,
+  type HeaderField,
   type PadronItem,
   type Orientation,
   type OutputFormat,
@@ -510,6 +514,9 @@ export default function PadronView() {
                     sedapalLogo={logosBase64.sedapal || SEDAPAL_LOGO}
                     pageNumber={getPageFolio(batchStart + j, physicalFolios)}
                     totalPages={exportPages.length}
+                    pageNumberStyle={folioConfig.pageNumberStyle}
+                    pageNumberSize={folioConfig.pageNumberSize}
+                    pageNumberFontStyle={folioConfig.pageNumberFontStyle}
                   />
                   ) : (
                     <PreviewPage
@@ -523,6 +530,9 @@ export default function PadronView() {
                       isFirstPage={batchStart + j === 0}
                       isLastPage={batchStart + j === exportPages.length - 1}
                       variant={previewVariant}
+                      pageNumberStyle={folioConfig.pageNumberStyle}
+                      pageNumberSize={folioConfig.pageNumberSize}
+                      pageNumberFontStyle={folioConfig.pageNumberFontStyle}
                     />
                   )}
                 </div>
@@ -634,179 +644,183 @@ export default function PadronView() {
     setIsTutorialOpen(true);
   }, []);
 
+  const fieldGroups = isWaterCutNotice ? WATER_CUT_FIELD_GROUPS : HEADER_FIELD_GROUPS;
+  const dateFields = isWaterCutNotice ? WATER_CUT_DATE_FIELDS : DATE_FIELDS;
+
+  const renderFieldControl = (field: HeaderField) => {
+    const value = isWaterCutNotice
+      ? waterCutData[field.key] ?? ''
+      : headerData[field.key] ?? '';
+    const onChange = (next: string) =>
+      isWaterCutNotice
+        ? handleWaterCutHeaderChange(field.key, next)
+        : handleHeaderChange(field.key, next);
+    const placeholder = field.required ? undefined : 'Opcional';
+
+    if (dateFields.has(field.key)) {
+      return (
+        <DatePicker
+          value={toISODate(value)}
+          onChange={(isoValue) => onChange(toDisplayDate(isoValue))}
+        />
+      );
+    }
+
+    if (field.stacked) {
+      return (
+        <textarea
+          rows={2}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+        />
+      );
+    }
+
+    return (
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+      />
+    );
+  };
+
   return (
     <div className="vpad-app vpad-app-embedded">
       <aside className={`vpad-sidebar${sidebarVisible ? '' : ' collapsed'}`}>
         {sidebarVisible && (
           <div className="vpad-config-panel">
             <section className="vpad-section vpad-section-format">
-              <div className="vpad-section-header">
-                <span className="vpad-section-number">1</span>
-                <h3 className="vpad-section-title">Formato de Salida</h3>
-              </div>
-
-              <div className="vpad-card">
-                {isWaterCutNotice ? (
-                  <div className="vpad-field-row">
-                    <div className="vpad-field">
-                      <span>Total registros</span>
-                      <input
-                        type="number"
-                        min={1}
-                        value={waterCutTotalItemsCount}
-                        onChange={(e) => handleWaterCutTotalItemsChange(e.target.value)}
-                      />
-                    </div>
-                    <div className="vpad-field">
-                      <span>Registro inicial</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={waterCutMaxItem}
-                        value={clamp(waterCutStartItem, 1, waterCutMaxItem)}
-                        onChange={(e) =>
-                          setWaterCutStartItem(clamp(Number(e.target.value), 1, waterCutMaxItem))
-                        }
-                      />
-                    </div>
-                    <div className="vpad-field">
-                      <span>Registro final</span>
-                      <input
-                        type="number"
-                        min={clamp(waterCutStartItem, 1, waterCutMaxItem)}
-                        max={waterCutMaxItem}
-                        value={clamp(
-                          waterCutEndItem,
-                          clamp(waterCutStartItem, 1, waterCutMaxItem),
-                          waterCutMaxItem,
-                        )}
-                        onChange={(e) =>
-                          setWaterCutEndItem(
-                            clamp(
-                              Number(e.target.value),
-                              clamp(waterCutStartItem, 1, waterCutMaxItem),
-                              waterCutMaxItem,
-                            ),
-                          )
-                        }
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="vpad-field-row">
-                    <div className="vpad-field">
-                      <span>Total ítems</span>
-                      <input
-                        type="number"
-                        min={1}
-                        value={totalItemsCount}
-                        onChange={(e) => handleTotalItemsChange(e.target.value)}
-                      />
-                    </div>
-                    <div className="vpad-field">
-                      <span>Item inicial</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={maxItem}
-                        value={clamp(startItem, 1, maxItem)}
-                        onChange={(e) =>
-                          setStartItem(clamp(Number(e.target.value), 1, maxItem))
-                        }
-                      />
-                    </div>
-                    <div className="vpad-field">
-                      <span>Item final</span>
-                      <input
-                        type="number"
-                        min={clamp(startItem, 1, maxItem)}
-                        max={maxItem}
-                        value={clamp(
-                          endItem,
-                          clamp(startItem, 1, maxItem),
-                          maxItem,
-                        )}
-                        onChange={(e) =>
-                          setEndItem(
-                            clamp(
-                              Number(e.target.value),
-                              clamp(startItem, 1, maxItem),
-                              maxItem,
-                            ),
-                          )
-                        }
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            <section className="vpad-section vpad-section-data">
-              <div className="vpad-section-header">
-                <span className="vpad-section-number">2</span>
-                <h3 className="vpad-section-title">
-                  {isWaterCutNotice ? 'Datos del aviso de corte' : 'Datos del Padrón'}
-                </h3>
-              </div>
-
-              <div className="vpad-card">
-                <div className="vpad-form-grid">
-                  {(isWaterCutNotice ? WATER_CUT_FIELDS : HEADER_FIELDS).map((field) => (
-                    <div
-                      key={field.key}
-                      className={`vpad-field ${field.wide ? 'wide' : ''}`}
-                    >
-                      <span>{field.shortLabel || field.label}</span>
-                      {(isWaterCutNotice ? WATER_CUT_DATE_FIELDS : DATE_FIELDS).has(field.key) ? (
-                        <DatePicker
-                          value={toISODate(
-                            isWaterCutNotice
-                              ? waterCutData[field.key] ?? ''
-                              : headerData[field.key] ?? '',
-                          )}
-                          onChange={(isoValue) =>
-                            isWaterCutNotice
-                              ? handleWaterCutHeaderChange(field.key, toDisplayDate(isoValue))
-                              : handleHeaderChange(field.key, toDisplayDate(isoValue))
-                          }
-                        />
-                      ) : !isWaterCutNotice && field.wide &&
-                        field.key !== 'codigoServicio' &&
-                        field.key !== 'descripcionServicio' ? (
-                        <textarea
-                          rows={2}
-                          value={headerData[field.key] ?? ''}
-                          onChange={(e) =>
-                            handleHeaderChange(field.key, e.target.value)
-                          }
-                          placeholder={
-                            field.required ? 'Campo requerido' : 'Opcional'
-                          }
-                        />
-                      ) : (
+              <h3 className="vpad-section-title">Formato de salida</h3>
+              <div className="vpad-inset-group">
+                <div className="vpad-inset-row vpad-inset-row-triple">
+                  {isWaterCutNotice ? (
+                    <>
+                      <label className="vpad-inset-cell">
+                        <span className="vpad-inset-label">Total registros</span>
                         <input
-                          type="text"
-                          value={
-                            isWaterCutNotice
-                              ? waterCutData[field.key] ?? ''
-                              : headerData[field.key] ?? ''
-                          }
+                          className="vpad-inset-control tabular-nums"
+                          type="number"
+                          min={1}
+                          value={waterCutTotalItemsCount}
+                          onChange={(e) => handleWaterCutTotalItemsChange(e.target.value)}
+                        />
+                      </label>
+                      <label className="vpad-inset-cell">
+                        <span className="vpad-inset-label">Registro inicial</span>
+                        <input
+                          className="vpad-inset-control tabular-nums"
+                          type="number"
+                          min={1}
+                          max={waterCutMaxItem}
+                          value={clamp(waterCutStartItem, 1, waterCutMaxItem)}
                           onChange={(e) =>
-                            isWaterCutNotice
-                              ? handleWaterCutHeaderChange(field.key, e.target.value)
-                              : handleHeaderChange(field.key, e.target.value)
-                          }
-                          placeholder={
-                            field.required ? 'Campo requerido' : 'Opcional'
+                            setWaterCutStartItem(clamp(Number(e.target.value), 1, waterCutMaxItem))
                           }
                         />
-                      )}
-                    </div>
-                  ))}
+                      </label>
+                      <label className="vpad-inset-cell">
+                        <span className="vpad-inset-label">Registro final</span>
+                        <input
+                          className="vpad-inset-control tabular-nums"
+                          type="number"
+                          min={clamp(waterCutStartItem, 1, waterCutMaxItem)}
+                          max={waterCutMaxItem}
+                          value={clamp(
+                            waterCutEndItem,
+                            clamp(waterCutStartItem, 1, waterCutMaxItem),
+                            waterCutMaxItem,
+                          )}
+                          onChange={(e) =>
+                            setWaterCutEndItem(
+                              clamp(
+                                Number(e.target.value),
+                                clamp(waterCutStartItem, 1, waterCutMaxItem),
+                                waterCutMaxItem,
+                              ),
+                            )
+                          }
+                        />
+                      </label>
+                    </>
+                  ) : (
+                    <>
+                      <label className="vpad-inset-cell">
+                        <span className="vpad-inset-label">Total ítems</span>
+                        <input
+                          className="vpad-inset-control tabular-nums"
+                          type="number"
+                          min={1}
+                          value={totalItemsCount}
+                          onChange={(e) => handleTotalItemsChange(e.target.value)}
+                        />
+                      </label>
+                      <label className="vpad-inset-cell">
+                        <span className="vpad-inset-label">Item inicial</span>
+                        <input
+                          className="vpad-inset-control tabular-nums"
+                          type="number"
+                          min={1}
+                          max={maxItem}
+                          value={clamp(startItem, 1, maxItem)}
+                          onChange={(e) =>
+                            setStartItem(clamp(Number(e.target.value), 1, maxItem))
+                          }
+                        />
+                      </label>
+                      <label className="vpad-inset-cell">
+                        <span className="vpad-inset-label">Item final</span>
+                        <input
+                          className="vpad-inset-control tabular-nums"
+                          type="number"
+                          min={clamp(startItem, 1, maxItem)}
+                          max={maxItem}
+                          value={clamp(
+                            endItem,
+                            clamp(startItem, 1, maxItem),
+                            maxItem,
+                          )}
+                          onChange={(e) =>
+                            setEndItem(
+                              clamp(
+                                Number(e.target.value),
+                                clamp(startItem, 1, maxItem),
+                                maxItem,
+                              ),
+                            )
+                          }
+                        />
+                      </label>
+                    </>
+                  )}
                 </div>
               </div>
             </section>
+
+            {fieldGroups.map((group) => (
+              <section key={group.title} className="vpad-section vpad-section-data">
+                <h3 className="vpad-section-title">{group.title}</h3>
+                <div className="vpad-inset-group">
+                  {group.fields.map((field, index) => (
+                    <React.Fragment key={field.key}>
+                      {index > 0 && <div className="vpad-inset-sep" />}
+                      <div
+                        className={`vpad-inset-row${field.stacked ? ' vpad-inset-row-stacked' : ''}`}
+                      >
+                        <span className="vpad-inset-label">
+                          {field.shortLabel || field.label}
+                        </span>
+                        <div className="vpad-inset-control-wrap">
+                          {renderFieldControl(field)}
+                        </div>
+                      </div>
+                    </React.Fragment>
+                  ))}
+                </div>
+              </section>
+            ))}
 
             <div className="vpad-action-box">
               <button
@@ -814,7 +828,7 @@ export default function PadronView() {
                 onClick={handleGeneratePdf}
                 disabled={isGeneratingPdf}
               >
-                <Download size={18} />{' '}
+                <Download size={15} strokeWidth={2.25} />
                 {isGeneratingPdf ? pdfProgress || 'Generando...' : 'Descargar PDF'}
               </button>
               <div className="vpad-actions-row">
@@ -822,10 +836,12 @@ export default function PadronView() {
                   className="vpad-btn vpad-btn-secondary"
                   onClick={handlePrint}
                 >
-                  <Printer size={18} /> Imprimir
+                  <Printer size={14} strokeWidth={2} />
+                  Imprimir
                 </button>
                 <button className="vpad-btn vpad-btn-ghost" onClick={handleReset}>
-                  <Trash2 size={18} /> Limpiar
+                  <Trash2 size={14} strokeWidth={2} />
+                  Limpiar
                 </button>
               </div>
             </div>
@@ -835,13 +851,14 @@ export default function PadronView() {
 
       <main className="vpad-preview-area">
         <header className="vpad-preview-toolbar">
-          <button
-            className="vpad-btn vpad-btn-nav"
-            onClick={() => setSidebarVisible(v => !v)}
-            title={sidebarVisible ? 'Ocultar panel' : 'Mostrar panel'}
-          >
-            <PanelLeft size={18} />
-          </button>
+          <WithHoverTooltip label={sidebarVisible ? 'Ocultar panel' : 'Mostrar panel'} placement="bottom">
+            <button
+              className="vpad-btn vpad-btn-nav"
+              onClick={() => setSidebarVisible(v => !v)}
+            >
+              <PanelLeft size={18} />
+            </button>
+          </WithHoverTooltip>
           <div className="vpad-badges">
             <span className="vpad-badge">
               {isWaterCutNotice ? 'Aviso corte de agua' : (orientation === 'landscape' ? 'Horizontal' : 'Vertical')}
@@ -885,65 +902,60 @@ export default function PadronView() {
             </div>
           )}
           <div className="vpad-toolbar-right">
-            <FolioControls
-              config={folioConfig}
-              totalPages={activePagesCount}
-              onChange={setFolioConfig}
-            />
-            <button
-              className="vpad-btn-excel"
-              onClick={() => setIsExcelModalOpen(true)}
-              title="Importar desde Excel"
-              type="button"
-            >
-              <FileSpreadsheet size={16} />
-              Excel
-            </button>
-            <div className="vpad-select-template-wrapper">
-              <label htmlFor="vpad-output-format" className="sr-only">Formato de salida</label>
-              <select
-                id="vpad-output-format"
-                className="vpad-select-template"
-                value={outputFormat}
-                onChange={(e) => handleOutputFormatChange(e.target.value)}
-                title="Seleccionar plantilla de salida"
-              >
-                {OUTPUT_FORMAT_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={14} className="vpad-select-template-icon" />
-            </div>
-            {!isWaterCutNotice && (
-              <div className="vpad-select-template-wrapper">
-                <label htmlFor="vpad-orientation" className="sr-only">Orientación</label>
-                <select
-                  id="vpad-orientation"
-                  className="vpad-select-template"
-                  value={orientation}
-                  onChange={(e) => handleOrientationChange(e.target.value)}
-                  title="Seleccionar orientación"
+            <div className="vpad-tool-cluster" role="group" aria-label="Acciones">
+              <FolioControls
+                config={folioConfig}
+                totalPages={activePagesCount}
+                onChange={setFolioConfig}
+              />
+              <WithHoverTooltip label="Importar desde Excel" placement="bottom">
+                <button
+                  className="vpad-tool-chip vpad-btn-excel"
+                  onClick={() => setIsExcelModalOpen(true)}
+                  type="button"
                 >
-                  {ORIENTATION_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown size={14} className="vpad-select-template-icon" />
-              </div>
-            )}
-            <button
-              className="tutorial-trigger-btn"
-              onClick={openTutorial}
-              title="Ver tutorial de como usar Generar Padrones"
-              type="button"
-            >
-              <HelpCircle size={16} />
-              Como usar
-            </button>
+                  <FileSpreadsheet size={15} strokeWidth={2} aria-hidden />
+                  Excel
+                </button>
+              </WithHoverTooltip>
+            </div>
+
+            <div className="vpad-tool-cluster" role="group" aria-label="Plantilla">
+              <WithHoverTooltip label="Seleccionar plantilla de salida" placement="bottom">
+                <FolioMenuSelect
+                  variant="toolbar"
+                  value={outputFormat}
+                  options={OUTPUT_FORMAT_OPTIONS}
+                  onChange={handleOutputFormatChange}
+                  aria-label="Formato de salida"
+                />
+              </WithHoverTooltip>
+              {!isWaterCutNotice && (
+                <WithHoverTooltip label="Seleccionar orientación" placement="bottom">
+                  <div className="vpad-toolbar-picker">
+                    <span className="sr-only">Orientación</span>
+                    <FolioMenuSelect
+                      variant="toolbar"
+                      value={orientation}
+                      options={ORIENTATION_OPTIONS}
+                      onChange={handleOrientationChange}
+                      aria-label="Orientación"
+                    />
+                  </div>
+                </WithHoverTooltip>
+              )}
+            </div>
+
+            <WithHoverTooltip label="Ver tutorial de como usar Generar Padrones" placement="bottom">
+              <button
+                className="vpad-tool-chip vpad-tool-chip-quiet tutorial-trigger-btn"
+                onClick={openTutorial}
+                type="button"
+              >
+                <HelpCircle size={15} strokeWidth={2} aria-hidden />
+                Cómo usar
+              </button>
+            </WithHoverTooltip>
           </div>
         </header>
 
@@ -960,6 +972,9 @@ export default function PadronView() {
                       sedapalLogo={logosBase64.sedapal || SEDAPAL_LOGO}
                       pageNumber={getPageFolio(globalIndex, physicalFolios)}
                       totalPages={activePagesCount}
+                      pageNumberStyle={folioConfig.pageNumberStyle}
+                      pageNumberSize={folioConfig.pageNumberSize}
+                      pageNumberFontStyle={folioConfig.pageNumberFontStyle}
                     />
                   ) : (
                     <PreviewPage
@@ -973,6 +988,9 @@ export default function PadronView() {
                       isFirstPage={globalIndex === 0}
                       isLastPage={globalIndex === activePagesCount - 1}
                       variant={previewVariant}
+                      pageNumberStyle={folioConfig.pageNumberStyle}
+                      pageNumberSize={folioConfig.pageNumberSize}
+                      pageNumberFontStyle={folioConfig.pageNumberFontStyle}
                     />
                   )}
                 </div>

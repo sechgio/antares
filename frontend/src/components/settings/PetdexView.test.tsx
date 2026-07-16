@@ -250,7 +250,7 @@ describe('PetdexView', () => {
 
     expect(screen.getByText('Sincronizado con Petdex')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTitle('Recargar catálogo'));
+    fireEvent.click(screen.getByRole('button', { name: 'Recargar catálogo' }));
 
     await waitFor(() => {
       expect(screen.getByText('Catálogo en caché')).toBeInTheDocument();

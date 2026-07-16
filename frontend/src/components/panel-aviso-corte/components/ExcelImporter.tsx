@@ -50,8 +50,8 @@ export default function ExcelImporter({ source, onSource }: Props) {
   return (
     <div className="flex flex-col gap-2">
       {source ? (
-        <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-2.5 py-2">
-          <CheckCircle2 size={15} className="text-emerald-500 shrink-0" />
+        <div className="flex items-center gap-2 rounded-lg border border-[var(--accent-green)]/30 bg-[var(--accent-green)]/5 px-2.5 py-2">
+          <CheckCircle2 size={15} className="text-[var(--accent-green)] shrink-0" />
           <div className="flex flex-col flex-1 min-w-0">
             <span className="text-[11px] font-medium text-[var(--text-primary)] truncate">{source.filename}</span>
             <span className="text-[10px] text-[var(--text-muted)]">{source.rows.length} filas · {source.columns.length} columnas</span>
@@ -77,7 +77,7 @@ export default function ExcelImporter({ source, onSource }: Props) {
         </button>
       )}
       <input ref={inputRef} type="file" accept=".xlsx" className="hidden" onChange={(e) => handleFile(e.target.files?.[0] ?? null)} />
-      {error && <span className="text-[11px] text-red-500 px-1">{error}</span>}
+      {error && <span className="text-[11px] text-[var(--accent-red)] px-1">{error}</span>}
       {source && source.columns.length > 0 && (
         <div className="flex flex-wrap gap-1 px-0.5">
           {source.columns.map((col) => (
@@ -103,7 +103,7 @@ export default function ExcelImporter({ source, onSource }: Props) {
               setError(err?.message || 'Error al descargar la plantilla');
             }
           }}
-          className="flex items-center justify-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-2.5 py-1.5 text-[11px] font-medium text-emerald-600 hover:bg-emerald-500/10 transition-colors"
+          className="flex items-center justify-center gap-2 rounded-lg border border-[var(--accent-green)]/30 bg-[var(--accent-green)]/5 px-2.5 py-1.5 text-[11px] font-medium text-[var(--accent-green)] hover:bg-[var(--accent-green)]/10 transition-colors"
         >
           <Download size={14} className="shrink-0" />
           <span>Descargar plantilla de ejemplo</span>

@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Variants } from 'framer-motion';
 import { ChevronDown, Upload, X, FileText, MapPin, Briefcase, Image as ImageIcon, Minus, Plus, RotateCcw } from 'lucide-react';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import type { FieldDef, LogoData, ReportTypeConfig } from '../types';
 import {
     DEFAULT_TITULO_COLOR,
@@ -201,18 +202,19 @@ export default function HeaderForm({
                                             {tituloStyleIsCustom && (
                                                 <>
                                                     <span className="rcampo-titulo-sep" aria-hidden="true" />
-                                                    <button
-                                                        type="button"
-                                                        className="rcampo-titulo-reset"
-                                                        title="Restablecer estilo"
-                                                        aria-label="Restablecer estilo del título"
-                                                        onClick={() => {
-                                                            onFieldChange(TITULO_SIZE_KEY, String(DEFAULT_TITULO_SIZE_PX));
-                                                            onFieldChange(TITULO_COLOR_KEY, DEFAULT_TITULO_COLOR);
-                                                        }}
-                                                    >
-                                                        <RotateCcw size={11} strokeWidth={2.25} />
-                                                    </button>
+                                                    <WithHoverTooltip label="Restablecer estilo" placement="bottom">
+                                                        <button
+                                                            type="button"
+                                                            className="rcampo-titulo-reset"
+                                                            aria-label="Restablecer estilo del título"
+                                                            onClick={() => {
+                                                                onFieldChange(TITULO_SIZE_KEY, String(DEFAULT_TITULO_SIZE_PX));
+                                                                onFieldChange(TITULO_COLOR_KEY, DEFAULT_TITULO_COLOR);
+                                                            }}
+                                                        >
+                                                            <RotateCcw size={11} strokeWidth={2.25} />
+                                                        </button>
+                                                    </WithHoverTooltip>
                                                 </>
                                             )}
                                         </div>

@@ -13,6 +13,7 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin, { type DateClickArg } from '@fullcalendar/interaction';
 import FullCalendar from '@fullcalendar/react';
 import timeGridPlugin from '@fullcalendar/timegrid';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { Check, Plus } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import type { BoardColumn, Tarea, TareaStatus } from '../../types';
@@ -31,7 +32,7 @@ interface CalendarViewProps {
   onEditTask?: (tarea: Tarea) => void;
 }
 
-const OVERDUE_COLOR = '#EF4444';
+const OVERDUE_COLOR = 'var(--accent-red)';
 
 const WEEKDAY_LONG = new Intl.DateTimeFormat('es', { weekday: 'long' });
 const DAY_MONTH = new Intl.DateTimeFormat('es', { day: 'numeric', month: 'short' });
@@ -217,19 +218,20 @@ export default function CalendarView({
       return (
         <div className="fc-day-cell-head">
           {(onAddTaskOnDate || onAddTask) && (
-            <button
-              type="button"
-              className="fc-day-add"
-              title="Crear tarea"
-              aria-label={`Crear tarea el ${dateStr}`}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                openCreateForDate(dateStr);
-              }}
-            >
-              <Plus className="h-3 w-3" strokeWidth={2.5} />
-            </button>
+            <WithHoverTooltip label="Crear tarea" placement="bottom">
+              <button
+                type="button"
+                className="fc-day-add"
+                aria-label={`Crear tarea el ${dateStr}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  openCreateForDate(dateStr);
+                }}
+              >
+                <Plus className="h-3 w-3" strokeWidth={2.5} />
+              </button>
+            </WithHoverTooltip>
           )}
           <span className="fc-day-num">{arg.dayNumberText}</span>
         </div>

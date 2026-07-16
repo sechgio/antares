@@ -1,3 +1,4 @@
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { ChartGantt, ChevronLeft, ChevronRight, Minus, Plus } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BoardColumn, Tarea, TareaStatus } from '../../types';
@@ -49,7 +50,7 @@ const BAR_HEIGHT = 26;
 const HEADER_WEEK_H = 28;
 const HEADER_DAY_H = 36;
 const MIN_LANES = 4;
-const OVERDUE_COLOR = '#EF4444';
+const OVERDUE_COLOR = 'var(--accent-red)';
 
 const DATE_SHORT = new Intl.DateTimeFormat('es', { day: 'numeric', month: 'short' });
 
@@ -458,27 +459,29 @@ export default function GanttView({
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setRangeOffset((o) => o - 14)}
-            className="gantt-tool-btn"
-            aria-label="Periodo anterior"
-            title="Anterior"
-          >
-            <ChevronLeft className="h-3.5 w-3.5" />
-          </button>
+          <WithHoverTooltip label="Anterior" placement="bottom">
+            <button
+              type="button"
+              onClick={() => setRangeOffset((o) => o - 14)}
+              className="gantt-tool-btn"
+              aria-label="Periodo anterior"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+          </WithHoverTooltip>
           <button type="button" onClick={goToday} className="gantt-tool-btn px-2.5 text-[11px] font-medium">
             Hoy
           </button>
-          <button
-            type="button"
-            onClick={() => setRangeOffset((o) => o + 14)}
-            className="gantt-tool-btn"
-            aria-label="Periodo siguiente"
-            title="Siguiente"
-          >
-            <ChevronRight className="h-3.5 w-3.5" />
-          </button>
+          <WithHoverTooltip label="Siguiente" placement="bottom">
+            <button
+              type="button"
+              onClick={() => setRangeOffset((o) => o + 14)}
+              className="gantt-tool-btn"
+              aria-label="Periodo siguiente"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </WithHoverTooltip>
 
           <div className="mx-1 h-4 w-px bg-[var(--border-subtle)]" />
 
@@ -515,26 +518,28 @@ export default function GanttView({
           </div>
 
           <div className="flex overflow-hidden rounded-md border border-[var(--border-subtle)]">
-            <button
-              type="button"
-              onClick={zoomIn}
-              disabled={colW >= COL_W_MAX}
-              className="gantt-zoom-step border-r border-[var(--border-subtle)]"
-              aria-label="Acercar"
-              title="Acercar (Ctrl + rueda)"
-            >
-              <Plus className="h-3 w-3" strokeWidth={2.5} />
-            </button>
-            <button
-              type="button"
-              onClick={zoomOut}
-              disabled={colW <= COL_W_MIN}
-              className="gantt-zoom-step"
-              aria-label="Alejar"
-              title="Alejar (Ctrl + rueda)"
-            >
-              <Minus className="h-3 w-3" strokeWidth={2.5} />
-            </button>
+            <WithHoverTooltip label="Acercar (Ctrl + rueda)" placement="bottom">
+              <button
+                type="button"
+                onClick={zoomIn}
+                disabled={colW >= COL_W_MAX}
+                className="gantt-zoom-step border-r border-[var(--border-subtle)]"
+                aria-label="Acercar"
+              >
+                <Plus className="h-3 w-3" strokeWidth={2.5} />
+              </button>
+            </WithHoverTooltip>
+            <WithHoverTooltip label="Alejar (Ctrl + rueda)" placement="bottom">
+              <button
+                type="button"
+                onClick={zoomOut}
+                disabled={colW <= COL_W_MIN}
+                className="gantt-zoom-step"
+                aria-label="Alejar"
+              >
+                <Minus className="h-3 w-3" strokeWidth={2.5} />
+              </button>
+            </WithHoverTooltip>
           </div>
         </div>
       </div>
@@ -579,50 +584,54 @@ export default function GanttView({
               {days.map((day, i) => {
                 const { weekday, dayNum } = formatDayHeader(day);
                 return (
-                  <button
+                  <WithHoverTooltip
                     key={day.date}
-                    type="button"
-                    className="gantt-day-head absolute top-0 flex h-full flex-col items-center justify-center gap-0.5 border-r border-[var(--border-subtle)]/70 transition-colors hover:bg-[var(--bg-base)]"
-                    style={{
-                      left: i * colW,
-                      width: colW,
-                      background: day.isToday
-                        ? 'color-mix(in srgb, var(--accent-red) 6%, transparent)'
-                        : day.isWeekend
-                          ? 'color-mix(in srgb, var(--text-muted) 5%, transparent)'
-                          : undefined,
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openCreateForDate(day.date);
-                    }}
-                    onMouseEnter={() => setHoverDate(day.date)}
-                    onMouseLeave={() => setHoverDate((d) => (d === day.date ? null : d))}
-                    title={`Crear tarea el ${day.date}`}
-                    aria-label={`Crear tarea el ${day.date}`}
+                    label={`Crear tarea el ${day.date}`}
+                    placement="bottom"
+                    className="gantt-day-head absolute top-0 h-full"
+                    style={{ left: i * colW, width: colW }}
                   >
-                    <span
-                      className={`text-[10px] leading-none ${
-                        day.isToday ? 'font-semibold text-[var(--accent-red)]' : 'text-[var(--text-muted)]'
-                      }`}
+                    <button
+                      type="button"
+                      className="flex h-full w-full flex-col items-center justify-center gap-0.5 border-r border-[var(--border-subtle)]/70 transition-colors hover:bg-[var(--bg-base)]"
+                      style={{
+                        background: day.isToday
+                          ? 'color-mix(in srgb, var(--accent-red) 6%, transparent)'
+                          : day.isWeekend
+                            ? 'color-mix(in srgb, var(--text-muted) 5%, transparent)'
+                            : undefined,
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openCreateForDate(day.date);
+                      }}
+                      onMouseEnter={() => setHoverDate(day.date)}
+                      onMouseLeave={() => setHoverDate((d) => (d === day.date ? null : d))}
+                      aria-label={`Crear tarea el ${day.date}`}
                     >
-                      {weekday}
-                    </span>
-                    <span
-                      className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] leading-none ${
-                        day.isToday
-                          ? 'bg-[var(--accent-red)] font-semibold text-white'
-                          : 'font-medium text-[var(--text-secondary)]'
-                      }`}
-                    >
-                      {dayNum}
-                    </span>
-                    {hoverDate === day.date && !day.isToday && (onAddTask || onAddTaskOnDate) && (
-                      <span className="pointer-events-none absolute right-0.5 top-0.5 text-[var(--text-muted)]">
-                        <Plus className="h-2.5 w-2.5" strokeWidth={2.5} />
+                      <span
+                        className={`text-[10px] leading-none ${
+                          day.isToday ? 'font-semibold text-[var(--accent-red)]' : 'text-[var(--text-muted)]'
+                        }`}
+                      >
+                        {weekday}
                       </span>
-                    )}
-                  </button>
+                      <span
+                        className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] leading-none ${
+                          day.isToday
+                            ? 'bg-[var(--accent-red)] font-semibold text-[var(--text-on-accent)]'
+                            : 'font-medium text-[var(--text-secondary)]'
+                        }`}
+                      >
+                        {dayNum}
+                      </span>
+                      {hoverDate === day.date && !day.isToday && (onAddTask || onAddTaskOnDate) && (
+                        <span className="pointer-events-none absolute right-0.5 top-0.5 text-[var(--text-muted)]">
+                          <Plus className="h-2.5 w-2.5" strokeWidth={2.5} />
+                        </span>
+                      )}
+                    </button>
+                  </WithHoverTooltip>
                 );
               })}
             </div>

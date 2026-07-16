@@ -202,19 +202,28 @@ function hasCachedThemeCSS() {
 
 function ensureReadableTheme(theme: ThemeConfig): ThemeConfig {
   const background = theme.bg || '#0A0A0A';
+  const isDarkBg = relativeLuminance(background) <= 0.55;
+  // Primary needs full AA (4.5:1). Secondary/muted may use large-text AA (3:1)
+  // so intentional dark-theme hierarchies (e.g. Vanta Black) are preserved.
   const primary = contrastRatio(background, theme.fg || '#FFFFFF') >= 4.5
     ? theme.fg
     : readableTextFor(background, '#F8FAFC', '#111827');
-  const secondary = contrastRatio(background, theme.fg_muted || '#A0A0A0') >= 4.5
-    ? theme.fg_muted
-    : readableSecondaryFor(background);
+
+  const mutedCandidate = theme.fg_muted || '#A0A0A0';
+  const secondaryCandidate = theme.fg_secondary || mutedCandidate;
+  const secondary =
+    contrastRatio(background, mutedCandidate) >= 3
+      ? mutedCandidate
+      : isDarkBg && contrastRatio(background, secondaryCandidate) >= 3
+        ? secondaryCandidate
+        : readableSecondaryFor(background);
 
   return {
     ...theme,
     fg: primary,
     fg_muted: secondary,
-    fg_secondary: contrastRatio(background, theme.fg_secondary || secondary) >= 4.5
-      ? theme.fg_secondary
+    fg_secondary: contrastRatio(background, theme.fg_secondary || secondary) >= 3
+      ? theme.fg_secondary || secondary
       : secondary,
   };
 }
@@ -278,6 +287,7 @@ function applyThemeToCSS(theme: ThemeConfig, mode: ThemeMode, accentKey: string)
     '--text-muted': nextTheme.fg_muted,
     '--text-tertiary': nextTheme.fg_tertiary || nextTheme.fg_muted,
     '--text-on-accent': readableTextFor(nextTheme.accent),
+    '--text-on-danger': readableTextFor(nextTheme.error || '#EF4444'),
     '--accent-primary-glow': `${nextTheme.accent}33`,
     '--accent-orange-glow': `${nextTheme.accent}33`,
     '--scrollbar-thumb': `${nextTheme.fg_muted}55`,

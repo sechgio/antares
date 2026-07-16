@@ -44,4 +44,25 @@ describe('TitleBar', () => {
     expect(closeWindow).toHaveBeenCalledTimes(1);
   });
 
+  it('renders settings with hover tooltip and no native title', () => {
+    render(
+      <DialogProvider>
+        <TitleBar onOpenSettings={vi.fn()} />
+      </DialogProvider>,
+    );
+
+    const settings = screen.getByTestId('titlebar-settings-button');
+    expect(settings).not.toHaveAttribute('title');
+    expect(screen.getByText('Configuración')).toBeInTheDocument();
+  });
+
+  it('renders window control hover tooltips without native titles', () => {
+    renderTitleBar();
+
+    for (const name of ['Minimizar', 'Maximizar', 'Cerrar'] as const) {
+      const button = screen.getByRole('button', { name });
+      expect(button).not.toHaveAttribute('title');
+      expect(screen.getByText(name)).toBeInTheDocument();
+    }
+  });
 });

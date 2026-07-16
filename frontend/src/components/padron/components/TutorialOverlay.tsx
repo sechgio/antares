@@ -29,7 +29,7 @@ const steps: TutorialStep[] = [
   {
     title: "Paso 3: Define el rango",
     description:
-      "En el panel izquierdo, seccion 'Formato de Salida', ajusta el total de items y el rango inicial/final que quieres incluir en el documento.",
+      "En el panel izquierdo, seccion 'Formato de salida', ajusta el total de items y el rango inicial/final que quieres incluir en el documento.",
     icon: (
       <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <line x1="4" y1="9" x2="20" y2="9" />

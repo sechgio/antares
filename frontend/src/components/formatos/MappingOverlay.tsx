@@ -236,14 +236,14 @@ export default function MappingOverlay({
         />
         <div
           aria-label="Redimensionar mapping"
-          className={`absolute -bottom-2 -right-2 z-30 h-4 w-4 cursor-nwse-resize rounded-full border-2 border-white bg-[var(--accent-primary)] shadow transition-opacity ${
+          className={`absolute -bottom-2 -right-2 z-30 h-4 w-4 cursor-nwse-resize rounded-full border-2 border-[var(--text-on-accent)] bg-[var(--accent-primary)] shadow transition-opacity ${
             showEditChrome ? 'opacity-100' : 'opacity-0 hover:opacity-100'
           }`}
           onMouseDown={startResize}
         />
       </div>
 
-      <div className="pointer-events-none absolute left-4 top-4 z-30 max-w-[280px] rounded-md border border-[var(--border-subtle)] bg-black/80 px-3 py-2 text-[10px] text-[var(--text-secondary)]">
+      <div className="pointer-events-none absolute left-4 top-4 z-30 max-w-[280px] rounded-md border border-[var(--border-subtle)] px-3 py-2 text-[10px] text-[var(--text-secondary)]" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 80%, transparent)' }}>
         <div className="flex items-center gap-3">
           <span className="inline-flex items-center gap-1"><Move size={11} /> Mover</span>
           <span className="inline-flex items-center gap-1"><ZoomIn size={11} /> Redimensionar</span>

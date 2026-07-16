@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   createDefaultFolioConfig,
   expectedFolioEnd,
+  formatPageNumberLabel,
   getPageFolio,
+  getPageNumberAppearanceStyle,
+  resolvePageNumberStyle,
   resolvePhysicalFolios,
   syncFolioEndWithPageCount,
 } from './folio';
@@ -170,5 +173,72 @@ describe('expectedFolioEnd', () => {
     expect(expectedFolioEnd(1, 50)).toBe(50);
     expect(expectedFolioEnd(2, 50)).toBe(51);
     expect(expectedFolioEnd(5, 1)).toBe(5);
+  });
+});
+
+describe('formatPageNumberLabel', () => {
+  it('formats Página N de X', () => {
+    expect(formatPageNumberLabel('pagina_de', 2, 5)).toBe('Página 2 de 5');
+  });
+
+  it('formats N de X', () => {
+    expect(formatPageNumberLabel('n_de', 2, 5)).toBe('2 de 5');
+  });
+
+  it('formats solo número', () => {
+    expect(formatPageNumberLabel('solo', 2, 5)).toBe('2');
+  });
+
+  it('auto keeps plantilla defaults', () => {
+    expect(formatPageNumberLabel('auto', 1, 3, 'service-interruption')).toBe('Página 1 de 3');
+    expect(formatPageNumberLabel('auto', 1, 3, 'volante-lurigancho')).toBe('1 de 3');
+    expect(formatPageNumberLabel('auto', 1, 3, 'volanteo-lurigancho-v2')).toBe('1');
+    expect(formatPageNumberLabel('auto', 1, 3, 'water-cut-notice')).toBe('Página 1 de 3');
+  });
+
+  it('explicit style overrides plantilla default', () => {
+    expect(formatPageNumberLabel('pagina_de', 1, 3, 'volante-lurigancho')).toBe('Página 1 de 3');
+    expect(formatPageNumberLabel('solo', 4, 10, 'service-interruption')).toBe('4');
+  });
+});
+
+describe('resolvePageNumberStyle', () => {
+  it('passes through explicit styles', () => {
+    expect(resolvePageNumberStyle('solo')).toBe('solo');
+    expect(resolvePageNumberStyle('n_de')).toBe('n_de');
+    expect(resolvePageNumberStyle('pagina_de')).toBe('pagina_de');
+  });
+});
+
+describe('getPageNumberAppearanceStyle', () => {
+  it('returns empty object when size and font stay auto', () => {
+    expect(getPageNumberAppearanceStyle('auto', 'auto')).toEqual({});
+  });
+
+  it('maps size overrides to pixel font sizes', () => {
+    expect(getPageNumberAppearanceStyle('sm', 'auto')).toEqual({ fontSize: '8px' });
+    expect(getPageNumberAppearanceStyle('md', 'auto')).toEqual({ fontSize: '10px' });
+    expect(getPageNumberAppearanceStyle('lg', 'auto')).toEqual({ fontSize: '14px' });
+    expect(getPageNumberAppearanceStyle('xl', 'auto')).toEqual({ fontSize: '18px' });
+  });
+
+  it('maps font style overrides to weight and italic', () => {
+    expect(getPageNumberAppearanceStyle('auto', 'normal')).toEqual({
+      fontWeight: 400,
+      fontStyle: 'normal',
+    });
+    expect(getPageNumberAppearanceStyle('auto', 'bold')).toEqual({
+      fontWeight: 700,
+      fontStyle: 'normal',
+    });
+    expect(getPageNumberAppearanceStyle('auto', 'italic')).toEqual({
+      fontWeight: 400,
+      fontStyle: 'italic',
+    });
+    expect(getPageNumberAppearanceStyle('lg', 'bold_italic')).toEqual({
+      fontSize: '14px',
+      fontWeight: 700,
+      fontStyle: 'italic',
+    });
   });
 });

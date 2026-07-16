@@ -1,3 +1,4 @@
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { FolderKanban, Plus } from 'lucide-react';
 import type { Espacio, Proyecto } from '../types';
 import SidebarNavItem from './SidebarNavItem';
@@ -85,16 +86,20 @@ export default function SpaceSidebar({
           <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
             Proyectos
           </span>
-          <button
-            type="button"
-            onClick={onAddProyecto}
-            disabled={!activeEspacioId}
-            className="rounded-md p-1 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-base)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label="Nuevo proyecto"
-            title={activeEspacioId ? 'Nuevo proyecto' : 'Selecciona un espacio primero'}
+          <WithHoverTooltip
+            label={activeEspacioId ? 'Nuevo proyecto' : 'Selecciona un espacio primero'}
+            placement="right"
           >
-            <Plus className="h-4 w-4" />
-          </button>
+            <button
+              type="button"
+              onClick={onAddProyecto}
+              disabled={!activeEspacioId}
+              className="rounded-md p-1 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-base)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Nuevo proyecto"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </WithHoverTooltip>
         </div>
         <ul className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto">
           {proyectos.map((proyecto, index) => (

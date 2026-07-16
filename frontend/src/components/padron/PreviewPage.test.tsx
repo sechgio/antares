@@ -54,4 +54,39 @@ describe('PreviewPage volante lurigancho variant', () => {
     expect(screen.getByText('2 de 3')).toBeInTheDocument();
     expect(screen.getByText('Responsable del volanteo :')).toBeInTheDocument();
   });
+
+  it('honors an explicit page number style override', () => {
+    render(
+      <PreviewPage
+        {...commonProps}
+        variant="volante-lurigancho"
+        pageNumber={1}
+        isFirstPage
+        isLastPage={false}
+        pageNumberStyle="pagina_de"
+      />,
+    );
+
+    expect(screen.getByText('Página 1 de 3')).toBeInTheDocument();
+    expect(screen.queryByText('1 de 3')).not.toBeInTheDocument();
+  });
+
+  it('applies size and font style overrides to the folio label', () => {
+    const { container } = render(
+      <PreviewPage
+        {...commonProps}
+        pageNumber={1}
+        isFirstPage
+        isLastPage={false}
+        pageNumberSize="lg"
+        pageNumberFontStyle="italic"
+      />,
+    );
+
+    const footer = container.querySelector('.vpad-sheet-foot') as HTMLElement | null;
+    expect(footer).toBeTruthy();
+    expect(footer?.style.fontSize).toBe('14px');
+    expect(footer?.style.fontStyle).toBe('italic');
+    expect(footer?.style.fontWeight).toBe('400');
+  });
 });

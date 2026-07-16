@@ -1,5 +1,12 @@
 import type { HeaderData, PadronItem } from './data';
 import type { Orientation } from './data';
+import {
+  formatPageNumberLabel,
+  getPageNumberAppearanceStyle,
+  type PageNumberFontStyle,
+  type PageNumberSize,
+  type PageNumberStyle,
+} from './folio';
 
 interface VProps {
   label: string;
@@ -45,6 +52,9 @@ interface PreviewPageProps {
   isFirstPage: boolean;
   isLastPage: boolean;
   variant?: 'service-interruption' | 'volante-lurigancho' | 'volanteo-lurigancho-v2';
+  pageNumberStyle?: PageNumberStyle;
+  pageNumberSize?: PageNumberSize;
+  pageNumberFontStyle?: PageNumberFontStyle;
 }
 
 export default function PreviewPage({
@@ -58,6 +68,9 @@ export default function PreviewPage({
   isFirstPage,
   isLastPage,
   variant = 'service-interruption',
+  pageNumberStyle = 'auto',
+  pageNumberSize = 'auto',
+  pageNumberFontStyle = 'auto',
 }: PreviewPageProps) {
   const colWidths = orientation === 'portrait'
     ? { item: '5%', name: '24%', address: '31%', time: '10%', firma: '30%' }
@@ -68,6 +81,16 @@ export default function PreviewPage({
   const showUpperLayout = !isAnyLurigancho || isFirstPage;
   const showCurrentVolanteo = !isAnyLurigancho && isLastPage;
   const showLuriganchoVolanteo = isAnyLurigancho;
+  const pageNumberLabel = formatPageNumberLabel(
+    pageNumberStyle,
+    pageNumber,
+    totalPages,
+    variant,
+  );
+  const pageNumberAppearance = getPageNumberAppearanceStyle(
+    pageNumberSize,
+    pageNumberFontStyle,
+  );
   const sheetClasses = [
     'vpad-sheet',
     orientation,
@@ -192,10 +215,15 @@ export default function PreviewPage({
       )}
 
       {isLuriganchoV2 ? (
-        <span className="vpad-sheet-folio-bottom">{pageNumber}</span>
+        <span className="vpad-sheet-folio-bottom" style={pageNumberAppearance}>
+          {pageNumberLabel}
+        </span>
       ) : (
-        <div className={isLurigancho ? 'vpad-sheet-folio-top' : 'vpad-sheet-foot'}>
-          {isLurigancho ? `${pageNumber} de ${totalPages}` : `Página ${pageNumber} de ${totalPages}`}
+        <div
+          className={isLurigancho ? 'vpad-sheet-folio-top' : 'vpad-sheet-foot'}
+          style={pageNumberAppearance}
+        >
+          {pageNumberLabel}
         </div>
       )}
     </div>

@@ -60,6 +60,7 @@ scratch/_smoke*.db
 .codex/
 .commandcode/
 .devin/
+.factory/
 .hypothesis/
 .kiro/
 .agents/
@@ -73,6 +74,7 @@ CLAUDE.md
 !.githooks/pre-push
 !.githooks/pre-commit
 docs/
+docs/superpowers/
 
 # Ruff cache
 .ruff_cache/

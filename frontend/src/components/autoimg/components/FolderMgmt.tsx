@@ -5,6 +5,7 @@ import type { AutoImgFolder, DriveVerifyResult } from '../types';
 import { parseDriveFolderId } from '../utils/parseDriveFolderId';
 import { ActionButton, INPUT_CLASS } from './shared';
 import { FolderPreviewStrip, useFolderPreviews } from './FolderPreviewStrip';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 
 interface FolderMgmtProps {
   folders?: AutoImgFolder[];
@@ -25,24 +26,25 @@ function Switch({
   title?: string;
 }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      title={title}
-      disabled={disabled}
-      onClick={onChange}
-      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200 ease-out active:scale-[0.97] disabled:opacity-40 ${
-        checked ? 'bg-[var(--accent-green)]' : 'bg-[var(--border-medium)]'
-      }`}
-    >
-      <span
-        className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${
-          checked ? 'translate-x-4' : 'translate-x-0.5'
+    <WithHoverTooltip label={title} placement="bottom">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        disabled={disabled}
+        onClick={onChange}
+        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200 ease-out active:scale-[0.97] disabled:opacity-40 ${
+          checked ? 'bg-[var(--accent-green)]' : 'bg-[var(--border-medium)]'
         }`}
-      />
-    </button>
+      >
+        <span
+          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${
+            checked ? 'translate-x-4' : 'translate-x-0.5'
+          }`}
+        />
+      </button>
+    </WithHoverTooltip>
   );
 }
 

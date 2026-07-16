@@ -72,11 +72,11 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
       <input ref={inputRef} type="file" multiple accept={ACCEPTED_IMAGE_TYPES.join(',')} className="hidden" onChange={(e) => handleFiles(e.target.files)} />
 
       {errors.length > 0 && (
-        <div className="flex flex-col gap-1.5 px-2 py-1.5 rounded-md bg-red-500/10 border border-red-500/20">
+        <div className="flex flex-col gap-1.5 px-2 py-1.5 rounded-md bg-[var(--accent-red)]/10 border border-[var(--accent-red)]/20">
           {errors.map((err, i) => (
-            <span key={i} className="text-[10px] font-medium text-red-500">{err}</span>
+            <span key={i} className="text-[10px] font-medium text-[var(--accent-red)]">{err}</span>
           ))}
-          <button type="button" className="text-[10px] font-medium text-red-600 self-start hover:underline" onClick={() => setErrors([])}>Descartar errores</button>
+          <button type="button" className="text-[10px] font-medium text-[var(--accent-red)] self-start hover:underline" onClick={() => setErrors([])}>Descartar errores</button>
         </div>
       )}
 
@@ -86,7 +86,7 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
             <span className="text-[10px] font-medium text-[var(--text-muted)]">
               Galería cargada
             </span>
-            <button type="button" onClick={onClear} className="text-[10px] font-medium text-[var(--text-muted)] hover:text-red-500 flex items-center gap-1 transition-colors">
+            <button type="button" onClick={onClear} className="text-[10px] font-medium text-[var(--text-muted)] hover:text-[var(--accent-red)] flex items-center gap-1 transition-colors">
               <Trash2 size={12} />
               Vaciar galería
             </button>
@@ -96,16 +96,17 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
             {visibleImages.map((img, idx) => (
               <div key={`${img.file.name}-${idx}`} className="relative group rounded-md overflow-hidden bg-[var(--bg-surface)] border border-[var(--border-subtle)] aspect-square">
                 <img src={img.objectUrl} alt={img.file.name} loading="lazy" className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110" />
-                <div className="absolute top-0.5 left-0.5 bg-black/70 backdrop-blur-sm text-white text-[9px] font-medium px-1.5 py-0.5 rounded flex items-center justify-center">
+                <div className="absolute top-0.5 left-0.5 backdrop-blur-sm text-[var(--text-primary)] text-[9px] font-medium px-1.5 py-0.5 rounded flex items-center justify-center" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 70%, transparent)' }}>
                   {idx + 1}
                 </div>
                 <button
                   type="button"
                   onClick={() => onRemove(idx)}
-                  className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 60%, transparent)' }}
                   aria-label={`Eliminar imagen ${idx + 1}`}
                 >
-                  <X size={14} className="text-white" />
+                  <X size={14} className="text-[var(--text-primary)]" />
                 </button>
               </div>
             ))}

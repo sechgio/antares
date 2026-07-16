@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { UserPlus, Trash2, ShieldCheck, ShieldOff, Ban, CheckCircle, Loader2, Mail, Search, Lock, Eye, EyeOff } from 'lucide-react';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../auth/AuthContext';
 import { useToast } from '../../hooks/useToast';
@@ -325,33 +326,39 @@ export default function PanelView() {
                   </td>
                   <td className="px-3 py-2.5">
                     <div className="flex items-center justify-end gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleAdmin(u)}
-                        disabled={u.user_id === currentUser?.id || actionLoading === `admin-${u.user_id}`}
-                        title={u.is_admin ? t('panel.removeAdmin') : t('panel.makeAdmin')}
-                        className="rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-primary)] disabled:opacity-30"
-                      >
-                        {actionLoading === `admin-${u.user_id}` ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleDisabled(u)}
-                        disabled={u.user_id === currentUser?.id || actionLoading === `disable-${u.user_id}`}
-                        title={u.is_disabled ? t('panel.enable') : t('panel.disable')}
-                        className="rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-yellow)] disabled:opacity-30"
-                      >
-                        {actionLoading === `disable-${u.user_id}` ? <Loader2 size={14} className="animate-spin" /> : <Ban size={14} />}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(u)}
-                        disabled={u.user_id === currentUser?.id || actionLoading === `delete-${u.user_id}`}
-                        title={t('panel.delete')}
-                        className="rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-red)] disabled:opacity-30"
-                      >
-                        {actionLoading === `delete-${u.user_id}` ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                      </button>
+                      <WithHoverTooltip label={u.is_admin ? t('panel.removeAdmin') : t('panel.makeAdmin')} placement="bottom">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleAdmin(u)}
+                          disabled={u.user_id === currentUser?.id || actionLoading === `admin-${u.user_id}`}
+                          aria-label={u.is_admin ? t('panel.removeAdmin') : t('panel.makeAdmin')}
+                          className="rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-primary)] disabled:opacity-30"
+                        >
+                          {actionLoading === `admin-${u.user_id}` ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
+                        </button>
+                      </WithHoverTooltip>
+                      <WithHoverTooltip label={u.is_disabled ? t('panel.enable') : t('panel.disable')} placement="bottom">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleDisabled(u)}
+                          disabled={u.user_id === currentUser?.id || actionLoading === `disable-${u.user_id}`}
+                          aria-label={u.is_disabled ? t('panel.enable') : t('panel.disable')}
+                          className="rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-yellow)] disabled:opacity-30"
+                        >
+                          {actionLoading === `disable-${u.user_id}` ? <Loader2 size={14} className="animate-spin" /> : <Ban size={14} />}
+                        </button>
+                      </WithHoverTooltip>
+                      <WithHoverTooltip label={t('panel.delete')} placement="bottom">
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(u)}
+                          disabled={u.user_id === currentUser?.id || actionLoading === `delete-${u.user_id}`}
+                          aria-label={t('panel.delete')}
+                          className="rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-red)] disabled:opacity-30"
+                        >
+                          {actionLoading === `delete-${u.user_id}` ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                        </button>
+                      </WithHoverTooltip>
                     </div>
                   </td>
                 </tr>

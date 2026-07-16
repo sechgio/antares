@@ -1,3 +1,4 @@
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ESPACIOS_COLORS, toColorInputValue } from '../utils/colors';
@@ -85,25 +86,26 @@ export default function ColorSwatchPicker({ color, label, onChange }: ColorSwatc
 
   return (
     <div className="relative shrink-0">
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-label={`Cambiar color de ${label}`}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        aria-controls={open ? panelId : undefined}
-        title={`Color de ${label}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen((value) => !value);
-        }}
-        className="flex h-6 w-6 items-center justify-center rounded-full transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]/40"
-      >
-        <span
-          className="h-3.5 w-3.5 rounded-full border border-black/15 shadow-sm"
-          style={{ backgroundColor: safeColor }}
-        />
-      </button>
+      <WithHoverTooltip label={`Color de ${label}`} placement="right">
+        <button
+          ref={triggerRef}
+          type="button"
+          aria-label={`Cambiar color de ${label}`}
+          aria-expanded={open}
+          aria-haspopup="dialog"
+          aria-controls={open ? panelId : undefined}
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen((value) => !value);
+          }}
+          className="flex h-6 w-6 items-center justify-center rounded-full transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]/40"
+        >
+          <span
+            className="h-3.5 w-3.5 rounded-full border border-black/15 shadow-sm"
+            style={{ backgroundColor: safeColor }}
+          />
+        </button>
+      </WithHoverTooltip>
 
       {open &&
         createPortal(

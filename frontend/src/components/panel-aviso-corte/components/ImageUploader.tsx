@@ -59,7 +59,7 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
           <span className="text-[10px] text-[var(--text-muted)]">PNG, JPG, WebP · admite lotes grandes</span>
         </div>
         {images.length > 0 && (
-          <span className="ml-auto px-2 py-0.5 rounded-full bg-[var(--accent-primary)] text-white text-[11px] font-bold">
+          <span className="ml-auto px-2 py-0.5 rounded-full bg-[var(--accent-primary)] text-[var(--text-on-accent)] text-[11px] font-bold">
             {images.length}
           </span>
         )}
@@ -70,7 +70,7 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
       {errors.length > 0 && (
         <div className="flex flex-col gap-1 px-1">
           {errors.map((err, i) => (
-            <span key={i} className="text-[11px] text-red-500">{err}</span>
+            <span key={i} className="text-[11px] text-[var(--accent-red)]">{err}</span>
           ))}
           <button className="text-[11px] text-[var(--text-muted)] self-start hover:underline" onClick={() => setErrors([])}>Descartar</button>
         </div>
@@ -84,7 +84,7 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
               <ImageIcon size={11} />
               {images.length} imagen{images.length !== 1 && 'es'}
             </span>
-            <button onClick={onClear} className="text-[11px] text-red-500 hover:text-red-400 flex items-center gap-1 transition-colors">
+            <button onClick={onClear} className="text-[11px] text-[var(--accent-red)] hover:opacity-80 flex items-center gap-1 transition-colors">
               <Trash2 size={11} />
               Limpiar
             </button>
@@ -95,9 +95,10 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
                 <img src={img.objectUrl} alt={img.file.name} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                 <button
                   onClick={() => onRemove(idx)}
-                  className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 50%, transparent)' }}
                 >
-                  <X size={14} className="text-white" />
+                  <X size={14} className="text-[var(--text-primary)]" />
                 </button>
               </div>
             ))}

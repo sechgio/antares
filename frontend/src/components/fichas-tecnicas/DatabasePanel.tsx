@@ -1,4 +1,4 @@
-import { Calendar, FileText, MapPin, Search } from 'lucide-react';
+import { FileText, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { FichaTecnicaListItem } from './types';
 
@@ -66,15 +66,10 @@ export default function DatabasePanel({ fichas, selectedId, onSelect }: Props) {
       <div className="ft-db-header">
         <div className="ft-db-header-top">
           <div className="ft-db-brand">
-            <span className="ft-db-brand-icon" aria-hidden="true">
-              <FileText size={14} />
-            </span>
-            <div>
-              <p className="ft-db-eyebrow">Base local</p>
-              <h2 className="ft-db-title">
-                {fichas.length} ficha{fichas.length === 1 ? '' : 's'}
-              </h2>
-            </div>
+            <p className="ft-db-eyebrow">Base local</p>
+            <h2 className="ft-db-title">
+              {fichas.length} ficha{fichas.length === 1 ? '' : 's'}
+            </h2>
           </div>
           {fichas.length > 0 && (
             <div className="ft-db-stats" aria-label="Resumen de estado">
@@ -85,29 +80,32 @@ export default function DatabasePanel({ fichas, selectedId, onSelect }: Props) {
         </div>
 
         <label className="ft-db-search">
-          <Search size={14} aria-hidden="true" />
+          <Search size={12} aria-hidden="true" />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Buscar cliente, O.S., distrito…"
+            placeholder="Buscar…"
             aria-label="Buscar fichas"
           />
         </label>
 
         <div className="ft-db-filters" role="tablist" aria-label="Filtrar por estado">
-          {filterOptions.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              role="tab"
-              aria-selected={statusFilter === option.id}
-              className={`ft-db-filter ${statusFilter === option.id ? 'is-active' : ''}`}
-              onClick={() => setStatusFilter(option.id)}
-            >
-              {option.label}
-              <span className="ft-db-filter-count">{option.count}</span>
-            </button>
-          ))}
+          {filterOptions.map((option) => {
+            const active = statusFilter === option.id;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                className={`ft-db-filter${active ? ' is-active' : ''}`}
+                onClick={() => setStatusFilter(option.id)}
+              >
+                <span className="ft-db-filter-label">{option.label}</span>
+                <span className="ft-db-filter-count tabular-nums">{option.count}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -146,18 +144,12 @@ export default function DatabasePanel({ fichas, selectedId, onSelect }: Props) {
                   <span className="ft-db-code">{code}</span>
                   {location ? (
                     <span className="ft-db-location">
-                      <MapPin size={10} aria-hidden="true" />
                       <span className="ft-db-location-text">{location}</span>
                     </span>
                   ) : (
                     <span className="ft-db-location ft-db-location--empty">Sin ubicación</span>
                   )}
-                  {fecha ? (
-                    <span className="ft-db-date">
-                      <Calendar size={10} aria-hidden="true" />
-                      {fecha}
-                    </span>
-                  ) : null}
+                  {fecha ? <span className="ft-db-date">{fecha}</span> : null}
                 </span>
               </span>
             </button>
@@ -168,15 +160,15 @@ export default function DatabasePanel({ fichas, selectedId, onSelect }: Props) {
           <div className="ft-db-empty">
             {fichas.length === 0 ? (
               <>
-                <FileText size={22} strokeWidth={1.5} />
-                <p>No hay fichas en la base local</p>
-                <span>Importa un archivo o crea una nueva ficha.</span>
+                <FileText size={18} strokeWidth={1.5} />
+                <p>No hay fichas</p>
+                <span>Importa un archivo o crea una nueva.</span>
               </>
             ) : (
               <>
-                <Search size={22} strokeWidth={1.5} />
+                <Search size={18} strokeWidth={1.5} />
                 <p>Sin resultados</p>
-                <span>Prueba otro término o cambia el filtro de estado.</span>
+                <span>Prueba otro término o filtro.</span>
               </>
             )}
           </div>

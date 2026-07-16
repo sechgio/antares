@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 
 type MascotState = 'idle' | 'walking' | 'reacting' | 'clicked';
 
@@ -266,39 +267,41 @@ export default function PetMascot() {
   const activeRow = getRow();
 
   return (
-    <div
-      data-testid="pet-mascot-container"
-      className="z-[90]"
-      onPointerDown={handlePointerDown}
-      onMouseEnter={handleMouseEnter}
-      onClick={handleClick}
-      style={{
-        position: 'fixed',
-        left: `${pos.x}px`,
-        top: `${pos.y}px`,
-        width: `${w}px`,
-        height: `${h}px`,
-        cursor: isDragging ? 'grabbing' : 'grab',
-        touchAction: 'none',
-        overflow: 'hidden',
-        opacity: config.opacity / 100,
-        transition: isDragging || mascotState === 'walking' ? 'none' : 'left 0.15s ease-out, top 0.15s ease-out',
-        userSelect: 'none',
-      }}
-      title="Arrastra para mover. Clic para saltar."
-    >
+    <WithHoverTooltip label="Arrastra para mover. Clic para saltar." placement="bottom">
       <div
+        data-testid="pet-mascot-container"
+        className="z-[90]"
+        onPointerDown={handlePointerDown}
+        onMouseEnter={handleMouseEnter}
+        onClick={handleClick}
+        aria-label="Arrastra para mover. Clic para saltar."
         style={{
-          width: `${SPRITE_W}px`,
-          height: `${SPRITE_H}px`,
-          backgroundImage: `url(${config.spritesheetUrl})`,
-          backgroundPosition: `-${frameCol * SPRITE_W}px -${activeRow * SPRITE_H}px`,
-          transform: `scale(${config.scale})`,
-          transformOrigin: 'top left',
-          imageRendering: 'pixelated',
-          pointerEvents: 'none',
+          position: 'fixed',
+          left: `${pos.x}px`,
+          top: `${pos.y}px`,
+          width: `${w}px`,
+          height: `${h}px`,
+          cursor: isDragging ? 'grabbing' : 'grab',
+          touchAction: 'none',
+          overflow: 'hidden',
+          opacity: config.opacity / 100,
+          transition: isDragging || mascotState === 'walking' ? 'none' : 'left 0.15s ease-out, top 0.15s ease-out',
+          userSelect: 'none',
         }}
-      />
-    </div>
+      >
+        <div
+          style={{
+            width: `${SPRITE_W}px`,
+            height: `${SPRITE_H}px`,
+            backgroundImage: `url(${config.spritesheetUrl})`,
+            backgroundPosition: `-${frameCol * SPRITE_W}px -${activeRow * SPRITE_H}px`,
+            transform: `scale(${config.scale})`,
+            transformOrigin: 'top left',
+            imageRendering: 'pixelated',
+            pointerEvents: 'none',
+          }}
+        />
+      </div>
+    </WithHoverTooltip>
   );
 }

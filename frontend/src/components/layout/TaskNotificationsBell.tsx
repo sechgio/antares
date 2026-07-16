@@ -5,6 +5,7 @@ import { useDueNotifications } from '../espacios/hooks/useDueNotifications';
 import { formatRelativeDate } from '../espacios/utils/dates';
 import type { DueNotification, DueUrgency } from '../espacios/utils/dueNotifications';
 import { writeEspaciosFocusTarget } from '../espacios/utils/focusTarget';
+import { HoverTooltip } from '@/components/ui/HoverTooltip';
 
 interface TaskNotificationsBellProps {
   onOpenEspacios?: () => void;
@@ -16,9 +17,9 @@ interface MenuPosition {
 }
 
 const URGENCY_DOT: Record<DueUrgency, string> = {
-  overdue: '#EF4444',
-  today: '#F59E0B',
-  soon: '#5F55EE',
+  overdue: 'var(--accent-red)',
+  today: 'var(--accent-yellow)',
+  soon: 'var(--accent-primary)',
 };
 
 const URGENCY_LABEL: Record<DueUrgency, string> = {
@@ -92,31 +93,36 @@ export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificati
   };
 
   const badgeLabel = count > 9 ? '9+' : String(count);
+  const tooltipLabel = count > 0 ? `${count} tarea${count === 1 ? '' : 's'} por vencer` : 'Notificaciones';
 
   return (
     <>
-      <button
-        ref={triggerRef}
-        type="button"
-        data-testid="titlebar-notifications-button"
-        aria-label={count > 0 ? `Notificaciones: ${count} tareas por vencer` : 'Notificaciones de tareas'}
-        title={count > 0 ? `${count} tarea${count === 1 ? '' : 's'} por vencer` : 'Notificaciones'}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-controls={open ? panelId : undefined}
-        onClick={() => setOpen((v) => !v)}
-        className="app-titlebar-button relative flex h-full w-10 items-center justify-center text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-      >
-        <Bell size={14} strokeWidth={1.8} />
-        {count > 0 && (
-          <span
-            className="absolute right-1.5 top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[var(--accent-red)] px-0.5 text-[9px] font-semibold leading-none text-white"
-            aria-hidden
-          >
-            {badgeLabel}
-          </span>
+      <div className="group relative flex h-full">
+        <button
+          ref={triggerRef}
+          type="button"
+          data-testid="titlebar-notifications-button"
+          aria-label={count > 0 ? `Notificaciones: ${count} tareas por vencer` : 'Notificaciones de tareas'}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-controls={open ? panelId : undefined}
+          onClick={() => setOpen((v) => !v)}
+          className="app-titlebar-button relative flex h-full w-10 items-center justify-center text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+        >
+          <Bell size={14} strokeWidth={1.8} />
+          {count > 0 && (
+            <span
+              className="absolute right-1.5 top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[var(--accent-red)] px-0.5 text-[9px] font-semibold leading-none text-[var(--text-on-accent)]"
+              aria-hidden
+            >
+              {badgeLabel}
+            </span>
+          )}
+        </button>
+        {!open && (
+          <HoverTooltip label={tooltipLabel} placement="bottom" groupHoverClass="group-hover:opacity-100" />
         )}
-      </button>
+      </div>
 
       {open &&
         createPortal(
@@ -125,7 +131,7 @@ export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificati
             id={panelId}
             role="dialog"
             aria-label="Tareas cercanas a vencer"
-            className="fixed z-[220] w-[320px] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] shadow-[0_16px_48px_color-mix(in_srgb,var(--bg-base)_60%,transparent),0_0_0_1px_color-mix(in_srgb,var(--border-medium)_40%,transparent)]"
+            className="fixed z-[220] w-[320px] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] shadow-[0_16px_48px_color-mix(in_srgb,var(--bg-base)_60%,transparent),0_0_0_1px_color-mix(in_srgb,var(--border-subtle)_80%,transparent)]"
             style={
               position
                 ? { top: position.top, right: position.right }
@@ -195,9 +201,9 @@ export default function TaskNotificationsBell({ onOpenEspacios }: TaskNotificati
                       <span
                         className={
                           item.urgency === 'overdue'
-                            ? 'font-medium text-[#EF4444]'
+                            ? 'font-medium text-[var(--accent-red)]'
                             : item.urgency === 'today'
-                              ? 'font-medium text-[#F59E0B]'
+                              ? 'font-medium text-[var(--accent-yellow)]'
                               : undefined
                         }
                       >

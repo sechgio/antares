@@ -1,6 +1,6 @@
 import { Crop, Download, FileImage, Gauge, Maximize2, Tag } from 'lucide-react';
 import { ASPECT_RATIO_OPTIONS, BatchSettings, ImageItem } from './types';
-import { OperationSection, SegmentedControl } from './ui';
+import { OperationSection, SegmentedControl, ThemeSelect, formControlClassName } from './ui';
 
 interface SettingsPanelProps {
   settings: BatchSettings;
@@ -11,6 +11,17 @@ interface SettingsPanelProps {
   onOpenCropEditor: () => void;
 }
 
+const fieldLabel = 'text-[10px] font-medium text-[var(--text-secondary)]';
+
+const FORMAT_OPTIONS = [
+  { value: 'original', label: 'Original' },
+  { value: 'jpeg', label: 'JPG' },
+  { value: 'png', label: 'PNG' },
+  { value: 'webp', label: 'WEBP' },
+  { value: 'avif', label: 'AVIF' },
+  { value: 'bmp', label: 'BMP' },
+] as const;
+
 export default function SettingsPanel({
   settings,
   previewNames,
@@ -20,34 +31,30 @@ export default function SettingsPanel({
   onOpenCropEditor,
 }: SettingsPanelProps) {
   return (
-    <aside className="custom-scrollbar flex flex-col gap-2.5 h-full overflow-y-auto xl:pr-1">
+    <aside className="custom-scrollbar flex h-full flex-col gap-1.5 overflow-y-auto xl:pr-0.5">
 
-      {/* Recorte */}
       <OperationSection
         title="Recorte"
-        icon={<Crop size={14} />}
+        icon={<Crop size={13} />}
         accentColor="#8B5CF6"
         enabled={settings.operations.cropEnabled}
         onToggle={(v) => onUpdateSettings((d) => { d.operations.cropEnabled = v; })}
         disabled={renameOnlyMode}
       >
-        <label className="block space-y-1.5">
-          <span className="text-[10px] font-mono text-[var(--text-muted)] uppercase tracking-widest">Relación</span>
-          <select
+        <label className="block space-y-1">
+          <span className={fieldLabel}>Relación</span>
+          <ThemeSelect
+            aria-label="Relación de aspecto"
             value={settings.crop.aspectRatio}
-            onChange={(e) => onUpdateSettings((draft) => { draft.crop.aspectRatio = e.target.value as BatchSettings['crop']['aspectRatio']; })}
-            className="w-full appearance-none rounded-lg border border-[var(--border-medium)] bg-[var(--bg-base)] px-3 py-2 text-[11px] font-mono text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent-primary)]"
-          >
-            {ASPECT_RATIO_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value} className="bg-[var(--bg-base)] text-[var(--text-primary)]">
-                {option.label}
-              </option>
-            ))}
-          </select>
+            options={ASPECT_RATIO_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            onChange={(value) => onUpdateSettings((draft) => {
+              draft.crop.aspectRatio = value as BatchSettings['crop']['aspectRatio'];
+            })}
+          />
         </label>
         {settings.crop.aspectRatio !== 'original' && (
-          <label className="block space-y-1.5">
-            <span className="text-[10px] font-mono text-[var(--text-muted)] uppercase tracking-widest">Dirección</span>
+          <label className="block space-y-1">
+            <span className={fieldLabel}>Dirección</span>
             <SegmentedControl
               value={settings.crop.cropOrigin}
               options={[
@@ -61,94 +68,87 @@ export default function SettingsPanel({
         <button
           onClick={onOpenCropEditor}
           disabled={!activeItem || !settings.operations.cropEnabled || settings.crop.aspectRatio === 'original'}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-surface)] px-4 py-2 text-[11px] font-mono text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] disabled:pointer-events-none disabled:opacity-30"
+          className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-input)] px-2 text-[11px] font-medium text-[var(--text-primary)] transition-[background-color,transform] duration-100 hover:border-[var(--accent-primary)]/40 active:scale-[0.96] motion-reduce:active:scale-100 disabled:pointer-events-none disabled:opacity-40"
         >
-          <Crop size={13} />
-          Ajustar recorte activo
+          <Crop size={12} />
+          Ajustar recorte
         </button>
       </OperationSection>
 
-      {/* Redimensionar */}
       <OperationSection
         title="Redimensionar"
-        icon={<Maximize2 size={14} />}
+        icon={<Maximize2 size={13} />}
         accentColor="#3B82F6"
         enabled={settings.operations.resizeEnabled}
         onToggle={(v) => onUpdateSettings((d) => { d.operations.resizeEnabled = v; })}
         disabled={renameOnlyMode}
       >
-        <div className="grid gap-3 grid-cols-2">
-          <label className="block space-y-1.5">
-            <span className="text-[10px] font-mono text-[var(--text-muted)] uppercase tracking-widest">Ancho max</span>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block space-y-1">
+            <span className={fieldLabel}>Ancho max</span>
             <input
               type="number"
               min="1"
               value={settings.resize.maxWidth}
               onChange={(e) => onUpdateSettings((draft) => { draft.resize.maxWidth = Math.max(1, Number(e.target.value) || 1); })}
-              className="w-full rounded-lg border border-[var(--border-medium)] bg-[var(--bg-base)] px-3 py-2 text-[11px] font-mono text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent-primary)]"
+              className={`${formControlClassName} tabular-nums`}
             />
           </label>
-          <label className="block space-y-1.5">
-            <span className="text-[10px] font-mono text-[var(--text-muted)] uppercase tracking-widest">Alto max</span>
+          <label className="block space-y-1">
+            <span className={fieldLabel}>Alto max</span>
             <input
               type="number"
               min="1"
               value={settings.resize.maxHeight}
               onChange={(e) => onUpdateSettings((draft) => { draft.resize.maxHeight = Math.max(1, Number(e.target.value) || 1); })}
-              className="w-full rounded-lg border border-[var(--border-medium)] bg-[var(--bg-base)] px-3 py-2 text-[11px] font-mono text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent-primary)]"
+              className={`${formControlClassName} tabular-nums`}
             />
           </label>
         </div>
-        <label className="flex cursor-pointer items-center justify-between rounded-lg border border-[var(--border-medium)] bg-[var(--bg-base)] px-3 py-2.5 transition-colors hover:bg-[var(--bg-surface)]">
-          <span className="text-[11px] font-mono text-[var(--text-primary)]">No ampliar pequeñas</span>
+        <label className="flex cursor-pointer items-center justify-between rounded-lg border border-[var(--border-medium)] bg-[var(--bg-input)] px-2.5 py-1.5 transition-colors hover:border-[var(--accent-primary)]/35">
+          <span className="text-[11px] font-medium text-[var(--text-primary)]">No ampliar pequeñas</span>
           <input
             type="checkbox"
             checked={settings.resize.noUpscale}
             onChange={(e) => onUpdateSettings((draft) => { draft.resize.noUpscale = e.target.checked; })}
-            className="h-3.5 w-3.5 rounded border-[var(--border-medium)] bg-[var(--bg-base)] text-[var(--accent-primary)] focus:ring-[var(--accent-primary)] focus:ring-offset-0"
+            className="h-3.5 w-3.5 rounded border-[var(--border-medium)] bg-[var(--bg-elevated)] text-[var(--accent-primary)] focus:ring-[var(--accent-primary)] focus:ring-offset-0"
           />
         </label>
       </OperationSection>
 
-      {/* Formato */}
       <OperationSection
         title="Formato"
-        icon={<FileImage size={14} />}
+        icon={<FileImage size={13} />}
         accentColor="#10B981"
         enabled={settings.operations.formatEnabled}
         onToggle={(v) => onUpdateSettings((d) => { d.operations.formatEnabled = v; })}
         disabled={renameOnlyMode}
       >
-        <label className="block space-y-1.5">
-          <span className="text-[10px] font-mono text-[var(--text-muted)] uppercase tracking-widest">Salida</span>
-          <select
+        <label className="block space-y-1">
+          <span className={fieldLabel}>Salida</span>
+          <ThemeSelect
+            aria-label="Formato de salida"
             value={settings.format.outputFormat}
-            onChange={(e) => onUpdateSettings((draft) => { draft.format.outputFormat = e.target.value as BatchSettings['format']['outputFormat']; })}
-            className="w-full appearance-none rounded-lg border border-[var(--border-medium)] bg-[var(--bg-base)] px-3 py-2 text-[11px] font-mono text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent-primary)]"
-          >
-            <option value="original" className="bg-[var(--bg-base)]">Original</option>
-            <option value="jpeg" className="bg-[var(--bg-base)]">JPG</option>
-            <option value="png" className="bg-[var(--bg-base)]">PNG</option>
-            <option value="webp" className="bg-[var(--bg-base)]">WEBP</option>
-            <option value="avif" className="bg-[var(--bg-base)]">AVIF</option>
-            <option value="bmp" className="bg-[var(--bg-base)]">BMP</option>
-          </select>
+            options={[...FORMAT_OPTIONS]}
+            onChange={(value) => onUpdateSettings((draft) => {
+              draft.format.outputFormat = value as BatchSettings['format']['outputFormat'];
+            })}
+          />
         </label>
       </OperationSection>
 
-      {/* Compresión */}
       <OperationSection
         title="Compresión"
-        icon={<Gauge size={14} />}
+        icon={<Gauge size={13} />}
         accentColor="#F59E0B"
         enabled={settings.operations.compressionEnabled}
         onToggle={(v) => onUpdateSettings((d) => { d.operations.compressionEnabled = v; })}
         disabled={renameOnlyMode}
       >
-        <label className="block space-y-1.5">
-          <span className="flex items-center justify-between text-[10px] font-mono text-[var(--text-muted)] uppercase tracking-widest">
+        <label className="block space-y-1">
+          <span className={`flex items-center justify-between ${fieldLabel}`}>
             <span>Calidad</span>
-            <span className="text-[var(--text-primary)]">{Math.round(settings.compression.quality * 100)}%</span>
+            <span className="font-mono tabular-nums text-[var(--text-primary)]">{Math.round(settings.compression.quality * 100)}%</span>
           </span>
           <input
             type="range"
@@ -157,71 +157,70 @@ export default function SettingsPanel({
             step="0.05"
             value={settings.compression.quality}
             onChange={(e) => onUpdateSettings((draft) => { draft.compression.quality = Number(e.target.value); })}
-            className="w-full accent-[var(--text-primary)] opacity-80 hover:opacity-100"
+            className="w-full accent-[var(--accent-primary)]"
           />
         </label>
-        <label className="block space-y-1.5">
-          <span className="text-[10px] font-mono text-[var(--text-muted)] uppercase tracking-widest">Peso máximo (MB)</span>
+        <label className="block space-y-1">
+          <span className={fieldLabel}>Peso máximo (MB)</span>
           <input
             type="number"
             min="0.1"
             step="0.1"
             value={settings.compression.maxSizeMB}
             onChange={(e) => onUpdateSettings((draft) => { draft.compression.maxSizeMB = Math.max(0.1, Number(e.target.value) || 0.1); })}
-            className="w-full rounded-lg border border-[var(--border-medium)] bg-[var(--bg-base)] px-3 py-2 text-[11px] font-mono text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent-primary)]"
+            className={`${formControlClassName} tabular-nums`}
           />
         </label>
       </OperationSection>
 
-      {/* Renombrar — never disabled, even in rename-only mode */}
       <OperationSection
         title="Renombrar"
-        icon={<Tag size={14} />}
+        icon={<Tag size={13} />}
         accentColor="#06B6D4"
         enabled={settings.operations.renameEnabled}
         onToggle={(v) => onUpdateSettings((d) => { d.operations.renameEnabled = v; })}
       >
-        <div className="grid gap-3 grid-cols-2">
-          <label className="block space-y-1.5">
-            <span className="text-[10px] font-mono text-[var(--text-muted)] uppercase tracking-widest">Prefijo</span>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block space-y-1">
+            <span className={fieldLabel}>Prefijo</span>
             <input
               type="text"
               value={settings.rename.prefix}
               onChange={(e) => onUpdateSettings((draft) => { draft.rename.prefix = e.target.value; })}
-              className="w-full rounded-lg border border-[var(--border-medium)] bg-[var(--bg-base)] px-3 py-2 text-[11px] font-mono text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent-primary)]"
+              className={formControlClassName}
             />
           </label>
-          <label className="block space-y-1.5">
-            <span className="text-[10px] font-mono text-[var(--text-muted)] uppercase tracking-widest">Inicio</span>
+          <label className="block space-y-1">
+            <span className={fieldLabel}>Inicio</span>
             <input
               type="number"
               min="0"
               value={settings.rename.startAt}
               onChange={(e) => onUpdateSettings((draft) => { draft.rename.startAt = Math.max(0, Number(e.target.value) || 0); })}
-              className="w-full rounded-lg border border-[var(--border-medium)] bg-[var(--bg-base)] px-3 py-2 text-[11px] font-mono text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent-primary)]"
+              className={`${formControlClassName} tabular-nums`}
             />
           </label>
         </div>
       </OperationSection>
+
       <div
-        className={`shrink-0 overflow-hidden rounded-[14px] border border-[var(--border-medium)] bg-[var(--bg-surface)] px-4 py-3 transition-opacity ${settings.operations.renameEnabled ? 'opacity-100' : 'opacity-60'}`}
-        style={{ borderLeftColor: '#06B6D4', borderLeftWidth: '3px' }}
+        className={`shrink-0 overflow-hidden rounded-xl border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-3 py-2 ${settings.operations.renameEnabled ? '' : 'opacity-60'}`}
+        style={{ borderLeftWidth: 3, borderLeftColor: '#06B6D4' }}
       >
-        <p className="text-[10px] font-mono text-[var(--text-muted)] uppercase tracking-widest">
-          Preview {settings.operations.renameEnabled ? '' : '(activa Renombrar para aplicar)'}
+        <p className={fieldLabel}>
+          Preview {settings.operations.renameEnabled ? '' : '(activa Renombrar)'}
         </p>
-        <p className="mt-1 text-[11px] font-mono text-[var(--text-primary)]/90 truncate">{previewNames.join(', ')}</p>
+        <p className="mt-0.5 truncate font-mono text-[11px] text-[var(--text-primary)]">{previewNames.join(', ')}</p>
       </div>
 
-      {/* Exportar — always visible, no toggle */}
       <OperationSection
         title="Exportar"
-        icon={<Download size={14} />}
+        icon={<Download size={13} />}
         accentColor="#6366F1"
         enabled={true}
       >
-        <label className="block space-y-1.5">
-          <span className="text-[10px] font-mono uppercase tracking-widest text-[var(--text-muted)]">Carpeta ZIP</span>
+        <label className="block space-y-1">
+          <span className={fieldLabel}>Carpeta ZIP</span>
           <input
             type="text"
             value={settings.export.zipName}
@@ -229,7 +228,7 @@ export default function SettingsPanel({
               draft.export.mode = 'zip';
               draft.export.zipName = e.target.value;
             })}
-            className="w-full rounded-lg border border-[var(--border-medium)] bg-[var(--bg-base)] px-3 py-2 text-[11px] font-mono text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent-primary)]"
+            className={formControlClassName}
           />
         </label>
       </OperationSection>

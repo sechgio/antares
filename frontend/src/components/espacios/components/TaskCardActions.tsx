@@ -1,3 +1,4 @@
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { Check, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -71,51 +72,50 @@ export default function TaskCardActions({
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
-      <button
-        type="button"
-        className={`${BTN} ${isDone ? 'text-[var(--accent-green,#22c55e)]' : ''}`}
-        aria-label={isDone ? `Reabrir «${title}»` : `Completar «${title}»`}
-        title={isDone ? 'Reabrir' : 'Completar'}
-        onClick={onComplete}
-      >
-        <Check className="h-3.5 w-3.5" strokeWidth={2.25} />
-      </button>
+      <WithHoverTooltip label={isDone ? 'Reabrir' : 'Completar'} placement="bottom">
+        <button
+          type="button"
+          className={`${BTN} ${isDone ? 'text-[var(--accent-green,#22c55e)]' : ''}`}
+          aria-label={isDone ? `Reabrir «${title}»` : `Completar «${title}»`}
+          onClick={onComplete}
+        >
+          <Check className="h-3.5 w-3.5" strokeWidth={2.25} />
+        </button>
+      </WithHoverTooltip>
 
       {onAdd && (
+        <WithHoverTooltip label="Nueva tarea" placement="bottom">
+          <button type="button" className={BTN} aria-label="Nueva tarea" onClick={onAdd}>
+            <Plus className="h-3.5 w-3.5" strokeWidth={2.25} />
+          </button>
+        </WithHoverTooltip>
+      )}
+
+      <WithHoverTooltip label="Editar" placement="bottom">
         <button
           type="button"
           className={BTN}
-          aria-label="Nueva tarea"
-          title="Nueva tarea"
-          onClick={onAdd}
+          aria-label={`Editar «${title}»`}
+          onClick={onEdit}
         >
-          <Plus className="h-3.5 w-3.5" strokeWidth={2.25} />
+          <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
         </button>
-      )}
+      </WithHoverTooltip>
 
-      <button
-        type="button"
-        className={BTN}
-        aria-label={`Editar «${title}»`}
-        title="Editar"
-        onClick={onEdit}
-      >
-        <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
-      </button>
-
-      <button
-        ref={moreRef}
-        type="button"
-        className={BTN}
-        aria-label={`Más opciones de «${title}»`}
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        aria-controls={menuOpen ? menuId : undefined}
-        title="Más"
-        onClick={() => setMenuOpen((v) => !v)}
-      >
-        <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={2.25} />
-      </button>
+      <WithHoverTooltip label="Más" placement="bottom">
+        <button
+          ref={moreRef}
+          type="button"
+          className={BTN}
+          aria-label={`Más opciones de «${title}»`}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          aria-controls={menuOpen ? menuId : undefined}
+          onClick={() => setMenuOpen((v) => !v)}
+        >
+          <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={2.25} />
+        </button>
+      </WithHoverTooltip>
 
       {menuOpen &&
         menuPos &&

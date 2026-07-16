@@ -10,6 +10,7 @@
   --accent-primary-hover: #8B93FF;
   --accent-primary-glow: rgba(94, 106, 210, 0.28);
   --text-on-accent: #FFFFFF;
+  --text-on-danger: #FFFFFF;
   --accent-secondary: #22C7A9;
   --accent-orange: var(--accent-primary);
   --accent-orange-hover: var(--accent-primary-hover);
@@ -26,6 +27,39 @@
   --selection-bg: rgba(94, 106, 210, 0.35);
   --selection-fg: #FFFFFF;
   --ease-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);
+  /* Motion tokens (Emil Kowalski / improve-animations) */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* shadcn semantic tokens → Antares theme vars */
+  --background: var(--bg-base);
+  --foreground: var(--text-primary);
+  --card: var(--bg-surface);
+  --card-foreground: var(--text-primary);
+  --popover: var(--bg-surface);
+  --popover-foreground: var(--text-primary);
+  --primary: var(--accent-primary);
+  --primary-foreground: var(--text-on-accent);
+  --secondary: var(--bg-elevated);
+  --secondary-foreground: var(--text-primary);
+  --muted: var(--bg-elevated);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--bg-elevated);
+  --accent-foreground: var(--text-primary);
+  --destructive: var(--accent-red);
+  --border: var(--border-subtle);
+  --input: var(--bg-input);
+  --ring: var(--accent-primary);
+  --radius: 0.625rem;
+  --sidebar: var(--bg-base);
+  --sidebar-foreground: var(--text-primary);
+  --sidebar-primary: var(--accent-primary);
+  --sidebar-primary-foreground: var(--text-on-accent);
+  --sidebar-accent: var(--bg-elevated);
+  --sidebar-accent-foreground: var(--text-primary);
+  --sidebar-border: var(--border-subtle);
+  --sidebar-ring: var(--accent-primary);
 
   --mc-canvas: #0A0A0A;
   --mc-lifted: #1A1A1A;
@@ -253,7 +287,10 @@
     cursor: pointer;
     font-family: inherit;
     outline: none;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+    transition:
+      border-color 140ms var(--ease-out),
+      box-shadow 140ms var(--ease-out),
+      background-color 140ms var(--ease-out);
   }
 
   .app-date-picker-trigger:hover:not(:disabled) {
@@ -263,12 +300,16 @@
   .app-date-picker-trigger:focus-visible,
   .app-date-picker-trigger.is-open {
     border-color: var(--accent-primary);
-    box-shadow: 0 0 0 3px var(--accent-primary-glow);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-primary) 28%, transparent);
   }
 
   .app-date-picker-trigger:disabled {
     cursor: not-allowed;
     opacity: 0.5;
+  }
+
+  .app-date-picker-trigger:active:not(:disabled) {
+    transform: scale(0.985);
   }
 
   .app-date-picker-trigger-sm {
@@ -291,11 +332,21 @@
     color: var(--text-muted);
   }
 
+  .app-date-picker-trigger.is-open .app-date-picker-trigger-icon,
+  .app-date-picker-trigger:hover:not(:disabled) .app-date-picker-trigger-icon {
+    color: var(--accent-primary);
+  }
+
   .app-date-picker-trigger-value {
     flex: 1;
     min-width: 0;
     text-align: left;
     font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .app-date-picker-trigger-value.is-placeholder {
@@ -304,78 +355,106 @@
   }
 
   .app-date-picker-popup {
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
-    z-index: 100;
-    width: min(100%, 292px);
-    padding: 14px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 14px;
-    background: var(--bg-surface);
+    position: fixed;
+    z-index: 200;
+    width: 248px;
+    padding: 10px;
+    border: 1px solid color-mix(in srgb, var(--border-medium) 55%, transparent);
+    border-radius: 12px;
+    background: var(--bg-elevated);
     color: var(--text-primary);
     box-shadow:
-      0 18px 40px color-mix(in srgb, var(--bg-base) 55%, transparent),
-      0 0 0 1px color-mix(in srgb, var(--border-medium) 35%, transparent);
-    animation: scaleIn 0.18s var(--ease-smooth) forwards;
+      0 12px 28px color-mix(in srgb, var(--bg-base) 62%, transparent),
+      0 0 0 0.5px color-mix(in srgb, var(--text-primary) 8%, transparent);
+    animation: appDatePickerIn 160ms var(--ease-out) forwards;
+    transform-origin: top center;
+  }
+
+  @keyframes appDatePickerIn {
+    from {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .app-date-picker-popup {
+      animation: none;
+    }
+
+    .app-date-picker-trigger:active:not(:disabled) {
+      transform: none;
+    }
   }
 
   .app-date-picker-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
-    margin-bottom: 12px;
+    gap: 0.25rem;
+    margin-bottom: 6px;
+    padding: 0 2px;
   }
 
   .app-date-picker-month {
     flex: 1;
     text-align: center;
-    font-size: 0.88rem;
-    font-weight: 700;
+    font-size: 0.8125rem;
+    font-weight: 600;
     color: var(--text-primary);
-    letter-spacing: -0.01em;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
   }
 
   .app-date-picker-nav {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 30px;
-    height: 30px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 999px;
-    background: var(--bg-elevated);
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
     color: var(--text-secondary);
     cursor: pointer;
     padding: 0;
-    transition: all 0.2s ease;
+    transition:
+      background-color 120ms var(--ease-out),
+      color 120ms var(--ease-out);
   }
 
   .app-date-picker-nav:hover {
-    border-color: var(--accent-primary);
-    color: var(--accent-primary);
-    background: color-mix(in srgb, var(--accent-primary) 10%, var(--bg-elevated));
+    color: var(--text-primary);
+    background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  }
+
+  .app-date-picker-nav:active {
+    background: color-mix(in srgb, var(--text-primary) 12%, transparent);
   }
 
   .app-date-picker-weekdays,
   .app-date-picker-days {
     display: grid;
     grid-template-columns: repeat(7, minmax(0, 1fr));
-    gap: 2px;
+    gap: 1px;
   }
 
   .app-date-picker-weekdays {
-    margin-bottom: 6px;
+    margin-bottom: 2px;
   }
 
   .app-date-picker-weekday {
-    padding: 4px 0;
+    padding: 2px 0;
     text-align: center;
-    font-size: 0.62rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
+    font-size: 0.5625rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
     color: var(--text-muted);
+    text-transform: uppercase;
   }
 
   .app-date-picker-day {
@@ -383,40 +462,61 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid transparent;
+    border: none;
     border-radius: 999px;
     background: transparent;
     color: var(--text-primary);
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
     cursor: pointer;
     padding: 0;
     font-family: inherit;
-    transition: all 0.15s ease;
+    position: relative;
+    transition:
+      background-color 120ms var(--ease-out),
+      color 120ms var(--ease-out);
   }
 
   .app-date-picker-day.is-outside {
     color: var(--text-muted);
-    opacity: 0.55;
+    opacity: 0.45;
   }
 
   .app-date-picker-day:hover:not(.is-selected) {
-    background: var(--bg-elevated);
-    border-color: var(--border-subtle);
+    background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  }
+
+  .app-date-picker-day.is-today:not(.is-selected)::after {
+    content: '';
+    position: absolute;
+    bottom: 3px;
+    left: 50%;
+    width: 3px;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--accent-primary);
+    transform: translateX(-50%);
   }
 
   .app-date-picker-day.is-today:not(.is-selected) {
-    border-color: color-mix(in srgb, var(--accent-primary) 55%, transparent);
     color: var(--accent-primary);
-    font-weight: 700;
+    font-weight: 600;
   }
 
   .app-date-picker-day.is-selected {
     background: var(--accent-primary);
-    border-color: var(--accent-primary);
     color: var(--text-on-accent);
-    font-weight: 700;
-    box-shadow: 0 6px 16px color-mix(in srgb, var(--accent-primary) 35%, transparent);
+    font-weight: 600;
+  }
+
+  .app-date-picker-day.is-selected:hover {
+    background: var(--accent-primary-hover);
+  }
+
+  .app-date-picker-day:active:not(.is-selected) {
+    background: color-mix(in srgb, var(--text-primary) 12%, transparent);
   }
 
   .app-date-picker-footer {
@@ -424,30 +524,40 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
-    margin-top: 12px;
-    padding-top: 10px;
-    border-top: 1px solid var(--border-subtle);
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 0.5px solid color-mix(in srgb, var(--text-primary) 10%, transparent);
   }
 
   .app-date-picker-action {
     border: none;
     background: transparent;
-    color: var(--accent-primary);
-    font-size: 0.78rem;
-    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 0.6875rem;
+    font-weight: 550;
     cursor: pointer;
-    padding: 4px 6px;
-    border-radius: 6px;
+    padding: 3px 6px;
+    border-radius: 5px;
     font-family: inherit;
-    transition: background-color 0.2s ease, color 0.2s ease;
+    letter-spacing: -0.01em;
+    transition:
+      background-color 120ms var(--ease-out),
+      color 120ms var(--ease-out);
   }
 
   .app-date-picker-action:hover {
-    background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+    color: var(--text-primary);
+    background: color-mix(in srgb, var(--text-primary) 8%, transparent);
   }
 
   .app-date-picker-action.is-primary {
     margin-left: auto;
+    color: var(--accent-primary);
+  }
+
+  .app-date-picker-action.is-primary:hover {
+    color: var(--accent-primary-hover);
+    background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
   }
 }
 
@@ -716,7 +826,6 @@
   }
 }
 
-
 /* ── Zoom Slider (Formatos topbar) ─────────────────────────────── */
 .zoom-slider {
   -webkit-appearance: none;
@@ -767,4 +876,3 @@
   border-radius: 2px;
   background: var(--border-medium);
 }
-

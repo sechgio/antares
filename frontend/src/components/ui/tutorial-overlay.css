@@ -41,10 +41,12 @@
     top: 50%;
     left: 50%;
     z-index: 9999;
-    background: var(--bg-surface);
+    background: var(--bg-base);
     border: 1px solid var(--border-subtle);
     border-radius: 16px;
-    box-shadow: 0 16px 48px color-mix(in srgb, var(--bg-base) 44%, transparent);
+    box-shadow:
+        0 16px 48px color-mix(in srgb, var(--bg-base) 55%, transparent),
+        0 0 0 1px color-mix(in srgb, var(--border-subtle) 80%, transparent);
     width: 90%;
     max-width: 480px;
     padding: 24px;

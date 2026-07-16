@@ -45,7 +45,7 @@ export default function ModalShell({
       ref={overlayRef}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in"
       style={{
-        background: 'color-mix(in srgb, var(--bg-base) 72%, transparent)',
+        backgroundColor: 'color-mix(in srgb, var(--bg-base) 85%, transparent)',
         backdropFilter: 'blur(6px)',
       }}
       onClick={(e) => {
@@ -53,7 +53,11 @@ export default function ModalShell({
       }}
     >
       <div
-        className={`w-full ${maxWidth} animate-scale-in rounded-2xl border border-[var(--border-medium)] bg-[var(--bg-surface)] shadow-[0_24px_48px_color-mix(in_srgb,var(--bg-base)_55%,transparent)]`}
+        className={`w-full ${maxWidth} animate-scale-in rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-base)]`}
+        style={{
+          boxShadow:
+            '0 24px 48px color-mix(in srgb, var(--bg-base) 55%, transparent), 0 0 0 1px color-mix(in srgb, var(--border-subtle) 80%, transparent)',
+        }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="espacios-modal-title"
@@ -81,7 +85,7 @@ export default function ModalShell({
           <button
             type="button"
             onClick={onClose}
-            className="shrink-0 rounded-lg p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            className="shrink-0 rounded-lg p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)]"
             aria-label="Cerrar"
           >
             <X className="h-4 w-4" />
@@ -91,7 +95,7 @@ export default function ModalShell({
         <div className="px-5 py-4">{children}</div>
 
         {footer && (
-          <div className="flex items-center justify-end gap-2 border-t border-[var(--border-subtle)] bg-[var(--bg-elevated)]/40 px-5 py-3.5">
+          <div className="flex items-center justify-end gap-2 border-t border-[var(--border-subtle)] bg-[var(--bg-surface)]/60 px-5 py-3.5">
             {footer}
           </div>
         )}
