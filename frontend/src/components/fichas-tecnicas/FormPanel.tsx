@@ -1,3 +1,4 @@
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { Save, Trash2, Upload, X } from 'lucide-react';
 import {
   normalizeFicha,
@@ -27,35 +28,75 @@ function LogoSlot({
   onLogoChange: (file: File | null) => void;
 }) {
   return (
-    <div className={`tr-logo-chip${url ? ' tr-logo-chip--filled' : ''}`}>
-      <label className="tr-logo-chip-hit" title={url ? 'Cambiar logo' : 'Subir logo'}>
-        <span className={`tr-logo-chip-thumb${url ? '' : ' tr-logo-chip-thumb--empty'}`}>
-          {url ? <img src={url} alt="" /> : <Upload size={13} strokeWidth={2} />}
-        </span>
-        <span className="tr-logo-chip-meta">
-          <span className="tr-logo-chip-label">Logo</span>
-          <span className="tr-logo-chip-hint">{url ? 'Clic para cambiar' : 'PNG · JPG · WebP'}</span>
-        </span>
-        <input
-          type="file"
-          accept="image/*"
-          onChange={(event) => {
-            const file = event.target.files?.[0] || null;
-            event.target.value = '';
-            onLogoChange(file);
-          }}
-        />
-      </label>
+    <div className={`tr-logo-chip ft-logo-toolbar${url ? ' tr-logo-chip--filled' : ''}`}>
+      <WithHoverTooltip label={url ? 'Cambiar logo' : 'Subir logo'} placement="bottom">
+        <label className="tr-logo-chip-hit">
+          <span className={`tr-logo-chip-thumb${url ? '' : ' tr-logo-chip-thumb--empty'}`}>
+            {url ? <img src={url} alt="" /> : <Upload size={12} strokeWidth={2} />}
+          </span>
+          <span className="tr-logo-chip-meta">
+            <span className="tr-logo-chip-label">Logo</span>
+            <span className="tr-logo-chip-hint">{url ? 'Cambiar' : 'PNG · JPG · WebP'}</span>
+          </span>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(event) => {
+              const file = event.target.files?.[0] || null;
+              event.target.value = '';
+              onLogoChange(file);
+            }}
+          />
+        </label>
+      </WithHoverTooltip>
       {url && (
-        <button
-          type="button"
-          className="tr-logo-chip-clear"
-          onClick={() => onLogoChange(null)}
-          title="Quitar logo"
-          aria-label="Quitar logo"
-        >
-          <X size={12} strokeWidth={2.25} />
-        </button>
+        <WithHoverTooltip label="Quitar logo" placement="bottom">
+          <button
+            type="button"
+            className="tr-logo-chip-clear"
+            onClick={() => onLogoChange(null)}
+            aria-label="Quitar logo"
+          >
+            <X size={11} strokeWidth={2.25} />
+          </button>
+        </WithHoverTooltip>
+      )}
+    </div>
+  );
+}
+
+function FormHeaderActions({
+  logoLeft,
+  onLogoChange,
+  hasChanges,
+  busy,
+  onSave,
+  onDelete,
+  showSave,
+}: {
+  logoLeft: string | null;
+  onLogoChange: (file: File | null) => void;
+  hasChanges?: boolean;
+  busy?: boolean;
+  onSave?: () => void;
+  onDelete?: () => void;
+  showSave: boolean;
+}) {
+  return (
+    <div className="tr-header-actions ft-form-actions">
+      <LogoSlot url={logoLeft} onLogoChange={onLogoChange} />
+      {showSave && (
+        <>
+          <button type="button" className="tr-primary" disabled={!hasChanges || busy} onClick={onSave}>
+            <Save size={13} />
+            Guardar
+          </button>
+          <WithHoverTooltip label="Eliminar" placement="left">
+            <button type="button" className="tr-danger tr-icon-button" disabled={busy} onClick={onDelete}>
+              <Trash2 size={13} />
+            </button>
+          </WithHoverTooltip>
+        </>
       )}
     </div>
   );
@@ -76,10 +117,20 @@ const TRATAMIENTO_OPTIONS: Array<[Exclude<keyof TiposTratamiento, 'otros'>, stri
 ];
 
 const SATISFACCION_OPTIONS: Array<{ value: SatisfaccionType; label: string; emoji: string }> = [
-  { value: 'muy_satisfecho', label: 'Muy Satisfecho', emoji: '😊' },
+  { value: 'muy_satisfecho', label: 'Muy satisfecho', emoji: '😊' },
   { value: 'satisfecho', label: 'Satisfecho', emoji: '🙂' },
   { value: 'regular', label: 'Regular', emoji: '😐' },
   { value: 'insatisfecho', label: 'Insatisfecho', emoji: '🙁' },
+];
+
+const PRODUCTO_FIELDS: Array<[keyof ProductoQuimico, string]> = [
+  ['producto', 'Producto'],
+  ['composicion', 'Composición'],
+  ['lote', 'Lote'],
+  ['fecha_vencimiento', 'Vencimiento'],
+  ['unidad', 'Unidad'],
+  ['concentracion', 'Concentración'],
+  ['cantidad', 'Cantidad'],
 ];
 
 export default function FormPanel({
@@ -94,21 +145,17 @@ export default function FormPanel({
 }: Props) {
   if (!ficha) {
     return (
-      <aside className="tr-panel tr-form">
-        <div className="tr-panel-header">
-          <div>
+      <aside className="tr-panel tr-form ft-form">
+        <div className="tr-panel-header ft-form-header">
+          <div className="ft-form-brand">
             <p className="tr-eyebrow">Editor</p>
             <h2>Plantilla</h2>
           </div>
+          <FormHeaderActions logoLeft={logoLeft} onLogoChange={onLogoChange} showSave={false} />
         </div>
         <div className="tr-form-scroll">
-          <section className="tr-section tr-section-logos">
-            <LogoSlot url={logoLeft} onLogoChange={onLogoChange} />
-          </section>
-          <div className="tr-empty" style={{ minHeight: 160 }}>
+          <div className="tr-empty ft-form-empty">
             Selecciona una ficha o pulsa <strong>Nuevo</strong> para editar.
-            <br />
-            El centro muestra la plantilla A4; <strong>PDF</strong> exporta la plantilla en blanco.
           </div>
         </div>
       </aside>
@@ -137,29 +184,24 @@ export default function FormPanel({
   };
 
   return (
-    <aside className="tr-panel tr-form">
-      <div className="tr-panel-header">
-        <div>
+    <aside className="tr-panel tr-form ft-form">
+      <div className="tr-panel-header ft-form-header">
+        <div className="ft-form-brand">
           <p className="tr-eyebrow">Editor</p>
-          <h2>{safe.os_numero || safe.id}</h2>
+          <h2 className="tabular-nums">{safe.os_numero || safe.id}</h2>
         </div>
-        <div className="tr-header-actions">
-          <span className={`tr-change-dot ${hasChanges ? 'dirty' : ''}`} title={hasChanges ? 'Cambios sin guardar' : 'Sin cambios'} />
-          <button type="button" className="tr-primary" disabled={!hasChanges || busy} onClick={onSave}>
-            <Save size={14} />
-            Guardar
-          </button>
-          <button type="button" className="tr-danger tr-icon-button" disabled={busy} onClick={onDelete} title="Eliminar ficha">
-            <Trash2 size={14} />
-          </button>
-        </div>
+        <FormHeaderActions
+          logoLeft={logoLeft}
+          onLogoChange={onLogoChange}
+          hasChanges={hasChanges}
+          busy={busy}
+          onSave={onSave}
+          onDelete={onDelete}
+          showSave
+        />
       </div>
 
       <div className="tr-form-scroll">
-        <section className="tr-section tr-section-logos">
-          <LogoSlot url={logoLeft} onLogoChange={onLogoChange} />
-        </section>
-
         <section className="tr-section">
           <h3>Información general</h3>
           <div className="tr-grid-2">
@@ -169,13 +211,17 @@ export default function FormPanel({
             </label>
             <label className="tr-field">
               <span>Fecha</span>
-              <input value={safe.fecha} onChange={(e) => patch({ fecha: e.target.value })} placeholder="YYYY-MM-DD" />
+              <input
+                value={safe.fecha}
+                onChange={(e) => patch({ fecha: e.target.value })}
+                placeholder="YYYY-MM-DD"
+              />
             </label>
-            <label className="tr-field" style={{ gridColumn: '1 / -1' }}>
+            <label className="tr-field ft-span-full">
               <span>Cliente</span>
               <input value={safe.cliente} onChange={(e) => patch({ cliente: e.target.value })} />
             </label>
-            <label className="tr-field" style={{ gridColumn: '1 / -1' }}>
+            <label className="tr-field ft-span-full">
               <span>Dirección</span>
               <input value={safe.direccion} onChange={(e) => patch({ direccion: e.target.value })} />
             </label>
@@ -214,26 +260,22 @@ export default function FormPanel({
 
         <section className="tr-section">
           <h3>Diagnóstico del área</h3>
-          <label className="tr-field">
-            <textarea
-              className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2 text-xs text-[var(--text-primary)]"
-              rows={3}
-              value={safe.diagnostico_area}
-              onChange={(e) => patch({ diagnostico_area: e.target.value })}
-            />
-          </label>
+          <textarea
+            className="ft-textarea"
+            rows={2}
+            value={safe.diagnostico_area}
+            onChange={(e) => patch({ diagnostico_area: e.target.value })}
+          />
         </section>
 
         <section className="tr-section">
           <h3>Condición sanitaria</h3>
-          <label className="tr-field">
-            <textarea
-              className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2 text-xs text-[var(--text-primary)]"
-              rows={2}
-              value={safe.condicion_sanitaria}
-              onChange={(e) => patch({ condicion_sanitaria: e.target.value })}
-            />
-          </label>
+          <textarea
+            className="ft-textarea"
+            rows={2}
+            value={safe.condicion_sanitaria}
+            onChange={(e) => patch({ condicion_sanitaria: e.target.value })}
+          />
         </section>
 
         <section className="tr-section">
@@ -259,20 +301,10 @@ export default function FormPanel({
         <section className="tr-section">
           <h3>Productos químicos / biológicos</h3>
           {safe.productos.map((prod, idx) => (
-            <div key={idx} className="tr-inspection-row">
-              <span>Producto {idx + 1}</span>
+            <div key={idx} className="tr-inspection-row ft-product-row">
+              <span className="ft-product-label">Producto {idx + 1}</span>
               <div className="tr-grid-2">
-                {(
-                  [
-                    ['producto', 'Producto'],
-                    ['composicion', 'Composición'],
-                    ['lote', 'Lote'],
-                    ['fecha_vencimiento', 'Vencimiento'],
-                    ['unidad', 'Unidad'],
-                    ['concentracion', 'Concentración'],
-                    ['cantidad', 'Cantidad'],
-                  ] as Array<[keyof ProductoQuimico, string]>
-                ).map(([field, label]) => (
+                {PRODUCTO_FIELDS.map(([field, label]) => (
                   <label key={field} className="tr-field">
                     <span>{label}</span>
                     <input value={prod[field]} onChange={(e) => patchProducto(idx, field, e.target.value)} />
@@ -286,7 +318,7 @@ export default function FormPanel({
         <section className="tr-section">
           <h3>Acciones correctivas</h3>
           <textarea
-            className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2 text-xs text-[var(--text-primary)]"
+            className="ft-textarea"
             rows={2}
             value={safe.acciones_correctivas}
             onChange={(e) => patch({ acciones_correctivas: e.target.value })}
@@ -296,7 +328,7 @@ export default function FormPanel({
         <section className="tr-section">
           <h3>Áreas tratadas</h3>
           <textarea
-            className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2 text-xs text-[var(--text-primary)]"
+            className="ft-textarea"
             rows={2}
             value={safe.areas_tratadas}
             onChange={(e) => patch({ areas_tratadas: e.target.value })}
@@ -325,9 +357,12 @@ export default function FormPanel({
               <span>Hora término</span>
               <input value={safe.hora_termino} onChange={(e) => patch({ hora_termino: e.target.value })} />
             </label>
-            <label className="tr-field" style={{ gridColumn: '1 / -1' }}>
+            <label className="tr-field ft-span-full">
               <span>N° certificado</span>
-              <input value={safe.numero_certificado} onChange={(e) => patch({ numero_certificado: e.target.value })} />
+              <input
+                value={safe.numero_certificado}
+                onChange={(e) => patch({ numero_certificado: e.target.value })}
+              />
             </label>
           </div>
         </section>
@@ -335,10 +370,10 @@ export default function FormPanel({
         <section className="tr-section">
           <h3>Observaciones y recomendaciones</h3>
           <div className="tr-grid-2">
-            <div className="tr-field">
-              <span>Observaciones</span>
+            <div className="ft-obs-col">
+              <span className="ft-obs-heading">Observaciones</span>
               {(['a', 'b', 'c'] as const).map((letter) => (
-                <label key={`obs-${letter}`} className="tr-field" style={{ marginTop: 6 }}>
+                <label key={`obs-${letter}`} className="tr-field">
                   <span>{letter})</span>
                   <input
                     value={safe.obs_rec[`observacion_${letter}`]}
@@ -347,10 +382,10 @@ export default function FormPanel({
                 </label>
               ))}
             </div>
-            <div className="tr-field">
-              <span>Recomendaciones</span>
+            <div className="ft-obs-col">
+              <span className="ft-obs-heading">Recomendaciones</span>
               {(['a', 'b', 'c'] as const).map((letter) => (
-                <label key={`rec-${letter}`} className="tr-field" style={{ marginTop: 6 }}>
+                <label key={`rec-${letter}`} className="tr-field">
                   <span>{letter})</span>
                   <input
                     value={safe.obs_rec[`recomendacion_${letter}`]}
@@ -364,32 +399,24 @@ export default function FormPanel({
 
         <section className="tr-section">
           <h3>Satisfacción del cliente</h3>
-          <div className="tr-grid-2">
-            {SATISFACCION_OPTIONS.map(({ value, label, emoji }) => (
-              <label
-                key={value}
-                className="tr-field"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: 8,
-                  borderRadius: 7,
-                  border: safe.satisfaccion === value ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-                  background: safe.satisfaccion === value ? 'var(--bg-elevated)' : 'transparent',
-                  cursor: 'pointer',
-                }}
-              >
-                <input
-                  type="radio"
-                  name="satisfaccion"
-                  checked={safe.satisfaccion === value}
-                  onChange={() => patch({ satisfaccion: value })}
-                />
-                <span style={{ fontSize: 18 }}>{emoji}</span>
-                <span style={{ textTransform: 'none', fontWeight: 600 }}>{label}</span>
-              </label>
-            ))}
+          <div className="ft-sat-grid">
+            {SATISFACCION_OPTIONS.map(({ value, label, emoji }) => {
+              const active = safe.satisfaccion === value;
+              return (
+                <label key={value} className={`ft-sat-option${active ? ' is-active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="satisfaccion"
+                    checked={active}
+                    onChange={() => patch({ satisfaccion: value })}
+                  />
+                  <span className="ft-sat-emoji" aria-hidden="true">
+                    {emoji}
+                  </span>
+                  <span className="ft-sat-label">{label}</span>
+                </label>
+              );
+            })}
           </div>
         </section>
       </div>

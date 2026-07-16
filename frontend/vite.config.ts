@@ -24,6 +24,11 @@ export default defineConfig(({ mode }) => ({
     react(),
     mode === 'analyze' && visualizer({ open: true, gzipSize: true, brotliSize: true }),
   ],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
   base: mode === 'development' ? '/' : './',
   build: {
     outDir: 'dist',
