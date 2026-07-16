@@ -12,7 +12,7 @@ describe('PadronView output formats', () => {
     fireEvent.change(screen.getByDisplayValue('18'), { target: { value: '36' } });
 
     expect(screen.getByLabelText('Formato de salida')).toHaveTextContent(/volante lurigancho/i);
-    expect(screen.getByText('Datos del Padrón')).toBeInTheDocument();
+    expect(screen.getByText('Interrupción')).toBeInTheDocument();
     expect(screen.getByText('Orientación')).toBeInTheDocument();
     expect(screen.getByText('1 de 2')).toBeInTheDocument();
   });
@@ -21,13 +21,13 @@ describe('PadronView output formats', () => {
     render(<PadronView />);
 
     expect(screen.getByLabelText('Formato de salida')).toHaveTextContent(/Plantilla actual/i);
-    expect(screen.getByText('Datos del Padrón')).toBeInTheDocument();
+    expect(screen.getByText('Interrupción')).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText('Formato de salida'));
     fireEvent.click(screen.getByRole('option', { name: /Aviso corte de agua/i }));
 
     expect(screen.getByLabelText('Formato de salida')).toHaveTextContent(/Aviso corte de agua/i);
-    expect(screen.getByText('Datos del aviso de corte')).toBeInTheDocument();
+    expect(screen.getByText('Aviso de corte')).toBeInTheDocument();
     expect(screen.queryByText('Orientación')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /AVISO DE CORTE DEL SERVICIO DE AGUA POTABLE/i })).toBeInTheDocument();
   });

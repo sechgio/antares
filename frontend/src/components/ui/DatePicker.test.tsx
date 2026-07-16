@@ -9,7 +9,7 @@ describe('DatePicker', () => {
       <DatePicker
         value=""
         onChange={onChange}
-        placeholder="Seleccionar fecha"
+        placeholder="Seleccionar"
         aria-label="Fecha de vencimiento"
       />,
     );
@@ -30,5 +30,20 @@ describe('DatePicker', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Fecha' }));
     fireEvent.click(screen.getByRole('button', { name: 'Borrar' }));
     expect(onChange).toHaveBeenCalledWith('');
+  });
+
+  it('portals the calendar outside overflow-hidden ancestors', () => {
+    const onChange = vi.fn();
+    const { container } = render(
+      <div style={{ overflow: 'hidden', height: 40 }}>
+        <DatePicker value="" onChange={onChange} aria-label="Fecha" />
+      </div>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fecha' }));
+    const dialog = screen.getByRole('dialog', { name: 'Fecha' });
+    expect(dialog).toBeInTheDocument();
+    expect(container.contains(dialog)).toBe(false);
+    expect(document.body.contains(dialog)).toBe(true);
   });
 });
