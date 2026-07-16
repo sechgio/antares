@@ -1,7 +1,7 @@
 import { useId } from 'react';
 import { ImageItem, PresetId } from './types';
 import { IMAGE_OPTIMIZER_PRESETS } from './presets';
-import { FormField, SettingSwitchRow, formControlClassName } from './ui';
+import { FormField, SettingSwitchRow, ThemeSelect, formControlClassName } from './ui';
 
 interface ItemOverridesPanelProps {
   item: ImageItem;
@@ -27,9 +27,14 @@ export default function ItemOverridesPanel({
   const skipCompressionId = useId();
   const excludeId = useId();
 
+  const presetOptions = [
+    { value: '', label: 'Global' },
+    ...IMAGE_OPTIMIZER_PRESETS.map((preset) => ({ value: preset.id, label: preset.label })),
+  ];
+
   return (
-    <div className="space-y-2 border-t border-[var(--border-medium)]/30 pt-2">
-      <div className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+    <div className="space-y-1.5 border-t border-[var(--border-medium)] pt-1.5 pb-1.5">
+      <div className="grid gap-x-4 gap-y-1.5 sm:grid-cols-2">
         <FormField label="Nombre final">
           <input
             type="text"
@@ -42,33 +47,27 @@ export default function ItemOverridesPanel({
 
         <div className="space-y-1">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[10px] font-mono uppercase tracking-[0.1em] text-[var(--text-muted)]/60">Preset local</span>
+            <span className="text-[10px] font-medium text-[var(--text-secondary)]">Preset local</span>
             {item.overrides.presetId ? (
               <button
                 type="button"
                 onClick={() => onClearPresetOverride(item.id)}
-                className="text-[10px] font-mono text-[var(--text-muted)]/70 transition-colors hover:text-[var(--text-primary)]"
+                className="text-[10px] font-medium text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
               >
                 Limpiar
               </button>
             ) : null}
           </div>
-          <select
+          <ThemeSelect
+            aria-label="Preset local"
             value={item.overrides.presetId || ''}
-            onChange={(e) => onUpdatePresetOverride(item.id, (e.target.value || null) as PresetId | null)}
-            className={`${formControlClassName} appearance-none`}
-          >
-            <option value="" className="bg-[var(--bg-base)]">Global</option>
-            {IMAGE_OPTIMIZER_PRESETS.map((preset) => (
-              <option key={preset.id} value={preset.id} className="bg-[var(--bg-base)] text-[var(--text-primary)]">
-                {preset.label}
-              </option>
-            ))}
-          </select>
+            options={presetOptions}
+            onChange={(value) => onUpdatePresetOverride(item.id, (value || null) as PresetId | null)}
+          />
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         <SettingSwitchRow
           switchId={skipCompressionId}
           label="Omitir compresión"
@@ -80,21 +79,21 @@ export default function ItemOverridesPanel({
         <SettingSwitchRow
           switchId={excludeId}
           label="Excluir del lote"
-          labelClassName={item.excluded ? 'text-[var(--accent-red)]/80' : 'text-[var(--text-muted)]/80'}
+          labelClassName={item.excluded ? 'text-[var(--accent-red)]' : 'text-[var(--text-secondary)]'}
           checked={item.excluded}
           onChange={(value) => onToggleExcluded(item.id, value)}
           accentColor="var(--accent-red)"
         />
 
-        <p className="text-[10px] font-mono text-[var(--text-muted)]/60 sm:ml-auto">
+        <p className="text-[10px] text-[var(--text-secondary)] sm:ml-auto">
           {primaryActionLabel}
-          <span className="mx-1.5 text-[var(--border-medium)]">·</span>
+          <span className="mx-1 text-[var(--border-medium)]">·</span>
           {isDirect ? 'Directa' : 'Con procesado'}
         </p>
       </div>
 
       {item.error ? (
-        <p className="text-[10px] font-mono leading-relaxed text-[var(--accent-red)]/80">{item.error}</p>
+        <p className="text-[10px] leading-snug text-[var(--accent-red)]">{item.error}</p>
       ) : null}
     </div>
   );
