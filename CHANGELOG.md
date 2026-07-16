@@ -5,6 +5,33 @@ Todas las versiones notables de Antares se documentan aquí.
 Formato basado en [Keep a Changelog](https://keepachangelog.com/),
 y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
+## [0.11.1] — 2026-07-16
+
+### Added
+- **Layout**: Sidebar con navegación agrupada, iconos Lucide unificados y tooltips al colapsar.
+- **Padrón**: Controles de folio con estilo de página, tamaño y tipografía; `FolioMenuSelect` y footer de acciones pulido.
+- **Preview panel**: `TemplatePicker` para elegir plantilla y mapping más claro.
+- **Image Optimizer**: UI preview-first con chrome más calmado y drop stage.
+- **UI**: componente `HoverTooltip` / `WithHoverTooltip` y `separator` (shadcn) reutilizables.
+- **Tests**: cobertura de Sidebar, TitleBar, folio, TemplatePicker y theme coverage.
+
+### Changed
+- **Chrome general**: vistas densas estilo Apple en Espacios, AutoIMG, Volantes, Reportes de campo, Fichas técnicas, Reportes técnicos y Settings.
+- **Appearance**: colores de tema aplicados de forma consistente a diálogos y chrome de módulos (incl. Vanta Black).
+- **BrandMark**: tamaño de logo reducido para alinear mejor con la title bar.
+- **Fichas técnicas**: panel de base de datos y editor más compactos; sin efectos de humo en el panel.
+- **Padrón**: formularios, date picker y estilos de vista previa refinados.
+
+### Fixed
+- **Conversion / IPC**: ola de corrección 001–014 (cancelación, process death, re-sync, overwrite seguro, mapping stem conflicts, preview stale races).
+- **Reportes técnicos**: slots de logo izquierdo y derecho restaurados.
+- **A11y / tests**: nombres accesibles (`aria-label`) tras el paso a HoverTooltip (Eliminar, Recargar catálogo).
+- **Process runner / Electron**: bookkeeping de UI y restart de backend más robustos.
+
+### Removed
+- Código muerto, dependencias sin uso, assets huérfanos y planes advisor 001–014 ya completados.
+- Config local de tooling (`.factory`, `docs/superpowers`) fuera del tracking del repo.
+
 ## [0.10.20] — 2026-07-13
 
 ### Added
