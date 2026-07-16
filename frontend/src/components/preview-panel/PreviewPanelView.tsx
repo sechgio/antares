@@ -777,7 +777,14 @@ export default function PreviewPanelView() {
                       {headers.map(h => <option key={h} value={h}>{h}</option>)}
                     </select>
                     <WithHoverTooltip label="Eliminar" placement="bottom">
-                      <button onClick={() => removeCustomColumn(col.id)} className="text-[var(--accent-red)] hover:opacity-80 text-[9px] px-0.5 hover:bg-[var(--accent-red)]/20 rounded transition-colors">✕</button>
+                      <button
+                        type="button"
+                        aria-label="Eliminar"
+                        onClick={() => removeCustomColumn(col.id)}
+                        className="text-[var(--accent-red)] hover:opacity-80 text-[9px] px-0.5 hover:bg-[var(--accent-red)]/20 rounded transition-colors"
+                      >
+                        ✕
+                      </button>
                     </WithHoverTooltip>
                   </div>
                 ))}
