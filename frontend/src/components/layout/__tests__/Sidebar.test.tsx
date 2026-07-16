@@ -49,6 +49,24 @@ describe('Sidebar', () => {
     expect(screen.getByRole('button', { name: 'Alternar barra lateral' })).toBeInTheDocument();
   });
 
+  it('shows a Hide Sidebar tooltip when expanded', () => {
+    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
+
+    const toggle = screen.getByTestId('sidebar-toggle');
+    expect(toggle).not.toHaveAttribute('title');
+    expect(screen.getByText('Hide Sidebar')).toBeInTheDocument();
+    expect(screen.queryByText('Ctrl')).not.toBeInTheDocument();
+  });
+
+  it('shows Show Sidebar after collapsing', () => {
+    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
+
+    fireEvent.click(screen.getByTestId('sidebar-toggle'));
+
+    expect(screen.getByText('Show Sidebar')).toBeInTheDocument();
+    expect(screen.queryByText('Hide Sidebar')).not.toBeInTheDocument();
+  });
+
   it('collapses and expands when toggled', () => {
     renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
 
@@ -62,6 +80,45 @@ describe('Sidebar', () => {
 
     fireEvent.click(toggle);
     expect(sidebar).toHaveAttribute('data-expanded', 'true');
+  });
+
+  it('toggles the sidebar with Ctrl+B', () => {
+    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
+
+    const sidebar = screen.getByTestId('app-sidebar');
+    expect(sidebar).toHaveAttribute('data-expanded', 'true');
+
+    fireEvent.keyDown(window, { key: 'b', ctrlKey: true });
+    expect(sidebar).toHaveAttribute('data-expanded', 'false');
+
+    fireEvent.keyDown(window, { key: 'b', ctrlKey: true });
+    expect(sidebar).toHaveAttribute('data-expanded', 'true');
+  });
+
+  it('shows tool name tooltips when collapsed, without shortcut keycaps', () => {
+    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
+
+    fireEvent.click(screen.getByTestId('sidebar-toggle'));
+
+    const espacios = screen.getByRole('button', { name: 'Espacios' });
+    expect(espacios).not.toHaveAttribute('title');
+
+    const tooltips = screen.getAllByRole('tooltip');
+    const espaciosTip = tooltips.find((node) => node.textContent === 'Espacios');
+    const informesTip = tooltips.find((node) => node.textContent === 'Informes técnicos');
+
+    expect(espaciosTip).toBeTruthy();
+    expect(informesTip).toBeTruthy();
+    expect(espaciosTip?.textContent).not.toContain('Ctrl');
+    expect(informesTip?.textContent).not.toContain('Ctrl');
+  });
+
+  it('does not render tool name tooltips when expanded', () => {
+    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
+
+    const tooltips = screen.getAllByRole('tooltip');
+    expect(tooltips).toHaveLength(1);
+    expect(tooltips[0]).toHaveTextContent('Hide Sidebar');
   });
 
   it('persists the collapsed state in localStorage', () => {
@@ -93,6 +150,16 @@ describe('Sidebar', () => {
 
     expect(screen.queryByRole('button', { name: 'Historial' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Apariencia' })).not.toBeInTheDocument();
+  });
+
+  it('shows a sign-out tooltip when collapsed', () => {
+    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
+
+    fireEvent.click(screen.getByTestId('sidebar-toggle'));
+
+    const signOut = screen.getByTestId('sidebar-signout-button');
+    expect(signOut).not.toHaveAttribute('title');
+    expect(screen.getAllByRole('tooltip').some((node) => node.textContent === 'auth.signOut')).toBe(true);
   });
 
   it('calls signOut from the bottom logout button', async () => {

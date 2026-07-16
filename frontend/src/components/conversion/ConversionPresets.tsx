@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Save, FolderOpen, ChevronDown, Trash2, Check, Settings2 } from 'lucide-react';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 
 export interface ConversionConfig {
   formato: string;
@@ -280,13 +281,16 @@ export default function ConversionPresets({ currentConfig, onLoadConfig, classNa
                         {preset.config.formato} · {preset.config.calidad}%
                       </span>
                     </div>
-                    <button
-                      onClick={(e) => handleDelete(preset.id, e)}
-                      className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[var(--accent-red)]/10 transition-all"
-                      title="Eliminar"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    <WithHoverTooltip label="Eliminar" placement="bottom">
+                      <button
+                        type="button"
+                        onClick={(e) => handleDelete(preset.id, e)}
+                        aria-label="Eliminar"
+                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[var(--accent-red)]/10 transition-all"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </WithHoverTooltip>
                   </button>
                 ))}
               </>

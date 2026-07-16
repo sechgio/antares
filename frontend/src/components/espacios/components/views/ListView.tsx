@@ -1,3 +1,4 @@
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { ListTodo, Pencil, Trash2 } from 'lucide-react';
 import EmptyState from '../EmptyState';
 import StatusPicker from '../StatusPicker';
@@ -126,25 +127,27 @@ export default function ListView({
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-0.5">
                     {onEdit && (
+                      <WithHoverTooltip label="Editar" placement="bottom">
+                        <button
+                          type="button"
+                          onClick={() => onEdit(tarea)}
+                          className="rounded-md p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                          aria-label={`Editar ${tarea.title}`}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                      </WithHoverTooltip>
+                    )}
+                    <WithHoverTooltip label="Eliminar" placement="bottom">
                       <button
                         type="button"
-                        onClick={() => onEdit(tarea)}
-                        className="rounded-md p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-                        aria-label={`Editar ${tarea.title}`}
-                        title="Editar"
+                        onClick={() => onDelete(tarea.id)}
+                        className="rounded-md p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-red)]"
+                        aria-label={`Eliminar ${tarea.title}`}
                       >
-                        <Pencil className="h-4 w-4" />
+                        <Trash2 className="h-4 w-4" />
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => onDelete(tarea.id)}
-                      className="rounded-md p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-red)]"
-                      aria-label={`Eliminar ${tarea.title}`}
-                      title="Eliminar"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    </WithHoverTooltip>
                   </div>
                 </td>
               </tr>

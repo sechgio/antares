@@ -1,9 +1,67 @@
+/** How the page/folio number is written on each sheet. */
+export type PageNumberStyle = 'auto' | 'pagina_de' | 'n_de' | 'solo';
+
+export type ResolvedPageNumberStyle = Exclude<PageNumberStyle, 'auto'>;
+
+/** Font size of the folio label. `auto` keeps plantilla CSS defaults. */
+export type PageNumberSize = 'auto' | 'sm' | 'md' | 'lg' | 'xl';
+
+/** Typographic weight/style of the folio label. `auto` keeps plantilla defaults. */
+export type PageNumberFontStyle = 'auto' | 'normal' | 'bold' | 'italic' | 'bold_italic';
+
+export const PAGE_NUMBER_STYLE_OPTIONS: ReadonlyArray<{
+  value: PageNumberStyle;
+  label: string;
+  example: string;
+}> = [
+  { value: 'auto', label: 'Según plantilla', example: 'Por defecto' },
+  { value: 'pagina_de', label: 'Página N de X', example: 'Página 1 de 5' },
+  { value: 'n_de', label: 'N de X', example: '1 de 5' },
+  { value: 'solo', label: 'Solo número', example: '1' },
+];
+
+export const PAGE_NUMBER_SIZE_OPTIONS: ReadonlyArray<{
+  value: PageNumberSize;
+  label: string;
+}> = [
+  { value: 'auto', label: 'Según plantilla' },
+  { value: 'sm', label: 'Pequeño' },
+  { value: 'md', label: 'Mediano' },
+  { value: 'lg', label: 'Grande' },
+  { value: 'xl', label: 'Extra grande' },
+];
+
+export const PAGE_NUMBER_FONT_STYLE_OPTIONS: ReadonlyArray<{
+  value: PageNumberFontStyle;
+  label: string;
+}> = [
+  { value: 'auto', label: 'Según plantilla' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'bold', label: 'Negrita' },
+  { value: 'italic', label: 'Cursiva' },
+  { value: 'bold_italic', label: 'Negrita cursiva' },
+];
+
+/** Pixel sizes used when the user overrides plantilla defaults. */
+export const PAGE_NUMBER_SIZE_PX: Record<Exclude<PageNumberSize, 'auto'>, number> = {
+  sm: 8,
+  md: 10,
+  lg: 14,
+  xl: 18,
+};
+
 export interface FolioConfig {
   folioStart: number;
   folioEnd: number | null;
   folioInverted: boolean;
   /** Tracks the page count folioEnd was last synced against. */
   syncedPageCount: number | null;
+  /** Label format for the folio shown on each page. */
+  pageNumberStyle: PageNumberStyle;
+  /** Font size override for the folio label. */
+  pageNumberSize: PageNumberSize;
+  /** Font weight/style override for the folio label. */
+  pageNumberFontStyle: PageNumberFontStyle;
 }
 
 export function createDefaultFolioConfig(): FolioConfig {
@@ -12,7 +70,60 @@ export function createDefaultFolioConfig(): FolioConfig {
     folioEnd: null,
     folioInverted: false,
     syncedPageCount: null,
+    pageNumberStyle: 'auto',
+    pageNumberSize: 'auto',
+    pageNumberFontStyle: 'auto',
   };
+}
+
+/** Inline styles for folio appearance. Empty object when both size and font stay auto. */
+export function getPageNumberAppearanceStyle(
+  size: PageNumberSize = 'auto',
+  fontStyle: PageNumberFontStyle = 'auto',
+): { fontSize?: string; fontWeight?: number; fontStyle?: 'normal' | 'italic' } {
+  const style: { fontSize?: string; fontWeight?: number; fontStyle?: 'normal' | 'italic' } = {};
+  if (size !== 'auto') {
+    style.fontSize = `${PAGE_NUMBER_SIZE_PX[size]}px`;
+  }
+  if (fontStyle !== 'auto') {
+    style.fontWeight = fontStyle === 'bold' || fontStyle === 'bold_italic' ? 700 : 400;
+    style.fontStyle = fontStyle === 'italic' || fontStyle === 'bold_italic' ? 'italic' : 'normal';
+  }
+  return style;
+}
+
+/**
+ * Resolve effective style. `auto` keeps each plantilla's historical default:
+ * - volanteo lurigancho v2 → solo número
+ * - volante lurigancho → "N de X"
+ * - resto → "Página N de X"
+ */
+export function resolvePageNumberStyle(
+  style: PageNumberStyle,
+  variant?: string | null,
+): ResolvedPageNumberStyle {
+  if (style !== 'auto') return style;
+  if (variant === 'volanteo-lurigancho-v2') return 'solo';
+  if (variant === 'volante-lurigancho') return 'n_de';
+  return 'pagina_de';
+}
+
+export function formatPageNumberLabel(
+  style: PageNumberStyle,
+  pageNumber: number,
+  totalPages: number,
+  variant?: string | null,
+): string {
+  const resolved = resolvePageNumberStyle(style, variant);
+  switch (resolved) {
+    case 'n_de':
+      return `${pageNumber} de ${totalPages}`;
+    case 'solo':
+      return String(pageNumber);
+    case 'pagina_de':
+    default:
+      return `Página ${pageNumber} de ${totalPages}`;
+  }
 }
 
 /** Last folio when numbering `totalPages` sheets starting at `folioStart`. */
@@ -69,7 +180,10 @@ export function isDefaultFolioConfig(
   return (
     config.folioStart === 1 &&
     effectiveEnd === expectedFolioEnd(1, totalPages) &&
-    !config.folioInverted
+    !config.folioInverted &&
+    config.pageNumberStyle === 'auto' &&
+    config.pageNumberSize === 'auto' &&
+    config.pageNumberFontStyle === 'auto'
   );
 }
 

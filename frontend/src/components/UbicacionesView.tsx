@@ -15,6 +15,7 @@ import {
   FileOutput,
   PenTool,
 } from 'lucide-react';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import Button from './ui/Button';
 import { api } from '../api';
 import { parseCombinedCoords, isValidCoord } from '../utils/coords';
@@ -1228,18 +1229,23 @@ export const UbicacionesView: React.FC = () => {
                         <span className="text-[9px] text-[var(--text-muted)] block">Color del Pin</span>
                         <div className="flex flex-wrap gap-1">
                           {PIN_PRESETS.map((presetColor, idx) => (
-                            <button
+                            <WithHoverTooltip
                               key={idx}
-                              type="button"
-                              onClick={() => updateStyle(s => ({ ...s, pin: { ...s.pin, color: presetColor } }))}
-                              className={`w-4.5 h-4.5 rounded-full border transition-all cursor-pointer ${
-                                (customStyles.pin.color ?? '') === presetColor
-                                  ? 'border-[var(--accent-primary)] scale-110 shadow-sm'
-                                  : 'border-[var(--border-subtle)] hover:scale-105'
-                              }`}
-                              style={{ backgroundColor: presetColor || '#4B5563', width: 18, height: 18 }}
-                              title={presetColor ? `Color: ${presetColor}` : 'Color original (rojo)'}
-                            />
+                              label={presetColor ? `Color: ${presetColor}` : 'Color original (rojo)'}
+                              placement="bottom"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => updateStyle(s => ({ ...s, pin: { ...s.pin, color: presetColor } }))}
+                                aria-label={presetColor ? `Color: ${presetColor}` : 'Color original (rojo)'}
+                                className={`w-4.5 h-4.5 rounded-full border transition-all cursor-pointer ${
+                                  (customStyles.pin.color ?? '') === presetColor
+                                    ? 'border-[var(--accent-primary)] scale-110 shadow-sm'
+                                    : 'border-[var(--border-subtle)] hover:scale-105'
+                                }`}
+                                style={{ backgroundColor: presetColor || '#4B5563', width: 18, height: 18 }}
+                              />
+                            </WithHoverTooltip>
                           ))}
                         </div>
                       </div>
@@ -1635,15 +1641,17 @@ const RealPreviewPanel: React.FC<{
               </button>
             </>
           )}
-          <button
-            onClick={onRefresh}
-            disabled={loading}
-            aria-label="Actualizar vista previa"
-            title="Actualizar vista previa"
-            className="ml-1.5 p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--text-muted)]"
-          >
-            <Loader2 size={14} className={loading ? 'animate-spin' : ''} />
-          </button>
+          <WithHoverTooltip label="Actualizar vista previa" placement="bottom">
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={loading}
+              aria-label="Actualizar vista previa"
+              className="ml-1.5 p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--text-muted)]"
+            >
+              <Loader2 size={14} className={loading ? 'animate-spin' : ''} />
+            </button>
+          </WithHoverTooltip>
         </div>
       )}
 

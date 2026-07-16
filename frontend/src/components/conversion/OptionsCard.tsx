@@ -3,6 +3,7 @@ import Card from '../ui/Card';
 import Toggle from '../ui/Toggle';
 import Input from '../ui/Input';
 import { Camera, Maximize2, SlidersHorizontal, Info, Zap, Image as ImageIcon, FileImage, Layers } from 'lucide-react';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 
 interface OptionsCardProps {
   formato: string;
@@ -96,29 +97,33 @@ export default function OptionsCard({
           <div className="space-y-2">
         <div className="flex items-center justify-between">
           <label className="text-xs font-medium text-[var(--text-secondary)]">Formato de salida</label>
-          <button
-            onClick={() => setShowFormatInfo((v) => !v)}
-            className="text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-colors"
-            title="Información del formato"
-          >
-            <Info className="h-3.5 w-3.5" />
-          </button>
+          <WithHoverTooltip label="Información del formato" placement="bottom">
+            <button
+              type="button"
+              onClick={() => setShowFormatInfo((v) => !v)}
+              aria-label="Información del formato"
+              className="text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-colors"
+            >
+              <Info className="h-3.5 w-3.5" />
+            </button>
+          </WithHoverTooltip>
         </div>
         <div className="grid grid-cols-4 gap-1.5">
           {formatos.map((f) => {
             const active = f === formato;
             const info = FORMAT_INFO[f];
             return (
-              <button
-                key={f}
-                onClick={() => onFormatoChange(f)}
-                className={`relative flex flex-col items-center gap-1 px-2 py-2.5 rounded-xl border text-center transition-all duration-200 ${
-                  active
-                    ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)]/40 text-[var(--accent-primary)]'
-                    : 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)]'
-                }`}
-                title={info?.desc || f}
-              >
+              <WithHoverTooltip key={f} label={info?.desc || f} placement="bottom">
+                <button
+                  type="button"
+                  onClick={() => onFormatoChange(f)}
+                  aria-label={info?.desc || f}
+                  className={`relative flex flex-col items-center gap-1 px-2 py-2.5 rounded-xl border text-center transition-all duration-200 ${
+                    active
+                      ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)]/40 text-[var(--accent-primary)]'
+                      : 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
                 <span className="text-[10px] font-bold">{f}</span>
                 {active && (
                   <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[var(--accent-primary)]">
@@ -128,6 +133,7 @@ export default function OptionsCard({
                   </span>
                 )}
               </button>
+              </WithHoverTooltip>
             );
           })}
         </div>

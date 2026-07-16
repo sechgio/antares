@@ -28,13 +28,14 @@ import {
   HelpCircle,
   X,
   FileSpreadsheet,
-  ChevronDown,
 } from 'lucide-react';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import DatePicker from '../ui/DatePicker';
 import PreviewPage from './PreviewPage';
 import WaterCutNoticePage from './WaterCutNoticePage';
 import TutorialOverlay from './components/TutorialOverlay';
 import FolioControls from './components/FolioControls';
+import FolioMenuSelect from './components/FolioMenuSelect';
 import {
   HEADER_FIELDS,
   OUTPUT_FORMAT_OPTIONS,
@@ -510,6 +511,9 @@ export default function PadronView() {
                     sedapalLogo={logosBase64.sedapal || SEDAPAL_LOGO}
                     pageNumber={getPageFolio(batchStart + j, physicalFolios)}
                     totalPages={exportPages.length}
+                    pageNumberStyle={folioConfig.pageNumberStyle}
+                    pageNumberSize={folioConfig.pageNumberSize}
+                    pageNumberFontStyle={folioConfig.pageNumberFontStyle}
                   />
                   ) : (
                     <PreviewPage
@@ -523,6 +527,9 @@ export default function PadronView() {
                       isFirstPage={batchStart + j === 0}
                       isLastPage={batchStart + j === exportPages.length - 1}
                       variant={previewVariant}
+                      pageNumberStyle={folioConfig.pageNumberStyle}
+                      pageNumberSize={folioConfig.pageNumberSize}
+                      pageNumberFontStyle={folioConfig.pageNumberFontStyle}
                     />
                   )}
                 </div>
@@ -835,13 +842,14 @@ export default function PadronView() {
 
       <main className="vpad-preview-area">
         <header className="vpad-preview-toolbar">
-          <button
-            className="vpad-btn vpad-btn-nav"
-            onClick={() => setSidebarVisible(v => !v)}
-            title={sidebarVisible ? 'Ocultar panel' : 'Mostrar panel'}
-          >
-            <PanelLeft size={18} />
-          </button>
+          <WithHoverTooltip label={sidebarVisible ? 'Ocultar panel' : 'Mostrar panel'} placement="bottom">
+            <button
+              className="vpad-btn vpad-btn-nav"
+              onClick={() => setSidebarVisible(v => !v)}
+            >
+              <PanelLeft size={18} />
+            </button>
+          </WithHoverTooltip>
           <div className="vpad-badges">
             <span className="vpad-badge">
               {isWaterCutNotice ? 'Aviso corte de agua' : (orientation === 'landscape' ? 'Horizontal' : 'Vertical')}
@@ -885,65 +893,60 @@ export default function PadronView() {
             </div>
           )}
           <div className="vpad-toolbar-right">
-            <FolioControls
-              config={folioConfig}
-              totalPages={activePagesCount}
-              onChange={setFolioConfig}
-            />
-            <button
-              className="vpad-btn-excel"
-              onClick={() => setIsExcelModalOpen(true)}
-              title="Importar desde Excel"
-              type="button"
-            >
-              <FileSpreadsheet size={16} />
-              Excel
-            </button>
-            <div className="vpad-select-template-wrapper">
-              <label htmlFor="vpad-output-format" className="sr-only">Formato de salida</label>
-              <select
-                id="vpad-output-format"
-                className="vpad-select-template"
-                value={outputFormat}
-                onChange={(e) => handleOutputFormatChange(e.target.value)}
-                title="Seleccionar plantilla de salida"
-              >
-                {OUTPUT_FORMAT_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={14} className="vpad-select-template-icon" />
-            </div>
-            {!isWaterCutNotice && (
-              <div className="vpad-select-template-wrapper">
-                <label htmlFor="vpad-orientation" className="sr-only">Orientación</label>
-                <select
-                  id="vpad-orientation"
-                  className="vpad-select-template"
-                  value={orientation}
-                  onChange={(e) => handleOrientationChange(e.target.value)}
-                  title="Seleccionar orientación"
+            <div className="vpad-tool-cluster" role="group" aria-label="Acciones">
+              <FolioControls
+                config={folioConfig}
+                totalPages={activePagesCount}
+                onChange={setFolioConfig}
+              />
+              <WithHoverTooltip label="Importar desde Excel" placement="bottom">
+                <button
+                  className="vpad-tool-chip vpad-btn-excel"
+                  onClick={() => setIsExcelModalOpen(true)}
+                  type="button"
                 >
-                  {ORIENTATION_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown size={14} className="vpad-select-template-icon" />
-              </div>
-            )}
-            <button
-              className="tutorial-trigger-btn"
-              onClick={openTutorial}
-              title="Ver tutorial de como usar Generar Padrones"
-              type="button"
-            >
-              <HelpCircle size={16} />
-              Como usar
-            </button>
+                  <FileSpreadsheet size={15} strokeWidth={2} aria-hidden />
+                  Excel
+                </button>
+              </WithHoverTooltip>
+            </div>
+
+            <div className="vpad-tool-cluster" role="group" aria-label="Plantilla">
+              <WithHoverTooltip label="Seleccionar plantilla de salida" placement="bottom">
+                <FolioMenuSelect
+                  variant="toolbar"
+                  value={outputFormat}
+                  options={OUTPUT_FORMAT_OPTIONS}
+                  onChange={handleOutputFormatChange}
+                  aria-label="Formato de salida"
+                />
+              </WithHoverTooltip>
+              {!isWaterCutNotice && (
+                <WithHoverTooltip label="Seleccionar orientación" placement="bottom">
+                  <div className="vpad-toolbar-picker">
+                    <span className="sr-only">Orientación</span>
+                    <FolioMenuSelect
+                      variant="toolbar"
+                      value={orientation}
+                      options={ORIENTATION_OPTIONS}
+                      onChange={handleOrientationChange}
+                      aria-label="Orientación"
+                    />
+                  </div>
+                </WithHoverTooltip>
+              )}
+            </div>
+
+            <WithHoverTooltip label="Ver tutorial de como usar Generar Padrones" placement="bottom">
+              <button
+                className="vpad-tool-chip vpad-tool-chip-quiet tutorial-trigger-btn"
+                onClick={openTutorial}
+                type="button"
+              >
+                <HelpCircle size={15} strokeWidth={2} aria-hidden />
+                Cómo usar
+              </button>
+            </WithHoverTooltip>
           </div>
         </header>
 
@@ -960,6 +963,9 @@ export default function PadronView() {
                       sedapalLogo={logosBase64.sedapal || SEDAPAL_LOGO}
                       pageNumber={getPageFolio(globalIndex, physicalFolios)}
                       totalPages={activePagesCount}
+                      pageNumberStyle={folioConfig.pageNumberStyle}
+                      pageNumberSize={folioConfig.pageNumberSize}
+                      pageNumberFontStyle={folioConfig.pageNumberFontStyle}
                     />
                   ) : (
                     <PreviewPage
@@ -973,6 +979,9 @@ export default function PadronView() {
                       isFirstPage={globalIndex === 0}
                       isLastPage={globalIndex === activePagesCount - 1}
                       variant={previewVariant}
+                      pageNumberStyle={folioConfig.pageNumberStyle}
+                      pageNumberSize={folioConfig.pageNumberSize}
+                      pageNumberFontStyle={folioConfig.pageNumberFontStyle}
                     />
                   )}
                 </div>

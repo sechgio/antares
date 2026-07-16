@@ -3,6 +3,7 @@ import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 
 import { api } from '../../api';
 
@@ -330,6 +331,8 @@ export default function HistoryView() {
 
 
 
+            <WithHoverTooltip label="Filtros" placement="bottom">
+
             <button
 
               type="button"
@@ -337,6 +340,8 @@ export default function HistoryView() {
               onClick={() => setFiltersOpen((v) => !v)}
 
               aria-expanded={filtersOpen}
+
+              aria-label="Filtros"
 
               className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-[12px] font-medium transition-all ${
 
@@ -347,8 +352,6 @@ export default function HistoryView() {
                   : 'border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)]'
 
               }`}
-
-              title="Filtros"
 
             >
 
@@ -367,6 +370,8 @@ export default function HistoryView() {
               )}
 
             </button>
+
+            </WithHoverTooltip>
 
           </div>
 

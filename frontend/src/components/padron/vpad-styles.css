@@ -491,11 +491,12 @@
     min-height: 45px;
     max-height: 45px;
     padding: 0 16px;
-    background: #ffffff;
-    border-bottom: 1px solid #e0e0e0;
+    background: #f4f4f5;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
     z-index: 20;
     position: sticky;
     top: 0;
+    color: #111111;
 }
 
 .vpad-preview-title {
@@ -1579,8 +1580,9 @@
 }
 
 [data-theme="light"] .vpad-preview-toolbar {
-    background: #ffffff;
-    border-bottom-color: rgba(0, 0, 0, 0.08);
+    background: #f4f4f5;
+    border-bottom-color: rgba(0, 0, 0, 0.1);
+    color: #111111;
 }
 
 [data-theme="light"] .vpad-badge {
@@ -1618,249 +1620,738 @@
     }
 }
 
-.vpad-toolbar-right {
+/* ── Toolbar chips — forced dark ink on light bar (legible) ─ */
+/* Scope under .vpad-preview-toolbar so theme text tokens cannot wash out labels */
+
+.vpad-preview-toolbar .vpad-toolbar-right {
     margin-left: auto;
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-shrink: 0;
+    min-width: 0;
+    color: #111111;
 }
 
-.vpad-btn-excel {
+.vpad-preview-toolbar .vpad-tool-cluster {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 11px;
+    background: #ffffff;
+    box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.1),
+        0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.vpad-preview-toolbar .vpad-tool-chip,
+.vpad-preview-toolbar .vpad-folio-menu--toolbar .vpad-folio-menu-trigger {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 6px;
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-weight: 600;
-    font-size: 0.82rem;
-    border: 1px solid var(--vpad-accent);
-    color: var(--vpad-accent);
+    flex-shrink: 0;
+    min-height: 30px;
+    padding: 0 11px;
+    margin: 0;
+    border: none;
+    border-radius: 8px;
     background: transparent;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    /* Hardcoded — never inherit white/gray from dark theme tokens */
+    color: #111111 !important;
+    -webkit-text-fill-color: #111111;
+    font-family: inherit;
+    font-size: 0.875rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
     white-space: nowrap;
     cursor: pointer;
-    font-family: inherit;
-}
-
-.vpad-btn-excel:hover {
-    background: var(--vpad-accent);
-    color: var(--vpad-on-accent);
-}
-
-.vpad-select-template-wrapper {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-}
-
-.vpad-select-template {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 6px 30px 6px 12px;
-    border-radius: 6px;
-    font-weight: 600;
-    font-size: 0.82rem;
-    border: 1px solid var(--vpad-accent);
-    color: var(--vpad-accent);
-    background: transparent;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    white-space: nowrap;
-    cursor: pointer;
-    font-family: inherit;
-    appearance: none;
-    outline: none;
-    height: 32px;
     box-sizing: border-box;
+    opacity: 1 !important;
+    transition-property: background-color, color, transform, box-shadow, -webkit-text-fill-color;
+    transition-duration: 120ms;
+    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 
-.vpad-select-template:hover {
-    background: var(--vpad-accent);
-    color: var(--vpad-on-accent);
+.vpad-preview-toolbar .vpad-folio-menu--toolbar .vpad-folio-menu-trigger {
+    padding: 0 9px 0 11px;
+    gap: 5px;
+    text-align: left;
 }
 
-.vpad-select-template-icon {
-    position: absolute;
-    right: 10px;
-    pointer-events: none;
-    color: var(--vpad-accent);
-    transition: color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+.vpad-preview-toolbar .vpad-tool-chip svg,
+.vpad-preview-toolbar .vpad-folio-menu--toolbar .vpad-folio-menu-chevron {
+    flex-shrink: 0;
+    opacity: 1 !important;
+    color: #111111 !important;
+    stroke: #111111;
 }
 
-.vpad-select-template:hover + .vpad-select-template-icon {
-    color: var(--vpad-on-accent);
+.vpad-preview-toolbar .vpad-folio-menu--toolbar .vpad-folio-menu-trigger-label {
+    color: #111111 !important;
+    -webkit-text-fill-color: #111111;
+    font-size: inherit;
+    font-weight: inherit;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
+    max-width: none;
+}
+
+.vpad-preview-toolbar .vpad-tool-chip:hover,
+.vpad-preview-toolbar .vpad-folio-menu--toolbar .vpad-folio-menu-trigger:hover {
+    background: rgba(0, 0, 0, 0.07);
+    color: #000000 !important;
+    -webkit-text-fill-color: #000000;
+}
+
+.vpad-preview-toolbar .vpad-tool-chip:hover svg,
+.vpad-preview-toolbar .vpad-folio-menu--toolbar .vpad-folio-menu-trigger:hover .vpad-folio-menu-chevron {
+    color: #000000 !important;
+    stroke: #000000;
+}
+
+.vpad-preview-toolbar .vpad-tool-chip:active,
+.vpad-preview-toolbar .vpad-folio-menu--toolbar .vpad-folio-menu-trigger:active {
+    transform: scale(0.97);
+    transition-duration: 70ms;
+}
+
+.vpad-preview-toolbar .vpad-tool-chip:focus-visible,
+.vpad-preview-toolbar .vpad-folio-menu--toolbar .vpad-folio-menu-trigger:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--vpad-accent) 35%, transparent);
+}
+
+/* Active / open — accent ink, still high contrast on white chips */
+.vpad-preview-toolbar .vpad-tool-chip.is-active,
+.vpad-preview-toolbar .vpad-tool-chip.is-open,
+.vpad-preview-toolbar .vpad-tool-chip.vpad-btn-folio-active,
+.vpad-preview-toolbar .vpad-tool-chip.vpad-btn-folio-open,
+.vpad-preview-toolbar .vpad-folio-menu--toolbar.is-open .vpad-folio-menu-trigger {
+    background: color-mix(in srgb, var(--vpad-accent) 16%, #ffffff);
+    color: var(--vpad-accent) !important;
+    -webkit-text-fill-color: var(--vpad-accent);
+    font-weight: 650;
+}
+
+.vpad-preview-toolbar .vpad-tool-chip.is-active svg,
+.vpad-preview-toolbar .vpad-tool-chip.is-open svg,
+.vpad-preview-toolbar .vpad-tool-chip.vpad-btn-folio-active svg,
+.vpad-preview-toolbar .vpad-tool-chip.vpad-btn-folio-open svg,
+.vpad-preview-toolbar .vpad-folio-menu--toolbar.is-open .vpad-folio-menu-chevron {
+    color: var(--vpad-accent) !important;
+    stroke: var(--vpad-accent);
+}
+
+.vpad-preview-toolbar .vpad-tool-chip.is-active:hover,
+.vpad-preview-toolbar .vpad-tool-chip.is-open:hover,
+.vpad-preview-toolbar .vpad-tool-chip.vpad-btn-folio-active:hover,
+.vpad-preview-toolbar .vpad-tool-chip.vpad-btn-folio-open:hover,
+.vpad-preview-toolbar .vpad-folio-menu--toolbar.is-open .vpad-folio-menu-trigger:hover {
+    background: color-mix(in srgb, var(--vpad-accent) 22%, #ffffff);
+}
+
+/* Cómo usar — same black ink (must stay readable) */
+.vpad-preview-toolbar .vpad-tool-chip-quiet {
+    color: #1f1f1f !important;
+    -webkit-text-fill-color: #1f1f1f;
+    font-weight: 600;
+}
+
+.vpad-preview-toolbar .vpad-tool-chip-quiet svg {
+    color: #1f1f1f !important;
+    stroke: #1f1f1f;
+}
+
+.vpad-preview-toolbar .vpad-tool-chip-quiet:hover {
+    color: #000000 !important;
+    -webkit-text-fill-color: #000000;
 }
 
 .vpad-folio-wrapper {
     position: relative;
     display: inline-flex;
+    flex-shrink: 0;
+}
+
+.vpad-toolbar-picker {
+    display: inline-flex;
+    flex-shrink: 0;
 }
 
 .vpad-btn-folio {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-weight: 600;
-    font-size: 0.82rem;
-    border: 1px solid var(--vpad-accent);
-    color: var(--vpad-accent);
-    background: transparent;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    white-space: nowrap;
-    cursor: pointer;
-    font-family: inherit;
-    height: 32px;
-    box-sizing: border-box;
-}
-
-.vpad-btn-folio:hover,
-.vpad-btn-folio-active {
-    background: var(--vpad-accent);
-    color: var(--vpad-on-accent);
+    padding-left: 10px;
 }
 
 .vpad-folio-summary {
     font-size: 0.72rem;
     font-weight: 700;
-    padding: 1px 6px;
+    padding: 2px 7px;
     border-radius: 99px;
-    background: rgba(255, 255, 255, 0.25);
+    background: color-mix(in srgb, var(--vpad-accent) 16%, transparent);
+    color: var(--vpad-accent);
+    -webkit-text-fill-color: var(--vpad-accent);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
 }
 
-.vpad-btn-folio-active .vpad-folio-summary {
-    background: rgba(255, 255, 255, 0.2);
+.vpad-folio-menu--toolbar {
+    position: relative;
+    display: inline-flex;
+    flex-shrink: 0;
+    max-width: none !important;
+    min-width: 0;
+    margin-left: 0;
+    z-index: 1;
 }
 
+.vpad-folio-menu--toolbar.is-open {
+    z-index: 40;
+}
+
+.vpad-folio-menu--toolbar .vpad-folio-menu-list {
+    left: 0;
+    right: auto;
+    min-width: max(100%, 200px);
+    transform-origin: top left;
+}
+
+/* ── Popover — restrained glass, Settings density ────────── */
 .vpad-folio-popover {
     position: absolute;
     top: calc(100% + 6px);
     right: 0;
     z-index: 50;
-    min-width: 240px;
-    padding: 12px;
-    border-radius: 8px;
-    border: 1px solid #e0e0e0;
-    background: #ffffff;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    width: min(272px, calc(100vw - 24px));
+    padding: 10px;
+    border-radius: 14px;
+    border: none;
+    color: var(--vpad-primary);
+    background: color-mix(in srgb, var(--vpad-elevated) 94%, transparent);
+    backdrop-filter: blur(40px) saturate(140%);
+    -webkit-backdrop-filter: blur(40px) saturate(140%);
+    box-shadow:
+        0 0 0 0.5px color-mix(in srgb, var(--vpad-primary) 10%, transparent),
+        0 10px 30px -8px rgba(0, 0, 0, 0.4);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow: visible;
+    transform-origin: top right;
+    animation: vpad-folio-popover-in 240ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+@keyframes vpad-folio-popover-in {
+    from {
+        opacity: 0;
+        transform: translateY(-4px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.vpad-folio-popover-header {
+    padding: 2px 6px 0;
 }
 
 .vpad-folio-popover-title {
-    font-size: 0.82rem;
-    font-weight: 700;
-    color: #111111;
-    margin-bottom: 10px;
-}
-
-.vpad-folio-fields {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    margin-bottom: 10px;
-}
-
-.vpad-folio-field {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-size: 0.72rem;
+    margin: 0;
+    font-size: 0.8125rem;
     font-weight: 600;
-    color: #666666;
-}
-
-.vpad-folio-field input {
-    height: 32px;
-    padding: 0 8px;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    font-size: 0.82rem;
-    font-family: inherit;
-    box-sizing: border-box;
-}
-
-.vpad-folio-field input:focus {
-    outline: 2px solid var(--vpad-accent);
-    outline-offset: 0;
-    border-color: var(--vpad-accent);
-}
-
-.vpad-folio-invert {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.78rem;
-    font-weight: 600;
-    color: #374151;
-    margin-bottom: 8px;
-    cursor: pointer;
-}
-
-.vpad-folio-hint {
-    font-size: 0.72rem;
-    color: #666666;
-    margin: 0 0 10px;
-    line-height: 1.4;
-}
-
-.vpad-folio-reset {
-    width: 100%;
-    padding: 6px 10px;
-    border-radius: 6px;
-    border: 1px solid #d1d5db;
-    background: #f9fafb;
-    font-size: 0.78rem;
-    font-weight: 600;
-    color: #374151;
-    cursor: pointer;
-    font-family: inherit;
-}
-
-.vpad-folio-reset:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.vpad-folio-reset:not(:disabled):hover {
-    background: #f3f4f6;
-}
-
-.vpad-select-template option {
-    background: var(--vpad-elevated);
+    letter-spacing: -0.015em;
+    line-height: 1.25;
     color: var(--vpad-primary);
 }
 
-[data-theme="light"] .vpad-select-template option {
-    background: #ffffff;
-    color: #1f2937;
+/* ── Inset groups ────────────────────────────────────────── */
+.vpad-folio-group {
+    border-radius: 11px;
+    background: color-mix(in srgb, var(--vpad-input) 55%, transparent);
+    box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--vpad-primary) 6%, transparent);
+    overflow: visible;
 }
 
-.tutorial-trigger-btn {
-    display: inline-flex;
+.vpad-folio-row {
+    display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 6px;
+    min-height: 38px;
     padding: 6px 12px;
-    border-radius: 6px;
-    font-weight: 600;
-    font-size: 0.82rem;
-    border: 1px solid #d1d5db;
-    color: #374151;
-    background: #ffffff;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    white-space: nowrap;
-    cursor: pointer;
-    font-family: inherit;
-    height: 32px;
+    margin: 0;
+    gap: 8px;
     box-sizing: border-box;
 }
 
-.tutorial-trigger-btn:hover {
-    background: #f9fafb;
-    border-color: #9ca3af;
-    color: #111827;
+.vpad-folio-row-split {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: stretch;
+    padding: 0;
+    min-height: 0;
+    gap: 0;
+}
+
+.vpad-folio-row-divider {
+    width: 0.5px;
+    background: color-mix(in srgb, var(--vpad-primary) 8%, transparent);
+    align-self: stretch;
+}
+
+.vpad-folio-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 7px 12px;
+    min-width: 0;
+    cursor: text;
+}
+
+/* Settings row: Label left · value › right */
+.vpad-folio-row-setting {
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 40px;
+    padding: 4px 6px 4px 12px;
+    overflow: visible;
+}
+
+.vpad-folio-setting-label {
+    flex-shrink: 0;
+    font-size: 0.8125rem;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+    color: var(--vpad-primary);
+    line-height: 1.2;
+}
+
+.vpad-folio-sep {
+    height: 0.5px;
+    margin-left: 12px;
+    background: color-mix(in srgb, var(--vpad-primary) 8%, transparent);
+}
+
+.vpad-folio-label {
+    font-size: 0.6875rem;
+    font-weight: 400;
+    color: var(--vpad-muted);
+    letter-spacing: 0;
+    line-height: 1.2;
+}
+
+.vpad-folio-label-primary {
+    font-size: 0.8125rem;
+    font-weight: 400;
+    color: var(--vpad-primary);
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+}
+
+.vpad-folio-control {
+    width: 100%;
+    min-width: 0;
+    height: 24px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: var(--vpad-primary);
+    font-family: inherit;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    box-sizing: border-box;
+    appearance: none;
+    -webkit-appearance: none;
+    cursor: text;
+    font-variant-numeric: tabular-nums;
+}
+
+.vpad-folio-control[type="number"]::-webkit-outer-spin-button,
+.vpad-folio-control[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.vpad-folio-control[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+.vpad-folio-control:focus {
+    outline: none;
+}
+
+.vpad-folio-cell:focus-within .vpad-folio-label {
+    color: var(--vpad-accent);
+}
+
+/* ── Switch ──────────────────────────────────────────────── */
+.vpad-folio-row-toggle {
+    justify-content: space-between;
+    cursor: pointer;
+    user-select: none;
+    min-height: 40px;
+}
+
+.vpad-folio-switch-input {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    pointer-events: none;
+}
+
+.vpad-folio-switch {
+    position: relative;
+    flex-shrink: 0;
+    width: 38px;
+    height: 22px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--vpad-primary) 16%, transparent);
+    transition-property: background-color;
+    transition-duration: 180ms;
+    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+.vpad-folio-switch-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+    transition-property: transform;
+    transition-duration: 180ms;
+    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+.vpad-folio-row-toggle:has(.vpad-folio-switch-input:checked) .vpad-folio-switch {
+    background: var(--vpad-accent);
+}
+
+.vpad-folio-row-toggle:has(.vpad-folio-switch-input:checked) .vpad-folio-switch-thumb {
+    transform: translateX(16px);
+}
+
+.vpad-folio-row-toggle:has(.vpad-folio-switch-input:focus-visible) .vpad-folio-switch {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--vpad-accent) 26%, transparent);
+}
+
+/* ── Menu — text only, like macOS / iOS ──────────────────── */
+.vpad-folio-menu {
+    position: relative;
+    min-width: 0;
+    z-index: 1;
+}
+
+/* Settings-row variant only: keep value column narrow */
+.vpad-folio-menu--setting {
+    max-width: 62%;
+    margin-left: auto;
+}
+
+.vpad-folio-menu.is-open {
+    z-index: 20;
+}
+
+.vpad-folio-menu-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 3px;
+    max-width: 100%;
+    min-height: 32px;
+    padding: 4px 6px;
+    margin: 0;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--vpad-secondary);
+    font-family: inherit;
+    cursor: pointer;
+    text-align: right;
+    transition-property: background-color, color, transform;
+    transition-duration: 120ms;
+    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+.vpad-folio-menu-trigger:hover {
+    background: color-mix(in srgb, var(--vpad-primary) 6%, transparent);
+    color: var(--vpad-primary);
+}
+
+.vpad-folio-menu-trigger:active {
+    transform: scale(0.97);
+    transition-duration: 70ms;
+}
+
+.vpad-folio-menu.is-open .vpad-folio-menu-trigger {
+    background: color-mix(in srgb, var(--vpad-primary) 8%, transparent);
+    color: var(--vpad-primary);
+}
+
+.vpad-folio-menu-trigger:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--vpad-accent) 24%, transparent);
+}
+
+.vpad-folio-menu-trigger-label {
+    font-size: 0.8125rem;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.vpad-folio-menu-chevron {
+    flex-shrink: 0;
+    opacity: 0.45;
+    transition-property: transform, opacity;
+    transition-duration: 160ms;
+    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+.vpad-folio-menu.is-open .vpad-folio-menu-chevron {
+    transform: rotate(180deg);
+    opacity: 0.75;
+}
+
+.vpad-folio-menu-list {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    left: auto;
+    z-index: 30;
+    min-width: 188px;
+    max-width: min(240px, 80vw);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 4px;
+    border-radius: 11px;
+    background: color-mix(in srgb, var(--vpad-elevated) 96%, transparent);
+    backdrop-filter: blur(32px) saturate(140%);
+    -webkit-backdrop-filter: blur(32px) saturate(140%);
+    box-shadow:
+        0 0 0 0.5px color-mix(in srgb, var(--vpad-primary) 10%, transparent),
+        0 12px 28px -10px rgba(0, 0, 0, 0.45);
+    animation: vpad-folio-menu-in 180ms cubic-bezier(0.32, 0.72, 0, 1) both;
+    transform-origin: top right;
+    max-height: min(260px, 48vh);
+    overflow-y: auto;
+}
+
+@keyframes vpad-folio-menu-in {
+    from {
+        opacity: 0;
+        transform: translateY(-3px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.vpad-folio-menu-option {
+    display: grid;
+    grid-template-columns: 1fr auto 14px;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 32px;
+    padding: 6px 8px;
+    margin: 0;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--vpad-primary);
+    font-family: inherit;
+    cursor: pointer;
+    text-align: left;
+    transition-property: background-color;
+    transition-duration: 100ms;
+    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+.vpad-folio-menu-option:hover,
+.vpad-folio-menu-option:focus-visible {
+    outline: none;
+    background: color-mix(in srgb, var(--vpad-primary) 7%, transparent);
+}
+
+.vpad-folio-menu-option.is-selected {
+    background: color-mix(in srgb, var(--vpad-accent) 12%, transparent);
+}
+
+.vpad-folio-menu-option.is-selected:hover,
+.vpad-folio-menu-option.is-selected:focus-visible {
+    background: color-mix(in srgb, var(--vpad-accent) 16%, transparent);
+}
+
+.vpad-folio-menu-option-label {
+    font-size: 0.8125rem;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    color: var(--vpad-primary);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vpad-folio-menu-option-detail {
+    font-size: 0.6875rem;
+    font-weight: 400;
+    color: var(--vpad-muted);
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 7.5rem;
+    justify-self: end;
+}
+
+.vpad-folio-menu-check {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    color: var(--vpad-accent);
+}
+
+/* ── Preview footer ──────────────────────────────────────── */
+.vpad-folio-preview {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    padding: 4px 6px 0;
+    text-align: center;
+}
+
+.vpad-folio-preview-sample {
+    font-size: 0.875rem;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    line-height: 1.25;
+    color: var(--vpad-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+.vpad-folio-hint {
+    font-size: 0.6875rem;
+    font-weight: 400;
+    color: var(--vpad-muted);
+    margin: 0;
+    line-height: 1.3;
+    font-variant-numeric: tabular-nums;
+}
+
+.vpad-folio-hint-sep {
+    margin: 0 0.25em;
+    opacity: 0.5;
+}
+
+/* ── Reset ───────────────────────────────────────────────── */
+.vpad-folio-reset {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: center;
+    min-height: 28px;
+    padding: 2px 10px;
+    margin: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    font-family: inherit;
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--vpad-accent);
+    cursor: pointer;
+    transition-property: opacity, background-color, transform;
+    transition-duration: 120ms;
+    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+.vpad-folio-reset:not(:disabled):hover {
+    background: color-mix(in srgb, var(--vpad-accent) 10%, transparent);
+}
+
+.vpad-folio-reset:not(:disabled):active {
+    transform: scale(0.97);
+}
+
+.vpad-folio-reset:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    color: var(--vpad-muted);
+}
+
+.vpad-folio-reset:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--vpad-accent) 24%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .vpad-folio-popover,
+    .vpad-btn-folio,
+    .vpad-tool-chip,
+    .vpad-folio-switch,
+    .vpad-folio-switch-thumb,
+    .vpad-folio-reset,
+    .vpad-folio-menu-list,
+    .vpad-folio-menu-trigger,
+    .vpad-folio-menu-option,
+    .vpad-folio-menu-chevron {
+        animation: none !important;
+        transition: none !important;
+        transform: none !important;
+        opacity: 1 !important;
+    }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+    .vpad-folio-popover,
+    .vpad-folio-menu-list {
+        background: var(--vpad-elevated);
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+    }
+}
+
+@media (prefers-contrast: more) {
+    .vpad-folio-popover,
+    .vpad-folio-menu-list {
+        background: var(--vpad-elevated);
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        box-shadow: 0 0 0 1px var(--vpad-border-strong);
+    }
+
+    .vpad-folio-group {
+        box-shadow: inset 0 0 0 1px var(--vpad-border-strong);
+    }
+}
+
+
+
+/* Tutorial uses vpad-tool-chip; keep class for any external refs */
+.tutorial-trigger-btn {
+    /* styled via .vpad-tool-chip */
 }
 
 /* Excel Modal */

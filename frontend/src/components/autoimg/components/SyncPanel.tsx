@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, onNotify } from '../../../api';
 import { CoverageRail } from './shared';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 
 interface SyncPanelProps {
   autoSync: boolean;
@@ -121,28 +122,27 @@ export default function SyncPanel({
             {lastSync}
           </span>
         )}
-        <label
-          className="flex cursor-pointer items-center gap-1.5 active:opacity-80"
-          title="Lee el Sheet cada 5 min (no re-escanea Drive)"
-        >
+        <label className="flex cursor-pointer items-center gap-1.5 active:opacity-80">
           <span className="text-[10px] tracking-wide text-[var(--text-muted)]">Auto</span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={autoSync}
-            aria-label="Actualizar desde Sheet cada 5 minutos"
-            disabled={togglingAuto}
-            onClick={handleAutoSyncToggle}
-            className={`relative h-4 w-7 shrink-0 rounded-full transition-colors duration-200 ease-out disabled:opacity-40 ${
-              autoSync ? 'bg-[var(--accent-green)]' : 'bg-[var(--border-medium)]'
-            }`}
-          >
-            <span
-              className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${
-                autoSync ? 'translate-x-3.5' : 'translate-x-0.5'
+          <WithHoverTooltip label="Lee el Sheet cada 5 min (no re-escanea Drive)" placement="bottom">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoSync}
+              aria-label="Actualizar desde Sheet cada 5 minutos"
+              disabled={togglingAuto}
+              onClick={handleAutoSyncToggle}
+              className={`relative h-4 w-7 shrink-0 rounded-full transition-colors duration-200 ease-out disabled:opacity-40 ${
+                autoSync ? 'bg-[var(--accent-green)]' : 'bg-[var(--border-medium)]'
               }`}
-            />
-          </button>
+            >
+              <span
+                className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${
+                  autoSync ? 'translate-x-3.5' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+          </WithHoverTooltip>
         </label>
       </div>
     </div>

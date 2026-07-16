@@ -1,3 +1,4 @@
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { Save, Trash2, Upload, X } from 'lucide-react';
 import {
   DEFAULT_MEDIDA_LABEL_DIAMETRO,
@@ -83,9 +84,11 @@ export default function FormPanel({ report, hasChanges, busy, logoLeft, logoRigh
             <Save size={15} />
             Guardar
           </button>
-          <button className="tr-danger tr-icon-button" onClick={onDelete} disabled={busy} aria-label="Eliminar informe" title="Eliminar informe">
-            <Trash2 size={15} />
-          </button>
+          <WithHoverTooltip label="Eliminar informe" placement="bottom">
+            <button className="tr-danger tr-icon-button" onClick={onDelete} disabled={busy} aria-label="Eliminar informe">
+              <Trash2 size={15} />
+            </button>
+          </WithHoverTooltip>
         </div>
       </div>
 
@@ -223,37 +226,40 @@ function LogoInput({ side, value, onChange }: { side: 'izq' | 'der'; value: stri
   const title = side === 'izq' ? 'Logo izquierdo' : 'Logo derecho';
   return (
     <div className={`tr-logo-chip${value ? ' tr-logo-chip--filled' : ''}`}>
-      <label className="tr-logo-chip-hit" title={value ? `Cambiar ${title.toLowerCase()}` : `Subir ${title.toLowerCase()}`}>
-        <span className={`tr-logo-chip-thumb${value ? '' : ' tr-logo-chip-thumb--empty'}`}>
-          {value ? <img src={value} alt={title} /> : <Upload size={13} strokeWidth={2} />}
-        </span>
-        <span className="tr-logo-chip-meta">
-          <span className="tr-logo-chip-label">Logo {side}</span>
-          <span className="tr-logo-chip-hint">{value ? 'Clic para cambiar' : 'PNG · JPG · WebP'}</span>
-        </span>
-        <input
-          type="file"
-          accept="image/*"
-          onChange={(event) => {
-            const file = event.target.files?.[0] || null;
-            event.target.value = '';
-            onChange(file);
-          }}
-        />
-      </label>
+      <WithHoverTooltip label={value ? `Cambiar ${title.toLowerCase()}` : `Subir ${title.toLowerCase()}`} placement="bottom">
+        <label className="tr-logo-chip-hit">
+          <span className={`tr-logo-chip-thumb${value ? '' : ' tr-logo-chip-thumb--empty'}`}>
+            {value ? <img src={value} alt={title} /> : <Upload size={13} strokeWidth={2} />}
+          </span>
+          <span className="tr-logo-chip-meta">
+            <span className="tr-logo-chip-label">Logo {side}</span>
+            <span className="tr-logo-chip-hint">{value ? 'Clic para cambiar' : 'PNG · JPG · WebP'}</span>
+          </span>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(event) => {
+              const file = event.target.files?.[0] || null;
+              event.target.value = '';
+              onChange(file);
+            }}
+          />
+        </label>
+      </WithHoverTooltip>
       {value && (
-        <button
-          type="button"
-          className="tr-logo-chip-clear"
-          onClick={(e) => {
-            e.stopPropagation();
-            onChange(null);
-          }}
-          aria-label={`Quitar ${title.toLowerCase()}`}
-          title={`Quitar ${title.toLowerCase()}`}
-        >
-          <X size={12} strokeWidth={2.25} />
-        </button>
+        <WithHoverTooltip label={`Quitar ${title.toLowerCase()}`} placement="bottom">
+          <button
+            type="button"
+            className="tr-logo-chip-clear"
+            onClick={(e) => {
+              e.stopPropagation();
+              onChange(null);
+            }}
+            aria-label={`Quitar ${title.toLowerCase()}`}
+          >
+            <X size={12} strokeWidth={2.25} />
+          </button>
+        </WithHoverTooltip>
       )}
     </div>
   );

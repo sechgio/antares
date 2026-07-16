@@ -1,6 +1,7 @@
 import React, { Suspense, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { History, Palette, X, Users, PawPrint, type LucideIcon } from 'lucide-react';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import AppearanceView from './AppearanceView';
 import HistoryView from '../history/HistoryView';
 import PanelView from './PanelView';
@@ -167,16 +168,17 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
                   : 'Colecciona y activa mascotas animadas'}
               </span>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Cerrar configuración"
-              title="Cerrar (Esc)"
-              data-testid="settings-modal-close"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-            >
-              <X size={16} strokeWidth={1.9} />
-            </button>
+            <WithHoverTooltip label="Cerrar (Esc)" placement="bottom">
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Cerrar configuración"
+                data-testid="settings-modal-close"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              >
+                <X size={16} strokeWidth={1.9} />
+              </button>
+            </WithHoverTooltip>
           </header>
 
           <div className="relative min-h-0 flex-1 overflow-hidden">

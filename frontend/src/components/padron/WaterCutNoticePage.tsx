@@ -1,4 +1,11 @@
 import type { WaterCutData, WaterCutItem } from './data';
+import {
+  formatPageNumberLabel,
+  getPageNumberAppearanceStyle,
+  type PageNumberFontStyle,
+  type PageNumberSize,
+  type PageNumberStyle,
+} from './folio';
 
 interface WaterCutNoticePageProps {
   headerData: WaterCutData;
@@ -7,6 +14,9 @@ interface WaterCutNoticePageProps {
   pageNumber: number;
   totalPages: number;
   rowsPerPage?: number;
+  pageNumberStyle?: PageNumberStyle;
+  pageNumberSize?: PageNumberSize;
+  pageNumberFontStyle?: PageNumberFontStyle;
 }
 
 function FieldRow({ label, value }: { label: string; value: string }) {
@@ -25,8 +35,15 @@ export default function WaterCutNoticePage({
   pageNumber,
   totalPages,
   rowsPerPage = 39,
+  pageNumberStyle = 'auto',
+  pageNumberSize = 'auto',
+  pageNumberFontStyle = 'auto',
 }: WaterCutNoticePageProps) {
   const rows = items.slice(0, rowsPerPage);
+  const pageNumberAppearance = getPageNumberAppearanceStyle(
+    pageNumberSize,
+    pageNumberFontStyle,
+  );
 
   return (
     <div className="vpad-sheet portrait vpad-cut-sheet">
@@ -75,8 +92,8 @@ export default function WaterCutNoticePage({
         </table>
       </div>
 
-      <div className="vpad-sheet-foot">
-        Página {pageNumber} de {totalPages}
+      <div className="vpad-sheet-foot" style={pageNumberAppearance}>
+        {formatPageNumberLabel(pageNumberStyle, pageNumber, totalPages, 'water-cut-notice')}
       </div>
     </div>
   );

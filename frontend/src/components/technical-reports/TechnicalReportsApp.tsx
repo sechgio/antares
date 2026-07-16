@@ -1,4 +1,5 @@
 import './technical-reports.css';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { Download, FilePlus2, Files, RefreshCw, Trash2, Upload } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDialog } from '../../hooks/useDialog';
@@ -237,12 +238,16 @@ export default function TechnicalReportsApp() {
               <Upload size={16} />
               Importar
             </button>
-            <button className="tr-secondary tr-icon-button" disabled={busy} onClick={() => void loadReports()} title="Recargar">
-              <RefreshCw size={16} />
-            </button>
-            <button className="tr-danger tr-icon-button" disabled={busy || reports.length === 0} onClick={() => void clearReports()} title="Eliminar todos">
-              <Trash2 size={16} />
-            </button>
+            <WithHoverTooltip label="Recargar" placement="bottom">
+              <button className="tr-secondary tr-icon-button" disabled={busy} onClick={() => void loadReports()}>
+                <RefreshCw size={16} />
+              </button>
+            </WithHoverTooltip>
+            <WithHoverTooltip label="Eliminar todos" placement="bottom">
+              <button className="tr-danger tr-icon-button" disabled={busy || reports.length === 0} onClick={() => void clearReports()}>
+                <Trash2 size={16} />
+              </button>
+            </WithHoverTooltip>
             <button className="tr-secondary" onClick={createReport} disabled={busy}>
               <FilePlus2 size={16} />
               Nuevo

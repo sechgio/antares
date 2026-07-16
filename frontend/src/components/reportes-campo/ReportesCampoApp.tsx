@@ -10,6 +10,7 @@ import {
     Loader2,
     PaintBucket,
 } from 'lucide-react';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import SheetPreview from './components/SheetPreview';
 import HeaderForm from './components/HeaderForm';
 import PhotoManager from './components/PhotoManager';
@@ -361,33 +362,42 @@ export default function ReportesCampoApp() {
                             onMouseDown={handleResizeStart('right')}
                         />
                         <div className="rcampo-panels-actions">
-                            <button
-                                className="rcampo-toolbar-btn rcampo-sidebar-action"
-                                onClick={createPanel}
-                                disabled={isExporting}
-                                title="Nuevo panel"
-                            >
-                                <FilePlus2 size={14} />
-                                Nuevo
-                            </button>
-                            <button
-                                className="rcampo-toolbar-btn rcampo-toolbar-btn-primary rcampo-sidebar-action"
-                                onClick={() => void handleExportCurrent()}
-                                disabled={!selectedPanel || photos.length === 0 || isExporting}
-                                title="Exportar panel actual"
-                            >
-                                {isExporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-                                PDF
-                            </button>
-                            <button
-                                className="rcampo-toolbar-btn rcampo-sidebar-action"
-                                onClick={() => void handleExportConsolidated()}
-                                disabled={exportablePanelCount === 0 || isExporting}
-                                title="Exportar todos los paneles"
-                            >
-                                <Files size={14} />
-                                Consolidado
-                            </button>
+                            <WithHoverTooltip label="Nuevo panel" placement="bottom">
+                                <button
+                                    type="button"
+                                    className="rcampo-toolbar-btn rcampo-sidebar-action"
+                                    onClick={createPanel}
+                                    disabled={isExporting}
+                                    aria-label="Nuevo panel"
+                                >
+                                    <FilePlus2 size={14} />
+                                    Nuevo
+                                </button>
+                            </WithHoverTooltip>
+                            <WithHoverTooltip label="Exportar panel actual" placement="bottom">
+                                <button
+                                    type="button"
+                                    className="rcampo-toolbar-btn rcampo-toolbar-btn-primary rcampo-sidebar-action"
+                                    onClick={() => void handleExportCurrent()}
+                                    disabled={!selectedPanel || photos.length === 0 || isExporting}
+                                    aria-label="Exportar panel actual"
+                                >
+                                    {isExporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                                    PDF
+                                </button>
+                            </WithHoverTooltip>
+                            <WithHoverTooltip label="Exportar todos los paneles" placement="bottom">
+                                <button
+                                    type="button"
+                                    className="rcampo-toolbar-btn rcampo-sidebar-action"
+                                    onClick={() => void handleExportConsolidated()}
+                                    disabled={exportablePanelCount === 0 || isExporting}
+                                    aria-label="Exportar todos los paneles"
+                                >
+                                    <Files size={14} />
+                                    Consolidado
+                                </button>
+                            </WithHoverTooltip>
                         </div>
                         <PanelList
                             panels={panelListItems}

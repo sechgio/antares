@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import {
   CheckCircle, AlertCircle, RotateCcw, ChevronLeft, ChevronRight, ChevronDown,
   FileSpreadsheet, Image as ImageIcon, FileCode, Settings,
@@ -8,6 +9,7 @@ import { api } from '../../api';
 import { useToast } from '../../hooks/useToast';
 import { useBackendStatus } from '../../hooks/useBackendStatus';
 import PreviewPanel, { renderPreviewHtml } from './PreviewPanel';
+import TemplatePicker from './TemplatePicker';
 import { REPORT_FIELDS } from './constants';
 import {
   excelSerialToDate, isDateColumn,
@@ -21,6 +23,7 @@ import {
   type PdfExportScope,
   type PdfQuality,
 } from './pdfExport';
+import './template-picker.css';
 
 interface TemplateInfo {
   id: string;
@@ -652,14 +655,13 @@ export default function PreviewPanelView() {
                 <input id="templateInput" type="file" hidden accept=".html" onChange={handleTemplateUpload} />
               </label>
 
-              <select
-                className="w-full h-7 rounded-md border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-2 text-[10px] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]"
-                onChange={e => handleBackendTemplateSelect(e.target.value)}
-                value={availableTemplates.some(t => t.filename === customTemplate?.name) ? customTemplate?.name : ''}
-              >
-                <option value="">{availableTemplates.length === 0 ? 'Sin plantillas' : '-- Elegir Plantilla --'}</option>
-                {availableTemplates.map(t => <option key={t.id} value={t.filename}>{t.name}</option>)}
-              </select>
+              <TemplatePicker
+                aria-label="Elegir plantilla"
+                placeholder={availableTemplates.length === 0 ? 'Sin plantillas' : '-- Elegir Plantilla --'}
+                value={availableTemplates.some(t => t.filename === customTemplate?.name) ? customTemplate?.name ?? '' : ''}
+                options={availableTemplates.map(t => ({ value: t.filename, label: t.name }))}
+                onChange={handleBackendTemplateSelect}
+              />
 
               {templateStatus === 'invalid' && templateError && (
                 <div className="text-[9px] text-[var(--accent-red)] px-0.5">⚠️ {templateError}</div>
@@ -673,9 +675,11 @@ export default function PreviewPanelView() {
                   </span>
                 </div>
                 {customTemplate && (
-                  <button onClick={handleResetTemplate} className="shrink-0 p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors" title="Usar Plantilla Predeterminada">
-                    <RotateCcw size={12} />
-                  </button>
+                  <WithHoverTooltip label="Usar Plantilla Predeterminada" placement="bottom">
+                    <button onClick={handleResetTemplate} className="shrink-0 p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors">
+                      <RotateCcw size={12} />
+                    </button>
+                  </WithHoverTooltip>
                 )}
               </div>
 
@@ -772,7 +776,9 @@ export default function PreviewPanelView() {
                       <option value="">Ignorar</option>
                       {headers.map(h => <option key={h} value={h}>{h}</option>)}
                     </select>
-                    <button onClick={() => removeCustomColumn(col.id)} className="text-[var(--accent-red)] hover:opacity-80 text-[9px] px-0.5 hover:bg-[var(--accent-red)]/20 rounded transition-colors" title="Eliminar">✕</button>
+                    <WithHoverTooltip label="Eliminar" placement="bottom">
+                      <button onClick={() => removeCustomColumn(col.id)} className="text-[var(--accent-red)] hover:opacity-80 text-[9px] px-0.5 hover:bg-[var(--accent-red)]/20 rounded transition-colors">✕</button>
+                    </WithHoverTooltip>
                   </div>
                 ))}
               </div>
@@ -938,14 +944,15 @@ export default function PreviewPanelView() {
             >
               <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--border-subtle)]">
                 <h3 className="text-[14px] font-semibold text-[var(--text-primary)]">Vista previa de datos ({data.length} registros)</h3>
-                <button
-                  onClick={() => setShowDataPreview(false)}
-                  className="shrink-0 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-                  title="Cerrar vista previa"
-                  aria-label="Cerrar vista previa"
-                >
-                  <X size={18} />
-                </button>
+                <WithHoverTooltip label="Cerrar vista previa" placement="bottom">
+                  <button
+                    onClick={() => setShowDataPreview(false)}
+                    className="shrink-0 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                    aria-label="Cerrar vista previa"
+                  >
+                    <X size={18} />
+                  </button>
+                </WithHoverTooltip>
               </div>
               <div className="flex-1 overflow-y-auto overflow-x-hidden p-3">
                 <table className="w-full table-fixed border-collapse text-[10px] sm:text-[11px]">

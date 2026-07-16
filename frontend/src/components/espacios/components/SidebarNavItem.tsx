@@ -1,3 +1,4 @@
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pencil, Star, Trash2 } from 'lucide-react';
 import ColorSwatchPicker from './ColorSwatchPicker';
@@ -119,49 +120,52 @@ export default function SidebarNavItem({
             />
           </form>
         ) : (
-          <button
-            type="button"
-            onClick={onSelect}
-            onDoubleClick={(e) => {
-              e.preventDefault();
-              startEditing();
-            }}
-            aria-current={isActive ? 'true' : undefined}
-            title="Doble clic para renombrar"
-            className="relative z-[1] flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-[10px]"
-          >
-            {icon}
-            <span
-              className={`min-w-0 flex-1 truncate pr-1 leading-snug ${
-                isActive ? 'font-medium text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'
-              }`}
+          <WithHoverTooltip label="Doble clic para renombrar" placement="right" className="min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={onSelect}
+              onDoubleClick={(e) => {
+                e.preventDefault();
+                startEditing();
+              }}
+              aria-current={isActive ? 'true' : undefined}
+              className="relative z-[1] flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-[10px]"
             >
-              {name}
-            </span>
-            {isFavorite && <Star className="h-3 w-3 shrink-0 fill-amber-400 text-amber-400" />}
-          </button>
+              {icon}
+              <span
+                className={`min-w-0 flex-1 truncate pr-1 leading-snug ${
+                  isActive ? 'font-medium text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'
+                }`}
+              >
+                {name}
+              </span>
+              {isFavorite && <Star className="h-3 w-3 shrink-0 fill-amber-400 text-amber-400" />}
+            </button>
+          </WithHoverTooltip>
         )}
 
         {!editing && (
           <div className="relative z-[1] flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/item:opacity-100 group-focus-within/item:opacity-100">
-            <button
-              type="button"
-              onClick={startEditing}
-              className="rounded-md p-1 text-[var(--text-muted)] hover:bg-[var(--bg-base)] hover:text-[var(--text-primary)] focus:opacity-100"
-              aria-label={renameLabel}
-              title={renameLabel}
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={onDelete}
-              className="rounded-md p-1 text-[var(--text-muted)] hover:bg-[var(--accent-red)]/10 hover:text-[var(--accent-red)] focus:opacity-100"
-              aria-label={deleteLabel}
-              title={deleteLabel}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+            <WithHoverTooltip label={renameLabel} placement="right">
+              <button
+                type="button"
+                onClick={startEditing}
+                className="rounded-md p-1 text-[var(--text-muted)] hover:bg-[var(--bg-base)] hover:text-[var(--text-primary)] focus:opacity-100"
+                aria-label={renameLabel}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            </WithHoverTooltip>
+            <WithHoverTooltip label={deleteLabel} placement="right">
+              <button
+                type="button"
+                onClick={onDelete}
+                className="rounded-md p-1 text-[var(--text-muted)] hover:bg-[var(--accent-red)]/10 hover:text-[var(--accent-red)] focus:opacity-100"
+                aria-label={deleteLabel}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </WithHoverTooltip>
           </div>
         )}
       </div>

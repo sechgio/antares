@@ -1,4 +1,5 @@
 import { RotateCcw } from 'lucide-react';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import type { VisualMapping } from '../../types';
 import { hexToMappingColor, mappingColorCss, mappingColorToHex } from './mappingCoords';
 
@@ -60,17 +61,17 @@ export default function MappingColorField({ mapping, originalMapping, showReset,
         {PRESETS.map((preset) => {
           const active = currentHex.toLowerCase() === preset.hex.toLowerCase();
           return (
-            <button
-              key={preset.hex}
-              type="button"
-              title={preset.label}
-              aria-label={preset.label}
-              onClick={() => onChange(hexToMappingColor(preset.hex))}
-              className={`h-6 w-6 rounded-full border transition-transform hover:scale-110 ${
-                active ? 'border-[var(--accent-primary)] ring-1 ring-[var(--accent-primary)]/50' : 'border-[var(--border-subtle)]'
-              }`}
-              style={{ backgroundColor: preset.hex }}
-            />
+            <WithHoverTooltip key={preset.hex} label={preset.label} placement="bottom">
+              <button
+                type="button"
+                aria-label={preset.label}
+                onClick={() => onChange(hexToMappingColor(preset.hex))}
+                className={`h-6 w-6 rounded-full border transition-transform hover:scale-110 ${
+                  active ? 'border-[var(--accent-primary)] ring-1 ring-[var(--accent-primary)]/50' : 'border-[var(--border-subtle)]'
+                }`}
+                style={{ backgroundColor: preset.hex }}
+              />
+            </WithHoverTooltip>
           );
         })}
       </div>

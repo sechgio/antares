@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Download, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { useDialog } from '../../hooks/useDialog';
+import { HoverTooltip } from '@/components/ui/HoverTooltip';
 
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error' | 'up-to-date';
 
@@ -111,13 +112,12 @@ export default function UpdateButton() {
     title;
 
   return (
-    <div className="relative">
+    <div className="group relative flex h-full">
       <button
         type="button"
         onClick={handleClick}
-        className={`app-titlebar-button group flex h-full w-10 items-center justify-center text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] ${isActive ? 'pointer-events-none opacity-70' : ''} ${isError ? 'text-[var(--accent-red)]' : ''}`}
+        className={`app-titlebar-button flex h-full w-10 items-center justify-center text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] ${isActive ? 'pointer-events-none opacity-70' : ''} ${isError ? 'text-[var(--accent-red)]' : ''}`}
         disabled={isActive}
-        title={title}
         aria-label={ariaLabel}
       >
         <span className={iconWrapClass} data-testid={hasUpdate ? 'update-status-badge' : undefined}>
@@ -128,6 +128,7 @@ export default function UpdateButton() {
           {(update.status === 'idle' || update.status === 'up-to-date') && <Download size={14} strokeWidth={1.8} />}
         </span>
       </button>
+      <HoverTooltip label={title} placement="bottom" groupHoverClass="group-hover:opacity-100" />
 
       {update.status === 'downloading' && (
         <div className="absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2">

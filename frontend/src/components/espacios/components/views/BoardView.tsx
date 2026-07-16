@@ -1,3 +1,4 @@
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import {
   DndContext,
   DragOverlay,
@@ -281,16 +282,17 @@ function SortableTaskCard({
         onDelete={onDelete}
         onAdd={onAdd}
         dragHandle={
-          <button
-            type="button"
-            className="mt-0.5 shrink-0 cursor-grab rounded-md p-0.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-secondary)] active:cursor-grabbing"
-            aria-label={`Arrastrar «${tarea.title}»`}
-            title="Arrastrar a otra columna"
-            {...attributes}
-            {...listeners}
-          >
-            <GripVertical className="h-4 w-4" strokeWidth={2} />
-          </button>
+          <WithHoverTooltip label="Arrastrar a otra columna" placement="bottom">
+            <button
+              type="button"
+              className="mt-0.5 shrink-0 cursor-grab rounded-md p-0.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-secondary)] active:cursor-grabbing"
+              aria-label={`Arrastrar «${tarea.title}»`}
+              {...attributes}
+              {...listeners}
+            >
+              <GripVertical className="h-4 w-4" strokeWidth={2} />
+            </button>
+          </WithHoverTooltip>
         }
       />
     </div>
@@ -488,21 +490,26 @@ function ColumnMenu({
                 </button>
               )}
               {onDelete && !column.is_system && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={busy || taskCount > 0}
-                  onClick={() => void submitDelete()}
-                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs text-[var(--accent-red)] hover:bg-[var(--accent-red)]/10 disabled:opacity-50"
-                  title={
+                <WithHoverTooltip
+                  label={
                     taskCount > 0
                       ? 'La columna debe estar vacía para eliminarla'
                       : 'Eliminar columna'
                   }
+                  placement="bottom"
+                  className="w-full"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Eliminar{taskCount > 0 ? ' (vacía primero)' : ''}
-                </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={busy || taskCount > 0}
+                    onClick={() => void submitDelete()}
+                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs text-[var(--accent-red)] hover:bg-[var(--accent-red)]/10 disabled:opacity-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Eliminar{taskCount > 0 ? ' (vacía primero)' : ''}
+                  </button>
+                </WithHoverTooltip>
               )}
               {column.is_system && (
                 <p className="px-2.5 py-1.5 text-[10px] text-[var(--text-muted)]">Columna del sistema</p>

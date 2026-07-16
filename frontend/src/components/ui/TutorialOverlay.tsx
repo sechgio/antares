@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useId } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import "./tutorial-overlay.css";
 
 export interface TutorialStep {
@@ -187,12 +188,14 @@ export default function TutorialOverlay({ isOpen, onClose, steps }: TutorialOver
             transition={{ type: "spring", stiffness: 300, damping: 25 }}
           >
             <div className="tutorial-header">
-              <button className="tutorial-close" onClick={onClose} title="Cerrar tutorial" type="button">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
+              <WithHoverTooltip label="Cerrar tutorial" placement="bottom">
+                <button className="tutorial-close" onClick={onClose} aria-label="Cerrar tutorial" type="button">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </WithHoverTooltip>
               <span className="tutorial-step-counter">
                 {currentStep + 1} / {steps.length}
               </span>

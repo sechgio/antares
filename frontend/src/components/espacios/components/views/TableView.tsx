@@ -1,3 +1,4 @@
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { Check, Flag, Pencil, Plus, Table2, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import EmptyState from '../EmptyState';
@@ -236,19 +237,20 @@ export default function TableView({
                     {index + 1}
                   </td>
                   <td className="px-2 py-2.5">
-                    <button
-                      type="button"
-                      onClick={() => onComplete(tarea)}
-                      className={`flex h-5 w-5 items-center justify-center rounded-full border transition-colors ${
-                        done
-                          ? 'border-[var(--accent-green)] bg-[var(--accent-green)] text-[var(--text-on-accent)]'
-                          : 'border-[var(--border-medium)] text-transparent hover:border-[var(--accent-primary)] hover:text-[var(--accent-primary)]'
-                      }`}
-                      aria-label={done ? `Reabrir «${tarea.title}»` : `Completar «${tarea.title}»`}
-                      title={done ? 'Reabrir' : 'Completar'}
-                    >
-                      <Check className="h-3 w-3" strokeWidth={3} />
-                    </button>
+                    <WithHoverTooltip label={done ? 'Reabrir' : 'Completar'} placement="bottom">
+                      <button
+                        type="button"
+                        onClick={() => onComplete(tarea)}
+                        className={`flex h-5 w-5 items-center justify-center rounded-full border transition-colors ${
+                          done
+                            ? 'border-[var(--accent-green)] bg-[var(--accent-green)] text-[var(--text-on-accent)]'
+                            : 'border-[var(--border-medium)] text-transparent hover:border-[var(--accent-primary)] hover:text-[var(--accent-primary)]'
+                        }`}
+                        aria-label={done ? `Reabrir «${tarea.title}»` : `Completar «${tarea.title}»`}
+                      >
+                        <Check className="h-3 w-3" strokeWidth={3} />
+                      </button>
+                    </WithHoverTooltip>
                   </td>
                   <td className="px-3 py-2.5">
                     <button type="button" className="min-w-0 max-w-full text-left" onClick={() => onEdit?.(tarea)}>
@@ -303,25 +305,27 @@ export default function TableView({
                   <td className="px-3 py-2.5">
                     <div className="flex items-center justify-end gap-0.5">
                       {onEdit && (
+                        <WithHoverTooltip label="Editar" placement="bottom">
+                          <button
+                            type="button"
+                            onClick={() => onEdit(tarea)}
+                            className="rounded-md p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
+                            aria-label={`Editar ${tarea.title}`}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        </WithHoverTooltip>
+                      )}
+                      <WithHoverTooltip label="Eliminar" placement="bottom">
                         <button
                           type="button"
-                          onClick={() => onEdit(tarea)}
-                          className="rounded-md p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
-                          aria-label={`Editar ${tarea.title}`}
-                          title="Editar"
+                          onClick={() => onDelete(tarea.id)}
+                          className="rounded-md p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-input)] hover:text-[var(--accent-red)]"
+                          aria-label={`Eliminar ${tarea.title}`}
                         >
-                          <Pencil className="h-3.5 w-3.5" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => onDelete(tarea.id)}
-                        className="rounded-md p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-input)] hover:text-[var(--accent-red)]"
-                        aria-label={`Eliminar ${tarea.title}`}
-                        title="Eliminar"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      </WithHoverTooltip>
                     </div>
                   </td>
                 </tr>

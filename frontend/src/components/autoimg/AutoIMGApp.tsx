@@ -21,6 +21,7 @@ import LogsViewer from './components/LogsViewer';
 import ArrastreViewer from './components/ArrastreViewer';
 import AutoImgSidebarHeader from './components/AutoImgSidebarHeader';
 import { SidebarShell } from './components/shared';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 
 const TABS: { id: AutoImgTab; label: string; icon: LucideIcon; hint: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, hint: 'Resumen y sync' },
@@ -171,24 +172,24 @@ export default function AutoIMGApp() {
               const isActive = activeTab === tab.id;
               const Icon = tab.icon;
               return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveTab(tab.id)}
-                  title={tab.hint}
-                  className={`relative flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-[12px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)] ${
-                    isActive
-                      ? 'bg-[var(--bg-elevated)] font-medium text-[var(--text-primary)] shadow-[inset_0_0_0_1px_var(--border-medium)]'
-                      : 'text-[var(--text-muted)] hover:bg-[var(--bg-elevated)]/50 hover:text-[var(--text-secondary)]'
-                  }`}
-                >
-                  <Icon
-                    size={14}
-                    strokeWidth={isActive ? 2 : 1.75}
-                    className={isActive ? 'text-[var(--accent-primary-hover)]' : ''}
-                  />
-                  {tab.label}
-                </button>
+                <WithHoverTooltip key={tab.id} label={tab.hint} placement="bottom">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`relative flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-[12px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)] ${
+                      isActive
+                        ? 'bg-[var(--bg-elevated)] font-medium text-[var(--text-primary)] shadow-[inset_0_0_0_1px_var(--border-medium)]'
+                        : 'text-[var(--text-muted)] hover:bg-[var(--bg-elevated)]/50 hover:text-[var(--text-secondary)]'
+                    }`}
+                  >
+                    <Icon
+                      size={14}
+                      strokeWidth={isActive ? 2 : 1.75}
+                      className={isActive ? 'text-[var(--accent-primary-hover)]' : ''}
+                    />
+                    {tab.label}
+                  </button>
+                </WithHoverTooltip>
               );
             })}
           </nav>
