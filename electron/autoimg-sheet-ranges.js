@@ -16,4 +16,4 @@ function assertAllowedSheetRange(range) {
   return trimmed;
 }
 
-module.exports = { ALLOWED_SHEETS, assertAllowedSheetRange };
+module.exports = { assertAllowedSheetRange };

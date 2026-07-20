@@ -13,17 +13,9 @@ from backend.core.run_types import ALL_RUN_TYPES  # noqa: F401
 
 # ─── Constants ─────────────────────────────────────────────────────────────
 
-# Run type ids. Kept here for backward compatibility — the canonical list
+# Run type id used as the default for ``save_run``. The canonical registry
 # lives in ``backend.core.run_types.RUN_TYPE_REGISTRY``.
 RUN_TYPE_CONVERSION = "conversion"
-RUN_TYPE_FORMATO = "formato"
-RUN_TYPE_SELLADOR = "sellador"
-RUN_TYPE_PADRON = "padron"
-RUN_TYPE_VOLANTE = "volante"
-RUN_TYPE_IMAGE_OPTIMIZER = "image_optimizer"
-RUN_TYPE_REPORTE_CAMPO = "reporte_campo"
-RUN_TYPE_PANEL_AVISO_CORTE = "panel_aviso_corte"
-RUN_TYPE_INFORME_TECNICO = "informe_tecnico"
 
 # Known historial columns — explicit projection (never ``SELECT *``).
 _HISTORIAL_COLUMNS: tuple[str, ...] = (

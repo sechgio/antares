@@ -246,14 +246,10 @@ export const api = {
 
   preview: (body: PreviewBody) => _invoke<PreviewResult>('preview', body),
 
-  isVideo: (path: string) => _invoke<{ is_video: boolean }>('is_video', { path }),
-
   dbDetectKeyColumn: (files: string[]) => _invoke<DbDetectKeyColumnResult>('db_detect_key_column', { files }),
 
   getRecords: () => _invoke<{ records: DBRecord[]; fields: string[] }>('db_records'),
   importExcel: (path: string) => _invoke<{ imported: number }>('db_import', { path }),
-  exportExcel: (path: string) => _invoke<{ exported: number }>('db_export', { path }),
-  generateTemplate: (path: string) => _invoke<{ path: string }>('db_template', { path }),
   clearDatabase: () => _invoke<{ cleared: number }>('db_clear'),
 
   getFields: () => _invoke<{ fields: DBField[] }>('db_fields'),
@@ -263,8 +259,6 @@ export const api = {
   getDbColumns: () => _invoke<{ columns: string[]; records: DBRecord[]; total: number }>('db_columns'),
   dbParseMapping: (path: string, files?: string[], id_column?: string, rename_column?: string) =>
     _invoke<MappingResult>('db_parse_mapping', { path, files: files ?? [], id_column, rename_column }),
-  dbValidateMapping: (mapping: Record<string, string>, files?: string[]) =>
-    _invoke<MappingResult>('db_validate_mapping', { mapping, files: files ?? [] }),
 
   getRenamePatterns: () => _invoke<{ patterns: RenamePattern[] }>('rename_patterns_get'),
   updateRenamePatterns: (patterns: RenamePattern[]) => _invoke<{ patterns: RenamePattern[] }>('rename_patterns_update', { patterns }),
@@ -283,7 +277,6 @@ export const api = {
   resetTheme: () => _invoke<ThemeConfig>('theme_reset'),
 
   historyList: (body?: { limit?: number; offset?: number; run_type?: string; date_from?: string; date_to?: string }) => _invoke<{ runs: unknown[] }>('history_list', body),
-  historyGet: (id: number) => _invoke<{ run: unknown }>('history_get', { id }),
   historyDelete: (id: number) => _invoke<{ deleted: boolean }>('history_delete', { id }),
   historyDeleteMany: (ids: number[]) => _invoke<{ deleted: number; requested: number }>('history_delete_many', { ids }),
   historySave: (body: {
@@ -298,8 +291,6 @@ export const api = {
     run_type: string;
     duration_ms?: number;
   }) => _invoke<{ id: number }>('history_save', body),
-  historyExport: (body?: { ids?: number[]; run_type?: string; date_from?: string; date_to?: string; limit?: number }) =>
-    _invoke<{ csv: string; count: number }>('history_export', body ?? {}),
 
   // ─── Formatos PDF ───────────────────────────────────────────────────────
   formatosList: () => _invoke<{ formats: FormatInfo[] }>('formatos_list'),
@@ -586,7 +577,6 @@ export const api = {
   }>('autoimg_bootstrap', { refresh }),
   autoimgAutoSyncToggle: (enabled: boolean) => _invoke<{ enabled: boolean }>('autoimg_auto_sync_toggle', { enabled }),
   autoimgCancelOperation: () => _invoke<{ success: boolean; operation?: string; reason?: string }>('autoimg_cancel_operation'),
-  autoimgOperationStatus: () => _invoke<{ active: string | null; cancellable: boolean }>('autoimg_operation_status'),
   autoimgStatus: () => _invoke<{ connected: boolean; sheetName?: string; sheetId?: string; sheetLinked?: boolean; lastSync?: string; autoSync: boolean; totalNis?: number; completos?: number; faltantes?: number; sobrantes?: number; sinSgio?: number; carpetasActivas?: number }>('autoimg_status'),
 
 };
