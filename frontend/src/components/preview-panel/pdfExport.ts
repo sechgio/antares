@@ -1,10 +1,7 @@
 import { matchesRecordId, naturalSortByName } from './utils';
 export {
   buildLocalImageToken,
-  fileToDataUrl,
-  imageToPdfDataUrl,
   imageToPdfSource,
-  type PdfImageSource,
   type PdfQuality,
 } from '../../utils/pdfAssets';
 

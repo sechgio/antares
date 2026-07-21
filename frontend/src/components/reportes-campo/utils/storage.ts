@@ -189,28 +189,6 @@ export async function deleteStoredPanel(id: string): Promise<void> {
     });
 }
 
-export async function clearPanelsByType(reportType: ReportType): Promise<void> {
-    if (!isPersistenceAvailable()) return;
-    return enqueueWrite(async () => {
-        const db = await openDb();
-        await new Promise<void>((resolve, reject) => {
-            const tx = db.transaction(STORE, 'readwrite');
-            const index = tx.objectStore(STORE).index(TYPE_INDEX);
-            const request = index.openCursor(IDBKeyRange.only(reportType));
-            request.onsuccess = () => {
-                const cursor = request.result;
-                if (cursor) {
-                    cursor.delete();
-                    cursor.continue();
-                }
-            };
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-            tx.onabort = () => reject(tx.error);
-        });
-    });
-}
-
 export async function loadBranding(reportType: ReportType): Promise<StoredBranding | null> {
     if (!isPersistenceAvailable()) return null;
     await waitForPendingWrites();

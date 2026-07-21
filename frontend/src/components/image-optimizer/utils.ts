@@ -204,10 +204,6 @@ export function hasCompressionOperation(settings: BatchSettings): boolean {
   return settings.operations.compressionEnabled;
 }
 
-export function isDirectExportMode(settings: BatchSettings): boolean {
-  return !hasCropOperation(settings) && !hasResizeOperation(settings) && !hasFormatConversion(settings) && !hasCompressionOperation(settings);
-}
-
 export function resolveSettingsForItem(baseSettings: BatchSettings, item: ImageItem): BatchSettings {
   const next = cloneSettings(baseSettings);
   const presetId = item.overrides.presetId;

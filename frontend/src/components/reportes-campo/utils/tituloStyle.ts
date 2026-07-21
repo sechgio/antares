@@ -8,9 +8,6 @@ export const DEFAULT_TITULO_COLOR = '#000000';
 /** Preset sizes offered in the form (px). */
 export const TITULO_SIZE_OPTIONS = [10, 12, 14, 16, 18, 20, 22, 24, 28] as const;
 
-/** Style-only keys: skip label recompute and use longer persistence debounce. */
-export const TITULO_STYLE_KEYS = [TITULO_SIZE_KEY, TITULO_COLOR_KEY] as const;
-
 const HEX_COLOR_RE = /^#([0-9A-Fa-f]{6})$/;
 
 export interface TituloStyle {

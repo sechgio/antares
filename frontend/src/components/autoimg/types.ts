@@ -31,24 +31,10 @@ export interface AutoImgStatus {
   carpetasActivas?: number;
 }
 
-export interface AutoImgBootstrap extends AutoImgStatus {
-  folders: AutoImgFolder[];
-  bdRows: string[][];
-  logRows: string[][];
-  arrastre: ArrastreEntry[];
-  cached?: boolean;
-}
-
-
 export interface DriveFolderThumb {
   id: string;
   name: string;
   dataUrl: string | null;
-}
-
-export interface DriveFolderPreview {
-  folder_id: string;
-  thumbs: DriveFolderThumb[];
 }
 
 export interface DriveVerifyResult {

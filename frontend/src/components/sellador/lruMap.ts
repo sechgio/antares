@@ -36,5 +36,3 @@ export function createLruMap<K, V>(maxSize: number) {
     },
   };
 }
-
-export type LruMap<K, V> = ReturnType<typeof createLruMap<K, V>>;

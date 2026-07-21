@@ -160,14 +160,6 @@ export const HEADER_FIELDS: HeaderField[] = HEADER_FIELD_GROUPS.flatMap((g) => g
 export const DATE_FIELDS = new Set(['fechaInicio', 'fechaPrevista', 'fechaTrabajo', 'fechaComunicacion']);
 export const WATER_CUT_DATE_FIELDS = new Set(['fechaCorte', 'fecha']);
 
-export const ITEM_COLUMNS = [
-  { key: 'item', label: 'Item' },
-  { key: 'nombresApellidos', label: 'Nombres y Apellidos' },
-  { key: 'direccion', label: 'Dirección' },
-  { key: 'horaComunicacion', label: 'Hora de comunicación' },
-  { key: 'firmaSuministro', label: 'Firma del usuario / N° medidor / suministro' },
-];
-
 export const WATER_CUT_FIELD_GROUPS: FieldGroup[] = [
   {
     title: 'Aviso de corte',
