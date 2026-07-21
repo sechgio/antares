@@ -10,6 +10,7 @@ import { useKeyboardShortcut } from './hooks/useKeyboardShortcut';
 import ToastContainer from './components/ui/Toast';
 import Dialog from './components/ui/Dialog';
 import CommandPalette from './components/ui/CommandPalette';
+import ErrorBoundary from './components/ui/ErrorBoundary';
 import { DEFAULT_TAB, FULL_BLEED_TABS, TAB_DEFINITIONS, CONFIG_SECTION_DEFINITIONS, type TabId, type ConfigSectionId } from './navigation';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import LoginScreen from './auth/LoginScreen';
@@ -198,7 +199,9 @@ function AppContent() {
             <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">Cargando...</div>}>
               {/* Full-bleed tools own their scroll; padded tools scroll in this shell. */}
               <div className={`h-full min-h-0 ${isFullBleed ? 'overflow-hidden' : 'overflow-y-auto px-6 py-4'}`}>
-                <ActiveView />
+                <ErrorBoundary key={activeTab}>
+                  <ActiveView />
+                </ErrorBoundary>
               </div>
             </Suspense>
           </main>

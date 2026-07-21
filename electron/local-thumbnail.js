@@ -123,7 +123,4 @@ async function createLocalThumbnail(filePath, maxEdge, nativeImage) {
 module.exports = {
   assertSafeLocalPath,
   createLocalThumbnail,
-  DEFAULT_MAX_EDGE,
-  MIN_MAX_EDGE,
-  MAX_MAX_EDGE,
 };
