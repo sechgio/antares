@@ -32,8 +32,3 @@ export type AppUser = {
   isDisabled: boolean;
   createdAt: string;
 };
-
-export type AuthSession = {
-  user: AppUser;
-  accessToken: string;
-};

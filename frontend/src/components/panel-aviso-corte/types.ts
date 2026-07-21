@@ -1,5 +1,4 @@
 export type MatchStrategy = 'prefix' | 'contains' | 'exact' | 'regex';
-export type ExportMode = 'skip_empty' | 'include_empty';
 
 export interface LogoAsset {
   file: File;

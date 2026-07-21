@@ -494,32 +494,6 @@ export function OperationSection({
   );
 }
 
-export function ModeToggle({
-  label,
-  enabled,
-  onChange,
-  activeClassName,
-}: {
-  label: string;
-  enabled: boolean;
-  onChange: (value: boolean) => void;
-  activeClassName?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!enabled)}
-      aria-pressed={enabled}
-      className={`flex h-7 shrink-0 items-center rounded-full px-2.5 text-[10px] font-medium transition-[color,background-color,border-color,transform] duration-100 ${pressable} ${enabled
-        ? activeClassName ?? 'border border-[var(--accent-primary)]/40 bg-[var(--accent-primary)]/12 text-[var(--accent-primary)]'
-        : 'border border-[var(--border-medium)] bg-[var(--bg-input)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-        }`}
-    >
-      {label}
-    </button>
-  );
-}
-
 export function PillPreset({
   label,
   accentClassName,

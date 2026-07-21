@@ -521,8 +521,10 @@ def limpiar_base_datos() -> int:
         count = int(row[0]) if row else 0
         cursor.execute("DELETE FROM imagenes")
         conn.commit()
-        # Vacuum to reclaim space and optimize
-        cursor.execute("VACUUM")
+    # No VACUUM aquí: reescribe TODO el archivo (incluidas historial/ubicaciones)
+    # mientras se mantiene _db_lock, bloqueando cualquier otra operación de BD por
+    # segundos. SQLite reutiliza las páginas liberadas en el siguiente import, así
+    # que el archivo no crece sin límite entre ciclos de vaciar/reimportar.
     return count
 
 

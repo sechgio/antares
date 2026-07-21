@@ -26,25 +26,6 @@ function normalizeTotalMinutes(total: number): number {
   return ((total % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
 }
 
-export function stepTime(
-  { hours, minutes }: TimeParts,
-  direction: 1 | -1,
-  step = MINUTE_STEP,
-): TimeParts {
-  let total = hours * 60 + minutes;
-
-  if (direction > 0) {
-    const remainder = total % step;
-    total += remainder === 0 ? step : step - remainder;
-  } else {
-    const remainder = total % step;
-    total -= remainder === 0 ? step : remainder;
-  }
-
-  total = normalizeTotalMinutes(total);
-  return { hours: Math.floor(total / 60), minutes: total % 60 };
-}
-
 export function snapTimeToStep(
   { hours, minutes }: TimeParts,
   step = MINUTE_STEP,

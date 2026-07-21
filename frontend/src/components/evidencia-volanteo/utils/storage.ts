@@ -101,15 +101,3 @@ export async function saveSession(session: EvidenciaSession): Promise<void> {
     tx.onabort = () => reject(tx.error);
   });
 }
-
-export async function clearStoredSession(): Promise<void> {
-  if (!isPersistenceAvailable()) return;
-  const db = await openDb();
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).delete(SESSION_KEY);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
-  });
-}

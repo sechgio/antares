@@ -66,23 +66,6 @@ export function defaultStampRect(page: PdfPageSize, stampAspect: number): StampR
   }, page);
 }
 
-export function rectAtDropPoint(
-  page: PdfPageSize,
-  dropX: number,
-  dropY: number,
-  stampAspect: number,
-  current?: StampRect | null,
-): StampRect {
-  const width = current?.width ?? Math.max(MIN_STAMP_SIZE, page.width * 0.16);
-  const height = current?.height ?? width / stampAspect;
-  return clampStampRect({
-    x: dropX - width / 2,
-    y: dropY - height / 2,
-    width,
-    height,
-  }, page);
-}
-
 function lcgNext(state: number): number {
   return (Math.imul(1664525, state) + 1013904223) >>> 0;
 }

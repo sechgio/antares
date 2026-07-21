@@ -41,14 +41,3 @@ export const TEMPLATE_KEY_MAP: Record<string, string> = {
   'direcciones-afectadas': 'DIRECCIONES AFECTADAS',
   direcciones_afectadas: 'DIRECCIONES AFECTADAS',
 };
-
-export const DATE_FIELDS = ['fecha-corte', 'fecha_corte', 'fecha-trabajo', 'fecha_trabajo'];
-
-export const TEMPLATE_HEADERS = [
-  'ID_ORDEN',
-  'CENTRO', 'NIS', 'OT',
-  'DIRECCION', 'LOCALIDAD', 'DISTRITO', 'ESTADO',
-  'TIPO_RED', 'SECTOR', 'ACTIVIDAD',
-  'CONTRATA', 'SUBACTIVIDAD', 'CUADRILLA',
-  'OBS_SEDAPAL', 'OBS_CONTRATA', 'OBS_FINALES',
-];
