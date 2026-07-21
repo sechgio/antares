@@ -66,12 +66,17 @@ def _validar_tipo_campo(tipo: str) -> bool:
 
 
 _cached_fields: tuple[Path, list[dict[str, Any]]] | None = None
+# Derived field-name list, cached separately so the per-file rename hot path
+# (RenamerEngine.aplicar -> get_field_names) does not pay load_fields()'s
+# defensive dict deep-copy on every call. Invalidated alongside _cached_fields.
+_cached_field_names: tuple[Path, list[str]] | None = None
 
 
 def _invalidate_fields_cache() -> None:
     """Clear the in-memory fields cache so next read hits disk."""
-    global _cached_fields
+    global _cached_fields, _cached_field_names
     _cached_fields = None
+    _cached_field_names = None
 
 
 def load_fields() -> list[dict[str, Any]]:
@@ -149,8 +154,19 @@ def save_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def get_field_names() -> list[str]:
-    """Retorna lista de nombres de campos."""
-    return [f["name"] for f in load_fields()]
+    """Retorna lista de nombres de campos.
+
+    Cached separately from :func:`load_fields` to avoid its per-call dict
+    deep-copy on the per-file rename hot path. Returns a fresh list of
+    (immutable) strings so callers may mutate the result safely.
+    """
+    global _cached_field_names
+    path = _config_file()
+    if _cached_field_names is not None and _cached_field_names[0] == path:
+        return list(_cached_field_names[1])
+    names = [f["name"] for f in load_fields()]
+    _cached_field_names = (path, names)
+    return list(names)
 
 
 def get_required_fields() -> list[str]:
