@@ -111,4 +111,72 @@ describe('AuthProvider', () => {
 
     expect(result.current.error).toBeNull();
   });
+
+  it('applies a late valid session after the safety timeout without invalidating gen', async () => {
+    let resolveSession: (value: unknown) => void = () => {};
+    const sessionPromise = new Promise((resolve) => {
+      resolveSession = resolve;
+    });
+    (supabase.auth.getSession as any).mockReturnValue(sessionPromise);
+    (supabase.from as any).mockReturnValue({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          single: vi.fn(() => ({
+            data: { display_name: 'Late', is_admin: false, is_disabled: false },
+            error: null,
+          })),
+        })),
+      })),
+    });
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(result.current.loading).toBe(false);
+    expect(result.current.user).toBeNull();
+
+    await act(async () => {
+      resolveSession({
+        data: {
+          session: {
+            access_token: 'tok',
+            user: { id: 'u-late', email: 'late@b.com', created_at: '2026-01-01' },
+          },
+        },
+        error: null,
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.user?.email).toBe('late@b.com');
+    });
+    vi.useRealTimers();
+  });
+
+  it('rejects signUp with invite-only message without calling Supabase', async () => {
+    (supabase.auth.getSession as any).mockResolvedValue({ data: { session: null }, error: null });
+
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    let signUpResult: { error: string | null } = { error: null };
+    await act(async () => {
+      signUpResult = await result.current.signUp('new@b.com', 'secret');
+    });
+
+    expect(supabase.auth.signUp).not.toHaveBeenCalled();
+    expect(signUpResult.error).toBe(
+      'Registro deshabilitado. Solicita una invitación a un administrador.',
+    );
+    expect(result.current.error).toBe(
+      'Registro deshabilitado. Solicita una invitación a un administrador.',
+    );
+  });
 });

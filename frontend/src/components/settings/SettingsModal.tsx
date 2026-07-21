@@ -6,6 +6,7 @@ import AppearanceView from './AppearanceView';
 import HistoryView from '../history/HistoryView';
 import PanelView from './PanelView';
 import { CONFIG_SECTION_DEFINITIONS, type ConfigSectionId } from '../../navigation';
+import { useAuth } from '../../auth/AuthContext';
 
 const PetdexView = React.lazy(() => import('./PetdexView'));
 
@@ -25,8 +26,14 @@ const SECTION_ICONS: Record<ConfigSectionId, LucideIcon> = {
 
 export default function SettingsModal({ isOpen, section, onSectionChange, onClose }: SettingsModalProps) {
   const { t } = useTranslation();
+  const { user } = useAuth();
   const overlayRef = useRef<HTMLDivElement>(null);
   const sectionButtonsRef = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  const visibleSectionDefs = useMemo(
+    () => CONFIG_SECTION_DEFINITIONS.filter((def) => def.id !== 'panel' || user?.isAdmin),
+    [user?.isAdmin],
+  );
 
   useEffect(() => {
     if (!isOpen) return;
@@ -36,8 +43,8 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
         e.stopPropagation();
         onClose();
       } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        const ids = CONFIG_SECTION_DEFINITIONS.map((s) => s.id);
-        const currentIndex = ids.indexOf(section);
+        const ids = visibleSectionDefs.map((s) => s.id);
+        const currentIndex = Math.max(0, ids.indexOf(section));
         const nextIndex = e.key === 'ArrowDown'
           ? (currentIndex + 1) % ids.length
           : (currentIndex - 1 + ids.length) % ids.length;
@@ -47,7 +54,7 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
     };
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
-  }, [isOpen, onClose, section, onSectionChange]);
+  }, [isOpen, onClose, section, onSectionChange, visibleSectionDefs]);
 
   useEffect(() => {
     // Prevent auto-focusing the button to avoid showing the focus ring visually
@@ -55,7 +62,7 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
   }, [isOpen, section]);
 
   const sections = useMemo(
-    () => CONFIG_SECTION_DEFINITIONS.map((def) => ({
+    () => visibleSectionDefs.map((def) => ({
       ...def,
       label: def.id === 'appearance'
         ? t('tab.appearance')
@@ -66,8 +73,15 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
         : t('tab.petdex'),
       icon: SECTION_ICONS[def.id],
     })),
-    [t],
+    [t, visibleSectionDefs],
   );
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (section === 'panel' && !user?.isAdmin) {
+      onSectionChange('appearance');
+    }
+  }, [isOpen, section, user?.isAdmin, onSectionChange]);
 
   const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target === overlayRef.current) onClose();

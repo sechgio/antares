@@ -146,7 +146,7 @@ class TestConvertirImagen:
 
 
 class TestConvertirAPreview:
-    """Vista previa: cap de 400px (B1) y cache invalidada por mtime (B2)."""
+    """Vista previa: cap de 400px (B1), cache por mtime (B2), path por defecto."""
 
     def test_preview_cap_400px_con_resize_grande(self, tmp_path) -> None:
         from backend.core.preview_cache import get_preview_cache
@@ -159,13 +159,25 @@ class TestConvertirAPreview:
         resultado = convertir_a_preview(origen, "JPEG", calidad=85, resize=[4000, 3000])
         assert resultado["width"] == "2000"
         assert resultado["height"] == "1500"
-
-        _header, b64 = resultado["preview"].split(",", 1)
-        img = Image.open(io.BytesIO(base64.b64decode(b64)))
+        assert "preview_path" in resultado
+        assert resultado["preview"].startswith("file:")
+        img = Image.open(resultado["preview_path"])
         # El cap de 400px debe sostenerse aunque resize sea enorme.
         assert max(img.size) <= 400, f"preview excede 400px: {img.size}"
         # El aspect del resize (4:3) se respeta dentro del cap.
         assert img.size == (400, 300)
+
+    def test_preview_legacy_data_uri_opt_in(self, tmp_path) -> None:
+        from backend.core.preview_cache import get_preview_cache
+
+        get_preview_cache().clear()
+        origen = tmp_path / "legacy.png"
+        Image.new("RGB", (100, 80), color=(1, 2, 3)).save(origen)
+        resultado = convertir_a_preview(origen, "JPEG", as_data_uri=True)
+        assert resultado["preview"].startswith("data:image/")
+        _header, b64 = resultado["preview"].split(",", 1)
+        img = Image.open(io.BytesIO(base64.b64decode(b64)))
+        assert max(img.size) <= 400
 
     def test_preview_cache_invalidada_por_mtime(self, tmp_path) -> None:
         from backend.core.preview_cache import get_preview_cache
@@ -178,6 +190,7 @@ class TestConvertirAPreview:
         r1 = convertir_a_preview(origen, "PNG")
         r2 = convertir_a_preview(origen, "PNG")
         assert r2["preview"] == r1["preview"]  # cache hit: misma mtime
+        assert r2["preview_path"] == r1["preview_path"]
 
         # Reescribir contenido y avanzar mtime -> cache miss, preview nueva.
         Image.new("RGB", (800, 600), color=(0, 0, 255)).save(origen)

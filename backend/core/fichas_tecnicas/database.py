@@ -72,9 +72,10 @@ class FichasTecnicasDB:
         tmp_path.replace(self.db_path)
 
     def get_all(self) -> list[dict[str, Any]]:
-        # Items are normalized on write/load; deepcopy avoids shared mutation.
+        # Shallow top-level copies for list/summary. Nested structures are
+        # treated as read-only; callers that mutate must use get()/update().
         with self._lock:
-            return [deepcopy(item) for item in self._items.values()]
+            return [dict(item) for item in self._items.values()]
 
     def get(self, ficha_id: str) -> dict[str, Any] | None:
         with self._lock:

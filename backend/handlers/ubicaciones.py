@@ -12,6 +12,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from typing import Any, cast
@@ -71,7 +72,8 @@ _BG_RGB = (246, 246, 246)
 # ── Asset caches (fonts, footers, excel) ─────────────────────────────────────
 _font_cache: dict[tuple[str, int], ImageFont.FreeTypeFont | ImageFont.ImageFont] = {}
 _footer_cache: dict[tuple[int, int, int], Image.Image | None] = {}
-_excel_cache: dict[str, tuple[float, pd.DataFrame, tuple[Any, ...]]] = {}
+_excel_cache: OrderedDict[str, tuple[float, pd.DataFrame, tuple[Any, ...]]] = OrderedDict()
+_MAX_EXCEL_CACHE = 8
 _map_screenshot_cache: dict[tuple[Any, ...], bytes] = {}
 _map_screenshot_working_cache: dict[tuple[Any, ...], bytes] = {}
 _preview_composed_cache: dict[tuple[int, int, tuple[str, float], int, str], dict[str, Any]] = {}
@@ -528,12 +530,17 @@ def fetch_static_map(
 def _load_excel_data(excel_path: str) -> tuple[pd.DataFrame, tuple[Any, ...]]:
     """Load and parse Excel, reusing cache when the file has not changed."""
     mtime = os.path.getmtime(excel_path)
-    cached = _excel_cache.get(excel_path)
-    if cached and cached[0] == mtime:
-        return cached[1], cached[2]
+    with _cache_lock:
+        cached = _excel_cache.get(excel_path)
+        if cached and cached[0] == mtime:
+            _excel_cache.move_to_end(excel_path)
+            return cached[1], cached[2]
     df = pd.read_excel(excel_path, engine="openpyxl")
     cols = _parse_excel_columns(df)
-    _excel_cache[excel_path] = (mtime, df, cols)
+    with _cache_lock:
+        _excel_cache[excel_path] = (mtime, df, cols)
+        _excel_cache.move_to_end(excel_path)
+        _trim_cache(_excel_cache, _MAX_EXCEL_CACHE)
     return df, cols
 
 
@@ -590,7 +597,10 @@ def _manual_preview_ctx(datos: dict) -> tuple[Any, ...]:
 
 def _trim_cache(cache: dict, max_size: int) -> None:
     while len(cache) > max_size:
-        del cache[next(iter(cache))]
+        if isinstance(cache, OrderedDict):
+            cache.popitem(last=False)
+        else:
+            del cache[next(iter(cache))]
 
 
 def _get_cached_map_screenshot(

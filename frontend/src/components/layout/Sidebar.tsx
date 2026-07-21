@@ -97,7 +97,7 @@ function readStoredExpanded(): boolean {
 
 export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
   const { t } = useTranslation();
-  const { signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const { addToast } = useToast();
   const [expanded, setExpanded] = useState(readStoredExpanded);
   const [signingOut, setSigningOut] = useState(false);
@@ -223,35 +223,37 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
         ))}
       </nav>
 
-      {expanded && <Separator className="mx-1.5 w-auto" />}
+      {expanded && user && <Separator className="mx-1.5 w-auto" />}
 
-      <div className={cn('shrink-0 py-1.5', expanded ? 'px-1.5' : 'flex justify-center px-1')}>
-        <div className={cn('relative', !expanded && 'group/signout')}>
-          <button
-            type="button"
-            data-testid="sidebar-signout-button"
-            aria-label={t('auth.signOut')}
-            disabled={signingOut}
-            onClick={handleSignOut}
-            className={cn(
-              'flex items-center rounded-md text-left text-[var(--text-muted)] transition-[color,background-color,transform] duration-150 ease-[var(--ease-out)] hover:bg-[var(--sidebar-accent)]/60 hover:text-[var(--text-secondary)] active:scale-[0.97] disabled:opacity-50 motion-reduce:active:scale-100',
-              expanded ? 'w-full gap-2 px-1.5 py-1.5' : 'size-8 shrink-0 justify-center p-0',
-            )}
-          >
-            <span className="flex size-4 shrink-0 items-center justify-center">
-              <LogOut className="size-4" strokeWidth={1.75} />
-            </span>
-            {expanded && (
-              <span className="min-w-0 truncate text-[13px] font-medium whitespace-nowrap" aria-hidden="true">
-                {t('auth.signOut')}
+      {user && (
+        <div className={cn('shrink-0 py-1.5', expanded ? 'px-1.5' : 'flex justify-center px-1')}>
+          <div className={cn('relative', !expanded && 'group/signout')}>
+            <button
+              type="button"
+              data-testid="sidebar-signout-button"
+              aria-label={t('auth.signOut')}
+              disabled={signingOut}
+              onClick={handleSignOut}
+              className={cn(
+                'flex items-center rounded-md text-left text-[var(--text-muted)] transition-[color,background-color,transform] duration-150 ease-[var(--ease-out)] hover:bg-[var(--sidebar-accent)]/60 hover:text-[var(--text-secondary)] active:scale-[0.97] disabled:opacity-50 motion-reduce:active:scale-100',
+                expanded ? 'w-full gap-2 px-1.5 py-1.5' : 'size-8 shrink-0 justify-center p-0',
+              )}
+            >
+              <span className="flex size-4 shrink-0 items-center justify-center">
+                <LogOut className="size-4" strokeWidth={1.75} />
               </span>
+              {expanded && (
+                <span className="min-w-0 truncate text-[13px] font-medium whitespace-nowrap" aria-hidden="true">
+                  {t('auth.signOut')}
+                </span>
+              )}
+            </button>
+            {!expanded && (
+              <HoverTooltip label={t('auth.signOut')} groupHoverClass="group-hover/signout:opacity-100" />
             )}
-          </button>
-          {!expanded && (
-            <HoverTooltip label={t('auth.signOut')} groupHoverClass="group-hover/signout:opacity-100" />
-          )}
+          </div>
         </div>
-      </div>
+      )}
     </aside>
   );
 }

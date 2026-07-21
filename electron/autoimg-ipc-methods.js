@@ -3,7 +3,6 @@ const AUTOIMG_METHODS = new Set([
   'autoimg_oauth_config_status',
   'autoimg_oauth_config_save',
   'autoimg_sheets_auth_url',
-  'autoimg_sheets_auth_callback',
   'autoimg_sheets_auth_cancel',
   'autoimg_sheets_auth_status',
   'autoimg_sheets_auth_revoke',

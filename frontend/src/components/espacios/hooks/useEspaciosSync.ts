@@ -46,6 +46,44 @@ function errorMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
+function isEspacioRow(row: unknown): row is Espacio {
+  return (
+    typeof row === 'object'
+    && row !== null
+    && typeof (row as Espacio).id === 'string'
+    && typeof (row as Espacio).name === 'string'
+  );
+}
+
+function isProyectoRow(row: unknown): row is Proyecto {
+  return (
+    typeof row === 'object'
+    && row !== null
+    && typeof (row as Proyecto).id === 'string'
+    && typeof (row as Proyecto).espacio_id === 'string'
+  );
+}
+
+function isTareaRow(row: unknown): row is Tarea {
+  return (
+    typeof row === 'object'
+    && row !== null
+    && typeof (row as Tarea).id === 'string'
+    && typeof (row as Tarea).proyecto_id === 'string'
+    && typeof (row as Tarea).status === 'string'
+  );
+}
+
+function isBoardColumnRow(row: unknown): row is BoardColumn {
+  return (
+    typeof row === 'object'
+    && row !== null
+    && typeof (row as BoardColumn).id === 'string'
+    && typeof (row as BoardColumn).proyecto_id === 'string'
+    && typeof (row as BoardColumn).key === 'string'
+  );
+}
+
 export function useEspaciosSync(userId: string | undefined) {
   const [espacios, setEspacios] = useState<Espacio[]>([]);
   const [proyectos, setProyectos] = useState<Proyecto[]>([]);
@@ -61,6 +99,7 @@ export function useEspaciosSync(userId: string | undefined) {
   const proyectosRequestRef = useRef(0);
   const tareasRequestRef = useRef(0);
   const columnsRequestRef = useRef(0);
+  const reloadAllRequestRef = useRef(0);
   const activeEspacioIdRef = useRef<string | null>(null);
   const activeProyectoIdRef = useRef<string | null>(null);
   /** Soft-deleted task ids waiting for undo timer / hard delete commit. */
@@ -133,10 +172,16 @@ export function useEspaciosSync(userId: string | undefined) {
   }, []);
 
   const reloadAll = useCallback(async () => {
+    const requestId = ++reloadAllRequestRef.current;
+    // Supersede any in-flight nested loads started before this reload.
+    proyectosRequestRef.current = requestId;
+    tareasRequestRef.current = requestId;
+    columnsRequestRef.current = requestId;
     setLoading(true);
     setError(null);
     try {
       const espaciosData = await fetchEspacios();
+      if (requestId !== reloadAllRequestRef.current) return;
       setEspacios(espaciosData);
       const currentEspacioId = activeEspacioIdRef.current;
       const espacioId =
@@ -154,6 +199,7 @@ export function useEspaciosSync(userId: string | undefined) {
       }
 
       const proyectosData = await fetchProyectos(espacioId);
+      if (requestId !== reloadAllRequestRef.current) return;
       setProyectos(proyectosData);
       const currentProyectoId = activeProyectoIdRef.current;
       const proyectoId =
@@ -172,12 +218,16 @@ export function useEspaciosSync(userId: string | undefined) {
         fetchTareas(proyectoId),
         fetchBoardColumns(proyectoId),
       ]);
+      if (requestId !== reloadAllRequestRef.current) return;
       setTareas(tareasData);
       setBoardColumns(columnsData);
     } catch (err) {
+      if (requestId !== reloadAllRequestRef.current) return;
       setError(errorMessage(err, 'Error al cargar ESPACIOS'));
     } finally {
-      setLoading(false);
+      if (requestId === reloadAllRequestRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -265,26 +315,26 @@ export function useEspaciosSync(userId: string | undefined) {
       activeProyectoId,
       ({ eventType, table, new: row, old }) => {
         if (table === 'espacios') {
-          const espacio = (row ?? old) as unknown as Espacio | null;
-          if (!espacio) return;
+          const espacio = row ?? old;
+          if (!isEspacioRow(espacio)) return;
           setEspacios((prev) => mergeById(prev, espacio, eventType));
         }
         if (table === 'proyectos') {
-          const proyecto = (row ?? old) as unknown as Proyecto | null;
-          if (!proyecto) return;
+          const proyecto = row ?? old;
+          if (!isProyectoRow(proyecto)) return;
           setProyectos((prev) => mergeById(prev, proyecto, eventType));
         }
         if (table === 'tareas') {
-          const tarea = (row ?? old) as unknown as Tarea | null;
-          if (!tarea) return;
+          const tarea = row ?? old;
+          if (!isTareaRow(tarea)) return;
           if (tarea.proyecto_id !== activeProyectoId && eventType !== 'DELETE') return;
           // Soft-deleted tasks must stay hidden until undo or hard commit.
           if (eventType !== 'DELETE' && pendingDeleteIdsRef.current.has(tarea.id)) return;
           setTareas((prev) => mergeById(prev, tarea, eventType));
         }
         if (table === 'board_columns') {
-          const col = (row ?? old) as unknown as BoardColumn | null;
-          if (!col) return;
+          const col = row ?? old;
+          if (!isBoardColumnRow(col)) return;
           if (col.proyecto_id !== activeProyectoId && eventType !== 'DELETE') return;
           setBoardColumns((prev) => {
             const next = mergeById(prev, col, eventType);

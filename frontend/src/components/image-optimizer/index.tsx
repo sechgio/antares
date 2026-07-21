@@ -7,6 +7,11 @@ import QueuePanel from './QueuePanel';
 import SettingsPanel from './SettingsPanel';
 import { glassToolbarClass, PillPreset, ToastContainer } from './ui';
 import { createImageItem, processImageItem } from './pipeline';
+import {
+  mapWithConcurrencyLimit,
+  resolveImportConcurrency,
+  resolveProcessConcurrency,
+} from './concurrency';
 import { DEFAULT_BATCH_SETTINGS, IMAGE_OPTIMIZER_PRESETS, cloneSettings } from './presets';
 import { BatchSettings, CropOffset, ImageItem, PresetId, Toast } from './types';
 import {
@@ -222,7 +227,11 @@ export default function ImageOptimizer() {
     }
     if (validFiles.length === 0) return;
 
-    const createdItems = await Promise.all(validFiles.map((file) => createImageItem(file)));
+    const createdItems = await mapWithConcurrencyLimit(
+      validFiles,
+      resolveImportConcurrency(),
+      (file) => createImageItem(file),
+    );
     commitItems((prev) => [...prev, ...createdItems]);
     setActiveItemId((current) => current || createdItems[0]?.id || null);
     addToast(`${createdItems.length} imagen(es) agregada(s) al lote.`, 'success', 2200);
@@ -558,41 +567,47 @@ export default function ImageOptimizer() {
     // Esperar el sig frame para dibujar
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    let successCount = 0;
+    let completed = 0;
 
-    for (let index = 0; index < targets.length; index += 1) {
-      const target = targets[index];
-      setProcessingMessage(`Procesando ${target.originalName}`);
+    const outcomes = await mapWithConcurrencyLimit(
+      targets,
+      resolveProcessConcurrency(),
+      async (target) => {
+        setProcessingMessage(`Procesando ${target.originalName}`);
+        try {
+          const latestItem = itemsRef.current.find((item) => item.id === target.id) || target;
+          const artifact = await processImageItem(latestItem, settingsRef.current);
+          const previewUrl = URL.createObjectURL(artifact.blob);
+          commitItems((prev) => prev.map((item) => {
+            if (item.id !== target.id) return item;
+            if (item.resultPreview) URL.revokeObjectURL(item.resultPreview);
+            return {
+              ...item,
+              resultBlob: artifact.blob,
+              resultPreview: previewUrl,
+              resultSize: artifact.blob.size,
+              finalWidth: artifact.width,
+              finalHeight: artifact.height,
+              status: 'completed',
+              error: undefined,
+              stale: false,
+              processedSignature: artifact.signature,
+              processedAt: Date.now(),
+            };
+          }));
+          return true;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Error desconocido';
+          commitItems((prev) => prev.map((item) => (item.id === target.id ? { ...item, status: 'error', error: message } : item)));
+          return false;
+        } finally {
+          completed += 1;
+          setProcessingProgress({ current: completed, total: targets.length });
+        }
+      },
+    );
 
-      try {
-        const latestItem = itemsRef.current.find((item) => item.id === target.id) || target;
-        const artifact = await processImageItem(latestItem, settingsRef.current);
-        const previewUrl = URL.createObjectURL(artifact.blob);
-        commitItems((prev) => prev.map((item) => {
-          if (item.id !== target.id) return item;
-          if (item.resultPreview) URL.revokeObjectURL(item.resultPreview);
-          return {
-            ...item,
-            resultBlob: artifact.blob,
-            resultPreview: previewUrl,
-            resultSize: artifact.blob.size,
-            finalWidth: artifact.width,
-            finalHeight: artifact.height,
-            status: 'completed',
-            error: undefined,
-            stale: false,
-            processedSignature: artifact.signature,
-            processedAt: Date.now(),
-          };
-        }));
-        successCount += 1;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Error desconocido';
-        commitItems((prev) => prev.map((item) => item.id === target.id ? { ...item, status: 'error', error: message } : item));
-      }
-
-      setProcessingProgress({ current: index + 1, total: targets.length });
-    }
+    const successCount = outcomes.filter(Boolean).length;
 
     setIsProcessing(false);
     setProcessingMessage('');

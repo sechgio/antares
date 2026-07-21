@@ -55,7 +55,7 @@ function stopCallbackServer() {
   }
 }
 
-function startCallbackServer(port, { onCode, onDenied, onTimeout }) {
+function startCallbackServer(port, { onCode, onDenied, onTimeout, expectedState }) {
   stopCallbackServer();
 
   return new Promise((resolve, reject) => {
@@ -69,6 +69,11 @@ function startCallbackServer(port, { onCode, onDenied, onTimeout }) {
 
     _server = http.createServer((req, res) => {
       const host = req.headers.host || `127.0.0.1:${port}`;
+      if (!String(host).startsWith('127.0.0.1:') && !String(host).startsWith('localhost:')) {
+        res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('Forbidden');
+        return;
+      }
       let pathname = '/callback';
       let search = '';
       try {
@@ -81,7 +86,7 @@ function startCallbackServer(port, { onCode, onDenied, onTimeout }) {
         return;
       }
 
-      if (pathname !== '/' && pathname !== '/callback') {
+      if (pathname !== '/callback' && pathname !== '/') {
         res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
         res.end('Not found');
         return;
@@ -90,6 +95,14 @@ function startCallbackServer(port, { onCode, onDenied, onTimeout }) {
       const params = new URLSearchParams(search);
       const code = params.get('code');
       const error = params.get('error');
+      const state = params.get('state');
+
+      if (expectedState && state !== expectedState) {
+        res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(_errorHtml('Estado OAuth inválido'));
+        finish(onDenied, 'invalid_state');
+        return;
+      }
 
       if (error) {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });

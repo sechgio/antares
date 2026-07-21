@@ -18,6 +18,7 @@ import {
   resolveCuadranteForPage,
 } from '../utils/cuadranteRanges';
 import { loadSession, saveSession, storedToSession } from '../utils/storage';
+import { registerLocalPath } from '../../../utils/registerLocalPath';
 
 const SAVE_DEBOUNCE_MS = 400;
 
@@ -42,6 +43,7 @@ export function useEvidenciaSession() {
   const [isLoaded, setIsLoaded] = useState(false);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dirtyRef = useRef(false);
   const imagesRef = useRef(images);
   const logoLeftRef = useRef(logoLeft);
   const logoRightRef = useRef(logoRight);
@@ -79,7 +81,7 @@ export function useEvidenciaSession() {
     void (async () => {
       const stored = await loadSession();
       if (cancelled) return;
-      if (stored) {
+      if (stored && !dirtyRef.current) {
         const restored = storedToSession(stored);
         setTitleState(restored.title);
         setCuadranteLabelState(restored.cuadranteLabel);
@@ -128,17 +130,28 @@ export function useEvidenciaSession() {
   const currentPageImages = pages[currentPageIndex] ?? [];
   const currentCuadrante = resolveCuadranteForPage(currentPageIndex + 1, cuadranteRanges);
 
-  const setTitle = useCallback((value: string) => setTitleState(value), []);
+  const setTitle = useCallback((value: string) => {
+    dirtyRef.current = true;
+    setTitleState(value);
+  }, []);
 
-  const setCuadranteLabel = useCallback((value: string) => setCuadranteLabelState(value), []);
+  const setCuadranteLabel = useCallback((value: string) => {
+    dirtyRef.current = true;
+    setCuadranteLabelState(value);
+  }, []);
 
-  const setShowCuadranteLabel = useCallback((value: boolean) => setShowCuadranteLabelState(value), []);
+  const setShowCuadranteLabel = useCallback((value: boolean) => {
+    dirtyRef.current = true;
+    setShowCuadranteLabelState(value);
+  }, []);
 
   const setCuadranteRanges = useCallback((ranges: CuadranteRange[]) => {
+    dirtyRef.current = true;
     setCuadranteRangesState(ranges);
   }, []);
 
   const addCuadranteRange = useCallback(() => {
+    dirtyRef.current = true;
     setCuadranteRangesState((prev) => {
       const last = prev[prev.length - 1];
       const nextFrom = last ? Math.min(last.toPage + 1, totalPages) : 1;
@@ -147,6 +160,7 @@ export function useEvidenciaSession() {
   }, [totalPages]);
 
   const setLogo = useCallback((side: 'left' | 'right', file: File | null): string | null => {
+    dirtyRef.current = true;
     const current = side === 'left' ? logoLeft : logoRight;
     const setter = side === 'left' ? setLogoLeftState : setLogoRightState;
     revokeLogo(current);
@@ -161,6 +175,7 @@ export function useEvidenciaSession() {
   }, [logoLeft, logoRight, validateLogo]);
 
   const addImages = useCallback((files: File[]): string[] => {
+    dirtyRef.current = true;
     const errors: string[] = [];
     const accepted: LocalImage[] = [];
     for (const file of files) {
@@ -173,6 +188,7 @@ export function useEvidenciaSession() {
         continue;
       }
       const localPath = window.electronAPI?.getPathForFile?.(file) || undefined;
+      if (localPath) registerLocalPath(localPath);
       accepted.push({ file, objectUrl: URL.createObjectURL(file), localPath });
     }
     if (accepted.length > 0) {
@@ -182,6 +198,7 @@ export function useEvidenciaSession() {
   }, []);
 
   const removeImage = useCallback((index: number) => {
+    dirtyRef.current = true;
     setImages((prev) => {
       const target = prev[index];
       if (target) URL.revokeObjectURL(target.objectUrl);
@@ -190,6 +207,7 @@ export function useEvidenciaSession() {
   }, []);
 
   const clearImages = useCallback(() => {
+    dirtyRef.current = true;
     setImages((prev) => {
       revokeImages(prev);
       return [];

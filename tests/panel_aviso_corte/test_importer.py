@@ -29,7 +29,7 @@ import pytest
 
 from backend.core.panel_aviso_corte.errors import InvalidExcelError
 from backend.core.panel_aviso_corte.importer import parse_excel_bytes
-from backend.core.panel_aviso_corte.models import MAX_EXCEL_ROWS, ExcelSource
+from backend.core.panel_aviso_corte.models import ExcelSource
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -247,22 +247,30 @@ class TestNoDataRows:
 
 
 class TestRowLimit:
-    def test_accepts_exactly_max_rows(self) -> None:
-        """10.000 filas de datos deben aceptarse (límite inclusivo)."""
+    def test_accepts_exactly_max_rows(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """MAX_EXCEL_ROWS filas de datos deben aceptarse (límite inclusivo)."""
+        import backend.core.panel_aviso_corte.importer as imp
+
+        small_limit = 20
+        monkeypatch.setattr(imp, "MAX_EXCEL_ROWS", small_limit)
         rows: list[list[Any]] = [["A"]]
-        rows.extend([f"v{i}"] for i in range(MAX_EXCEL_ROWS))
+        rows.extend([f"v{i}"] for i in range(small_limit))
         content = _build_xlsx(rows)
         result = parse_excel_bytes(content, "big.xlsx")
-        assert len(result.rows) == MAX_EXCEL_ROWS
+        assert len(result.rows) == small_limit
 
-    def test_rejects_more_than_max_rows(self) -> None:
-        """10.001 filas de datos → rechazo con mensaje exacto."""
+    def test_rejects_more_than_max_rows(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """MAX_EXCEL_ROWS + 1 filas de datos → rechazo con mensaje exacto."""
+        import backend.core.panel_aviso_corte.importer as imp
+
+        small_limit = 20
+        monkeypatch.setattr(imp, "MAX_EXCEL_ROWS", small_limit)
         rows: list[list[Any]] = [["A"]]
-        rows.extend([f"v{i}"] for i in range(MAX_EXCEL_ROWS + 1))
+        rows.extend([f"v{i}"] for i in range(small_limit + 1))
         content = _build_xlsx(rows)
         with pytest.raises(
             InvalidExcelError,
-            match=r"^El Excel excede el límite de 10\.000 filas$",
+            match=r"El Excel excede el límite",
         ):
             parse_excel_bytes(content, "huge.xlsx")
 

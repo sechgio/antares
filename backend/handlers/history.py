@@ -37,15 +37,29 @@ def _safe_int(value: Any) -> int | None:
 @with_locale
 def history_list(params: dict[str, Any]) -> dict[str, Any]:
     from backend.core.history import list_runs
+    limit = parse_positive_int(params.get("limit", 50), "limit", maximum=500)
+    offset = _parse_history_offset(params.get("offset", 0))
     return {
         "runs": list_runs(
             run_type=params.get("run_type"),
-            limit=params.get("limit", 50),
-            offset=params.get("offset", 0),
+            limit=limit,
+            offset=offset,
             date_from=params.get("date_from"),
             date_to=params.get("date_to"),
         )
     }
+
+
+def _parse_history_offset(value: Any) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        msg = "offset inválido"
+        raise ValueError(msg) from exc
+    if parsed < 0:
+        msg = "offset no puede ser negativo"
+        raise ValueError(msg)
+    return parsed
 
 
 @with_locale

@@ -18,6 +18,8 @@ import {
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import Button from './ui/Button';
 import { api } from '../api';
+import { useToast } from '../hooks/useToast';
+import { registerLocalPath } from '../utils/registerLocalPath';
 import { parseCombinedCoords, isValidCoord } from '../utils/coords';
 
 type Result = { success: boolean; data?: any; error?: string } | null;
@@ -204,6 +206,7 @@ const TEXT_FIELDS = [
 ] as const;
 
 export const UbicacionesView: React.FC = () => {
+  const { addToast } = useToast();
   const [inputMode, setInputMode] = useState<'excel' | 'manual'>(() => {
     try {
       return localStorage.getItem(LS_INPUT_MODE) === 'manual' ? 'manual' : 'excel';
@@ -273,6 +276,7 @@ export const UbicacionesView: React.FC = () => {
   });
 
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+  const [keysConfigured, setKeysConfigured] = useState<Record<string, boolean>>({});
   const apiKeysHydratedRef = useRef(false);
 
   // Design custom styles state
@@ -324,28 +328,32 @@ export const UbicacionesView: React.FC = () => {
 
     (async () => {
       try {
-        const { keys: secureKeys } = await api.ubicacionesKeysGet();
-        if (cancelled) return;
-
-        if (secureKeys && Object.keys(secureKeys).length > 0) {
-          setApiKeys(secureKeys);
-          clearPlaintextApiKeys();
-          return;
-        }
-
+        // One-shot migrate plaintext localStorage → secure store, then wipe LS.
         const migrated = readPlaintextApiKeys();
         if (Object.keys(migrated).length > 0) {
-          await api.ubicacionesKeysSet(migrated);
+          try {
+            await api.ubicacionesKeysSet(migrated);
+          } catch (err) {
+            console.error('Failed to migrate ubicaciones API keys', err);
+          }
           clearPlaintextApiKeys();
-          if (!cancelled) setApiKeys(migrated);
         }
+
+        const { keys: secureKeys, configured } = await api.ubicacionesKeysGet();
+        if (cancelled) return;
+
+        // Keep draft state empty for configured providers (mask only in UI);
+        // Electron injects real keys for preview/generate.
+        const next: Record<string, string> = {};
+        for (const [k, v] of Object.entries(secureKeys || {})) {
+          if (configured?.[k]) next[k] = '';
+          else if (typeof v === 'string' && v && !v.startsWith('••••')) next[k] = v;
+        }
+        setApiKeys(next);
+        setKeysConfigured(configured || {});
       } catch (err) {
-        // Keep plaintext in UI so maps still work; retry secure write on next mount.
-        const fallback = readPlaintextApiKeys();
-        if (!cancelled && Object.keys(fallback).length > 0) {
-          setApiKeys(fallback);
-        }
-        console.error('Failed to load/migrate ubicaciones API keys', err);
+        console.error('Failed to load ubicaciones API keys', err);
+        clearPlaintextApiKeys();
       } finally {
         if (!cancelled) apiKeysHydratedRef.current = true;
       }
@@ -378,8 +386,23 @@ export const UbicacionesView: React.FC = () => {
 
   useEffect(() => {
     if (!apiKeysHydratedRef.current) return;
+    // Only persist entries that look like freshly typed secrets (not empty/mask).
+    const dirty: Record<string, string> = {};
+    for (const [k, v] of Object.entries(apiKeys)) {
+      const s = String(v || '').trim();
+      if (s && !s.startsWith('••••')) dirty[k] = s;
+    }
+    if (Object.keys(dirty).length === 0) return;
     const timer = setTimeout(() => {
-      api.ubicacionesKeysSet(apiKeys).catch((err) => {
+      api.ubicacionesKeysSet(dirty).then((resp) => {
+        if (resp?.configured) setKeysConfigured(resp.configured);
+        // Clear draft after successful save so secrets don't linger in React state.
+        setApiKeys((prev) => {
+          const next = { ...prev };
+          for (const k of Object.keys(dirty)) next[k] = '';
+          return next;
+        });
+      }).catch((err) => {
         console.error('Failed to persist ubicaciones API keys', err);
       });
     }, 300);
@@ -626,19 +649,32 @@ export const UbicacionesView: React.FC = () => {
 
   const loadExcelFile = useCallback(
     (file: File) => {
+      const path = window.electronAPI?.getPathForFile?.(file) || '';
+      if (!path) {
+        setExcelFile(null);
+        setExcelPath('');
+        setPreview(null);
+        hasPreviewRef.current = false;
+        setPreviewError(null);
+        setPreviewLoading(false);
+        addToast({
+          message: 'No se pudo resolver la ruta del archivo Excel.',
+          type: 'error',
+        });
+        return;
+      }
+      registerLocalPath(path);
       setExcelFile(file);
       setResult(null);
       setPreview(null);
       hasPreviewRef.current = false;
       setPreviewRowIndex(0);
-      const path = window.electronAPI?.getPathForFile?.(file) || '';
-      if (!path) return;
       prevFormatoRef.current = formato;
       setExcelPath(path);
       setPreviewLoading(true);
       triggerPreviewFetch(0, { excelPathOverride: path });
     },
-    [triggerPreviewFetch, formato],
+    [triggerPreviewFetch, formato, addToast],
   );
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -672,14 +708,13 @@ export const UbicacionesView: React.FC = () => {
 
   const handleSelectOutputDir = async () => {
     try {
-      if (!window.electronAPI) return;
-      const result = await window.electronAPI.invoke('dialog_folder', {
+      const result = await api.dialogFolder({
         title: 'Seleccionar carpeta de salida',
         pickOnly: true,
-      }) as { folder?: string; paths?: string[] } | undefined;
-      if (result?.folder) {
+      });
+      if (result.folder) {
         setOutputDir(result.folder);
-      } else if (result?.paths && result.paths.length > 0) {
+      } else if (result.paths && result.paths.length > 0) {
         setOutputDir(result.paths[0]);
       }
     } catch (err) {
@@ -711,6 +746,7 @@ export const UbicacionesView: React.FC = () => {
           setResult({ success: false, error: 'No se pudo resolver la ruta del archivo Excel.' });
           return;
         }
+        registerLocalPath(path);
       }
 
       const {
@@ -1347,7 +1383,11 @@ export const UbicacionesView: React.FC = () => {
                                 });
                                 scheduleApiKeyPreview();
                               }}
-                              placeholder={`Pega tu llave de ${MAP_PROVIDER_BY_ID[provider]?.label ?? provider} aquí...`}
+                              placeholder={
+                                keysConfigured[provider]
+                                  ? 'Clave guardada — escribe una nueva para reemplazarla'
+                                  : `Pega tu llave de ${MAP_PROVIDER_BY_ID[provider]?.label ?? provider} aquí...`
+                              }
                               className="w-full bg-[var(--bg-input)] border border-[var(--border-subtle)] rounded px-2 py-1 text-[10px] text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-primary)]"
                             />
                           </div>

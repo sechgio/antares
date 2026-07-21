@@ -6,7 +6,7 @@ import ListView from '../ListView';
 import type { Tarea, TeamMember } from '../../../types';
 
 const mockMembers: TeamMember[] = [
-  { id: 'user-1', name: 'Alice', email: 'alice@example.com' },
+  { user_id: 'user-1', display_name: 'Alice' },
 ];
 
 function createMockTareas(count: number): Tarea[] {
@@ -39,6 +39,23 @@ describe('Virtualized TableView & ListView Components', () => {
 
       expect(screen.getByText('Tarea 1')).toBeInTheDocument();
       expect(screen.getByText('Tarea 10')).toBeInTheDocument();
+      expect(screen.getByRole('table')).toBeInTheDocument();
+    });
+
+    it('switches to virtualized layout for >= 50 items', () => {
+      const tareas = createMockTareas(55);
+      const { container } = render(
+        <TableView
+          tareas={tareas}
+          members={mockMembers}
+          onStatusChange={vi.fn()}
+          onComplete={vi.fn()}
+          onDelete={vi.fn()}
+        />
+      );
+
+      expect(container.querySelector('[data-virtualized-table="true"]')).toBeTruthy();
+      expect(screen.queryByRole('table')).not.toBeInTheDocument();
     });
 
     it('handles selection toggle callbacks correctly', () => {
@@ -78,6 +95,20 @@ describe('Virtualized TableView & ListView Components', () => {
 
       expect(screen.getByText('Tarea 1')).toBeInTheDocument();
       expect(screen.getByText('Tarea 10')).toBeInTheDocument();
+    });
+
+    it('uses virtualized list shell for >= 50 items', () => {
+      const tareas = createMockTareas(60);
+      const { container } = render(
+        <ListView
+          tareas={tareas}
+          members={mockMembers}
+          onStatusChange={vi.fn()}
+          onDelete={vi.fn()}
+        />
+      );
+
+      expect(container.querySelector('[data-virtualized-list]')).toBeTruthy();
     });
 
     it('handles item delete callback', () => {

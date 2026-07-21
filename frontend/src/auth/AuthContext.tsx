@@ -87,11 +87,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     refreshUser();
-    // Safety timeout: if Supabase is unreachable, show login after 5s
+    // Safety timeout: if Supabase is slow, show login UI after 5s — but do NOT
+    // bump authGenRef. Invalidating the generation discarded a late valid
+    // getSession() result and left users stuck on the login screen.
     const timeout = setTimeout(() => {
       if (mountedRef.current && loadingRef.current) {
         console.warn('[auth] Session check timed out, showing login screen');
-        authGenRef.current++; // invalidate any in-flight check
         setLoading(false);
       }
     }, 5000);
@@ -137,15 +138,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: null };
   }, []);
 
-  const signUp = useCallback(async (email: string, password: string) => {
-    if (!supabase) return { error: 'Supabase no configurado' };
-    const { error: sbError } = await supabase.auth.signUp({ email, password });
-    if (sbError) {
-      setError(sbError.message);
-      return { error: sbError.message };
-    }
-    setError(null);
-    return { error: null };
+  const signUp = useCallback(async (_email: string, _password: string) => {
+    const message = 'Registro deshabilitado. Solicita una invitación a un administrador.';
+    setError(message);
+    return { error: message };
   }, []);
 
   const signOut = useCallback(async () => {

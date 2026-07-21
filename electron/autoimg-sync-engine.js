@@ -29,7 +29,8 @@ const CACHE_TTL_MS = 60_000;
 const AUTO_SYNC_CONFIG_KEY = 'AUTO_SYNC';
 const RENAME_DEST_CONFIG_KEY = 'RENAME_DEST_FOLDER_ID';
 const AUTO_SYNC_INTERVAL_MS = 5 * 60_000;
-const RENAME_COPY_CONCURRENCY = 3;
+const RENAME_COPY_CONCURRENCY_MIN = 2;
+const RENAME_COPY_CONCURRENCY_MAX = 8;
 
 let _autoSyncEnabled = false;
 let _autoSyncTimer = null;
@@ -42,6 +43,10 @@ let _cachedLogs = [];
 let _cachedBdArrastre = [];
 let _cachedFolders = [];
 let _cacheLoadedAt = 0;
+/** Drive modifiedTime of the spreadsheet when cache was last filled from Sheets. */
+let _cacheSheetRevision = null;
+/** Raise on repeated 429s during rename copies; decay after clean batches. */
+let _renameConcurrencyBias = 0;
 
 function emit(method, params) {
   const win = getMainWindow();
@@ -62,6 +67,69 @@ function _touchCache() {
 
 function _invalidateCache() {
   _cacheLoadedAt = 0;
+  _cacheSheetRevision = null;
+}
+
+/**
+ * Adaptive copy concurrency for Drive rename export.
+ * Scales with job count; backs off when recent batches hit rate limits.
+ * @param {number} jobCount
+ * @returns {number}
+ */
+function resolveRenameCopyConcurrency(jobCount) {
+  const n = Number(jobCount) || 0;
+  let base = 3;
+  if (n >= 40) base = 6;
+  else if (n >= 15) base = 4;
+  const bias = Math.max(0, Math.min(4, _renameConcurrencyBias));
+  return Math.max(
+    RENAME_COPY_CONCURRENCY_MIN,
+    Math.min(RENAME_COPY_CONCURRENCY_MAX, base - bias),
+  );
+}
+
+function _noteRenameRateLimit() {
+  _renameConcurrencyBias = Math.min(4, _renameConcurrencyBias + 1);
+}
+
+function _noteRenameBatchClean() {
+  _renameConcurrencyBias = Math.max(0, _renameConcurrencyBias - 1);
+}
+
+function _isRateLimitError(err) {
+  const msg = err instanceof Error ? err.message : String(err || '');
+  return /429|rate limit|Rate limit/i.test(msg);
+}
+
+async function _readSheetRevision() {
+  try {
+    const sheetId = sheets.getSheetId?.();
+    if (!sheetId || typeof drive.getFileMetadata !== 'function') return null;
+    const meta = await drive.getFileMetadata(sheetId, 'modifiedTime,version');
+    return meta?.modifiedTime || (meta?.version != null ? String(meta.version) : null);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True when in-memory sheet data is present and Drive reports the same revision.
+ * Allows skipping full Sheets reads after TTL expiry when nothing changed.
+ */
+async function _canServeUnchangedRevision() {
+  if (!_cacheSheetRevision) return false;
+  if (!_cachedBdImg.length && !_cachedFolders.length && !_cachedLogs.length) return false;
+  const rev = await _readSheetRevision();
+  return Boolean(rev && rev === _cacheSheetRevision);
+}
+
+async function _rememberSheetRevision(knownRev) {
+  if (knownRev) {
+    _cacheSheetRevision = knownRev;
+    return;
+  }
+  const rev = await _readSheetRevision();
+  if (rev) _cacheSheetRevision = rev;
 }
 
 function _parseAutoSyncConfig(value) {
@@ -273,12 +341,18 @@ async function listFolders({ force = false } = {}) {
   if (!force && _isCacheFresh()) {
     return { folders: _cachedFolders, cached: true };
   }
+  if (!force && _cachedFolders.length && await _canServeUnchangedRevision()) {
+    _touchCache();
+    return { folders: _cachedFolders, cached: true, revision_match: true };
+  }
   try {
     await _ensureSheetId();
+    const rev = await _readSheetRevision();
     const { values } = await sheets.readRange('FOLDERS!A:E');
     _cachedFolders = parseFoldersFromValues(values);
     _persistFoldersLocal(_cachedFolders);
     _touchCache();
+    await _rememberSheetRevision(rev);
     return { folders: _cachedFolders, cached: false };
   } catch (err) {
     // Offline / unauthenticated: serve last known local mirror so IDs are not "lost"
@@ -422,11 +496,19 @@ async function scanAndSync() {
 }
 
 async function _applySheetBatch(batch) {
-  _cachedBdImg = batch['BD_IMG!A:M'] || [];
-  _cachedLogs = batch['LOGS!A:E'] || [];
-  _cachedBdArrastre = parseArrastreRows(batch['BD_ARRASTRE!A:E'] || []);
-  _cachedFolders = parseFoldersFromValues(batch['FOLDERS!A:E'] || []);
-  if (_cachedFolders.length) _persistFoldersLocal(_cachedFolders);
+  if (Object.prototype.hasOwnProperty.call(batch, 'BD_IMG!A:M')) {
+    _cachedBdImg = batch['BD_IMG!A:M'] || [];
+  }
+  if (Object.prototype.hasOwnProperty.call(batch, 'LOGS!A:E')) {
+    _cachedLogs = batch['LOGS!A:E'] || [];
+  }
+  if (Object.prototype.hasOwnProperty.call(batch, 'BD_ARRASTRE!A:E')) {
+    _cachedBdArrastre = parseArrastreRows(batch['BD_ARRASTRE!A:E'] || []);
+  }
+  if (Object.prototype.hasOwnProperty.call(batch, 'FOLDERS!A:E')) {
+    _cachedFolders = parseFoldersFromValues(batch['FOLDERS!A:E'] || []);
+    if (_cachedFolders.length) _persistFoldersLocal(_cachedFolders);
+  }
   _touchCache();
 }
 
@@ -437,14 +519,32 @@ async function _fetchSheetBatch(ranges) {
 
 async function syncFromSheet() {
   return _runLocked('sync_from', async () => {
+    await _ensureSheetId();
+    const rev = await _readSheetRevision();
+    if (
+      rev
+      && rev === _cacheSheetRevision
+      && (_cachedBdImg.length || _cachedBdArrastre.length)
+    ) {
+      _touchCache();
+      emit('autoimg.sync.from_complete', { rows: _cachedBdImg.length, cached: true });
+      return {
+        success: true,
+        rows: _cachedBdImg,
+        arrastre: _cachedBdArrastre,
+        cached: true,
+        revision_match: true,
+      };
+    }
     const batch = await _fetchSheetBatch(['BD_IMG!A:M', 'LOGS!A:E', 'BD_ARRASTRE!A:E']);
     await _applySheetBatch({
       'BD_IMG!A:M': batch['BD_IMG!A:M'],
       'LOGS!A:E': batch['LOGS!A:E'],
       'BD_ARRASTRE!A:E': batch['BD_ARRASTRE!A:E'],
     });
+    await _rememberSheetRevision(rev);
     emit('autoimg.sync.from_complete', { rows: _cachedBdImg.length });
-    return { success: true, rows: _cachedBdImg, arrastre: _cachedBdArrastre };
+    return { success: true, rows: _cachedBdImg, arrastre: _cachedBdArrastre, cached: false };
   });
 }
 
@@ -452,10 +552,16 @@ async function listLogs({ force = false } = {}) {
   if (!force && _isCacheFresh()) {
     return { values: _cachedLogs, cached: true };
   }
+  if (!force && _cachedLogs.length && await _canServeUnchangedRevision()) {
+    _touchCache();
+    return { values: _cachedLogs, cached: true, revision_match: true };
+  }
   await _ensureSheetId();
+  const rev = await _readSheetRevision();
   const { values } = await sheets.readRange('LOGS!A:E');
   _cachedLogs = values || [];
   _touchCache();
+  await _rememberSheetRevision(rev);
   return { values: _cachedLogs, cached: false };
 }
 
@@ -463,10 +569,16 @@ async function listArrastre({ force = false } = {}) {
   if (!force && _isCacheFresh()) {
     return { entries: _cachedBdArrastre, cached: true };
   }
+  if (!force && _cachedBdArrastre.length && await _canServeUnchangedRevision()) {
+    _touchCache();
+    return { entries: _cachedBdArrastre, cached: true, revision_match: true };
+  }
   await _ensureSheetId();
+  const rev = await _readSheetRevision();
   const { values } = await sheets.readRange('BD_ARRASTRE!A:E');
   _cachedBdArrastre = parseArrastreRows(values || []);
   _touchCache();
+  await _rememberSheetRevision(rev);
   return { entries: _cachedBdArrastre, cached: false };
 }
 
@@ -611,8 +723,22 @@ async function bootstrap({ refresh = true } = {}) {
     return { ...base, cached: true };
   }
 
+  if (!refresh && await _canServeUnchangedRevision()) {
+    _touchCache();
+    return {
+      ...base,
+      folders: _cachedFolders.length ? _cachedFolders : foldersForUi,
+      bdRows: _cachedBdImg,
+      logRows: _cachedLogs,
+      arrastre: _cachedBdArrastre,
+      cached: true,
+      revision_match: true,
+    };
+  }
+
   try {
     await _ensureSheetId();
+    const rev = await _readSheetRevision();
     const batch = await _fetchSheetBatch([
       'CONFIG!A:B',
       'RESUMEN!A:C',
@@ -622,6 +748,7 @@ async function bootstrap({ refresh = true } = {}) {
       'BD_ARRASTRE!A:E',
     ]);
     await _applySheetBatch(batch);
+    await _rememberSheetRevision(rev);
     const fields = _statusFieldsFromBatch(batch, sheets.getStoredSheetConfig());
     _restoreAutoSyncFromConfig(batch['CONFIG!A:B'] || []);
     return {
@@ -711,10 +838,12 @@ async function _renameExportCore({ dest_folder_id, only_completos = true } = {})
   const copied = [];
   const failed = [];
   let done = 0;
+  const copyConcurrency = resolveRenameCopyConcurrency(jobs.length);
+  let hitRateLimit = false;
 
   await mapWithConcurrency(
     jobs,
-    RENAME_COPY_CONCURRENCY,
+    copyConcurrency,
     async (job) => {
       _throwIfCancelled();
       const targetFolderId = destinoFolderIds.get(job.destino);
@@ -734,6 +863,7 @@ async function _renameExportCore({ dest_folder_id, only_completos = true } = {})
           file_id: res.id || '',
         });
       } catch (err) {
+        if (_isRateLimitError(err)) hitRateLimit = true;
         failed.push({
           nis: job.nis,
           sgio: job.sgio,
@@ -753,6 +883,9 @@ async function _renameExportCore({ dest_folder_id, only_completos = true } = {})
     },
     { shouldCancel: () => _cancelRequested },
   );
+
+  if (hitRateLimit) _noteRenameRateLimit();
+  else if (failed.length === 0 && jobs.length > 0) _noteRenameBatchClean();
 
   await _upsertConfigValues({ [RENAME_DEST_CONFIG_KEY]: rootFolderId });
   try {
@@ -845,4 +978,5 @@ module.exports = {
   listLogs,
   buildFolderErrorSummary,
   formatFolderErrorScan,
+  resolveRenameCopyConcurrency,
 };

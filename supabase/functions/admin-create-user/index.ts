@@ -1,10 +1,29 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const ALLOWED_ORIGINS = [
+  "http://localhost:5173",
+  "https://yoyxclndjevkzzclhdcv.supabase.co",
+];
+
+function corsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get("Origin");
+  const allow =
+    !origin ||
+    origin === "null" ||
+    ALLOWED_ORIGINS.includes(origin) ||
+    origin.includes("localhost:5173");
+
+  const headers: Record<string, string> = {
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  };
+  if (allow && origin) {
+    headers["Access-Control-Allow-Origin"] = origin;
+  } else if (allow) {
+    headers["Access-Control-Allow-Origin"] = "*";
+  }
+  return headers;
+}
 
 interface CreateUserBody {
   email?: string;
@@ -14,14 +33,16 @@ interface CreateUserBody {
 }
 
 Deno.serve(async (req: Request) => {
+  const cors = corsHeaders(req);
+
   if (req.method === "OPTIONS") {
-    return new Response("ok", { status: 200, headers: corsHeaders });
+    return new Response("ok", { status: 200, headers: cors });
   }
 
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...cors, "Content-Type": "application/json" },
     });
   }
 
@@ -33,7 +54,14 @@ Deno.serve(async (req: Request) => {
     if (!email || !password) {
       return new Response(
         JSON.stringify({ error: "Email y password son obligatorios" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 400, headers: { ...cors, "Content-Type": "application/json" } },
+      );
+    }
+
+    if (password.length < 6) {
+      return new Response(
+        JSON.stringify({ error: "La contraseña debe tener al menos 6 caracteres" }),
+        { status: 400, headers: { ...cors, "Content-Type": "application/json" } },
       );
     }
 
@@ -44,7 +72,7 @@ Deno.serve(async (req: Request) => {
     if (!authHeader) {
       return new Response(
         JSON.stringify({ error: "This endpoint requires a valid Bearer token" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 401, headers: { ...cors, "Content-Type": "application/json" } },
       );
     }
 
@@ -56,20 +84,20 @@ Deno.serve(async (req: Request) => {
     if (!callerUser) {
       return new Response(
         JSON.stringify({ error: "This endpoint requires a valid Bearer token" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 401, headers: { ...cors, "Content-Type": "application/json" } },
       );
     }
 
     const { data: profile } = await userClient
       .from("user_profiles")
-      .select("is_admin")
+      .select("is_admin, is_disabled")
       .eq("user_id", callerUser.id)
       .single();
 
-    if (!profile?.is_admin) {
+    if (!profile?.is_admin || profile.is_disabled) {
       return new Response(
         JSON.stringify({ error: "Solo los administradores pueden crear usuarios" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 403, headers: { ...cors, "Content-Type": "application/json" } },
       );
     }
 
@@ -86,31 +114,31 @@ Deno.serve(async (req: Request) => {
     if (createError) {
       return new Response(
         JSON.stringify({ error: createError.message }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 400, headers: { ...cors, "Content-Type": "application/json" } },
       );
     }
 
     if (body.role === "admin" && userData.user?.id) {
-      const { error: adminError } = await adminClient.rpc("admin_set_admin", {
-        p_user_id: userData.user.id,
-        p_is_admin: true,
-      });
+      const { error: adminError } = await adminClient
+        .from("user_profiles")
+        .update({ is_admin: true })
+        .eq("user_id", userData.user.id);
       if (adminError) {
         return new Response(
           JSON.stringify({ error: adminError.message, user: userData.user }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          { status: 400, headers: { ...cors, "Content-Type": "application/json" } },
         );
       }
     }
 
     return new Response(
       JSON.stringify({ user: userData.user }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { status: 200, headers: { ...cors, "Content-Type": "application/json" } },
     );
   } catch (err) {
     return new Response(
       JSON.stringify({ error: err instanceof Error ? err.message : "Internal server error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { status: 500, headers: { ...cors, "Content-Type": "application/json" } },
     );
   }
 });

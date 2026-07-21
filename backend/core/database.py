@@ -11,7 +11,7 @@ from typing import Any, cast
 
 from backend.core.config_fields import get_field_names, load_fields, save_fields
 from backend.core.exceptions import DatabaseError
-from backend.core.repository import _db_lock, get_connection
+from backend.core.repository import _db_lock, get_connection, get_read_connection
 from backend.utils.paths import user_data_path
 
 logger = logging.getLogger(__name__)
@@ -39,6 +39,11 @@ def _qi(name: str) -> str:
 def _get_connection() -> sqlite3.Connection:
     """Retorna la conexión compartida del pool."""
     return get_connection(get_db_path())
+
+
+def _get_read_connection() -> sqlite3.Connection:
+    """Retorna la conexión de solo lectura para SELECT."""
+    return get_read_connection(get_db_path())
 
 
 def _normalize_excel_column_name(name: Any, fallback: str) -> str:
@@ -255,44 +260,44 @@ def importar_excel(excel_path: str) -> int:
         msg = f"No se encontró el archivo: {excel_path}"
         raise FileNotFoundError(msg)
 
-    df = pd.read_excel(excel_path, dtype=str, engine="openpyxl")
-    df.columns = _normalize_excel_columns(list(df.columns))
-
-    existing_fields = {f["name"]: f for f in load_fields()}
-    fields = [
-        {
-            **existing_fields.get(column, {}),
-            "name": column,
-            "type": existing_fields.get(column, {}).get("type", "TEXT"),
-            "required": bool(existing_fields.get(column, {}).get("required", False)),
-            "unique": bool(existing_fields.get(column, {}).get("unique", False)),
-        }
-        for column in df.columns
-    ]
-    fields = save_fields(fields)
-    if not fields:
-        msg = f"El Excel no contiene columnas válidas para importar: {list(df.columns)}"
-        raise ValueError(msg)
-    field_names = [f["name"] for f in fields]
-
-    # Asegurar que el esquema de BD coincida con los campos, incluyendo columnas del Excel.
-    init_db()
-    required = [f["name"] for f in fields if f.get("required")]
-
-    # Validate all field names as safe SQL identifiers (defense in depth)
-    field_names = [_validate_identifier(fn) for fn in field_names]
-
-    missing = [r for r in required if r not in df.columns]
-    if missing:
-        msg = (
-            f"El Excel debe contener al menos las columnas requeridas: {missing}. "
-            f"Columnas encontradas: {list(df.columns)}"
-        )
-        raise ValueError(
-            msg,
-        )
-
     with _db_lock:
+        df = pd.read_excel(excel_path, dtype=str, engine="openpyxl")
+        df.columns = _normalize_excel_columns(list(df.columns))
+
+        existing_fields = {f["name"]: f for f in load_fields()}
+        fields = [
+            {
+                **existing_fields.get(column, {}),
+                "name": column,
+                "type": existing_fields.get(column, {}).get("type", "TEXT"),
+                "required": bool(existing_fields.get(column, {}).get("required", False)),
+                "unique": bool(existing_fields.get(column, {}).get("unique", False)),
+            }
+            for column in df.columns
+        ]
+        fields = save_fields(fields)
+        if not fields:
+            msg = f"El Excel no contiene columnas válidas para importar: {list(df.columns)}"
+            raise ValueError(msg)
+        field_names = [f["name"] for f in fields]
+
+        # Asegurar que el esquema de BD coincida con los campos, incluyendo columnas del Excel.
+        init_db()
+        required = [f["name"] for f in fields if f.get("required")]
+
+        # Validate all field names as safe SQL identifiers (defense in depth)
+        field_names = [_validate_identifier(fn) for fn in field_names]
+
+        missing = [r for r in required if r not in df.columns]
+        if missing:
+            msg = (
+                f"El Excel debe contener al menos las columnas requeridas: {missing}. "
+                f"Columnas encontradas: {list(df.columns)}"
+            )
+            raise ValueError(
+                msg,
+            )
+
         conn = _get_connection()
         cursor = conn.cursor()
 
@@ -387,6 +392,10 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
     Pre-carga todos los registros que coincidan con cualquiera de los códigos
     proporcionados, eliminando la necesidad de N queries individuales.
 
+    Strategy: prefer a single-column ``codigo`` (or first field) lookup with a
+    large chunk size, then fall back to multi-field OR only for unresolved codes
+    so multi-key catalogs keep working.
+
     Args:
         codigos: Lista de códigos a buscar.
 
@@ -396,7 +405,7 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
     if not codigos:
         return {}
     with _db_lock:
-        conn = _get_connection()
+        conn = _get_read_connection()
         cursor = conn.cursor()
         field_names = [_validate_identifier(fn) for fn in get_field_names()]
         if not field_names:
@@ -407,35 +416,61 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
             return {}
         unique_codes = list(unique_codes_set)
 
-        # Batch query: fetch all records where ANY field matches ANY of the codes.
-        # Use chunks to avoid SQLite variable limit (999 per query).
         result: dict[str, dict[str, Any]] = {}
         # Track which DB row each code was first resolved to, so collisions (the
         # same code matching two distinct records) are logged instead of letting
         # the last row win. Codes are expected to be unique.
         code_rowids: dict[str, int] = {}
-        # safe margin for SQLite param limit; clamp to >=1 so a schema with
-        # >900 fields cannot produce CHUNK == 0 (range step of 0 -> ValueError).
-        CHUNK = max(1, 900 // len(field_names))
-        for i in range(0, len(unique_codes), CHUNK):
-            chunk = unique_codes[i:i + CHUNK]
-            placeholders = ", ".join(["?"] * len(chunk))
-            conditions = " OR ".join(
-                [f"{_qi(fn)} IN ({placeholders})" for fn in field_names]
-            )
-            params = chunk * len(field_names)
-            cursor.execute(
-                f"SELECT rowid AS __antares_rowid__, * FROM imagenes WHERE {conditions}",
-                params,
-            )
-            for row in cursor.fetchall():
-                row_dict = dict(row)
-                row_id = row_dict.pop("__antares_rowid__")
-                # Map each matching field value back to the code
-                for fn in field_names:
-                    val = str(row_dict.get(fn, "") or "").strip()
-                    if val and val in unique_codes_set:
-                        _record_code_match(result, code_rowids, val, row_id, row_dict)
+        cols = ", ".join(_qi(fn) for fn in field_names)
+
+        preferred = "codigo" if "codigo" in field_names else field_names[0]
+
+        def _scan_column(codes: list[str], column: str) -> None:
+            CHUNK = 900
+            for i in range(0, len(codes), CHUNK):
+                chunk = codes[i:i + CHUNK]
+                placeholders = ", ".join(["?"] * len(chunk))
+                cursor.execute(
+                    f"SELECT rowid AS __antares_rowid__, {cols} FROM imagenes "
+                    f"WHERE {_qi(column)} IN ({placeholders})",
+                    chunk,
+                )
+                for row in cursor.fetchall():
+                    row_dict = dict(row)
+                    row_id = row_dict.pop("__antares_rowid__")
+                    for fn in field_names:
+                        val = str(row_dict.get(fn, "") or "").strip()
+                        if val and val in unique_codes_set:
+                            _record_code_match(result, code_rowids, val, row_id, row_dict)
+
+        # Pass 1: fast path on preferred key column.
+        _scan_column(unique_codes, preferred)
+
+        unresolved = [c for c in unique_codes if c not in result]
+        if unresolved and len(field_names) > 1:
+            # Pass 2: multi-field OR only for codes still missing.
+            # safe margin for SQLite param limit; clamp to >=1 so a schema with
+            # >900 fields cannot produce CHUNK == 0 (range step of 0 -> ValueError).
+            CHUNK = max(1, 900 // len(field_names))
+            other_fields = [fn for fn in field_names if fn != preferred]
+            for i in range(0, len(unresolved), CHUNK):
+                chunk = unresolved[i:i + CHUNK]
+                placeholders = ", ".join(["?"] * len(chunk))
+                conditions = " OR ".join(
+                    [f"{_qi(fn)} IN ({placeholders})" for fn in other_fields]
+                )
+                params = chunk * len(other_fields)
+                cursor.execute(
+                    f"SELECT rowid AS __antares_rowid__, {cols} FROM imagenes WHERE {conditions}",
+                    params,
+                )
+                for row in cursor.fetchall():
+                    row_dict = dict(row)
+                    row_id = row_dict.pop("__antares_rowid__")
+                    for fn in field_names:
+                        val = str(row_dict.get(fn, "") or "").strip()
+                        if val and val in unique_codes_set:
+                            _record_code_match(result, code_rowids, val, row_id, row_dict)
         return result
 
 
@@ -453,9 +488,10 @@ def buscar_por_columna(codigos: list[str], column: str) -> dict[str, dict[str, A
         return {}
     safe_column = _validate_identifier(column)
     with _db_lock:
-        conn = _get_connection()
+        conn = _get_read_connection()
         cursor = conn.cursor()
-        field_names = set(get_field_names())
+        field_names_list = [_validate_identifier(fn) for fn in get_field_names()]
+        field_names = set(field_names_list)
         if safe_column not in field_names:
             return {}
         unique_codes_set = {str(c).strip() for c in codigos if c}
@@ -469,11 +505,12 @@ def buscar_por_columna(codigos: list[str], column: str) -> dict[str, dict[str, A
         # the last row win. Codes are expected to be unique.
         code_rowids: dict[str, int] = {}
         CHUNK = 900  # safe margin for SQLite param limit
+        cols = ", ".join(_qi(fn) for fn in field_names_list)
         for i in range(0, len(unique_codes), CHUNK):
             chunk = unique_codes[i:i + CHUNK]
             placeholders = ", ".join(["?"] * len(chunk))
             cursor.execute(
-                f"SELECT rowid AS __antares_rowid__, * FROM imagenes "
+                f"SELECT rowid AS __antares_rowid__, {cols} FROM imagenes "
                 f"WHERE {_qi(safe_column)} IN ({placeholders})",
                 chunk,
             )
@@ -494,7 +531,7 @@ def obtener_todos(limit: int | None = None, offset: int = 0) -> list[dict[str, A
         offset: Número de registros a saltar desde el inicio.
     """
     with _db_lock:
-        conn = _get_connection()
+        conn = _get_read_connection()
         cursor = conn.cursor()
         field_names = [_validate_identifier(fn) for fn in get_field_names()]
         cols = ", ".join(_qi(fn) for fn in field_names)

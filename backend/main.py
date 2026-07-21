@@ -35,13 +35,16 @@ sys.path = adjust_backend_import_path(
 
 import locale
 import logging
+import os
 import signal
+import threading
 import time
 import traceback
 import warnings
 from concurrent.futures import Future
 
 from backend.core.database import init_db
+from backend.core.exceptions import AntaresBaseException
 from backend.core.plugins import load_plugins_from_dir
 from backend.core.repository import close_connection
 from backend.core.scheduler import SchedulerBusy, get_scheduler
@@ -168,9 +171,14 @@ def _dispatch(handler, params, msg_id, method_name) -> None:
         result = handler(params)
         send_response(result, msg_id)
     except Exception as exc:
-        error_msg = f"{type(exc).__name__}: {exc}"
-        logger.exception("Error en %s: %s\n%s", method_name, error_msg, traceback.format_exc())
-        send_response(None, msg_id, error=error_msg)
+        if isinstance(exc, AntaresBaseException):
+            user_msg = exc
+        elif isinstance(exc, (ValueError, FileNotFoundError, ImportError)):
+            user_msg = str(exc)
+        else:
+            user_msg = f"{type(exc).__name__}: {exc}"
+        logger.exception("Error en %s: %s\n%s", method_name, user_msg, traceback.format_exc())
+        send_response(None, msg_id, error=user_msg)
 
 
 def _log_future_exception(future: Future) -> None:
@@ -205,21 +213,39 @@ def main() -> None:
     (PDF generation, Excel import, etc.) do NOT block the main loop from
     reading subsequent messages on stdin.
     """
-    # Handshake: report ready IMMEDIATELY so the spawner doesn't timeout
-    # on heavy initialization work.
-    send_notification("ready", {"status": "ok"})
-
-    logger.info(t("info.backend_ready"))
-
-    # Initialize heavy resources AFTER handshake to prevent spawner kill loops.
+    # Fail fast on DB init BEFORE the ready handshake so Electron never marks
+    # the backend healthy while the catalog is unusable.
     try:
         init_db()
     except Exception as exc:
         logger.exception("init_db failed during startup: %s", exc)
-    try:
-        load_plugins_from_dir()
-    except Exception as exc:
-        logger.exception("load_plugins_from_dir failed during startup: %s", exc)
+        try:
+            send_notification("db_init_failed", {"message": str(exc)})
+        except Exception:
+            logger.exception("Failed to emit db_init_failed notification")
+        sys.exit(1)
+
+    send_notification("ready", {"status": "ok"})
+
+    logger.info(t("info.backend_ready"))
+
+    # Warm heavy handler imports off the critical path so the first light IPC
+    # (version / theme) is not blocked by Pillow/PyMuPDF/WeasyPrint loads.
+    def _warm_handlers() -> None:
+        try:
+            HANDLERS.warm()
+        except Exception:
+            logger.exception("Background handler warm-up failed")
+
+    threading.Thread(target=_warm_handlers, name="handler-warmup", daemon=True).start()
+
+    # Plugins are opt-in: set ANTARES_ENABLE_PLUGINS=1 to load user_data/plugins/*.py
+    # at startup. Default off so installs without plugins pay no import/exec cost.
+    if os.environ.get("ANTARES_ENABLE_PLUGINS") == "1":
+        try:
+            load_plugins_from_dir()
+        except Exception as exc:
+            logger.exception("load_plugins_from_dir failed during startup: %s", exc)
 
     # Note: ubicaciones map previews now use a lightweight static-map HTTP fetch
     # (OSM tiles / Google Static Maps) instead of a persistent Playwright browser,

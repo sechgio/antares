@@ -55,33 +55,48 @@ function extractSlot(filename) {
   return Number(m[2]);
 }
 
-function buildNisMap(files, folderName) {
-  const nisMap = {};
-  for (const file of files) {
+/**
+ * Merge one page of Drive files into an accumulating NIS map (slots stay as Set).
+ * Call finalizeNisMap before IPC / JSON serialization.
+ */
+function accumulateNisFiles(nisMap, files, folderName) {
+  const map = nisMap || {};
+  for (const file of files || []) {
     const name = file.name || '';
     const nis = extractNis(name);
     if (!nis) continue;
-    if (!nisMap[nis]) {
-      nisMap[nis] = { count: 0, files: [], folders: [], slots: new Set() };
+    if (!map[nis]) {
+      map[nis] = { count: 0, files: [], folders: [], slots: new Set() };
+    } else if (!(map[nis].slots instanceof Set)) {
+      map[nis].slots = new Set(map[nis].slots || []);
     }
-    nisMap[nis].count += 1;
-    nisMap[nis].files.push({
+    map[nis].count += 1;
+    map[nis].files.push({
       name,
       id: file.id,
       modifiedTime: file.modifiedTime,
       slot: extractSlot(name),
     });
     const slot = extractSlot(name);
-    if (slot != null) nisMap[nis].slots.add(slot);
-    if (folderName && !nisMap[nis].folders.includes(folderName)) {
-      nisMap[nis].folders.push(folderName);
+    if (slot != null) map[nis].slots.add(slot);
+    if (folderName && !map[nis].folders.includes(folderName)) {
+      map[nis].folders.push(folderName);
     }
   }
-  // Serialize slots for IPC (Set is not JSON-friendly)
-  for (const entry of Object.values(nisMap)) {
-    entry.slots = [...entry.slots].sort((a, b) => a - b);
+  return map;
+}
+
+/** Convert slot Sets to sorted arrays for IPC. Mutates and returns nisMap. */
+function finalizeNisMap(nisMap) {
+  for (const entry of Object.values(nisMap || {})) {
+    const slots = entry.slots instanceof Set ? entry.slots : entry.slots || [];
+    entry.slots = [...slots].sort((a, b) => a - b);
   }
-  return nisMap;
+  return nisMap || {};
+}
+
+function buildNisMap(files, folderName) {
+  return finalizeNisMap(accumulateNisFiles({}, files, folderName));
 }
 
 function parseDedupStrategy(value) {
@@ -136,6 +151,8 @@ module.exports = {
   stripExtension,
   extractNis,
   extractSlot,
+  accumulateNisFiles,
+  finalizeNisMap,
   buildNisMap,
   parseDedupStrategy,
   mergeNisMaps,

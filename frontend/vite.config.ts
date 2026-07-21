@@ -12,8 +12,8 @@ const sharedHtmlSanitizerPlugin = {
     if (path.normalize(id.split('?')[0]) !== path.normalize(sharedHtmlSanitizerPath)) return null
 
     return code.replace(
-      'module.exports = { sanitizeHtmlForPdf, CSP_META };',
-      'export { sanitizeHtmlForPdf, CSP_META };',
+      /module\.exports = \{[^}]+\};/,
+      'export { sanitizeHtmlForPdf, CSP_META, isSafeDataUrl };',
     )
   },
 }

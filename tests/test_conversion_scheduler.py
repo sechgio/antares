@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import time
 from concurrent.futures import Future
+from pathlib import Path
 
 from backend.core.jobs import Job
 from backend.handlers import conversion
@@ -29,6 +30,9 @@ class _RecordingScheduler:
     def submit_heavy(self, fn, task, *, block=False, cancel_check=None):  # type: ignore[no-untyped-def]
         self.submitted.append(task)
         return _ImmediateFuture(fn(task))
+
+    def submit_light(self, fn, /, *args, **kwargs):  # type: ignore[no-untyped-def]
+        return _ImmediateFuture(fn(*args, **kwargs))
 
 
 def test_conversion_prepares_work_incrementally(monkeypatch) -> None:
@@ -60,6 +64,148 @@ def test_conversion_prepares_work_incrementally(monkeypatch) -> None:
 
     assert [len(batch) for batch in seen_batches] == [2, 2, 1]
     assert len(scheduler.submitted) == 5
+
+
+def test_conversion_prefetches_next_chunk_while_heavy_runs(monkeypatch) -> None:
+    """Next chunk prepare (submit_light) must overlap the current chunk's heavy work."""
+    first_heavy_started = threading.Event()
+    release_heavy = threading.Event()
+    prepare_during_heavy = threading.Event()
+    heavy_count = 0
+    lock = threading.Lock()
+
+    class _OverlapScheduler:
+        def submit_heavy(self, fn, task, *, block=False, cancel_check=None):  # type: ignore[no-untyped-def]
+            future: Future = Future()
+
+            def _run() -> None:
+                nonlocal heavy_count
+                with lock:
+                    heavy_count += 1
+                    is_first = heavy_count == 1
+                if is_first:
+                    first_heavy_started.set()
+                    release_heavy.wait(timeout=5)
+                if not future.cancelled():
+                    try:
+                        future.set_result(fn(task))
+                    except Exception as exc:  # pragma: no cover
+                        future.set_exception(exc)
+
+            threading.Thread(target=_run, daemon=True).start()
+            return future
+
+        def submit_light(self, fn, /, *args, **kwargs):  # type: ignore[no-untyped-def]
+            if first_heavy_started.is_set() and not release_heavy.is_set():
+                prepare_during_heavy.set()
+            return _ImmediateFuture(fn(*args, **kwargs))
+
+    monkeypatch.setattr(conversion, "get_scheduler", lambda: _OverlapScheduler())
+    monkeypatch.setattr(conversion, "es_video", lambda _path: False)
+    monkeypatch.setattr(conversion, "convertir_imagen", lambda *args, **kwargs: None)
+    monkeypatch.setattr(conversion, "copiar_archivo", lambda *args, **kwargs: Path(args[1]))
+    monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 1)
+    monkeypatch.setattr("backend.core.database.buscar_lote_por_codigos", lambda _codes: {})
+
+    job = Job(
+        id="prefetch",
+        job_type="conversion",
+        params={
+            "files": ["C:/tmp/a.jpg", "C:/tmp/b.jpg"],
+            "destino": "C:/out",
+            "formato": "JPEG",
+            "usar_rename": True,
+            "conversion_enabled": False,
+        },
+    )
+
+    def _run_job() -> None:
+        conversion._run_conversion_job(job)
+
+    thread = threading.Thread(target=_run_job, daemon=True)
+    thread.start()
+    assert first_heavy_started.wait(timeout=5)
+    # Give submit_light a moment to run while heavy is blocked.
+    assert prepare_during_heavy.wait(timeout=2), "expected next-chunk prepare while heavy still running"
+    release_heavy.set()
+    thread.join(timeout=5)
+    assert not thread.is_alive()
+    assert job.result is not None
+    assert job.result["cancelled"] is False
+
+
+def test_conversion_cancel_discards_prefetched_chunk(monkeypatch, tmp_path) -> None:
+    """Cancel after chunk 0 must not write outputs from a prefetched chunk 1."""
+    destino = tmp_path / "out"
+    destino.mkdir()
+    src_a = tmp_path / "a.jpg"
+    src_b = tmp_path / "b.jpg"
+    src_a.write_bytes(b"a")
+    src_b.write_bytes(b"b")
+
+    first_heavy_started = threading.Event()
+    release_heavy = threading.Event()
+    written: list[str] = []
+
+    class _CancelScheduler:
+        def submit_heavy(self, fn, task, *, block=False, cancel_check=None):  # type: ignore[no-untyped-def]
+            future: Future = Future()
+
+            def _run() -> None:
+                first_heavy_started.set()
+                release_heavy.wait(timeout=5)
+                if cancel_check and cancel_check():
+                    future.cancel()
+                    return
+                if not future.cancelled():
+                    future.set_result(fn(task))
+
+            threading.Thread(target=_run, daemon=True).start()
+            return future
+
+        def submit_light(self, fn, /, *args, **kwargs):  # type: ignore[no-untyped-def]
+            return _ImmediateFuture(fn(*args, **kwargs))
+
+    def tracking_copy(src, dest):  # type: ignore[no-untyped-def]
+        written.append(str(dest))
+        Path(dest).write_bytes(b"x")
+        return Path(dest)
+
+    monkeypatch.setattr(conversion, "get_scheduler", lambda: _CancelScheduler())
+    monkeypatch.setattr(conversion, "es_video", lambda _path: False)
+    monkeypatch.setattr(conversion, "copiar_archivo", tracking_copy)
+    monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 1)
+    monkeypatch.setattr(conversion, "_CANCEL_GRACE_SECONDS", 0.05)
+    monkeypatch.setattr("backend.core.database.buscar_lote_por_codigos", lambda _codes: {})
+
+    job = Job(
+        id="cancel-prefetch",
+        job_type="conversion",
+        params={
+            "files": [str(src_a), str(src_b)],
+            "destino": str(destino),
+            "formato": "JPEG",
+            "usar_rename": False,
+            "conversion_enabled": False,
+        },
+    )
+
+    def _run_job() -> None:
+        conversion._run_conversion_job(job)
+
+    thread = threading.Thread(target=_run_job, daemon=True)
+    thread.start()
+    assert first_heavy_started.wait(timeout=5)
+    with job.state._lock:
+        job.state.cancel_requested = True
+    release_heavy.set()
+    thread.join(timeout=5)
+    assert not thread.is_alive()
+    assert job.result is not None
+    assert job.result["cancelled"] is True
+    # Prefetched chunk must never be submitted → at most the first file may appear.
+    assert len(written) <= 1
+    assert not (destino / "b.jpg").exists()
 
 
 def test_conversion_cancel_releases_visible_state_without_waiting_for_slow_workers(monkeypatch) -> None:

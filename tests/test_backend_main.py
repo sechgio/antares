@@ -65,6 +65,12 @@ def test_heavy_methods_include_fichas_and_evidencia() -> None:
     assert "evidencia_volanteo_render" in backend_main.HEAVY_METHODS
 
 
+def test_classify_init_db_failure_is_fatal_message() -> None:
+    """Document expected stderr phrase used by Electron fatal classification."""
+    # The spawner looks for this substring in startup error / stderr tails.
+    assert "init_db failed" in "init_db failed during startup: disk full"
+
+
 def test_sync_methods_are_liveness_safe() -> None:
     """version/process_status stay off the pool so health probes never starve."""
     assert "version" in backend_main.SYNC_METHODS

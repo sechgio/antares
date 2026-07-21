@@ -7,14 +7,32 @@
 import { api } from '../api';
 
 const MAX_CACHE = 200;
-const CONCURRENCY = 3;
+const MIN_CONCURRENCY = 4;
+const MAX_CONCURRENCY = 8;
 const DEFAULT_MAX_EDGE = 256;
 
 /** key = path + maxEdge → data URL */
 const cache = new Map<string, string>();
 
+/** Coalesce concurrent requests for the same key into one IPC call. */
+const inFlight = new Map<string, Promise<string | null>>();
+
 let active = 0;
 const waitQueue: Array<() => void> = [];
+
+function resolveConcurrency(): number {
+  try {
+    const cores =
+      typeof navigator !== 'undefined' && typeof navigator.hardwareConcurrency === 'number'
+        ? navigator.hardwareConcurrency
+        : MIN_CONCURRENCY;
+    return Math.min(MAX_CONCURRENCY, Math.max(MIN_CONCURRENCY, cores || MIN_CONCURRENCY));
+  } catch {
+    return MIN_CONCURRENCY;
+  }
+}
+
+const CONCURRENCY = resolveConcurrency();
 
 function cacheKey(filePath: string, maxEdge: number): string {
   return `${filePath}\0${maxEdge}`;
@@ -58,7 +76,8 @@ function runLimited<T>(fn: () => Promise<T>): Promise<T> {
 
 /**
  * Resolve a display-size data URL for a local absolute path, or null on failure.
- * Cache hits skip IPC; concurrent in-flight requests are limited to 3.
+ * Cache hits skip IPC; concurrent requests for the same key share one in-flight
+ * promise; distinct keys are limited by adaptive concurrency (4–8).
  */
 export async function getLocalThumbnail(
   filePath: string,
@@ -71,21 +90,32 @@ export async function getLocalThumbnail(
   const hit = cacheGet(key);
   if (hit) return hit;
 
-  try {
-    const result = await runLimited(() => api.localThumbnail({ path: filePath, maxEdge: edge }));
-    if (result && typeof result.dataUrl === 'string' && result.dataUrl.startsWith('data:')) {
-      cacheSet(key, result.dataUrl);
-      return result.dataUrl;
+  const existing = inFlight.get(key);
+  if (existing) return existing;
+
+  const promise = (async (): Promise<string | null> => {
+    try {
+      const result = await runLimited(() => api.localThumbnail({ path: filePath, maxEdge: edge }));
+      if (result && typeof result.dataUrl === 'string' && result.dataUrl.startsWith('data:')) {
+        cacheSet(key, result.dataUrl);
+        return result.dataUrl;
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      inFlight.delete(key);
     }
-    return null;
-  } catch {
-    return null;
-  }
+  })();
+
+  inFlight.set(key, promise);
+  return promise;
 }
 
-/** Test helper — clears cache and pending concurrency queue. */
+/** Test helper — clears cache, in-flight map, and pending concurrency queue. */
 export function _resetLocalThumbForTests(): void {
   cache.clear();
+  inFlight.clear();
   waitQueue.length = 0;
   active = 0;
 }

@@ -114,11 +114,12 @@ class Job:
     def to_dict_detail(self) -> dict[str, Any]:
         """Serialize job detail (including logs) for IPC responses."""
         with self.state._lock:
+            result = dict(self.result) if isinstance(self.result, dict) else self.result
             return {
                 **self.to_dict(),
                 "logs": [dict(log) for log in self.state.logs],
                 "params": self.params,
-                "result": self.result,
+                "result": result,
             }
 
 

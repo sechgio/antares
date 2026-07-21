@@ -38,6 +38,7 @@ const REAUTH_REQUIRED_MESSAGE =
 
 let _pendingRedirectUri = null;
 let _pendingCodeVerifier = null;
+let _pendingOAuthState = null;
 let _oauthFlowPromise = null;
 
 function isInvalidGrantResponse(body) {
@@ -188,7 +189,7 @@ async function getValidTokens() {
   return tokens;
 }
 
-function _buildAuthUrl(redirectUri, codeChallenge) {
+function _buildAuthUrl(redirectUri, codeChallenge, state) {
   const cfg = _requireConfig();
   const params = new URLSearchParams({
     client_id: cfg.clientId,
@@ -200,6 +201,7 @@ function _buildAuthUrl(redirectUri, codeChallenge) {
     prompt: 'select_account consent',
     code_challenge: codeChallenge,
     code_challenge_method: 'S256',
+    state,
   });
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 }
@@ -208,13 +210,15 @@ function getAuthUrl() {
   const redirectUri = _pendingRedirectUri || 'http://127.0.0.1:42813';
   const verifier = _pendingCodeVerifier || _generateCodeVerifier();
   const challenge = _generateCodeChallenge(verifier);
-  return _buildAuthUrl(redirectUri, challenge);
+  const state = _pendingOAuthState || crypto.randomBytes(24).toString('base64url');
+  return _buildAuthUrl(redirectUri, challenge, state);
 }
 
 function cancelBrowserOAuthFlow() {
   stopCallbackServer();
   _pendingRedirectUri = null;
   _pendingCodeVerifier = null;
+  _pendingOAuthState = null;
   _oauthFlowPromise = null;
 }
 
@@ -225,11 +229,14 @@ async function beginBrowserOAuthFlow(onComplete, onError) {
   const redirectUri = `http://127.0.0.1:${port}`;
   const codeVerifier = _generateCodeVerifier();
   const codeChallenge = _generateCodeChallenge(codeVerifier);
+  const oauthState = crypto.randomBytes(24).toString('base64url');
   _pendingRedirectUri = redirectUri;
   _pendingCodeVerifier = codeVerifier;
-  const url = _buildAuthUrl(redirectUri, codeChallenge);
+  _pendingOAuthState = oauthState;
+  const url = _buildAuthUrl(redirectUri, codeChallenge, oauthState);
 
   _oauthFlowPromise = startCallbackServer(port, {
+    expectedState: oauthState,
     onCode: async (code) => {
       try {
         await exchangeCode(code, redirectUri);
@@ -393,9 +400,10 @@ async function _apiFetch(url, options = {}) {
 function parseSheetId(input) {
   const trimmed = String(input || '').trim();
   if (!trimmed) return '';
-  const urlMatch = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  const urlMatch = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]{10,128})/);
   if (urlMatch) return urlMatch[1];
-  return trimmed;
+  if (/^[a-zA-Z0-9_-]{10,128}$/.test(trimmed)) return trimmed;
+  throw new Error('ID de hoja de cálculo inválido');
 }
 
 function _getTabNames() {
@@ -404,14 +412,14 @@ function _getTabNames() {
 
 async function _refreshSheetMeta() {
   if (!_sheetId) return;
-  const res = await _apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${_sheetId}?fields=properties.title,sheets.properties`);
+  const res = await _apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(_sheetId)}?fields=properties.title,sheets.properties`);
   _sheetMeta = await res.json();
 }
 
 async function _createSheetTabs(tabNames) {
   if (!_sheetId || !tabNames.length) return;
   await _apiFetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${_sheetId}:batchUpdate`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(_sheetId)}:batchUpdate`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -443,7 +451,7 @@ async function ensureAutoImgTabs() {
 async function openSpreadsheet(rawId) {
   const sheetId = parseSheetId(rawId);
   if (!sheetId) throw new Error('ID de Sheet inválido');
-  const res = await _apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=properties.title,sheets.properties`);
+  const res = await _apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}?fields=properties.title,sheets.properties`);
   const data = await res.json();
   const name = data.properties?.title || '';
   _sheetId = sheetId;
@@ -517,7 +525,7 @@ function _mapBatchGetResult(ranges, valueRanges) {
 async function readRange(range) {
   if (!_sheetId) throw new Error('No hay Sheet abierto. Usa autoimg_sheets_open primero.');
   const encoded = encodeURIComponent(range);
-  const res = await _apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${_sheetId}/values/${encoded}`);
+  const res = await _apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(_sheetId)}/values/${encoded}`);
   const data = await res.json();
   return { values: data.values || [] };
 }
@@ -528,7 +536,7 @@ async function readRanges(ranges) {
   const qs = new URLSearchParams();
   for (const range of ranges) qs.append('ranges', range);
   const res = await _apiFetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${_sheetId}/values:batchGet?${qs.toString()}`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(_sheetId)}/values:batchGet?${qs.toString()}`,
   );
   const data = await res.json();
   return _mapBatchGetResult(ranges, data.valueRanges);
@@ -538,7 +546,7 @@ async function writeRange(range, values) {
   if (!_sheetId) throw new Error('No hay Sheet abierto.');
   const encoded = encodeURIComponent(range);
   const res = await _apiFetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${_sheetId}/values/${encoded}?valueInputOption=USER_ENTERED`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(_sheetId)}/values/${encoded}?valueInputOption=USER_ENTERED`,
     { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values }) },
   );
   const data = await res.json();
@@ -549,7 +557,7 @@ async function appendRow(range, values) {
   if (!_sheetId) throw new Error('No hay Sheet abierto.');
   const encoded = encodeURIComponent(range);
   const res = await _apiFetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${_sheetId}/values/${encoded}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(_sheetId)}/values/${encoded}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values: [values] }) },
   );
   const data = await res.json();
@@ -565,7 +573,7 @@ async function batchWriteRanges(updates) {
     values: u.values,
   }));
   const res = await _apiFetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${_sheetId}/values:batchUpdate`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(_sheetId)}/values:batchUpdate`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

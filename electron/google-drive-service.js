@@ -64,9 +64,17 @@ function assertValidFolderId(input) {
   return id;
 }
 
-async function listFolder(folderId, { onPage } = {}) {
+/**
+ * List images in a Drive folder (paginated).
+ * @param {string} folderId
+ * @param {{ onPage?: Function, collect?: boolean }} [opts]
+ *   - collect (default true): accumulate and return all file stubs.
+ *     Set false when streaming via onPage to avoid holding the full folder in RAM.
+ */
+async function listFolder(folderId, { onPage, collect = true } = {}) {
   const safeId = assertValidFolderId(folderId);
-  const files = [];
+  const files = collect ? [] : null;
+  let totalSoFar = 0;
   let pageToken = '';
   do {
     const data = await _driveFetch('files', {
@@ -75,25 +83,37 @@ async function listFolder(folderId, { onPage } = {}) {
       pageSize: '200',
       ...(pageToken ? { pageToken } : {}),
     });
-    const pageFiles = data.files || [];
-    for (const f of pageFiles) {
-      files.push({ id: f.id, name: f.name, modifiedTime: f.modifiedTime });
+    const pageFiles = (data.files || []).map((f) => ({
+      id: f.id,
+      name: f.name,
+      modifiedTime: f.modifiedTime,
+    }));
+    totalSoFar += pageFiles.length;
+    if (files) {
+      for (const f of pageFiles) files.push(f);
     }
     if (onPage) {
       onPage({
         pageFiles,
-        totalSoFar: files.length,
+        totalSoFar,
         hasMore: Boolean(data.nextPageToken),
       });
     }
     pageToken = data.nextPageToken || '';
   } while (pageToken);
-  return files;
+  return files || [];
 }
 
+/** Scan NIS by streaming pages — does not materialize the full file list. */
 async function scanNis(folderId, folderName = '') {
-  const files = await listFolder(folderId);
-  return { nis_map: nis.buildNisMap(files, folderName) };
+  const nisMap = {};
+  await listFolder(folderId, {
+    collect: false,
+    onPage: ({ pageFiles }) => {
+      nis.accumulateNisFiles(nisMap, pageFiles, folderName);
+    },
+  });
+  return { nis_map: nis.finalizeNisMap(nisMap) };
 }
 
 async function assertDriveFolder(input) {
@@ -105,19 +125,31 @@ async function assertDriveFolder(input) {
   return { folder_id: meta.id, name: meta.name || '' };
 }
 
+/**
+ * Verify folder access without listing the entire folder.
+ * Uses a single files.list page (pageSize=200): exact count when has_more is false;
+ * otherwise image_count is a lower bound (UI should show e.g. "200+").
+ */
 async function verifyFolder(input) {
   const folderId = assertValidFolderId(input);
   const meta = await _driveFetch(`files/${folderId}`, { fields: 'id,name,mimeType' });
   if (meta.mimeType !== 'application/vnd.google-apps.folder') {
     throw new Error('El ID no corresponde a una carpeta de Drive');
   }
-  const files = await listFolder(folderId);
+  const data = await _driveFetch('files', {
+    q: `'${folderId}' in parents and trashed=false and ${IMAGE_QUERY}`,
+    fields: 'nextPageToken,files(name)',
+    pageSize: '200',
+  });
+  const pageFiles = data.files || [];
+  const hasMore = Boolean(data.nextPageToken);
   return {
     accessible: true,
     folder_id: meta.id,
     name: meta.name,
-    image_count: files.length,
-    sample_files: files.slice(0, 5).map((f) => f.name),
+    image_count: pageFiles.length,
+    has_more: hasMore,
+    sample_files: pageFiles.slice(0, 5).map((f) => f.name || ''),
   };
 }
 
@@ -267,6 +299,17 @@ function invalidateFolderPreview(folderId) {
   if (id) previewCache.delete(id);
 }
 
+/**
+ * Lightweight Drive files.get — used to skip Sheet re-reads when modifiedTime is unchanged.
+ * @param {string} fileId
+ * @param {string} [fields]
+ */
+async function getFileMetadata(fileId, fields = 'id,name,modifiedTime,version') {
+  const id = String(fileId || '').trim();
+  if (!FILE_ID_RE.test(id)) throw new Error('ID de archivo de Drive inválido');
+  return _driveFetch(`files/${encodeURIComponent(id)}`, { fields });
+}
+
 module.exports = {
   listFolder,
   scanNis,
@@ -274,6 +317,7 @@ module.exports = {
   verifyFolder,
   previewFolder,
   invalidateFolderPreview,
+  getFileMetadata,
   copyFileToFolder,
   findOrCreateSubfolder,
   escapeDriveQueryValue,

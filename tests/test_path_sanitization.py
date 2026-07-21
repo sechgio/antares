@@ -1,13 +1,12 @@
-import os
-import sys
+"""Path sanitization security tests."""
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from __future__ import annotations
 
 from backend.utils.validators import sanitizar_nombre
 
 
 def test_path_traversal_prevention() -> None:
-    """Test that path traversal characters are removed."""
+    """Path traversal characters must be removed."""
     bad_names = [
         "../../../etc/passwd",
         "..\\..\\windows\\system32",
@@ -22,8 +21,8 @@ def test_path_traversal_prevention() -> None:
 
 
 def test_control_characters() -> None:
-    """Test that control characters are removed."""
-    name_with_control = "file\x00name.txt"  # Null byte
+    """Control characters must be removed."""
+    name_with_control = "file\x00name.txt"
     result = sanitizar_nombre(name_with_control)
     assert "\x00" not in result, "Control character not removed"
 
@@ -33,13 +32,7 @@ def test_control_characters() -> None:
 
 
 def test_leading_dots() -> None:
-    """Test that leading dots are removed (hidden files on Unix)."""
+    """Leading dots must be removed (hidden files on Unix)."""
     hidden_file = ".hidden_file.txt"
     result = sanitizar_nombre(hidden_file)
     assert not result.startswith("."), "Leading dot not removed"
-
-
-if __name__ == "__main__":
-    test_path_traversal_prevention()
-    test_control_characters()
-    test_leading_dots()

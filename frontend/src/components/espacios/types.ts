@@ -59,7 +59,6 @@ export interface Tarea {
 export interface TeamMember {
   user_id: string;
   display_name: string;
-  email: string;
 }
 
 export interface TareaInput {

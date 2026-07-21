@@ -39,6 +39,7 @@ const NATIVE_METHODS = [
   'dialog_folder',
   'html_to_pdf',
   'local_thumbnail',
+  'register_local_path',
 ];
 
 const { AUTOIMG_METHODS } = require('./autoimg-ipc-methods');

@@ -75,30 +75,22 @@ function ElectronOnlyNotice() {
   );
 }
 
+/** Tabs that require Supabase auth (cloud collaboration). Local tools stay usable offline. */
+const CLOUD_AUTH_TABS = new Set<TabId>(['espacios']);
+
 function AuthGate() {
   const { user, loading, signOut } = useAuth();
 
-  if (loading) {
-    return (
-      <div className="flex h-screen w-screen items-center justify-center bg-[var(--bg-base)]">
-        <div className="text-sm text-[var(--text-muted)]">Cargando...</div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <LoginScreen />;
-  }
-
-  if (user.isDisabled) {
-    return <DisabledUserNotice onSignOut={signOut} />;
-  }
-
-  // User is authenticated — check Electron bridge
+  // Electron bridge is required for the whole app — check before auth.
   if (!window.electronAPI) {
     return <ElectronOnlyNotice />;
   }
 
+  if (!loading && user?.isDisabled) {
+    return <DisabledUserNotice onSignOut={signOut} />;
+  }
+
+  // Show the shell immediately (default tab is local). Do not block on session resolve.
   return <AppContent />;
 }
 
@@ -117,6 +109,7 @@ function DisabledUserNotice({ onSignOut }: { onSignOut: () => Promise<void> }) {
 }
 
 function AppContent() {
+  const { user, loading: authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<TabId>(DEFAULT_TAB);
   const [commandOpen, setCommandOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -170,16 +163,20 @@ function AppContent() {
         shortcut: tab.shortcut,
         action: () => handleTabChange(tab.id),
       })),
-      ...CONFIG_SECTION_DEFINITIONS.map((section) => ({
-        id: `settings-${section.id}`,
-        label: `Configuración: ${section.label}`,
-        shortcut: section.shortcut,
-        action: () => openSettings(section.id),
-      })),
+      ...CONFIG_SECTION_DEFINITIONS
+        .filter((section) => section.id !== 'panel' || user?.isAdmin)
+        .map((section) => ({
+          id: `settings-${section.id}`,
+          label: `Configuración: ${section.label}`,
+          shortcut: section.shortcut,
+          action: () => openSettings(section.id),
+        })),
     ],
-    [handleTabChange, openSettings],
+    [handleTabChange, openSettings, user?.isAdmin],
   );
 
+  const needsCloudAuth = CLOUD_AUTH_TABS.has(activeTab);
+  const cloudAuthBlocked = needsCloudAuth && !user;
   const isFullBleed = FULL_BLEED_TABS.has(activeTab);
   const ActiveView = VIEWS[activeTab];
 
@@ -196,14 +193,24 @@ function AppContent() {
         />
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
           <main className="flex-1 overflow-hidden relative">
-            <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">Cargando...</div>}>
-              {/* Full-bleed tools own their scroll; padded tools scroll in this shell. */}
-              <div className={`h-full min-h-0 ${isFullBleed ? 'overflow-hidden' : 'overflow-y-auto px-6 py-4'}`}>
-                <ErrorBoundary key={activeTab}>
-                  <ActiveView />
-                </ErrorBoundary>
-              </div>
-            </Suspense>
+            {cloudAuthBlocked ? (
+              authLoading ? (
+                <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">
+                  Cargando sesión...
+                </div>
+              ) : (
+                <LoginScreen />
+              )
+            ) : (
+              <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">Cargando...</div>}>
+                {/* Full-bleed tools own their scroll; padded tools scroll in this shell. */}
+                <div className={`h-full min-h-0 ${isFullBleed ? 'overflow-hidden' : 'overflow-y-auto px-6 py-4'}`}>
+                  <ErrorBoundary key={activeTab}>
+                    <ActiveView />
+                  </ErrorBoundary>
+                </div>
+              </Suspense>
+            )}
           </main>
         </div>
       </div>

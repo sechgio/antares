@@ -72,10 +72,8 @@ def test_parse_errors_skip_without_orphan_response(monkeypatch) -> None:
 
 
 def test_inbound_payload_over_max_is_skipped(monkeypatch) -> None:
-    """Oversized stdin lines must not be json.loads'd (OOM hygiene)."""
+    """Oversized stdin lines without a parseable id must not be json.loads'd."""
     monkeypatch.setattr(ipc_protocol, "_MAX_PAYLOAD_SIZE", 64)
-    stdin = io.StringIO('{"jsonrpc":"2.0","id":"1","method":"version","params":{}}\n')
-    # Force a line larger than the patched max.
     big = "x" * 200 + "\n"
     stdin = io.StringIO(big)
     stdout = io.StringIO()
@@ -115,7 +113,3 @@ def test_invalid_message_with_known_id_sends_error(monkeypatch) -> None:
     out = stdout.getvalue()
     assert '"id": "abc"' in out
     assert '"error"' in out
-
-if __name__ == "__main__":
-    test_invalid_method()
-    test_path_traversal()

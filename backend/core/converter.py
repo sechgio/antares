@@ -185,22 +185,32 @@ def convertir_a_preview(
     formato_salida: str = "PNG",
     calidad: int = 85,
     resize: tuple[int, int] | list[int] | None = None,
+    *,
+    as_data_uri: bool = False,
 ) -> dict[str, str]:
     """Genera una vista previa en el formato seleccionado y retorna metadata.
+
+    By default writes the preview to a disk cache under the user data dir and
+    returns a ``file://`` URI (plus ``preview_path``). Pass ``as_data_uri=True``
+    to keep the legacy base64 data-URI in ``preview`` (larger IPC payloads).
 
     Args:
         ruta_origen: Path de la imagen origen.
         formato_salida: Formato destino para la preview (JPEG, PNG, WEBP, etc.).
         calidad: Calidad 1-100 para formatos con pérdida.
         resize: Tupla (ancho, alto) opcional.
+        as_data_uri: If True, embed base64 in ``preview`` (legacy).
 
     Returns:
         Diccionario con:
-            - preview: Base64 data URI string
-            - width: Ancho original
-            - height: Alto original
-            - orig_size_kb: Tamaño original en KB
+            - preview: file URI (default) or base64 data URI
+            - preview_path: absolute path to cached preview bytes (when not data-URI)
+            - width / height / orig_size_kb
     """
+    import hashlib
+
+    from backend.utils.paths import user_data_path
+
     ruta_origen = Path(ruta_origen)
     if not ruta_origen.exists():
         msg = f"No se encontró: {ruta_origen}"
@@ -212,11 +222,22 @@ def convertir_a_preview(
 
     stat = ruta_origen.stat()
     resize_key = f"{resize[0]}x{resize[1]}" if resize and len(resize) == 2 else "none"
-    cache_key = f"{ruta_origen}:{formato_salida}:{calidad}:{resize_key}:{int(stat.st_mtime)}"
+    mode_key = "data" if as_data_uri else "path"
+    cache_key = (
+        f"{ruta_origen}:{formato_salida}:{calidad}:{resize_key}:"
+        f"{int(stat.st_mtime)}:{mode_key}"
+    )
     cache = get_preview_cache()
     cached_result = cache.get(cache_key)
     if cached_result:
-        return cast(dict[str, str], cached_result)
+        cached = cast(dict[str, str], cached_result)
+        # Path mode: ensure file still on disk before serving.
+        if not as_data_uri:
+            path_str = cached.get("preview_path") or ""
+            if path_str and Path(path_str).is_file():
+                return cached
+        else:
+            return cached
 
     formato = formato_salida.upper()
     pil_formato = PIL_FORMAT_MAP.get(formato, formato)
@@ -254,16 +275,35 @@ def convertir_a_preview(
         buffer = io.BytesIO()
         save_kwargs = _build_save_kwargs(formato, calidad, False, img)
         img.save(buffer, format=pil_formato, **save_kwargs)
-        buffer.seek(0)
-        data = base64.b64encode(buffer.read()).decode("ascii")
+        raw = buffer.getvalue()
 
     mime = f"image/{pil_formato.lower()}"
-    result = {
-        "preview": f"data:{mime};base64,{data}",
-        "width": str(orig_w),
-        "height": str(orig_h),
-        "orig_size_kb": str(orig_size_kb),
-    }
+    if as_data_uri:
+        data = base64.b64encode(raw).decode("ascii")
+        result = {
+            "preview": f"data:{mime};base64,{data}",
+            "width": str(orig_w),
+            "height": str(orig_h),
+            "orig_size_kb": str(orig_size_kb),
+        }
+    else:
+        ext = "." + (pil_formato.lower() if pil_formato.lower() != "jpeg" else "jpg")
+        cache_dir = user_data_path("preview_cache")
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        digest = hashlib.sha1(cache_key.encode("utf-8", errors="replace")).hexdigest()
+        out_path = cache_dir / f"{digest}{ext}"
+        # Atomic-ish write: temp then replace
+        tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
+        tmp_path.write_bytes(raw)
+        tmp_path.replace(out_path)
+        result = {
+            "preview": out_path.resolve().as_uri(),
+            "preview_path": str(out_path.resolve()),
+            "mime": mime,
+            "width": str(orig_w),
+            "height": str(orig_h),
+            "orig_size_kb": str(orig_size_kb),
+        }
 
     cache.set(cache_key, result)
     return result

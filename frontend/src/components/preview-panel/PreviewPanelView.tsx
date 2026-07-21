@@ -322,6 +322,11 @@ export default function PreviewPanelView() {
         setTemplateError(validation.error);
       }
     };
+    reader.onerror = () => {
+      setCustomTemplate(null);
+      setTemplateStatus('invalid');
+      setTemplateError('No se pudo leer la plantilla');
+    };
     reader.readAsText(file);
   };
 
@@ -391,6 +396,9 @@ export default function PreviewPanelView() {
         autoMapFields(_headers);
         setShowDataPreview(true);
       }
+    };
+    reader.onerror = () => {
+      addToast({ message: 'No se pudo leer el archivo Excel/CSV', type: 'error' });
     };
     reader.readAsBinaryString(file);
   };

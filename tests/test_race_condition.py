@@ -1,17 +1,15 @@
-import os
-import sys
+"""Verify that concurrent access to ProcessState is thread-safe."""
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from __future__ import annotations
 
 import threading
 
-from backend import handlers
 from backend.handlers import _state
 
 
 def test_concurrent_state_access() -> None:
-    """Test that concurrent access to ProcessState is safe."""
-    results = []
+    """Concurrent reads and writes to ProcessState must not lose data."""
+    results: list[bool] = []
 
     def reader() -> None:
         for _ in range(100):
@@ -32,9 +30,3 @@ def test_concurrent_state_access() -> None:
         t.join()
 
     assert len(results) == 500
-
-if __name__ == "__main__":
-    # Reset state before test
-    handlers._reset_state()
-    test_concurrent_state_access()
-

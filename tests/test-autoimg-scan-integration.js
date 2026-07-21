@@ -56,20 +56,24 @@ async function main() {
         const match = file.name.match(/\b(\d{7})\b/);
         if (!match) continue;
         const nis = match[1];
-        if (!map[nis]) map[nis] = { count: 0, files: [], folders: [] };
+        if (!map[nis]) map[nis] = { count: 0, files: [], folders: [], slots: [] };
         map[nis].count += 1;
         map[nis].files.push(file.name);
         map[nis].folders.push(folderName);
       }
       return map;
     },
-    listFolder: async (folderId) => {
+    listFolder: async (folderId, { onPage, collect = true } = {}) => {
       await sleep(15);
       if (folderId === 'fail-folder') throw new Error('sin acceso');
-      return [
+      const files = [
         { id: '1', name: `${folderId.slice(0, 7)}-1.jpg`, modifiedTime: '' },
         { id: '2', name: `${folderId.slice(0, 7)}-2.jpg`, modifiedTime: '' },
       ];
+      if (onPage) {
+        onPage({ pageFiles: files, totalSoFar: files.length, hasMore: false });
+      }
+      return collect ? files : [];
     },
   };
 

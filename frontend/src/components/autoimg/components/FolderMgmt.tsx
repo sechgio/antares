@@ -109,7 +109,7 @@ function AddFolderForm({
         {verified && (
           <p className="flex items-center gap-1.5 text-[11px] text-[var(--accent-green)]">
             <CheckCircle2 size={12} strokeWidth={2} />
-            {verified.name} · {verified.image_count} imagen(es)
+            {verified.name} · {verified.image_count}{verified.has_more ? '+' : ''} imagen(es)
           </p>
         )}
         {resolvedFolderId && folderId.includes('/') && (

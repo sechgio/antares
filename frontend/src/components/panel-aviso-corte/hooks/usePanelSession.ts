@@ -15,8 +15,10 @@ import type {
   LogoAsset,
   MatchResult,
   MatchRule,
+  PanelMatchPanelResponse,
   PanelVM,
 } from '../types';
+import { registerLocalPath } from '../../../utils/registerLocalPath';
 import {
   buildExcelPreviewPanels,
   normalizePanelDateStr,
@@ -52,6 +54,20 @@ export interface PanelSession {
   setIsExporting: (v: boolean) => void;
   clearErrors: () => void;
   previewPanels: PanelVM[];
+}
+
+function panelResponseToVm(p: PanelMatchPanelResponse): PanelVM {
+  return {
+    cuadrante: p.cuadrante || '',
+    fechaCorte: p.fecha_corte || '',
+    motivo: p.motivo || '',
+    imagenes: (p.imagenes || []).map((img) => ({
+      filename: img.filename,
+      caption: img.caption,
+      position: img.position,
+    })),
+    sourceRowIndex: p.source_row_index ?? null,
+  };
 }
 
 export function usePanelSession(): PanelSession {
@@ -131,6 +147,7 @@ export function usePanelSession(): PanelSession {
         continue;
       }
       const localPath = window.electronAPI?.getPathForFile(file) || undefined;
+      if (localPath) registerLocalPath(localPath);
       accepted.push({ file, objectUrl: URL.createObjectURL(file), localPath });
     }
     setImages((prev) => [...prev, ...accepted]);
@@ -222,18 +239,8 @@ export function usePanelSession(): PanelSession {
       });
       // Ignore stale responses when the user changed rules/images quickly.
       if (token !== matchTokenRef.current) return;
-      const panels = (resp.panels as any[]).map((p: any) => ({
-        cuadrante: p.cuadrante || '',
-        fechaCorte: p.fecha_corte || '',
-        motivo: p.motivo || '',
-        imagenes: (p.imagenes || []).map((img: any) => ({
-          filename: img.filename,
-          caption: img.caption,
-          position: img.position,
-        })),
-        sourceRowIndex: p.source_row_index ?? null,
-      }));
-      const summary = resp.summary as any;
+      const panels = resp.panels.map(panelResponseToVm);
+      const summary = resp.summary;
       setMatchResult({
         panels,
         summary: {

@@ -65,3 +65,35 @@ export interface HeaderFormState {
   fechaCorte: string;
   motivo: string;
 }
+
+/** IPC wire shape from panel_aviso_corte_compute_match (snake_case). */
+export interface PanelMatchImageRefResponse {
+  filename: string;
+  caption: string;
+  position: number;
+}
+
+export interface PanelMatchPanelResponse {
+  cuadrante: string;
+  fecha_corte: string;
+  motivo: string;
+  imagenes: PanelMatchImageRefResponse[];
+  source_row_index: number | null;
+}
+
+export interface PanelMatchSummaryResponse {
+  total_rows: number;
+  rows_with_images: number;
+  rows_without_images: number;
+  total_images: number;
+  matched_images: number;
+  unmatched_images: number;
+  unmatched_image_names: string[];
+  rows_without_images_keys: string[];
+}
+
+export interface PanelMatchResponse {
+  panels: PanelMatchPanelResponse[];
+  summary: PanelMatchSummaryResponse;
+  warnings: string[];
+}

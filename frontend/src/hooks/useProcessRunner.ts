@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api, onNotify } from '../api';
 import { ProcessStatus } from '../types';
 import type { ProcessBody } from '../api';
@@ -14,16 +14,45 @@ function emptyStatus(): ProcessStatus {
   };
 }
 
+function pickProcessFields(p: Record<string, unknown>): Partial<ProcessStatus> {
+  const safeKeys = new Set(['running', 'progress', 'current_file', 'ok_count', 'err_count', 'logs', 'cancelled']);
+  const filtered: Partial<ProcessStatus> = {};
+  for (const [k, v] of Object.entries(p)) {
+    if (!safeKeys.has(k)) continue;
+    if (k === 'progress' && typeof v !== 'number') continue;
+    (filtered as Record<string, unknown>)[k] = v;
+  }
+  return filtered;
+}
+
+function pollErrorMessage(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  return String(err);
+}
+
 export function useProcessRunner() {
   const [status, setStatus] = useState<ProcessStatus | null>(null);
   const [running, setRunning] = useState(false);
+  const [pollError, setPollError] = useState<string | null>(null);
+  const runningRef = useRef(false);
+
+  useEffect(() => {
+    runningRef.current = running;
+  }, [running]);
 
   const pollStatus = useCallback(async () => {
     try {
       const s = await api.getStatus();
+      setPollError(null);
       setStatus(s);
       setRunning(s.running);
-    } catch { /* ignore */ }
+    } catch (err) {
+      if (runningRef.current) {
+        setRunning(false);
+        setPollError(pollErrorMessage(err));
+        setStatus((prev) => (prev ? { ...prev, running: false } : prev));
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -36,22 +65,18 @@ export function useProcessRunner() {
       }
 
       if (!params || typeof params !== 'object' || Array.isArray(params)) return;
-      const p = params as Record<string, unknown>;
-      const safeKeys = new Set(['running', 'progress', 'current_file', 'ok_count', 'err_count', 'logs', 'cancelled']);
-      const filtered: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(p)) {
-        if (safeKeys.has(k)) filtered[k] = v;
-      }
+      const filtered = pickProcessFields(params as Record<string, unknown>);
       if (method === 'process.progress') {
         setStatus((prev) => ({ ...(prev ?? emptyStatus()), ...filtered, running: true } as ProcessStatus));
         setRunning(true);
       } else if (method === 'process.complete') {
+        const p = params as Record<string, unknown>;
         const cancelled = p.cancelled === true;
         setStatus((prev) => {
           const base = prev ?? emptyStatus();
           const progress = cancelled
-            ? (typeof filtered.progress === 'number' ? filtered.progress as number : base.progress)
-            : (typeof filtered.progress === 'number' ? filtered.progress as number : 100);
+            ? (typeof filtered.progress === 'number' ? filtered.progress : base.progress)
+            : (typeof filtered.progress === 'number' ? filtered.progress : 100);
           return { ...base, ...filtered, running: false, progress } as ProcessStatus;
         });
         setRunning(false);
@@ -65,6 +90,7 @@ export function useProcessRunner() {
     // up to ~30s while the backend boots (waitForReady), and the start button
     // is gated on `running`. Setting it after the await left the button enabled
     // during that window, so a second click enqueued a second process_start.
+    setPollError(null);
     setRunning(true);
     setStatus((prev) => ({ ...(prev ?? emptyStatus()), running: true, progress: 0 }));
     try {
@@ -92,5 +118,5 @@ export function useProcessRunner() {
     pollStatus();
   }, [pollStatus]);
 
-  return { status, running, pollStatus, startProcess, cancelProcess };
+  return { status, running, pollError, pollStatus, startProcess, cancelProcess };
 }

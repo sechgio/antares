@@ -246,6 +246,43 @@ describe('useProcessRunner', () => {
     expect(result.current.status?.progress).toBe(40);
   });
 
+  it('ignores non-numeric progress in process.progress notify', async () => {
+    const { result } = renderHook(() => useProcessRunner());
+    await act(async () => Promise.resolve());
+
+    act(() => {
+      notifyCallback?.('process.progress', {
+        progress: '50' as unknown as number,
+        current_file: 'photo.jpg',
+        ok_count: 1,
+        err_count: 0,
+      });
+    });
+
+    expect(result.current.status?.progress).toBe(0);
+    expect(result.current.running).toBe(true);
+  });
+
+  it('clears running and surfaces error when pollStatus fails while running', async () => {
+    mockApi.getStatus.mockRejectedValue(new Error('IPC down'));
+
+    const { result } = renderHook(() => useProcessRunner());
+    await act(async () => Promise.resolve());
+
+    act(() => {
+      notifyCallback?.('process.progress', { progress: 10, current_file: 'a.jpg' });
+    });
+    expect(result.current.running).toBe(true);
+
+    await act(async () => {
+      await result.current.pollStatus();
+    });
+
+    expect(result.current.running).toBe(false);
+    expect(result.current.pollError).toBe('IPC down');
+    expect(result.current.status?.running).toBe(false);
+  });
+
   it('sets running=true optimistically before startProcess resolves', async () => {
     let resolveStart!: (value: { started: boolean }) => void;
     mockApi.startProcess.mockImplementation(
