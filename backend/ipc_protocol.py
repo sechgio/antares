@@ -71,14 +71,30 @@ class IPCMessage:
         return f"IPCMessage(id={self.id}, method={self.method})"
 
 
-def send_response(result: Any, msg_id: str | int, *, error: str | None = None) -> None:
+def send_response(
+    result: Any,
+    msg_id: str | int,
+    *,
+    error: Any | None = None,
+    error_code: int = -32000,
+    error_category: str = "INTERNAL_ERROR",
+) -> None:
     """Escribe una respuesta JSON-RPC a stdout. Nunca levanta excepción."""
     payload: dict[str, Any] = {
         "jsonrpc": "2.0",
         "id": msg_id,
     }
-    if error:
-        payload["error"] = {"code": -32000, "message": error}
+    if error is not None:
+        if hasattr(error, "to_dict") and callable(getattr(error, "to_dict", None)):
+            payload["error"] = error.to_dict()
+        elif isinstance(error, dict):
+            payload["error"] = error
+        else:
+            payload["error"] = {
+                "code": error_code,
+                "message": str(error),
+                "category": error_category,
+            }
     else:
         payload["result"] = result
     try:

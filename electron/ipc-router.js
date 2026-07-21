@@ -123,7 +123,13 @@ function _ensureListeners() {
           decrementPendingRequests();
           if (msg.error) {
             const errMsg = typeof msg.error === 'object' ? (msg.error.message || JSON.stringify(msg.error)) : String(msg.error);
-            entry.reject(new Error(errMsg));
+            const err = new Error(errMsg);
+            if (typeof msg.error === 'object') {
+              if (msg.error.code !== undefined) err.code = msg.error.code;
+              if (msg.error.category !== undefined) err.category = msg.error.category;
+              if (msg.error.details !== undefined) err.details = msg.error.details;
+            }
+            entry.reject(err);
           } else {
             entry.resolve(msg.result);
           }

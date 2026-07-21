@@ -42,11 +42,33 @@ const IPC_LONG_TIMEOUT = 900_000;     // 15 min for large PDF/ZIP/image batches
 // backend's informed recovery. The timeout race below stays as a backstop in
 // case the main process itself hangs before the backend timeout fires.
 
+export class AntaresAPIError extends Error {
+  code: number;
+  category: string;
+  details?: Record<string, unknown>;
+
+  constructor(message: string, code = -32000, category = 'INTERNAL_ERROR', details?: Record<string, unknown>) {
+    super(message);
+    this.name = 'AntaresAPIError';
+    this.code = code;
+    this.category = category;
+    this.details = details;
+  }
+
+  isResourceLockedError(): boolean {
+    return this.code === -32002 || this.category === 'RESOURCE_LOCKED';
+  }
+
+  isValidationError(): boolean {
+    return this.code === -32602 || this.category === 'VALIDATION_ERROR';
+  }
+}
+
 const LONG_RUNNING_METHODS = new Set<string>(longRunningMethods);
 
 const _invoke = async <T>(method: string, params?: Record<string, unknown> | object): Promise<T> => {
   if (!window.electronAPI) {
-    throw new Error('Electron IPC no disponible');
+    throw new AntaresAPIError('Electron IPC no disponible', -32000, 'INTERNAL_ERROR');
   }
 
   const timeoutMs = LONG_RUNNING_METHODS.has(method) ? IPC_LONG_TIMEOUT : IPC_TIMEOUT;
@@ -58,12 +80,24 @@ const _invoke = async <T>(method: string, params?: Record<string, unknown> | obj
     const result = await Promise.race([
       window.electronAPI.invoke(method, params as Record<string, unknown>),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`IPC timeout: ${method}`)), timeoutMs);
+        timer = setTimeout(() => reject(new AntaresAPIError(`IPC timeout: ${method}`, -32001, 'TIMEOUT')), timeoutMs);
       }),
     ]);
     return result as T;
-  } catch (err) {
-    throw err instanceof Error ? err : new Error(String(err));
+  } catch (err: unknown) {
+    if (err instanceof AntaresAPIError) {
+      throw err;
+    }
+    if (err instanceof Error) {
+      const rawErr = err as Error & { code?: number; category?: string; details?: Record<string, unknown> };
+      throw new AntaresAPIError(
+        rawErr.message,
+        rawErr.code ?? -32000,
+        rawErr.category ?? 'INTERNAL_ERROR',
+        rawErr.details,
+      );
+    }
+    throw new AntaresAPIError(String(err));
   } finally {
     // Limpiar el timer en éxito: sin esto el closure del setTimeout vive hasta
     // que dispara, goteando memoria en sesiones largas con muchos IPC calls.
