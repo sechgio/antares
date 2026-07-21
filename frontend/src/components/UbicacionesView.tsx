@@ -495,6 +495,9 @@ export const UbicacionesView: React.FC = () => {
           // not match the current selection, skip it (stale format toggle).
           const respFormato = r.data?.formato;
           if (respFormato && respFormato !== currentFormato) return;
+          if (r.data?.image_path) {
+            registerLocalPath(r.data.image_path);
+          }
           setPreview(r.data ?? null);
           hasPreviewRef.current = !!r.data;
           if (r.data?.total_filas) {

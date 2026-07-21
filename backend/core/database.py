@@ -334,6 +334,12 @@ def importar_excel(excel_path: str) -> int:
             inserted = len(all_values)
 
             cursor.execute("COMMIT")
+            # Full-table reload: refresh planner stats so indexes stay effective
+            # after large Excel imports (audit: periodic ANALYZE).
+            try:
+                conn.execute("ANALYZE imagenes")
+            except sqlite3.Error:
+                logger.debug("ANALYZE after import failed", exc_info=True)
             return inserted
         except sqlite3.Error as exc:
             cursor.execute("ROLLBACK")

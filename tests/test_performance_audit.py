@@ -338,6 +338,28 @@ def test_convertir_a_preview_defaults_to_file_path(tmp_path) -> None:
     assert "base64," not in result["preview"]
 
 
+def test_importar_excel_runs_analyze(tmp_path, monkeypatch) -> None:
+    """Full-table Excel import must ANALYZE so the planner sees fresh stats."""
+    import inspect
+
+    from backend.core import database as db
+
+    source = inspect.getsource(db.importar_excel)
+    assert "ANALYZE imagenes" in source
+
+
+def test_ubicaciones_preview_uses_file_uri() -> None:
+    """Ubicaciones composed preview must not ship base64 over IPC."""
+    import inspect
+
+    from backend.handlers import ubicaciones as ubi
+
+    source = inspect.getsource(ubi._encode_preview_data)
+    assert "as_uri()" in source
+    assert "b64encode" not in source
+    assert "data:image" not in source
+
+
 def test_fichas_get_all_uses_shallow_copy(tmp_path) -> None:
     """List path must not deepcopy nested ficha trees."""
     from backend.core.fichas_tecnicas.database import FichasTecnicasDB
