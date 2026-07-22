@@ -222,4 +222,25 @@ describe('LayerNode inline edit', () => {
     const span = node.querySelector('span') as HTMLElement;
     expect(span.style.lineHeight).toBe('1.5');
   });
+
+  it('renders checkbox / signature / table previews aligned with export', () => {
+    const checkbox = createLayer('checkbox', { meta: { checked: true } });
+    const { rerender, container } = render(
+      <LayerNode layer={checkbox} selected interactive scale={1} editing={false} {...baseHandlers} />,
+    );
+    expect(screen.getByTestId('canvas-checkbox-mark').textContent).toBe('✓');
+
+    const signature = createLayer('signature', { value: 'Ana Ruiz' });
+    rerender(
+      <LayerNode layer={signature} selected interactive scale={1} editing={false} {...baseHandlers} />,
+    );
+    expect(screen.getByTestId('canvas-signature-preview').textContent).toContain('Ana Ruiz');
+
+    const table = createLayer('table');
+    rerender(
+      <LayerNode layer={table} selected interactive scale={1} editing={false} {...baseHandlers} />,
+    );
+    expect(screen.getByTestId('canvas-table-preview').querySelectorAll('td').length).toBeGreaterThan(0);
+    expect(container.textContent).not.toContain('Tabla');
+  });
 });

@@ -2,7 +2,7 @@
 
 import type { CanvasLayer, LayerPath, PathPoint } from '../types';
 import { mm, newId, parseMm } from '../types';
-import { DEFAULT_LINE_STROKE_PX, lineHeightMmFromStrokePx, lineStrokeWidthPx, pxToMm } from './layerStyle';
+import { lineStrokeWidthPx, pxToMm } from './layerStyle';
 
 const MIN_BBOX_MM = 0.5;
 
@@ -16,14 +16,15 @@ export function parseStrokeCap(raw: string | undefined): 'none' | 'round' | 'squ
 }
 
 /** Two-point horizontal path from legacy bar-line dimensions. */
-export function linePathFromLegacy(layer: Pick<CanvasLayer, 'cssVars'>): LayerPath {
+export function linePathFromLegacy(layer: Pick<CanvasLayer, 'cssVars' | 'type'>): LayerPath {
   const w = Math.max(MIN_BBOX_MM, parseMm(layer.cssVars['--width'], 80));
-  const h = Math.max(lineHeightMmFromStrokePx(DEFAULT_LINE_STROKE_PX), parseMm(layer.cssVars['--height'], 0.3));
-  const y = h / 2;
+  const strokeMm = Math.max(0.05, pxToMm(lineStrokeWidthPx(layer as CanvasLayer)));
+  const h = Math.max(strokeMm, parseMm(layer.cssVars['--height'], strokeMm));
+  const y = round2(h / 2);
   return {
     points: [
       { x: 0, y },
-      { x: w, y },
+      { x: round2(w), y },
     ],
     closed: false,
   };
@@ -160,16 +161,27 @@ export function normalizePathOrigin(path: LayerPath): {
 export function ensureLinePath(layer: CanvasLayer): CanvasLayer {
   if (layer.type !== 'line') return layer;
   if (layer.meta?.path?.points && layer.meta.path.points.length >= 2) return layer;
-  const path = linePathFromLegacy(layer);
-  const strokePad = pxToMm(lineStrokeWidthPx(layer)) / 2;
-  const { path: normalized, width, height } = normalizePathOrigin(path);
-  const h = Math.max(height, lineHeightMmFromStrokePx(lineStrokeWidthPx(layer)), strokePad * 2 || MIN_BBOX_MM);
+
+  // Legacy bar → stroke-centered path. Do NOT run through pathBounds/normalizePathOrigin:
+  // pathBounds forces MIN_BBOX_MM (0.5mm) on zero-thickness axes, which moves the stroke
+  // to y=0 (top of an inflated box) and breaks WYSIWYG vs the design-time bar.
+  const strokeMm = Math.max(0.05, pxToMm(lineStrokeWidthPx(layer)));
+  const w = Math.max(MIN_BBOX_MM, parseMm(layer.cssVars['--width'], 80));
+  const h = strokeMm;
+  const y = round2(h / 2);
+  const path: LayerPath = {
+    points: [
+      { x: 0, y },
+      { x: round2(w), y },
+    ],
+    closed: false,
+  };
   return {
     ...layer,
-    meta: { ...layer.meta, path: normalized },
+    meta: { ...layer.meta, path },
     cssVars: {
       ...layer.cssVars,
-      '--width': mm(Math.max(width, MIN_BBOX_MM)),
+      '--width': mm(w),
       '--height': mm(h),
       '--stroke-start': layer.cssVars['--stroke-start'] || 'none',
       '--stroke-end': layer.cssVars['--stroke-end'] || 'none',

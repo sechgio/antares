@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { createLayer } from '../constants';
+import { buildLayerPaintStyle } from '../ops/layerPaint';
 import {
   buildLayerTransform,
   collectDocumentColors,
@@ -200,6 +201,21 @@ describe('layerStyle', () => {
     expect(css).toContain('filter:blur(4px)');
   });
 
+  it('buildLayerPaintStyle matches cssVarsToStyleParts and scales font-size', () => {
+    const paint = buildLayerPaintStyle(
+      {
+        '--background-color': '#FF0000',
+        '--fill-opacity': '50',
+        '--font-size': '10px',
+        '--color': '#111111',
+      },
+      { scale: 2 },
+    );
+    expect(paint.backgroundColor).toMatch(/rgba?\(255,\s*0,\s*0/i);
+    expect(paint.fontSize).toBe('20px');
+    expect(paint.color).toBe('#111111');
+  });
+
   it('parseFilterBlurPx, resolveFilter and imageContentInlineStyle', () => {
     expect(parseFilterBlurPx({ '--filter-blur': '8px' })).toBe(8);
     expect(resolveFilter({ '--filter-blur': '0px' })).toBeUndefined();
@@ -368,6 +384,36 @@ describe('RightPanel shape inspector', () => {
     render(<RightPanel layer={null} selectedCount={0} onChange={vi.fn()} {...panelProps} />);
     expect(screen.queryByText(/Selecciona una capa/i)).toBeNull();
     expect(screen.getByText('Propiedades')).toBeTruthy();
+    expect(screen.getByTestId('canvas-zoom-slot')).toBeTruthy();
+  });
+
+  it('shows Plantillas under Propiedades when nothing is selected', () => {
+    const onApplyPreset = vi.fn();
+    render(
+      <RightPanel
+        {...panelProps}
+        layer={null}
+        selectedCount={0}
+        onChange={vi.fn()}
+        onApplyPreset={onApplyPreset}
+      />,
+    );
+    expect(screen.getByText('Plantillas')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('Aplicar plantilla Panel fotográfico'));
+    expect(onApplyPreset).toHaveBeenCalledWith('panel');
+  });
+
+  it('hides Plantillas in right panel when a layer is selected', () => {
+    render(
+      <RightPanel
+        {...panelProps}
+        layer={createLayer('rect')}
+        selectedCount={1}
+        onChange={vi.fn()}
+        onApplyPreset={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText('Plantillas')).toBeNull();
   });
 
   it('shows logo side conflict hint when logoSideConflict is true', () => {

@@ -1,10 +1,21 @@
 import type { CanvasDocument, CanvasLayer } from '../types';
 import { parseMm } from '../types';
 import { applyGridToImageSlots } from '../ops/gridLayout';
+import { justifyContentForTextAlign } from '../ops/inlineEdit';
 import { clipPathForLayerType } from '../ops/shapePaths';
-import { buildLayerTransform, cssVarsToStyleParts, imageContentInlineStyle } from '../ops/layerStyle';
+import {
+  buildLayerTransform,
+  cssVarsToStyleParts,
+  imageContentInlineStyle,
+} from '../ops/layerStyle';
+import {
+  DEFAULT_LAYER_COLOR,
+  DEFAULT_LAYER_FONT,
+  DEFAULT_LINE_HEIGHT,
+} from '../ops/layerPaint';
 import { buildLineSvgContent } from '../ops/lineSvg';
 import { ensureLinePath } from '../ops/pathGeometry';
+import { parseTableData } from '../ops/tableData';
 
 export { cssVarsToStyleParts };
 
@@ -29,8 +40,20 @@ function cssVarsToInline(vars: CanvasLayer['cssVars']): string {
   return cssVarsToStyleParts(vars).join(';');
 }
 
-/** Drop placeholder fill/border for logo and field — keep editor chrome, clean PDF. */
-function cssVarsForExport(layer: CanvasLayer): CanvasLayer['cssVars'] {
+/** Drop editor placeholder chrome (dashed fills/borders) for clean filled export. */
+function stripPlaceholderChrome(vars: CanvasLayer['cssVars']): CanvasLayer['cssVars'] {
+  return {
+    ...vars,
+    '--background-color': 'transparent',
+    '--fill-visible': '0',
+    '--stroke-visible': '0',
+    '--border-width': '0px',
+    '--border': '',
+  };
+}
+
+/** Drop placeholder fill/border for logo/field/filled slots — keep editor chrome, clean PDF. */
+function cssVarsForExport(layer: CanvasLayer, ctx?: FillContext): CanvasLayer['cssVars'] {
   if (layer.type === 'line') {
     const ensured = ensureLinePath(layer);
     return {
@@ -39,29 +62,17 @@ function cssVarsForExport(layer: CanvasLayer): CanvasLayer['cssVars'] {
       '--fill-visible': '0',
       '--border-width': '0px',
       '--stroke-visible': '0',
+      '--border': '',
     };
   }
-  if (layer.type !== 'logo' && layer.type !== 'field') return layer.cssVars;
-  return {
-    ...layer.cssVars,
-    '--background-color': 'transparent',
-    '--fill-visible': '0',
-    '--stroke-visible': '0',
-    '--border-width': '0px',
-  };
-}
-
-function parseTableData(raw: string | undefined): { cells: string[][]; fieldKeys?: (string | null)[][] } {
-  if (!raw) return { cells: [['', '']] };
-  try {
-    const parsed = JSON.parse(raw) as { cells?: string[][]; fieldKeys?: (string | null)[][] };
-    if (Array.isArray(parsed.cells)) {
-      return { cells: parsed.cells, fieldKeys: parsed.fieldKeys };
-    }
-  } catch {
-    /* ignore */
+  if (layer.type === 'field' || layer.type === 'logo') {
+    return stripPlaceholderChrome(layer.cssVars);
   }
-  return { cells: [['', '']] };
+  if (layer.type === 'imageSlot') {
+    const index = layer.meta?.index ?? 0;
+    if (ctx?.images[index]) return stripPlaceholderChrome(layer.cssVars);
+  }
+  return layer.cssVars;
 }
 
 function resolveLayerContent(
@@ -86,9 +97,13 @@ function resolveLayerContent(
   if (layer.type === 'logo') {
     const src = layer.meta?.side === 'right' ? ctx.logoRight : ctx.logoLeft;
     if (!src) return { kind: 'empty', html: '' };
+    const imgStyle = imageContentInlineStyle({
+      ...layer.cssVars,
+      '--object-fit': layer.cssVars['--object-fit'] || 'contain',
+    });
     return {
       kind: 'image',
-      html: `<img src="${escapeHtml(src)}" alt="logo" style="width:100%;height:100%;object-fit:contain;" />`,
+      html: `<img src="${escapeHtml(src)}" alt="logo" style="${imgStyle}" />`,
     };
   }
   if (layer.type === 'imageSlot') {
@@ -142,21 +157,28 @@ function resolveLayerContent(
       checked = raw === '1' || raw === 'true' || raw === 'si' || raw === 'sí' || raw === 'x' || raw === 'yes';
     }
     const mark = checked ? '✓' : '';
+    const fontSize = layer.cssVars['--font-size'] || '10pt';
+    const color = layer.cssVars['--color'] || 'inherit';
     return {
       kind: 'html',
-      html: `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:10pt;font-weight:700;border:1px solid #000;box-sizing:border-box;">${mark}</div>`,
+      html: `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:${escapeHtml(fontSize)};font-weight:700;color:${escapeHtml(color)};box-sizing:border-box;">${mark}</div>`,
     };
   }
   if (layer.type === 'signature') {
     const key = layer.meta?.key;
     const name = key && ctx.data[key] ? ctx.data[key] : layer.value || '';
+    const fontSize = layer.cssVars['--font-size'] || '8pt';
+    const color = layer.cssVars['--color'] || 'inherit';
     return {
       kind: 'html',
-      html: `<div style="width:100%;height:100%;display:flex;flex-direction:column;justify-content:flex-end;padding:1mm;box-sizing:border-box;"><div style="border-top:1px solid #000;padding-top:1mm;font-size:8pt;text-align:center;">${escapeHtml(name || 'Firma')}</div></div>`,
+      html: `<div style="width:100%;height:100%;display:flex;flex-direction:column;justify-content:flex-end;padding:1mm;box-sizing:border-box;color:${escapeHtml(color)};"><div style="border-top:1px solid currentColor;padding-top:1mm;font-size:${escapeHtml(fontSize)};text-align:center;">${escapeHtml(name || 'Firma')}</div></div>`,
     };
   }
   if (layer.type === 'table') {
     const { cells, fieldKeys } = parseTableData(layer.meta?.rowsData);
+    const fontSize = layer.cssVars['--font-size'] || '8pt';
+    const borderColor = layer.cssVars['--border-color'] || '#cbd5e1';
+    const color = layer.cssVars['--color'] || 'inherit';
     const rowsHtml = cells
       .map((row, ri) => {
         const cellsHtml = row
@@ -166,7 +188,7 @@ function resolveLayerContent(
               fieldKey && ctx.data[fieldKey] != null && ctx.data[fieldKey] !== ''
                 ? ctx.data[fieldKey]
                 : cell;
-            return `<td style="border:1px solid #cbd5e1;padding:1mm 1.5mm;font-size:8pt;">${escapeHtml(String(text))}</td>`;
+            return `<td style="border:1px solid ${escapeHtml(borderColor)};padding:1mm 1.5mm;font-size:${escapeHtml(fontSize)};color:${escapeHtml(color)};">${escapeHtml(String(text))}</td>`;
           })
           .join('');
         return `<tr>${cellsHtml}</tr>`;
@@ -198,9 +220,10 @@ export function renderCanvasHtml(
   const { widthMm, heightMm } = document.page;
   const forScreen = options?.forScreen ?? false;
   const MM_TO_PX = 96 / 25.4;
-  const u = (mmVal: number) => (forScreen ? `${mmVal * MM_TO_PX}px` : `${mmVal}mm`);
-  const pageW = forScreen ? `${widthMm * MM_TO_PX}px` : `${widthMm}mm`;
-  const pageH = forScreen ? `${heightMm * MM_TO_PX}px` : `${heightMm}mm`;
+  // Match Design artboard (mmToScreenPx at zoom=1): whole CSS pixels, no subpixel drift.
+  const u = (mmVal: number) => (forScreen ? `${Math.round(mmVal * MM_TO_PX)}px` : `${mmVal}mm`);
+  const pageW = forScreen ? `${Math.round(widthMm * MM_TO_PX)}px` : `${widthMm}mm`;
+  const pageH = forScreen ? `${Math.round(heightMm * MM_TO_PX)}px` : `${heightMm}mm`;
   const contentLayers = prepareLayers(document, ctx);
 
   const nodes = contentLayers
@@ -209,19 +232,42 @@ export function renderCanvasHtml(
       const x = parseMm(ensured.cssVars['--translate-x']);
       const y = parseMm(ensured.cssVars['--translate-y']);
       const w = parseMm(ensured.cssVars['--width'], 10);
-      const exportVars = cssVarsForExport(ensured);
+      const exportVars = cssVarsForExport(ensured, ctx);
       const h = parseMm(exportVars['--height'] ?? ensured.cssVars['--height'], 10);
       const resolved = resolveLayerContent(ensured, ctx);
       if (ensured.visible === false) return '';
-      const extra = cssVarsToInline(exportVars);
+      const styleVars =
+        ensured.type === 'text' || ensured.type === 'field'
+          ? {
+              ...exportVars,
+              '--color': exportVars['--color'] || DEFAULT_LAYER_COLOR,
+              '--font-family': exportVars['--font-family'] || DEFAULT_LAYER_FONT,
+            }
+          : exportVars;
+      const extra = cssVarsToInline(styleVars);
       const clip = clipPathForLayerType(ensured.type);
       const clipStyle = clip ? `clip-path:${clip};` : '';
-      const transform = buildLayerTransform(ensured.cssVars);
-      const transformStyle = transform ? `transform:${transform};transform-origin:center center;` : '';
+      const hasTransform = Boolean(buildLayerTransform(ensured.cssVars));
+      const transformOriginStyle = hasTransform ? 'transform-origin:center center;' : '';
+      const hasExplicitRadius = Boolean(
+        ensured.cssVars['--border-radius'] ||
+          ensured.cssVars['--radius-tl'] ||
+          ensured.cssVars['--radius-tr'] ||
+          ensured.cssVars['--radius-br'] ||
+          ensured.cssVars['--radius-bl'],
+      );
+      const ellipseRadius =
+        ensured.type === 'ellipse' && !hasExplicitRadius && !clip ? 'border-radius:50%;' : '';
+      const clipRadius = clip ? 'border-radius:0;' : '';
       const overflow = ensured.type === 'line' ? 'visible' : 'hidden';
-      const box = `position:absolute;left:${u(x)};top:${u(y)};width:${u(w)};height:${u(h)};box-sizing:border-box;overflow:${overflow};${clipStyle}${transformStyle}${extra}`;
+      const lineFlex =
+        ensured.type === 'line' ? 'display:flex;align-items:center;' : '';
+      // clipRadius last so it overrides any border-radius from cssVarsToStyleParts
+      const box = `position:absolute;left:${u(x)};top:${u(y)};width:${u(w)};height:${u(h)};box-sizing:border-box;overflow:${overflow};${lineFlex}${clipStyle}${transformOriginStyle}${ellipseRadius}${extra};${clipRadius}`;
       if (resolved.kind === 'text') {
-        return `<div data-layer="${escapeHtml(ensured.id)}" style="${box};display:flex;align-items:center;padding:4px;">${resolved.html}</div>`;
+        const justify = justifyContentForTextAlign(ensured.cssVars['--text-align']);
+        const lineHeight = ensured.cssVars['--line-height'] || DEFAULT_LINE_HEIGHT;
+        return `<div data-layer="${escapeHtml(ensured.id)}" style="${box};display:flex;align-items:center;justify-content:${justify};padding:2px 6px;"><span style="width:100%;line-height:${lineHeight};white-space:pre-wrap;">${resolved.html}</span></div>`;
       }
       if (resolved.kind === 'image' || resolved.kind === 'html') {
         return `<div data-layer="${escapeHtml(ensured.id)}" style="${box}">${resolved.html}</div>`;
@@ -243,7 +289,7 @@ export function renderCanvasHtml(
     height: ${pageH};
     margin: 0;
     background: #fff;
-    font-family: 'Segoe UI', Arial, sans-serif;
+    font-family: ${DEFAULT_LAYER_FONT};
   }
   .page {
     position: relative;

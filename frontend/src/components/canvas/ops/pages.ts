@@ -155,8 +155,39 @@ export function syncImagesPerPage(doc: CanvasDocument): CanvasDocument {
 export function renderMultiPageHtml(
   doc: CanvasDocument,
   ctx: FillContext,
-  options?: { imagesPerPage?: number },
+  options?: { imagesPerPage?: number; forScreen?: boolean },
 ): string {
+  const plan = planMultiPageRender(doc, ctx, options);
+  return mergeCanvasHtmlDocuments(
+    plan.map((p) => renderCanvasHtml(p.pageDoc, p.pageCtx, { forScreen: options?.forScreen })),
+  );
+}
+
+/** Same as renderMultiPageHtml but yields between pages so large templates stay responsive. */
+export async function renderMultiPageHtmlAsync(
+  doc: CanvasDocument,
+  ctx: FillContext,
+  options?: { imagesPerPage?: number; forScreen?: boolean },
+): Promise<string> {
+  const plan = planMultiPageRender(doc, ctx, options);
+  const out: string[] = [];
+  for (let i = 0; i < plan.length; i += 1) {
+    out.push(renderCanvasHtml(plan[i].pageDoc, plan[i].pageCtx, { forScreen: options?.forScreen }));
+    if (i > 0 && i % 2 === 0) {
+      await new Promise<void>((resolve) => {
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
+        else setTimeout(resolve, 0);
+      });
+    }
+  }
+  return mergeCanvasHtmlDocuments(out);
+}
+
+function planMultiPageRender(
+  doc: CanvasDocument,
+  ctx: FillContext,
+  options?: { imagesPerPage?: number },
+): Array<{ pageDoc: CanvasDocument; pageCtx: FillContext }> {
   const slotPerPage = templateImagesPerPage(doc);
   // Slots win when present; options/settings only apply when the template has no slots.
   const hasSlots = doc.layers.some((l) => l.type === 'imageSlot');
@@ -174,7 +205,7 @@ export function renderMultiPageHtml(
     ? Math.max(docPageCount, imageChunks.length)
     : docPageCount;
 
-  const rendered = Array.from({ length: totalPages }, (_, pageIndex) => {
+  return Array.from({ length: totalPages }, (_, pageIndex) => {
     const sourcePage = Math.min(pageIndex, docPageCount - 1);
     const pageDoc: CanvasDocument = {
       ...doc,
@@ -184,8 +215,6 @@ export function renderMultiPageHtml(
       ...ctx,
       images: useImagePagination ? (imageChunks[pageIndex] ?? []) : ctx.images,
     };
-    return renderCanvasHtml(pageDoc, pageCtx);
+    return { pageDoc, pageCtx };
   });
-
-  return mergeCanvasHtmlDocuments(rendered);
 }

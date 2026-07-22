@@ -5,8 +5,8 @@ import { imageToPdfSource } from '../../../utils/pdfAssets';
 import type { CanvasDocument, CanvasDocumentSummary } from '../types';
 import { A4_HEIGHT_PX, A4_WIDTH_PX, normalizeDocument } from '../types';
 import { buildRowData, matchesRecordId, naturalSortByName, parseSpreadsheetFile } from '../runtime/excel';
-import { renderCanvasHtml, type FillContext } from '../runtime/renderHtml';
-import { renderMultiPageHtml, templateImagesPerPage } from '../ops/pages';
+import { type FillContext } from '../runtime/renderHtml';
+import { renderMultiPageHtml } from '../ops/pages';
 import { exportCanvasPdf } from '../export/exportPdf';
 import { selectGenerateRowIndices, type GenerateExportScope } from '../ops/generateExport';
 import GenerateSidebar from './GenerateSidebar';
@@ -55,6 +55,9 @@ export default function GeneratePanel({ document: designDocument }: GeneratePane
     let cancelled = false;
     void (async () => {
       try {
+        const { syncCanvasDocuments } = await import('../sync/canvasCloudSync');
+        await syncCanvasDocuments();
+        if (cancelled) return;
         const res = await api.canvasList();
         if (!cancelled) setDocs(res.documents);
       } catch {
@@ -161,11 +164,7 @@ export default function GeneratePanel({ document: designDocument }: GeneratePane
         for (const key of fieldKeys) demo[key] = `{{${key}}}`;
         ctx = { data: demo, images: [], logoLeft, logoRight };
       }
-      const perPage = templateImagesPerPage(generateDoc);
-      const html =
-        ctx.images.length > perPage
-          ? renderMultiPageHtml(generateDoc, ctx)
-          : renderCanvasHtml(generateDoc, ctx, { forScreen: true });
+      const html = renderMultiPageHtml(generateDoc, ctx, { forScreen: true });
       setPreviewHtml(html);
       setError(null);
     } catch (err) {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createLayer } from '../constants';
+import { addPage } from '../ops/pages';
 import {
   buildDemoFillContext,
   collectDemoFieldKeys,
@@ -7,7 +8,7 @@ import {
   renderDemoPreviewHtml,
   sampleValueForKey,
 } from '../runtime/demoFill';
-import { createEmptyDocument, newId } from '../types';
+import { createEmptyDocument, mm, newId } from '../types';
 
 describe('demoFill', () => {
   it('sampleValueForKey returns known samples for common keys', () => {
@@ -61,5 +62,51 @@ describe('demoFill', () => {
     });
     const html = renderDemoPreviewHtml(doc);
     expect(html).toContain('45871203');
+  });
+
+  it('renderDemoPreviewHtml keeps design pages separate (no layer stacking)', () => {
+    let doc = createEmptyDocument('Multi');
+    doc.layers.push({
+      id: 'p0-text',
+      type: 'text',
+      name: 'P0',
+      value: 'PaginaUno',
+      pageIndex: 0,
+      cssVars: {
+        '--width': mm(40),
+        '--height': mm(8),
+        '--translate-x': mm(10),
+        '--translate-y': mm(10),
+        '--color': '#000',
+      },
+    });
+    doc = addPage(doc);
+    doc.layers.push({
+      id: 'p1-text',
+      type: 'text',
+      name: 'P1',
+      value: 'PaginaDos',
+      pageIndex: 1,
+      cssVars: {
+        '--width': mm(40),
+        '--height': mm(8),
+        '--translate-x': mm(10),
+        '--translate-y': mm(10),
+        '--color': '#000',
+      },
+    });
+
+    const html = renderDemoPreviewHtml(doc);
+    expect(html.match(/class="page"/g)?.length).toBe(2);
+    expect(html).toContain('px');
+    expect(html).not.toMatch(/left:\d+(\.\d+)?mm/);
+
+    const pageStarts = [...html.matchAll(/class="page"/g)].map((m) => m.index ?? -1);
+    const p0 = html.indexOf('data-layer="p0-text"');
+    const p1 = html.indexOf('data-layer="p1-text"');
+    expect(pageStarts).toHaveLength(2);
+    expect(p0).toBeGreaterThan(pageStarts[0]);
+    expect(p0).toBeLessThan(pageStarts[1]);
+    expect(p1).toBeGreaterThan(pageStarts[1]);
   });
 });

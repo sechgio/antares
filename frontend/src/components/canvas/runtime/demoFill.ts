@@ -1,6 +1,5 @@
 import type { CanvasDocument } from '../types';
 import type { FillContext } from './renderHtml';
-import { renderCanvasHtml } from './renderHtml';
 import { renderMultiPageHtml, templateImagesPerPage } from '../ops/pages';
 
 /** Realistic sample values for common field keys (case-insensitive). */
@@ -38,6 +37,7 @@ function parseTableFieldKeys(raw: string | undefined): string[] {
     if (!Array.isArray(parsed.fieldKeys)) return [];
     return parsed.fieldKeys.flat().filter((k): k is string => typeof k === 'string' && k.length > 0);
   } catch {
+    // Malformed rowsData JSON — treat as no field bindings rather than crash demo preview.
     return [];
   }
 }
@@ -114,11 +114,8 @@ export function buildDemoFillContext(doc: CanvasDocument): FillContext {
   };
 }
 
-/** Render filled HTML preview for design-mode demo. */
+/** Render filled HTML preview for design-mode demo (always page-aware + screen px). */
 export function renderDemoPreviewHtml(doc: CanvasDocument): string {
   const ctx = buildDemoFillContext(doc);
-  const perPage = templateImagesPerPage(doc);
-  return ctx.images.length > perPage
-    ? renderMultiPageHtml(doc, ctx)
-    : renderCanvasHtml(doc, ctx, { forScreen: true });
+  return renderMultiPageHtml(doc, ctx, { forScreen: true });
 }

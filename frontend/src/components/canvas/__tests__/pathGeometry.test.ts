@@ -84,6 +84,38 @@ describe('pathGeometry', () => {
     expect(again.meta?.path?.points).toEqual(migrated.meta?.path?.points);
   });
 
+  it('ensureLinePath keeps stroke-height box and centers path (no MIN_BBOX inflation)', () => {
+    const legacy = createLayer('line', {
+      cssVars: {
+        '--width': '198.75mm',
+        '--height': '0.26mm',
+        '--translate-x': '6.03mm',
+        '--translate-y': '78.83mm',
+        '--border-width': '1px',
+        '--border-color': '#0D43FB',
+        '--stroke-visible': '1',
+        '--background-color': 'transparent',
+        '--fill-visible': '0',
+      },
+      meta: {},
+    });
+    delete legacy.meta!.path;
+
+    const migrated = ensureLinePath(legacy);
+    const h = parseMm(migrated.cssVars['--height']);
+    const y0 = migrated.meta!.path!.points[0].y;
+    const y1 = migrated.meta!.path!.points[1].y;
+
+    // Must stay near 1px stroke in mm (~0.26), not jump to MIN_BBOX 0.5mm
+    expect(h).toBeLessThan(0.35);
+    expect(h).toBeGreaterThan(0.2);
+    // Path centered in the stroke box (legacy bar WYSIWYG)
+    expect(y0).toBeCloseTo(h / 2, 5);
+    expect(y1).toBeCloseTo(h / 2, 5);
+    // Origin unchanged — visual top stays where the designer placed it
+    expect(migrated.cssVars['--translate-y']).toBe('78.83mm');
+  });
+
   it('bendSegment adds symmetric handles on a segment', () => {
     const path = { points: [{ x: 0, y: 0 }, { x: 100, y: 0 }], closed: false };
     const bent = bendSegment(path, 0, 50, -20);

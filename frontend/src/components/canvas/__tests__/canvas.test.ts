@@ -126,6 +126,36 @@ describe('canvas renderHtml', () => {
     expect(html).not.toMatch(/left:\d+(\.\d+)?mm/);
   });
 
+  it('matches LayerNode text box model (padding, justify, pre-wrap, line-height)', () => {
+    const doc = createEmptyDocument('Text parity');
+    doc.layers.push({
+      id: 'text-center',
+      type: 'text',
+      name: 'T',
+      value: 'Linea 1\nLinea 2',
+      cssVars: {
+        '--width': '40mm',
+        '--height': '16mm',
+        '--translate-x': '10mm',
+        '--translate-y': '20mm',
+        '--color': '#000',
+        '--text-align': 'center',
+      },
+    });
+    const html = renderCanvasHtml(
+      doc,
+      { data: {}, images: [], logoLeft: null, logoRight: null },
+      { forScreen: true },
+    );
+    const style = html.match(/data-layer="text-center"[^>]*style="([^"]*)"/)?.[1] ?? '';
+    expect(style).toContain('padding:2px 6px');
+    expect(style).toContain('justify-content:center');
+    expect(style).not.toContain('padding:4px');
+    expect(html).toMatch(/white-space:\s*pre-wrap/);
+    expect(html).toMatch(/line-height:\s*1\.2/);
+    expect(html).toContain('Linea 1\nLinea 2');
+  });
+
   it('merges multiple pages', () => {
     const doc = createEmptyDocument('A');
     const a = renderCanvasHtml(doc, { data: {}, images: [], logoLeft: null, logoRight: null });
@@ -199,6 +229,131 @@ describe('canvas renderHtml', () => {
     expect(rectStyle).toMatch(/background-color:/);
     expect(rectStyle).not.toContain('background-color:transparent');
     expect(rectStyle).toMatch(/(?:^|;)\s*border:/);
+  });
+
+  it('strips imageSlot placeholder chrome when photo is filled', () => {
+    const doc = createEmptyDocument('Slot chrome');
+    doc.layers.push(
+      createLayer('imageSlot', {
+        id: 'slot-0',
+        meta: { index: 0 },
+        cssVars: {
+          '--width': '50mm',
+          '--height': '40mm',
+          '--translate-x': '10mm',
+          '--translate-y': '40mm',
+          '--background-color': '#f1f5f9',
+          '--border': '1px dashed #94a3b8',
+          '--object-fit': 'cover',
+        },
+      }),
+    );
+    const html = renderCanvasHtml(doc, {
+      data: {},
+      images: ['data:image/png;base64,foto'],
+      logoLeft: null,
+      logoRight: null,
+    });
+    const style = html.match(/data-layer="slot-0"[^>]*style="([^"]*)"/)?.[1] ?? '';
+    expect(style).toContain('background-color:transparent');
+    expect(style).not.toContain('dashed');
+    expect(style).not.toContain('#f1f5f9');
+    expect(html).toContain('data:image/png;base64,foto');
+  });
+
+  it('logo img uses layer object-fit from cssVars', () => {
+    const doc = createEmptyDocument('Logo fit');
+    doc.layers.push(
+      createLayer('logo', {
+        id: 'logo-cover',
+        meta: { side: 'left' },
+        cssVars: {
+          '--width': '30mm',
+          '--height': '12mm',
+          '--translate-x': '5mm',
+          '--translate-y': '5mm',
+          '--object-fit': 'cover',
+        },
+      }),
+    );
+    const html = renderCanvasHtml(doc, {
+      data: {},
+      images: [],
+      logoLeft: 'data:image/png;base64,logo',
+      logoRight: null,
+    });
+    expect(html).toMatch(/alt="logo"[^>]*object-fit:cover/);
+  });
+
+  it('checkbox and signature content inherit layer styles (no hardcoded black box)', () => {
+    const doc = createEmptyDocument('Widgets');
+    doc.layers.push(
+      createLayer('checkbox', {
+        id: 'cb-1',
+        meta: { checked: true },
+        cssVars: {
+          '--width': '6mm',
+          '--height': '6mm',
+          '--translate-x': '10mm',
+          '--translate-y': '10mm',
+          '--border-width': '2px',
+          '--border-color': '#0e8fd6',
+          '--color': '#0e8fd6',
+          '--font-size': '12pt',
+        },
+      }),
+      createLayer('signature', {
+        id: 'sig-1',
+        value: 'Ana Ruiz',
+        cssVars: {
+          '--width': '60mm',
+          '--height': '20mm',
+          '--translate-x': '10mm',
+          '--translate-y': '30mm',
+          '--color': '#334155',
+          '--font-size': '9pt',
+        },
+      }),
+    );
+    const html = renderCanvasHtml(doc, {
+      data: {},
+      images: [],
+      logoLeft: null,
+      logoRight: null,
+    });
+    const cbInner = html.match(/data-layer="cb-1"[^>]*>[\s\S]*?<\/div>/)?.[0] ?? '';
+    expect(cbInner).toContain('✓');
+    expect(cbInner).not.toContain('border:1px solid #000');
+    expect(cbInner).toMatch(/color:#0e8fd6|color:inherit/);
+    expect(html).toContain('Ana Ruiz');
+    expect(html).toMatch(/font-size:9pt/);
+    expect(html).toMatch(/color:#334155/);
+  });
+
+  it('clipped shapes force border-radius 0 like LayerNode', () => {
+    const doc = createEmptyDocument('Clip');
+    doc.layers.push(
+      createLayer('arrow', {
+        id: 'arrow-1',
+        cssVars: {
+          '--width': '40mm',
+          '--height': '20mm',
+          '--translate-x': '10mm',
+          '--translate-y': '10mm',
+          '--background-color': '#000',
+          '--border-radius': '8px',
+        },
+      }),
+    );
+    const html = renderCanvasHtml(doc, {
+      data: {},
+      images: [],
+      logoLeft: null,
+      logoRight: null,
+    });
+    const style = html.match(/data-layer="arrow-1"[^>]*style="([^"]*)"/)?.[1] ?? '';
+    expect(style).toContain('clip-path:');
+    expect(style).toMatch(/border-radius:\s*0/);
   });
 
   it('renders distinct left and right logos when sides differ', () => {

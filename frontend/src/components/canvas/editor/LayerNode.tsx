@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import type { CanvasLayer } from '../types';
 import { parseMm } from '../types';
-import { mmToScreenPx, scaleCssLength } from '../ops/drawHelpers';
+import { mmToScreenPx } from '../ops/drawHelpers';
 import {
   canFocusFieldBinding,
   canInlineEditLayer,
@@ -10,17 +10,14 @@ import {
 } from '../ops/inlineEdit';
 import { clipPathForLayerType } from '../ops/shapePaths';
 import {
-  buildLayerTransform,
-  parseImageZoom,
-  resolveBorderRadius,
-  resolveFillBackground,
-  resolveFillColor,
-  resolveFilter,
-  resolveStrokeStyle,
-  scaleBorderRadius,
-} from '../ops/layerStyle';
+  buildLayerPaintStyle,
+  DEFAULT_LAYER_FONT,
+  DEFAULT_LINE_HEIGHT,
+} from '../ops/layerPaint';
+import { imageContentInlineStyle } from '../ops/layerStyle';
 import { ensureLinePath } from '../ops/pathGeometry';
 import { buildLineSvgContent } from '../ops/lineSvg';
+import { parseTableData } from '../ops/tableData';
 
 interface LayerNodeProps {
   layer: CanvasLayer;
@@ -39,6 +36,21 @@ interface LayerNodeProps {
   onFitTextHeight?: (id: string, contentHeightPx: number) => void;
   onCommitEdit?: () => void;
   onStartPathEdit?: (id: string) => void;
+}
+
+function imgStyleFromCssVars(cssVars: CanvasLayer['cssVars']): CSSProperties {
+  const style: CSSProperties = {};
+  for (const part of imageContentInlineStyle(cssVars).split(';')) {
+    if (!part) continue;
+    const i = part.indexOf(':');
+    if (i < 0) continue;
+    const prop = part.slice(0, i).trim();
+    const value = part.slice(i + 1).trim();
+    const camel = prop.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase()) as keyof CSSProperties;
+    (style as Record<string, string>)[camel as string] = value;
+  }
+  style.imageRendering = 'auto';
+  return style;
 }
 
 function LayerNode({
@@ -122,39 +134,33 @@ function LayerNode({
       layer.cssVars['--radius-br'] ||
       layer.cssVars['--radius-bl'],
   );
-  const radius = clipPath
-    ? '0px'
-    : !hasExplicitRadius && layer.type === 'ellipse'
-      ? '50%'
-      : scaleBorderRadius(resolveBorderRadius(layer.cssVars), scale) || '0px';
-  const borderW = scaleCssLength(
-    layer.cssVars['--border-width'] || (layer.cssVars['--border'] ? undefined : '0px'),
-    scale,
-  );
-  const fontSize = scaleCssLength(layer.cssVars['--font-size'] || '11px', scale);
-  const isGradientFill =
-    !isLine &&
-    (layer.cssVars['--fill-type'] === 'linear' || layer.cssVars['--fill-type'] === 'radial');
-  const fill = isLine
-    ? 'transparent'
-    : isGradientFill
-      ? resolveFillBackground(layer.cssVars)
-      : resolveFillColor(layer.cssVars);
-  const stroke = isLine ? {} : resolveStrokeStyle(layer.cssVars, borderW);
-  const transform = buildLayerTransform(layer.cssVars);
-  const layerFilter = resolveFilter(layer.cssVars);
   const textAlign = layer.cssVars['--text-align'];
-  const lineHeight = layer.cssVars['--line-height'] || '1.2';
+  const lineHeight = layer.cssVars['--line-height'] || DEFAULT_LINE_HEIGHT;
   const canEditText = canInlineEditLayer(layer);
   const canEditField = canFocusFieldBinding(layer);
+  const highlighted = selected || editing || pathEditing;
 
-  const shadowParts: string[] = [];
-  if (layer.cssVars['--box-shadow'] && layer.cssVars['--box-shadow'] !== 'none') {
-    shadowParts.push(layer.cssVars['--box-shadow']);
+  const paintVars = isLine
+    ? {
+        ...lineLayer.cssVars,
+        '--background-color': 'transparent',
+        '--fill-visible': '0',
+        '--border-width': '0px',
+        '--stroke-visible': '0',
+        '--border': '',
+      }
+    : layer.cssVars;
+
+  const paint = buildLayerPaintStyle(paintVars, { scale });
+
+  if (clipPath) {
+    paint.borderRadius = '0px';
+  } else if (!hasExplicitRadius && layer.type === 'ellipse') {
+    paint.borderRadius = '50%';
   }
-  if (stroke.boxShadowExtra) shadowParts.push(stroke.boxShadowExtra);
 
   const style: CSSProperties = {
+    ...paint,
     position: 'absolute',
     left: mmToScreenPx(x, scale),
     top: mmToScreenPx(y, scale),
@@ -167,32 +173,14 @@ function LayerNode({
       : !interactive || layer.locked
         ? 'default'
         : 'move',
-    ...(isGradientFill
-      ? { background: fill, backgroundColor: 'transparent' }
-      : { backgroundColor: fill }),
-    color: layer.cssVars['--color'] || '#1e1e1e',
-    fontSize,
-    fontFamily: layer.cssVars['--font-family'] || 'Segoe UI, Helvetica Neue, Arial, sans-serif',
-    fontWeight: layer.cssVars['--font-weight'] as CSSProperties['fontWeight'],
-    textAlign: (textAlign as CSSProperties['textAlign']) || 'left',
-    opacity: layer.cssVars['--opacity']
-      ? Number(layer.cssVars['--opacity']) / (Number(layer.cssVars['--opacity']) > 1 ? 100 : 1)
-      : 1,
-    borderRadius: radius,
-    border: stroke.border || 'none',
-    outline: stroke.outline || (selected || editing || pathEditing ? '1px solid #18a0fb' : undefined),
-    outlineOffset: stroke.outlineOffset,
-    filter: layerFilter,
-    boxShadow: shadowParts.length ? shadowParts.join(',') : undefined,
     clipPath,
-    transform,
     display: 'flex',
     alignItems: 'center',
     justifyContent: justifyContentForTextAlign(textAlign),
     padding:
       layer.type === 'text' || layer.type === 'field' ? `${2 * scale}px ${6 * scale}px` : 0,
     userSelect: editing ? 'text' : 'none',
-    zIndex: selected || editing || pathEditing ? 20 : 1,
+    zIndex: highlighted ? 20 : 1,
     pointerEvents:
       layer.type === 'group' && !selected
         ? 'none'
@@ -201,10 +189,12 @@ function LayerNode({
           : 'none',
   };
 
-  if ((selected || editing || pathEditing) && stroke.outline) {
-    style.boxShadow = [...(shadowParts.length ? shadowParts : []), '0 0 0 1px #18a0fb'].join(',');
-  } else if ((selected || editing || pathEditing) && !stroke.outline) {
-    style.outline = '1px solid #18a0fb';
+  if (highlighted) {
+    if (paint.outline) {
+      style.boxShadow = [paint.boxShadow, '0 0 0 1px #18a0fb'].filter(Boolean).join(',');
+    } else {
+      style.outline = '1px solid #18a0fb';
+    }
   }
 
   let label = layer.value || layer.name;
@@ -217,14 +207,14 @@ function LayerNode({
     layer.type === 'ellipse' ||
     layer.type === 'arrow' ||
     layer.type === 'polygon' ||
-    layer.type === 'star'
+    layer.type === 'star' ||
+    layer.type === 'checkbox' ||
+    layer.type === 'signature' ||
+    layer.type === 'table'
   )
     label = '';
   else if (layer.type === 'grid') label = `Grid ${layer.meta?.cols ?? 2}×${layer.meta?.rows ?? 2}`;
   else if (layer.type === 'group') label = 'Grupo';
-  else if (layer.type === 'checkbox') label = layer.meta?.checked ? '☑' : '☐';
-  else if (layer.type === 'signature') label = layer.value || 'Firma';
-  else if (layer.type === 'table') label = 'Tabla';
   else if (layer.type === 'image') label = layer.value ? '' : 'Imagen';
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -241,12 +231,21 @@ function LayerNode({
   };
 
   const isChromePlaceholder =
-    layer.type === 'imageSlot' ||
-    layer.type === 'logo' ||
-    layer.type === 'grid' ||
-    layer.type === 'table' ||
-    layer.type === 'signature' ||
-    layer.type === 'checkbox';
+    layer.type === 'imageSlot' || layer.type === 'logo' || layer.type === 'grid';
+
+  const textInnerStyle: CSSProperties = {
+    width: '100%',
+    lineHeight,
+    whiteSpace: 'pre-wrap',
+    fontFamily: layer.cssVars['--font-family'] || DEFAULT_LAYER_FONT,
+    fontSize: 'inherit',
+    color: 'inherit',
+    textAlign: (textAlign as CSSProperties['textAlign']) || 'left',
+  };
+
+  const tablePreview = layer.type === 'table' ? parseTableData(layer.meta?.rowsData) : null;
+  const signatureName = layer.type === 'signature' ? layer.value || 'Firma' : '';
+  const checkboxMark = layer.type === 'checkbox' && layer.meta?.checked ? '✓' : '';
 
   return (
     <div
@@ -331,18 +330,7 @@ function LayerNode({
           alt=""
           draggable={false}
           decoding="async"
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: (layer.cssVars['--object-fit'] as CSSProperties['objectFit']) || 'cover',
-            objectPosition: layer.cssVars['--object-position'] || '50% 50%',
-            transform: (() => {
-              const zoom = parseImageZoom(layer.cssVars);
-              return zoom !== 1 ? `scale(${zoom})` : undefined;
-            })(),
-            transformOrigin: layer.cssVars['--object-position'] || '50% 50%',
-            imageRendering: 'auto',
-          }}
+          style={imgStyleFromCssVars(layer.cssVars)}
         />
       ) : layer.type === 'line' ? (
         <div
@@ -354,20 +342,86 @@ function LayerNode({
         layer.type === 'ellipse' ||
         layer.type === 'arrow' ||
         layer.type === 'polygon' ||
-        layer.type === 'star' ? null : layer.type === 'field' ? (
-        <span
+        layer.type === 'star' ? null : layer.type === 'checkbox' ? (
+        <div
+          data-testid="canvas-checkbox-mark"
           style={{
             width: '100%',
-            lineHeight,
-            whiteSpace: 'pre-wrap',
-            fontFamily: layer.cssVars['--font-family'] || 'Segoe UI, Helvetica Neue, Arial, sans-serif',
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontWeight: 700,
             fontSize: 'inherit',
             color: 'inherit',
-            textAlign: (textAlign as CSSProperties['textAlign']) || 'left',
+            boxSizing: 'border-box',
+            pointerEvents: 'none',
           }}
         >
-          {label}
-        </span>
+          {checkboxMark}
+        </div>
+      ) : layer.type === 'signature' ? (
+        <div
+          data-testid="canvas-signature-preview"
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'flex-end',
+            padding: `${Math.max(1, scale)}px`,
+            boxSizing: 'border-box',
+            color: 'inherit',
+            pointerEvents: 'none',
+          }}
+        >
+          <div
+            style={{
+              borderTop: '1px solid currentColor',
+              paddingTop: `${Math.max(1, scale)}px`,
+              fontSize: 'inherit',
+              textAlign: 'center',
+            }}
+          >
+            {signatureName}
+          </div>
+        </div>
+      ) : layer.type === 'table' && tablePreview ? (
+        <table
+          data-testid="canvas-table-preview"
+          style={{
+            width: '100%',
+            height: '100%',
+            borderCollapse: 'collapse',
+            tableLayout: 'fixed',
+            fontSize: 'inherit',
+            color: 'inherit',
+            pointerEvents: 'none',
+          }}
+        >
+          <tbody>
+            {tablePreview.cells.map((row, ri) => (
+              <tr key={ri}>
+                {row.map((cell, ci) => (
+                  <td
+                    key={ci}
+                    style={{
+                      border: `1px solid ${layer.cssVars['--border-color'] || '#cbd5e1'}`,
+                      padding: `${Math.max(1, scale)}px ${Math.max(2, 2 * scale)}px`,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : layer.type === 'field' ? (
+        <span style={textInnerStyle}>{label}</span>
       ) : isChromePlaceholder ? (
         <span
           style={{
