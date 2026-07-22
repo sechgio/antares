@@ -11,8 +11,13 @@ import {
 import { clipPathForLayerType } from '../ops/shapePaths';
 import {
   buildLayerTransform,
+  parseImageZoom,
+  resolveBorderRadius,
+  resolveFillBackground,
   resolveFillColor,
+  resolveFilter,
   resolveStrokeStyle,
+  scaleBorderRadius,
 } from '../ops/layerStyle';
 import { ensureLinePath } from '../ops/pathGeometry';
 import { buildLineSvgContent } from '../ops/lineSvg';
@@ -54,6 +59,23 @@ function LayerNode({
   onStartPathEdit,
 }: LayerNodeProps) {
   const editorRef = useRef<HTMLTextAreaElement>(null);
+  // Keep latest callbacks behind refs so memo can ignore handler identity without going stale.
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+  const onLayerPointerDownRef = useRef(onLayerPointerDown);
+  onLayerPointerDownRef.current = onLayerPointerDown;
+  const onContextMenuRef = useRef(onContextMenu);
+  onContextMenuRef.current = onContextMenu;
+  const onStartEditRef = useRef(onStartEdit);
+  onStartEditRef.current = onStartEdit;
+  const onEditValueRef = useRef(onEditValue);
+  onEditValueRef.current = onEditValue;
+  const onFitTextHeightRef = useRef(onFitTextHeight);
+  onFitTextHeightRef.current = onFitTextHeight;
+  const onCommitEditRef = useRef(onCommitEdit);
+  onCommitEditRef.current = onCommitEdit;
+  const onStartPathEditRef = useRef(onStartPathEdit);
+  onStartPathEditRef.current = onStartPathEdit;
 
   useEffect(() => {
     if (!editing || !editorRef.current) return;
@@ -68,10 +90,10 @@ function LayerNode({
 
   const finishEdit = () => {
     const el = editorRef.current;
-    if (el && onFitTextHeight) {
-      onFitTextHeight(layer.id, el.scrollHeight);
+    if (el && onFitTextHeightRef.current) {
+      onFitTextHeightRef.current(layer.id, el.scrollHeight);
     }
-    onCommitEdit?.();
+    onCommitEditRef.current?.();
   };
 
   const lineLayer = useMemo(
@@ -93,18 +115,34 @@ function LayerNode({
     ? parseMm(lineLayer.cssVars['--height'], parseMm(layer.cssVars['--height'], 2))
     : parseMm(layer.cssVars['--height'], 10);
   const clipPath = clipPathForLayerType(layer.type);
+  const hasExplicitRadius = Boolean(
+    layer.cssVars['--border-radius'] ||
+      layer.cssVars['--radius-tl'] ||
+      layer.cssVars['--radius-tr'] ||
+      layer.cssVars['--radius-br'] ||
+      layer.cssVars['--radius-bl'],
+  );
   const radius = clipPath
     ? '0px'
-    : scaleCssLength(layer.cssVars['--border-radius'], scale) ||
-      (layer.type === 'ellipse' ? '50%' : '0px');
+    : !hasExplicitRadius && layer.type === 'ellipse'
+      ? '50%'
+      : scaleBorderRadius(resolveBorderRadius(layer.cssVars), scale) || '0px';
   const borderW = scaleCssLength(
     layer.cssVars['--border-width'] || (layer.cssVars['--border'] ? undefined : '0px'),
     scale,
   );
   const fontSize = scaleCssLength(layer.cssVars['--font-size'] || '11px', scale);
-  const fill = isLine ? 'transparent' : resolveFillColor(layer.cssVars);
+  const isGradientFill =
+    !isLine &&
+    (layer.cssVars['--fill-type'] === 'linear' || layer.cssVars['--fill-type'] === 'radial');
+  const fill = isLine
+    ? 'transparent'
+    : isGradientFill
+      ? resolveFillBackground(layer.cssVars)
+      : resolveFillColor(layer.cssVars);
   const stroke = isLine ? {} : resolveStrokeStyle(layer.cssVars, borderW);
   const transform = buildLayerTransform(layer.cssVars);
+  const layerFilter = resolveFilter(layer.cssVars);
   const textAlign = layer.cssVars['--text-align'];
   const lineHeight = layer.cssVars['--line-height'] || '1.2';
   const canEditText = canInlineEditLayer(layer);
@@ -129,7 +167,9 @@ function LayerNode({
       : !interactive || layer.locked
         ? 'default'
         : 'move',
-    backgroundColor: fill,
+    ...(isGradientFill
+      ? { background: fill, backgroundColor: 'transparent' }
+      : { backgroundColor: fill }),
     color: layer.cssVars['--color'] || '#1e1e1e',
     fontSize,
     fontFamily: layer.cssVars['--font-family'] || 'Segoe UI, Helvetica Neue, Arial, sans-serif',
@@ -142,6 +182,7 @@ function LayerNode({
     border: stroke.border || 'none',
     outline: stroke.outline || (selected || editing || pathEditing ? '1px solid #18a0fb' : undefined),
     outlineOffset: stroke.outlineOffset,
+    filter: layerFilter,
     boxShadow: shadowParts.length ? shadowParts.join(',') : undefined,
     clipPath,
     transform,
@@ -196,7 +237,7 @@ function LayerNode({
     if (e.button === 1) return;
     if (e.button !== 0) return;
     e.stopPropagation();
-    onLayerPointerDown(layer.id, e.shiftKey || e.ctrlKey || e.metaKey, e);
+    onLayerPointerDownRef.current(layer.id, e.shiftKey || e.ctrlKey || e.metaKey, e);
   };
 
   const isChromePlaceholder =
@@ -217,25 +258,25 @@ function LayerNode({
         if (layer.type === 'group' || layer.type === 'grid') {
           e.stopPropagation();
           e.preventDefault();
-          onStartEdit?.(layer.id);
+          onStartEditRef.current?.(layer.id);
           return;
         }
         if (layer.type === 'line') {
           e.stopPropagation();
           e.preventDefault();
-          onStartPathEdit?.(layer.id);
+          onStartPathEditRef.current?.(layer.id);
           return;
         }
         if (!canEditText && !canEditField) return;
         e.stopPropagation();
         e.preventDefault();
-        onStartEdit?.(layer.id);
+        onStartEditRef.current?.(layer.id);
       }}
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        onSelect(layer.id, false);
-        onContextMenu?.(layer.id, e.clientX, e.clientY);
+        onSelectRef.current(layer.id, false);
+        onContextMenuRef.current?.(layer.id, e.clientX, e.clientY);
       }}
       role="button"
       tabIndex={0}
@@ -246,7 +287,7 @@ function LayerNode({
           data-testid="canvas-inline-editor"
           value={layer.value}
           aria-label="Editar texto"
-          onChange={(e) => onEditValue?.(layer.id, e.target.value)}
+          onChange={(e) => onEditValueRef.current?.(layer.id, e.target.value)}
           onBlur={() => finishEdit()}
           onPointerDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
@@ -294,6 +335,12 @@ function LayerNode({
             width: '100%',
             height: '100%',
             objectFit: (layer.cssVars['--object-fit'] as CSSProperties['objectFit']) || 'cover',
+            objectPosition: layer.cssVars['--object-position'] || '50% 50%',
+            transform: (() => {
+              const zoom = parseImageZoom(layer.cssVars);
+              return zoom !== 1 ? `scale(${zoom})` : undefined;
+            })(),
+            transformOrigin: layer.cssVars['--object-position'] || '50% 50%',
             imageRendering: 'auto',
           }}
         />

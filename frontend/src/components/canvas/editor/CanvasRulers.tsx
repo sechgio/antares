@@ -102,9 +102,9 @@ export default function CanvasRulers({
           top: 0,
           width: RULER,
           height: RULER,
-          background: 'var(--cv-bg-panel, #2c2c2c)',
-          borderRight: '1px solid var(--cv-border, #3c3c3c)',
-          borderBottom: '1px solid var(--cv-border, #3c3c3c)',
+          background: 'var(--cv-panel-elevated, #ffffff)',
+          borderRight: '1px solid var(--cv-border, #e2e6eb)',
+          borderBottom: '1px solid var(--cv-border, #e2e6eb)',
           zIndex: 60,
           pointerEvents: 'none',
         }}
@@ -120,8 +120,8 @@ export default function CanvasRulers({
           top: 0,
           right: 0,
           height: RULER,
-          background: 'var(--cv-bg-panel, #2c2c2c)',
-          borderBottom: '1px solid var(--cv-border, #3c3c3c)',
+          background: 'var(--cv-panel-elevated, #ffffff)',
+          borderBottom: '1px solid var(--cv-border, #e2e6eb)',
           zIndex: 60,
           cursor: 'ns-resize',
           overflow: 'hidden',
@@ -137,7 +137,7 @@ export default function CanvasRulers({
                 bottom: 0,
                 width: 1,
                 height: major ? 12 : 6,
-                background: 'var(--cv-text-muted, #8c8c8c)',
+                background: 'var(--cv-text-secondary, #5c6778)',
               }}
             >
               {major && (
@@ -147,7 +147,7 @@ export default function CanvasRulers({
                     top: 2,
                     left: 2,
                     fontSize: 9,
-                    color: 'var(--cv-text-muted, #8c8c8c)',
+                    color: 'var(--cv-text-secondary, #5c6778)',
                     whiteSpace: 'nowrap',
                   }}
                 >
@@ -169,8 +169,8 @@ export default function CanvasRulers({
           top: RULER,
           bottom: 0,
           width: RULER,
-          background: 'var(--cv-bg-panel, #2c2c2c)',
-          borderRight: '1px solid var(--cv-border, #3c3c3c)',
+          background: 'var(--cv-panel-elevated, #ffffff)',
+          borderRight: '1px solid var(--cv-border, #e2e6eb)',
           zIndex: 60,
           cursor: 'ew-resize',
           overflow: 'hidden',
@@ -186,7 +186,7 @@ export default function CanvasRulers({
                 right: 0,
                 height: 1,
                 width: major ? 12 : 6,
-                background: 'var(--cv-text-muted, #8c8c8c)',
+                background: 'var(--cv-text-secondary, #5c6778)',
               }}
             >
               {major && (
@@ -196,7 +196,7 @@ export default function CanvasRulers({
                     left: 2,
                     top: 2,
                     fontSize: 9,
-                    color: 'var(--cv-text-muted, #8c8c8c)',
+                    color: 'var(--cv-text-secondary, #5c6778)',
                     whiteSpace: 'nowrap',
                     writingMode: 'vertical-lr',
                     transform: 'rotate(180deg)',

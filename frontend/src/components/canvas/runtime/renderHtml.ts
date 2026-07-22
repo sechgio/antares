@@ -2,7 +2,7 @@ import type { CanvasDocument, CanvasLayer } from '../types';
 import { parseMm } from '../types';
 import { applyGridToImageSlots } from '../ops/gridLayout';
 import { clipPathForLayerType } from '../ops/shapePaths';
-import { buildLayerTransform, cssVarsToStyleParts } from '../ops/layerStyle';
+import { buildLayerTransform, cssVarsToStyleParts, imageContentInlineStyle } from '../ops/layerStyle';
 import { buildLineSvgContent } from '../ops/lineSvg';
 import { ensureLinePath } from '../ops/pathGeometry';
 
@@ -101,7 +101,7 @@ function resolveLayerContent(
         html: `<span style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#94a3b8;font-size:9pt;">Foto ${index + 1}</span>`,
       };
     }
-    const fit = layer.cssVars['--object-fit'] || 'cover';
+    const imgStyle = imageContentInlineStyle(layer.cssVars);
     const captions: string[] = [];
     if (layer.meta?.showDate && meta?.date) captions.push(escapeHtml(meta.date));
     if (layer.meta?.showCoords && meta?.coords) captions.push(escapeHtml(meta.coords));
@@ -111,15 +111,15 @@ function resolveLayerContent(
       : '';
     return {
       kind: 'html',
-      html: `<div style="position:relative;width:100%;height:100%;"><img src="${escapeHtml(src)}" alt="foto-${index}" style="width:100%;height:100%;object-fit:${escapeHtml(fit)};" />${captionHtml}</div>`,
+      html: `<div style="position:relative;width:100%;height:100%;overflow:hidden;"><img src="${escapeHtml(src)}" alt="foto-${index}" style="${imgStyle}" />${captionHtml}</div>`,
     };
   }
   if (layer.type === 'image') {
     if (!layer.value) return { kind: 'empty', html: '' };
-    const fit = layer.cssVars['--object-fit'] || 'cover';
+    const imgStyle = imageContentInlineStyle(layer.cssVars);
     return {
       kind: 'image',
-      html: `<img src="${escapeHtml(layer.value)}" alt="" style="width:100%;height:100%;object-fit:${escapeHtml(fit)};" />`,
+      html: `<img src="${escapeHtml(layer.value)}" alt="" style="${imgStyle}" />`,
     };
   }
   if (

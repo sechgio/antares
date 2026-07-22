@@ -3,7 +3,7 @@
 import type { CanvasLayer } from '../types';
 import { parseMm } from '../types';
 import { ensureLinePath, parseStrokeCap, pathToSvgD } from './pathGeometry';
-import { lineStrokeWidthPx, pxToMm, resolveLineFillColor } from './layerStyle';
+import { lineStrokeWidthPx, pxToMm, resolveLineFillColor, parseStrokeDash, strokeDasharrayMm } from './layerStyle';
 
 function escapeAttr(value: string): string {
   return value
@@ -62,9 +62,15 @@ export function buildLineSvgContent(layer: CanvasLayer): string {
       ? 'butt'
       : strokeLinecap(startCap === 'none' && endCap !== 'none' ? endCap : startCap);
 
+  const dash = parseStrokeDash(ensured.cssVars['--stroke-dash']);
+  const dashAttr = (() => {
+    const arr = strokeDasharrayMm(dash, strokeWidthMm);
+    return arr ? ` stroke-dasharray="${escapeAttr(arr)}"` : '';
+  })();
+
   const defsBlock = defs.length ? `<defs>${defs.join('')}</defs>` : '';
   const pathEl = visible
-    ? `<path d="${escapeAttr(d)}" fill="none" stroke="${escapeAttr(color)}" stroke-width="${strokeWidthMm}" stroke-linecap="${linecap}" stroke-linejoin="round"${markerStart}${markerEnd} />`
+    ? `<path d="${escapeAttr(d)}" fill="none" stroke="${escapeAttr(color)}" stroke-width="${strokeWidthMm}" stroke-linecap="${linecap}" stroke-linejoin="round"${dashAttr}${markerStart}${markerEnd} />`
     : '';
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 ${w} ${h}" overflow="visible" preserveAspectRatio="none">${defsBlock}${pathEl}</svg>`;

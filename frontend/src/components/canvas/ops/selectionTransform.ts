@@ -21,6 +21,28 @@ export function snapThresholdMm(zoom: number, screenPx = 5): number {
   return screenPx / (MM_TO_PX * z);
 }
 
+export const DEFAULT_GRID_MM = 5;
+
+export function snapToGridMm(value: number, gridMm: number): number {
+  if (!(gridMm > 0) || !Number.isFinite(value)) return value;
+  return Math.round(value / gridMm) * gridMm;
+}
+
+/** Snap a box so left/top/right/bottom land on the grid. */
+export function snapRectToGrid(box: RectMm, gridMm: number): RectMm {
+  if (!(gridMm > 0)) return box;
+  const x = snapToGridMm(box.x, gridMm);
+  const y = snapToGridMm(box.y, gridMm);
+  const right = snapToGridMm(box.x + box.w, gridMm);
+  const bottom = snapToGridMm(box.y + box.h, gridMm);
+  return {
+    x,
+    y,
+    w: Math.max(gridMm, right - x),
+    h: Math.max(gridMm, bottom - y),
+  };
+}
+
 /** True when pointer travel is small enough to treat as a click (not a drag). */
 export function isPointerClick(dxPx: number, dyPx: number, thresholdPx = POINTER_CLICK_PX): boolean {
   return dxPx * dxPx + dyPx * dyPx <= thresholdPx * thresholdPx;
@@ -393,16 +415,18 @@ function collectGuidePositions(
   return { xs, ys };
 }
 
-/** Cache guide rails while the layers array identity is stable (gesture snapshot). */
-let guideCache: {
-  layers: CanvasLayer[];
-  excludeKey: string;
-  pageW: number;
-  pageH: number;
-  guidesKey: string;
-  xs: number[];
-  ys: number[];
-} | null = null;
+/** Cache guide rails keyed by the layers array (gesture snapshot). WeakMap avoids a module singleton. */
+const guideCacheByLayers = new WeakMap<
+  CanvasLayer[],
+  {
+    excludeKey: string;
+    pageW: number;
+    pageH: number;
+    guidesKey: string;
+    xs: number[];
+    ys: number[];
+  }
+>();
 
 function guidePositionsCached(
   layers: CanvasLayer[],
@@ -412,26 +436,25 @@ function guidePositionsCached(
 ): { xs: number[]; ys: number[] } {
   const excludeKey = [...excludeIds].join('\0');
   const guidesKey = manualGuides.map((g) => `${g.axis}:${g.posMm}`).join('|');
+  const hit = guideCacheByLayers.get(layers);
   if (
-    guideCache &&
-    guideCache.layers === layers &&
-    guideCache.excludeKey === excludeKey &&
-    guideCache.pageW === page.widthMm &&
-    guideCache.pageH === page.heightMm &&
-    guideCache.guidesKey === guidesKey
+    hit &&
+    hit.excludeKey === excludeKey &&
+    hit.pageW === page.widthMm &&
+    hit.pageH === page.heightMm &&
+    hit.guidesKey === guidesKey
   ) {
-    return { xs: guideCache.xs, ys: guideCache.ys };
+    return { xs: hit.xs, ys: hit.ys };
   }
   const next = collectGuidePositions(layers, excludeIds, page, manualGuides);
-  guideCache = {
-    layers,
+  guideCacheByLayers.set(layers, {
     excludeKey,
     pageW: page.widthMm,
     pageH: page.heightMm,
     guidesKey,
     xs: next.xs,
     ys: next.ys,
-  };
+  });
   return next;
 }
 

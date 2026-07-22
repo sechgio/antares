@@ -10,11 +10,24 @@ import {
   rotateSelection,
   selectionBounds,
   snapMoveWithGuides,
+  snapRectToGrid,
+  snapToGridMm,
   type HandlePos,
 } from '../ops/selectionTransform';
 import { parseMm } from '../types';
 
 describe('selectionTransform', () => {
+  it('snapToGridMm and snapRectToGrid align to step', () => {
+    expect(snapToGridMm(12.4, 5)).toBe(10);
+    expect(snapToGridMm(12.6, 5)).toBe(15);
+    expect(snapRectToGrid({ x: 12.4, y: 7.6, w: 10.2, h: 8.1 }, 5)).toEqual({
+      x: 10,
+      y: 10,
+      w: 15,
+      h: 5,
+    });
+  });
+
   it('isPointerClick treats small travel as click', () => {
     expect(isPointerClick(0, 0)).toBe(true);
     expect(isPointerClick(POINTER_CLICK_PX, 0)).toBe(true);

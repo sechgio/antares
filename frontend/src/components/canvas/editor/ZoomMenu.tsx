@@ -8,6 +8,10 @@ interface ZoomMenuProps {
   onZoom: (z: number) => void;
   onZoomFit: () => void;
   onZoomSelection?: () => void;
+  showRulers?: boolean;
+  onToggleRulers?: () => void;
+  snapToGrid?: boolean;
+  onToggleSnapToGrid?: () => void;
 }
 
 const ZOOM_STEP = 0.1;
@@ -28,7 +32,16 @@ interface ZoomAction {
   checked?: boolean;
 }
 
-export default function ZoomMenu({ zoom, onZoom, onZoomFit, onZoomSelection }: ZoomMenuProps) {
+export default function ZoomMenu({
+  zoom,
+  onZoom,
+  onZoomFit,
+  onZoomSelection,
+  showRulers = true,
+  onToggleRulers,
+  snapToGrid = false,
+  onToggleSnapToGrid,
+}: ZoomMenuProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
@@ -127,6 +140,28 @@ export default function ZoomMenu({ zoom, onZoom, onZoomFit, onZoomSelection }: Z
       run: () => onZoom(2),
       checked: near(200),
     },
+    ...(onToggleRulers
+      ? [
+          {
+            id: 'rulers',
+            label: showRulers ? 'Ocultar reglas' : 'Mostrar reglas',
+            tip: 'Shift+R',
+            run: onToggleRulers,
+            checked: showRulers,
+          } satisfies ZoomAction,
+        ]
+      : []),
+    ...(onToggleSnapToGrid
+      ? [
+          {
+            id: 'snap-grid',
+            label: snapToGrid ? 'Desactivar snap a cuadrícula' : 'Snap a cuadrícula',
+            tip: "Shift+'",
+            run: onToggleSnapToGrid,
+            checked: snapToGrid,
+          } satisfies ZoomAction,
+        ]
+      : []),
   ];
 
   return (

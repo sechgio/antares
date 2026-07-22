@@ -2,7 +2,7 @@ import { useCallback, useImperativeHandle, useMemo, useState, type Ref } from 'r
 import type { CanvasDocument, CanvasGuide, CanvasLayer, CanvasTool } from '../types';
 import { A4_HEIGHT_PX, A4_WIDTH_PX } from '../types';
 import { MM_TO_PX, type DrawRect } from '../ops/drawHelpers';
-import { selectionBounds, type RectMm } from '../ops/selectionTransform';
+import { selectionBounds } from '../ops/selectionTransform';
 import { fitZoomForViewport, zoomToFitRectMm } from '../ops/viewportNav';
 import Artboard from './Artboard';
 import ZoomMenu from './ZoomMenu';
@@ -40,6 +40,10 @@ interface DesignStageProps {
   onUpsertGuide?: (guide: CanvasGuide) => void;
   onMoveGuide?: (id: string, posMm: number) => void;
   onRemoveGuide?: (id: string) => void;
+  showRulers?: boolean;
+  onToggleRulers?: () => void;
+  snapToGrid?: boolean;
+  onToggleSnapToGrid?: () => void;
   children?: React.ReactNode;
 }
 
@@ -71,6 +75,10 @@ export default function DesignStage({
   onUpsertGuide,
   onMoveGuide,
   onRemoveGuide,
+  showRulers = true,
+  onToggleRulers,
+  snapToGrid = false,
+  onToggleSnapToGrid,
   children,
 }: DesignStageProps) {
   const [zoom, setZoom] = useState(0.85);
@@ -102,7 +110,7 @@ export default function DesignStage({
       const next = zoomToFitRectMm(
         width,
         height,
-        bounds as RectMm,
+        bounds,
         { widthMm: document.page.widthMm, heightMm: document.page.heightMm },
         MM_TO_PX,
       );
@@ -153,6 +161,8 @@ export default function DesignStage({
         onUpsertGuide={onUpsertGuide}
         onMoveGuide={onMoveGuide}
         onRemoveGuide={onRemoveGuide}
+        showRulers={showRulers}
+        snapToGrid={snapToGrid}
       />
       <div className="canvas-viewport-zoom">
         <ZoomMenu
@@ -160,6 +170,10 @@ export default function DesignStage({
           onZoom={setZoom}
           onZoomFit={zoomToFit}
           onZoomSelection={selectedIds.length ? () => zoomToSelection() : undefined}
+          showRulers={showRulers}
+          onToggleRulers={onToggleRulers}
+          snapToGrid={snapToGrid}
+          onToggleSnapToGrid={onToggleSnapToGrid}
         />
       </div>
       {children}

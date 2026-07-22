@@ -151,6 +151,7 @@ export function sendToBack(layers: CanvasLayer[], ids: string[]): CanvasLayer[] 
 export function duplicateLayers(
   layers: CanvasLayer[],
   ids: string[],
+  options?: { offsetMm?: number },
 ): { layers: CanvasLayer[]; newIds: string[] } {
   const byId = new Map(layers.map((l) => [l.id, l]));
   const requested = new Set(
@@ -161,6 +162,7 @@ export function duplicateLayers(
   );
 
   const toDuplicate = new Set(expandWithDescendants(layers, [...requested]));
+  const offset = options?.offsetMm ?? NUDGE_OFFSET_MM;
 
   const idMap = new Map<string, string>();
   for (const id of toDuplicate) {
@@ -180,8 +182,8 @@ export function duplicateLayers(
       name: `${layer.name} copia`,
       cssVars: {
         ...layer.cssVars,
-        '--translate-x': mm(parseMm(layer.cssVars['--translate-x']) + NUDGE_OFFSET_MM),
-        '--translate-y': mm(parseMm(layer.cssVars['--translate-y']) + NUDGE_OFFSET_MM),
+        '--translate-x': mm(parseMm(layer.cssVars['--translate-x']) + offset),
+        '--translate-y': mm(parseMm(layer.cssVars['--translate-y']) + offset),
       },
       parentId:
         layer.parentId && toDuplicate.has(layer.parentId)

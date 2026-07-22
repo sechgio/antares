@@ -444,6 +444,16 @@ describe('layerOps', () => {
     expect(parseMm(dup.cssVars['--translate-y'])).toBe(parseMm(source.cssVars['--translate-y']) + 5);
   });
 
+  it('duplicateLayers can paste in place with zero offset', () => {
+    const source = createLayer('rect');
+    source.cssVars['--translate-x'] = '10mm';
+    source.cssVars['--translate-y'] = '20mm';
+    const { layers: next, newIds } = duplicateLayers([source], [source.id], { offsetMm: 0 });
+    const dup = next.find((l) => l.id === newIds[0])!;
+    expect(parseMm(dup.cssVars['--translate-x'])).toBe(10);
+    expect(parseMm(dup.cssVars['--translate-y'])).toBe(20);
+  });
+
   it('skips locked frames when duplicating', () => {
     const layers = baseLayers();
     const frame = layers[0];

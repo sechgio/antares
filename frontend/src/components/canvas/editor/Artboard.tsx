@@ -31,10 +31,13 @@ import {
   selectionBounds,
   snapMoveWithGuides,
   snapResizeBox,
+  snapRectToGrid,
+  snapToGridMm,
   snapThresholdMm,
   type HandlePos,
   type RectMm,
   type SmartGuide,
+  DEFAULT_GRID_MM,
 } from '../ops/selectionTransform';
 import { formatGapMm, guidesForPage, measureSelectionGaps, type DistanceLabel } from '../ops/guides';
 import { wheelZoomFactor, zoomAtCursor } from '../ops/viewportNav';
@@ -80,6 +83,9 @@ interface ArtboardProps {
   onUpsertGuide?: (guide: CanvasGuide) => void;
   onMoveGuide?: (id: string, posMm: number) => void;
   onRemoveGuide?: (id: string) => void;
+  showRulers?: boolean;
+  snapToGrid?: boolean;
+  gridSizeMm?: number;
 }
 
 function handleStyle(left: number, top: number, cursor: string): CSSProperties {
@@ -131,6 +137,9 @@ export default function Artboard({
   onUpsertGuide,
   onMoveGuide,
   onRemoveGuide,
+  showRulers = true,
+  snapToGrid = false,
+  gridSizeMm = DEFAULT_GRID_MM,
 }: ArtboardProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -167,8 +176,17 @@ export default function Artboard({
   const pageSizeRef = useRef({ widthMm: document.page.widthMm, heightMm: document.page.heightMm });
   pageSizeRef.current = { widthMm: document.page.widthMm, heightMm: document.page.heightMm };
   const pageGuides = useMemo(() => guidesForPage(document, pageIndex), [document, pageIndex]);
-  const manualGuidesRef = useRef(pageGuides);
-  manualGuidesRef.current = pageGuides;
+  const [guideDrag, setGuideDrag] = useState<{ id: string; posMm: number } | null>(null);
+  const displayGuides = useMemo(() => {
+    if (!guideDrag) return pageGuides;
+    return pageGuides.map((g) => (g.id === guideDrag.id ? { ...g, posMm: guideDrag.posMm } : g));
+  }, [pageGuides, guideDrag]);
+  const manualGuidesRef = useRef(displayGuides);
+  manualGuidesRef.current = displayGuides;
+  const snapToGridRef = useRef(snapToGrid);
+  snapToGridRef.current = snapToGrid;
+  const gridSizeMmRef = useRef(gridSizeMm);
+  gridSizeMmRef.current = gridSizeMm > 0 ? gridSizeMm : DEFAULT_GRID_MM;
 
   const applyGestureLayers = useCallback((layers: CanvasLayer[]) => {
     gestureDirtyRef.current = true;
@@ -309,19 +327,35 @@ export default function Artboard({
         const rawDy = dyPx / (z * MM_TO_PX);
         const disableSnap = ev.ctrlKey || ev.metaKey;
         const threshold = snapThresholdMm(z);
-        const snapped = disableSnap
-          ? { dx: rawDx, dy: rawDy, guides: [] as SmartGuide[] }
-          : snapMoveWithGuides(
-              snapshot,
-              ids,
-              rawDx,
-              rawDy,
-              pageSizeRef.current,
-              threshold,
-              manualGuidesRef.current,
-            );
-        setGuides(snapped.guides);
-        const moved = moveSelection(snapshot, ids, snapped.dx, snapped.dy);
+        let dx = rawDx;
+        let dy = rawDy;
+        let guides: SmartGuide[] = [];
+        if (!disableSnap) {
+          const snapped = snapMoveWithGuides(
+            snapshot,
+            ids,
+            rawDx,
+            rawDy,
+            pageSizeRef.current,
+            threshold,
+            manualGuidesRef.current,
+          );
+          dx = snapped.dx;
+          dy = snapped.dy;
+          guides = snapped.guides;
+          if (snapToGridRef.current) {
+            const bounds = selectionBounds(snapshot, ids);
+            if (bounds) {
+              const grid = gridSizeMmRef.current;
+              const nx = snapToGridMm(bounds.x + dx, grid);
+              const ny = snapToGridMm(bounds.y + dy, grid);
+              dx = nx - bounds.x;
+              dy = ny - bounds.y;
+            }
+          }
+        }
+        setGuides(guides);
+        const moved = moveSelection(snapshot, ids, dx, dy);
         applyGestureLayers(moved);
         if (ev.altKey) {
           const bounds = selectionBounds(moved, ids);
@@ -421,6 +455,9 @@ export default function Artboard({
         );
         nextBox = snapped.box;
         setGuides(snapped.guides);
+        if (snapToGridRef.current) {
+          nextBox = snapRectToGrid(nextBox, gridSizeMmRef.current);
+        }
       } else {
         setGuides([]);
       }
@@ -762,14 +799,16 @@ export default function Artboard({
         onContextMenu?.(null, e.clientX, e.clientY);
       }}
     >
-      <CanvasRulers
-        zoom={zoom}
-        pan={pan}
-        pageWidthMm={document.page.widthMm}
-        pageHeightMm={document.page.heightMm}
-        pageIndex={pageIndex}
-        onCreateGuide={(guide) => onUpsertGuide?.(guide)}
-      />
+      {showRulers && (
+        <CanvasRulers
+          zoom={zoom}
+          pan={pan}
+          pageWidthMm={document.page.widthMm}
+          pageHeightMm={document.page.heightMm}
+          pageIndex={pageIndex}
+          onCreateGuide={(guide) => onUpsertGuide?.(guide)}
+        />
+      )}
 
       <div
         data-testid="canvas-pan-layer"
@@ -928,7 +967,7 @@ export default function Artboard({
             ),
           )}
 
-          {pageGuides.map((g) => (
+          {displayGuides.map((g) => (
             <div
               key={g.id}
               data-testid="canvas-manual-guide"
@@ -938,26 +977,38 @@ export default function Artboard({
                 e.stopPropagation();
                 e.preventDefault();
                 if (!frameRef.current) return;
+                let lastPos = g.posMm;
+                let removed = false;
+                setGuideDrag({ id: g.id, posMm: g.posMm });
                 const onMove = (ev: PointerEvent) => {
-                  if (!frameRef.current) return;
+                  if (!frameRef.current || removed) return;
                   const r = frameRef.current.getBoundingClientRect();
                   const cur = clientToMm(ev.clientX, ev.clientY, r, zoomRef.current);
                   const max = g.axis === 'x' ? document.page.widthMm : document.page.heightMm;
                   const pos = Math.max(0, Math.min(max, g.axis === 'x' ? cur.xMm : cur.yMm));
                   // Drag back into ruler strip → delete
                   if (g.axis === 'x' && ev.clientX < (viewportRef.current?.getBoundingClientRect().left ?? 0) + RULER_SIZE + 4) {
+                    removed = true;
+                    setGuideDrag(null);
                     onRemoveGuide?.(g.id);
                     return;
                   }
                   if (g.axis === 'y' && ev.clientY < (viewportRef.current?.getBoundingClientRect().top ?? 0) + RULER_SIZE + 4) {
+                    removed = true;
+                    setGuideDrag(null);
                     onRemoveGuide?.(g.id);
                     return;
                   }
-                  onMoveGuide?.(g.id, pos);
+                  lastPos = pos;
+                  setGuideDrag({ id: g.id, posMm: pos });
                 };
                 const onUp = () => {
                   window.removeEventListener('pointermove', onMove);
                   window.removeEventListener('pointerup', onUp);
+                  setGuideDrag(null);
+                  if (!removed && lastPos !== g.posMm) {
+                    onMoveGuide?.(g.id, lastPos);
+                  }
                 };
                 window.addEventListener('pointermove', onMove);
                 window.addEventListener('pointerup', onUp);

@@ -8,6 +8,8 @@ import {
   AlignVerticalJustifyCenter,
   ArrowDownToLine,
   ArrowUpToLine,
+  ChevronDown,
+  ChevronUp,
   Eye,
   EyeOff,
   FlipHorizontal2,
@@ -30,6 +32,7 @@ import {
   applyLineStrokeWeight,
   clampOpacity,
   clampStrokeWeight,
+  cornerRadiusPx,
   formatBoxShadow,
   isAspectLocked,
   isShapeLayer,
@@ -37,24 +40,31 @@ import {
   lineHeightMmFromStrokePx,
   lineStrokeWidthPx,
   parseBoxShadow,
+  parseFilterBlurPx,
+  parseImageZoom,
   parseScale,
   parseStrokeAlign,
+  parseStrokeDash,
   rememberStrokeWeight,
   resizeWithAspectLock,
   STROKE_WEIGHT_MAX_PX,
   STROKE_WEIGHT_MIN_PX,
   STROKE_WEIGHT_STEP_PX,
   toggleFlip,
+  type CornerId,
   type StrokeAlign,
+  type StrokeDash,
 } from '../ops/layerStyle';
 import { parseStrokeCap } from '../ops/pathGeometry';
 import { clipPathForLayerType } from '../ops/shapePaths';
+import { exportLayerPng, exportSelectionPng } from '../ops/exportPng';
 import InlineNumField from './InlineNumField';
 import PaintRow from './PaintRow';
 
 interface RightPanelProps {
   layer: CanvasLayer | null;
   selectedCount: number;
+  selectedIds?: string[];
   pageColors: string[];
   onChange: (layer: CanvasLayer) => void;
   /** Live updates without undo (typing). Pair with onCommitLive on blur. */
@@ -67,7 +77,9 @@ interface RightPanelProps {
   onBulkLocked: (locked: boolean) => void;
   onBulkOpacity: (opacity: number) => void;
   onBringFront: () => void;
+  onBringForward: () => void;
   onSendBack: () => void;
+  onSendBackward: () => void;
   /** True when another logo layer shares this layer's side. */
   logoSideConflict?: boolean;
 }
@@ -134,23 +146,10 @@ const ALIGN_ITEMS = [
   { align: 'bottom' as const, icon: AlignVerticalJustifyCenter, label: 'Abajo' },
 ];
 
-async function exportLayerPng(layerId: string, name: string, scale: number) {
-  const el = document.querySelector(`[data-layer-id="${layerId}"]`) as HTMLElement | null;
-  if (!el) return;
-  const { toPng } = await import('html-to-image');
-  const dataUrl = await toPng(el, {
-    pixelRatio: scale,
-    cacheBust: true,
-  });
-  const a = document.createElement('a');
-  a.href = dataUrl;
-  a.download = `${name || 'layer'}.png`;
-  a.click();
-}
-
 export default memo(function RightPanel({
   layer,
   selectedCount,
+  selectedIds = [],
   pageColors,
   onChange,
   onChangeLive,
@@ -162,7 +161,9 @@ export default memo(function RightPanel({
   onBulkLocked,
   onBulkOpacity,
   onBringFront,
+  onBringForward,
   onSendBack,
+  onSendBackward,
   logoSideConflict = false,
 }: RightPanelProps) {
   const [exportScale, setExportScale] = useState(1);
@@ -244,9 +245,13 @@ export default memo(function RightPanel({
         style={{ borderColor: 'var(--cv-border)' }}
       >
         <span className="canvas-section-title !mb-0 truncate">
-          {hasSelection && layer ? layerPanelTitle(layer) : 'Propiedades'}
+          {selectedCount > 1
+            ? `${selectedCount} seleccionados`
+            : hasSelection && layer
+              ? layerPanelTitle(layer)
+              : 'Propiedades'}
         </span>
-        {hasSelection && layer && (
+        {hasSelection && layer && selectedCount === 1 && (
           <div className="flex items-center gap-0.5">
             <WithHoverTooltip
               label={layer.visible !== false ? 'Ocultar' : 'Mostrar'}
@@ -327,6 +332,16 @@ export default memo(function RightPanel({
                 <ArrowUpToLine className="h-3.5 w-3.5" />
               </button>
             </WithHoverTooltip>
+            <WithHoverTooltip label="Adelante" placement="bottom" variant="dark">
+              <button type="button" className="canvas-icon-btn" aria-label="Adelante" onClick={onBringForward}>
+                <ChevronUp className="h-3.5 w-3.5" />
+              </button>
+            </WithHoverTooltip>
+            <WithHoverTooltip label="Atrás" placement="bottom" variant="dark">
+              <button type="button" className="canvas-icon-btn" aria-label="Atrás" onClick={onSendBackward}>
+                <ChevronDown className="h-3.5 w-3.5" />
+              </button>
+            </WithHoverTooltip>
             <WithHoverTooltip label="Al fondo" placement="bottom" variant="dark">
               <button type="button" className="canvas-icon-btn" aria-label="Al fondo" onClick={onSendBack}>
                 <ArrowDownToLine className="h-3.5 w-3.5" />
@@ -370,10 +385,36 @@ export default memo(function RightPanel({
               onChange={(e) => onBulkOpacity(Number(e.target.value) || 0)}
             />
           </label>
+          <div className="mt-2 flex gap-2">
+            <select
+              className="canvas-input"
+              value={exportScale}
+              onChange={(e) => setExportScale(Number(e.target.value))}
+              aria-label="Escala de exportación"
+            >
+              <option value={1}>1x</option>
+              <option value={2}>2x</option>
+            </select>
+            <button
+              type="button"
+              className="canvas-export-btn flex-1"
+              disabled={exporting || selectedIds.length === 0}
+              onClick={() => {
+                setExporting(true);
+                void exportSelectionPng(
+                  selectedIds,
+                  `seleccion-${selectedIds.length}`,
+                  exportScale,
+                ).finally(() => setExporting(false));
+              }}
+            >
+              Exportar PNG
+            </button>
+          </div>
         </div>
       )}
 
-      {hasSelection && layer && (
+      {hasSelection && layer && selectedCount === 1 && (
           <div className="min-h-0 flex-1 overflow-y-auto">
             {/* Posición */}
             <div className="canvas-section">
@@ -512,13 +553,42 @@ export default memo(function RightPanel({
                 {showRadius && (
                   <InlineNumField
                     prefix=""
-                    value={parseFloat(layer.cssVars['--border-radius'] || '0') || 0}
-                    onChange={(n) => setVarLive('--border-radius', `${Math.max(0, n)}px`)}
+                    value={cornerRadiusPx(layer.cssVars, 'tl')}
+                    onChange={(n) => {
+                      const v = `${Math.max(0, n)}px`;
+                      const next = { ...layer.cssVars, '--border-radius': v };
+                      delete next['--radius-tl'];
+                      delete next['--radius-tr'];
+                      delete next['--radius-br'];
+                      delete next['--radius-bl'];
+                      emitLive({ ...layer, cssVars: next });
+                    }}
                     onCommit={onCommitLive}
-                    title="Radio de esquina"
+                    title="Radio uniforme"
                   />
                 )}
               </div>
+              {showRadius && (
+                <div className="mt-2 grid grid-cols-2 gap-1">
+                  {(
+                    [
+                      ['tl', 'TL'],
+                      ['tr', 'TR'],
+                      ['bl', 'BL'],
+                      ['br', 'BR'],
+                    ] as Array<[CornerId, string]>
+                  ).map(([corner, label]) => (
+                    <InlineNumField
+                      key={corner}
+                      prefix={label}
+                      value={cornerRadiusPx(layer.cssVars, corner)}
+                      onChange={(n) => setVarLive(`--radius-${corner}`, `${Math.max(0, n)}px`)}
+                      onCommit={onCommitLive}
+                      title={`Radio ${label}`}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Relleno */}
@@ -540,6 +610,7 @@ export default memo(function RightPanel({
                 </button>
               </SectionHeader>
               {hasFill ? (
+                <div className="space-y-2">
                   <PaintRow
                     color={layer.cssVars['--background-color'] || '#FFFFFF'}
                     opacity={Number(layer.cssVars['--fill-opacity'] ?? 100)}
@@ -558,9 +629,66 @@ export default memo(function RightPanel({
                       setVars({
                         '--background-color': 'transparent',
                         '--fill-visible': '0',
+                        '--fill-type': 'solid',
                       })
                     }
                   />
+                  <label className="block text-[11px]" style={{ color: 'var(--cv-text-secondary)' }}>
+                    Tipo
+                    <select
+                      className="canvas-input mt-1 w-full text-[11px]"
+                      value={layer.cssVars['--fill-type'] || 'solid'}
+                      aria-label="Tipo de relleno"
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        if (next === 'linear' || next === 'radial') {
+                          setVars({
+                            '--fill-type': next,
+                            '--fill-color-2': layer.cssVars['--fill-color-2'] || '#000000',
+                            '--fill-angle': layer.cssVars['--fill-angle'] || '180',
+                          });
+                        } else {
+                          setVar('--fill-type', 'solid');
+                        }
+                      }}
+                    >
+                      <option value="solid">Sólido</option>
+                      <option value="linear">Lineal</option>
+                      <option value="radial">Radial</option>
+                    </select>
+                  </label>
+                  {(layer.cssVars['--fill-type'] === 'linear' ||
+                    layer.cssVars['--fill-type'] === 'radial') && (
+                    <>
+                      <PaintRow
+                        color={layer.cssVars['--fill-color-2'] || '#000000'}
+                        opacity={Number(layer.cssVars['--fill-opacity'] ?? 100)}
+                        visible
+                        pageColors={pageColors}
+                        onPaintChange={(c, o) =>
+                          setVarsLive({
+                            '--fill-color-2': c,
+                            '--fill-opacity': String(o),
+                          })
+                        }
+                        onPaintCommit={onCommitLive}
+                        onVisibleChange={() => undefined}
+                        onRemove={() => setVar('--fill-type', 'solid')}
+                      />
+                      {layer.cssVars['--fill-type'] === 'linear' && (
+                        <InlineNumField
+                          prefix="∠"
+                          value={Number.parseFloat(layer.cssVars['--fill-angle'] || '180') || 180}
+                          step={1}
+                          title="Ángulo del degradado"
+                          onChange={(n) => setVarLive('--fill-angle', String(Math.round(n)))}
+                          onCommit={onCommitLive}
+                          suffix="°"
+                        />
+                      )}
+                    </>
+                  )}
+                </div>
                 ) : (
                 <p className="text-[11px]" style={{ color: 'var(--cv-text-muted)' }}>
                   Sin relleno
@@ -648,6 +776,19 @@ export default memo(function RightPanel({
                           {!isLine && <option value="outside">Exterior</option>}
                         </select>
                       </label>
+                      <label className="block">
+                        <span className="canvas-sublabel">Estilo</span>
+                        <select
+                          className="canvas-input"
+                          value={parseStrokeDash(layer.cssVars['--stroke-dash'])}
+                          aria-label="Estilo de trazo"
+                          onChange={(e) => setVar('--stroke-dash', e.target.value as StrokeDash)}
+                        >
+                          <option value="solid">Continuo</option>
+                          <option value="dashed">Discontinuo</option>
+                          <option value="dotted">Punteado</option>
+                        </select>
+                      </label>
                       <div>
                         <span className="canvas-sublabel">Peso</span>
                         <div className="mt-0.5 flex items-center gap-2">
@@ -730,16 +871,29 @@ export default memo(function RightPanel({
                   <Plus className="h-3.5 w-3.5" />
                 </button>
               </SectionHeader>
-              {(() => {
-                const shadow = parseBoxShadow(layer.cssVars['--box-shadow']);
-                if (!shadow) {
+              <div className="space-y-2">
+                <InlineNumField
+                  prefix="Blur"
+                  value={parseFilterBlurPx(layer.cssVars)}
+                  step={1}
+                  title="Desenfoque de capa"
+                  onChange={(n) => {
+                    const blur = Math.max(0, Math.min(40, Math.round(n)));
+                    setVarLive('--filter-blur', blur > 0 ? `${blur}px` : '0px');
+                  }}
+                  onCommit={onCommitLive}
+                  suffix="px"
+                />
+                {(() => {
+                  const shadow = parseBoxShadow(layer.cssVars['--box-shadow']);
+                  if (!shadow) {
+                    return (
+                      <p className="text-[11px]" style={{ color: 'var(--cv-text-muted)' }}>
+                        Sin sombra
+                      </p>
+                    );
+                  }
                   return (
-                    <p className="text-[11px]" style={{ color: 'var(--cv-text-muted)' }}>
-                      Sin efectos
-                    </p>
-                  );
-                }
-                return (
                   <div className="space-y-2" data-testid="canvas-effect-shadow">
                     <div className="flex items-center gap-2">
                       <span
@@ -812,8 +966,9 @@ export default memo(function RightPanel({
                       />
                     </div>
                   </div>
-                );
-              })()}
+                  );
+                })()}
+              </div>
             </div>
 
             {/* Exportar */}
@@ -862,6 +1017,16 @@ export default memo(function RightPanel({
                   <WithHoverTooltip label="Al frente" placement="bottom" variant="dark">
                     <button type="button" className="canvas-icon-btn" aria-label="Al frente" onClick={onBringFront}>
                       <ArrowUpToLine className="h-3.5 w-3.5" />
+                    </button>
+                  </WithHoverTooltip>
+                  <WithHoverTooltip label="Adelante" placement="bottom" variant="dark">
+                    <button type="button" className="canvas-icon-btn" aria-label="Adelante" onClick={onBringForward}>
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </button>
+                  </WithHoverTooltip>
+                  <WithHoverTooltip label="Atrás" placement="bottom" variant="dark">
+                    <button type="button" className="canvas-icon-btn" aria-label="Atrás" onClick={onSendBackward}>
+                      <ChevronDown className="h-3.5 w-3.5" />
                     </button>
                   </WithHoverTooltip>
                   <WithHoverTooltip label="Al fondo" placement="bottom" variant="dark">
@@ -1068,6 +1233,37 @@ export default memo(function RightPanel({
                   <option value="contain">Contener</option>
                   <option value="fill">Estirar</option>
                 </select>
+                <div className="mt-2 flex gap-1">
+                  <InlineNumField
+                    prefix="Z"
+                    value={parseImageZoom(layer.cssVars)}
+                    step={0.05}
+                    title="Zoom de recorte"
+                    onChange={(n) =>
+                      setVarLive('--image-zoom', String(Math.min(3, Math.max(1, Math.round(n * 100) / 100))))
+                    }
+                    onCommit={onCommitLive}
+                  />
+                </div>
+                <label className="mt-2 block text-[11px]" style={{ color: 'var(--cv-text-secondary)' }}>
+                  Posición
+                </label>
+                <select
+                  className="canvas-input mt-1 text-[11px]"
+                  value={layer.cssVars['--object-position'] || '50% 50%'}
+                  aria-label="Posición de imagen"
+                  onChange={(e) => setVar('--object-position', e.target.value)}
+                >
+                  <option value="50% 50%">Centro</option>
+                  <option value="0% 0%">Arriba izq.</option>
+                  <option value="50% 0%">Arriba</option>
+                  <option value="100% 0%">Arriba der.</option>
+                  <option value="0% 50%">Izquierda</option>
+                  <option value="100% 50%">Derecha</option>
+                  <option value="0% 100%">Abajo izq.</option>
+                  <option value="50% 100%">Abajo</option>
+                  <option value="100% 100%">Abajo der.</option>
+                </select>
               </div>
             )}
 
@@ -1080,6 +1276,49 @@ export default memo(function RightPanel({
                   onChange={(n) => setMetaLive({ index: Math.max(0, Math.floor(n)) })}
                   onCommit={onCommitLive}
                 />
+                <label className="mt-2 block text-[11px]" style={{ color: 'var(--cv-text-secondary)' }}>
+                  Ajuste
+                </label>
+                <select
+                  className="canvas-input mt-1 text-[11px]"
+                  value={layer.cssVars['--object-fit'] || 'cover'}
+                  onChange={(e) => setVar('--object-fit', e.target.value)}
+                >
+                  <option value="cover">Cubrir</option>
+                  <option value="contain">Contener</option>
+                  <option value="fill">Estirar</option>
+                </select>
+                <div className="mt-2 flex gap-1">
+                  <InlineNumField
+                    prefix="Z"
+                    value={parseImageZoom(layer.cssVars)}
+                    step={0.05}
+                    title="Zoom de recorte"
+                    onChange={(n) =>
+                      setVarLive('--image-zoom', String(Math.min(3, Math.max(1, Math.round(n * 100) / 100))))
+                    }
+                    onCommit={onCommitLive}
+                  />
+                </div>
+                <label className="mt-2 block text-[11px]" style={{ color: 'var(--cv-text-secondary)' }}>
+                  Posición
+                </label>
+                <select
+                  className="canvas-input mt-1 text-[11px]"
+                  value={layer.cssVars['--object-position'] || '50% 50%'}
+                  aria-label="Posición de foto"
+                  onChange={(e) => setVar('--object-position', e.target.value)}
+                >
+                  <option value="50% 50%">Centro</option>
+                  <option value="0% 0%">Arriba izq.</option>
+                  <option value="50% 0%">Arriba</option>
+                  <option value="100% 0%">Arriba der.</option>
+                  <option value="0% 50%">Izquierda</option>
+                  <option value="100% 50%">Derecha</option>
+                  <option value="0% 100%">Abajo izq.</option>
+                  <option value="50% 100%">Abajo</option>
+                  <option value="100% 100%">Abajo der.</option>
+                </select>
                 <label className="mt-2 flex items-center gap-2 text-[11px]">
                   <input
                     type="checkbox"
@@ -1200,6 +1439,16 @@ export default memo(function RightPanel({
                   <WithHoverTooltip label="Al frente" placement="bottom" variant="dark">
                     <button type="button" className="canvas-icon-btn" aria-label="Al frente" onClick={onBringFront}>
                       <ArrowUpToLine className="h-3.5 w-3.5" />
+                    </button>
+                  </WithHoverTooltip>
+                  <WithHoverTooltip label="Adelante" placement="bottom" variant="dark">
+                    <button type="button" className="canvas-icon-btn" aria-label="Adelante" onClick={onBringForward}>
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </button>
+                  </WithHoverTooltip>
+                  <WithHoverTooltip label="Atrás" placement="bottom" variant="dark">
+                    <button type="button" className="canvas-icon-btn" aria-label="Atrás" onClick={onSendBackward}>
+                      <ChevronDown className="h-3.5 w-3.5" />
                     </button>
                   </WithHoverTooltip>
                   <WithHoverTooltip label="Al fondo" placement="bottom" variant="dark">

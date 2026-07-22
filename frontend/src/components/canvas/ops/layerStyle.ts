@@ -265,11 +265,135 @@ export function resolveFillColor(vars: LayerCssVars): string {
   return hexToRgba(normalizeHex(hex), Number.isFinite(opacity) ? opacity : 100);
 }
 
+/** CSS `background` value — solid rgba, linear-gradient, or radial-gradient. */
+export function resolveFillBackground(vars: LayerCssVars): string {
+  if (vars['--fill-visible'] === '0') return 'transparent';
+  const type = vars['--fill-type'] || 'solid';
+  if (type !== 'linear' && type !== 'radial') return resolveFillColor(vars);
+
+  const hex1 = vars['--background-color'];
+  if (!hex1 || hex1 === 'transparent') return 'transparent';
+  const opacity = Number(vars['--fill-opacity'] ?? 100);
+  const op = Number.isFinite(opacity) ? opacity : 100;
+  const c1 = hexToRgba(normalizeHex(hex1), op);
+  const hex2 = vars['--fill-color-2'] || hex1;
+  const c2 = hexToRgba(normalizeHex(hex2, '#000000'), op);
+  if (type === 'radial') return `radial-gradient(circle at center, ${c1}, ${c2})`;
+  const angle = Number.parseFloat(vars['--fill-angle'] || '180');
+  const deg = Number.isFinite(angle) ? angle : 180;
+  return `linear-gradient(${deg}deg, ${c1}, ${c2})`;
+}
+
+export function parseFilterBlurPx(vars: LayerCssVars): number {
+  const raw = vars['--filter-blur'];
+  if (!raw || raw === 'none') return 0;
+  const n = parseFloat(raw);
+  return Number.isFinite(n) ? Math.max(0, Math.min(40, n)) : 0;
+}
+
+export function resolveFilter(vars: LayerCssVars): string | undefined {
+  const blur = parseFilterBlurPx(vars);
+  if (blur <= 0) return undefined;
+  return `blur(${blur}px)`;
+}
+
+export function parseImageZoom(vars: LayerCssVars): number {
+  const n = Number.parseFloat(vars['--image-zoom'] || '1');
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(3, Math.max(1, Math.round(n * 100) / 100));
+}
+
+/** Inline CSS for <img> content (editor + PDF export). */
+export function imageContentInlineStyle(vars: LayerCssVars): string {
+  const fit = vars['--object-fit'] || 'cover';
+  const pos = vars['--object-position'] || '50% 50%';
+  const zoom = parseImageZoom(vars);
+  const parts = [
+    'width:100%',
+    'height:100%',
+    `object-fit:${fit}`,
+    `object-position:${pos}`,
+  ];
+  if (zoom !== 1) {
+    parts.push(`transform:scale(${zoom})`);
+    parts.push(`transform-origin:${pos}`);
+  }
+  return parts.join(';');
+}
+
+export type CornerId = 'tl' | 'tr' | 'br' | 'bl';
+
+export function parseRadiusPx(value: string | undefined): number {
+  if (!value || value.includes('%')) return 0;
+  const n = parseFloat(value);
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
+}
+
+/** Resolved CSS border-radius (1 or 4 values). */
+export function resolveBorderRadius(vars: LayerCssVars): string {
+  const uniform = vars['--border-radius'];
+  const tl = vars['--radius-tl'];
+  const tr = vars['--radius-tr'];
+  const br = vars['--radius-br'];
+  const bl = vars['--radius-bl'];
+  const hasCorners = Boolean(tl || tr || br || bl);
+  if (!hasCorners) return uniform || '0px';
+  const fallback = uniform || '0px';
+  const a = tl || fallback;
+  const b = tr || fallback;
+  const c = br || fallback;
+  const d = bl || fallback;
+  if (a === b && b === c && c === d) return a;
+  return `${a} ${b} ${c} ${d}`;
+}
+
+export function cornerRadiusPx(vars: LayerCssVars, corner: CornerId): number {
+  const key = `--radius-${corner}` as const;
+  const specific = vars[key];
+  if (specific) return parseRadiusPx(specific);
+  return parseRadiusPx(vars['--border-radius']);
+}
+
+/** Scale a 1–4 value border-radius string by zoom (skips %). */
+export function scaleBorderRadius(value: string | undefined, scale: number): string | undefined {
+  if (!value) return undefined;
+  return value
+    .trim()
+    .split(/\s+/)
+    .map((part) => {
+      if (part.includes('%')) return part;
+      const match = /^(-?[\d.]+)([a-z]*)$/i.exec(part);
+      if (!match) return part;
+      const n = Number(match[1]);
+      if (!Number.isFinite(n)) return part;
+      const unit = match[2] || 'px';
+      const scaled = n * scale;
+      const snapped = unit === 'px' || unit === '' ? Math.round(scaled) : scaled;
+      return `${snapped}${unit || 'px'}`;
+    })
+    .join(' ');
+}
+
 export type StrokeAlign = 'inside' | 'center' | 'outside';
 
 export function parseStrokeAlign(value: string | undefined): StrokeAlign {
   if (value === 'center' || value === 'outside') return value;
   return 'inside';
+}
+
+export type StrokeDash = 'solid' | 'dashed' | 'dotted';
+
+export function parseStrokeDash(value: string | undefined): StrokeDash {
+  if (value === 'dashed' || value === 'dotted') return value;
+  return 'solid';
+}
+
+/** SVG stroke-dasharray in mm (viewBox units). */
+export function strokeDasharrayMm(dash: StrokeDash, strokeWidthMm: number): string | undefined {
+  if (dash === 'solid') return undefined;
+  const w = Math.max(0.05, strokeWidthMm);
+  if (dash === 'dotted') return `0 ${w * 2.2}`;
+  return `${w * 3} ${w * 2}`;
 }
 
 export interface StrokeStyle {
@@ -292,6 +416,8 @@ export function resolveStrokeStyle(
   const opacity = Number(vars['--stroke-opacity'] ?? 100);
   const color = hexToRgba(normalizeHex(colorRaw, '#000000'), Number.isFinite(opacity) ? opacity : 100);
   const align = parseStrokeAlign(vars['--stroke-align']);
+  const dash = parseStrokeDash(vars['--stroke-dash']);
+  const lineStyle = dash === 'solid' ? 'solid' : dash;
 
   if (vars['--border']) {
     return { border: vars['--border'] };
@@ -299,16 +425,23 @@ export function resolveStrokeStyle(
 
   if (align === 'center') {
     return {
-      outline: `${width} solid ${color}`,
+      outline: `${width} ${lineStyle} ${color}`,
       outlineOffset: `-${wNum / 2}px`,
     };
   }
   if (align === 'outside') {
+    // box-shadow cannot dash; fall back to outline outside the box.
+    if (dash !== 'solid') {
+      return {
+        outline: `${width} ${lineStyle} ${color}`,
+        outlineOffset: '0px',
+      };
+    }
     return {
       boxShadowExtra: `0 0 0 ${width} ${color}`,
     };
   }
-  return { border: `${width} solid ${color}` };
+  return { border: `${width} ${lineStyle} ${color}` };
 }
 
 export function toggleFlip(layer: CanvasLayer, axis: 'x' | 'y'): CanvasLayer {
@@ -446,7 +579,7 @@ export function collectDocumentColors(layers: CanvasLayer[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const layer of layers) {
-    for (const key of ['--background-color', '--border-color', '--color'] as const) {
+    for (const key of ['--background-color', '--fill-color-2', '--border-color', '--color'] as const) {
       const raw = layer.cssVars[key];
       if (!raw || raw === 'transparent') continue;
       const hex = normalizeHex(raw, '');
@@ -470,15 +603,27 @@ export function cssVarsToStyleParts(vars: LayerCssVars): string[] {
     '--scale-y',
     '--fill-opacity',
     '--fill-visible',
+    '--fill-type',
+    '--fill-color-2',
+    '--fill-angle',
+    '--filter-blur',
+    '--image-zoom',
+    '--object-position',
     '--stroke-opacity',
     '--stroke-visible',
     '--stroke-align',
+    '--stroke-dash',
     '--aspect-locked',
     '--box-shadow',
     '--background-color',
     '--border-width',
     '--border-color',
     '--border',
+    '--border-radius',
+    '--radius-tl',
+    '--radius-tr',
+    '--radius-br',
+    '--radius-bl',
   ]);
   const parts: string[] = [];
   for (const [key, value] of Object.entries(vars)) {
@@ -492,14 +637,24 @@ export function cssVarsToStyleParts(vars: LayerCssVars): string[] {
     else if (prop === 'opacity') {
       const n = Number(value);
       parts.push(`opacity:${n > 1 ? n / 100 : n}`);
-    } else if (prop === 'border-radius') parts.push(`border-radius:${value}`);
-    else if (prop === 'object-fit') parts.push(`object-fit:${value}`);
+    } else if (prop === 'object-fit') parts.push(`object-fit:${value}`);
     else if (prop === 'line-height') parts.push(`line-height:${value}`);
   }
 
-  const fill = resolveFillColor(vars);
-  if (fill !== 'transparent') parts.push(`background-color:${fill}`);
-  else parts.push('background-color:transparent');
+  const radius = resolveBorderRadius(vars);
+  if (radius && radius !== '0px') parts.push(`border-radius:${radius}`);
+
+  const fillBg = resolveFillBackground(vars);
+  if (
+    (vars['--fill-type'] === 'linear' || vars['--fill-type'] === 'radial') &&
+    fillBg !== 'transparent'
+  ) {
+    parts.push(`background:${fillBg}`);
+  } else if (fillBg !== 'transparent') {
+    parts.push(`background-color:${fillBg}`);
+  } else {
+    parts.push('background-color:transparent');
+  }
 
   const stroke = resolveStrokeStyle(vars);
   if (stroke.border) {
@@ -515,6 +670,9 @@ export function cssVarsToStyleParts(vars: LayerCssVars): string[] {
   }
   if (stroke.boxShadowExtra) shadowParts.push(stroke.boxShadowExtra);
   if (shadowParts.length) parts.push(`box-shadow:${shadowParts.join(',')}`);
+
+  const filter = resolveFilter(vars);
+  if (filter) parts.push(`filter:${filter}`);
 
   const transform = buildLayerTransform(vars);
   if (transform) parts.push(`transform:${transform}`);

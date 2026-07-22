@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import {
   ArrowDownToLine,
   ArrowUpToLine,
+  ChevronUp,
+  ChevronDown,
   ClipboardPaste,
   Copy,
   Eye,
@@ -19,11 +21,14 @@ export type CanvasContextAction =
   | 'edit'
   | 'copy'
   | 'paste'
+  | 'pasteInPlace'
   | 'duplicate'
   | 'toggleLock'
   | 'toggleVisible'
   | 'bringFront'
+  | 'bringForward'
   | 'sendBack'
+  | 'sendBackward'
   | 'selectChildren'
   | 'group'
   | 'ungroup'
@@ -99,6 +104,13 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
   items.push(
     { id: 'copy', label: 'Copiar', tip: 'Ctrl+C', icon: Copy, disabled: !hasLayer },
     { id: 'paste', label: 'Pegar', tip: 'Ctrl+V', icon: ClipboardPaste, disabled: !menu.canPaste },
+    {
+      id: 'pasteInPlace',
+      label: 'Pegar en el sitio',
+      tip: 'Ctrl+Shift+V',
+      icon: ClipboardPaste,
+      disabled: !menu.canPaste,
+    },
     { id: 'duplicate', label: 'Duplicar', tip: 'Ctrl+D', icon: Copy, disabled: !hasLayer || menu.locked },
     {
       id: 'toggleLock',
@@ -134,6 +146,20 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
       disabled: !menu.canUngroup || menu.locked,
     },
     { id: 'bringFront', label: 'Traer al frente', tip: ']', icon: ArrowUpToLine, disabled: !hasLayer || menu.locked },
+    {
+      id: 'bringForward',
+      label: 'Adelante',
+      tip: 'Ctrl+]',
+      icon: ChevronUp,
+      disabled: !hasLayer || menu.locked,
+    },
+    {
+      id: 'sendBackward',
+      label: 'Atrás',
+      tip: 'Ctrl+[',
+      icon: ChevronDown,
+      disabled: !hasLayer || menu.locked,
+    },
     { id: 'sendBack', label: 'Enviar al fondo', tip: '[', icon: ArrowDownToLine, disabled: !hasLayer || menu.locked },
     { id: 'delete', label: 'Eliminar', tip: 'Supr', icon: Trash2, danger: true, disabled: !hasLayer || menu.locked },
   );

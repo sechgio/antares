@@ -7,11 +7,17 @@ import {
   cssVarsToStyleParts,
   formatBoxShadow,
   hexToRgba,
+  imageContentInlineStyle,
   isAspectLocked,
   layerPanelTitle,
   parseBoxShadow,
+  parseFilterBlurPx,
+  parseImageZoom,
   resizeWithAspectLock,
+  resolveFillBackground,
   resolveFillColor,
+  resolveFilter,
+  resolveBorderRadius,
   resolveStrokeStyle,
   toggleFlip,
 } from '../ops/layerStyle';
@@ -30,7 +36,9 @@ const panelProps = {
   onBulkLocked: vi.fn(),
   onBulkOpacity: vi.fn(),
   onBringFront: vi.fn(),
+  onBringForward: vi.fn(),
   onSendBack: vi.fn(),
+  onSendBackward: vi.fn(),
 };
 
 describe('layerStyle', () => {
@@ -119,6 +127,91 @@ describe('layerStyle', () => {
       '--stroke-align': 'inside',
     });
     expect(stroke.border).toBe('2px solid rgba(0,0,255,0.5)');
+  });
+
+  it('resolveBorderRadius supports independent corners', () => {
+    expect(
+      resolveBorderRadius({
+        '--border-radius': '4px',
+        '--radius-tl': '10px',
+        '--radius-tr': '0px',
+      }),
+    ).toBe('10px 0px 4px 4px');
+  });
+
+  it('resolveFillBackground builds linear gradients', () => {
+    expect(
+      resolveFillBackground({
+        '--width': '1mm',
+        '--height': '1mm',
+        '--translate-x': '0mm',
+        '--translate-y': '0mm',
+        '--background-color': '#FF0000',
+        '--fill-color-2': '#0000FF',
+        '--fill-type': 'linear',
+        '--fill-angle': '90',
+        '--fill-opacity': '100',
+      }),
+    ).toBe('linear-gradient(90deg, #FF0000, #0000FF)');
+  });
+
+  it('resolveFillBackground builds radial gradients', () => {
+    expect(
+      resolveFillBackground({
+        '--width': '1mm',
+        '--height': '1mm',
+        '--translate-x': '0mm',
+        '--translate-y': '0mm',
+        '--background-color': '#FF0000',
+        '--fill-color-2': '#0000FF',
+        '--fill-type': 'radial',
+        '--fill-opacity': '100',
+      }),
+    ).toBe('radial-gradient(circle at center, #FF0000, #0000FF)');
+  });
+
+  it('resolveStrokeStyle supports dashed borders', () => {
+    const stroke = resolveStrokeStyle({
+      '--width': '1mm',
+      '--height': '1mm',
+      '--translate-x': '0mm',
+      '--translate-y': '0mm',
+      '--border-width': '2px',
+      '--border-color': '#000000',
+      '--stroke-dash': 'dashed',
+      '--stroke-align': 'inside',
+    });
+    expect(stroke.border).toBe('2px dashed #000000');
+  });
+
+  it('cssVarsToStyleParts includes linear fill and layer blur', () => {
+    const css = cssVarsToStyleParts({
+      '--width': '10mm',
+      '--height': '10mm',
+      '--translate-x': '0mm',
+      '--translate-y': '0mm',
+      '--background-color': '#FF0000',
+      '--fill-color-2': '#0000FF',
+      '--fill-type': 'linear',
+      '--fill-angle': '180',
+      '--filter-blur': '4px',
+    }).join(';');
+    expect(css).toContain('background:linear-gradient(180deg, #FF0000, #0000FF)');
+    expect(css).toContain('filter:blur(4px)');
+  });
+
+  it('parseFilterBlurPx, resolveFilter and imageContentInlineStyle', () => {
+    expect(parseFilterBlurPx({ '--filter-blur': '8px' })).toBe(8);
+    expect(resolveFilter({ '--filter-blur': '0px' })).toBeUndefined();
+    expect(parseImageZoom({ '--image-zoom': '1.5' })).toBe(1.5);
+    const img = imageContentInlineStyle({
+      '--object-fit': 'contain',
+      '--object-position': '0% 50%',
+      '--image-zoom': '2',
+    });
+    expect(img).toContain('object-fit:contain');
+    expect(img).toContain('object-position:0% 50%');
+    expect(img).toContain('transform:scale(2)');
   });
 
   it('hexToRgba and parseBoxShadow round-trip', () => {
@@ -217,6 +310,14 @@ describe('RightPanel shape inspector', () => {
     expect(screen.getByText('Efectos')).toBeTruthy();
     expect(screen.getByText('Exportar')).toBeTruthy();
     expect(screen.getByRole('button', { name: /Exportar/ })).toBeTruthy();
+  });
+
+  it('multi-select shows bulk panel only', () => {
+    const layer = createLayer('rect');
+    render(<RightPanel layer={layer} onChange={vi.fn()} {...panelProps} selectedCount={3} />);
+    expect(screen.getByText('3 seleccionados')).toBeTruthy();
+    expect(screen.queryByText('Relleno')).toBeNull();
+    expect(screen.getByLabelText('Adelante')).toBeTruthy();
   });
 
   it('fill hex change updates background-color and keeps opacity in one onChange', () => {

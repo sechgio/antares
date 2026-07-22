@@ -46,6 +46,11 @@ export interface LayerCssVars {
   '--border-width'?: string;
   '--border-color'?: string;
   '--border-radius'?: string;
+  /** Per-corner radii (px); fall back to --border-radius when unset */
+  '--radius-tl'?: string;
+  '--radius-tr'?: string;
+  '--radius-br'?: string;
+  '--radius-bl'?: string;
   '--rotate'?: string;
   '--object-fit'?: string;
   /** Flip horizontal: "1" | "-1" */
@@ -56,6 +61,20 @@ export interface LayerCssVars {
   '--fill-opacity'?: string;
   /** "0" hides fill */
   '--fill-visible'?: string;
+  /** solid | linear | radial */
+  '--fill-type'?: string;
+  /** Second stop for linear gradient */
+  '--fill-color-2'?: string;
+  /** Linear gradient angle in degrees */
+  '--fill-angle'?: string;
+  /** Layer blur in px (e.g. "4px") */
+  '--filter-blur'?: string;
+  /** Image zoom factor 1–3 for crop/pan */
+  '--image-zoom'?: string;
+  /** Image focal point, e.g. "50% 50%" */
+  '--object-position'?: string;
+  /** solid | dashed | dotted */
+  '--stroke-dash'?: string;
   /** Stroke opacity 0–100 */
   '--stroke-opacity'?: string;
   /** "0" hides stroke */
@@ -164,11 +183,21 @@ export interface CanvasDocument {
   version: 1 | typeof DOCUMENT_VERSION;
   id: string;
   name: string;
+  /** ISO-8601; used for local↔cloud last-write-wins sync. */
+  updatedAt?: string;
   page: { widthMm: number; heightMm: number };
   layers: CanvasLayer[];
   fields: CanvasFieldDef[];
   pages?: Array<{ id: string; name: string }>;
-  settings?: { imagesPerPage?: number; gridRules?: GridRule[] };
+  settings?: {
+    imagesPerPage?: number;
+    gridRules?: GridRule[];
+    showRulers?: boolean;
+    /** Snap layer edges to a regular mm grid while moving/resizing */
+    snapToGrid?: boolean;
+    /** Grid step in mm (default 5) */
+    gridSizeMm?: number;
+  };
   /** Manual guides dragged from rulers. */
   guides?: CanvasGuide[];
 }
@@ -176,6 +205,7 @@ export interface CanvasDocument {
 export interface CanvasDocumentSummary {
   id: string;
   name: string;
+  updatedAt?: string;
 }
 
 export function newId(): string {
@@ -187,18 +217,23 @@ export function newId(): string {
 
 /** Upgrade v1 documents to the current schema. */
 export function normalizeDocument(doc: CanvasDocument): CanvasDocument {
-  if (doc.version === DOCUMENT_VERSION) return doc;
-  const pageId = newId();
+  const upgraded =
+    doc.version === DOCUMENT_VERSION
+      ? doc
+      : {
+          ...doc,
+          version: DOCUMENT_VERSION as typeof DOCUMENT_VERSION,
+          pages: doc.pages ?? [{ id: newId(), name: 'Página 1' }],
+          layers: doc.layers.map((layer) => ({
+            ...layer,
+            pageIndex: layer.pageIndex ?? 0,
+          })),
+          settings: doc.settings ?? {},
+          guides: doc.guides ?? [],
+        };
   return {
-    ...doc,
-    version: DOCUMENT_VERSION,
-    pages: doc.pages ?? [{ id: pageId, name: 'Página 1' }],
-    layers: doc.layers.map((layer) => ({
-      ...layer,
-      pageIndex: layer.pageIndex ?? 0,
-    })),
-    settings: doc.settings ?? {},
-    guides: doc.guides ?? [],
+    ...upgraded,
+    updatedAt: upgraded.updatedAt || new Date(0).toISOString(),
   };
 }
 
@@ -208,6 +243,7 @@ export function createEmptyDocument(name = 'Sin título'): CanvasDocument {
     version: DOCUMENT_VERSION,
     id: newId(),
     name,
+    updatedAt: new Date().toISOString(),
     page: { widthMm: A4_WIDTH_MM, heightMm: A4_HEIGHT_MM },
     pages: [{ id: pageId, name: 'Página 1' }],
     settings: {},

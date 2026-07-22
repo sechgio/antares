@@ -4,6 +4,11 @@ import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import './canvas.css';
 import { createLayer } from './constants';
 import { CANVAS_PRESETS } from './presets';
+import {
+  queueCanvasCloudDelete,
+  queueCanvasCloudPush,
+  syncCanvasDocuments,
+} from './sync/canvasCloudSync';
 import BottomToolbar from './editor/BottomToolbar';
 import ContextMenu, {
   type CanvasContextAction,
@@ -60,6 +65,7 @@ import { assignUniqueLogoSides, logoSideHasConflict, withAssignedLogoSide } from
 import { isClickPlace, type DrawRect } from './ops/drawHelpers';
 import { moveGuide, removeGuide, upsertGuide } from './ops/guides';
 import { canFocusFieldBinding, canInlineEditLayer, growTextLayerToContent, isEditableKeyboardTarget, isTypeToEditKey } from './ops/inlineEdit';
+import { matchHistoryShortcut } from './ops/historyShortcuts';
 import {
   A4_HEIGHT_PX,
   A4_WIDTH_PX,
@@ -180,6 +186,23 @@ export default function CanvasView() {
     }
   }, []);
 
+  const runCloudSync = useCallback(async () => {
+    try {
+      const result = await syncCanvasDocuments({
+        openDocumentId: history.document.id,
+        openDirty: history.canUndo,
+      });
+      if (result.skipped) return;
+      await refreshList();
+      if (result.reloadOpenId && result.reloadOpenId === history.document.id && !history.canUndo) {
+        const got = await api.canvasGet(result.reloadOpenId);
+        history.replaceDocument(normalizeDocument(got.document as CanvasDocument));
+      }
+    } catch {
+      /* offline / auth — local cache remains usable */
+    }
+  }, [history, refreshList]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -195,7 +218,8 @@ export default function CanvasView() {
           const created = await api.canvasCreate('Sin título');
           if (!cancelled) {
             history.replaceDocument(normalizeDocument(created.document as CanvasDocument));
-            setDocs([{ id: created.document.id, name: created.document.name }]);
+            setDocs([{ id: created.document.id, name: created.document.name, updatedAt: created.document.updatedAt }]);
+            queueCanvasCloudPush(normalizeDocument(created.document as CanvasDocument));
           }
         }
       } catch {
@@ -203,6 +227,7 @@ export default function CanvasView() {
       } finally {
         if (!cancelled) setLoading(false);
       }
+      if (!cancelled) void runCloudSync();
     })();
     return () => {
       cancelled = true;
@@ -210,12 +235,22 @@ export default function CanvasView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount bootstrap only
   }, []);
 
+  useEffect(() => {
+    const onFocus = () => {
+      void runCloudSync();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [runCloudSync]);
+
   const onSave = useCallback(async () => {
     try {
       const res = await api.canvasSave(history.document);
-      history.replaceDocument(normalizeDocument(res.document as CanvasDocument));
+      const saved = normalizeDocument(res.document as CanvasDocument);
+      history.replaceDocument(saved);
       await refreshList();
       flashStatus('Guardado');
+      queueCanvasCloudPush(saved);
     } catch (err) {
       flashStatus(err instanceof Error ? err.message : 'Error al guardar');
     }
@@ -399,6 +434,25 @@ export default function CanvasView() {
     [history.document.layers, startInlineEdit],
   );
 
+  const pasteClipboard = useCallback(
+    (offsetMm?: number) => {
+      if (!clipboard.length) return;
+      const withIds = clipboard.map((l) => ({ ...l, pageIndex }));
+      const clipIds = new Set(withIds.map((l) => l.id));
+      const roots = withIds.filter((l) => !l.parentId || !clipIds.has(l.parentId));
+      const temp = [...history.document.layers, ...withIds];
+      const { layers, newIds } = duplicateLayers(
+        temp,
+        roots.map((l) => l.id),
+        offsetMm === undefined ? undefined : { offsetMm },
+      );
+      const originalClipIds = new Set(withIds.map((l) => l.id));
+      setAllLayers(assignUniqueLogoSides(layers.filter((l) => !originalClipIds.has(l.id)), newIds));
+      setSelectedIds(newIds);
+    },
+    [clipboard, history.document.layers, pageIndex, setAllLayers],
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (mode !== 'design') return;
@@ -426,6 +480,8 @@ export default function CanvasView() {
         }
       }
 
+      const historyChord = matchHistoryShortcut(e);
+
       // While inline-editing: let the textarea handle keys once focused;
       // route printable keys if focus hasn't landed yet (type-to-edit race).
       if (editingLayerId) {
@@ -440,7 +496,15 @@ export default function CanvasView() {
           runDuplicate();
           return;
         }
+        // Textarea / contentEditable: keep native undo while typing.
         if (isEditableKeyboardTarget(e.target)) return;
+        if (historyChord) {
+          e.preventDefault();
+          commitInlineEdit();
+          if (historyChord === 'redo') history.redo();
+          else history.undo();
+          return;
+        }
         if (isTypeToEditKey(e.key, e) && !e.repeat) {
           e.preventDefault();
           const layer = history.document.layers.find((l) => l.id === editingLayerId);
@@ -450,7 +514,13 @@ export default function CanvasView() {
         // Block tool / delete / nudge shortcuts while editing.
         return;
       }
-      // Allow Ctrl/Cmd+D even when focus is in panel inputs.
+      // Allow undo/redo + Ctrl/Cmd+D even when focus is in panel inputs.
+      if (historyChord) {
+        e.preventDefault();
+        if (historyChord === 'redo') history.redo();
+        else history.undo();
+        return;
+      }
       if (isEditableKeyboardTarget(e.target) && !isDuplicateShortcut) return;
 
       // Type-to-edit before tool letter shortcuts (Figma: typing replaces text, not tools).
@@ -466,7 +536,7 @@ export default function CanvasView() {
       if (e.key === 'v' || e.key === 'V') setTool('select');
       if (e.key === 'h' || e.key === 'H') setTool('hand');
       if (e.key === 't' || e.key === 'T') setTool('text');
-      if (e.key === 'r' || e.key === 'R') setTool('rect');
+      if ((e.key === 'r' || e.key === 'R') && !e.shiftKey) setTool('rect');
       if (e.key === 'o' || e.key === 'O') setTool('ellipse');
       if (e.key === 'f' || e.key === 'F') setTool('field');
       if ((e.key === 'l' || e.key === 'L') && !e.ctrlKey && !e.metaKey) {
@@ -562,15 +632,6 @@ export default function CanvasView() {
         setAllLayers(nudgeLayers(history.document.layers, editableIds, dx, dy));
       }
 
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) history.redo();
-        else history.undo();
-      }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) {
-        e.preventDefault();
-        history.redo();
-      }
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         void onSave();
@@ -587,18 +648,29 @@ export default function CanvasView() {
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
         e.preventDefault();
-        if (!clipboard.length) return;
-        const withIds = clipboard.map((l) => ({ ...l, pageIndex }));
-        const clipIds = new Set(withIds.map((l) => l.id));
-        const roots = withIds.filter((l) => !l.parentId || !clipIds.has(l.parentId));
-        const temp = [...history.document.layers, ...withIds];
-        const { layers, newIds } = duplicateLayers(
-          temp,
-          roots.map((l) => l.id),
-        );
-        const originalClipIds = new Set(withIds.map((l) => l.id));
-        setAllLayers(assignUniqueLogoSides(layers.filter((l) => !originalClipIds.has(l.id)), newIds));
-        setSelectedIds(newIds);
+        pasteClipboard(e.shiftKey ? 0 : undefined);
+      }
+      if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'R' || e.key === 'r')) {
+        e.preventDefault();
+        const doc = history.document;
+        history.setDocument({
+          ...doc,
+          settings: {
+            ...doc.settings,
+            showRulers: doc.settings?.showRulers === false,
+          },
+        });
+      }
+      if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === "'" || e.code === 'Quote')) {
+        e.preventDefault();
+        const doc = history.document;
+        history.setDocument({
+          ...doc,
+          settings: {
+            ...doc.settings,
+            snapToGrid: !doc.settings?.snapToGrid,
+          },
+        });
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'g') {
         e.preventDefault();
@@ -702,6 +774,7 @@ export default function CanvasView() {
     startContainerOrInlineEdit,
     onInlineEditValue,
     previewOpen,
+    pasteClipboard,
   ]);
 
   const selected = history.document.layers.find((l) => l.id === selectedId) || null;
@@ -808,13 +881,16 @@ export default function CanvasView() {
 
   const onDuplicate = async () => {
     try {
-      await api.canvasSave(history.document);
+      const savedRes = await api.canvasSave(history.document);
+      queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
       const res = await api.canvasDuplicate(history.document.id);
-      history.replaceDocument(normalizeDocument(res.document as CanvasDocument));
+      const dup = normalizeDocument(res.document as CanvasDocument);
+      history.replaceDocument(dup);
       setSelectedIds([]);
       setPageIndex(0);
       await refreshList();
       flashStatus('Duplicado');
+      queueCanvasCloudPush(dup);
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Error al duplicar');
     }
@@ -822,7 +898,9 @@ export default function CanvasView() {
 
   const onDeleteDoc = async () => {
     try {
-      await api.canvasDelete(history.document.id);
+      const deletedId = history.document.id;
+      await api.canvasDelete(deletedId);
+      queueCanvasCloudDelete(deletedId);
       const list = await api.canvasList();
       if (list.documents.length) {
         const got = await api.canvasGet(list.documents[0].id);
@@ -830,8 +908,10 @@ export default function CanvasView() {
         setDocs(list.documents);
       } else {
         const created = await api.canvasCreate('Sin título');
-        history.replaceDocument(normalizeDocument(created.document as CanvasDocument));
-        setDocs([{ id: created.document.id, name: created.document.name }]);
+        const doc = normalizeDocument(created.document as CanvasDocument);
+        history.replaceDocument(doc);
+        setDocs([{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt }]);
+        queueCanvasCloudPush(doc);
       }
       setSelectedIds([]);
       setPageIndex(0);
@@ -845,7 +925,8 @@ export default function CanvasView() {
   const onOpenDoc = async (id: string) => {
     if (!id || id === history.document.id) return;
     try {
-      await api.canvasSave(history.document);
+      const savedRes = await api.canvasSave(history.document);
+      queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
       const res = await api.canvasGet(id);
       history.replaceDocument(normalizeDocument(res.document as CanvasDocument));
       setSelectedIds([]);
@@ -859,13 +940,16 @@ export default function CanvasView() {
 
   const onNew = async () => {
     try {
-      await api.canvasSave(history.document);
+      const savedRes = await api.canvasSave(history.document);
+      queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
       const res = await api.canvasCreate('Sin título');
-      history.replaceDocument(normalizeDocument(res.document as CanvasDocument));
+      const doc = normalizeDocument(res.document as CanvasDocument);
+      history.replaceDocument(doc);
       setSelectedIds([]);
       setPageIndex(0);
       resetViewportPan();
       await refreshList();
+      queueCanvasCloudPush(doc);
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Error al crear');
     }
@@ -900,18 +984,11 @@ export default function CanvasView() {
     const id = contextMenu?.layerId;
 
     if (action === 'paste') {
-      if (!clipboard.length) return;
-      const withIds = clipboard.map((l) => ({ ...l, pageIndex }));
-      const clipIds = new Set(withIds.map((l) => l.id));
-      const roots = withIds.filter((l) => !l.parentId || !clipIds.has(l.parentId));
-      const temp = [...history.document.layers, ...withIds];
-      const { layers, newIds } = duplicateLayers(
-        temp,
-        roots.map((l) => l.id),
-      );
-      const originalClipIds = new Set(withIds.map((l) => l.id));
-      setAllLayers(assignUniqueLogoSides(layers.filter((l) => !originalClipIds.has(l.id)), newIds));
-      setSelectedIds(newIds);
+      pasteClipboard();
+      return;
+    }
+    if (action === 'pasteInPlace') {
+      pasteClipboard(0);
       return;
     }
 
@@ -976,8 +1053,16 @@ export default function CanvasView() {
       setAllLayers(bringToFront(history.document.layers, [id]));
       return;
     }
+    if (action === 'bringForward') {
+      setAllLayers(bringForward(history.document.layers, [id]));
+      return;
+    }
     if (action === 'sendBack') {
       setAllLayers(sendToBack(history.document.layers, [id]));
+      return;
+    }
+    if (action === 'sendBackward') {
+      setAllLayers(sendBackward(history.document.layers, [id]));
       return;
     }
     if (action === 'delete') {
@@ -1140,10 +1225,33 @@ export default function CanvasView() {
               else history.setDocument(upsertGuide(history.document, guide));
             }}
             onMoveGuide={(id, posMm) => {
-              history.updateSilent(moveGuide(history.document, id, posMm));
+              // Called once on pointerup (Artboard keeps live preview local during drag).
+              history.setDocument(moveGuide(history.document, id, posMm));
             }}
             onRemoveGuide={(id) => {
               history.setDocument(removeGuide(history.document, id));
+            }}
+            showRulers={history.document.settings?.showRulers !== false}
+            onToggleRulers={() => {
+              const doc = history.document;
+              history.setDocument({
+                ...doc,
+                settings: {
+                  ...doc.settings,
+                  showRulers: doc.settings?.showRulers === false,
+                },
+              });
+            }}
+            snapToGrid={Boolean(history.document.settings?.snapToGrid)}
+            onToggleSnapToGrid={() => {
+              const doc = history.document;
+              history.setDocument({
+                ...doc,
+                settings: {
+                  ...doc.settings,
+                  snapToGrid: !doc.settings?.snapToGrid,
+                },
+              });
             }}
             onContextMenu={(layerId, x, y) => {
               const layer = layerId
@@ -1225,6 +1333,7 @@ export default function CanvasView() {
           <RightPanel
             layer={selected}
             selectedCount={selectedIds.length}
+            selectedIds={selectedIds}
             pageColors={pageColors}
             onChange={(layer) => {
               if (panelBaselineRef.current) onPanelCommitLive();
@@ -1249,7 +1358,9 @@ export default function CanvasView() {
               setAllLayers(setLayersOpacity(history.document.layers, editableSelectedIds, opacity))
             }
             onBringFront={() => setAllLayers(bringToFront(history.document.layers, selectedIds))}
+            onBringForward={() => setAllLayers(bringForward(history.document.layers, selectedIds))}
             onSendBack={() => setAllLayers(sendToBack(history.document.layers, selectedIds))}
+            onSendBackward={() => setAllLayers(sendBackward(history.document.layers, selectedIds))}
             logoSideConflict={
               Boolean(selected?.type === 'logo' && logoSideHasConflict(history.document.layers, selected.id))
             }
