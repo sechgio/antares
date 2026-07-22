@@ -55,4 +55,23 @@ describe('WithHoverTooltip', () => {
     fireEvent.mouseEnter(screen.getByRole('button', { name: 'Sin tip' }).parentElement!);
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
   });
+
+  it('renders dark Figma-style tooltip with shortcut', () => {
+    render(
+      <WithHoverTooltip label="Acciones" shortcut="Ctrl+," placement="top" variant="dark">
+        <button type="button" aria-label="Acciones">
+          *
+        </button>
+      </WithHoverTooltip>,
+    );
+
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'Acciones' }).parentElement!);
+    const tip = screen.getByRole('tooltip');
+    expect(tip).toHaveTextContent('Acciones');
+    expect(tip).toHaveTextContent('Ctrl+,');
+    expect(tip.className).toMatch(/bg-\[#1e1e1e\]/);
+    // Must stay fixed — `relative` would collapse it to a full-width bottom bar via twMerge
+    expect(tip).toHaveClass('fixed');
+    expect(tip).not.toHaveClass('relative');
+  });
 });

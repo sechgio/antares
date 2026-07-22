@@ -276,7 +276,12 @@ export default function PreviewPanelView() {
     let cancelled = false;
     api.templatesList().then(res => {
       if (cancelled) return;
-      setAvailableTemplates(res.templates || []);
+      // Canvas is an independent tool — never mix its docs into this selector.
+      setAvailableTemplates(
+        (res.templates || []).filter(
+          (t) => t.source !== 'canvas' && !String(t.filename || '').startsWith('canvas:'),
+        ),
+      );
     }).catch(() => {
       if (cancelled) return;
       addToast({ message: 'Error cargando plantillas', type: 'error' });
