@@ -31,6 +31,7 @@ const EvidenciaVolanteoView = React.lazy(() => import('./components/evidencia-vo
 const AutoIMGView = React.lazy(() => import('./components/autoimg'));
 const FichasTecnicasView = React.lazy(() => import('./components/fichas-tecnicas'));
 const EspaciosView = React.lazy(() => import('./components/espacios'));
+const CanvasView = React.lazy(() => import('./components/canvas'));
 
 const VIEWS: Record<TabId, React.LazyExoticComponent<React.ComponentType>> = {
   espacios: EspaciosView,
@@ -43,6 +44,7 @@ const VIEWS: Record<TabId, React.LazyExoticComponent<React.ComponentType>> = {
   technicalReports: TechnicalReportsView,
   imageOptimizer: ImageOptimizerView,
   previewPanel: PreviewPanelView,
+  canvas: CanvasView,
   panelAvisoCorte: PanelAvisoCorteView,
   ubicaciones: UbicacionesView,
   evidenciaVolanteo: EvidenciaVolanteoView,
@@ -137,6 +139,7 @@ function AppContent() {
   useKeyboardShortcut('8', () => handleTabChange('reportesCampo'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('9', () => handleTabChange('imageOptimizer'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('0', () => handleTabChange('previewPanel'), { ctrl: true, preventDefault: true });
+  useKeyboardShortcut('c', () => handleTabChange('canvas'), { ctrl: true, shift: true, preventDefault: true });
   useKeyboardShortcut('2', () => handleTabChange('panelAvisoCorte'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('u', () => handleTabChange('ubicaciones'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('v', () => handleTabChange('evidenciaVolanteo'), { ctrl: true, shift: true, preventDefault: true });

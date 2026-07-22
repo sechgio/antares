@@ -29,6 +29,7 @@ _HANDLER_GROUPS: tuple[tuple[str, str], ...] = (
     ("backend.handlers.history", "HANDLERS"),
     ("backend.handlers.database", "HANDLERS"),
     ("backend.handlers.templates", "HANDLERS"),
+    ("backend.handlers.canvas", "HANDLERS"),
     ("backend.handlers.conversion", "HANDLERS"),
     ("backend.handlers.formatos", "HANDLERS"),
     ("backend.handlers.optimizer", "HANDLERS"),

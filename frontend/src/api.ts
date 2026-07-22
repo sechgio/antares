@@ -445,8 +445,21 @@ export const api = {
     _invoke<ImageOptimizerSaveFilesResponse>('image_optimizer_save_files', body),
 
   // ─── Plantillas PreviewPanel ─────────────────────────────────────────────
-  templatesList: () => _invoke<{ templates: Array<{ id: string; name: string; filename: string }> }>('templates_list'),
-  templateGet: (name: string) => _invoke<{ name: string; content: string }>('template_get', { name }),
+  templatesList: () =>
+    _invoke<{ templates: Array<{ id: string; name: string; filename: string; source?: string }> }>('templates_list'),
+  templateGet: (name: string) =>
+    _invoke<{ name: string; content: string; source?: string }>('template_get', { name }),
+
+  // ─── Canvas (independent template editor) ────────────────────────────────
+  canvasList: () => _invoke<{ documents: Array<{ id: string; name: string }> }>('canvas_list'),
+  canvasGet: (id: string) => _invoke<{ document: import('./components/canvas/types').CanvasDocument }>('canvas_get', { id }),
+  canvasSave: (document: import('./components/canvas/types').CanvasDocument) =>
+    _invoke<{ document: import('./components/canvas/types').CanvasDocument }>('canvas_save', { document }),
+  canvasCreate: (name?: string) =>
+    _invoke<{ document: import('./components/canvas/types').CanvasDocument }>('canvas_create', name ? { name } : {}),
+  canvasDelete: (id: string) => _invoke<{ success: boolean; deleted_id: string }>('canvas_delete', { id }),
+  canvasDuplicate: (id: string, name?: string) =>
+    _invoke<{ document: import('./components/canvas/types').CanvasDocument }>('canvas_duplicate', name ? { id, name } : { id }),
 
   // ─── Render HTML to PDF via Electron ─────────────────────────────────────
   // Sanitization happens once, in Electron's renderHtmlToPdf (defense in depth

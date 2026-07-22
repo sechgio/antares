@@ -1,0 +1,144 @@
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { createLayer } from '../constants';
+import LayerNode from '../editor/LayerNode';
+
+const baseHandlers = {
+  onSelect: vi.fn(),
+  onLayerPointerDown: vi.fn(),
+};
+
+describe('LayerNode inline edit', () => {
+  it('renders static text when not editing', () => {
+    const layer = createLayer('text', { value: 'Hola' });
+    render(
+      <LayerNode layer={layer} selected interactive scale={1} editing={false} {...baseHandlers} />,
+    );
+    expect(screen.getByText('Hola')).toBeTruthy();
+    expect(screen.queryByTestId('canvas-inline-editor')).toBeNull();
+  });
+
+  it('calls onStartEdit on double-click for text layers', () => {
+    const layer = createLayer('text', { value: 'Hola' });
+    const onStartEdit = vi.fn();
+    render(
+      <LayerNode
+        layer={layer}
+        selected
+        interactive
+        scale={1}
+        editing={false}
+        onStartEdit={onStartEdit}
+        {...baseHandlers}
+      />,
+    );
+    fireEvent.doubleClick(screen.getByRole('button'));
+    expect(onStartEdit).toHaveBeenCalledWith(layer.id);
+  });
+
+  it('calls onStartEdit on double-click for field layers (binding focus)', () => {
+    const layer = createLayer('field');
+    const onStartEdit = vi.fn();
+    render(
+      <LayerNode
+        layer={layer}
+        selected
+        interactive
+        scale={1}
+        editing={false}
+        onStartEdit={onStartEdit}
+        {...baseHandlers}
+      />,
+    );
+    fireEvent.doubleClick(screen.getByRole('button'));
+    expect(onStartEdit).toHaveBeenCalledWith(layer.id);
+  });
+
+  it('renders field fallback with layer typography (not monospace chrome)', () => {
+    const base = createLayer('field');
+    const layer = createLayer('field', {
+      meta: { key: 'NIS', fallback: 'Sample' },
+      cssVars: {
+        ...base.cssVars,
+        '--font-size': '14pt',
+        '--font-family': 'Georgia, serif',
+        '--line-height': '1.4',
+        '--text-align': 'right',
+      },
+    });
+    const { container } = render(
+      <LayerNode layer={layer} selected interactive scale={1} editing={false} {...baseHandlers} />,
+    );
+    expect(screen.getByText('Sample')).toBeTruthy();
+    const node = container.querySelector('[data-layer-id]') as HTMLElement;
+    expect(node.style.justifyContent).toBe('flex-end');
+    expect(node.style.fontFamily).toContain('Georgia');
+    const span = node.querySelector('span') as HTMLElement;
+    expect(span.style.lineHeight).toBe('1.4');
+    expect(span.style.fontFamily).not.toContain('monospace');
+    expect(node.style.fontFamily).not.toContain('monospace');
+  });
+
+  it('renders textarea while editing and reports value changes', () => {
+    const layer = createLayer('text', { value: 'Hola' });
+    const onEditValue = vi.fn();
+    const onCommitEdit = vi.fn();
+    render(
+      <LayerNode
+        layer={layer}
+        selected
+        interactive
+        scale={1}
+        editing
+        onEditValue={onEditValue}
+        onCommitEdit={onCommitEdit}
+        {...baseHandlers}
+      />,
+    );
+    const editor = screen.getByTestId('canvas-inline-editor') as HTMLTextAreaElement;
+    expect(editor.value).toBe('Hola');
+    fireEvent.change(editor, { target: { value: 'Mundo' } });
+    expect(onEditValue).toHaveBeenCalledWith(layer.id, 'Mundo');
+  });
+
+  it('commits on Escape and does not start drag from the editor', () => {
+    const layer = createLayer('text', { value: 'Hola' });
+    const onCommitEdit = vi.fn();
+    const onLayerPointerDown = vi.fn();
+    render(
+      <LayerNode
+        layer={layer}
+        selected
+        interactive
+        scale={1}
+        editing
+        onCommitEdit={onCommitEdit}
+        onSelect={baseHandlers.onSelect}
+        onLayerPointerDown={onLayerPointerDown}
+      />,
+    );
+    const editor = screen.getByTestId('canvas-inline-editor');
+    fireEvent.pointerDown(editor);
+    expect(onLayerPointerDown).not.toHaveBeenCalled();
+    fireEvent.keyDown(editor, { key: 'Escape' });
+    expect(onCommitEdit).toHaveBeenCalled();
+  });
+
+  it('applies line-height and right-align from cssVars', () => {
+    const layer = createLayer('text', {
+      value: 'Hi',
+      cssVars: {
+        ...createLayer('text').cssVars,
+        '--line-height': '1.5',
+        '--text-align': 'right',
+      },
+    });
+    const { container } = render(
+      <LayerNode layer={layer} selected interactive scale={1} editing={false} {...baseHandlers} />,
+    );
+    const node = container.querySelector('[data-layer-id]') as HTMLElement;
+    expect(node.style.justifyContent).toBe('flex-end');
+    const span = node.querySelector('span') as HTMLElement;
+    expect(span.style.lineHeight).toBe('1.5');
+  });
+});

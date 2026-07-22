@@ -1,0 +1,279 @@
+import { memo, useEffect, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import type { CanvasLayer } from '../types';
+import { parseMm } from '../types';
+import { mmToScreenPx, scaleCssLength } from '../ops/drawHelpers';
+import {
+  canFocusFieldBinding,
+  canInlineEditLayer,
+  fieldDesignLabel,
+  justifyContentForTextAlign,
+} from '../ops/inlineEdit';
+import { clipPathForLayerType } from '../ops/shapePaths';
+import {
+  buildLayerTransform,
+  resolveFillColor,
+  resolveStrokeStyle,
+} from '../ops/layerStyle';
+
+interface LayerNodeProps {
+  layer: CanvasLayer;
+  selected: boolean;
+  interactive: boolean;
+  scale: number;
+  editing?: boolean;
+  onSelect: (id: string, additive?: boolean) => void;
+  onLayerPointerDown: (id: string, additive: boolean, e: ReactPointerEvent<HTMLDivElement>) => void;
+  onContextMenu?: (id: string, clientX: number, clientY: number) => void;
+  onStartEdit?: (id: string) => void;
+  onEditValue?: (id: string, value: string) => void;
+  onCommitEdit?: () => void;
+}
+
+function LayerNode({
+  layer,
+  selected,
+  interactive,
+  scale,
+  editing = false,
+  onSelect,
+  onLayerPointerDown,
+  onContextMenu,
+  onStartEdit,
+  onEditValue,
+  onCommitEdit,
+}: LayerNodeProps) {
+  const editorRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!editing || !editorRef.current) return;
+    const el = editorRef.current;
+    el.focus();
+    el.select();
+  }, [editing]);
+
+  if (layer.type === 'frame' || layer.visible === false) return null;
+
+  const x = parseMm(layer.cssVars['--translate-x']);
+  const y = parseMm(layer.cssVars['--translate-y']);
+  const w = parseMm(layer.cssVars['--width'], 10);
+  const h = parseMm(layer.cssVars['--height'], 10);
+  const clipPath = clipPathForLayerType(layer.type);
+  const radius = clipPath
+    ? '0px'
+    : scaleCssLength(layer.cssVars['--border-radius'], scale) ||
+      (layer.type === 'ellipse' ? '50%' : '0px');
+  const borderW = scaleCssLength(
+    layer.cssVars['--border-width'] || (layer.cssVars['--border'] ? undefined : '0px'),
+    scale,
+  );
+  const fontSize = scaleCssLength(layer.cssVars['--font-size'] || '11px', scale);
+  const fill = resolveFillColor(layer.cssVars);
+  const stroke = resolveStrokeStyle(layer.cssVars, borderW);
+  const transform = buildLayerTransform(layer.cssVars);
+  const textAlign = layer.cssVars['--text-align'];
+  const lineHeight = layer.cssVars['--line-height'] || '1.2';
+  const canEditText = canInlineEditLayer(layer);
+  const canEditField = canFocusFieldBinding(layer);
+
+  const shadowParts: string[] = [];
+  if (layer.cssVars['--box-shadow'] && layer.cssVars['--box-shadow'] !== 'none') {
+    shadowParts.push(layer.cssVars['--box-shadow']);
+  }
+  if (stroke.boxShadowExtra) shadowParts.push(stroke.boxShadowExtra);
+
+  const style: CSSProperties = {
+    position: 'absolute',
+    left: mmToScreenPx(x, scale),
+    top: mmToScreenPx(y, scale),
+    width: mmToScreenPx(w, scale),
+    height: mmToScreenPx(h, scale),
+    boxSizing: 'border-box',
+    overflow: 'hidden',
+    cursor: editing
+      ? 'text'
+      : !interactive || layer.locked
+        ? 'default'
+        : canEditText || canEditField
+          ? 'text'
+          : 'move',
+    backgroundColor: fill,
+    color: layer.cssVars['--color'] || '#1e1e1e',
+    fontSize,
+    fontFamily: layer.cssVars['--font-family'] || 'Segoe UI, Helvetica Neue, Arial, sans-serif',
+    fontWeight: layer.cssVars['--font-weight'] as CSSProperties['fontWeight'],
+    textAlign: (textAlign as CSSProperties['textAlign']) || 'left',
+    opacity: layer.cssVars['--opacity']
+      ? Number(layer.cssVars['--opacity']) / (Number(layer.cssVars['--opacity']) > 1 ? 100 : 1)
+      : 1,
+    borderRadius: radius,
+    border: stroke.border || 'none',
+    outline: stroke.outline || (selected || editing ? '1px solid #18a0fb' : undefined),
+    outlineOffset: stroke.outlineOffset,
+    boxShadow: shadowParts.length ? shadowParts.join(',') : undefined,
+    clipPath,
+    transform,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: justifyContentForTextAlign(textAlign),
+    padding:
+      layer.type === 'text' || layer.type === 'field' ? `${2 * scale}px ${6 * scale}px` : 0,
+    userSelect: editing ? 'text' : 'none',
+    zIndex: selected || editing ? 20 : 1,
+    pointerEvents: interactive || editing ? 'auto' : 'none',
+  };
+
+  if ((selected || editing) && stroke.outline) {
+    style.boxShadow = [...(shadowParts.length ? shadowParts : []), '0 0 0 1px #18a0fb'].join(',');
+  } else if ((selected || editing) && !stroke.outline) {
+    style.outline = '1px solid #18a0fb';
+  }
+
+  let label = layer.value || layer.name;
+  if (layer.type === 'field') label = fieldDesignLabel(layer);
+  else if (layer.type === 'logo') label = `Logo ${layer.meta?.side === 'right' ? 'R' : 'L'}`;
+  else if (layer.type === 'imageSlot') label = `Foto ${(layer.meta?.index ?? 0) + 1}`;
+  else if (
+    layer.type === 'rect' ||
+    layer.type === 'line' ||
+    layer.type === 'ellipse' ||
+    layer.type === 'arrow' ||
+    layer.type === 'polygon' ||
+    layer.type === 'star'
+  )
+    label = '';
+  else if (layer.type === 'grid') label = `Grid ${layer.meta?.cols ?? 2}×${layer.meta?.rows ?? 2}`;
+  else if (layer.type === 'group') label = 'Grupo';
+  else if (layer.type === 'checkbox') label = layer.meta?.checked ? '☑' : '☐';
+  else if (layer.type === 'signature') label = layer.value || 'Firma';
+  else if (layer.type === 'table') label = 'Tabla';
+  else if (layer.type === 'image') label = layer.value ? '' : 'Imagen';
+
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (editing) {
+      e.stopPropagation();
+      return;
+    }
+    if (!interactive) return;
+    e.stopPropagation();
+    onLayerPointerDown(layer.id, e.shiftKey || e.ctrlKey || e.metaKey, e);
+  };
+
+  const isChromePlaceholder =
+    layer.type === 'imageSlot' ||
+    layer.type === 'logo' ||
+    layer.type === 'grid' ||
+    layer.type === 'table' ||
+    layer.type === 'signature' ||
+    layer.type === 'checkbox';
+
+  return (
+    <div
+      data-layer-id={layer.id}
+      style={style}
+      onPointerDown={onPointerDown}
+      onDoubleClick={(e) => {
+        if (!interactive || editing) return;
+        if (!canEditText && !canEditField) return;
+        e.stopPropagation();
+        e.preventDefault();
+        onStartEdit?.(layer.id);
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onSelect(layer.id, false);
+        onContextMenu?.(layer.id, e.clientX, e.clientY);
+      }}
+      role="button"
+      tabIndex={0}
+    >
+      {editing && layer.type === 'text' ? (
+        <textarea
+          ref={editorRef}
+          data-testid="canvas-inline-editor"
+          value={layer.value}
+          aria-label="Editar texto"
+          onChange={(e) => onEditValue?.(layer.id, e.target.value)}
+          onBlur={() => onCommitEdit?.()}
+          onPointerDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              onCommitEdit?.();
+            }
+          }}
+          style={{
+            width: '100%',
+            height: '100%',
+            margin: 0,
+            padding: 0,
+            border: 'none',
+            outline: 'none',
+            resize: 'none',
+            background: 'transparent',
+            color: 'inherit',
+            font: 'inherit',
+            fontSize: 'inherit',
+            fontFamily: 'inherit',
+            fontWeight: 'inherit',
+            textAlign: (textAlign as CSSProperties['textAlign']) || 'left',
+            lineHeight,
+            whiteSpace: 'pre-wrap',
+            overflow: 'hidden',
+            boxSizing: 'border-box',
+            cursor: 'text',
+          }}
+        />
+      ) : layer.type === 'image' && layer.value ? (
+        <img
+          src={layer.value}
+          alt=""
+          draggable={false}
+          decoding="async"
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            imageRendering: 'auto',
+          }}
+        />
+      ) : layer.type === 'rect' ||
+        layer.type === 'line' ||
+        layer.type === 'ellipse' ||
+        layer.type === 'arrow' ||
+        layer.type === 'polygon' ||
+        layer.type === 'star' ? null : layer.type === 'field' ? (
+        <span
+          style={{
+            width: '100%',
+            lineHeight,
+            whiteSpace: 'pre-wrap',
+            fontFamily: layer.cssVars['--font-family'] || 'Segoe UI, Helvetica Neue, Arial, sans-serif',
+            fontSize: 'inherit',
+            color: 'inherit',
+            textAlign: (textAlign as CSSProperties['textAlign']) || 'left',
+          }}
+        >
+          {label}
+        </span>
+      ) : isChromePlaceholder ? (
+        <span
+          style={{
+            width: '100%',
+            textAlign: 'center',
+            fontSize: 10 * scale,
+            color: '#94a3b8',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+          }}
+        >
+          {label}
+        </span>
+      ) : (
+        <span style={{ width: '100%', lineHeight, whiteSpace: 'pre-wrap' }}>{label}</span>
+      )}
+    </div>
+  );
+}
+
+export default memo(LayerNode);
