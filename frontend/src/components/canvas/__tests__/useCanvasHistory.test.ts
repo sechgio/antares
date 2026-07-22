@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { createLayer } from '../constants';
-import { useCanvasHistory } from '../hooks/useCanvasHistory';
+import { useCanvasHistory, MAX_HISTORY } from '../hooks/useCanvasHistory';
 import { createEmptyDocument, parseMm, type CanvasDocument } from '../types';
 
 function cloneDoc(doc: CanvasDocument): CanvasDocument {
@@ -61,5 +61,34 @@ describe('useCanvasHistory gesture coalesce', () => {
     expect(parseMm(result.current.document.layers.find((l) => l.type === 'text')!.cssVars['--translate-x'])).toBe(
       10,
     );
+  });
+
+  it('keeps a stable API object when the document is unchanged', () => {
+    const base = createEmptyDocument('Test');
+    const { result, rerender } = renderHook(() => useCanvasHistory(base));
+    const first = result.current;
+    rerender();
+    expect(result.current).toBe(first);
+  });
+
+  it(`caps undo stack at MAX_HISTORY (${MAX_HISTORY})`, () => {
+    const base = createEmptyDocument('Test');
+    const { result } = renderHook(() => useCanvasHistory(base));
+
+    for (let i = 0; i < MAX_HISTORY + 10; i += 1) {
+      act(() => {
+        result.current.setDocument(withMovedText(result.current.document, i + 1));
+      });
+    }
+
+    let undos = 0;
+    while (result.current.canUndo) {
+      act(() => {
+        result.current.undo();
+      });
+      undos += 1;
+      if (undos > MAX_HISTORY + 5) break;
+    }
+    expect(undos).toBe(MAX_HISTORY);
   });
 });

@@ -1,5 +1,5 @@
 import type { CanvasLayer, GridRule } from '../types';
-import { mm, parseMm } from '../types';
+import { mm, newId, parseMm } from '../types';
 
 export type { GridRule };
 
@@ -58,6 +58,57 @@ function gridChildSlots(layers: CanvasLayer[], gridLayerId: string): CanvasLayer
     .sort((a, b) => (a.meta?.index ?? 0) - (b.meta?.index ?? 0));
 }
 
+function createGridImageSlot(gridId: string, pageIndex: number, index: number): CanvasLayer {
+  return {
+    id: newId(),
+    type: 'imageSlot',
+    name: `Foto ${index + 1}`,
+    value: '',
+    pageIndex,
+    parentId: gridId,
+    cssVars: {
+      '--width': mm(40),
+      '--height': mm(40),
+      '--translate-x': mm(0),
+      '--translate-y': mm(0),
+      '--background-color': '#f1f5f9',
+      '--border-width': '1px',
+      '--border-color': '#cbd5e1',
+      '--object-fit': 'cover',
+    },
+    meta: { index },
+  };
+}
+
+/**
+ * Sync child image slots to cols×rows and relayout.
+ * Used when the user edits Cols / Rows / Gap in the properties panel.
+ */
+export function rebuildGridSlots(layers: CanvasLayer[], gridLayerId: string): CanvasLayer[] {
+  const grid = layers.find((l) => l.id === gridLayerId && l.type === 'grid');
+  if (!grid) return layers;
+
+  const cols = Math.max(1, Math.floor(grid.meta?.cols ?? 2));
+  const rows = Math.max(1, Math.floor(grid.meta?.rows ?? 2));
+  const target = cols * rows;
+  const existing = gridChildSlots(layers, gridLayerId);
+  const pageIndex = grid.pageIndex ?? 0;
+
+  let next = layers;
+  if (existing.length > target) {
+    const removeIds = new Set(existing.slice(target).map((s) => s.id));
+    next = next.filter((l) => !removeIds.has(l.id));
+  } else if (existing.length < target) {
+    const added: CanvasLayer[] = [];
+    for (let i = existing.length; i < target; i += 1) {
+      added.push(createGridImageSlot(gridLayerId, pageIndex, i));
+    }
+    next = [...next, ...added];
+  }
+
+  return applyGridToImageSlots(next, gridLayerId);
+}
+
 export function applyGridToImageSlots(
   layers: CanvasLayer[],
   gridLayerId: string,
@@ -67,15 +118,19 @@ export function applyGridToImageSlots(
   if (!grid) return layers;
 
   const slots = gridChildSlots(layers, gridLayerId);
-  const count = imageCount ?? slots.length;
-  if (!count) return layers;
+  if (!slots.length && imageCount == null) return layers;
 
   const rules = grid.meta?.rules ?? DEFAULT_GRID_RULES;
   const fallback = {
-    cols: grid.meta?.cols ?? 2,
-    rows: grid.meta?.rows ?? 2,
+    cols: Math.max(1, grid.meta?.cols ?? 2),
+    rows: Math.max(1, grid.meta?.rows ?? 2),
   };
-  const { cols, rows } = resolveGridLayout(count, rules, fallback);
+  // Adaptive rules only when generating/exporting with a known image count.
+  // In the editor, respect the designed cols × rows from meta.
+  const { cols, rows } =
+    imageCount != null && imageCount > 0
+      ? resolveGridLayout(imageCount, rules, fallback)
+      : fallback;
   const gapMm = grid.meta?.gapMm ?? 2;
 
   const originX = parseMm(grid.cssVars['--translate-x']);
@@ -86,13 +141,17 @@ export function applyGridToImageSlots(
 
   const slotIds = new Set(slots.slice(0, positions.length).map((s) => s.id));
 
+  const slotIndexById = new Map(slots.map((s, i) => [s.id, i]));
+
   return layers.map((layer) => {
     if (!slotIds.has(layer.id)) return layer;
-    const index = slots.findIndex((s) => s.id === layer.id);
+    const index = slotIndexById.get(layer.id);
+    if (index == null) return layer;
     const pos = positions[index];
     if (!pos) return layer;
     return {
       ...layer,
+      name: `Foto ${index + 1}`,
       parentId: gridLayerId,
       cssVars: {
         ...layer.cssVars,

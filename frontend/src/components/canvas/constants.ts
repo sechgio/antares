@@ -1,5 +1,6 @@
 import type { CanvasLayer, CanvasLayerType } from './types';
 import { mm, newId } from './types';
+import { DEFAULT_LINE_STROKE_PX, lineHeightMmFromStrokePx } from './ops/layerStyle';
 
 export const DEFAULT_FIELD_KEYS = [
   { key: 'CENTRO', label: 'Centro' },
@@ -198,10 +199,27 @@ export function createLayer(
       value: '',
       cssVars: {
         '--width': mm(80),
-        '--height': mm(1),
+        '--height': mm(Math.max(2, lineHeightMmFromStrokePx(DEFAULT_LINE_STROKE_PX))),
         '--translate-x': mm(20),
         '--translate-y': mm(180),
-        '--background-color': '#000000',
+        '--background-color': 'transparent',
+        '--fill-visible': '0',
+        '--border-width': `${DEFAULT_LINE_STROKE_PX}px`,
+        '--border-color': '#000000',
+        '--stroke-align': 'center',
+        '--stroke-visible': '1',
+        '--stroke-opacity': '100',
+        '--stroke-start': 'none',
+        '--stroke-end': 'none',
+      },
+      meta: {
+        path: {
+          points: [
+            { x: 0, y: 1 },
+            { x: 80, y: 1 },
+          ],
+          closed: false,
+        },
       },
     },
     ellipse: {

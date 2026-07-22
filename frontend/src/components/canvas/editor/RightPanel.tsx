@@ -22,7 +22,7 @@ import {
   Unlock,
 } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
-import type { CanvasLayer } from '../types';
+import type { CanvasLayer, StrokeCap } from '../types';
 import { DEFAULT_FIELD_KEYS } from '../constants';
 import { mm, parseMm } from '../types';
 import {
@@ -34,6 +34,7 @@ import {
   isAspectLocked,
   isShapeLayer,
   layerPanelTitle,
+  lineHeightMmFromStrokePx,
   lineStrokeWidthPx,
   parseBoxShadow,
   parseScale,
@@ -46,6 +47,7 @@ import {
   toggleFlip,
   type StrokeAlign,
 } from '../ops/layerStyle';
+import { parseStrokeCap } from '../ops/pathGeometry';
 import { clipPathForLayerType } from '../ops/shapePaths';
 import InlineNumField from './InlineNumField';
 import PaintRow from './PaintRow';
@@ -66,8 +68,8 @@ interface RightPanelProps {
   onBulkOpacity: (opacity: number) => void;
   onBringFront: () => void;
   onSendBack: () => void;
-  imagesPerPage: number;
-  onImagesPerPage: (n: number) => void;
+  /** True when another logo layer shares this layer's side. */
+  logoSideConflict?: boolean;
 }
 
 function NumField({
@@ -146,7 +148,7 @@ async function exportLayerPng(layerId: string, name: string, scale: number) {
   a.click();
 }
 
-function RightPanel({
+export default memo(function RightPanel({
   layer,
   selectedCount,
   pageColors,
@@ -161,8 +163,7 @@ function RightPanel({
   onBulkOpacity,
   onBringFront,
   onSendBack,
-  imagesPerPage,
-  onImagesPerPage,
+  logoSideConflict = false,
 }: RightPanelProps) {
   const [exportScale, setExportScale] = useState(1);
   const [exporting, setExporting] = useState(false);
@@ -213,9 +214,8 @@ function RightPanel({
     layer!.cssVars['--fill-visible'] !== '0';
   const hasStroke =
     Boolean(layer) &&
-    (isLine ||
-      (layer!.cssVars['--stroke-visible'] !== '0' &&
-        parseFloat(layer!.cssVars['--border-width'] || '0') > 0));
+    layer!.cssVars['--stroke-visible'] !== '0' &&
+    (isLine || parseFloat(layer!.cssVars['--border-width'] || '0') > 0);
   const strokeWeightPx = layer
     ? isLine
       ? lineStrokeWidthPx(layer)
@@ -279,17 +279,6 @@ function RightPanel({
           </div>
         )}
       </div>
-
-      {!hasSelection && (
-        <div className="canvas-section border-b" style={{ borderColor: 'var(--cv-border)' }}>
-          <div className="canvas-section-title">Documento</div>
-          <NumField
-            label="Fotos / página"
-            value={imagesPerPage}
-            onChange={(n) => onImagesPerPage(Math.max(1, Math.floor(n)))}
-          />
-        </div>
-      )}
 
       {selectedCount > 1 && (
         <div className="canvas-section">
@@ -384,18 +373,7 @@ function RightPanel({
         </div>
       )}
 
-      {!hasSelection ? (
-        <div className="p-4">
-          <p className="text-[12px] leading-relaxed" style={{ color: 'var(--cv-text-muted)' }}>
-            Selecciona una capa para editar propiedades, o aplica un preset a la izquierda.
-          </p>
-          <p className="mt-3 text-[11px]" style={{ color: 'var(--cv-text-muted)' }}>
-            Tip: pulsa <kbd className="canvas-kbd">?</kbd> o el icono de teclado para ver atajos. Clic derecho
-            sobre una capa abre el menú (duplicar, bloquear, orden).
-          </p>
-        </div>
-      ) : (
-        layer && (
+      {hasSelection && layer && (
           <div className="min-h-0 flex-1 overflow-y-auto">
             {/* Posición */}
             <div className="canvas-section">
@@ -486,9 +464,14 @@ function RightPanel({
                 />
                 <InlineNumField
                   prefix="H"
-                  value={parseMm(layer.cssVars['--height'], 10)}
+                  value={
+                    isLine
+                      ? Math.round(lineHeightMmFromStrokePx(lineStrokeWidthPx(layer)) * 100) / 100
+                      : parseMm(layer.cssVars['--height'], 10)
+                  }
                   onChange={(n) => emitLive(resizeWithAspectLock(layer, 'height', n))}
                   onCommit={onCommitLive}
+                  title={isLine ? 'Grosor (derivado del trazo)' : undefined}
                 />
                 <WithHoverTooltip
                   label={isAspectLocked(layer.cssVars) ? 'Desbloquear proporciones' : 'Bloquear proporciones'}
@@ -595,7 +578,20 @@ function RightPanel({
                   onClick={() => {
                     if (!layer) return;
                     if (layer.type === 'line') {
-                      onChange(applyLineStrokeWeight(layer, 1));
+                      onChange(
+                        applyLineStrokeWeight(
+                          {
+                            ...layer,
+                            cssVars: {
+                              ...layer.cssVars,
+                              '--border-color': layer.cssVars['--border-color'] || '#000000',
+                              '--stroke-opacity': '100',
+                              '--stroke-align': 'center',
+                            },
+                          },
+                          1,
+                        ),
+                      );
                       return;
                     }
                     setVars({
@@ -612,62 +608,46 @@ function RightPanel({
               </SectionHeader>
               {hasStroke ? (
                   <>
-                    {isLine ? (
-                      <PaintRow
-                        color={layer.cssVars['--background-color'] || '#000000'}
-                        opacity={Number(layer.cssVars['--fill-opacity'] ?? 100)}
-                        visible={parseMm(layer.cssVars['--height'], 0) > 0}
-                        pageColors={pageColors}
-                        onPaintChange={(c, o) =>
-                          setVarsLive({
-                            '--background-color': c,
-                            '--fill-opacity': String(o),
-                          })
+                    <PaintRow
+                      color={layer.cssVars['--border-color'] || '#000000'}
+                      opacity={Number(layer.cssVars['--stroke-opacity'] ?? 100)}
+                      visible={layer.cssVars['--stroke-visible'] !== '0'}
+                      pageColors={pageColors}
+                      onPaintChange={(c, o) =>
+                        setVarsLive({
+                          '--border-color': c,
+                          '--stroke-opacity': String(o),
+                          '--stroke-visible': '1',
+                        })
+                      }
+                      onPaintCommit={onCommitLive}
+                      onVisibleChange={(v) => setVar('--stroke-visible', v ? '1' : '0')}
+                      onRemove={() => {
+                        if (layer.type === 'line') {
+                          onChange(applyLineStrokeWeight(layer, 0));
+                          return;
                         }
-                        onPaintCommit={onCommitLive}
-                        onVisibleChange={(v) =>
-                          emitLive(applyLineStrokeWeight(layer, v ? strokeWeightPx || 1 : 0))
-                        }
-                        onRemove={() => onChange(applyLineStrokeWeight(layer, 0))}
-                      />
-                    ) : (
-                      <PaintRow
-                        color={layer.cssVars['--border-color'] || '#000000'}
-                        opacity={Number(layer.cssVars['--stroke-opacity'] ?? 100)}
-                        visible={layer.cssVars['--stroke-visible'] !== '0'}
-                        pageColors={pageColors}
-                        onPaintChange={(c, o) =>
-                          setVarsLive({
-                            '--border-color': c,
-                            '--stroke-opacity': String(o),
-                            '--stroke-visible': '1',
-                          })
-                        }
-                        onPaintCommit={onCommitLive}
-                        onVisibleChange={(v) => setVar('--stroke-visible', v ? '1' : '0')}
-                        onRemove={() =>
-                          setVars({
-                            '--border-width': '0px',
-                            '--stroke-visible': '0',
-                          })
-                        }
-                      />
-                    )}
+                        setVars({
+                          '--border-width': '0px',
+                          '--stroke-visible': '0',
+                        });
+                      }}
+                    />
                     <div className="mt-2 space-y-2">
-                      {!isLine && (
-                        <label className="block">
-                          <span className="canvas-sublabel">Posición</span>
-                          <select
-                            className="canvas-input"
-                            value={parseStrokeAlign(layer.cssVars['--stroke-align'])}
-                            onChange={(e) => setVar('--stroke-align', e.target.value as StrokeAlign)}
-                          >
-                            <option value="inside">Interior</option>
-                            <option value="center">Centro</option>
-                            <option value="outside">Exterior</option>
-                          </select>
-                        </label>
-                      )}
+                      <label className="block">
+                        <span className="canvas-sublabel">Posición</span>
+                        <select
+                          className="canvas-input"
+                          value={isLine ? 'center' : parseStrokeAlign(layer.cssVars['--stroke-align'])}
+                          disabled={isLine}
+                          title={isLine ? 'Las líneas abiertas usan alineación Centro' : undefined}
+                          onChange={(e) => setVar('--stroke-align', e.target.value as StrokeAlign)}
+                        >
+                          {!isLine && <option value="inside">Interior</option>}
+                          <option value="center">Centro</option>
+                          {!isLine && <option value="outside">Exterior</option>}
+                        </select>
+                      </label>
                       <div>
                         <span className="canvas-sublabel">Peso</span>
                         <div className="mt-0.5 flex items-center gap-2">
@@ -697,6 +677,38 @@ function RightPanel({
                           />
                         </div>
                       </div>
+                      {isLine && (
+                        <div className="flex gap-2">
+                          <label className="min-w-0 flex-1">
+                            <span className="canvas-sublabel">Punto de partida</span>
+                            <select
+                              className="canvas-input"
+                              value={parseStrokeCap(layer.cssVars['--stroke-start'])}
+                              aria-label="Punto de partida"
+                              onChange={(e) => setVar('--stroke-start', e.target.value as StrokeCap)}
+                            >
+                              <option value="none">Ninguno</option>
+                              <option value="round">Redondo</option>
+                              <option value="square">Cuadrado</option>
+                              <option value="arrow">Flecha</option>
+                            </select>
+                          </label>
+                          <label className="min-w-0 flex-1">
+                            <span className="canvas-sublabel">Punto final</span>
+                            <select
+                              className="canvas-input"
+                              value={parseStrokeCap(layer.cssVars['--stroke-end'])}
+                              aria-label="Punto final"
+                              onChange={(e) => setVar('--stroke-end', e.target.value as StrokeCap)}
+                            >
+                              <option value="none">Ninguno</option>
+                              <option value="round">Redondo</option>
+                              <option value="square">Cuadrado</option>
+                              <option value="arrow">Flecha</option>
+                            </select>
+                          </label>
+                        </div>
+                      )}
                     </div>
                   </>
                 ) : (
@@ -1011,10 +1023,16 @@ function RightPanel({
                   className="canvas-input"
                   value={layer.meta?.side || 'left'}
                   onChange={(e) => setMeta({ side: e.target.value as 'left' | 'right' })}
+                  aria-label="Lado del logo"
                 >
                   <option value="left">Izquierdo</option>
                   <option value="right">Derecho</option>
                 </select>
+                {logoSideConflict && (
+                  <p className="mt-1.5 text-[10px] leading-snug" style={{ color: 'var(--cv-text-muted)' }}>
+                    Otra capa usa este lado; ambas mostrarán el mismo logo.
+                  </p>
+                )}
               </div>
             )}
 
@@ -1033,6 +1051,23 @@ function RightPanel({
                     reader.readAsDataURL(file);
                   }}
                 />
+                <label className="mt-2 block text-[11px]" style={{ color: 'var(--cv-text-secondary)' }}>
+                  Ajuste
+                </label>
+                <select
+                  className="canvas-input mt-1 text-[11px]"
+                  value={layer.cssVars['--object-fit'] || 'cover'}
+                  onChange={(e) =>
+                    onChange({
+                      ...layer,
+                      cssVars: { ...layer.cssVars, '--object-fit': e.target.value },
+                    })
+                  }
+                >
+                  <option value="cover">Cubrir</option>
+                  <option value="contain">Contener</option>
+                  <option value="fill">Estirar</option>
+                </select>
               </div>
             )}
 
@@ -1188,10 +1223,7 @@ function RightPanel({
               </button>
             </div>
           </div>
-        )
       )}
     </aside>
   );
-}
-
-export default memo(RightPanel);
+});

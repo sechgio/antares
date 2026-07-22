@@ -2,7 +2,17 @@
 
 export const MM_TO_PX = 96 / 25.4;
 
-export type DrawRect = { x: number; y: number; w: number; h: number };
+export type DrawRect = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Original drag endpoints in page mm (line tool). */
+  x0?: number;
+  y0?: number;
+  x1?: number;
+  y1?: number;
+};
 
 /**
  * mm → screen px at the current zoom.

@@ -48,29 +48,103 @@ export function mmToPxLength(mmVal: number): number {
   return mmVal * MM_TO_PX;
 }
 
-export function lineHeightMmFromStrokePx(px: number): number {
-  if (px <= 0) return 0.05;
-  return pxToMm(px);
+export function parseBorderWidthPx(vars: LayerCssVars, fallback = 0): number {
+  const raw = vars['--border-width'];
+  if (raw == null || raw === '') return fallback;
+  const n = parseFloat(raw);
+  return Number.isFinite(n) ? clampStrokeWeight(n) : fallback;
 }
 
-/** Stroke weight in px for a line (derived from fill-bar height). */
+/** Stroke weight in px for a line. Legacy lines (no --border-width) use fill height. */
 export function lineStrokeWidthPx(layer: Pick<CanvasLayer, 'type' | 'cssVars'>): number {
-  const h = parseMm(layer.cssVars['--height'], 0);
-  if (h > 0) return clampStrokeWeight(mmToPxLength(h));
+  if (layer.cssVars['--border-width'] != null && layer.cssVars['--border-width'] !== '') {
+    return parseBorderWidthPx(layer.cssVars, DEFAULT_LINE_STROKE_PX);
+  }
+  if (layer.type === 'line') {
+    const h = parseMm(layer.cssVars['--height'], 0);
+    if (h > 0) return clampStrokeWeight(mmToPxLength(h));
+  }
   return DEFAULT_LINE_STROKE_PX;
 }
 
-/** Persist line thickness from a free px weight and remember it for the next insert. */
+export function lineHeightMmFromStrokePx(px: number): number {
+  return Math.max(0.05, pxToMm(Math.max(0, px)));
+}
+
+/**
+ * Persist stroke weight for lines.
+ * Path-based lines keep their bbox height; legacy bar-lines sync --height to weight.
+ */
 export function applyLineStrokeWeight(layer: CanvasLayer, px: number): CanvasLayer {
   const weight = clampStrokeWeight(px);
   if (weight > 0) rememberStrokeWeight(weight);
+  const hasPath = Boolean(layer.meta?.path?.points && layer.meta.path.points.length >= 2);
   return {
     ...layer,
     cssVars: {
       ...layer.cssVars,
-      '--height': mm(lineHeightMmFromStrokePx(weight > 0 ? weight : 0.25)),
-      '--background-color': layer.cssVars['--background-color'] || '#000000',
+      '--border-width': `${weight}px`,
+      ...(hasPath
+        ? {}
+        : { '--height': mm(lineHeightMmFromStrokePx(weight > 0 ? weight : 0.25)) }),
+      '--stroke-visible': weight > 0 ? '1' : '0',
+      '--stroke-align': layer.cssVars['--stroke-align'] || 'center',
+      '--border-color': layer.cssVars['--border-color'] || '#000000',
     },
+  };
+}
+
+/** Paint color for a line bar (stroke color, with legacy fill fallback). */
+export function resolveLineFillColor(vars: LayerCssVars): string {
+  if (vars['--stroke-visible'] === '0') return 'transparent';
+  const hex =
+    (vars['--border-color'] && vars['--border-color'] !== 'transparent'
+      ? vars['--border-color']
+      : null) ||
+    (vars['--background-color'] && vars['--background-color'] !== 'transparent'
+      ? vars['--background-color']
+      : '#000000');
+  const opacity = Number(vars['--stroke-opacity'] ?? vars['--fill-opacity'] ?? 100);
+  return hexToRgba(normalizeHex(hex, '#000000'), Number.isFinite(opacity) ? opacity : 100);
+}
+
+/**
+ * Normalize line cssVars to a filled bar for editor/export (no CSS border stroke).
+ * Thickness comes from --border-width; legacy lines keep fill-height appearance.
+ */
+export function lineVisualCssVars(vars: LayerCssVars): LayerCssVars {
+  const hasStrokeWidth = vars['--border-width'] != null && vars['--border-width'] !== '';
+  const strokePx = hasStrokeWidth
+    ? parseBorderWidthPx(vars, DEFAULT_LINE_STROKE_PX)
+    : Math.round(mmToPxLength(parseMm(vars['--height'], pxToMm(DEFAULT_LINE_STROKE_PX))) * 100) / 100;
+  const heightMm = hasStrokeWidth
+    ? lineHeightMmFromStrokePx(strokePx)
+    : Math.max(0.05, parseMm(vars['--height'], lineHeightMmFromStrokePx(DEFAULT_LINE_STROKE_PX)));
+  const color =
+    (vars['--border-color'] && vars['--border-color'] !== 'transparent'
+      ? vars['--border-color']
+      : null) ||
+    (vars['--background-color'] && vars['--background-color'] !== 'transparent'
+      ? vars['--background-color']
+      : '#000000');
+  if (vars['--stroke-visible'] === '0') {
+    return {
+      ...vars,
+      '--height': mm(heightMm),
+      '--background-color': 'transparent',
+      '--fill-visible': '0',
+      '--border-width': '0px',
+      '--stroke-visible': '0',
+    };
+  }
+  return {
+    ...vars,
+    '--height': mm(heightMm),
+    '--background-color': color,
+    '--fill-visible': '1',
+    '--fill-opacity': vars['--stroke-opacity'] ?? vars['--fill-opacity'] ?? '100',
+    '--border-width': '0px',
+    '--stroke-visible': '0',
   };
 }
 
@@ -258,6 +332,29 @@ export function resizeWithAspectLock(
   dim: 'width' | 'height',
   nextMm: number,
 ): CanvasLayer {
+  if (layer.type === 'line') {
+    const hasPath = Boolean(layer.meta?.path?.points && layer.meta.path.points.length >= 2);
+    if (dim === 'width') {
+      return {
+        ...layer,
+        cssVars: {
+          ...layer.cssVars,
+          '--width': mm(Math.max(0.5, nextMm)),
+        },
+      };
+    }
+    if (hasPath) {
+      return {
+        ...layer,
+        cssVars: {
+          ...layer.cssVars,
+          '--height': mm(Math.max(0.5, nextMm)),
+        },
+      };
+    }
+    return applyLineStrokeWeight(layer, Math.max(0, mmToPxLength(nextMm)));
+  }
+
   const w = parseMm(layer.cssVars['--width'], 10);
   const h = parseMm(layer.cssVars['--height'], 10);
   const locked = isAspectLocked(layer.cssVars);

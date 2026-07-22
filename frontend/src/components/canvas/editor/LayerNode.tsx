@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useEffect, useMemo, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import type { CanvasLayer } from '../types';
 import { parseMm } from '../types';
 import { mmToScreenPx, scaleCssLength } from '../ops/drawHelpers';
@@ -14,6 +14,8 @@ import {
   resolveFillColor,
   resolveStrokeStyle,
 } from '../ops/layerStyle';
+import { ensureLinePath } from '../ops/pathGeometry';
+import { buildLineSvgContent } from '../ops/lineSvg';
 
 interface LayerNodeProps {
   layer: CanvasLayer;
@@ -23,6 +25,7 @@ interface LayerNodeProps {
   editing?: boolean;
   /** When true (default), focus selects all text; false keeps caret at end (type-to-edit). */
   editingSelectAll?: boolean;
+  pathEditing?: boolean;
   onSelect: (id: string, additive?: boolean) => void;
   onLayerPointerDown: (id: string, additive: boolean, e: ReactPointerEvent<HTMLDivElement>) => void;
   onContextMenu?: (id: string, clientX: number, clientY: number) => void;
@@ -30,6 +33,7 @@ interface LayerNodeProps {
   onEditValue?: (id: string, value: string) => void;
   onFitTextHeight?: (id: string, contentHeightPx: number) => void;
   onCommitEdit?: () => void;
+  onStartPathEdit?: (id: string) => void;
 }
 
 function LayerNode({
@@ -39,6 +43,7 @@ function LayerNode({
   scale,
   editing = false,
   editingSelectAll = true,
+  pathEditing = false,
   onSelect,
   onLayerPointerDown,
   onContextMenu,
@@ -46,6 +51,7 @@ function LayerNode({
   onEditValue,
   onFitTextHeight,
   onCommitEdit,
+  onStartPathEdit,
 }: LayerNodeProps) {
   const editorRef = useRef<HTMLTextAreaElement>(null);
 
@@ -68,12 +74,24 @@ function LayerNode({
     onCommitEdit?.();
   };
 
+  const lineLayer = useMemo(
+    () => (layer.type === 'line' ? ensureLinePath(layer) : layer),
+    [layer],
+  );
+  const lineSvg = useMemo(
+    () => (layer.type === 'line' ? buildLineSvgContent(lineLayer) : ''),
+    [layer.type, lineLayer],
+  );
+
   if (layer.type === 'frame' || layer.visible === false) return null;
 
   const x = parseMm(layer.cssVars['--translate-x']);
   const y = parseMm(layer.cssVars['--translate-y']);
   const w = parseMm(layer.cssVars['--width'], 10);
-  const h = parseMm(layer.cssVars['--height'], 10);
+  const isLine = layer.type === 'line';
+  const h = isLine
+    ? parseMm(lineLayer.cssVars['--height'], parseMm(layer.cssVars['--height'], 2))
+    : parseMm(layer.cssVars['--height'], 10);
   const clipPath = clipPathForLayerType(layer.type);
   const radius = clipPath
     ? '0px'
@@ -84,8 +102,8 @@ function LayerNode({
     scale,
   );
   const fontSize = scaleCssLength(layer.cssVars['--font-size'] || '11px', scale);
-  const fill = resolveFillColor(layer.cssVars);
-  const stroke = resolveStrokeStyle(layer.cssVars, borderW);
+  const fill = isLine ? 'transparent' : resolveFillColor(layer.cssVars);
+  const stroke = isLine ? {} : resolveStrokeStyle(layer.cssVars, borderW);
   const transform = buildLayerTransform(layer.cssVars);
   const textAlign = layer.cssVars['--text-align'];
   const lineHeight = layer.cssVars['--line-height'] || '1.2';
@@ -105,14 +123,12 @@ function LayerNode({
     width: mmToScreenPx(w, scale),
     height: mmToScreenPx(h, scale),
     boxSizing: 'border-box',
-    overflow: 'hidden',
+    overflow: isLine ? 'visible' : 'hidden',
     cursor: editing
       ? 'text'
       : !interactive || layer.locked
         ? 'default'
-        : canEditText || canEditField
-          ? 'text'
-          : 'move',
+        : 'move',
     backgroundColor: fill,
     color: layer.cssVars['--color'] || '#1e1e1e',
     fontSize,
@@ -124,7 +140,7 @@ function LayerNode({
       : 1,
     borderRadius: radius,
     border: stroke.border || 'none',
-    outline: stroke.outline || (selected || editing ? '1px solid #18a0fb' : undefined),
+    outline: stroke.outline || (selected || editing || pathEditing ? '1px solid #18a0fb' : undefined),
     outlineOffset: stroke.outlineOffset,
     boxShadow: shadowParts.length ? shadowParts.join(',') : undefined,
     clipPath,
@@ -135,13 +151,18 @@ function LayerNode({
     padding:
       layer.type === 'text' || layer.type === 'field' ? `${2 * scale}px ${6 * scale}px` : 0,
     userSelect: editing ? 'text' : 'none',
-    zIndex: selected || editing ? 20 : 1,
-    pointerEvents: interactive || editing ? 'auto' : 'none',
+    zIndex: selected || editing || pathEditing ? 20 : 1,
+    pointerEvents:
+      layer.type === 'group' && !selected
+        ? 'none'
+        : interactive || editing
+          ? 'auto'
+          : 'none',
   };
 
-  if ((selected || editing) && stroke.outline) {
+  if ((selected || editing || pathEditing) && stroke.outline) {
     style.boxShadow = [...(shadowParts.length ? shadowParts : []), '0 0 0 1px #18a0fb'].join(',');
-  } else if ((selected || editing) && !stroke.outline) {
+  } else if ((selected || editing || pathEditing) && !stroke.outline) {
     style.outline = '1px solid #18a0fb';
   }
 
@@ -171,6 +192,9 @@ function LayerNode({
       return;
     }
     if (!interactive) return;
+    // Let middle-click bubble for viewport pan.
+    if (e.button === 1) return;
+    if (e.button !== 0) return;
     e.stopPropagation();
     onLayerPointerDown(layer.id, e.shiftKey || e.ctrlKey || e.metaKey, e);
   };
@@ -190,6 +214,18 @@ function LayerNode({
       onPointerDown={onPointerDown}
       onDoubleClick={(e) => {
         if (!interactive || editing) return;
+        if (layer.type === 'group' || layer.type === 'grid') {
+          e.stopPropagation();
+          e.preventDefault();
+          onStartEdit?.(layer.id);
+          return;
+        }
+        if (layer.type === 'line') {
+          e.stopPropagation();
+          e.preventDefault();
+          onStartPathEdit?.(layer.id);
+          return;
+        }
         if (!canEditText && !canEditField) return;
         e.stopPropagation();
         e.preventDefault();
@@ -214,6 +250,12 @@ function LayerNode({
           onBlur={() => finishEdit()}
           onPointerDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
+            // Let Ctrl/Cmd+D bubble to CanvasView (window) for duplicate.
+            if ((e.ctrlKey || e.metaKey) && e.code === 'KeyD') {
+              e.preventDefault();
+              finishEdit();
+              return;
+            }
             e.stopPropagation();
             if (e.key === 'Escape') {
               e.preventDefault();
@@ -251,12 +293,17 @@ function LayerNode({
           style={{
             width: '100%',
             height: '100%',
-            objectFit: 'cover',
+            objectFit: (layer.cssVars['--object-fit'] as CSSProperties['objectFit']) || 'cover',
             imageRendering: 'auto',
           }}
         />
+      ) : layer.type === 'line' ? (
+        <div
+          data-testid="canvas-line-svg"
+          style={{ width: '100%', height: '100%', pointerEvents: 'none' }}
+          dangerouslySetInnerHTML={{ __html: lineSvg }}
+        />
       ) : layer.type === 'rect' ||
-        layer.type === 'line' ||
         layer.type === 'ellipse' ||
         layer.type === 'arrow' ||
         layer.type === 'polygon' ||
@@ -293,4 +340,12 @@ function LayerNode({
   );
 }
 
-export default memo(LayerNode);
+export default memo(LayerNode, (prev, next) =>
+  prev.layer === next.layer &&
+  prev.selected === next.selected &&
+  prev.interactive === next.interactive &&
+  prev.scale === next.scale &&
+  prev.editing === next.editing &&
+  prev.editingSelectAll === next.editingSelectAll &&
+  prev.pathEditing === next.pathEditing,
+);

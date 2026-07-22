@@ -9,36 +9,158 @@ function layerBounds(layer: CanvasLayer) {
   const y = parseMm(layer.cssVars['--translate-y']);
   const w = parseMm(layer.cssVars['--width'], 10);
   const h = parseMm(layer.cssVars['--height'], 10);
-  return { x, y, w, h, right: x + w, bottom: y + h, cx: x + w / 2, cy: y + h / 2 };
+  const rotate = parseFloat(layer.cssVars['--rotate'] || '0') || 0;
+  if (!rotate) {
+    return { x, y, w, h, right: x + w, bottom: y + h, cx: x + w / 2, cy: y + h / 2 };
+  }
+  // Visual AABB of rotated box (transform-origin center).
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const rad = (rotate * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const corners = [
+    { dx: -w / 2, dy: -h / 2 },
+    { dx: w / 2, dy: -h / 2 },
+    { dx: w / 2, dy: h / 2 },
+    { dx: -w / 2, dy: h / 2 },
+  ].map(({ dx, dy }) => ({ x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos }));
+  const minX = Math.min(...corners.map((c) => c.x));
+  const maxX = Math.max(...corners.map((c) => c.x));
+  const minY = Math.min(...corners.map((c) => c.y));
+  const maxY = Math.max(...corners.map((c) => c.y));
+  return {
+    x: minX,
+    y: minY,
+    w: maxX - minX,
+    h: maxY - minY,
+    right: maxX,
+    bottom: maxY,
+    cx: (minX + maxX) / 2,
+    cy: (minY + maxY) / 2,
+  };
 }
 
 function isLocked(layer: CanvasLayer): boolean {
   return Boolean(layer.locked);
 }
 
-function partitionLayers(layers: CanvasLayer[], ids: Set<string>) {
-  const frame = layers.find((l) => l.type === 'frame');
-  const selected = layers.filter((l) => ids.has(l.id) && !isLocked(l));
-  const rest = layers.filter((l) => !ids.has(l.id) || isLocked(l));
-  return { frame, selected, rest };
+function resolvedParentId(layers: CanvasLayer[], layer: CanvasLayer): string | undefined {
+  return layer.parentId && layers.some((l) => l.id === layer.parentId) ? layer.parentId : undefined;
+}
+
+/** Move root ids by delta, expanding descendants (like nudge/move). */
+function translateRoots(
+  layers: CanvasLayer[],
+  rootIds: string[],
+  dx: number,
+  dy: number,
+): CanvasLayer[] {
+  if (dx === 0 && dy === 0) return layers;
+  const roots = new Set(rootIds);
+  const idSet = new Set(expandWithDescendants(layers, rootIds));
+  return layers.map((layer) => {
+    if (!idSet.has(layer.id) || layer.type === 'frame') return layer;
+    if (roots.has(layer.id) && isLocked(layer)) return layer;
+    return {
+      ...layer,
+      cssVars: {
+        ...layer.cssVars,
+        '--translate-x': mm(parseMm(layer.cssVars['--translate-x']) + dx),
+        '--translate-y': mm(parseMm(layer.cssVars['--translate-y']) + dy),
+      },
+    };
+  });
+}
+
+/**
+ * Reorder siblings so `siblingIds` sit at the front (or back) of their parent group,
+ * preserving relative order of movers and of non-movers.
+ */
+function reorderSiblingsExtreme(
+  layers: CanvasLayer[],
+  siblingIds: string[],
+  place: 'front' | 'back',
+): CanvasLayer[] {
+  if (!siblingIds.length) return layers;
+  const sample = layers.find((l) => l.id === siblingIds[0]);
+  if (!sample) return layers;
+  const parent = resolvedParentId(layers, sample);
+  const order = layers.filter((l) => l.type !== 'frame' && resolvedParentId(layers, l) === parent);
+  const moving = order.filter((l) => siblingIds.includes(l.id));
+  const staying = order.filter((l) => !siblingIds.includes(l.id));
+  const reordered = place === 'front' ? [...staying, ...moving] : [...moving, ...staying];
+  const siblingSet = new Set(order.map((l) => l.id));
+  const result: CanvasLayer[] = [];
+  let inserted = false;
+  for (const layer of layers) {
+    if (!siblingSet.has(layer.id)) {
+      result.push(layer);
+      continue;
+    }
+    if (!inserted) {
+      result.push(...reordered);
+      inserted = true;
+    }
+  }
+  return result;
+}
+
+/** Bring selected layers to the front among their siblings (parent-scoped). */
+export function bringToFront(layers: CanvasLayer[], ids: string[]): CanvasLayer[] {
+  const idSet = new Set(ids);
+  const selected = layers.filter((l) => idSet.has(l.id) && !isLocked(l) && l.type !== 'frame');
+  if (!selected.length) return layers;
+
+  const byParent = new Map<string | undefined, string[]>();
+  for (const layer of selected) {
+    const parent = resolvedParentId(layers, layer);
+    const list = byParent.get(parent) ?? [];
+    list.push(layer.id);
+    byParent.set(parent, list);
+  }
+
+  let next = layers;
+  for (const siblingIds of byParent.values()) {
+    next = reorderSiblingsExtreme(next, siblingIds, 'front');
+  }
+  return next;
+}
+
+/** Send selected layers to the back among their siblings (parent-scoped). */
+export function sendToBack(layers: CanvasLayer[], ids: string[]): CanvasLayer[] {
+  const idSet = new Set(ids);
+  const selected = layers.filter((l) => idSet.has(l.id) && !isLocked(l) && l.type !== 'frame');
+  if (!selected.length) return layers;
+
+  const byParent = new Map<string | undefined, string[]>();
+  for (const layer of selected) {
+    const parent = resolvedParentId(layers, layer);
+    const list = byParent.get(parent) ?? [];
+    list.push(layer.id);
+    byParent.set(parent, list);
+  }
+
+  let next = layers;
+  for (const siblingIds of byParent.values()) {
+    next = reorderSiblingsExtreme(next, siblingIds, 'back');
+  }
+  return next;
 }
 
 export function duplicateLayers(
   layers: CanvasLayer[],
   ids: string[],
 ): { layers: CanvasLayer[]; newIds: string[] } {
-  const requested = new Set(ids.filter((id) => {
-    const layer = layers.find((l) => l.id === id);
-    return layer && !isLocked(layer);
-  }));
+  const byId = new Map(layers.map((l) => [l.id, l]));
+  const requested = new Set(
+    ids.filter((id) => {
+      const layer = byId.get(id);
+      return layer && !isLocked(layer);
+    }),
+  );
 
-  const toDuplicate = new Set(requested);
-  for (const id of requested) {
-    const layer = layers.find((l) => l.id === id);
-    if (layer?.type === 'group') {
-      layers.filter((l) => l.parentId === id).forEach((child) => toDuplicate.add(child.id));
-    }
-  }
+  const toDuplicate = new Set(expandWithDescendants(layers, [...requested]));
 
   const idMap = new Map<string, string>();
   for (const id of toDuplicate) {
@@ -73,21 +195,6 @@ export function duplicateLayers(
   return { layers: result, newIds };
 }
 
-export function bringToFront(layers: CanvasLayer[], ids: string[]): CanvasLayer[] {
-  const { frame, selected, rest } = partitionLayers(layers, new Set(ids));
-  if (!selected.length) return layers;
-  const withoutFrame = rest.filter((l) => l.type !== 'frame');
-  return frame ? [frame, ...withoutFrame, ...selected] : [...rest, ...selected];
-}
-
-export function sendToBack(layers: CanvasLayer[], ids: string[]): CanvasLayer[] {
-  const { frame, selected, rest } = partitionLayers(layers, new Set(ids));
-  if (!selected.length) return layers;
-  if (!frame) return [...selected, ...rest];
-  const afterFrame = rest.filter((l) => l.type !== 'frame');
-  return [frame, ...selected, ...afterFrame];
-}
-
 export function reorderLayer(layers: CanvasLayer[], fromIndex: number, toIndex: number): CanvasLayer[] {
   if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return layers;
   if (fromIndex >= layers.length || toIndex >= layers.length) return layers;
@@ -95,10 +202,6 @@ export function reorderLayer(layers: CanvasLayer[], fromIndex: number, toIndex: 
   const [moved] = next.splice(fromIndex, 1);
   next.splice(toIndex, 0, moved);
   return next;
-}
-
-function resolvedParentId(layers: CanvasLayer[], layer: CanvasLayer): string | undefined {
-  return layer.parentId && layers.some((l) => l.id === layer.parentId) ? layer.parentId : undefined;
 }
 
 /**
@@ -187,20 +290,7 @@ export function nudgeLayers(
   dxMm: number,
   dyMm: number,
 ): CanvasLayer[] {
-  const roots = new Set(ids);
-  const idSet = new Set(expandWithDescendants(layers, ids));
-  return layers.map((layer) => {
-    if (!idSet.has(layer.id) || layer.type === 'frame') return layer;
-    if (roots.has(layer.id) && isLocked(layer)) return layer;
-    return {
-      ...layer,
-      cssVars: {
-        ...layer.cssVars,
-        '--translate-x': mm(parseMm(layer.cssVars['--translate-x']) + dxMm),
-        '--translate-y': mm(parseMm(layer.cssVars['--translate-y']) + dyMm),
-      },
-    };
-  });
+  return translateRoots(layers, ids, dxMm, dyMm);
 }
 
 /** Remove layers and all descendants linked via parentId. */
@@ -209,41 +299,51 @@ export function deleteLayers(layers: CanvasLayer[], ids: string[]): CanvasLayer[
   return layers.filter((l) => !remove.has(l.id));
 }
 
+export type AlignMode = 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom';
+
+/**
+ * Align selected layers. Single selection aligns to the page frame
+ * (optionally for `pageIndex`). Multi-select aligns to selection bounds.
+ * Moving a group also moves its descendants.
+ */
 export function alignLayers(
   layers: CanvasLayer[],
   ids: string[],
-  align: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom',
+  align: AlignMode,
+  options?: { pageIndex?: number },
 ): CanvasLayer[] {
   const idSet = new Set(ids);
-  const targets = layers.filter((l) => idSet.has(l.id) && !isLocked(l));
+  const targets = layers.filter((l) => idSet.has(l.id) && !isLocked(l) && l.type !== 'frame');
   if (!targets.length) return layers;
 
-  const frame = layers.find((l) => l.type === 'frame');
+  const pageIndex = options?.pageIndex ?? targets[0].pageIndex ?? 0;
+  const frame = layers.find((l) => l.type === 'frame' && (l.pageIndex ?? 0) === pageIndex);
 
-  // Single selection: align to frame bounds
+  const applyDelta = (rootId: string, targetVisualX: number, targetVisualY: number) => {
+    const layer = layers.find((l) => l.id === rootId);
+    if (!layer) return { dx: 0, dy: 0 };
+    const visual = layerBounds(layer);
+    // CSS rotate is around center, so a visual AABB shift equals a local translate shift.
+    return {
+      dx: targetVisualX - visual.x,
+      dy: targetVisualY - visual.y,
+    };
+  };
+
   if (targets.length === 1 && frame) {
     const target = targets[0];
     const fb = layerBounds(frame);
     const b = layerBounds(target);
-    let x = b.x;
-    let y = b.y;
-    if (align === 'left') x = fb.x;
-    else if (align === 'right') x = fb.right - b.w;
-    else if (align === 'center') x = fb.x + (fb.w - b.w) / 2;
-    else if (align === 'top') y = fb.y;
-    else if (align === 'bottom') y = fb.bottom - b.h;
-    else y = fb.y + (fb.h - b.h) / 2;
-    return layers.map((layer) => {
-      if (layer.id !== target.id) return layer;
-      return {
-        ...layer,
-        cssVars: {
-          ...layer.cssVars,
-          '--translate-x': mm(x),
-          '--translate-y': mm(y),
-        },
-      };
-    });
+    let vx = b.x;
+    let vy = b.y;
+    if (align === 'left') vx = fb.x;
+    else if (align === 'right') vx = fb.right - b.w;
+    else if (align === 'center') vx = fb.x + (fb.w - b.w) / 2;
+    else if (align === 'top') vy = fb.y;
+    else if (align === 'bottom') vy = fb.bottom - b.h;
+    else vy = fb.y + (fb.h - b.h) / 2;
+    const { dx, dy } = applyDelta(target.id, vx, vy);
+    return translateRoots(layers, [target.id], dx, dy);
   }
 
   if (targets.length < 2) return layers;
@@ -265,67 +365,96 @@ export function alignLayers(
     value = (minY + maxY) / 2;
   }
 
-  return layers.map((layer) => {
-    if (!idSet.has(layer.id) || isLocked(layer)) return layer;
-    const b = layerBounds(layer);
-    let x = b.x;
-    let y = b.y;
-    if (align === 'left') x = value;
-    else if (align === 'right') x = value - b.w;
-    else if (align === 'center') x = value - b.w / 2;
-    else if (align === 'top') y = value;
-    else if (align === 'bottom') y = value - b.h;
-    else y = value - b.h / 2;
-    return {
-      ...layer,
-      cssVars: {
-        ...layer.cssVars,
-        '--translate-x': mm(x),
-        '--translate-y': mm(y),
-      },
-    };
-  });
+  let next = layers;
+  for (const target of targets) {
+    const b = layerBounds(target);
+    let vx = b.x;
+    let vy = b.y;
+    if (align === 'left') vx = value;
+    else if (align === 'right') vx = value - b.w;
+    else if (align === 'center') vx = value - b.w / 2;
+    else if (align === 'top') vy = value;
+    else if (align === 'bottom') vy = value - b.h;
+    else vy = value - b.h / 2;
+    const { dx, dy } = applyDelta(target.id, vx, vy);
+    next = translateRoots(next, [target.id], dx, dy);
+  }
+  return next;
 }
 
+/**
+ * Distribute selected layers (≥3).
+ * - `centers` (default): even spacing between centers (legacy).
+ * - `gaps`: equal gaps between bounding boxes (Figma-like tidy spacing).
+ */
 export function distributeLayers(
   layers: CanvasLayer[],
   ids: string[],
   axis: 'horizontal' | 'vertical',
+  options?: { mode?: 'centers' | 'gaps' },
 ): CanvasLayer[] {
   const idSet = new Set(ids);
-  const targets = layers.filter((l) => idSet.has(l.id) && !isLocked(l));
+  const targets = layers.filter((l) => idSet.has(l.id) && !isLocked(l) && l.type !== 'frame');
   if (targets.length < 3) return layers;
 
+  const mode = options?.mode ?? 'gaps';
   const sorted = [...targets].sort((a, b) => {
     const ba = layerBounds(a);
     const bb = layerBounds(b);
     return axis === 'horizontal' ? ba.cx - bb.cx : ba.cy - bb.cy;
   });
 
-  const first = layerBounds(sorted[0]);
-  const last = layerBounds(sorted[sorted.length - 1]);
-  const span = axis === 'horizontal' ? last.cx - first.cx : last.cy - first.cy;
-  const step = span / (sorted.length - 1);
+  const deltas = new Map<string, { dx: number; dy: number }>();
 
-  const positions = new Map<string, number>();
-  sorted.forEach((layer, index) => {
-    const b = layerBounds(layer);
-    positions.set(layer.id, axis === 'horizontal' ? first.cx + step * index - b.w / 2 : first.cy + step * index - b.h / 2);
-  });
+  if (mode === 'centers') {
+    const first = layerBounds(sorted[0]);
+    const last = layerBounds(sorted[sorted.length - 1]);
+    const span = axis === 'horizontal' ? last.cx - first.cx : last.cy - first.cy;
+    const step = span / (sorted.length - 1);
+    sorted.forEach((layer, index) => {
+      const b = layerBounds(layer);
+      if (axis === 'horizontal') {
+        const vx = first.cx + step * index - b.w / 2;
+        deltas.set(layer.id, { dx: vx - b.x, dy: 0 });
+      } else {
+        const vy = first.cy + step * index - b.h / 2;
+        deltas.set(layer.id, { dx: 0, dy: vy - b.y });
+      }
+    });
+  } else {
+    const boxes = sorted.map((l) => ({ id: l.id, ...layerBounds(l) }));
+    if (axis === 'horizontal') {
+      const first = boxes[0];
+      const last = boxes[boxes.length - 1];
+      const innerSpan = last.x - (first.x + first.w);
+      const middleWidths = boxes.slice(1, -1).reduce((sum, b) => sum + b.w, 0);
+      const gap = (innerSpan - middleWidths) / (boxes.length - 1);
+      let cursor = first.x + first.w + gap;
+      for (let i = 1; i < boxes.length - 1; i += 1) {
+        const b = boxes[i];
+        deltas.set(b.id, { dx: cursor - b.x, dy: 0 });
+        cursor += b.w + gap;
+      }
+    } else {
+      const first = boxes[0];
+      const last = boxes[boxes.length - 1];
+      const innerSpan = last.y - (first.y + first.h);
+      const middleHeights = boxes.slice(1, -1).reduce((sum, b) => sum + b.h, 0);
+      const gap = (innerSpan - middleHeights) / (boxes.length - 1);
+      let cursor = first.y + first.h + gap;
+      for (let i = 1; i < boxes.length - 1; i += 1) {
+        const b = boxes[i];
+        deltas.set(b.id, { dx: 0, dy: cursor - b.y });
+        cursor += b.h + gap;
+      }
+    }
+  }
 
-  return layers.map((layer) => {
-    if (!positions.has(layer.id)) return layer;
-    const b = layerBounds(layer);
-    const pos = positions.get(layer.id)!;
-    return {
-      ...layer,
-      cssVars: {
-        ...layer.cssVars,
-        '--translate-x': mm(axis === 'horizontal' ? pos : b.x),
-        '--translate-y': mm(axis === 'vertical' ? pos : b.y),
-      },
-    };
-  });
+  let next = layers;
+  for (const [id, { dx, dy }] of deltas) {
+    next = translateRoots(next, [id], dx, dy);
+  }
+  return next;
 }
 
 export function groupLayers(

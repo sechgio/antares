@@ -46,6 +46,38 @@ export function zoomAtCursor(
   };
 }
 
+/** Fit a page-relative rect (mm) into the viewport; centers it with pan. */
+export function zoomToFitRectMm(
+  viewportWidth: number,
+  viewportHeight: number,
+  rect: { x: number; y: number; w: number; h: number },
+  page: { widthMm: number; heightMm: number },
+  mmToPx: number,
+  pad = 48,
+): { zoom: number; pan: { x: number; y: number } } {
+  const w = Math.max(1, rect.w);
+  const h = Math.max(1, rect.h);
+  if (viewportWidth < 40 || viewportHeight < 40) {
+    return { zoom: clampZoom(1), pan: { x: 0, y: 0 } };
+  }
+  const fit = Math.min(
+    (viewportWidth - pad) / (w * mmToPx),
+    (viewportHeight - pad) / (h * mmToPx),
+  );
+  const zoom = clampZoom(Math.max(MIN_ZOOM, Math.round(fit * 100) / 100));
+  const scx = rect.x + w / 2;
+  const scy = rect.y + h / 2;
+  const pageCx = page.widthMm / 2;
+  const pageCy = page.heightMm / 2;
+  return {
+    zoom,
+    pan: {
+      x: -(scx - pageCx) * mmToPx * zoom,
+      y: -(scy - pageCy) * mmToPx * zoom,
+    },
+  };
+}
+
 /** Wheel delta → zoom factor. Positive deltaY = zoom out. */
 export function wheelZoomFactor(deltaY: number, ctrlKey: boolean): number {
   // Trackpad pinch often comes as ctrlKey + small deltaY

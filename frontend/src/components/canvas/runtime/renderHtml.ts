@@ -2,7 +2,9 @@ import type { CanvasDocument, CanvasLayer } from '../types';
 import { parseMm } from '../types';
 import { applyGridToImageSlots } from '../ops/gridLayout';
 import { clipPathForLayerType } from '../ops/shapePaths';
-import { cssVarsToStyleParts } from '../ops/layerStyle';
+import { buildLayerTransform, cssVarsToStyleParts } from '../ops/layerStyle';
+import { buildLineSvgContent } from '../ops/lineSvg';
+import { ensureLinePath } from '../ops/pathGeometry';
 
 export { cssVarsToStyleParts };
 
@@ -25,6 +27,28 @@ function escapeHtml(value: string): string {
 
 function cssVarsToInline(vars: CanvasLayer['cssVars']): string {
   return cssVarsToStyleParts(vars).join(';');
+}
+
+/** Drop placeholder fill/border for logo and field — keep editor chrome, clean PDF. */
+function cssVarsForExport(layer: CanvasLayer): CanvasLayer['cssVars'] {
+  if (layer.type === 'line') {
+    const ensured = ensureLinePath(layer);
+    return {
+      ...ensured.cssVars,
+      '--background-color': 'transparent',
+      '--fill-visible': '0',
+      '--border-width': '0px',
+      '--stroke-visible': '0',
+    };
+  }
+  if (layer.type !== 'logo' && layer.type !== 'field') return layer.cssVars;
+  return {
+    ...layer.cssVars,
+    '--background-color': 'transparent',
+    '--fill-visible': '0',
+    '--stroke-visible': '0',
+    '--border-width': '0px',
+  };
 }
 
 function parseTableData(raw: string | undefined): { cells: string[][]; fieldKeys?: (string | null)[][] } {
@@ -100,13 +124,15 @@ function resolveLayerContent(
   }
   if (
     layer.type === 'rect' ||
-    layer.type === 'line' ||
     layer.type === 'ellipse' ||
     layer.type === 'arrow' ||
     layer.type === 'polygon' ||
     layer.type === 'star'
   ) {
     return { kind: 'empty', html: '' };
+  }
+  if (layer.type === 'line') {
+    return { kind: 'html', html: buildLineSvgContent(ensureLinePath(layer)) };
   }
   if (layer.type === 'checkbox') {
     const key = layer.meta?.key;
@@ -179,23 +205,28 @@ export function renderCanvasHtml(
 
   const nodes = contentLayers
     .map((layer) => {
-      const x = parseMm(layer.cssVars['--translate-x']);
-      const y = parseMm(layer.cssVars['--translate-y']);
-      const w = parseMm(layer.cssVars['--width'], 10);
-      const h = parseMm(layer.cssVars['--height'], 10);
-      const resolved = resolveLayerContent(layer, ctx);
-      if (layer.visible === false) return '';
-      const extra = cssVarsToInline(layer.cssVars);
-      const clip = clipPathForLayerType(layer.type);
+      const ensured = layer.type === 'line' ? ensureLinePath(layer) : layer;
+      const x = parseMm(ensured.cssVars['--translate-x']);
+      const y = parseMm(ensured.cssVars['--translate-y']);
+      const w = parseMm(ensured.cssVars['--width'], 10);
+      const exportVars = cssVarsForExport(ensured);
+      const h = parseMm(exportVars['--height'] ?? ensured.cssVars['--height'], 10);
+      const resolved = resolveLayerContent(ensured, ctx);
+      if (ensured.visible === false) return '';
+      const extra = cssVarsToInline(exportVars);
+      const clip = clipPathForLayerType(ensured.type);
       const clipStyle = clip ? `clip-path:${clip};` : '';
-      const box = `position:absolute;left:${u(x)};top:${u(y)};width:${u(w)};height:${u(h)};box-sizing:border-box;overflow:hidden;${clipStyle}${extra}`;
+      const transform = buildLayerTransform(ensured.cssVars);
+      const transformStyle = transform ? `transform:${transform};transform-origin:center center;` : '';
+      const overflow = ensured.type === 'line' ? 'visible' : 'hidden';
+      const box = `position:absolute;left:${u(x)};top:${u(y)};width:${u(w)};height:${u(h)};box-sizing:border-box;overflow:${overflow};${clipStyle}${transformStyle}${extra}`;
       if (resolved.kind === 'text') {
-        return `<div data-layer="${escapeHtml(layer.id)}" style="${box};display:flex;align-items:center;padding:4px;">${resolved.html}</div>`;
+        return `<div data-layer="${escapeHtml(ensured.id)}" style="${box};display:flex;align-items:center;padding:4px;">${resolved.html}</div>`;
       }
       if (resolved.kind === 'image' || resolved.kind === 'html') {
-        return `<div data-layer="${escapeHtml(layer.id)}" style="${box}">${resolved.html}</div>`;
+        return `<div data-layer="${escapeHtml(ensured.id)}" style="${box}">${resolved.html}</div>`;
       }
-      return `<div data-layer="${escapeHtml(layer.id)}" style="${box}"></div>`;
+      return `<div data-layer="${escapeHtml(ensured.id)}" style="${box}"></div>`;
     })
     .join('\n');
 

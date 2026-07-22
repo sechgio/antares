@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   ChevronRight,
@@ -70,7 +70,7 @@ function layerIcon(type: CanvasLayer['type']) {
   return <Layers className="h-3 w-3" />;
 }
 
-export default function LeftSidebar({
+export default memo(function LeftSidebar({
   documentName,
   docs,
   documentId,
@@ -218,15 +218,6 @@ export default function LeftSidebar({
     <aside
       className="canvas-panel flex h-full w-[248px] shrink-0 flex-col overflow-hidden border-r"
     >
-      <div className="border-b px-3 py-3" style={{ borderColor: 'var(--cv-border)' }}>
-        <div className="truncate text-[13px] font-semibold" style={{ color: 'var(--cv-text)' }}>
-          {documentName || 'Sin título'}
-        </div>
-        <div className="mt-0.5 text-[11px]" style={{ color: 'var(--cv-text-muted)' }}>
-          Documento · A4
-        </div>
-      </div>
-
       <div className="border-b px-2 py-2" style={{ borderColor: 'var(--cv-border)' }}>
         <div className="canvas-section-title mb-1.5 flex items-center justify-between px-1">
           <span>Archivos</span>
@@ -554,4 +545,4 @@ export default function LeftSidebar({
       </div>
     </aside>
   );
-}
+});

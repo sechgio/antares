@@ -1,6 +1,10 @@
-import type { CanvasLayer } from '../types';
+import type { CanvasGuide, CanvasLayer } from '../types';
 import { mm, parseMm } from '../types';
+import { MM_TO_PX } from './drawHelpers';
+import { applyGridToImageSlots } from './gridLayout';
+import { applyLineStrokeWeight, mmToPxLength } from './layerStyle';
 import { expandWithDescendants } from './layerTree';
+import { ensureLinePath, scalePathPoints } from './pathGeometry';
 
 export type HandlePos = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
@@ -11,12 +15,55 @@ export type SmartGuide = { axis: 'x' | 'y'; pos: number };
 export const SNAP_THRESHOLD_MM = 0.5;
 export const POINTER_CLICK_PX = 4;
 
+/** Screen-pixel snap feel (~5px) converted to mm at current zoom. */
+export function snapThresholdMm(zoom: number, screenPx = 5): number {
+  const z = Math.max(0.05, zoom);
+  return screenPx / (MM_TO_PX * z);
+}
+
 /** True when pointer travel is small enough to treat as a click (not a drag). */
 export function isPointerClick(dxPx: number, dyPx: number, thresholdPx = POINTER_CLICK_PX): boolean {
   return dxPx * dxPx + dyPx * dyPx <= thresholdPx * thresholdPx;
 }
 
 function layerBounds(layer: CanvasLayer): RectMm & { right: number; bottom: number; cx: number; cy: number } {
+  const x = parseMm(layer.cssVars['--translate-x']);
+  const y = parseMm(layer.cssVars['--translate-y']);
+  const w = parseMm(layer.cssVars['--width'], 10);
+  const h = parseMm(layer.cssVars['--height'], 10);
+  const rotate = parseRotateDeg(layer);
+  if (!rotate) {
+    return { x, y, w, h, right: x + w, bottom: y + h, cx: x + w / 2, cy: y + h / 2 };
+  }
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const rad = (rotate * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const corners = [
+    { dx: -w / 2, dy: -h / 2 },
+    { dx: w / 2, dy: -h / 2 },
+    { dx: w / 2, dy: h / 2 },
+    { dx: -w / 2, dy: h / 2 },
+  ].map(({ dx, dy }) => ({ x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos }));
+  const minX = Math.min(...corners.map((c) => c.x));
+  const maxX = Math.max(...corners.map((c) => c.x));
+  const minY = Math.min(...corners.map((c) => c.y));
+  const maxY = Math.max(...corners.map((c) => c.y));
+  return {
+    x: minX,
+    y: minY,
+    w: maxX - minX,
+    h: maxY - minY,
+    right: maxX,
+    bottom: maxY,
+    cx: (minX + maxX) / 2,
+    cy: (minY + maxY) / 2,
+  };
+}
+
+/** Unrotated local box (used for resize mapping of layer geometry). */
+function layerLocalBounds(layer: CanvasLayer): RectMm & { right: number; bottom: number; cx: number; cy: number } {
   const x = parseMm(layer.cssVars['--translate-x']);
   const y = parseMm(layer.cssVars['--translate-y']);
   const w = parseMm(layer.cssVars['--width'], 10);
@@ -32,7 +79,7 @@ function parseRotateDeg(layer: CanvasLayer): number {
   return parseFloat(layer.cssVars['--rotate'] || '0') || 0;
 }
 
-/** Axis-aligned union of selected transformable layers. */
+/** Axis-aligned union of selected transformable layers (includes rotation AABB). */
 export function selectionBounds(layers: CanvasLayer[], ids: string[]): RectMm | null {
   const idSet = new Set(ids);
   const targets = layers.filter((l) => idSet.has(l.id) && isTransformable(l));
@@ -114,8 +161,33 @@ function applyAspectLock(
   return { x, y, w, h };
 }
 
-function resizeBBox(origin: RectMm, handle: HandlePos, dxMm: number, dyMm: number): RectMm {
+function resizeBBox(
+  origin: RectMm,
+  handle: HandlePos,
+  dxMm: number,
+  dyMm: number,
+  options?: { fromCenter?: boolean },
+): RectMm {
   let { x, y, w, h } = origin;
+  if (options?.fromCenter) {
+    if (handle.includes('e')) {
+      w = Math.max(2, origin.w + 2 * dxMm);
+      x = origin.x + origin.w / 2 - w / 2;
+    }
+    if (handle.includes('w')) {
+      w = Math.max(2, origin.w - 2 * dxMm);
+      x = origin.x + origin.w / 2 - w / 2;
+    }
+    if (handle.includes('s')) {
+      h = Math.max(2, origin.h + 2 * dyMm);
+      y = origin.y + origin.h / 2 - h / 2;
+    }
+    if (handle.includes('n')) {
+      h = Math.max(2, origin.h - 2 * dyMm);
+      y = origin.y + origin.h / 2 - h / 2;
+    }
+    return { x, y, w, h };
+  }
   if (handle.includes('e')) w = Math.max(2, origin.w + dxMm);
   if (handle.includes('s')) h = Math.max(2, origin.h + dyMm);
   if (handle.includes('w')) {
@@ -132,6 +204,7 @@ function resizeBBox(origin: RectMm, handle: HandlePos, dxMm: number, dyMm: numbe
 /**
  * Resize all selected layers by mapping them from the original group bbox
  * into the resized bbox (uniform scale per axis).
+ * Grids re-layout their image slots to fill the new box (cols/rows/gap stay).
  */
 export function resizeSelection(
   layers: CanvasLayer[],
@@ -139,40 +212,78 @@ export function resizeSelection(
   handle: HandlePos,
   dxMm: number,
   dyMm: number,
-  options?: { aspectLock?: boolean },
+  options?: { aspectLock?: boolean; fromCenter?: boolean; targetBox?: RectMm },
 ): CanvasLayer[] {
   const idSet = new Set(ids);
   const origin = selectionBounds(layers, ids);
   if (!origin || origin.w <= 0 || origin.h <= 0) return layers;
 
-  let nextBox = resizeBBox(origin, handle, dxMm, dyMm);
-  if (options?.aspectLock) {
+  let nextBox = options?.targetBox
+    ? options.targetBox
+    : resizeBBox(origin, handle, dxMm, dyMm, { fromCenter: options?.fromCenter });
+  if (!options?.targetBox && options?.aspectLock) {
     nextBox = applyAspectLock(origin, nextBox, handle);
     nextBox = {
       ...nextBox,
       w: Math.max(2, nextBox.w),
       h: Math.max(2, nextBox.h),
     };
+    if (options.fromCenter) {
+      nextBox = {
+        ...nextBox,
+        x: origin.x + origin.w / 2 - nextBox.w / 2,
+        y: origin.y + origin.h / 2 - nextBox.h / 2,
+      };
+    }
   }
 
-  return layers.map((layer) => {
+  let next = layers.map((layer) => {
     if (!idSet.has(layer.id) || !isTransformable(layer)) return layer;
-    const b = layerBounds(layer);
+    const b = layerLocalBounds(layer);
     const relX = (b.x - origin.x) / origin.w;
     const relY = (b.y - origin.y) / origin.h;
     const relW = b.w / origin.w;
     const relH = b.h / origin.h;
-    return {
+    const nextW = Math.max(1, relW * nextBox.w);
+    const nextH = Math.max(layer.type === 'line' ? 0.5 : 1, relH * nextBox.h);
+    const moved: CanvasLayer = {
       ...layer,
       cssVars: {
         ...layer.cssVars,
         '--translate-x': mm(nextBox.x + relX * nextBox.w),
         '--translate-y': mm(nextBox.y + relY * nextBox.h),
-        '--width': mm(Math.max(1, relW * nextBox.w)),
-        '--height': mm(Math.max(1, relH * nextBox.h)),
+        '--width': mm(nextW),
+        '--height': mm(nextH),
       },
     };
+    if (layer.type === 'line') {
+      const ensured = ensureLinePath(layer);
+      const path = ensured.meta?.path;
+      if (path && b.w > 0 && b.h > 0) {
+        const sx = nextW / b.w;
+        const sy = nextH / b.h;
+        return {
+          ...moved,
+          meta: { ...moved.meta, path: scalePathPoints(path, sx, sy) },
+          cssVars: {
+            ...moved.cssVars,
+            '--border-width': ensured.cssVars['--border-width'],
+            '--stroke-visible': ensured.cssVars['--stroke-visible'] || '1',
+          },
+        };
+      }
+      return applyLineStrokeWeight(moved, mmToPxLength(nextH));
+    }
+    return moved;
   });
+
+  for (const id of ids) {
+    const layer = next.find((l) => l.id === id);
+    if (layer?.type === 'grid') {
+      next = applyGridToImageSlots(next, id);
+    }
+  }
+  return next;
 }
 
 function rotatePoint(
@@ -219,7 +330,7 @@ export function rotateSelection(
 
   return layers.map((layer) => {
     if (!idSet.has(layer.id) || !isTransformable(layer)) return layer;
-    const b = layerBounds(layer);
+    const b = layerLocalBounds(layer);
     const center = rotatePoint(b.cx, b.cy, cx, cy, delta);
     const nextRotate = normalizeDeg(parseRotateDeg(layer) + delta);
     return {
@@ -234,10 +345,38 @@ export function rotateSelection(
   });
 }
 
+/** Export resize bbox helper for Artboard snap pipeline. */
+export function computeResizeBox(
+  origin: RectMm,
+  handle: HandlePos,
+  dxMm: number,
+  dyMm: number,
+  options?: { aspectLock?: boolean; fromCenter?: boolean },
+): RectMm {
+  let nextBox = resizeBBox(origin, handle, dxMm, dyMm, { fromCenter: options?.fromCenter });
+  if (options?.aspectLock) {
+    nextBox = applyAspectLock(origin, nextBox, handle);
+    nextBox = {
+      ...nextBox,
+      w: Math.max(2, nextBox.w),
+      h: Math.max(2, nextBox.h),
+    };
+    if (options.fromCenter) {
+      nextBox = {
+        ...nextBox,
+        x: origin.x + origin.w / 2 - nextBox.w / 2,
+        y: origin.y + origin.h / 2 - nextBox.h / 2,
+      };
+    }
+  }
+  return nextBox;
+}
+
 function collectGuidePositions(
   layers: CanvasLayer[],
   excludeIds: Set<string>,
   page: { widthMm: number; heightMm: number },
+  manualGuides: CanvasGuide[] = [],
 ): { xs: number[]; ys: number[] } {
   const xs = [0, page.widthMm / 2, page.widthMm];
   const ys = [0, page.heightMm / 2, page.heightMm];
@@ -247,7 +386,53 @@ function collectGuidePositions(
     xs.push(b.x, b.cx, b.right);
     ys.push(b.y, b.cy, b.bottom);
   }
+  for (const g of manualGuides) {
+    if (g.axis === 'x') xs.push(g.posMm);
+    else ys.push(g.posMm);
+  }
   return { xs, ys };
+}
+
+/** Cache guide rails while the layers array identity is stable (gesture snapshot). */
+let guideCache: {
+  layers: CanvasLayer[];
+  excludeKey: string;
+  pageW: number;
+  pageH: number;
+  guidesKey: string;
+  xs: number[];
+  ys: number[];
+} | null = null;
+
+function guidePositionsCached(
+  layers: CanvasLayer[],
+  excludeIds: Set<string>,
+  page: { widthMm: number; heightMm: number },
+  manualGuides: CanvasGuide[] = [],
+): { xs: number[]; ys: number[] } {
+  const excludeKey = [...excludeIds].join('\0');
+  const guidesKey = manualGuides.map((g) => `${g.axis}:${g.posMm}`).join('|');
+  if (
+    guideCache &&
+    guideCache.layers === layers &&
+    guideCache.excludeKey === excludeKey &&
+    guideCache.pageW === page.widthMm &&
+    guideCache.pageH === page.heightMm &&
+    guideCache.guidesKey === guidesKey
+  ) {
+    return { xs: guideCache.xs, ys: guideCache.ys };
+  }
+  const next = collectGuidePositions(layers, excludeIds, page, manualGuides);
+  guideCache = {
+    layers,
+    excludeKey,
+    pageW: page.widthMm,
+    pageH: page.heightMm,
+    guidesKey,
+    xs: next.xs,
+    ys: next.ys,
+  };
+  return next;
 }
 
 /**
@@ -261,12 +446,13 @@ export function snapMoveWithGuides(
   dyMm: number,
   page: { widthMm: number; heightMm: number },
   thresholdMm = SNAP_THRESHOLD_MM,
+  manualGuides: CanvasGuide[] = [],
 ): { dx: number; dy: number; guides: SmartGuide[] } {
   const bounds = selectionBounds(layers, ids);
   if (!bounds) return { dx: dxMm, dy: dyMm, guides: [] };
 
-  const exclude = new Set(ids);
-  const { xs, ys } = collectGuidePositions(layers, exclude, page);
+  const exclude = new Set(expandWithDescendants(layers, ids));
+  const { xs, ys } = guidePositionsCached(layers, exclude, page, manualGuides);
 
   const edgesX = [
     { kind: 'left' as const, pos: bounds.x + dxMm },
@@ -316,6 +502,76 @@ export function snapMoveWithGuides(
   if (guideX != null) guides.push({ axis: 'x', pos: guideX });
   if (guideY != null) guides.push({ axis: 'y', pos: guideY });
   return { dx: bestDx, dy: bestDy, guides };
+}
+
+/**
+ * Snap a resized selection bbox to page/sibling edges.
+ * Returns adjusted box (mm) and active guides.
+ */
+export function snapResizeBox(
+  layers: CanvasLayer[],
+  ids: string[],
+  box: RectMm,
+  page: { widthMm: number; heightMm: number },
+  thresholdMm = SNAP_THRESHOLD_MM,
+  manualGuides: CanvasGuide[] = [],
+): { box: RectMm; guides: SmartGuide[] } {
+  const exclude = new Set(expandWithDescendants(layers, ids));
+  const { xs, ys } = guidePositionsCached(layers, exclude, page, manualGuides);
+
+  let { x, y, w, h } = box;
+  let guideX: number | null = null;
+  let guideY: number | null = null;
+  let bestX = thresholdMm + 1;
+  let bestY = thresholdMm + 1;
+
+  const edgesX = [
+    { kind: 'left' as const, pos: x },
+    { kind: 'right' as const, pos: x + w },
+  ];
+  const edgesY = [
+    { kind: 'top' as const, pos: y },
+    { kind: 'bottom' as const, pos: y + h },
+  ];
+
+  for (const edge of edgesX) {
+    for (const g of xs) {
+      const dist = Math.abs(edge.pos - g);
+      if (dist <= thresholdMm && dist < bestX) {
+        bestX = dist;
+        guideX = g;
+        if (edge.kind === 'left') {
+          const right = x + w;
+          x = g;
+          w = Math.max(2, right - x);
+        } else {
+          w = Math.max(2, g - x);
+        }
+      }
+    }
+  }
+
+  for (const edge of edgesY) {
+    for (const g of ys) {
+      const dist = Math.abs(edge.pos - g);
+      if (dist <= thresholdMm && dist < bestY) {
+        bestY = dist;
+        guideY = g;
+        if (edge.kind === 'top') {
+          const bottom = y + h;
+          y = g;
+          h = Math.max(2, bottom - y);
+        } else {
+          h = Math.max(2, g - y);
+        }
+      }
+    }
+  }
+
+  const guides: SmartGuide[] = [];
+  if (guideX != null) guides.push({ axis: 'x', pos: guideX });
+  if (guideY != null) guides.push({ axis: 'y', pos: guideY });
+  return { box: { x, y, w, h }, guides };
 }
 
 /** Angle in degrees from bbox top-center to pointer (for rotate handle). */

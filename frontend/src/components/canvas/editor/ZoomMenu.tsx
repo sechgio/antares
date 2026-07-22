@@ -7,6 +7,7 @@ interface ZoomMenuProps {
   zoom: number;
   onZoom: (z: number) => void;
   onZoomFit: () => void;
+  onZoomSelection?: () => void;
 }
 
 const ZOOM_STEP = 0.1;
@@ -27,7 +28,7 @@ interface ZoomAction {
   checked?: boolean;
 }
 
-export default function ZoomMenu({ zoom, onZoom, onZoomFit }: ZoomMenuProps) {
+export default function ZoomMenu({ zoom, onZoom, onZoomFit, onZoomSelection }: ZoomMenuProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
@@ -97,6 +98,16 @@ export default function ZoomMenu({ zoom, onZoom, onZoomFit }: ZoomMenuProps) {
       tip: 'Shift+1',
       run: onZoomFit,
     },
+    ...(onZoomSelection
+      ? [
+          {
+            id: 'selection',
+            label: 'Zoom a la selección',
+            tip: 'Shift+2',
+            run: onZoomSelection,
+          } satisfies ZoomAction,
+        ]
+      : []),
     {
       id: '50',
       label: 'Zoom al 50 %',

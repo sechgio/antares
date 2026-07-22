@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import {
   ArrowDownToLine,
   ArrowUpToLine,
+  ClipboardPaste,
   Copy,
   Eye,
   EyeOff,
@@ -10,11 +11,14 @@ import {
   Lock,
   Pencil,
   Trash2,
+  Ungroup,
   Unlock,
 } from 'lucide-react';
 
 export type CanvasContextAction =
   | 'edit'
+  | 'copy'
+  | 'paste'
   | 'duplicate'
   | 'toggleLock'
   | 'toggleVisible'
@@ -22,6 +26,7 @@ export type CanvasContextAction =
   | 'sendBack'
   | 'selectChildren'
   | 'group'
+  | 'ungroup'
   | 'delete';
 
 export interface CanvasContextMenuState {
@@ -32,6 +37,8 @@ export interface CanvasContextMenuState {
   visible: boolean;
   isContainer: boolean;
   canGroup: boolean;
+  canUngroup: boolean;
+  canPaste: boolean;
   /** When set, show "Editar texto/campo" at the top. */
   editKind?: 'text' | 'field' | null;
 }
@@ -90,6 +97,8 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
     items.push({ id: 'edit', label: 'Editar campo', tip: 'Doble clic', icon: Pencil, disabled: menu.locked });
   }
   items.push(
+    { id: 'copy', label: 'Copiar', tip: 'Ctrl+C', icon: Copy, disabled: !hasLayer },
+    { id: 'paste', label: 'Pegar', tip: 'Ctrl+V', icon: ClipboardPaste, disabled: !menu.canPaste },
     { id: 'duplicate', label: 'Duplicar', tip: 'Ctrl+D', icon: Copy, disabled: !hasLayer || menu.locked },
     {
       id: 'toggleLock',
@@ -116,6 +125,13 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
       tip: 'Ctrl+G',
       icon: Group,
       disabled: !menu.canGroup || menu.locked,
+    },
+    {
+      id: 'ungroup',
+      label: 'Desagrupar',
+      tip: 'Ctrl+Shift+G',
+      icon: Ungroup,
+      disabled: !menu.canUngroup || menu.locked,
     },
     { id: 'bringFront', label: 'Traer al frente', tip: ']', icon: ArrowUpToLine, disabled: !hasLayer || menu.locked },
     { id: 'sendBack', label: 'Enviar al fondo', tip: '[', icon: ArrowDownToLine, disabled: !hasLayer || menu.locked },

@@ -125,18 +125,51 @@ export function chunkImages(images: string[], perPage: number): string[][] {
   return chunks.length ? chunks : [[]];
 }
 
+/** Photo capacity of the template page (page 0), else max slots on any page. */
+export function templateImagesPerPage(doc: CanvasDocument): number {
+  const byPage = new Map<number, number>();
+  for (const layer of doc.layers) {
+    if (layer.type !== 'imageSlot') continue;
+    const page = layer.pageIndex ?? 0;
+    byPage.set(page, (byPage.get(page) ?? 0) + 1);
+  }
+  if (byPage.size === 0) {
+    const fallback = doc.settings?.imagesPerPage;
+    return fallback && fallback > 0 ? fallback : 1;
+  }
+  const page0 = byPage.get(0);
+  if (page0 && page0 > 0) return page0;
+  return Math.max(...byPage.values());
+}
+
+/** Keep settings.imagesPerPage aligned with template image slots. */
+export function syncImagesPerPage(doc: CanvasDocument): CanvasDocument {
+  const n = templateImagesPerPage(doc);
+  if (doc.settings?.imagesPerPage === n) return doc;
+  return {
+    ...doc,
+    settings: { ...doc.settings, imagesPerPage: n },
+  };
+}
+
 export function renderMultiPageHtml(
   doc: CanvasDocument,
   ctx: FillContext,
   options?: { imagesPerPage?: number },
 ): string {
+  const slotPerPage = templateImagesPerPage(doc);
+  // Slots win when present; options/settings only apply when the template has no slots.
+  const hasSlots = doc.layers.some((l) => l.type === 'imageSlot');
   const configured = options?.imagesPerPage ?? doc.settings?.imagesPerPage;
-  const slotCount = doc.layers.filter((l) => l.type === 'imageSlot').length;
-  const perPage = configured && configured > 0 ? configured : Math.max(slotCount, ctx.images.length, 1);
+  const perPage = hasSlots
+    ? slotPerPage
+    : configured && configured > 0
+      ? configured
+      : Math.max(ctx.images.length, 1);
   const imageChunks = chunkImages(ctx.images, perPage);
   const docPageCount = getPageCount(doc);
   // Paginate by image chunks when more images than one page of slots; else use design pages
-  const useImagePagination = configured && configured > 0 && ctx.images.length > perPage;
+  const useImagePagination = perPage > 0 && ctx.images.length > perPage;
   const totalPages = useImagePagination
     ? Math.max(docPageCount, imageChunks.length)
     : docPageCount;

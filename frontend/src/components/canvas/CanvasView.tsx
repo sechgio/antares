@@ -1,20 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import './canvas.css';
 import { createLayer } from './constants';
 import { CANVAS_PRESETS } from './presets';
-import GeneratePanel from './editor/GeneratePanel';
-import Artboard from './editor/Artboard';
 import BottomToolbar from './editor/BottomToolbar';
 import ContextMenu, {
   type CanvasContextAction,
   type CanvasContextMenuState,
 } from './editor/ContextMenu';
+import DesignStage, { type ViewportNavApi } from './editor/DesignStage';
 import LeftSidebar from './editor/LeftSidebar';
+import PreviewViewport from './editor/PreviewViewport';
+import PathEditToolbar from './editor/PathEditToolbar';
 import RightPanel from './editor/RightPanel';
 import TopBar from './editor/TopBar';
-import ZoomMenu from './editor/ZoomMenu';
+import { renderDemoPreviewHtml } from './runtime/demoFill';
 import { useCanvasHistory } from './hooks/useCanvasHistory';
 import { CANVAS_SHORTCUTS } from './shortcuts';
 import {
@@ -36,13 +37,29 @@ import {
   setLayersVisible,
   ungroupLayers,
 } from './ops/layerOps';
-import { childIdsOf, isLayerContainer } from './ops/layerTree';
-import { collectDocumentColors, lineHeightMmFromStrokePx, strokeWeightForNewLine } from './ops/layerStyle';
-import { addPage, duplicatePage, getPageCount, removePage, renamePage, setActivePageLayers } from './ops/pages';
-import { applyGridToImageSlots } from './ops/gridLayout';
+import { childIdsOf, expandWithDescendants, isLayerContainer } from './ops/layerTree';
+import {
+  collectDocumentColors,
+  DEFAULT_LINE_STROKE_PX,
+  lineHeightMmFromStrokePx,
+  strokeWeightForNewLine,
+} from './ops/layerStyle';
+import { applyPathToLayer, ensureLinePath, pathFromDrag } from './ops/pathGeometry';
+import { toggleLineClosed } from './ops/pathEditGestures';
+import {
+  addPage,
+  duplicatePage,
+  getPageCount,
+  removePage,
+  renamePage,
+  setActivePageLayers,
+  syncImagesPerPage,
+} from './ops/pages';
+import { applyGridToImageSlots, rebuildGridSlots } from './ops/gridLayout';
+import { assignUniqueLogoSides, logoSideHasConflict, withAssignedLogoSide } from './ops/logoSide';
 import { isClickPlace, type DrawRect } from './ops/drawHelpers';
+import { moveGuide, removeGuide, upsertGuide } from './ops/guides';
 import { canFocusFieldBinding, canInlineEditLayer, growTextLayerToContent, isEditableKeyboardTarget, isTypeToEditKey } from './ops/inlineEdit';
-import { fitZoomForViewport } from './ops/viewportNav';
 import {
   A4_HEIGHT_PX,
   A4_WIDTH_PX,
@@ -58,12 +75,14 @@ import {
   newId,
 } from './types';
 
+const GeneratePanel = lazy(() => import('./editor/GeneratePanel'));
+
 type PlaceableTool = Exclude<CanvasTool, 'select' | 'hand'>;
 
 const DEFAULT_SIZES: Partial<Record<PlaceableTool, { w: number; h: number }>> = {
   rect: { w: 50, h: 40 },
   ellipse: { w: 40, h: 40 },
-  line: { w: 60, h: 1 },
+  line: { w: 60, h: lineHeightMmFromStrokePx(DEFAULT_LINE_STROKE_PX) },
   arrow: { w: 50, h: 24 },
   polygon: { w: 40, h: 40 },
   star: { w: 40, h: 40 },
@@ -84,8 +103,7 @@ export default function CanvasView() {
   const [docs, setDocs] = useState<CanvasDocumentSummary[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [pageIndex, setPageIndex] = useState(0);
-  const [zoom, setZoom] = useState(0.85);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const viewportNavRef = useRef<ViewportNavApi | null>(null);
   const [tool, setTool] = useState<CanvasTool>('select');
   const toolBeforeSpaceRef = useRef<CanvasTool | null>(null);
   const [clipboard, setClipboard] = useState<CanvasLayer[]>([]);
@@ -93,13 +111,65 @@ export default function CanvasView() {
   const [loading, setLoading] = useState(true);
   const [contextMenu, setContextMenu] = useState<CanvasContextMenuState | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState('');
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
+  const [pathEditingLayerId, setPathEditingLayerId] = useState<string | null>(null);
   const [editingSelectAll, setEditingSelectAll] = useState(true);
   const editBaselineRef = useRef<CanvasDocument | null>(null);
   const panelBaselineRef = useRef<CanvasDocument | null>(null);
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedId = selectedIds[0] ?? null;
-  const pageLayers = history.document.layers.filter((l) => (l.pageIndex ?? 0) === pageIndex);
+  const pageLayers = useMemo(
+    () => history.document.layers.filter((l) => (l.pageIndex ?? 0) === pageIndex),
+    [history.document.layers, pageIndex],
+  );
+  const pageColors = useMemo(
+    () => collectDocumentColors(history.document.layers),
+    [history.document.layers],
+  );
+
+  const flashStatus = useCallback((message: string, ms = 2000) => {
+    setStatus(message);
+    if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+    statusTimerRef.current = setTimeout(() => {
+      statusTimerRef.current = null;
+      setStatus(null);
+    }, ms);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+    },
+    [],
+  );
+
+  const resetViewportPan = useCallback(() => {
+    viewportNavRef.current?.setPan({ x: 0, y: 0 });
+  }, []);
+
+  const togglePreview = useCallback(() => {
+    setPreviewOpen((open) => {
+      if (open) {
+        setPreviewHtml('');
+        return false;
+      }
+      setPreviewHtml(renderDemoPreviewHtml(history.document));
+      setShowShortcuts(false);
+      setContextMenu(null);
+      return true;
+    });
+  }, [history.document]);
+
+  useEffect(() => {
+    if (!previewOpen) return;
+    const timer = window.setTimeout(() => {
+      setPreviewHtml(renderDemoPreviewHtml(history.document));
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [previewOpen, history.document]);
 
   const refreshList = useCallback(async () => {
     try {
@@ -145,19 +215,18 @@ export default function CanvasView() {
       const res = await api.canvasSave(history.document);
       history.replaceDocument(normalizeDocument(res.document as CanvasDocument));
       await refreshList();
-      setStatus('Guardado');
-      setTimeout(() => setStatus(null), 2000);
+      flashStatus('Guardado');
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Error al guardar');
+      flashStatus(err instanceof Error ? err.message : 'Error al guardar');
     }
-  }, [history, refreshList]);
+  }, [history, refreshList, flashStatus]);
 
   const setPageLayers = (layers: CanvasLayer[]) => {
-    history.setDocument(setActivePageLayers(history.document, pageIndex, layers));
+    history.setDocument(syncImagesPerPage(setActivePageLayers(history.document, pageIndex, layers)));
   };
 
   const setAllLayers = (layers: CanvasLayer[]) => {
-    history.setDocument({ ...history.document, layers });
+    history.setDocument(syncImagesPerPage({ ...history.document, layers }));
   };
 
   const cloneDocument = (doc: CanvasDocument): CanvasDocument => ({
@@ -180,7 +249,10 @@ export default function CanvasView() {
       if (!gestureBaselineRef.current) {
         gestureBaselineRef.current = cloneDocument(history.document);
       }
-      history.updateSilent(setActivePageLayers(history.document, pageIndex, layers));
+      // Called once at gesture end (Artboard keeps live preview local) — sync here is fine.
+      history.updateSilent(
+        syncImagesPerPage(setActivePageLayers(history.document, pageIndex, layers)),
+      );
     },
     [history, pageIndex],
   );
@@ -246,7 +318,7 @@ export default function CanvasView() {
   );
 
   const onFitTextHeight = useCallback(
-    (id: string, contentHeightPx: number) => {
+    (id: string, contentHeightPx: number, zoom: number) => {
       const layer = history.document.layers.find((l) => l.id === id);
       if (!layer) return;
       const next = growTextLayerToContent(layer, contentHeightPx, zoom);
@@ -256,7 +328,7 @@ export default function CanvasView() {
         layers: history.document.layers.map((l) => (l.id === id ? next : l)),
       });
     },
-    [history, zoom],
+    [history],
   );
 
   const onPanelChangeLive = useCallback(
@@ -264,10 +336,11 @@ export default function CanvasView() {
       if (!panelBaselineRef.current) {
         panelBaselineRef.current = cloneDocument(history.document);
       }
-      history.updateSilent({
-        ...history.document,
-        layers: history.document.layers.map((l) => (l.id === layer.id ? layer : l)),
-      });
+      let layers = history.document.layers.map((l) => (l.id === layer.id ? layer : l));
+      if (layer.type === 'grid') {
+        layers = rebuildGridSlots(layers, layer.id);
+      }
+      history.updateSilent(syncImagesPerPage({ ...history.document, layers }));
     },
     [history],
   );
@@ -283,11 +356,15 @@ export default function CanvasView() {
     if (editingLayerId && id !== editingLayerId) {
       commitInlineEdit();
     }
+    if (pathEditingLayerId && id !== pathEditingLayerId) {
+      setPathEditingLayerId(null);
+    }
     if (panelBaselineRef.current) {
       onPanelCommitLive();
     }
     if (!id) {
       setSelectedIds([]);
+      setPathEditingLayerId(null);
       return;
     }
     if (additive) {
@@ -298,16 +375,56 @@ export default function CanvasView() {
   };
 
   const zoomToFit = useCallback(() => {
-    const el = document.querySelector<HTMLElement>('[data-testid="canvas-viewport"]');
-    if (!el) return;
-    const { width, height } = el.getBoundingClientRect();
-    setZoom(fitZoomForViewport(width, height, A4_WIDTH_PX, A4_HEIGHT_PX));
-    setPan({ x: 0, y: 0 });
+    viewportNavRef.current?.zoomToFit();
   }, []);
+
+  const zoomToSelection = useCallback(() => {
+    viewportNavRef.current?.zoomToSelection(selectedIds);
+  }, [selectedIds]);
+
+  const startContainerOrInlineEdit = useCallback(
+    (id: string, opts?: { seed?: string }) => {
+      const layer = history.document.layers.find((l) => l.id === id);
+      if (layer && isLayerContainer(layer)) {
+        const kids = childIdsOf(history.document.layers, id);
+        if (kids.length) {
+          setSelectedIds(kids);
+          setTool('select');
+          setContextMenu(null);
+        }
+        return;
+      }
+      startInlineEdit(id, opts);
+    },
+    [history.document.layers, startInlineEdit],
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (mode !== 'design') return;
+
+      const isDuplicateShortcut = (e.ctrlKey || e.metaKey) && e.code === 'KeyD';
+      const getEditableIds = () =>
+        selectedIds.filter((id) => {
+          const layer = history.document.layers.find((l) => l.id === id);
+          return layer && !layer.locked && layer.type !== 'frame';
+        });
+      const runDuplicate = () => {
+        const ids = getEditableIds();
+        if (!ids.length) return;
+        const { layers, newIds } = duplicateLayers(history.document.layers, ids);
+        setAllLayers(assignUniqueLogoSides(layers, newIds));
+        setSelectedIds(newIds);
+      };
+
+      if (pathEditingLayerId) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setPathEditingLayerId(null);
+          setTool('select');
+          return;
+        }
+      }
 
       // While inline-editing: let the textarea handle keys once focused;
       // route printable keys if focus hasn't landed yet (type-to-edit race).
@@ -315,6 +432,12 @@ export default function CanvasView() {
         if (e.key === 'Escape') {
           e.preventDefault();
           commitInlineEdit();
+          return;
+        }
+        if (isDuplicateShortcut) {
+          e.preventDefault();
+          commitInlineEdit();
+          runDuplicate();
           return;
         }
         if (isEditableKeyboardTarget(e.target)) return;
@@ -327,7 +450,8 @@ export default function CanvasView() {
         // Block tool / delete / nudge shortcuts while editing.
         return;
       }
-      if (isEditableKeyboardTarget(e.target)) return;
+      // Allow Ctrl/Cmd+D even when focus is in panel inputs.
+      if (isEditableKeyboardTarget(e.target) && !isDuplicateShortcut) return;
 
       // Type-to-edit before tool letter shortcuts (Figma: typing replaces text, not tools).
       if (selectedIds.length === 1 && isTypeToEditKey(e.key, e)) {
@@ -348,6 +472,17 @@ export default function CanvasView() {
       if ((e.key === 'l' || e.key === 'L') && !e.ctrlKey && !e.metaKey) {
         setTool(e.shiftKey ? 'arrow' : 'line');
       }
+      if ((e.key === 'c' || e.key === 'C') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const lineId =
+          pathEditingLayerId ||
+          selectedIds.find((id) => history.document.layers.find((l) => l.id === id)?.type === 'line');
+        if (lineId) {
+          setPathEditingLayerId(lineId);
+          setSelectedIds([lineId]);
+          setTool('cut');
+        }
+      }
+      if ((e.key === 'u' || e.key === 'U') && !e.ctrlKey && !e.metaKey) setTool('lasso');
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault();
         setTool('image');
@@ -356,6 +491,16 @@ export default function CanvasView() {
       if (e.key === 'g' || e.key === 'G') setTool('grid');
       if (e.key === 'b' || e.key === 'B') setTool('table');
       if (e.key === 'm' || e.key === 'M') setTool('image');
+      if ((e.key === 'p' || e.key === 'P') && !e.ctrlKey && !e.metaKey) {
+        const lineId =
+          pathEditingLayerId ||
+          selectedIds.find((id) => history.document.layers.find((l) => l.id === id)?.type === 'line');
+        if (lineId) {
+          setPathEditingLayerId(lineId);
+          setSelectedIds([lineId]);
+          setTool('bend');
+        }
+      }
       // Space = temporary hand (OpenPencil)
       if (e.code === 'Space' && !e.repeat) {
         e.preventDefault();
@@ -365,40 +510,38 @@ export default function CanvasView() {
       // Zoom shortcuts (OpenPencil: Ctrl/⌘ + / - / 0; Shift+1 = fit)
       if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) {
         e.preventDefault();
-        setZoom((z) => Math.min(4, Math.round((z + 0.1) * 100) / 100));
+        viewportNavRef.current?.setZoom((z) => Math.min(4, Math.round((z + 0.1) * 100) / 100));
       }
       if ((e.ctrlKey || e.metaKey) && e.key === '-') {
         e.preventDefault();
-        setZoom((z) => Math.max(0.2, Math.round((z - 0.1) * 100) / 100));
+        viewportNavRef.current?.setZoom((z) => Math.max(0.2, Math.round((z - 0.1) * 100) / 100));
       }
       if ((e.ctrlKey || e.metaKey) && e.key === '0') {
         e.preventDefault();
-        setZoom(1);
-        setPan({ x: 0, y: 0 });
+        viewportNavRef.current?.setZoom(1);
       }
       if (e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'Digit1') {
         e.preventDefault();
         zoomToFit();
       }
+      if (e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'Digit2') {
+        e.preventDefault();
+        zoomToSelection();
+      }
 
-      const editableIds = selectedIds.filter((id) => {
-        const layer = history.document.layers.find((l) => l.id === id);
-        return layer && !layer.locked && layer.type !== 'frame';
-      });
+      const editableIds = getEditableIds();
 
       if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.shiftKey && editableIds.length === 1) {
         const layer = history.document.layers.find((l) => l.id === editableIds[0]);
-        if (layer && isLayerContainer(layer)) {
-          const kids = childIdsOf(history.document.layers, layer.id);
-          if (kids.length) {
-            e.preventDefault();
-            setSelectedIds(kids);
-            return;
-          }
-        }
-        if (canInlineEditLayer(layer)) {
+        if (layer?.type === 'line') {
           e.preventDefault();
-          startInlineEdit(editableIds[0]);
+          setPathEditingLayerId(layer.id);
+          setTool('select');
+          return;
+        }
+        if (layer && (isLayerContainer(layer) || canInlineEditLayer(layer))) {
+          e.preventDefault();
+          startContainerOrInlineEdit(editableIds[0]);
           return;
         }
       }
@@ -424,33 +567,37 @@ export default function CanvasView() {
         if (e.shiftKey) history.redo();
         else history.undo();
       }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        history.redo();
+      }
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         void onSave();
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+      if (isDuplicateShortcut) {
         e.preventDefault();
-        if (!editableIds.length) return;
-        const { layers, newIds } = duplicateLayers(history.document.layers, editableIds);
-        setAllLayers(layers);
-        setSelectedIds(newIds);
+        runDuplicate();
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
         e.preventDefault();
-        const copies = history.document.layers.filter((l) => editableIds.includes(l.id));
+        const deepIds = expandWithDescendants(history.document.layers, editableIds);
+        const copies = history.document.layers.filter((l) => deepIds.includes(l.id));
         setClipboard(copies.map((l) => ({ ...l, cssVars: { ...l.cssVars } })));
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
         e.preventDefault();
         if (!clipboard.length) return;
         const withIds = clipboard.map((l) => ({ ...l, pageIndex }));
+        const clipIds = new Set(withIds.map((l) => l.id));
+        const roots = withIds.filter((l) => !l.parentId || !clipIds.has(l.parentId));
         const temp = [...history.document.layers, ...withIds];
         const { layers, newIds } = duplicateLayers(
           temp,
-          withIds.map((l) => l.id),
+          roots.map((l) => l.id),
         );
         const originalClipIds = new Set(withIds.map((l) => l.id));
-        setAllLayers(layers.filter((l) => !originalClipIds.has(l.id)));
+        setAllLayers(assignUniqueLogoSides(layers.filter((l) => !originalClipIds.has(l.id)), newIds));
         setSelectedIds(newIds);
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'g') {
@@ -491,7 +638,33 @@ export default function CanvasView() {
       if (e.key === 'Escape') {
         setContextMenu(null);
         setShowShortcuts(false);
-        if (selectedIds.length) setSelectedIds([]);
+        if (previewOpen) {
+          setPreviewOpen(false);
+          setPreviewHtml('');
+          return;
+        }
+        if (pathEditingLayerId) {
+          setPathEditingLayerId(null);
+          return;
+        }
+        // Esc → select parent when all selected share one parent (Figma-like).
+        if (selectedIds.length) {
+          const parents = new Set(
+            selectedIds.map((id) => {
+              const layer = history.document.layers.find((l) => l.id === id);
+              return layer?.parentId;
+            }),
+          );
+          if (parents.size === 1) {
+            const parentId = [...parents][0];
+            if (parentId) {
+              e.preventDefault();
+              setSelectedIds([parentId]);
+              return;
+            }
+          }
+          setSelectedIds([]);
+        }
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
@@ -511,29 +684,53 @@ export default function CanvasView() {
   }, [
     mode,
     selectedIds,
-    history,
+    history.document,
+    history.undo,
+    history.redo,
+    history.setDocument,
     onSave,
     clipboard,
     pageIndex,
     pageLayers,
     tool,
     zoomToFit,
+    zoomToSelection,
     editingLayerId,
+    pathEditingLayerId,
     commitInlineEdit,
     startInlineEdit,
+    startContainerOrInlineEdit,
     onInlineEditValue,
+    previewOpen,
   ]);
 
   const selected = history.document.layers.find((l) => l.id === selectedId) || null;
+  const selectedLine =
+    selectedIds.length === 1
+      ? history.document.layers.find((l) => l.id === selectedIds[0] && l.type === 'line')
+      : pathEditingLayerId
+        ? history.document.layers.find((l) => l.id === pathEditingLayerId && l.type === 'line')
+        : null;
+  const showPathToolbar = Boolean(selectedLine || pathEditingLayerId || tool === 'bend' || tool === 'cut' || tool === 'lasso');
+  const pathToolbarLine = selectedLine
+    ? ensureLinePath(selectedLine)
+    : pathEditingLayerId
+      ? ensureLinePath(
+          history.document.layers.find((l) => l.id === pathEditingLayerId) || createLayer('line'),
+        )
+      : null;
 
   const addLayerAt = (type: PlaceableTool, rect: DrawRect) => {
     const layerType = type as Exclude<CanvasLayerType, 'frame' | 'group'>;
-    const layer = createLayer(layerType);
+    let layer = createLayer(layerType);
+    if (layerType === 'logo') {
+      layer = withAssignedLogoSide(layer, history.document.layers);
+    }
     layer.pageIndex = pageIndex;
     const defaults = DEFAULT_SIZES[type] ?? { w: 40, h: 30 };
     const useDefault = isClickPlace(rect) || (rect.w === 0 && rect.h === 0);
     const w = useDefault ? defaults.w : Math.max(type === 'line' ? 1 : 4, rect.w);
-    const h = useDefault ? defaults.h : Math.max(type === 'line' ? 0.5 : 4, rect.h);
+    const h = useDefault ? defaults.h : Math.max(4, rect.h);
     const x = useDefault ? rect.x : rect.x;
     const y = useDefault ? rect.y : rect.y;
     layer.cssVars = {
@@ -548,8 +745,28 @@ export default function CanvasView() {
     }
     if (type === 'line') {
       const strokePx = strokeWeightForNewLine();
-      layer.cssVars['--background-color'] = layer.cssVars['--background-color'] || '#000000';
-      layer.cssVars['--height'] = mm(Math.max(0.05, lineHeightMmFromStrokePx(strokePx)));
+      layer.cssVars['--background-color'] = 'transparent';
+      layer.cssVars['--fill-visible'] = '0';
+      layer.cssVars['--border-width'] = `${strokePx}px`;
+      layer.cssVars['--border-color'] = layer.cssVars['--border-color'] || '#000000';
+      layer.cssVars['--stroke-align'] = 'center';
+      layer.cssVars['--stroke-visible'] = '1';
+      layer.cssVars['--stroke-opacity'] = layer.cssVars['--stroke-opacity'] || '100';
+      layer.cssVars['--stroke-start'] = layer.cssVars['--stroke-start'] || 'none';
+      layer.cssVars['--stroke-end'] = layer.cssVars['--stroke-end'] || 'none';
+      if (!useDefault && rect.x0 != null && rect.y0 != null && rect.x1 != null && rect.y1 != null) {
+        const drag = pathFromDrag(rect.x0, rect.y0, rect.x1, rect.y1);
+        layer = applyPathToLayer(layer, drag.path, drag.originX, drag.originY);
+      } else {
+        const endX = useDefault ? defaults.w : Math.max(1, w);
+        const midY = Math.max(1, lineHeightMmFromStrokePx(strokePx));
+        layer = applyPathToLayer(
+          layer,
+          { points: [{ x: 0, y: midY }, { x: endX, y: midY }], closed: false },
+          x,
+          y,
+        );
+      }
     }
     let layers = [...history.document.layers, layer];
     if (type === 'grid') {
@@ -567,25 +784,26 @@ export default function CanvasView() {
       }
       layers = applyGridToImageSlots([...layers, ...slots], layer.id);
     }
-    history.setDocument({
-      ...history.document,
-      layers,
-      fields:
-        type === 'field' && layer.meta?.key
-          ? [
-              ...history.document.fields.filter((f) => f.key !== layer.meta!.key),
-              { id: newId(), key: layer.meta.key, label: layer.meta.key },
-            ]
-          : history.document.fields,
-    });
+    history.setDocument(
+      syncImagesPerPage({
+        ...history.document,
+        layers,
+        fields:
+          type === 'field' && layer.meta?.key
+            ? [
+                ...history.document.fields.filter((f) => f.key !== layer.meta!.key),
+                { id: newId(), key: layer.meta.key, label: layer.meta.key },
+              ]
+            : history.document.fields,
+      }),
+    );
     setSelectedIds([layer.id]);
     setTool('select');
     if (type === 'text') {
       editBaselineRef.current = cloneDocument({ ...history.document, layers });
       setEditingLayerId(layer.id);
     }
-    setStatus(`Capa «${layer.name}» creada`);
-    setTimeout(() => setStatus(null), 1500);
+    flashStatus(`Capa «${layer.name}» creada`, 1500);
   };
 
   const onDuplicate = async () => {
@@ -596,7 +814,7 @@ export default function CanvasView() {
       setSelectedIds([]);
       setPageIndex(0);
       await refreshList();
-      setStatus('Duplicado');
+      flashStatus('Duplicado');
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Error al duplicar');
     }
@@ -617,8 +835,8 @@ export default function CanvasView() {
       }
       setSelectedIds([]);
       setPageIndex(0);
-      setPan({ x: 0, y: 0 });
-      setStatus('Documento eliminado');
+      resetViewportPan();
+      flashStatus('Documento eliminado');
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Error al eliminar');
     }
@@ -632,7 +850,7 @@ export default function CanvasView() {
       history.replaceDocument(normalizeDocument(res.document as CanvasDocument));
       setSelectedIds([]);
       setPageIndex(0);
-      setPan({ x: 0, y: 0 });
+      resetViewportPan();
       await refreshList();
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Error al abrir');
@@ -646,7 +864,7 @@ export default function CanvasView() {
       history.replaceDocument(normalizeDocument(res.document as CanvasDocument));
       setSelectedIds([]);
       setPageIndex(0);
-      setPan({ x: 0, y: 0 });
+      resetViewportPan();
       await refreshList();
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Error al crear');
@@ -668,7 +886,7 @@ export default function CanvasView() {
     const doc = preset.create();
     doc.id = history.document.id;
     doc.name = history.document.name;
-    history.setDocument(doc);
+    history.setDocument(syncImagesPerPage(doc));
     setSelectedIds([]);
     setPageIndex(0);
   };
@@ -680,12 +898,40 @@ export default function CanvasView() {
 
   const onContextAction = (action: CanvasContextAction) => {
     const id = contextMenu?.layerId;
+
+    if (action === 'paste') {
+      if (!clipboard.length) return;
+      const withIds = clipboard.map((l) => ({ ...l, pageIndex }));
+      const clipIds = new Set(withIds.map((l) => l.id));
+      const roots = withIds.filter((l) => !l.parentId || !clipIds.has(l.parentId));
+      const temp = [...history.document.layers, ...withIds];
+      const { layers, newIds } = duplicateLayers(
+        temp,
+        roots.map((l) => l.id),
+      );
+      const originalClipIds = new Set(withIds.map((l) => l.id));
+      setAllLayers(assignUniqueLogoSides(layers.filter((l) => !originalClipIds.has(l.id)), newIds));
+      setSelectedIds(newIds);
+      return;
+    }
+
     if (!id) return;
     const layer = history.document.layers.find((l) => l.id === id);
     if (!layer || layer.type === 'frame') return;
 
     if (action === 'edit') {
-      startInlineEdit(id);
+      startContainerOrInlineEdit(id);
+      return;
+    }
+    if (action === 'copy') {
+      const roots = selectedIds.includes(id) ? selectedIds : [id];
+      const editable = roots.filter((lid) => {
+        const l = history.document.layers.find((x) => x.id === lid);
+        return l && !l.locked && l.type !== 'frame';
+      });
+      const deepIds = expandWithDescendants(history.document.layers, editable);
+      const copies = history.document.layers.filter((l) => deepIds.includes(l.id));
+      setClipboard(copies.map((l) => ({ ...l, cssVars: { ...l.cssVars } })));
       return;
     }
     if (action === 'toggleLock') {
@@ -713,11 +959,16 @@ export default function CanvasView() {
       setSelectedIds([groupId]);
       return;
     }
+    if (action === 'ungroup') {
+      if (layer.type !== 'group') return;
+      setAllLayers(ungroupLayers(history.document.layers, id));
+      return;
+    }
     if (layer.locked) return;
 
     if (action === 'duplicate') {
       const { layers, newIds } = duplicateLayers(history.document.layers, [id]);
-      setAllLayers(layers);
+      setAllLayers(assignUniqueLogoSides(layers, newIds));
       setSelectedIds(newIds);
       return;
     }
@@ -735,13 +986,17 @@ export default function CanvasView() {
   };
 
   const onAlign = (align: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => {
-    if (selectedIds.length < 2) return;
-    setAllLayers(alignLayers(history.document.layers, selectedIds, align));
+    if (!selectedIds.length) return;
+    setAllLayers(
+      alignLayers(history.document.layers, selectedIds, align, { pageIndex }),
+    );
   };
 
   const onDistribute = (axis: 'horizontal' | 'vertical') => {
     if (selectedIds.length < 3) return;
-    setAllLayers(distributeLayers(history.document.layers, selectedIds, axis));
+    setAllLayers(
+      distributeLayers(history.document.layers, selectedIds, axis, { mode: 'gaps' }),
+    );
   };
 
   const editableSelectedIds = selectedIds.filter((id) => {
@@ -771,12 +1026,16 @@ export default function CanvasView() {
         canRedo={history.canRedo}
         status={status}
         showShortcuts={showShortcuts}
+        previewOpen={previewOpen}
         onToggleShortcuts={() => setShowShortcuts((v) => !v)}
+        onTogglePreview={togglePreview}
         onNameChange={onRename}
         onMode={(next) => {
           setMode(next);
           setContextMenu(null);
           setShowShortcuts(false);
+          setPreviewOpen(false);
+          setPreviewHtml('');
         }}
         onUndo={history.undo}
         onRedo={history.redo}
@@ -785,6 +1044,11 @@ export default function CanvasView() {
       />
 
       {mode === 'design' ? (
+        previewOpen ? (
+          <div className="canvas-demo-preview" data-testid="canvas-demo-preview">
+            <PreviewViewport html={previewHtml} widthPx={A4_WIDTH_PX} heightPx={A4_HEIGHT_PX} />
+          </div>
+        ) : (
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
           <LeftSidebar
             documentName={history.document.name}
@@ -832,59 +1096,97 @@ export default function CanvasView() {
               setAllLayers(history.document.layers.map((l) => (l.id === id ? { ...l, name } : l)));
             }}
           />
-          <div className="relative h-full min-h-0 min-w-0 flex-1">
-            <Artboard
-              document={{ ...history.document, layers: pageLayers }}
-              selectedIds={selectedIds}
-              zoom={zoom}
-              tool={tool}
-              pan={pan}
-              editingLayerId={editingLayerId}
-              editingSelectAll={editingSelectAll}
-              onPan={setPan}
-              onSelect={onSelect}
-              onSelectIds={(ids) => {
-                if (editingLayerId && (ids.length !== 1 || ids[0] !== editingLayerId)) {
-                  commitInlineEdit();
-                }
-                setSelectedIds(ids);
-              }}
-              onChangeLayers={setPageLayers}
-              onPreviewLayers={setPageLayersLive}
-              onCommitGesture={commitPageLayersGesture}
-              onZoom={setZoom}
-              onDrawLayer={(drawTool, rect) => {
-                if (drawTool === 'select' || drawTool === 'hand') return;
-                addLayerAt(drawTool, rect);
-              }}
-              onStartEdit={startInlineEdit}
-              onEditValue={onInlineEditValue}
-              onFitTextHeight={onFitTextHeight}
-              onCommitEdit={commitInlineEdit}
-              onContextMenu={(layerId, x, y) => {
-                const layer = layerId
-                  ? history.document.layers.find((l) => l.id === layerId)
-                  : null;
-                setContextMenu({
-                  x,
-                  y,
-                  layerId,
-                  locked: Boolean(layer?.locked),
-                  visible: layer?.visible !== false,
-                  isContainer: Boolean(layer && isLayerContainer(layer)),
-                  canGroup: selectedIds.length >= 2 && (layerId ? selectedIds.includes(layerId) : false),
-                  editKind: canInlineEditLayer(layer)
-                    ? 'text'
-                    : canFocusFieldBinding(layer)
-                      ? 'field'
-                      : null,
-                });
-              }}
-            />
+          <DesignStage
+            navRef={viewportNavRef}
+            document={history.document}
+            pageLayers={pageLayers}
+            pageIndex={pageIndex}
+            selectedIds={selectedIds}
+            tool={tool}
+            editingLayerId={editingLayerId}
+            editingSelectAll={editingSelectAll}
+            pathEditingLayerId={pathEditingLayerId}
+            onSelect={onSelect}
+            onSelectIds={(ids) => {
+              if (editingLayerId && (ids.length !== 1 || ids[0] !== editingLayerId)) {
+                commitInlineEdit();
+              }
+              if (pathEditingLayerId && (ids.length !== 1 || ids[0] !== pathEditingLayerId)) {
+                setPathEditingLayerId(null);
+              }
+              setSelectedIds(ids);
+            }}
+            onChangeLayers={setPageLayers}
+            onPreviewLayers={setPageLayersLive}
+            onCommitGesture={commitPageLayersGesture}
+            onDrawLayer={(drawTool, rect) => {
+              if (drawTool === 'select' || drawTool === 'hand' || drawTool === 'lasso' || drawTool === 'bend' || drawTool === 'cut') {
+                return;
+              }
+              addLayerAt(drawTool, rect);
+            }}
+            onStartEdit={startContainerOrInlineEdit}
+            onStartPathEdit={(id) => {
+              setPathEditingLayerId(id);
+              setSelectedIds([id]);
+              setTool('select');
+            }}
+            onEditValue={onInlineEditValue}
+            onFitTextHeight={onFitTextHeight}
+            onCommitEdit={commitInlineEdit}
+            onUpsertGuide={(guide) => {
+              const exists = history.document.guides?.some((g) => g.id === guide.id);
+              if (exists) history.updateSilent(upsertGuide(history.document, guide));
+              else history.setDocument(upsertGuide(history.document, guide));
+            }}
+            onMoveGuide={(id, posMm) => {
+              history.updateSilent(moveGuide(history.document, id, posMm));
+            }}
+            onRemoveGuide={(id) => {
+              history.setDocument(removeGuide(history.document, id));
+            }}
+            onContextMenu={(layerId, x, y) => {
+              const layer = layerId
+                ? history.document.layers.find((l) => l.id === layerId)
+                : null;
+              setContextMenu({
+                x,
+                y,
+                layerId,
+                locked: Boolean(layer?.locked),
+                visible: layer?.visible !== false,
+                isContainer: Boolean(layer && isLayerContainer(layer)),
+                canGroup: selectedIds.length >= 2 && (layerId ? selectedIds.includes(layerId) : false),
+                canUngroup: layer?.type === 'group',
+                canPaste: clipboard.length > 0,
+                editKind: canInlineEditLayer(layer)
+                  ? 'text'
+                  : canFocusFieldBinding(layer)
+                    ? 'field'
+                    : null,
+              });
+            }}
+          >
+            {showPathToolbar && (
+              <PathEditToolbar
+                tool={tool}
+                onTool={(t) => {
+                  setTool(t);
+                  if (t !== 'select' && selectedLine) {
+                    setPathEditingLayerId(selectedLine.id);
+                  }
+                }}
+                canClosePath={Boolean(pathToolbarLine && (pathToolbarLine.meta?.path?.points.length ?? 0) >= 3)}
+                pathClosed={Boolean(pathToolbarLine?.meta?.path?.closed)}
+                onToggleClosed={() => {
+                  if (!pathToolbarLine) return;
+                  setPageLayers(
+                    pageLayers.map((l) => (l.id === pathToolbarLine.id ? toggleLineClosed(l) : l)),
+                  );
+                }}
+              />
+            )}
             <BottomToolbar tool={tool} onTool={setTool} />
-            <div className="canvas-viewport-zoom">
-              <ZoomMenu zoom={zoom} onZoom={setZoom} onZoomFit={zoomToFit} />
-            </div>
             {showShortcuts && (
               <div className="canvas-shortcuts-panel" data-testid="canvas-shortcuts-panel">
                 <div className="canvas-section-title mb-2 flex items-center justify-between">
@@ -919,14 +1221,18 @@ export default function CanvasView() {
                 onClose={() => setContextMenu(null)}
               />
             )}
-          </div>
+          </DesignStage>
           <RightPanel
             layer={selected}
             selectedCount={selectedIds.length}
-            pageColors={collectDocumentColors(history.document.layers)}
+            pageColors={pageColors}
             onChange={(layer) => {
               if (panelBaselineRef.current) onPanelCommitLive();
-              setAllLayers(history.document.layers.map((l) => (l.id === layer.id ? layer : l)));
+              let layers = history.document.layers.map((l) => (l.id === layer.id ? layer : l));
+              if (layer.type === 'grid') {
+                layers = rebuildGridSlots(layers, layer.id);
+              }
+              setAllLayers(layers);
             }}
             onChangeLive={onPanelChangeLive}
             onCommitLive={onPanelCommitLive}
@@ -944,17 +1250,16 @@ export default function CanvasView() {
             }
             onBringFront={() => setAllLayers(bringToFront(history.document.layers, selectedIds))}
             onSendBack={() => setAllLayers(sendToBack(history.document.layers, selectedIds))}
-            imagesPerPage={history.document.settings?.imagesPerPage ?? 4}
-            onImagesPerPage={(n) =>
-              history.setDocument({
-                ...history.document,
-                settings: { ...history.document.settings, imagesPerPage: n },
-              })
+            logoSideConflict={
+              Boolean(selected?.type === 'logo' && logoSideHasConflict(history.document.layers, selected.id))
             }
           />
         </div>
+        )
       ) : (
-        <GeneratePanel document={history.document} />
+        <Suspense fallback={<div className="canvas-app canvas-loading">Cargando generador…</div>}>
+          <GeneratePanel document={history.document} />
+        </Suspense>
       )}
     </div>
   );

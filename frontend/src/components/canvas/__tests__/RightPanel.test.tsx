@@ -31,8 +31,6 @@ const panelProps = {
   onBulkOpacity: vi.fn(),
   onBringFront: vi.fn(),
   onSendBack: vi.fn(),
-  imagesPerPage: 4,
-  onImagesPerPage: vi.fn(),
 };
 
 describe('layerStyle', () => {
@@ -265,6 +263,21 @@ describe('RightPanel shape inspector', () => {
     expect(onChange.mock.calls[0][0].cssVars['--scale-x']).toBe('-1');
   });
 
+  it('shows empty properties panel when nothing is selected', () => {
+    render(<RightPanel layer={null} selectedCount={0} onChange={vi.fn()} {...panelProps} />);
+    expect(screen.queryByText(/Selecciona una capa/i)).toBeNull();
+    expect(screen.getByText('Propiedades')).toBeTruthy();
+  });
+
+  it('shows logo side conflict hint when logoSideConflict is true', () => {
+    const layer = createLayer('logo', { meta: { side: 'left' } });
+    render(
+      <RightPanel layer={layer} onChange={vi.fn()} {...panelProps} logoSideConflict />,
+    );
+    expect(screen.getByLabelText('Lado del logo')).toHaveValue('left');
+    expect(screen.getByText(/Otra capa usa este lado/i)).toBeTruthy();
+  });
+
   it('accepts free stroke weight via number input and slider (0.1px steps)', () => {
     const layer = createLayer('line');
     const onChangeLive = vi.fn();
@@ -286,20 +299,15 @@ describe('RightPanel shape inspector', () => {
     expect(numberInput.title).toBe('Grosor en px (0–100)');
     fireEvent.change(numberInput, { target: { value: '0.1' } });
     expect(onChangeLive).toHaveBeenCalled();
+    expect(onChangeLive.mock.calls.at(-1)?.[0].cssVars['--border-width']).toBe('0.1px');
 
     const slider = screen.getByLabelText('Peso del trazo') as HTMLInputElement;
     expect(slider.type).toBe('range');
     expect(slider.step).toBe('0.1');
     fireEvent.change(slider, { target: { value: '12.5' } });
-    expect(onChangeLive).toHaveBeenCalled();
+    expect(onChangeLive.mock.calls.at(-1)?.[0].cssVars['--border-width']).toBe('12.5px');
     fireEvent.pointerUp(slider);
     expect(onCommitLive).toHaveBeenCalled();
-  });
-
-  it('hides Documento when a layer is selected', () => {
-    const layer = createLayer('rect');
-    render(<RightPanel layer={layer} onChange={vi.fn()} {...panelProps} />);
-    expect(screen.queryByText('Documento')).toBeNull();
   });
 
   it('coalesces numeric edits via onChangeLive + onCommitLive on blur', () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createLayer } from '../constants';
+import { applyGridToImageSlots } from '../ops/gridLayout';
 import {
   isPointerClick,
   layersInMarquee,
@@ -153,6 +154,37 @@ describe('selectionTransform', () => {
     expect(result.guides.some((g) => g.axis === 'x')).toBe(true);
   });
 
+  it('selectionBounds includes rotated AABB', () => {
+    const layer = createLayer('rect', {
+      cssVars: {
+        '--translate-x': '0mm',
+        '--translate-y': '0mm',
+        '--width': '20mm',
+        '--height': '10mm',
+        '--rotate': '90deg',
+      },
+    });
+    const bounds = selectionBounds([layer], [layer.id])!;
+    // 20×10 rotated 90° around center → visual ~10×20
+    expect(bounds.w).toBeCloseTo(10, 5);
+    expect(bounds.h).toBeCloseTo(20, 5);
+  });
+
+  it('resizeSelection fromCenter grows symmetrically', () => {
+    const layer = createLayer('rect', {
+      cssVars: {
+        '--translate-x': '10mm',
+        '--translate-y': '10mm',
+        '--width': '20mm',
+        '--height': '20mm',
+      },
+    });
+    const next = resizeSelection([layer], [layer.id], 'e', 5, 0, { fromCenter: true });
+    const moved = next.find((l) => l.id === layer.id)!;
+    expect(parseMm(moved.cssVars['--width'])).toBeCloseTo(30, 5);
+    expect(parseMm(moved.cssVars['--translate-x'])).toBeCloseTo(5, 5);
+  });
+
   it('resizeSelection scales multiple layers relative to group bbox', () => {
     const a = createLayer('rect', {
       cssVars: {
@@ -174,5 +206,70 @@ describe('selectionTransform', () => {
     expect(parseMm(next.find((l) => l.id === a.id)!.cssVars['--width'])).toBeCloseTo(30, 5);
     expect(parseMm(next.find((l) => l.id === b.id)!.cssVars['--translate-x'])).toBeCloseTo(30, 5);
     expect(parseMm(next.find((l) => l.id === b.id)!.cssVars['--width'])).toBeCloseTo(30, 5);
+  });
+
+  it('resizeSelection relayouts grid image slots into the new box', () => {
+    const grid = createLayer('grid', {
+      meta: { cols: 2, rows: 2, gapMm: 2 },
+      cssVars: {
+        '--translate-x': '10mm',
+        '--translate-y': '10mm',
+        '--width': '100mm',
+        '--height': '80mm',
+      },
+    });
+    const slots = [0, 1, 2, 3].map((i) =>
+      createLayer('imageSlot', {
+        parentId: grid.id,
+        meta: { index: i },
+        cssVars: {
+          '--translate-x': '10mm',
+          '--translate-y': '10mm',
+          '--width': '40mm',
+          '--height': '30mm',
+        },
+      }),
+    );
+    const before = applyGridToImageSlots([grid, ...slots], grid.id);
+    const slotBefore = before.find((l) => l.parentId === grid.id && l.meta?.index === 1)!;
+    const next = resizeSelection(before, [grid.id], 'se', 40, 20, { aspectLock: false });
+    const gridNext = next.find((l) => l.id === grid.id)!;
+    const slotAfter = next.find((l) => l.id === slotBefore.id)!;
+    expect(parseMm(gridNext.cssVars['--width'])).toBeCloseTo(140, 5);
+    expect(parseMm(gridNext.cssVars['--height'])).toBeCloseTo(100, 5);
+    // Right-column slot should move further right after a wider grid
+    expect(parseMm(slotAfter.cssVars['--translate-x'])).toBeGreaterThan(
+      parseMm(slotBefore.cssVars['--translate-x']),
+    );
+    expect(parseMm(slotAfter.cssVars['--width'])).toBeGreaterThan(
+      parseMm(slotBefore.cssVars['--width']),
+    );
+  });
+
+  it('resizeSelection scales path points on line layers without changing stroke weight', () => {
+    const line = createLayer('line', {
+      cssVars: {
+        ...createLayer('line').cssVars,
+        '--translate-x': '0mm',
+        '--translate-y': '0mm',
+        '--width': '80mm',
+        '--height': '2mm',
+        '--border-width': '2px',
+      },
+      meta: {
+        path: {
+          points: [
+            { x: 0, y: 1 },
+            { x: 80, y: 1 },
+          ],
+          closed: false,
+        },
+      },
+    });
+    const next = resizeSelection([line], [line.id], 'e', 40, 0, { aspectLock: false });
+    const resized = next.find((l) => l.id === line.id)!;
+    expect(parseMm(resized.cssVars['--width'])).toBeCloseTo(120, 5);
+    expect(resized.cssVars['--border-width']).toBe('2px');
+    expect(resized.meta?.path?.points[1].x).toBeCloseTo(120, 5);
   });
 });

@@ -66,8 +66,28 @@ export interface LayerCssVars {
   '--box-shadow'?: string;
   /** "1" locks W/H aspect ratio in inspector */
   '--aspect-locked'?: string;
+  /** Line stroke start cap: none | round | square | arrow */
+  '--stroke-start'?: string;
+  /** Line stroke end cap: none | round | square | arrow */
+  '--stroke-end'?: string;
   [key: string]: string | undefined;
 }
+
+export type StrokeCap = 'none' | 'round' | 'square' | 'arrow';
+
+export type PathPoint = {
+  x: number;
+  y: number;
+  /** Incoming handle in layer-local mm; null/undefined = sharp corner */
+  hin?: { x: number; y: number } | null;
+  /** Outgoing handle in layer-local mm; null/undefined = sharp corner */
+  hout?: { x: number; y: number } | null;
+};
+
+export type LayerPath = {
+  points: PathPoint[];
+  closed?: boolean;
+};
 
 export type CanvasTool =
   | 'select'
@@ -86,7 +106,10 @@ export type CanvasTool =
   | 'ellipse'
   | 'arrow'
   | 'polygon'
-  | 'star';
+  | 'star'
+  | 'lasso'
+  | 'bend'
+  | 'cut';
 
 export type CanvasMode = 'design' | 'generate';
 
@@ -106,6 +129,8 @@ export interface LayerMeta {
   rowsData?: string;
   imagesPerPage?: number;
   pageIndex?: number;
+  /** Vector geometry for line layers (mm relative to layer origin). */
+  path?: LayerPath;
 }
 
 export interface CanvasLayer {
@@ -127,6 +152,14 @@ export interface CanvasFieldDef {
   label: string;
 }
 
+/** Persistent alignment guide (page-relative mm). */
+export interface CanvasGuide {
+  id: string;
+  axis: 'x' | 'y';
+  posMm: number;
+  pageIndex?: number;
+}
+
 export interface CanvasDocument {
   version: 1 | typeof DOCUMENT_VERSION;
   id: string;
@@ -136,6 +169,8 @@ export interface CanvasDocument {
   fields: CanvasFieldDef[];
   pages?: Array<{ id: string; name: string }>;
   settings?: { imagesPerPage?: number; gridRules?: GridRule[] };
+  /** Manual guides dragged from rulers. */
+  guides?: CanvasGuide[];
 }
 
 export interface CanvasDocumentSummary {
@@ -163,6 +198,7 @@ export function normalizeDocument(doc: CanvasDocument): CanvasDocument {
       pageIndex: layer.pageIndex ?? 0,
     })),
     settings: doc.settings ?? {},
+    guides: doc.guides ?? [],
   };
 }
 
@@ -175,6 +211,7 @@ export function createEmptyDocument(name = 'Sin título'): CanvasDocument {
     page: { widthMm: A4_WIDTH_MM, heightMm: A4_HEIGHT_MM },
     pages: [{ id: pageId, name: 'Página 1' }],
     settings: {},
+    guides: [],
     layers: [
       {
         id: newId(),

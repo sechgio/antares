@@ -1,5 +1,6 @@
 import { createLayer } from './constants';
 import { applyGridToImageSlots, DEFAULT_GRID_RULES } from './ops/gridLayout';
+import { DEFAULT_LINE_STROKE_PX, lineHeightMmFromStrokePx } from './ops/layerStyle';
 import type { CanvasDocument, CanvasLayer } from './types';
 import { DOCUMENT_VERSION, mm, newId } from './types';
 
@@ -144,13 +145,14 @@ function addPhotoGrid(
 }
 
 function docFrom(name: string, layers: CanvasLayer[], fieldKeys: string[]): CanvasDocument {
+  const slotCount = layers.filter((l) => l.type === 'imageSlot').length;
   return {
     version: DOCUMENT_VERSION,
     id: newId(),
     name,
     page: { widthMm: 210, heightMm: 297 },
     pages: [{ id: newId(), name: 'Página 1' }],
-    settings: {},
+    settings: slotCount > 0 ? { imagesPerPage: slotCount } : {},
     layers,
     fields: fieldKeys.map((key) => ({ id: newId(), key, label: key })),
   };
@@ -272,7 +274,7 @@ export function createReservoriosPreset(name = 'Reservorios'): CanvasDocument {
   addFields(layers, fields);
   addPhotoGrid(layers, { x: 8, y: 56, w: 194, h: 228, cols: 3, rows: 3, gapMm: 2 });
   const doc = docFrom(name, layers, fields.map((f) => f.key));
-  doc.settings = { gridRules: DEFAULT_GRID_RULES };
+  doc.settings = { ...doc.settings, gridRules: DEFAULT_GRID_RULES };
   return doc;
 }
 
@@ -533,10 +535,16 @@ export function createFichaTecnicaPreset(name = 'Ficha técnica'): CanvasDocumen
       pageIndex: 0,
       cssVars: {
         '--width': mm(180),
-        '--height': mm(0.5),
+        '--height': mm(lineHeightMmFromStrokePx(DEFAULT_LINE_STROKE_PX)),
         '--translate-x': mm(15),
         '--translate-y': mm(145),
-        '--background-color': '#000000',
+        '--background-color': 'transparent',
+        '--fill-visible': '0',
+        '--border-width': `${DEFAULT_LINE_STROKE_PX}px`,
+        '--border-color': '#000000',
+        '--stroke-align': 'center',
+        '--stroke-visible': '1',
+        '--stroke-opacity': '100',
       },
     }),
   });

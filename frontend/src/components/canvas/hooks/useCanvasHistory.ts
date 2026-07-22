@@ -1,7 +1,8 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { CanvasDocument } from '../types';
 
-const MAX_HISTORY = 50;
+/** Cap undo depth to limit RAM when documents embed large data-URL images. */
+export const MAX_HISTORY = 30;
 
 export function useCanvasHistory(initial: CanvasDocument) {
   const [document, setDocumentState] = useState<CanvasDocument>(initial);
@@ -50,15 +51,31 @@ export function useCanvasHistory(initial: CanvasDocument) {
     });
   }, [document]);
 
-  return {
-    document,
-    setDocument,
-    replaceDocument,
-    updateSilent,
-    commitFromBaseline,
-    undo,
-    redo,
-    canUndo: past.length > 0,
-    canRedo: future.length > 0,
-  };
+  const canUndo = past.length > 0;
+  const canRedo = future.length > 0;
+
+  return useMemo(
+    () => ({
+      document,
+      setDocument,
+      replaceDocument,
+      updateSilent,
+      commitFromBaseline,
+      undo,
+      redo,
+      canUndo,
+      canRedo,
+    }),
+    [
+      document,
+      setDocument,
+      replaceDocument,
+      updateSilent,
+      commitFromBaseline,
+      undo,
+      redo,
+      canUndo,
+      canRedo,
+    ],
+  );
 }

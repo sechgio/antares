@@ -127,6 +127,66 @@ describe('LayerNode inline edit', () => {
     expect(onCommitEdit).toHaveBeenCalled();
   });
 
+  it('commits on Ctrl+D so window duplicate can run', () => {
+    const layer = createLayer('text', { value: 'Hola' });
+    const onCommitEdit = vi.fn();
+    const onFitTextHeight = vi.fn();
+    render(
+      <LayerNode
+        layer={layer}
+        selected
+        interactive
+        scale={1}
+        editing
+        onCommitEdit={onCommitEdit}
+        onFitTextHeight={onFitTextHeight}
+        {...baseHandlers}
+      />,
+    );
+    fireEvent.keyDown(screen.getByTestId('canvas-inline-editor'), {
+      key: 'd',
+      code: 'KeyD',
+      ctrlKey: true,
+    });
+    expect(onFitTextHeight).toHaveBeenCalledWith(layer.id, expect.any(Number));
+    expect(onCommitEdit).toHaveBeenCalled();
+  });
+
+  it('uses move cursor for text when not editing', () => {
+    const layer = createLayer('text', { value: 'Hola' });
+    const { container } = render(
+      <LayerNode layer={layer} selected interactive scale={1} editing={false} {...baseHandlers} />,
+    );
+    const node = container.querySelector('[data-layer-id]') as HTMLElement;
+    expect(node.style.cursor).toBe('move');
+  });
+
+  it('uses text cursor while inline editing', () => {
+    const layer = createLayer('text', { value: 'Hola' });
+    const { container } = render(
+      <LayerNode
+        layer={layer}
+        selected
+        interactive
+        scale={1}
+        editing
+        onCommitEdit={vi.fn()}
+        {...baseHandlers}
+      />,
+    );
+    const node = container.querySelector('[data-layer-id]') as HTMLElement;
+    expect(node.style.cursor).toBe('text');
+  });
+
+  it('uses move cursor for field layers when not editing', () => {
+    const layer = createLayer('field');
+    const { container } = render(
+      <LayerNode layer={layer} selected interactive scale={1} editing={false} {...baseHandlers} />,
+    );
+    const node = container.querySelector('[data-layer-id]') as HTMLElement;
+    expect(node.style.cursor).toBe('move');
+  });
+
   it('puts caret at end when editingSelectAll is false', () => {
     const layer = createLayer('text', { value: 'Hi' });
     render(

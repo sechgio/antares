@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { memo, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ArrowUpRight,
@@ -267,7 +267,7 @@ function ToolGroup({
   );
 }
 
-export default function BottomToolbar({ tool, onTool }: BottomToolbarProps) {
+export default memo(function BottomToolbar({ tool, onTool }: BottomToolbarProps) {
   return (
     <div className="pointer-events-none absolute bottom-5 left-1/2 z-50 -translate-x-1/2">
       <div className="canvas-toolbar-float pointer-events-auto" role="toolbar" aria-label="Herramientas Canvas">
@@ -281,4 +281,5 @@ export default function BottomToolbar({ tool, onTool }: BottomToolbarProps) {
       </div>
     </div>
   );
-}
+});
+
