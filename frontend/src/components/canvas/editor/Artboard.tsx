@@ -14,6 +14,7 @@ import {
 import { clipPathForLayerType } from '../ops/shapePaths';
 import {
   angleFromCenter,
+  isPointerClick,
   layersInMarquee,
   moveSelection,
   resizeSelection,
@@ -207,10 +208,17 @@ export default function Artboard({
   const beginSelectionMove = (ids: string[], startClientX: number, startClientY: number) => {
     const snapshot = cloneLayers(layersRef.current);
     gestureDirtyRef.current = false;
+    let dragging = false;
 
     const onMovePtr = (ev: PointerEvent) => {
-      const rawDx = (ev.clientX - startClientX) / (zoom * MM_TO_PX);
-      const rawDy = (ev.clientY - startClientY) / (zoom * MM_TO_PX);
+      const dxPx = ev.clientX - startClientX;
+      const dyPx = ev.clientY - startClientY;
+      if (!dragging) {
+        if (isPointerClick(dxPx, dyPx)) return;
+        dragging = true;
+      }
+      const rawDx = dxPx / (zoom * MM_TO_PX);
+      const rawDy = dyPx / (zoom * MM_TO_PX);
       const snapped = snapMoveWithGuides(snapshot, ids, rawDx, rawDy, pageSize);
       setGuides(snapped.guides);
       applyGestureLayers(moveSelection(snapshot, ids, snapped.dx, snapped.dy));
