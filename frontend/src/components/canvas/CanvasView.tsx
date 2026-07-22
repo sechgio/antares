@@ -172,6 +172,25 @@ export default function CanvasView() {
     settings: doc.settings ? { ...doc.settings, gridRules: doc.settings.gridRules?.map((r) => ({ ...r })) } : undefined,
   });
 
+  const gestureBaselineRef = useRef<CanvasDocument | null>(null);
+
+  const setPageLayersLive = useCallback(
+    (layers: CanvasLayer[]) => {
+      if (!gestureBaselineRef.current) {
+        gestureBaselineRef.current = cloneDocument(history.document);
+      }
+      history.updateSilent(setActivePageLayers(history.document, pageIndex, layers));
+    },
+    [history, pageIndex],
+  );
+
+  const commitPageLayersGesture = useCallback(() => {
+    const baseline = gestureBaselineRef.current;
+    if (!baseline) return;
+    gestureBaselineRef.current = null;
+    history.commitFromBaseline(baseline);
+  }, [history]);
+
   const commitInlineEdit = useCallback(() => {
     if (!editingLayerId) return;
     const baseline = editBaselineRef.current;
@@ -779,6 +798,8 @@ export default function CanvasView() {
                 setSelectedIds(ids);
               }}
               onChangeLayers={setPageLayers}
+              onPreviewLayers={setPageLayersLive}
+              onCommitGesture={commitPageLayersGesture}
               onZoom={setZoom}
               onDrawLayer={(drawTool, rect) => {
                 if (drawTool === 'select' || drawTool === 'hand') return;
