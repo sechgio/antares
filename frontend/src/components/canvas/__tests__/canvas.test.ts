@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { createLayer } from '../constants';
 import { DEFAULT_GRID_RULES, layoutGridSlots, resolveGridLayout } from '../ops/gridLayout';
 import {
@@ -23,6 +23,14 @@ import { buildRowData, matchesRecordId } from '../runtime/excel';
 import { mergeCanvasHtmlDocuments, renderCanvasHtml } from '../runtime/renderHtml';
 import { createEmptyDocument, newId, normalizeDocument, parseMm } from '../types';
 import { CANVAS_SHORTCUTS } from '../shortcuts';
+import {
+  applyLineStrokeWeight,
+  clampStrokeWeight,
+  lineHeightMmFromStrokePx,
+  lineStrokeWidthPx,
+  resetLastStrokeWeight,
+  strokeWeightForNewLine,
+} from '../ops/layerStyle';
 
 describe('canvas renderHtml', () => {
   it('renders field bindings and image slots', () => {
@@ -148,6 +156,36 @@ describe('createLayer', () => {
     expect(createLayer('arrow').type).toBe('arrow');
     expect(createLayer('polygon').type).toBe('polygon');
     expect(createLayer('star').type).toBe('star');
+  });
+});
+
+describe('line stroke weight', () => {
+  beforeEach(() => {
+    resetLastStrokeWeight();
+  });
+
+  it('accepts fine Figma-like weights (0.1px steps) and clamps to Canva range', () => {
+    const line = createLayer('line');
+    expect(lineStrokeWidthPx(applyLineStrokeWeight(line, 0.1))).toBeCloseTo(0.1, 1);
+    expect(lineStrokeWidthPx(applyLineStrokeWeight(line, 2.5))).toBeCloseTo(2.5, 1);
+    expect(lineStrokeWidthPx(applyLineStrokeWeight(line, 0.15))).toBeCloseTo(0.15, 1);
+    expect(clampStrokeWeight(-3)).toBe(0);
+    expect(clampStrokeWeight(0.1)).toBe(0.1);
+    expect(clampStrokeWeight(100)).toBe(100);
+    expect(clampStrokeWeight(101)).toBe(100);
+    expect(lineStrokeWidthPx(applyLineStrokeWeight(line, 250))).toBe(100);
+  });
+
+  it('remembers last positive weight for the next line insert', () => {
+    expect(strokeWeightForNewLine()).toBe(1);
+    applyLineStrokeWeight(createLayer('line'), 4.5);
+    expect(strokeWeightForNewLine()).toBe(4.5);
+    applyLineStrokeWeight(createLayer('line'), 0);
+    expect(strokeWeightForNewLine()).toBe(4.5);
+    expect(parseMm(applyLineStrokeWeight(createLayer('line'), 8).cssVars['--height'])).toBeCloseTo(
+      lineHeightMmFromStrokePx(8),
+      2,
+    );
   });
 });
 

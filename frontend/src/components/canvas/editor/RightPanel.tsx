@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { toPng } from 'html-to-image';
+import { memo, useState } from 'react';
 import {
   AlignCenter,
   AlignHorizontalDistributeCenter,
@@ -28,15 +27,22 @@ import { DEFAULT_FIELD_KEYS } from '../constants';
 import { mm, parseMm } from '../types';
 import {
   DEFAULT_SHADOW,
+  applyLineStrokeWeight,
   clampOpacity,
+  clampStrokeWeight,
   formatBoxShadow,
   isAspectLocked,
   isShapeLayer,
   layerPanelTitle,
+  lineStrokeWidthPx,
   parseBoxShadow,
   parseScale,
   parseStrokeAlign,
+  rememberStrokeWeight,
   resizeWithAspectLock,
+  STROKE_WEIGHT_MAX_PX,
+  STROKE_WEIGHT_MIN_PX,
+  STROKE_WEIGHT_STEP_PX,
   toggleFlip,
   type StrokeAlign,
 } from '../ops/layerStyle';
@@ -129,6 +135,7 @@ const ALIGN_ITEMS = [
 async function exportLayerPng(layerId: string, name: string, scale: number) {
   const el = document.querySelector(`[data-layer-id="${layerId}"]`) as HTMLElement | null;
   if (!el) return;
+  const { toPng } = await import('html-to-image');
   const dataUrl = await toPng(el, {
     pixelRatio: scale,
     cacheBust: true,
@@ -139,7 +146,7 @@ async function exportLayerPng(layerId: string, name: string, scale: number) {
   a.click();
 }
 
-export default function RightPanel({
+function RightPanel({
   layer,
   selectedCount,
   pageColors,
@@ -197,15 +204,34 @@ export default function RightPanel({
 
   const hasSelection = Boolean(layer && layer.type !== 'frame');
   const shape = layer ? isShapeLayer(layer) : false;
+  const isLine = layer?.type === 'line';
   const showRadius = layer ? !clipPathForLayerType(layer.type) && layer.type !== 'line' : false;
   const hasFill =
     Boolean(layer) &&
+    !isLine &&
     layer!.cssVars['--background-color'] !== 'transparent' &&
     layer!.cssVars['--fill-visible'] !== '0';
   const hasStroke =
     Boolean(layer) &&
-    layer!.cssVars['--stroke-visible'] !== '0' &&
-    parseFloat(layer!.cssVars['--border-width'] || '0') > 0;
+    (isLine ||
+      (layer!.cssVars['--stroke-visible'] !== '0' &&
+        parseFloat(layer!.cssVars['--border-width'] || '0') > 0));
+  const strokeWeightPx = layer
+    ? isLine
+      ? lineStrokeWidthPx(layer)
+      : clampStrokeWeight(parseFloat(layer.cssVars['--border-width'] || '0') || 0)
+    : 0;
+
+  const setStrokeWeight = (raw: number) => {
+    if (!layer) return;
+    if (layer.type === 'line') {
+      emitLive(applyLineStrokeWeight(layer, raw));
+      return;
+    }
+    const px = clampStrokeWeight(raw);
+    rememberStrokeWeight(px);
+    setVarLive('--border-width', `${px}px`);
+  };
 
   return (
     <aside
@@ -566,68 +592,111 @@ export default function RightPanel({
                   type="button"
                   className="canvas-paint-icon"
                   aria-label="Añadir trazo"
-                  onClick={() =>
+                  onClick={() => {
+                    if (!layer) return;
+                    if (layer.type === 'line') {
+                      onChange(applyLineStrokeWeight(layer, 1));
+                      return;
+                    }
                     setVars({
                       '--border-color': '#000000',
                       '--border-width': '1px',
                       '--stroke-opacity': '100',
                       '--stroke-visible': '1',
                       '--stroke-align': 'inside',
-                    })
-                  }
+                    });
+                  }}
                 >
                   <Plus className="h-3.5 w-3.5" />
                 </button>
               </SectionHeader>
               {hasStroke ? (
                   <>
-                    <PaintRow
-                      color={layer.cssVars['--border-color'] || '#000000'}
-                      opacity={Number(layer.cssVars['--stroke-opacity'] ?? 100)}
-                      visible={layer.cssVars['--stroke-visible'] !== '0'}
-                      pageColors={pageColors}
-                      onPaintChange={(c, o) =>
-                        setVarsLive({
-                          '--border-color': c,
-                          '--stroke-opacity': String(o),
-                          '--stroke-visible': '1',
-                        })
-                      }
-                      onPaintCommit={onCommitLive}
-                      onVisibleChange={(v) => setVar('--stroke-visible', v ? '1' : '0')}
-                      onRemove={() =>
-                        setVars({
-                          '--border-width': '0px',
-                          '--stroke-visible': '0',
-                        })
-                      }
-                    />
-                    <div className="mt-2 flex gap-2">
-                      <label className="min-w-0 flex-1">
-                        <span className="canvas-sublabel">Posición</span>
-                        <select
-                          className="canvas-input"
-                          value={parseStrokeAlign(layer.cssVars['--stroke-align'])}
-                          onChange={(e) => setVar('--stroke-align', e.target.value as StrokeAlign)}
-                        >
-                          <option value="inside">Interior</option>
-                          <option value="center">Centro</option>
-                          <option value="outside">Exterior</option>
-                        </select>
-                      </label>
-                      <label className="w-16 shrink-0">
+                    {isLine ? (
+                      <PaintRow
+                        color={layer.cssVars['--background-color'] || '#000000'}
+                        opacity={Number(layer.cssVars['--fill-opacity'] ?? 100)}
+                        visible={parseMm(layer.cssVars['--height'], 0) > 0}
+                        pageColors={pageColors}
+                        onPaintChange={(c, o) =>
+                          setVarsLive({
+                            '--background-color': c,
+                            '--fill-opacity': String(o),
+                          })
+                        }
+                        onPaintCommit={onCommitLive}
+                        onVisibleChange={(v) =>
+                          emitLive(applyLineStrokeWeight(layer, v ? strokeWeightPx || 1 : 0))
+                        }
+                        onRemove={() => onChange(applyLineStrokeWeight(layer, 0))}
+                      />
+                    ) : (
+                      <PaintRow
+                        color={layer.cssVars['--border-color'] || '#000000'}
+                        opacity={Number(layer.cssVars['--stroke-opacity'] ?? 100)}
+                        visible={layer.cssVars['--stroke-visible'] !== '0'}
+                        pageColors={pageColors}
+                        onPaintChange={(c, o) =>
+                          setVarsLive({
+                            '--border-color': c,
+                            '--stroke-opacity': String(o),
+                            '--stroke-visible': '1',
+                          })
+                        }
+                        onPaintCommit={onCommitLive}
+                        onVisibleChange={(v) => setVar('--stroke-visible', v ? '1' : '0')}
+                        onRemove={() =>
+                          setVars({
+                            '--border-width': '0px',
+                            '--stroke-visible': '0',
+                          })
+                        }
+                      />
+                    )}
+                    <div className="mt-2 space-y-2">
+                      {!isLine && (
+                        <label className="block">
+                          <span className="canvas-sublabel">Posición</span>
+                          <select
+                            className="canvas-input"
+                            value={parseStrokeAlign(layer.cssVars['--stroke-align'])}
+                            onChange={(e) => setVar('--stroke-align', e.target.value as StrokeAlign)}
+                          >
+                            <option value="inside">Interior</option>
+                            <option value="center">Centro</option>
+                            <option value="outside">Exterior</option>
+                          </select>
+                        </label>
+                      )}
+                      <div>
                         <span className="canvas-sublabel">Peso</span>
-                        <input
-                          type="number"
-                          className="canvas-input"
-                          min={0}
-                          value={parseFloat(layer.cssVars['--border-width'] || '0') || 0}
-                          onChange={(e) =>
-                            setVarLive('--border-width', `${Math.max(0, Number(e.target.value) || 0)}px`)
-                          }
-                          onBlur={() => onCommitLive?.()}
-                        />
-                      </label>
+                        <div className="mt-0.5 flex items-center gap-2">
+                          <input
+                            type="range"
+                            className="h-1 min-w-0 flex-1 cursor-pointer appearance-none rounded-full bg-[var(--cv-border)] outline-none [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-black/20 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-black/20 [&::-moz-range-thumb]:bg-white [&::-moz-range-track]:h-1 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-[var(--cv-border)]"
+                            min={STROKE_WEIGHT_MIN_PX}
+                            max={STROKE_WEIGHT_MAX_PX}
+                            step={STROKE_WEIGHT_STEP_PX}
+                            value={strokeWeightPx}
+                            aria-label="Peso del trazo"
+                            onChange={(e) => setStrokeWeight(Number(e.target.value))}
+                            onPointerUp={() => onCommitLive?.()}
+                            onKeyUp={() => onCommitLive?.()}
+                          />
+                          <input
+                            type="number"
+                            className="canvas-input w-[4.25rem] shrink-0"
+                            min={STROKE_WEIGHT_MIN_PX}
+                            max={STROKE_WEIGHT_MAX_PX}
+                            step={STROKE_WEIGHT_STEP_PX}
+                            value={strokeWeightPx}
+                            aria-label="Peso del trazo (px)"
+                            title={`Grosor en px (${STROKE_WEIGHT_MIN_PX}–${STROKE_WEIGHT_MAX_PX})`}
+                            onChange={(e) => setStrokeWeight(Number(e.target.value))}
+                            onBlur={() => onCommitLive?.()}
+                          />
+                        </div>
+                      </div>
                     </div>
                   </>
                 ) : (
@@ -1124,3 +1193,5 @@ export default function RightPanel({
     </aside>
   );
 }
+
+export default memo(RightPanel);

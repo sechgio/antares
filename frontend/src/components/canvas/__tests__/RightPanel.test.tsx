@@ -265,6 +265,37 @@ describe('RightPanel shape inspector', () => {
     expect(onChange.mock.calls[0][0].cssVars['--scale-x']).toBe('-1');
   });
 
+  it('accepts free stroke weight via number input and slider (0.1px steps)', () => {
+    const layer = createLayer('line');
+    const onChangeLive = vi.fn();
+    const onCommitLive = vi.fn();
+    render(
+      <RightPanel
+        layer={layer}
+        onChange={vi.fn()}
+        onChangeLive={onChangeLive}
+        onCommitLive={onCommitLive}
+        {...panelProps}
+      />,
+    );
+
+    const numberInput = screen.getByLabelText('Peso del trazo (px)') as HTMLInputElement;
+    expect(numberInput.step).toBe('0.1');
+    expect(numberInput.min).toBe('0');
+    expect(numberInput.max).toBe('100');
+    expect(numberInput.title).toBe('Grosor en px (0–100)');
+    fireEvent.change(numberInput, { target: { value: '0.1' } });
+    expect(onChangeLive).toHaveBeenCalled();
+
+    const slider = screen.getByLabelText('Peso del trazo') as HTMLInputElement;
+    expect(slider.type).toBe('range');
+    expect(slider.step).toBe('0.1');
+    fireEvent.change(slider, { target: { value: '12.5' } });
+    expect(onChangeLive).toHaveBeenCalled();
+    fireEvent.pointerUp(slider);
+    expect(onCommitLive).toHaveBeenCalled();
+  });
+
   it('hides Documento when a layer is selected', () => {
     const layer = createLayer('rect');
     render(<RightPanel layer={layer} onChange={vi.fn()} {...panelProps} />);

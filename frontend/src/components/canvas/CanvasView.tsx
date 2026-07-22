@@ -37,7 +37,7 @@ import {
   ungroupLayers,
 } from './ops/layerOps';
 import { childIdsOf, isLayerContainer } from './ops/layerTree';
-import { collectDocumentColors } from './ops/layerStyle';
+import { collectDocumentColors, lineHeightMmFromStrokePx, strokeWeightForNewLine } from './ops/layerStyle';
 import { addPage, duplicatePage, getPageCount, removePage, renamePage, setActivePageLayers } from './ops/pages';
 import { applyGridToImageSlots } from './ops/gridLayout';
 import { isClickPlace, type DrawRect } from './ops/drawHelpers';
@@ -547,8 +547,9 @@ export default function CanvasView() {
       layer.cssVars['--border-radius'] = '50%';
     }
     if (type === 'line') {
+      const strokePx = strokeWeightForNewLine();
       layer.cssVars['--background-color'] = layer.cssVars['--background-color'] || '#000000';
-      layer.cssVars['--height'] = mm(Math.max(0.5, useDefault ? 1 : Math.min(h, 2)));
+      layer.cssVars['--height'] = mm(Math.max(0.05, lineHeightMmFromStrokePx(strokePx)));
     }
     let layers = [...history.document.layers, layer];
     if (type === 'grid') {
