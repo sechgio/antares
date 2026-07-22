@@ -7,6 +7,7 @@ export const CANVAS_SHORTCUTS: Array<{ keys: string; action: string }> = [
   { keys: 'Ctrl+Shift+K', action: 'Imagen' },
   { keys: 'T / F', action: 'Texto / Campo Excel' },
   { keys: 'Doble clic / Enter', action: 'Editar texto (campo → clave Excel)' },
+  { keys: 'Teclear (texto sel.)', action: 'Escribir / reemplazar en el lienzo' },
   { keys: 'Esc (editando)', action: 'Salir de edición de texto' },
   { keys: 'I / M / G / B', action: 'Slot / Imagen / Grid / Tabla' },
   { keys: 'Ctrl+Z / ⇧Z', action: 'Deshacer / Rehacer' },

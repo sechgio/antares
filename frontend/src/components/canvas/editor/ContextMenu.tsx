@@ -8,11 +8,13 @@ import {
   Group,
   Layers,
   Lock,
+  Pencil,
   Trash2,
   Unlock,
 } from 'lucide-react';
 
 export type CanvasContextAction =
+  | 'edit'
   | 'duplicate'
   | 'toggleLock'
   | 'toggleVisible'
@@ -30,6 +32,8 @@ export interface CanvasContextMenuState {
   visible: boolean;
   isContainer: boolean;
   canGroup: boolean;
+  /** When set, show "Editar texto/campo" at the top. */
+  editKind?: 'text' | 'field' | null;
 }
 
 interface ContextMenuProps {
@@ -79,7 +83,13 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
   }, [menu.x, menu.y]);
 
   const hasLayer = Boolean(menu.layerId);
-  const items: MenuItem[] = [
+  const items: MenuItem[] = [];
+  if (menu.editKind === 'text') {
+    items.push({ id: 'edit', label: 'Editar texto', tip: 'Enter', icon: Pencil, disabled: menu.locked });
+  } else if (menu.editKind === 'field') {
+    items.push({ id: 'edit', label: 'Editar campo', tip: 'Doble clic', icon: Pencil, disabled: menu.locked });
+  }
+  items.push(
     { id: 'duplicate', label: 'Duplicar', tip: 'Ctrl+D', icon: Copy, disabled: !hasLayer || menu.locked },
     {
       id: 'toggleLock',
@@ -110,7 +120,7 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
     { id: 'bringFront', label: 'Traer al frente', tip: ']', icon: ArrowUpToLine, disabled: !hasLayer || menu.locked },
     { id: 'sendBack', label: 'Enviar al fondo', tip: '[', icon: ArrowDownToLine, disabled: !hasLayer || menu.locked },
     { id: 'delete', label: 'Eliminar', tip: 'Supr', icon: Trash2, danger: true, disabled: !hasLayer || menu.locked },
-  ];
+  );
 
   return (
     <div

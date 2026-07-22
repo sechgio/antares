@@ -50,7 +50,9 @@ interface ArtboardProps {
   onContextMenu?: (layerId: string | null, clientX: number, clientY: number) => void;
   onStartEdit?: (id: string) => void;
   onEditValue?: (id: string, value: string) => void;
+  onFitTextHeight?: (id: string, contentHeightPx: number) => void;
   onCommitEdit?: () => void;
+  editingSelectAll?: boolean;
 }
 
 function handleStyle(left: number, top: number, cursor: string): CSSProperties {
@@ -93,7 +95,9 @@ export default function Artboard({
   onContextMenu,
   onStartEdit,
   onEditValue,
+  onFitTextHeight,
   onCommitEdit,
+  editingSelectAll = true,
 }: ArtboardProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -525,12 +529,14 @@ export default function Artboard({
               selected={selectedIds.includes(layer.id)}
               interactive={interactive && !panning}
               editing={editingLayerId === layer.id}
+              editingSelectAll={editingSelectAll}
               scale={zoom}
               onSelect={(id, additive) => onSelect(id, additive)}
               onLayerPointerDown={(id, additive, ev) => onLayerPointerDown(id, additive, ev)}
               onContextMenu={onContextMenu}
               onStartEdit={onStartEdit}
               onEditValue={onEditValue}
+              onFitTextHeight={onFitTextHeight}
               onCommitEdit={onCommitEdit}
             />
           ))}

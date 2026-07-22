@@ -104,6 +104,7 @@ describe('LayerNode inline edit', () => {
   it('commits on Escape and does not start drag from the editor', () => {
     const layer = createLayer('text', { value: 'Hola' });
     const onCommitEdit = vi.fn();
+    const onFitTextHeight = vi.fn();
     const onLayerPointerDown = vi.fn();
     render(
       <LayerNode
@@ -113,6 +114,7 @@ describe('LayerNode inline edit', () => {
         scale={1}
         editing
         onCommitEdit={onCommitEdit}
+        onFitTextHeight={onFitTextHeight}
         onSelect={baseHandlers.onSelect}
         onLayerPointerDown={onLayerPointerDown}
       />,
@@ -121,7 +123,26 @@ describe('LayerNode inline edit', () => {
     fireEvent.pointerDown(editor);
     expect(onLayerPointerDown).not.toHaveBeenCalled();
     fireEvent.keyDown(editor, { key: 'Escape' });
+    expect(onFitTextHeight).toHaveBeenCalledWith(layer.id, expect.any(Number));
     expect(onCommitEdit).toHaveBeenCalled();
+  });
+
+  it('puts caret at end when editingSelectAll is false', () => {
+    const layer = createLayer('text', { value: 'Hi' });
+    render(
+      <LayerNode
+        layer={layer}
+        selected
+        interactive
+        scale={1}
+        editing
+        editingSelectAll={false}
+        {...baseHandlers}
+      />,
+    );
+    const editor = screen.getByTestId('canvas-inline-editor') as HTMLTextAreaElement;
+    expect(editor.selectionStart).toBe(2);
+    expect(editor.selectionEnd).toBe(2);
   });
 
   it('applies line-height and right-align from cssVars', () => {

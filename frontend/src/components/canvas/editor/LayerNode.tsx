@@ -21,11 +21,14 @@ interface LayerNodeProps {
   interactive: boolean;
   scale: number;
   editing?: boolean;
+  /** When true (default), focus selects all text; false keeps caret at end (type-to-edit). */
+  editingSelectAll?: boolean;
   onSelect: (id: string, additive?: boolean) => void;
   onLayerPointerDown: (id: string, additive: boolean, e: ReactPointerEvent<HTMLDivElement>) => void;
   onContextMenu?: (id: string, clientX: number, clientY: number) => void;
   onStartEdit?: (id: string) => void;
   onEditValue?: (id: string, value: string) => void;
+  onFitTextHeight?: (id: string, contentHeightPx: number) => void;
   onCommitEdit?: () => void;
 }
 
@@ -35,11 +38,13 @@ function LayerNode({
   interactive,
   scale,
   editing = false,
+  editingSelectAll = true,
   onSelect,
   onLayerPointerDown,
   onContextMenu,
   onStartEdit,
   onEditValue,
+  onFitTextHeight,
   onCommitEdit,
 }: LayerNodeProps) {
   const editorRef = useRef<HTMLTextAreaElement>(null);
@@ -48,8 +53,20 @@ function LayerNode({
     if (!editing || !editorRef.current) return;
     const el = editorRef.current;
     el.focus();
-    el.select();
-  }, [editing]);
+    if (editingSelectAll) el.select();
+    else {
+      const len = el.value.length;
+      el.setSelectionRange(len, len);
+    }
+  }, [editing, editingSelectAll]);
+
+  const finishEdit = () => {
+    const el = editorRef.current;
+    if (el && onFitTextHeight) {
+      onFitTextHeight(layer.id, el.scrollHeight);
+    }
+    onCommitEdit?.();
+  };
 
   if (layer.type === 'frame' || layer.visible === false) return null;
 
@@ -194,13 +211,13 @@ function LayerNode({
           value={layer.value}
           aria-label="Editar texto"
           onChange={(e) => onEditValue?.(layer.id, e.target.value)}
-          onBlur={() => onCommitEdit?.()}
+          onBlur={() => finishEdit()}
           onPointerDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
             e.stopPropagation();
             if (e.key === 'Escape') {
               e.preventDefault();
-              onCommitEdit?.();
+              finishEdit();
             }
           }}
           style={{

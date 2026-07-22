@@ -41,7 +41,7 @@ import { collectDocumentColors } from './ops/layerStyle';
 import { addPage, duplicatePage, getPageCount, removePage, renamePage, setActivePageLayers } from './ops/pages';
 import { applyGridToImageSlots } from './ops/gridLayout';
 import { isClickPlace, type DrawRect } from './ops/drawHelpers';
-import { canFocusFieldBinding, canInlineEditLayer, isEditableKeyboardTarget } from './ops/inlineEdit';
+import { canFocusFieldBinding, canInlineEditLayer, growTextLayerToContent, isEditableKeyboardTarget, isTypeToEditKey } from './ops/inlineEdit';
 import { fitZoomForViewport } from './ops/viewportNav';
 import {
   A4_HEIGHT_PX,
@@ -94,6 +94,7 @@ export default function CanvasView() {
   const [contextMenu, setContextMenu] = useState<CanvasContextMenuState | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
+  const [editingSelectAll, setEditingSelectAll] = useState(true);
   const editBaselineRef = useRef<CanvasDocument | null>(null);
   const panelBaselineRef = useRef<CanvasDocument | null>(null);
 
@@ -203,7 +204,7 @@ export default function CanvasView() {
   }, [editingLayerId, history]);
 
   const startInlineEdit = useCallback(
-    (id: string) => {
+    (id: string, opts?: { seed?: string }) => {
       const layer = history.document.layers.find((l) => l.id === id);
       if (canFocusFieldBinding(layer)) {
         if (editingLayerId) commitInlineEdit();
@@ -221,10 +222,17 @@ export default function CanvasView() {
       editBaselineRef.current = cloneDocument(history.document);
       setSelectedIds([id]);
       setTool('select');
+      setEditingSelectAll(opts?.seed == null);
+      if (opts?.seed != null) {
+        history.updateSilent({
+          ...history.document,
+          layers: history.document.layers.map((l) => (l.id === id ? { ...l, value: opts.seed! } : l)),
+        });
+      }
       setEditingLayerId(id);
       setContextMenu(null);
     },
-    [history.document, editingLayerId, commitInlineEdit],
+    [history, editingLayerId, commitInlineEdit],
   );
 
   const onInlineEditValue = useCallback(
@@ -235,6 +243,20 @@ export default function CanvasView() {
       });
     },
     [history],
+  );
+
+  const onFitTextHeight = useCallback(
+    (id: string, contentHeightPx: number) => {
+      const layer = history.document.layers.find((l) => l.id === id);
+      if (!layer) return;
+      const next = growTextLayerToContent(layer, contentHeightPx, zoom);
+      if (next === layer) return;
+      history.updateSilent({
+        ...history.document,
+        layers: history.document.layers.map((l) => (l.id === id ? next : l)),
+      });
+    },
+    [history, zoom],
   );
 
   const onPanelChangeLive = useCallback(
@@ -286,12 +308,35 @@ export default function CanvasView() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (mode !== 'design') return;
-      if (isEditableKeyboardTarget(e.target) || editingLayerId) {
-        if (e.key === 'Escape' && editingLayerId) {
+
+      // While inline-editing: let the textarea handle keys once focused;
+      // route printable keys if focus hasn't landed yet (type-to-edit race).
+      if (editingLayerId) {
+        if (e.key === 'Escape') {
           e.preventDefault();
           commitInlineEdit();
+          return;
         }
+        if (isEditableKeyboardTarget(e.target)) return;
+        if (isTypeToEditKey(e.key, e) && !e.repeat) {
+          e.preventDefault();
+          const layer = history.document.layers.find((l) => l.id === editingLayerId);
+          if (layer) onInlineEditValue(editingLayerId, `${layer.value}${e.key}`);
+          return;
+        }
+        // Block tool / delete / nudge shortcuts while editing.
         return;
+      }
+      if (isEditableKeyboardTarget(e.target)) return;
+
+      // Type-to-edit before tool letter shortcuts (Figma: typing replaces text, not tools).
+      if (selectedIds.length === 1 && isTypeToEditKey(e.key, e)) {
+        const layer = history.document.layers.find((l) => l.id === selectedIds[0]);
+        if (canInlineEditLayer(layer)) {
+          e.preventDefault();
+          startInlineEdit(selectedIds[0], { seed: e.key });
+          return;
+        }
       }
 
       if (e.key === 'v' || e.key === 'V') setTool('select');
@@ -476,6 +521,7 @@ export default function CanvasView() {
     editingLayerId,
     commitInlineEdit,
     startInlineEdit,
+    onInlineEditValue,
   ]);
 
   const selected = history.document.layers.find((l) => l.id === selectedId) || null;
@@ -637,6 +683,10 @@ export default function CanvasView() {
     const layer = history.document.layers.find((l) => l.id === id);
     if (!layer || layer.type === 'frame') return;
 
+    if (action === 'edit') {
+      startInlineEdit(id);
+      return;
+    }
     if (action === 'toggleLock') {
       setAllLayers(setLayerLocked(history.document.layers, id, !layer.locked));
       return;
@@ -789,6 +839,7 @@ export default function CanvasView() {
               tool={tool}
               pan={pan}
               editingLayerId={editingLayerId}
+              editingSelectAll={editingSelectAll}
               onPan={setPan}
               onSelect={onSelect}
               onSelectIds={(ids) => {
@@ -807,6 +858,7 @@ export default function CanvasView() {
               }}
               onStartEdit={startInlineEdit}
               onEditValue={onInlineEditValue}
+              onFitTextHeight={onFitTextHeight}
               onCommitEdit={commitInlineEdit}
               onContextMenu={(layerId, x, y) => {
                 const layer = layerId
@@ -820,6 +872,11 @@ export default function CanvasView() {
                   visible: layer?.visible !== false,
                   isContainer: Boolean(layer && isLayerContainer(layer)),
                   canGroup: selectedIds.length >= 2 && (layerId ? selectedIds.includes(layerId) : false),
+                  editKind: canInlineEditLayer(layer)
+                    ? 'text'
+                    : canFocusFieldBinding(layer)
+                      ? 'field'
+                      : null,
                 });
               }}
             />

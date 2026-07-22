@@ -10,6 +10,8 @@ interface PaintRowProps {
   pageColors: string[];
   /** Apply color + opacity together (avoids race when picker updates both). */
   onPaintChange: (color: string, opacity: number) => void;
+  /** Coalesce undo after a paint interaction (picker close / field blur). */
+  onPaintCommit?: () => void;
   onVisibleChange: (visible: boolean) => void;
   onRemove: () => void;
 }
@@ -20,6 +22,7 @@ export default function PaintRow({
   visible,
   pageColors,
   onPaintChange,
+  onPaintCommit,
   onVisibleChange,
   onRemove,
 }: PaintRowProps) {
@@ -35,6 +38,11 @@ export default function PaintRow({
     setHexDraft(normalized.replace('#', ''));
   }, [normalized]);
 
+  const closePicker = () => {
+    setOpen(false);
+    onPaintCommit?.();
+  };
+
   return (
     <>
       <div className="canvas-paint-row" data-testid="canvas-paint-row">
@@ -46,7 +54,7 @@ export default function PaintRow({
           onClick={(e) => {
             e.stopPropagation();
             if (open) {
-              setOpen(false);
+              closePicker();
               return;
             }
             const rect = swatchRef.current?.getBoundingClientRect();
@@ -80,6 +88,7 @@ export default function PaintRow({
             } else {
               setHexDraft(normalized.replace('#', ''));
             }
+            onPaintCommit?.();
           }}
         />
         <input
@@ -88,6 +97,7 @@ export default function PaintRow({
           value={op}
           aria-label="Opacidad relleno"
           onChange={(e) => onPaintChange(normalized, clampOpacity(Number(e.target.value) || 0))}
+          onBlur={() => onPaintCommit?.()}
         />
         <span className="canvas-paint-pct">%</span>
         <button
@@ -110,7 +120,7 @@ export default function PaintRow({
           pageColors={pageColors}
           anchor={anchor}
           onChange={onPaintChange}
-          onClose={() => setOpen(false)}
+          onClose={closePicker}
         />
       )}
     </>

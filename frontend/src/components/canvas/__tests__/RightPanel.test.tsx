@@ -225,13 +225,26 @@ describe('RightPanel shape inspector', () => {
     const layer = createLayer('rect');
     layer.cssVars['--fill-opacity'] = '75';
     const onChange = vi.fn();
-    render(<RightPanel layer={layer} onChange={onChange} {...panelProps} />);
+    const onChangeLive = vi.fn();
+    const onCommitLive = vi.fn();
+    render(
+      <RightPanel
+        layer={layer}
+        onChange={onChange}
+        onChangeLive={onChangeLive}
+        onCommitLive={onCommitLive}
+        {...panelProps}
+      />,
+    );
     const hexInputs = screen.getAllByLabelText('Hex');
     fireEvent.change(hexInputs[0], { target: { value: 'AABBCC' } });
-    expect(onChange).toHaveBeenCalled();
-    const next = onChange.mock.calls[0][0];
+    expect(onChangeLive).toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
+    const next = onChangeLive.mock.calls[0][0];
     expect(next.cssVars['--background-color']).toBe('#AABBCC');
     expect(next.cssVars['--fill-opacity']).toBe('75');
+    fireEvent.blur(hexInputs[0]);
+    expect(onCommitLive).toHaveBeenCalled();
   });
 
   it('aspect lock button toggles css var', () => {
@@ -256,5 +269,29 @@ describe('RightPanel shape inspector', () => {
     const layer = createLayer('rect');
     render(<RightPanel layer={layer} onChange={vi.fn()} {...panelProps} />);
     expect(screen.queryByText('Documento')).toBeNull();
+  });
+
+  it('coalesces numeric edits via onChangeLive + onCommitLive on blur', () => {
+    const layer = createLayer('rect');
+    layer.cssVars['--translate-x'] = '10mm';
+    const onChange = vi.fn();
+    const onChangeLive = vi.fn();
+    const onCommitLive = vi.fn();
+    render(
+      <RightPanel
+        layer={layer}
+        onChange={onChange}
+        onChangeLive={onChangeLive}
+        onCommitLive={onCommitLive}
+        {...panelProps}
+      />,
+    );
+    const xInput = screen.getByLabelText('X');
+    fireEvent.change(xInput, { target: { value: '25' } });
+    expect(onChangeLive).toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
+    expect(parseMm(onChangeLive.mock.calls[0][0].cssVars['--translate-x'])).toBe(25);
+    fireEvent.blur(xInput);
+    expect(onCommitLive).toHaveBeenCalled();
   });
 });

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { createLayer } from '../constants';
 import {
+  isPointerClick,
   layersInMarquee,
   moveSelection,
+  POINTER_CLICK_PX,
   resizeSelection,
   rotateSelection,
   selectionBounds,
@@ -12,6 +14,14 @@ import {
 import { parseMm } from '../types';
 
 describe('selectionTransform', () => {
+  it('isPointerClick treats small travel as click', () => {
+    expect(isPointerClick(0, 0)).toBe(true);
+    expect(isPointerClick(POINTER_CLICK_PX, 0)).toBe(true);
+    expect(isPointerClick(POINTER_CLICK_PX + 1, 0)).toBe(false);
+    expect(isPointerClick(2, 2)).toBe(true);
+    expect(isPointerClick(10, 10)).toBe(false);
+  });
+
   it('moveSelection allows negative coordinates (free canvas)', () => {
     const layer = createLayer('rect', {
       cssVars: {

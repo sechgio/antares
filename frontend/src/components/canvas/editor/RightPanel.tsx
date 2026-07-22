@@ -68,11 +68,13 @@ function NumField({
   label,
   value,
   onChange,
+  onCommit,
   suffix,
 }: {
   label: string;
   value: number;
   onChange: (n: number) => void;
+  onCommit?: () => void;
   suffix?: string;
 }) {
   return (
@@ -85,6 +87,7 @@ function NumField({
           className="canvas-input pr-6"
           value={Number.isFinite(value) ? Math.round(value * 10) / 10 : 0}
           onChange={(e) => onChange(Number(e.target.value) || 0)}
+          onBlur={() => onCommit?.()}
         />
         {suffix && (
           <span
@@ -167,14 +170,29 @@ export default function RightPanel({
     onChange({ ...layer, cssVars: { ...layer.cssVars, [key]: value } });
   };
 
+  const setVarLive = (key: string, value: string) => {
+    if (!layer) return;
+    emitLive({ ...layer, cssVars: { ...layer.cssVars, [key]: value } });
+  };
+
   const setVars = (patch: Record<string, string>) => {
     if (!layer) return;
     onChange({ ...layer, cssVars: { ...layer.cssVars, ...patch } });
   };
 
+  const setVarsLive = (patch: Record<string, string>) => {
+    if (!layer) return;
+    emitLive({ ...layer, cssVars: { ...layer.cssVars, ...patch } });
+  };
+
   const setMeta = (patch: NonNullable<CanvasLayer['meta']>) => {
     if (!layer) return;
     onChange({ ...layer, meta: { ...layer.meta, ...patch } });
+  };
+
+  const setMetaLive = (patch: NonNullable<CanvasLayer['meta']>) => {
+    if (!layer) return;
+    emitLive({ ...layer, meta: { ...layer.meta, ...patch } });
   };
 
   const hasSelection = Boolean(layer && layer.type !== 'frame');
@@ -375,19 +393,22 @@ export default function RightPanel({
                 <InlineNumField
                   prefix="X"
                   value={parseMm(layer.cssVars['--translate-x'])}
-                  onChange={(n) => setVar('--translate-x', mm(n))}
+                  onChange={(n) => setVarLive('--translate-x', mm(n))}
+                  onCommit={onCommitLive}
                 />
                 <InlineNumField
                   prefix="Y"
                   value={parseMm(layer.cssVars['--translate-y'])}
-                  onChange={(n) => setVar('--translate-y', mm(n))}
+                  onChange={(n) => setVarLive('--translate-y', mm(n))}
+                  onCommit={onCommitLive}
                 />
               </div>
               <div className="mt-2 flex items-center gap-1">
                 <InlineNumField
                   prefix=""
                   value={parseFloat(layer.cssVars['--rotate'] || '0') || 0}
-                  onChange={(n) => setVar('--rotate', `${n}deg`)}
+                  onChange={(n) => setVarLive('--rotate', `${n}deg`)}
+                  onCommit={onCommitLive}
                   suffix="°"
                   title="Rotación"
                 />
@@ -434,12 +455,14 @@ export default function RightPanel({
                 <InlineNumField
                   prefix="W"
                   value={parseMm(layer.cssVars['--width'], 10)}
-                  onChange={(n) => onChange(resizeWithAspectLock(layer, 'width', n))}
+                  onChange={(n) => emitLive(resizeWithAspectLock(layer, 'width', n))}
+                  onCommit={onCommitLive}
                 />
                 <InlineNumField
                   prefix="H"
                   value={parseMm(layer.cssVars['--height'], 10)}
-                  onChange={(n) => onChange(resizeWithAspectLock(layer, 'height', n))}
+                  onChange={(n) => emitLive(resizeWithAspectLock(layer, 'height', n))}
+                  onCommit={onCommitLive}
                 />
                 <WithHoverTooltip
                   label={isAspectLocked(layer.cssVars) ? 'Desbloquear proporciones' : 'Bloquear proporciones'}
@@ -472,7 +495,8 @@ export default function RightPanel({
                 <InlineNumField
                   prefix=""
                   value={Number(layer.cssVars['--opacity'] || 100)}
-                  onChange={(n) => setVar('--opacity', String(clampOpacity(n)))}
+                  onChange={(n) => setVarLive('--opacity', String(clampOpacity(n)))}
+                  onCommit={onCommitLive}
                   suffix="%"
                   title="Opacidad"
                 />
@@ -480,7 +504,8 @@ export default function RightPanel({
                   <InlineNumField
                     prefix=""
                     value={parseFloat(layer.cssVars['--border-radius'] || '0') || 0}
-                    onChange={(n) => setVar('--border-radius', `${Math.max(0, n)}px`)}
+                    onChange={(n) => setVarLive('--border-radius', `${Math.max(0, n)}px`)}
+                    onCommit={onCommitLive}
                     title="Radio de esquina"
                   />
                 )}
@@ -512,12 +537,13 @@ export default function RightPanel({
                     visible={layer.cssVars['--fill-visible'] !== '0'}
                     pageColors={pageColors}
                     onPaintChange={(c, o) =>
-                      setVars({
+                      setVarsLive({
                         '--background-color': c,
                         '--fill-opacity': String(o),
                         '--fill-visible': '1',
                       })
                     }
+                    onPaintCommit={onCommitLive}
                     onVisibleChange={(v) => setVar('--fill-visible', v ? '1' : '0')}
                     onRemove={() =>
                       setVars({
@@ -561,12 +587,13 @@ export default function RightPanel({
                       visible={layer.cssVars['--stroke-visible'] !== '0'}
                       pageColors={pageColors}
                       onPaintChange={(c, o) =>
-                        setVars({
+                        setVarsLive({
                           '--border-color': c,
                           '--stroke-opacity': String(o),
                           '--stroke-visible': '1',
                         })
                       }
+                      onPaintCommit={onCommitLive}
                       onVisibleChange={(v) => setVar('--stroke-visible', v ? '1' : '0')}
                       onRemove={() =>
                         setVars({
@@ -596,8 +623,9 @@ export default function RightPanel({
                           min={0}
                           value={parseFloat(layer.cssVars['--border-width'] || '0') || 0}
                           onChange={(e) =>
-                            setVar('--border-width', `${Math.max(0, Number(e.target.value) || 0)}px`)
+                            setVarLive('--border-width', `${Math.max(0, Number(e.target.value) || 0)}px`)
                           }
+                          onBlur={() => onCommitLive?.()}
                         />
                       </label>
                     </div>
@@ -666,13 +694,15 @@ export default function RightPanel({
                         prefix="X"
                         value={shadow.x}
                         step={1}
-                        onChange={(n) => setVar('--box-shadow', formatBoxShadow({ ...shadow, x: n }))}
+                        onChange={(n) => setVarLive('--box-shadow', formatBoxShadow({ ...shadow, x: n }))}
+                        onCommit={onCommitLive}
                       />
                       <InlineNumField
                         prefix="Y"
                         value={shadow.y}
                         step={1}
-                        onChange={(n) => setVar('--box-shadow', formatBoxShadow({ ...shadow, y: n }))}
+                        onChange={(n) => setVarLive('--box-shadow', formatBoxShadow({ ...shadow, y: n }))}
+                        onCommit={onCommitLive}
                       />
                     </div>
                     <div className="flex gap-1">
@@ -682,8 +712,9 @@ export default function RightPanel({
                         step={1}
                         title="Difuminado"
                         onChange={(n) =>
-                          setVar('--box-shadow', formatBoxShadow({ ...shadow, blur: Math.max(0, n) }))
+                          setVarLive('--box-shadow', formatBoxShadow({ ...shadow, blur: Math.max(0, n) }))
                         }
+                        onCommit={onCommitLive}
                       />
                       <InlineNumField
                         prefix=""
@@ -691,11 +722,12 @@ export default function RightPanel({
                         suffix="%"
                         title="Opacidad sombra"
                         onChange={(n) =>
-                          setVar(
+                          setVarLive(
                             '--box-shadow',
                             formatBoxShadow({ ...shadow, opacity: clampOpacity(n) }),
                           )
                         }
+                        onCommit={onCommitLive}
                       />
                     </div>
                   </div>
@@ -742,7 +774,8 @@ export default function RightPanel({
                 <input
                   className="canvas-input mb-2"
                   value={layer.name}
-                  onChange={(e) => onChange({ ...layer, name: e.target.value })}
+                  onChange={(e) => emitLive({ ...layer, name: e.target.value })}
+                  onBlur={() => onCommitLive?.()}
                 />
                 <div className="flex gap-1">
                   <WithHoverTooltip label="Al frente" placement="bottom" variant="dark">
@@ -781,7 +814,8 @@ export default function RightPanel({
                   <input
                     className="canvas-input"
                     value={layer.cssVars['--font-size'] || '11pt'}
-                    onChange={(e) => setVar('--font-size', e.target.value)}
+                    onChange={(e) => setVarLive('--font-size', e.target.value)}
+                    onBlur={() => onCommitLive?.()}
                     placeholder="11pt"
                   />
                 </div>
@@ -828,7 +862,8 @@ export default function RightPanel({
                   className="canvas-input"
                   placeholder="Line height (ej. 1.2)"
                   value={layer.cssVars['--line-height'] || ''}
-                  onChange={(e) => setVar('--line-height', e.target.value)}
+                  onChange={(e) => setVarLive('--line-height', e.target.value)}
+                  onBlur={() => onCommitLive?.()}
                 />
               </div>
             )}
@@ -938,7 +973,8 @@ export default function RightPanel({
                 <NumField
                   label="Índice"
                   value={layer.meta?.index ?? 0}
-                  onChange={(n) => setMeta({ index: Math.max(0, Math.floor(n)) })}
+                  onChange={(n) => setMetaLive({ index: Math.max(0, Math.floor(n)) })}
+                  onCommit={onCommitLive}
                 />
                 <label className="mt-2 flex items-center gap-2 text-[11px]">
                   <input
@@ -974,19 +1010,22 @@ export default function RightPanel({
                   <NumField
                     label="Cols"
                     value={layer.meta?.cols ?? 2}
-                    onChange={(n) => setMeta({ cols: Math.max(1, Math.floor(n)) })}
+                    onChange={(n) => setMetaLive({ cols: Math.max(1, Math.floor(n)) })}
+                    onCommit={onCommitLive}
                   />
                   <NumField
                     label="Rows"
                     value={layer.meta?.rows ?? 2}
-                    onChange={(n) => setMeta({ rows: Math.max(1, Math.floor(n)) })}
+                    onChange={(n) => setMetaLive({ rows: Math.max(1, Math.floor(n)) })}
+                    onCommit={onCommitLive}
                   />
                 </div>
                 <div className="mt-2">
                   <NumField
                     label="Gap"
                     value={layer.meta?.gapMm ?? 2}
-                    onChange={(n) => setMeta({ gapMm: Math.max(0, n) })}
+                    onChange={(n) => setMetaLive({ gapMm: Math.max(0, n) })}
+                    onCommit={onCommitLive}
                     suffix="mm"
                   />
                 </div>
