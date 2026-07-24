@@ -1,6 +1,10 @@
 # Base de datos local
 data/*.db
 
+# Canvas document fixtures (junk/test docs must not ship to users)
+data/canvas/documents/*.json
+!data/canvas/documents/.gitkeep
+
 # Archivos de Excel temporales
 ~$*.xlsx
 
@@ -142,3 +146,6 @@ data/formatos/uploads/
 
 # Agent scratch output (local only)
 agent-tools/
+
+# Advisor plans (local only)
+plans/
