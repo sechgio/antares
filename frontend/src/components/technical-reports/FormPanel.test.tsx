@@ -96,6 +96,6 @@ describe('FormPanel', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: /eliminar informe/i })).toHaveClass('tr-icon-button');
+    expect(screen.getByRole('button', { name: /eliminar informe/i })).toHaveClass('tr-form-action--danger');
   });
 });
