@@ -9,6 +9,7 @@ import {
 import InlineNumField from '../../InlineNumField';
 import { SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
+import CanvasSelect from '../../CanvasSelect';
 
 export default function AppearanceSection({
   layer,
@@ -51,12 +52,11 @@ export default function AppearanceSection({
       </div>
       <label className="mt-2 block">
         <span className="canvas-sublabel">Modo de fusión</span>
-        <select
-          className="canvas-input mt-1"
+        <CanvasSelect
+          className="mt-1"
           value={parseBlendMode(layer.cssVars)}
           aria-label="Modo de fusión"
-          onChange={(e) => {
-            const v = e.target.value;
+          onChange={(v) => {
             if (v === 'normal') {
               const next = { ...layer.cssVars };
               delete next['--blend-mode'];
@@ -65,13 +65,11 @@ export default function AppearanceSection({
               setVar('--blend-mode', v);
             }
           }}
-        >
-          {BLEND_MODES.map((mode) => (
-            <option key={mode} value={mode}>
-              {BLEND_MODE_LABELS[mode]}
-            </option>
-          ))}
-        </select>
+          options={BLEND_MODES.map((mode) => ({
+            value: mode,
+            label: BLEND_MODE_LABELS[mode],
+          }))}
+        />
       </label>
       {showRadius && (
         <div className="mt-2 grid grid-cols-2 gap-1">

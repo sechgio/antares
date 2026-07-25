@@ -116,13 +116,17 @@ export function setActivePageLayers(
   return { ...doc, layers: [...otherPages, ...normalized] };
 }
 
-export function chunkImages(images: string[], perPage: number): string[][] {
-  if (perPage <= 0) return images.length ? [images] : [[]];
-  const chunks: string[][] = [];
-  for (let i = 0; i < images.length; i += perPage) {
-    chunks.push(images.slice(i, i + perPage));
+export function chunkArray<T>(items: T[], perPage: number): T[][] {
+  if (perPage <= 0) return items.length ? [items] : [[]];
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += perPage) {
+    chunks.push(items.slice(i, i + perPage));
   }
   return chunks.length ? chunks : [[]];
+}
+
+export function chunkImages(images: string[], perPage: number): string[][] {
+  return chunkArray(images, perPage);
 }
 
 /** Photo capacity of the template page (page 0), else max slots on any page. */
@@ -198,6 +202,7 @@ function planMultiPageRender(
       ? configured
       : Math.max(ctx.images.length, 1);
   const imageChunks = chunkImages(ctx.images, perPage);
+  const imageMetaChunks = ctx.imageMeta ? chunkArray(ctx.imageMeta, perPage) : undefined;
   const docPageCount = getPageCount(doc);
   // Paginate by image chunks when more images than one page of slots; else use design pages
   const useImagePagination = perPage > 0 && ctx.images.length > perPage;
@@ -214,6 +219,7 @@ function planMultiPageRender(
     const pageCtx: FillContext = {
       ...ctx,
       images: useImagePagination ? (imageChunks[pageIndex] ?? []) : ctx.images,
+      imageMeta: useImagePagination && imageMetaChunks ? (imageMetaChunks[pageIndex] ?? []) : ctx.imageMeta,
     };
     return { pageDoc, pageCtx };
   });

@@ -140,6 +140,41 @@ def _normalize_meta(raw: Any) -> dict[str, Any] | None:
                 continue
         if rules:
             cleaned["rules"] = rules
+    if isinstance(raw.get("path"), dict):
+        raw_path = raw["path"]
+        if isinstance(raw_path.get("points"), list):
+            cleaned_points = []
+            for pt in raw_path["points"]:
+                if not isinstance(pt, dict):
+                    continue
+                try:
+                    pt_dict: dict[str, Any] = {
+                        "x": float(pt.get("x", 0)),
+                        "y": float(pt.get("y", 0)),
+                    }
+                    if isinstance(pt.get("hin"), dict):
+                        pt_dict["hin"] = {
+                            "x": float(pt["hin"].get("x", 0)),
+                            "y": float(pt["hin"].get("y", 0)),
+                        }
+                    elif pt.get("hin") is None and "hin" in pt:
+                        pt_dict["hin"] = None
+
+                    if isinstance(pt.get("hout"), dict):
+                        pt_dict["hout"] = {
+                            "x": float(pt["hout"].get("x", 0)),
+                            "y": float(pt["hout"].get("y", 0)),
+                        }
+                    elif pt.get("hout") is None and "hout" in pt:
+                        pt_dict["hout"] = None
+
+                    cleaned_points.append(pt_dict)
+                except (TypeError, ValueError):
+                    continue
+            path_dict: dict[str, Any] = {"points": cleaned_points}
+            if "closed" in raw_path:
+                path_dict["closed"] = bool(raw_path["closed"])
+            cleaned["path"] = path_dict
     return cleaned or None
 
 

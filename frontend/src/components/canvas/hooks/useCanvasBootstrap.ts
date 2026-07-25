@@ -51,7 +51,11 @@ export function useCanvasBootstrap({
           }
         }
       } catch {
-        if (!cancelled) replaceDocument(createEmptyDocument());
+        if (!cancelled) {
+          const doc = createEmptyDocument();
+          replaceDocument(doc);
+          setDocs([{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt }]);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }

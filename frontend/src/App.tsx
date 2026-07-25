@@ -139,7 +139,7 @@ function AppContent() {
   useKeyboardShortcut('8', () => handleTabChange('reportesCampo'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('9', () => handleTabChange('imageOptimizer'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('0', () => handleTabChange('previewPanel'), { ctrl: true, preventDefault: true });
-  useKeyboardShortcut('c', () => handleTabChange('canvas'), { ctrl: true, shift: true, preventDefault: true });
+  useKeyboardShortcut('c', () => handleTabChange('canvas'), { ctrl: true, alt: true, preventDefault: true });
   useKeyboardShortcut('2', () => handleTabChange('panelAvisoCorte'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('u', () => handleTabChange('ubicaciones'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('v', () => handleTabChange('evidenciaVolanteo'), { ctrl: true, shift: true, preventDefault: true });

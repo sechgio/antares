@@ -17,7 +17,7 @@ import {
   nextFreeLogoSide,
   withAssignedLogoSide,
 } from '../ops/logoSide';
-import { addPage, chunkImages, duplicatePage, removePage, renamePage, syncImagesPerPage, templateImagesPerPage } from '../ops/pages';
+import { addPage, chunkImages, duplicatePage, removePage, renamePage, renderMultiPageHtml, syncImagesPerPage, templateImagesPerPage } from '../ops/pages';
 import {
   clientToMm,
   isClickPlace,
@@ -31,7 +31,7 @@ import { filterVisibleLayers, visiblePageRectMm } from '../ops/viewportCulling';
 import { applyAnchoredResize, parseResizeAnchor, resizeLayerAnchored, RESIZE_ANCHORS } from '../ops/resizeConstraints';
 import { clipPathForLayerType, isShapeTool, isSquareConstrainTool } from '../ops/shapePaths';
 import { buildRowData, matchesRecordId } from '../runtime/excel';
-import { mergeCanvasHtmlDocuments, renderCanvasHtml } from '../runtime/renderHtml';
+import { mergeCanvasHtmlDocuments, renderCanvasHtml, type FillContext } from '../runtime/renderHtml';
 import { createEmptyDocument, mm, newId, normalizeDocument, parseMm } from '../types';
 import { CANVAS_SHORTCUTS } from '../shortcuts';
 import {
@@ -1233,3 +1233,45 @@ describe('new clip-path shapes', () => {
     expect(isSquareConstrainTool('line')).toBe(false);
   });
 });
+
+describe('renderMultiPageHtml photo metadata chunking', () => {
+  it('chunks imageMeta in sync with images so captions match photo on page 2+', () => {
+    const doc: CanvasDocument = {
+      version: 2,
+      id: 'doc-1',
+      name: 'Test Doc',
+      page: { widthMm: 210, heightMm: 297 },
+      pages: [{ id: 'p1', name: 'Page 1' }],
+      layers: [
+        {
+          id: 'slot-1',
+          type: 'imageSlot',
+          name: 'Foto 1',
+          value: '',
+          pageIndex: 0,
+          cssVars: { '--translate-x': '10mm', '--translate-y': '10mm', '--width': '50mm', '--height': '50mm' },
+          meta: { index: 0, showDate: true, showCoords: true, showFilename: true },
+        },
+      ],
+      fields: [],
+    };
+
+    const ctx: FillContext = {
+      data: {},
+      images: ['img0.jpg', 'img1.jpg'],
+      logoLeft: null,
+      logoRight: null,
+      imageMeta: [
+        { date: '2026-01-01', coords: '-12.0, -77.0', name: 'foto_1.jpg' },
+        { date: '2026-02-02', coords: '-14.0, -75.0', name: 'foto_2.jpg' },
+      ],
+    };
+
+    const html = renderMultiPageHtml(doc, ctx, { imagesPerPage: 1 });
+    expect(html).toContain('img0.jpg');
+    expect(html).toContain('img1.jpg');
+    expect(html).toContain('2026-01-01');
+    expect(html).toContain('2026-02-02');
+  });
+});
+

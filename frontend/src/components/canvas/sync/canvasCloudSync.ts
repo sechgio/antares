@@ -169,7 +169,7 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
   for (const r of remote) {
     if (r.deleted_at) {
       if (localById.has(r.id)) {
-        if (options.openDocumentId === r.id && options.openDirty) continue;
+        if (options.openDocumentId === r.id) continue;
         await api.canvasDelete(r.id);
         deletedLocal += 1;
         localById.delete(r.id);

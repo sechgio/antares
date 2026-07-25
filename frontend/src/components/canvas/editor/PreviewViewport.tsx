@@ -126,6 +126,7 @@ const PreviewViewport = forwardRef<PreviewViewportHandle, PreviewViewportProps>(
               <iframe
                 ref={iframeRef}
                 title="Canvas preview"
+                sandbox="allow-same-origin allow-scripts"
                 className="border-0 bg-white"
                 style={{
                   width: widthPx,

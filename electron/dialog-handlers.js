@@ -398,6 +398,5 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
 
 module.exports = {
   handleDialogCall,
-  _registerWriteRootFromPath,
   _clearAllowedWriteRoots: () => _allowedWriteRoots.clear(),
 };

@@ -16,6 +16,7 @@ import type { GenerateExportScope } from '../ops/generateExport';
 import type { CanvasDocumentSummary } from '../types';
 import { CanvasToggle } from './CanvasControls';
 import { GenerateSegmented, GenerateStep } from './GenerateWizardChrome';
+import CanvasSelect from './CanvasSelect';
 
 function dashedStyle(active: boolean) {
   return {
@@ -163,16 +164,12 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
           status={stepStates[1] ? 'done' : 'pending'}
         >
           <div className="space-y-1.5">
-            <select
-              className="canvas-input"
+            <CanvasSelect
               aria-label="Elegir plantilla Canvas"
               value={selectedTemplateId}
-              onChange={(e) => onSelectTemplate(e.target.value)}
-            >
-              {templateOptions.map((d) => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
-            </select>
+              onChange={(val) => onSelectTemplate(val)}
+              options={templateOptions.map((d) => ({ value: d.id, label: d.name }))}
+            />
 
             <div
               className="flex items-center justify-between rounded-md border px-2 py-1 text-[9px]"
@@ -248,12 +245,15 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
           <div className="space-y-1.5">
             <label className="block">
               <span className="canvas-label">Columna ID (Clave)</span>
-              <select className="canvas-input" value={idColumn} onChange={(e) => onIdColumn(e.target.value)}>
-                <option value="">-- Seleccionar ID --</option>
-                {headers.map((h) => (
-                  <option key={h} value={h}>{h}</option>
-                ))}
-              </select>
+              <CanvasSelect
+                value={idColumn}
+                onChange={(val) => onIdColumn(val)}
+                aria-label="Columna ID (Clave)"
+                options={[
+                  { value: '', label: '-- Seleccionar ID --' },
+                  ...headers.map((h) => ({ value: h, label: h })),
+                ]}
+              />
             </label>
             {fieldKeys.length > 0 && (
               <div className="max-h-40 space-y-1 overflow-y-auto pr-0.5">
@@ -267,16 +267,15 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
                         {key}
                       </span>
                     </WithHoverTooltip>
-                    <select
-                      className="canvas-input !h-[22px] !text-[9px]"
+                    <CanvasSelect
                       value={mappings[key] || ''}
-                      onChange={(e) => onMapping(key, e.target.value)}
-                    >
-                      <option value="">Ignorar</option>
-                      {headers.map((h) => (
-                        <option key={h} value={h}>{h}</option>
-                      ))}
-                    </select>
+                      onChange={(val) => onMapping(key, val)}
+                      aria-label={`Mapeo ${key}`}
+                      options={[
+                        { value: '', label: 'Ignorar' },
+                        ...headers.map((h) => ({ value: h, label: h })),
+                      ]}
+                    />
                   </div>
                 ))}
               </div>
@@ -354,19 +353,20 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
               />
             </div>
 
-            <select
-              className="canvas-input"
-              value={rows.length ? rowIndex : ''}
-              onChange={(e) => onRowIndex(Number(e.target.value))}
+            <CanvasSelect
+              value={rows.length ? String(rowIndex) : ''}
+              onChange={(val) => onRowIndex(Number(val))}
               disabled={exportScope === 'all' || rows.length === 0}
-            >
-              {rows.length === 0 && <option value="">-- Seleccionar Fila --</option>}
-              {rows.map((row, i) => (
-                <option key={i} value={i}>
-                  {i + 1}. {idColumn ? row[idColumn] : `Fila ${i + 1}`}
-                </option>
-              ))}
-            </select>
+              aria-label="Seleccionar Fila"
+              options={
+                rows.length === 0
+                  ? [{ value: '', label: '-- Seleccionar Fila --' }]
+                  : rows.map((row, i) => ({
+                      value: String(i),
+                      label: `${i + 1}. ${idColumn && row[idColumn] ? row[idColumn] : `Fila ${i + 1}`}`,
+                    }))
+              }
+            />
 
             <div className="space-y-1.5 border-t pt-1.5" style={{ borderColor: 'var(--cv-border)' }}>
               <div className="space-y-1">

@@ -4,6 +4,8 @@ import { CanvasCheckbox } from '../../CanvasControls';
 import { NumField, SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
 
+import CanvasSelect from '../../CanvasSelect';
+
 export default function ImageSlotSection({
   layer,
   setVar,
@@ -24,15 +26,17 @@ export default function ImageSlotSection({
       <label className="mt-2 block text-[11px]" style={{ color: 'var(--cv-text-secondary)' }}>
         Ajuste
       </label>
-      <select
-        className="canvas-input mt-1 text-[11px]"
+      <CanvasSelect
+        className="mt-1 text-[11px]"
         value={layer.cssVars['--object-fit'] || 'cover'}
-        onChange={(e) => setVar('--object-fit', e.target.value)}
-      >
-        <option value="cover">Cubrir</option>
-        <option value="contain">Contener</option>
-        <option value="fill">Estirar</option>
-      </select>
+        aria-label="Ajuste de foto"
+        onChange={(val) => setVar('--object-fit', val)}
+        options={[
+          { value: 'cover', label: 'Cubrir' },
+          { value: 'contain', label: 'Contener' },
+          { value: 'fill', label: 'Estirar' },
+        ]}
+      />
       <div className="mt-2 flex gap-1">
         <InlineNumField
           prefix="Z"
@@ -48,22 +52,23 @@ export default function ImageSlotSection({
       <label className="mt-2 block text-[11px]" style={{ color: 'var(--cv-text-secondary)' }}>
         Posición
       </label>
-      <select
-        className="canvas-input mt-1 text-[11px]"
+      <CanvasSelect
+        className="mt-1 text-[11px]"
         value={layer.cssVars['--object-position'] || '50% 50%'}
         aria-label="Posición de foto"
-        onChange={(e) => setVar('--object-position', e.target.value)}
-      >
-        <option value="50% 50%">Centro</option>
-        <option value="0% 0%">Arriba izq.</option>
-        <option value="50% 0%">Arriba</option>
-        <option value="100% 0%">Arriba der.</option>
-        <option value="0% 50%">Izquierda</option>
-        <option value="100% 50%">Derecha</option>
-        <option value="0% 100%">Abajo izq.</option>
-        <option value="50% 100%">Abajo</option>
-        <option value="100% 100%">Abajo der.</option>
-      </select>
+        onChange={(val) => setVar('--object-position', val)}
+        options={[
+          { value: '50% 50%', label: 'Centro' },
+          { value: '0% 0%', label: 'Arriba izq.' },
+          { value: '50% 0%', label: 'Arriba' },
+          { value: '100% 0%', label: 'Arriba der.' },
+          { value: '0% 50%', label: 'Izquierda' },
+          { value: '100% 50%', label: 'Derecha' },
+          { value: '0% 100%', label: 'Abajo izq.' },
+          { value: '50% 100%', label: 'Abajo' },
+          { value: '100% 100%', label: 'Abajo der.' },
+        ]}
+      />
       <div className="mt-2 flex items-center gap-2">
         <CanvasCheckbox
           checked={!!layer.meta?.showDate}
