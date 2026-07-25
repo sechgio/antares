@@ -171,22 +171,23 @@ function ShapeToolMenu({ tool, onTool }: BottomToolbarProps) {
             <Icon className="h-[15px] w-[15px]" strokeWidth={shapeActive ? 2 : 1.75} />
           </button>
         </WithHoverTooltip>
-        <button
-          type="button"
-          aria-label="Más formas"
-          aria-haspopup="menu"
-          aria-expanded={open}
-          aria-controls={open ? menuId : undefined}
-          title="Más formas"
-          className="canvas-toolbar-tool canvas-shape-split-chevron"
-          data-active={open}
-          onClick={(e) => {
-            e.stopPropagation();
-            toggleMenu();
-          }}
-        >
-          <ChevronDown className="h-3 w-3" strokeWidth={2.25} />
-        </button>
+        <WithHoverTooltip label="Más formas" placement="top" variant="dark">
+          <button
+            type="button"
+            aria-label="Más formas"
+            aria-haspopup="menu"
+            aria-expanded={open}
+            aria-controls={open ? menuId : undefined}
+            className="canvas-toolbar-tool canvas-shape-split-chevron"
+            data-active={open}
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleMenu();
+            }}
+          >
+            <ChevronDown className="h-3 w-3" strokeWidth={2.25} />
+          </button>
+        </WithHoverTooltip>
       </div>
 
       {menu

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { Fragment, useEffect, useRef } from 'react';
 import {
   ArrowDownToLine,
   ArrowUpToLine,
@@ -61,6 +61,8 @@ interface MenuItem {
   icon: typeof Copy;
   danger?: boolean;
   disabled?: boolean;
+  /** Render a group separator above this item. */
+  sepBefore?: boolean;
 }
 
 export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProps) {
@@ -102,7 +104,14 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
     items.push({ id: 'edit', label: 'Editar campo', tip: 'Doble clic', icon: Pencil, disabled: menu.locked });
   }
   items.push(
-    { id: 'copy', label: 'Copiar', tip: 'Ctrl+C', icon: Copy, disabled: !hasLayer },
+    {
+      id: 'copy',
+      label: 'Copiar',
+      tip: 'Ctrl+C',
+      icon: Copy,
+      disabled: !hasLayer,
+      sepBefore: Boolean(menu.editKind),
+    },
     { id: 'paste', label: 'Pegar', tip: 'Ctrl+V', icon: ClipboardPaste, disabled: !menu.canPaste },
     {
       id: 'pasteInPlace',
@@ -117,6 +126,7 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
       label: menu.locked ? 'Desbloquear' : 'Bloquear',
       icon: menu.locked ? Unlock : Lock,
       disabled: !hasLayer,
+      sepBefore: true,
     },
     {
       id: 'toggleVisible',
@@ -137,6 +147,7 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
       tip: 'Ctrl+G',
       icon: Group,
       disabled: !menu.canGroup || menu.locked,
+      sepBefore: true,
     },
     {
       id: 'ungroup',
@@ -145,7 +156,14 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
       icon: Ungroup,
       disabled: !menu.canUngroup || menu.locked,
     },
-    { id: 'bringFront', label: 'Traer al frente', tip: ']', icon: ArrowUpToLine, disabled: !hasLayer || menu.locked },
+    {
+      id: 'bringFront',
+      label: 'Traer al frente',
+      tip: ']',
+      icon: ArrowUpToLine,
+      disabled: !hasLayer || menu.locked,
+      sepBefore: true,
+    },
     {
       id: 'bringForward',
       label: 'Adelante',
@@ -161,7 +179,15 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
       disabled: !hasLayer || menu.locked,
     },
     { id: 'sendBack', label: 'Enviar al fondo', tip: '[', icon: ArrowDownToLine, disabled: !hasLayer || menu.locked },
-    { id: 'delete', label: 'Eliminar', tip: 'Supr', icon: Trash2, danger: true, disabled: !hasLayer || menu.locked },
+    {
+      id: 'delete',
+      label: 'Eliminar',
+      tip: 'Supr',
+      icon: Trash2,
+      danger: true,
+      disabled: !hasLayer || menu.locked,
+      sepBefore: true,
+    },
   );
 
   return (
@@ -176,23 +202,25 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
         <div className="canvas-context-hint">Clic derecho sobre una capa para editarla</div>
       )}
       {items.map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          role="menuitem"
-          className="canvas-context-item"
-          data-danger={item.danger || undefined}
-          disabled={item.disabled}
-          onClick={() => {
-            if (item.disabled) return;
-            onAction(item.id);
-            onClose();
-          }}
-        >
-          <item.icon className="h-3.5 w-3.5 shrink-0" />
-          <span className="min-w-0 flex-1 text-left">{item.label}</span>
-          {item.tip && <kbd className="canvas-kbd">{item.tip}</kbd>}
-        </button>
+        <Fragment key={item.id}>
+          {item.sepBefore ? <div className="canvas-context-sep" role="separator" /> : null}
+          <button
+            type="button"
+            role="menuitem"
+            className="canvas-context-item"
+            data-danger={item.danger || undefined}
+            disabled={item.disabled}
+            onClick={() => {
+              if (item.disabled) return;
+              onAction(item.id);
+              onClose();
+            }}
+          >
+            <item.icon className="h-3.5 w-3.5 shrink-0" />
+            <span className="min-w-0 flex-1 text-left">{item.label}</span>
+            {item.tip && <kbd className="canvas-kbd">{item.tip}</kbd>}
+          </button>
+        </Fragment>
       ))}
     </div>
   );
