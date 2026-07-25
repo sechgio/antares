@@ -22,6 +22,7 @@ def test_sanitize_strips_active_content_and_external_urls() -> None:
         <script>alert(1)</script>
         <iframe src="file:///etc/passwd"></iframe>
         <img src="https://evil.example/x.png" onerror="alert(1)"/>
+        <a href="data:text/html,<script>alert(1)</script>">x</a>
       </body>
     </html>
     """
@@ -35,6 +36,7 @@ def test_sanitize_strips_active_content_and_external_urls() -> None:
     assert "https://evil.example/x.png" not in out
     assert "onerror" not in out.lower()
     assert "url(data:image/png;base64,AAAA)" in out
+    assert "data:text/html" not in out
 
 
 def test_sanitize_neutralises_javascript_in_css() -> None:

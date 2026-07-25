@@ -61,12 +61,15 @@ class TechnicalReportsDB:
         tmp_path.replace(self.db_path)
 
     def get_all(self) -> list[dict[str, Any]]:
+        # Items are normalized on write/load; shallow copy is enough for list
+        # views. Mutating callers use get()/update() which re-normalize.
         with self._lock:
-            return [TechnicalReport.normalize(item) for item in self._items.values()]
+            return [dict(item) for item in self._items.values()]
 
     def get(self, report_id: str) -> dict[str, Any] | None:
         with self._lock:
             item = self._items.get(str(report_id))
+            # Return a fresh normalized copy so edit forms cannot mutate storage.
             return TechnicalReport.normalize(item) if item else None
 
     def create(self, report: dict[str, Any]) -> dict[str, Any]:

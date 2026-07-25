@@ -69,6 +69,13 @@ function main() {
     failed = true;
   }
 
+  const { getMaskedUbicacionesApiKeys } = require(path.join(ROOT, 'electron', 'ubicaciones-secure-keys'));
+  const masked = getMaskedUbicacionesApiKeys();
+  if (masked.keys.google === 'g-key' || !masked.configured.google) {
+    console.error('[FAIL] getMaskedUbicacionesApiKeys should mask secrets:', masked);
+    failed = true;
+  }
+
   try {
     fs.unlinkSync(filePath);
   } catch {

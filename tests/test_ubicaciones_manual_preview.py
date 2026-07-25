@@ -1,6 +1,7 @@
 """Regresión: preview manual no reutiliza caché entre filas distintas."""
 
 from io import BytesIO
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -49,6 +50,9 @@ def test_manual_preview_cache_differs_by_text_fields() -> None:
     assert second["success"] is True
     assert first["data"]["cod_componente"] == "COD-A"
     assert second["data"]["cod_componente"] == "COD-B"
+    assert str(first["data"]["image"]).startswith("file:")
+    assert Path(first["data"]["image_path"]).is_file()
+    assert "base64," not in str(first["data"]["image"])
 
 
 def test_manual_preview_cache_differs_by_coordinates() -> None:

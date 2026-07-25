@@ -225,10 +225,12 @@ function _enterFatalFromRestartBudget(message) {
 
 function _classifyStartupError(rawMessage) {
   const msg = (rawMessage || '').toLowerCase();
-  // Fatal = no point retrying: executable missing, python not installed.
+  // Fatal = no point retrying: executable missing, python not installed, DB unusable.
   if (msg.includes('backend executable not found')) return 'fatal';
   if (msg.includes('python no encontrado')) return 'fatal';
   if (msg.includes('enoent')) return 'fatal';
+  if (msg.includes('init_db failed')) return 'fatal';
+  if (msg.includes('db_init_failed')) return 'fatal';
   return 'transient';
 }
 
@@ -344,6 +346,10 @@ async function startPythonBackend(isDev, attempt = 1) {
 /**
  * Periodic health check: if the backend process exited without firing 'close',
  * or if it's a zombie, force a restart.
+ *
+ * The probe attaches a temporary stdout listener (removed in cleanup via finish())
+ * in addition to ipc-router's persistent listener. Both parse JSON lines; the
+ * probe only handles responses matching its probeId.
  */
 function _probeBackendResponsiveness(proc) {
   if (!proc || proc.killed) {
@@ -558,6 +564,13 @@ function _spawn(isDev) {
     _state = wasReady ? STATE.EXITED : _state;
 
     if (wasReady && !_isShuttingDown && _state !== STATE.FATAL) {
+      const stderrTail = getStderrTail();
+      if (/init_db failed|db_init_failed/i.test(stderrTail)) {
+        _enterFatalFromRestartBudget(
+          'La base de datos local no pudo inicializarse. Revisa permisos o reinstala la app.',
+        );
+        return;
+      }
       // Unexpected crash after being healthy → try to restart.
       _autoRestart().catch((err) => console.error('[backend-spawner] Auto-restart failed:', err));
     }

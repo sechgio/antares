@@ -1,0 +1,125 @@
+"""Phase 3 backend remediations: caps, sanitization, validation, IPC."""
+
+from __future__ import annotations
+
+import base64
+import io
+import json
+
+import pytest
+
+from backend import ipc_protocol
+from backend import main as backend_main
+from backend.core.exceptions import ValidationError
+from backend.core.sellador_io import MAX_PDF_BYTES, read_user_file
+from backend.handlers.database import db_records
+from backend.handlers.history import history_list
+from backend.handlers.sellador import sellador_apply, sellador_inspect_pdf
+from backend.utils.html_sanitizer import sanitize_html_for_pdf
+
+
+def test_read_user_file_rejects_oversized_pdf(tmp_path) -> None:
+    pdf_path = tmp_path / "big.pdf"
+    pdf_path.write_bytes(b"%PDF" + b"x" * (MAX_PDF_BYTES + 1))
+    with pytest.raises(ValueError, match="demasiado grande"):
+        read_user_file(str(pdf_path), "PDF", max_bytes=MAX_PDF_BYTES)
+
+
+def test_sellador_apply_rejects_oversized_base64() -> None:
+    huge = base64.b64encode(b"x" * (MAX_PDF_BYTES + 1)).decode("ascii")
+    stamp = base64.b64encode(b"stamp").decode("ascii")
+    with pytest.raises(ValueError, match="PDF demasiado grande"):
+        sellador_apply({
+            "pdf_b64": huge,
+            "stamp_b64": stamp,
+            "stamp_count": 1,
+            "x": 1,
+            "y": 1,
+            "width": 10,
+            "height": 10,
+        })
+
+
+def test_db_records_paginates_with_defaults() -> None:
+    result = db_records({})
+    assert result["limit"] == 500
+    assert result["offset"] == 0
+    assert isinstance(result["records"], list)
+    assert isinstance(result["fields"], list)
+
+
+def test_db_records_rejects_limit_above_max() -> None:
+    with pytest.raises(ValueError, match="limit"):
+        db_records({"limit": 5000})
+
+
+def test_sanitize_strips_unsafe_data_uri_in_src() -> None:
+    html = '<img src="data:text/html,<script>alert(1)</script>"/>'
+    out = sanitize_html_for_pdf(html)
+    assert "data:text/html" not in out
+    assert 'src=""' in out or "src=''" in out
+
+
+def test_sanitize_keeps_safe_image_data_uri_in_src() -> None:
+    html = '<img src="data:image/png;base64,AAAA"/>'
+    out = sanitize_html_for_pdf(html)
+    assert "data:image/png;base64,AAAA" in out
+
+
+def test_sellador_inspect_pdf_rejects_path_traversal() -> None:
+    with pytest.raises(ValueError, match="Path traversal"):
+        sellador_inspect_pdf({"pdf_path": "../../etc/passwd"})
+
+
+def test_history_list_caps_limit() -> None:
+    with pytest.raises(ValueError, match="limit"):
+        history_list({"limit": 1000})
+
+
+def test_history_list_rejects_negative_offset() -> None:
+    with pytest.raises(ValueError, match="offset"):
+        history_list({"offset": -1})
+
+
+def test_inbound_payload_over_max_with_id_sends_error(monkeypatch) -> None:
+    monkeypatch.setattr(ipc_protocol, "_MAX_PAYLOAD_SIZE", 64)
+    payload = {"jsonrpc": "2.0", "id": "req-big", "method": "version", "params": {"blob": "x" * 200}}
+    line = json.dumps(payload) + "\n"
+    stdin = io.StringIO(line)
+    stdout = io.StringIO()
+    monkeypatch.setattr(ipc_protocol.sys, "stdin", stdin)
+    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
+
+    result = ipc_protocol.read_message()
+
+    assert result is ipc_protocol._SKIP
+    out = stdout.getvalue()
+    assert '"id": "req-big"' in out
+    assert '"error"' in out
+    assert "too large" in out.lower()
+
+
+def test_dispatch_prefers_user_facing_value_error(monkeypatch) -> None:
+    sent: list[dict] = []
+    monkeypatch.setattr(backend_main, "send_response", lambda *args, **kwargs: sent.append({"args": args, **kwargs}))
+
+    def boom(_params):
+        raise ValueError("Parámetro inválido")
+
+    backend_main._dispatch(boom, {}, "42", "test_method")
+    assert sent
+    assert sent[0]["error"] == "Parámetro inválido"
+
+
+def test_dispatch_structured_exception(monkeypatch) -> None:
+    sent: list[dict] = []
+    monkeypatch.setattr(backend_main, "send_response", lambda *args, **kwargs: sent.append({"args": args, **kwargs}))
+
+    def boom(_params):
+        raise ValidationError("Ruta no permitida")
+
+    backend_main._dispatch(boom, {}, "99", "test_method")
+    assert sent
+    err = sent[0]["error"]
+    assert hasattr(err, "to_dict")
+    assert err.to_dict()["message"] == "Ruta no permitida"

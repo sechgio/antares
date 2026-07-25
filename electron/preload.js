@@ -60,7 +60,10 @@ try {
       if (typeof method !== 'string' || !method) {
         return Promise.reject(new Error('IPC method not allowed: invalid method name.'));
       }
-      // Soft warn for unknown methods when we still have an injected list, but do not block.
+      if (!isDev && ALLOWED_RENDERER_METHODS.size > 0 && !ALLOWED_RENDERER_METHODS.has(method)) {
+        return Promise.reject(new Error(`IPC method not allowed: ${method}`));
+      }
+      // Soft warn for unknown methods in dev when we still have an injected list.
       if (ALLOWED_RENDERER_METHODS.size > 0 && !ALLOWED_RENDERER_METHODS.has(method) && isDev) {
         console.warn(
           `[preload] method "${method}" not in window-create allowlist; forwarding to main (may require Electron restart if main is also stale)`,
@@ -97,6 +100,7 @@ try {
         return '';
       }
     },
+    registerLocalPath: (filePath) => ipcRenderer.invoke('ipc-call', 'register_local_path', { path: filePath }),
   });
   if (isDev) {
     console.debug('[preload] electronAPI exposed successfully');

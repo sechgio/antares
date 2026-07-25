@@ -30,6 +30,23 @@ function isSafeDataUrl(url) {
   return SAFE_DATA_URI_PREFIXES.some((prefix) => lowered.startsWith(prefix));
 }
 
+function neutralizeUrlAttr(match, attr, quote, urlValue) {
+  const lowered = String(urlValue).trim().toLowerCase();
+  if (lowered.startsWith('data:') && !isSafeDataUrl(urlValue)) {
+    return `${attr}=${quote}${quote}`;
+  }
+  if (
+    lowered.startsWith('javascript:')
+    || lowered.startsWith('vbscript:')
+    || lowered.startsWith('http:')
+    || lowered.startsWith('https:')
+    || lowered.startsWith('file:')
+  ) {
+    return `${attr}=${quote}${quote}`;
+  }
+  return match;
+}
+
 function sanitizeHtmlForPdf(html) {
   const stripped = String(html)
     // Strip <script>/<iframe>/<object> pairs non-greedily first.
@@ -55,8 +72,9 @@ function sanitizeHtmlForPdf(html) {
     .replace(/\son[a-z]+\s*=\s*`[^`]*`/gi, '')
     .replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '')
     .replace(/\son[a-z]+\b(?=\s|>|\/)/gi, '')
-    // Neutralise javascript:/vbscript: URIs in href/src/xlink:href/etc.
-    .replace(/(href|src|xlink:href)\s*=\s*(['"]?)\s*(?:javascript|vbscript):[^"'>\s]*\2/gi, '$1=$2$2')
+    // Neutralise unsafe URIs in href/src/xlink:href (javascript, remote, file,
+    // and data: except allowlisted safe image prefixes).
+    .replace(/(href|src|xlink:href)\s*=\s*(['"]?)\s*([^"'>\s]+)\2/gi, neutralizeUrlAttr)
     // Neutralise javascript:/vbscript: URIs inside CSS url(...) — the
     // href/src regex above does not reach into CSS. Without this, a
     // payload like `<style>.x{background:url(javascript:alert(1))}</style>`

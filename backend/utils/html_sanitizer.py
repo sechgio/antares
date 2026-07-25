@@ -33,6 +33,18 @@ def _collapse_unsafe_url(match: re.Match[str]) -> str:
     return "url('')"
 
 
+def _neutralize_url_attr(match: re.Match[str]) -> str:
+    attr = match.group(1)
+    quote = match.group(2) or ""
+    url_value = match.group(3)
+    lowered = url_value.strip().lower()
+    if lowered.startswith("data:") and not is_safe_data_url(url_value):
+        return f"{attr}={quote}{quote}"
+    if lowered.startswith(("javascript:", "vbscript:", "http:", "https:", "file:")):
+        return f"{attr}={quote}{quote}"
+    return match.group(0)
+
+
 def sanitize_html_for_pdf(html: str) -> str:
     """Strip active content and external resource URLs before WeasyPrint."""
     stripped = str(html)
@@ -51,14 +63,8 @@ def sanitize_html_for_pdf(html: str) -> str:
     stripped = re.sub(r"\son[a-z]+\s*=\s*[^\s>]+", "", stripped, flags=re.IGNORECASE)
     stripped = re.sub(r"\son[a-z]+\b(?=\s|>|/)", "", stripped, flags=re.IGNORECASE)
     stripped = re.sub(
-        r'(href|src|xlink:href)\s*=\s*(["\']?)\s*(?:javascript|vbscript):[^"\'>\s]*\2',
-        r"\1=\2\2",
-        stripped,
-        flags=re.IGNORECASE,
-    )
-    stripped = re.sub(
-        r'(href|src|xlink:href)\s*=\s*(["\']?)\s*(?:https?|file):[^"\'>\s]*\2',
-        r"\1=\2\2",
+        r'(href|src|xlink:href)\s*=\s*(["\']?)\s*([^"\'>\s]+)\2',
+        _neutralize_url_attr,
         stripped,
         flags=re.IGNORECASE,
     )

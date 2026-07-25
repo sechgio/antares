@@ -69,6 +69,23 @@ assert(map['6553447'].folders.includes('Carpeta A'), 'registra carpeta');
 assert(map['9999999']?.count === 1, 'otro NIS separado');
 assert(!map['noise'], 'ignora nombres sin NIS');
 
+// --- streaming accumulate matches buildNisMap ---
+const {
+  accumulateNisFiles,
+  finalizeNisMap,
+} = require('../electron/autoimg-nis');
+const acc = {};
+accumulateNisFiles(acc, [
+  { id: 'a', name: '6553447_1.jpg' },
+  { id: 'b', name: '6553447-2.jpeg' },
+], 'Carpeta A');
+accumulateNisFiles(acc, [
+  { id: 'c', name: '6553447-3C.png' },
+], 'Carpeta A');
+finalizeNisMap(acc);
+assert(acc['6553447'].count === 3, 'accumulate across pages');
+assert(acc['6553447'].slots.join(',') === '1,2,3', 'slots finalized sorted');
+
 // --- merge MAX vs SUM ---
 const m1 = buildNisMap([{ id: '1', name: '1111111_1.jpg' }, { id: '2', name: '1111111_2.jpg' }], 'A');
 const m2 = buildNisMap([{ id: '3', name: '1111111_1.jpg' }, { id: '4', name: '1111111_3.jpg' }], 'B');

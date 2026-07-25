@@ -9,7 +9,13 @@ from typing import Any
 
 
 def is_safe_user_path(value: object) -> bool:
-    """Return whether a user-provided path string avoids traversal patterns."""
+    """Return whether a user-provided path string avoids traversal patterns.
+
+    Desktop IPC intentionally allows absolute paths (e.g. ``C:\\Users\\...``)
+    chosen via native dialogs. This helper only blocks classic traversal and
+    null-byte tricks — confinement to dialog-selected roots is enforced in the
+    Electron main process path allowlist, not here.
+    """
     if not isinstance(value, str) or not value:
         return True
     if "\x00" in value:

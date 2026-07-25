@@ -12,6 +12,7 @@ const report: TechnicalReport = {
     cs: 'SUR',
     contratista: 'ACCIONA',
     sgio: '454654001',
+    sgio_label: 'SGIO',
     codigo_infraestructura: 'RES-01',
     ubicacion: 'LIMA',
     suministro: '123',

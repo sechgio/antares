@@ -26,6 +26,20 @@ async function handleAutoimgCall(method, params = {}) {
       case 'autoimg_oauth_config_save': {
         const clientId = typeof params.client_id === 'string' ? params.client_id : '';
         const clientSecret = typeof params.client_secret === 'string' ? params.client_secret : '';
+        const { dialog } = require('electron');
+        const win = getMainWindow();
+        const confirm = await dialog.showMessageBox(win || undefined, {
+          type: 'warning',
+          buttons: ['Cancelar', 'Guardar'],
+          defaultId: 0,
+          cancelId: 0,
+          title: 'Guardar credenciales OAuth',
+          message: '¿Guardar el Client ID / Secret de Google OAuth?',
+          detail: 'Solo continúa si obtuviste estas credenciales desde tu propio proyecto de Google Cloud.',
+        });
+        if (confirm.response !== 1) {
+          return { handled: true, result: { success: false, cancelled: true } };
+        }
         const result = sheets.saveOAuthConfig(clientId, clientSecret);
         return { handled: true, result };
       }
@@ -40,11 +54,6 @@ async function handleAutoimgCall(method, params = {}) {
         );
         await shell.openExternal(result.url);
         return { handled: true, result: { ...result, opened: true } };
-      }
-
-      case 'autoimg_sheets_auth_callback': {
-        await sheets.exchangeCode(params.code, params.redirect_uri);
-        return { handled: true, result: { success: true } };
       }
 
       case 'autoimg_sheets_auth_cancel':

@@ -1,8 +1,10 @@
+import { useState, type ReactNode } from 'react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
-import { Save, Trash2, Upload, X } from 'lucide-react';
+import { ChevronDown, Save, Trash2, Upload, X } from 'lucide-react';
 import {
   DEFAULT_MEDIDA_LABEL_DIAMETRO,
   DEFAULT_MEDIDA_LABEL_DIAMETRO_INTERNO,
+  DEFAULT_SGIO_LABEL,
   type CanastillasData,
   type CheckState,
   type InspeccionDescripcion,
@@ -73,20 +75,20 @@ export default function FormPanel({ report, hasChanges, busy, logoLeft, logoRigh
 
   return (
     <aside className="tr-panel tr-form">
-      <div className="tr-panel-header">
-        <div>
-          <p className="tr-eyebrow">Editor</p>
-          <h2>Informe #{report.metadata.informe_id}</h2>
-        </div>
-        <div className="tr-header-actions">
+      <div className="tr-panel-header tr-form-header">
+        <h2 className="tr-form-title">
+          Informe #{report.metadata.informe_id}
           <span className={`tr-change-dot ${hasChanges ? 'dirty' : ''}`} title={hasChanges ? 'Cambios sin guardar' : 'Sin cambios'} />
-          <button className="tr-primary" onClick={onSave} disabled={!hasChanges || busy}>
-            <Save size={15} />
-            Guardar
-          </button>
+        </h2>
+        <div className="tr-form-actions">
+          <WithHoverTooltip label={hasChanges ? 'Guardar cambios' : 'Sin cambios'} placement="bottom">
+            <button className="tr-form-action" onClick={onSave} disabled={!hasChanges || busy} aria-label="Guardar">
+              <Save size={14} strokeWidth={2} />
+            </button>
+          </WithHoverTooltip>
           <WithHoverTooltip label="Eliminar informe" placement="bottom">
-            <button className="tr-danger tr-icon-button" onClick={onDelete} disabled={busy} aria-label="Eliminar informe">
-              <Trash2 size={15} />
+            <button className="tr-form-action tr-form-action--danger" onClick={onDelete} disabled={busy} aria-label="Eliminar informe">
+              <Trash2 size={14} strokeWidth={2} />
             </button>
           </WithHoverTooltip>
         </div>
@@ -100,23 +102,26 @@ export default function FormPanel({ report, hasChanges, busy, logoLeft, logoRigh
           </div>
         </section>
 
-        <section className="tr-section">
-          <h3>Metadata</h3>
+        <Section title="Metadata" defaultOpen>
           <div className="tr-grid-4">
             <Field label="Informe" type="number" value={report.metadata.informe_id} onChange={(value) => patchMetadata('informe_id', Number(value) || 0)} />
             <Field label="Día" type="number" value={report.metadata.dia} onChange={(value) => patchMetadata('dia', Number(value) || 1)} />
             <Field label="Mes" value={report.metadata.mes} onChange={(value) => patchMetadata('mes', value.toUpperCase())} />
             <Field label="Año" type="number" value={report.metadata.anio} onChange={(value) => patchMetadata('anio', Number(value) || new Date().getFullYear())} />
           </div>
-        </section>
+        </Section>
 
-        <section className="tr-section">
-          <h3>Cabecera</h3>
+        <Section title="Cabecera" defaultOpen>
           <Field label="C.S." value={report.header.cs} onChange={(value) => patchHeader('cs', value)} />
           <div className="tr-grid-2">
             <Field label="Contratista" value={report.header.contratista} onChange={(value) => patchHeader('contratista', value)} />
             <Field label="SGIO" value={report.header.sgio} onChange={(value) => patchHeader('sgio', value)} />
           </div>
+          <Field
+            label="Etiqueta SGIO (nombre del campo)"
+            value={report.header.sgio_label || DEFAULT_SGIO_LABEL}
+            onChange={(value) => patchHeader('sgio_label', value.trim() || DEFAULT_SGIO_LABEL)}
+          />
           <Field label="Código infraestructura" value={report.header.codigo_infraestructura} onChange={(value) => patchHeader('codigo_infraestructura', value)} />
           <Field label="Ubicación" value={report.header.ubicacion} onChange={(value) => patchHeader('ubicacion', value)} />
           <div className="tr-grid-2">
@@ -133,10 +138,9 @@ export default function FormPanel({ report, hasChanges, busy, logoLeft, logoRigh
               <option value="CISTERNA">CISTERNA</option>
             </select>
           </label>
-        </section>
+        </Section>
 
-        <section className="tr-section">
-          <h3>Inspección</h3>
+        <Section title="Inspección">
           {INSPECTION_ROWS.map(([key, label, obsKey, sugKey]) => (
             <div className="tr-inspection-row" key={String(key)}>
               <div>
@@ -158,30 +162,27 @@ export default function FormPanel({ report, hasChanges, busy, logoLeft, logoRigh
               <Field label="Sug." value={String(report.inspeccion[sugKey] || '')} onChange={(value) => patchInspection(sugKey, value)} />
             </div>
           ))}
-        </section>
+        </Section>
 
-        <section className="tr-section">
-          <h3>Válvulas</h3>
+        <Section title="Válvulas">
           <DiameterEditor
             diameters={['2', '3', '4', '6', '8', '10', '12']}
             sections={VALVE_SECTIONS}
             data={report.valvulas}
             onChange={(valvulas) => patch({ valvulas })}
           />
-        </section>
+        </Section>
 
-        <section className="tr-section">
-          <h3>Canastillas</h3>
+        <Section title="Canastillas">
           <DiameterEditor
             diameters={['2', '3', '4', '6', '8', '10', '14']}
             sections={BASKET_SECTIONS.map(([key, label]) => [key, label, key] as [keyof CanastillasData, string, string])}
             data={report.canastillas}
             onChange={(canastillas) => patch({ canastillas })}
           />
-        </section>
+        </Section>
 
-        <section className="tr-section">
-          <h3>Medidas</h3>
+        <Section title="Medidas">
           <div className="tr-grid-2">
             {([
               ['etiqueta_diametro', 'diametro', 'Etiqueta (diámetro / largo)', DEFAULT_MEDIDA_LABEL_DIAMETRO],
@@ -216,7 +217,7 @@ export default function FormPanel({ report, hasChanges, busy, logoLeft, logoRigh
               />
             ))}
           </div>
-        </section>
+        </Section>
       </div>
     </aside>
   );
@@ -271,6 +272,21 @@ function Field({ label, value, type = 'text', onChange }: { label: string; value
       <span>{label}</span>
       <input type={type} value={value ?? ''} onChange={(event) => onChange(event.target.value)} />
     </label>
+  );
+}
+
+function Section({ title, defaultOpen = false, children }: { title: string; defaultOpen?: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className={`tr-section tr-collapsible${open ? ' tr-collapsible--open' : ''}`}>
+      <button type="button" className="tr-section-toggle" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <h3>{title}</h3>
+        <ChevronDown size={13} strokeWidth={2.25} className="tr-section-chevron" />
+      </button>
+      <div className="tr-section-body" aria-hidden={!open}>
+        <div className="tr-section-inner">{children}</div>
+      </div>
+    </section>
   );
 }
 

@@ -12,6 +12,7 @@ from backend.handlers.common import validate_params, with_locale
 
 
 @with_locale
+@validate_params()
 def panel_aviso_corte_parse_excel(params: dict[str, Any]) -> dict[str, Any]:
     xlsx_b64 = params.get("xlsx_b64", "")
     if not xlsx_b64:
@@ -31,6 +32,7 @@ def panel_aviso_corte_parse_excel(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 @with_locale
+@validate_params()
 def panel_aviso_corte_compute_match(params: dict[str, Any]) -> dict[str, Any]:
     rows = params.get("rows", [])
     key_column = str(params.get("key_column", ""))
@@ -69,6 +71,7 @@ def panel_aviso_corte_compute_match(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 @with_locale
+@validate_params()
 def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
     panels_raw = params.get("panels") or []
     logos_raw = params.get("logos") or {}

@@ -1,0 +1,33 @@
+import type { CanvasLayer } from '../../types';
+import { isShapeLayer } from '../../ops/layerStyle';
+import type { PanelSection } from './types';
+import TextSection from './tails/TextSection';
+import FieldSection from './tails/FieldSection';
+import LogoSection from './tails/LogoSection';
+import ImageSection from './tails/ImageSection';
+import ImageSlotSection from './tails/ImageSlotSection';
+import GridSection from './tails/GridSection';
+import CheckboxSection from './tails/CheckboxSection';
+import SignatureSection from './tails/SignatureSection';
+import TableSection from './tails/TableSection';
+
+/** Ordered type-specific tail sections. Render ALL matching entries (in
+ *  order): `field` matches both TextSection and FieldSection, so a field layer
+ *  renders the Text inspector followed by the Campo Excel inspector, matching
+ *  the original single-selection body order. */
+export const TAIL_SECTIONS: PanelSection[] = [
+  { test: (l) => l.type === 'text' || l.type === 'field', Component: TextSection },
+  { test: (l) => l.type === 'field', Component: FieldSection },
+  { test: (l) => l.type === 'logo', Component: LogoSection },
+  { test: (l) => l.type === 'image', Component: ImageSection },
+  { test: (l) => l.type === 'imageSlot', Component: ImageSlotSection },
+  { test: (l) => l.type === 'grid', Component: GridSection },
+  { test: (l) => l.type === 'checkbox', Component: CheckboxSection },
+  { test: (l) => l.type === 'signature', Component: SignatureSection },
+  { test: (l) => l.type === 'table', Component: TableSection },
+];
+
+/** Type guard matching the original `{shape && (...)}` block. */
+export function isShapeTail(layer: CanvasLayer): boolean {
+  return isShapeLayer(layer);
+}

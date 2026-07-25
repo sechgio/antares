@@ -4,7 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const previewPayloads: Record<string, unknown>[] = [];
 const generatePayloads: Record<string, unknown>[] = [];
 
-const { mockPreview, mockGenerate, mockKeysGet, mockKeysSet } = vi.hoisted(() => ({
+const EXCEL_PATH = 'C:\\data\\ubicaciones.xlsx';
+const OUTPUT_DIR = 'C:\\salida\\ubicaciones';
+
+const { mockPreview, mockGenerate, mockKeysGet, mockKeysSet, mockDialogFolder } = vi.hoisted(() => ({
   mockPreview: vi.fn(async (body: Record<string, unknown>) => {
     previewPayloads.push(body);
     return {
@@ -27,6 +30,7 @@ const { mockPreview, mockGenerate, mockKeysGet, mockKeysSet } = vi.hoisted(() =>
   }),
   mockKeysGet: vi.fn(async () => ({ keys: {} })),
   mockKeysSet: vi.fn(async (keys: Record<string, string>) => ({ keys })),
+  mockDialogFolder: vi.fn(async () => ({ folder: OUTPUT_DIR, paths: [OUTPUT_DIR] })),
 }));
 
 vi.mock('../api', () => ({
@@ -35,24 +39,24 @@ vi.mock('../api', () => ({
     generarUbicaciones: mockGenerate,
     ubicacionesKeysGet: mockKeysGet,
     ubicacionesKeysSet: mockKeysSet,
+    dialogFolder: mockDialogFolder,
   },
+}));
+
+vi.mock('../hooks/useToast', () => ({
+  useToast: () => ({ addToast: vi.fn() }),
 }));
 
 import { UbicacionesView, loadCustomStylesFromStorage } from './UbicacionesView';
 
-const EXCEL_PATH = 'C:\\data\\ubicaciones.xlsx';
-const OUTPUT_DIR = 'C:\\salida\\ubicaciones';
-
 function setupElectronApi() {
   const electronApi = window.electronAPI!;
-  vi.spyOn(electronApi, 'invoke').mockImplementation(async (method: string) => {
-    if (method === 'dialog_folder') {
-      return { folder: OUTPUT_DIR };
-    }
-    return {};
-  });
   Object.defineProperty(electronApi, 'getPathForFile', {
     value: (file: File) => (file.name.endsWith('.xlsx') ? EXCEL_PATH : ''),
+    configurable: true,
+  });
+  Object.defineProperty(electronApi, 'registerLocalPath', {
+    value: vi.fn().mockResolvedValue(undefined),
     configurable: true,
   });
 }

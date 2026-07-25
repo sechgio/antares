@@ -9,6 +9,7 @@ from PIL import Image
 from pypdf import PdfReader, PdfWriter
 
 from backend.core.sellador import _prepare_stamp_image, apply_sellador, distribute_stamp_pages, group_stamp_pages
+from backend.core.sellador_io import MAX_STAMP_BYTES
 from backend.handlers.sellador import (
     sellador_apply,
     sellador_inspect_pdf,
@@ -296,3 +297,18 @@ def test_sellador_apply_from_paths(tmp_path) -> None:
     })
     assert result["saved_path"] == str(output_path.resolve())
     assert output_path.exists()
+
+
+def test_sellador_apply_rejects_oversized_stamp_b64() -> None:
+    pdf = base64.b64encode(_blank_pdf(1)).decode("ascii")
+    huge_stamp = base64.b64encode(b"x" * (MAX_STAMP_BYTES + 1)).decode("ascii")
+    with pytest.raises(ValueError, match="Sello demasiado grande"):
+        sellador_apply({
+            "pdf_b64": pdf,
+            "stamp_b64": huge_stamp,
+            "stamp_count": 1,
+            "x": 1,
+            "y": 1,
+            "width": 10,
+            "height": 10,
+        })

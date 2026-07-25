@@ -110,3 +110,41 @@ def test_cancelled_queued_heavy_future_releases_slot() -> None:
     finally:
         release.set()
         scheduler.shutdown(wait=True)
+
+def test_detect_limits_allows_8_heavy_on_high_ram(monkeypatch) -> None:
+    from backend.core import scheduler as sched
+
+    monkeypatch.setattr(sched.os, 'cpu_count', lambda: 16)
+
+    class _Mem:
+        available = 20 * (1024 ** 3)
+
+    class _Psutil:
+        @staticmethod
+        def virtual_memory():
+            return _Mem()
+
+    monkeypatch.setitem(__import__('sys').modules, 'psutil', _Psutil())
+    _light, heavy, queue = sched._detect_limits()
+    assert heavy <= 8
+    assert heavy >= 2
+    assert heavy == 8, f'expected heavy_workers=8 on high RAM, got {heavy}'
+    assert queue >= heavy
+
+
+def test_detect_limits_caps_at_6_below_16gb(monkeypatch) -> None:
+    from backend.core import scheduler as sched
+
+    monkeypatch.setattr(sched.os, 'cpu_count', lambda: 16)
+
+    class _Mem:
+        available = 10 * (1024 ** 3)
+
+    class _Psutil:
+        @staticmethod
+        def virtual_memory():
+            return _Mem()
+
+    monkeypatch.setitem(__import__('sys').modules, 'psutil', _Psutil())
+    _light, heavy, _queue = sched._detect_limits()
+    assert heavy <= 6

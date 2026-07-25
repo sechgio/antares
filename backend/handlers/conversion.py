@@ -12,7 +12,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable
-from concurrent.futures import ALL_COMPLETED, CancelledError, wait
+from concurrent.futures import ALL_COMPLETED, CancelledError, Future, wait
 from pathlib import Path
 from typing import Any, cast
 
@@ -440,6 +440,7 @@ def _slim_process_status(job: Job) -> dict[str, Any]:
     """Status payload for polling: full logs/result, no bulk files list."""
     with job.state._lock:
         logs = [dict(log) for log in job.state.logs]
+        result = dict(job.result) if isinstance(job.result, dict) else job.result
     summary = job.to_dict()
     raw_params = job.params or {}
     files = raw_params.get("files") or []
@@ -447,7 +448,7 @@ def _slim_process_status(job: Job) -> dict[str, Any]:
     return {
         **summary,
         "logs": logs,
-        "result": job.result,
+        "result": result,
         "params": {
             "file_count": file_count,
             "destino": raw_params.get("destino"),
@@ -663,6 +664,28 @@ def _run_conversion_job(job: Job) -> None:
             futures: list = []
             # Track output paths across chunks so same-name collisions never overwrite.
             reserved_out_paths: set[str] = set()
+            # Prefetch: prepare chunk N+1 on the light pool while chunk N converts.
+            # Dedupe against reserved_out_paths stays on the job thread after collect.
+            prefetched_raw: list[tuple[str, Path, bool]] | None = None
+            prefetched_for_start: int | None = None
+            submit_light = getattr(scheduler, "submit_light", None)
+
+            def _warn_dedupe(msg: str) -> None:
+                log_message(msg, "warn", state=state)
+
+            def _prepare_chunk_raw(chunk_files: list[str], global_offset: int) -> list[tuple[str, Path, bool]]:
+                return _prepare_chunk_tasks(
+                    chunk_files,
+                    destino=destino,
+                    engine=engine,
+                    conversion_enabled=conversion_enabled,
+                    ext_dest=ext_dest,
+                    lookup_fn=buscar_lote_por_codigos,
+                    use_column_rename=use_column_rename,
+                    global_offset=global_offset,
+                    key_column=key_column,
+                    mapping_index=mapping_index,
+                )
 
             try:
                 for chunk_start in range(0, len(files), CHUNK_SIZE):
@@ -670,22 +693,18 @@ def _run_conversion_job(job: Job) -> None:
                         break
                     chunk_end = min(chunk_start + CHUNK_SIZE, len(files))
                     chunk_files = files[chunk_start:chunk_end]
-                    chunk_tasks = _prepare_chunk_tasks(
-                        chunk_files,
-                        destino=destino,
-                        engine=engine,
-                        conversion_enabled=conversion_enabled,
-                        ext_dest=ext_dest,
-                        lookup_fn=buscar_lote_por_codigos,
-                        use_column_rename=use_column_rename,
-                        global_offset=chunk_start,
-                        key_column=key_column,
-                        mapping_index=mapping_index,
-                    )
+
+                    if prefetched_raw is not None and prefetched_for_start == chunk_start:
+                        raw_tasks = prefetched_raw
+                        prefetched_raw = None
+                        prefetched_for_start = None
+                    else:
+                        raw_tasks = _prepare_chunk_raw(chunk_files, chunk_start)
+
                     chunk_tasks = _dedupe_chunk_out_paths(
-                        chunk_tasks,
+                        raw_tasks,
                         reserved_out_paths,
-                        log=lambda msg: log_message(msg, "warn", state=state),
+                        log=_warn_dedupe,
                     )
                     futures = []
                     for task in chunk_tasks:
@@ -715,6 +734,22 @@ def _run_conversion_job(job: Job) -> None:
                             future.cancel()
                         wait(futures, timeout=_CANCEL_GRACE_SECONDS, return_when=ALL_COMPLETED)
                         break
+
+                    # Kick off prepare for the next chunk while this chunk converts.
+                    next_start = chunk_start + CHUNK_SIZE
+                    prefetch_future: Future | None = None
+                    if submit_light is not None and next_start < len(files):
+                        next_end = min(next_start + CHUNK_SIZE, len(files))
+                        next_files = files[next_start:next_end]
+                        try:
+                            prefetch_future = submit_light(
+                                _prepare_chunk_raw,
+                                next_files,
+                                next_start,
+                            )
+                        except Exception:
+                            logger.debug("Chunk prefetch submit_light failed; will prepare sync", exc_info=True)
+                            prefetch_future = None
 
                     for future in futures:
                         if future.cancelled():
@@ -766,6 +801,23 @@ def _run_conversion_job(job: Job) -> None:
                             for pending in futures:
                                 pending.cancel()
                             break
+
+                    # Resolve prefetch after the current chunk's heavy work (or cancel).
+                    if prefetch_future is not None:
+                        try:
+                            raw_next = prefetch_future.result()
+                        except Exception:
+                            logger.debug("Chunk prefetch prepare failed; will prepare sync", exc_info=True)
+                            raw_next = None
+                        with state._lock:
+                            if state.cancel_requested:
+                                cancelled = True
+                        if cancelled or raw_next is None:
+                            prefetched_raw = None
+                            prefetched_for_start = None
+                        else:
+                            prefetched_raw = raw_next
+                            prefetched_for_start = next_start
             finally:
                 if cancelled:
                     wait(futures, timeout=_CANCEL_GRACE_SECONDS, return_when=ALL_COMPLETED)
@@ -775,8 +827,7 @@ def _run_conversion_job(job: Job) -> None:
                 state.progress = 100 if not cancelled else state.progress
                 ok_count = state.ok_count
                 err_count = state.err_count
-
-            job.result = {"ok_count": ok_count, "err_count": err_count, "cancelled": cancelled}
+                job.result = {"ok_count": ok_count, "err_count": err_count, "cancelled": cancelled}
 
             if cancelled:
                 log_message(t("info.process_cancelled"), "warn", state=state)
@@ -828,12 +879,13 @@ def _run_conversion_job(job: Job) -> None:
                 error_msg = f"{type(exc).__name__}: {exc}"
                 logger.exception("Conversion job %s failed: %s", job_id, error_msg)
                 log_message(error_msg, "error", state=state)
-                job.result = {
-                    "ok_count": 0,
-                    "err_count": err_count,
-                    "cancelled": False,
-                    "error": error_msg,
-                }
+                with state._lock:
+                    job.result = {
+                        "ok_count": 0,
+                        "err_count": err_count,
+                        "cancelled": False,
+                        "error": error_msg,
+                    }
                 _notify_complete(job, 0, err_count, cancelled=False, progress=0)
                 notified = True
     finally:

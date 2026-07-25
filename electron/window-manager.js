@@ -9,10 +9,27 @@ let mainWindow = null;
 let _isDev = false;
 
 function buildAppMenu(menuIndex = 0) {
+  const isPackaged = (() => {
+    try {
+      return !!require('electron').app.isPackaged;
+    } catch {
+      return false;
+    }
+  })();
+  const viewSubmenu = [
+    { label: 'Recargar', role: 'reload' },
+    ...(!isPackaged ? [{ label: 'Herramientas de desarrollo', role: 'toggleDevTools' }] : []),
+    { type: 'separator' },
+    { label: 'Zoom real', role: 'resetZoom' },
+    { label: 'Acercar', role: 'zoomIn' },
+    { label: 'Alejar', role: 'zoomOut' },
+    { type: 'separator' },
+    { label: 'Pantalla completa', role: 'togglefullscreen' },
+  ];
   const menus = [
     { label: 'Archivo', submenu: [{ label: 'Cerrar ventana', role: 'close' }, { type: 'separator' }, { label: 'Salir', role: 'quit' }] },
     { label: 'Editar', submenu: [{ label: 'Deshacer', role: 'undo' }, { label: 'Rehacer', role: 'redo' }, { type: 'separator' }, { label: 'Cortar', role: 'cut' }, { label: 'Copiar', role: 'copy' }, { label: 'Pegar', role: 'paste' }, { label: 'Seleccionar todo', role: 'selectAll' }] },
-    { label: 'Ver', submenu: [{ label: 'Recargar', role: 'reload' }, { label: 'Herramientas de desarrollo', role: 'toggleDevTools' }, { type: 'separator' }, { label: 'Zoom real', role: 'resetZoom' }, { label: 'Acercar', role: 'zoomIn' }, { label: 'Alejar', role: 'zoomOut' }, { type: 'separator' }, { label: 'Pantalla completa', role: 'togglefullscreen' }] },
+    { label: 'Ver', submenu: viewSubmenu },
     { label: 'Ventana', submenu: [{ label: 'Minimizar', role: 'minimize' }, { label: 'Maximizar', click: () => mainWindow?.maximize() }, { label: 'Restaurar', click: () => mainWindow?.unmaximize() }, { type: 'separator' }, { label: 'Cerrar', role: 'close' }] },
     { label: 'Ayuda', submenu: [{ label: 'Acerca de Antares', role: 'about' }] },
   ];
@@ -58,8 +75,8 @@ function createWindow(isDev) {
           isDev
             // wss://*.supabase.co is required for Supabase Realtime (Espacios live sync).
             // https: does NOT imply wss: under CSP scheme matching.
-            ? "default-src 'self' http://localhost:5173; script-src 'self' http://localhost:5173 'unsafe-inline'; style-src 'self' 'unsafe-inline' http://localhost:5173 https://fonts.googleapis.com; img-src 'self' data: blob: http://localhost:5173 https://assets.petdex.dev; font-src 'self' http://localhost:5173 https://fonts.gstatic.com; connect-src 'self' http://localhost:5173 ws://localhost:5173 wss://*.supabase.co https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev"
-            : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://assets.petdex.dev; font-src 'self' https://fonts.gstatic.com; connect-src 'self' wss://*.supabase.co https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev"
+            ? "default-src 'self' http://localhost:5173; script-src 'self' http://localhost:5173 'unsafe-inline'; style-src 'self' 'unsafe-inline' http://localhost:5173 https://fonts.googleapis.com; img-src 'self' data: blob: http://localhost:5173 https://assets.petdex.dev; font-src 'self' http://localhost:5173 https://fonts.gstatic.com; connect-src 'self' http://localhost:5173 ws://localhost:5173 wss://yoyxclndjevkzzclhdcv.supabase.co https://yoyxclndjevkzzclhdcv.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev"
+            : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://assets.petdex.dev; font-src 'self' https://fonts.gstatic.com; connect-src 'self' wss://yoyxclndjevkzzclhdcv.supabase.co https://yoyxclndjevkzzclhdcv.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev"
         ]
       }
     });
@@ -84,6 +101,13 @@ function createWindow(isDev) {
       require('electron').shell.openExternal(url).catch(() => {});
     }
     return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const allowed = isDev
+      ? (url.startsWith('http://localhost:5173') || url.startsWith('http://127.0.0.1:5173'))
+      : url.startsWith('file://');
+    if (!allowed) event.preventDefault();
   });
 
   mainWindow.once('ready-to-show', () => {

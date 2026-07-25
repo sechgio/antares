@@ -24,25 +24,53 @@ vi.mock('../lib/supabase', () => {
       })),
     })),
   }));
+  const channel = {
+    on: vi.fn().mockReturnThis(),
+    subscribe: vi.fn().mockReturnThis(),
+  };
   return {
     supabase: {
       auth: mockAuth,
       from: mockFrom,
       rpc: vi.fn(),
+      channel: vi.fn(() => channel),
+      removeChannel: vi.fn(),
     },
   };
 });
+
+function mockProfile(row: { display_name: string; is_admin: boolean; is_disabled: boolean } | null) {
+  (supabase.from as any).mockReturnValue({
+    select: vi.fn(() => ({
+      eq: vi.fn(() => ({
+        single: vi.fn(() => ({
+          data: row,
+          error: row ? null : { message: 'not found' },
+        })),
+      })),
+    })),
+  });
+}
 
 describe('AuthProvider', () => {
   beforeEach(() => {
     // Only clear call history, not implementations (vitest 4 clearAllMocks resets impls)
     (supabase.auth.getSession as any).mockClear();
     (supabase.auth.onAuthStateChange as any).mockClear();
+    (supabase.auth.signInWithPassword as any).mockClear();
+    (supabase.auth.signOut as any).mockClear();
     (supabase.from as any).mockClear();
+    (supabase.channel as any).mockClear();
+    (supabase.removeChannel as any).mockClear();
     // Ensure onAuthStateChange always returns a valid subscription object
     (supabase.auth.onAuthStateChange as any).mockImplementation(() => ({
       data: { subscription: { unsubscribe: vi.fn() } },
     }));
+    const channel = {
+      on: vi.fn().mockReturnThis(),
+      subscribe: vi.fn().mockReturnThis(),
+    };
+    (supabase.channel as any).mockReturnValue(channel);
   });
 
   it('starts in loading state and resolves to no user when no session', async () => {
@@ -110,5 +138,168 @@ describe('AuthProvider', () => {
     });
 
     expect(result.current.error).toBeNull();
+  });
+
+  it('applies a late valid session after the safety timeout without invalidating gen', async () => {
+    let resolveSession: (value: unknown) => void = () => {};
+    const sessionPromise = new Promise((resolve) => {
+      resolveSession = resolve;
+    });
+    (supabase.auth.getSession as any).mockReturnValue(sessionPromise);
+    (supabase.from as any).mockReturnValue({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          single: vi.fn(() => ({
+            data: { display_name: 'Late', is_admin: false, is_disabled: false },
+            error: null,
+          })),
+        })),
+      })),
+    });
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(result.current.loading).toBe(false);
+    expect(result.current.user).toBeNull();
+
+    await act(async () => {
+      resolveSession({
+        data: {
+          session: {
+            access_token: 'tok',
+            user: { id: 'u-late', email: 'late@b.com', created_at: '2026-01-01' },
+          },
+        },
+        error: null,
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.user?.email).toBe('late@b.com');
+    });
+    vi.useRealTimers();
+  });
+
+  it('rejects signUp with invite-only message without calling Supabase', async () => {
+    (supabase.auth.getSession as any).mockResolvedValue({ data: { session: null }, error: null });
+
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    let signUpResult: { error: string | null } = { error: null };
+    await act(async () => {
+      signUpResult = await result.current.signUp('new@b.com', 'secret');
+    });
+
+    expect(supabase.auth.signUp).not.toHaveBeenCalled();
+    expect(signUpResult.error).toBe(
+      'Registro deshabilitado. Solicita una invitación a un administrador.',
+    );
+    expect(result.current.error).toBe(
+      'Registro deshabilitado. Solicita una invitación a un administrador.',
+    );
+  });
+
+  it('signs out and clears user when session profile is disabled', async () => {
+    (supabase.auth.getSession as any).mockResolvedValue({
+      data: {
+        session: {
+          access_token: 'tok',
+          user: { id: 'u-disabled', email: 'disabled@b.com', created_at: '2026-01-01' },
+        },
+      },
+      error: null,
+    });
+    mockProfile({ display_name: 'Disabled', is_admin: false, is_disabled: true });
+    (supabase.auth.signOut as any).mockResolvedValue({ error: null });
+
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(supabase.auth.signOut).toHaveBeenCalled();
+    expect(result.current.user).toBeNull();
+    expect(result.current.error).toMatch(/desactivad/i);
+  });
+
+  it('rejects signIn when the account is disabled', async () => {
+    (supabase.auth.getSession as any).mockResolvedValue({ data: { session: null }, error: null });
+    (supabase.auth.signInWithPassword as any).mockResolvedValue({
+      data: {
+        session: { access_token: 'tok' },
+        user: { id: 'u-disabled', email: 'disabled@b.com', created_at: '2026-01-01' },
+      },
+      error: null,
+    });
+    mockProfile({ display_name: 'Disabled', is_admin: false, is_disabled: true });
+    (supabase.auth.signOut as any).mockResolvedValue({ error: null });
+
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    let signInResult: { error: string | null } = { error: null };
+    await act(async () => {
+      signInResult = await result.current.signIn('disabled@b.com', 'secret');
+    });
+
+    expect(signInResult.error).toMatch(/desactivad/i);
+    expect(supabase.auth.signOut).toHaveBeenCalled();
+    expect(result.current.user).toBeNull();
+  });
+
+  it('signs out when realtime marks the current profile as disabled', async () => {
+    let profileHandler: ((payload: { new: Record<string, unknown> }) => void) | null = null;
+    const channel = {
+      on: vi.fn((_event: string, _filter: unknown, cb: (payload: { new: Record<string, unknown> }) => void) => {
+        profileHandler = cb;
+        return channel;
+      }),
+      subscribe: vi.fn().mockReturnThis(),
+    };
+    (supabase.channel as any).mockReturnValue(channel);
+
+    (supabase.auth.getSession as any).mockResolvedValue({
+      data: {
+        session: {
+          access_token: 'tok',
+          user: { id: 'u1', email: 'a@b.com', created_at: '2026-01-01' },
+        },
+      },
+      error: null,
+    });
+    mockProfile({ display_name: 'A', is_admin: false, is_disabled: false });
+    (supabase.auth.signOut as any).mockResolvedValue({ error: null });
+
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+
+    await waitFor(() => {
+      expect(result.current.user?.email).toBe('a@b.com');
+    });
+    await waitFor(() => {
+      expect(profileHandler).not.toBeNull();
+    });
+
+    await act(async () => {
+      profileHandler?.({ new: { user_id: 'u1', is_disabled: true, is_admin: false, display_name: 'A' } });
+    });
+
+    await waitFor(() => {
+      expect(result.current.user).toBeNull();
+    });
+    expect(supabase.auth.signOut).toHaveBeenCalled();
+    expect(result.current.error).toMatch(/desactivad/i);
   });
 });

@@ -149,6 +149,18 @@ def _json_default(obj: Any) -> Any:
 # Sentinel returned on parse errors (not EOF)
 _SKIP = object()
 
+_REQUEST_ID_RE = re.compile(r'"id"\s*:\s*(?:"([^"\\]*(?:\\.[^"\\]*)*)"|(-?\d+))')
+
+
+def _try_extract_request_id(line: str) -> str | int | None:
+    """Best-effort id extraction without parsing the full JSON payload."""
+    match = _REQUEST_ID_RE.search(line)
+    if not match:
+        return None
+    if match.group(1) is not None:
+        return bytes(match.group(1), "utf-8").decode("unicode_escape")
+    return int(match.group(2))
+
 
 def read_message() -> IPCMessage | None:
     """Lee una línea JSON desde stdin. Returns None on EOF, _SKIP on parse error.
@@ -173,6 +185,15 @@ def read_message() -> IPCMessage | None:
                 line_bytes,
                 _MAX_PAYLOAD_SIZE,
             )
+            msg_id = _try_extract_request_id(line)
+            if msg_id is not None:
+                send_response(
+                    None,
+                    msg_id,
+                    error=f"Request payload too large ({line_bytes} bytes)",
+                    error_code=-32600,
+                    error_category="INVALID_REQUEST",
+                )
             return _SKIP  # type: ignore[return-value]
         data = json.loads(line)
         # Try to recover an id from the partially-parsed payload so the

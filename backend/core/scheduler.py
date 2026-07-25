@@ -36,8 +36,12 @@ def _detect_limits() -> tuple[int, int, int]:
         available_gb = 4
 
     light_workers = max(2, min(cpu_count, 4))
-    ram_limited_heavy = max(1, int(available_gb // 3))
-    heavy_workers = max(2, min(max(1, cpu_count // 2), ram_limited_heavy, 6))
+    # Cap at 8 on high-RAM machines (≥16GB available); otherwise 6.
+    # Use a looser RAM budget (~2GB/worker) so the higher cap is reachable.
+    heavy_cap = 8 if available_gb >= 16 else 6
+    ram_divisor = 2 if available_gb >= 16 else 3
+    ram_limited_heavy = max(1, int(available_gb // ram_divisor))
+    heavy_workers = max(2, min(max(1, cpu_count // 2), ram_limited_heavy, heavy_cap))
     heavy_queue_limit = max(heavy_workers, heavy_workers * 2)
     return light_workers, heavy_workers, heavy_queue_limit
 

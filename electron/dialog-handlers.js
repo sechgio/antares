@@ -5,9 +5,57 @@ const { pathToFileURL } = require('url');
 
 const { sanitizeHtmlForPdf } = require('../shared/html-sanitizer');
 const { createLocalThumbnail } = require('./local-thumbnail');
+const {
+  isPathInside,
+  registerAllowedReadPath,
+  registerAllowedReadPaths,
+  assertPathNotSymlink,
+  isAllowedReadPath,
+} = require('./path-allowlist');
 
 const DIALOG_METHODS = new Set(['dialog_files', 'dialog_dest', 'dialog_save', 'dialog_folder']);
-const NATIVE_METHODS = new Set([...DIALOG_METHODS, 'html_to_pdf', 'local_thumbnail']);
+const NATIVE_METHODS = new Set([...DIALOG_METHODS, 'html_to_pdf', 'local_thumbnail', 'register_local_path']);
+
+/** @type {Set<string>} Directory roots allowed for PDF writes (from dialogs). */
+const _allowedWriteRoots = new Set();
+
+function _registerWriteRootFromPath(rawPath) {
+  if (typeof rawPath !== 'string' || !rawPath.trim()) return;
+  const resolved = path.resolve(rawPath);
+  let root;
+  try {
+    const stat = fs.lstatSync(resolved);
+    root = stat.isDirectory() ? resolved : path.dirname(resolved);
+  } catch {
+    root = path.dirname(resolved);
+  }
+  _allowedWriteRoots.add(root);
+}
+
+function _registerDialogPaths(paths) {
+  if (!Array.isArray(paths)) return;
+  registerAllowedReadPaths(paths);
+  for (const p of paths) _registerWriteRootFromPath(p);
+}
+
+function _isUnderAllowedPdfWriteDir(dir) {
+  const resolvedDir = path.resolve(dir);
+  for (const root of _allowedWriteRoots) {
+    if (isPathInside(root, resolvedDir)) return true;
+  }
+  try {
+    const { app } = require('electron');
+    if (app && typeof app.getPath === 'function') {
+      for (const name of ['documents', 'downloads']) {
+        const stdRoot = app.getPath(name);
+        if (stdRoot && isPathInside(stdRoot, resolvedDir)) return true;
+      }
+    }
+  } catch {
+    /* Electron not available (unit tests) */
+  }
+  return false;
+}
 
 function _localImageEntries(rawPaths) {
   if (!rawPaths || typeof rawPaths !== 'object' || Array.isArray(rawPaths)) return [];
@@ -17,6 +65,7 @@ function _localImageEntries(rawPaths) {
     if (typeof token !== 'string' || !/^antares-local-image:[a-zA-Z0-9_-]{1,120}$/.test(token)) return [];
     if (typeof rawPath !== 'string' || !path.isAbsolute(rawPath)) return [];
     if (!allowedExtensions.has(path.extname(rawPath).toLowerCase())) return [];
+    if (!isAllowedReadPath(rawPath)) return [];
     return [{ token, fileUrl: pathToFileURL(rawPath).toString() }];
   });
 }
@@ -40,8 +89,33 @@ function _sanitizePdfOutputPath(outputPath, fallbackFilename) {
   if (typeof outputPath !== 'string' || !outputPath.trim()) return null;
   const resolved = path.resolve(outputPath);
   const dir = path.dirname(resolved);
+  if (!_isUnderAllowedPdfWriteDir(dir)) {
+    throw new Error(
+      'La ruta de salida del PDF no está permitida. Elige una carpeta con el diálogo de guardado o usa Documentos/Descargas.',
+    );
+  }
   const safeName = _sanitizeFilename(path.basename(resolved) || fallbackFilename);
   return path.join(dir, safeName);
+}
+
+function _handleRegisterLocalPath(params = {}) {
+  const raw = params.path;
+  if (typeof raw !== 'string' || !raw.trim()) {
+    throw new Error('path required');
+  }
+  if (raw.includes('\0')) {
+    throw new Error('invalid path');
+  }
+  if (!path.isAbsolute(raw)) {
+    throw new Error('path must be absolute');
+  }
+  const resolved = path.resolve(raw);
+  const stat = assertPathNotSymlink(resolved);
+  if (!stat.isFile()) {
+    throw new Error('not a file');
+  }
+  registerAllowedReadPath(resolved);
+  return { registered: true, path: resolved };
 }
 
 function resultFromOpenDialog(response) {
@@ -246,6 +320,10 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
     return { handled: false };
   }
 
+  if (method === 'register_local_path') {
+    return { handled: true, result: _handleRegisterLocalPath(params) };
+  }
+
   if (method === 'local_thumbnail') {
     // Path A: display-size thumbs via nativeImage. On any failure the renderer
     // falls back to file:// full path — never blank cards.
@@ -271,7 +349,9 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
         { name: 'Todos los archivos', extensions: ['*'] },
       ],
     });
-    return { handled: true, result: resultFromSaveDialog(response) };
+    const result = resultFromSaveDialog(response);
+    _registerDialogPaths(result.paths);
+    return { handled: true, result };
   }
 
   if (method === 'dialog_folder') {
@@ -286,10 +366,12 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
     // `pickOnly` returns just the folder path without scanning its contents.
     // Used by features that only need a destination (e.g. image optimizer
     // "save to folder"), so we avoid an expensive recursive scan.
+    _registerWriteRootFromPath(folderPath);
     if (params && params.pickOnly) {
       return { handled: true, result: { paths: [], folder: folderPath } };
     }
     const files = await _scanFolderRecursive(folderPath, FOLDER_SCAN_EXTENSIONS);
+    _registerDialogPaths(files);
     return { handled: true, result: { paths: files } };
   }
 
@@ -306,7 +388,16 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
     ],
   });
 
-  return { handled: true, result: resultFromOpenDialog(response) };
+  const result = resultFromOpenDialog(response);
+  if (method === 'dialog_dest' && result.paths.length > 0) {
+    _registerWriteRootFromPath(result.paths[0]);
+  }
+  _registerDialogPaths(result.paths);
+  return { handled: true, result };
 }
 
-module.exports = { handleDialogCall };
+module.exports = {
+  handleDialogCall,
+  _registerWriteRootFromPath,
+  _clearAllowedWriteRoots: () => _allowedWriteRoots.clear(),
+};

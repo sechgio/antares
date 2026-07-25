@@ -1,5 +1,6 @@
 // Tests for Electron dialog IPC handling without requiring Electron at import time.
-const { handleDialogCall } = require('../electron/dialog-handlers.js');
+const { handleDialogCall, _clearAllowedWriteRoots } = require('../electron/dialog-handlers.js');
+const { clearAllowedReadPaths } = require('../electron/path-allowlist.js');
 
 let passed = 0;
 let failed = 0;
@@ -16,6 +17,8 @@ function assert(condition, message) {
 
 async function run() {
   console.log('Testing dialog handlers...\n');
+  clearAllowedReadPaths();
+  _clearAllowedWriteRoots();
 
   const calls = [];
   const dialog = {
@@ -169,30 +172,42 @@ async function run() {
   assert(!pdfWindow.loadedHtml.includes('<script'), 'html_to_pdf should strip script tags');
   assert(!pdfWindow.loadedHtml.includes('file:///etc/passwd'), 'html_to_pdf should block local file URLs');
 
-  const allowedImagePath = process.platform === 'win32' ? 'C:\\tmp\\foto.jpg' : '/tmp/foto.jpg';
+  const fsForImage = require('fs');
+  const osForImage = require('os');
+  const pathForImage = require('path');
+  const imageTempDir = await fsForImage.promises.mkdtemp(pathForImage.join(osForImage.tmpdir(), 'antares-pdf-img-'));
+  const realImagePath = pathForImage.join(imageTempDir, 'foto.jpg');
+  await fsForImage.promises.writeFile(realImagePath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+  await handleDialogCall('register_local_path', { path: realImagePath }, dialog, win);
+
   const pdfWithLocalImage = await handleDialogCall(
     'html_to_pdf',
     {
       html: '<!doctype html><html><body><img src="antares-local-image:row-1-img-0"><img src="file:///etc/passwd"></body></html>',
       filename: 'local.pdf',
-      localImagePaths: { 'antares-local-image:row-1-img-0': allowedImagePath },
+      localImagePaths: { 'antares-local-image:row-1-img-0': realImagePath },
     },
     dialog,
     win,
     { BrowserWindow: FakeBrowserWindow },
   );
   const localImageWindow = FakeBrowserWindow.instances[1];
+  const { pathToFileURL } = require('url');
+  const expectedFileUrl = pathToFileURL(realImagePath).toString();
   assert(pdfWithLocalImage.handled === true, 'html_to_pdf should accept disk-backed image references');
-  assert(localImageWindow.loadedHtml.includes('file://'), 'html_to_pdf should replace local image tokens with file URLs');
   assert(!localImageWindow.loadedHtml.includes('antares-local-image:row-1-img-0'), 'html_to_pdf should remove local image tokens before rendering');
 
   let allowedDecision = null;
-  localImageWindow.onBeforeRequest({ url: localImageWindow.loadedHtml.match(/src="([^"]+)"/)[1] }, decision => { allowedDecision = decision; });
+  localImageWindow.onBeforeRequest({ url: expectedFileUrl }, (decision) => { allowedDecision = decision; });
   assert(allowedDecision.cancel === false, 'html_to_pdf should allow only registered local image files');
 
   let blockedDecision = null;
   localImageWindow.onBeforeRequest({ url: 'file:///etc/passwd' }, decision => { blockedDecision = decision; });
   assert(blockedDecision.cancel === true, 'html_to_pdf should block unregistered local file URLs');
+
+  try {
+    await fsForImage.promises.rm(imageTempDir, { recursive: true, force: true });
+  } catch { /* ignore */ }
 
   const fs = require('fs');
   const os = require('os');
@@ -200,6 +215,18 @@ async function run() {
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'antares-dialog-test-'));
   try {
     const outputPath = path.join(tempDir, 'salida.pdf');
+    await handleDialogCall(
+      'dialog_save',
+      {},
+      {
+        async showOpenDialog() { return { canceled: true }; },
+        async showSaveDialog() {
+          return { canceled: false, filePath: outputPath };
+        },
+      },
+      win,
+    );
+
     const pdfToDisk = await handleDialogCall(
       'html_to_pdf',
       {
@@ -216,6 +243,24 @@ async function run() {
     assert(pdfToDisk.result.saved_path === outputPath, 'html_to_pdf should return the saved PDF path');
     assert(pdfToDisk.result.pdf_base64 === undefined, 'html_to_pdf should skip base64 when saving to disk');
     assert((await fs.promises.readFile(outputPath, 'utf8')) === '%PDF-test', 'html_to_pdf should write PDF bytes to disk');
+
+    let rejectedDisallowedPdf = false;
+    try {
+      await handleDialogCall(
+        'html_to_pdf',
+        {
+          html: '<!doctype html><html><body>nope</body></html>',
+          filename: 'bad.pdf',
+          outputPath: path.join(os.tmpdir(), 'antares-disallowed', 'bad.pdf'),
+        },
+        dialog,
+        win,
+        { BrowserWindow: FakeBrowserWindow },
+      );
+    } catch (err) {
+      rejectedDisallowedPdf = /no está permitida|not allowed/i.test(err.message);
+    }
+    assert(rejectedDisallowedPdf, 'html_to_pdf should reject PDF output outside allowed directories');
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
@@ -261,6 +306,8 @@ async function run() {
     const imgPath = path.join(thumbTempDir, 'tiny.jpg');
     await fs.promises.writeFile(imgPath, Buffer.from([0xff, 0xd8, 0xff, 0xd9])); // minimal JPEG marker pair
 
+    await handleDialogCall('register_local_path', { path: imgPath }, dialog, win);
+
     const fakeNativeImage = {
       createThumbnailFromPath: async () => {
         throw new Error('createThumbnailFromPath unavailable in test');
@@ -305,6 +352,16 @@ async function run() {
       badPathHandled = /absolute|invalid path/i.test(err.message);
     }
     assert(badPathHandled, 'local_thumbnail should reject relative path params');
+
+    let unregisteredHandled = false;
+    try {
+      await handleDialogCall('local_thumbnail', { path: process.platform === 'win32' ? 'C:\\missing-antares.jpg' : '/tmp/missing-antares.jpg' }, dialog, win, {
+        nativeImage: fakeNativeImage,
+      });
+    } catch (err) {
+      unregisteredHandled = /not allowed|not a file/i.test(err.message);
+    }
+    assert(unregisteredHandled, 'local_thumbnail should reject unregistered paths');
   } finally {
     await fs.promises.rm(thumbTempDir, { recursive: true, force: true });
   }

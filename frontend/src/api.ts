@@ -4,6 +4,7 @@
  */
 
 import type { ProcessStatus, LogEntry, PreviewItem, DBField, RenamePattern, DBRecord, ThemeConfig, VisualMapping, FormatInfo, FormatOrigin, MappingStrategy, MappingResult, MappingCollision } from './types';
+import type { PanelMatchResponse } from './components/panel-aviso-corte/types';
 
 export type { ProcessStatus, LogEntry, PreviewItem, DBField, RenamePattern, DBRecord, ThemeConfig, VisualMapping, FormatInfo, FormatOrigin, MappingStrategy, MappingResult, MappingCollision };
 
@@ -29,6 +30,7 @@ declare global {
       autoUpdateInstall: () => Promise<{ success: boolean; reason?: string }>;
       onAutoUpdateStatus: (callback: (data: { status: string; version: string | null; progress: number; message?: string }) => void) => () => void;
       getPathForFile: (file: File) => string;
+      registerLocalPath: (filePath: string) => Promise<unknown>;
     };
   }
 }
@@ -62,6 +64,48 @@ export class AntaresAPIError extends Error {
   isValidationError(): boolean {
     return this.code === -32602 || this.category === 'VALIDATION_ERROR';
   }
+}
+
+function asNumber(value: unknown, fallback = 0): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function asString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function asBoolean(value: unknown, fallback = false): boolean {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function parseProcessStatus(raw: unknown): ProcessStatus {
+  if (!raw || typeof raw !== 'object') {
+    throw new AntaresAPIError('Respuesta process_status inválida', -32000, 'INTERNAL_ERROR');
+  }
+  const data = raw as Record<string, unknown>;
+  const logsRaw = Array.isArray(data.logs) ? data.logs : [];
+  return {
+    running: asBoolean(data.running),
+    progress: asNumber(data.progress),
+    current_file: asString(data.current_file),
+    ok_count: asNumber(data.ok_count),
+    err_count: asNumber(data.err_count),
+    logs: logsRaw
+      .filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === 'object')
+      .map((entry) => ({
+        message: asString(entry.message),
+        tag: asString(entry.tag),
+      })),
+    id: typeof data.id === 'string' ? data.id : undefined,
+    job_type: typeof data.job_type === 'string' ? data.job_type : undefined,
+    total: typeof data.total === 'number' ? data.total : undefined,
+    cancel_requested: typeof data.cancel_requested === 'boolean' ? data.cancel_requested : undefined,
+    created_at: typeof data.created_at === 'string' ? data.created_at : undefined,
+    params: data.params && typeof data.params === 'object' ? data.params as Record<string, unknown> : undefined,
+    result: data.result === null
+      ? null
+      : (data.result && typeof data.result === 'object' ? data.result as Record<string, unknown> : undefined),
+  };
 }
 
 const LONG_RUNNING_METHODS = new Set<string>(longRunningMethods);
@@ -275,14 +319,18 @@ export const api = {
   startProcess: (body: ProcessBody) =>
     _invoke<{ started: boolean; reason?: string; job_id?: string }>('process_start', body),
 
-  getStatus: () => _invoke<ProcessStatus>('process_status'),
+  getStatus: async () => parseProcessStatus(await _invoke<unknown>('process_status')),
   cancelProcess: () => _invoke<{ cancelled: boolean }>('process_cancel'),
 
   preview: (body: PreviewBody) => _invoke<PreviewResult>('preview', body),
 
   dbDetectKeyColumn: (files: string[]) => _invoke<DbDetectKeyColumnResult>('db_detect_key_column', { files }),
 
-  getRecords: () => _invoke<{ records: DBRecord[]; fields: string[] }>('db_records'),
+  getRecords: (opts?: { limit?: number; offset?: number }) =>
+    _invoke<{ records: DBRecord[]; fields: string[]; limit: number; offset: number }>(
+      'db_records',
+      opts ?? {},
+    ),
   importExcel: (path: string) => _invoke<{ imported: number }>('db_import', { path }),
   clearDatabase: () => _invoke<{ cleared: number }>('db_clear'),
 
@@ -397,8 +445,28 @@ export const api = {
     _invoke<ImageOptimizerSaveFilesResponse>('image_optimizer_save_files', body),
 
   // ─── Plantillas PreviewPanel ─────────────────────────────────────────────
-  templatesList: () => _invoke<{ templates: Array<{ id: string; name: string; filename: string }> }>('templates_list'),
-  templateGet: (name: string) => _invoke<{ name: string; content: string }>('template_get', { name }),
+  templatesList: () =>
+    _invoke<{ templates: Array<{ id: string; name: string; filename: string; source?: string }> }>('templates_list'),
+  templateGet: (name: string) =>
+    _invoke<{ name: string; content: string; source?: string }>('template_get', { name }),
+
+  // ─── Canvas (independent template editor) ────────────────────────────────
+  canvasList: () =>
+    _invoke<{ documents: Array<{ id: string; name: string; updatedAt?: string }> }>('canvas_list'),
+  canvasGet: (id: string) => _invoke<{ document: import('./components/canvas/types').CanvasDocument }>('canvas_get', { id }),
+  canvasSave: (
+    document: import('./components/canvas/types').CanvasDocument,
+    opts?: { touch?: boolean },
+  ) =>
+    _invoke<{ document: import('./components/canvas/types').CanvasDocument }>('canvas_save', {
+      document,
+      ...(opts?.touch === false ? { touch: false } : {}),
+    }),
+  canvasCreate: (name?: string) =>
+    _invoke<{ document: import('./components/canvas/types').CanvasDocument }>('canvas_create', name ? { name } : {}),
+  canvasDelete: (id: string) => _invoke<{ success: boolean; deleted_id: string }>('canvas_delete', { id }),
+  canvasDuplicate: (id: string, name?: string) =>
+    _invoke<{ document: import('./components/canvas/types').CanvasDocument }>('canvas_duplicate', name ? { id, name } : { id }),
 
   // ─── Render HTML to PDF via Electron ─────────────────────────────────────
   // Sanitization happens once, in Electron's renderHtmlToPdf (defense in depth
@@ -461,7 +529,7 @@ export const api = {
     address_column?: string;
     image_names: string[];
     export_mode: string;
-  }) => _invoke<{ panels: unknown[]; summary: unknown; warnings: string[] }>('panel_aviso_corte_compute_match', body),
+  }) => _invoke<PanelMatchResponse>('panel_aviso_corte_compute_match', body),
   panelAvisoCorteRenderPdf: (body: {
     panels: unknown[];
     logos: { left_b64?: string; right_b64?: string };
@@ -512,17 +580,16 @@ export const api = {
     customStyles?: Record<string, unknown>;
     manualData?: Record<string, any>;
   }) => _invoke<{ success: boolean; data?: unknown; error?: string }>('generar_ubicaciones', body),
-  ubicacionesKeysGet: () => _invoke<{ keys: Record<string, string> }>('ubicaciones_keys_get'),
+  ubicacionesKeysGet: () =>
+    _invoke<{ keys: Record<string, string>; configured?: Record<string, boolean> }>('ubicaciones_keys_get'),
   ubicacionesKeysSet: (keys: Record<string, string>) =>
-    _invoke<{ keys: Record<string, string> }>('ubicaciones_keys_set', { keys }),
+    _invoke<{ keys: Record<string, string>; configured?: Record<string, boolean> }>('ubicaciones_keys_set', { keys }),
 
   // ─── AutoIMG (Google Sheets + Drive — Electron main) ───────────────────
   autoimgOAuthConfigStatus: () => _invoke<{ configured: boolean; client_id_masked?: string }>('autoimg_oauth_config_status'),
   autoimgOAuthConfigSave: (client_id: string, client_secret: string) =>
     _invoke<{ success: boolean }>('autoimg_oauth_config_save', { client_id, client_secret }),
   autoimgSheetsAuthUrl: () => _invoke<{ url: string; redirect_uri: string }>('autoimg_sheets_auth_url'),
-  autoimgSheetsAuthCallback: (code: string, redirect_uri?: string) =>
-    _invoke<{ success: boolean }>('autoimg_sheets_auth_callback', { code, redirect_uri }),
   autoimgSheetsAuthCancel: () => _invoke<{ success: boolean }>('autoimg_sheets_auth_cancel'),
   autoimgSheetsAuthStatus: () => _invoke<{ authenticated: boolean; email?: string }>('autoimg_sheets_auth_status'),
   autoimgSheetsAuthRevoke: () => _invoke<{ success: boolean }>('autoimg_sheets_auth_revoke'),

@@ -50,8 +50,36 @@ def test_sqlite_cache_size_is_set() -> None:
             cache_size = conn.execute("PRAGMA cache_size").fetchone()[0]
             # cache_size=-16000 means 16MB; negative = kibibytes
             assert cache_size <= -16000, f"Expected cache_size <= -16000, got {cache_size}"
+            temp_store = conn.execute("PRAGMA temp_store").fetchone()[0]
+            # MEMORY = 2
+            assert temp_store == 2, f"Expected temp_store=MEMORY (2), got {temp_store}"
         finally:
             close_connection()
+
+
+def test_read_connection_is_readonly(tmp_path) -> None:
+    """Read pool must reject writes when mode=ro is active."""
+    from backend.core.repository import close_connection, get_connection, get_read_connection
+
+    db_path = tmp_path / "ro.db"
+    try:
+        write = get_connection(db_path)
+        write.execute("CREATE TABLE t (id INTEGER)")
+        write.execute("INSERT INTO t (id) VALUES (1)")
+        write.commit()
+
+        read = get_read_connection(db_path)
+        row = read.execute("SELECT id FROM t").fetchone()
+        assert row[0] == 1
+        import sqlite3
+
+        try:
+            read.execute("INSERT INTO t (id) VALUES (2)")
+            raise AssertionError("read connection allowed INSERT")
+        except sqlite3.OperationalError as exc:
+            assert "readonly" in str(exc).lower() or "read-only" in str(exc).lower()
+    finally:
+        close_connection()
 
 
 # ─── 2. Preview cache bounds ────────────────────────────────────────────────
@@ -144,8 +172,27 @@ def test_buscar_lote_por_codigos_uses_batch_query(tmp_path, monkeypatch) -> None
         # Batch query should use a single query (or chunked), not N individual.
         # We verify by checking that the result has both keys from one call.
         assert len(result) == 2
+        # Explicit column projection (all configured fields, no SELECT *)
+        assert set(result["A001"].keys()) == {"codigo", "nombre"}
     finally:
         close_connection()
+
+
+def test_buscar_queries_project_columns_not_star() -> None:
+    """Batch lookups must SELECT explicit columns, never SELECT *."""
+    import inspect
+
+    from backend.core.database import buscar_lote_por_codigos, buscar_por_columna
+
+    sources = inspect.getsource(buscar_lote_por_codigos) + "\n" + inspect.getsource(buscar_por_columna)
+    assert "SELECT rowid AS __antares_rowid__, *" not in sources
+    assert "__antares_rowid__, *" not in sources
+    assert "SELECT rowid AS __antares_rowid__, {cols}" in sources
+    assert "cols = " in sources
+    # Key-column-first then multi-field OR fallback for unresolved codes
+    assert "preferred" in inspect.getsource(buscar_lote_por_codigos)
+    assert "OR" in inspect.getsource(buscar_lote_por_codigos)
+    assert "unresolved" in inspect.getsource(buscar_lote_por_codigos)
 
 
 # ─── 5. IPC payload size limit ──────────────────────────────────────────────
@@ -273,3 +320,59 @@ def test_connection_is_reused() -> None:
             assert conn1 is conn2, "Connection should be reused for the same DB path"
         finally:
             close_connection()
+
+
+def test_convertir_a_preview_defaults_to_file_path(tmp_path) -> None:
+    """Previews should prefer file:// / path over base64 for IPC size."""
+    from PIL import Image
+
+    from backend.core.converter import convertir_a_preview
+    from backend.core.preview_cache import get_preview_cache
+
+    get_preview_cache().clear()
+    origen = tmp_path / "p.png"
+    Image.new("RGB", (120, 80), color=(9, 9, 9)).save(origen)
+    result = convertir_a_preview(origen, "JPEG")
+    assert result["preview"].startswith("file:")
+    assert Path(result["preview_path"]).is_file()
+    assert "base64," not in result["preview"]
+
+
+def test_importar_excel_runs_analyze(tmp_path, monkeypatch) -> None:
+    """Full-table Excel import must ANALYZE so the planner sees fresh stats."""
+    import inspect
+
+    from backend.core import database as db
+
+    source = inspect.getsource(db.importar_excel)
+    assert "ANALYZE imagenes" in source
+
+
+def test_ubicaciones_preview_uses_file_uri() -> None:
+    """Ubicaciones composed preview must not ship base64 over IPC."""
+    import inspect
+
+    from backend.handlers import ubicaciones as ubi
+
+    source = inspect.getsource(ubi._encode_preview_data)
+    assert "as_uri()" in source
+    assert "b64encode" not in source
+    assert "data:image" not in source
+
+
+def test_fichas_get_all_uses_shallow_copy(tmp_path) -> None:
+    """List path must not deepcopy nested ficha trees."""
+    from backend.core.fichas_tecnicas.database import FichasTecnicasDB
+
+    db = FichasTecnicasDB(tmp_path / "f.json")
+    created = db.create({"cliente": "Acme", "productos": [{"producto": "X"}]})
+    listed = db.get_all()
+    assert len(listed) == 1
+    # Top-level dict is a copy…
+    assert listed[0] is not db._items[created["id"]]
+    # …but nested list is shared (shallow) — mutation of nested is discouraged.
+    assert listed[0]["productos"] is db._items[created["id"]]["productos"]
+    # get() still deep-copies for safe editing
+    got = db.get(created["id"])
+    assert got is not None
+    assert got["productos"] is not db._items[created["id"]]["productos"]

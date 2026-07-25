@@ -7,10 +7,11 @@ from pathlib import Path
 from typing import Any
 
 from backend.core.evidencia_volanteo import deserialize_document, render_docx, render_pdf, render_pdf_html
-from backend.handlers.common import with_locale
+from backend.handlers.common import validate_params, with_locale
 
 
 @with_locale
+@validate_params()
 def evidencia_volanteo_render(params: dict[str, Any]) -> dict[str, Any]:
     fmt = str(params.get("format", "pdf")).lower()
     output_path = str(params.get("output_path") or "").strip() or None

@@ -73,6 +73,27 @@ const REQUEST_TIMEOUT_MS = 30_000;         // per-request response timeout — m
 const LONG_REQUEST_TIMEOUT_MS = 900_000;   // 15 min for heavy operations (large PDF/ZIP batches)
 const STARTUP_WAIT_MS = 30_000;            // backend should start in <10s; 30s is a safe margin
 const MID_FLIGHT_RETRIES = 2;              // retries for transient mid-flight errors
+const BACKEND_RESTART_MIN_INTERVAL_MS = 5_000;
+
+let _lastBackendRestartAt = 0;
+
+function _isAllowedIpcSender(event) {
+  const url = event?.senderFrame?.url || '';
+  let isDev;
+  try {
+    isDev = require('./window-manager').getIsDev();
+  } catch {
+    try {
+      isDev = !require('electron').app.isPackaged;
+    } catch {
+      isDev = false;
+    }
+  }
+  if (isDev) {
+    return url.startsWith('http://localhost:5173/') || url.startsWith('http://127.0.0.1:5173/');
+  }
+  return url.startsWith('file://');
+}
 
 /**
  * Attach stdout/close listeners to the current backend process if we haven't
@@ -265,6 +286,9 @@ async function _callBackend(method, params) {
 
 function registerIpcHandlers() {
   ipcMain.handle('ipc-call', async (event, method, params) => {
+    if (!_isAllowedIpcSender(event)) {
+      throw new Error('IPC call rejected: untrusted sender frame');
+    }
     if (typeof method !== 'string' || !_getAllowedMethods().has(method)) {
       const hint = ' Reinicia Antares por completo (cierra todas las ventanas) para recargar la allowlist IPC.';
       throw new Error(`IPC method not allowed: ${method}.${hint}`);
@@ -282,19 +306,61 @@ function registerIpcHandlers() {
     const ubicacionesResult = await handleUbicacionesCall(method, params);
     if (ubicacionesResult.handled) return ubicacionesResult.result;
 
-    return _callBackend(method, params);
+    // Inject map provider secrets from OS-backed store so the renderer never
+    // needs to hold plaintext API keys for preview/generate.
+    let backendParams = params;
+    if (method === 'preview_ubicacion' || method === 'generar_ubicaciones') {
+      const { resolveProviderApiKey } = require('./ubicaciones-secure-keys');
+      const provider = params && typeof params === 'object' ? params.provider : '';
+      const injected = resolveProviderApiKey(provider, params?.api_key);
+      backendParams = { ...params, api_key: injected };
+    }
+
+    return _callBackend(method, backendParams);
   });
 
-  ipcMain.handle('backend-status', async () => {
+  ipcMain.handle('backend-status', async (event) => {
+    if (!_isAllowedIpcSender(event)) {
+      throw new Error('IPC call rejected: untrusted sender frame');
+    }
+    let isPackaged = false;
+    try {
+      isPackaged = require('electron').app.isPackaged;
+    } catch {
+      /* tests */
+    }
     return {
       state: getState(),
       ready: isReady(),
       lastError: getLastError(),
-      stderrTail: getStderrTail(),
+      stderrTail: isPackaged ? '' : getStderrTail(),
     };
   });
 
-  ipcMain.handle('backend-restart', async () => {
+  ipcMain.handle('backend-restart', async (event) => {
+    if (!_isAllowedIpcSender(event)) {
+      throw new Error('IPC call rejected: untrusted sender frame');
+    }
+    const now = Date.now();
+    if (now - _lastBackendRestartAt < BACKEND_RESTART_MIN_INTERVAL_MS) {
+      return { success: false, state: getState(), error: 'rate_limited' };
+    }
+
+    const win = getMainWindow();
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'question',
+      buttons: ['Reiniciar', 'Cancelar'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'Reiniciar backend',
+      message: '¿Reiniciar el servicio de Antares?',
+      detail: 'Las operaciones en curso pueden interrumpirse.',
+    });
+    if (response !== 0) {
+      return { success: false, state: getState(), cancelled: true };
+    }
+
+    _lastBackendRestartAt = now;
     const { getIsDev } = require('./window-manager');
     // Fallback: determine isDev from app if window-manager doesn't export it
     let isDev;
@@ -307,7 +373,10 @@ function registerIpcHandlers() {
     return { success: ok, state: getState() };
   });
 
-  ipcMain.handle('window-control', async (_event, action) => {
+  ipcMain.handle('window-control', async (event, action) => {
+    if (!_isAllowedIpcSender(event)) {
+      throw new Error('IPC call rejected: untrusted sender frame');
+    }
     const win = getMainWindow();
     if (!win || win.isDestroyed()) return { handled: false };
     if (action === 'minimize') { win.minimize(); return { handled: true }; }
@@ -316,7 +385,10 @@ function registerIpcHandlers() {
     return { handled: false };
   });
 
-  ipcMain.handle('app-menu-popup', async (_event, menuIndex, position) => {
+  ipcMain.handle('app-menu-popup', async (event, menuIndex, position) => {
+    if (!_isAllowedIpcSender(event)) {
+      throw new Error('IPC call rejected: untrusted sender frame');
+    }
     const win = getMainWindow();
     if (!win || win.isDestroyed()) return { handled: false };
     const menu = buildAppMenu(Number(menuIndex));
@@ -330,4 +402,4 @@ function registerIpcHandlers() {
   });
 }
 
-module.exports = { registerIpcHandlers, _ensureListeners };
+module.exports = { registerIpcHandlers, _ensureListeners, _isAllowedIpcSender };

@@ -20,6 +20,7 @@ type UserRole = 'user' | 'admin';
 
 const MIN_PASSWORD_LENGTH = 6;
 
+/** Admin gate is UX-only; RLS, RPCs, and edge functions enforce real authorization. */
 export default function PanelView() {
   const { t } = useTranslation();
   const { user: currentUser } = useAuth();
@@ -155,6 +156,8 @@ export default function PanelView() {
   }, [currentUser, loadUsers, addToast, t]);
 
   if (!currentUser?.isAdmin) {
+    // UX-only gate: real authorization is enforced by Supabase RPCs / edge
+    // functions (is_admin + not disabled). This UI check only avoids confusion.
     return (
       <div className="flex h-full items-center justify-center p-8 text-center">
         <div>

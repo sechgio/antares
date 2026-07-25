@@ -1,4 +1,3 @@
-import base64
 import contextlib
 import errno
 import hashlib
@@ -12,14 +11,16 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
+from pathlib import Path
 from typing import Any, cast
 
 import pandas as pd
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-from backend.utils.paths import resource_path
+from backend.utils.paths import resource_path, user_data_path
 from backend.utils.validators import sanitizar_nombre
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,8 @@ _BG_RGB = (246, 246, 246)
 # ── Asset caches (fonts, footers, excel) ─────────────────────────────────────
 _font_cache: dict[tuple[str, int], ImageFont.FreeTypeFont | ImageFont.ImageFont] = {}
 _footer_cache: dict[tuple[int, int, int], Image.Image | None] = {}
-_excel_cache: dict[str, tuple[float, pd.DataFrame, tuple[Any, ...]]] = {}
+_excel_cache: OrderedDict[str, tuple[float, pd.DataFrame, tuple[Any, ...]]] = OrderedDict()
+_MAX_EXCEL_CACHE = 8
 _map_screenshot_cache: dict[tuple[Any, ...], bytes] = {}
 _map_screenshot_working_cache: dict[tuple[Any, ...], bytes] = {}
 _preview_composed_cache: dict[tuple[int, int, tuple[str, float], int, str], dict[str, Any]] = {}
@@ -528,12 +530,17 @@ def fetch_static_map(
 def _load_excel_data(excel_path: str) -> tuple[pd.DataFrame, tuple[Any, ...]]:
     """Load and parse Excel, reusing cache when the file has not changed."""
     mtime = os.path.getmtime(excel_path)
-    cached = _excel_cache.get(excel_path)
-    if cached and cached[0] == mtime:
-        return cached[1], cached[2]
+    with _cache_lock:
+        cached = _excel_cache.get(excel_path)
+        if cached and cached[0] == mtime:
+            _excel_cache.move_to_end(excel_path)
+            return cached[1], cached[2]
     df = pd.read_excel(excel_path, engine="openpyxl")
     cols = _parse_excel_columns(df)
-    _excel_cache[excel_path] = (mtime, df, cols)
+    with _cache_lock:
+        _excel_cache[excel_path] = (mtime, df, cols)
+        _excel_cache.move_to_end(excel_path)
+        _trim_cache(_excel_cache, _MAX_EXCEL_CACHE)
     return df, cols
 
 
@@ -590,7 +597,10 @@ def _manual_preview_ctx(datos: dict) -> tuple[Any, ...]:
 
 def _trim_cache(cache: dict, max_size: int) -> None:
     while len(cache) > max_size:
-        del cache[next(iter(cache))]
+        if isinstance(cache, OrderedDict):
+            cache.popitem(last=False)
+        else:
+            del cache[next(iter(cache))]
 
 
 def _get_cached_map_screenshot(
@@ -625,6 +635,22 @@ def _get_cached_map_screenshot(
     return screenshot
 
 
+_MAX_UBIC_PREVIEW_FILES = 200
+
+
+def _trim_ubicaciones_preview_files(cache_dir: Path) -> None:
+    try:
+        files = sorted(cache_dir.glob("*.jpg"), key=lambda p: p.stat().st_mtime)
+        excess = len(files) - _MAX_UBIC_PREVIEW_FILES
+        if excess <= 0:
+            return
+        for stale in files[:excess]:
+            with contextlib.suppress(OSError):
+                stale.unlink()
+    except OSError:
+        return
+
+
 def _encode_preview_data(
     preview_img: Image.Image,
     datos: dict,
@@ -633,11 +659,25 @@ def _encode_preview_data(
     total_filas: int,
     formato: str,
 ) -> dict[str, Any]:
+    """Encode composed preview to a disk JPEG; return file URI (not base64)."""
     buf = BytesIO()
     preview_img.save(buf, format="JPEG", quality=88, optimize=True, subsampling=0)
-    img_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+    raw = buf.getvalue()
+
+    cache_dir = Path(user_data_path("ubicaciones_preview_cache"))
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    digest = hashlib.sha1(raw).hexdigest()
+    out_path = cache_dir / f"{digest}.jpg"
+    if not out_path.is_file():
+        tmp_path = out_path.with_suffix(".jpg.tmp")
+        tmp_path.write_bytes(raw)
+        tmp_path.replace(out_path)
+        _trim_ubicaciones_preview_files(cache_dir)
+
+    resolved = out_path.resolve()
     return {
-        "image": f"data:image/jpeg;base64,{img_b64}",
+        "image": resolved.as_uri(),
+        "image_path": str(resolved),
         "cod_componente": str(datos["cod_componente"]),
         "direccion": str(datos["direccion"]),
         "localidad": str(datos["localidad"]),
@@ -1035,7 +1075,11 @@ def handle_preview_ubicacion(payload: dict) -> dict:
 
         cached_preview = _preview_composed_cache.get(composed_key)
         if cached_preview is not None:
-            return {"success": True, "data": cached_preview}
+            cached_path = str(cached_preview.get("image_path") or "")
+            if cached_path and Path(cached_path).is_file():
+                return {"success": True, "data": cached_preview}
+            with _cache_lock:
+                _preview_composed_cache.pop(composed_key, None)
 
         if recompose_only:
             map_key = _map_cache_key(lat, lon, formato, preview=True, map_opts=map_opts)

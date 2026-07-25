@@ -6,11 +6,29 @@ from pathlib import Path
 from typing import Any
 
 from backend.core.sellador import apply_sellador
-from backend.core.sellador_io import resolve_pdf_bytes, resolve_stamp_bytes
+from backend.core.sellador_io import MAX_PDF_BYTES, MAX_STAMP_BYTES, resolve_pdf_bytes, resolve_stamp_bytes
 from backend.core.sellador_preview import inspect_pdf_path, render_pdf_page_preview
-from backend.handlers.common import parse_positive_int, with_locale
+from backend.handlers.common import parse_positive_int, validate_params, with_locale
 
 _MAX_INLINE_PDF_BYTES = 8 * 1024 * 1024
+
+
+def _estimate_b64_decoded_size(value: str) -> int:
+    """Upper-bound decoded byte size from a base64 string (before decode)."""
+    raw = str(value).strip()
+    if "," in raw and raw.lower().startswith("data:"):
+        raw = raw.split(",", 1)[1]
+    raw = "".join(raw.split())
+    return (len(raw) * 3) // 4
+
+
+def _reject_oversized_b64(value: str, *, max_bytes: int, label: str) -> None:
+    if not value:
+        return
+    if _estimate_b64_decoded_size(value) > max_bytes:
+        limit_mb = max_bytes // (1024 * 1024)
+        msg = f"{label} demasiado grande (máx. {limit_mb} MB)"
+        raise ValueError(msg)
 
 
 def _parse_float(value: Any, label: str, *, allow_zero: bool = False) -> float:
@@ -67,6 +85,7 @@ def _parse_seed(value: Any) -> int | None:
 
 
 @with_locale
+@validate_params()
 def sellador_inspect_pdf(params: dict[str, Any]) -> dict[str, Any]:
     pdf_path = str(params.get("pdf_path") or "").strip()
     if not pdf_path:
@@ -76,6 +95,7 @@ def sellador_inspect_pdf(params: dict[str, Any]) -> dict[str, Any]:
 
 
 @with_locale
+@validate_params()
 def sellador_render_page(params: dict[str, Any]) -> dict[str, Any]:
     pdf_path = str(params.get("pdf_path") or "").strip()
     if not pdf_path:
@@ -87,7 +107,10 @@ def sellador_render_page(params: dict[str, Any]) -> dict[str, Any]:
 
 
 @with_locale
+@validate_params()
 def sellador_apply(params: dict[str, Any]) -> dict[str, Any]:
+    _reject_oversized_b64(str(params.get("pdf_b64") or ""), max_bytes=MAX_PDF_BYTES, label="PDF")
+    _reject_oversized_b64(str(params.get("stamp_b64") or ""), max_bytes=MAX_STAMP_BYTES, label="Sello")
     pdf_bytes = resolve_pdf_bytes(params)
     stamp_bytes = resolve_stamp_bytes(params)
     stamp_count = parse_positive_int(params.get("stamp_count"), "Cantidad de sellos")

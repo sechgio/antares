@@ -1,6 +1,9 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { supabase, type AppUser } from '../lib/supabase';
 
+export const DISABLED_ACCOUNT_MESSAGE =
+  'Tu cuenta ha sido desactivada. Contacta al administrador.';
+
 interface AuthContextValue {
   user: AppUser | null;
   loading: boolean;
@@ -28,7 +31,7 @@ async function _fetchProfile(userId: string): Promise<Partial<AppUser> | null> {
   };
 }
 
-function _mapUser(supabaseUser: any, profile: Partial<AppUser> | null): AppUser {
+function _mapUser(supabaseUser: { id: string; email?: string; created_at?: string }, profile: Partial<AppUser> | null): AppUser {
   return {
     id: supabaseUser.id,
     email: supabaseUser.email ?? '',
@@ -60,6 +63,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => { mountedRef.current = false; };
   }, []);
 
+  const revokeDisabledSession = useCallback(async () => {
+    if (!supabase) return;
+    await supabase.auth.signOut();
+    if (mountedRef.current) {
+      setUser(null);
+      setError(DISABLED_ACCOUNT_MESSAGE);
+      setLoading(false);
+    }
+  }, []);
+
+  const applyAuthenticatedUser = useCallback(async (
+    supabaseUser: { id: string; email?: string; created_at?: string },
+    gen: number,
+  ): Promise<boolean> => {
+    const profile = await _fetchProfile(supabaseUser.id);
+    if (gen !== authGenRef.current || !mountedRef.current) return false;
+    if (profile?.isDisabled) {
+      await revokeDisabledSession();
+      return false;
+    }
+    setUser(_mapUser(supabaseUser, profile));
+    setLoading(false);
+    return true;
+  }, [revokeDisabledSession]);
+
   const refreshUser = useCallback(async () => {
     if (!supabase) { setLoading(false); return; }
     const gen = ++authGenRef.current;
@@ -70,12 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (mountedRef.current) { setUser(null); setLoading(false); }
         return;
       }
-      const profile = await _fetchProfile(session.user.id);
-      if (gen !== authGenRef.current) return;
-      if (mountedRef.current) {
-        setUser(_mapUser(session.user, profile));
-        setLoading(false);
-      }
+      await applyAuthenticatedUser(session.user, gen);
     } catch (err) {
       console.warn('[auth] refreshUser error:', err);
       if (gen === authGenRef.current && mountedRef.current) {
@@ -83,15 +106,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
       }
     }
-  }, []);
+  }, [applyAuthenticatedUser]);
 
   useEffect(() => {
     refreshUser();
-    // Safety timeout: if Supabase is unreachable, show login after 5s
+    // Safety timeout: if Supabase is slow, show login UI after 5s — but do NOT
+    // bump authGenRef. Invalidating the generation discarded a late valid
+    // getSession() result and left users stuck on the login screen.
     const timeout = setTimeout(() => {
       if (mountedRef.current && loadingRef.current) {
         console.warn('[auth] Session check timed out, showing login screen');
-        authGenRef.current++; // invalidate any in-flight check
         setLoading(false);
       }
     }, 5000);
@@ -110,12 +134,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // user appears without a loading gate and the app flickers).
       const gen = ++authGenRef.current;
       setLoading(true);
-      _fetchProfile(session.user.id).then((profile) => {
-        if (!mountedRef.current) return;
-        if (gen !== authGenRef.current) return; // a newer event wins
-        setUser(_mapUser(session.user, profile));
-        setLoading(false);
-      }).catch((err) => {
+      applyAuthenticatedUser(session.user, gen).catch((err) => {
         console.warn('[auth] onAuthStateChange profile fetch failed:', err);
         if (mountedRef.current && gen === authGenRef.current) {
           setUser(null);
@@ -124,28 +143,59 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
     });
     return () => { clearTimeout(timeout); subscription.unsubscribe(); };
-  }, [refreshUser]);
+  }, [refreshUser, applyAuthenticatedUser]);
+
+  // Immediate logout when an admin flips is_disabled on this user's profile.
+  useEffect(() => {
+    if (!supabase || !user?.id) return;
+    const client = supabase;
+    const userId = user.id;
+    const channel = client
+      .channel(`user-profile:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'user_profiles',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const next = payload.new as { is_disabled?: boolean } | null;
+          if (next?.is_disabled) {
+            void revokeDisabledSession();
+          }
+        },
+      )
+      .subscribe();
+    return () => {
+      void client.removeChannel(channel);
+    };
+  }, [user?.id, revokeDisabledSession]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     if (!supabase) return { error: 'Supabase no configurado' };
-    const { error: sbError } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error: sbError } = await supabase.auth.signInWithPassword({ email, password });
     if (sbError) {
       setError(sbError.message);
       return { error: sbError.message };
     }
+    const userId = data.user?.id;
+    if (userId) {
+      const profile = await _fetchProfile(userId);
+      if (profile?.isDisabled) {
+        await revokeDisabledSession();
+        return { error: DISABLED_ACCOUNT_MESSAGE };
+      }
+    }
     setError(null);
     return { error: null };
-  }, []);
+  }, [revokeDisabledSession]);
 
-  const signUp = useCallback(async (email: string, password: string) => {
-    if (!supabase) return { error: 'Supabase no configurado' };
-    const { error: sbError } = await supabase.auth.signUp({ email, password });
-    if (sbError) {
-      setError(sbError.message);
-      return { error: sbError.message };
-    }
-    setError(null);
-    return { error: null };
+  const signUp = useCallback(async (_email: string, _password: string) => {
+    const message = 'Registro deshabilitado. Solicita una invitación a un administrador.';
+    setError(message);
+    return { error: message };
   }, []);
 
   const signOut = useCallback(async () => {

@@ -53,7 +53,11 @@ function setupAutoUpdater(isDev) {
   if (isDev || !app.isPackaged) {
     console.log('[auto-updater] desactivado (modo dev / app no empaquetada). Registrando manejadores mock.');
 
-    ipcMain.handle('auto-update-check', async () => {
+    ipcMain.handle('auto-update-check', async (event) => {
+      const { _isAllowedIpcSender } = require('./ipc-router');
+      if (!_isAllowedIpcSender(event)) {
+        return { success: false, reason: 'untrusted sender' };
+      }
       console.log('[auto-updater] (dev) Manual check requested. Mocking up-to-date.');
       setTimeout(() => {
         _broadcastToRenderer('auto-update-status', {
@@ -65,7 +69,11 @@ function setupAutoUpdater(isDev) {
       return { success: true };
     });
 
-    ipcMain.handle('auto-update-install', async () => {
+    ipcMain.handle('auto-update-install', async (event) => {
+      const { _isAllowedIpcSender } = require('./ipc-router');
+      if (!_isAllowedIpcSender(event)) {
+        return { success: false, reason: 'untrusted sender' };
+      }
       return { success: false, reason: 'No disponible en modo desarrollo' };
     });
 
@@ -152,7 +160,11 @@ function setupAutoUpdater(isDev) {
     updater.checkForUpdates().catch(() => {});
   }, 6 * 60 * 60 * 1000);
 
-  ipcMain.handle('auto-update-check', async () => {
+  ipcMain.handle('auto-update-check', async (event) => {
+    const { _isAllowedIpcSender } = require('./ipc-router');
+    if (!_isAllowedIpcSender(event)) {
+      return { success: false, reason: 'untrusted sender' };
+    }
     console.log('[auto-updater] Manual check requested. In progress:', _updateInProgress);
     if (!updater || _updateInProgress) {
       const reason = !updater ? 'updater not loaded' : 'update in progress';
@@ -171,7 +183,11 @@ function setupAutoUpdater(isDev) {
     }
   });
 
-  ipcMain.handle('auto-update-install', async () => {
+  ipcMain.handle('auto-update-install', async (event) => {
+    const { _isAllowedIpcSender } = require('./ipc-router');
+    if (!_isAllowedIpcSender(event)) {
+      return { success: false, reason: 'untrusted sender' };
+    }
     if (!_updateDownloaded || !_autoUpdater) {
       return { success: false, reason: 'update not ready' };
     }

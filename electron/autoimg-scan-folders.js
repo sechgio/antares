@@ -1,4 +1,5 @@
 const { mapWithConcurrency } = require('./autoimg-concurrency');
+const { accumulateNisFiles, finalizeNisMap } = require('./autoimg-nis');
 
 const DEFAULT_SCAN_CONCURRENCY = 3;
 
@@ -17,9 +18,14 @@ async function scanActiveFolders(activeFolders, {
     });
 
     try {
-      const files = await drive.listFolder(folder.folder_id, {
+      const nisMap = {};
+      let fileCount = 0;
+      await drive.listFolder(folder.folder_id, {
+        collect: false,
         onPage: ({ pageFiles, totalSoFar, hasMore }) => {
           shouldCancel?.();
+          fileCount = totalSoFar;
+          accumulateNisFiles(nisMap, pageFiles, folder.name);
           const lastFile = pageFiles[pageFiles.length - 1];
           emit('autoimg.scan.progress', {
             folder: folder.name,
@@ -31,11 +37,11 @@ async function scanActiveFolders(activeFolders, {
       });
       shouldCancel?.();
 
-      const nisMap = drive.buildNisMap(files, folder.name);
-      const nisFound = Object.keys(nisMap).length;
+      const finalized = finalizeNisMap(nisMap);
+      const nisFound = Object.keys(finalized).length;
       emit('autoimg.scan.folder_done', {
         folder: folder.name,
-        count: files.length,
+        count: fileCount,
         nis_found: nisFound,
       });
 
@@ -45,11 +51,11 @@ async function scanActiveFolders(activeFolders, {
         folderSummary: {
           name: folder.name,
           folder_id: folder.folder_id,
-          count: files.length,
+          count: fileCount,
           nis_found: nisFound,
         },
-        nisMap,
-        fileCount: files.length,
+        nisMap: finalized,
+        fileCount,
       };
     } catch (err) {
       const failed = buildFolderErrorSummary(folder, err);

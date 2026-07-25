@@ -16,7 +16,6 @@ from backend.core.panel_aviso_corte import (
     Panel,
     PanelImageRef,
     build_panels,
-    parse_excel_bytes,
     render_docx,
     render_pdf,
 )
@@ -58,20 +57,45 @@ def _png_b64(width: int, height: int) -> str:
 
 
 def _fixture_panels_and_images() -> tuple[tuple[Panel, ...], dict[str, str]]:
-    excel_path = _ROOT / "tests" / "aviso.xlsx"
-    image_paths = sorted((_ROOT / "tests" / "aviso").glob("*.jpg"))
-    source = parse_excel_bytes(excel_path.read_bytes(), excel_path.name)
+    """Build panels and synthetic images without disk fixtures.
+
+    Generates 8 synthetic 100x100 PNG images (base64-encoded) matching IDs
+    1001-1008, then runs ``build_panels`` with exact strategy to produce 2
+    panels with 4 images each.
+    """
+    source = ExcelSource(
+        filename="aviso.xlsx",
+        columns=("ID", "DIRECCION", "FECHA DE CORTE", "CUADRANTE AFECTADO", "MOTIVO"),
+        normalized_columns=("id", "direccion", "fecha de corte", "cuadrante afectado", "motivo"),
+        rows=(
+            {"ID": "1001", "DIRECCION": "Calle Las Flores 123", "FECHA DE CORTE": "2024-05-15",
+             "CUADRANTE AFECTADO": "CUADRANTE A-12", "MOTIVO": "Trabajos de mejoramiento del reservorio R104"},
+            {"ID": "1002", "DIRECCION": "Av. Principal 456", "FECHA DE CORTE": "2024-05-15",
+             "CUADRANTE AFECTADO": "CUADRANTE B-05", "MOTIVO": "Trabajos de mejoramiento del reservorio R105"},
+            {"ID": "1003", "DIRECCION": "Jr. Independencia 789", "FECHA DE CORTE": "2024-05-16",
+             "CUADRANTE AFECTADO": "CUADRANTE C-08", "MOTIVO": "Trabajos de mejoramiento del reservorio R106"},
+            {"ID": "1004", "DIRECCION": "Pasaje El Olivo 101", "FECHA DE CORTE": "2024-05-17",
+             "CUADRANTE AFECTADO": "CUADRANTE D-11", "MOTIVO": "Trabajos de mejoramiento del reservorio R107"},
+            {"ID": "1005", "DIRECCION": "Calle Las Flores 124", "FECHA DE CORTE": "2024-05-15",
+             "CUADRANTE AFECTADO": "CUADRANTE A-13", "MOTIVO": "Trabajos de mejoramiento del reservorio R108"},
+            {"ID": "1006", "DIRECCION": "Av. Principal 457", "FECHA DE CORTE": "2024-05-15",
+             "CUADRANTE AFECTADO": "CUADRANTE B-06", "MOTIVO": "Trabajos de mejoramiento del reservorio R109"},
+            {"ID": "1007", "DIRECCION": "Jr. Independencia 790", "FECHA DE CORTE": "2024-05-16",
+             "CUADRANTE AFECTADO": "CUADRANTE C-09", "MOTIVO": "Trabajos de mejoramiento del reservorio R110"},
+            {"ID": "1008", "DIRECCION": "Pasaje El Olivo 102", "FECHA DE CORTE": "2024-05-17",
+             "CUADRANTE AFECTADO": "CUADRANTE D-12", "MOTIVO": "Trabajos de mejoramiento del reservorio R111"},
+        ),
+        warnings=(),
+    )
+    image_names = [f"{i}.jpg" for i in range(1001, 1009)]
     result = build_panels(
         source=source,
         rule=MatchRule(key_column="ID", strategy="exact"),
-        image_names=[path.name for path in image_paths],
+        image_names=image_names,
         address_column="DIRECCION",
         export_mode="skip_empty",
     )
-    images = {
-        path.name: base64.b64encode(path.read_bytes()).decode("ascii")
-        for path in image_paths
-    }
+    images = {name: _png_b64(100, 100) for name in image_names}
     return result.panels, images
 
 

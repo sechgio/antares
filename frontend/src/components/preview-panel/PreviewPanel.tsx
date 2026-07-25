@@ -51,7 +51,7 @@ function isMaqBaldeTemplate(template?: { name?: string; content?: string } | nul
   return content.includes("row.get('titulo'") || content.includes("row.get('direcciones_afectadas'") || content.includes('photo-cell-photo-3');
 }
 
-function isFixedA4TemplatePreview(template?: { name?: string } | null): boolean {
+function isFixedA4TemplatePreview(template?: { name?: string; content?: string } | null): boolean {
   return template?.name === KNOWN_TEMPLATES.reportVolanteo || isMaqBaldeTemplate(template) || isMaquinaBaldeTemplate(template);
 }
 

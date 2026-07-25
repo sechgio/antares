@@ -118,7 +118,8 @@ export default function GoogleDrivePanel({ googleConnected, onFolderAdded }: Goo
             <div className="min-w-0">
               <p className="truncate text-[11px] text-[var(--text-primary)]">{verified.name}</p>
               <p className="text-[10px] text-[var(--text-muted)]">
-                {verified.image_count} imagen{verified.image_count !== 1 ? 'es' : ''}
+                {verified.image_count}{verified.has_more ? '+' : ''} imagen
+                {verified.image_count !== 1 || verified.has_more ? 'es' : ''}
               </p>
             </div>
           </div>

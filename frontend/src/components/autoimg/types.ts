@@ -41,6 +41,9 @@ export interface DriveVerifyResult {
   accessible: boolean;
   folder_id: string;
   name: string;
+  /** Exact when has_more is false; otherwise a lower bound from the first page. */
   image_count: number;
+  /** True when more images exist beyond image_count (verify uses a single page). */
+  has_more?: boolean;
   sample_files: string[];
 }

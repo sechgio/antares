@@ -8,6 +8,26 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
+// jsdom does not implement ResizeObserver (used by virtualized lists/grids).
+if (typeof globalThis.ResizeObserver !== 'function') {
+  class ResizeObserverStub {
+    callback: ResizeObserverCallback;
+    constructor(callback: ResizeObserverCallback) {
+      this.callback = callback;
+    }
+    observe(target: Element) {
+      const rect = target.getBoundingClientRect?.() ?? { width: 800, height: 600, top: 0, left: 0, bottom: 600, right: 800, x: 0, y: 0, toJSON: () => ({}) };
+      this.callback(
+        [{ target, contentRect: rect, borderBoxSize: [], contentBoxSize: [], devicePixelContentBoxSize: [] } as ResizeObserverEntry],
+        this as unknown as ResizeObserver,
+      );
+    }
+    unobserve() {}
+    disconnect() {}
+  }
+  globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
+}
+
 // jsdom does not implement matchMedia; EspaciosWelcome / LoginScreen need it.
 if (typeof window.matchMedia !== 'function') {
   Object.defineProperty(window, 'matchMedia', {
@@ -47,7 +67,7 @@ Object.defineProperty(window, 'electronAPI', {
       if (method === 'theme_presets') return { presets: ['Precision Linear'] };
       if (method === 'history_list') return { runs: [] };
       if (method === 'technical_reports_list') return { reports: [] };
-      if (method === 'templates_list') return { templates: [] };
+      if (method === 'templates_list') return { templates: [] };
       return {};
     },
     onNotify: () => () => {},

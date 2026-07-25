@@ -1,4 +1,4 @@
-"""HTML template handlers."""
+"""HTML template handlers for the report generator."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -14,16 +14,29 @@ def _preview_templates_dir() -> Path:
         return bundled
     return Path(__file__).resolve().parent.parent / "templates"
 
+
 @with_locale
 def templates_list(params: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
     templates_dir = _preview_templates_dir()
-    if not templates_dir.exists():
-        return {"templates": []}
-    return {"templates": [{"id": f.stem, "name": f.name, "filename": f.name} for f in sorted(templates_dir.glob("*.html"))]}
+    templates: list[dict[str, str]] = []
+    if templates_dir.exists():
+        templates.extend(
+            [
+                {
+                    "id": f.stem,
+                    "name": f.name,
+                    "filename": f.name,
+                    "source": "html",
+                }
+                for f in sorted(templates_dir.glob("*.html"))
+            ]
+        )
+    return {"templates": templates}
+
 
 @with_locale
 @validate_params("name")
-def template_get(params: dict[str, Any]) -> dict[str, str]:
+def template_get(params: dict[str, Any]) -> dict[str, Any]:
     name = params.get("name", "")
     templates_dir = _preview_templates_dir()
     target = templates_dir / name
@@ -35,7 +48,8 @@ def template_get(params: dict[str, Any]) -> dict[str, str]:
     if not target.exists() or not target.is_file():
         msg = f"Template not found: {name}"
         raise ValueError(msg)
-    return {"name": name, "content": target.read_text(encoding="utf-8")}
+    return {"name": name, "source": "html", "content": target.read_text(encoding="utf-8")}
+
 
 HANDLERS = {
     "templates_list": templates_list,

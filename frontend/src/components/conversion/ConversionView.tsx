@@ -19,6 +19,7 @@ import {
   takePendingHistoryReexecute,
 } from '../history/historyEvents';
 import type { HistoryRun } from '../history/RunList';
+import { registerLocalPaths } from '../../utils/registerLocalPath';
 
 export default function ConversionView() {
   const [files, setFiles] = useState<string[]>([]);
@@ -57,7 +58,7 @@ export default function ConversionView() {
     [mappingData, files],
   );
   const { selectedFile, setSelectedFile, selectedFiles, setSelectedFiles, handleFileClick, handleFileDoubleClick, selectAllFiles } = useFileSelection(files);
-  const { status, running, pollStatus, startProcess, cancelProcess } = useProcessRunner();
+  const { status, running, pollStatus, pollError, startProcess, cancelProcess } = useProcessRunner();
   const { addToast } = useToast();
   const { confirm } = useDialog();
   const defaultsLockedRef = useRef(false);
@@ -266,6 +267,14 @@ export default function ConversionView() {
     return () => { cancelled = true; };
   }, []);
 
+  useEffect(() => {
+    if (!pollError) return;
+    addToast({
+      message: `Error al consultar el estado del proceso: ${pollError}`,
+      type: 'error',
+    });
+  }, [pollError, addToast]);
+
   const mergeFiles = useCallback((incoming: string[]) => {
     if (!incoming.length) return;
     // For large incoming batches, avoid the O(n) Set scan of the entire
@@ -281,6 +290,7 @@ export default function ConversionView() {
 
   const addFiles = async () => {
     const r = await api.dialogFiles();
+    registerLocalPaths(r.paths);
     mergeFiles(r.paths);
   };
 
@@ -590,15 +600,38 @@ export default function ConversionView() {
 
   const onDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(true); }, []);
   const onDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(false); }, []);
-  const onDrop = useCallback((e: React.DragEvent) => {
+  const onDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
     // Electron 32+ removed File.path; resolve via the webUtils bridge.
-    const dropped = Array.from(e.dataTransfer.files)
+    const fileList = Array.from(e.dataTransfer.files);
+    const dropped = fileList
       .map((f) => window.electronAPI?.getPathForFile(f) ?? '')
       .filter((p) => p.length > 0);
-    if (dropped.length) mergeFiles(dropped);
-  }, [mergeFiles]);
+    if (fileList.length > 0 && dropped.length === 0) {
+      addToast({
+        message: 'No se pudieron resolver las rutas de los archivos. Usa el selector de archivos.',
+        type: 'error',
+      });
+      try {
+        const r = await api.dialogFiles();
+        if (r.paths.length > 0) {
+          registerLocalPaths(r.paths);
+          mergeFiles(r.paths);
+        }
+      } catch (err) {
+        addToast({
+          message: err instanceof Error ? err.message : 'Error al seleccionar archivos',
+          type: 'error',
+        });
+      }
+      return;
+    }
+    if (dropped.length) {
+      registerLocalPaths(dropped);
+      mergeFiles(dropped);
+    }
+  }, [mergeFiles, addToast]);
 
   const onPasteFiles = useCallback((paths: string[]) => { mergeFiles(paths); }, [mergeFiles]);
 

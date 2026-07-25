@@ -14,12 +14,38 @@ from backend.core.database import (
     obtener_todos,
     parse_id_rename_mapping_full,
 )
-from backend.handlers.common import validate_params, with_locale
+from backend.handlers.common import parse_positive_int, validate_params, with_locale
+
+_DB_RECORDS_DEFAULT_LIMIT = 500
+_DB_RECORDS_MAX_LIMIT = 2000
+
+
+def _parse_offset(value: Any, label: str) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        msg = f"{label} inválido"
+        raise ValueError(msg) from exc
+    if parsed < 0:
+        msg = f"{label} no puede ser negativo"
+        raise ValueError(msg)
+    return parsed
 
 
 @with_locale
 def db_records(params: dict[str, Any]) -> dict[str, Any]:
-    return {"records": obtener_todos(), "fields": get_field_names()}
+    limit = parse_positive_int(
+        params.get("limit", _DB_RECORDS_DEFAULT_LIMIT),
+        "limit",
+        maximum=_DB_RECORDS_MAX_LIMIT,
+    )
+    offset = _parse_offset(params.get("offset", 0), "offset")
+    return {
+        "records": obtener_todos(limit=limit, offset=offset),
+        "fields": get_field_names(),
+        "limit": limit,
+        "offset": offset,
+    }
 
 @with_locale
 @validate_params("path")

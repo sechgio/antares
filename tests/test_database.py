@@ -88,6 +88,8 @@ class TestBuscarLotePorCodigos:
         assert "ABC" in resultado
         assert resultado["ABC"]["codigo"] == "ABC"
         assert resultado["ABC"]["nombre"] == "Producto"
+        # Explicit projection: only configured field names (no extra/id columns)
+        assert set(resultado["ABC"].keys()) == {"codigo", "nombre"}
 
     def test_no_encuentra_retorna_vacio(self, db_path, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import Button from '../ui/Button';
 import { api } from '../../api';
+import { registerLocalPaths } from '../../utils/registerLocalPath';
 import { Folder, Plus, RotateCcw, UploadCloud, FileImage, Film, Database } from 'lucide-react';
 
 interface DropzoneProps {
@@ -60,6 +61,7 @@ export default function Dropzone({
       }
     }
     if (files.length > 0) {
+      registerLocalPaths(files);
       setPasting(true);
       onPasteFiles(files);
       setTimeout(() => setPasting(false), 500);

@@ -1,4 +1,5 @@
 import { matchesRecordId, naturalSortByName } from './utils';
+import { sanitizeHtmlForPdf } from '../../../../shared/html-sanitizer.js';
 export {
   buildLocalImageToken,
   imageToPdfSource,
@@ -84,16 +85,17 @@ export function selectRowsForPdfExport({
 }
 
 function extractHtmlParts(html: string): { head: string; body: string } {
+  const safeHtml = sanitizeHtmlForPdf(html);
   if (typeof DOMParser !== 'undefined') {
-    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const doc = new DOMParser().parseFromString(safeHtml, 'text/html');
     return {
       head: doc.head?.innerHTML || '',
-      body: doc.body?.innerHTML || html,
+      body: doc.body?.innerHTML || safeHtml,
     };
   }
 
-  const head = html.match(/<head[^>]*>([\s\S]*?)<\/head>/i)?.[1] || '';
-  const body = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] || html;
+  const head = safeHtml.match(/<head[^>]*>([\s\S]*?)<\/head>/i)?.[1] || '';
+  const body = safeHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] || safeHtml;
   return { head, body };
 }
 
@@ -102,7 +104,7 @@ export function mergeHtmlDocuments(documents: string[]): string {
   const head = parts.map(part => part.head).filter(Boolean).join('\n');
   const body = parts.map(part => part.body).join('\n');
 
-  return `<!DOCTYPE html>
+  return sanitizeHtmlForPdf(`<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -117,5 +119,5 @@ ${head}
 <body>
 ${body}
 </body>
-</html>`;
+</html>`);
 }

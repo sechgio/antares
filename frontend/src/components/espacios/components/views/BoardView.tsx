@@ -28,7 +28,8 @@ import {
   User,
   type LucideIcon,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { List } from 'react-window';
 import EmptyState from '../EmptyState';
 import StatusPicker from '../StatusPicker';
 import TaskCardActions from '../TaskCardActions';
@@ -50,6 +51,7 @@ import {
   softColor,
   visibleBoardColumns,
 } from '../../utils/statusConfig';
+import { BOARD_CARD_ROW_HEIGHT, ESPACIOS_VIRTUALIZE_THRESHOLD } from './virtualizeConfig';
 
 interface BoardViewProps {
   tareas: Tarea[];
@@ -67,6 +69,9 @@ interface BoardViewProps {
   onRenameColumn?: (id: string, name: string) => Promise<void>;
   onDeleteColumn?: (id: string) => Promise<void>;
 }
+
+// Large columns use react-window; SortableContext still receives all task ids for DnD.
+const BOARD_VIRTUALIZE_THRESHOLD = ESPACIOS_VIRTUALIZE_THRESHOLD;
 
 /** Prefer pointer-over targets; fall back so empty columns still receive drops. */
 const boardCollisionDetection: CollisionDetection = (args) => {
@@ -558,6 +563,93 @@ function Column({
     data: { type: 'column', status: column.key },
   });
   const color = column.color;
+  const useVirtual = taskIds.length >= BOARD_VIRTUALIZE_THRESHOLD;
+  const listRef = useRef<HTMLDivElement>(null);
+  const [listHeight, setListHeight] = useState(0);
+
+  useLayoutEffect(() => {
+    if (!useVirtual) return;
+    const el = listRef.current;
+    if (!el) return;
+    const update = () => setListHeight(Math.floor(el.getBoundingClientRect().height));
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [useVirtual, taskIds.length]);
+
+  type BoardRowProps = {
+    ariaAttributes: { 'aria-posinset': number; 'aria-setsize': number; role: 'listitem' };
+    index: number;
+    style: React.CSSProperties;
+    taskIds: string[];
+    tareaById: Map<string, Tarea>;
+    members: TeamMember[];
+    allColumns: BoardColumn[];
+    projectName?: string | null;
+    onStatusPick: (id: string, status: TareaStatus) => void;
+    onEditTask?: (tarea: Tarea) => void;
+    onCompleteTask?: (tarea: Tarea) => void;
+    onDeleteTask?: (tarea: Tarea) => void;
+    onAddTask?: (status?: TareaStatus) => void;
+    columnKey: TareaStatus;
+  };
+
+  const boardRowProps = useMemo(
+    () => ({
+      taskIds,
+      tareaById,
+      members,
+      allColumns,
+      projectName,
+      onStatusPick,
+      onEditTask,
+      onCompleteTask,
+      onDeleteTask,
+      onAddTask,
+      columnKey: column.key,
+    }),
+    [taskIds, tareaById, members, allColumns, projectName, onStatusPick, onEditTask, onCompleteTask, onDeleteTask, onAddTask, column.key],
+  );
+
+  const BoardVirtualRow = useMemo(
+    () =>
+      function BoardVirtualRowInner({
+        index,
+        style,
+        taskIds: ids,
+        tareaById: byId,
+        members: mems,
+        allColumns: cols,
+        projectName: proj,
+        onStatusPick: pick,
+        onEditTask: edit,
+        onCompleteTask: complete,
+        onDeleteTask: remove,
+        onAddTask: add,
+        columnKey,
+      }: BoardRowProps) {
+        const id = ids[index];
+        const tarea = id ? byId.get(id) : undefined;
+        if (!tarea) return <div style={style} />;
+        return (
+          <div style={style} className="px-0.5 pb-2" data-virtual-row>
+            <SortableTaskCard
+              tarea={tarea}
+              members={mems}
+              columns={cols}
+              projectName={proj}
+              onStatusPick={(next) => pick(id, next)}
+              onEdit={edit ? () => edit(tarea) : undefined}
+              onComplete={complete ? () => complete(tarea) : undefined}
+              onDelete={remove ? () => remove(tarea) : undefined}
+              onAdd={add ? () => add(columnKey) : undefined}
+            />
+          </div>
+        );
+      },
+    [],
+  );
 
   return (
     <div
@@ -570,6 +662,7 @@ function Column({
           ? `color-mix(in srgb, ${color} 45%, transparent)`
           : `color-mix(in srgb, ${color} 14%, var(--border-subtle))`,
       }}
+      data-virtualized-board-column={useVirtual ? 'true' : 'false'}
     >
       <div className="mb-2.5 flex items-center justify-between gap-2 px-1 pt-0.5">
         <StatusPill column={column} count={taskIds.length} />
@@ -583,28 +676,46 @@ function Column({
 
       <div
         ref={setNodeRef}
-        className="flex min-h-[160px] flex-1 flex-col gap-2 overflow-y-auto rounded-xl p-0.5"
+        className="flex min-h-[160px] max-h-[min(70vh,640px)] flex-1 flex-col gap-2 overflow-hidden rounded-xl p-0.5"
         data-status={column.key}
       >
         <SortableContext items={taskIds} strategy={verticalListSortingStrategy} id={dropId}>
-          {taskIds.map((id) => {
-            const tarea = tareaById.get(id);
-            if (!tarea) return null;
-            return (
-              <SortableTaskCard
-                key={id}
-                tarea={tarea}
-                members={members}
-                columns={allColumns}
-                projectName={projectName}
-                onStatusPick={(next) => onStatusPick(id, next)}
-                onEdit={onEditTask ? () => onEditTask(tarea) : undefined}
-                onComplete={onCompleteTask ? () => onCompleteTask(tarea) : undefined}
-                onDelete={onDeleteTask ? () => onDeleteTask(tarea) : undefined}
-                onAdd={onAddTask ? () => onAddTask(column.key) : undefined}
-              />
-            );
-          })}
+          {!useVirtual ? (
+            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+              {taskIds.map((id) => {
+                const tarea = tareaById.get(id);
+                if (!tarea) return null;
+                return (
+                  <SortableTaskCard
+                    key={id}
+                    tarea={tarea}
+                    members={members}
+                    columns={allColumns}
+                    projectName={projectName}
+                    onStatusPick={(next) => onStatusPick(id, next)}
+                    onEdit={onEditTask ? () => onEditTask(tarea) : undefined}
+                    onComplete={onCompleteTask ? () => onCompleteTask(tarea) : undefined}
+                    onDelete={onDeleteTask ? () => onDeleteTask(tarea) : undefined}
+                    onAdd={onAddTask ? () => onAddTask(column.key) : undefined}
+                  />
+                );
+              })}
+            </div>
+          ) : (
+            <div ref={listRef} className="min-h-0 flex-1">
+              {listHeight > 0 && (
+                <List
+                  rowCount={taskIds.length}
+                  rowHeight={BOARD_CARD_ROW_HEIGHT}
+                  defaultHeight={listHeight}
+                  overscanCount={4}
+                  rowComponent={BoardVirtualRow as never}
+                  rowProps={boardRowProps}
+                  style={{ height: listHeight, width: '100%' }}
+                />
+              )}
+            </div>
+          )}
         </SortableContext>
       </div>
 
