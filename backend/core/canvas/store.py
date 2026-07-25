@@ -95,15 +95,19 @@ class CanvasStore:
             for path in sorted(self.docs_dir.glob("*.json")):
                 try:
                     raw = json.loads(path.read_text(encoding="utf-8"))
-                    doc = normalize_document(raw)
+                    if not isinstance(raw, dict):
+                        continue
+                    doc_id = str(raw.get("id") or path.stem)
+                    doc_name = str(raw.get("name") or "Sin título")
+                    updated_at = str(raw.get("updatedAt") or "")
                 except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
                     logger.warning("Skipping unreadable canvas document %s: %s", path, exc)
                     continue
                 items.append(
                     {
-                        "id": doc["id"],
-                        "name": doc["name"],
-                        "updatedAt": str(doc.get("updatedAt") or ""),
+                        "id": doc_id,
+                        "name": doc_name,
+                        "updatedAt": updated_at,
                     }
                 )
             return items
@@ -128,7 +132,7 @@ class CanvasStore:
             path = self._path_for(doc["id"])
             self.docs_dir.mkdir(parents=True, exist_ok=True)
             tmp = path.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+            tmp.write_text(json.dumps(doc, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
             tmp.replace(path)
             return doc
 

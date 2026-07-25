@@ -1,5 +1,6 @@
 # Base de datos local
 data/*.db
+data/technical_reports.json
 
 # Canvas document fixtures (junk/test docs must not ship to users)
 data/canvas/documents/*.json

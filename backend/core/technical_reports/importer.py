@@ -4,7 +4,7 @@ import csv
 import io
 import re
 import unicodedata
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from openpyxl import load_workbook
@@ -39,32 +39,66 @@ COLUMN_MAPPING = {
     "informe": "informe_id",
     "id": "informe_id",
     "item": "informe_id",
+    "nro": "informe_id",
+    "numero": "informe_id",
+    "num": "informe_id",
+    "no": "informe_id",
+    "n": "informe_id",
+    "ninforme": "informe_id",
+    "noinforme": "informe_id",
+    "numinforme": "informe_id",
+    "codinforme": "informe_id",
+    "codigoinforme": "informe_id",
     "centrodeservicio": "cs",
     "centroservicio": "cs",
     "cs": "cs",
     "sede": "cs",
     "localidad": "cs",
+    "zonal": "cs",
+    "zona": "cs",
+    "sucursal": "cs",
     "contratista": "contratista",
+    "empresa": "contratista",
+    "empresacontratista": "contratista",
+    "service": "contratista",
     "sgio": "sgio",
+    "nrosgio": "sgio",
+    "numerosgio": "sgio",
+    "ordensgio": "sgio",
     "codigoinfraestructura": "codigo_infraestructura",
     "codinfraestructura": "codigo_infraestructura",
     "infraestructura": "codigo_infraestructura",
     "codigo": "codigo_infraestructura",
+    "codinfra": "codigo_infraestructura",
+    "instalacion": "codigo_infraestructura",
     "ubicacion": "ubicacion",
     "direccion": "ubicacion",
+    "lugar": "ubicacion",
+    "sitio": "ubicacion",
     "suministro": "suministro",
     "nrosuministro": "suministro",
+    "numerosuministro": "suministro",
     "nis": "suministro",
+    "nisrad": "suministro",
+    "nisradicado": "suministro",
     "tipo": "tipo",
     "tipoestructura": "tipo",
+    "tipodestructuta": "tipo",
+    "tiporeservorio": "tipo",
+    "estructura": "tipo",
     "volumen": "volumen",
     "volumenm3": "volumen",
     "capacidad": "volumen",
+    "capacidadm3": "volumen",
     "dia": "dia",
     "mes": "mes",
     "ano": "anio",
     "año": "anio",
     "anio": "anio",
+    "fecha": "fecha",
+    "fechainforme": "fecha",
+    "fechadeinspeccion": "fecha",
+    "fechainspeccion": "fecha",
     "cajaregistro": "caja_registro",
     "cajaderegistro": "caja_registro",
     "marcotapa": "marco_tapa",
@@ -277,7 +311,7 @@ def import_reports_from_bytes(filename: str, content: bytes) -> list[dict[str, A
     lower_name = filename.lower()
     if lower_name.endswith(".csv"):
         rows = parse_csv_file(content)
-    elif lower_name.endswith(".xlsx"):
+    elif lower_name.endswith(".xlsx") or lower_name.endswith(".xls"):
         rows = parse_xlsx_file(content)
     else:
         msg = "Formato no soportado. Use archivos .csv o .xlsx"
@@ -285,58 +319,150 @@ def import_reports_from_bytes(filename: str, content: bytes) -> list[dict[str, A
     if not rows:
         msg = "El archivo esta vacio o no tiene datos validos"
         raise ValueError(msg)
+
     reports: list[dict[str, Any]] = []
+    used_numbers: set[int] = set()
     next_report_number = 1
+
     for row in rows:
         explicit_number = _safe_int(row.get("informe_id"), 0)
-        report_number = explicit_number if explicit_number > 0 else next_report_number
-        reports.append(transform_flat_to_nested(row, report_number))
+        if explicit_number > 0 and explicit_number not in used_numbers:
+            report_number = explicit_number
+        else:
+            while next_report_number in used_numbers:
+                next_report_number += 1
+            report_number = next_report_number
+
+        used_numbers.add(report_number)
         next_report_number = max(next_report_number, report_number) + 1
+        reports.append(transform_flat_to_nested(row, report_number))
+
     return reports
 
 
 def parse_csv_file(content: bytes) -> list[dict[str, Any]]:
-    text = content.decode("utf-8-sig")
-    sample = text[:2048]
-    delimiter = ";" if sample.count(";") >= sample.count(",") else ","
-    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
-    rows: list[dict[str, Any]] = []
-    for row in reader:
-        normalized = {normalize_csv_key(key): value for key, value in row.items() if key is not None}
-        if any(str(value or "").strip() for value in normalized.values()):
-            rows.append(normalized)
-    return rows
+    text: str | None = None
+    for encoding in ("utf-8-sig", "utf-8", "latin-1", "cp1252", "iso-8859-1"):
+        try:
+            text = content.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+
+    if text is None:
+        msg = "No se pudo decodificar el archivo CSV"
+        raise ValueError(msg)
+
+    def _read_rows(delimiter: str) -> list[dict[str, Any]]:
+        reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+        parsed_rows: list[dict[str, Any]] = []
+        for row in reader:
+            normalized = {normalize_csv_key(key): value for key, value in row.items() if key is not None}
+            if any(str(value or "").strip() for value in normalized.values()):
+                parsed_rows.append(normalized)
+        return parsed_rows
+
+    semicolon_rows = _read_rows(";")
+    comma_rows = _read_rows(",")
+    tab_rows = _read_rows("\t")
+
+    def _mapped_col_count(rows: list[dict[str, Any]]) -> int:
+        if not rows:
+            return 0
+        return len([k for k in rows[0] if k and k in COLUMN_MAPPING.values()])
+
+    semi_cols = _mapped_col_count(semicolon_rows)
+    comma_cols = _mapped_col_count(comma_rows)
+    tab_cols = _mapped_col_count(tab_rows)
+
+    best_cols = max(semi_cols, comma_cols, tab_cols)
+    if best_cols >= 1:
+        if semi_cols == best_cols and semicolon_rows:
+            return semicolon_rows
+        if tab_cols == best_cols and tab_rows:
+            return tab_rows
+        if comma_rows:
+            return comma_rows
+
+    return semicolon_rows or comma_rows or tab_rows
 
 
 def parse_xlsx_file(content: bytes) -> list[dict[str, Any]]:
-    workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
-    worksheet = workbook.active
-    if worksheet is None:
+    try:
+        workbook = load_workbook(io.BytesIO(content), data_only=True)
+    except Exception as err:
+        msg = f"Error al abrir el archivo Excel: {err}"
+        raise ValueError(msg) from err
+
+    sheets = workbook.worksheets
+    if not sheets:
         return []
-    rows_iter = worksheet.iter_rows(values_only=True)
-    headers = next(rows_iter, None)
-    if not headers:
-        return []
-    keys = [normalize_csv_key(str(header or "")) for header in headers]
-    rows: list[dict[str, Any]] = []
-    for values in rows_iter:
-        row = {keys[idx]: values[idx] for idx in range(min(len(keys), len(values))) if keys[idx]}
-        if any(str(value or "").strip() for value in row.values()):
-            rows.append(row)
-    return rows
+
+    best_rows: list[dict[str, Any]] = []
+    best_sheet_score = -1
+
+    for worksheet in sheets:
+        rows_iter = list(worksheet.iter_rows(values_only=True))
+        if not rows_iter:
+            continue
+
+        header_idx = -1
+        best_score = -1
+        for idx, row_tuple in enumerate(rows_iter[:10]):
+            non_empty = [v for v in row_tuple if v is not None and str(v).strip() != ""]
+            if not non_empty:
+                continue
+            score = sum(1 for v in non_empty if normalize_header_value(str(v)) in COLUMN_MAPPING)
+            if score > best_score:
+                best_score = score
+                header_idx = idx
+
+        if header_idx == -1 or best_score <= 0:
+            for idx, row_tuple in enumerate(rows_iter[:10]):
+                if any(v is not None and str(v).strip() != "" for v in row_tuple):
+                    header_idx = idx
+                    break
+
+        if header_idx == -1:
+            continue
+
+        headers = rows_iter[header_idx]
+        keys = [normalize_csv_key(str(header or "")) for header in headers]
+
+        rows: list[dict[str, Any]] = []
+        consecutive_empty = 0
+        for values in rows_iter[header_idx + 1:]:
+            row_dict: dict[str, Any] = {keys[idx]: values[idx] for idx in range(min(len(keys), len(values))) if keys[idx]}
+            if any(value is not None and str(value or "").strip() != "" for value in row_dict.values()):
+                rows.append(row_dict)
+                consecutive_empty = 0
+            else:
+                consecutive_empty += 1
+                if consecutive_empty >= 50:
+                    break
+
+        if rows and best_score > best_sheet_score:
+            best_sheet_score = best_score
+            best_rows = rows
+
+    return best_rows
+
 
 
 def transform_flat_to_nested(row: dict[str, Any], fallback_report_number: int = 1) -> dict[str, Any]:
     informe_id = _safe_int(row.get("informe_id"), 0)
     if informe_id <= 0:
         informe_id = fallback_report_number
+
+    dia, mes, anio = _extract_date(row)
+
     report = create_empty_report(informe_id)
     report["id"] = report_id_from_number(informe_id)
     report["metadata"].update({
         "informe_id": informe_id,
-        "dia": _safe_int(row.get("dia"), 1),
-        "mes": _resolve_mes(row.get("mes")),
-        "anio": _safe_int(row.get("anio"), datetime.now().year),
+        "dia": dia,
+        "mes": mes,
+        "anio": anio,
         "pagina": "1 de 2",
     })
     report["header"].update({
@@ -379,13 +505,48 @@ def transform_flat_to_nested(row: dict[str, Any], fallback_report_number: int = 
     return TechnicalReport.normalize(report)
 
 
+def _extract_date(row: dict[str, Any]) -> tuple[int, str, int]:
+    now = datetime.now()
+    raw_fecha = row.get("fecha")
+    if raw_fecha is not None:
+        if isinstance(raw_fecha, (datetime, date)):
+            return raw_fecha.day, MESES.get(raw_fecha.month, "ENERO"), raw_fecha.year
+        fecha_str = str(raw_fecha).strip()
+        if fecha_str:
+            m = re.match(r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})", fecha_str)
+            if m:
+                y, mth, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                return d, MESES.get(mth, "ENERO"), y
+            m = re.match(r"^(\d{1,2})[-/](\d{1,2})[-/](\d{4})", fecha_str)
+            if m:
+                d, mth, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                return d, MESES.get(mth, "ENERO"), y
+
+    raw_dia = row.get("dia")
+    raw_mes = row.get("mes")
+    raw_anio = row.get("anio")
+
+    dia = _safe_int(raw_dia, 0)
+    mes_str = _resolve_mes(raw_mes) if raw_mes is not None and str(raw_mes).strip() != "" else ""
+    anio = _safe_int(raw_anio, 0)
+
+    if dia <= 0:
+        dia = 1
+    if not mes_str or (mes_str == "ENERO" and raw_mes is None):
+        mes_str = MESES.get(now.month, "ENERO")
+    if anio <= 0:
+        anio = now.year
+
+    return dia, mes_str, anio
+
+
 def parse_check(value: Any) -> str:
     if value is None or str(value).strip() == "":
         return "unchecked"
     text = str(value).strip().upper()
-    if text in {"X", "NORMAL", "BUENO", "OK", "SI", "SÍ", "V", "BIEN", "B", "N", "BUEN ESTADO"}:
+    if text in {"X", "NORMAL", "BUENO", "OK", "SI", "SÍ", "V", "BIEN", "B", "N", "BUEN ESTADO", "CONFORME", "OPERATIVO", "1", "TRUE"}:
         return "normal"
-    if text in {"CRITICO", "CRÍTICO", "MALO", "OBSERVADO", "F", "NO", "MAL", "C", "M", "DEFICIENTE", "DAÑADO"}:
+    if text in {"CRITICO", "CRÍTICO", "MALO", "OBSERVADO", "F", "NO", "MAL", "C", "M", "DEFICIENTE", "DAÑADO", "INOPERATIVO", "0", "FALSE"}:
         return "critico"
     return "unchecked"
 
@@ -456,5 +617,3 @@ def _resolve_mes(value: Any) -> str:
     except (TypeError, ValueError):
         pass
     return str(value).strip().upper()
-
-

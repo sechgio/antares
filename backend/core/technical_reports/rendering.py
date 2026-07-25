@@ -5,7 +5,7 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from backend.core.technical_reports.diameter_totals import sum_diameter_columns
+from backend.core.technical_reports.diameter_totals import sum_diameter_columns, sum_diameter_row
 from backend.core.technical_reports.models import TechnicalReport
 from backend.utils.paths import resource_path
 
@@ -34,6 +34,7 @@ def _environment() -> Environment:
             auto_reload=True,
         )
         _jinja_env.globals["sum_diameter_columns"] = sum_diameter_columns
+        _jinja_env.globals["sum_diameter_row"] = sum_diameter_row
         _jinja_template_mtime = template_mtime
     return _jinja_env
 

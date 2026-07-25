@@ -115,3 +115,57 @@ def test_csv_import_maps_sgio_column() -> None:
 
     assert reports[0]["header"]["contratista"] == "ACCIONA"
     assert reports[0]["header"]["sgio"] == "454654001"
+
+
+def test_csv_import_handles_latin1_encoding() -> None:
+    content = "N° Informe;Centro de Servicio;Ubicación;Contratista\n1;Zonal Cañete;Concepción N° 123;Compañía S.A.".encode("latin-1")
+
+    reports = import_reports_from_bytes("latin1_data.csv", content)
+
+    assert reports[0]["id"] == "RPT-0001"
+    assert reports[0]["header"]["cs"] == "Zonal Cañete"
+    assert reports[0]["header"]["ubicacion"] == "Concepción N° 123"
+    assert reports[0]["header"]["contratista"] == "Compañía S.A."
+
+
+def test_xlsx_import_handles_datetime_cells_and_title_row() -> None:
+    from datetime import date, datetime
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["INFORMES TÉCNICOS 2026"])  # Title row before header
+    ws.append(["N°", "CS", "Fecha", "Caja Registro", "Marco Tapa"])  # Header row
+    ws.append([10, "SUR", datetime(2026, 5, 15), "CONFORME", "INOPERATIVO"])
+    ws.append([11, "NORTE", date(2026, 8, 20), "OPERATIVO", "MALO"])
+    buf = BytesIO()
+    wb.save(buf)
+
+    reports = import_reports_from_bytes("reportes_con_fechas.xlsx", buf.getvalue())
+
+    assert len(reports) == 2
+    assert reports[0]["id"] == "RPT-0010"
+    assert reports[0]["metadata"]["dia"] == 15
+    assert reports[0]["metadata"]["mes"] == "MAYO"
+    assert reports[0]["metadata"]["anio"] == 2026
+    assert reports[0]["inspeccion"]["caja_registro"] == "normal"
+    assert reports[0]["inspeccion"]["marco_tapa"] == "critico"
+
+    assert reports[1]["id"] == "RPT-0011"
+    assert reports[1]["metadata"]["dia"] == 20
+    assert reports[1]["metadata"]["mes"] == "AGOSTO"
+    assert reports[1]["metadata"]["anio"] == 2026
+    assert reports[1]["inspeccion"]["caja_registro"] == "normal"
+    assert reports[1]["inspeccion"]["marco_tapa"] == "critico"
+
+
+def test_single_fecha_column_string_parsing() -> None:
+    content = (
+        b"Nro;CS;Fecha;Tipo\n"
+        b"12;SUR;25/07/2026;ELEVADO\n"
+    )
+
+    reports = import_reports_from_bytes("fecha_string.csv", content)
+
+    assert reports[0]["metadata"]["dia"] == 25
+    assert reports[0]["metadata"]["mes"] == "JULIO"
+    assert reports[0]["metadata"]["anio"] == 2026
+
