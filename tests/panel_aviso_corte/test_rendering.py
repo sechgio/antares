@@ -59,8 +59,8 @@ def _png_b64(width: int, height: int) -> str:
 def _fixture_panels_and_images() -> tuple[tuple[Panel, ...], dict[str, str]]:
     """Build panels and synthetic images without disk fixtures.
 
-    Generates 8 synthetic 100×100 PNG images (base64-encoded) matching IDs
-    1001–1008, then runs ``build_panels`` with exact strategy to produce 2
+    Generates 8 synthetic 100x100 PNG images (base64-encoded) matching IDs
+    1001-1008, then runs ``build_panels`` with exact strategy to produce 2
     panels with 4 images each.
     """
     source = ExcelSource(

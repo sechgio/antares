@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import re
 import uuid
@@ -211,10 +212,8 @@ def _normalize_settings(raw: Any) -> dict[str, Any]:
         return {}
     out: dict[str, Any] = {}
     if "imagesPerPage" in raw:
-        try:
+        with contextlib.suppress(TypeError, ValueError):
             out["imagesPerPage"] = max(1, int(raw["imagesPerPage"]))
-        except (TypeError, ValueError):
-            pass
     if "showRulers" in raw:
         out["showRulers"] = bool(raw["showRulers"])
     if "snapToGrid" in raw:
@@ -269,7 +268,9 @@ def normalize_document(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         return create_empty_document()
 
-    page_raw = raw.get("page") if isinstance(raw.get("page"), dict) else {}
+    page_raw: Any = raw.get("page")
+    if not isinstance(page_raw, dict):
+        page_raw = {}
     try:
         width_mm = int(page_raw.get("widthMm", A4_WIDTH_MM))
     except (TypeError, ValueError):

@@ -1,0 +1,56 @@
+import { useCallback, useEffect } from 'react';
+import { api } from '../../../api';
+import { syncCanvasDocuments } from '../sync/canvasCloudSync';
+import { normalizeDocument, type CanvasDocument } from '../types';
+import type { useCanvasHistory } from './useCanvasHistory';
+
+interface UseCanvasSyncOptions {
+  /** Ref to the current open document id (read inside sync without re-subscribing). */
+  historyDocRef: React.MutableRefObject<CanvasDocument>;
+  /** Ref to the current undo-availability (dirty signal for reload gating). */
+  historyCanUndoRef: React.MutableRefObject<boolean>;
+  /** Refresh the doc list (also used by docs hook). */
+  refreshList: () => Promise<void>;
+  /** Replace the open document after a remote-side reload. */
+  replaceDocument: ReturnType<typeof useCanvasHistory>['replaceDocument'];
+}
+
+/** Cloud sync: pull remote changes when the window regains focus.
+ *
+ * Returns `runCloudSync` so the bootstrap effect can call it once after mount.
+ * The refs avoid re-subscribing the focus listener on every keystroke/drag. */
+export function useCanvasSync({
+  historyDocRef,
+  historyCanUndoRef,
+  refreshList,
+  replaceDocument,
+}: UseCanvasSyncOptions) {
+  const runCloudSync = useCallback(async () => {
+    try {
+      const openId = historyDocRef.current.id;
+      const openDirty = historyCanUndoRef.current;
+      const result = await syncCanvasDocuments({
+        openDocumentId: openId,
+        openDirty,
+      });
+      if (result.skipped) return;
+      await refreshList();
+      if (result.reloadOpenId && result.reloadOpenId === openId && !historyCanUndoRef.current) {
+        const got = await api.canvasGet(result.reloadOpenId);
+        replaceDocument(normalizeDocument(got.document as CanvasDocument));
+      }
+    } catch {
+      /* offline / auth — local cache remains usable */
+    }
+  }, [historyDocRef, historyCanUndoRef, refreshList, replaceDocument]);
+
+  useEffect(() => {
+    const onFocus = () => {
+      void runCloudSync();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [runCloudSync]);
+
+  return { runCloudSync };
+}

@@ -169,7 +169,7 @@ class TestCanvasIpcE2E:
         assert "result" in resp, resp
         saved = resp["result"]["document"]
         assert saved["id"] == doc_id
-        assert any(l["id"] == "e2e-layer-1" for l in saved["layers"])
+        assert any(lyr["id"] == "e2e-layer-1" for lyr in saved["layers"])
 
         # 3. canvas_list — one doc
         resp = _rpc_call(proc, "canvas_list", {})
@@ -184,7 +184,7 @@ class TestCanvasIpcE2E:
         assert "result" in resp, resp
         fetched = resp["result"]["document"]
         assert fetched["id"] == doc_id
-        assert any(l["id"] == "e2e-layer-1" for l in fetched["layers"])
+        assert any(lyr["id"] == "e2e-layer-1" for lyr in fetched["layers"])
 
         # 5. canvas_duplicate — second doc
         resp = _rpc_call(proc, "canvas_duplicate", {"id": doc_id})
@@ -193,7 +193,7 @@ class TestCanvasIpcE2E:
         dup_id = dup["id"]
         assert dup_id != doc_id
         assert dup["name"].startswith("E2E")
-        assert any(l["type"] == "text" for l in dup["layers"])  # layer was cloned
+        assert any(lyr["type"] == "text" for lyr in dup["layers"])  # layer was cloned
 
         # 6. canvas_list — two docs
         resp = _rpc_call(proc, "canvas_list", {})

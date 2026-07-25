@@ -125,7 +125,7 @@ def test_detect_limits_allows_8_heavy_on_high_ram(monkeypatch) -> None:
             return _Mem()
 
     monkeypatch.setitem(__import__('sys').modules, 'psutil', _Psutil())
-    light, heavy, queue = sched._detect_limits()
+    _light, heavy, queue = sched._detect_limits()
     assert heavy <= 8
     assert heavy >= 2
     assert heavy == 8, f'expected heavy_workers=8 on high RAM, got {heavy}'

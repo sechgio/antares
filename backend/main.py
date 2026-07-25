@@ -171,6 +171,7 @@ def _dispatch(handler, params, msg_id, method_name) -> None:
         result = handler(params)
         send_response(result, msg_id)
     except Exception as exc:
+        user_msg: str | AntaresBaseException
         if isinstance(exc, AntaresBaseException):
             user_msg = exc
         elif isinstance(exc, (ValueError, FileNotFoundError, ImportError)):

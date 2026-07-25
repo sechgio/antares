@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
+from backend.core.canvas import store as canvas_store_mod
 from backend.core.canvas.models import (
     create_empty_document,
     duplicate_document,
     next_copy_name,
     normalize_document,
 )
-from backend.core.canvas import store as canvas_store_mod
 from backend.core.canvas.store import CanvasStore, migrate_legacy_canvas_documents
 from backend.handlers import canvas as canvas_handlers
 

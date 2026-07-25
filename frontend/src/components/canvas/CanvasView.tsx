@@ -7,7 +7,6 @@ import { CANVAS_PRESETS } from './presets';
 import {
   queueCanvasCloudDelete,
   queueCanvasCloudPush,
-  syncCanvasDocuments,
 } from './sync/canvasCloudSync';
 import BottomToolbar from './editor/BottomToolbar';
 import ContextMenu, {
@@ -22,6 +21,10 @@ import RightPanel from './editor/RightPanel';
 import TopBar from './editor/TopBar';
 import { renderDemoPreviewHtml } from './runtime/demoFill';
 import { useCanvasHistory } from './hooks/useCanvasHistory';
+import { useCanvasBootstrap } from './hooks/useCanvasBootstrap';
+import { useCanvasSync } from './hooks/useCanvasSync';
+import { useGestureBaselines } from './hooks/useGestureBaselines';
+import { useInlineEdit } from './hooks/useInlineEdit';
 import { CANVAS_SHORTCUTS } from './shortcuts';
 import {
   alignLayers,
@@ -65,8 +68,9 @@ import { applyGridToImageSlots, rebuildGridSlots } from './ops/gridLayout';
 import { assignUniqueLogoSides, logoSideHasConflict, withAssignedLogoSide } from './ops/logoSide';
 import { isClickPlace, type DrawRect } from './ops/drawHelpers';
 import { moveGuide, removeGuide, upsertGuide } from './ops/guides';
-import { canFocusFieldBinding, canInlineEditLayer, growTextLayerToContent, isEditableKeyboardTarget, isTypeToEditKey } from './ops/inlineEdit';
+import { canFocusFieldBinding, canInlineEditLayer, isEditableKeyboardTarget, isTypeToEditKey } from './ops/inlineEdit';
 import { matchHistoryShortcut } from './ops/historyShortcuts';
+import { cloneDocument } from './ops/document';
 import {
   A4_HEIGHT_PX,
   A4_WIDTH_PX,
@@ -131,11 +135,7 @@ export default function CanvasView() {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewHtml, setPreviewHtml] = useState('');
-  const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
   const [pathEditingLayerId, setPathEditingLayerId] = useState<string | null>(null);
-  const [editingSelectAll, setEditingSelectAll] = useState(true);
-  const editBaselineRef = useRef<CanvasDocument | null>(null);
-  const panelBaselineRef = useRef<CanvasDocument | null>(null);
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedId = selectedIds[0] ?? null;
@@ -168,6 +168,16 @@ export default function CanvasView() {
     viewportNavRef.current?.setPan({ x: 0, y: 0 });
   }, []);
 
+  const {
+    editingLayerId,
+    editingSelectAll,
+    commitInlineEdit,
+    startInlineEdit,
+    onInlineEditValue,
+    onFitTextHeight,
+    beginEditWithBaseline,
+  } = useInlineEdit({ history, setSelectedIds, setTool, setContextMenu });
+
   const togglePreview = useCallback(() => {
     setPreviewOpen((open) => {
       if (open) {
@@ -198,64 +208,19 @@ export default function CanvasView() {
     }
   }, []);
 
-  const runCloudSync = useCallback(async () => {
-    try {
-      const openId = historyDocRef.current.id;
-      const openDirty = historyCanUndoRef.current;
-      const result = await syncCanvasDocuments({
-        openDocumentId: openId,
-        openDirty,
-      });
-      if (result.skipped) return;
-      await refreshList();
-      if (result.reloadOpenId && result.reloadOpenId === openId && !historyCanUndoRef.current) {
-        const got = await api.canvasGet(result.reloadOpenId);
-        history.replaceDocument(normalizeDocument(got.document as CanvasDocument));
-      }
-    } catch {
-      /* offline / auth — local cache remains usable */
-    }
-  }, [history.replaceDocument, refreshList]);
+  const { runCloudSync } = useCanvasSync({
+    historyDocRef,
+    historyCanUndoRef,
+    refreshList,
+    replaceDocument: history.replaceDocument,
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      try {
-        const list = await api.canvasList();
-        if (cancelled) return;
-        setDocs(list.documents);
-        if (list.documents.length > 0) {
-          const got = await api.canvasGet(list.documents[0].id);
-          if (!cancelled) history.replaceDocument(normalizeDocument(got.document as CanvasDocument));
-        } else {
-          const created = await api.canvasCreate('Sin título');
-          if (!cancelled) {
-            history.replaceDocument(normalizeDocument(created.document as CanvasDocument));
-            setDocs([{ id: created.document.id, name: created.document.name, updatedAt: created.document.updatedAt }]);
-            queueCanvasCloudPush(normalizeDocument(created.document as CanvasDocument));
-          }
-        }
-      } catch {
-        if (!cancelled) history.replaceDocument(createEmptyDocument());
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-      if (!cancelled) void runCloudSync();
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount bootstrap only
-  }, []);
-
-  useEffect(() => {
-    const onFocus = () => {
-      void runCloudSync();
-    };
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
-  }, [runCloudSync]);
+  useCanvasBootstrap({
+    replaceDocument: history.replaceDocument,
+    setDocs,
+    setLoading,
+    runCloudSync,
+  });
 
   const onSave = useCallback(async () => {
     try {
@@ -278,135 +243,13 @@ export default function CanvasView() {
     history.setDocument(syncImagesPerPage({ ...history.document, layers }));
   };
 
-  const cloneDocument = (doc: CanvasDocument): CanvasDocument => ({
-    ...doc,
-    page: { ...doc.page },
-    layers: doc.layers.map((l) => ({
-      ...l,
-      cssVars: { ...l.cssVars },
-      meta: l.meta ? { ...l.meta } : undefined,
-    })),
-    fields: doc.fields.map((f) => ({ ...f })),
-    pages: doc.pages?.map((p) => ({ ...p })),
-    settings: doc.settings ? { ...doc.settings, gridRules: doc.settings.gridRules?.map((r) => ({ ...r })) } : undefined,
-  });
-
-  const gestureBaselineRef = useRef<CanvasDocument | null>(null);
-
-  const setPageLayersLive = useCallback(
-    (layers: CanvasLayer[]) => {
-      if (!gestureBaselineRef.current) {
-        gestureBaselineRef.current = cloneDocument(history.document);
-      }
-      // Called once at gesture end (Artboard keeps live preview local) — sync here is fine.
-      history.updateSilent(
-        syncImagesPerPage(setActivePageLayers(history.document, pageIndex, layers)),
-      );
-    },
-    [history, pageIndex],
-  );
-
-  const commitPageLayersGesture = useCallback(() => {
-    const baseline = gestureBaselineRef.current;
-    if (!baseline) return;
-    gestureBaselineRef.current = null;
-    history.commitFromBaseline(baseline);
-  }, [history]);
-
-  const commitInlineEdit = useCallback(() => {
-    if (!editingLayerId) return;
-    const baseline = editBaselineRef.current;
-    const layer = history.document.layers.find((l) => l.id === editingLayerId);
-    if (baseline && layer && layer.value !== baseline.layers.find((l) => l.id === editingLayerId)?.value) {
-      history.commitFromBaseline(baseline);
-    }
-    editBaselineRef.current = null;
-    setEditingLayerId(null);
-  }, [editingLayerId, history]);
-
-  const startInlineEdit = useCallback(
-    (id: string, opts?: { seed?: string }) => {
-      const layer = history.document.layers.find((l) => l.id === id);
-      if (canFocusFieldBinding(layer)) {
-        if (editingLayerId) commitInlineEdit();
-        setSelectedIds([id]);
-        setTool('select');
-        setContextMenu(null);
-        requestAnimationFrame(() => {
-          const input = document.querySelector<HTMLInputElement>('[data-testid="canvas-field-key-input"]');
-          input?.focus();
-          input?.select();
-        });
-        return;
-      }
-      if (!canInlineEditLayer(layer)) return;
-      editBaselineRef.current = cloneDocument(history.document);
-      setSelectedIds([id]);
-      setTool('select');
-      setEditingSelectAll(opts?.seed == null);
-      if (opts?.seed != null) {
-        history.updateSilent({
-          ...history.document,
-          layers: history.document.layers.map((l) => (l.id === id ? { ...l, value: opts.seed! } : l)),
-        });
-      }
-      setEditingLayerId(id);
-      setContextMenu(null);
-    },
-    [history, editingLayerId, commitInlineEdit],
-  );
-
-  const onInlineEditValue = useCallback(
-    (id: string, value: string, contentHeightPx?: number, zoom?: number) => {
-      history.updateSilent({
-        ...history.document,
-        layers: history.document.layers.map((l) => {
-          if (l.id !== id) return l;
-          const next = { ...l, value };
-          // Live auto-grow while typing (single update so value + height land together).
-          return contentHeightPx != null && zoom != null
-            ? growTextLayerToContent(next, contentHeightPx, zoom)
-            : next;
-        }),
-      });
-    },
-    [history],
-  );
-
-  const onFitTextHeight = useCallback(
-    (id: string, contentHeightPx: number, zoom: number) => {
-      const layer = history.document.layers.find((l) => l.id === id);
-      if (!layer) return;
-      const next = growTextLayerToContent(layer, contentHeightPx, zoom);
-      if (next === layer) return;
-      history.updateSilent({
-        ...history.document,
-        layers: history.document.layers.map((l) => (l.id === id ? next : l)),
-      });
-    },
-    [history],
-  );
-
-  const onPanelChangeLive = useCallback(
-    (layer: CanvasLayer) => {
-      if (!panelBaselineRef.current) {
-        panelBaselineRef.current = cloneDocument(history.document);
-      }
-      let layers = history.document.layers.map((l) => (l.id === layer.id ? layer : l));
-      if (layer.type === 'grid') {
-        layers = rebuildGridSlots(layers, layer.id);
-      }
-      history.updateSilent(syncImagesPerPage({ ...history.document, layers }));
-    },
-    [history],
-  );
-
-  const onPanelCommitLive = useCallback(() => {
-    const baseline = panelBaselineRef.current;
-    if (!baseline) return;
-    panelBaselineRef.current = null;
-    history.commitFromBaseline(baseline);
-  }, [history]);
+  const {
+    panelBaselineRef,
+    setPageLayersLive,
+    commitPageLayersGesture,
+    onPanelChangeLive,
+    onPanelCommitLive,
+  } = useGestureBaselines({ history, pageIndex });
 
   const onSelect = (id: string | null, additive = false) => {
     if (editingLayerId && id !== editingLayerId) {
@@ -899,8 +742,7 @@ export default function CanvasView() {
     setSelectedIds([layer.id]);
     setTool('select');
     if (type === 'text') {
-      editBaselineRef.current = cloneDocument({ ...history.document, layers });
-      setEditingLayerId(layer.id);
+      beginEditWithBaseline(cloneDocument({ ...history.document, layers }), layer.id);
     }
     flashStatus(`Capa «${layer.name}» creada`, 1500);
   };
