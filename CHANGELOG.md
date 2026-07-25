@@ -5,6 +5,25 @@ Todas las versiones notables de Antares se documentan aquí.
 Formato basado en [Keep a Changelog](https://keepachangelog.com/),
 y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
+## [0.11.2] — 2026-07-25
+
+### Added
+- **Canvas Editor**: Paridad Figma completa con herramienta de línea vectorial (editor de paths, remates de línea, curvar/cortar/lazo), grosor de trazo libre con slider e inserción de último estilo usado.
+- **Canvas Editor**: Panel de Capas jerárquico con soporte para operaciones de capas conscientes del contenedor (agrupar, desagrupar, z-index).
+- **Canvas Editor**: Auto-grow en vivo para edición de texto inline, soporte type-to-edit, auto-height y coalescencia de undo en modificaciones continuas de propiedades.
+- **Reportes Técnicos**: Secciones colapsables y cabecera minimalista compacta para maximizar área de trabajo.
+- **Arquitectura / UI**: Root `ErrorBoundary` global, virtualización de listas pesadas, códigos de error IPC estructurados y modularización de `UbicacionesView`.
+
+### Changed
+- **Canvas Editor**: Menú contextual pulido, conmutadores y tooltips de barra de herramientas alineados a Figma.
+- **Performance**: Eliminación de transferencias base64 redundantes en previews de Ubicaciones y ejecución de `ANALYZE` optimizado tras importación de catálogo.
+
+### Fixed
+- **Canvas / Accesibilidad**: Solucionado acceso a Canvas, dependencias circulares, atajos de teclado y renderizado de previsualización/exportación alineado con el artboard de diseño.
+- **Canvas Sync**: Corrección de bug de resurrección de capas eliminadas, propagación clara de errores y caracterización con suite de tests.
+- **Seguridad**: Revocación inmediata de sesión cuando administradores deshabilitan usuarios y endurecimiento general de IPC en Electron, backend, frontend y Supabase.
+- **Clean Code**: Eliminación de código muerto (métodos IPC no utilizados, tipos obsoletos y módulos sin consumo).
+
 ## [0.11.1] — 2026-07-16
 
 ### Added

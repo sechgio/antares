@@ -420,3 +420,40 @@ def test_handlers_with_injected_store(tmp_path: Path, monkeypatch: pytest.Monkey
     canvas_handlers.canvas_delete({"id": created["document"]["id"]})
     with pytest.raises(ValueError):
         canvas_handlers.canvas_get({"id": created["document"]["id"]})
+
+
+def test_normalize_preserves_layer_meta_path() -> None:
+    raw = create_empty_document()
+    raw["layers"].append(
+        {
+            "id": "line-1",
+            "type": "line",
+            "name": "Linea Vector",
+            "value": "",
+            "cssVars": {
+                "--width": "60mm",
+                "--height": "10mm",
+                "--translate-x": "5mm",
+                "--translate-y": "5mm",
+            },
+            "meta": {
+                "path": {
+                    "points": [
+                        {"x": 0.0, "y": 5.0, "hin": None, "hout": {"x": 2.0, "y": 0.0}},
+                        {"x": 60.0, "y": 5.0, "hin": {"x": -2.0, "y": 0.0}, "hout": None},
+                    ],
+                    "closed": False,
+                }
+            },
+        }
+    )
+    doc = normalize_document(raw)
+    line_layer = next(layer for layer in doc["layers"] if layer["id"] == "line-1")
+    assert "meta" in line_layer
+    assert "path" in line_layer["meta"]
+    path = line_layer["meta"]["path"]
+    assert path["closed"] is False
+    assert len(path["points"]) == 2
+    assert path["points"][0]["x"] == 0.0
+    assert path["points"][1]["hin"] == {"x": -2.0, "y": 0.0}
+

@@ -3,6 +3,7 @@ import PaintRow from '../../PaintRow';
 import InlineNumField from '../../InlineNumField';
 import { SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
+import CanvasSelect from '../../CanvasSelect';
 
 export default function FillSection({
   layer,
@@ -58,12 +59,11 @@ export default function FillSection({
           />
           <label className="block text-[11px]" style={{ color: 'var(--cv-text-secondary)' }}>
             Tipo
-            <select
-              className="canvas-input mt-1 w-full text-[11px]"
+            <CanvasSelect
+              className="mt-1 w-full text-[11px]"
               value={layer.cssVars['--fill-type'] || 'solid'}
               aria-label="Tipo de relleno"
-              onChange={(e) => {
-                const next = e.target.value;
+              onChange={(next) => {
                 if (next === 'linear' || next === 'radial') {
                   setVars({
                     '--fill-type': next,
@@ -74,11 +74,12 @@ export default function FillSection({
                   setVar('--fill-type', 'solid');
                 }
               }}
-            >
-              <option value="solid">Sólido</option>
-              <option value="linear">Lineal</option>
-              <option value="radial">Radial</option>
-            </select>
+              options={[
+                { value: 'solid', label: 'Sólido' },
+                { value: 'linear', label: 'Lineal' },
+                { value: 'radial', label: 'Radial' },
+              ]}
+            />
           </label>
           {(layer.cssVars['--fill-type'] === 'linear' ||
             layer.cssVars['--fill-type'] === 'radial') && (

@@ -33,6 +33,7 @@ import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { ancestorIds, buildLayerTree, flattenLayerTree, isLayerContainer } from '../ops/layerTree';
 import type { CanvasDocumentSummary, CanvasLayer } from '../types';
 import PageContextMenu, { type PageContextMenuState } from './PageContextMenu';
+import CanvasSelect from './CanvasSelect';
 
 interface LeftSidebarProps {
   documentName: string;
@@ -246,16 +247,12 @@ export default memo(function LeftSidebar({
             </WithHoverTooltip>
           </div>
         </div>
-        <select
-          className="canvas-input"
+        <CanvasSelect
           value={documentId}
-          onChange={(e) => onOpenDoc(e.target.value)}
+          onChange={(val) => onOpenDoc(val)}
           aria-label="Archivo abierto"
-        >
-          {fileOptions.map((d) => (
-            <option key={d.id} value={d.id}>{d.name}</option>
-          ))}
-        </select>
+          options={fileOptions.map((d) => ({ value: d.id, label: d.name }))}
+        />
       </div>
 
       <div className="border-b px-3 py-2" style={{ borderColor: 'var(--cv-border)' }}>

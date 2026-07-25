@@ -3,6 +3,8 @@ import { layerPanelTitle } from '../../../ops/layerStyle';
 import { SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
 
+import CanvasSelect from '../../CanvasSelect';
+
 export default function ExportSection({
   layer,
   exportScale,
@@ -14,18 +16,22 @@ export default function ExportSection({
     <div className="canvas-section">
       <SectionHeader title="Exportar" />
       <div className="flex gap-2">
-        <select
-          className="canvas-input"
-          value={exportScale}
-          onChange={(e) => setExportScale(Number(e.target.value))}
+        <CanvasSelect
+          value={String(exportScale)}
+          onChange={(val) => setExportScale(Number(val))}
           aria-label="Escala de exportación"
-        >
-          <option value={1}>1x</option>
-          <option value={2}>2x</option>
-        </select>
-        <select className="canvas-input" value="png" disabled aria-label="Formato">
-          <option value="png">PNG</option>
-        </select>
+          options={[
+            { value: '1', label: '1x' },
+            { value: '2', label: '2x' },
+          ]}
+        />
+        <CanvasSelect
+          value="png"
+          onChange={() => {}}
+          disabled
+          aria-label="Formato"
+          options={[{ value: 'png', label: 'PNG' }]}
+        />
       </div>
       <button
         type="button"

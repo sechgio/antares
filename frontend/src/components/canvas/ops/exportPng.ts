@@ -10,9 +10,39 @@ async function downloadDataUrl(dataUrl: string, filename: string) {
 export async function exportLayerPng(layerId: string, name: string, scale: number): Promise<void> {
   const el = document.querySelector(`[data-layer-id="${layerId}"]`) as HTMLElement | null;
   if (!el) return;
-  const { toPng } = await import('html-to-image');
-  const dataUrl = await toPng(el, { pixelRatio: scale, cacheBust: true });
-  await downloadDataUrl(dataUrl, name || 'layer');
+
+  const rect = el.getBoundingClientRect();
+  const width = Math.max(1, Math.ceil(rect.width));
+  const height = Math.max(1, Math.ceil(rect.height));
+
+  const wrap = document.createElement('div');
+  wrap.setAttribute('data-testid', 'canvas-export-wrap');
+  wrap.style.cssText = `position:fixed;left:-100000px;top:0;width:${width}px;height:${height}px;overflow:hidden;background:transparent;pointer-events:none;`;
+
+  const clone = el.cloneNode(true) as HTMLElement;
+  clone.removeAttribute('data-selected');
+  clone.style.position = 'relative';
+  clone.style.left = '0';
+  clone.style.top = '0';
+  clone.style.width = '100%';
+  clone.style.height = '100%';
+  clone.style.margin = '0';
+  clone.style.outline = 'none';
+  clone.style.boxShadow = 'none';
+  clone.querySelectorAll('[data-handle]').forEach((handle) => handle.remove());
+
+  wrap.appendChild(clone);
+  document.body.appendChild(wrap);
+
+  try {
+    const { toPng } = await import('html-to-image');
+    const dataUrl = await toPng(wrap, { pixelRatio: scale, cacheBust: true });
+    await downloadDataUrl(dataUrl, name || 'layer');
+  } catch (err) {
+    console.error('Error exporting layer PNG:', err);
+  } finally {
+    wrap.remove();
+  }
 }
 
 /**
@@ -74,6 +104,7 @@ export async function exportSelectionPng(
     clone.style.margin = '0';
     clone.style.outline = 'none';
     clone.style.boxShadow = 'none';
+    clone.querySelectorAll('[data-handle]').forEach((handle) => handle.remove());
     wrap.appendChild(clone);
   }
 
@@ -82,6 +113,8 @@ export async function exportSelectionPng(
     const { toPng } = await import('html-to-image');
     const dataUrl = await toPng(wrap, { pixelRatio: scale, cacheBust: true });
     await downloadDataUrl(dataUrl, name || 'seleccion');
+  } catch (err) {
+    console.error('Error exporting selection PNG:', err);
   } finally {
     wrap.remove();
   }

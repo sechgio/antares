@@ -2,6 +2,7 @@ import { Plus } from 'lucide-react';
 import PaintRow from '../../PaintRow';
 import { SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
+import CanvasSelect from '../../CanvasSelect';
 import {
   applyLineStrokeWeight,
   parseStrokeAlign,
@@ -97,30 +98,30 @@ export default function StrokeSection({
           <div className="mt-2 space-y-2">
             <label className="block">
               <span className="canvas-sublabel">Posición</span>
-              <select
-                className="canvas-input"
+              <CanvasSelect
                 value={isLine ? 'center' : parseStrokeAlign(layer.cssVars['--stroke-align'])}
                 disabled={isLine}
-                title={isLine ? 'Las líneas abiertas usan alineación Centro' : undefined}
-                onChange={(e) => setVar('--stroke-align', e.target.value as StrokeAlign)}
-              >
-                {!isLine && <option value="inside">Interior</option>}
-                <option value="center">Centro</option>
-                {!isLine && <option value="outside">Exterior</option>}
-              </select>
+                aria-label="Posición de trazo"
+                onChange={(val) => setVar('--stroke-align', val as StrokeAlign)}
+                options={[
+                  ...(!isLine ? [{ value: 'inside', label: 'Interior' }] : []),
+                  { value: 'center', label: 'Centro' },
+                  ...(!isLine ? [{ value: 'outside', label: 'Exterior' }] : []),
+                ]}
+              />
             </label>
             <label className="block">
               <span className="canvas-sublabel">Estilo</span>
-              <select
-                className="canvas-input"
+              <CanvasSelect
                 value={parseStrokeDash(layer.cssVars['--stroke-dash'])}
                 aria-label="Estilo de trazo"
-                onChange={(e) => setVar('--stroke-dash', e.target.value as StrokeDash)}
-              >
-                <option value="solid">Continuo</option>
-                <option value="dashed">Discontinuo</option>
-                <option value="dotted">Punteado</option>
-              </select>
+                onChange={(val) => setVar('--stroke-dash', val as StrokeDash)}
+                options={[
+                  { value: 'solid', label: 'Continuo' },
+                  { value: 'dashed', label: 'Discontinuo' },
+                  { value: 'dotted', label: 'Punteado' },
+                ]}
+              />
             </label>
             <div>
               <span className="canvas-sublabel">Peso</span>
@@ -158,31 +159,31 @@ export default function StrokeSection({
               <div className="flex gap-2">
                 <label className="min-w-0 flex-1">
                   <span className="canvas-sublabel">Punto de partida</span>
-                  <select
-                    className="canvas-input"
+                  <CanvasSelect
                     value={parseStrokeCap(layer.cssVars['--stroke-start'])}
                     aria-label="Punto de partida"
-                    onChange={(e) => setVar('--stroke-start', e.target.value as StrokeCap)}
-                  >
-                    <option value="none">Ninguno</option>
-                    <option value="round">Redondo</option>
-                    <option value="square">Cuadrado</option>
-                    <option value="arrow">Flecha</option>
-                  </select>
+                    onChange={(val) => setVar('--stroke-start', val as StrokeCap)}
+                    options={[
+                      { value: 'none', label: 'Ninguno' },
+                      { value: 'round', label: 'Redondo' },
+                      { value: 'square', label: 'Cuadrado' },
+                      { value: 'arrow', label: 'Flecha' },
+                    ]}
+                  />
                 </label>
                 <label className="min-w-0 flex-1">
                   <span className="canvas-sublabel">Punto final</span>
-                  <select
-                    className="canvas-input"
+                  <CanvasSelect
                     value={parseStrokeCap(layer.cssVars['--stroke-end'])}
                     aria-label="Punto final"
-                    onChange={(e) => setVar('--stroke-end', e.target.value as StrokeCap)}
-                  >
-                    <option value="none">Ninguno</option>
-                    <option value="round">Redondo</option>
-                    <option value="square">Cuadrado</option>
-                    <option value="arrow">Flecha</option>
-                  </select>
+                    onChange={(val) => setVar('--stroke-end', val as StrokeCap)}
+                    options={[
+                      { value: 'none', label: 'Ninguno' },
+                      { value: 'round', label: 'Redondo' },
+                      { value: 'square', label: 'Cuadrado' },
+                      { value: 'arrow', label: 'Flecha' },
+                    ]}
+                  />
                 </label>
               </div>
             )}

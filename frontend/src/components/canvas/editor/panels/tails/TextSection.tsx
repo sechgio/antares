@@ -3,6 +3,8 @@ import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
 
+import CanvasSelect from '../../CanvasSelect';
+
 /** Text inspector — matches `text` and `field`. The textarea only renders for
  *  `text`; `field` shows the color/family/align controls but no editable value
  *  (its value comes from the Excel binding, edited in FieldSection). */
@@ -41,26 +43,30 @@ export default function TextSection({
           placeholder="11pt"
         />
       </div>
-      <select
-        className="canvas-input mb-2"
+      <CanvasSelect
+        className="mb-2"
         value={layer.cssVars['--font-weight'] || '400'}
-        onChange={(e) => setVar('--font-weight', e.target.value)}
-      >
-        <option value="400">Regular</option>
-        <option value="500">Medium</option>
-        <option value="600">Semibold</option>
-        <option value="700">Bold</option>
-      </select>
-      <select
-        className="canvas-input mb-2"
+        onChange={(val) => setVar('--font-weight', val)}
+        aria-label="Peso de fuente"
+        options={[
+          { value: '400', label: 'Regular' },
+          { value: '500', label: 'Medium' },
+          { value: '600', label: 'Semibold' },
+          { value: '700', label: 'Bold' },
+        ]}
+      />
+      <CanvasSelect
+        className="mb-2"
         value={layer.cssVars['--font-family'] || 'Segoe UI, Arial, sans-serif'}
-        onChange={(e) => setVar('--font-family', e.target.value)}
-      >
-        <option value="Segoe UI, Arial, sans-serif">Segoe UI</option>
-        <option value="Arial, sans-serif">Arial</option>
-        <option value="Georgia, serif">Georgia</option>
-        <option value="Consolas, monospace">Consolas</option>
-      </select>
+        onChange={(val) => setVar('--font-family', val)}
+        aria-label="Familia de fuente"
+        options={[
+          { value: 'Segoe UI, Arial, sans-serif', label: 'Segoe UI' },
+          { value: 'Arial, sans-serif', label: 'Arial' },
+          { value: 'Georgia, serif', label: 'Georgia' },
+          { value: 'Consolas, monospace', label: 'Consolas' },
+        ]}
+      />
       <div className="mb-2 flex gap-1">
         {[
           { icon: AlignLeft, align: 'left', label: 'Alinear izquierda' },

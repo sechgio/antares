@@ -34,6 +34,7 @@ import ExportSection from './panels/common/ExportSection';
 import ShapeSection from './panels/tails/ShapeSection';
 import { TAIL_SECTIONS } from './panels/registry';
 import type { SectionProps, ZOrderCallbacks } from './panels/types';
+import CanvasSelect from './CanvasSelect';
 
 interface RightPanelProps {
   layer: CanvasLayer | null;
@@ -341,15 +342,15 @@ export default memo(function RightPanel({
             selectionKey={selectedIds.join(',')}
           />
           <div className="mt-2 flex gap-2">
-            <select
-              className="canvas-input"
-              value={exportScale}
-              onChange={(e) => setExportScale(Number(e.target.value))}
+            <CanvasSelect
+              value={String(exportScale)}
+              onChange={(val) => setExportScale(Number(val))}
               aria-label="Escala de exportación"
-            >
-              <option value={1}>1x</option>
-              <option value={2}>2x</option>
-            </select>
+              options={[
+                { value: '1', label: '1x' },
+                { value: '2', label: '2x' },
+              ]}
+            />
             <button
               type="button"
               className="canvas-export-btn flex-1"

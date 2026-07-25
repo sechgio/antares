@@ -1,30 +1,27 @@
 import type { CanvasLayer, CanvasLayerType, LayerCssVars } from '../types';
 import { mm, parseMm } from '../types';
 import { MM_TO_PX } from './drawHelpers';
-import { rememberStrokeWeight } from './strokeWeightStore';
+import {
+  DEFAULT_LINE_STROKE_PX,
+  STROKE_WEIGHT_MIN_PX,
+  STROKE_WEIGHT_MAX_PX,
+  STROKE_WEIGHT_STEP_PX,
+  clampStrokeWeight,
+  rememberStrokeWeight,
+  strokeWeightForNewLine,
+  resetLastStrokeWeight,
+} from './strokeWeightStore';
 
-/** Default Figma-like stroke weight for new lines (CSS px at 96dpi). */
-export const DEFAULT_LINE_STROKE_PX = 1;
-
-/**
- * Free stroke weight range (CSS px), aligned with Canva (0–100) and Figma's free numeric entry.
- * Arrow/spinner step matches Figma's fine control (0.1px).
- */
-export const STROKE_WEIGHT_MIN_PX = 0;
-export const STROKE_WEIGHT_MAX_PX = 100;
-export const STROKE_WEIGHT_STEP_PX = 0.1;
-
-// Session last-used stroke weight lives in ./strokeWeightStore; re-exported here
-// so existing import sites (CanvasView, RightPanel, canvas.test) keep working.
-export { rememberStrokeWeight, strokeWeightForNewLine, resetLastStrokeWeight } from './strokeWeightStore';
-
-/** Clamp and round stroke weight to two decimals within the allowed range. */
-export function clampStrokeWeight(px: number): number {
-  if (!Number.isFinite(px)) return DEFAULT_LINE_STROKE_PX;
-  return (
-    Math.round(Math.min(STROKE_WEIGHT_MAX_PX, Math.max(STROKE_WEIGHT_MIN_PX, px)) * 100) / 100
-  );
-}
+export {
+  DEFAULT_LINE_STROKE_PX,
+  STROKE_WEIGHT_MIN_PX,
+  STROKE_WEIGHT_MAX_PX,
+  STROKE_WEIGHT_STEP_PX,
+  clampStrokeWeight,
+  rememberStrokeWeight,
+  strokeWeightForNewLine,
+  resetLastStrokeWeight,
+};
 
 export function pxToMm(px: number): number {
   return px / MM_TO_PX;

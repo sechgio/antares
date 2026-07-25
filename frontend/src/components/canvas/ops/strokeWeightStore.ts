@@ -1,12 +1,14 @@
-/**
- * Session last-used stroke weight for new line inserts (Figma/Canva-like recall).
- *
- * Isolated into its own module so the hidden global state is discoverable and
- * independently testable, rather than buried in the 800-LOC layerStyle module.
- * `layerStyle.ts` re-exports these for back-comat with existing import sites.
- */
+export const DEFAULT_LINE_STROKE_PX = 1;
+export const STROKE_WEIGHT_MIN_PX = 0;
+export const STROKE_WEIGHT_MAX_PX = 100;
+export const STROKE_WEIGHT_STEP_PX = 0.1;
 
-import { clampStrokeWeight, DEFAULT_LINE_STROKE_PX } from './layerStyle';
+export function clampStrokeWeight(px: number): number {
+  if (!Number.isFinite(px)) return DEFAULT_LINE_STROKE_PX;
+  return (
+    Math.round(Math.min(STROKE_WEIGHT_MAX_PX, Math.max(STROKE_WEIGHT_MIN_PX, px)) * 100) / 100
+  );
+}
 
 let lastStrokeWeightPx = DEFAULT_LINE_STROKE_PX;
 

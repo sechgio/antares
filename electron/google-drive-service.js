@@ -320,9 +320,7 @@ module.exports = {
   getFileMetadata,
   copyFileToFolder,
   findOrCreateSubfolder,
-  escapeDriveQueryValue,
   getDriveStatus,
-  parseFolderId,
   assertValidFolderId,
   ...nis,
 };
