@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 CHECK_STATES = {"normal", "critico", "unchecked"}
@@ -50,6 +50,8 @@ def report_id_from_number(value: int) -> str:
 def _safe_int(value: Any, default: int = 0) -> int:
     if value is None or value == "":
         return default
+    if isinstance(value, (datetime, date)):
+        return default
     try:
         return int(float(value))
     except (TypeError, ValueError):
@@ -59,6 +61,8 @@ def _safe_int(value: Any, default: int = 0) -> int:
 def _safe_str(value: Any, default: str = "") -> str:
     if value is None:
         return default
+    if isinstance(value, (datetime, date)):
+        return value.strftime("%Y-%m-%d")
     text = str(value).strip()
     return text or default
 

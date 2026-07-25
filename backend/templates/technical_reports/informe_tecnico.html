@@ -566,6 +566,7 @@
                     <th>12''</th>
                 </tr>
             </thead>
+                {% set valvulas_diameter_sizes = ['2', '3', '4', '6', '8', '10', '12'] %}
             <tbody>
                 <tr>
                     <td class="row-label">CONDUCCIÓN</td>
@@ -583,7 +584,7 @@
                     </td>
                     <td class="center">{{ report.valvulas.diametros['12'] if report.valvulas.diametros['12'] else '' }}
                     </td>
-                    <td class="center"></td>
+                    <td class="center">{{ sum_diameter_row(report.valvulas.diametros, valvulas_diameter_sizes) or '' }}</td>
                     <td class="center"></td>
                     <td>{{ report.valvulas.observaciones_conduccion }}</td>
                     <td>{{ report.valvulas.sugerencias_conduccion }}</td>
@@ -604,7 +605,7 @@
                     </td>
                     <td class="center">{{ report.valvulas.impulsion['12'] if report.valvulas.impulsion['12'] else '' }}
                     </td>
-                    <td class="center"></td>
+                    <td class="center">{{ sum_diameter_row(report.valvulas.impulsion, valvulas_diameter_sizes) or '' }}</td>
                     <td class="center"></td>
                     <td>{{ report.valvulas.observaciones_impulsion }}</td>
                     <td>{{ report.valvulas.sugerencias_impulsion }}</td>
@@ -620,7 +621,7 @@
                     </td>
                     <td class="center">{{ report.valvulas.aduccion['12'] if report.valvulas.aduccion['12'] else '' }}
                     </td>
-                    <td class="center"></td>
+                    <td class="center">{{ sum_diameter_row(report.valvulas.aduccion, valvulas_diameter_sizes) or '' }}</td>
                     <td class="center"></td>
                     <td>{{ report.valvulas.observaciones_aduccion }}</td>
                     <td>{{ report.valvulas.sugerencias_aduccion }}</td>
@@ -634,7 +635,7 @@
                     <td class="center">{{ report.valvulas.bypass['8'] if report.valvulas.bypass['8'] else '' }}</td>
                     <td class="center">{{ report.valvulas.bypass['10'] if report.valvulas.bypass['10'] else '' }}</td>
                     <td class="center">{{ report.valvulas.bypass['12'] if report.valvulas.bypass['12'] else '' }}</td>
-                    <td class="center"></td>
+                    <td class="center">{{ sum_diameter_row(report.valvulas.bypass, valvulas_diameter_sizes) or '' }}</td>
                     <td class="center"></td>
                     <td>{{ report.valvulas.observaciones_bypass }}</td>
                     <td>{{ report.valvulas.sugerencias_bypass }}</td>
@@ -648,7 +649,7 @@
                     <td class="center">{{ report.valvulas.desague['8'] if report.valvulas.desague['8'] else '' }}</td>
                     <td class="center">{{ report.valvulas.desague['10'] if report.valvulas.desague['10'] else '' }}</td>
                     <td class="center">{{ report.valvulas.desague['12'] if report.valvulas.desague['12'] else '' }}</td>
-                    <td class="center"></td>
+                    <td class="center">{{ sum_diameter_row(report.valvulas.desague, valvulas_diameter_sizes) or '' }}</td>
                     <td class="center"></td>
                     <td>{{ report.valvulas.observaciones_desague }}</td>
                     <td>{{ report.valvulas.sugerencias_desague }}</td>
@@ -660,7 +661,6 @@
                     report.valvulas.bypass,
                     report.valvulas.desague
                 ] %}
-                {% set valvulas_diameter_sizes = ['2', '3', '4', '6', '8', '10', '12'] %}
                 {% set valvulas_diameter_totals = sum_diameter_columns(valvulas_diameter_rows, valvulas_diameter_sizes) %}
                 <tr style="background:#d4d8dd">
                     <td class="row-label">TOTAL</td>
@@ -671,7 +671,7 @@
                     <td class="center" style="font-weight:bold;">{{ valvulas_diameter_totals['8'] or '' }}</td>
                     <td class="center" style="font-weight:bold;">{{ valvulas_diameter_totals['10'] or '' }}</td>
                     <td class="center" style="font-weight:bold;">{{ valvulas_diameter_totals['12'] or '' }}</td>
-                    <td class="center" style="font-weight:bold;">{{ report.valvulas.operativas }}</td>
+                    <td class="center" style="font-weight:bold;">{{ valvulas_diameter_totals.values() | sum or '' }}</td>
                     <td class="center" style="font-weight:bold;">{{ report.valvulas.no_operativas }}</td>
                     <td></td>
                     <td></td>
@@ -708,6 +708,7 @@
                     <th>14''</th>
                 </tr>
             </thead>
+                {% set canastillas_diameter_sizes = ['2', '3', '4', '6', '8', '10', '14'] %}
             <tbody>
                 <tr>
                     <td class="row-label">ADUCCION</td>
@@ -725,7 +726,7 @@
                         }}</td>
                     <td class="center">{{ report.canastillas.aduccion['14'] if report.canastillas.aduccion['14'] else ''
                         }}</td>
-                    <td class="center"></td>
+                    <td class="center">{{ sum_diameter_row(report.canastillas.aduccion, canastillas_diameter_sizes) or '' }}</td>
                     <td class="center"></td>
                     <td class="center">{{ report.canastillas.observaciones_aduccion }}</td>
                     <td class="center">{{ report.canastillas.sugerencias_aduccion }}</td>
@@ -746,7 +747,7 @@
                         }}</td>
                     <td class="center">{{ report.canastillas.succion['14'] if report.canastillas.succion['14'] else ''
                         }}</td>
-                    <td class="center"></td>
+                    <td class="center">{{ sum_diameter_row(report.canastillas.succion, canastillas_diameter_sizes) or '' }}</td>
                     <td class="center"></td>
                     <td class="center">{{ report.canastillas.observaciones_succion }}</td>
                     <td class="center">{{ report.canastillas.sugerencias_succion }}</td>
@@ -767,7 +768,7 @@
                         }}</td>
                     <td class="center">{{ report.canastillas.desague['14'] if report.canastillas.desague['14'] else ''
                         }}</td>
-                    <td class="center"></td>
+                    <td class="center">{{ sum_diameter_row(report.canastillas.desague, canastillas_diameter_sizes) or '' }}</td>
                     <td class="center"></td>
                     <td class="center">{{ report.canastillas.observaciones_desague }}</td>
                     <td class="center">{{ report.canastillas.sugerencias_desague }}</td>
@@ -777,7 +778,6 @@
                     report.canastillas.succion,
                     report.canastillas.desague
                 ] %}
-                {% set canastillas_diameter_sizes = ['2', '3', '4', '6', '8', '10', '14'] %}
                 {% set canastillas_diameter_totals = sum_diameter_columns(canastillas_diameter_rows, canastillas_diameter_sizes) %}
                 <tr style="background:#d4d8dd">
                     <td class="row-label">TOTAL</td>
@@ -788,7 +788,7 @@
                     <td class="center" style="font-weight:bold;">{{ canastillas_diameter_totals['8'] or '' }}</td>
                     <td class="center" style="font-weight:bold;">{{ canastillas_diameter_totals['10'] or '' }}</td>
                     <td class="center" style="font-weight:bold;">{{ canastillas_diameter_totals['14'] or '' }}</td>
-                    <td class="center" style="font-weight:bold;">{{ report.canastillas.operativas }}</td>
+                    <td class="center" style="font-weight:bold;">{{ canastillas_diameter_totals.values() | sum or '' }}</td>
                     <td class="center" style="font-weight:bold;">{{ report.canastillas.no_operativas }}</td>
                     <td></td>
                     <td></td>

@@ -56,3 +56,61 @@ def test_html_to_pdf_handler_removed_from_backend() -> None:
     """
     assert "html_to_pdf" not in HANDLERS, "html_to_pdf should not be in backend HANDLERS (Electron handles it)"
 
+
+def test_import_file_handler_accepts_data_uri_and_unpadded_base64(monkeypatch, tmp_path) -> None:
+    from backend.core.technical_reports import database as db_module
+
+    monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "technical_reports.json")
+    raw_csv = b"Informe;CS;Codigo;Tipo\n1;NORTE;RES-2;ELEVADO\n"
+    encoded = base64.b64encode(raw_csv).decode("ascii").rstrip("=")
+    data_uri = f"data:text/csv;base64,{encoded}"
+
+    result = HANDLERS["technical_reports_import_file"]({"filename": "datos.csv", "content_b64": data_uri})
+
+    assert result["imported_count"] == 1
+    assert result["total_rows_in_file"] == 1
+    reports = HANDLERS["technical_reports_list"]({})["reports"]
+    assert len(reports) == 1
+    assert reports[0]["header"]["cs"] == "NORTE"
+
+
+def test_import_file_handler_raises_descriptive_error_on_invalid_base64(monkeypatch, tmp_path) -> None:
+    import pytest
+
+    from backend.core.technical_reports import database as db_module
+
+    monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "technical_reports.json")
+
+    with pytest.raises(ValueError, match="No se pudo decodificar el contenido base64"):
+        HANDLERS["technical_reports_import_file"]({"filename": "datos.csv", "content_b64": "!!!NOT_VALID_BASE64!!!"})
+
+
+def test_import_file_handler_imports_xlsx_multisheet(monkeypatch, tmp_path) -> None:
+    import io
+
+    from openpyxl import Workbook
+
+    from backend.core.technical_reports import database as db_module
+
+    monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "technical_reports.json")
+
+    wb = Workbook()
+    ws1 = wb.active
+    ws1.title = "Instrucciones"
+    ws1.append(["Por favor complete los datos en la siguiente hoja"])
+
+    ws2 = wb.create_sheet(title="Reportes")
+    ws2.append(["Nro Informe", "Centro de Servicio", "Codigo Infraestructura", "Tipo"])
+    ws2.append([1, "CENTRO", "RES-3", "ELEVADO"])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    content_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+
+    result = HANDLERS["technical_reports_import_file"]({"filename": "reportes.xlsx", "content_b64": content_b64})
+
+    assert result["imported_count"] == 1
+    reports = HANDLERS["technical_reports_list"]({})["reports"]
+    assert reports[0]["header"]["cs"] == "CENTRO"
+
+

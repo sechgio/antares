@@ -1,4 +1,4 @@
-import { sumDiameterColumns } from './diameterTotals';
+import { sumDiameterColumns, sumDiameterRow } from './diameterTotals';
 import {
   DEFAULT_MEDIDA_LABEL_DIAMETRO,
   DEFAULT_MEDIDA_LABEL_DIAMETRO_INTERNO,
@@ -211,7 +211,6 @@ export default function PreviewPanel({ report, logoLeft, logoRight }: Props) {
             ['BY PASS', data.valvulas.bypass, data.valvulas.observaciones_bypass, data.valvulas.sugerencias_bypass],
             ['DESAGÜE', data.valvulas.desague, data.valvulas.observaciones_desague, data.valvulas.sugerencias_desague],
           ]}
-          operativas={data.valvulas.operativas}
           noOperativas={data.valvulas.no_operativas}
         />
 
@@ -223,7 +222,6 @@ export default function PreviewPanel({ report, logoLeft, logoRight }: Props) {
             ['SUCCION', data.canastillas.succion, data.canastillas.observaciones_succion, data.canastillas.sugerencias_succion],
             ['DESAGUE', data.canastillas.desague, data.canastillas.observaciones_desague, data.canastillas.sugerencias_desague],
           ]}
-          operativas={data.canastillas.operativas}
           noOperativas={data.canastillas.no_operativas}
         />
 
@@ -282,19 +280,22 @@ function ReportDiameterTable({
   title,
   diameters,
   rows,
-  operativas,
   noOperativas,
 }: {
   title: string;
   diameters: string[];
   rows: Array<[string, Record<string, number>, string, string]>;
-  operativas: number;
   noOperativas: number;
 }) {
   const diameterTotals = sumDiameterColumns(
     rows.map(([, data]) => data),
     diameters,
   );
+
+  // Row totals (horizontal sum per row) → shown in OPER. column
+  const rowTotals = rows.map(([, data]) => sumDiameterRow(data, diameters));
+  // Grand total = sum of all row totals (== sum of all column totals)
+  const grandTotal = rowTotals.reduce((acc, v) => acc + v, 0);
 
   return (
     <table className="tr-paper-table tr-paper-small">
@@ -324,20 +325,23 @@ function ReportDiameterTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map(([label, data, obs, sug]) => (
-          <tr key={label}>
-            <th>{label}</th>
-            {diameters.map((d) => (
-              <td key={d} className="center">
-                {data[d] || ''}
-              </td>
-            ))}
-            <td></td>
-            <td></td>
-            <td>{obs || ''}</td>
-            <td>{sug || ''}</td>
-          </tr>
-        ))}
+        {rows.map(([label, data, obs, sug], idx) => {
+          const rowTotal = rowTotals[idx];
+          return (
+            <tr key={label}>
+              <th>{label}</th>
+              {diameters.map((d) => (
+                <td key={d} className="center">
+                  {data[d] || ''}
+                </td>
+              ))}
+              <td className="center">{rowTotal || ''}</td>
+              <td></td>
+              <td>{obs || ''}</td>
+              <td>{sug || ''}</td>
+            </tr>
+          );
+        })}
         <tr style={{ background: '#d4d8dd' }}>
           <th>TOTAL</th>
           {diameters.map((d) => (
@@ -345,7 +349,7 @@ function ReportDiameterTable({
               {diameterTotals[d] ? diameterTotals[d] : ''}
             </td>
           ))}
-          <td className="center" style={{ fontWeight: 'bold' }}>{operativas}</td>
+          <td className="center" style={{ fontWeight: 'bold' }}>{grandTotal || ''}</td>
           <td className="center" style={{ fontWeight: 'bold' }}>{noOperativas}</td>
           <td></td>
           <td></td>
