@@ -93,7 +93,6 @@ export default function CanvasSelect({
         type="button"
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
-        aria-label={ariaLabel}
         aria-expanded={isOpen}
         className="canvas-input flex w-full items-center justify-between gap-1.5 px-2 text-left cursor-pointer transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
       >

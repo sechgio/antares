@@ -18,7 +18,8 @@ describe('CanvasSelect', () => {
       />
     );
 
-    expect(screen.getByRole('button', { name: 'Archivo abierto' })).toHaveTextContent('Certificados');
+    expect(screen.getByRole('button', { name: /Certificados/i })).toHaveTextContent('Certificados');
+    expect(screen.getByLabelText('Archivo abierto')).toBeInTheDocument();
   });
 
   it('opens dropdown popover on click and selects option', () => {
@@ -32,7 +33,7 @@ describe('CanvasSelect', () => {
       />
     );
 
-    const button = screen.getByRole('button', { name: 'Archivo abierto' });
+    const button = screen.getByRole('button', { name: /Certificados/i });
     fireEvent.click(button);
 
     // Option list should be visible
@@ -53,7 +54,7 @@ describe('CanvasSelect', () => {
       />
     );
 
-    const button = screen.getByRole('button', { name: 'Archivo abierto' });
+    const button = screen.getByRole('button', { name: /Certificados/i });
     fireEvent.click(button);
 
     expect(screen.getByRole('button', { name: 'Sin título' })).toBeInTheDocument();

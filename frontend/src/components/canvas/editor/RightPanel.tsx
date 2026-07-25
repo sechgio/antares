@@ -33,6 +33,7 @@ import EffectsSection from './panels/common/EffectsSection';
 import ExportSection from './panels/common/ExportSection';
 import ShapeSection from './panels/tails/ShapeSection';
 import { TAIL_SECTIONS } from './panels/registry';
+import type { SectionProps, ZOrderCallbacks } from './panels/types';
 import CanvasSelect from './CanvasSelect';
 
 interface RightPanelProps {
