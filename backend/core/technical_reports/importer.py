@@ -408,8 +408,8 @@ def parse_xlsx_file(content: bytes) -> list[dict[str, Any]]:
 
         header_idx = -1
         best_score = -1
-        for idx, row in enumerate(rows_iter[:10]):
-            non_empty = [v for v in row if v is not None and str(v).strip() != ""]
+        for idx, row_tuple in enumerate(rows_iter[:10]):
+            non_empty = [v for v in row_tuple if v is not None and str(v).strip() != ""]
             if not non_empty:
                 continue
             score = sum(1 for v in non_empty if normalize_header_value(str(v)) in COLUMN_MAPPING)
@@ -418,8 +418,8 @@ def parse_xlsx_file(content: bytes) -> list[dict[str, Any]]:
                 header_idx = idx
 
         if header_idx == -1 or best_score <= 0:
-            for idx, row in enumerate(rows_iter[:10]):
-                if any(v is not None and str(v).strip() != "" for v in row):
+            for idx, row_tuple in enumerate(rows_iter[:10]):
+                if any(v is not None and str(v).strip() != "" for v in row_tuple):
                     header_idx = idx
                     break
 
@@ -432,9 +432,9 @@ def parse_xlsx_file(content: bytes) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         consecutive_empty = 0
         for values in rows_iter[header_idx + 1:]:
-            row = {keys[idx]: values[idx] for idx in range(min(len(keys), len(values))) if keys[idx]}
-            if any(value is not None and str(value or "").strip() != "" for value in row.values()):
-                rows.append(row)
+            row_dict: dict[str, Any] = {keys[idx]: values[idx] for idx in range(min(len(keys), len(values))) if keys[idx]}
+            if any(value is not None and str(value or "").strip() != "" for value in row_dict.values()):
+                rows.append(row_dict)
                 consecutive_empty = 0
             else:
                 consecutive_empty += 1
