@@ -28,7 +28,10 @@ export type CanvasLayerType =
   | 'ellipse'
   | 'arrow'
   | 'polygon'
-  | 'star';
+  | 'star'
+  | 'diamond'
+  | 'hexagon'
+  | 'pentagon';
 
 export interface LayerCssVars {
   '--width': string;
@@ -89,6 +92,10 @@ export interface LayerCssVars {
   '--stroke-start'?: string;
   /** Line stroke end cap: none | round | square | arrow */
   '--stroke-end'?: string;
+  /** Layer compositing blend mode (CSS mix-blend-mode; default normal) */
+  '--blend-mode'?: string;
+  /** 9-point resize anchor (tl..br) pinning edges on inspector W/H edits */
+  '--resize-anchor'?: string;
   [key: string]: string | undefined;
 }
 
@@ -126,6 +133,9 @@ export type CanvasTool =
   | 'arrow'
   | 'polygon'
   | 'star'
+  | 'diamond'
+  | 'hexagon'
+  | 'pentagon'
   | 'lasso'
   | 'bend'
   | 'cut';

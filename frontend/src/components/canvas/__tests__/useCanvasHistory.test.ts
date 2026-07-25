@@ -91,4 +91,71 @@ describe('useCanvasHistory gesture coalesce', () => {
     }
     expect(undos).toBe(MAX_HISTORY);
   });
+
+  it('undo then redo restores the edited document', () => {
+    const base = createEmptyDocument('Test');
+    const text = createLayer('text');
+    text.cssVars['--translate-x'] = '10mm';
+    base.layers.push(text);
+
+    const { result } = renderHook(() => useCanvasHistory(base));
+
+    act(() => {
+      result.current.setDocument(withMovedText(result.current.document, 40));
+    });
+    expect(parseMm(result.current.document.layers.find((l) => l.type === 'text')!.cssVars['--translate-x'])).toBe(
+      40,
+    );
+
+    act(() => {
+      result.current.undo();
+    });
+    expect(result.current.canRedo).toBe(true);
+    expect(parseMm(result.current.document.layers.find((l) => l.type === 'text')!.cssVars['--translate-x'])).toBe(
+      10,
+    );
+
+    act(() => {
+      result.current.redo();
+    });
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.canRedo).toBe(false);
+    expect(parseMm(result.current.document.layers.find((l) => l.type === 'text')!.cssVars['--translate-x'])).toBe(
+      40,
+    );
+  });
+
+  it('supports rapid successive undos in one act', () => {
+    const base = createEmptyDocument('Test');
+    const text = createLayer('text');
+    text.cssVars['--translate-x'] = '0mm';
+    base.layers.push(text);
+
+    const { result } = renderHook(() => useCanvasHistory(base));
+
+    act(() => {
+      result.current.setDocument(withMovedText(result.current.document, 10));
+      result.current.setDocument(withMovedText(result.current.document, 20));
+      result.current.setDocument(withMovedText(result.current.document, 30));
+    });
+
+    act(() => {
+      result.current.undo();
+      result.current.undo();
+      result.current.undo();
+    });
+
+    expect(result.current.canUndo).toBe(false);
+    expect(parseMm(result.current.document.layers.find((l) => l.type === 'text')!.cssVars['--translate-x'])).toBe(
+      0,
+    );
+
+    act(() => {
+      result.current.redo();
+      result.current.redo();
+    });
+    expect(parseMm(result.current.document.layers.find((l) => l.type === 'text')!.cssVars['--translate-x'])).toBe(
+      20,
+    );
+  });
 });

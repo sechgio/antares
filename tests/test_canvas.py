@@ -12,7 +12,8 @@ from backend.core.canvas.models import (
     next_copy_name,
     normalize_document,
 )
-from backend.core.canvas.store import CanvasStore
+from backend.core.canvas import store as canvas_store_mod
+from backend.core.canvas.store import CanvasStore, migrate_legacy_canvas_documents
 from backend.handlers import canvas as canvas_handlers
 
 
@@ -20,9 +21,21 @@ def test_create_empty_document_has_a4_frame() -> None:
     doc = create_empty_document(name="Demo")
     assert doc["version"] == 2
     assert doc["name"] == "Demo"
+    assert doc["updatedAt"]
     assert doc["page"] == {"widthMm": 210, "heightMm": 297}
     assert len(doc["layers"]) == 1
     assert doc["layers"][0]["type"] == "frame"
+
+
+def test_store_save_can_preserve_updated_at(tmp_path: Path) -> None:
+    store = CanvasStore(tmp_path)
+    created = store.create(name="Panel")
+    stamped = {**created, "updatedAt": "2020-01-01T00:00:00.000Z", "name": "Renamed"}
+    saved = store.save(stamped, touch=False)
+    assert saved["updatedAt"] == "2020-01-01T00:00:00.000Z"
+    assert saved["name"] == "Renamed"
+    listed = store.list_documents()
+    assert listed[0]["updatedAt"] == "2020-01-01T00:00:00.000Z"
 
 
 def test_normalize_accepts_new_layer_types() -> None:
@@ -142,6 +155,88 @@ def test_normalize_rejects_unknown_layer_types() -> None:
     assert "field" in types
     field = next(layer for layer in doc["layers"] if layer["type"] == "field")
     assert field["meta"]["key"] == "NIS"
+
+
+def test_normalize_preserves_editor_settings_and_guides() -> None:
+    """Saving must keep showRulers/snap/guides — otherwise rulers reappear after Guardar."""
+    raw = create_empty_document()
+    raw["settings"] = {
+        "imagesPerPage": 4,
+        "showRulers": False,
+        "snapToGrid": True,
+        "gridSizeMm": 2.5,
+        "gridRules": [{"whenImages": 4, "cols": 2, "rows": 2}],
+    }
+    raw["guides"] = [
+        {"id": "g-x", "axis": "x", "posMm": 42},
+        {"id": "g-y", "axis": "y", "posMm": 10.5},
+        {"id": "bad", "axis": "z", "posMm": 1},
+    ]
+    doc = normalize_document(raw)
+    assert doc["settings"]["showRulers"] is False
+    assert doc["settings"]["snapToGrid"] is True
+    assert doc["settings"]["gridSizeMm"] == 2.5
+    assert doc["settings"]["imagesPerPage"] == 4
+    assert doc["settings"]["gridRules"] == [{"whenImages": 4, "cols": 2, "rows": 2}]
+    assert doc["guides"] == [
+        {"id": "g-x", "axis": "x", "posMm": 42.0},
+        {"id": "g-y", "axis": "y", "posMm": 10.5},
+    ]
+
+
+def test_default_docs_dir_uses_user_data(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    user_root = tmp_path / "AntaresUser"
+    monkeypatch.setattr(
+        canvas_store_mod,
+        "user_data_path",
+        lambda rel: user_root / rel,
+    )
+    monkeypatch.setattr(
+        canvas_store_mod,
+        "resource_path",
+        lambda rel: tmp_path / "legacy_unused" / rel,
+    )
+    assert canvas_store_mod._default_docs_dir() == user_root / "canvas" / "documents"
+
+
+def test_migrate_legacy_copies_missing_json_only(tmp_path: Path) -> None:
+    legacy = tmp_path / "legacy"
+    dest = tmp_path / "user"
+    legacy.mkdir()
+    dest.mkdir()
+    (legacy / "a.json").write_text('{"id":"a","name":"A"}', encoding="utf-8")
+    (legacy / "b.json").write_text('{"id":"b","name":"B"}', encoding="utf-8")
+    (dest / "b.json").write_text('{"id":"b","name":"KEEP"}', encoding="utf-8")
+
+    copied = migrate_legacy_canvas_documents(source=legacy, dest=dest)
+    assert copied == 1
+    assert (dest / "a.json").is_file()
+    assert (dest / "b.json").read_text(encoding="utf-8") == '{"id":"b","name":"KEEP"}'
+
+
+def test_store_migrates_legacy_when_using_default_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import json
+
+    user_docs = tmp_path / "user" / "canvas" / "documents"
+    legacy = tmp_path / "legacy" / "data" / "canvas" / "documents"
+    legacy.mkdir(parents=True)
+    doc = create_empty_document(name="Migrada")
+    doc["id"] = "mig"
+    (legacy / "mig.json").write_text(json.dumps(doc), encoding="utf-8")
+    monkeypatch.setattr(canvas_store_mod, "user_data_path", lambda rel: tmp_path / "user" / rel)
+    monkeypatch.setattr(
+        canvas_store_mod,
+        "resource_path",
+        lambda rel: tmp_path / "legacy" / rel,
+    )
+
+    store = CanvasStore()
+    assert store.docs_dir == user_docs
+    loaded = store.get("mig")
+    assert loaded is not None
+    assert loaded["name"] == "Migrada"
 
 
 def test_store_crud_roundtrip(tmp_path: Path) -> None:

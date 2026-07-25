@@ -28,6 +28,8 @@ interface LayerNodeProps {
   /** When true (default), focus selects all text; false keeps caret at end (type-to-edit). */
   editingSelectAll?: boolean;
   pathEditing?: boolean;
+  /** True while the layer is part of an active drag gesture (enables GPU compositing). */
+  moving?: boolean;
   onSelect: (id: string, additive?: boolean) => void;
   onLayerPointerDown: (id: string, additive: boolean, e: ReactPointerEvent<HTMLDivElement>) => void;
   onContextMenu?: (id: string, clientX: number, clientY: number) => void;
@@ -61,6 +63,7 @@ function LayerNode({
   editing = false,
   editingSelectAll = true,
   pathEditing = false,
+  moving = false,
   onSelect,
   onLayerPointerDown,
   onContextMenu,
@@ -162,8 +165,11 @@ function LayerNode({
   const style: CSSProperties = {
     ...paint,
     position: 'absolute',
-    left: mmToScreenPx(x, scale),
-    top: mmToScreenPx(y, scale),
+    left: 0,
+    top: 0,
+    // Compositor-driven positioning: drag moves update transform only (no layout).
+    transform: `translate(${mmToScreenPx(x, scale)}px, ${mmToScreenPx(y, scale)}px)`,
+    willChange: moving ? 'transform' : undefined,
     width: mmToScreenPx(w, scale),
     height: mmToScreenPx(h, scale),
     boxSizing: 'border-box',
@@ -187,6 +193,7 @@ function LayerNode({
         : interactive || editing
           ? 'auto'
           : 'none',
+    mixBlendMode: (layer.cssVars['--blend-mode'] as CSSProperties['mixBlendMode']) || undefined,
   };
 
   if (highlighted) {
@@ -207,6 +214,10 @@ function LayerNode({
     layer.type === 'ellipse' ||
     layer.type === 'arrow' ||
     layer.type === 'polygon' ||
+    layer.type === 'diamond' ||
+    layer.type === 'hexagon' ||
+    layer.type === 'pentagon' ||
+
     layer.type === 'star' ||
     layer.type === 'checkbox' ||
     layer.type === 'signature' ||
@@ -342,7 +353,10 @@ function LayerNode({
         layer.type === 'ellipse' ||
         layer.type === 'arrow' ||
         layer.type === 'polygon' ||
-        layer.type === 'star' ? null : layer.type === 'checkbox' ? (
+        layer.type === 'star' ||
+        layer.type === 'diamond' ||
+        layer.type === 'hexagon' ||
+        layer.type === 'pentagon' ? null : layer.type === 'checkbox' ? (
         <div
           data-testid="canvas-checkbox-mark"
           style={{
@@ -448,5 +462,6 @@ export default memo(LayerNode, (prev, next) =>
   prev.scale === next.scale &&
   prev.editing === next.editing &&
   prev.editingSelectAll === next.editingSelectAll &&
-  prev.pathEditing === next.pathEditing,
+  prev.pathEditing === next.pathEditing &&
+  prev.moving === next.moving,
 );

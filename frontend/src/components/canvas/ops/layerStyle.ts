@@ -155,6 +155,9 @@ export const SHAPE_TYPES = new Set<CanvasLayerType>([
   'arrow',
   'polygon',
   'star',
+  'diamond',
+  'hexagon',
+  'pentagon',
 ]);
 
 export const LAYER_TYPE_LABELS: Record<CanvasLayerType, string> = {
@@ -175,6 +178,9 @@ export const LAYER_TYPE_LABELS: Record<CanvasLayerType, string> = {
   arrow: 'Flecha',
   polygon: 'Polígono',
   star: 'Estrella',
+  diamond: 'Rombo',
+  hexagon: 'Hexágono',
+  pentagon: 'Pentágono',
 };
 
 export function isShapeLayer(layer: CanvasLayer): boolean {
@@ -540,6 +546,112 @@ export const DEFAULT_SHADOW: ParsedShadow = {
   opacity: 25,
 };
 
+/** Blend modes supported for layer compositing (Figma/Canva parity). */
+export const BLEND_MODES = [
+  'normal',
+  'multiply',
+  'screen',
+  'overlay',
+  'darken',
+  'lighten',
+  'color-dodge',
+  'color-burn',
+  'hard-light',
+  'soft-light',
+  'difference',
+  'exclusion',
+  'hue',
+  'saturation',
+  'color',
+  'luminosity',
+] as const;
+
+export type BlendMode = (typeof BLEND_MODES)[number];
+
+/** Human-readable Spanish labels for each blend mode. */
+export const BLEND_MODE_LABELS: Record<BlendMode, string> = {
+  normal: 'Normal',
+  multiply: 'Multiplicar',
+  screen: 'Trama',
+  overlay: 'Superponer',
+  darken: 'Oscurecer',
+  lighten: 'Aclarar',
+  'color-dodge': 'Sobreexponer color',
+  'color-burn': 'Subexponer color',
+  'hard-light': 'Luz fuerte',
+  'soft-light': 'Luz suave',
+  difference: 'Diferencia',
+  exclusion: 'Exclusión',
+  hue: 'Tono',
+  saturation: 'Saturación',
+  color: 'Color',
+  luminosity: 'Luminosidad',
+};
+
+/** Blend mode of a layer; 'normal' when unset or unknown. */
+export function parseBlendMode(vars: LayerCssVars): BlendMode {
+  const raw = vars['--blend-mode'];
+  return (BLEND_MODES as readonly string[]).includes(raw ?? '') ? (raw as BlendMode) : 'normal';
+}
+
+/** Split a CSS list on top-level commas (ignores commas inside rgba()/hsla()). */
+function splitTopLevelCommas(input: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const ch of input) {
+    if (ch === '(') depth += 1;
+    else if (ch === ')') depth = Math.max(0, depth - 1);
+    if (ch === ',' && depth === 0) {
+      parts.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  parts.push(current);
+  return parts.map((part) => part.trim()).filter(Boolean);
+}
+
+/** All shadows in a (possibly comma-separated) box-shadow value. */
+export function parseBoxShadows(raw: string | undefined): ParsedShadow[] {
+  if (!raw || raw === 'none') return [];
+  return splitTopLevelCommas(raw)
+    .map((part) => parseBoxShadow(part))
+    .filter((shadow): shadow is ParsedShadow => Boolean(shadow));
+}
+
+/** Join multiple shadows into one CSS box-shadow value ("none" when empty). */
+export function formatBoxShadows(shadows: ParsedShadow[]): string {
+  return shadows.length ? shadows.map((shadow) => formatBoxShadow(shadow)).join(', ') : 'none';
+}
+
+/** Append a shadow (defaults to DEFAULT_SHADOW) to a box-shadow value. */
+export function addBoxShadow(
+  raw: string | undefined,
+  shadow: ParsedShadow = DEFAULT_SHADOW,
+): string {
+  return formatBoxShadows([...parseBoxShadows(raw), shadow]);
+}
+
+/** Patch the shadow at `index`; returns the value unchanged when out of range. */
+export function updateBoxShadowAt(
+  raw: string | undefined,
+  index: number,
+  patch: Partial<ParsedShadow>,
+): string {
+  const shadows = parseBoxShadows(raw);
+  if (!shadows[index]) return formatBoxShadows(shadows);
+  shadows[index] = { ...shadows[index], ...patch };
+  return formatBoxShadows(shadows);
+}
+
+/** Remove the shadow at `index` ("none" when none remain). */
+export function removeBoxShadowAt(raw: string | undefined, index: number): string {
+  return formatBoxShadows(parseBoxShadows(raw).filter((_, i) => i !== index));
+}
+
+
 export function parseBoxShadow(value: string | undefined): ParsedShadow | null {
   if (!value || value === 'none') return null;
   // e.g. "0px 4px 8px rgba(0,0,0,0.25)" or "0 4px 8px #00000040"
@@ -574,6 +686,15 @@ export function formatBoxShadow(shadow: ParsedShadow): string {
   const color = hexToRgba(shadow.color, shadow.opacity);
   return `${shadow.x}px ${shadow.y}px ${shadow.blur}px ${color}`;
 }
+
+/** Default second shadow preset (subtle ambient). */
+export const DEFAULT_SHADOW_2: ParsedShadow = {
+  color: '#000000',
+  x: 0,
+  y: 1,
+  blur: 3,
+  opacity: 15,
+};
 
 export function collectDocumentColors(layers: CanvasLayer[]): string[] {
   const seen = new Set<string>();
@@ -639,6 +760,7 @@ export function cssVarsToStyleParts(vars: LayerCssVars): string[] {
       parts.push(`opacity:${n > 1 ? n / 100 : n}`);
     } else if (prop === 'object-fit') parts.push(`object-fit:${value}`);
     else if (prop === 'line-height') parts.push(`line-height:${value}`);
+    else if (prop === 'blend-mode' && value !== 'normal') parts.push(`mix-blend-mode:${value}`);
   }
 
   const radius = resolveBorderRadius(vars);

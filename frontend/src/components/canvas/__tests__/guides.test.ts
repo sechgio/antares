@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  clampGuidePos,
   createGuide,
   formatGapMm,
   guidesForPage,
+  isGuideRemovalPoint,
   measureSelectionGaps,
   moveGuide,
   removeGuide,
@@ -84,5 +86,22 @@ describe('guides', () => {
     const at2 = snapThresholdMm(2, 5);
     expect(at1).toBeCloseTo(5 / MM_TO_PX, 5);
     expect(at2).toBeCloseTo(at1 / 2, 5);
+  });
+
+  it('clampGuidePos clamps to the page extent', () => {
+    expect(clampGuidePos(-5, 210)).toBe(0);
+    expect(clampGuidePos(42.5, 210)).toBe(42.5);
+    expect(clampGuidePos(999, 210)).toBe(210);
+  });
+
+  it('isGuideRemovalPoint detects the ruler strip per axis', () => {
+    const rect = { left: 100, top: 50 };
+    // Vertical guide (axis x) removes over the left ruler strip.
+    expect(isGuideRemovalPoint('x', 100 + 20 + 3, 400, rect, 20)).toBe(true);
+    expect(isGuideRemovalPoint('x', 100 + 20 + 4, 400, rect, 20)).toBe(false);
+    expect(isGuideRemovalPoint('x', 500, 10, rect, 20)).toBe(false);
+    // Horizontal guide (axis y) removes over the top ruler strip.
+    expect(isGuideRemovalPoint('y', 500, 50 + 20 + 3, rect, 20)).toBe(true);
+    expect(isGuideRemovalPoint('y', 500, 50 + 20 + 4, rect, 20)).toBe(false);
   });
 });

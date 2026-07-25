@@ -148,8 +148,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Immediate logout when an admin flips is_disabled on this user's profile.
   useEffect(() => {
     if (!supabase || !user?.id) return;
+    const client = supabase;
     const userId = user.id;
-    const channel = supabase
+    const channel = client
       .channel(`user-profile:${userId}`)
       .on(
         'postgres_changes',
@@ -168,7 +169,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       )
       .subscribe();
     return () => {
-      void supabase.removeChannel(channel);
+      void client.removeChannel(channel);
     };
   }, [user?.id, revokeDisabledSession]);
 

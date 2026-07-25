@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
-import { clampZoom } from '../ops/viewportNav';
+import { clampZoom, nextZoomPreset } from '../ops/viewportNav';
 
 interface ZoomMenuProps {
   zoom: number;
@@ -13,8 +13,6 @@ interface ZoomMenuProps {
   snapToGrid?: boolean;
   onToggleSnapToGrid?: () => void;
 }
-
-const ZOOM_STEP = 0.1;
 
 function parseZoomPercent(raw: string): number | null {
   const cleaned = raw.trim().replace(/%/g, '').replace(',', '.');
@@ -97,13 +95,13 @@ export default function ZoomMenu({
       id: 'in',
       label: 'Acercar',
       tip: 'Ctrl++',
-      run: () => onZoom(clampZoom(zoom + ZOOM_STEP)),
+      run: () => onZoom(nextZoomPreset(zoom, 'in')),
     },
     {
       id: 'out',
       label: 'Alejar',
       tip: 'Ctrl+-',
-      run: () => onZoom(clampZoom(zoom - ZOOM_STEP)),
+      run: () => onZoom(nextZoomPreset(zoom, 'out')),
     },
     {
       id: 'fit',
@@ -177,7 +175,7 @@ export default function ZoomMenu({
           onClick={() => setOpen((v) => !v)}
         >
           <span>{pct}%</span>
-          <ChevronDown className="h-3 w-3 opacity-80" strokeWidth={2.5} />
+          <ChevronDown className="h-3.5 w-3.5 opacity-80" strokeWidth={2.5} />
         </button>
       </WithHoverTooltip>
 

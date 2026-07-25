@@ -1,9 +1,11 @@
-import { useCallback, useImperativeHandle, useMemo, useState, type Ref } from 'react';
+import { useCallback, useImperativeHandle, useMemo, type Ref } from 'react';
+import { createPortal } from 'react-dom';
 import type { CanvasDocument, CanvasGuide, CanvasLayer, CanvasTool } from '../types';
 import { A4_HEIGHT_PX, A4_WIDTH_PX } from '../types';
 import { MM_TO_PX, type DrawRect } from '../ops/drawHelpers';
 import { selectionBounds } from '../ops/selectionTransform';
 import { fitZoomForViewport, zoomToFitRectMm } from '../ops/viewportNav';
+import { useSmoothViewport } from '../hooks/useSmoothViewport';
 import Artboard from './Artboard';
 import ZoomMenu from './ZoomMenu';
 
@@ -13,6 +15,8 @@ export type ViewportNavApi = {
   setPan: (pan: { x: number; y: number }) => void;
   zoomToFit: () => void;
   zoomToSelection: (ids?: string[]) => void;
+  /** Animated viewport transition (Figma-like smooth). */
+  animateTo: (target: { zoom: number; pan: { x: number; y: number } }) => void;
 };
 
 interface DesignStageProps {
@@ -40,10 +44,13 @@ interface DesignStageProps {
   onUpsertGuide?: (guide: CanvasGuide) => void;
   onMoveGuide?: (id: string, posMm: number) => void;
   onRemoveGuide?: (id: string) => void;
+  onCancelGuideCreate?: (id: string) => void;
   showRulers?: boolean;
   onToggleRulers?: () => void;
   snapToGrid?: boolean;
   onToggleSnapToGrid?: () => void;
+  /** Portal target in RightPanel header (next to Propiedades). */
+  zoomPortalTarget?: HTMLElement | null;
   children?: React.ReactNode;
 }
 
@@ -75,14 +82,18 @@ export default function DesignStage({
   onUpsertGuide,
   onMoveGuide,
   onRemoveGuide,
+  onCancelGuideCreate,
   showRulers = true,
   onToggleRulers,
   snapToGrid = false,
   onToggleSnapToGrid,
+  zoomPortalTarget = null,
   children,
 }: DesignStageProps) {
-  const [zoom, setZoom] = useState(0.85);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const { zoom, pan, setZoom, setPan, animateTo, startInertia } = useSmoothViewport(0.85);
+
+  /** Menu/preset zoom actions glide to the target (Figma-like); wheel stays instant. */
+  const animateZoomTo = useCallback((z: number) => animateTo({ zoom: z, pan }), [animateTo, pan]);
 
   const artboardDocument = useMemo(
     () => ({ ...document, layers: pageLayers }),
@@ -93,9 +104,9 @@ export default function DesignStage({
     const el = window.document.querySelector<HTMLElement>('[data-testid="canvas-viewport"]');
     if (!el) return;
     const { width, height } = el.getBoundingClientRect();
-    setZoom(fitZoomForViewport(width, height, A4_WIDTH_PX, A4_HEIGHT_PX));
-    setPan({ x: 0, y: 0 });
-  }, []);
+    const fitZ = fitZoomForViewport(width, height, A4_WIDTH_PX, A4_HEIGHT_PX);
+    animateTo({ zoom: fitZ, pan: { x: 0, y: 0 } });
+  }, [animateTo]);
 
   const zoomToSelection = useCallback(
     (ids: string[] = selectedIds) => {
@@ -114,10 +125,9 @@ export default function DesignStage({
         { widthMm: document.page.widthMm, heightMm: document.page.heightMm },
         MM_TO_PX,
       );
-      setZoom(next.zoom);
-      setPan(next.pan);
+      animateTo(next);
     },
-    [document.page.heightMm, document.page.widthMm, pageLayers, selectedIds, zoomToFit],
+    [document.page.heightMm, document.page.widthMm, pageLayers, selectedIds, zoomToFit, animateTo],
   );
 
   useImperativeHandle(
@@ -128,8 +138,9 @@ export default function DesignStage({
       setPan,
       zoomToFit,
       zoomToSelection,
+      animateTo,
     }),
-    [zoom, zoomToFit, zoomToSelection],
+    [zoom, setZoom, setPan, zoomToFit, zoomToSelection, animateTo],
   );
 
   return (
@@ -161,21 +172,26 @@ export default function DesignStage({
         onUpsertGuide={onUpsertGuide}
         onMoveGuide={onMoveGuide}
         onRemoveGuide={onRemoveGuide}
+        onCancelGuideCreate={onCancelGuideCreate}
         showRulers={showRulers}
         snapToGrid={snapToGrid}
+        onStartInertia={startInertia}
       />
-      <div className="canvas-viewport-zoom">
-        <ZoomMenu
-          zoom={zoom}
-          onZoom={setZoom}
-          onZoomFit={zoomToFit}
-          onZoomSelection={selectedIds.length ? () => zoomToSelection() : undefined}
-          showRulers={showRulers}
-          onToggleRulers={onToggleRulers}
-          snapToGrid={snapToGrid}
-          onToggleSnapToGrid={onToggleSnapToGrid}
-        />
-      </div>
+      {zoomPortalTarget
+        ? createPortal(
+            <ZoomMenu
+              zoom={zoom}
+              onZoom={animateZoomTo}
+              onZoomFit={zoomToFit}
+              onZoomSelection={selectedIds.length ? () => zoomToSelection() : undefined}
+              showRulers={showRulers}
+              onToggleRulers={onToggleRulers}
+              snapToGrid={snapToGrid}
+              onToggleSnapToGrid={onToggleSnapToGrid}
+            />,
+            zoomPortalTarget,
+          )
+        : null}
       {children}
     </div>
   );

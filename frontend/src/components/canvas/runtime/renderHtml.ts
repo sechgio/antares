@@ -142,6 +142,9 @@ function resolveLayerContent(
     layer.type === 'ellipse' ||
     layer.type === 'arrow' ||
     layer.type === 'polygon' ||
+    layer.type === 'diamond' ||
+    layer.type === 'hexagon' ||
+    layer.type === 'pentagon' ||
     layer.type === 'star'
   ) {
     return { kind: 'empty', html: '' };
@@ -262,8 +265,11 @@ export function renderCanvasHtml(
       const overflow = ensured.type === 'line' ? 'visible' : 'hidden';
       const lineFlex =
         ensured.type === 'line' ? 'display:flex;align-items:center;' : '';
+      const blendMode = ensured.cssVars['--blend-mode']
+        ? `mix-blend-mode:${ensured.cssVars['--blend-mode']};`
+        : '';
       // clipRadius last so it overrides any border-radius from cssVarsToStyleParts
-      const box = `position:absolute;left:${u(x)};top:${u(y)};width:${u(w)};height:${u(h)};box-sizing:border-box;overflow:${overflow};${lineFlex}${clipStyle}${transformOriginStyle}${ellipseRadius}${extra};${clipRadius}`;
+      const box = `position:absolute;left:${u(x)};top:${u(y)};width:${u(w)};height:${u(h)};box-sizing:border-box;overflow:${overflow};${lineFlex}${blendMode}${clipStyle}${transformOriginStyle}${ellipseRadius}${extra};${clipRadius}`;
       if (resolved.kind === 'text') {
         const justify = justifyContentForTextAlign(ensured.cssVars['--text-align']);
         const lineHeight = ensured.cssVars['--line-height'] || DEFAULT_LINE_HEIGHT;

@@ -5,9 +5,14 @@ from __future__ import annotations
 import copy
 import re
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 DOCUMENT_VERSION = 2
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 ALLOWED_LAYER_TYPES = frozenset(
     {
         "text",
@@ -27,6 +32,9 @@ ALLOWED_LAYER_TYPES = frozenset(
         "arrow",
         "polygon",
         "star",
+        "diamond",
+        "hexagon",
+        "pentagon",
     }
 )
 A4_WIDTH_MM = 210
@@ -44,6 +52,7 @@ def create_empty_document(*, name: str = "Sin título") -> dict[str, Any]:
         "version": DOCUMENT_VERSION,
         "id": doc_id,
         "name": name.strip() or "Sin título",
+        "updatedAt": utc_now_iso(),
         "page": {"widthMm": A4_WIDTH_MM, "heightMm": A4_HEIGHT_MM},
         "pages": [{"id": page_id, "name": "Página 1"}],
         "settings": {},
@@ -206,6 +215,17 @@ def _normalize_settings(raw: Any) -> dict[str, Any]:
             out["imagesPerPage"] = max(1, int(raw["imagesPerPage"]))
         except (TypeError, ValueError):
             pass
+    if "showRulers" in raw:
+        out["showRulers"] = bool(raw["showRulers"])
+    if "snapToGrid" in raw:
+        out["snapToGrid"] = bool(raw["snapToGrid"])
+    if "gridSizeMm" in raw:
+        try:
+            size = float(raw["gridSizeMm"])
+            if size > 0:
+                out["gridSizeMm"] = size
+        except (TypeError, ValueError):
+            pass
     if isinstance(raw.get("gridRules"), list):
         rules = []
         for item in raw["gridRules"]:
@@ -224,6 +244,25 @@ def _normalize_settings(raw: Any) -> dict[str, Any]:
         if rules:
             out["gridRules"] = rules
     return out
+
+
+def _normalize_guides(raw: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        return []
+    guides: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        axis = item.get("axis")
+        if axis not in ("x", "y"):
+            continue
+        try:
+            pos_mm = float(item.get("posMm", 0))
+        except (TypeError, ValueError):
+            continue
+        guide_id = str(item.get("id") or "").strip() or _new_id()
+        guides.append({"id": guide_id, "axis": axis, "posMm": pos_mm})
+    return guides
 
 
 def normalize_document(raw: Any) -> dict[str, Any]:
@@ -250,13 +289,18 @@ def normalize_document(raw: Any) -> dict[str, Any]:
     if not layers:
         layers = create_empty_document()["layers"]
 
+    updated_raw = raw.get("updatedAt")
+    updated_at = str(updated_raw).strip() if isinstance(updated_raw, str) and str(updated_raw).strip() else ""
+
     return {
         "version": DOCUMENT_VERSION,
         "id": str(raw.get("id") or _new_id()),
         "name": str(raw.get("name") or "Sin título").strip() or "Sin título",
+        "updatedAt": updated_at or utc_now_iso(),
         "page": {"widthMm": max(1, width_mm), "heightMm": max(1, height_mm)},
         "pages": _normalize_pages(raw.get("pages")),
         "settings": _normalize_settings(raw.get("settings")),
+        "guides": _normalize_guides(raw.get("guides")),
         "layers": layers,
         "fields": _normalize_fields(raw.get("fields")),
     }
@@ -287,6 +331,7 @@ def duplicate_document(
 ) -> dict[str, Any]:
     doc = normalize_document(copy.deepcopy(source))
     doc["id"] = _new_id()
+    doc["updatedAt"] = utc_now_iso()
     if name is not None and str(name).strip():
         doc["name"] = str(name).strip()
     else:

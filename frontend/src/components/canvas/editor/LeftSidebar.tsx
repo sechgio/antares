@@ -9,7 +9,6 @@ import {
   Square,
   Type,
   Layers,
-  FileStack,
   Trash2,
   Table2,
   Grid3X3,
@@ -20,11 +19,13 @@ import {
   ArrowUpRight,
   Triangle,
   Star,
+  Diamond,
+  Hexagon,
+  Pentagon,
   Lock,
   Unlock,
 } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
-import { CANVAS_PRESETS } from '../presets';
 import { ancestorIds, buildLayerTree, flattenLayerTree, isLayerContainer } from '../ops/layerTree';
 import type { CanvasDocumentSummary, CanvasLayer } from '../types';
 import PageContextMenu, { type PageContextMenuState } from './PageContextMenu';
@@ -42,7 +43,6 @@ interface LeftSidebarProps {
   onOpenDoc: (id: string) => void;
   onNew: () => void;
   onDeleteDoc: () => void;
-  onApplyPreset: (presetId: string) => void;
   onPageChange: (index: number) => void;
   onAddPage: () => void;
   onRemovePage: (index: number) => void;
@@ -66,6 +66,9 @@ function layerIcon(type: CanvasLayer['type']) {
   if (type === 'arrow') return <ArrowUpRight className="h-3 w-3" />;
   if (type === 'polygon') return <Triangle className="h-3 w-3" />;
   if (type === 'star') return <Star className="h-3 w-3" />;
+  if (type === 'diamond') return <Diamond className="h-3 w-3" />;
+  if (type === 'hexagon') return <Hexagon className="h-3 w-3" />;
+  if (type === 'pentagon') return <Pentagon className="h-3 w-3" />;
   if (type === 'imageSlot' || type === 'image' || type === 'logo') return <ImageIcon className="h-3 w-3" />;
   return <Layers className="h-3 w-3" />;
 }
@@ -83,7 +86,6 @@ export default memo(function LeftSidebar({
   onOpenDoc,
   onNew,
   onDeleteDoc,
-  onApplyPreset,
   onPageChange,
   onAddPage,
   onRemovePage,
@@ -249,32 +251,6 @@ export default memo(function LeftSidebar({
             <option key={d.id} value={d.id}>{d.name}</option>
           ))}
         </select>
-      </div>
-
-      <div className="border-b px-2 py-2" style={{ borderColor: 'var(--cv-border)' }}>
-        <div className="canvas-section-title mb-1.5 px-1">Plantillas</div>
-        <div className="max-h-28 overflow-y-auto">
-          {CANVAS_PRESETS.map((p) => (
-            <WithHoverTooltip
-              key={p.id}
-              label={`Aplicar «${p.label}»`}
-              placement="right"
-              variant="dark"
-              className="w-full"
-            >
-              <button
-                type="button"
-                onClick={() => onApplyPreset(p.id)}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[11px] transition-colors hover:bg-[var(--cv-hover)]"
-                style={{ color: 'var(--cv-text-secondary)' }}
-                aria-label={`Aplicar plantilla ${p.label}`}
-              >
-                <FileStack className="h-3 w-3 shrink-0" />
-                {p.label}
-              </button>
-            </WithHoverTooltip>
-          ))}
-        </div>
       </div>
 
       <div className="border-b px-3 py-2" style={{ borderColor: 'var(--cv-border)' }}>

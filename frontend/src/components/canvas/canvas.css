@@ -11,10 +11,11 @@
   --cv-text-secondary: #5c6778;
   --cv-hover: #f0f3f7;
   --cv-active: #e8f3fb;
-  --cv-accent: #0d99ff;
+  --cv-accent: #0d99ff;       /* Figma Blue 500 — selección, foco, acción primaria */
   --cv-accent-hover: #0b8ce8;
   --cv-accent-soft: rgba(13, 153, 255, 0.14);
-  --cv-danger: #e03e2f;
+  --cv-accent-2: #d931c8;     /* Figma spacing guides (magenta) */
+  --cv-danger: #e03e2f;       /* Figma Red 500 — eliminar, quitar guía */
   --cv-danger-soft: #fef2f1;
   --cv-warn-bg: #fff8f0;
   --cv-warn-text: #b45309;

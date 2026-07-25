@@ -284,6 +284,55 @@ export function createLayer(
         '--opacity': '100',
       },
     },
+    diamond: {
+      id: newId(),
+      type: 'diamond',
+      name: 'Rombo',
+      value: '',
+      cssVars: {
+        '--width': mm(40),
+        '--height': mm(40),
+        '--translate-x': mm(20),
+        '--translate-y': mm(230),
+        '--background-color': '#ffffff',
+        '--border-width': '1px',
+        '--border-color': '#000000',
+        '--opacity': '100',
+      },
+    },
+    hexagon: {
+      id: newId(),
+      type: 'hexagon',
+      name: 'Hexágono',
+      value: '',
+      cssVars: {
+        '--width': mm(40),
+        '--height': mm(40),
+        '--translate-x': mm(20),
+        '--translate-y': mm(240),
+        '--background-color': '#ffffff',
+        '--border-width': '1px',
+        '--border-color': '#000000',
+        '--opacity': '100',
+      },
+    },
+    pentagon: {
+      id: newId(),
+      type: 'pentagon',
+      name: 'Pentágono',
+      value: '',
+      cssVars: {
+        '--width': mm(40),
+        '--height': mm(40),
+        '--translate-x': mm(20),
+        '--translate-y': mm(250),
+        '--background-color': '#ffffff',
+        '--border-width': '1px',
+        '--border-color': '#000000',
+        '--opacity': '100',
+      },
+    },
+
   };
 
   return { ...base[type], ...overrides, id: overrides?.id ?? newId(), type };

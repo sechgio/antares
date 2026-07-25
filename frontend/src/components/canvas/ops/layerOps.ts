@@ -197,15 +197,6 @@ export function duplicateLayers(
   return { layers: result, newIds };
 }
 
-export function reorderLayer(layers: CanvasLayer[], fromIndex: number, toIndex: number): CanvasLayer[] {
-  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return layers;
-  if (fromIndex >= layers.length || toIndex >= layers.length) return layers;
-  const next = [...layers];
-  const [moved] = next.splice(fromIndex, 1);
-  next.splice(toIndex, 0, moved);
-  return next;
-}
-
 /**
  * Reorder dragged among siblings relative to Capas visual order (paint-top-first).
  * Capas "before" = closer to front = later in the document array.

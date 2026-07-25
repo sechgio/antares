@@ -3,6 +3,7 @@ import { Save, Trash2, Upload, X } from 'lucide-react';
 import {
   DEFAULT_MEDIDA_LABEL_DIAMETRO,
   DEFAULT_MEDIDA_LABEL_DIAMETRO_INTERNO,
+  DEFAULT_SGIO_LABEL,
   type CanastillasData,
   type CheckState,
   type InspeccionDescripcion,
@@ -117,6 +118,11 @@ export default function FormPanel({ report, hasChanges, busy, logoLeft, logoRigh
             <Field label="Contratista" value={report.header.contratista} onChange={(value) => patchHeader('contratista', value)} />
             <Field label="SGIO" value={report.header.sgio} onChange={(value) => patchHeader('sgio', value)} />
           </div>
+          <Field
+            label="Etiqueta SGIO (nombre del campo)"
+            value={report.header.sgio_label || DEFAULT_SGIO_LABEL}
+            onChange={(value) => patchHeader('sgio_label', value.trim() || DEFAULT_SGIO_LABEL)}
+          />
           <Field label="Código infraestructura" value={report.header.codigo_infraestructura} onChange={(value) => patchHeader('codigo_infraestructura', value)} />
           <Field label="Ubicación" value={report.header.ubicacion} onChange={(value) => patchHeader('ubicacion', value)} />
           <div className="tr-grid-2">

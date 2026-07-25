@@ -17,6 +17,9 @@ import {
   Slash,
   Square,
   Star,
+  Diamond,
+  Hexagon,
+  Pentagon,
   Table2,
   Triangle,
   Type,
@@ -47,6 +50,9 @@ const SHAPE_MENU_ITEMS: {
   { id: 'ellipse', icon: Circle, title: 'Elipse', tip: 'O' },
   { id: 'polygon', icon: Triangle, title: 'Polígono', tip: '' },
   { id: 'star', icon: Star, title: 'Estrella', tip: '' },
+  { id: 'diamond', icon: Diamond, title: 'Rombo', tip: '' },
+  { id: 'hexagon', icon: Hexagon, title: 'Hexágono', tip: '' },
+  { id: 'pentagon', icon: Pentagon, title: 'Pentágono', tip: '' },
   { id: 'image', icon: ImageIcon, title: 'Imagen/vídeo...', tip: 'Ctrl+Shift+K' },
 ];
 

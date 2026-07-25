@@ -12,6 +12,7 @@ import {
   isAspectLocked,
   layerPanelTitle,
   parseBoxShadow,
+  parseBoxShadows,
   parseFilterBlurPx,
   parseImageZoom,
   resizeWithAspectLock,
@@ -400,7 +401,7 @@ describe('RightPanel shape inspector', () => {
     );
     expect(screen.getByText('Plantillas')).toBeTruthy();
     fireEvent.click(screen.getByLabelText('Aplicar plantilla Panel fotográfico'));
-    expect(onApplyPreset).toHaveBeenCalledWith('panel');
+    expect(onApplyPreset).toHaveBeenCalledWith('report');
   });
 
   it('hides Plantillas in right panel when a layer is selected', () => {
@@ -479,5 +480,61 @@ describe('RightPanel shape inspector', () => {
     expect(parseMm(onChangeLive.mock.calls[0][0].cssVars['--translate-x'])).toBe(25);
     fireEvent.blur(xInput);
     expect(onCommitLive).toHaveBeenCalled();
+  });
+});
+
+describe('RightPanel creative freedom controls', () => {
+  it('blend mode select applies and clears mix-blend mode', () => {
+    const layer = createLayer('rect');
+    const onChange = vi.fn();
+    const { unmount } = render(<RightPanel layer={layer} onChange={onChange} {...panelProps} />);
+    fireEvent.change(screen.getByLabelText('Modo de fusión'), { target: { value: 'multiply' } });
+    expect(onChange.mock.calls.at(-1)?.[0].cssVars['--blend-mode']).toBe('multiply');
+    unmount();
+
+    const blended = { ...layer, cssVars: { ...layer.cssVars, '--blend-mode': 'multiply' } };
+    const onChange2 = vi.fn();
+    render(<RightPanel layer={blended} onChange={onChange2} {...panelProps} />);
+    fireEvent.change(screen.getByLabelText('Modo de fusión'), { target: { value: 'normal' } });
+    expect(onChange2.mock.calls.at(-1)?.[0].cssVars['--blend-mode']).toBeUndefined();
+  });
+
+  it('resize anchor pins the opposite edge when editing W', () => {
+    const layer = createLayer('rect');
+    layer.cssVars['--translate-x'] = '10mm';
+    layer.cssVars['--width'] = '100mm';
+    layer.cssVars['--height'] = '50mm';
+    const onChange = vi.fn();
+    const { unmount } = render(<RightPanel layer={layer} onChange={onChange} {...panelProps} />);
+    fireEvent.click(screen.getByLabelText('Anclar br'));
+    expect(onChange.mock.calls.at(-1)?.[0].cssVars['--resize-anchor']).toBe('br');
+    unmount();
+
+    const anchored = { ...layer, cssVars: { ...layer.cssVars, '--resize-anchor': 'br' } };
+    const onChangeLive = vi.fn();
+    render(
+      <RightPanel layer={anchored} onChange={vi.fn()} onChangeLive={onChangeLive} {...panelProps} />,
+    );
+    fireEvent.change(screen.getByLabelText('W'), { target: { value: '200' } });
+    const next = onChangeLive.mock.calls.at(-1)?.[0];
+    expect(parseMm(next.cssVars['--width'])).toBe(200);
+    expect(parseMm(next.cssVars['--translate-x'])).toBe(-90);
+  });
+
+  it('lists multiple shadow editors and adds/removes shadows', () => {
+    const layer = createLayer('rect');
+    layer.cssVars['--box-shadow'] = '0px 4px 8px rgba(0,0,0,0.25), 2px 2px 4px rgba(255,0,0,0.5)';
+    const onChange = vi.fn();
+    render(<RightPanel layer={layer} onChange={onChange} {...panelProps} />);
+    expect(screen.getAllByTestId('canvas-effect-shadow')).toHaveLength(2);
+
+    fireEvent.click(screen.getByLabelText('Añadir sombra'));
+    const added = onChange.mock.calls.at(-1)?.[0].cssVars['--box-shadow'] as string;
+    expect(parseBoxShadows(added)).toHaveLength(3);
+
+    fireEvent.click(screen.getAllByLabelText('Quitar sombra')[0]);
+    const remaining = parseBoxShadows(onChange.mock.calls.at(-1)?.[0].cssVars['--box-shadow']);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].color).toBe('#FF0000');
   });
 });

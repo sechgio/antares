@@ -36,7 +36,10 @@ def canvas_save(params: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(document, dict):
         msg = "document must be an object"
         raise ValueError(msg)
-    saved = get_canvas_store().save(document)
+    touch = params.get("touch", True)
+    if not isinstance(touch, bool):
+        touch = True
+    saved = get_canvas_store().save(document, touch=touch)
     return {"document": saved}
 
 

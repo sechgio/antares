@@ -26,13 +26,23 @@ import {
   normalizeDrawRect,
   scaleCssLength,
 } from '../ops/drawHelpers';
-import { clampZoom, fitZoomForViewport, zoomAtCursor } from '../ops/viewportNav';
+import { clampZoom, fitZoomForViewport, MAX_ZOOM, MIN_ZOOM, nextZoomPreset, pinchViewport, wheelPanDelta, zoomAtCursor } from '../ops/viewportNav';
+import { filterVisibleLayers, visiblePageRectMm } from '../ops/viewportCulling';
+import { applyAnchoredResize, parseResizeAnchor, resizeLayerAnchored, RESIZE_ANCHORS } from '../ops/resizeConstraints';
+import { clipPathForLayerType, isShapeTool, isSquareConstrainTool } from '../ops/shapePaths';
 import { buildRowData, matchesRecordId } from '../runtime/excel';
 import { mergeCanvasHtmlDocuments, renderCanvasHtml } from '../runtime/renderHtml';
 import { createEmptyDocument, mm, newId, normalizeDocument, parseMm } from '../types';
 import { CANVAS_SHORTCUTS } from '../shortcuts';
 import {
+  addBoxShadow,
   applyLineStrokeWeight,
+  cssVarsToStyleParts,
+  formatBoxShadows,
+  parseBlendMode,
+  parseBoxShadows,
+  removeBoxShadowAt,
+  updateBoxShadowAt,
   clampStrokeWeight,
   lineHeightMmFromStrokePx,
   lineStrokeWidthPx,
@@ -871,8 +881,8 @@ describe('gridLayout', () => {
 
 describe('viewportNav', () => {
   it('zoomAtCursor keeps cursor point stable', () => {
-    expect(clampZoom(0.01)).toBe(0.2);
-    expect(clampZoom(10)).toBe(4);
+    expect(clampZoom(0.001)).toBe(MIN_ZOOM);
+    expect(clampZoom(100000)).toBe(MAX_ZOOM);
     const next = zoomAtCursor(1, { x: 0, y: 0 }, { x: 100, y: 50 }, 2);
     expect(next.zoom).toBe(2);
     expect(next.pan.x).toBe(100 - 100 * 2);
@@ -1061,5 +1071,165 @@ describe('canvas editor P1 helpers', () => {
     expect(newIds).toHaveLength(1);
     expect(layers.filter((l) => l.name.includes('copia'))).toHaveLength(1);
     expect(layers.find((l) => l.name.includes('copia'))?.type).toBe('rect');
+  });
+});
+
+describe('viewportNav wide zoom range', () => {
+  it('supports the wide 0.02x-256x zoom range', () => {
+    expect(MIN_ZOOM).toBe(0.02);
+    expect(MAX_ZOOM).toBe(256);
+    expect(clampZoom(0.001)).toBe(0.02);
+    expect(clampZoom(999)).toBe(256);
+  });
+
+  it('nextZoomPreset traverses the extended preset stops', () => {
+    expect(nextZoomPreset(1, 'in')).toBe(1.5);
+    expect(nextZoomPreset(64, 'in')).toBe(128);
+    expect(nextZoomPreset(256, 'in')).toBe(256);
+    expect(nextZoomPreset(0.02, 'out')).toBe(0.02);
+  });
+
+  it('wheelPanDelta pans horizontally on Shift+wheel', () => {
+    expect(wheelPanDelta(0, 120, false)).toEqual({ x: 0, y: 120 });
+    expect(wheelPanDelta(0, 120, true)).toEqual({ x: 120, y: 0 });
+    expect(wheelPanDelta(30, 120, true)).toEqual({ x: 30, y: 120 });
+  });
+
+  it('pinchViewport scales and tracks the fingers midpoint', () => {
+    const start = { zoom: 1, pan: { x: 0, y: 0 } };
+    const zoomed = pinchViewport(start, { x: 0, y: 0 }, { x: 0, y: 0 }, 2);
+    expect(zoomed.zoom).toBe(2);
+    expect(zoomed.pan).toEqual({ x: 0, y: 0 });
+
+    const moved = pinchViewport(start, { x: 100, y: 50 }, { x: 140, y: 80 }, 1.5);
+    expect(moved.zoom).toBe(1.5);
+    expect(moved.pan.x).toBeCloseTo(140 - 100 * 1.5, 6);
+    expect(moved.pan.y).toBeCloseTo(80 - 50 * 1.5, 6);
+
+    expect(pinchViewport(start, { x: 0, y: 0 }, { x: 0, y: 0 }, 1000).zoom).toBe(MAX_ZOOM);
+    expect(pinchViewport(start, { x: 0, y: 0 }, { x: 0, y: 0 }, 0)).toBe(start);
+  });
+});
+
+describe('viewportCulling', () => {
+  it('visiblePageRectMm maps the viewport to a page mm region', () => {
+    const rect = visiblePageRectMm(848, 648, { x: 0, y: 0 }, 1, 794, 1123, 0);
+    expect(rect).not.toBeNull();
+    expect(rect!.x + rect!.w / 2).toBeCloseTo(105, 0);
+    expect(rect!.y + rect!.h / 2).toBeCloseTo(148.5, 0);
+    expect(visiblePageRectMm(0, 0, { x: 0, y: 0 }, 1, 794, 1123)).toBeNull();
+  });
+
+  it('filterVisibleLayers keeps intersecting and forced layers only', () => {
+    const near = createLayer('rect', {
+      cssVars: { '--width': '20mm', '--height': '20mm', '--translate-x': '90mm', '--translate-y': '140mm' },
+    });
+    const far = createLayer('rect', {
+      cssVars: { '--width': '20mm', '--height': '20mm', '--translate-x': '500mm', '--translate-y': '900mm' },
+    });
+    const view = { x: 0, y: 0, w: 210, h: 297 };
+    expect(filterVisibleLayers([near, far], view).map((l) => l.id)).toEqual([near.id]);
+    expect(filterVisibleLayers([near, far], view, new Set([far.id]))).toHaveLength(2);
+    expect(filterVisibleLayers([near, far], null)).toHaveLength(2);
+  });
+});
+
+describe('resizeConstraints', () => {
+  const base = () =>
+    createLayer('rect', {
+      cssVars: {
+        '--width': '100mm',
+        '--height': '50mm',
+        '--translate-x': '10mm',
+        '--translate-y': '20mm',
+      },
+    });
+
+  it('defaults to the top-left anchor (legacy behavior)', () => {
+    expect(parseResizeAnchor(undefined)).toBe('tl');
+    expect(parseResizeAnchor('bogus')).toBe('tl');
+    expect(RESIZE_ANCHORS).toHaveLength(9);
+    const next = applyAnchoredResize(base(), { w: 200 }, 'tl');
+    expect(next.cssVars['--translate-x']).toBe('10mm');
+    expect(next.cssVars['--translate-y']).toBe('20mm');
+  });
+
+  it('keeps the pinned edge, corner or center fixed', () => {
+    const br = applyAnchoredResize(base(), { w: 200, h: 100 }, 'br');
+    expect(parseMm(br.cssVars['--translate-x'])).toBe(-90);
+    expect(parseMm(br.cssVars['--translate-y'])).toBe(-30);
+    const cc = applyAnchoredResize(base(), { w: 200, h: 100 }, 'cc');
+    expect(parseMm(cc.cssVars['--translate-x'])).toBe(-40);
+    expect(parseMm(cc.cssVars['--translate-y'])).toBe(-5);
+    const tr = applyAnchoredResize(base(), { w: 50 }, 'tr');
+    expect(parseMm(tr.cssVars['--translate-x'])).toBe(60);
+    expect(parseMm(tr.cssVars['--translate-y'])).toBe(20);
+  });
+
+  it('resizeLayerAnchored combines aspect lock and anchor', () => {
+    const layer = base();
+    layer.cssVars['--aspect-locked'] = '1';
+    layer.cssVars['--resize-anchor'] = 'br';
+    const next = resizeLayerAnchored(layer, 'width', 200);
+    expect(parseMm(next.cssVars['--width'])).toBe(200);
+    expect(parseMm(next.cssVars['--height'])).toBe(100);
+    expect(parseMm(next.cssVars['--translate-x'])).toBe(-90);
+    expect(parseMm(next.cssVars['--translate-y'])).toBe(-30);
+  });
+});
+
+describe('multi-shadow and blend modes', () => {
+  it('parses and formats multiple shadows (rgba commas safe)', () => {
+    const two = '0px 4px 8px rgba(0,0,0,0.25), 2px 2px 4px rgba(255,0,0,0.5)';
+    const shadows = parseBoxShadows(two);
+    expect(shadows).toHaveLength(2);
+    expect(shadows[0]).toMatchObject({ x: 0, y: 4, blur: 8, opacity: 25 });
+    expect(shadows[1]).toMatchObject({ x: 2, y: 2, blur: 4 });
+    expect(formatBoxShadows(shadows)).toBe(two);
+    expect(parseBoxShadows('none')).toEqual([]);
+    expect(parseBoxShadows(undefined)).toEqual([]);
+    expect(formatBoxShadows([])).toBe('none');
+  });
+
+  it('adds, updates and removes shadows by index', () => {
+    const one = addBoxShadow(undefined);
+    expect(parseBoxShadows(one)).toHaveLength(1);
+    const two = addBoxShadow(one, { color: '#FF0000', x: 2, y: 2, blur: 4, opacity: 50 });
+    expect(parseBoxShadows(two)).toHaveLength(2);
+    const updated = updateBoxShadowAt(two, 1, { y: 6 });
+    expect(parseBoxShadows(updated)[1]).toMatchObject({ x: 2, y: 6 });
+    expect(updateBoxShadowAt(two, 9, { y: 6 })).toBe(two);
+    const removed = removeBoxShadowAt(two, 0);
+    const remaining = parseBoxShadows(removed);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].color).toBe('#FF0000');
+    expect(removeBoxShadowAt(removed, 0)).toBe('none');
+  });
+
+  it('blend modes parse and render as mix-blend-mode', () => {
+    const layer = createLayer('rect');
+    expect(parseBlendMode(layer.cssVars)).toBe('normal');
+    layer.cssVars['--blend-mode'] = 'overlay';
+    expect(parseBlendMode(layer.cssVars)).toBe('overlay');
+    layer.cssVars['--blend-mode'] = 'nonsense';
+    expect(parseBlendMode(layer.cssVars)).toBe('normal');
+    const css = cssVarsToStyleParts({ ...layer.cssVars, '--blend-mode': 'multiply' }).join(';');
+    expect(css).toContain('mix-blend-mode:multiply');
+    const normalCss = cssVarsToStyleParts({ ...layer.cssVars, '--blend-mode': 'normal' }).join(';');
+    expect(normalCss).not.toContain('mix-blend-mode');
+  });
+});
+
+describe('new clip-path shapes', () => {
+  it('creates diamond, hexagon and pentagon layers with clip paths', () => {
+    for (const type of ['diamond', 'hexagon', 'pentagon'] as const) {
+      const layer = createLayer(type);
+      expect(layer.type).toBe(type);
+      expect(clipPathForLayerType(type)).toContain('polygon(');
+      expect(isShapeTool(type)).toBe(true);
+      expect(isSquareConstrainTool(type)).toBe(true);
+    }
+    expect(clipPathForLayerType('rect')).toBeUndefined();
+    expect(isSquareConstrainTool('line')).toBe(false);
   });
 });

@@ -19,7 +19,7 @@ import {
   normalizeDrawRect,
   type DrawRect,
 } from '../ops/drawHelpers';
-import { clipPathForLayerType } from '../ops/shapePaths';
+import { clipPathForLayerType, isSquareConstrainTool } from '../ops/shapePaths';
 import {
   angleFromCenter,
   computeResizeBox,
@@ -39,8 +39,19 @@ import {
   type SmartGuide,
   DEFAULT_GRID_MM,
 } from '../ops/selectionTransform';
-import { formatGapMm, guidesForPage, measureSelectionGaps, type DistanceLabel } from '../ops/guides';
-import { wheelZoomFactor, zoomAtCursor } from '../ops/viewportNav';
+import { buildSpatialIndex } from '../ops/spatialIndex';
+import {
+  clampGuidePos,
+  formatGapMm,
+  guidesForPage,
+  isGuideRemovalPoint,
+  measureSelectionGaps,
+  type DistanceLabel,
+} from '../ops/guides';
+import { wheelPanDelta, wheelZoomFactor, zoomAtCursor } from '../ops/viewportNav';
+import { filterVisibleLayers, visiblePageRectMm } from '../ops/viewportCulling';
+import { createGestureRaf } from '../ops/gestureRaf';
+import { usePinchZoom } from '../hooks/usePinchZoom';
 import {
   bendLineAt,
   cutLineAt,
@@ -48,11 +59,13 @@ import {
   dragLineHandle,
 } from '../ops/pathEditGestures';
 import { ensureLinePath, lineIntersectsPolygon, rectIntersectsPolygon } from '../ops/pathGeometry';
-import CanvasRulers, { RULER_SIZE } from './CanvasRulers';
+import CanvasRulers, { GuidePositionChip, RULER_SIZE } from './CanvasRulers';
 import LayerNode from './LayerNode';
 import PathHandlesOverlay from './PathHandlesOverlay';
 
 const HANDLE = 8;
+/** Invisible grab zone around a guide line (Figma uses a generous hit area). */
+const GUIDE_HIT_PX = 10;
 const ROTATE_HANDLE_OFFSET = 24;
 
 interface ArtboardProps {
@@ -83,9 +96,13 @@ interface ArtboardProps {
   onUpsertGuide?: (guide: CanvasGuide) => void;
   onMoveGuide?: (id: string, posMm: number) => void;
   onRemoveGuide?: (id: string) => void;
+  /** Abort an in-progress guide creation from the rulers (silent, no history). */
+  onCancelGuideCreate?: (id: string) => void;
   showRulers?: boolean;
   snapToGrid?: boolean;
   gridSizeMm?: number;
+  /** Start inertial panning after hand-tool drag release. */
+  onStartInertia?: (velocity: { vx: number; vy: number }) => void;
 }
 
 function handleStyle(left: number, top: number, cursor: string): CSSProperties {
@@ -137,9 +154,11 @@ export default function Artboard({
   onUpsertGuide,
   onMoveGuide,
   onRemoveGuide,
+  onCancelGuideCreate,
   showRulers = true,
   snapToGrid = false,
   gridSizeMm = DEFAULT_GRID_MM,
+  onStartInertia,
 }: ArtboardProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -150,6 +169,10 @@ export default function Artboard({
   const [guides, setGuides] = useState<SmartGuide[]>([]);
   const [distanceLabels, setDistanceLabels] = useState<DistanceLabel[]>([]);
   const [panning, setPanning] = useState(false);
+  /** True while a two-finger pinch is (or was, until all fingers lift) active. */
+  const pinchGestureRef = useRef(false);
+  /** Viewport size in CSS px — drives layer culling (virtualized rendering). */
+  const [viewportSize, setViewportSize] = useState<{ w: number; h: number } | null>(null);
   /** Live gesture preview stays in Artboard so CanvasView/sidebars skip per-frame updates. */
   const [gestureLayers, setGestureLayers] = useState<CanvasLayer[] | null>(null);
   const didFit = useRef(false);
@@ -176,7 +199,13 @@ export default function Artboard({
   const pageSizeRef = useRef({ widthMm: document.page.widthMm, heightMm: document.page.heightMm });
   pageSizeRef.current = { widthMm: document.page.widthMm, heightMm: document.page.heightMm };
   const pageGuides = useMemo(() => guidesForPage(document, pageIndex), [document, pageIndex]);
-  const [guideDrag, setGuideDrag] = useState<{ id: string; posMm: number } | null>(null);
+  const [guideDrag, setGuideDrag] = useState<{
+    id: string;
+    posMm: number;
+    clientX: number;
+    clientY: number;
+    willRemove: boolean;
+  } | null>(null);
   const displayGuides = useMemo(() => {
     if (!guideDrag) return pageGuides;
     return pageGuides.map((g) => (g.id === guideDrag.id ? { ...g, posMm: guideDrag.posMm } : g));
@@ -189,6 +218,7 @@ export default function Artboard({
   gridSizeMmRef.current = gridSizeMm > 0 ? gridSizeMm : DEFAULT_GRID_MM;
 
   const applyGestureLayers = useCallback((layers: CanvasLayer[]) => {
+    if (pinchGestureRef.current) return;
     gestureDirtyRef.current = true;
     gestureLayersRef.current = layers;
     layersRef.current = layers;
@@ -212,6 +242,19 @@ export default function Artboard({
 
   const navRef = useRef({ zoom, pan, onZoom, onPan });
   navRef.current = { zoom, pan, onZoom, onPan };
+
+  usePinchZoom(viewportRef, navRef, {
+    activeRef: pinchGestureRef,
+    onStart: () => {
+      // Cancel in-flight single-pointer gesture visuals when the second finger lands.
+      setMarquee(null);
+      setDraft(null);
+      setGuides([]);
+      setDistanceLabels([]);
+      setLassoPts(null);
+      setPanning(false);
+    },
+  });
   const selectedIdsRef = useRef(selectedIds);
   selectedIdsRef.current = selectedIds;
 
@@ -232,14 +275,47 @@ export default function Artboard({
       ? displayLayers.find((l) => l.id === selectedIds[0] && l.type === 'line') ?? null
       : null;
 
-  const editableSelected = selectedIds.filter((id) => {
-    const layer = displayLayers.find((l) => l.id === id);
-    return layer && layer.type !== 'frame' && !layer.locked && layer.visible !== false;
-  });
-  const bbox = selectionBounds(displayLayers, editableSelected);
+  const layerById = useMemo(() => new Map(displayLayers.map((l) => [l.id, l])), [displayLayers]);
+
+  // Virtualized rendering: only mount layers inside the visible page region.
+  const viewRectMm = useMemo(
+    () =>
+      viewportSize
+        ? visiblePageRectMm(viewportSize.w, viewportSize.h, pan, zoom, A4_WIDTH_PX, A4_HEIGHT_PX)
+        : null,
+    [viewportSize, pan, zoom],
+  );
+  const renderLayers = useMemo(() => {
+    const always = new Set(selectedIds);
+    if (editingLayerId) always.add(editingLayerId);
+    if (pathEditingLayerId) always.add(pathEditingLayerId);
+    return filterVisibleLayers(contentLayers, viewRectMm, always);
+  }, [contentLayers, viewRectMm, selectedIds, editingLayerId, pathEditingLayerId]);
+
+  const editableSelected = useMemo(
+    () =>
+      selectedIds.filter((id) => {
+        const layer = layerById.get(id);
+        return layer && layer.type !== 'frame' && !layer.locked && layer.visible !== false;
+      }),
+    [layerById, selectedIds],
+  );
+  const bbox = useMemo(() => selectionBounds(displayLayers, editableSelected), [displayLayers, editableSelected]);
 
   const handleSelect = useCallback((id: string, additive?: boolean) => {
     onSelectRef.current(id, additive);
+  }, []);
+
+  const onUpsertGuideRef = useRef(onUpsertGuide);
+  onUpsertGuideRef.current = onUpsertGuide;
+  const onCancelGuideCreateRef = useRef(onCancelGuideCreate);
+  onCancelGuideCreateRef.current = onCancelGuideCreate;
+  // Stable identity so memoized rulers skip re-rendering on every gesture frame.
+  const handleCreateGuide = useCallback((guide: CanvasGuide) => {
+    onUpsertGuideRef.current?.(guide);
+  }, []);
+  const handleCancelGuideCreate = useCallback((id: string) => {
+    onCancelGuideCreateRef.current?.(id);
   }, []);
 
   useEffect(() => {
@@ -258,6 +334,24 @@ export default function Artboard({
     ro.observe(viewportRef.current);
     return () => ro.disconnect();
   }, [onZoom, onPan]);
+
+  // Track viewport size for layer culling (cheap; updates only on resize).
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const { width, height } = entry.contentRect;
+      setViewportSize((prev) =>
+        prev && Math.abs(prev.w - width) < 1 && Math.abs(prev.h - height) < 1
+          ? prev
+          : { w: width, h: height },
+      );
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     const el = viewportRef.current;
@@ -280,7 +374,8 @@ export default function Artboard({
         return;
       }
 
-      setP({ x: p.x - e.deltaX, y: p.y - e.deltaY });
+      const d = wheelPanDelta(e.deltaX, e.deltaY, e.shiftKey);
+      setP({ x: p.x - d.x, y: p.y - d.y });
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
@@ -293,17 +388,43 @@ export default function Artboard({
     const startX = e.clientX;
     const startY = e.clientY;
     const origin = { ...navRef.current.pan };
+    let lastX = e.clientX;
+    let lastY = e.clientY;
+    let lastT = performance.now();
+    let vx = 0;
+    let vy = 0;
 
-    const onMovePtr = (ev: PointerEvent) => {
+    // Pan state updates coalesced to one per frame; velocity sampling stays
+    // per raw event so release inertia keeps sub-frame accuracy.
+    const raf = createGestureRaf((ev: PointerEvent) => {
       navRef.current.onPan({
         x: origin.x + (ev.clientX - startX),
         y: origin.y + (ev.clientY - startY),
       });
+    });
+    const onMovePtr = (ev: PointerEvent) => {
+      if (pinchGestureRef.current) return;
+      const now = performance.now();
+      const dt = Math.max(1, now - lastT);
+      // Exponential moving average for smooth velocity
+      const instantVx = (ev.clientX - lastX) / dt * 16; // normalize to ~60fps frame
+      const instantVy = (ev.clientY - lastY) / dt * 16;
+      vx = vx * 0.6 + instantVx * 0.4;
+      vy = vy * 0.6 + instantVy * 0.4;
+      lastX = ev.clientX;
+      lastY = ev.clientY;
+      lastT = now;
+      raf.schedule(ev);
     };
     const onUp = () => {
+      raf.flush();
       setPanning(false);
       window.removeEventListener('pointermove', onMovePtr);
       window.removeEventListener('pointerup', onUp);
+      // Trigger inertial glide if velocity is significant
+      if (!pinchGestureRef.current && onStartInertia && (Math.abs(vx) > 1 || Math.abs(vy) > 1)) {
+        onStartInertia({ vx, vy });
+      }
     };
     window.addEventListener('pointermove', onMovePtr);
     window.addEventListener('pointerup', onUp);
@@ -315,7 +436,9 @@ export default function Artboard({
       gestureDirtyRef.current = false;
       let dragging = false;
 
-      const onMovePtr = (ev: PointerEvent) => {
+      // Coalesce to one apply per animation frame; latest pointer position wins.
+      const raf = createGestureRaf((ev: PointerEvent) => {
+        if (pinchGestureRef.current) return;
         const dxPx = ev.clientX - startClientX;
         const dyPx = ev.clientY - startClientY;
         if (!dragging) {
@@ -375,8 +498,10 @@ export default function Artboard({
         } else {
           setDistanceLabels([]);
         }
-      };
+      });
+      const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
       const onUp = () => {
+        raf.flush();
         setGuides([]);
         setDistanceLabels([]);
         endGesture();
@@ -436,8 +561,9 @@ export default function Artboard({
     if (!origin) return;
     gestureDirtyRef.current = false;
 
-    const onMovePtr = (ev: PointerEvent) => {
+    const raf = createGestureRaf((ev: PointerEvent) => {
       const z = zoomRef.current;
+      if (pinchGestureRef.current) return;
       const dx = (ev.clientX - startX) / (z * MM_TO_PX);
       const dy = (ev.clientY - startY) / (z * MM_TO_PX);
       let nextBox = computeResizeBox(origin, corner, dx, dy, {
@@ -464,8 +590,10 @@ export default function Artboard({
       applyGestureLayers(
         resizeSelection(snapshot, ids, corner, 0, 0, { targetBox: nextBox }),
       );
-    };
+    });
+    const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
     const onUp = () => {
+      raf.flush();
       setGuides([]);
       endGesture();
       window.removeEventListener('pointermove', onMovePtr);
@@ -488,15 +616,17 @@ export default function Artboard({
     const startAngle = angleFromCenter(cx, cy, start.xMm, start.yMm);
     gestureDirtyRef.current = false;
 
-    const onMovePtr = (ev: PointerEvent) => {
+    const raf = createGestureRaf((ev: PointerEvent) => {
       if (!frameRef.current) return;
       const r = frameRef.current.getBoundingClientRect();
       const cur = clientToMm(ev.clientX, ev.clientY, r, zoom);
       const angle = angleFromCenter(cx, cy, cur.xMm, cur.yMm);
       const delta = angle - startAngle;
       applyGestureLayers(rotateSelection(snapshot, ids, delta, { snap15: ev.shiftKey }));
-    };
+    });
+    const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
     const onUp = () => {
+      raf.flush();
       endGesture();
       window.removeEventListener('pointermove', onMovePtr);
       window.removeEventListener('pointerup', onUp);
@@ -518,10 +648,11 @@ export default function Artboard({
     setMarquee({ x: xMm, y: yMm, w: 0, h: 0 });
     if (!e.shiftKey) onSelectIds([]);
 
-    const onMovePtr = (ev: PointerEvent) => {
+    const raf = createGestureRaf((ev: PointerEvent) => {
       if (!frameRef.current) return;
       const r = frameRef.current.getBoundingClientRect();
       const cur = clientToMm(ev.clientX, ev.clientY, r, zoom);
+      if (pinchGestureRef.current) return;
       const x = Math.min(origin.xMm, cur.xMm);
       const y = Math.min(origin.yMm, cur.yMm);
       setMarquee({
@@ -530,8 +661,10 @@ export default function Artboard({
         w: Math.abs(cur.xMm - origin.xMm),
         h: Math.abs(cur.yMm - origin.yMm),
       });
-    };
+    });
+    const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
     const onUp = (ev: PointerEvent) => {
+      raf.cancel();
       window.removeEventListener('pointermove', onMovePtr);
       window.removeEventListener('pointerup', onUp);
       if (!frameRef.current) {
@@ -540,6 +673,10 @@ export default function Artboard({
       }
       const r = frameRef.current.getBoundingClientRect();
       const cur = clientToMm(ev.clientX, ev.clientY, r, zoom);
+      if (pinchGestureRef.current) {
+        setMarquee(null);
+        return;
+      }
       const box: RectMm = {
         x: Math.min(origin.xMm, cur.xMm),
         y: Math.min(origin.yMm, cur.yMm),
@@ -551,7 +688,12 @@ export default function Artboard({
         if (!ev.shiftKey) onSelect(null);
         return;
       }
-      const hit = layersInMarquee(layersRef.current, box);
+      // Use spatial index for fast marquee hit-testing with many layers
+      const currentLayers = layersRef.current;
+      const hit =
+        currentLayers.length > 30
+          ? buildSpatialIndex(currentLayers).query(box)
+          : layersInMarquee(currentLayers, box);
       if (ev.shiftKey) {
         const merged = Array.from(new Set([...selectedIdsRef.current, ...hit]));
         onSelectIds(merged);
@@ -573,7 +715,7 @@ export default function Artboard({
     e.preventDefault();
     const layerId = pathEditLayer.id;
 
-    const onMovePtr = (ev: PointerEvent) => {
+    const raf = createGestureRaf((ev: PointerEvent) => {
       if (!frameRef.current) return;
       const r = frameRef.current.getBoundingClientRect();
       const cur = clientToMm(ev.clientX, ev.clientY, r, zoom);
@@ -584,9 +726,11 @@ export default function Artboard({
           ? dragLineAnchor(current, pointIndex, cur.xMm, cur.yMm)
           : dragLineHandle(current, pointIndex, kind, cur.xMm, cur.yMm, !ev.altKey);
       applyGestureLayers(layersRef.current.map((l) => (l.id === layerId ? next : l)));
-    };
+    });
+    const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
 
     const onUp = () => {
+      raf.flush();
       window.removeEventListener('pointermove', onMovePtr);
       window.removeEventListener('pointerup', onUp);
       endGesture();
@@ -615,14 +759,16 @@ export default function Artboard({
     };
     applyAt(start.xMm, start.yMm);
 
-    const onMovePtr = (ev: PointerEvent) => {
+    const raf = createGestureRaf((ev: PointerEvent) => {
       if (!frameRef.current) return;
       const r = frameRef.current.getBoundingClientRect();
       const cur = clientToMm(ev.clientX, ev.clientY, r, zoom);
       applyAt(cur.xMm, cur.yMm);
-    };
+    });
+    const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
 
     const onUp = () => {
+      raf.flush();
       window.removeEventListener('pointermove', onMovePtr);
       window.removeEventListener('pointerup', onUp);
       endGesture();
@@ -662,19 +808,22 @@ export default function Artboard({
     const pts: Array<{ x: number; y: number }> = [{ x: start.xMm, y: start.yMm }];
     setLassoPts(pts);
 
-    const onMovePtr = (ev: PointerEvent) => {
+    const raf = createGestureRaf((ev: PointerEvent) => {
       if (!frameRef.current) return;
+      if (pinchGestureRef.current) return;
       const fr = frameRef.current.getBoundingClientRect();
       const cur = clientToMm(ev.clientX, ev.clientY, fr, zoom);
       pts.push({ x: cur.xMm, y: cur.yMm });
       setLassoPts([...pts]);
-    };
+    });
+    const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
 
     const onUp = () => {
+      raf.flush();
       window.removeEventListener('pointermove', onMovePtr);
       window.removeEventListener('pointerup', onUp);
       setLassoPts(null);
-      if (pts.length < 3) return;
+      if (pinchGestureRef.current || pts.length < 3) return;
       const hit = layersRef.current
         .filter((l) => l.type !== 'frame' && l.visible !== false && !l.locked)
         .filter((l) => {
@@ -706,12 +855,13 @@ export default function Artboard({
     drawStart.current = { xMm, yMm };
     setDraft({ x: xMm, y: yMm, w: 0, h: 0 });
 
-    const onMovePtr = (ev: PointerEvent) => {
+    const raf = createGestureRaf((ev: PointerEvent) => {
       if (!drawStart.current || !frameRef.current) return;
+      if (pinchGestureRef.current) return;
       const r = frameRef.current.getBoundingClientRect();
       const cur = clientToMm(ev.clientX, ev.clientY, r, zoom);
       const constrainSquare =
-        ev.shiftKey && (tool === 'rect' || tool === 'ellipse' || tool === 'polygon' || tool === 'star');
+        ev.shiftKey && isSquareConstrainTool(tool);
       const next = normalizeDrawRect(drawStart.current.xMm, drawStart.current.yMm, cur.xMm, cur.yMm, {
         constrainSquare,
       });
@@ -722,9 +872,11 @@ export default function Artboard({
         next.y1 = cur.yMm;
       }
       setDraft(next);
-    };
+    });
+    const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
 
     const onUp = (ev: PointerEvent) => {
+      raf.cancel();
       window.removeEventListener('pointermove', onMovePtr);
       window.removeEventListener('pointerup', onUp);
       if (!drawStart.current || !frameRef.current) {
@@ -735,7 +887,7 @@ export default function Artboard({
       const cur = clientToMm(ev.clientX, ev.clientY, r, zoom);
       let result = normalizeDrawRect(drawStart.current.xMm, drawStart.current.yMm, cur.xMm, cur.yMm, {
         constrainSquare:
-          ev.shiftKey && (tool === 'rect' || tool === 'ellipse' || tool === 'polygon' || tool === 'star'),
+          ev.shiftKey && isSquareConstrainTool(tool),
       });
       if (tool === 'line') {
         result.x0 = drawStart.current.xMm;
@@ -748,11 +900,64 @@ export default function Artboard({
       }
       drawStart.current = null;
       setDraft(null);
-      onDrawLayer(tool, result);
+      if (!pinchGestureRef.current) onDrawLayer(tool, result);
     };
 
     window.addEventListener('pointermove', onMovePtr);
     window.addEventListener('pointerup', onUp);
+  };
+
+  /** Drag an existing guide: live preview, drop on the ruler to remove, Esc to cancel. */
+  const beginGuideDrag = (g: CanvasGuide, e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    if (!frameRef.current) return;
+    const original = g.posMm;
+    let lastPos = g.posMm;
+    let willRemove = false;
+    let cancelled = false;
+    setGuideDrag({ id: g.id, posMm: g.posMm, clientX: e.clientX, clientY: e.clientY, willRemove: false });
+
+    const raf = createGestureRaf((ev: PointerEvent) => {
+      if (!frameRef.current || cancelled) return;
+      const r = frameRef.current.getBoundingClientRect();
+      const cur = clientToMm(ev.clientX, ev.clientY, r, zoomRef.current);
+      const max = g.axis === 'x' ? pageSizeRef.current.widthMm : pageSizeRef.current.heightMm;
+      lastPos = clampGuidePos(g.axis === 'x' ? cur.xMm : cur.yMm, max);
+      const vr = viewportRef.current?.getBoundingClientRect();
+      willRemove = vr ? isGuideRemovalPoint(g.axis, ev.clientX, ev.clientY, vr, RULER_SIZE) : false;
+      setGuideDrag({ id: g.id, posMm: lastPos, clientX: ev.clientX, clientY: ev.clientY, willRemove });
+    });
+
+    const cleanup = () => {
+      raf.cancel();
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('keydown', onKey);
+    };
+
+    const onMove = (ev: PointerEvent) => raf.schedule(ev);
+
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key !== 'Escape') return;
+      cancelled = true;
+      cleanup();
+      setGuideDrag(null);
+    };
+
+    const onUp = () => {
+      raf.flush();
+      cleanup();
+      setGuideDrag(null);
+      if (cancelled) return;
+      if (willRemove) onRemoveGuide?.(g.id);
+      else if (lastPos !== original) onMoveGuide?.(g.id, lastPos);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('keydown', onKey);
   };
 
   const onCanvasPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -806,7 +1011,8 @@ export default function Artboard({
           pageWidthMm={document.page.widthMm}
           pageHeightMm={document.page.heightMm}
           pageIndex={pageIndex}
-          onCreateGuide={(guide) => onUpsertGuide?.(guide)}
+          onCreateGuide={handleCreateGuide}
+          onCancelCreate={handleCancelGuideCreate}
         />
       )}
 
@@ -881,11 +1087,12 @@ export default function Artboard({
             )}
           </div>
 
-          {contentLayers.map((layer) => (
+          {renderLayers.map((layer) => (
             <LayerNode
               key={layer.id}
               layer={layer}
               selected={selectedIdSet.has(layer.id)}
+              moving={gestureLayers !== null && selectedIdSet.has(layer.id)}
               interactive={interactive && !panning}
               editing={editingLayerId === layer.id}
               pathEditing={pathEditingLayerId === layer.id}
@@ -967,79 +1174,75 @@ export default function Artboard({
             ),
           )}
 
-          {displayGuides.map((g) => (
-            <div
-              key={g.id}
-              data-testid="canvas-manual-guide"
-              data-axis={g.axis}
-              onPointerDown={(e) => {
-                if (e.button !== 0) return;
-                e.stopPropagation();
-                e.preventDefault();
-                if (!frameRef.current) return;
-                let lastPos = g.posMm;
-                let removed = false;
-                setGuideDrag({ id: g.id, posMm: g.posMm });
-                const onMove = (ev: PointerEvent) => {
-                  if (!frameRef.current || removed) return;
-                  const r = frameRef.current.getBoundingClientRect();
-                  const cur = clientToMm(ev.clientX, ev.clientY, r, zoomRef.current);
-                  const max = g.axis === 'x' ? document.page.widthMm : document.page.heightMm;
-                  const pos = Math.max(0, Math.min(max, g.axis === 'x' ? cur.xMm : cur.yMm));
-                  // Drag back into ruler strip → delete
-                  if (g.axis === 'x' && ev.clientX < (viewportRef.current?.getBoundingClientRect().left ?? 0) + RULER_SIZE + 4) {
-                    removed = true;
-                    setGuideDrag(null);
-                    onRemoveGuide?.(g.id);
-                    return;
+          {displayGuides.map((g) => {
+            const removing = guideDrag?.id === g.id && guideDrag.willRemove;
+            return (
+              <div
+                key={g.id}
+                data-testid="canvas-manual-guide"
+                data-axis={g.axis}
+                onPointerDown={(e) => beginGuideDrag(g, e)}
+                style={
+                  g.axis === 'x'
+                    ? {
+                        position: 'absolute',
+                        left: mmToScreenPx(g.posMm, zoom),
+                        top: 0,
+                        width: GUIDE_HIT_PX,
+                        height: '100%',
+                        marginLeft: -GUIDE_HIT_PX / 2,
+                        cursor: 'ew-resize',
+                        zIndex: 44,
+                      }
+                    : {
+                        position: 'absolute',
+                        top: mmToScreenPx(g.posMm, zoom),
+                        left: 0,
+                        height: GUIDE_HIT_PX,
+                        width: '100%',
+                        marginTop: -GUIDE_HIT_PX / 2,
+                        cursor: 'ns-resize',
+                        zIndex: 44,
+                      }
+                }
+              >
+                <div
+                  style={
+                    g.axis === 'x'
+                      ? {
+                          position: 'absolute',
+                          left: '50%',
+                          top: 0,
+                          width: 2,
+                          height: '100%',
+                          marginLeft: -1,
+                          background: removing ? '#f24e1e' : '#18a0fb',
+                          pointerEvents: 'none',
+                        }
+                      : {
+                          position: 'absolute',
+                          top: '50%',
+                          left: 0,
+                          height: 2,
+                          width: '100%',
+                          marginTop: -1,
+                          background: removing ? '#f24e1e' : '#18a0fb',
+                          pointerEvents: 'none',
+                        }
                   }
-                  if (g.axis === 'y' && ev.clientY < (viewportRef.current?.getBoundingClientRect().top ?? 0) + RULER_SIZE + 4) {
-                    removed = true;
-                    setGuideDrag(null);
-                    onRemoveGuide?.(g.id);
-                    return;
-                  }
-                  lastPos = pos;
-                  setGuideDrag({ id: g.id, posMm: pos });
-                };
-                const onUp = () => {
-                  window.removeEventListener('pointermove', onMove);
-                  window.removeEventListener('pointerup', onUp);
-                  setGuideDrag(null);
-                  if (!removed && lastPos !== g.posMm) {
-                    onMoveGuide?.(g.id, lastPos);
-                  }
-                };
-                window.addEventListener('pointermove', onMove);
-                window.addEventListener('pointerup', onUp);
-              }}
-              style={
-                g.axis === 'x'
-                  ? {
-                      position: 'absolute',
-                      left: mmToScreenPx(g.posMm, zoom),
-                      top: 0,
-                      width: 2,
-                      height: '100%',
-                      marginLeft: -1,
-                      background: '#18a0fb',
-                      cursor: 'ew-resize',
-                      zIndex: 44,
-                    }
-                  : {
-                      position: 'absolute',
-                      top: mmToScreenPx(g.posMm, zoom),
-                      left: 0,
-                      height: 2,
-                      width: '100%',
-                      marginTop: -1,
-                      background: '#18a0fb',
-                      cursor: 'ns-resize',
-                      zIndex: 44,
-                    }
-              }
+                />
+              </div>
+            );
+          })}
+
+          {guideDrag && (
+            <GuidePositionChip
+              x={guideDrag.clientX}
+              y={guideDrag.clientY}
+              danger={guideDrag.willRemove}
+              label={guideDrag.willRemove ? 'Eliminar guía' : formatGapMm(guideDrag.posMm)}
             />
-          ))}
+          )}
 
           {distanceLabels.map((d) => (
             <div key={d.id} data-testid="canvas-distance-label" style={{ pointerEvents: 'none', zIndex: 46 }}>

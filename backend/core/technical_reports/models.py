@@ -84,6 +84,7 @@ def default_header() -> dict[str, Any]:
         "cs": "",
         "contratista": "",
         "sgio": "",
+        "sgio_label": "SGIO",
         "codigo_infraestructura": "",
         "ubicacion": "",
         "suministro": "",
@@ -204,8 +205,10 @@ class TechnicalReport:
         if header["tipo"] not in REPORT_TYPES:
             header["tipo"] = "ELEVADO"
         header["volumen"] = _safe_int(header.get("volumen"), 0)
-        for key in ["cs", "contratista", "sgio", "codigo_infraestructura", "ubicacion", "suministro"]:
+        for key in ["cs", "contratista", "sgio", "sgio_label", "codigo_infraestructura", "ubicacion", "suministro"]:
             header[key] = _safe_str(header.get(key), "")
+        if not header["sgio_label"]:
+            header["sgio_label"] = "SGIO"
         report["header"] = header
 
         report["inspeccion"] = _normalize_inspeccion(source.get("inspeccion"))

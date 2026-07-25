@@ -31,8 +31,8 @@ function HandleDot({
       cx={x}
       cy={y}
       r={r}
-      fill={kind === 'anchor' ? '#ffffff' : '#18a0fb'}
-      stroke="#18a0fb"
+      fill={kind === 'anchor' ? '#ffffff' : 'var(--cv-accent)'}
+      stroke="var(--cv-accent)"
       strokeWidth={1.5}
       style={{ cursor: 'pointer', pointerEvents: 'auto' }}
       onPointerDown={onPointerDown}
@@ -86,7 +86,7 @@ export default function PathHandlesOverlay({ layer, zoom, onPointPointerDown }: 
               y1={anchor.y}
               x2={hin.x}
               y2={hin.y}
-              stroke="#18a0fb"
+              stroke="var(--cv-accent)"
               strokeWidth={1}
             />,
             <HandleDot
@@ -107,7 +107,7 @@ export default function PathHandlesOverlay({ layer, zoom, onPointPointerDown }: 
               y1={anchor.y}
               x2={hout.x}
               y2={hout.y}
-              stroke="#18a0fb"
+              stroke="var(--cv-accent)"
               strokeWidth={1}
             />,
             <HandleDot

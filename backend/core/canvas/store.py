@@ -1,14 +1,19 @@
-"""File-backed Canvas document store under data/canvas/documents/."""
+"""File-backed Canvas document store under user data (survives app updates)."""
 
 from __future__ import annotations
 
 import json
-import sys
+import shutil
 import threading
 from pathlib import Path
 from typing import Any
 
-from backend.core.canvas.models import create_empty_document, duplicate_document, normalize_document
+from backend.core.canvas.models import (
+    create_empty_document,
+    duplicate_document,
+    normalize_document,
+    utc_now_iso,
+)
 from backend.utils.paths import resource_path, user_data_path
 
 _store_instance: CanvasStore | None = None
@@ -16,8 +21,12 @@ _store_lock = threading.Lock()
 
 
 def _default_docs_dir() -> Path:
-    if getattr(sys, "frozen", False):
-        return user_data_path("canvas/documents")
+    """Writable store outside the install tree — survives updates."""
+    return user_data_path("canvas/documents")
+
+
+def _legacy_docs_dir() -> Path:
+    """Pre-user-data location (repo / bundled data/)."""
     return resource_path("data/canvas/documents")
 
 
@@ -30,11 +39,45 @@ def get_canvas_store(docs_dir: str | Path | None = None) -> CanvasStore:
     return _store_instance
 
 
+def migrate_legacy_canvas_documents(*, source: Path, dest: Path) -> int:
+    """Copy JSON docs from *source* into *dest* without overwriting. Returns count copied."""
+    if not source.is_dir():
+        return 0
+    try:
+        if source.resolve() == dest.resolve():
+            return 0
+    except OSError:
+        if source == dest:
+            return 0
+
+    dest.mkdir(parents=True, exist_ok=True)
+    copied = 0
+    for path in source.glob("*.json"):
+        target = dest / path.name
+        if target.exists():
+            continue
+        try:
+            shutil.copy2(path, target)
+            copied += 1
+        except OSError:
+            continue
+    return copied
+
+
 class CanvasStore:
-    def __init__(self, docs_dir: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        docs_dir: str | Path | None = None,
+        *,
+        migrate_legacy: bool | None = None,
+    ) -> None:
+        using_default = docs_dir is None
         self.docs_dir = Path(docs_dir) if docs_dir is not None else _default_docs_dir()
         self._lock = threading.RLock()
         self.docs_dir.mkdir(parents=True, exist_ok=True)
+        should_migrate = migrate_legacy if migrate_legacy is not None else using_default
+        if should_migrate:
+            migrate_legacy_canvas_documents(source=_legacy_docs_dir(), dest=self.docs_dir)
 
     def _path_for(self, doc_id: str) -> Path:
         safe = Path(doc_id).name
@@ -52,7 +95,13 @@ class CanvasStore:
                     doc = normalize_document(raw)
                 except (OSError, json.JSONDecodeError, TypeError, ValueError):
                     continue
-                items.append({"id": doc["id"], "name": doc["name"]})
+                items.append(
+                    {
+                        "id": doc["id"],
+                        "name": doc["name"],
+                        "updatedAt": str(doc.get("updatedAt") or ""),
+                    }
+                )
             return items
 
     def get(self, doc_id: str) -> dict[str, Any] | None:
@@ -66,9 +115,11 @@ class CanvasStore:
                 return None
             return normalize_document(raw)
 
-    def save(self, document: dict[str, Any]) -> dict[str, Any]:
+    def save(self, document: dict[str, Any], *, touch: bool = True) -> dict[str, Any]:
         with self._lock:
             doc = normalize_document(document)
+            if touch:
+                doc["updatedAt"] = utc_now_iso()
             path = self._path_for(doc["id"])
             self.docs_dir.mkdir(parents=True, exist_ok=True)
             tmp = path.with_suffix(".json.tmp")

@@ -451,10 +451,17 @@ export const api = {
     _invoke<{ name: string; content: string; source?: string }>('template_get', { name }),
 
   // ─── Canvas (independent template editor) ────────────────────────────────
-  canvasList: () => _invoke<{ documents: Array<{ id: string; name: string }> }>('canvas_list'),
+  canvasList: () =>
+    _invoke<{ documents: Array<{ id: string; name: string; updatedAt?: string }> }>('canvas_list'),
   canvasGet: (id: string) => _invoke<{ document: import('./components/canvas/types').CanvasDocument }>('canvas_get', { id }),
-  canvasSave: (document: import('./components/canvas/types').CanvasDocument) =>
-    _invoke<{ document: import('./components/canvas/types').CanvasDocument }>('canvas_save', { document }),
+  canvasSave: (
+    document: import('./components/canvas/types').CanvasDocument,
+    opts?: { touch?: boolean },
+  ) =>
+    _invoke<{ document: import('./components/canvas/types').CanvasDocument }>('canvas_save', {
+      document,
+      ...(opts?.touch === false ? { touch: false } : {}),
+    }),
   canvasCreate: (name?: string) =>
     _invoke<{ document: import('./components/canvas/types').CanvasDocument }>('canvas_create', name ? { name } : {}),
   canvasDelete: (id: string) => _invoke<{ success: boolean; deleted_id: string }>('canvas_delete', { id }),

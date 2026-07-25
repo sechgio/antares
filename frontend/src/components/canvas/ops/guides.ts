@@ -43,6 +43,30 @@ export function removeGuide(doc: CanvasDocument, id: string): CanvasDocument {
   return { ...doc, guides: (doc.guides ?? []).filter((g) => g.id !== id) };
 }
 
+/** Slack (px) beyond the ruler strip that still counts as "dropped on the ruler". */
+export const GUIDE_REMOVE_SLACK_PX = 4;
+
+/** Clamp a guide position to the page extent on its axis. */
+export function clampGuidePos(posMm: number, maxMm: number): number {
+  return Math.max(0, Math.min(maxMm, posMm));
+}
+
+/**
+ * True when the pointer is over the ruler strip for the guide's axis.
+ * Releasing a guide drag here removes it (Figma drop-on-ruler behavior).
+ */
+export function isGuideRemovalPoint(
+  axis: 'x' | 'y',
+  clientX: number,
+  clientY: number,
+  viewportRect: { left: number; top: number },
+  rulerSize: number,
+): boolean {
+  if (axis === 'x') return clientX < viewportRect.left + rulerSize + GUIDE_REMOVE_SLACK_PX;
+  return clientY < viewportRect.top + rulerSize + GUIDE_REMOVE_SLACK_PX;
+}
+
+
 /**
  * Gap labels from selection AABB to nearest sibling edges / page edges.
  * Used for Alt-hold distance readout while dragging.

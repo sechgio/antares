@@ -10,10 +10,13 @@ export interface ReportMetadata {
   pagina: string;
 }
 
+export const DEFAULT_SGIO_LABEL = 'SGIO';
+
 export interface ReportHeader {
   cs: string;
   contratista: string;
   sgio: string;
+  sgio_label: string;
   codigo_infraestructura: string;
   ubicacion: string;
   suministro: string;
