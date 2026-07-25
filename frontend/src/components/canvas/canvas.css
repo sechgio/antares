@@ -11,9 +11,9 @@
   --cv-text-secondary: #5c6778;
   --cv-hover: #f0f3f7;
   --cv-active: #e8f3fb;
-  --cv-accent: #0e8fd6;
-  --cv-accent-hover: #0a7ab8;
-  --cv-accent-soft: rgba(14, 143, 214, 0.12);
+  --cv-accent: #0d99ff;
+  --cv-accent-hover: #0b8ce8;
+  --cv-accent-soft: rgba(13, 153, 255, 0.14);
   --cv-danger: #e03e2f;
   --cv-danger-soft: #fef2f1;
   --cv-warn-bg: #fff8f0;
@@ -268,6 +268,16 @@
   opacity: 0.4;
 }
 
+.canvas-paint-icon:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.canvas-paint-icon:disabled:hover {
+  background: transparent;
+  color: inherit;
+}
+
 .canvas-color-picker {
   position: fixed;
   z-index: 120;
@@ -472,7 +482,7 @@
 }
 
 .canvas-color-swatch-chip:hover {
-  box-shadow: 0 0 0 2px #0d99ff;
+  box-shadow: 0 0 0 2px var(--cv-accent);
 }
 
 .canvas-export-btn {
@@ -495,11 +505,23 @@
   background: var(--cv-hover);
 }
 
-.canvas-viewport-zoom {
-  position: absolute;
-  bottom: 72px;
-  right: 16px;
-  z-index: 30;
+.canvas-export-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--cv-accent-soft), 0 0 0 1px var(--cv-accent);
+}
+
+.canvas-danger-btn {
+  color: var(--cv-danger);
+  background: rgba(242, 72, 34, 0.08);
+}
+
+.canvas-danger-btn:hover {
+  background: rgba(242, 72, 34, 0.16);
+}
+
+.canvas-danger-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(224, 62, 47, 0.2);
 }
 
 .canvas-icon-btn {
@@ -531,13 +553,18 @@
   cursor: default;
 }
 
+.canvas-icon-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--cv-accent-soft), 0 0 0 1px var(--cv-accent);
+}
+
 .canvas-icon-btn[data-active="true"] {
-  background: #0d99ff;
+  background: var(--cv-accent);
   color: #ffffff;
 }
 
 .canvas-icon-btn[data-active="true"]:hover {
-  background: #0b8ce8;
+  background: var(--cv-accent-hover);
   color: #ffffff;
 }
 
@@ -746,12 +773,12 @@
 }
 
 .canvas-toolbar-tool[data-active="true"] {
-  background: #0d99ff;
+  background: var(--cv-accent);
   color: #ffffff;
 }
 
 .canvas-toolbar-tool[data-active="true"]:hover {
-  background: #0b8ce8;
+  background: var(--cv-accent-hover);
   color: #ffffff;
 }
 
@@ -762,7 +789,7 @@
 
 .canvas-toolbar-tool:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #0d99ff;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--cv-accent);
 }
 
 .canvas-toolbar-tool:disabled {
@@ -930,11 +957,20 @@
 }
 
 .canvas-switch[data-checked="true"] {
-  background: #0d99ff;
+  background: var(--cv-accent);
 }
 
 .canvas-switch[data-checked="true"]:hover {
-  background: #0b8ce8;
+  background: var(--cv-accent-hover);
+}
+
+.canvas-switch:disabled {
+  cursor: default;
+}
+
+.canvas-switch:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--cv-accent-soft), 0 0 0 1px var(--cv-accent);
 }
 
 .canvas-switch-knob {
@@ -1024,22 +1060,6 @@
 
 .canvas-generate-aside > .flex-1 {
   padding: 10px;
-}
-
-.canvas-file-input.canvas-input {
-  height: auto;
-  padding: 6px 8px;
-}
-
-.canvas-file-input.canvas-input::file-selector-button {
-  margin-right: 8px;
-  border: 0;
-  border-radius: 4px;
-  background: var(--cv-hover);
-  padding: 4px 8px;
-  font-size: 11px;
-  color: var(--cv-text-secondary);
-  cursor: pointer;
 }
 
 .canvas-loading {
@@ -1174,18 +1194,6 @@
   backdrop-filter: blur(12px);
 }
 
-.canvas-steps {
-  margin: 0;
-  padding-left: 18px;
-  font-size: 11px;
-  line-height: 1.55;
-  color: var(--cv-text-secondary);
-}
-
-.canvas-steps li + li {
-  margin-top: 2px;
-}
-
 @keyframes canvas-pulse {
   0%,
   100% {
@@ -1202,13 +1210,13 @@
 .canvas-zoom-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  height: 26px;
+  gap: 4px;
+  height: 30px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--cv-active);
-  padding: 0 8px 0 10px;
-  font-size: 11px;
+  padding: 0 10px 0 12px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--cv-accent);
@@ -1250,7 +1258,7 @@
 .canvas-zoom-menu-input {
   width: 100%;
   height: 30px;
-  border: 1.5px solid #18a0fb;
+  border: 1.5px solid #0d99ff;
   border-radius: 4px;
   background: #1e1e1e;
   padding: 0 8px;
@@ -1258,11 +1266,11 @@
   font-weight: 500;
   color: #f5f5f5;
   outline: none;
-  box-shadow: 0 0 0 1px rgba(24, 160, 251, 0.25);
+  box-shadow: 0 0 0 1px rgba(13, 153, 255, 0.25);
 }
 
 .canvas-zoom-menu-input:focus {
-  border-color: #18a0fb;
+  border-color: #0d99ff;
 }
 
 .canvas-zoom-menu-sep {

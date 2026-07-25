@@ -1,11 +1,16 @@
-import { memo, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import {
   AlignCenter,
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  AlignEndHorizontal,
+  AlignEndVertical,
   AlignHorizontalDistributeCenter,
   AlignLeft,
   AlignRight,
+  AlignStartHorizontal,
+  AlignStartVertical,
   AlignVerticalDistributeCenter,
-  AlignVerticalJustifyCenter,
   ArrowDownToLine,
   ArrowUpToLine,
   ChevronDown,
@@ -28,25 +33,30 @@ import type { CanvasLayer, StrokeCap } from '../types';
 import { DEFAULT_FIELD_KEYS } from '../constants';
 import { mm, parseMm } from '../types';
 import {
+  addBoxShadow,
+  BLEND_MODES,
+  BLEND_MODE_LABELS,
   DEFAULT_SHADOW,
+  DEFAULT_SHADOW_2,
   applyLineStrokeWeight,
   clampOpacity,
   clampStrokeWeight,
   cornerRadiusPx,
-  formatBoxShadow,
+  removeBoxShadowAt,
   isAspectLocked,
   isShapeLayer,
   layerPanelTitle,
   lineHeightMmFromStrokePx,
   lineStrokeWidthPx,
-  parseBoxShadow,
+  parseBlendMode,
+  parseBoxShadows,
   parseFilterBlurPx,
   parseImageZoom,
   parseScale,
   parseStrokeAlign,
   parseStrokeDash,
   rememberStrokeWeight,
-  resizeWithAspectLock,
+  updateBoxShadowAt,
   STROKE_WEIGHT_MAX_PX,
   STROKE_WEIGHT_MIN_PX,
   STROKE_WEIGHT_STEP_PX,
@@ -55,11 +65,18 @@ import {
   type StrokeAlign,
   type StrokeDash,
 } from '../ops/layerStyle';
+import {
+  parseResizeAnchor,
+  resizeLayerAnchored,
+  RESIZE_ANCHORS,
+  type ResizeAnchor,
+} from '../ops/resizeConstraints';
 import { parseStrokeCap } from '../ops/pathGeometry';
 import { clipPathForLayerType } from '../ops/shapePaths';
 import { exportLayerPng, exportSelectionPng } from '../ops/exportPng';
 import InlineNumField from './InlineNumField';
 import PaintRow from './PaintRow';
+import TemplatesSection from './TemplatesSection';
 
 interface RightPanelProps {
   layer: CanvasLayer | null;
@@ -80,8 +97,12 @@ interface RightPanelProps {
   onBringForward: () => void;
   onSendBack: () => void;
   onSendBackward: () => void;
+  /** Apply a canvas preset when nothing is selected. */
+  onApplyPreset?: (presetId: string) => void;
   /** True when another logo layer shares this layer's side. */
   logoSideConflict?: boolean;
+  /** Mount point for viewport ZoomMenu (portal from DesignStage). */
+  zoomSlotRef?: (el: HTMLDivElement | null) => void;
 }
 
 function NumField({
@@ -97,6 +118,9 @@ function NumField({
   onCommit?: () => void;
   suffix?: string;
 }) {
+  // Draft while focused so partial input ("", "-", "1.") doesn't snap to 0.
+  const [draft, setDraft] = useState<string | null>(null);
+  const display = Number.isFinite(value) ? String(Math.round(value * 10) / 10) : '0';
   return (
     <label className="flex min-w-0 flex-1 flex-col gap-0.5">
       <span className="canvas-label !mb-0">{label}</span>
@@ -105,9 +129,18 @@ function NumField({
           type="number"
           step={0.5}
           className="canvas-input pr-6"
-          value={Number.isFinite(value) ? Math.round(value * 10) / 10 : 0}
-          onChange={(e) => onChange(Number(e.target.value) || 0)}
-          onBlur={() => onCommit?.()}
+          value={draft ?? display}
+          onFocus={() => setDraft(display)}
+          onChange={(e) => {
+            const raw = e.target.value;
+            setDraft(raw);
+            const n = Number(raw);
+            if (raw !== '' && Number.isFinite(n)) onChange(n);
+          }}
+          onBlur={() => {
+            setDraft(null);
+            onCommit?.();
+          }}
         />
         {suffix && (
           <span
@@ -119,6 +152,39 @@ function NumField({
         )}
       </div>
     </label>
+  );
+}
+
+function HexField({
+  color,
+  ariaLabel,
+  onCommit,
+}: {
+  color: string;
+  ariaLabel: string;
+  onCommit: (hex: string) => void;
+}) {
+  // Draft so partial hex input stays editable; commits only when valid.
+  const [draft, setDraft] = useState(color.replace('#', ''));
+  useEffect(() => {
+    setDraft(color.replace('#', ''));
+  }, [color]);
+  return (
+    <input
+      className="canvas-input flex-1 uppercase"
+      aria-label={ariaLabel}
+      value={draft}
+      onChange={(e) => {
+        const raw = e.target.value.replace('#', '').slice(0, 6);
+        if (!/^[0-9a-fA-F]*$/i.test(raw)) return;
+        setDraft(raw);
+        if (raw.length === 6) onCommit(`#${raw.toUpperCase()}`);
+      }}
+      onBlur={() => {
+        if (/^[0-9a-fA-F]{6}$/i.test(draft)) onCommit(`#${draft.toUpperCase()}`);
+        else setDraft(color.replace('#', ''));
+      }}
+    />
   );
 }
 
@@ -138,12 +204,12 @@ function SectionHeader({
 }
 
 const ALIGN_ITEMS = [
-  { align: 'left' as const, icon: AlignLeft, label: 'Izquierda' },
-  { align: 'center' as const, icon: AlignCenter, label: 'Centro' },
-  { align: 'right' as const, icon: AlignRight, label: 'Derecha' },
-  { align: 'top' as const, icon: AlignVerticalJustifyCenter, label: 'Arriba' },
-  { align: 'middle' as const, icon: AlignVerticalJustifyCenter, label: 'Medio' },
-  { align: 'bottom' as const, icon: AlignVerticalJustifyCenter, label: 'Abajo' },
+  { align: 'left' as const, icon: AlignStartVertical, label: 'Izquierda' },
+  { align: 'center' as const, icon: AlignCenterVertical, label: 'Centro' },
+  { align: 'right' as const, icon: AlignEndVertical, label: 'Derecha' },
+  { align: 'top' as const, icon: AlignStartHorizontal, label: 'Arriba' },
+  { align: 'middle' as const, icon: AlignCenterHorizontal, label: 'Medio' },
+  { align: 'bottom' as const, icon: AlignEndHorizontal, label: 'Abajo' },
 ];
 
 export default memo(function RightPanel({
@@ -164,7 +230,9 @@ export default memo(function RightPanel({
   onBringForward,
   onSendBack,
   onSendBackward,
+  onApplyPreset,
   logoSideConflict = false,
+  zoomSlotRef,
 }: RightPanelProps) {
   const [exportScale, setExportScale] = useState(1);
   const [exporting, setExporting] = useState(false);
@@ -236,21 +304,28 @@ export default memo(function RightPanel({
 
   return (
     <aside
-      className="flex h-full w-[260px] shrink-0 flex-col overflow-hidden border-l"
+      className="flex h-full w-[260px] shrink-0 flex-col border-l"
       style={{ background: 'var(--cv-panel)', borderColor: 'var(--cv-border)' }}
       data-testid="canvas-right-panel"
     >
       <div
-        className="flex items-center justify-between gap-2 border-b px-3 py-2.5"
+        className="relative z-20 flex items-center justify-between gap-2 border-b px-3 py-2.5"
         style={{ borderColor: 'var(--cv-border)' }}
       >
-        <span className="canvas-section-title !mb-0 truncate">
-          {selectedCount > 1
-            ? `${selectedCount} seleccionados`
-            : hasSelection && layer
-              ? layerPanelTitle(layer)
-              : 'Propiedades'}
-        </span>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="canvas-section-title !mb-0 truncate">
+            {selectedCount > 1
+              ? `${selectedCount} seleccionados`
+              : hasSelection && layer
+                ? layerPanelTitle(layer)
+                : 'Propiedades'}
+          </span>
+          <div
+            ref={zoomSlotRef}
+            className="relative shrink-0"
+            data-testid="canvas-zoom-slot"
+          />
+        </div>
         {hasSelection && layer && selectedCount === 1 && (
           <div className="flex items-center gap-0.5">
             <WithHoverTooltip
@@ -284,6 +359,12 @@ export default memo(function RightPanel({
           </div>
         )}
       </div>
+
+      {selectedCount === 0 && onApplyPreset && (
+        <div className="border-b px-2 py-2" style={{ borderColor: 'var(--cv-border)' }}>
+          <TemplatesSection onApplyPreset={onApplyPreset} tooltipPlacement="left" />
+        </div>
+      )}
 
       {selectedCount > 1 && (
         <div className="canvas-section">
@@ -381,8 +462,12 @@ export default memo(function RightPanel({
               max={100}
               className="canvas-input"
               defaultValue={100}
+              key={selectedIds.join(',')}
               aria-label="Opacidad múltiple"
-              onChange={(e) => onBulkOpacity(Number(e.target.value) || 0)}
+              onBlur={(e) => onBulkOpacity(clampOpacity(Number(e.target.value) || 0))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur();
+              }}
             />
           </label>
           <div className="mt-2 flex gap-2">
@@ -500,7 +585,7 @@ export default memo(function RightPanel({
                 <InlineNumField
                   prefix="W"
                   value={parseMm(layer.cssVars['--width'], 10)}
-                  onChange={(n) => emitLive(resizeWithAspectLock(layer, 'width', n))}
+                  onChange={(n) => emitLive(resizeLayerAnchored(layer, 'width', n))}
                   onCommit={onCommitLive}
                 />
                 <InlineNumField
@@ -510,7 +595,7 @@ export default memo(function RightPanel({
                       ? Math.round(lineHeightMmFromStrokePx(lineStrokeWidthPx(layer)) * 100) / 100
                       : parseMm(layer.cssVars['--height'], 10)
                   }
-                  onChange={(n) => emitLive(resizeWithAspectLock(layer, 'height', n))}
+                  onChange={(n) => emitLive(resizeLayerAnchored(layer, 'height', n))}
                   onCommit={onCommitLive}
                   title={isLine ? 'Grosor (derivado del trazo)' : undefined}
                 />
@@ -535,6 +620,36 @@ export default memo(function RightPanel({
                     )}
                   </button>
                 </WithHoverTooltip>
+              </div>
+              <span className="canvas-sublabel mt-2 block">Anclaje de redimensión</span>
+              <div
+                className="grid w-fit grid-cols-3 gap-0.5"
+                role="radiogroup"
+                aria-label="Anclaje de redimensión"
+              >
+                {RESIZE_ANCHORS.map((anchor: ResizeAnchor) => {
+                  const active = parseResizeAnchor(layer.cssVars['--resize-anchor']) === anchor;
+                  return (
+                    <button
+                      key={anchor}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      aria-label={`Anclar ${anchor}`}
+                      className="flex h-5 w-5 items-center justify-center rounded-sm border"
+                      style={{
+                        borderColor: 'var(--cv-border)',
+                        background: active ? 'var(--cv-accent, #18a0fb)' : 'transparent',
+                      }}
+                      onClick={() => setVar('--resize-anchor', anchor)}
+                    >
+                      <span
+                        className="h-1.5 w-1.5 rounded-full"
+                        style={{ background: active ? '#fff' : 'var(--cv-text-muted)' }}
+                      />
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -568,6 +683,30 @@ export default memo(function RightPanel({
                   />
                 )}
               </div>
+              <label className="mt-2 block">
+                <span className="canvas-sublabel">Modo de fusión</span>
+                <select
+                  className="canvas-input mt-1"
+                  value={parseBlendMode(layer.cssVars)}
+                  aria-label="Modo de fusión"
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === 'normal') {
+                      const next = { ...layer.cssVars };
+                      delete next['--blend-mode'];
+                      onChange({ ...layer, cssVars: next });
+                    } else {
+                      setVar('--blend-mode', v);
+                    }
+                  }}
+                >
+                  {BLEND_MODES.map((mode) => (
+                    <option key={mode} value={mode}>
+                      {BLEND_MODE_LABELS[mode]}
+                    </option>
+                  ))}
+                </select>
+              </label>
               {showRadius && (
                 <div className="mt-2 grid grid-cols-2 gap-1">
                   {(
@@ -598,6 +737,7 @@ export default memo(function RightPanel({
                   type="button"
                   className="canvas-paint-icon"
                   aria-label="Añadir relleno"
+                  disabled={hasFill}
                   onClick={() =>
                     setVars({
                       '--background-color': '#D9D9D9',
@@ -672,7 +812,6 @@ export default memo(function RightPanel({
                           })
                         }
                         onPaintCommit={onCommitLive}
-                        onVisibleChange={() => undefined}
                         onRemove={() => setVar('--fill-type', 'solid')}
                       />
                       {layer.cssVars['--fill-type'] === 'linear' && (
@@ -703,6 +842,7 @@ export default memo(function RightPanel({
                   type="button"
                   className="canvas-paint-icon"
                   aria-label="Añadir trazo"
+                  disabled={hasStroke}
                   onClick={() => {
                     if (!layer) return;
                     if (layer.type === 'line') {
@@ -865,8 +1005,12 @@ export default memo(function RightPanel({
                 <button
                   type="button"
                   className="canvas-paint-icon"
-                  aria-label="Añadir efecto"
-                  onClick={() => setVar('--box-shadow', formatBoxShadow(DEFAULT_SHADOW))}
+                  aria-label="Añadir sombra"
+                  onClick={() => {
+                    const raw = layer.cssVars['--box-shadow'];
+                    const preset = parseBoxShadows(raw).length === 0 ? DEFAULT_SHADOW : DEFAULT_SHADOW_2;
+                    setVar('--box-shadow', addBoxShadow(raw, preset));
+                  }}
                 >
                   <Plus className="h-3.5 w-3.5" />
                 </button>
@@ -884,17 +1028,8 @@ export default memo(function RightPanel({
                   onCommit={onCommitLive}
                   suffix="px"
                 />
-                {(() => {
-                  const shadow = parseBoxShadow(layer.cssVars['--box-shadow']);
-                  if (!shadow) {
-                    return (
-                      <p className="text-[11px]" style={{ color: 'var(--cv-text-muted)' }}>
-                        Sin sombra
-                      </p>
-                    );
-                  }
-                  return (
-                  <div className="space-y-2" data-testid="canvas-effect-shadow">
+                {parseBoxShadows(layer.cssVars['--box-shadow']).map((shadow, shadowIndex) => (
+                  <div className="space-y-2" data-testid="canvas-effect-shadow" key={shadowIndex}>
                     <div className="flex items-center gap-2">
                       <span
                         className="canvas-swatch !cursor-default"
@@ -902,24 +1037,28 @@ export default memo(function RightPanel({
                       >
                         <span className="canvas-swatch-fill" style={{ background: shadow.color }} />
                       </span>
-                      <input
-                        className="canvas-input flex-1 uppercase"
-                        value={shadow.color.replace('#', '')}
-                        onChange={(e) => {
-                          const raw = e.target.value.replace('#', '').slice(0, 6);
-                          if (/^[0-9a-fA-F]{6}$/i.test(raw)) {
-                            setVar(
-                              '--box-shadow',
-                              formatBoxShadow({ ...shadow, color: `#${raw.toUpperCase()}` }),
-                            );
-                          }
-                        }}
+                      <HexField
+                        color={shadow.color}
+                        ariaLabel={`Color sombra ${shadowIndex + 1}`}
+                        onCommit={(hex) =>
+                          setVar(
+                            '--box-shadow',
+                            updateBoxShadowAt(layer.cssVars['--box-shadow'], shadowIndex, {
+                              color: hex,
+                            }),
+                          )
+                        }
                       />
                       <button
                         type="button"
                         className="canvas-paint-icon"
-                        aria-label="Quitar efecto"
-                        onClick={() => setVar('--box-shadow', 'none')}
+                        aria-label="Quitar sombra"
+                        onClick={() =>
+                          setVar(
+                            '--box-shadow',
+                            removeBoxShadowAt(layer.cssVars['--box-shadow'], shadowIndex),
+                          )
+                        }
                       >
                         <Minus className="h-3 w-3" />
                       </button>
@@ -929,14 +1068,24 @@ export default memo(function RightPanel({
                         prefix="X"
                         value={shadow.x}
                         step={1}
-                        onChange={(n) => setVarLive('--box-shadow', formatBoxShadow({ ...shadow, x: n }))}
+                        onChange={(n) =>
+                          setVarLive(
+                            '--box-shadow',
+                            updateBoxShadowAt(layer.cssVars['--box-shadow'], shadowIndex, { x: n }),
+                          )
+                        }
                         onCommit={onCommitLive}
                       />
                       <InlineNumField
                         prefix="Y"
                         value={shadow.y}
                         step={1}
-                        onChange={(n) => setVarLive('--box-shadow', formatBoxShadow({ ...shadow, y: n }))}
+                        onChange={(n) =>
+                          setVarLive(
+                            '--box-shadow',
+                            updateBoxShadowAt(layer.cssVars['--box-shadow'], shadowIndex, { y: n }),
+                          )
+                        }
                         onCommit={onCommitLive}
                       />
                     </div>
@@ -947,7 +1096,12 @@ export default memo(function RightPanel({
                         step={1}
                         title="Difuminado"
                         onChange={(n) =>
-                          setVarLive('--box-shadow', formatBoxShadow({ ...shadow, blur: Math.max(0, n) }))
+                          setVarLive(
+                            '--box-shadow',
+                            updateBoxShadowAt(layer.cssVars['--box-shadow'], shadowIndex, {
+                              blur: Math.max(0, n),
+                            }),
+                          )
                         }
                         onCommit={onCommitLive}
                       />
@@ -959,15 +1113,16 @@ export default memo(function RightPanel({
                         onChange={(n) =>
                           setVarLive(
                             '--box-shadow',
-                            formatBoxShadow({ ...shadow, opacity: clampOpacity(n) }),
+                            updateBoxShadowAt(layer.cssVars['--box-shadow'], shadowIndex, {
+                              opacity: clampOpacity(n),
+                            }),
                           )
                         }
                         onCommit={onCommitLive}
                       />
                     </div>
                   </div>
-                  );
-                })()}
+                ))}
               </div>
             </div>
 
@@ -1055,7 +1210,8 @@ export default memo(function RightPanel({
                     type="color"
                     className="h-7 w-7 cursor-pointer rounded border-0 bg-transparent"
                     value={layer.cssVars['--color'] || '#1e1e1e'}
-                    onChange={(e) => setVar('--color', e.target.value)}
+                    onChange={(e) => setVarLive('--color', e.target.value)}
+                    onBlur={() => onCommitLive?.()}
                   />
                   <input
                     className="canvas-input"
@@ -1463,8 +1619,7 @@ export default memo(function RightPanel({
             <div className="p-3">
               <button
                 type="button"
-                className="flex w-full items-center justify-center gap-2 rounded-md px-3 py-2 text-[12px] transition-colors"
-                style={{ color: 'var(--cv-danger)', background: 'rgba(242,72,34,0.08)' }}
+                className="canvas-danger-btn flex w-full items-center justify-center gap-2 rounded-md px-3 py-2 text-[12px] transition-colors"
                 onClick={() => onDelete(layer.id)}
               >
                 <Trash2 className="h-3.5 w-3.5" />

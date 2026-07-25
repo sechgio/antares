@@ -42,7 +42,7 @@ export default function TopBar({
   onDuplicate,
 }: TopBarProps) {
   return (
-    <header className="canvas-topbar flex shrink-0 items-center gap-2 px-3">
+    <header className="canvas-topbar relative flex shrink-0 items-center gap-2 px-3">
       <div className="canvas-brand-mark" aria-hidden>
         <BrandFace />
       </div>
@@ -101,10 +101,12 @@ export default function TopBar({
         )}
       </div>
 
-      <div className="mx-auto">
+      {/* Absolutely centered so it never shifts when side content changes (Figma-like). */}
+      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
         <CanvasSegmented
           value={mode}
           onChange={onMode}
+          ariaLabel="Modo de trabajo"
           options={[
             { value: 'design', label: 'Diseñar' },
             { value: 'generate', label: 'Generar' },
@@ -112,15 +114,21 @@ export default function TopBar({
         />
       </div>
 
-      {status && <span className="canvas-status-pill">{status}</span>}
+      <div className="ml-auto flex items-center gap-2">
+        {status && (
+          <span className="canvas-status-pill" role="status">
+            {status}
+          </span>
+        )}
 
-      {mode === 'design' && onTogglePreview && (
-        <PreviewButton active={Boolean(previewOpen)} onToggle={onTogglePreview} />
-      )}
+        {mode === 'design' && onTogglePreview && (
+          <PreviewButton active={Boolean(previewOpen)} onToggle={onTogglePreview} />
+        )}
 
-      <WithHoverTooltip label="Guardar" shortcut="Ctrl+S" placement="bottom" variant="dark">
-        <SaveButton onSave={onSave} />
-      </WithHoverTooltip>
+        <WithHoverTooltip label="Guardar" shortcut="Ctrl+S" placement="bottom" variant="dark">
+          <SaveButton onSave={onSave} />
+        </WithHoverTooltip>
+      </div>
     </header>
   );
 }

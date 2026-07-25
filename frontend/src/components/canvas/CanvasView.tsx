@@ -92,6 +92,9 @@ const DEFAULT_SIZES: Partial<Record<PlaceableTool, { w: number; h: number }>> = 
   arrow: { w: 50, h: 24 },
   polygon: { w: 40, h: 40 },
   star: { w: 40, h: 40 },
+  diamond: { w: 40, h: 40 },
+  hexagon: { w: 40, h: 40 },
+  pentagon: { w: 40, h: 40 },
   text: { w: 60, h: 8 },
   field: { w: 70, h: 8 },
   logo: { w: 45, h: 16 },
@@ -105,11 +108,19 @@ const DEFAULT_SIZES: Partial<Record<PlaceableTool, { w: number; h: number }>> = 
 
 export default function CanvasView() {
   const history = useCanvasHistory(createEmptyDocument('Sin título'));
+  // Refs mirror history state so runCloudSync can read the latest values
+  // without depending on `history` (which changes on every mutation and would
+  // re-subscribe the focus listener on every keystroke/drag).
+  const historyDocRef = useRef(history.document);
+  const historyCanUndoRef = useRef(history.canUndo);
+  historyDocRef.current = history.document;
+  historyCanUndoRef.current = history.canUndo;
   const [mode, setMode] = useState<CanvasMode>('design');
   const [docs, setDocs] = useState<CanvasDocumentSummary[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [pageIndex, setPageIndex] = useState(0);
   const viewportNavRef = useRef<ViewportNavApi | null>(null);
+  const [zoomPortalTarget, setZoomPortalTarget] = useState<HTMLDivElement | null>(null);
   const [tool, setTool] = useState<CanvasTool>('select');
   const toolBeforeSpaceRef = useRef<CanvasTool | null>(null);
   const [clipboard, setClipboard] = useState<CanvasLayer[]>([]);
@@ -188,20 +199,22 @@ export default function CanvasView() {
 
   const runCloudSync = useCallback(async () => {
     try {
+      const openId = historyDocRef.current.id;
+      const openDirty = historyCanUndoRef.current;
       const result = await syncCanvasDocuments({
-        openDocumentId: history.document.id,
-        openDirty: history.canUndo,
+        openDocumentId: openId,
+        openDirty,
       });
       if (result.skipped) return;
       await refreshList();
-      if (result.reloadOpenId && result.reloadOpenId === history.document.id && !history.canUndo) {
+      if (result.reloadOpenId && result.reloadOpenId === openId && !historyCanUndoRef.current) {
         const got = await api.canvasGet(result.reloadOpenId);
         history.replaceDocument(normalizeDocument(got.document as CanvasDocument));
       }
     } catch {
       /* offline / auth — local cache remains usable */
     }
-  }, [history, refreshList]);
+  }, [history.replaceDocument, refreshList]);
 
   useEffect(() => {
     let cancelled = false;
@@ -343,10 +356,17 @@ export default function CanvasView() {
   );
 
   const onInlineEditValue = useCallback(
-    (id: string, value: string) => {
+    (id: string, value: string, contentHeightPx?: number, zoom?: number) => {
       history.updateSilent({
         ...history.document,
-        layers: history.document.layers.map((l) => (l.id === id ? { ...l, value } : l)),
+        layers: history.document.layers.map((l) => {
+          if (l.id !== id) return l;
+          const next = { ...l, value };
+          // Live auto-grow while typing (single update so value + height land together).
+          return contentHeightPx != null && zoom != null
+            ? growTextLayerToContent(next, contentHeightPx, zoom)
+            : next;
+        }),
       });
     },
     [history],
@@ -533,43 +553,48 @@ export default function CanvasView() {
         }
       }
 
-      if (e.key === 'v' || e.key === 'V') setTool('select');
-      if (e.key === 'h' || e.key === 'H') setTool('hand');
-      if (e.key === 't' || e.key === 'T') setTool('text');
-      if ((e.key === 'r' || e.key === 'R') && !e.shiftKey) setTool('rect');
-      if (e.key === 'o' || e.key === 'O') setTool('ellipse');
-      if (e.key === 'f' || e.key === 'F') setTool('field');
-      if ((e.key === 'l' || e.key === 'L') && !e.ctrlKey && !e.metaKey) {
-        setTool(e.shiftKey ? 'arrow' : 'line');
-      }
-      if ((e.key === 'c' || e.key === 'C') && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        const lineId =
-          pathEditingLayerId ||
-          selectedIds.find((id) => history.document.layers.find((l) => l.id === id)?.type === 'line');
-        if (lineId) {
-          setPathEditingLayerId(lineId);
-          setSelectedIds([lineId]);
-          setTool('cut');
+      // Single-letter tool shortcuts must never swallow modifier chords
+      // (Ctrl+V paste, Ctrl+G group, Ctrl+B, Alt combos…).
+      const plainKey = !e.ctrlKey && !e.metaKey && !e.altKey;
+      if (plainKey) {
+        if (e.key === 'v' || e.key === 'V') setTool('select');
+        if (e.key === 'h' || e.key === 'H') setTool('hand');
+        if (e.key === 't' || e.key === 'T') setTool('text');
+        if ((e.key === 'r' || e.key === 'R') && !e.shiftKey) setTool('rect');
+        if (e.key === 'o' || e.key === 'O') setTool('ellipse');
+        if (e.key === 'f' || e.key === 'F') setTool('field');
+        if (e.key === 'l' || e.key === 'L') {
+          setTool(e.shiftKey ? 'arrow' : 'line');
+        }
+        if (e.key === 'c' || e.key === 'C') {
+          const lineId =
+            pathEditingLayerId ||
+            selectedIds.find((id) => history.document.layers.find((l) => l.id === id)?.type === 'line');
+          if (lineId) {
+            setPathEditingLayerId(lineId);
+            setSelectedIds([lineId]);
+            setTool('cut');
+          }
+        }
+        if (e.key === 'u' || e.key === 'U') setTool('lasso');
+        if (e.key === 'i' || e.key === 'I') setTool('imageSlot');
+        if (e.key === 'g' || e.key === 'G') setTool('grid');
+        if (e.key === 'b' || e.key === 'B') setTool('table');
+        if (e.key === 'm' || e.key === 'M') setTool('image');
+        if (e.key === 'p' || e.key === 'P') {
+          const lineId =
+            pathEditingLayerId ||
+            selectedIds.find((id) => history.document.layers.find((l) => l.id === id)?.type === 'line');
+          if (lineId) {
+            setPathEditingLayerId(lineId);
+            setSelectedIds([lineId]);
+            setTool('bend');
+          }
         }
       }
-      if ((e.key === 'u' || e.key === 'U') && !e.ctrlKey && !e.metaKey) setTool('lasso');
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault();
         setTool('image');
-      }
-      if (e.key === 'i' || e.key === 'I') setTool('imageSlot');
-      if (e.key === 'g' || e.key === 'G') setTool('grid');
-      if (e.key === 'b' || e.key === 'B') setTool('table');
-      if (e.key === 'm' || e.key === 'M') setTool('image');
-      if ((e.key === 'p' || e.key === 'P') && !e.ctrlKey && !e.metaKey) {
-        const lineId =
-          pathEditingLayerId ||
-          selectedIds.find((id) => history.document.layers.find((l) => l.id === id)?.type === 'line');
-        if (lineId) {
-          setPathEditingLayerId(lineId);
-          setSelectedIds([lineId]);
-          setTool('bend');
-        }
       }
       // Space = temporary hand (OpenPencil)
       if (e.code === 'Space' && !e.repeat) {
@@ -1148,7 +1173,6 @@ export default function CanvasView() {
             onOpenDoc={(id) => void onOpenDoc(id)}
             onNew={() => void onNew()}
             onDeleteDoc={() => void onDeleteDoc()}
-            onApplyPreset={onApplyPreset}
             onPageChange={setPageIndex}
             onAddPage={() => {
               const next = addPage(history.document);
@@ -1231,6 +1255,10 @@ export default function CanvasView() {
             onRemoveGuide={(id) => {
               history.setDocument(removeGuide(history.document, id));
             }}
+            onCancelGuideCreate={(id) => {
+              // Silent: creation already pushed its history entry; aborting leaves no trace.
+              history.updateSilent(removeGuide(history.document, id));
+            }}
             showRulers={history.document.settings?.showRulers !== false}
             onToggleRulers={() => {
               const doc = history.document;
@@ -1253,6 +1281,7 @@ export default function CanvasView() {
                 },
               });
             }}
+            zoomPortalTarget={zoomPortalTarget}
             onContextMenu={(layerId, x, y) => {
               const layer = layerId
                 ? history.document.layers.find((l) => l.id === layerId)
@@ -1361,9 +1390,11 @@ export default function CanvasView() {
             onBringForward={() => setAllLayers(bringForward(history.document.layers, selectedIds))}
             onSendBack={() => setAllLayers(sendToBack(history.document.layers, selectedIds))}
             onSendBackward={() => setAllLayers(sendBackward(history.document.layers, selectedIds))}
+            onApplyPreset={onApplyPreset}
             logoSideConflict={
               Boolean(selected?.type === 'logo' && logoSideHasConflict(history.document.layers, selected.id))
             }
+            zoomSlotRef={setZoomPortalTarget}
           />
         </div>
         )

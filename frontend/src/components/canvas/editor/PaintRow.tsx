@@ -12,7 +12,8 @@ interface PaintRowProps {
   onPaintChange: (color: string, opacity: number) => void;
   /** Coalesce undo after a paint interaction (picker close / field blur). */
   onPaintCommit?: () => void;
-  onVisibleChange: (visible: boolean) => void;
+  /** When omitted the visibility toggle is hidden (e.g. gradient stop 2). */
+  onVisibleChange?: (visible: boolean) => void;
   onRemove: () => void;
 }
 
@@ -100,15 +101,17 @@ export default function PaintRow({
           onBlur={() => onPaintCommit?.()}
         />
         <span className="canvas-paint-pct">%</span>
-        <button
-          type="button"
-          className="canvas-paint-icon"
-          data-active={visible}
-          aria-label={visible ? 'Ocultar' : 'Mostrar'}
-          onClick={() => onVisibleChange(!visible)}
-        >
-          {visible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-        </button>
+        {onVisibleChange && (
+          <button
+            type="button"
+            className="canvas-paint-icon"
+            data-active={visible}
+            aria-label={visible ? 'Ocultar' : 'Mostrar'}
+            onClick={() => onVisibleChange(!visible)}
+          >
+            {visible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+          </button>
+        )}
         <button type="button" className="canvas-paint-icon" aria-label="Quitar" onClick={onRemove}>
           <Minus className="h-3 w-3" />
         </button>

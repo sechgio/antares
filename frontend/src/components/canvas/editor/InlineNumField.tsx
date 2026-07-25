@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 interface InlineNumFieldProps {
   prefix: string;
   value: number;
@@ -18,15 +20,27 @@ export default function InlineNumField({
   step = 0.5,
   title,
 }: InlineNumFieldProps) {
+  // Draft while focused so partial input ("", "-", "1.") doesn't snap to 0.
+  const [draft, setDraft] = useState<string | null>(null);
+  const display = Number.isFinite(value) ? String(Math.round(value * 100) / 100) : '0';
   return (
     <label className="canvas-inline-field" title={title}>
       <span className="canvas-inline-field-prefix">{prefix}</span>
       <input
         type="number"
         step={step}
-        value={Number.isFinite(value) ? Math.round(value * 10) / 10 : 0}
-        onChange={(e) => onChange(Number(e.target.value) || 0)}
-        onBlur={() => onCommit?.()}
+        value={draft ?? display}
+        onFocus={() => setDraft(display)}
+        onChange={(e) => {
+          const raw = e.target.value;
+          setDraft(raw);
+          const n = Number(raw);
+          if (raw !== '' && Number.isFinite(n)) onChange(n);
+        }}
+        onBlur={() => {
+          setDraft(null);
+          onCommit?.();
+        }}
         aria-label={title || prefix}
       />
       {suffix ? <span className="canvas-inline-field-suffix">{suffix}</span> : null}
