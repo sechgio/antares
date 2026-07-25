@@ -97,8 +97,9 @@ describe('LayerNode inline edit', () => {
     );
     const editor = screen.getByTestId('canvas-inline-editor') as HTMLTextAreaElement;
     expect(editor.value).toBe('Hola');
+    expect(editor.getAttribute('spellcheck')).toBe('false');
     fireEvent.change(editor, { target: { value: 'Mundo' } });
-    expect(onEditValue).toHaveBeenCalledWith(layer.id, 'Mundo');
+    expect(onEditValue).toHaveBeenCalledWith(layer.id, 'Mundo', expect.any(Number));
   });
 
   it('commits on Escape and does not start drag from the editor', () => {

@@ -37,7 +37,7 @@ interface DesignStageProps {
   onDrawLayer: (tool: CanvasTool, rect: DrawRect) => void;
   onStartEdit: (id: string) => void;
   onStartPathEdit?: (id: string) => void;
-  onEditValue: (id: string, value: string) => void;
+  onEditValue: (id: string, value: string, contentHeightPx?: number, zoom?: number) => void;
   onFitTextHeight: (id: string, contentHeightPx: number, zoom: number) => void;
   onCommitEdit: () => void;
   onContextMenu: (layerId: string | null, clientX: number, clientY: number) => void;
@@ -165,7 +165,7 @@ export default function DesignStage({
         onDrawLayer={onDrawLayer}
         onStartEdit={onStartEdit}
         onStartPathEdit={onStartPathEdit}
-        onEditValue={onEditValue}
+        onEditValue={(id, v, h) => onEditValue(id, v, h, zoom)}
         onFitTextHeight={(id, h) => onFitTextHeight(id, h, zoom)}
         onCommitEdit={onCommitEdit}
         onContextMenu={onContextMenu}

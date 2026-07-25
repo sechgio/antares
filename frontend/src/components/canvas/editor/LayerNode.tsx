@@ -34,7 +34,8 @@ interface LayerNodeProps {
   onLayerPointerDown: (id: string, additive: boolean, e: ReactPointerEvent<HTMLDivElement>) => void;
   onContextMenu?: (id: string, clientX: number, clientY: number) => void;
   onStartEdit?: (id: string) => void;
-  onEditValue?: (id: string, value: string) => void;
+  /** `contentHeightPx` is the editor scrollHeight, for live auto-grow while typing. */
+  onEditValue?: (id: string, value: string, contentHeightPx?: number) => void;
   onFitTextHeight?: (id: string, contentHeightPx: number) => void;
   onCommitEdit?: () => void;
   onStartPathEdit?: (id: string) => void;
@@ -297,7 +298,8 @@ function LayerNode({
           data-testid="canvas-inline-editor"
           value={layer.value}
           aria-label="Editar texto"
-          onChange={(e) => onEditValueRef.current?.(layer.id, e.target.value)}
+          spellCheck={false}
+          onChange={(e) => onEditValueRef.current?.(layer.id, e.target.value, e.target.scrollHeight)}
           onBlur={() => finishEdit()}
           onPointerDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => {

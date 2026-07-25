@@ -88,7 +88,7 @@ interface ArtboardProps {
   onDrawLayer?: (tool: CanvasTool, rect: DrawRect) => void;
   onContextMenu?: (layerId: string | null, clientX: number, clientY: number) => void;
   onStartEdit?: (id: string) => void;
-  onEditValue?: (id: string, value: string) => void;
+  onEditValue?: (id: string, value: string, contentHeightPx?: number) => void;
   onFitTextHeight?: (id: string, contentHeightPx: number) => void;
   onCommitEdit?: () => void;
   editingSelectAll?: boolean;

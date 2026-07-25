@@ -356,10 +356,17 @@ export default function CanvasView() {
   );
 
   const onInlineEditValue = useCallback(
-    (id: string, value: string) => {
+    (id: string, value: string, contentHeightPx?: number, zoom?: number) => {
       history.updateSilent({
         ...history.document,
-        layers: history.document.layers.map((l) => (l.id === id ? { ...l, value } : l)),
+        layers: history.document.layers.map((l) => {
+          if (l.id !== id) return l;
+          const next = { ...l, value };
+          // Live auto-grow while typing (single update so value + height land together).
+          return contentHeightPx != null && zoom != null
+            ? growTextLayerToContent(next, contentHeightPx, zoom)
+            : next;
+        }),
       });
     },
     [history],
