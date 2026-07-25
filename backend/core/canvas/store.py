@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import threading
 from pathlib import Path
@@ -15,6 +16,8 @@ from backend.core.canvas.models import (
     utc_now_iso,
 )
 from backend.utils.paths import resource_path, user_data_path
+
+logger = logging.getLogger(__name__)
 
 _store_instance: CanvasStore | None = None
 _store_lock = threading.Lock()
@@ -93,7 +96,8 @@ class CanvasStore:
                 try:
                     raw = json.loads(path.read_text(encoding="utf-8"))
                     doc = normalize_document(raw)
-                except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+                    logger.warning("Skipping unreadable canvas document %s: %s", path, exc)
                     continue
                 items.append(
                     {
@@ -111,7 +115,8 @@ class CanvasStore:
                 return None
             try:
                 raw = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.warning("Could not read canvas document %s: %s", path, exc)
                 return None
             return normalize_document(raw)
 

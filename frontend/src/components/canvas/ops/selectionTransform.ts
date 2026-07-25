@@ -3,12 +3,14 @@ import { mm, parseMm } from '../types';
 import { MM_TO_PX } from './drawHelpers';
 import { applyGridToImageSlots } from './gridLayout';
 import { applyLineStrokeWeight, mmToPxLength } from './layerStyle';
+import { layerBounds, layerLocalBounds, parseRotateDeg, type RectMm } from './layerBounds';
 import { expandWithDescendants } from './layerTree';
 import { ensureLinePath, scalePathPoints } from './pathGeometry';
 
-export type HandlePos = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
+// Re-export the canonical RectMm so existing importers (guides, Artboard) keep working.
+export type { RectMm };
 
-export type RectMm = { x: number; y: number; w: number; h: number };
+export type HandlePos = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
 export type SmartGuide = { axis: 'x' | 'y'; pos: number };
 
@@ -48,57 +50,8 @@ export function isPointerClick(dxPx: number, dyPx: number, thresholdPx = POINTER
   return dxPx * dxPx + dyPx * dyPx <= thresholdPx * thresholdPx;
 }
 
-function layerBounds(layer: CanvasLayer): RectMm & { right: number; bottom: number; cx: number; cy: number } {
-  const x = parseMm(layer.cssVars['--translate-x']);
-  const y = parseMm(layer.cssVars['--translate-y']);
-  const w = parseMm(layer.cssVars['--width'], 10);
-  const h = parseMm(layer.cssVars['--height'], 10);
-  const rotate = parseRotateDeg(layer);
-  if (!rotate) {
-    return { x, y, w, h, right: x + w, bottom: y + h, cx: x + w / 2, cy: y + h / 2 };
-  }
-  const cx = x + w / 2;
-  const cy = y + h / 2;
-  const rad = (rotate * Math.PI) / 180;
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-  const corners = [
-    { dx: -w / 2, dy: -h / 2 },
-    { dx: w / 2, dy: -h / 2 },
-    { dx: w / 2, dy: h / 2 },
-    { dx: -w / 2, dy: h / 2 },
-  ].map(({ dx, dy }) => ({ x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos }));
-  const minX = Math.min(...corners.map((c) => c.x));
-  const maxX = Math.max(...corners.map((c) => c.x));
-  const minY = Math.min(...corners.map((c) => c.y));
-  const maxY = Math.max(...corners.map((c) => c.y));
-  return {
-    x: minX,
-    y: minY,
-    w: maxX - minX,
-    h: maxY - minY,
-    right: maxX,
-    bottom: maxY,
-    cx: (minX + maxX) / 2,
-    cy: (minY + maxY) / 2,
-  };
-}
-
-/** Unrotated local box (used for resize mapping of layer geometry). */
-function layerLocalBounds(layer: CanvasLayer): RectMm & { right: number; bottom: number; cx: number; cy: number } {
-  const x = parseMm(layer.cssVars['--translate-x']);
-  const y = parseMm(layer.cssVars['--translate-y']);
-  const w = parseMm(layer.cssVars['--width'], 10);
-  const h = parseMm(layer.cssVars['--height'], 10);
-  return { x, y, w, h, right: x + w, bottom: y + h, cx: x + w / 2, cy: y + h / 2 };
-}
-
 function isTransformable(layer: CanvasLayer): boolean {
   return layer.type !== 'frame' && layer.visible !== false && !layer.locked;
-}
-
-function parseRotateDeg(layer: CanvasLayer): number {
-  return parseFloat(layer.cssVars['--rotate'] || '0') || 0;
 }
 
 /** Axis-aligned union of selected transformable layers (includes rotation AABB). */

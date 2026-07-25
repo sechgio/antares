@@ -47,6 +47,7 @@ export default function ZoomMenu({
   const menuId = useId();
   const pct = Math.round(zoom * 100);
 
+  // On open: seed draft with current pct and focus/select the input.
   useEffect(() => {
     if (!open) return;
     setDraft(`${pct}%`);
@@ -55,6 +56,17 @@ export default function ZoomMenu({
       inputRef.current?.select();
     }, 0);
     return () => window.clearTimeout(t);
+    // Only on open transition — pct changes while open are handled below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // While open, keep draft in sync with pct — but never clobber what the user
+  // is actively typing. If the input is focused, the animated zoom must not
+  // overwrite the in-progress edit.
+  useEffect(() => {
+    if (!open) return;
+    if (document.activeElement === inputRef.current) return;
+    setDraft(`${pct}%`);
   }, [open, pct]);
 
   useEffect(() => {

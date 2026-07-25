@@ -199,9 +199,9 @@ function LayerNode({
 
   if (highlighted) {
     if (paint.outline) {
-      style.boxShadow = [paint.boxShadow, '0 0 0 1px #18a0fb'].filter(Boolean).join(',');
+      style.boxShadow = [paint.boxShadow, '0 0 0 1px var(--cv-accent)'].filter(Boolean).join(',');
     } else {
-      style.outline = '1px solid #18a0fb';
+      style.outline = '1px solid var(--cv-accent)';
     }
   }
 
@@ -288,6 +288,31 @@ function LayerNode({
         e.stopPropagation();
         onSelectRef.current(layer.id, false);
         onContextMenuRef.current?.(layer.id, e.clientX, e.clientY);
+      }}
+      onKeyDown={(e) => {
+        if (!interactive || editing) return;
+        if (e.key === ' ' || e.key === 'Spacebar') {
+          // Space → select (equivalent to a click on the layer).
+          e.preventDefault();
+          onSelectRef.current(layer.id, e.shiftKey || e.ctrlKey || e.metaKey);
+          return;
+        }
+        if (e.key === 'Enter') {
+          // Enter → select + enter edit mode (equivalent to double-click),
+          // since double-click isn't keyboard-accessible. Mirrors onDoubleClick.
+          e.preventDefault();
+          e.stopPropagation();
+          onSelectRef.current(layer.id, false);
+          if (layer.type === 'group' || layer.type === 'grid') {
+            onStartEditRef.current?.(layer.id);
+            return;
+          }
+          if (layer.type === 'line') {
+            onStartPathEditRef.current?.(layer.id);
+            return;
+          }
+          if (canEditText || canEditField) onStartEditRef.current?.(layer.id);
+        }
       }}
       role="button"
       tabIndex={0}

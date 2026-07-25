@@ -305,6 +305,14 @@ export default function ColorPicker({
                 setH(next.h);
                 setS(next.s);
                 setV(next.v);
+                // Re-typing the same hex that's already current would not
+                // change h/s/v, so the emit effect would no-op. Force-emit so
+                // the host always receives a confirmed value on valid input
+                // (e.g. user deleted last char and re-typed it).
+                const candidate = `#${raw}`.toUpperCase();
+                if (candidate === hex) {
+                  emitRef.current(candidate, op);
+                }
               }
             }}
             aria-label="Hex"

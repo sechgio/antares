@@ -17,6 +17,8 @@ interface TopBarProps {
   onToggleShortcuts?: () => void;
   onTogglePreview?: () => void;
   onNameChange: (name: string) => void;
+  onNameStart?: () => void;
+  onNameCommit?: () => void;
   onMode: (mode: CanvasMode) => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -35,6 +37,8 @@ export default function TopBar({
   onToggleShortcuts,
   onTogglePreview,
   onNameChange,
+  onNameStart,
+  onNameCommit,
   onMode,
   onUndo,
   onRedo,
@@ -50,7 +54,17 @@ export default function TopBar({
         className="min-w-0 max-w-[220px] border-0 bg-transparent text-[13px] font-semibold outline-none placeholder:text-[var(--cv-text-muted)]"
         style={{ color: 'var(--cv-text)' }}
         value={name}
+        title={name || undefined}
         onChange={(e) => onNameChange(e.target.value)}
+        onFocus={onNameStart}
+        onBlur={onNameCommit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.currentTarget.blur();
+          } else if (e.key === 'Escape') {
+            e.currentTarget.blur();
+          }
+        }}
         placeholder="Sin título"
         aria-label="Nombre del documento"
       />

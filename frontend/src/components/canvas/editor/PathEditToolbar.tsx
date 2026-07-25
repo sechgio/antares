@@ -40,7 +40,7 @@ export default function PathEditToolbar({
       {ITEMS.map(({ id, icon: Icon, title }) => {
         const isActive = active === id;
         return (
-          <WithHoverTooltip key={id} label={title}>
+          <WithHoverTooltip key={id} label={title} variant="dark">
             <button
               type="button"
               className={`canvas-path-edit-btn${isActive ? ' is-active' : ''}`}
@@ -56,7 +56,7 @@ export default function PathEditToolbar({
       {canClosePath && onToggleClosed && (
         <>
           <span className="canvas-path-edit-sep" aria-hidden />
-          <WithHoverTooltip label={pathClosed ? 'Abrir trazo' : 'Cerrar trazo'}>
+          <WithHoverTooltip label={pathClosed ? 'Abrir trazo' : 'Cerrar trazo'} variant="dark">
             <button
               type="button"
               className={`canvas-path-edit-btn${pathClosed ? ' is-active' : ''}`}

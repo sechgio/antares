@@ -1,45 +1,9 @@
 import type { CanvasLayer } from '../types';
 import { mm, newId, parseMm } from '../types';
+import { layerBounds } from './layerBounds';
 import { expandWithDescendants } from './layerTree';
 
 const NUDGE_OFFSET_MM = 5;
-
-function layerBounds(layer: CanvasLayer) {
-  const x = parseMm(layer.cssVars['--translate-x']);
-  const y = parseMm(layer.cssVars['--translate-y']);
-  const w = parseMm(layer.cssVars['--width'], 10);
-  const h = parseMm(layer.cssVars['--height'], 10);
-  const rotate = parseFloat(layer.cssVars['--rotate'] || '0') || 0;
-  if (!rotate) {
-    return { x, y, w, h, right: x + w, bottom: y + h, cx: x + w / 2, cy: y + h / 2 };
-  }
-  // Visual AABB of rotated box (transform-origin center).
-  const cx = x + w / 2;
-  const cy = y + h / 2;
-  const rad = (rotate * Math.PI) / 180;
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-  const corners = [
-    { dx: -w / 2, dy: -h / 2 },
-    { dx: w / 2, dy: -h / 2 },
-    { dx: w / 2, dy: h / 2 },
-    { dx: -w / 2, dy: h / 2 },
-  ].map(({ dx, dy }) => ({ x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos }));
-  const minX = Math.min(...corners.map((c) => c.x));
-  const maxX = Math.max(...corners.map((c) => c.x));
-  const minY = Math.min(...corners.map((c) => c.y));
-  const maxY = Math.max(...corners.map((c) => c.y));
-  return {
-    x: minX,
-    y: minY,
-    w: maxX - minX,
-    h: maxY - minY,
-    right: maxX,
-    bottom: maxY,
-    cx: (minX + maxX) / 2,
-    cy: (minY + maxY) / 2,
-  };
-}
 
 function isLocked(layer: CanvasLayer): boolean {
   return Boolean(layer.locked);

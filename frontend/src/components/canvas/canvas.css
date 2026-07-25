@@ -44,6 +44,7 @@
   background: var(--cv-hover);
   padding: 0 8px;
   font-size: 11px;
+  letter-spacing: normal;
   color: var(--cv-text);
   outline: none;
   transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
@@ -990,6 +991,52 @@
   transform: translateX(14px);
 }
 
+/* Figma-like checkbox used in RightPanel imageSlot/checkbox sections. */
+.canvas-checkbox {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border: 1.5px solid var(--cv-border-strong);
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.canvas-checkbox:hover {
+  border-color: var(--cv-accent);
+}
+
+.canvas-checkbox[data-checked="true"] {
+  background: var(--cv-accent);
+  border-color: var(--cv-accent);
+}
+
+.canvas-checkbox[data-checked="true"]:hover {
+  background: var(--cv-accent-hover);
+  border-color: var(--cv-accent-hover);
+}
+
+.canvas-checkbox:disabled {
+  cursor: default;
+}
+
+.canvas-checkbox:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--cv-accent-soft), 0 0 0 1px var(--cv-accent);
+}
+
+.canvas-checkbox-check {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
 .canvas-list-row {
   display: flex;
   width: 100%;
@@ -1337,6 +1384,7 @@
   .canvas-toolbar-tool,
   .canvas-switch,
   .canvas-switch-knob,
+  .canvas-checkbox,
   .canvas-input,
   .canvas-btn-primary,
   .canvas-list-row,

@@ -8,7 +8,7 @@
  */
 
 import type { CanvasLayer } from '../types';
-import { parseMm } from '../types';
+import { layerBoundsMm } from './layerBounds';
 
 export type BBox = { x: number; y: number; w: number; h: number };
 
@@ -28,14 +28,6 @@ function cellKey(cx: number, cy: number): string {
   return `${cx},${cy}`;
 }
 
-function layerBBox(layer: CanvasLayer): BBox {
-  const x = parseMm(layer.cssVars['--translate-x']);
-  const y = parseMm(layer.cssVars['--translate-y']);
-  const w = parseMm(layer.cssVars['--width'], 10);
-  const h = parseMm(layer.cssVars['--height'], 10);
-  return { x, y, w, h };
-}
-
 function rectsOverlap(a: BBox, b: BBox): boolean {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
@@ -50,7 +42,7 @@ export function buildSpatialIndex(layers: CanvasLayer[]): SpatialIndex {
 
   for (const layer of layers) {
     if (layer.type === 'frame' || layer.visible === false || layer.locked) continue;
-    const box = layerBBox(layer);
+    const box = layerBoundsMm(layer);
     bboxes.set(layer.id, box);
 
     const minCx = Math.floor(box.x / CELL_SIZE_MM);

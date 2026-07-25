@@ -159,6 +159,7 @@ function ShapeToolMenu({ tool, onTool }: BottomToolbarProps) {
             type="button"
             aria-label={lastLabel}
             aria-pressed={shapeActive}
+            aria-expanded={open}
             className="canvas-toolbar-tool canvas-shape-split-main"
             data-active={shapeActive}
             onClick={(e) => {

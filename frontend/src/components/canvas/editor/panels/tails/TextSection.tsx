@@ -1,0 +1,92 @@
+import { AlignCenter, AlignLeft, AlignRight } from 'lucide-react';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
+import { SectionHeader } from '../shared';
+import type { SectionProps } from '../types';
+
+/** Text inspector — matches `text` and `field`. The textarea only renders for
+ *  `text`; `field` shows the color/family/align controls but no editable value
+ *  (its value comes from the Excel binding, edited in FieldSection). */
+export default function TextSection({
+  layer,
+  emitLive,
+  onCommitLive,
+  setVar,
+  setVarLive,
+}: SectionProps) {
+  return (
+    <div className="canvas-section">
+      <SectionHeader title="Texto" />
+      {layer.type === 'text' && (
+        <textarea
+          className="canvas-input mb-2 !h-auto py-1.5"
+          rows={3}
+          value={layer.value}
+          onChange={(e) => emitLive({ ...layer, value: e.target.value })}
+          onBlur={() => onCommitLive?.()}
+        />
+      )}
+      <div className="mb-2 flex items-center gap-2">
+        <input
+          type="color"
+          className="h-7 w-7 cursor-pointer rounded border-0 bg-transparent"
+          value={layer.cssVars['--color'] || '#1e1e1e'}
+          onChange={(e) => setVarLive('--color', e.target.value)}
+          onBlur={() => onCommitLive?.()}
+        />
+        <input
+          className="canvas-input"
+          value={layer.cssVars['--font-size'] || '11pt'}
+          onChange={(e) => setVarLive('--font-size', e.target.value)}
+          onBlur={() => onCommitLive?.()}
+          placeholder="11pt"
+        />
+      </div>
+      <select
+        className="canvas-input mb-2"
+        value={layer.cssVars['--font-weight'] || '400'}
+        onChange={(e) => setVar('--font-weight', e.target.value)}
+      >
+        <option value="400">Regular</option>
+        <option value="500">Medium</option>
+        <option value="600">Semibold</option>
+        <option value="700">Bold</option>
+      </select>
+      <select
+        className="canvas-input mb-2"
+        value={layer.cssVars['--font-family'] || 'Segoe UI, Arial, sans-serif'}
+        onChange={(e) => setVar('--font-family', e.target.value)}
+      >
+        <option value="Segoe UI, Arial, sans-serif">Segoe UI</option>
+        <option value="Arial, sans-serif">Arial</option>
+        <option value="Georgia, serif">Georgia</option>
+        <option value="Consolas, monospace">Consolas</option>
+      </select>
+      <div className="mb-2 flex gap-1">
+        {[
+          { icon: AlignLeft, align: 'left', label: 'Alinear izquierda' },
+          { icon: AlignCenter, align: 'center', label: 'Alinear centro' },
+          { icon: AlignRight, align: 'right', label: 'Alinear derecha' },
+        ].map(({ icon: Icon, align, label }) => (
+          <WithHoverTooltip key={align} label={label} placement="bottom" variant="dark">
+            <button
+              type="button"
+              className="canvas-icon-btn"
+              aria-label={label}
+              data-active={layer.cssVars['--text-align'] === align}
+              onClick={() => setVar('--text-align', align)}
+            >
+              <Icon className="h-3.5 w-3.5" />
+            </button>
+          </WithHoverTooltip>
+        ))}
+      </div>
+      <input
+        className="canvas-input"
+        placeholder="Line height (ej. 1.2)"
+        value={layer.cssVars['--line-height'] || ''}
+        onChange={(e) => setVarLive('--line-height', e.target.value)}
+        onBlur={() => onCommitLive?.()}
+      />
+    </div>
+  );
+}

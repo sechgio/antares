@@ -368,6 +368,35 @@ def test_path_traversal_rejected(tmp_path: Path) -> None:
         store.get("../secrets")
 
 
+def test_corrupt_document_is_logged_and_skipped(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """A corrupt JSON file is skipped from listings (no crash) and logged."""
+    store = CanvasStore(tmp_path)
+    # Write a valid doc first so the directory has one readable file.
+    store.create(name="Good")
+    # Drop a corrupt JSON file alongside it.
+    (tmp_path / "broken.json").write_text("{not valid json", encoding="utf-8")
+
+    with caplog.at_level("WARNING", logger="backend.core.canvas.store"):
+        items = store.list_documents()
+
+    # The good doc is listed; the corrupt one is skipped (no exception).
+    assert [item["name"] for item in items] == ["Good"]
+    # A warning was emitted naming the corrupt file.
+    assert any("broken.json" in record.getMessage() for record in caplog.records)
+
+
+def test_corrupt_document_get_returns_none_and_logs(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Reading a specific corrupt file returns None and logs a warning."""
+    store = CanvasStore(tmp_path)
+    (tmp_path / "broken.json").write_text("{not valid json", encoding="utf-8")
+
+    with caplog.at_level("WARNING", logger="backend.core.canvas.store"):
+        result = store.get("broken")
+
+    assert result is None
+    assert any("broken.json" in record.getMessage() for record in caplog.records)
+
+
 def test_handlers_with_injected_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     store = CanvasStore(tmp_path)
 

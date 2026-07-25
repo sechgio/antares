@@ -46,6 +46,7 @@ import { childIdsOf, expandWithDescendants, isLayerContainer } from './ops/layer
 import {
   collectDocumentColors,
   DEFAULT_LINE_STROKE_PX,
+  clampOpacity,
   lineHeightMmFromStrokePx,
   strokeWeightForNewLine,
 } from './ops/layerStyle';
@@ -989,6 +990,20 @@ export default function CanvasView() {
     });
   };
 
+  // Capture the document snapshot at focus time so the rename can be committed
+  // to history as a single undoable entry on blur/Enter (instead of one entry
+  // per keystroke). Mirrors the gesture pattern used elsewhere in the canvas.
+  const renameBaselineRef = useRef<typeof history.document | null>(null);
+  const onRenameStart = () => {
+    renameBaselineRef.current = history.document;
+  };
+  const onRenameCommit = () => {
+    const baseline = renameBaselineRef.current;
+    renameBaselineRef.current = null;
+    if (!baseline || baseline.name === history.document.name) return;
+    history.commitFromBaseline(baseline);
+  };
+
   const onApplyPreset = (presetId: string) => {
     const preset = CANVAS_PRESETS.find((p) => p.id === presetId);
     if (!preset) return;
@@ -1140,6 +1155,8 @@ export default function CanvasView() {
         onToggleShortcuts={() => setShowShortcuts((v) => !v)}
         onTogglePreview={togglePreview}
         onNameChange={onRename}
+        onNameStart={onRenameStart}
+        onNameCommit={onRenameCommit}
         onMode={(next) => {
           setMode(next);
           setContextMenu(null);
@@ -1386,6 +1403,15 @@ export default function CanvasView() {
             onBulkOpacity={(opacity) =>
               setAllLayers(setLayersOpacity(history.document.layers, editableSelectedIds, opacity))
             }
+            bulkOpacityValue={(() => {
+              const sel = history.document.layers.filter((l) => editableSelectedIds.includes(l.id));
+              if (sel.length === 0) return undefined;
+              const first = sel[0].cssVars['--opacity'];
+              const allSame = sel.every((l) => l.cssVars['--opacity'] === first);
+              if (!allSame) return null;
+              const n = Number(first ?? '100');
+              return Number.isFinite(n) ? clampOpacity(n) : undefined;
+            })()}
             onBringFront={() => setAllLayers(bringToFront(history.document.layers, selectedIds))}
             onBringForward={() => setAllLayers(bringForward(history.document.layers, selectedIds))}
             onSendBack={() => setAllLayers(sendToBack(history.document.layers, selectedIds))}

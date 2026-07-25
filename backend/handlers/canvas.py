@@ -4,23 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.core import canvas as _canvas_core
 from backend.handlers.common import validate_params, with_locale
 
 
 @with_locale
 def canvas_list(params: dict[str, Any]) -> dict[str, Any]:
-    from backend.core.canvas import get_canvas_store
-
-    return {"documents": get_canvas_store().list_documents()}
+    return {"documents": _canvas_core.get_canvas_store().list_documents()}
 
 
 @with_locale
 @validate_params("id")
 def canvas_get(params: dict[str, Any]) -> dict[str, Any]:
-    from backend.core.canvas import get_canvas_store
-
     doc_id = str(params["id"])
-    document = get_canvas_store().get(doc_id)
+    document = _canvas_core.get_canvas_store().get(doc_id)
     if document is None:
         msg = f"Document not found: {doc_id}"
         raise ValueError(msg)
@@ -30,8 +27,6 @@ def canvas_get(params: dict[str, Any]) -> dict[str, Any]:
 @with_locale
 @validate_params("document")
 def canvas_save(params: dict[str, Any]) -> dict[str, Any]:
-    from backend.core.canvas import get_canvas_store
-
     document = params["document"]
     if not isinstance(document, dict):
         msg = "document must be an object"
@@ -39,26 +34,22 @@ def canvas_save(params: dict[str, Any]) -> dict[str, Any]:
     touch = params.get("touch", True)
     if not isinstance(touch, bool):
         touch = True
-    saved = get_canvas_store().save(document, touch=touch)
+    saved = _canvas_core.get_canvas_store().save(document, touch=touch)
     return {"document": saved}
 
 
 @with_locale
 def canvas_create(params: dict[str, Any]) -> dict[str, Any]:
-    from backend.core.canvas import get_canvas_store
-
     name = str(params.get("name") or "Sin título")
-    document = get_canvas_store().create(name=name)
+    document = _canvas_core.get_canvas_store().create(name=name)
     return {"document": document}
 
 
 @with_locale
 @validate_params("id")
 def canvas_delete(params: dict[str, Any]) -> dict[str, Any]:
-    from backend.core.canvas import get_canvas_store
-
     doc_id = str(params["id"])
-    deleted = get_canvas_store().delete(doc_id)
+    deleted = _canvas_core.get_canvas_store().delete(doc_id)
     if not deleted:
         msg = f"Document not found: {doc_id}"
         raise ValueError(msg)
@@ -68,11 +59,9 @@ def canvas_delete(params: dict[str, Any]) -> dict[str, Any]:
 @with_locale
 @validate_params("id")
 def canvas_duplicate(params: dict[str, Any]) -> dict[str, Any]:
-    from backend.core.canvas import get_canvas_store
-
     doc_id = str(params["id"])
     name = params.get("name")
-    document = get_canvas_store().duplicate(doc_id, name=str(name) if name else None)
+    document = _canvas_core.get_canvas_store().duplicate(doc_id, name=str(name) if name else None)
     return {"document": document}
 
 

@@ -2,18 +2,22 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   Eye,
   EyeOff,
   FileText,
+  Group,
   Image as ImageIcon,
+  Minus,
+  Plus,
   Square,
+  Slash,
   Type,
   Layers,
   Trash2,
   Table2,
   Grid3X3,
   CheckSquare,
-  Minus,
   Circle,
   PenLine,
   ArrowUpRight,
@@ -58,10 +62,11 @@ function layerIcon(type: CanvasLayer['type']) {
   if (type === 'text' || type === 'field') return <Type className="h-3 w-3" />;
   if (type === 'rect') return <Square className="h-3 w-3" />;
   if (type === 'table') return <Table2 className="h-3 w-3" />;
-  if (type === 'grid' || type === 'group') return <Grid3X3 className="h-3 w-3" />;
+  if (type === 'grid') return <Grid3X3 className="h-3 w-3" />;
+  if (type === 'group') return <Group className="h-3 w-3" />;
   if (type === 'checkbox') return <CheckSquare className="h-3 w-3" />;
   if (type === 'signature') return <PenLine className="h-3 w-3" />;
-  if (type === 'line') return <Minus className="h-3 w-3" />;
+  if (type === 'line') return <Slash className="h-3 w-3" />;
   if (type === 'ellipse') return <Circle className="h-3 w-3" />;
   if (type === 'arrow') return <ArrowUpRight className="h-3 w-3" />;
   if (type === 'polygon') return <Triangle className="h-3 w-3" />;
@@ -225,8 +230,8 @@ export default memo(function LeftSidebar({
           <span>Archivos</span>
           <div className="flex gap-0.5">
             <WithHoverTooltip label="Nuevo" placement="bottom" variant="dark">
-              <button type="button" className="canvas-icon-btn !h-6 !w-6 text-xs" onClick={onNew} aria-label="Nuevo">
-                +
+              <button type="button" className="canvas-icon-btn !h-6 !w-6" onClick={onNew} aria-label="Nuevo">
+                <Plus className="h-3 w-3" />
               </button>
             </WithHoverTooltip>
             <WithHoverTooltip label="Eliminar" placement="bottom" variant="dark">
@@ -261,17 +266,19 @@ export default memo(function LeftSidebar({
           </span>
           <div className="flex gap-0.5">
             <WithHoverTooltip label="Añadir página" placement="bottom" variant="dark">
-              <button type="button" className="canvas-icon-btn !h-6 !w-6 text-xs" onClick={onAddPage} aria-label="Añadir página">+</button>
+              <button type="button" className="canvas-icon-btn !h-6 !w-6" onClick={onAddPage} aria-label="Añadir página">
+                <Plus className="h-3 w-3" />
+              </button>
             </WithHoverTooltip>
             <WithHoverTooltip label="Quitar página" placement="bottom" variant="dark">
               <button
                 type="button"
-                className="canvas-icon-btn !h-6 !w-6 text-xs"
+                className="canvas-icon-btn !h-6 !w-6"
                 onClick={() => onRemovePage(pageIndex)}
                 aria-label="Quitar página"
                 disabled={pageCount <= 1}
               >
-                −
+                <Minus className="h-3 w-3" />
               </button>
             </WithHoverTooltip>
           </div>
@@ -483,7 +490,7 @@ export default memo(function LeftSidebar({
                   <WithHoverTooltip label="Subir" placement="left" variant="dark">
                     <button
                       type="button"
-                      className="canvas-icon-btn !h-6 !w-6 text-[10px]"
+                      className="canvas-icon-btn !h-6 !w-6"
                       aria-label="Subir"
                       disabled={sibIndex <= 0 || layer.locked}
                       onClick={() => {
@@ -491,13 +498,13 @@ export default memo(function LeftSidebar({
                         if (prev) onReorderSibling(layer.id, prev.id, 'before');
                       }}
                     >
-                      ↑
+                      <ChevronUp className="h-3 w-3" />
                     </button>
                   </WithHoverTooltip>
                   <WithHoverTooltip label="Bajar" placement="left" variant="dark">
                     <button
                       type="button"
-                      className="canvas-icon-btn !h-6 !w-6 text-[10px]"
+                      className="canvas-icon-btn !h-6 !w-6"
                       aria-label="Bajar"
                       disabled={sibIndex < 0 || sibIndex >= siblingCapas.length - 1 || layer.locked}
                       onClick={() => {
@@ -505,7 +512,7 @@ export default memo(function LeftSidebar({
                         if (nextLayer) onReorderSibling(layer.id, nextLayer.id, 'after');
                       }}
                     >
-                      ↓
+                      <ChevronDown className="h-3 w-3" />
                     </button>
                   </WithHoverTooltip>
                 </div>

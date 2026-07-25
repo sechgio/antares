@@ -1,5 +1,6 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { CheckCircle, ChevronDown } from 'lucide-react';
+import { CanvasSegmented } from './CanvasControls';
 
 interface StepProps {
   number: string;
@@ -24,7 +25,18 @@ export function GenerateStep({
 }: StepProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const contentRef = useRef<HTMLDivElement>(null);
+  const [contentHeight, setContentHeight] = useState<number | null>(null);
   const done = status === 'done';
+
+  // Measure the content height in a layout effect (after DOM commit) instead
+  // of reading scrollHeight during render, which races with Strict Mode / SSR
+  // and returns null on first paint. Re-measure when content or open state changes.
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    const el = contentRef.current;
+    if (!el) return;
+    setContentHeight(el.scrollHeight);
+  }, [isOpen, children]);
 
   return (
     <div
@@ -62,7 +74,7 @@ export function GenerateStep({
         ref={contentRef}
         className="overflow-hidden transition-all duration-200 ease-in-out"
         style={{
-          maxHeight: isOpen ? `${contentRef.current?.scrollHeight ?? 800}px` : '0px',
+          maxHeight: isOpen ? `${contentHeight ?? 800}px` : '0px',
           opacity: isOpen ? 1 : 0,
         }}
       >
@@ -72,6 +84,11 @@ export function GenerateStep({
   );
 }
 
+/**
+ * Thin wrapper around `CanvasSegmented` (compact `sm` size) for the Generate
+ * wizard. Kept as a named export so existing imports keep working; new code
+ * should use `CanvasSegmented` directly with `size="sm"`.
+ */
 export function GenerateSegmented<T extends string>({
   value,
   onChange,
@@ -84,35 +101,12 @@ export function GenerateSegmented<T extends string>({
   'aria-label'?: string;
 }) {
   return (
-    <div
-      role="group"
-      aria-label={ariaLabel}
-      className="flex gap-0.5 rounded-md p-0.5"
-      style={{ background: 'var(--cv-hover)' }}
-    >
-      {options.map((option) => {
-        const active = value === option.value;
-        return (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onChange(option.value)}
-            aria-pressed={active}
-            className="flex-1 rounded px-2 py-1.5 text-[10px] font-medium transition-all duration-150"
-            style={
-              active
-                ? {
-                    background: 'var(--cv-panel-elevated)',
-                    color: 'var(--cv-text)',
-                    boxShadow: 'var(--cv-shadow)',
-                  }
-                : { color: 'var(--cv-text-secondary)' }
-            }
-          >
-            {option.label}
-          </button>
-        );
-      })}
-    </div>
+    <CanvasSegmented
+      value={value}
+      onChange={onChange}
+      options={options}
+      ariaLabel={ariaLabel}
+      size="sm"
+    />
   );
 }

@@ -115,7 +115,7 @@ function handleStyle(left: number, top: number, cursor: string): CSSProperties {
     marginLeft: -HANDLE / 2,
     marginTop: -HANDLE / 2,
     background: '#fff',
-    border: '1.5px solid #18a0fb',
+    border: '1.5px solid var(--cv-accent)',
     borderRadius: 1,
     zIndex: 40,
     cursor,
@@ -1071,17 +1071,21 @@ export default function Artboard({
               top: -22,
               left: 0,
               fontSize: 11,
+              lineHeight: '16px',
               color: '#8c8c8c',
+              background: 'var(--cv-panel)',
+              padding: '1px 6px',
+              borderRadius: 3,
               whiteSpace: 'nowrap',
               pointerEvents: 'none',
             }}
           >
             Página A4 — 210 × 297 mm · {Math.round(zoom * 100)}%
             {placing && (
-              <span style={{ marginLeft: 8, color: '#18a0fb' }}>· Arrastra para dibujar</span>
+              <span style={{ marginLeft: 8, color: 'var(--cv-accent)' }}>· Arrastra para dibujar</span>
             )}
             {editableSelected.length > 1 && (
-              <span style={{ marginLeft: 8, color: '#18a0fb' }}>
+              <span style={{ marginLeft: 8, color: 'var(--cv-accent)' }}>
                 · {editableSelected.length} seleccionados
               </span>
             )}
@@ -1133,7 +1137,7 @@ export default function Artboard({
             >
               <polyline
                 fill="rgba(24,160,251,0.08)"
-                stroke="#18a0fb"
+                stroke="var(--cv-accent)"
                 strokeWidth={1}
                 points={lassoPts.map((p) => `${mmToScreenPx(p.x, zoom)},${mmToScreenPx(p.y, zoom)}`).join(' ')}
               />
@@ -1151,7 +1155,7 @@ export default function Artboard({
                   top: 0,
                   width: 1,
                   height: '100%',
-                  background: '#f12dd2',
+                  background: 'var(--cv-accent-2)',
                   pointerEvents: 'none',
                   zIndex: 45,
                 }}
@@ -1166,7 +1170,7 @@ export default function Artboard({
                   left: 0,
                   height: 1,
                   width: '100%',
-                  background: '#f12dd2',
+                  background: 'var(--cv-accent-2)',
                   pointerEvents: 'none',
                   zIndex: 45,
                 }}
@@ -1216,7 +1220,7 @@ export default function Artboard({
                           width: 2,
                           height: '100%',
                           marginLeft: -1,
-                          background: removing ? '#f24e1e' : '#18a0fb',
+                          background: removing ? 'var(--cv-danger)' : 'var(--cv-accent)',
                           pointerEvents: 'none',
                         }
                       : {
@@ -1226,7 +1230,7 @@ export default function Artboard({
                           height: 2,
                           width: '100%',
                           marginTop: -1,
-                          background: removing ? '#f24e1e' : '#18a0fb',
+                          background: removing ? 'var(--cv-danger)' : 'var(--cv-accent)',
                           pointerEvents: 'none',
                         }
                   }
@@ -1253,8 +1257,8 @@ export default function Artboard({
                   top: mmToScreenPx(Math.min(d.y1, d.y2), zoom),
                   width: Math.max(1, mmToScreenPx(Math.abs(d.x2 - d.x1), zoom)),
                   height: Math.max(1, mmToScreenPx(Math.abs(d.y2 - d.y1), zoom)),
-                  borderTop: d.axis === 'x' ? '1px solid #f12dd2' : undefined,
-                  borderLeft: d.axis === 'y' ? '1px solid #f12dd2' : undefined,
+                  borderTop: d.axis === 'x' ? '1px solid var(--cv-accent-2)' : undefined,
+                  borderLeft: d.axis === 'y' ? '1px solid var(--cv-accent-2)' : undefined,
                   boxSizing: 'border-box',
                 }}
               />
@@ -1264,7 +1268,7 @@ export default function Artboard({
                   left: mmToScreenPx(d.x, zoom),
                   top: mmToScreenPx(d.y, zoom),
                   transform: 'translate(-50%, -50%)',
-                  background: '#f12dd2',
+                  background: 'var(--cv-accent-2)',
                   color: '#fff',
                   fontSize: 10,
                   padding: '1px 4px',
@@ -1286,8 +1290,8 @@ export default function Artboard({
                 top: mmToScreenPx(marquee.y, zoom),
                 width: Math.max(mmToScreenPx(marquee.w, zoom), 1),
                 height: Math.max(mmToScreenPx(marquee.h, zoom), 1),
-                border: '1px solid #18a0fb',
-                background: 'rgba(24,160,251,0.08)',
+                border: '1px solid var(--cv-accent)',
+                background: 'color-mix(in srgb, var(--cv-accent) 8%, transparent)',
                 pointerEvents: 'none',
                 zIndex: 50,
                 boxSizing: 'border-box',
@@ -1314,7 +1318,7 @@ export default function Artboard({
                 y1={mmToScreenPx(draft.y0, zoom)}
                 x2={mmToScreenPx(draft.x1, zoom)}
                 y2={mmToScreenPx(draft.y1, zoom)}
-                stroke="#18a0fb"
+                stroke="var(--cv-accent)"
                 strokeWidth={1.5}
               />
             </svg>
@@ -1329,8 +1333,8 @@ export default function Artboard({
                 top: mmToScreenPx(draft.y, zoom),
                 width: Math.max(mmToScreenPx(draft.w, zoom), 1),
                 height: Math.max(mmToScreenPx(draft.h, zoom), 1),
-                border: '1.5px solid #18a0fb',
-                background: 'rgba(24,160,251,0.08)',
+                border: '1.5px solid var(--cv-accent)',
+                background: 'color-mix(in srgb, var(--cv-accent) 8%, transparent)',
                 borderRadius: tool === 'ellipse' ? '50%' : 0,
                 clipPath: clipPathForLayerType(tool),
                 pointerEvents: 'none',
@@ -1349,7 +1353,7 @@ export default function Artboard({
                   top: selY,
                   width: selW,
                   height: selH,
-                  outline: '1.5px solid #18a0fb',
+                  outline: '1.5px solid var(--cv-accent)',
                   pointerEvents: 'none',
                   zIndex: 30,
                   boxSizing: 'border-box',
@@ -1363,7 +1367,7 @@ export default function Artboard({
                   width: 1,
                   height: ROTATE_HANDLE_OFFSET,
                   marginLeft: -0.5,
-                  background: '#18a0fb',
+                  background: 'var(--cv-accent)',
                   pointerEvents: 'none',
                   zIndex: 39,
                 }}
@@ -1391,7 +1395,7 @@ export default function Artboard({
                     width: '100%',
                     height: '100%',
                     borderRadius: '50%',
-                    background: '#18a0fb',
+                    background: 'var(--cv-accent)',
                     border: '1.5px solid #fff',
                     cursor: 'grab',
                     boxSizing: 'border-box',

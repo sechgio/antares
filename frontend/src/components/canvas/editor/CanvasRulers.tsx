@@ -70,9 +70,18 @@ function CanvasRulers({
 
   const ticksH = useMemo(() => {
     const stepMm = zoom >= 1.5 ? 5 : zoom >= 0.6 ? 10 : 20;
-    const out: Array<{ mm: number; major: boolean }> = [];
+    // Major ticks carry labels; at low zoom the major step (stepMm*2) still
+    // places labels too close (e.g. "200" needs ~24px). Double the label cadence
+    // until there's enough horizontal room, so intermediate labels hide
+    // instead of overlapping — Figma hides labels when space is tight.
+    let labelStepMm = stepMm * 2;
+    while (labelStepMm * MM_TO_PX * zoom < 24 && labelStepMm < pageWidthMm) {
+      labelStepMm *= 2;
+    }
+    const out: Array<{ mm: number; major: boolean; showLabel: boolean }> = [];
     for (let mm = 0; mm <= pageWidthMm + 0.01; mm += stepMm) {
-      out.push({ mm, major: mm % (stepMm * 2) === 0 || mm === 0 || Math.abs(mm - pageWidthMm) < 0.01 });
+      const major = mm % (stepMm * 2) === 0 || mm === 0 || Math.abs(mm - pageWidthMm) < 0.01;
+      out.push({ mm, major, showLabel: major && (mm % labelStepMm === 0 || mm === 0 || Math.abs(mm - pageWidthMm) < 0.01) });
     }
     return out;
   }, [pageWidthMm, zoom]);
@@ -205,7 +214,7 @@ function CanvasRulers({
         }}
       >
         <div style={{ position: 'absolute', left: originX, top: 0, height: '100%', pointerEvents: 'none' }}>
-          {ticksH.map(({ mm: m, major }) => (
+          {ticksH.map(({ mm: m, major, showLabel }) => (
             <div
               key={`h-${m}`}
               style={{
@@ -217,7 +226,7 @@ function CanvasRulers({
                 background: 'var(--cv-text-secondary, #5c6778)',
               }}
             >
-              {major && (
+              {showLabel && (
                 <span
                   style={{
                     position: 'absolute',

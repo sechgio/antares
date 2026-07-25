@@ -1,6 +1,7 @@
 import type { CanvasLayer, CanvasLayerType, LayerCssVars } from '../types';
 import { mm, parseMm } from '../types';
 import { MM_TO_PX } from './drawHelpers';
+import { rememberStrokeWeight } from './strokeWeightStore';
 
 /** Default Figma-like stroke weight for new lines (CSS px at 96dpi). */
 export const DEFAULT_LINE_STROKE_PX = 1;
@@ -13,8 +14,9 @@ export const STROKE_WEIGHT_MIN_PX = 0;
 export const STROKE_WEIGHT_MAX_PX = 100;
 export const STROKE_WEIGHT_STEP_PX = 0.1;
 
-/** Session last-used weight (Figma/Canva-like) for the next line insert. */
-let lastStrokeWeightPx = DEFAULT_LINE_STROKE_PX;
+// Session last-used stroke weight lives in ./strokeWeightStore; re-exported here
+// so existing import sites (CanvasView, RightPanel, canvas.test) keep working.
+export { rememberStrokeWeight, strokeWeightForNewLine, resetLastStrokeWeight } from './strokeWeightStore';
 
 /** Clamp and round stroke weight to two decimals within the allowed range. */
 export function clampStrokeWeight(px: number): number {
@@ -22,22 +24,6 @@ export function clampStrokeWeight(px: number): number {
   return (
     Math.round(Math.min(STROKE_WEIGHT_MAX_PX, Math.max(STROKE_WEIGHT_MIN_PX, px)) * 100) / 100
   );
-}
-
-/** Remember a positive stroke weight for subsequent line inserts. */
-export function rememberStrokeWeight(px: number): void {
-  const weight = clampStrokeWeight(px);
-  if (weight > 0) lastStrokeWeightPx = weight;
-}
-
-/** Stroke weight to apply when placing a new line with the line tool. */
-export function strokeWeightForNewLine(): number {
-  return lastStrokeWeightPx > 0 ? lastStrokeWeightPx : DEFAULT_LINE_STROKE_PX;
-}
-
-/** Reset session last-used weight (tests / explicit restore). */
-export function resetLastStrokeWeight(px = DEFAULT_LINE_STROKE_PX): void {
-  lastStrokeWeightPx = clampStrokeWeight(px) || DEFAULT_LINE_STROKE_PX;
 }
 
 export function pxToMm(px: number): number {

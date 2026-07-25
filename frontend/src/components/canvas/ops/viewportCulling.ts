@@ -5,10 +5,12 @@
  */
 
 import type { CanvasLayer } from '../types';
-import { parseMm } from '../types';
 import { MM_TO_PX } from './drawHelpers';
+import { layerBoundsMm, type RectMm } from './layerBounds';
 
-export type RectMm = { x: number; y: number; w: number; h: number };
+// Re-export for existing importers of these symbols from viewportCulling.
+export type { RectMm };
+export { layerBoundsMm };
 
 /** Overscan around the viewport so layers do not pop in while panning. */
 export const CULLING_MARGIN_MM = 40;
@@ -36,16 +38,6 @@ export function visiblePageRectMm(
     y: (0 - pageTop) / scale - marginMm,
     w: viewportW / scale + marginMm * 2,
     h: viewportH / scale + marginMm * 2,
-  };
-}
-
-/** Unrotated layer bounding box in page mm. */
-export function layerBoundsMm(layer: CanvasLayer): RectMm {
-  return {
-    x: parseMm(layer.cssVars['--translate-x']),
-    y: parseMm(layer.cssVars['--translate-y']),
-    w: parseMm(layer.cssVars['--width'], 10),
-    h: parseMm(layer.cssVars['--height'], 10),
   };
 }
 
