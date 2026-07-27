@@ -5,12 +5,13 @@ import io
 import pytest
 
 from backend import ipc_protocol
+from backend.core.exceptions import InvalidRequestError
 from backend.ipc_protocol import IPCMessage
 
 
 def test_invalid_method() -> None:
     """Test that invalid methods are rejected."""
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidRequestError):
         IPCMessage({"id": "1", "method": "../../../etc/passwd", "params": {}})
 
 def test_missing_required_params() -> None:
@@ -112,4 +113,22 @@ def test_invalid_message_with_known_id_sends_error(monkeypatch) -> None:
     assert result is ipc_protocol._SKIP
     out = stdout.getvalue()
     assert '"id": "abc"' in out
+    assert '"code": -32600' in out
+    assert '"category": "INVALID_REQUEST"' in out
     assert '"error"' in out
+
+
+def test_invalid_params_with_known_id_sends_structured_error(monkeypatch) -> None:
+    """Path-traversal params with a known id get a structured -32602 response."""
+    stdin = io.StringIO('{"jsonrpc":"2.0","id":"p1","method":"version","params":{"path":"../../etc/passwd"}}\n')
+    stdout = io.StringIO()
+    monkeypatch.setattr(ipc_protocol.sys, "stdin", stdin)
+    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
+
+    result = ipc_protocol.read_message()
+
+    assert result is ipc_protocol._SKIP
+    out = stdout.getvalue()
+    assert '"id": "p1"' in out
+    assert '"code": -32602' in out
+    assert '"category": "VALIDATION_ERROR"' in out

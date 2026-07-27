@@ -116,6 +116,8 @@ class TestIPC:
     def test_unknown_method(self, backend_process) -> None:
         resp = _rpc_call(backend_process, "nonexistent_method", {})
         assert "error" in resp
+        assert resp["error"]["code"] == -32601
+        assert resp["error"]["category"] == "METHOD_NOT_FOUND"
         msg = resp["error"]["message"]
         assert "desconocido" in msg.lower() or "unknown" in msg.lower()
 

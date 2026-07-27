@@ -16,6 +16,7 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+from backend.core.exceptions import AntaresBaseException, InvalidRequestError, ValidationError
 from backend.utils.validators import path_param_violations
 
 logger = logging.getLogger(__name__)
@@ -61,11 +62,9 @@ class IPCMessage:
 
         # Validate
         if not validate_method(self.method):
-            msg = f"Invalid method name: {self.method}"
-            raise ValueError(msg)
+            raise InvalidRequestError(f"Invalid method name: {self.method}")
         if not validate_params(self.params):
-            msg = "Invalid params: possible path traversal detected"
-            raise ValueError(msg)
+            raise ValidationError("Invalid params: possible path traversal detected")
 
     def __repr__(self) -> str:
         return f"IPCMessage(id={self.id}, method={self.method})"
@@ -201,10 +200,10 @@ def read_message() -> IPCMessage | None:
         msg_id = data.get("id") if isinstance(data, dict) else None
         try:
             return IPCMessage(data)
-        except ValueError as exc:
+        except (ValueError, AntaresBaseException) as exc:
             # Malformed message but we know the id → send a proper error response.
             if msg_id is not None:
-                send_response(None, msg_id, error=str(exc))
+                send_response(None, msg_id, error=exc)
             else:
                 logger.error("Invalid IPC message with no id: %s", exc)
             return _SKIP  # type: ignore[return-value]

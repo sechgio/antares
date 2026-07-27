@@ -60,16 +60,24 @@ const JOB_ACTIVITY_GRACE_MS = 60_000;
 // rejects when state === FATAL.
 let _readyResolve = null;
 let _readyReject = null;
+let _readyGatePending = false;             // true while the gate is unsettled
 let _readyPromise = _createReadyPromise();
 
 function _createReadyPromise() {
+  _readyGatePending = true;
   return new Promise((resolve, reject) => {
-    _readyResolve = resolve;
-    _readyReject = reject;
+    _readyResolve = () => { _readyGatePending = false; resolve(); };
+    _readyReject = (err) => { _readyGatePending = false; reject(err); };
   });
 }
 
 function _resetReadyGate() {
+  // Never replace a pending gate: an in-flight start cycle (initial spawn,
+  // auto-restart backoff, or manual restart) is responsible for settling it.
+  // Replacing it here would orphan current waitForReady() callers — they
+  // would hang until their own timeout and fail with "backend unavailable"
+  // even if the backend becomes ready seconds later.
+  if (_readyGatePending) return;
   // Rejections must be swallowed to avoid unhandled rejection warnings
   // when no one is awaiting.
   if (_readyPromise) {
