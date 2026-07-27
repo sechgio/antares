@@ -40,6 +40,20 @@ class AntaresBaseException(AntaresError):
         return payload
 
 
+class InvalidRequestError(AntaresBaseException):
+    """Error de mensaje IPC malformado o método inválido (JSON-RPC -32600)."""
+
+    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
+        super().__init__(message, code=-32600, category="INVALID_REQUEST", details=details)
+
+
+class MethodNotFoundError(AntaresBaseException):
+    """Error cuando el método IPC solicitado no existe (JSON-RPC -32601)."""
+
+    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
+        super().__init__(message, code=-32601, category="METHOD_NOT_FOUND", details=details)
+
+
 class ValidationError(AntaresBaseException):
     """Error de validación de entrada o parámetros (JSON-RPC -32602)."""
 

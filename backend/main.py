@@ -44,7 +44,7 @@ import warnings
 from concurrent.futures import Future
 
 from backend.core.database import init_db
-from backend.core.exceptions import AntaresBaseException
+from backend.core.exceptions import AntaresBaseException, MethodNotFoundError
 from backend.core.plugins import load_plugins_from_dir
 from backend.core.repository import close_connection
 from backend.core.scheduler import SchedulerBusy, get_scheduler
@@ -271,7 +271,7 @@ def main() -> None:
                 msg = read_message()
                 if msg is None:
                     # EOF — pipe closed. Exit immediately to prevent zombie processes.
-                    logger.error("EOF on stdin — pipe closed. Exiting immediately.")
+                    logger.info("EOF on stdin — pipe closed. Exiting immediately.")
                     break
                 if msg is _SKIP:
                     _consecutive_errors = max(0, _consecutive_errors - 1)
@@ -286,7 +286,7 @@ def main() -> None:
                     else:
                         _submit_handler(handler, msg.params, msg.id, msg.method)
                 else:
-                    send_response(None, msg.id, error=f"Método desconocido: {msg.method}")
+                    send_response(None, msg.id, error=MethodNotFoundError(f"Método desconocido: {msg.method}"))
                 _consecutive_errors = 0
             except Exception as exc:
                 # Global handler: any unexpected exception in the loop should NOT kill the process

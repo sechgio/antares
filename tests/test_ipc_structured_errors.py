@@ -3,6 +3,8 @@
 from backend.core.exceptions import (
     AntaresBaseException,
     InternalError,
+    InvalidRequestError,
+    MethodNotFoundError,
     NotFoundError,
     ResourceLockedError,
     ValidationError,
@@ -38,6 +40,14 @@ def test_specific_exception_subclasses() -> None:
     not_found_err = NotFoundError("Plantilla no encontrada")
     assert not_found_err.code == -32004
     assert not_found_err.category == "NOT_FOUND"
+
+    invalid_req = InvalidRequestError("Método inválido")
+    assert invalid_req.code == -32600
+    assert invalid_req.category == "INVALID_REQUEST"
+
+    method_missing = MethodNotFoundError("Método desconocido")
+    assert method_missing.code == -32601
+    assert method_missing.category == "METHOD_NOT_FOUND"
 
 
 def test_send_response_with_structured_exception(capsys) -> None:
