@@ -52,7 +52,21 @@ function stripPlaceholderChrome(vars: CanvasLayer['cssVars']): CanvasLayer['cssV
   };
 }
 
-/** Drop placeholder fill/border for logo/field/filled slots — keep editor chrome, clean PDF. */
+/**
+ * Drop only the dashed placeholder shorthand (--border) and placeholder fill.
+ * Real strokes (--border-width/--stroke-*, set by presets or the inspector) are kept.
+ */
+function stripDashedChrome(vars: CanvasLayer['cssVars']): CanvasLayer['cssVars'] {
+  return {
+    ...vars,
+    '--background-color': 'transparent',
+    '--fill-visible': '0',
+    '--border': '',
+  };
+}
+
+/** Per-type export chrome: logo/field strip all placeholder paint; grid and filled slots
+ *  keep real strokes (panel frames), dropping only the dashed placeholder shorthand. */
 function cssVarsForExport(layer: CanvasLayer, ctx?: FillContext): CanvasLayer['cssVars'] {
   if (layer.type === 'line') {
     const ensured = ensureLinePath(layer);
@@ -68,9 +82,14 @@ function cssVarsForExport(layer: CanvasLayer, ctx?: FillContext): CanvasLayer['c
   if (layer.type === 'field' || layer.type === 'logo') {
     return stripPlaceholderChrome(layer.cssVars);
   }
+  if (layer.type === 'grid') {
+    // The grid box is a design element (e.g. the panel frame in reference templates);
+    // only the dashed shorthand from freshly drawn grids is placeholder chrome.
+    return { ...layer.cssVars, '--border': '' };
+  }
   if (layer.type === 'imageSlot') {
     const index = layer.meta?.index ?? 0;
-    if (ctx?.images[index]) return stripPlaceholderChrome(layer.cssVars);
+    if (ctx?.images[index]) return stripDashedChrome(layer.cssVars);
   }
   return layer.cssVars;
 }
@@ -211,7 +230,9 @@ function prepareLayers(document: CanvasDocument, ctx: FillContext): CanvasLayer[
   if (grid) {
     layers = applyGridToImageSlots(layers, grid.id, ctx.images.length || undefined);
   }
-  return layers.filter((l) => l.type !== 'frame' && l.type !== 'group' && l.type !== 'grid');
+  // Grid layers stay: their box may carry a real stroke (the photo-panel frame),
+  // which is part of the generated output. Only frame/group are chrome-free containers.
+  return layers.filter((l) => l.type !== 'frame' && l.type !== 'group');
 }
 
 /** Build a filled A4 HTML document from Canvas layers + runtime data. */
