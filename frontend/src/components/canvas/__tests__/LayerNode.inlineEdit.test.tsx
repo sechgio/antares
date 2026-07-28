@@ -79,6 +79,48 @@ describe('LayerNode inline edit', () => {
     expect(node.style.fontFamily).not.toContain('monospace');
   });
 
+  it('isolates design letter-spacing from UI chrome (Figma default = normal/0)', () => {
+    const layer = createLayer('text', {
+      value: 'Hola',
+      cssVars: {
+        ...createLayer('text').cssVars,
+        '--font-size': '18pt',
+      },
+    });
+    const { container } = render(
+      <div className="canvas-app" style={{ letterSpacing: '-0.01em' }}>
+        <LayerNode layer={layer} selected interactive scale={1} editing={false} {...baseHandlers} />
+      </div>,
+    );
+    const node = container.querySelector('[data-layer-id]') as HTMLElement;
+    expect(node.style.fontSize).toBe('18pt');
+    // Must not inherit .canvas-app letter-spacing: -0.01em
+    expect(node.style.letterSpacing).toBe('normal');
+    const span = node.querySelector('span') as HTMLElement;
+    expect(span.style.letterSpacing || 'normal').toMatch(/^(normal|0px)?$/);
+  });
+
+  it('applies letter-spacing and line-height on text spans like fields', () => {
+    const base = createLayer('text');
+    const layer = createLayer('text', {
+      value: 'Espacio',
+      cssVars: {
+        ...base.cssVars,
+        '--letter-spacing': '1.5px',
+        '--line-height': '1.6',
+        '--font-size': '12pt',
+      },
+    });
+    const { container } = render(
+      <LayerNode layer={layer} selected interactive scale={1} editing={false} {...baseHandlers} />,
+    );
+    const node = container.querySelector('[data-layer-id]') as HTMLElement;
+    expect(node.style.fontSize).toBe('12pt');
+    const span = node.querySelector('span') as HTMLElement;
+    expect(span.style.lineHeight).toBe('1.6');
+    expect(span.style.letterSpacing).toBe('1.5px');
+  });
+
   it('renders textarea while editing and reports value changes', () => {
     const layer = createLayer('text', { value: 'Hola' });
     const onEditValue = vi.fn();

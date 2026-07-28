@@ -105,9 +105,9 @@ export default function PageLayerPreview({
         background: '#ffffff',
         overflow: 'hidden',
         boxShadow: '0 0 0 1px rgba(0,0,0,0.08), 0 12px 40px rgba(0,0,0,0.14)',
-        // Match .canvas-app typography inheritance used by Design LayerNode.
+        // Match Design artboard: no UI chrome letter-spacing bleed.
         fontFamily: 'var(--cv-font, "Segoe UI", "Helvetica Neue", Arial, sans-serif)',
-        letterSpacing: '-0.01em',
+        letterSpacing: 'normal',
       }}
     >
       {layers.map((layer) => (

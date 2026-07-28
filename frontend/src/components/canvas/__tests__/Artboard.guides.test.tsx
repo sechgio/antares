@@ -144,5 +144,42 @@ describe('Artboard guide dragging', () => {
     // Line restored to its original spot (50mm → 189px at zoom 1).
     expect((screen.getByTestId('canvas-manual-guide') as HTMLElement).style.left).toBe('189px');
   });
+
+  it('keeps guide hit target screen-constant under camera zoom (Figma chrome)', () => {
+    const document = createEmptyDocument('Zoom guides');
+    document.guides = [createGuide('x', 50, 0)];
+    const { rerender } = render(
+      <Artboard
+        document={document}
+        selectedIds={[]}
+        zoom={1}
+        tool="select"
+        pan={{ x: 0, y: 0 }}
+        onPan={() => {}}
+        onSelect={() => {}}
+        onSelectIds={() => {}}
+        onChangeLayers={() => {}}
+      />,
+    );
+    const at1 = screen.getByTestId('canvas-manual-guide') as HTMLElement;
+    expect(at1.style.width).toBe('10px');
+
+    rerender(
+      <Artboard
+        document={document}
+        selectedIds={[]}
+        zoom={0.5}
+        tool="select"
+        pan={{ x: 0, y: 0 }}
+        onPan={() => {}}
+        onSelect={() => {}}
+        onSelectIds={() => {}}
+        onChangeLayers={() => {}}
+      />,
+    );
+    const atHalf = screen.getByTestId('canvas-manual-guide') as HTMLElement;
+    // Inside CSS zoom 0.5, layout width 20px → 10px on screen.
+    expect(atHalf.style.width).toBe('20px');
+  });
 });
 

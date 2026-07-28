@@ -62,11 +62,14 @@ import { ensureLinePath, lineIntersectsPolygon, rectIntersectsPolygon } from '..
 import CanvasRulers, { GuidePositionChip, RULER_SIZE } from './CanvasRulers';
 import LayerNode from './LayerNode';
 import PathHandlesOverlay from './PathHandlesOverlay';
+import { screenChromePx } from '../ops/textTypography';
 
 const HANDLE = 8;
 /** Invisible grab zone around a guide line (Figma uses a generous hit area). */
 const GUIDE_HIT_PX = 10;
 const ROTATE_HANDLE_OFFSET = 24;
+/** Guide line thickness in screen px (counter-scaled under CSS camera zoom). */
+const GUIDE_LINE_PX = 2;
 
 interface ArtboardProps {
   document: CanvasDocument;
@@ -105,17 +108,18 @@ interface ArtboardProps {
   onStartInertia?: (velocity: { vx: number; vy: number }) => void;
 }
 
-function handleStyle(left: number, top: number, cursor: string): CSSProperties {
+function handleStyle(left: number, top: number, cursor: string, cameraZoom: number): CSSProperties {
+  const size = screenChromePx(HANDLE, cameraZoom);
   return {
     position: 'absolute',
     left,
     top,
-    width: HANDLE,
-    height: HANDLE,
-    marginLeft: -HANDLE / 2,
-    marginTop: -HANDLE / 2,
+    width: size,
+    height: size,
+    marginLeft: -size / 2,
+    marginTop: -size / 2,
     background: '#fff',
-    border: '1.5px solid var(--cv-accent)',
+    border: `${screenChromePx(1.5, cameraZoom)}px solid var(--cv-accent)`,
     borderRadius: 1,
     zIndex: 40,
     cursor,
@@ -985,7 +989,11 @@ export default function Artboard({
   const selW = bbox ? mmToScreenPx(bbox.w, 1) : 0;
   const selH = bbox ? mmToScreenPx(bbox.h, 1) : 0;
   const rotateHandleX = selX + selW / 2;
-  const rotateHandleY = selY - ROTATE_HANDLE_OFFSET;
+  const rotateOffset = screenChromePx(ROTATE_HANDLE_OFFSET, zoom);
+  const rotateHandleY = selY - rotateOffset;
+  const guideHit = screenChromePx(GUIDE_HIT_PX, zoom);
+  const guideLine = screenChromePx(GUIDE_LINE_PX, zoom);
+  const handleSize = screenChromePx(HANDLE, zoom);
 
   const cursor = panning
     ? 'grabbing'
@@ -1043,6 +1051,8 @@ export default function Artboard({
             background: '#ffffff',
             boxShadow: '0 0 0 1px rgba(0,0,0,0.08), 0 12px 40px rgba(0,0,0,0.14)',
             cursor: canPanTool || panning ? cursor : placing ? 'crosshair' : 'default',
+            // Design default; do not inherit .canvas-app UI tracking (-0.01em).
+            letterSpacing: 'normal',
           }}
           onPointerDown={(e) => {
             if (e.button === 1 || canPanTool) {
@@ -1158,7 +1168,7 @@ export default function Artboard({
                   position: 'absolute',
                   left: mmToScreenPx(g.pos, 1),
                   top: 0,
-                  width: 1,
+                  width: screenChromePx(1, zoom),
                   height: '100%',
                   background: 'var(--cv-accent-2)',
                   pointerEvents: 'none',
@@ -1173,7 +1183,7 @@ export default function Artboard({
                   position: 'absolute',
                   top: mmToScreenPx(g.pos, 1),
                   left: 0,
-                  height: 1,
+                  height: screenChromePx(1, zoom),
                   width: '100%',
                   background: 'var(--cv-accent-2)',
                   pointerEvents: 'none',
@@ -1197,9 +1207,9 @@ export default function Artboard({
                         position: 'absolute',
                         left: mmToScreenPx(g.posMm, 1),
                         top: 0,
-                        width: GUIDE_HIT_PX,
+                        width: guideHit,
                         height: '100%',
-                        marginLeft: -GUIDE_HIT_PX / 2,
+                        marginLeft: -guideHit / 2,
                         cursor: 'ew-resize',
                         zIndex: 44,
                       }
@@ -1207,9 +1217,9 @@ export default function Artboard({
                         position: 'absolute',
                         top: mmToScreenPx(g.posMm, 1),
                         left: 0,
-                        height: GUIDE_HIT_PX,
+                        height: guideHit,
                         width: '100%',
-                        marginTop: -GUIDE_HIT_PX / 2,
+                        marginTop: -guideHit / 2,
                         cursor: 'ns-resize',
                         zIndex: 44,
                       }
@@ -1222,9 +1232,9 @@ export default function Artboard({
                           position: 'absolute',
                           left: '50%',
                           top: 0,
-                          width: 2,
+                          width: guideLine,
                           height: '100%',
-                          marginLeft: -1,
+                          marginLeft: -guideLine / 2,
                           background: removing ? 'var(--cv-danger)' : 'var(--cv-accent)',
                           pointerEvents: 'none',
                         }
@@ -1232,9 +1242,9 @@ export default function Artboard({
                           position: 'absolute',
                           top: '50%',
                           left: 0,
-                          height: 2,
+                          height: guideLine,
                           width: '100%',
-                          marginTop: -1,
+                          marginTop: -guideLine / 2,
                           background: removing ? 'var(--cv-danger)' : 'var(--cv-accent)',
                           pointerEvents: 'none',
                         }
@@ -1369,9 +1379,9 @@ export default function Artboard({
                   position: 'absolute',
                   left: rotateHandleX,
                   top: selY,
-                  width: 1,
-                  height: ROTATE_HANDLE_OFFSET,
-                  marginLeft: -0.5,
+                  width: screenChromePx(1, zoom),
+                  height: rotateOffset,
+                  marginLeft: -screenChromePx(0.5, zoom),
                   background: 'var(--cv-accent)',
                   pointerEvents: 'none',
                   zIndex: 39,
@@ -1386,10 +1396,10 @@ export default function Artboard({
                 style={{
                   left: rotateHandleX,
                   top: rotateHandleY,
-                  width: HANDLE,
-                  height: HANDLE,
-                  marginLeft: -HANDLE / 2,
-                  marginTop: -HANDLE / 2,
+                  width: handleSize,
+                  height: handleSize,
+                  marginLeft: -handleSize / 2,
+                  marginTop: -handleSize / 2,
                   zIndex: 40,
                 }}
               >
@@ -1401,7 +1411,7 @@ export default function Artboard({
                     height: '100%',
                     borderRadius: '50%',
                     background: 'var(--cv-accent)',
-                    border: '1.5px solid #fff',
+                    border: `${screenChromePx(1.5, zoom)}px solid #fff`,
                     cursor: 'grab',
                     boxSizing: 'border-box',
                   }}
@@ -1422,7 +1432,7 @@ export default function Artboard({
               ).map(([pos, left, top, cursorName]) => (
                 <div
                   key={pos}
-                  style={handleStyle(left, top, cursorName)}
+                  style={handleStyle(left, top, cursorName, zoom)}
                   onPointerDown={(ev) => startResize(ev, pos)}
                 />
               ))}
