@@ -114,10 +114,10 @@ describe('renderHtml grid frames (Generar preview/export)', () => {
     );
     const slotStyle = styleOf(html, slot.id);
     expect(slotStyle).toContain('border:1px solid #E0E0E0');
-    expect(slotStyle).toContain('background-color:transparent');
+    expect(slotStyle.toLowerCase()).toContain('#fafafa');
   });
 
-  it('drawn grid stays invisible in export (placeholder chrome dropped)', () => {
+  it('drawn grid keeps placeholder frame in export (WYSIWYG)', () => {
     const doc = docWithDrawnGrid();
     const gridId = doc.layers.find((l) => l.type === 'grid')!.id;
     const html = renderMultiPageHtml(
@@ -126,11 +126,11 @@ describe('renderHtml grid frames (Generar preview/export)', () => {
       { forScreen: true },
     );
     const gridStyle = styleOf(html, gridId);
-    expect(gridStyle).not.toContain('dashed');
-    expect(gridStyle).not.toMatch(/(?:^|;)\s*border:/);
+    expect(gridStyle).toContain('dashed');
+    expect(gridStyle).toMatch(/(?:^|;)\s*border:/);
   });
 
-  it('filled drawn slots stay frameless in export (placeholder chrome dropped)', () => {
+  it('filled drawn slots keep placeholder frame in export (WYSIWYG)', () => {
     const doc = docWithDrawnGrid();
     const slot = doc.layers.find((l) => l.type === 'imageSlot' && l.meta?.index === 0)!;
     const html = renderMultiPageHtml(
@@ -139,8 +139,83 @@ describe('renderHtml grid frames (Generar preview/export)', () => {
       { forScreen: true },
     );
     const slotStyle = styleOf(html, slot.id);
-    expect(slotStyle).not.toContain('dashed');
-    expect(slotStyle).not.toMatch(/(?:^|;)\s*border:/);
-    expect(slotStyle).toContain('background-color:transparent');
+    expect(slotStyle).toContain('dashed');
+    expect(slotStyle).toMatch(/(?:^|;)\s*border:/);
+    expect(slotStyle.toLowerCase()).toContain('#f1f5f9');
+  });
+});
+
+describe('renderHtml Panel fotográfico WYSIWYG', () => {
+  it('keeps field/logo/slot chrome and dotted borders like design', async () => {
+    const { createReportPreset } = await import('../presets/panels');
+    const doc = createReportPreset();
+    const html = renderMultiPageHtml(
+      doc,
+      { data: {}, images: [], logoLeft: null, logoRight: null },
+      { forScreen: true },
+    );
+
+    const field = doc.layers.find((l) => l.type === 'field' && l.meta?.key === 'NIS')!;
+    const logo = doc.layers.find((l) => l.type === 'logo' && l.meta?.side !== 'right')!;
+    const slot = doc.layers.find((l) => l.type === 'imageSlot' && l.meta?.index === 0)!;
+
+    const fieldStyle = styleOf(html, field.id);
+    expect(fieldStyle.toLowerCase()).toContain('#fefefe');
+    expect(fieldStyle).toContain('dotted');
+    expect(fieldStyle).toMatch(/(?:^|;)\s*border:/);
+    expect(html).toMatch(new RegExp(`data-layer="${field.id}"[^>]*>.*?<span[^>]*>-</span>`, 's'));
+
+    const logoStyle = styleOf(html, logo.id);
+    expect(logoStyle.toLowerCase()).toContain('#f8fafc');
+    expect(logoStyle).toMatch(/(?:^|;)\s*border:/);
+    expect(html).toContain('Logo L');
+    expect(html).toContain('font-family:ui-monospace');
+
+    const slotStyle = styleOf(html, slot.id);
+    expect(slotStyle.toLowerCase()).toContain('#fafafa');
+    expect(slotStyle).toMatch(/(?:^|;)\s*border:/);
+    expect(html).toContain('Foto 1');
+    expect(html).toMatch(/font-size:10px/);
+  });
+});
+
+describe('renderHtml stored grid geometry (D7)', () => {
+  it('keeps manually moved slot translate in export (no re-layout)', () => {
+    const doc = docWithPresetGrid();
+    const slot = doc.layers.find((l) => l.type === 'imageSlot' && l.meta?.index === 0)!;
+    const movedX = mm(42);
+    const movedY = mm(120);
+    doc.layers = doc.layers.map((l) =>
+      l.id === slot.id
+        ? {
+            ...l,
+            cssVars: { ...l.cssVars, '--translate-x': movedX, '--translate-y': movedY },
+          }
+        : l,
+    );
+    const html = renderMultiPageHtml(
+      doc,
+      { data: {}, images: [], logoLeft: null, logoRight: null },
+      { forScreen: true },
+    );
+    const slotStyle = styleOf(html, slot.id);
+    // forScreen uses px; 42mm ≈ 159px at 96dpi
+    expect(slotStyle).toMatch(/left:\s*159px/);
+    expect(slotStyle).toMatch(/top:\s*454px/);
+  });
+});
+
+describe('renderHtml empty image placeholder (D8)', () => {
+  it('renders Imagen chrome for empty image layers', () => {
+    const doc = createEmptyDocument('Empty image');
+    const image = createLayer('image', { id: 'img-empty', value: '' });
+    doc.layers.push(image);
+    const html = renderMultiPageHtml(
+      doc,
+      { data: {}, images: [], logoLeft: null, logoRight: null },
+      { forScreen: true },
+    );
+    expect(html).toContain('Imagen');
+    expect(html).toContain('font-family:ui-monospace');
   });
 });

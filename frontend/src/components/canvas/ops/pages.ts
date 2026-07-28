@@ -187,7 +187,7 @@ export async function renderMultiPageHtmlAsync(
   return mergeCanvasHtmlDocuments(out);
 }
 
-function planMultiPageRender(
+export function planMultiPageRender(
   doc: CanvasDocument,
   ctx: FillContext,
   options?: { imagesPerPage?: number },
@@ -223,4 +223,22 @@ function planMultiPageRender(
     };
     return { pageDoc, pageCtx };
   });
+}
+
+/**
+ * Same pagination as HTML export, but layers remapped to pageIndex 0 so each
+ * slice renders cleanly in PageLayerPreview (default pageIndex=0).
+ */
+export function planMultiPageDocuments(
+  doc: CanvasDocument,
+  ctx: FillContext,
+  options?: { imagesPerPage?: number },
+): Array<{ pageDoc: CanvasDocument; pageCtx: FillContext }> {
+  return planMultiPageRender(doc, ctx, options).map(({ pageDoc, pageCtx }) => ({
+    pageDoc: {
+      ...pageDoc,
+      layers: pageDoc.layers.map((layer) => ({ ...layer, pageIndex: 0 })),
+    },
+    pageCtx,
+  }));
 }

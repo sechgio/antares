@@ -241,7 +241,15 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
           </label>
         </GenerateStep>
 
-        <GenerateStep number="3" title="Mapeo de Columnas" icon={<Settings size={12} />} disabled={headers.length === 0} defaultOpen={false} status={stepStates[3] ? 'done' : 'pending'}>
+        <GenerateStep
+          key={headers.length > 0 ? 'mapping-ready' : 'mapping-locked'}
+          number="3"
+          title="Mapeo de Columnas"
+          icon={<Settings size={12} />}
+          disabled={headers.length === 0}
+          defaultOpen={headers.length > 0}
+          status={stepStates[3] ? 'done' : 'pending'}
+        >
           <div className="space-y-1.5">
             <label className="block">
               <span className="canvas-label">Columna ID (Clave)</span>
@@ -255,10 +263,10 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
                 ]}
               />
             </label>
-            {fieldKeys.length > 0 && (
-              <div className="max-h-40 space-y-1 overflow-y-auto pr-0.5">
+            {fieldKeys.length > 0 ? (
+              <div className="space-y-1 pr-0.5">
                 {fieldKeys.map((key) => (
-                  <div key={key} className="grid grid-cols-[80px_1fr] items-center gap-1.5">
+                  <div key={key} className="grid grid-cols-[minmax(0,88px)_1fr] items-center gap-1.5">
                     <WithHoverTooltip label={key} placement="top" variant="dark" className="min-w-0">
                       <span
                         className="block truncate text-[9px] font-medium uppercase"
@@ -279,6 +287,10 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
                   </div>
                 ))}
               </div>
+            ) : (
+              <p className="text-[9px]" style={{ color: 'var(--cv-text-muted)' }}>
+                Sin campos en la plantilla. Añade capas «Campo» en Diseñar para mapear columnas.
+              </p>
             )}
           </div>
         </GenerateStep>

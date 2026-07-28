@@ -16,10 +16,10 @@ import ContextMenu, {
 import DesignStage, { type ViewportNavApi } from './editor/DesignStage';
 import LeftSidebar from './editor/LeftSidebar';
 import PreviewViewport from './editor/PreviewViewport';
+import PageLayerPreview from './editor/PageLayerPreview';
 import PathEditToolbar from './editor/PathEditToolbar';
 import RightPanel from './editor/RightPanel';
 import TopBar from './editor/TopBar';
-import { renderDemoPreviewHtml } from './runtime/demoFill';
 import { useCanvasHistory } from './hooks/useCanvasHistory';
 import { useCanvasBootstrap } from './hooks/useCanvasBootstrap';
 import { useCanvasSync } from './hooks/useCanvasSync';
@@ -134,7 +134,6 @@ export default function CanvasView() {
   const [contextMenu, setContextMenu] = useState<CanvasContextMenuState | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewHtml, setPreviewHtml] = useState('');
   const [pathEditingLayerId, setPathEditingLayerId] = useState<string | null>(null);
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -180,24 +179,12 @@ export default function CanvasView() {
 
   const togglePreview = useCallback(() => {
     setPreviewOpen((open) => {
-      if (open) {
-        setPreviewHtml('');
-        return false;
-      }
-      setPreviewHtml(renderDemoPreviewHtml(history.document));
+      if (open) return false;
       setShowShortcuts(false);
       setContextMenu(null);
       return true;
     });
-  }, [history.document]);
-
-  useEffect(() => {
-    if (!previewOpen) return;
-    const timer = window.setTimeout(() => {
-      setPreviewHtml(renderDemoPreviewHtml(history.document));
-    }, 200);
-    return () => window.clearTimeout(timer);
-  }, [previewOpen, history.document]);
+  }, []);
 
   const refreshList = useCallback(async () => {
     try {
@@ -581,7 +568,6 @@ export default function CanvasView() {
         setShowShortcuts(false);
         if (previewOpen) {
           setPreviewOpen(false);
-          setPreviewHtml('');
           return;
         }
         if (pathEditingLayerId) {
@@ -1004,7 +990,6 @@ export default function CanvasView() {
           setContextMenu(null);
           setShowShortcuts(false);
           setPreviewOpen(false);
-          setPreviewHtml('');
         }}
         onUndo={history.undo}
         onRedo={history.redo}
@@ -1015,7 +1000,11 @@ export default function CanvasView() {
       {mode === 'design' ? (
         previewOpen ? (
           <div className="canvas-demo-preview" data-testid="canvas-demo-preview">
-            <PreviewViewport html={previewHtml} widthPx={A4_WIDTH_PX} heightPx={A4_HEIGHT_PX} />
+            <PreviewViewport ready widthPx={A4_WIDTH_PX} heightPx={A4_HEIGHT_PX}>
+              {(scale) => (
+                <PageLayerPreview document={history.document} pageIndex={pageIndex} scale={scale} />
+              )}
+            </PreviewViewport>
           </div>
         ) : (
         <div className="relative flex min-h-0 flex-1 overflow-hidden">

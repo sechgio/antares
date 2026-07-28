@@ -163,13 +163,19 @@ function LayerNode({
     paint.borderRadius = '50%';
   }
 
+  // Position via translate; keep rotate/flip from paint (do not clobber).
+  const { transform: paintTransform, ...paintRest } = paint;
+  const translate = `translate(${mmToScreenPx(x, scale)}px, ${mmToScreenPx(y, scale)}px)`;
+  const combinedTransform = paintTransform ? `${translate} ${paintTransform}` : translate;
+
   const style: CSSProperties = {
-    ...paint,
+    ...paintRest,
     position: 'absolute',
     left: 0,
     top: 0,
     // Compositor-driven positioning: drag moves update transform only (no layout).
-    transform: `translate(${mmToScreenPx(x, scale)}px, ${mmToScreenPx(y, scale)}px)`,
+    transform: combinedTransform,
+    transformOrigin: paintTransform ? 'center center' : undefined,
     willChange: moving ? 'transform' : undefined,
     width: mmToScreenPx(w, scale),
     height: mmToScreenPx(h, scale),
@@ -182,7 +188,10 @@ function LayerNode({
         : 'move',
     clipPath,
     display: 'flex',
-    alignItems: 'center',
+    alignItems:
+      layer.type === 'text' || layer.type === 'field'
+        ? (layer.cssVars['--text-valign'] as CSSProperties['alignItems']) || 'center'
+        : 'center',
     justifyContent: justifyContentForTextAlign(textAlign),
     padding:
       layer.type === 'text' || layer.type === 'field' ? `${2 * scale}px ${6 * scale}px` : 0,
@@ -253,6 +262,10 @@ function LayerNode({
     fontSize: 'inherit',
     color: 'inherit',
     textAlign: (textAlign as CSSProperties['textAlign']) || 'left',
+    fontStyle: (layer.cssVars['--font-style'] as CSSProperties['fontStyle']) || undefined,
+    textDecoration: (layer.cssVars['--text-decoration'] as CSSProperties['textDecoration']) || undefined,
+    letterSpacing: layer.cssVars['--letter-spacing'] || undefined,
+    textTransform: (layer.cssVars['--text-transform'] as CSSProperties['textTransform']) || undefined,
   };
 
   const tablePreview = layer.type === 'table' ? parseTableData(layer.meta?.rowsData) : null;
@@ -354,6 +367,10 @@ function LayerNode({
             fontSize: 'inherit',
             fontFamily: 'inherit',
             fontWeight: 'inherit',
+            fontStyle: 'inherit',
+            textDecoration: 'inherit',
+            letterSpacing: 'inherit',
+            textTransform: 'inherit',
             textAlign: (textAlign as CSSProperties['textAlign']) || 'left',
             lineHeight,
             whiteSpace: 'pre-wrap',

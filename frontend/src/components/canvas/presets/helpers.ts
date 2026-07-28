@@ -122,7 +122,7 @@ export function fieldLayer(f: FieldSpec): CanvasLayer {
       '--background-color': dotted ? '#fefefe' : '#f8fafc',
       '--border-width': '1px',
       '--border-color': dotted ? '#888888' : '#e2e8f0',
-      '--border-style': dotted ? 'dotted' : 'solid',
+      '--stroke-dash': dotted ? 'dotted' : 'solid',
       '--text-align': 'left',
     },
     meta: { key: f.key, fallback: '-' },

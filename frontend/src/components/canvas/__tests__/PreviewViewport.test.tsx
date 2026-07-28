@@ -81,18 +81,16 @@ describe('PreviewViewport', () => {
     expect(iframe.style.pointerEvents).toBe('none');
   });
 
-  it('ctrl+wheel zooms; plain wheel pans without changing zoom label', () => {
-    render(<PreviewViewport html="<html><body>ok</body></html>" widthPx={200} heightPx={280} />);
-    const viewport = screen.getByTestId('generate-preview-viewport');
-    act(() => {
-      viewport.dispatchEvent(new WheelEvent('wheel', { deltaY: 40, deltaX: 10, bubbles: true, cancelable: true }));
-    });
-    expect(screen.getByText('85%')).toBeTruthy();
-    act(() => {
-      viewport.dispatchEvent(
-        new WheelEvent('wheel', { deltaY: -120, ctrlKey: true, bubbles: true, cancelable: true }),
-      );
-    });
-    expect(screen.queryByText('85%')).toBeNull();
+  it('LayerNode preview stays at design scale=1; camera uses CSS zoom', () => {
+    const { container } = render(
+      <PreviewViewport widthPx={200} heightPx={280} ready>
+        {(scale) => <div data-testid="preview-scale">{scale}</div>}
+      </PreviewViewport>,
+    );
+    expect(screen.getByTestId('preview-scale').textContent).toBe('1');
+    const stage = container.querySelector('[data-testid="generate-preview-stage"]') as HTMLElement;
+    expect(String((stage.style as CSSStyleDeclaration & { zoom?: string }).zoom)).toBe('0.85');
+    expect(stage.style.width).toBe('200px');
+    expect(stage.style.height).toBe('280px');
   });
 });

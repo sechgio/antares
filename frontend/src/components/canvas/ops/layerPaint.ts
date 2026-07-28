@@ -68,9 +68,8 @@ export function buildLayerPaintStyle(
   };
   if (!merged['--color']) merged['--color'] = DEFAULT_LAYER_COLOR;
   if (!merged['--font-family']) merged['--font-family'] = DEFAULT_LAYER_FONT;
-  if (!merged['--font-size']) {
-    merged['--font-size'] = scaleCssLength('11px', scale) || '11px';
-  }
+  // Default size is unscaled; scaleCssVarsForZoom applies zoom once (avoid double-scale).
+  if (!merged['--font-size']) merged['--font-size'] = '11px';
   const scaled = scaleCssVarsForZoom(merged, scale);
   return cssDeclarationsToStyle(cssVarsToStyleParts(scaled));
 }

@@ -1,19 +1,33 @@
 import {
+  Children,
+  cloneElement,
   forwardRef,
+  isValidElement,
   useEffect,
   useImperativeHandle,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type ReactElement,
+  type ReactNode,
 } from 'react';
 import { Minus, Plus } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { clampZoom, wheelZoomFactor, zoomAtCursor } from '../ops/viewportNav';
 
+type PreviewChild = ReactNode | ((scale: number) => ReactNode);
+
 interface PreviewViewportProps {
-  html: string;
+  /** Optional HTML for print / PDF path (hidden iframe). */
+  html?: string;
+  /**
+   * Screen preview. LayerNode pages must render at scale=1; this viewport applies
+   * CSS `zoom` as a Figma-like camera so text layout never changes with zoom.
+   */
+  children?: PreviewChild;
   widthPx: number;
   heightPx: number;
+  ready?: boolean;
 }
 
 export interface PreviewViewportHandle {
@@ -24,7 +38,7 @@ const DEFAULT_ZOOM = 0.85;
 const ZOOM_STEP = 0.1;
 
 const PreviewViewport = forwardRef<PreviewViewportHandle, PreviewViewportProps>(
-  function PreviewViewport({ html, widthPx, heightPx }, ref) {
+  function PreviewViewport({ html = '', children, widthPx, heightPx, ready = true }, ref) {
     const viewportRef = useRef<HTMLDivElement>(null);
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const [zoom, setZoom] = useState(DEFAULT_ZOOM);
@@ -33,13 +47,14 @@ const PreviewViewport = forwardRef<PreviewViewportHandle, PreviewViewportProps>(
     const navRef = useRef({ zoom, pan, setZoom, setPan });
     navRef.current = { zoom, pan, setZoom, setPan };
 
+    const useLayerPreview = children != null;
+
     useImperativeHandle(ref, () => ({
       print: () => {
         iframeRef.current?.contentWindow?.print();
       },
     }));
 
-    // Set srcdoc only when html changes — never on zoom/pan re-renders.
     useEffect(() => {
       const iframe = iframeRef.current;
       if (!iframe || !html) return;
@@ -74,7 +89,6 @@ const PreviewViewport = forwardRef<PreviewViewportHandle, PreviewViewportProps>(
     }, []);
 
     const startPan = (e: ReactPointerEvent<HTMLDivElement>) => {
-      // Preview is read-only: any left/middle drag pans (iframe has pointer-events: none).
       if (e.button !== 0 && e.button !== 1) return;
       e.preventDefault();
       const startX = e.clientX;
@@ -97,6 +111,18 @@ const PreviewViewport = forwardRef<PreviewViewportHandle, PreviewViewportProps>(
       setZoom((z) => clampZoom(z + direction * ZOOM_STEP));
     };
 
+    const showStage = ready && (children != null || Boolean(html));
+
+    // Always design resolution (scale=1). Camera zoom is CSS `zoom` on the stage.
+    let page: ReactNode = null;
+    if (typeof children === 'function') {
+      page = children(1);
+    } else if (isValidElement(children)) {
+      page = cloneElement(children as ReactElement<{ scale?: number }>, { scale: 1 });
+    } else if (children != null) {
+      page = Children.only(children);
+    }
+
     return (
       <div className="relative min-h-0 min-w-0 flex-1">
         <div
@@ -106,7 +132,7 @@ const PreviewViewport = forwardRef<PreviewViewportHandle, PreviewViewportProps>(
           style={{ cursor: panning ? 'grabbing' : 'grab' }}
           onPointerDown={startPan}
         >
-          {html ? (
+          {showStage ? (
             <div
               data-testid="generate-preview-stage"
               style={{
@@ -115,28 +141,27 @@ const PreviewViewport = forwardRef<PreviewViewportHandle, PreviewViewportProps>(
                 top: '50%',
                 width: widthPx,
                 height: heightPx,
-                // CSS `zoom` (Chromium/Electron) re-rasterizes at the zoom level — crisp like
-                // layout-scale. Avoid `transform: scale()` which upscales a 1× bitmap.
-                // Divide pan by zoom so visual offset stays in screen px after CSS zoom.
+                // Figma camera: CSS zoom re-rasterizes; pan compensated by /zoom.
                 transform: `translate(calc(-50% + ${pan.x / zoom}px), calc(-50% + ${pan.y / zoom}px))`,
                 transformOrigin: 'center center',
                 zoom,
               }}
             >
-              <iframe
-                ref={iframeRef}
-                title="Canvas preview"
-                sandbox="allow-same-origin allow-scripts"
-                className="border-0 bg-white"
-                style={{
-                  width: widthPx,
-                  height: heightPx,
-                  display: 'block',
-                  // Let wheel/drag hit the viewport so pan/zoom work over the page.
-                  pointerEvents: 'none',
-                  boxShadow: '0 0 0 1px rgba(0,0,0,0.08), 0 12px 40px rgba(0,0,0,0.14)',
-                }}
-              />
+              {page ?? (
+                <iframe
+                  ref={iframeRef}
+                  title="Canvas preview"
+                  sandbox="allow-same-origin allow-scripts"
+                  className="border-0 bg-white"
+                  style={{
+                    width: widthPx,
+                    height: heightPx,
+                    display: 'block',
+                    pointerEvents: 'none',
+                    boxShadow: '0 0 0 1px rgba(0,0,0,0.08), 0 12px 40px rgba(0,0,0,0.14)',
+                  }}
+                />
+              )}
             </div>
           ) : (
             <p
@@ -147,6 +172,17 @@ const PreviewViewport = forwardRef<PreviewViewportHandle, PreviewViewportProps>(
             </p>
           )}
         </div>
+
+        {useLayerPreview && html ? (
+          <iframe
+            ref={iframeRef}
+            title="Canvas print"
+            sandbox="allow-same-origin allow-scripts"
+            aria-hidden
+            tabIndex={-1}
+            style={{ position: 'fixed', left: -99999, top: 0, width: 0, height: 0, border: 0 }}
+          />
+        ) : null}
 
         <div
           className="canvas-zoom-chip pointer-events-auto absolute bottom-5 right-5 z-50 flex items-center gap-0.5 rounded-xl border px-1.5 py-1"

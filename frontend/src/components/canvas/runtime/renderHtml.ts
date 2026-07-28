@@ -1,7 +1,6 @@
 import type { CanvasDocument, CanvasLayer } from '../types';
 import { parseMm } from '../types';
-import { applyGridToImageSlots } from '../ops/gridLayout';
-import { justifyContentForTextAlign } from '../ops/inlineEdit';
+import { fieldDesignLabel, justifyContentForTextAlign } from '../ops/inlineEdit';
 import { clipPathForLayerType } from '../ops/shapePaths';
 import {
   buildLayerTransform,
@@ -9,7 +8,7 @@ import {
   imageContentInlineStyle,
 } from '../ops/layerStyle';
 import {
-  DEFAULT_LAYER_COLOR,
+  buildLayerPaintStyle,
   DEFAULT_LAYER_FONT,
   DEFAULT_LINE_HEIGHT,
 } from '../ops/layerPaint';
@@ -19,6 +18,11 @@ import { parseTableData } from '../ops/tableData';
 
 export { cssVarsToStyleParts };
 
+/** Inner chrome paddings — must match LayerNode at zoom=1 (not mm). */
+const SIGNATURE_PAD = '1px';
+const TABLE_CELL_PAD = '1px 2px';
+const CAPTION_PAD = '2px 4px';
+
 export interface FillContext {
   data: Record<string, string>;
   images: string[];
@@ -26,6 +30,10 @@ export interface FillContext {
   logoRight: string | null;
   imageMeta?: Array<{ date?: string; coords?: string; name?: string }>;
 }
+
+/** Matches LayerNode chrome placeholders (logo / empty imageSlot / grid) at zoom=1. */
+const CHROME_PLACEHOLDER_STYLE =
+  'width:100%;text-align:center;color:#94a3b8;font-size:10px;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;';
 
 function escapeHtml(value: string): string {
   return value
@@ -36,38 +44,19 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function cssVarsToInline(vars: CanvasLayer['cssVars']): string {
-  return cssVarsToStyleParts(vars).join(';');
+/** Serialize buildLayerPaintStyle (same defaults as LayerNode @ zoom 1) to inline CSS. */
+function paintVarsToInline(vars: CanvasLayer['cssVars']): string {
+  const paint = buildLayerPaintStyle(vars, { scale: 1 });
+  return Object.entries(paint)
+    .map(([camel, value]) => {
+      const kebab = camel.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+      return `${kebab}:${value}`;
+    })
+    .join(';');
 }
 
-/** Drop editor placeholder chrome (dashed fills/borders) for clean filled export. */
-function stripPlaceholderChrome(vars: CanvasLayer['cssVars']): CanvasLayer['cssVars'] {
-  return {
-    ...vars,
-    '--background-color': 'transparent',
-    '--fill-visible': '0',
-    '--stroke-visible': '0',
-    '--border-width': '0px',
-    '--border': '',
-  };
-}
-
-/**
- * Drop only the dashed placeholder shorthand (--border) and placeholder fill.
- * Real strokes (--border-width/--stroke-*, set by presets or the inspector) are kept.
- */
-function stripDashedChrome(vars: CanvasLayer['cssVars']): CanvasLayer['cssVars'] {
-  return {
-    ...vars,
-    '--background-color': 'transparent',
-    '--fill-visible': '0',
-    '--border': '',
-  };
-}
-
-/** Per-type export chrome: logo/field strip all placeholder paint; grid and filled slots
- *  keep real strokes (panel frames), dropping only the dashed placeholder shorthand. */
-function cssVarsForExport(layer: CanvasLayer, ctx?: FillContext): CanvasLayer['cssVars'] {
+/** Line layers clear box paint (SVG stroke carries the visual); other types keep design chrome. */
+function cssVarsForExport(layer: CanvasLayer): CanvasLayer['cssVars'] {
   if (layer.type === 'line') {
     const ensured = ensureLinePath(layer);
     return {
@@ -79,18 +68,6 @@ function cssVarsForExport(layer: CanvasLayer, ctx?: FillContext): CanvasLayer['c
       '--border': '',
     };
   }
-  if (layer.type === 'field' || layer.type === 'logo') {
-    return stripPlaceholderChrome(layer.cssVars);
-  }
-  if (layer.type === 'grid') {
-    // The grid box is a design element (e.g. the panel frame in reference templates);
-    // only the dashed shorthand from freshly drawn grids is placeholder chrome.
-    return { ...layer.cssVars, '--border': '' };
-  }
-  if (layer.type === 'imageSlot') {
-    const index = layer.meta?.index ?? 0;
-    if (ctx?.images[index]) return stripDashedChrome(layer.cssVars);
-  }
   return layer.cssVars;
 }
 
@@ -98,8 +75,19 @@ function resolveLayerContent(
   layer: CanvasLayer,
   ctx: FillContext,
 ): { kind: 'text' | 'image' | 'empty' | 'html'; html: string } {
-  if (layer.type === 'frame' || layer.type === 'group' || layer.type === 'grid') {
+  if (layer.type === 'frame') {
     return { kind: 'empty', html: '' };
+  }
+  if (layer.type === 'grid') {
+    const cols = layer.meta?.cols ?? 2;
+    const rows = layer.meta?.rows ?? 2;
+    return {
+      kind: 'html',
+      html: `<span style="${CHROME_PLACEHOLDER_STYLE}">Grid ${cols}×${rows}</span>`,
+    };
+  }
+  if (layer.type === 'group') {
+    return { kind: 'text', html: escapeHtml('Grupo') };
   }
   if (layer.visible === false) {
     return { kind: 'empty', html: '' };
@@ -109,13 +97,19 @@ function resolveLayerContent(
   }
   if (layer.type === 'field') {
     const key = layer.meta?.key || '';
-    const fallback = layer.meta?.fallback ?? '-';
-    const value = key && ctx.data[key] != null && ctx.data[key] !== '' ? ctx.data[key] : fallback;
+    const hasData = key && ctx.data[key] != null && ctx.data[key] !== '';
+    const value = hasData ? ctx.data[key] : fieldDesignLabel(layer);
     return { kind: 'text', html: escapeHtml(String(value)) };
   }
   if (layer.type === 'logo') {
     const src = layer.meta?.side === 'right' ? ctx.logoRight : ctx.logoLeft;
-    if (!src) return { kind: 'empty', html: '' };
+    if (!src) {
+      const side = layer.meta?.side === 'right' ? 'R' : 'L';
+      return {
+        kind: 'html',
+        html: `<span style="${CHROME_PLACEHOLDER_STYLE}">Logo ${side}</span>`,
+      };
+    }
     const imgStyle = imageContentInlineStyle({
       ...layer.cssVars,
       '--object-fit': layer.cssVars['--object-fit'] || 'contain',
@@ -131,8 +125,8 @@ function resolveLayerContent(
     const meta = ctx.imageMeta?.[index];
     if (!src) {
       return {
-        kind: 'text',
-        html: `<span style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#94a3b8;font-size:9pt;">Foto ${index + 1}</span>`,
+        kind: 'html',
+        html: `<span style="${CHROME_PLACEHOLDER_STYLE}">Foto ${index + 1}</span>`,
       };
     }
     const imgStyle = imageContentInlineStyle(layer.cssVars);
@@ -141,7 +135,7 @@ function resolveLayerContent(
     if (layer.meta?.showCoords && meta?.coords) captions.push(escapeHtml(meta.coords));
     if (layer.meta?.showFilename && meta?.name) captions.push(escapeHtml(meta.name));
     const captionHtml = captions.length
-      ? `<div style="position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);color:#fff;font-size:7pt;padding:1mm 1.5mm;line-height:1.2;">${captions.join(' · ')}</div>`
+      ? `<div style="position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);color:#fff;font-size:7pt;padding:${CAPTION_PAD};line-height:1.2;">${captions.join(' · ')}</div>`
       : '';
     return {
       kind: 'html',
@@ -149,7 +143,12 @@ function resolveLayerContent(
     };
   }
   if (layer.type === 'image') {
-    if (!layer.value) return { kind: 'empty', html: '' };
+    if (!layer.value) {
+      return {
+        kind: 'html',
+        html: `<span style="${CHROME_PLACEHOLDER_STYLE}">Imagen</span>`,
+      };
+    }
     const imgStyle = imageContentInlineStyle(layer.cssVars);
     return {
       kind: 'image',
@@ -169,7 +168,11 @@ function resolveLayerContent(
     return { kind: 'empty', html: '' };
   }
   if (layer.type === 'line') {
-    return { kind: 'html', html: buildLineSvgContent(ensureLinePath(layer)) };
+    const svg = buildLineSvgContent(ensureLinePath(layer));
+    return {
+      kind: 'html',
+      html: `<div style="width:100%;height:100%;pointer-events:none">${svg}</div>`,
+    };
   }
   if (layer.type === 'checkbox') {
     const key = layer.meta?.key;
@@ -179,28 +182,23 @@ function resolveLayerContent(
       checked = raw === '1' || raw === 'true' || raw === 'si' || raw === 'sí' || raw === 'x' || raw === 'yes';
     }
     const mark = checked ? '✓' : '';
-    const fontSize = layer.cssVars['--font-size'] || '10pt';
-    const color = layer.cssVars['--color'] || 'inherit';
+    // font-size/color inherit from outer paint (same as LayerNode).
     return {
       kind: 'html',
-      html: `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:${escapeHtml(fontSize)};font-weight:700;color:${escapeHtml(color)};box-sizing:border-box;">${mark}</div>`,
+      html: `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:inherit;color:inherit;box-sizing:border-box;">${mark}</div>`,
     };
   }
   if (layer.type === 'signature') {
     const key = layer.meta?.key;
     const name = key && ctx.data[key] ? ctx.data[key] : layer.value || '';
-    const fontSize = layer.cssVars['--font-size'] || '8pt';
-    const color = layer.cssVars['--color'] || 'inherit';
     return {
       kind: 'html',
-      html: `<div style="width:100%;height:100%;display:flex;flex-direction:column;justify-content:flex-end;padding:1mm;box-sizing:border-box;color:${escapeHtml(color)};"><div style="border-top:1px solid currentColor;padding-top:1mm;font-size:${escapeHtml(fontSize)};text-align:center;">${escapeHtml(name || 'Firma')}</div></div>`,
+      html: `<div style="width:100%;height:100%;display:flex;flex-direction:column;justify-content:flex-end;padding:${SIGNATURE_PAD};box-sizing:border-box;color:inherit;"><div style="border-top:1px solid currentColor;padding-top:${SIGNATURE_PAD};font-size:inherit;text-align:center;">${escapeHtml(name || 'Firma')}</div></div>`,
     };
   }
   if (layer.type === 'table') {
     const { cells, fieldKeys } = parseTableData(layer.meta?.rowsData);
-    const fontSize = layer.cssVars['--font-size'] || '8pt';
     const borderColor = layer.cssVars['--border-color'] || '#cbd5e1';
-    const color = layer.cssVars['--color'] || 'inherit';
     const rowsHtml = cells
       .map((row, ri) => {
         const cellsHtml = row
@@ -210,7 +208,7 @@ function resolveLayerContent(
               fieldKey && ctx.data[fieldKey] != null && ctx.data[fieldKey] !== ''
                 ? ctx.data[fieldKey]
                 : cell;
-            return `<td style="border:1px solid ${escapeHtml(borderColor)};padding:1mm 1.5mm;font-size:${escapeHtml(fontSize)};color:${escapeHtml(color)};">${escapeHtml(String(text))}</td>`;
+            return `<td style="border:1px solid ${escapeHtml(borderColor)};padding:${TABLE_CELL_PAD};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(String(text))}</td>`;
           })
           .join('');
         return `<tr>${cellsHtml}</tr>`;
@@ -218,21 +216,16 @@ function resolveLayerContent(
       .join('');
     return {
       kind: 'html',
-      html: `<table style="width:100%;height:100%;border-collapse:collapse;table-layout:fixed;">${rowsHtml}</table>`,
+      html: `<table style="width:100%;height:100%;border-collapse:collapse;table-layout:fixed;font-size:inherit;color:inherit;">${rowsHtml}</table>`,
     };
   }
   return { kind: 'empty', html: '' };
 }
 
-function prepareLayers(document: CanvasDocument, ctx: FillContext): CanvasLayer[] {
-  let layers = document.layers.filter((l) => l.visible !== false);
-  const grid = layers.find((l) => l.type === 'grid');
-  if (grid) {
-    layers = applyGridToImageSlots(layers, grid.id, ctx.images.length || undefined);
-  }
-  // Grid layers stay: their box may carry a real stroke (the photo-panel frame),
-  // which is part of the generated output. Only frame/group are chrome-free containers.
-  return layers.filter((l) => l.type !== 'frame' && l.type !== 'group');
+function prepareLayers(document: CanvasDocument): CanvasLayer[] {
+  // Do not re-layout grids here — Design renders stored slot positions as-is.
+  // Relayout only happens in the editor when the user edits grid cols/rows/gap.
+  return document.layers.filter((l) => l.visible !== false && l.type !== 'frame');
 }
 
 /** Build a filled A4 HTML document from Canvas layers + runtime data. */
@@ -248,7 +241,7 @@ export function renderCanvasHtml(
   const u = (mmVal: number) => (forScreen ? `${Math.round(mmVal * MM_TO_PX)}px` : `${mmVal}mm`);
   const pageW = forScreen ? `${Math.round(widthMm * MM_TO_PX)}px` : `${widthMm}mm`;
   const pageH = forScreen ? `${Math.round(heightMm * MM_TO_PX)}px` : `${heightMm}mm`;
-  const contentLayers = prepareLayers(document, ctx);
+  const contentLayers = prepareLayers(document);
 
   const nodes = contentLayers
     .map((layer) => {
@@ -256,19 +249,11 @@ export function renderCanvasHtml(
       const x = parseMm(ensured.cssVars['--translate-x']);
       const y = parseMm(ensured.cssVars['--translate-y']);
       const w = parseMm(ensured.cssVars['--width'], 10);
-      const exportVars = cssVarsForExport(ensured, ctx);
+      const exportVars = cssVarsForExport(ensured);
       const h = parseMm(exportVars['--height'] ?? ensured.cssVars['--height'], 10);
       const resolved = resolveLayerContent(ensured, ctx);
       if (ensured.visible === false) return '';
-      const styleVars =
-        ensured.type === 'text' || ensured.type === 'field'
-          ? {
-              ...exportVars,
-              '--color': exportVars['--color'] || DEFAULT_LAYER_COLOR,
-              '--font-family': exportVars['--font-family'] || DEFAULT_LAYER_FONT,
-            }
-          : exportVars;
-      const extra = cssVarsToInline(styleVars);
+      const extra = paintVarsToInline(exportVars);
       const clip = clipPathForLayerType(ensured.type);
       const clipStyle = clip ? `clip-path:${clip};` : '';
       const hasTransform = Boolean(buildLayerTransform(ensured.cssVars));
@@ -284,17 +269,36 @@ export function renderCanvasHtml(
         ensured.type === 'ellipse' && !hasExplicitRadius && !clip ? 'border-radius:50%;' : '';
       const clipRadius = clip ? 'border-radius:0;' : '';
       const overflow = ensured.type === 'line' ? 'visible' : 'hidden';
-      const lineFlex =
-        ensured.type === 'line' ? 'display:flex;align-items:center;' : '';
+      const justify = justifyContentForTextAlign(ensured.cssVars['--text-align']);
+      const isTextBox = ensured.type === 'text' || ensured.type === 'field';
+      const pad = isTextBox ? 'padding:2px 6px;' : 'padding:0;';
+      // Match LayerNode: every layer is a flex box (alignment + chrome placeholders).
+      const valign = isTextBox ? ensured.cssVars['--text-valign'] || 'center' : 'center';
+      const flex = `display:flex;align-items:${valign};justify-content:${justify};`;
       const blendMode = ensured.cssVars['--blend-mode']
         ? `mix-blend-mode:${ensured.cssVars['--blend-mode']};`
         : '';
       // clipRadius last so it overrides any border-radius from cssVarsToStyleParts
-      const box = `position:absolute;left:${u(x)};top:${u(y)};width:${u(w)};height:${u(h)};box-sizing:border-box;overflow:${overflow};${lineFlex}${blendMode}${clipStyle}${transformOriginStyle}${ellipseRadius}${extra};${clipRadius}`;
+      const box = `position:absolute;left:${u(x)};top:${u(y)};width:${u(w)};height:${u(h)};box-sizing:border-box;overflow:${overflow};${flex}${pad}${blendMode}${clipStyle}${transformOriginStyle}${ellipseRadius}${extra};${clipRadius}`;
       if (resolved.kind === 'text') {
-        const justify = justifyContentForTextAlign(ensured.cssVars['--text-align']);
         const lineHeight = ensured.cssVars['--line-height'] || DEFAULT_LINE_HEIGHT;
-        return `<div data-layer="${escapeHtml(ensured.id)}" style="${box};display:flex;align-items:center;justify-content:${justify};padding:2px 6px;"><span style="width:100%;line-height:${lineHeight};white-space:pre-wrap;">${resolved.html}</span></div>`;
+        const fontFamily = ensured.cssVars['--font-family'] || DEFAULT_LAYER_FONT;
+        const align = ensured.cssVars['--text-align'] || 'left';
+        const fontStyle = ensured.cssVars['--font-style'];
+        const textDecoration = ensured.cssVars['--text-decoration'];
+        const letterSpacing = ensured.cssVars['--letter-spacing'];
+        const textTransform = ensured.cssVars['--text-transform'];
+        const typo = [
+          fontStyle ? `font-style:${fontStyle};` : '',
+          textDecoration ? `text-decoration:${textDecoration};` : '',
+          letterSpacing ? `letter-spacing:${letterSpacing};` : '',
+          textTransform && textTransform !== 'none' ? `text-transform:${textTransform};` : '',
+        ].join('');
+        const innerSpan =
+          ensured.type === 'field' || ensured.type === 'text'
+            ? `width:100%;line-height:${lineHeight};white-space:pre-wrap;font-family:${fontFamily};font-size:inherit;color:inherit;text-align:${align};${typo}`
+            : `width:100%;line-height:${lineHeight};white-space:pre-wrap;`;
+        return `<div data-layer="${escapeHtml(ensured.id)}" style="${box}"><span style="${innerSpan}">${resolved.html}</span></div>`;
       }
       if (resolved.kind === 'image' || resolved.kind === 'html') {
         return `<div data-layer="${escapeHtml(ensured.id)}" style="${box}">${resolved.html}</div>`;
@@ -317,6 +321,7 @@ export function renderCanvasHtml(
     margin: 0;
     background: #fff;
     font-family: ${DEFAULT_LAYER_FONT};
+    letter-spacing: -0.01em;
   }
   .page {
     position: relative;

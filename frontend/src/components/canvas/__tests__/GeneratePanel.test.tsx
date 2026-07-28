@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createLayer } from '../constants';
 import { createEmptyDocument } from '../types';
@@ -108,6 +108,90 @@ describe('GeneratePanel wizard', () => {
     expect(screen.getByText(/Diseño actual · 1 capas/)).toBeTruthy();
   });
 
+  it('syncs generate preview when the design document changes', async () => {
+    const design = docWithLayers('Diseño actual', 'doc-design');
+    const { rerender } = render(<GeneratePanel document={design} />);
+
+    await waitFor(() => expect(screen.getByText(/Diseño actual · 1 capas/)).toBeTruthy());
+
+    const updated = docWithLayers('Diseño actual', 'doc-design');
+    updated.layers.push(createLayer('text', { name: 'Nuevo', value: 'Hola' }));
+
+    rerender(<GeneratePanel document={updated} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Diseño actual · 2 capas/)).toBeTruthy();
+    });
+  });
+
+  it('empty preview uses LayerNode page matching design chrome for panel fotográfico', async () => {
+    const { createReportPreset } = await import('../presets/panels');
+    const doc = createReportPreset();
+    doc.id = 'doc-preset';
+    render(<GeneratePanel document={doc} />);
+
+    await waitFor(
+      () => {
+        const page = document.querySelector('[data-testid="page-layer-preview"]');
+        expect(page).toBeTruthy();
+        const text = page?.textContent ?? '';
+        expect(text).toContain('PANEL FOTOGRÁFICO');
+        expect(text).toContain('1.0 LOCALIZACIÓN');
+        expect(text).toContain('3.0 PANEL FOTOGRÁFICO');
+        expect(text).toContain('Grid 3×2');
+        expect(text).toContain('Logo L');
+        expect(text).toContain('Foto 1');
+        expect(text).toContain('-');
+      },
+      { timeout: 4000 },
+    );
+  });
+
+  it('renders one PageLayerPreview per image page for a 2×2 grid with 9 photos', async () => {
+    const doc = createEmptyDocument('Multi gen');
+    doc.id = 'doc-multi';
+    const gridId = 'grid-1';
+    doc.layers.push({
+      id: gridId,
+      type: 'grid',
+      name: 'Grid',
+      value: '',
+      pageIndex: 0,
+      cssVars: {},
+      meta: { cols: 2, rows: 2 },
+    });
+    for (let i = 0; i < 4; i += 1) {
+      doc.layers.push(createLayer('imageSlot', { meta: { index: i }, parentId: gridId }));
+    }
+
+    const { container } = render(<GeneratePanel document={doc} />);
+
+    const excelInput = container.querySelector('input[accept=".csv,.xlsx,.xls"]') as HTMLInputElement;
+    fireEvent.change(excelInput, {
+      target: {
+        files: [new File(['ID,NIS\nA-1,100'], 'datos.csv', { type: 'text/csv' })],
+      },
+    });
+    await waitFor(() => expect(screen.getByText('1 registros cargados')).toBeTruthy());
+
+    const imageInputs = container.querySelectorAll('input[accept="image/*"]');
+    const imageInput = imageInputs[imageInputs.length - 1] as HTMLInputElement;
+    fireEvent.change(imageInput, {
+      target: {
+        files: Array.from({ length: 9 }, (_, i) =>
+          new File([`img${i}`], `A-1-${i + 1}.jpg`, { type: 'image/jpeg' }),
+        ),
+      },
+    });
+
+    await waitFor(
+      () => {
+        expect(document.querySelectorAll('[data-testid="page-layer-preview"]')).toHaveLength(3);
+      },
+      { timeout: 4000 },
+    );
+  });
+
   it('loads another canvas template without calling canvasGet for the design doc', async () => {
     const design = docWithLayers('Diseño actual', 'doc-design');
     render(<GeneratePanel document={design} />);
@@ -143,5 +227,53 @@ describe('GeneratePanel wizard', () => {
 
     await waitFor(() => expect(screen.getByText('2 registros cargados')).toBeTruthy());
     expect(screen.getByText('4/6')).toBeTruthy();
+  });
+
+  it('opens column mapping and shows all field keys after excel load', async () => {
+    const design = createEmptyDocument('Multi campos');
+    design.id = 'doc-design';
+    for (const key of ['CENTRO', 'NIS', 'SECTOR', 'FECHA CORTE', 'DIRECCIONES AFECTADAS']) {
+      const field = createLayer('field');
+      field.meta = { key, fallback: '-' };
+      design.layers.push(field);
+    }
+
+    const { container } = render(<GeneratePanel document={design} />);
+
+    const fileInput = container.querySelector('input[accept=".csv,.xlsx,.xls"]') as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: {
+        files: [
+          new File(
+            ['ID,CENTRO,NIS,SECTOR,FECHA CORTE,DIRECCIONES AFECTADAS\n1,A,100,N,2024-01-01,Calle 1'],
+            'datos.csv',
+            { type: 'text/csv' },
+          ),
+        ],
+      },
+    });
+
+    await waitFor(() => expect(screen.getByText('1 registros cargados')).toBeTruthy());
+
+    await waitFor(() => {
+      const heading = screen.getByText('Mapeo de Columnas');
+      const toggle = heading.closest('button');
+      expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+    });
+
+    expect(screen.getByLabelText('Columna ID (Clave)')).toBeTruthy();
+    for (const key of ['CENTRO', 'NIS', 'SECTOR', 'FECHA CORTE', 'DIRECCIONES AFECTADAS']) {
+      expect(screen.getByLabelText(`Mapeo ${key}`)).toBeTruthy();
+    }
+
+    // Open ID column dropdown — every Excel header must be reachable via portal
+    const idSelect = screen.getByLabelText('Columna ID (Clave)');
+    const idTrigger = idSelect.parentElement?.querySelector('button[aria-expanded]') as HTMLButtonElement;
+    fireEvent.click(idTrigger);
+    await waitFor(() => {
+      const listbox = screen.getByRole('listbox');
+      expect(within(listbox).getByRole('option', { name: 'CENTRO' })).toBeTruthy();
+      expect(within(listbox).getByRole('option', { name: 'DIRECCIONES AFECTADAS' })).toBeTruthy();
+    });
   });
 });
