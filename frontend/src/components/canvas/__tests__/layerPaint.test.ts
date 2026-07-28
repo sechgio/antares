@@ -92,12 +92,8 @@ describe('buildLayerPaintStyle', () => {
     expect(style.opacity).toBe('0.8');
   });
 
-  it('scales the default font-size when scale > 1', () => {
+  it('scales the default font-size when scale > 1 (single-scale only)', () => {
     const style = buildLayerPaintStyle(vars({}), { scale: 2 });
-    // NOTE: the default font-size is double-scaled today — buildLayerPaintStyle
-    // first sets it via scaleCssLength('11px', 2) = '22px', then scaleCssVarsForZoom
-    // scales it again to '44px'. User-provided font-size is only single-scaled.
-    // This test pins the current behavior; revisit if the double-scaling is fixed.
-    expect(style.fontSize).toBe('44px');
+    expect(style.fontSize).toBe('22px');
   });
 });

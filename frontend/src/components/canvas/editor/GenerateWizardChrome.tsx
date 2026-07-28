@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { CheckCircle, ChevronDown } from 'lucide-react';
 import { CanvasSegmented } from './CanvasControls';
 
@@ -24,19 +24,14 @@ export function GenerateStep({
   status = 'pending',
 }: StepProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [contentHeight, setContentHeight] = useState<number | null>(null);
+  const wasDisabled = useRef(!!disabled);
   const done = status === 'done';
 
-  // Measure the content height in a layout effect (after DOM commit) instead
-  // of reading scrollHeight during render, which races with Strict Mode / SSR
-  // and returns null on first paint. Re-measure when content or open state changes.
-  useLayoutEffect(() => {
-    if (!isOpen) return;
-    const el = contentRef.current;
-    if (!el) return;
-    setContentHeight(el.scrollHeight);
-  }, [isOpen, children]);
+  // When a step unlocks (e.g. Excel loaded → Mapeo), open it so content is visible.
+  useEffect(() => {
+    if (wasDisabled.current && !disabled) setIsOpen(true);
+    wasDisabled.current = !!disabled;
+  }, [disabled]);
 
   return (
     <div
@@ -70,15 +65,21 @@ export function GenerateStep({
           style={{ color: 'var(--cv-text-muted)' }}
         />
       </button>
+      {/*
+        CSS grid 0fr/1fr expands to natural content height without JS measurement.
+        Avoids the classic maxHeight+scrollHeight bug that clips growing children
+        (e.g. column mapping rows after Excel load).
+      */}
       <div
-        ref={contentRef}
-        className="overflow-hidden transition-all duration-200 ease-in-out"
+        className="grid transition-[grid-template-rows,opacity] duration-200 ease-in-out"
         style={{
-          maxHeight: isOpen ? `${contentHeight ?? 800}px` : '0px',
+          gridTemplateRows: isOpen ? '1fr' : '0fr',
           opacity: isOpen ? 1 : 0,
         }}
       >
-        <div className="px-2 pb-2 pt-0.5">{children}</div>
+        <div className="min-h-0 overflow-hidden">
+          <div className="px-2 pb-2 pt-0.5">{children}</div>
+        </div>
       </div>
     </div>
   );

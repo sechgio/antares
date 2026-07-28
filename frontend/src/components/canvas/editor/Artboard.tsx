@@ -972,15 +972,18 @@ export default function Artboard({
     }
   };
 
-  // Integer CSS px — fractional frame size + CSS transform pan promotes a soft compositor layer.
-  const frameW = Math.round(A4_WIDTH_PX * zoom);
-  const frameH = Math.round(A4_HEIGHT_PX * zoom);
+  // Figma-like camera: page is always laid out at design resolution (A4 CSS px).
+  // CSS `zoom` on the artboard is the camera — it must NOT re-layout layers/text.
+  const designW = A4_WIDTH_PX;
+  const designH = A4_HEIGHT_PX;
+  const visualW = Math.round(A4_WIDTH_PX * zoom);
+  const visualH = Math.round(A4_HEIGHT_PX * zoom);
   const panX = Math.round(pan.x);
   const panY = Math.round(pan.y);
-  const selX = bbox ? mmToScreenPx(bbox.x, zoom) : 0;
-  const selY = bbox ? mmToScreenPx(bbox.y, zoom) : 0;
-  const selW = bbox ? mmToScreenPx(bbox.w, zoom) : 0;
-  const selH = bbox ? mmToScreenPx(bbox.h, zoom) : 0;
+  const selX = bbox ? mmToScreenPx(bbox.x, 1) : 0;
+  const selY = bbox ? mmToScreenPx(bbox.y, 1) : 0;
+  const selW = bbox ? mmToScreenPx(bbox.w, 1) : 0;
+  const selH = bbox ? mmToScreenPx(bbox.h, 1) : 0;
   const rotateHandleX = selX + selW / 2;
   const rotateHandleY = selY - ROTATE_HANDLE_OFFSET;
 
@@ -1022,10 +1025,10 @@ export default function Artboard({
           position: 'absolute',
           left: `calc(50% + ${panX}px)`,
           top: `calc(50% + ${panY}px)`,
-          width: frameW,
-          height: frameH,
-          marginLeft: -frameW / 2,
-          marginTop: -frameH / 2,
+          width: visualW,
+          height: visualH,
+          marginLeft: -visualW / 2,
+          marginTop: -visualH / 2,
         }}
       >
         <div
@@ -1033,8 +1036,10 @@ export default function Artboard({
           data-testid="canvas-artboard"
           style={{
             position: 'relative',
-            width: frameW,
-            height: frameH,
+            width: designW,
+            height: designH,
+            // Camera zoom (Chromium/Electron): re-rasterizes crisply without reflowing text.
+            zoom,
             background: '#ffffff',
             boxShadow: '0 0 0 1px rgba(0,0,0,0.08), 0 12px 40px rgba(0,0,0,0.14)',
             cursor: canPanTool || panning ? cursor : placing ? 'crosshair' : 'default',
@@ -1101,7 +1106,7 @@ export default function Artboard({
               editing={editingLayerId === layer.id}
               pathEditing={pathEditingLayerId === layer.id}
               editingSelectAll={editingSelectAll}
-              scale={zoom}
+              scale={1}
               onSelect={handleSelect}
               onLayerPointerDown={handleLayerPointerDown}
               onContextMenu={onContextMenu}
@@ -1116,7 +1121,7 @@ export default function Artboard({
           {pathEditLayer && (
             <PathHandlesOverlay
               layer={ensureLinePath(pathEditLayer)}
-              zoom={zoom}
+              zoom={1}
               onPointPointerDown={beginPathPointDrag}
             />
           )}
@@ -1139,7 +1144,7 @@ export default function Artboard({
                 fill="rgba(24,160,251,0.08)"
                 stroke="var(--cv-accent)"
                 strokeWidth={1}
-                points={lassoPts.map((p) => `${mmToScreenPx(p.x, zoom)},${mmToScreenPx(p.y, zoom)}`).join(' ')}
+                points={lassoPts.map((p) => `${mmToScreenPx(p.x, 1)},${mmToScreenPx(p.y, 1)}`).join(' ')}
               />
             </svg>
           )}
@@ -1151,7 +1156,7 @@ export default function Artboard({
                 data-testid="canvas-smart-guide"
                 style={{
                   position: 'absolute',
-                  left: mmToScreenPx(g.pos, zoom),
+                  left: mmToScreenPx(g.pos, 1),
                   top: 0,
                   width: 1,
                   height: '100%',
@@ -1166,7 +1171,7 @@ export default function Artboard({
                 data-testid="canvas-smart-guide"
                 style={{
                   position: 'absolute',
-                  top: mmToScreenPx(g.pos, zoom),
+                  top: mmToScreenPx(g.pos, 1),
                   left: 0,
                   height: 1,
                   width: '100%',
@@ -1190,7 +1195,7 @@ export default function Artboard({
                   g.axis === 'x'
                     ? {
                         position: 'absolute',
-                        left: mmToScreenPx(g.posMm, zoom),
+                        left: mmToScreenPx(g.posMm, 1),
                         top: 0,
                         width: GUIDE_HIT_PX,
                         height: '100%',
@@ -1200,7 +1205,7 @@ export default function Artboard({
                       }
                     : {
                         position: 'absolute',
-                        top: mmToScreenPx(g.posMm, zoom),
+                        top: mmToScreenPx(g.posMm, 1),
                         left: 0,
                         height: GUIDE_HIT_PX,
                         width: '100%',
@@ -1253,10 +1258,10 @@ export default function Artboard({
               <div
                 style={{
                   position: 'absolute',
-                  left: mmToScreenPx(Math.min(d.x1, d.x2), zoom),
-                  top: mmToScreenPx(Math.min(d.y1, d.y2), zoom),
-                  width: Math.max(1, mmToScreenPx(Math.abs(d.x2 - d.x1), zoom)),
-                  height: Math.max(1, mmToScreenPx(Math.abs(d.y2 - d.y1), zoom)),
+                  left: mmToScreenPx(Math.min(d.x1, d.x2), 1),
+                  top: mmToScreenPx(Math.min(d.y1, d.y2), 1),
+                  width: Math.max(1, mmToScreenPx(Math.abs(d.x2 - d.x1), 1)),
+                  height: Math.max(1, mmToScreenPx(Math.abs(d.y2 - d.y1), 1)),
                   borderTop: d.axis === 'x' ? '1px solid var(--cv-accent-2)' : undefined,
                   borderLeft: d.axis === 'y' ? '1px solid var(--cv-accent-2)' : undefined,
                   boxSizing: 'border-box',
@@ -1265,8 +1270,8 @@ export default function Artboard({
               <div
                 style={{
                   position: 'absolute',
-                  left: mmToScreenPx(d.x, zoom),
-                  top: mmToScreenPx(d.y, zoom),
+                  left: mmToScreenPx(d.x, 1),
+                  top: mmToScreenPx(d.y, 1),
                   transform: 'translate(-50%, -50%)',
                   background: 'var(--cv-accent-2)',
                   color: '#fff',
@@ -1286,10 +1291,10 @@ export default function Artboard({
               data-testid="canvas-marquee"
               style={{
                 position: 'absolute',
-                left: mmToScreenPx(marquee.x, zoom),
-                top: mmToScreenPx(marquee.y, zoom),
-                width: Math.max(mmToScreenPx(marquee.w, zoom), 1),
-                height: Math.max(mmToScreenPx(marquee.h, zoom), 1),
+                left: mmToScreenPx(marquee.x, 1),
+                top: mmToScreenPx(marquee.y, 1),
+                width: Math.max(mmToScreenPx(marquee.w, 1), 1),
+                height: Math.max(mmToScreenPx(marquee.h, 1), 1),
                 border: '1px solid var(--cv-accent)',
                 background: 'color-mix(in srgb, var(--cv-accent) 8%, transparent)',
                 pointerEvents: 'none',
@@ -1314,10 +1319,10 @@ export default function Artboard({
               }}
             >
               <line
-                x1={mmToScreenPx(draft.x0, zoom)}
-                y1={mmToScreenPx(draft.y0, zoom)}
-                x2={mmToScreenPx(draft.x1, zoom)}
-                y2={mmToScreenPx(draft.y1, zoom)}
+                x1={mmToScreenPx(draft.x0, 1)}
+                y1={mmToScreenPx(draft.y0, 1)}
+                x2={mmToScreenPx(draft.x1, 1)}
+                y2={mmToScreenPx(draft.y1, 1)}
                 stroke="var(--cv-accent)"
                 strokeWidth={1.5}
               />
@@ -1329,10 +1334,10 @@ export default function Artboard({
               data-testid="canvas-draw-draft"
               style={{
                 position: 'absolute',
-                left: mmToScreenPx(draft.x, zoom),
-                top: mmToScreenPx(draft.y, zoom),
-                width: Math.max(mmToScreenPx(draft.w, zoom), 1),
-                height: Math.max(mmToScreenPx(draft.h, zoom), 1),
+                left: mmToScreenPx(draft.x, 1),
+                top: mmToScreenPx(draft.y, 1),
+                width: Math.max(mmToScreenPx(draft.w, 1), 1),
+                height: Math.max(mmToScreenPx(draft.h, 1), 1),
                 border: '1.5px solid var(--cv-accent)',
                 background: 'color-mix(in srgb, var(--cv-accent) 8%, transparent)',
                 borderRadius: tool === 'ellipse' ? '50%' : 0,

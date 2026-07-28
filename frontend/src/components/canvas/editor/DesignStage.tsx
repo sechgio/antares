@@ -165,8 +165,8 @@ export default function DesignStage({
         onDrawLayer={onDrawLayer}
         onStartEdit={onStartEdit}
         onStartPathEdit={onStartPathEdit}
-        onEditValue={(id, v, h) => onEditValue(id, v, h, zoom)}
-        onFitTextHeight={(id, h) => onFitTextHeight(id, h, zoom)}
+        onEditValue={(id, v, h) => onEditValue(id, v, h, 1)}
+        onFitTextHeight={(id, h) => onFitTextHeight(id, h, 1)}
         onCommitEdit={onCommitEdit}
         onContextMenu={onContextMenu}
         onUpsertGuide={onUpsertGuide}

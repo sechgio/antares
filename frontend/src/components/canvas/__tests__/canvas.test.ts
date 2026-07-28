@@ -32,6 +32,8 @@ import { applyAnchoredResize, parseResizeAnchor, resizeLayerAnchored, RESIZE_ANC
 import { clipPathForLayerType, isShapeTool, isSquareConstrainTool } from '../ops/shapePaths';
 import { buildRowData, matchesRecordId } from '../runtime/excel';
 import { mergeCanvasHtmlDocuments, renderCanvasHtml, type FillContext } from '../runtime/renderHtml';
+import { buildLayerPaintStyle } from '../ops/layerPaint';
+import { ensureLinePath } from '../ops/pathGeometry';
 import { createEmptyDocument, mm, newId, normalizeDocument, parseMm } from '../types';
 import { CANVAS_SHORTCUTS } from '../shortcuts';
 import {
@@ -174,7 +176,7 @@ describe('canvas renderHtml', () => {
     expect(merged.match(/class="page"/g)?.length).toBe(2);
   });
 
-  it('strips placeholder fill and border from logo and field on export', () => {
+  it('keeps field and logo layer paint in export (WYSIWYG)', () => {
     const doc = createEmptyDocument('Clean export');
     const field = createLayer('field', {
       id: 'field-nis',
@@ -226,22 +228,20 @@ describe('canvas renderHtml', () => {
     const logoStyle = html.match(/data-layer="logo-left"[^>]*style="([^"]*)"/)?.[1] ?? '';
     const rectStyle = html.match(/data-layer="rect-box"[^>]*style="([^"]*)"/)?.[1] ?? '';
 
-    expect(fieldStyle).toContain('background-color:transparent');
-    expect(fieldStyle).not.toMatch(/(?:^|;)\s*border:/);
-    expect(fieldStyle).not.toContain('#f5f5f5');
-    expect(fieldStyle).not.toContain('dashed');
+    expect(fieldStyle.toLowerCase()).toContain('#f5f5f5');
+    expect(fieldStyle).toMatch(/(?:^|;)\s*border:/);
+    expect(fieldStyle).toContain('dashed');
 
-    expect(logoStyle).toContain('background-color:transparent');
-    expect(logoStyle).not.toMatch(/(?:^|;)\s*border:/);
-    expect(logoStyle).not.toContain('#eef2ff');
-    expect(logoStyle).not.toContain('dashed');
+    expect(logoStyle.toLowerCase()).toContain('#eef2ff');
+    expect(logoStyle).toMatch(/(?:^|;)\s*border:/);
+    expect(logoStyle).toContain('dashed');
 
     expect(rectStyle).toMatch(/background-color:/);
     expect(rectStyle).not.toContain('background-color:transparent');
     expect(rectStyle).toMatch(/(?:^|;)\s*border:/);
   });
 
-  it('strips imageSlot placeholder chrome when photo is filled', () => {
+  it('keeps imageSlot layer paint when photo is filled (WYSIWYG)', () => {
     const doc = createEmptyDocument('Slot chrome');
     doc.layers.push(
       createLayer('imageSlot', {
@@ -265,10 +265,101 @@ describe('canvas renderHtml', () => {
       logoRight: null,
     });
     const style = html.match(/data-layer="slot-0"[^>]*style="([^"]*)"/)?.[1] ?? '';
-    expect(style).toContain('background-color:transparent');
-    expect(style).not.toContain('dashed');
-    expect(style).not.toContain('#f1f5f9');
+    expect(style.toLowerCase()).toContain('#f1f5f9');
+    expect(style).toContain('dashed');
     expect(html).toContain('data:image/png;base64,foto');
+  });
+
+  it('matches LayerNode padding for signature and table (px, not mm)', () => {
+    const doc = createEmptyDocument('Pad parity');
+    doc.layers.push(
+      createLayer('signature', { id: 'sig-pad', value: 'Ana' }),
+      createLayer('table', {
+        id: 'tbl-pad',
+        meta: { rowsData: JSON.stringify({ cells: [['A', 'B']], fieldKeys: [[null, null]] }) },
+      }),
+    );
+    const html = renderCanvasHtml(
+      doc,
+      { data: {}, images: [], logoLeft: null, logoRight: null },
+      { forScreen: true },
+    );
+    expect(html).toContain('padding:1px');
+    expect(html).toContain('padding:1px 2px');
+    expect(html).not.toContain('padding:1mm');
+  });
+
+  it('keeps designed grid cols×rows even when image count would adapt (WYSIWYG)', async () => {
+    const { createReportPreset } = await import('../presets/panels');
+    const doc = createReportPreset();
+    const grid = doc.layers.find((l) => l.type === 'grid')!;
+    const designedCols = grid.meta?.cols ?? 3;
+    const designedRows = grid.meta?.rows ?? 2;
+    // 4 images would resolve to 2×2 under DEFAULT_GRID_RULES — must NOT relayout.
+    const html = renderCanvasHtml(
+      doc,
+      {
+        data: {},
+        images: ['a', 'b', 'c', 'd'],
+        logoLeft: null,
+        logoRight: null,
+      },
+      { forScreen: true },
+    );
+    const slots = doc.layers.filter((l) => l.type === 'imageSlot');
+    expect(slots.length).toBe(designedCols * designedRows);
+    // First slot stays at designed position (applyGrid without imageCount).
+    const slot0 = slots.find((s) => s.meta?.index === 0)!;
+    const style = html.match(new RegExp(`data-layer="${slot0.id}"[^>]*style="([^"]*)"`))?.[1] ?? '';
+    const x = Math.round(parseMm(slot0.cssVars['--translate-x']) * (96 / 25.4));
+    expect(style).toContain(`left:${x}px`);
+  });
+
+  it('empty field uses fieldDesignLabel like LayerNode', () => {
+    const doc = createEmptyDocument('Field label');
+    doc.layers.push(
+      createLayer('field', {
+        id: 'f-empty-fb',
+        meta: { key: 'NIS', fallback: '' },
+        cssVars: {
+          '--width': '40mm',
+          '--height': '8mm',
+          '--translate-x': '10mm',
+          '--translate-y': '20mm',
+        },
+      }),
+    );
+    const html = renderCanvasHtml(doc, {
+      data: {},
+      images: [],
+      logoLeft: null,
+      logoRight: null,
+    });
+    expect(html).toContain('{{ NIS }}');
+  });
+
+  it('legacy --border-style dotted renders in export (saved templates)', () => {
+    const doc = createEmptyDocument('Legacy border');
+    doc.layers.push(
+      createLayer('field', {
+        id: 'legacy-field',
+        meta: { key: 'SECTOR', fallback: '-' },
+        cssVars: {
+          '--width': '40mm',
+          '--height': '8mm',
+          '--translate-x': '10mm',
+          '--translate-y': '20mm',
+          '--background-color': '#fefefe',
+          '--border-width': '1px',
+          '--border-color': '#888888',
+          '--border-style': 'dotted',
+        },
+      }),
+    );
+    const html = renderCanvasHtml(doc, { data: {}, images: [], logoLeft: null, logoRight: null }, { forScreen: true });
+    const style = html.match(/data-layer="legacy-field"[^>]*style="([^"]*)"/)?.[1] ?? '';
+    expect(style).toMatch(/(?:^|;)\s*border:/);
+    expect(style).toContain('dotted');
   });
 
   it('logo img uses layer object-fit from cssVars', () => {
@@ -1272,6 +1363,88 @@ describe('renderMultiPageHtml photo metadata chunking', () => {
     expect(html).toContain('img1.jpg');
     expect(html).toContain('2026-01-01');
     expect(html).toContain('2026-02-02');
+  });
+});
+
+describe('preset WYSIWYG parity (design vs renderHtml)', () => {
+  const MM = 96 / 25.4;
+  const toPx = (mmVal: number) => Math.round(mmVal * MM);
+
+  function styleOf(html: string, layerId: string): string {
+    return html.match(new RegExp(`data-layer="${layerId}"[^>]*style="([^"]*)"`))?.[1] ?? '';
+  }
+
+  async function loadAllPresets() {
+    const panels = await import('../presets/panels');
+    const reservorios = await import('../presets/reservorios');
+    const etapas = await import('../presets/etapas');
+    const certificates = await import('../presets/certificates');
+    return [
+      panels.createReportPreset(),
+      panels.createEmergenciasPreset(),
+      panels.createPanelAvisoCortePreset(),
+      panels.createPanelVolanteoPreset(),
+      panels.createEvidenciaVolanteoPreset(),
+      panels.createMaquinaBaldePreset(),
+      panels.createVolanMaqBaldeSjlPreset(),
+      panels.createAniegosChorrillosPreset(),
+      reservorios.createFormatReservoriosPreset(),
+      reservorios.createPanelReservoriosPreset(),
+      reservorios.createReservoriosLuriganchoV2Preset(),
+      reservorios.createReservoriosLuriganchoSgioPreset(),
+      reservorios.createReservoriosVillaSunassPreset(),
+      etapas.createFormatEtapasPreset(),
+      certificates.createCertLugoPreset(),
+      certificates.createCertSjlBlancoPreset(),
+      certificates.createCertSjlGuardaminoPreset(),
+    ];
+  }
+
+  it('every preset layer has matching box geometry and paint in export', async () => {
+    const ctx: FillContext = { data: {}, images: [], logoLeft: null, logoRight: null };
+    for (const doc of await loadAllPresets()) {
+      const html = renderCanvasHtml(doc, ctx, { forScreen: true });
+      const layers = doc.layers.filter((l) => l.visible !== false && l.type !== 'frame');
+      for (const layer of layers) {
+        const style = styleOf(html, layer.id);
+        expect(style, `${doc.name} · ${layer.name || layer.type}`).not.toBe('');
+
+        const ref = layer.type === 'line' ? ensureLinePath(layer) : layer;
+        const x = toPx(parseMm(ref.cssVars['--translate-x']));
+        const y = toPx(parseMm(ref.cssVars['--translate-y']));
+        const w = toPx(parseMm(ref.cssVars['--width'], 10));
+        const h = toPx(parseMm(ref.cssVars['--height'], 10));
+        expect(style, `${doc.name} · ${layer.id} left`).toContain(`left:${x}px`);
+        expect(style, `${doc.name} · ${layer.id} top`).toContain(`top:${y}px`);
+        expect(style, `${doc.name} · ${layer.id} width`).toContain(`width:${w}px`);
+        expect(style, `${doc.name} · ${layer.id} height`).toContain(`height:${h}px`);
+
+        if (layer.type !== 'line') {
+          const paint = buildLayerPaintStyle(layer.cssVars, { scale: 1 });
+          if (paint.fontSize) {
+            expect(style, `${doc.name} · ${layer.id} font-size`).toContain(`font-size:${paint.fontSize}`);
+          }
+          if (paint.color) {
+            expect(style.toLowerCase(), `${doc.name} · ${layer.id} color`).toContain(
+              paint.color.toLowerCase(),
+            );
+          }
+        }
+      }
+    }
+  });
+
+  it('grid layers show design chrome label in export', async () => {
+    const { createReportPreset } = await import('../presets/panels');
+    const doc = createReportPreset();
+    const grid = doc.layers.find((l) => l.type === 'grid')!;
+    const html = renderCanvasHtml(
+      doc,
+      { data: {}, images: [], logoLeft: null, logoRight: null },
+      { forScreen: true },
+    );
+    expect(html).toContain(`data-layer="${grid.id}"`);
+    expect(html).toMatch(new RegExp(`data-layer="${grid.id}"[^>]*>.*?Grid 3×2`, 's'));
   });
 });
 

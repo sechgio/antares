@@ -6,11 +6,14 @@ import type { CanvasDocument, CanvasDocumentSummary } from '../types';
 import { A4_HEIGHT_PX, A4_WIDTH_PX, normalizeDocument } from '../types';
 import { buildRowData, matchesRecordId, naturalSortByName, parseSpreadsheetFile } from '../runtime/excel';
 import { type FillContext } from '../runtime/renderHtml';
-import { renderMultiPageHtml } from '../ops/pages';
+import { planMultiPageDocuments, renderMultiPageHtml } from '../ops/pages';
 import { exportCanvasPdf } from '../export/exportPdf';
 import { selectGenerateRowIndices, type GenerateExportScope } from '../ops/generateExport';
 import GenerateSidebar from './GenerateSidebar';
+import PageLayerPreview, { documentWithFill } from './PageLayerPreview';
 import PreviewViewport, { type PreviewViewportHandle } from './PreviewViewport';
+
+const PAGE_STACK_GAP_PX = 24;
 
 interface GeneratePanelProps {
   document: CanvasDocument;
@@ -29,8 +32,14 @@ export default function GeneratePanel({ document: designDocument }: GeneratePane
   const previewRef = useRef<PreviewViewportHandle>(null);
 
   const [docs, setDocs] = useState<CanvasDocumentSummary[]>([]);
-  const [generateDoc, setGenerateDoc] = useState<CanvasDocument>(designDocument);
+  const [externalDoc, setExternalDoc] = useState<CanvasDocument | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState(designDocument.id);
+
+  /** Live design doc when selected; disk-loaded doc when user picks another template. */
+  const templateDoc = useMemo(
+    () => (selectedTemplateId === designDocument.id ? designDocument : externalDoc ?? designDocument),
+    [selectedTemplateId, designDocument, externalDoc],
+  );
 
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
@@ -48,6 +57,7 @@ export default function GeneratePanel({ document: designDocument }: GeneratePane
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewHtml, setPreviewHtml] = useState('');
+  const [previewPages, setPreviewPages] = useState<CanvasDocument[]>([]);
   const [dragData, setDragData] = useState(false);
   const [dragImages, setDragImages] = useState(false);
 
@@ -70,13 +80,13 @@ export default function GeneratePanel({ document: designDocument }: GeneratePane
   }, []);
 
   const fieldKeys = useMemo(() => {
-    const fromLayers = generateDoc.layers
+    const fromLayers = templateDoc.layers
       .filter((l) => l.type === 'field' && l.meta?.key)
       .map((l) => l.meta!.key!);
     return [...new Set(fromLayers)];
-  }, [generateDoc.layers]);
+  }, [templateDoc.layers]);
 
-  const layerCount = generateDoc.layers.filter((l) => l.type !== 'frame').length;
+  const layerCount = templateDoc.layers.filter((l) => l.type !== 'frame').length;
   const templateValid = layerCount > 0;
 
   const templateOptions = useMemo(() => {
@@ -106,12 +116,12 @@ export default function GeneratePanel({ document: designDocument }: GeneratePane
     setError(null);
     try {
       if (id === designDocument.id) {
-        setGenerateDoc(designDocument);
+        setExternalDoc(null);
         setSelectedTemplateId(id);
         return;
       }
       const res = await api.canvasGet(id);
-      setGenerateDoc(normalizeDocument(res.document as CanvasDocument));
+      setExternalDoc(normalizeDocument(res.document as CanvasDocument));
       setSelectedTemplateId(id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo cargar la plantilla');
@@ -160,17 +170,19 @@ export default function GeneratePanel({ document: designDocument }: GeneratePane
         const { contexts } = await buildContexts([rowIndex], 'preview');
         ctx = contexts[0] || ctx;
       } else if (showPlaceholders) {
-        const demo: Record<string, string> = {};
-        for (const key of fieldKeys) demo[key] = `{{${key}}}`;
-        ctx = { data: demo, images: [], logoLeft, logoRight };
+        // Match design artboard: empty data → field.meta.fallback ("-"), Logo L/R, Foto N.
+        ctx = { data: {}, images: [], logoLeft, logoRight };
       }
-      const html = renderMultiPageHtml(generateDoc, ctx, { forScreen: true });
+      // Screen preview uses LayerNode (same as Diseño). HTML kept for print/PDF only.
+      const plan = planMultiPageDocuments(templateDoc, ctx);
+      setPreviewPages(plan.map(({ pageDoc, pageCtx }) => documentWithFill(pageDoc, pageCtx)));
+      const html = renderMultiPageHtml(templateDoc, ctx, { forScreen: true });
       setPreviewHtml(html);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al renderizar preview');
     }
-  }, [generateDoc, rows, rowIndex, buildContexts, logoLeft, logoRight, showPlaceholders, fieldKeys]);
+  }, [templateDoc, rows, rowIndex, buildContexts, logoLeft, logoRight, showPlaceholders]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -231,8 +243,8 @@ export default function GeneratePanel({ document: designDocument }: GeneratePane
       }
       const filename =
         exportScope === 'all'
-          ? `${generateDoc.name || 'canvas'}_consolidado.pdf`
-          : `${generateDoc.name || 'canvas'}.pdf`;
+          ? `${templateDoc.name || 'canvas'}_consolidado.pdf`
+          : `${templateDoc.name || 'canvas'}.pdf`;
       const save = await api.dialogSave({
         title: 'Guardar PDF Canvas',
         defaultPath: filename,
@@ -244,7 +256,7 @@ export default function GeneratePanel({ document: designDocument }: GeneratePane
         return;
       }
       await exportCanvasPdf({
-        document: generateDoc,
+        document: templateDoc,
         contexts,
         filename,
         outputPath,
@@ -270,7 +282,7 @@ export default function GeneratePanel({ document: designDocument }: GeneratePane
         templateOptions={templateOptions}
         selectedTemplateId={selectedTemplateId}
         onSelectTemplate={(id) => void onSelectTemplate(id)}
-        templateName={generateDoc.name}
+        templateName={templateDoc.name}
         layerCount={layerCount}
         fieldKeys={fieldKeys}
         requiresImages={requiresImages}
@@ -308,9 +320,31 @@ export default function GeneratePanel({ document: designDocument }: GeneratePane
       <PreviewViewport
         ref={previewRef}
         html={previewHtml}
+        ready={previewPages.length > 0}
         widthPx={A4_WIDTH_PX}
-        heightPx={A4_HEIGHT_PX}
-      />
+        heightPx={
+          previewPages.length > 0
+            ? previewPages.length * A4_HEIGHT_PX + (previewPages.length - 1) * PAGE_STACK_GAP_PX
+            : A4_HEIGHT_PX
+        }
+      >
+        {previewPages.length > 0
+          ? (scale) => (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: PAGE_STACK_GAP_PX * scale,
+                  alignItems: 'center',
+                }}
+              >
+                {previewPages.map((pageDoc, i) => (
+                  <PageLayerPreview key={`${pageDoc.id}-p${i}`} document={pageDoc} scale={scale} />
+                ))}
+              </div>
+            )
+          : null}
+      </PreviewViewport>
     </div>
   );
 }

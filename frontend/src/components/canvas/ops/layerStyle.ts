@@ -405,7 +405,7 @@ export function resolveStrokeStyle(
   const opacity = Number(vars['--stroke-opacity'] ?? 100);
   const color = hexToRgba(normalizeHex(colorRaw, '#000000'), Number.isFinite(opacity) ? opacity : 100);
   const align = parseStrokeAlign(vars['--stroke-align']);
-  const dash = parseStrokeDash(vars['--stroke-dash']);
+  const dash = parseStrokeDash(vars['--stroke-dash'] ?? vars['--border-style']);
   const lineStyle = dash === 'solid' ? 'solid' : dash;
 
   if (vars['--border']) {
@@ -737,6 +737,10 @@ export function cssVarsToStyleParts(vars: LayerCssVars): string[] {
     else if (prop === 'font-weight') parts.push(`font-weight:${value}`);
     else if (prop === 'font-family') parts.push(`font-family:${value}`);
     else if (prop === 'text-align') parts.push(`text-align:${value}`);
+    else if (prop === 'font-style' && value) parts.push(`font-style:${value}`);
+    else if (prop === 'text-decoration' && value) parts.push(`text-decoration:${value}`);
+    else if (prop === 'letter-spacing') parts.push(`letter-spacing:${value}`);
+    else if (prop === 'text-transform' && value && value !== 'none') parts.push(`text-transform:${value}`);
     else if (prop === 'color') parts.push(`color:${value}`);
     else if (prop === 'opacity') {
       const n = Number(value);
