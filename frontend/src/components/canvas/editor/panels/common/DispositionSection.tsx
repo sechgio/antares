@@ -52,7 +52,7 @@ export default function DispositionSection({
         >
           <button
             type="button"
-            className="canvas-icon-btn !h-7 !w-7"
+            className="canvas-icon-btn !h-7 !w-7 shrink-0"
             data-active={isAspectLocked(layer.cssVars)}
             aria-label="Proporciones"
             onClick={() => setVar('--aspect-locked', isAspectLocked(layer.cssVars) ? '0' : '1')}
@@ -64,36 +64,37 @@ export default function DispositionSection({
             )}
           </button>
         </WithHoverTooltip>
-      </div>
-      <span className="canvas-sublabel mt-2 block">Anclaje de redimensión</span>
-      <div
-        className="grid w-fit grid-cols-3 gap-0.5"
-        role="radiogroup"
-        aria-label="Anclaje de redimensión"
-      >
-        {RESIZE_ANCHORS.map((anchor: ResizeAnchor) => {
-          const active = parseResizeAnchor(layer.cssVars['--resize-anchor']) === anchor;
-          return (
-            <button
-              key={anchor}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              aria-label={`Anclar ${anchor}`}
-              className="flex h-5 w-5 items-center justify-center rounded-sm border"
-              style={{
-                borderColor: 'var(--cv-border)',
-                background: active ? 'var(--cv-accent)' : 'transparent',
-              }}
-              onClick={() => setVar('--resize-anchor', anchor)}
-            >
-              <span
-                className="h-1.5 w-1.5 rounded-full"
-                style={{ background: active ? '#fff' : 'var(--cv-text-muted)' }}
-              />
-            </button>
-          );
-        })}
+        <WithHoverTooltip label="Anclaje de redimensión" placement="bottom" variant="dark">
+          <div
+            className="ml-0.5 grid shrink-0 grid-cols-3 gap-px"
+            role="radiogroup"
+            aria-label="Anclaje de redimensión"
+          >
+            {RESIZE_ANCHORS.map((anchor: ResizeAnchor) => {
+              const active = parseResizeAnchor(layer.cssVars['--resize-anchor']) === anchor;
+              return (
+                <button
+                  key={anchor}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  aria-label={`Anclar ${anchor}`}
+                  className="flex h-3 w-3 items-center justify-center rounded-[2px] border"
+                  style={{
+                    borderColor: active ? 'var(--cv-accent)' : 'var(--cv-border)',
+                    background: active ? 'var(--cv-accent)' : 'transparent',
+                  }}
+                  onClick={() => setVar('--resize-anchor', anchor)}
+                >
+                  <span
+                    className="h-1 w-1 rounded-full"
+                    style={{ background: active ? '#fff' : 'var(--cv-text-muted)' }}
+                  />
+                </button>
+              );
+            })}
+          </div>
+        </WithHoverTooltip>
       </div>
     </div>
   );

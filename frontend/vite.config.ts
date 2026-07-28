@@ -30,6 +30,12 @@ export default defineConfig(({ mode }) => ({
     },
   },
   base: mode === 'development' ? '/' : './',
+  // Electron hardcodes http://localhost:5173. If this port is taken, Vite must
+  // fail (not silently move to 5174) or Electron loads the wrong app.
+  server: {
+    port: 5173,
+    strictPort: true,
+  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,

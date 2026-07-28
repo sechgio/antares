@@ -44,6 +44,16 @@ export interface LayerCssVars {
   '--font-weight'?: string;
   '--font-family'?: string;
   '--text-align'?: string;
+  /** Italic: "italic" | "" */
+  '--font-style'?: string;
+  /** Underline / strikethrough: "underline" | "line-through" | "" */
+  '--text-decoration'?: string;
+  /** CSS letter-spacing, e.g. "0.5px" or "-0.2px" */
+  '--letter-spacing'?: string;
+  /** none | uppercase | lowercase | capitalize */
+  '--text-transform'?: string;
+  /** Vertical alignment inside the layer box: flex-start | center | flex-end */
+  '--text-valign'?: string;
   '--opacity'?: string;
   '--border'?: string;
   '--border-width'?: string;
