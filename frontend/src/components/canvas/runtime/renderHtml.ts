@@ -286,12 +286,12 @@ export function renderCanvasHtml(
         const align = ensured.cssVars['--text-align'] || 'left';
         const fontStyle = ensured.cssVars['--font-style'];
         const textDecoration = ensured.cssVars['--text-decoration'];
-        const letterSpacing = ensured.cssVars['--letter-spacing'];
+        const letterSpacing = ensured.cssVars['--letter-spacing'] || 'normal';
         const textTransform = ensured.cssVars['--text-transform'];
         const typo = [
           fontStyle ? `font-style:${fontStyle};` : '',
           textDecoration ? `text-decoration:${textDecoration};` : '',
-          letterSpacing ? `letter-spacing:${letterSpacing};` : '',
+          `letter-spacing:${letterSpacing};`,
           textTransform && textTransform !== 'none' ? `text-transform:${textTransform};` : '',
         ].join('');
         const innerSpan =
@@ -321,7 +321,7 @@ export function renderCanvasHtml(
     margin: 0;
     background: #fff;
     font-family: ${DEFAULT_LAYER_FONT};
-    letter-spacing: -0.01em;
+    letter-spacing: normal;
   }
   .page {
     position: relative;

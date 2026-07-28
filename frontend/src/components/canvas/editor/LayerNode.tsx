@@ -170,6 +170,8 @@ function LayerNode({
 
   const style: CSSProperties = {
     ...paintRest,
+    // Isolate from .canvas-app UI letter-spacing (-0.01em); Figma default is 0/normal.
+    letterSpacing: paintRest.letterSpacing || 'normal',
     position: 'absolute',
     left: 0,
     top: 0,
@@ -264,7 +266,7 @@ function LayerNode({
     textAlign: (textAlign as CSSProperties['textAlign']) || 'left',
     fontStyle: (layer.cssVars['--font-style'] as CSSProperties['fontStyle']) || undefined,
     textDecoration: (layer.cssVars['--text-decoration'] as CSSProperties['textDecoration']) || undefined,
-    letterSpacing: layer.cssVars['--letter-spacing'] || undefined,
+    letterSpacing: layer.cssVars['--letter-spacing'] || 'normal',
     textTransform: (layer.cssVars['--text-transform'] as CSSProperties['textTransform']) || undefined,
   };
 
@@ -492,6 +494,8 @@ function LayerNode({
         >
           {label}
         </span>
+      ) : layer.type === 'text' ? (
+        <span style={textInnerStyle}>{label}</span>
       ) : (
         <span style={{ width: '100%', lineHeight, whiteSpace: 'pre-wrap' }}>{label}</span>
       )}

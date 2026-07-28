@@ -4,6 +4,15 @@ import { SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
 
 import CanvasSelect from '../../CanvasSelect';
+import InlineNumField from '../../InlineNumField';
+import {
+  formatFontSizePt,
+  formatLetterSpacingPx,
+  formatLineHeight,
+  parseFontSizePt,
+  parseLetterSpacingPx,
+  parseLineHeight,
+} from '../../../ops/textTypography';
 
 /** Text inspector — matches `text` and `field`. The textarea only renders for
  *  `text`; `field` shows the color/family/align controls but no editable value
@@ -32,17 +41,19 @@ export default function TextSection({
       <div className="mb-2 flex items-center gap-2">
         <input
           type="color"
-          className="h-7 w-7 cursor-pointer rounded border-0 bg-transparent"
+          className="h-7 w-7 shrink-0 cursor-pointer rounded border-0 bg-transparent"
           value={v['--color'] || '#1e1e1e'}
           onChange={(e) => setVarLive('--color', e.target.value)}
           onBlur={() => onCommitLive?.()}
         />
-        <input
-          className="canvas-input"
-          value={v['--font-size'] || '11pt'}
-          onChange={(e) => setVarLive('--font-size', e.target.value)}
-          onBlur={() => onCommitLive?.()}
-          placeholder="11pt"
+        <InlineNumField
+          prefix="Aa"
+          value={parseFontSizePt(v['--font-size'])}
+          onChange={(n) => setVarLive('--font-size', formatFontSizePt(Math.max(1, n)))}
+          onCommit={onCommitLive}
+          step={1}
+          title="Tamaño de fuente"
+          suffix="pt"
         />
       </div>
       <div className="mb-2 flex items-center gap-2">
@@ -164,19 +175,22 @@ export default function TextSection({
         ))}
       </div>
       <div className="mb-2 flex items-center gap-2">
-        <input
-          className="canvas-input"
-          placeholder="Interletra (ej. 0.5px)"
-          value={v['--letter-spacing'] || ''}
-          onChange={(e) => setVarLive('--letter-spacing', e.target.value)}
-          onBlur={() => onCommitLive?.()}
+        <InlineNumField
+          prefix="LS"
+          value={parseLetterSpacingPx(v['--letter-spacing'])}
+          onChange={(n) => setVarLive('--letter-spacing', formatLetterSpacingPx(n))}
+          onCommit={onCommitLive}
+          step={0.1}
+          title="Interletra"
+          suffix="px"
         />
-        <input
-          className="canvas-input"
-          placeholder="Line height (ej. 1.2)"
-          value={v['--line-height'] || ''}
-          onChange={(e) => setVarLive('--line-height', e.target.value)}
-          onBlur={() => onCommitLive?.()}
+        <InlineNumField
+          prefix="↕"
+          value={parseLineHeight(v['--line-height'])}
+          onChange={(n) => setVarLive('--line-height', formatLineHeight(Math.max(0.5, n)))}
+          onCommit={onCommitLive}
+          step={0.05}
+          title="Interlineado"
         />
       </div>
     </div>
