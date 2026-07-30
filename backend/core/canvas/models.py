@@ -80,8 +80,10 @@ def create_empty_document(*, name: str = "Sin título") -> dict[str, Any]:
     }
 
 
-def _normalize_css_vars(raw: Any) -> dict[str, str]:
+def _normalize_css_vars(raw: Any, *, with_geometry_defaults: bool = True) -> dict[str, str]:
     if not isinstance(raw, dict):
+        if not with_geometry_defaults:
+            return {}
         return {
             "--width": "40mm",
             "--height": "10mm",
@@ -92,10 +94,11 @@ def _normalize_css_vars(raw: Any) -> dict[str, str]:
     for key, value in raw.items():
         if isinstance(key, str) and isinstance(value, (str, int, float)):
             out[key] = str(value)
-    out.setdefault("--width", "40mm")
-    out.setdefault("--height", "10mm")
-    out.setdefault("--translate-x", "10mm")
-    out.setdefault("--translate-y", "10mm")
+    if with_geometry_defaults:
+        out.setdefault("--width", "40mm")
+        out.setdefault("--height", "10mm")
+        out.setdefault("--translate-x", "10mm")
+        out.setdefault("--translate-y", "10mm")
     return out
 
 
@@ -177,7 +180,27 @@ def _normalize_meta(raw: Any) -> dict[str, Any] | None:
             if "closed" in raw_path:
                 path_dict["closed"] = bool(raw_path["closed"])
             cleaned["path"] = path_dict
+    for track_key in ("colTracks", "rowTracks"):
+        tracks = _normalize_track_list(raw.get(track_key))
+        if tracks is not None:
+            cleaned[track_key] = tracks
     return cleaned or None
+
+
+def _normalize_track_list(raw: Any) -> list[float] | None:
+    """Keep positive float track weights; omit key if invalid (do not invent defaults)."""
+    if not isinstance(raw, list) or not raw:
+        return None
+    tracks: list[float] = []
+    for item in raw:
+        try:
+            value = float(item)
+        except (TypeError, ValueError):
+            return None
+        if value <= 0 or value != value:  # NaN check
+            return None
+        tracks.append(value)
+    return tracks
 
 
 def _normalize_layer(raw: Any) -> dict[str, Any] | None:
@@ -308,7 +331,7 @@ def _normalize_styles(raw: Any) -> list[dict[str, Any]]:
             continue
         style_id = str(item.get("id") or "").strip() or _new_id()
         name = str(item.get("name") or kind).strip() or kind
-        css = _normalize_css_vars(item.get("cssVars"))
+        css = _normalize_css_vars(item.get("cssVars"), with_geometry_defaults=False)
         styles.append({"id": style_id, "name": name, "kind": kind, "cssVars": css})
     return styles
 
@@ -328,7 +351,13 @@ def _normalize_guides(raw: Any) -> list[dict[str, Any]]:
         except (TypeError, ValueError):
             continue
         guide_id = str(item.get("id") or "").strip() or _new_id()
-        guides.append({"id": guide_id, "axis": axis, "posMm": pos_mm})
+        try:
+            page_index = int(item.get("pageIndex", 0))
+        except (TypeError, ValueError):
+            page_index = 0
+        if page_index < 0:
+            page_index = 0
+        guides.append({"id": guide_id, "axis": axis, "posMm": pos_mm, "pageIndex": page_index})
     return guides
 
 

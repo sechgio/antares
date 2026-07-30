@@ -148,6 +148,11 @@ def test_normalize_preserves_shared_styles_and_layer_links() -> None:
     assert len(doc["styles"]) == 1
     assert doc["styles"][0]["id"] == "style-1"
     assert doc["styles"][0]["kind"] == "color"
+    assert doc["styles"][0]["cssVars"] == {
+        "--background-color": "#FF0000",
+        "--fill-visible": "1",
+    }
+    assert "--width" not in doc["styles"][0]["cssVars"]
     linked = next(l for l in doc["layers"] if l["id"] == "rect-1")
     assert linked["fillStyleId"] == "style-1"
 
@@ -213,8 +218,49 @@ def test_normalize_preserves_editor_settings_and_guides() -> None:
     assert doc["settings"]["imagesPerPage"] == 4
     assert doc["settings"]["gridRules"] == [{"whenImages": 4, "cols": 2, "rows": 2}]
     assert doc["guides"] == [
-        {"id": "g-x", "axis": "x", "posMm": 42.0},
-        {"id": "g-y", "axis": "y", "posMm": 10.5},
+        {"id": "g-x", "axis": "x", "posMm": 42.0, "pageIndex": 0},
+        {"id": "g-y", "axis": "y", "posMm": 10.5, "pageIndex": 0},
+    ]
+
+
+def test_normalize_preserves_grid_tracks() -> None:
+    raw = create_empty_document()
+    raw["layers"] = [
+        {
+            "id": "grid-1",
+            "type": "grid",
+            "name": "Grid",
+            "cssVars": {
+                "--width": "100mm",
+                "--height": "100mm",
+                "--translate-x": "0mm",
+                "--translate-y": "0mm",
+            },
+            "meta": {
+                "cols": 2,
+                "rows": 2,
+                "gapMm": 2.0,
+                "colTracks": [1.5, 2.0],
+                "rowTracks": [1.0, 3.0],
+            },
+        }
+    ]
+    doc = normalize_document(raw)
+    grid = next(layer for layer in doc["layers"] if layer["id"] == "grid-1")
+    assert grid["meta"]["colTracks"] == [1.5, 2.0]
+    assert grid["meta"]["rowTracks"] == [1.0, 3.0]
+
+
+def test_normalize_preserves_guide_page_index() -> None:
+    raw = create_empty_document()
+    raw["guides"] = [
+        {"id": "g-p1", "axis": "x", "posMm": 20, "pageIndex": 1},
+        {"id": "g-bad", "axis": "y", "posMm": 5, "pageIndex": -3},
+    ]
+    doc = normalize_document(raw)
+    assert doc["guides"] == [
+        {"id": "g-p1", "axis": "x", "posMm": 20.0, "pageIndex": 1},
+        {"id": "g-bad", "axis": "y", "posMm": 5.0, "pageIndex": 0},
     ]
 
 
