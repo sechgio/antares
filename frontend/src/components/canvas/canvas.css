@@ -60,6 +60,25 @@
   box-shadow: 0 0 0 3px var(--cv-accent-soft);
 }
 
+/* Ghost input for inline list rename — row selection is the only chrome */
+.canvas-input.canvas-input--inline {
+  height: auto;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0 4px;
+  font-size: 12px;
+  box-shadow: none;
+  transition: none;
+}
+
+.canvas-input.canvas-input--inline:hover,
+.canvas-input.canvas-input--inline:focus {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
 select.canvas-input {
   appearance: none;
   -webkit-appearance: none;

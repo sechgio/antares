@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import {
   ChevronDown,
   ChevronRight,
@@ -79,6 +79,231 @@ function layerIcon(type: CanvasLayer['type']) {
   return <Layers className="h-3 w-3" />;
 }
 
+/** Sibling groups in Capas visual order (front first = reverse document order). */
+function buildSiblingCapasMap(layers: CanvasLayer[]): Map<string, CanvasLayer[]> {
+  const validParents = new Set(layers.map((l) => l.id));
+  const map = new Map<string, CanvasLayer[]>();
+  for (const layer of layers) {
+    if (layer.type === 'frame') continue;
+    const key =
+      layer.parentId && validParents.has(layer.parentId) ? layer.parentId : '';
+    const list = map.get(key);
+    if (list) list.push(layer);
+    else map.set(key, [layer]);
+  }
+  for (const list of map.values()) list.reverse();
+  return map;
+}
+
+interface LayerRowProps {
+  layer: CanvasLayer;
+  depth: number;
+  hasChildren: boolean;
+  expanded: boolean;
+  selected: boolean;
+  sibIndex: number;
+  siblingCount: number;
+  prevSiblingId: string | undefined;
+  nextSiblingId: string | undefined;
+  renaming: boolean;
+  renameDraft: string;
+  dropPosition: 'before' | 'after' | null;
+  layerRenameRef: RefObject<HTMLInputElement>;
+  onToggleExpanded: (id: string) => void;
+  onSelect: (id: string, additive?: boolean) => void;
+  onStartRename: (id: string, name: string) => void;
+  onRenameDraftChange: (value: string) => void;
+  onCommitRename: () => void;
+  onCancelRename: () => void;
+  onToggleVisible: (id: string, visible: boolean) => void;
+  onToggleLocked: (id: string, locked: boolean) => void;
+  onReorderSibling: (draggedId: string, targetId: string, position: 'before' | 'after') => void;
+  onDropHover: (id: string, position: 'before' | 'after' | null) => void;
+}
+
+const LayerRow = memo(function LayerRow({
+  layer,
+  depth,
+  hasChildren,
+  expanded,
+  selected,
+  sibIndex,
+  siblingCount,
+  prevSiblingId,
+  nextSiblingId,
+  renaming,
+  renameDraft,
+  dropPosition,
+  layerRenameRef,
+  onToggleExpanded,
+  onSelect,
+  onStartRename,
+  onRenameDraftChange,
+  onCommitRename,
+  onCancelRename,
+  onToggleVisible,
+  onToggleLocked,
+  onReorderSibling,
+  onDropHover,
+}: LayerRowProps) {
+  return (
+    <li>
+      <div
+        className="canvas-list-row"
+        data-layer-id={layer.id}
+        data-selected={selected}
+        data-dimmed={layer.visible === false}
+        data-drop={dropPosition ?? undefined}
+        draggable={!layer.locked && !renaming}
+        onDragStart={(e) => {
+          if (layer.locked) {
+            e.preventDefault();
+            return;
+          }
+          e.dataTransfer.setData('text/plain', layer.id);
+          e.dataTransfer.effectAllowed = 'move';
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          const position = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+          onDropHover(layer.id, position);
+        }}
+        onDragLeave={() => onDropHover(layer.id, null)}
+        onDrop={(e) => {
+          e.preventDefault();
+          onDropHover(layer.id, null);
+          const draggedId = e.dataTransfer.getData('text/plain');
+          if (!draggedId || draggedId === layer.id) return;
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          const position = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+          onReorderSibling(draggedId, layer.id, position);
+        }}
+        style={{
+          color: 'var(--cv-text)',
+          paddingLeft: `${4 + depth * 12}px`,
+          boxShadow:
+            dropPosition === 'before'
+              ? 'inset 0 2px 0 0 var(--cv-accent)'
+              : dropPosition === 'after'
+                ? 'inset 0 -2px 0 0 var(--cv-accent)'
+                : undefined,
+        }}
+      >
+        {hasChildren ? (
+          <button
+            type="button"
+            className="canvas-icon-btn !h-5 !w-5 shrink-0"
+            style={{ color: 'var(--cv-text-muted)' }}
+            aria-label={expanded ? 'Colapsar' : 'Expandir'}
+            onClick={() => onToggleExpanded(layer.id)}
+          >
+            {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          </button>
+        ) : (
+          <span className="inline-block h-5 w-5 shrink-0" aria-hidden />
+        )}
+        {renaming ? (
+          <div className="flex min-w-0 flex-1 items-center gap-1 px-1 py-0.5">
+            <span style={{ color: 'var(--cv-text-muted)' }}>{layerIcon(layer.type)}</span>
+            <input
+              ref={layerRenameRef}
+              className="canvas-input canvas-input--inline min-w-0 flex-1"
+              value={renameDraft}
+              aria-label="Nombre de capa"
+              onChange={(e) => onRenameDraftChange(e.target.value)}
+              onBlur={onCommitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  onCommitRename();
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  onCancelRename();
+                }
+              }}
+            />
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-0.5 text-left"
+            onClick={(e) => onSelect(layer.id, e.shiftKey || e.ctrlKey || e.metaKey)}
+            onDoubleClick={(e) => {
+              e.preventDefault();
+              if (layer.locked) return;
+              onStartRename(layer.id, layer.name);
+            }}
+          >
+            <span style={{ color: 'var(--cv-text-muted)' }}>{layerIcon(layer.type)}</span>
+            <span className="min-w-0 flex-1 truncate">{layer.name}</span>
+            {layer.meta?.key && (
+              <span
+                className="max-w-[72px] shrink-0 truncate rounded px-1 text-[9px] uppercase tracking-wide"
+                style={{
+                  background: 'var(--cv-hover)',
+                  color: 'var(--cv-text-muted)',
+                }}
+                title={layer.meta.key}
+              >
+                {layer.meta.key}
+              </span>
+            )}
+          </button>
+        )}
+        <WithHoverTooltip label="Visibilidad" placement="left" variant="dark">
+          <button
+            type="button"
+            className="canvas-icon-btn !h-6 !w-6"
+            aria-label="Visibilidad"
+            onClick={() => onToggleVisible(layer.id, layer.visible === false)}
+          >
+            {layer.visible === false ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+          </button>
+        </WithHoverTooltip>
+        <WithHoverTooltip label={layer.locked ? 'Desbloquear' : 'Bloquear'} placement="left" variant="dark">
+          <button
+            type="button"
+            className="canvas-icon-btn !h-6 !w-6"
+            aria-label={layer.locked ? 'Desbloquear' : 'Bloquear'}
+            onClick={() => onToggleLocked(layer.id, !layer.locked)}
+          >
+            {layer.locked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
+          </button>
+        </WithHoverTooltip>
+        <WithHoverTooltip label="Subir" placement="left" variant="dark">
+          <button
+            type="button"
+            className="canvas-icon-btn !h-6 !w-6"
+            aria-label="Subir"
+            disabled={sibIndex <= 0 || layer.locked}
+            onClick={() => {
+              if (prevSiblingId) onReorderSibling(layer.id, prevSiblingId, 'before');
+            }}
+          >
+            <ChevronUp className="h-3 w-3" />
+          </button>
+        </WithHoverTooltip>
+        <WithHoverTooltip label="Bajar" placement="left" variant="dark">
+          <button
+            type="button"
+            className="canvas-icon-btn !h-6 !w-6"
+            aria-label="Bajar"
+            disabled={sibIndex < 0 || sibIndex >= siblingCount - 1 || layer.locked}
+            onClick={() => {
+              if (nextSiblingId) onReorderSibling(layer.id, nextSiblingId, 'after');
+            }}
+          >
+            <ChevronDown className="h-3 w-3" />
+          </button>
+        </WithHoverTooltip>
+      </div>
+    </li>
+  );
+});
+
 export default memo(function LeftSidebar({
   documentName,
   docs,
@@ -107,15 +332,20 @@ export default memo(function LeftSidebar({
     () => layers.filter((l) => isLayerContainer(l)).map((l) => l.id),
     [layers],
   );
+  const siblingCapasByParent = useMemo(() => buildSiblingCapasMap(layers), [layers]);
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set(containerIds));
   const [layerQuery, setLayerQuery] = useState('');
   const [pageMenu, setPageMenu] = useState<PageContextMenuState | null>(null);
   const [renamingIndex, setRenamingIndex] = useState<number | null>(null);
   const [renamingLayerId, setRenamingLayerId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
+  const [dropHover, setDropHover] = useState<{ id: string; position: 'before' | 'after' } | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const layerRenameRef = useRef<HTMLInputElement>(null);
   const layerListRef = useRef<HTMLUListElement>(null);
+  const layersRef = useRef(layers);
+  layersRef.current = layers;
 
   const fileOptions = useMemo(() => {
     const byId = new Map(docs.map((d) => [d.id, d]));
@@ -141,11 +371,11 @@ export default memo(function LeftSidebar({
     });
   }, [containerIds]);
 
-  // Expand ancestors + scroll selected Capas row into view.
+  // Expand ancestors + scroll selected Capas row into view (selection-driven, not every layers edit).
   useEffect(() => {
     const id = selectedIds[0];
     if (!id) return;
-    const ancestors = ancestorIds(layers, id);
+    const ancestors = ancestorIds(layersRef.current, id);
     if (ancestors.length) {
       setExpandedIds((prev) => {
         const next = new Set(prev);
@@ -163,7 +393,7 @@ export default memo(function LeftSidebar({
       const el = layerListRef.current?.querySelector(`[data-layer-id="${id}"]`);
       el?.scrollIntoView({ block: 'nearest' });
     });
-  }, [selectedIds, layers]);
+  }, [selectedIds]);
 
   useEffect(() => {
     if (renamingIndex === null) return;
@@ -183,21 +413,40 @@ export default memo(function LeftSidebar({
     setRenamingIndex(null);
   };
 
-  const commitLayerRename = () => {
+  const commitLayerRename = useCallback(() => {
     if (renamingLayerId === null) return;
     const name = renameDraft.trim();
     if (name) onRenameLayer(renamingLayerId, name);
     setRenamingLayerId(null);
-  };
+  }, [renamingLayerId, renameDraft, onRenameLayer]);
 
-  const toggleExpanded = (id: string) => {
+  const cancelLayerRename = useCallback(() => {
+    setRenamingLayerId(null);
+  }, []);
+
+  const toggleExpanded = useCallback((id: string) => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  };
+  }, []);
+
+  const startLayerRename = useCallback((id: string, name: string) => {
+    setRenameDraft(name);
+    setRenamingLayerId(id);
+  }, []);
+
+  const onDropHover = useCallback((id: string, position: 'before' | 'after' | null) => {
+    setDropHover((prev) => {
+      if (position == null) {
+        return prev?.id === id ? null : prev;
+      }
+      if (prev?.id === id && prev.position === position) return prev;
+      return { id, position };
+    });
+  }, []);
 
   const rows = useMemo(() => {
     const query = layerQuery.trim().toLowerCase();
@@ -286,7 +535,7 @@ export default memo(function LeftSidebar({
               <input
                 key={pages?.[i]?.id ?? i}
                 ref={renameInputRef}
-                className="canvas-input w-full !py-1.5 text-[12px]"
+                className="canvas-input canvas-input--inline w-full py-1.5"
                 value={renameDraft}
                 aria-label="Nombre de página"
                 onChange={(e) => setRenameDraft(e.target.value)}
@@ -363,157 +612,42 @@ export default memo(function LeftSidebar({
         <ul ref={layerListRef} className="flex-1 overflow-y-auto px-1 pb-3">
           {rows.map((row) => {
             const { layer, depth, hasChildren } = row;
-            const expanded = expandedIds.has(layer.id);
+            const validParents = siblingCapasByParent;
             const parentKey =
-              layer.parentId && layers.some((l) => l.id === layer.parentId) ? layer.parentId : undefined;
-            const siblingCapas = layers
-              .filter((l) => {
-                if (l.type === 'frame') return false;
-                const p = l.parentId && layers.some((x) => x.id === l.parentId) ? l.parentId : undefined;
-                return p === parentKey;
-              })
-              .reverse();
+              layer.parentId && layers.some((l) => l.id === layer.parentId) ? layer.parentId : '';
+            const siblingCapas = validParents.get(parentKey) ?? [];
             const sibIndex = siblingCapas.findIndex((l) => l.id === layer.id);
             return (
-              <li key={layer.id}>
-                <div
-                  className="canvas-list-row"
-                  data-layer-id={layer.id}
-                  data-selected={selectedIds.includes(layer.id)}
-                  data-dimmed={layer.visible === false}
-                  draggable={!layer.locked && renamingLayerId !== layer.id}
-                  onDragStart={(e) => {
-                    if (layer.locked) {
-                      e.preventDefault();
-                      return;
-                    }
-                    e.dataTransfer.setData('text/plain', layer.id);
-                    e.dataTransfer.effectAllowed = 'move';
-                  }}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = 'move';
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const draggedId = e.dataTransfer.getData('text/plain');
-                    if (!draggedId || draggedId === layer.id) return;
-                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    const position = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-                    onReorderSibling(draggedId, layer.id, position);
-                  }}
-                  style={{ color: 'var(--cv-text)', paddingLeft: `${4 + depth * 12}px` }}
-                >
-                  {hasChildren ? (
-                    <button
-                      type="button"
-                      className="canvas-icon-btn !h-5 !w-5 shrink-0"
-                      style={{ color: 'var(--cv-text-muted)' }}
-                      aria-label={expanded ? 'Colapsar' : 'Expandir'}
-                      onClick={() => toggleExpanded(layer.id)}
-                    >
-                      {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                    </button>
-                  ) : (
-                    <span className="inline-block h-5 w-5 shrink-0" aria-hidden />
-                  )}
-                  {renamingLayerId === layer.id ? (
-                    <input
-                      ref={layerRenameRef}
-                      className="canvas-input min-w-0 flex-1 !px-1 !py-0 text-[11px]"
-                      value={renameDraft}
-                      aria-label="Nombre de capa"
-                      onChange={(e) => setRenameDraft(e.target.value)}
-                      onBlur={commitLayerRename}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          commitLayerRename();
-                        }
-                        if (e.key === 'Escape') {
-                          e.preventDefault();
-                          setRenamingLayerId(null);
-                        }
-                      }}
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-0.5 text-left"
-                      onClick={(e) => onSelect(layer.id, e.shiftKey || e.ctrlKey || e.metaKey)}
-                      onDoubleClick={(e) => {
-                        e.preventDefault();
-                        if (layer.locked) return;
-                        setRenameDraft(layer.name);
-                        setRenamingLayerId(layer.id);
-                      }}
-                    >
-                      <span style={{ color: 'var(--cv-text-muted)' }}>{layerIcon(layer.type)}</span>
-                      <span className="min-w-0 flex-1 truncate">{layer.name}</span>
-                      {layer.meta?.key && (
-                        <span
-                          className="max-w-[72px] shrink-0 truncate rounded px-1 text-[9px] uppercase tracking-wide"
-                          style={{
-                            background: 'var(--cv-hover)',
-                            color: 'var(--cv-text-muted)',
-                          }}
-                          title={layer.meta.key}
-                        >
-                          {layer.meta.key}
-                        </span>
-                      )}
-                    </button>
-                  )}
-                  <WithHoverTooltip label="Visibilidad" placement="left" variant="dark">
-                    <button
-                      type="button"
-                      className="canvas-icon-btn !h-6 !w-6"
-                      aria-label="Visibilidad"
-                      onClick={() => onToggleVisible(layer.id, layer.visible === false)}
-                    >
-                      {layer.visible === false ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                    </button>
-                  </WithHoverTooltip>
-                  <WithHoverTooltip label={layer.locked ? 'Desbloquear' : 'Bloquear'} placement="left" variant="dark">
-                    <button
-                      type="button"
-                      className="canvas-icon-btn !h-6 !w-6"
-                      aria-label={layer.locked ? 'Desbloquear' : 'Bloquear'}
-                      onClick={() => onToggleLocked(layer.id, !layer.locked)}
-                    >
-                      {layer.locked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
-                    </button>
-                  </WithHoverTooltip>
-                  <WithHoverTooltip label="Subir" placement="left" variant="dark">
-                    <button
-                      type="button"
-                      className="canvas-icon-btn !h-6 !w-6"
-                      aria-label="Subir"
-                      disabled={sibIndex <= 0 || layer.locked}
-                      onClick={() => {
-                        const prev = siblingCapas[sibIndex - 1];
-                        if (prev) onReorderSibling(layer.id, prev.id, 'before');
-                      }}
-                    >
-                      <ChevronUp className="h-3 w-3" />
-                    </button>
-                  </WithHoverTooltip>
-                  <WithHoverTooltip label="Bajar" placement="left" variant="dark">
-                    <button
-                      type="button"
-                      className="canvas-icon-btn !h-6 !w-6"
-                      aria-label="Bajar"
-                      disabled={sibIndex < 0 || sibIndex >= siblingCapas.length - 1 || layer.locked}
-                      onClick={() => {
-                        const nextLayer = siblingCapas[sibIndex + 1];
-                        if (nextLayer) onReorderSibling(layer.id, nextLayer.id, 'after');
-                      }}
-                    >
-                      <ChevronDown className="h-3 w-3" />
-                    </button>
-                  </WithHoverTooltip>
-                </div>
-              </li>
+              <LayerRow
+                key={layer.id}
+                layer={layer}
+                depth={depth}
+                hasChildren={hasChildren}
+                expanded={expandedIds.has(layer.id)}
+                selected={selectedIdSet.has(layer.id)}
+                sibIndex={sibIndex}
+                siblingCount={siblingCapas.length}
+                prevSiblingId={sibIndex > 0 ? siblingCapas[sibIndex - 1]?.id : undefined}
+                nextSiblingId={
+                  sibIndex >= 0 && sibIndex < siblingCapas.length - 1
+                    ? siblingCapas[sibIndex + 1]?.id
+                    : undefined
+                }
+                renaming={renamingLayerId === layer.id}
+                renameDraft={renamingLayerId === layer.id ? renameDraft : ''}
+                dropPosition={dropHover?.id === layer.id ? dropHover.position : null}
+                layerRenameRef={layerRenameRef}
+                onToggleExpanded={toggleExpanded}
+                onSelect={onSelect}
+                onStartRename={startLayerRename}
+                onRenameDraftChange={setRenameDraft}
+                onCommitRename={commitLayerRename}
+                onCancelRename={cancelLayerRename}
+                onToggleVisible={onToggleVisible}
+                onToggleLocked={onToggleLocked}
+                onReorderSibling={onReorderSibling}
+                onDropHover={onDropHover}
+              />
             );
           })}
           {rows.length === 0 && (
