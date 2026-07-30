@@ -332,26 +332,6 @@ export default memo(function RightPanel({
         </div>
       )}
 
-      {selectedCount === 1 &&
-        onCreateStyle &&
-        onApplyStyle &&
-        onDetachStyle &&
-        onRemoveStyle &&
-        onRenameStyle && (
-          <div className="border-b px-4 py-3" style={{ borderColor: 'var(--cv-border)' }}>
-            <StylesSection
-              styles={documentStyles}
-              layer={layer}
-              canLink={Boolean(layer && layer.type !== 'frame' && !layer.locked)}
-              onCreate={onCreateStyle}
-              onApply={onApplyStyle}
-              onDetach={onDetachStyle}
-              onRemove={onRemoveStyle}
-              onRename={onRenameStyle}
-            />
-          </div>
-        )}
-
       {selectedCount > 1 && (
         <div className="canvas-section">
           <div className="canvas-section-title">Alinear ({selectedCount})</div>
@@ -522,6 +502,23 @@ export default memo(function RightPanel({
 
           {/* Shape name + z-order block (commits directly via onChange). */}
           {shape && <ShapeSection {...sectionProps} />}
+
+          {onCreateStyle &&
+            onApplyStyle &&
+            onDetachStyle &&
+            onRemoveStyle &&
+            onRenameStyle && (
+              <StylesSection
+                styles={documentStyles}
+                layer={layer}
+                canLink={Boolean(layer && layer.type !== 'frame' && !layer.locked)}
+                onCreate={onCreateStyle}
+                onApply={onApplyStyle}
+                onDetach={onDetachStyle}
+                onRemove={onRemoveStyle}
+                onRename={onRenameStyle}
+              />
+            )}
 
           <div className="px-4 py-4">
             <button

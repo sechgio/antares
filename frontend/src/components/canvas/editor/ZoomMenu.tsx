@@ -228,7 +228,7 @@ export default function ZoomMenu({
           onClick={() => setOpen((v) => !v)}
         >
           <span>{pct}%</span>
-          <ChevronDown className="h-3.5 w-3.5 opacity-80" strokeWidth={2.5} />
+          <ChevronDown className="h-2.5 w-2.5 opacity-70" strokeWidth={2.5} aria-hidden />
         </button>
       </WithHoverTooltip>
 

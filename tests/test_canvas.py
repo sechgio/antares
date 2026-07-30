@@ -153,7 +153,7 @@ def test_normalize_preserves_shared_styles_and_layer_links() -> None:
         "--fill-visible": "1",
     }
     assert "--width" not in doc["styles"][0]["cssVars"]
-    linked = next(l for l in doc["layers"] if l["id"] == "rect-1")
+    linked = next(layer for layer in doc["layers"] if layer["id"] == "rect-1")
     assert linked["fillStyleId"] == "style-1"
 
 

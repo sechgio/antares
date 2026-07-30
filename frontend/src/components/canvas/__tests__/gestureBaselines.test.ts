@@ -135,4 +135,45 @@ describe('applyLivePanelLayerChange', () => {
     expect(slots).toHaveLength(3);
     expect(parseMm(slots[1]!.cssVars['--translate-x'])).toBeGreaterThan(0);
   });
+
+  it('lock/visibility toggles do not rebuild or move child slots', () => {
+    const gridId = 'g1';
+    const grid = createLayer('grid', {
+      id: gridId,
+      meta: { cols: 2, rows: 2, gapMm: 2 },
+      cssVars: {
+        '--width': '100mm',
+        '--height': '80mm',
+        '--translate-x': '0mm',
+        '--translate-y': '0mm',
+      },
+    });
+    const slot = createLayer('imageSlot', {
+      id: 's1',
+      parentId: gridId,
+      meta: { index: 0 },
+      cssVars: {
+        '--width': '30mm',
+        '--height': '20mm',
+        '--translate-x': '19mm',
+        '--translate-y': '19mm',
+      },
+    });
+    const layers = [
+      grid,
+      slot,
+      createLayer('imageSlot', { id: 's2', parentId: gridId, meta: { index: 1 } }),
+      createLayer('imageSlot', { id: 's3', parentId: gridId, meta: { index: 2 } }),
+      createLayer('imageSlot', { id: 's4', parentId: gridId, meta: { index: 3 } }),
+    ];
+    const lockedGrid: typeof grid = { ...grid, locked: true };
+    const next = applyLivePanelLayerChange(layers, grid, lockedGrid);
+    const nextSlot = next.find((l) => l.id === 's1')!;
+    // Must keep custom cell size/position (e.g. after "Mismo tamaño para todos").
+    expect(parseMm(nextSlot.cssVars['--width'])).toBeCloseTo(30, 5);
+    expect(parseMm(nextSlot.cssVars['--height'])).toBeCloseTo(20, 5);
+    expect(parseMm(nextSlot.cssVars['--translate-x'])).toBeCloseTo(19, 5);
+    expect(parseMm(nextSlot.cssVars['--translate-y'])).toBeCloseTo(19, 5);
+    expect(next.find((l) => l.id === gridId)!.locked).toBe(true);
+  });
 });

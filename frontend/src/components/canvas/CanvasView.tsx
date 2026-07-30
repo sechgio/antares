@@ -64,7 +64,11 @@ import {
   setActivePageLayers,
   syncImagesPerPage,
 } from './ops/pages';
-import { applyGridToImageSlots, matchGridSlotsToSourceSize, rebuildGridSlots } from './ops/gridLayout';
+import {
+  applyGridToImageSlots,
+  applyLivePanelLayerChange,
+  matchGridSlotsToSourceSize,
+} from './ops/gridLayout';
 import { assignUniqueLogoSides, logoSideHasConflict, withAssignedLogoSide } from './ops/logoSide';
 import { isClickPlace, type DrawRect } from './ops/drawHelpers';
 import { moveGuide, removeGuide, upsertGuide } from './ops/guides';
@@ -1454,11 +1458,8 @@ export default function CanvasView() {
             onChange={(layer) => {
               if (panelBaselineRef.current) onPanelCommitLive();
               const prev = history.document.layers.find((l) => l.id === layer.id);
-              let layers = history.document.layers.map((l) => (l.id === layer.id ? layer : l));
-              // Only cols/rows/gap rebuild touches siblings. Slot W/H edits stay per-cell.
-              if (layer.type === 'grid') {
-                layers = rebuildGridSlots(layers, layer.id);
-              }
+              // Same gate as live path: only cols/rows/gap rebuild sibling slots.
+              const layers = applyLivePanelLayerChange(history.document.layers, prev, layer);
               const synced = syncLinkedStylesFromLayer(
                 { ...history.document, layers },
                 prev,

@@ -282,7 +282,8 @@ export function applyGridToImageSlots(
 
 /**
  * Make every cell in the parent grid match the source slot's w×h.
- * Resizes the grid box so equal tracks fit those cell sizes; origin unchanged.
+ * Keeps gapMm; never shrinks the grid frame (grows only if cells need more room).
+ * When the frame is larger than the cell block, centers the block inside it.
  */
 export function matchGridSlotsToSourceSize(
   layers: CanvasLayer[],
@@ -298,27 +299,73 @@ export function matchGridSlotsToSourceSize(
   const gapMm = Math.max(0, grid.meta?.gapMm ?? 2);
   const cellW = Math.max(MIN_GRID_CELL_MM, parseMm(slot.cssVars['--width'], MIN_GRID_CELL_MM));
   const cellH = Math.max(MIN_GRID_CELL_MM, parseMm(slot.cssVars['--height'], MIN_GRID_CELL_MM));
-  const gridW = cellW * cols + gapMm * Math.max(cols - 1, 0);
-  const gridH = cellH * rows + gapMm * Math.max(rows - 1, 0);
 
-  const withGrid = layers.map((l) =>
-    l.id === grid.id
-      ? {
-          ...l,
-          cssVars: {
-            ...l.cssVars,
-            '--width': mm(gridW),
-            '--height': mm(gridH),
-          },
-          meta: {
-            ...l.meta,
-            cols,
-            rows,
-            colTracks: Array.from({ length: cols }, () => 1),
-            rowTracks: Array.from({ length: rows }, () => 1),
-          },
-        }
-      : l,
+  const originX = parseMm(grid.cssVars['--translate-x']);
+  const originY = parseMm(grid.cssVars['--translate-y']);
+  const currentW = parseMm(grid.cssVars['--width'], 100);
+  const currentH = parseMm(grid.cssVars['--height'], 100);
+
+  const contentW = cellW * cols + gapMm * Math.max(cols - 1, 0);
+  const contentH = cellH * rows + gapMm * Math.max(rows - 1, 0);
+  // Never shrink the outer frame — only grow when cells no longer fit.
+  const gridW = Math.max(currentW, contentW);
+  const gridH = Math.max(currentH, contentH);
+  const padX = (gridW - contentW) / 2;
+  const padY = (gridH - contentH) / 2;
+
+  const colTracks = Array.from({ length: cols }, () => 1);
+  const rowTracks = Array.from({ length: rows }, () => 1);
+  const positions = layoutGridSlots(
+    originX + padX,
+    originY + padY,
+    contentW,
+    contentH,
+    cols,
+    rows,
+    gapMm,
+    { cols: colTracks, rows: rowTracks },
   );
-  return applyGridToImageSlots(withGrid, grid.id);
+
+  const slots = gridChildSlots(layers, grid.id);
+  const slotIds = new Set(slots.slice(0, positions.length).map((s) => s.id));
+  const slotIndexById = new Map(slots.map((s, i) => [s.id, i]));
+
+  return layers.map((layer) => {
+    if (layer.id === grid.id) {
+      return {
+        ...layer,
+        cssVars: {
+          ...layer.cssVars,
+          '--width': mm(gridW),
+          '--height': mm(gridH),
+        },
+        meta: {
+          ...layer.meta,
+          cols,
+          rows,
+          gapMm,
+          colTracks,
+          rowTracks,
+        },
+      };
+    }
+    if (!slotIds.has(layer.id)) return layer;
+    const index = slotIndexById.get(layer.id);
+    if (index == null) return layer;
+    const pos = positions[index];
+    if (!pos) return layer;
+    return {
+      ...layer,
+      name: `Foto ${index + 1}`,
+      parentId: grid.id,
+      cssVars: {
+        ...layer.cssVars,
+        '--translate-x': mm(pos.x),
+        '--translate-y': mm(pos.y),
+        '--width': mm(pos.w),
+        '--height': mm(pos.h),
+      },
+      meta: { ...layer.meta, index },
+    };
+  });
 }

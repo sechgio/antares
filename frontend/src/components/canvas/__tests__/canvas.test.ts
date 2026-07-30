@@ -1075,12 +1075,68 @@ describe('gridLayout', () => {
       expect(parseMm(s.cssVars['--width'])).toBeCloseTo(sourceW, 5);
       expect(parseMm(s.cssVars['--height'])).toBeCloseTo(sourceH, 5);
     }
+    // Larger cells still grow the grid to fit (gap preserved).
     expect(parseMm(grid.cssVars['--width'])).toBeCloseTo(sourceW * 2 + 2, 5);
     expect(parseMm(grid.cssVars['--height'])).toBeCloseTo(sourceH * 2 + 2, 5);
     expect(parseMm(grid.cssVars['--translate-x'])).toBeCloseTo(10, 5);
     expect(parseMm(grid.cssVars['--translate-y'])).toBeCloseTo(5, 5);
+    expect(grid.meta?.gapMm).toBe(2);
     expect(grid.meta?.colTracks).toEqual([1, 1]);
     expect(grid.meta?.rowTracks).toEqual([1, 1]);
+  });
+
+  it('matchGridSlotsToSourceSize does not shrink the grid frame for smaller cells', () => {
+    const gridId = newId();
+    let layers = [
+      createLayer('grid', {
+        id: gridId,
+        meta: { cols: 2, rows: 2, gapMm: 2 },
+        cssVars: {
+          '--width': '100mm',
+          '--height': '80mm',
+          '--translate-x': '10mm',
+          '--translate-y': '5mm',
+        },
+      }),
+      ...[0, 1, 2, 3].map((i) =>
+        createLayer('imageSlot', { id: `slot-${i}`, parentId: gridId, meta: { index: i } }),
+      ),
+    ];
+    layers = applyGridToImageSlots(layers, gridId);
+    layers = layers.map((l) =>
+      l.id === 'slot-0'
+        ? {
+            ...l,
+            cssVars: {
+              ...l.cssVars,
+              '--width': '30mm',
+              '--height': '20mm',
+            },
+          }
+        : l,
+    );
+
+    const next = matchGridSlotsToSourceSize(layers, 'slot-0');
+    const grid = next.find((l) => l.id === gridId)!;
+    const slots = next.filter((l) => l.parentId === gridId && l.type === 'imageSlot');
+    expect(slots).toHaveLength(4);
+    for (const s of slots) {
+      expect(parseMm(s.cssVars['--width'])).toBeCloseTo(30, 5);
+      expect(parseMm(s.cssVars['--height'])).toBeCloseTo(20, 5);
+    }
+    // Outer frame stays put; gap between cells stays 2mm; content is centered.
+    expect(parseMm(grid.cssVars['--width'])).toBeCloseTo(100, 5);
+    expect(parseMm(grid.cssVars['--height'])).toBeCloseTo(80, 5);
+    expect(parseMm(grid.cssVars['--translate-x'])).toBeCloseTo(10, 5);
+    expect(parseMm(grid.cssVars['--translate-y'])).toBeCloseTo(5, 5);
+    expect(grid.meta?.gapMm).toBe(2);
+    // content = 30*2+2=62 by 20*2+2=42 → pad (100-62)/2=19, (80-42)/2=19
+    const slot0 = slots.find((s) => s.meta?.index === 0)!;
+    const slot1 = slots.find((s) => s.meta?.index === 1)!;
+    expect(parseMm(slot0.cssVars['--translate-x'])).toBeCloseTo(10 + 19, 5);
+    expect(parseMm(slot0.cssVars['--translate-y'])).toBeCloseTo(5 + 19, 5);
+    expect(parseMm(slot1.cssVars['--translate-x'])).toBeCloseTo(10 + 19 + 30 + 2, 5);
+    expect(parseMm(slot1.cssVars['--translate-y'])).toBeCloseTo(5 + 19, 5);
   });
 
   it('matchGridSlotsToSourceSize is a no-op for non-grid slots', () => {

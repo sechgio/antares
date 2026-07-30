@@ -321,6 +321,118 @@ select.canvas-input option {
   color: inherit;
 }
 
+.canvas-paint-icon[data-active='true'] {
+  color: var(--cv-accent);
+  background: var(--cv-accent-soft);
+}
+
+.canvas-paint-icon[data-active='true']:hover {
+  color: var(--cv-accent-hover);
+  background: var(--cv-accent-soft);
+}
+
+/* Shared styles panel — Figma-like local styles list */
+.canvas-style-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.canvas-style-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 22px;
+}
+
+.canvas-style-group-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--cv-text-secondary);
+  line-height: 1;
+}
+
+.canvas-style-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.canvas-style-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 2px 2px 2px 6px;
+  border-radius: var(--cv-radius-sm);
+  transition: background 0.1s ease;
+}
+
+.canvas-style-row:hover,
+.canvas-style-row:focus-within {
+  background: var(--cv-hover);
+}
+
+.canvas-style-row[data-linked='true'] .canvas-style-name {
+  color: var(--cv-accent);
+}
+
+.canvas-style-linked-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--cv-accent);
+  opacity: 0.85;
+}
+
+.canvas-style-name {
+  min-width: 0;
+  flex: 1;
+  font-size: 11px !important;
+  font-weight: 500;
+  color: var(--cv-text);
+  line-height: 1.2;
+}
+
+.canvas-style-kind-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--cv-panel-elevated);
+  color: var(--cv-text-secondary);
+}
+
+.canvas-style-actions {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  padding-left: 12px;
+  background: linear-gradient(to right, transparent, var(--cv-hover) 28%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s ease;
+}
+
+.canvas-style-row:hover .canvas-style-actions,
+.canvas-style-row:focus-within .canvas-style-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .canvas-color-picker {
   position: fixed;
   z-index: 120;
@@ -1569,34 +1681,46 @@ select.canvas-input option {
   }
 }
 
-/* Zoom menu — same chrome tokens as CanvasSelect / panels */
+/* Zoom menu — compact chip beside Propiedades (Figma-like) */
 .canvas-zoom-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  height: 30px;
-  border: none;
-  border-radius: var(--cv-radius);
-  background: var(--cv-active);
-  padding: 0 10px 0 12px;
-  font-size: 13px;
-  font-weight: 600;
+  gap: 2px;
+  height: 22px;
+  border: 1px solid transparent;
+  border-radius: var(--cv-radius-sm);
+  background: transparent;
+  padding: 0 4px 0 6px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
-  color: var(--cv-accent);
+  line-height: 1;
+  color: var(--cv-text-secondary);
   cursor: pointer;
-  transition: background 0.12s ease, transform 0.1s ease;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease, transform 0.08s ease;
 }
 
 .canvas-zoom-trigger:hover {
-  background: color-mix(in srgb, var(--cv-accent) 18%, var(--cv-panel-elevated));
+  background: var(--cv-hover);
+  color: var(--cv-text);
 }
 
 .canvas-zoom-trigger:active {
   transform: scale(0.97);
 }
 
+.canvas-zoom-trigger:focus-visible {
+  outline: none;
+  border-color: var(--cv-accent);
+  box-shadow: 0 0 0 3px var(--cv-accent-soft);
+}
+
 .canvas-zoom-trigger[aria-expanded='true'] {
-  background: color-mix(in srgb, var(--cv-accent) 22%, var(--cv-panel-elevated));
+  background: var(--cv-active);
+  border-color: color-mix(in srgb, var(--cv-accent) 28%, transparent);
+  color: var(--cv-accent);
 }
 
 .canvas-zoom-menu {

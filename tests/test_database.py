@@ -88,7 +88,7 @@ class TestInitDb:
             {"name": "archivo", "type": "TEXT", "required": True},
             {"name": "cliente", "type": "TEXT"},
         ])
-        with pytest.raises(DatabaseError, match="vacía|vaciar|abortada|catálogo"):
+        with pytest.raises(DatabaseError, match=r"vacía|vaciar|abortada|catálogo"):
             db.init_db()
 
         # Catalog intact under previous schema
