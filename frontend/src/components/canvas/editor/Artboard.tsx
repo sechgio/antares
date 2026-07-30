@@ -1402,6 +1402,7 @@ export default function Artboard({
               layer={layer}
               selected={selectedIdSet.has(layer.id)}
               moving={gestureLayers !== null && selectedIdSet.has(layer.id)}
+              panning={panning}
               interactive={interactive && !panning}
               editing={editingLayerId === layer.id}
               pathEditing={pathEditingLayerId === layer.id}

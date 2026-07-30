@@ -27,7 +27,7 @@ const BACKEND_METHODS = [
   'sellador_apply', 'sellador_inspect_pdf', 'sellador_render_page',
   'theme_get', 'theme_save', 'theme_presets', 'theme_preset', 'theme_reset',
   'templates_list', 'template_get',
-  'canvas_list', 'canvas_get', 'canvas_save', 'canvas_create', 'canvas_delete', 'canvas_duplicate',
+  'canvas_list', 'canvas_get', 'canvas_save', 'canvas_create', 'canvas_delete', 'canvas_duplicate', 'canvas_export_cmyk_pdf', 'canvas_get_history', 'canvas_save_history',
   'generar_ubicaciones',
   'preview_ubicacion',
   'evidencia_volanteo_render',

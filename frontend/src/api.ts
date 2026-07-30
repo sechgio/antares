@@ -287,6 +287,18 @@ export interface HtmlToPdfBody {
   outputPath?: string;
 }
 
+export interface CanvasExportCmykPdfBody {
+  document: import('./components/canvas/types').CanvasDocument;
+  contexts?: unknown[];
+  color_profile?: string;
+  dpi?: number;
+  bleed_mm?: number;
+  show_crop_marks?: boolean;
+  filename?: string;
+  outputPath?: string;
+  localImagePaths?: Record<string, string>;
+}
+
 export type HtmlToPdfResponse =
   | { pdf_base64: string; filename: string; saved_path?: never }
   | { pdf_base64?: never; filename: string; saved_path: string };
@@ -479,6 +491,12 @@ export const api = {
   canvasDelete: (id: string) => _invoke<{ success: boolean; deleted_id: string }>('canvas_delete', { id }),
   canvasDuplicate: (id: string, name?: string) =>
     _invoke<{ document: import('./components/canvas/types').CanvasDocument }>('canvas_duplicate', name ? { id, name } : { id }),
+  canvasExportCmykPdf: (body: CanvasExportCmykPdfBody) =>
+    _invoke<HtmlToPdfResponse>('canvas_export_cmyk_pdf', body),
+  canvasGetHistory: (id: string) =>
+    _invoke<{ past: import('./components/canvas/types').CanvasDocument[]; future: import('./components/canvas/types').CanvasDocument[] }>('canvas_get_history', { id }),
+  canvasSaveHistory: (id: string, past: import('./components/canvas/types').CanvasDocument[], future: import('./components/canvas/types').CanvasDocument[]) =>
+    _invoke<{ success: boolean }>('canvas_save_history', { id, past, future }),
 
   // ─── Render HTML to PDF via Electron ─────────────────────────────────────
   // Sanitization happens once, in Electron's renderHtmlToPdf (defense in depth

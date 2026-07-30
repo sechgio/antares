@@ -139,90 +139,66 @@ export function measureSelectionGaps(
     });
   }
 
-  // Nearest horizontal gaps to other boxes (left/right)
-  let bestLeft: { dist: number; other: RectMm } | null = null;
-  let bestRight: { dist: number; other: RectMm } | null = null;
-  let bestTop: { dist: number; other: RectMm } | null = null;
-  let bestBottom: { dist: number; other: RectMm } | null = null;
+  // Multi-object horizontal gaps for all consecutive adjacent boxes in the Y-overlapping band
+  const horizBoxes = [
+    selection,
+    ...others.filter((o) => boxesOverlapOnAxis(selection.y, selection.y + selection.h, o.y, o.y + o.h)),
+  ].sort((a, b) => a.x - b.x);
 
-  for (const o of others) {
-    const gapLeft = selection.x - (o.x + o.w);
-    if (gapLeft > 0.05 && (!bestLeft || gapLeft < bestLeft.dist)) {
-      bestLeft = { dist: gapLeft, other: o };
-    }
-    const gapRight = o.x - (selection.x + selection.w);
-    if (gapRight > 0.05 && (!bestRight || gapRight < bestRight.dist)) {
-      bestRight = { dist: gapRight, other: o };
-    }
-    const gapTop = selection.y - (o.y + o.h);
-    if (gapTop > 0.05 && (!bestTop || gapTop < bestTop.dist)) {
-      bestTop = { dist: gapTop, other: o };
-    }
-    const gapBottom = o.y - (selection.y + selection.h);
-    if (gapBottom > 0.05 && (!bestBottom || gapBottom < bestBottom.dist)) {
-      bestBottom = { dist: gapBottom, other: o };
+  for (let i = 0; i < horizBoxes.length - 1; i++) {
+    const a = horizBoxes[i];
+    const b = horizBoxes[i + 1];
+    const gap = b.x - (a.x + a.w);
+    if (gap > 0.05) {
+      const midY = (Math.max(a.y, b.y) + Math.min(a.y + a.h, b.y + b.h)) / 2;
+      const isSelPair = a === selection || b === selection;
+      labels.push({
+        id: isSelPair
+          ? a === selection
+            ? 'obj-right'
+            : 'obj-left'
+          : `obj-x-${Math.round(a.x)}-${Math.round(b.x)}`,
+        axis: 'x',
+        x: a.x + a.w + gap / 2,
+        y: midY,
+        valueMm: gap,
+        x1: a.x + a.w,
+        y1: midY,
+        x2: b.x,
+        y2: midY,
+      });
     }
   }
 
-  if (bestLeft) {
-    const o = bestLeft.other;
-    const midY = (Math.max(selection.y, o.y) + Math.min(selection.y + selection.h, o.y + o.h)) / 2;
-    labels.push({
-      id: 'obj-left',
-      axis: 'x',
-      x: o.x + o.w + bestLeft.dist / 2,
-      y: midY,
-      valueMm: bestLeft.dist,
-      x1: o.x + o.w,
-      y1: midY,
-      x2: selection.x,
-      y2: midY,
-    });
-  }
-  if (bestRight) {
-    const o = bestRight.other;
-    const midY = (Math.max(selection.y, o.y) + Math.min(selection.y + selection.h, o.y + o.h)) / 2;
-    labels.push({
-      id: 'obj-right',
-      axis: 'x',
-      x: selection.x + selection.w + bestRight.dist / 2,
-      y: midY,
-      valueMm: bestRight.dist,
-      x1: selection.x + selection.w,
-      y1: midY,
-      x2: o.x,
-      y2: midY,
-    });
-  }
-  if (bestTop) {
-    const o = bestTop.other;
-    const midX = (Math.max(selection.x, o.x) + Math.min(selection.x + selection.w, o.x + o.w)) / 2;
-    labels.push({
-      id: 'obj-top',
-      axis: 'y',
-      x: midX,
-      y: o.y + o.h + bestTop.dist / 2,
-      valueMm: bestTop.dist,
-      x1: midX,
-      y1: o.y + o.h,
-      x2: midX,
-      y2: selection.y,
-    });
-  }
-  if (bestBottom) {
-    const o = bestBottom.other;
-    const midX = (Math.max(selection.x, o.x) + Math.min(selection.x + selection.w, o.x + o.w)) / 2;
-    labels.push({
-      id: 'obj-bottom',
-      axis: 'y',
-      x: midX,
-      y: selection.y + selection.h + bestBottom.dist / 2,
-      valueMm: bestBottom.dist,
-      x1: midX,
-      y1: selection.y + selection.h,
-      x2: midX,
-      y2: o.y,
-    });
+  // Multi-object vertical gaps for all consecutive adjacent boxes in the X-overlapping band
+  const vertBoxes = [
+    selection,
+    ...others.filter((o) => boxesOverlapOnAxis(selection.x, selection.x + selection.w, o.x, o.x + o.w)),
+  ].sort((a, b) => a.y - b.y);
+
+  for (let i = 0; i < vertBoxes.length - 1; i++) {
+    const a = vertBoxes[i];
+    const b = vertBoxes[i + 1];
+    const gap = b.y - (a.y + a.h);
+    if (gap > 0.05) {
+      const midX = (Math.max(a.x, b.x) + Math.min(a.x + a.w, b.x + b.w)) / 2;
+      const isSelPair = a === selection || b === selection;
+      labels.push({
+        id: isSelPair
+          ? a === selection
+            ? 'obj-bottom'
+            : 'obj-top'
+          : `obj-y-${Math.round(a.y)}-${Math.round(b.y)}`,
+        axis: 'y',
+        x: midX,
+        y: a.y + a.h + gap / 2,
+        valueMm: gap,
+        x1: midX,
+        y1: a.y + a.h,
+        x2: midX,
+        y2: b.y,
+      });
+    }
   }
 
   return labels;
@@ -461,8 +437,46 @@ export function snapEqualGaps(
   const labels: DistanceLabel[] = [];
   const dx = best.x ? best.x.delta : dxMm;
   const dy = best.y ? best.y.delta : dyMm;
-  if (best.x) labels.push(best.x.label);
-  if (best.y) labels.push(best.y.label);
+
+  if (best.x || best.y) {
+    const snappedSel = { x: origin.x + dx, y: origin.y + dy, w: origin.w, h: origin.h };
+    const measured = measureSelectionGaps(snappedSel, others, page);
+    const addedIds = new Set<string>();
+
+    if (best.x) {
+      const targetVal = best.x.label.valueMm;
+      const matching = measured.filter(
+        (l) => l.axis === 'x' && Math.abs(l.valueMm - targetVal) < 0.1,
+      );
+      if (matching.length) {
+        for (const m of matching) {
+          labels.push(m);
+          addedIds.add(m.id);
+        }
+      } else {
+        labels.push(best.x.label);
+        addedIds.add(best.x.label.id);
+      }
+    }
+
+    if (best.y) {
+      const targetVal = best.y.label.valueMm;
+      const matching = measured.filter(
+        (l) => l.axis === 'y' && Math.abs(l.valueMm - targetVal) < 0.1,
+      );
+      if (matching.length) {
+        for (const m of matching) {
+          if (!addedIds.has(m.id)) {
+            labels.push(m);
+            addedIds.add(m.id);
+          }
+        }
+      } else if (!addedIds.has(best.y.label.id)) {
+        labels.push(best.y.label);
+      }
+    }
+  }
+
   return { dx, dy, labels };
 }
 

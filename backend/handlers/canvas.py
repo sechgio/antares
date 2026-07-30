@@ -65,6 +65,70 @@ def canvas_duplicate(params: dict[str, Any]) -> dict[str, Any]:
     return {"document": document}
 
 
+@with_locale
+@validate_params("document")
+def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
+    import base64
+    from pathlib import Path
+
+    from backend.core.cmyk_pdf import CanvasCmykRenderer
+
+    document = params["document"]
+    contexts = params.get("contexts") or [{}]
+    color_profile = str(params.get("color_profile") or "cmyk_iso_coated_v2")
+    dpi = int(params.get("dpi") or 300)
+    bleed_mm = float(params.get("bleed_mm") or 0.0)
+    show_crop_marks = bool(params.get("show_crop_marks", False))
+    filename = str(params.get("filename") or "canvas_cmyk.pdf")
+    output_path = params.get("outputPath")
+    local_image_paths = params.get("localImagePaths") or {}
+
+    renderer = CanvasCmykRenderer(
+        document=document,
+        contexts=contexts,
+        color_profile=color_profile,
+        dpi=dpi,
+        bleed_mm=bleed_mm,
+        show_crop_marks=show_crop_marks,
+    )
+    pdf_bytes = renderer.render(local_image_paths=local_image_paths)
+
+    saved_path: str | None = None
+    if output_path:
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(pdf_bytes)
+        saved_path = str(out)
+
+    encoded = base64.b64encode(pdf_bytes).decode("ascii")
+    return {
+        "filename": filename,
+        "saved_path": saved_path,
+        "pdf_base64": encoded,
+    }
+
+
+@with_locale
+@validate_params("id")
+def canvas_get_history(params: dict[str, Any]) -> dict[str, Any]:
+    doc_id = str(params["id"])
+    history_data = _canvas_core.get_canvas_store().get_history(doc_id)
+    return history_data
+
+
+@with_locale
+@validate_params("id")
+def canvas_save_history(params: dict[str, Any]) -> dict[str, Any]:
+    doc_id = str(params["id"])
+    past = params.get("past") or []
+    future = params.get("future") or []
+    if not isinstance(past, list) or not isinstance(future, list):
+        msg = "past and future must be arrays"
+        raise ValueError(msg)
+    _canvas_core.get_canvas_store().save_history(doc_id, past, future)
+    return {"success": True}
+
+
 HANDLERS = {
     "canvas_list": canvas_list,
     "canvas_get": canvas_get,
@@ -72,4 +136,8 @@ HANDLERS = {
     "canvas_create": canvas_create,
     "canvas_delete": canvas_delete,
     "canvas_duplicate": canvas_duplicate,
+    "canvas_export_cmyk_pdf": canvas_export_cmyk_pdf,
+    "canvas_get_history": canvas_get_history,
+    "canvas_save_history": canvas_save_history,
 }
+

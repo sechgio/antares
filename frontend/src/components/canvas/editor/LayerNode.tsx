@@ -30,6 +30,10 @@ interface LayerNodeProps {
   pathEditing?: boolean;
   /** True while the layer is part of an active drag gesture (enables GPU compositing). */
   moving?: boolean;
+  /** True when the layer is outside the active viewport region. Pauses inner DOM subtree rendering. */
+  offscreen?: boolean;
+  /** True while camera zoom or pan navigation is actively moving. Pauses expensive GPU filters. */
+  panning?: boolean;
   onSelect: (id: string, additive?: boolean) => void;
   onLayerPointerDown: (id: string, additive: boolean, e: ReactPointerEvent<HTMLDivElement>) => void;
   onContextMenu?: (id: string, clientX: number, clientY: number) => void;
@@ -75,6 +79,8 @@ function LayerNode({
   editingSelectAll = true,
   pathEditing = false,
   moving = false,
+  offscreen = false,
+  panning = false,
   onSelect,
   onLayerPointerDown,
   onContextMenu,
@@ -141,6 +147,26 @@ function LayerNode({
   const h = isLine
     ? parseMm(lineLayer.cssVars['--height'], parseMm(layer.cssVars['--height'], 2))
     : parseMm(layer.cssVars['--height'], 10);
+
+  if (offscreen && !selected && !editing && !pathEditing) {
+    return (
+      <div
+        data-layer-id={layer.id}
+        data-culled="true"
+        aria-hidden
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          transform: `translate(${mmToScreenPx(x, scale)}px, ${mmToScreenPx(y, scale)}px)`,
+          width: mmToScreenPx(w, scale),
+          height: mmToScreenPx(h, scale),
+          display: 'none',
+          pointerEvents: 'none',
+        }}
+      />
+    );
+  }
   const clipPath = clipPathForLayerType(layer.type);
   const hasExplicitRadius = Boolean(
     layer.cssVars['--border-radius'] ||
@@ -156,7 +182,7 @@ function LayerNode({
   const highlighted = selected || editing || pathEditing;
 
   const paintSource = isLine ? lineLayer.cssVars : layer.cssVars;
-  const paintCacheKey = `${paintVarsKey(paintSource, scale, isLine)}|${clipPath ?? ''}|${hasExplicitRadius ? 1 : 0}|${layer.type}|${moving ? 1 : 0}`;
+  const paintCacheKey = `${paintVarsKey(paintSource, scale, isLine)}|${clipPath ?? ''}|${hasExplicitRadius ? 1 : 0}|${layer.type}|${moving || panning ? 1 : 0}`;
   let paint: Record<string, string>;
   if (paintCacheRef.current?.key === paintCacheKey) {
     paint = paintCacheRef.current.paint;
@@ -177,8 +203,8 @@ function LayerNode({
     } else if (!hasExplicitRadius && layer.type === 'ellipse') {
       paint.borderRadius = '50%';
     }
-    // Defer expensive GPU effects while dragging (restore on commit).
-    if (moving) {
+    // Defer expensive GPU effects while dragging or camera panning (restore on commit/stop).
+    if (moving || panning) {
       const { filter: _filter, boxShadow: _shadow, ...rest } = paint;
       paint = rest;
     }
@@ -192,6 +218,7 @@ function LayerNode({
 
   const style: CSSProperties = {
     ...paintRest,
+    contain: 'layout paint',
     // Isolate from .canvas-app UI letter-spacing (-0.01em); Figma default is 0/normal.
     letterSpacing: paintRest.letterSpacing || 'normal',
     position: 'absolute',
@@ -412,6 +439,7 @@ function LayerNode({
           alt=""
           draggable={false}
           decoding="async"
+          loading="lazy"
           style={imgStyleFromCssVars(layer.cssVars)}
         />
       ) : layer.type === 'line' ? (
@@ -536,5 +564,7 @@ export default memo(LayerNode, (prev, next) =>
   prev.editing === next.editing &&
   prev.editingSelectAll === next.editingSelectAll &&
   prev.pathEditing === next.pathEditing &&
-  prev.moving === next.moving,
+  prev.moving === next.moving &&
+  prev.offscreen === next.offscreen &&
+  prev.panning === next.panning,
 );

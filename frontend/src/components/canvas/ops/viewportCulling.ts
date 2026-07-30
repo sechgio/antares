@@ -33,11 +33,15 @@ export function visiblePageRectMm(
   const pageLeft = viewportW / 2 + pan.x - (pageWidthPx * zoom) / 2;
   const pageTop = viewportH / 2 + pan.y - (pageHeightPx * zoom) / 2;
   const scale = zoom * MM_TO_PX;
+  const effectiveMargin =
+    marginMm === CULLING_MARGIN_MM
+      ? Math.max(CULLING_MARGIN_MM, Math.round(CULLING_MARGIN_MM / Math.max(zoom, 0.4)))
+      : marginMm;
   return {
-    x: (0 - pageLeft) / scale - marginMm,
-    y: (0 - pageTop) / scale - marginMm,
-    w: viewportW / scale + marginMm * 2,
-    h: viewportH / scale + marginMm * 2,
+    x: (0 - pageLeft) / scale - effectiveMargin,
+    y: (0 - pageTop) / scale - effectiveMargin,
+    w: viewportW / scale + effectiveMargin * 2,
+    h: viewportH / scale + effectiveMargin * 2,
   };
 }
 
