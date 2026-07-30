@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  memo,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
@@ -29,6 +30,8 @@ import {
   resizeSelection,
   rotateSelection,
   selectionBounds,
+  prepareSnapRails,
+  smartGuidesEqual,
   snapMoveWithGuides,
   snapResizeBox,
   snapRectToGrid,
@@ -131,6 +134,54 @@ function cloneLayers(layers: CanvasLayer[]): CanvasLayer[] {
   return layers.map((l) => ({ ...l, cssVars: { ...l.cssVars }, meta: l.meta ? { ...l.meta } : undefined }));
 }
 
+/** Isolated smart-guide chrome so Artboard gesture frames skip reconciling unrelated subtrees. */
+const SmartGuidesOverlay = memo(function SmartGuidesOverlay({
+  guides,
+  zoom,
+}: {
+  guides: SmartGuide[];
+  zoom: number;
+}) {
+  if (!guides.length) return null;
+  return (
+    <>
+      {guides.map((g) =>
+        g.axis === 'x' ? (
+          <div
+            key={`gx-${g.pos}`}
+            data-testid="canvas-smart-guide"
+            style={{
+              position: 'absolute',
+              left: mmToScreenPx(g.pos, 1),
+              top: 0,
+              width: screenChromePx(1, zoom),
+              height: '100%',
+              background: 'var(--cv-accent-2)',
+              pointerEvents: 'none',
+              zIndex: 45,
+            }}
+          />
+        ) : (
+          <div
+            key={`gy-${g.pos}`}
+            data-testid="canvas-smart-guide"
+            style={{
+              position: 'absolute',
+              top: mmToScreenPx(g.pos, 1),
+              left: 0,
+              height: screenChromePx(1, zoom),
+              width: '100%',
+              background: 'var(--cv-accent-2)',
+              pointerEvents: 'none',
+              zIndex: 45,
+            }}
+          />
+        ),
+      )}
+    </>
+  );
+});
+
 export default function Artboard({
   document,
   selectedIds,
@@ -171,7 +222,36 @@ export default function Artboard({
   const [marquee, setMarquee] = useState<RectMm | null>(null);
   const [lassoPts, setLassoPts] = useState<Array<{ x: number; y: number }> | null>(null);
   const [guides, setGuides] = useState<SmartGuide[]>([]);
+  const guidesRef = useRef<SmartGuide[]>([]);
+  guidesRef.current = guides;
   const [distanceLabels, setDistanceLabels] = useState<DistanceLabel[]>([]);
+  const distanceLabelsRef = useRef<DistanceLabel[]>([]);
+  distanceLabelsRef.current = distanceLabels;
+
+  const setGuidesIfChanged = useCallback((next: SmartGuide[]) => {
+    if (smartGuidesEqual(guidesRef.current, next)) return;
+    guidesRef.current = next;
+    setGuides(next);
+  }, []);
+
+  const setDistanceLabelsIfChanged = useCallback((next: DistanceLabel[]) => {
+    const prev = distanceLabelsRef.current;
+    if (
+      prev.length === next.length &&
+      prev.every(
+        (p, i) =>
+          p.id === next[i]!.id &&
+          p.axis === next[i]!.axis &&
+          p.valueMm === next[i]!.valueMm &&
+          p.x === next[i]!.x &&
+          p.y === next[i]!.y,
+      )
+    ) {
+      return;
+    }
+    distanceLabelsRef.current = next;
+    setDistanceLabels(next);
+  }, []);
   const [panning, setPanning] = useState(false);
   /** True while a two-finger pinch is (or was, until all fingers lift) active. */
   const pinchGestureRef = useRef(false);
@@ -253,8 +333,8 @@ export default function Artboard({
       // Cancel in-flight single-pointer gesture visuals when the second finger lands.
       setMarquee(null);
       setDraft(null);
-      setGuides([]);
-      setDistanceLabels([]);
+      setGuidesIfChanged([]);
+      setDistanceLabelsIfChanged([]);
       setLassoPts(null);
       setPanning(false);
     },
@@ -439,6 +519,18 @@ export default function Artboard({
       const snapshot = cloneLayers(layersRef.current);
       gestureDirtyRef.current = false;
       let dragging = false;
+      const originBounds = selectionBounds(snapshot, ids);
+      const rails = prepareSnapRails(snapshot, ids, pageSizeRef.current, manualGuidesRef.current);
+      const exclude = new Set(ids);
+      const othersRects = snapshot
+        .filter((l) => !exclude.has(l.id) && l.type !== 'frame' && l.visible !== false && !l.locked)
+        .map((l) => {
+          const x = parseMm(l.cssVars['--translate-x']);
+          const y = parseMm(l.cssVars['--translate-y']);
+          const w = parseMm(l.cssVars['--width'], 10);
+          const h = parseMm(l.cssVars['--height'], 10);
+          return { x, y, w, h };
+        });
 
       // Coalesce to one apply per animation frame; latest pointer position wins.
       const raf = createGestureRaf((ev: PointerEvent) => {
@@ -456,7 +548,7 @@ export default function Artboard({
         const threshold = snapThresholdMm(z);
         let dx = rawDx;
         let dy = rawDy;
-        let guides: SmartGuide[] = [];
+        let nextGuides: SmartGuide[] = [];
         if (!disableSnap) {
           const snapped = snapMoveWithGuides(
             snapshot,
@@ -466,48 +558,38 @@ export default function Artboard({
             pageSizeRef.current,
             threshold,
             manualGuidesRef.current,
+            rails,
           );
           dx = snapped.dx;
           dy = snapped.dy;
-          guides = snapped.guides;
-          if (snapToGridRef.current) {
-            const bounds = selectionBounds(snapshot, ids);
-            if (bounds) {
-              const grid = gridSizeMmRef.current;
-              const nx = snapToGridMm(bounds.x + dx, grid);
-              const ny = snapToGridMm(bounds.y + dy, grid);
-              dx = nx - bounds.x;
-              dy = ny - bounds.y;
-            }
+          nextGuides = snapped.guides;
+          if (snapToGridRef.current && originBounds) {
+            const grid = gridSizeMmRef.current;
+            const nx = snapToGridMm(originBounds.x + dx, grid);
+            const ny = snapToGridMm(originBounds.y + dy, grid);
+            dx = nx - originBounds.x;
+            dy = ny - originBounds.y;
           }
         }
-        setGuides(guides);
+        setGuidesIfChanged(nextGuides);
         const moved = moveSelection(snapshot, ids, dx, dy);
         applyGestureLayers(moved);
         if (ev.altKey) {
           const bounds = selectionBounds(moved, ids);
           if (bounds) {
-            const exclude = new Set(ids);
-            const others = snapshot
-              .filter((l) => !exclude.has(l.id) && l.type !== 'frame' && l.visible !== false && !l.locked)
-              .map((l) => {
-                const x = parseMm(l.cssVars['--translate-x']);
-                const y = parseMm(l.cssVars['--translate-y']);
-                const w = parseMm(l.cssVars['--width'], 10);
-                const h = parseMm(l.cssVars['--height'], 10);
-                return { x, y, w, h };
-              });
-            setDistanceLabels(measureSelectionGaps(bounds, others, pageSizeRef.current));
+            setDistanceLabelsIfChanged(
+              measureSelectionGaps(bounds, othersRects, pageSizeRef.current),
+            );
           }
         } else {
-          setDistanceLabels([]);
+          setDistanceLabelsIfChanged([]);
         }
       });
       const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
       const onUp = () => {
         raf.flush();
-        setGuides([]);
-        setDistanceLabels([]);
+        setGuidesIfChanged([]);
+        setDistanceLabelsIfChanged([]);
         endGesture();
         window.removeEventListener('pointermove', onMovePtr);
         window.removeEventListener('pointerup', onUp);
@@ -515,7 +597,7 @@ export default function Artboard({
       window.addEventListener('pointermove', onMovePtr);
       window.addEventListener('pointerup', onUp);
     },
-    [applyGestureLayers, endGesture],
+    [applyGestureLayers, endGesture, setGuidesIfChanged, setDistanceLabelsIfChanged],
   );
 
   const handleLayerPointerDown = useCallback(
@@ -564,6 +646,7 @@ export default function Artboard({
     const origin = selectionBounds(snapshot, ids);
     if (!origin) return;
     gestureDirtyRef.current = false;
+    const rails = prepareSnapRails(snapshot, ids, pageSizeRef.current, manualGuidesRef.current);
 
     const raf = createGestureRaf((ev: PointerEvent) => {
       const z = zoomRef.current;
@@ -582,14 +665,15 @@ export default function Artboard({
           pageSizeRef.current,
           snapThresholdMm(z),
           manualGuidesRef.current,
+          rails,
         );
         nextBox = snapped.box;
-        setGuides(snapped.guides);
+        setGuidesIfChanged(snapped.guides);
         if (snapToGridRef.current) {
           nextBox = snapRectToGrid(nextBox, gridSizeMmRef.current);
         }
       } else {
-        setGuides([]);
+        setGuidesIfChanged([]);
       }
       applyGestureLayers(
         resizeSelection(snapshot, ids, corner, 0, 0, { targetBox: nextBox }),
@@ -598,7 +682,7 @@ export default function Artboard({
     const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
     const onUp = () => {
       raf.flush();
-      setGuides([]);
+      setGuidesIfChanged([]);
       endGesture();
       window.removeEventListener('pointermove', onMovePtr);
       window.removeEventListener('pointerup', onUp);
@@ -1159,39 +1243,7 @@ export default function Artboard({
             </svg>
           )}
 
-          {guides.map((g) =>
-            g.axis === 'x' ? (
-              <div
-                key={`gx-${g.pos}`}
-                data-testid="canvas-smart-guide"
-                style={{
-                  position: 'absolute',
-                  left: mmToScreenPx(g.pos, 1),
-                  top: 0,
-                  width: screenChromePx(1, zoom),
-                  height: '100%',
-                  background: 'var(--cv-accent-2)',
-                  pointerEvents: 'none',
-                  zIndex: 45,
-                }}
-              />
-            ) : (
-              <div
-                key={`gy-${g.pos}`}
-                data-testid="canvas-smart-guide"
-                style={{
-                  position: 'absolute',
-                  top: mmToScreenPx(g.pos, 1),
-                  left: 0,
-                  height: screenChromePx(1, zoom),
-                  width: '100%',
-                  background: 'var(--cv-accent-2)',
-                  pointerEvents: 'none',
-                  zIndex: 45,
-                }}
-              />
-            ),
-          )}
+          <SmartGuidesOverlay guides={guides} zoom={zoom} />
 
           {displayGuides.map((g) => {
             const removing = guideDrag?.id === g.id && guideDrag.willRemove;

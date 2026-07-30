@@ -6,7 +6,7 @@ import { MM_TO_PX } from '../ops/drawHelpers';
 /**
  * Guide creation from rulers (Figma parity): drag out of a ruler creates a
  * guide with a live position chip; releasing back on the ruler or pressing
- * Esc cancels the creation.
+ * Esc cancels the creation. Document commit happens only on pointerup.
  */
 describe('CanvasRulers guide creation', () => {
   let frames: Map<number, FrameRequestCallback>;
@@ -74,24 +74,29 @@ describe('CanvasRulers guide creation', () => {
       tick();
     });
     expect(onCreateGuide).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('canvas-guide-create-preview')).toBeNull();
 
     act(() => {
       fireEvent.pointerMove(window, { clientX: 200, clientY: 120 });
       tick();
+    });
+    // Preview is local — document not written until pointerup.
+    expect(onCreateGuide).not.toHaveBeenCalled();
+    expect(screen.getByTestId('canvas-guide-create-preview')).toBeTruthy();
+    expect(screen.getByTestId('canvas-guide-chip').textContent).toMatch(/mm$/);
+
+    // Released over the canvas → the guide commits once.
+    act(() => {
+      fireEvent.pointerUp(window, { clientX: 200, clientY: 120 });
     });
     expect(onCreateGuide).toHaveBeenCalledTimes(1);
     const guide = onCreateGuide.mock.calls[0][0];
     expect(guide.axis).toBe('y');
     expect(guide.pageIndex).toBe(2);
     expect(guide.posMm).toBeGreaterThan(0);
-    expect(screen.getByTestId('canvas-guide-chip').textContent).toMatch(/mm$/);
-
-    // Released over the canvas → the guide stays.
-    act(() => {
-      fireEvent.pointerUp(window, { clientX: 200, clientY: 120 });
-    });
     expect(onCancelCreate).not.toHaveBeenCalled();
     expect(screen.queryByTestId('canvas-guide-chip')).toBeNull();
+    expect(screen.queryByTestId('canvas-guide-create-preview')).toBeNull();
   });
 
   it('clamps a vertical guide to the page extent', () => {
@@ -102,12 +107,14 @@ describe('CanvasRulers guide creation', () => {
       fireEvent.pointerMove(window, { clientX: 5000, clientY: 300 });
       tick();
     });
-    const guide = onCreateGuide.mock.calls.at(-1)![0];
-    expect(guide.axis).toBe('x');
-    expect(guide.posMm).toBe(210);
+    expect(onCreateGuide).not.toHaveBeenCalled();
     act(() => {
       fireEvent.pointerUp(window, { clientX: 5000, clientY: 300 });
     });
+    expect(onCreateGuide).toHaveBeenCalledTimes(1);
+    const guide = onCreateGuide.mock.calls[0][0];
+    expect(guide.axis).toBe('x');
+    expect(guide.posMm).toBe(210);
     expect(onCancelCreate).not.toHaveBeenCalled();
   });
 
@@ -119,7 +126,7 @@ describe('CanvasRulers guide creation', () => {
       fireEvent.pointerMove(window, { clientX: 200, clientY: 120 });
       tick();
     });
-    const guide = onCreateGuide.mock.calls[0][0];
+    expect(screen.getByTestId('canvas-guide-create-preview')).toBeTruthy();
     act(() => {
       fireEvent.pointerMove(window, { clientX: 200, clientY: 10 });
       tick();
@@ -127,7 +134,8 @@ describe('CanvasRulers guide creation', () => {
     act(() => {
       fireEvent.pointerUp(window, { clientX: 200, clientY: 10 });
     });
-    expect(onCancelCreate).toHaveBeenCalledWith(guide.id);
+    expect(onCreateGuide).not.toHaveBeenCalled();
+    expect(onCancelCreate).toHaveBeenCalledTimes(1);
   });
 
   it('Esc aborts creation and ignores further moves', () => {
@@ -138,18 +146,17 @@ describe('CanvasRulers guide creation', () => {
       fireEvent.pointerMove(window, { clientX: 200, clientY: 120 });
       tick();
     });
-    const guide = onCreateGuide.mock.calls[0][0];
     act(() => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     });
-    expect(onCancelCreate).toHaveBeenCalledWith(guide.id);
+    expect(onCancelCreate).toHaveBeenCalledTimes(1);
+    expect(onCreateGuide).not.toHaveBeenCalled();
     expect(screen.queryByTestId('canvas-guide-chip')).toBeNull();
     act(() => {
       fireEvent.pointerMove(window, { clientX: 200, clientY: 200 });
       tick();
       fireEvent.pointerUp(window, { clientX: 200, clientY: 200 });
     });
-    expect(onCreateGuide).toHaveBeenCalledTimes(1);
+    expect(onCreateGuide).not.toHaveBeenCalled();
   });
 });
-

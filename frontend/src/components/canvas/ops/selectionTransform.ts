@@ -347,12 +347,14 @@ export function computeResizeBox(
   return nextBox;
 }
 
+export type SnapRails = { xs: number[]; ys: number[] };
+
 function collectGuidePositions(
   layers: CanvasLayer[],
   excludeIds: Set<string>,
   page: { widthMm: number; heightMm: number },
   manualGuides: CanvasGuide[] = [],
-): { xs: number[]; ys: number[] } {
+): SnapRails {
   const xs = [0, page.widthMm / 2, page.widthMm];
   const ys = [0, page.heightMm / 2, page.heightMm];
   for (const layer of layers) {
@@ -366,6 +368,47 @@ function collectGuidePositions(
     else ys.push(g.posMm);
   }
   return { xs, ys };
+}
+
+function sortRails(rails: SnapRails): SnapRails {
+  return {
+    xs: [...rails.xs].sort((a, b) => a - b),
+    ys: [...rails.ys].sort((a, b) => a - b),
+  };
+}
+
+/** First index in sorted `arr` with value >= target (binary search). */
+function lowerBound(arr: number[], target: number): number {
+  let lo = 0;
+  let hi = arr.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (arr[mid]! < target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * Scan sorted rails in [pos - threshold, pos + threshold] for the closest hit.
+ * Same winner as a full nested loop when ties break by first-seen (ascending order).
+ */
+function nearestRailInRange(
+  sorted: number[],
+  pos: number,
+  thresholdMm: number,
+): { rail: number; dist: number } | null {
+  const start = lowerBound(sorted, pos - thresholdMm);
+  let best: { rail: number; dist: number } | null = null;
+  for (let i = start; i < sorted.length; i++) {
+    const g = sorted[i]!;
+    if (g > pos + thresholdMm) break;
+    const dist = Math.abs(pos - g);
+    if (dist <= thresholdMm && (best == null || dist < best.dist)) {
+      best = { rail: g, dist };
+    }
+  }
+  return best;
 }
 
 /** Cache guide rails keyed by the layers array (gesture snapshot). WeakMap avoids a module singleton. */
@@ -386,7 +429,7 @@ function guidePositionsCached(
   excludeIds: Set<string>,
   page: { widthMm: number; heightMm: number },
   manualGuides: CanvasGuide[] = [],
-): { xs: number[]; ys: number[] } {
+): SnapRails {
   const excludeKey = [...excludeIds].join('\0');
   const guidesKey = manualGuides.map((g) => `${g.axis}:${g.posMm}`).join('|');
   const hit = guideCacheByLayers.get(layers);
@@ -399,7 +442,7 @@ function guidePositionsCached(
   ) {
     return { xs: hit.xs, ys: hit.ys };
   }
-  const next = collectGuidePositions(layers, excludeIds, page, manualGuides);
+  const next = sortRails(collectGuidePositions(layers, excludeIds, page, manualGuides));
   guideCacheByLayers.set(layers, {
     excludeKey,
     pageW: page.widthMm,
@@ -412,8 +455,23 @@ function guidePositionsCached(
 }
 
 /**
+ * Build sorted snap rails once per gesture (snapshot is immutable during drag).
+ * Prefer this over per-frame WeakMap lookup when the caller holds the snapshot.
+ */
+export function prepareSnapRails(
+  layers: CanvasLayer[],
+  ids: string[],
+  page: { widthMm: number; heightMm: number },
+  manualGuides: CanvasGuide[] = [],
+): SnapRails {
+  const exclude = new Set(expandWithDescendants(layers, ids));
+  return guidePositionsCached(layers, exclude, page, manualGuides);
+}
+
+/**
  * Adjust a proposed move so selection edges/centers snap to page or other layers.
  * Returns corrected delta and active guide lines (in mm).
+ * Pass `rails` from `prepareSnapRails` to skip per-frame rail collection.
  */
 export function snapMoveWithGuides(
   layers: CanvasLayer[],
@@ -423,12 +481,12 @@ export function snapMoveWithGuides(
   page: { widthMm: number; heightMm: number },
   thresholdMm = SNAP_THRESHOLD_MM,
   manualGuides: CanvasGuide[] = [],
+  rails?: SnapRails,
 ): { dx: number; dy: number; guides: SmartGuide[] } {
   const bounds = selectionBounds(layers, ids);
   if (!bounds) return { dx: dxMm, dy: dyMm, guides: [] };
 
-  const exclude = new Set(expandWithDescendants(layers, ids));
-  const { xs, ys } = guidePositionsCached(layers, exclude, page, manualGuides);
+  const { xs, ys } = rails ?? prepareSnapRails(layers, ids, page, manualGuides);
 
   const edgesX = [
     { kind: 'left' as const, pos: bounds.x + dxMm },
@@ -449,28 +507,24 @@ export function snapMoveWithGuides(
   let guideY: number | null = null;
 
   for (const edge of edgesX) {
-    for (const g of xs) {
-      const dist = Math.abs(edge.pos - g);
-      if (dist <= thresholdMm && dist < bestXDist) {
-        bestXDist = dist;
-        guideX = g;
-        if (edge.kind === 'left') bestDx = g - bounds.x;
-        else if (edge.kind === 'right') bestDx = g - (bounds.x + bounds.w);
-        else bestDx = g - (bounds.x + bounds.w / 2);
-      }
+    const hit = nearestRailInRange(xs, edge.pos, thresholdMm);
+    if (hit && hit.dist < bestXDist) {
+      bestXDist = hit.dist;
+      guideX = hit.rail;
+      if (edge.kind === 'left') bestDx = hit.rail - bounds.x;
+      else if (edge.kind === 'right') bestDx = hit.rail - (bounds.x + bounds.w);
+      else bestDx = hit.rail - (bounds.x + bounds.w / 2);
     }
   }
 
   for (const edge of edgesY) {
-    for (const g of ys) {
-      const dist = Math.abs(edge.pos - g);
-      if (dist <= thresholdMm && dist < bestYDist) {
-        bestYDist = dist;
-        guideY = g;
-        if (edge.kind === 'top') bestDy = g - bounds.y;
-        else if (edge.kind === 'bottom') bestDy = g - (bounds.y + bounds.h);
-        else bestDy = g - (bounds.y + bounds.h / 2);
-      }
+    const hit = nearestRailInRange(ys, edge.pos, thresholdMm);
+    if (hit && hit.dist < bestYDist) {
+      bestYDist = hit.dist;
+      guideY = hit.rail;
+      if (edge.kind === 'top') bestDy = hit.rail - bounds.y;
+      else if (edge.kind === 'bottom') bestDy = hit.rail - (bounds.y + bounds.h);
+      else bestDy = hit.rail - (bounds.y + bounds.h / 2);
     }
   }
 
@@ -483,6 +537,7 @@ export function snapMoveWithGuides(
 /**
  * Snap a resized selection bbox to page/sibling edges.
  * Returns adjusted box (mm) and active guides.
+ * Pass `rails` from `prepareSnapRails` to skip per-frame rail collection.
  */
 export function snapResizeBox(
   layers: CanvasLayer[],
@@ -491,9 +546,9 @@ export function snapResizeBox(
   page: { widthMm: number; heightMm: number },
   thresholdMm = SNAP_THRESHOLD_MM,
   manualGuides: CanvasGuide[] = [],
+  rails?: SnapRails,
 ): { box: RectMm; guides: SmartGuide[] } {
-  const exclude = new Set(expandWithDescendants(layers, ids));
-  const { xs, ys } = guidePositionsCached(layers, exclude, page, manualGuides);
+  const { xs, ys } = rails ?? prepareSnapRails(layers, ids, page, manualGuides);
 
   let { x, y, w, h } = box;
   let guideX: number | null = null;
@@ -511,35 +566,31 @@ export function snapResizeBox(
   ];
 
   for (const edge of edgesX) {
-    for (const g of xs) {
-      const dist = Math.abs(edge.pos - g);
-      if (dist <= thresholdMm && dist < bestX) {
-        bestX = dist;
-        guideX = g;
-        if (edge.kind === 'left') {
-          const right = x + w;
-          x = g;
-          w = Math.max(2, right - x);
-        } else {
-          w = Math.max(2, g - x);
-        }
+    const hit = nearestRailInRange(xs, edge.pos, thresholdMm);
+    if (hit && hit.dist < bestX) {
+      bestX = hit.dist;
+      guideX = hit.rail;
+      if (edge.kind === 'left') {
+        const right = x + w;
+        x = hit.rail;
+        w = Math.max(2, right - x);
+      } else {
+        w = Math.max(2, hit.rail - x);
       }
     }
   }
 
   for (const edge of edgesY) {
-    for (const g of ys) {
-      const dist = Math.abs(edge.pos - g);
-      if (dist <= thresholdMm && dist < bestY) {
-        bestY = dist;
-        guideY = g;
-        if (edge.kind === 'top') {
-          const bottom = y + h;
-          y = g;
-          h = Math.max(2, bottom - y);
-        } else {
-          h = Math.max(2, g - y);
-        }
+    const hit = nearestRailInRange(ys, edge.pos, thresholdMm);
+    if (hit && hit.dist < bestY) {
+      bestY = hit.dist;
+      guideY = hit.rail;
+      if (edge.kind === 'top') {
+        const bottom = y + h;
+        y = hit.rail;
+        h = Math.max(2, bottom - y);
+      } else {
+        h = Math.max(2, hit.rail - y);
       }
     }
   }
@@ -548,6 +599,15 @@ export function snapResizeBox(
   if (guideX != null) guides.push({ axis: 'x', pos: guideX });
   if (guideY != null) guides.push({ axis: 'y', pos: guideY });
   return { box: { x, y, w, h }, guides };
+}
+
+/** True when smart-guide lists are equal (axis + pos). */
+export function smartGuidesEqual(a: SmartGuide[], b: SmartGuide[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i]!.axis !== b[i]!.axis || a[i]!.pos !== b[i]!.pos) return false;
+  }
+  return true;
 }
 
 /** Angle in degrees from bbox top-center to pointer (for rotate handle). */
