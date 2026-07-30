@@ -5,6 +5,26 @@ Todas las versiones notables de Antares se documentan aquí.
 Formato basado en [Keep a Changelog](https://keepachangelog.com/),
 y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
+## [0.11.3] — 2026-07-30
+
+### Added
+- **Canvas Editor**: Selector de fuentes de Google Fonts estilo Figma con previsualización WYSIWYG en canvas y exportación PDF.
+- **Canvas Editor**: Controles tipográficos avanzados estilo Figma (tamaño, peso, interlineado, espaciado de caracteres, alineación y transformación).
+- **Canvas Editor**: Sistema de estilos compartidos (estilos de texto y color reutilizables en panel derecho).
+- **Canvas Editor**: Guías de alineación y snap con escala constante independiente del nivel de zoom.
+
+### Changed
+- **Canvas Editor**: Composiciones de layout A4 mejoradas y ordenamiento de capas refinado.
+- **Canvas Editor**: Optimización de rendimiento en arrastre de artboard y cálculo de snap guides.
+- **Supabase**: URL dinámica de Supabase en Edge Functions para consistencia multi-entorno.
+
+### Fixed
+- **Canvas Editor**: Preservación del marco de rejilla al redimensionar artboards y aislamiento de variables CSS en estilos compartidos.
+- **Canvas Editor**: Preservación de `created_by` y corrección del índice de página en sincronización cloud.
+- **Canvas Editor**: Endurecimiento de operaciones de página, guardas de grupo, `parentId` huérfanos y triggers de base de datos.
+- **Canvas Editor**: Edición de nombre de capas inline pulido en el panel de Capas.
+- **Tests**: Corrección del test de coalescencia de `localThumb` con tick de microtask en la suite de integración.
+
 ## [0.11.2] — 2026-07-25
 
 ### Added
