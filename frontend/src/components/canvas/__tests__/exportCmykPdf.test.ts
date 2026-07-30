@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../../../api';
 import { exportCanvasPdf } from '../export/exportPdf';
 import { createEmptyDocument } from '../types';
@@ -11,6 +11,9 @@ vi.mock('../../../api', () => ({
 }));
 
 describe('exportCanvasPdf with CMYK color mode', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
   it('calls api.htmlToPdf when colorMode is "rgb" or omitted', async () => {
     const doc = createEmptyDocument('Test RGB');
     (api.htmlToPdf as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -20,7 +23,7 @@ describe('exportCanvasPdf with CMYK color mode', () => {
 
     const result = await exportCanvasPdf({
       document: doc,
-      contexts: [{}],
+      contexts: [{ images: [] }],
       filename: 'doc.pdf',
       colorMode: 'rgb',
     });
@@ -39,7 +42,7 @@ describe('exportCanvasPdf with CMYK color mode', () => {
 
     const result = await exportCanvasPdf({
       document: doc,
-      contexts: [{}],
+      contexts: [{ images: [] }],
       filename: 'cmyk_doc.pdf',
       colorMode: 'cmyk',
       colorProfile: 'cmyk_iso_coated_v2',

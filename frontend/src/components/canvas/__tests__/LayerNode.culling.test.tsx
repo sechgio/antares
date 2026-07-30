@@ -92,7 +92,7 @@ describe('LayerNode viewport culling and performance', () => {
 
   it('adds loading="lazy" attribute to image layers', () => {
     const layer = createLayer('image', { value: 'data:image/png;base64,fake' });
-    render(
+    const { container } = render(
       <LayerNode
         layer={layer}
         selected={false}
@@ -102,7 +102,8 @@ describe('LayerNode viewport culling and performance', () => {
       />,
     );
 
-    const img = screen.getByRole('img', { hidden: true });
+    const img = container.querySelector('img') as HTMLImageElement;
+    expect(img).not.toBeNull();
     expect(img.getAttribute('loading')).toBe('lazy');
     expect(img.getAttribute('decoding')).toBe('async');
   });

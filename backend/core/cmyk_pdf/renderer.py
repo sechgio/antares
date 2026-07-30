@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, cast
 
 import fitz  # PyMuPDF
 from PIL import Image
@@ -11,6 +11,7 @@ from PIL import Image
 from backend.core.cmyk_pdf.color import convert_pil_to_cmyk_bytes, css_color_to_cmyk
 
 MM_TO_PT = 72.0 / 25.4  # ~2.834645669 pt per mm
+
 
 
 def _parse_length_pt(val_str: Any, default_mm: float = 0.0) -> float:
@@ -102,17 +103,18 @@ class CanvasCmykRenderer:
                 page.set_mediabox(media_rect)
 
                 # Set PDF geometry boxes (TrimBox & BleedBox)
+                mbox = page.mediabox
                 trim_rect = fitz.Rect(
-                    origin_x_pt,
-                    origin_y_pt,
-                    origin_x_pt + trim_w_pt,
-                    origin_y_pt + trim_h_pt,
+                    max(mbox.x0, origin_x_pt),
+                    max(mbox.y0, origin_y_pt),
+                    min(mbox.x1, origin_x_pt + trim_w_pt),
+                    min(mbox.y1, origin_y_pt + trim_h_pt),
                 )
                 bleed_rect = fitz.Rect(
-                    origin_x_pt - bleed_pt,
-                    origin_y_pt - bleed_pt,
-                    origin_x_pt + trim_w_pt + bleed_pt,
-                    origin_y_pt + trim_h_pt + bleed_pt,
+                    max(mbox.x0, origin_x_pt - bleed_pt),
+                    max(mbox.y0, origin_y_pt - bleed_pt),
+                    min(mbox.x1, origin_x_pt + trim_w_pt + bleed_pt),
+                    min(mbox.y1, origin_y_pt + trim_h_pt + bleed_pt),
                 )
                 page.set_trimbox(trim_rect)
                 page.set_bleedbox(bleed_rect)
@@ -131,7 +133,7 @@ class CanvasCmykRenderer:
 
                 shape.commit()
 
-        pdf_bytes = pdf.tobytes(clean=True, deflate=True)
+        pdf_bytes = cast(bytes, pdf.tobytes(clean=True, deflate=True))
         pdf.close()
         return pdf_bytes
 

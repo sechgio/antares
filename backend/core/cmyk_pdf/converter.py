@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import fitz
 
 
@@ -19,7 +21,7 @@ def convert_pdf_bytes_to_cmyk(pdf_bytes: bytes, dpi: int = 300) -> bytes:
         cmyk_page = out_pdf.new_page(width=page.rect.width, height=page.rect.height)
         cmyk_page.insert_image(page.rect, stream=pix.tobytes("jpeg"))
 
-    res_bytes = out_pdf.tobytes(clean=True, deflate=True)
+    res_bytes = cast(bytes, out_pdf.tobytes(clean=True, deflate=True))
     src_pdf.close()
     out_pdf.close()
     return res_bytes
