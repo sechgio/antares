@@ -78,6 +78,25 @@ function run() {
   const pngDataOut = sanitizeHtmlForPdf(pngDataPayload);
   assert(pngDataOut.includes('data:image/png;base64,iVBOR='), 'S-MEDIO-1: keeps data:image/png URIs in CSS');
 
+  // Google Fonts allowlist for canvas PDF WYSIWYG
+  const gfLink =
+    '<head><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter&display=swap"></head>';
+  const gfOut = sanitizeHtmlForPdf(gfLink);
+  assert(
+    gfOut.includes('https://fonts.googleapis.com/css2?family=Inter'),
+    'keeps Google Fonts stylesheet <link>',
+  );
+  assert(gfOut.includes('fonts.gstatic.com'), 'CSP allows fonts.gstatic.com');
+  assert(gfOut.includes('fonts.googleapis.com'), 'CSP allows fonts.googleapis.com for style-src');
+
+  const badLink = '<head><link rel="stylesheet" href="https://evil.example/x.css"></head>';
+  const badOut = sanitizeHtmlForPdf(badLink);
+  assert(!badOut.includes('evil.example'), 'still strips non-Google <link> tags');
+
+  const evilHref = '<head></head><a href="https://evil.example/x">x</a>';
+  const evilHrefOut = sanitizeHtmlForPdf(evilHref);
+  assert(!evilHrefOut.includes('https://evil.example'), 'still neutralises non-Google https href');
+
   console.log(`\n${'='.repeat(50)}`);
   console.log(`Results: ${passed} passed, ${failed} failed`);
   console.log('='.repeat(50));

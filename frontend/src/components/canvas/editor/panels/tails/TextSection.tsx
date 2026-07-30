@@ -4,6 +4,7 @@ import { SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
 
 import CanvasSelect from '../../CanvasSelect';
+import FontPicker from '../../FontPicker';
 import InlineNumField from '../../InlineNumField';
 import {
   formatFontSizePt,
@@ -110,17 +111,11 @@ export default function TextSection({
           </button>
         </WithHoverTooltip>
       </div>
-      <CanvasSelect
+      <FontPicker
         className="mb-2"
         value={v['--font-family'] || 'Segoe UI, Arial, sans-serif'}
         onChange={(val) => setVar('--font-family', val)}
         aria-label="Familia de fuente"
-        options={[
-          { value: 'Segoe UI, Arial, sans-serif', label: 'Segoe UI' },
-          { value: 'Arial, sans-serif', label: 'Arial' },
-          { value: 'Georgia, serif', label: 'Georgia' },
-          { value: 'Consolas, monospace', label: 'Consolas' },
-        ]}
       />
       <CanvasSelect
         className="mb-2"

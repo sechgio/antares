@@ -12,6 +12,7 @@ import {
   DEFAULT_LAYER_FONT,
   DEFAULT_LINE_HEIGHT,
 } from '../ops/layerPaint';
+import { collectGoogleFontFamilies, googleFontsHeadHtml } from '../ops/fontCatalog';
 import { buildLineSvgContent } from '../ops/lineSvg';
 import { ensureLinePath } from '../ops/pathGeometry';
 import { parseTableData } from '../ops/tableData';
@@ -307,12 +308,14 @@ export function renderCanvasHtml(
     })
     .join('\n');
 
+  const fontLinks = googleFontsHeadHtml(collectGoogleFontFamilies(contentLayers));
+
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8" />
 <title>${escapeHtml(document.name)}</title>
-<style>
+${fontLinks ? `${fontLinks}\n` : ''}<style>
   @page { size: ${widthMm}mm ${heightMm}mm; margin: 0; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body {
