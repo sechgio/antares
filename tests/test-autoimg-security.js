@@ -103,6 +103,7 @@ function main() {
   const allowPaths = new Set([
     'frontend/.env.example',
     '.env.example',
+    'README.md',
     'tests/test-autoimg-security.js',
     '.githooks/pre-commit',
     'scripts/supabase-db-push.ps1',
