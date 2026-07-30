@@ -10,7 +10,7 @@ import {
   Unlock,
 } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
-import type { CanvasLayer } from '../types';
+import type { CanvasLayer, CanvasSharedStyle, CanvasStyleKind } from '../types';
 import InlineNumField from './InlineNumField';
 import {
   applyLineStrokeWeight,
@@ -25,6 +25,7 @@ import {
 import { exportSelectionPng } from '../ops/exportPng';
 import { clipPathForLayerType } from '../ops/shapePaths';
 import TemplatesSection from './TemplatesSection';
+import StylesSection from './StylesSection';
 import { ALIGN_ITEMS, BulkOpacityField, SectionHeader, ZOrderButtons } from './panels/shared';
 import PositionSection from './panels/common/PositionSection';
 import DispositionSection from './panels/common/DispositionSection';
@@ -67,6 +68,12 @@ interface RightPanelProps {
   onSendBackward: () => void;
   /** Apply a canvas preset when nothing is selected. */
   onApplyPreset?: (presetId: string) => void;
+  documentStyles?: CanvasSharedStyle[];
+  onCreateStyle?: (kind: CanvasStyleKind) => void;
+  onApplyStyle?: (styleId: string) => void;
+  onDetachStyle?: (kind: CanvasStyleKind) => void;
+  onRemoveStyle?: (styleId: string) => void;
+  onRenameStyle?: (styleId: string, name: string) => void;
   /** True when another logo layer shares this layer's side. */
   logoSideConflict?: boolean;
   /** Mount point for viewport ZoomMenu (portal from DesignStage). */
@@ -100,6 +107,12 @@ export default memo(function RightPanel({
   onSendBack,
   onSendBackward,
   onApplyPreset,
+  documentStyles = [],
+  onCreateStyle,
+  onApplyStyle,
+  onDetachStyle,
+  onRemoveStyle,
+  onRenameStyle,
   logoSideConflict = false,
   zoomSlotRef,
   open = true,
@@ -317,6 +330,26 @@ export default memo(function RightPanel({
           <TemplatesSection onApplyPreset={onApplyPreset} tooltipPlacement="left" />
         </div>
       )}
+
+      {(selectedCount === 0 || selectedCount === 1) &&
+        onCreateStyle &&
+        onApplyStyle &&
+        onDetachStyle &&
+        onRemoveStyle &&
+        onRenameStyle && (
+          <div className="border-b px-4 py-3" style={{ borderColor: 'var(--cv-border)' }}>
+            <StylesSection
+              styles={documentStyles}
+              layer={selectedCount === 1 ? layer : null}
+              canLink={Boolean(selectedCount === 1 && layer && layer.type !== 'frame' && !layer.locked)}
+              onCreate={onCreateStyle}
+              onApply={onApplyStyle}
+              onDetach={onDetachStyle}
+              onRemove={onRemoveStyle}
+              onRename={onRenameStyle}
+            />
+          </div>
+        )}
 
       {selectedCount > 1 && (
         <div className="canvas-section">

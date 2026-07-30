@@ -70,7 +70,14 @@ import { isClickPlace, type DrawRect } from './ops/drawHelpers';
 import { moveGuide, removeGuide, upsertGuide } from './ops/guides';
 import { selectionBounds } from './ops/selectionTransform';
 import { syncLinkedStylesFromLayer } from './ops/syncLinkedStyles';
-import { colorStyleSwatches } from './ops/sharedStyles';
+import {
+  applyStyleToLayers,
+  colorStyleSwatches,
+  createAndLinkStyle,
+  detachStyleOnLayers,
+  removeStyle,
+  updateStyle,
+} from './ops/sharedStyles';
 import {
   nextBothPanelsOpen,
   PANEL_CHROME_KEYS,
@@ -91,6 +98,7 @@ import {
   type CanvasLayer,
   type CanvasLayerType,
   type CanvasMode,
+  type CanvasStyleKind,
   type CanvasTool,
   newId,
 } from './types';
@@ -1393,6 +1401,38 @@ export default function CanvasView() {
             onDelete={onDeleteLayer}
             onAlign={onAlign}
             onDistribute={onDistribute}
+            documentStyles={history.document.styles ?? []}
+            onCreateStyle={(kind: CanvasStyleKind) => {
+              if (selectedIds.length !== 1) return;
+              if (panelBaselineRef.current) onPanelCommitLive();
+              history.setDocument(createAndLinkStyle(history.document, selectedIds[0]!, kind));
+            }}
+            onApplyStyle={(styleId) => {
+              if (!selectedIds.length) return;
+              if (panelBaselineRef.current) onPanelCommitLive();
+              const style = (history.document.styles ?? []).find((s) => s.id === styleId);
+              if (!style) return;
+              history.setDocument({
+                ...history.document,
+                layers: applyStyleToLayers(history.document.layers, style, selectedIds),
+              });
+            }}
+            onDetachStyle={(kind) => {
+              if (!selectedIds.length) return;
+              if (panelBaselineRef.current) onPanelCommitLive();
+              history.setDocument({
+                ...history.document,
+                layers: detachStyleOnLayers(history.document.layers, kind, selectedIds),
+              });
+            }}
+            onRemoveStyle={(styleId) => {
+              if (panelBaselineRef.current) onPanelCommitLive();
+              history.setDocument(removeStyle(history.document, styleId));
+            }}
+            onRenameStyle={(styleId, name) => {
+              if (panelBaselineRef.current) onPanelCommitLive();
+              history.setDocument(updateStyle(history.document, styleId, { name }));
+            }}
             onNudgeSelection={(dx, dy) => {
               if (!dx && !dy) return;
               if (panelBaselineRef.current) onPanelCommitLive();
