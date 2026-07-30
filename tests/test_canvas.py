@@ -590,3 +590,26 @@ def test_normalize_clamps_out_of_range_page_index() -> None:
     ghost = next(layer for layer in doc["layers"] if layer["id"] == "ghost")
     assert ghost["pageIndex"] == 1
 
+
+def test_duplicate_document_drops_orphan_parent_id() -> None:
+    """A layer whose parentId points to a non-existent layer loses the dangling ref on duplicate."""
+    raw = create_empty_document()
+    raw["layers"].append(
+        {
+            "id": "child",
+            "type": "text",
+            "name": "Child",
+            "value": "x",
+            "parentId": "does-not-exist",
+            "cssVars": {
+                "--width": "40mm",
+                "--height": "10mm",
+                "--translate-x": "10mm",
+                "--translate-y": "10mm",
+            },
+        }
+    )
+    doc = duplicate_document(raw)
+    child = next(layer for layer in doc["layers"] if layer["type"] == "text" and layer["name"] == "Child")
+    assert "parentId" not in child
+

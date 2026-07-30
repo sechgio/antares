@@ -449,7 +449,12 @@ def duplicate_document(
     for layer in doc["layers"]:
         parent = layer.get("parentId")
         if parent:
-            layer["parentId"] = id_map.get(parent, parent)
+            if parent in id_map:
+                layer["parentId"] = id_map[parent]
+            else:
+                # Parent was not duplicated (orphan reference in source) — drop
+                # the dangling id instead of pointing at a non-existent layer.
+                layer.pop("parentId", None)
     for field in doc["fields"]:
         field["id"] = _new_id()
     for page in doc.get("pages") or []:

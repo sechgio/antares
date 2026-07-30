@@ -14,8 +14,9 @@ import {
   expandWithDescendants,
   flattenLayerTree,
 } from '../ops/layerTree';
+import { setActivePageLayers } from '../ops/pages';
 import { moveSelection } from '../ops/selectionTransform';
-import { parseMm } from '../types';
+import { parseMm, type CanvasDocument } from '../types';
 
 describe('layerTree', () => {
   it('nests children under group/grid by parentId', () => {
@@ -199,5 +200,55 @@ describe('groupLayers', () => {
     const group = layers.find((l) => l.id === groupId)!;
     expect(group.pageIndex).toBe(1);
     expect(layers.filter((l) => l.parentId === groupId).map((l) => l.id).sort()).toEqual(['a', 'b']);
+  });
+
+  it('rejects grouping when children span multiple pages', () => {
+    const a = createLayer('rect', { id: 'a', pageIndex: 0 });
+    a.cssVars = { ...a.cssVars, '--translate-x': '10mm', '--translate-y': '10mm', '--width': '20mm', '--height': '20mm' };
+    const b = createLayer('text', { id: 'b', pageIndex: 1 });
+    b.cssVars = { ...b.cssVars, '--translate-x': '40mm', '--translate-y': '10mm', '--width': '30mm', '--height': '10mm' };
+    const input = [a, b];
+    const { layers, groupId } = groupLayers(input, ['a', 'b']);
+    expect(groupId).toBe('');
+    expect(layers).toBe(input);
+  });
+});
+
+describe('setActivePageLayers', () => {
+  function makeDoc(layers: ReturnType<typeof createLayer>[]): CanvasDocument {
+    return {
+      id: 'd1',
+      name: 'Test',
+      version: 2,
+      updatedAt: new Date().toISOString(),
+      page: { widthMm: 210, heightMm: 297 },
+      layers,
+      fields: [],
+    };
+  }
+
+  it('preserves document array order when replacing active page layers', () => {
+    const p0a = createLayer('rect', { id: 'p0a', pageIndex: 0 });
+    const p1b = createLayer('text', { id: 'p1b', pageIndex: 1 });
+    const p0c = createLayer('rect', { id: 'p0c', pageIndex: 0 });
+    const doc = makeDoc([p0a, p1b, p0c]);
+
+    // Update only p0a on page 0; p0c is dropped (not in incoming), p1b stays.
+    const updated = setActivePageLayers(doc, 0, [
+      { ...p0a, name: 'Renamed' },
+    ]);
+    expect(updated.layers.map((l) => l.id)).toEqual(['p0a', 'p1b']);
+    expect(updated.layers[0].name).toBe('Renamed');
+    expect(updated.layers[1]).toBe(p1b);
+  });
+
+  it('appends new layers at the end of the active page block', () => {
+    const p0a = createLayer('rect', { id: 'p0a', pageIndex: 0 });
+    const p1b = createLayer('text', { id: 'p1b', pageIndex: 1 });
+    const doc = makeDoc([p0a, p1b]);
+    const fresh = createLayer('rect', { id: 'fresh', pageIndex: 0 });
+
+    const updated = setActivePageLayers(doc, 0, [p0a, fresh]);
+    expect(updated.layers.map((l) => l.id)).toEqual(['p0a', 'fresh', 'p1b']);
   });
 });

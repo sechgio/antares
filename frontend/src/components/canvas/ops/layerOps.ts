@@ -485,6 +485,11 @@ export function groupLayers(
   const maxY = Math.max(...bounds.map((b) => b.bottom));
   const groupId = newId();
   const pageIndex = children[0].pageIndex ?? 0;
+  // Guard: grouping across pages would place children on a page where they
+  // are invisible. The UI prevents cross-page selection, but defend anyway.
+  if (!children.every((c) => (c.pageIndex ?? 0) === pageIndex)) {
+    return { layers, groupId: '' };
+  }
 
   const group: CanvasLayer = {
     id: groupId,
