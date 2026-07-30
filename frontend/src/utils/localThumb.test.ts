@@ -39,6 +39,7 @@ describe('getLocalThumbnail', () => {
     const p1 = getLocalThumbnail('C:\\photos\\same.jpg', 256);
     const p2 = getLocalThumbnail('C:\\photos\\same.jpg', 256);
 
+    await Promise.resolve();
     expect(localThumbnail).toHaveBeenCalledTimes(1);
     resolveIpc({ dataUrl: 'data:image/jpeg;base64,coalesced' });
 
