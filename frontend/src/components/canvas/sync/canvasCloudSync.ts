@@ -81,7 +81,7 @@ export async function pushCanvasDocument(doc: CanvasDocument): Promise<boolean> 
 
   const { data: existing, error: selectError } = await supabase
     .from('canvas_documents')
-    .select('updated_at, deleted_at')
+    .select('updated_at, deleted_at, created_by')
     .eq('id', doc.id)
     .maybeSingle();
   if (selectError) throw new Error(selectError.message);
@@ -92,6 +92,9 @@ export async function pushCanvasDocument(doc: CanvasDocument): Promise<boolean> 
     return false;
   }
 
+  // Preserve the original creator on update: upsert overwrites every column,
+  // so without this a second user's push would steal created_by.
+  const existingRow = existing as { created_by?: string } | null;
   const row = {
     id: doc.id,
     name: doc.name,
@@ -99,7 +102,7 @@ export async function pushCanvasDocument(doc: CanvasDocument): Promise<boolean> 
     updated_at: updatedAt,
     updated_by: uid,
     deleted_at: null as string | null,
-    created_by: uid,
+    created_by: existingRow?.created_by ?? uid,
   };
 
   // Atomic upsert on PK — avoids the select-then-insert/update race where two
@@ -151,6 +154,12 @@ export type SyncOptions = {
   openDirty?: boolean;
 };
 
+// Module-level mutex: focus events and GeneratePanel can both fire sync in
+// overlapping windows; reentrancy here would let a late pull overwrite a
+// doc that was just locally edited and pushed. Declared before use so the
+// queued-push waiter never hits a TDZ violation.
+let syncPromise: Promise<unknown> | null = null;
+
 /**
  * Merge cloud ↔ local without blocking the editor.
  * Pulls only docs where remote is newer; pushes local-only / newer locals.
@@ -160,19 +169,18 @@ export async function syncCanvasDocuments(options: SyncOptions = {}): Promise<Sy
   if (!supabase) return { ...empty, skipped: true, reason: 'no-supabase' };
   const uid = await sessionUserId();
   if (!uid) return { ...empty, skipped: true, reason: 'no-session' };
-  // Module-level mutex: focus events and GeneratePanel can both fire sync in
-  // overlapping windows; reentrancy here would let a late pull overwrite a
-  // doc that was just locally edited and pushed.
-  if (syncInFlight) return { ...empty, skipped: true, reason: 'sync-in-flight' };
-  syncInFlight = true;
+  if (syncPromise) return { ...empty, skipped: true, reason: 'sync-in-flight' };
+  let releaseSync!: () => void;
+  syncPromise = new Promise<void>((resolve) => {
+    releaseSync = resolve;
+  });
   try {
     return await runSync(options);
   } finally {
-    syncInFlight = false;
+    releaseSync();
+    syncPromise = null;
   }
 }
-
-let syncInFlight = false;
 
 async function runSync(options: SyncOptions): Promise<SyncResult> {
   const empty: SyncResult = { pulled: 0, pushed: 0, deletedLocal: 0, skipped: false, pushErrors: 0 };
@@ -238,11 +246,16 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
   return { pulled, pushed, deletedLocal, reloadOpenId, skipped: false, pushErrors, lastError };
 }
 
-/** Fire-and-forget push after a successful local save. */
+/** Fire-and-forget push after a successful local save.
+ *  Waits for any in-flight sync so the push's select-then-upsert cannot race
+ *  the sync's own LWW guard on the same document. */
 export function queueCanvasCloudPush(doc: CanvasDocument): void {
-  void pushCanvasDocument(doc).catch(() => {
-    /* local already saved */
-  });
+  void (syncPromise ?? Promise.resolve())
+    .catch(() => {})
+    .then(() => pushCanvasDocument(doc))
+    .catch(() => {
+      /* local already saved */
+    });
 }
 
 export function queueCanvasCloudDelete(id: string): void {

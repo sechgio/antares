@@ -566,3 +566,27 @@ def test_normalize_preserves_layer_meta_path() -> None:
     assert path["points"][0]["x"] == 0.0
     assert path["points"][1]["hin"] == {"x": -2.0, "y": 0.0}
 
+
+def test_normalize_clamps_out_of_range_page_index() -> None:
+    """A layer whose pageIndex exceeds the page count is clamped to the last page."""
+    raw = create_empty_document()
+    raw["pages"] = [{"id": "p1", "name": "Página 1"}, {"id": "p2", "name": "Página 2"}]
+    raw["layers"].append(
+        {
+            "id": "ghost",
+            "type": "text",
+            "name": "Ghost",
+            "value": "x",
+            "pageIndex": 999,
+            "cssVars": {
+                "--width": "40mm",
+                "--height": "10mm",
+                "--translate-x": "10mm",
+                "--translate-y": "10mm",
+            },
+        }
+    )
+    doc = normalize_document(raw)
+    ghost = next(layer for layer in doc["layers"] if layer["id"] == "ghost")
+    assert ghost["pageIndex"] == 1
+

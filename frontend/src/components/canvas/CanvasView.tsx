@@ -1233,12 +1233,12 @@ export default function CanvasView() {
             onDeleteDoc={() => void onDeleteDoc()}
             onPageChange={setPageIndex}
             onAddPage={() => {
-              const next = addPage(history.document);
+              const next = syncImagesPerPage(addPage(history.document));
               history.setDocument(next);
               setPageIndex(getPageCount(next) - 1);
             }}
             onRemovePage={(index) => {
-              const next = removePage(history.document, index);
+              const next = syncImagesPerPage(removePage(history.document, index));
               history.setDocument(next);
               setPageIndex((prev) => {
                 if (index < prev) return prev - 1;
@@ -1247,7 +1247,7 @@ export default function CanvasView() {
               });
             }}
             onDuplicatePage={(index) => {
-              const next = duplicatePage(history.document, index);
+              const next = syncImagesPerPage(duplicatePage(history.document, index));
               history.setDocument(next);
               setPageIndex(index + 1);
             }}

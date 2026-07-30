@@ -425,4 +425,36 @@ describe('pushCanvasDocument', () => {
     expect(ok).toBe(false);
     expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
   });
+
+  it('preserves existing created_by on update instead of overwriting with the current user', async () => {
+    const doc = makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T13:00:00Z' });
+    // Response 1: LWW select — existing row created by another user.
+    enqueue({ updated_at: '2026-07-22T12:00:00Z', deleted_at: null, created_by: 'user-original' });
+    // Response 2: upsert
+    enqueue(null);
+
+    const ok = await pushCanvasDocument(doc);
+
+    expect(ok).toBe(true);
+    const upsert = supabaseMock.chainable.upsert as ReturnType<typeof vi.fn>;
+    const [row] = upsert.mock.calls[0];
+    // created_by must stay the original creator, not the current session user.
+    expect(row.created_by).toBe('user-original');
+    expect(row.updated_by).toBe('user-1');
+  });
+
+  it('sets created_by to the current user when the row is new', async () => {
+    const doc = makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T13:00:00Z' });
+    // Response 1: LWW select — no existing row.
+    enqueue(null);
+    // Response 2: upsert
+    enqueue(null);
+
+    const ok = await pushCanvasDocument(doc);
+
+    expect(ok).toBe(true);
+    const upsert = supabaseMock.chainable.upsert as ReturnType<typeof vi.fn>;
+    const [row] = upsert.mock.calls[0];
+    expect(row.created_by).toBe('user-1');
+  });
 });

@@ -390,13 +390,19 @@ def normalize_document(raw: Any) -> dict[str, Any]:
     updated_raw = raw.get("updatedAt")
     updated_at = str(updated_raw).strip() if isinstance(updated_raw, str) and str(updated_raw).strip() else ""
 
+    pages = _normalize_pages(raw.get("pages"))
+    # Clamp pageIndex into the valid page range so a stale/legacy index cannot
+    # create invisible "ghost" layers on a non-existent page.
+    last_page = len(pages) - 1
+    layers = [{**layer, "pageIndex": min(layer.get("pageIndex", 0), last_page)} for layer in layers]
+
     return {
         "version": DOCUMENT_VERSION,
         "id": str(raw.get("id") or _new_id()),
         "name": str(raw.get("name") or "Sin título").strip() or "Sin título",
         "updatedAt": updated_at or utc_now_iso(),
         "page": {"widthMm": max(1, width_mm), "heightMm": max(1, height_mm)},
-        "pages": _normalize_pages(raw.get("pages")),
+        "pages": pages,
         "settings": _normalize_settings(raw.get("settings")),
         "guides": _normalize_guides(raw.get("guides")),
         "styles": _normalize_styles(raw.get("styles")),
