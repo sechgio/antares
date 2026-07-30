@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useMemo, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import type { CanvasGuide } from '../types';
 import { MM_TO_PX } from '../ops/drawHelpers';
 import { clampGuidePos, createGuide, formatGapMm, isGuideRemovalPoint } from '../ops/guides';
@@ -17,6 +17,42 @@ interface CanvasRulersProps {
   onCancelCreate?: (id: string) => void;
 }
 
+/** Compact pill for sizes, gaps, and guide positions. */
+export function MeasurementBadge({
+  label,
+  style,
+  testId = 'canvas-measurement-badge',
+  danger = false,
+  accent = false,
+}: {
+  label: string;
+  style?: CSSProperties;
+  testId?: string;
+  danger?: boolean;
+  /** Use selection blue instead of magenta (guide position chips). */
+  accent?: boolean;
+}) {
+  const bg = danger ? 'var(--cv-danger)' : accent ? 'var(--cv-accent)' : 'var(--cv-accent-2)';
+  return (
+    <div
+      data-testid={testId}
+      style={{
+        background: bg,
+        color: '#fff',
+        fontSize: 11,
+        padding: '1px 6px',
+        borderRadius: 999,
+        whiteSpace: 'nowrap',
+        pointerEvents: 'none',
+        lineHeight: 1.4,
+        ...style,
+      }}
+    >
+      {label}
+    </div>
+  );
+}
+
 /** Floating label that follows the pointer while creating/dragging a guide. */
 export function GuidePositionChip({
   x,
@@ -30,24 +66,18 @@ export function GuidePositionChip({
   danger?: boolean;
 }) {
   return (
-    <div
-      data-testid="canvas-guide-chip"
+    <MeasurementBadge
+      testId="canvas-guide-chip"
+      label={label}
+      danger={danger}
+      accent={!danger}
       style={{
         position: 'fixed',
         left: x + 12,
         top: y + 12,
         zIndex: 80,
-        background: danger ? 'var(--cv-danger)' : 'var(--cv-accent)',
-        color: '#fff',
-        fontSize: 10,
-        padding: '1px 4px',
-        borderRadius: 2,
-        whiteSpace: 'nowrap',
-        pointerEvents: 'none',
       }}
-    >
-      {label}
-    </div>
+    />
   );
 }
 

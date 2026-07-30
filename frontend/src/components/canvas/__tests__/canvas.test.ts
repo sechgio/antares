@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createLayer } from '../constants';
-import { DEFAULT_GRID_RULES, layoutGridSlots, rebuildGridSlots, resolveGridLayout, applyGridToImageSlots } from '../ops/gridLayout';
+import {
+  DEFAULT_GRID_RULES,
+  layoutGridSlots,
+  rebuildGridSlots,
+  resolveGridLayout,
+  applyGridToImageSlots,
+  matchGridSlotsToSourceSize,
+} from '../ops/gridLayout';
 import {
   alignLayers,
   bringToFront,
@@ -901,6 +908,16 @@ describe('gridLayout', () => {
     expect(slots[2].y).toBe(42);
   });
 
+  it('layoutGridSlots respects unequal col/row tracks', () => {
+    const slots = layoutGridSlots(0, 0, 100, 80, 2, 2, 0, {
+      cols: [3, 1],
+      rows: [1, 1],
+    });
+    expect(slots[0]!.w).toBeCloseTo(75, 5);
+    expect(slots[1]!.w).toBeCloseTo(25, 5);
+    expect(slots[1]!.x).toBeCloseTo(75, 5);
+  });
+
   it('rebuildGridSlots expands and shrinks child slots to cols×rows', () => {
     const gridId = newId();
     let layers: ReturnType<typeof createLayer>[] = [
@@ -967,6 +984,67 @@ describe('gridLayout', () => {
     // 3 columns → third slot shares the first row (same Y as first, larger X)
     expect(parseMm(slots[0].cssVars['--translate-y'])).toBe(parseMm(slots[2].cssVars['--translate-y']));
     expect(parseMm(slots[2].cssVars['--translate-x'])).toBeGreaterThan(parseMm(slots[1].cssVars['--translate-x']));
+  });
+
+  it('matchGridSlotsToSourceSize equalizes all cells to the source slot size', () => {
+    const gridId = newId();
+    let layers = [
+      createLayer('grid', {
+        id: gridId,
+        meta: { cols: 2, rows: 2, gapMm: 2 },
+        cssVars: {
+          '--width': '100mm',
+          '--height': '80mm',
+          '--translate-x': '10mm',
+          '--translate-y': '5mm',
+        },
+      }),
+      ...[0, 1, 2, 3].map((i) =>
+        createLayer('imageSlot', { id: `slot-${i}`, parentId: gridId, meta: { index: i } }),
+      ),
+    ];
+    layers = applyGridToImageSlots(layers, gridId);
+    layers = layers.map((l) =>
+      l.id === 'slot-0'
+        ? {
+            ...l,
+            cssVars: {
+              ...l.cssVars,
+              '--width': '70mm',
+              '--height': '50mm',
+            },
+          }
+        : l,
+    );
+    const sourceBefore = layers.find((l) => l.id === 'slot-0')!;
+    const sourceW = parseMm(sourceBefore.cssVars['--width']);
+    const sourceH = parseMm(sourceBefore.cssVars['--height']);
+    expect(sourceW).toBeCloseTo(70, 5);
+    expect(sourceH).toBeCloseTo(50, 5);
+
+    const next = matchGridSlotsToSourceSize(layers, 'slot-0');
+    const grid = next.find((l) => l.id === gridId)!;
+    const slots = next.filter((l) => l.parentId === gridId && l.type === 'imageSlot');
+    expect(slots).toHaveLength(4);
+    for (const s of slots) {
+      expect(parseMm(s.cssVars['--width'])).toBeCloseTo(sourceW, 5);
+      expect(parseMm(s.cssVars['--height'])).toBeCloseTo(sourceH, 5);
+    }
+    expect(parseMm(grid.cssVars['--width'])).toBeCloseTo(sourceW * 2 + 2, 5);
+    expect(parseMm(grid.cssVars['--height'])).toBeCloseTo(sourceH * 2 + 2, 5);
+    expect(parseMm(grid.cssVars['--translate-x'])).toBeCloseTo(10, 5);
+    expect(parseMm(grid.cssVars['--translate-y'])).toBeCloseTo(5, 5);
+    expect(grid.meta?.colTracks).toEqual([1, 1]);
+    expect(grid.meta?.rowTracks).toEqual([1, 1]);
+  });
+
+  it('matchGridSlotsToSourceSize is a no-op for non-grid slots', () => {
+    const lone = createLayer('imageSlot', { id: 'lone' });
+    const rect = createLayer('rect', { id: 'r1' });
+    const layers = [lone, rect];
+    expect(matchGridSlotsToSourceSize(layers, 'lone')).toBe(layers);
+    expect(matchGridSlotsToSourceSize(layers, 'r1')).toBe(layers);
+    expect(matchGridSlotsToSourceSize(layers, 'missing')).toBe(layers);
   });
 });
 

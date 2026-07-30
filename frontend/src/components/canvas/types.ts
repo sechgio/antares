@@ -5,6 +5,9 @@ export const DOCUMENT_VERSION = 2 as const;
 export const A4_WIDTH_MM = 210;
 export const A4_HEIGHT_MM = 297;
 
+/** Default print safe-area inset when `settings.pageMarginMm` is unset. */
+export const DEFAULT_PAGE_MARGIN_MM = 10;
+
 /** A4 at 96dpi for on-screen frame sizing. */
 export const A4_WIDTH_PX = Math.round((A4_WIDTH_MM * 96) / 25.4);
 export const A4_HEIGHT_PX = Math.round((A4_HEIGHT_MM * 96) / 25.4);
@@ -160,6 +163,10 @@ export interface LayerMeta {
   cols?: number;
   rows?: number;
   gapMm?: number;
+  /** Relative column widths (length = cols). Unequal values keep free cell sizing. */
+  colTracks?: number[];
+  /** Relative row heights (length = rows). */
+  rowTracks?: number[];
   rules?: GridRule[];
   showDate?: boolean;
   showCoords?: boolean;
@@ -183,6 +190,12 @@ export interface CanvasLayer {
   pageIndex?: number;
   cssVars: LayerCssVars;
   meta?: LayerMeta;
+  /** Linked shared color/fill/stroke style (document.styles kind=color). */
+  fillStyleId?: string;
+  /** Linked shared text style (document.styles kind=text). */
+  textStyleId?: string;
+  /** Linked shared effect style (document.styles kind=effect). */
+  effectStyleId?: string;
 }
 
 export interface CanvasFieldDef {
@@ -197,6 +210,17 @@ export interface CanvasGuide {
   axis: 'x' | 'y';
   posMm: number;
   pageIndex?: number;
+}
+
+export type CanvasStyleKind = 'color' | 'text' | 'effect';
+
+/** Named reusable style patch stored on the document (Figma-like shared styles). */
+export interface CanvasSharedStyle {
+  id: string;
+  name: string;
+  kind: CanvasStyleKind;
+  /** Subset of LayerCssVars for this kind only. */
+  cssVars: Partial<LayerCssVars>;
 }
 
 export interface CanvasDocument {
@@ -217,9 +241,21 @@ export interface CanvasDocument {
     snapToGrid?: boolean;
     /** Grid step in mm (default 5) */
     gridSizeMm?: number;
+    /** Print safe-area inset in mm (default 10). 0 hides overlay and margin snap. */
+    pageMarginMm?: number;
   };
   /** Manual guides dragged from rulers. */
   guides?: CanvasGuide[];
+  /** Shared color / text / effect styles (optional; absent = legacy docs). */
+  styles?: CanvasSharedStyle[];
+}
+
+/** Resolve page margin: unset → default; explicit 0 disables margins. */
+export function resolvePageMarginMm(settings?: CanvasDocument['settings']): number {
+  if (settings?.pageMarginMm === undefined) return DEFAULT_PAGE_MARGIN_MM;
+  const n = settings.pageMarginMm;
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_PAGE_MARGIN_MM;
+  return n;
 }
 
 export interface CanvasDocumentSummary {
@@ -250,9 +286,11 @@ export function normalizeDocument(doc: CanvasDocument): CanvasDocument {
           })),
           settings: doc.settings ?? {},
           guides: doc.guides ?? [],
+          styles: doc.styles ?? [],
         };
   return {
     ...upgraded,
+    styles: upgraded.styles ?? [],
     updatedAt: upgraded.updatedAt || new Date(0).toISOString(),
   };
 }
@@ -268,6 +306,7 @@ export function createEmptyDocument(name = 'Sin título'): CanvasDocument {
     pages: [{ id: pageId, name: 'Página 1' }],
     settings: {},
     guides: [],
+    styles: [],
     layers: [
       {
         id: newId(),

@@ -1,7 +1,7 @@
 import type { CanvasLayer } from '../types';
 import { mm, newId, parseMm } from '../types';
 import { layerBounds } from './layerBounds';
-import { expandWithDescendants } from './layerTree';
+import { expandWithDescendants, isLayerContainer } from './layerTree';
 
 const NUDGE_OFFSET_MM = 5;
 
@@ -183,6 +183,62 @@ export function reorderAmongSiblings(
   if (targetIdx < 0) return layers;
   const insertAt = position === 'before' ? targetIdx + 1 : targetIdx;
   without.splice(insertAt, 0, dragged);
+  return without;
+}
+
+export type LayerTreeDropPosition = 'before' | 'after' | 'inside';
+
+/**
+ * Capas drag: reorder and/or reparent. Capas "before" = later in the document array.
+ * `inside` nests under a group/grid (front of Capas children = end of sibling run).
+ */
+export function moveLayerInTree(
+  layers: CanvasLayer[],
+  draggedId: string,
+  targetId: string,
+  position: LayerTreeDropPosition,
+): CanvasLayer[] {
+  if (draggedId === targetId) return layers;
+  const dragged = layers.find((l) => l.id === draggedId);
+  const target = layers.find((l) => l.id === targetId);
+  if (!dragged || !target) return layers;
+  if (dragged.type === 'frame' || target.type === 'frame' || isLocked(dragged)) return layers;
+
+  let newParentId: string | undefined;
+  if (position === 'inside') {
+    if (!isLayerContainer(target)) return layers;
+    newParentId = targetId;
+  } else {
+    newParentId = resolvedParentId(layers, target);
+  }
+
+  if (newParentId) {
+    if (newParentId === draggedId) return layers;
+    const underDragged = new Set(expandWithDescendants(layers, [draggedId]));
+    if (underDragged.has(newParentId)) return layers;
+  }
+
+  const moved: CanvasLayer = { ...dragged, parentId: newParentId };
+  if (!newParentId) delete moved.parentId;
+
+  const without = layers.filter((l) => l.id !== draggedId);
+  let insertAt: number;
+  if (position === 'inside') {
+    let lastChildIdx = -1;
+    for (let i = 0; i < without.length; i++) {
+      if (resolvedParentId(without, without[i]) === targetId) lastChildIdx = i;
+    }
+    insertAt =
+      lastChildIdx >= 0
+        ? lastChildIdx + 1
+        : without.findIndex((l) => l.id === targetId) + 1;
+  } else {
+    const targetIdx = without.findIndex((l) => l.id === targetId);
+    if (targetIdx < 0) return layers;
+    insertAt = position === 'before' ? targetIdx + 1 : targetIdx;
+  }
+  if (insertAt < 0) return layers;
+  without.splice(insertAt, 0, moved);
   return without;
 }
 
@@ -428,12 +484,14 @@ export function groupLayers(
   const maxX = Math.max(...bounds.map((b) => b.right));
   const maxY = Math.max(...bounds.map((b) => b.bottom));
   const groupId = newId();
+  const pageIndex = children[0].pageIndex ?? 0;
 
   const group: CanvasLayer = {
     id: groupId,
     type: 'group',
     name: 'Grupo',
     value: '',
+    pageIndex,
     cssVars: {
       '--width': mm(maxX - minX),
       '--height': mm(maxY - minY),

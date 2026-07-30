@@ -481,6 +481,23 @@ describe('RightPanel shape inspector', () => {
     fireEvent.blur(xInput);
     expect(onCommitLive).toHaveBeenCalled();
   });
+
+  it('keeps prior live X when editing Y before the panel re-renders', () => {
+    const layer = createLayer('rect');
+    layer.cssVars['--translate-x'] = '10mm';
+    layer.cssVars['--translate-y'] = '20mm';
+    const onChangeLive = vi.fn();
+    // Parent intentionally keeps the stale `layer` prop (no rerender) — mimics
+    // rapid X then Y edits before React commits the live update.
+    render(
+      <RightPanel layer={layer} onChange={vi.fn()} onChangeLive={onChangeLive} {...panelProps} />,
+    );
+    fireEvent.change(screen.getByLabelText('X'), { target: { value: '50' } });
+    fireEvent.change(screen.getByLabelText('Y'), { target: { value: '60' } });
+    const last = onChangeLive.mock.calls.at(-1)?.[0];
+    expect(parseMm(last.cssVars['--translate-x'])).toBe(50);
+    expect(parseMm(last.cssVars['--translate-y'])).toBe(60);
+  });
 });
 
 describe('RightPanel creative freedom controls', () => {

@@ -34,7 +34,7 @@ export default function FillSection({
         </button>
       </SectionHeader>
       {hasFill ? (
-        <div className="space-y-2">
+        <div className="space-y-3">
           <PaintRow
             color={layer.cssVars['--background-color'] || '#FFFFFF'}
             opacity={Number(layer.cssVars['--fill-opacity'] ?? 100)}
@@ -57,10 +57,10 @@ export default function FillSection({
               })
             }
           />
-          <label className="block text-[11px]" style={{ color: 'var(--cv-text-secondary)' }}>
-            Tipo
+          <label className="block">
+            <span className="canvas-sublabel">Tipo</span>
             <CanvasSelect
-              className="mt-1 w-full text-[11px]"
+              className="w-full"
               value={layer.cssVars['--fill-type'] || 'solid'}
               aria-label="Tipo de relleno"
               onChange={(next) => {

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { createLayer } from '../constants';
-import { bringForward, deleteLayers, nudgeLayers, reorderAmongSiblings, setLayersOpacity } from '../ops/layerOps';
+import {
+  bringForward,
+  deleteLayers,
+  groupLayers,
+  moveLayerInTree,
+  nudgeLayers,
+  reorderAmongSiblings,
+  setLayersOpacity,
+} from '../ops/layerOps';
 import {
   buildLayerTree,
   expandWithDescendants,
@@ -121,5 +129,75 @@ describe('reorderAmongSiblings', () => {
     const next = setLayersOpacity([a, b], ['a', 'b'], 40);
     expect(next.find((l) => l.id === 'a')!.cssVars['--opacity']).toBe('40%');
     expect(next.find((l) => l.id === 'b')!.cssVars['--opacity']).toBeUndefined();
+  });
+});
+
+describe('moveLayerInTree', () => {
+  it('reparents root layer inside a group', () => {
+    const g = createLayer('group', { id: 'g' });
+    const a = createLayer('text', { id: 'a', parentId: 'g' });
+    const b = createLayer('text', { id: 'b' });
+    const next = moveLayerInTree([g, a, b], 'b', 'g', 'inside');
+    expect(next.find((l) => l.id === 'b')!.parentId).toBe('g');
+    expect(next.filter((l) => l.parentId === 'g').map((l) => l.id)).toEqual(['a', 'b']);
+  });
+
+  it('moves child out of group to root via before on root sibling', () => {
+    const g = createLayer('group', { id: 'g' });
+    const a = createLayer('text', { id: 'a', parentId: 'g' });
+    const b = createLayer('text', { id: 'b' });
+    // Capas roots top-first [b, g]; drop a before b → a becomes root, above b
+    const next = moveLayerInTree([g, a, b], 'a', 'b', 'before');
+    expect(next.find((l) => l.id === 'a')!.parentId).toBeUndefined();
+    const roots = next.filter((l) => !l.parentId && l.type !== 'frame');
+    expect(roots.map((l) => l.id)).toEqual(['g', 'b', 'a']);
+  });
+
+  it('cross-parent before places under target parent', () => {
+    const g = createLayer('group', { id: 'g' });
+    const a = createLayer('text', { id: 'a', parentId: 'g' });
+    const b = createLayer('text', { id: 'b' });
+    const next = moveLayerInTree([g, a, b], 'b', 'a', 'before');
+    expect(next.find((l) => l.id === 'b')!.parentId).toBe('g');
+    expect(next.filter((l) => l.parentId === 'g').map((l) => l.id)).toEqual(['a', 'b']);
+  });
+
+  it('rejects nesting a group inside its descendant', () => {
+    const outer = createLayer('group', { id: 'outer' });
+    const inner = createLayer('group', { id: 'inner', parentId: 'outer' });
+    const child = createLayer('text', { id: 'c', parentId: 'inner' });
+    const layers = [outer, inner, child];
+    expect(moveLayerInTree(layers, 'outer', 'inner', 'inside')).toBe(layers);
+    expect(moveLayerInTree(layers, 'outer', 'c', 'before')).toBe(layers);
+  });
+
+  it('sibling-only reorder matches Capas-before semantics', () => {
+    const g = createLayer('group', { id: 'g' });
+    const a = createLayer('text', { id: 'a', parentId: 'g' });
+    const b = createLayer('text', { id: 'b', parentId: 'g' });
+    const next = moveLayerInTree([g, a, b], 'a', 'b', 'before');
+    expect(next.filter((l) => l.parentId === 'g').map((l) => l.id)).toEqual(['b', 'a']);
+  });
+
+  it('rejects inside on non-container', () => {
+    const a = createLayer('text', { id: 'a' });
+    const b = createLayer('text', { id: 'b' });
+    const layers = [a, b];
+    expect(moveLayerInTree(layers, 'a', 'b', 'inside')).toBe(layers);
+  });
+});
+
+describe('groupLayers', () => {
+  it('assigns pageIndex from children so Capas keeps the group on that page', () => {
+    const a = createLayer('rect', { id: 'a' });
+    a.pageIndex = 1;
+    a.cssVars = { ...a.cssVars, '--translate-x': '10mm', '--translate-y': '10mm', '--width': '20mm', '--height': '20mm' };
+    const b = createLayer('text', { id: 'b' });
+    b.pageIndex = 1;
+    b.cssVars = { ...b.cssVars, '--translate-x': '40mm', '--translate-y': '10mm', '--width': '30mm', '--height': '10mm' };
+    const { layers, groupId } = groupLayers([a, b], ['a', 'b']);
+    const group = layers.find((l) => l.id === groupId)!;
+    expect(group.pageIndex).toBe(1);
+    expect(layers.filter((l) => l.parentId === groupId).map((l) => l.id).sort()).toEqual(['a', 'b']);
   });
 });

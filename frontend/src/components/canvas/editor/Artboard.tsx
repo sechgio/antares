@@ -5,12 +5,10 @@ import {
   useRef,
   useState,
   memo,
-  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import type { CanvasDocument, CanvasGuide, CanvasLayer, CanvasTool } from '../types';
-import { A4_HEIGHT_PX, A4_WIDTH_PX, parseMm } from '../types';
+import { A4_HEIGHT_PX, A4_WIDTH_PX, parseMm, resolvePageMarginMm } from '../types';
 import {
   clientToMm,
   isClickPlace,
@@ -37,23 +35,35 @@ import {
   snapRectToGrid,
   snapToGridMm,
   snapThresholdMm,
+  constrainMoveToAxis,
   type HandlePos,
   type RectMm,
   type SmartGuide,
   DEFAULT_GRID_MM,
 } from '../ops/selectionTransform';
 import { buildSpatialIndex } from '../ops/spatialIndex';
+import { replaceLayerById } from '../ops/patchLayers';
 import {
   clampGuidePos,
+  collectReferenceGaps,
   formatGapMm,
   guidesForPage,
   isGuideRemovalPoint,
   measureSelectionGaps,
+  snapEqualGaps,
   type DistanceLabel,
 } from '../ops/guides';
+import { duplicateLayers } from '../ops/layerOps';
+import { expandWithDescendants } from '../ops/layerTree';
 import { wheelPanDelta, wheelZoomFactor, zoomAtCursor } from '../ops/viewportNav';
 import { filterVisibleLayers, visiblePageRectMm } from '../ops/viewportCulling';
 import { createGestureRaf } from '../ops/gestureRaf';
+import {
+  computeRadiusFromDrag,
+  layerSupportsCornerRadius,
+  layersWithCornerRadius,
+  maxCornerRadiusPxForLayer,
+} from '../ops/cornerRadiusGesture';
 import { usePinchZoom } from '../hooks/usePinchZoom';
 import {
   bendLineAt,
@@ -62,15 +72,15 @@ import {
   dragLineHandle,
 } from '../ops/pathEditGestures';
 import { ensureLinePath, lineIntersectsPolygon, rectIntersectsPolygon } from '../ops/pathGeometry';
-import CanvasRulers, { GuidePositionChip, RULER_SIZE } from './CanvasRulers';
+import { cornerRadiusPx, type CornerId } from '../ops/layerStyle';
+import CanvasRulers, { GuidePositionChip, MeasurementBadge, RULER_SIZE } from './CanvasRulers';
 import LayerNode from './LayerNode';
 import PathHandlesOverlay from './PathHandlesOverlay';
+import { SelectionChromeOverlay } from './SelectionChromeOverlay';
 import { screenChromePx } from '../ops/textTypography';
 
-const HANDLE = 8;
 /** Invisible grab zone around a guide line (Figma uses a generous hit area). */
 const GUIDE_HIT_PX = 10;
-const ROTATE_HANDLE_OFFSET = 24;
 /** Guide line thickness in screen px (counter-scaled under CSS camera zoom). */
 const GUIDE_LINE_PX = 2;
 
@@ -111,27 +121,26 @@ interface ArtboardProps {
   onStartInertia?: (velocity: { vx: number; vy: number }) => void;
 }
 
-function handleStyle(left: number, top: number, cursor: string, cameraZoom: number): CSSProperties {
-  const size = screenChromePx(HANDLE, cameraZoom);
-  return {
-    position: 'absolute',
-    left,
-    top,
-    width: size,
-    height: size,
-    marginLeft: -size / 2,
-    marginTop: -size / 2,
-    background: '#fff',
-    border: `${screenChromePx(1.5, cameraZoom)}px solid var(--cv-accent)`,
-    borderRadius: 1,
-    zIndex: 40,
-    cursor,
-    boxSizing: 'border-box',
-  };
-}
-
 function cloneLayers(layers: CanvasLayer[]): CanvasLayer[] {
   return layers.map((l) => ({ ...l, cssVars: { ...l.cssVars }, meta: l.meta ? { ...l.meta } : undefined }));
+}
+
+/** Cache artboard client rect for a gesture; refresh if camera zoom changes mid-drag. */
+function createFrameRectCache(
+  frame: HTMLElement,
+  zoomRef: { current: number },
+): { read: () => DOMRect } {
+  let zoom = zoomRef.current;
+  let rect = frame.getBoundingClientRect();
+  return {
+    read() {
+      if (zoomRef.current !== zoom) {
+        zoom = zoomRef.current;
+        rect = frame.getBoundingClientRect();
+      }
+      return rect;
+    },
+  };
 }
 
 /** Isolated smart-guide chrome so Artboard gesture frames skip reconciling unrelated subtrees. */
@@ -143,42 +152,49 @@ const SmartGuidesOverlay = memo(function SmartGuidesOverlay({
   zoom: number;
 }) {
   if (!guides.length) return null;
+  const strokeW = screenChromePx(1, zoom);
+  const dash = `${screenChromePx(4, zoom)} ${screenChromePx(3, zoom)}`;
   return (
-    <>
+    <svg
+      style={{
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        width: '100%',
+        height: '100%',
+        pointerEvents: 'none',
+        zIndex: 45,
+        overflow: 'visible',
+      }}
+    >
       {guides.map((g) =>
         g.axis === 'x' ? (
-          <div
+          <line
             key={`gx-${g.pos}`}
             data-testid="canvas-smart-guide"
-            style={{
-              position: 'absolute',
-              left: mmToScreenPx(g.pos, 1),
-              top: 0,
-              width: screenChromePx(1, zoom),
-              height: '100%',
-              background: 'var(--cv-accent-2)',
-              pointerEvents: 'none',
-              zIndex: 45,
-            }}
+            x1={mmToScreenPx(g.pos, 1)}
+            y1={0}
+            x2={mmToScreenPx(g.pos, 1)}
+            y2="100%"
+            stroke="var(--cv-accent-2)"
+            strokeWidth={strokeW}
+            strokeDasharray={dash}
           />
         ) : (
-          <div
+          <line
             key={`gy-${g.pos}`}
             data-testid="canvas-smart-guide"
-            style={{
-              position: 'absolute',
-              top: mmToScreenPx(g.pos, 1),
-              left: 0,
-              height: screenChromePx(1, zoom),
-              width: '100%',
-              background: 'var(--cv-accent-2)',
-              pointerEvents: 'none',
-              zIndex: 45,
-            }}
+            x1={0}
+            y1={mmToScreenPx(g.pos, 1)}
+            x2="100%"
+            y2={mmToScreenPx(g.pos, 1)}
+            stroke="var(--cv-accent-2)"
+            strokeWidth={strokeW}
+            strokeDasharray={dash}
           />
         ),
       )}
-    </>
+    </svg>
   );
 });
 
@@ -282,6 +298,9 @@ export default function Artboard({
   zoomRef.current = zoom;
   const pageSizeRef = useRef({ widthMm: document.page.widthMm, heightMm: document.page.heightMm });
   pageSizeRef.current = { widthMm: document.page.widthMm, heightMm: document.page.heightMm };
+  const pageMarginMm = resolvePageMarginMm(document.settings);
+  const pageMarginRef = useRef(pageMarginMm);
+  pageMarginRef.current = pageMarginMm;
   const pageGuides = useMemo(() => guidesForPage(document, pageIndex), [document, pageIndex]);
   const [guideDrag, setGuideDrag] = useState<{
     id: string;
@@ -385,6 +404,27 @@ export default function Artboard({
     [layerById, selectedIds],
   );
   const bbox = useMemo(() => selectionBounds(displayLayers, editableSelected), [displayLayers, editableSelected]);
+  const [radiusDrag, setRadiusDrag] = useState<{
+    label: string;
+    corner: CornerId;
+  } | null>(null);
+  const radiusTargetLayer = useMemo(() => {
+    if (editableSelected.length !== 1) return null;
+    const layer = displayLayers.find((l) => l.id === editableSelected[0]);
+    if (!layer || !layerSupportsCornerRadius(layer)) return null;
+    return layer;
+  }, [displayLayers, editableSelected]);
+  const showRadiusHandles = Boolean(radiusTargetLayer);
+  const cornerRadii = useMemo(() => {
+    if (!radiusTargetLayer) return undefined;
+    const vars = radiusTargetLayer.cssVars;
+    return {
+      tl: cornerRadiusPx(vars, 'tl'),
+      tr: cornerRadiusPx(vars, 'tr'),
+      br: cornerRadiusPx(vars, 'br'),
+      bl: cornerRadiusPx(vars, 'bl'),
+    };
+  }, [radiusTargetLayer]);
 
   const handleSelect = useCallback((id: string, additive?: boolean) => {
     onSelectRef.current(id, additive);
@@ -515,22 +555,53 @@ export default function Artboard({
   };
 
   const beginSelectionMove = useCallback(
-    (ids: string[], startClientX: number, startClientY: number) => {
-      const snapshot = cloneLayers(layersRef.current);
+    (
+      ids: string[],
+      startClientX: number,
+      startClientY: number,
+      options?: { onClickWithoutDrag?: () => void; duplicate?: boolean },
+    ) => {
+      let snapshot = cloneLayers(layersRef.current);
+      let moveIds = ids;
+      let didDuplicate = false;
       gestureDirtyRef.current = false;
       let dragging = false;
-      const originBounds = selectionBounds(snapshot, ids);
-      const rails = prepareSnapRails(snapshot, ids, pageSizeRef.current, manualGuidesRef.current);
-      const exclude = new Set(ids);
-      const othersRects = snapshot
-        .filter((l) => !exclude.has(l.id) && l.type !== 'frame' && l.visible !== false && !l.locked)
-        .map((l) => {
-          const x = parseMm(l.cssVars['--translate-x']);
-          const y = parseMm(l.cssVars['--translate-y']);
-          const w = parseMm(l.cssVars['--width'], 10);
-          const h = parseMm(l.cssVars['--height'], 10);
-          return { x, y, w, h };
-        });
+      const marginMm = pageMarginRef.current;
+
+      const ensureDuplicate = () => {
+        if (!options?.duplicate || didDuplicate) return;
+        didDuplicate = true;
+        const { layers, newIds } = duplicateLayers(snapshot, ids, { offsetMm: 0 });
+        if (!newIds.length) return;
+        snapshot = layers;
+        moveIds = newIds;
+        onSelectIdsRef.current(newIds);
+        applyGestureLayers(snapshot);
+      };
+
+      const buildOthers = (snap: CanvasLayer[], moving: string[]) => {
+        const exclude = new Set(expandWithDescendants(snap, moving));
+        return snap
+          .filter((l) => !exclude.has(l.id) && l.type !== 'frame' && l.visible !== false && !l.locked)
+          .map((l) => {
+            const x = parseMm(l.cssVars['--translate-x']);
+            const y = parseMm(l.cssVars['--translate-y']);
+            const w = parseMm(l.cssVars['--width'], 10);
+            const h = parseMm(l.cssVars['--height'], 10);
+            return { x, y, w, h };
+          });
+      };
+
+      let originBounds = selectionBounds(snapshot, moveIds);
+      let rails = prepareSnapRails(
+        snapshot,
+        moveIds,
+        pageSizeRef.current,
+        manualGuidesRef.current,
+        marginMm,
+      );
+      let othersRects = buildOthers(snapshot, moveIds);
+      let refGaps = collectReferenceGaps(othersRects, pageSizeRef.current);
 
       // Coalesce to one apply per animation frame; latest pointer position wins.
       const raf = createGestureRaf((ev: PointerEvent) => {
@@ -540,29 +611,61 @@ export default function Artboard({
         if (!dragging) {
           if (isPointerClick(dxPx, dyPx)) return;
           dragging = true;
+          ensureDuplicate();
+          originBounds = selectionBounds(snapshot, moveIds);
+          rails = prepareSnapRails(
+            snapshot,
+            moveIds,
+            pageSizeRef.current,
+            manualGuidesRef.current,
+            marginMm,
+          );
+          othersRects = buildOthers(snapshot, moveIds);
+          refGaps = collectReferenceGaps(othersRects, pageSizeRef.current);
         }
         const z = zoomRef.current;
-        const rawDx = dxPx / (z * MM_TO_PX);
-        const rawDy = dyPx / (z * MM_TO_PX);
+        let rawDx = dxPx / (z * MM_TO_PX);
+        let rawDy = dyPx / (z * MM_TO_PX);
+        // Figma: Shift while dragging locks to the dominant axis.
+        const axisLock = ev.shiftKey;
+        ({ dx: rawDx, dy: rawDy } = constrainMoveToAxis(rawDx, rawDy, axisLock));
+        const lockHorizontal = axisLock && rawDy === 0;
+        const lockVertical = axisLock && rawDx === 0;
         const disableSnap = ev.ctrlKey || ev.metaKey;
         const threshold = snapThresholdMm(z);
         let dx = rawDx;
         let dy = rawDy;
         let nextGuides: SmartGuide[] = [];
+        let equalGapLabels: DistanceLabel[] = [];
         if (!disableSnap) {
           const snapped = snapMoveWithGuides(
             snapshot,
-            ids,
+            moveIds,
             rawDx,
             rawDy,
             pageSizeRef.current,
             threshold,
             manualGuidesRef.current,
             rails,
+            marginMm,
           );
           dx = snapped.dx;
           dy = snapped.dy;
           nextGuides = snapped.guides;
+          if (originBounds) {
+            const equal = snapEqualGaps(
+              originBounds,
+              dx,
+              dy,
+              othersRects,
+              pageSizeRef.current,
+              threshold,
+              refGaps,
+            );
+            dx = equal.dx;
+            dy = equal.dy;
+            equalGapLabels = equal.labels;
+          }
           if (snapToGridRef.current && originBounds) {
             const grid = gridSizeMmRef.current;
             const nx = snapToGridMm(originBounds.x + dx, grid);
@@ -571,16 +674,25 @@ export default function Artboard({
             dy = ny - originBounds.y;
           }
         }
+        // Keep axis lock after snap/grid (Figma: guides only on the free axis).
+        if (lockHorizontal) {
+          dy = 0;
+          nextGuides = nextGuides.filter((g) => g.axis === 'x');
+          equalGapLabels = equalGapLabels.filter((g) => g.axis === 'x');
+        } else if (lockVertical) {
+          dx = 0;
+          nextGuides = nextGuides.filter((g) => g.axis === 'y');
+          equalGapLabels = equalGapLabels.filter((g) => g.axis === 'y');
+        }
         setGuidesIfChanged(nextGuides);
-        const moved = moveSelection(snapshot, ids, dx, dy);
+        const moved = moveSelection(snapshot, moveIds, dx, dy);
         applyGestureLayers(moved);
-        if (ev.altKey) {
-          const bounds = selectionBounds(moved, ids);
-          if (bounds) {
-            setDistanceLabelsIfChanged(
-              measureSelectionGaps(bounds, othersRects, pageSizeRef.current),
-            );
-          }
+        // Distances always while dragging when neighbors/page gaps exist;
+        // equal-gap badges take priority when present.
+        const bounds = selectionBounds(moved, moveIds);
+        if (bounds) {
+          const measured = measureSelectionGaps(bounds, othersRects, pageSizeRef.current);
+          setDistanceLabelsIfChanged(equalGapLabels.length ? equalGapLabels : measured);
         } else {
           setDistanceLabelsIfChanged([]);
         }
@@ -593,6 +705,8 @@ export default function Artboard({
         endGesture();
         window.removeEventListener('pointermove', onMovePtr);
         window.removeEventListener('pointerup', onUp);
+        // Figma: Shift/Ctrl+click toggles selection only when there was no drag.
+        if (!dragging) options?.onClickWithoutDrag?.();
       };
       window.addEventListener('pointermove', onMovePtr);
       window.addEventListener('pointerup', onUp);
@@ -610,13 +724,23 @@ export default function Artboard({
         onCommitEditRef.current?.();
       }
       const current = selectedIdsRef.current;
+      const wasSelected = current.includes(id);
       let ids: string[];
+      let onClickWithoutDrag: (() => void) | undefined;
+
       if (additive) {
-        ids = current.includes(id) ? current.filter((x) => x !== id) : [...current, id];
-        onSelectIdsRef.current(ids);
-        return;
-      }
-      if (current.includes(id) && current.length > 1) {
+        // Figma: modifier+click toggles; modifier+drag still moves the selection
+        // (with Shift also locking axis during the gesture).
+        if (wasSelected) {
+          ids = current;
+          onClickWithoutDrag = () => {
+            onSelectIdsRef.current(current.filter((x) => x !== id));
+          };
+        } else {
+          ids = [...current, id];
+          onSelectIdsRef.current(ids);
+        }
+      } else if (wasSelected && current.length > 1) {
         ids = current;
       } else {
         ids = [id];
@@ -630,7 +754,11 @@ export default function Artboard({
         return l && !l.locked && l.type !== 'frame';
       });
       if (!moveIds.length) return;
-      beginSelectionMove(moveIds, e.clientX, e.clientY);
+      e.preventDefault();
+      beginSelectionMove(moveIds, e.clientX, e.clientY, {
+        onClickWithoutDrag,
+        duplicate: e.altKey,
+      });
     },
     [beginSelectionMove],
   );
@@ -646,7 +774,13 @@ export default function Artboard({
     const origin = selectionBounds(snapshot, ids);
     if (!origin) return;
     gestureDirtyRef.current = false;
-    const rails = prepareSnapRails(snapshot, ids, pageSizeRef.current, manualGuidesRef.current);
+    const rails = prepareSnapRails(
+      snapshot,
+      ids,
+      pageSizeRef.current,
+      manualGuidesRef.current,
+      pageMarginRef.current,
+    );
 
     const raf = createGestureRaf((ev: PointerEvent) => {
       const z = zoomRef.current;
@@ -699,15 +833,13 @@ export default function Artboard({
     const ids = [...editableSelected];
     const cx = bbox.x + bbox.w / 2;
     const cy = bbox.y + bbox.h / 2;
-    const rect = frameRef.current.getBoundingClientRect();
-    const start = clientToMm(e.clientX, e.clientY, rect, zoom);
+    const frameRect = createFrameRectCache(frameRef.current, zoomRef);
+    const start = clientToMm(e.clientX, e.clientY, frameRect.read(), zoom);
     const startAngle = angleFromCenter(cx, cy, start.xMm, start.yMm);
     gestureDirtyRef.current = false;
 
     const raf = createGestureRaf((ev: PointerEvent) => {
-      if (!frameRef.current) return;
-      const r = frameRef.current.getBoundingClientRect();
-      const cur = clientToMm(ev.clientX, ev.clientY, r, zoom);
+      const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
       const angle = angleFromCenter(cx, cy, cur.xMm, cur.yMm);
       const delta = angle - startAngle;
       applyGestureLayers(rotateSelection(snapshot, ids, delta, { snap15: ev.shiftKey }));
@@ -723,6 +855,50 @@ export default function Artboard({
     window.addEventListener('pointerup', onUp);
   };
 
+  const startRadiusResize = (e: ReactPointerEvent<HTMLDivElement>, corner: CornerId) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (editableSelected.length !== 1) return;
+    const id = editableSelected[0]!;
+    const snapshot = cloneLayers(layersRef.current);
+    const layer = snapshot.find((l) => l.id === id);
+    if (!layer || !layerSupportsCornerRadius(layer)) return;
+    const startRadius = cornerRadiusPx(layer.cssVars, corner);
+    const startX = e.clientX;
+    const startY = e.clientY;
+    gestureDirtyRef.current = false;
+    setRadiusDrag({ label: `Radius ${Math.round(startRadius)}`, corner });
+
+    const raf = createGestureRaf((ev: PointerEvent) => {
+      const z = zoomRef.current;
+      if (pinchGestureRef.current) return;
+      const dxPx = (ev.clientX - startX) / z;
+      const dyPx = (ev.clientY - startY) / z;
+      const base = snapshot.find((l) => l.id === id)!;
+      const nextR = computeRadiusFromDrag(
+        startRadius,
+        corner,
+        dxPx,
+        dyPx,
+        maxCornerRadiusPxForLayer(base),
+      );
+      applyGestureLayers(
+        layersWithCornerRadius(snapshot, id, corner, nextR, { independent: ev.altKey }),
+      );
+      setRadiusDrag({ label: `Radius ${Math.round(nextR)}`, corner });
+    });
+    const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
+    const onUp = () => {
+      raf.flush();
+      setRadiusDrag(null);
+      endGesture();
+      window.removeEventListener('pointermove', onMovePtr);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMovePtr);
+    window.addEventListener('pointerup', onUp);
+  };
+
   const beginMarquee = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!frameRef.current) return;
     if (editingLayerId) {
@@ -730,16 +906,14 @@ export default function Artboard({
     }
     e.stopPropagation();
     e.preventDefault();
-    const rect = frameRef.current.getBoundingClientRect();
-    const { xMm, yMm } = clientToMm(e.clientX, e.clientY, rect, zoom);
+    const frameRect = createFrameRectCache(frameRef.current, zoomRef);
+    const { xMm, yMm } = clientToMm(e.clientX, e.clientY, frameRect.read(), zoom);
     const origin = { xMm, yMm };
     setMarquee({ x: xMm, y: yMm, w: 0, h: 0 });
     if (!e.shiftKey) onSelectIds([]);
 
     const raf = createGestureRaf((ev: PointerEvent) => {
-      if (!frameRef.current) return;
-      const r = frameRef.current.getBoundingClientRect();
-      const cur = clientToMm(ev.clientX, ev.clientY, r, zoom);
+      const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
       if (pinchGestureRef.current) return;
       const x = Math.min(origin.xMm, cur.xMm);
       const y = Math.min(origin.yMm, cur.yMm);
@@ -755,12 +929,7 @@ export default function Artboard({
       raf.cancel();
       window.removeEventListener('pointermove', onMovePtr);
       window.removeEventListener('pointerup', onUp);
-      if (!frameRef.current) {
-        setMarquee(null);
-        return;
-      }
-      const r = frameRef.current.getBoundingClientRect();
-      const cur = clientToMm(ev.clientX, ev.clientY, r, zoom);
+      const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
       if (pinchGestureRef.current) {
         setMarquee(null);
         return;
@@ -772,12 +941,23 @@ export default function Artboard({
         h: Math.abs(cur.yMm - origin.yMm),
       };
       setMarquee(null);
+      const currentLayers = layersRef.current;
       if (box.w < 1 && box.h < 1) {
-        if (!ev.shiftKey) onSelect(null);
+        // Point pick via spatial index so culled (unmounted) layers remain selectable.
+        const hits = buildSpatialIndex(currentLayers).hitTest(cur.xMm, cur.yMm);
+        const top = hits[0];
+        if (top) {
+          if (ev.shiftKey) {
+            const merged = Array.from(new Set([...selectedIdsRef.current, top]));
+            onSelectIds(merged);
+          } else {
+            onSelect(top);
+          }
+        } else if (!ev.shiftKey) {
+          onSelect(null);
+        }
         return;
       }
-      // Use spatial index for fast marquee hit-testing with many layers
-      const currentLayers = layersRef.current;
       const hit =
         currentLayers.length > 30
           ? buildSpatialIndex(currentLayers).query(box)
@@ -802,18 +982,17 @@ export default function Artboard({
     e.stopPropagation();
     e.preventDefault();
     const layerId = pathEditLayer.id;
+    const frameRect = createFrameRectCache(frameRef.current, zoomRef);
 
     const raf = createGestureRaf((ev: PointerEvent) => {
-      if (!frameRef.current) return;
-      const r = frameRef.current.getBoundingClientRect();
-      const cur = clientToMm(ev.clientX, ev.clientY, r, zoom);
+      const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
       const current = layersRef.current.find((l) => l.id === layerId);
       if (!current) return;
       const next =
         kind === 'anchor'
           ? dragLineAnchor(current, pointIndex, cur.xMm, cur.yMm)
           : dragLineHandle(current, pointIndex, kind, cur.xMm, cur.yMm, !ev.altKey);
-      applyGestureLayers(layersRef.current.map((l) => (l.id === layerId ? next : l)));
+      applyGestureLayers(replaceLayerById(layersRef.current, next));
     });
     const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
 
@@ -837,20 +1016,18 @@ export default function Artboard({
       selectedIds.find((id) => displayLayers.find((l) => l.id === id)?.type === 'line');
     if (!targetId) return;
     if (pathEditingLayerId !== targetId) onStartPathEdit?.(targetId);
-    const r0 = frameRef.current.getBoundingClientRect();
-    const start = clientToMm(e.clientX, e.clientY, r0, zoom);
+    const frameRect = createFrameRectCache(frameRef.current, zoomRef);
+    const start = clientToMm(e.clientX, e.clientY, frameRect.read(), zoom);
     const applyAt = (xMm: number, yMm: number) => {
       const current = layersRef.current.find((l) => l.id === targetId);
       if (!current || current.type !== 'line') return;
       const next = bendLineAt(current, xMm, yMm);
-      applyGestureLayers(layersRef.current.map((l) => (l.id === targetId ? next : l)));
+      applyGestureLayers(replaceLayerById(layersRef.current, next));
     };
     applyAt(start.xMm, start.yMm);
 
     const raf = createGestureRaf((ev: PointerEvent) => {
-      if (!frameRef.current) return;
-      const r = frameRef.current.getBoundingClientRect();
-      const cur = clientToMm(ev.clientX, ev.clientY, r, zoom);
+      const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
       applyAt(cur.xMm, cur.yMm);
     });
     const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
@@ -875,8 +1052,8 @@ export default function Artboard({
       selectedIds.find((id) => displayLayers.find((l) => l.id === id)?.type === 'line');
     if (!targetId) return;
     if (pathEditingLayerId !== targetId) onStartPathEdit?.(targetId);
-    const r = frameRef.current.getBoundingClientRect();
-    const cur = clientToMm(e.clientX, e.clientY, r, zoom);
+    const frameRect = createFrameRectCache(frameRef.current, zoomRef);
+    const cur = clientToMm(e.clientX, e.clientY, frameRect.read(), zoom);
     const current = layersRef.current.find((l) => l.id === targetId);
     if (!current || current.type !== 'line') return;
     const split = cutLineAt(current, cur.xMm, cur.yMm);
@@ -891,16 +1068,14 @@ export default function Artboard({
     if (!frameRef.current) return;
     e.stopPropagation();
     e.preventDefault();
-    const r = frameRef.current.getBoundingClientRect();
-    const start = clientToMm(e.clientX, e.clientY, r, zoom);
+    const frameRect = createFrameRectCache(frameRef.current, zoomRef);
+    const start = clientToMm(e.clientX, e.clientY, frameRect.read(), zoom);
     const pts: Array<{ x: number; y: number }> = [{ x: start.xMm, y: start.yMm }];
     setLassoPts(pts);
 
     const raf = createGestureRaf((ev: PointerEvent) => {
-      if (!frameRef.current) return;
       if (pinchGestureRef.current) return;
-      const fr = frameRef.current.getBoundingClientRect();
-      const cur = clientToMm(ev.clientX, ev.clientY, fr, zoom);
+      const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
       pts.push({ x: cur.xMm, y: cur.yMm });
       setLassoPts([...pts]);
     });
@@ -938,16 +1113,15 @@ export default function Artboard({
     if (!placing || !onDrawLayer || !frameRef.current) return;
     e.stopPropagation();
     e.preventDefault();
-    const rect = frameRef.current.getBoundingClientRect();
-    const { xMm, yMm } = clientToMm(e.clientX, e.clientY, rect, zoom);
+    const frameRect = createFrameRectCache(frameRef.current, zoomRef);
+    const { xMm, yMm } = clientToMm(e.clientX, e.clientY, frameRect.read(), zoom);
     drawStart.current = { xMm, yMm };
     setDraft({ x: xMm, y: yMm, w: 0, h: 0 });
 
     const raf = createGestureRaf((ev: PointerEvent) => {
-      if (!drawStart.current || !frameRef.current) return;
+      if (!drawStart.current) return;
       if (pinchGestureRef.current) return;
-      const r = frameRef.current.getBoundingClientRect();
-      const cur = clientToMm(ev.clientX, ev.clientY, r, zoom);
+      const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
       const constrainSquare =
         ev.shiftKey && isSquareConstrainTool(tool);
       const next = normalizeDrawRect(drawStart.current.xMm, drawStart.current.yMm, cur.xMm, cur.yMm, {
@@ -967,12 +1141,11 @@ export default function Artboard({
       raf.cancel();
       window.removeEventListener('pointermove', onMovePtr);
       window.removeEventListener('pointerup', onUp);
-      if (!drawStart.current || !frameRef.current) {
+      if (!drawStart.current) {
         setDraft(null);
         return;
       }
-      const r = frameRef.current.getBoundingClientRect();
-      const cur = clientToMm(ev.clientX, ev.clientY, r, zoom);
+      const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
       let result = normalizeDrawRect(drawStart.current.xMm, drawStart.current.yMm, cur.xMm, cur.yMm, {
         constrainSquare:
           ev.shiftKey && isSquareConstrainTool(tool),
@@ -1005,16 +1178,18 @@ export default function Artboard({
     let lastPos = g.posMm;
     let willRemove = false;
     let cancelled = false;
+    const frameRect = createFrameRectCache(frameRef.current, zoomRef);
+    const viewportRect = viewportRef.current?.getBoundingClientRect() ?? null;
     setGuideDrag({ id: g.id, posMm: g.posMm, clientX: e.clientX, clientY: e.clientY, willRemove: false });
 
     const raf = createGestureRaf((ev: PointerEvent) => {
-      if (!frameRef.current || cancelled) return;
-      const r = frameRef.current.getBoundingClientRect();
-      const cur = clientToMm(ev.clientX, ev.clientY, r, zoomRef.current);
+      if (cancelled) return;
+      const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
       const max = g.axis === 'x' ? pageSizeRef.current.widthMm : pageSizeRef.current.heightMm;
       lastPos = clampGuidePos(g.axis === 'x' ? cur.xMm : cur.yMm, max);
-      const vr = viewportRef.current?.getBoundingClientRect();
-      willRemove = vr ? isGuideRemovalPoint(g.axis, ev.clientX, ev.clientY, vr, RULER_SIZE) : false;
+      willRemove = viewportRect
+        ? isGuideRemovalPoint(g.axis, ev.clientX, ev.clientY, viewportRect, RULER_SIZE)
+        : false;
       setGuideDrag({ id: g.id, posMm: lastPos, clientX: ev.clientX, clientY: ev.clientY, willRemove });
     });
 
@@ -1068,16 +1243,8 @@ export default function Artboard({
   const visualH = Math.round(A4_HEIGHT_PX * zoom);
   const panX = Math.round(pan.x);
   const panY = Math.round(pan.y);
-  const selX = bbox ? mmToScreenPx(bbox.x, 1) : 0;
-  const selY = bbox ? mmToScreenPx(bbox.y, 1) : 0;
-  const selW = bbox ? mmToScreenPx(bbox.w, 1) : 0;
-  const selH = bbox ? mmToScreenPx(bbox.h, 1) : 0;
-  const rotateHandleX = selX + selW / 2;
-  const rotateOffset = screenChromePx(ROTATE_HANDLE_OFFSET, zoom);
-  const rotateHandleY = selY - rotateOffset;
   const guideHit = screenChromePx(GUIDE_HIT_PX, zoom);
   const guideLine = screenChromePx(GUIDE_LINE_PX, zoom);
-  const handleSize = screenChromePx(HANDLE, zoom);
 
   const cursor = panning
     ? 'grabbing'
@@ -1092,6 +1259,8 @@ export default function Artboard({
       ref={viewportRef}
       className="canvas-dot-bg absolute inset-0 overflow-hidden"
       data-testid="canvas-viewport"
+      data-canvas-tool={tool}
+      data-canvas-panning={panning ? '1' : undefined}
       style={{ cursor, touchAction: 'none' }}
       onPointerDown={onCanvasPointerDown}
       onContextMenu={(e) => {
@@ -1115,12 +1284,13 @@ export default function Artboard({
         data-testid="canvas-pan-layer"
         style={{
           position: 'absolute',
-          left: `calc(50% + ${panX}px)`,
-          top: `calc(50% + ${panY}px)`,
+          left: '50%',
+          top: '50%',
           width: visualW,
           height: visualH,
-          marginLeft: -visualW / 2,
-          marginTop: -visualH / 2,
+          // Compositor pan (avoids left/top layout thrash on every wheel/drag tick).
+          transform: `translate3d(calc(-50% + ${panX}px), calc(-50% + ${panY}px), 0)`,
+          willChange: panning ? 'transform' : undefined,
         }}
       >
         <div
@@ -1164,6 +1334,23 @@ export default function Artboard({
             }
           }}
         >
+          {pageMarginMm > 0 && (
+            <div
+              data-testid="canvas-page-margin"
+              aria-hidden
+              style={{
+                position: 'absolute',
+                left: `${pageMarginMm}mm`,
+                top: `${pageMarginMm}mm`,
+                right: `${pageMarginMm}mm`,
+                bottom: `${pageMarginMm}mm`,
+                border: '1px dashed rgba(255, 87, 34, 0.45)',
+                pointerEvents: 'none',
+                zIndex: 1,
+                boxSizing: 'border-box',
+              }}
+            />
+          )}
           <div
             style={{
               position: 'absolute',
@@ -1329,22 +1516,16 @@ export default function Artboard({
                   boxSizing: 'border-box',
                 }}
               />
-              <div
+              <MeasurementBadge
+                testId="canvas-distance-value"
+                label={formatGapMm(d.valueMm)}
                 style={{
                   position: 'absolute',
                   left: mmToScreenPx(d.x, 1),
                   top: mmToScreenPx(d.y, 1),
                   transform: 'translate(-50%, -50%)',
-                  background: 'var(--cv-accent-2)',
-                  color: '#fff',
-                  fontSize: 10,
-                  padding: '1px 4px',
-                  borderRadius: 2,
-                  whiteSpace: 'nowrap',
                 }}
-              >
-                {formatGapMm(d.valueMm)}
-              </div>
+              />
             </div>
           ))}
 
@@ -1412,83 +1593,17 @@ export default function Artboard({
           )}
 
           {bbox && interactive && !panning && !editingLayerId && (
-            <>
-              <div
-                style={{
-                  position: 'absolute',
-                  left: selX,
-                  top: selY,
-                  width: selW,
-                  height: selH,
-                  outline: '1.5px solid var(--cv-accent)',
-                  pointerEvents: 'none',
-                  zIndex: 30,
-                  boxSizing: 'border-box',
-                }}
-              />
-              <div
-                style={{
-                  position: 'absolute',
-                  left: rotateHandleX,
-                  top: selY,
-                  width: screenChromePx(1, zoom),
-                  height: rotateOffset,
-                  marginLeft: -screenChromePx(0.5, zoom),
-                  background: 'var(--cv-accent)',
-                  pointerEvents: 'none',
-                  zIndex: 39,
-                }}
-              />
-              <WithHoverTooltip
-                label="Rotar"
-                shortcut="Shift · 15°"
-                placement="top"
-                variant="dark"
-                className="!absolute"
-                style={{
-                  left: rotateHandleX,
-                  top: rotateHandleY,
-                  width: handleSize,
-                  height: handleSize,
-                  marginLeft: -handleSize / 2,
-                  marginTop: -handleSize / 2,
-                  zIndex: 40,
-                }}
-              >
-                <div
-                  data-testid="canvas-rotate-handle"
-                  aria-label="Rotar"
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    borderRadius: '50%',
-                    background: 'var(--cv-accent)',
-                    border: `${screenChromePx(1.5, zoom)}px solid #fff`,
-                    cursor: 'grab',
-                    boxSizing: 'border-box',
-                  }}
-                  onPointerDown={startRotate}
-                />
-              </WithHoverTooltip>
-              {(
-                [
-                  ['nw', selX, selY, 'nwse-resize'],
-                  ['n', selX + selW / 2, selY, 'ns-resize'],
-                  ['ne', selX + selW, selY, 'nesw-resize'],
-                  ['e', selX + selW, selY + selH / 2, 'ew-resize'],
-                  ['se', selX + selW, selY + selH, 'nwse-resize'],
-                  ['s', selX + selW / 2, selY + selH, 'ns-resize'],
-                  ['sw', selX, selY + selH, 'nesw-resize'],
-                  ['w', selX, selY + selH / 2, 'ew-resize'],
-                ] as const
-              ).map(([pos, left, top, cursorName]) => (
-                <div
-                  key={pos}
-                  style={handleStyle(left, top, cursorName, zoom)}
-                  onPointerDown={(ev) => startResize(ev, pos)}
-                />
-              ))}
-            </>
+            <SelectionChromeOverlay
+              bbox={bbox}
+              zoom={zoom}
+              showRadiusHandles={showRadiusHandles}
+              cornerRadii={cornerRadii}
+              radiusDragLabel={radiusDrag?.label ?? null}
+              radiusDragCorner={radiusDrag?.corner ?? null}
+              onResize={startResize}
+              onRotate={startRotate}
+              onRadiusResize={startRadiusResize}
+            />
           )}
         </div>
       </div>

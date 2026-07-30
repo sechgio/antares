@@ -1,10 +1,10 @@
 import type { CanvasGuide, CanvasLayer } from '../types';
 import { mm, parseMm } from '../types';
 import { MM_TO_PX } from './drawHelpers';
-import { applyGridToImageSlots } from './gridLayout';
 import { applyLineStrokeWeight, mmToPxLength } from './layerStyle';
 import { layerBounds, layerLocalBounds, parseRotateDeg, type RectMm } from './layerBounds';
 import { expandWithDescendants } from './layerTree';
+import { patchLayersById } from './patchLayers';
 import { ensureLinePath, scalePathPoints } from './pathGeometry';
 
 // Re-export the canonical RectMm so existing importers (guides, Artboard) keep working.
@@ -50,6 +50,19 @@ export function isPointerClick(dxPx: number, dyPx: number, thresholdPx = POINTER
   return dxPx * dxPx + dyPx * dyPx <= thresholdPx * thresholdPx;
 }
 
+/**
+ * Figma-like Shift while moving: lock to the dominant axis (larger |delta| wins;
+ * ties keep X). When `lock` is false, returns the raw delta unchanged.
+ */
+export function constrainMoveToAxis(
+  dx: number,
+  dy: number,
+  lock: boolean,
+): { dx: number; dy: number } {
+  if (!lock) return { dx, dy };
+  return Math.abs(dx) >= Math.abs(dy) ? { dx, dy: 0 } : { dx: 0, dy };
+}
+
 function isTransformable(layer: CanvasLayer): boolean {
   return layer.type !== 'frame' && layer.visible !== false && !layer.locked;
 }
@@ -78,28 +91,32 @@ export function layersInMarquee(layers: CanvasLayer[], marquee: RectMm): string[
 }
 
 /** Translate selection by dx/dy mm. Negative coords are allowed (free canvas).
- * Selecting a group/grid also moves its descendants (including locked children). */
+ * Selecting a group/grid also moves its descendants (including locked children).
+ * Only touched layers get new object identity (O(k) patches). */
 export function moveSelection(
   layers: CanvasLayer[],
   ids: string[],
   dxMm: number,
   dyMm: number,
 ): CanvasLayer[] {
+  if (dxMm === 0 && dyMm === 0) return layers;
   const roots = new Set(ids);
   const idSet = new Set(expandWithDescendants(layers, ids));
-  return layers.map((layer) => {
-    if (!idSet.has(layer.id) || layer.type === 'frame') return layer;
-    if (roots.has(layer.id) && !isTransformable(layer)) return layer;
-    if (!roots.has(layer.id) && layer.visible === false) return layer;
-    return {
+  const updates = new Map<string, CanvasLayer>();
+  for (const layer of layers) {
+    if (!idSet.has(layer.id) || layer.type === 'frame') continue;
+    if (roots.has(layer.id) && !isTransformable(layer)) continue;
+    if (!roots.has(layer.id) && layer.visible === false) continue;
+    updates.set(layer.id, {
       ...layer,
       cssVars: {
         ...layer.cssVars,
         '--translate-x': mm(parseMm(layer.cssVars['--translate-x']) + dxMm),
         '--translate-y': mm(parseMm(layer.cssVars['--translate-y']) + dyMm),
       },
-    };
-  });
+    });
+  }
+  return patchLayersById(layers, updates);
 }
 
 function applyAspectLock(
@@ -179,7 +196,9 @@ function resizeBBox(
 /**
  * Resize all selected layers by mapping them from the original group bbox
  * into the resized bbox (uniform scale per axis).
- * Grids re-layout their image slots to fill the new box (cols/rows/gap stay).
+ * Selecting a group/grid also scales its descendants (including locked children).
+ * A single grid imageSlot resizes only itself — sibling cells are untouched.
+ * Resizing the grid container scales children with the box (no equal-cell relayout).
  */
 export function resizeSelection(
   layers: CanvasLayer[],
@@ -189,7 +208,8 @@ export function resizeSelection(
   dyMm: number,
   options?: { aspectLock?: boolean; fromCenter?: boolean; targetBox?: RectMm },
 ): CanvasLayer[] {
-  const idSet = new Set(ids);
+  const roots = new Set(ids);
+  const idSet = new Set(expandWithDescendants(layers, ids));
   const origin = selectionBounds(layers, ids);
   if (!origin || origin.w <= 0 || origin.h <= 0) return layers;
 
@@ -212,8 +232,11 @@ export function resizeSelection(
     }
   }
 
-  let next = layers.map((layer) => {
-    if (!idSet.has(layer.id) || !isTransformable(layer)) return layer;
+  const updates = new Map<string, CanvasLayer>();
+  for (const layer of layers) {
+    if (!idSet.has(layer.id) || layer.type === 'frame') continue;
+    if (roots.has(layer.id) && !isTransformable(layer)) continue;
+    if (!roots.has(layer.id) && layer.visible === false) continue;
     const b = layerLocalBounds(layer);
     const relX = (b.x - origin.x) / origin.w;
     const relY = (b.y - origin.y) / origin.h;
@@ -237,7 +260,7 @@ export function resizeSelection(
       if (path && b.w > 0 && b.h > 0) {
         const sx = nextW / b.w;
         const sy = nextH / b.h;
-        return {
+        updates.set(layer.id, {
           ...moved,
           meta: { ...moved.meta, path: scalePathPoints(path, sx, sy) },
           cssVars: {
@@ -245,20 +268,16 @@ export function resizeSelection(
             '--border-width': ensured.cssVars['--border-width'],
             '--stroke-visible': ensured.cssVars['--stroke-visible'] || '1',
           },
-        };
+        });
+        continue;
       }
-      return applyLineStrokeWeight(moved, mmToPxLength(nextH));
+      updates.set(layer.id, applyLineStrokeWeight(moved, mmToPxLength(nextH)));
+      continue;
     }
-    return moved;
-  });
-
-  for (const id of ids) {
-    const layer = next.find((l) => l.id === id);
-    if (layer?.type === 'grid') {
-      next = applyGridToImageSlots(next, id);
-    }
+    updates.set(layer.id, moved);
   }
-  return next;
+
+  return patchLayersById(layers, updates);
 }
 
 function rotatePoint(
@@ -283,14 +302,16 @@ function normalizeDeg(deg: number): number {
   return Math.round(d * 1000) / 1000;
 }
 
-/** Rotate selection around its bbox center. Optional 15° snap on the delta. */
+/** Rotate selection around its bbox center. Optional 15° snap on the delta.
+ * Selecting a group also rotates its descendants around the same center. */
 export function rotateSelection(
   layers: CanvasLayer[],
   ids: string[],
   deltaDeg: number,
   options?: { snap15?: boolean },
 ): CanvasLayer[] {
-  const idSet = new Set(ids);
+  const roots = new Set(ids);
+  const idSet = new Set(expandWithDescendants(layers, ids));
   const bounds = selectionBounds(layers, ids);
   if (!bounds) return layers;
 
@@ -303,12 +324,15 @@ export function rotateSelection(
   const cx = bounds.x + bounds.w / 2;
   const cy = bounds.y + bounds.h / 2;
 
-  return layers.map((layer) => {
-    if (!idSet.has(layer.id) || !isTransformable(layer)) return layer;
+  const updates = new Map<string, CanvasLayer>();
+  for (const layer of layers) {
+    if (!idSet.has(layer.id) || layer.type === 'frame') continue;
+    if (roots.has(layer.id) && !isTransformable(layer)) continue;
+    if (!roots.has(layer.id) && layer.visible === false) continue;
     const b = layerLocalBounds(layer);
     const center = rotatePoint(b.cx, b.cy, cx, cy, delta);
     const nextRotate = normalizeDeg(parseRotateDeg(layer) + delta);
-    return {
+    updates.set(layer.id, {
       ...layer,
       cssVars: {
         ...layer.cssVars,
@@ -316,8 +340,9 @@ export function rotateSelection(
         '--translate-y': mm(center.y - b.h / 2),
         '--rotate': `${nextRotate}deg`,
       },
-    };
-  });
+    });
+  }
+  return patchLayersById(layers, updates);
 }
 
 /** Export resize bbox helper for Artboard snap pipeline. */
@@ -354,9 +379,14 @@ function collectGuidePositions(
   excludeIds: Set<string>,
   page: { widthMm: number; heightMm: number },
   manualGuides: CanvasGuide[] = [],
+  pageMarginMm = 0,
 ): SnapRails {
   const xs = [0, page.widthMm / 2, page.widthMm];
   const ys = [0, page.heightMm / 2, page.heightMm];
+  if (pageMarginMm > 0) {
+    xs.push(pageMarginMm, page.widthMm - pageMarginMm);
+    ys.push(pageMarginMm, page.heightMm - pageMarginMm);
+  }
   for (const layer of layers) {
     if (excludeIds.has(layer.id) || !isTransformable(layer)) continue;
     const b = layerBounds(layer);
@@ -419,6 +449,7 @@ const guideCacheByLayers = new WeakMap<
     pageW: number;
     pageH: number;
     guidesKey: string;
+    marginMm: number;
     xs: number[];
     ys: number[];
   }
@@ -429,6 +460,7 @@ function guidePositionsCached(
   excludeIds: Set<string>,
   page: { widthMm: number; heightMm: number },
   manualGuides: CanvasGuide[] = [],
+  pageMarginMm = 0,
 ): SnapRails {
   const excludeKey = [...excludeIds].join('\0');
   const guidesKey = manualGuides.map((g) => `${g.axis}:${g.posMm}`).join('|');
@@ -438,16 +470,18 @@ function guidePositionsCached(
     hit.excludeKey === excludeKey &&
     hit.pageW === page.widthMm &&
     hit.pageH === page.heightMm &&
-    hit.guidesKey === guidesKey
+    hit.guidesKey === guidesKey &&
+    hit.marginMm === pageMarginMm
   ) {
     return { xs: hit.xs, ys: hit.ys };
   }
-  const next = sortRails(collectGuidePositions(layers, excludeIds, page, manualGuides));
+  const next = sortRails(collectGuidePositions(layers, excludeIds, page, manualGuides, pageMarginMm));
   guideCacheByLayers.set(layers, {
     excludeKey,
     pageW: page.widthMm,
     pageH: page.heightMm,
     guidesKey,
+    marginMm: pageMarginMm,
     xs: next.xs,
     ys: next.ys,
   });
@@ -463,9 +497,10 @@ export function prepareSnapRails(
   ids: string[],
   page: { widthMm: number; heightMm: number },
   manualGuides: CanvasGuide[] = [],
+  pageMarginMm = 0,
 ): SnapRails {
   const exclude = new Set(expandWithDescendants(layers, ids));
-  return guidePositionsCached(layers, exclude, page, manualGuides);
+  return guidePositionsCached(layers, exclude, page, manualGuides, pageMarginMm);
 }
 
 /**
@@ -482,11 +517,12 @@ export function snapMoveWithGuides(
   thresholdMm = SNAP_THRESHOLD_MM,
   manualGuides: CanvasGuide[] = [],
   rails?: SnapRails,
+  pageMarginMm = 0,
 ): { dx: number; dy: number; guides: SmartGuide[] } {
   const bounds = selectionBounds(layers, ids);
   if (!bounds) return { dx: dxMm, dy: dyMm, guides: [] };
 
-  const { xs, ys } = rails ?? prepareSnapRails(layers, ids, page, manualGuides);
+  const { xs, ys } = rails ?? prepareSnapRails(layers, ids, page, manualGuides, pageMarginMm);
 
   const edgesX = [
     { kind: 'left' as const, pos: bounds.x + dxMm },
@@ -547,8 +583,9 @@ export function snapResizeBox(
   thresholdMm = SNAP_THRESHOLD_MM,
   manualGuides: CanvasGuide[] = [],
   rails?: SnapRails,
+  pageMarginMm = 0,
 ): { box: RectMm; guides: SmartGuide[] } {
-  const { xs, ys } = rails ?? prepareSnapRails(layers, ids, page, manualGuides);
+  const { xs, ys } = rails ?? prepareSnapRails(layers, ids, page, manualGuides, pageMarginMm);
 
   let { x, y, w, h } = box;
   let guideX: number | null = null;

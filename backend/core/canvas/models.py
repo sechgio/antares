@@ -57,6 +57,8 @@ def create_empty_document(*, name: str = "Sin título") -> dict[str, Any]:
         "page": {"widthMm": A4_WIDTH_MM, "heightMm": A4_HEIGHT_MM},
         "pages": [{"id": page_id, "name": "Página 1"}],
         "settings": {},
+        "guides": [],
+        "styles": [],
         "layers": [
             {
                 "id": _new_id(),
@@ -203,6 +205,10 @@ def _normalize_layer(raw: Any) -> dict[str, Any] | None:
     meta = _normalize_meta(raw.get("meta"))
     if meta:
         layer["meta"] = meta
+    for key in ("fillStyleId", "textStyleId", "effectStyleId"):
+        val = raw.get(key)
+        if isinstance(val, str) and val.strip():
+            layer[key] = val.strip()
     return layer
 
 
@@ -260,6 +266,13 @@ def _normalize_settings(raw: Any) -> dict[str, Any]:
                 out["gridSizeMm"] = size
         except (TypeError, ValueError):
             pass
+    if "pageMarginMm" in raw:
+        try:
+            margin = float(raw["pageMarginMm"])
+            if margin >= 0:
+                out["pageMarginMm"] = margin
+        except (TypeError, ValueError):
+            pass
     if isinstance(raw.get("gridRules"), list):
         rules = []
         for item in raw["gridRules"]:
@@ -278,6 +291,26 @@ def _normalize_settings(raw: Any) -> dict[str, Any]:
         if rules:
             out["gridRules"] = rules
     return out
+
+
+_STYLE_KINDS = frozenset({"color", "text", "effect"})
+
+
+def _normalize_styles(raw: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        return []
+    styles: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("kind") or "")
+        if kind not in _STYLE_KINDS:
+            continue
+        style_id = str(item.get("id") or "").strip() or _new_id()
+        name = str(item.get("name") or kind).strip() or kind
+        css = _normalize_css_vars(item.get("cssVars"))
+        styles.append({"id": style_id, "name": name, "kind": kind, "cssVars": css})
+    return styles
 
 
 def _normalize_guides(raw: Any) -> list[dict[str, Any]]:
@@ -337,6 +370,7 @@ def normalize_document(raw: Any) -> dict[str, Any]:
         "pages": _normalize_pages(raw.get("pages")),
         "settings": _normalize_settings(raw.get("settings")),
         "guides": _normalize_guides(raw.get("guides")),
+        "styles": _normalize_styles(raw.get("styles")),
         "layers": layers,
         "fields": _normalize_fields(raw.get("fields")),
     }

@@ -1,4 +1,4 @@
-import { Copy, Keyboard, Redo2, Undo2 } from 'lucide-react';
+import { Copy, Keyboard, Lock, Redo2, Undo2, Unlock } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import type { CanvasMode } from '../types';
 import BrandFace from './BrandFace';
@@ -24,6 +24,15 @@ interface TopBarProps {
   onRedo: () => void;
   onSave: () => void;
   onDuplicate: () => void;
+  /** Design-mode UI chrome lock (panels stay put). */
+  uiLocked?: boolean;
+  onToggleUiLock?: () => void;
+  /** When true, brand+name span matches left sidebar width so the edge aligns. */
+  leftPanelOpen?: boolean;
+}
+
+function TopBarDivider() {
+  return <div className="canvas-topbar-divider" aria-hidden />;
 }
 
 export default function TopBar({
@@ -44,34 +53,44 @@ export default function TopBar({
   onRedo,
   onSave,
   onDuplicate,
+  uiLocked = false,
+  onToggleUiLock,
+  leftPanelOpen = true,
 }: TopBarProps) {
   return (
-    <header className="canvas-topbar relative flex shrink-0 items-center gap-2 px-3">
-      <div className="canvas-brand-mark" aria-hidden>
-        <BrandFace />
+    <header className="canvas-topbar relative flex shrink-0 items-center">
+      <div
+        className={
+          leftPanelOpen
+            ? 'canvas-topbar-leading canvas-topbar-leading--panel'
+            : 'canvas-topbar-leading'
+        }
+      >
+        <div className="canvas-brand-mark" aria-hidden>
+          <BrandFace />
+        </div>
+        <input
+          className="min-w-0 flex-1 border-0 bg-transparent text-[13px] font-semibold leading-none outline-none placeholder:text-[var(--cv-text-muted)]"
+          style={{ color: 'var(--cv-text)' }}
+          value={name}
+          title={name || undefined}
+          onChange={(e) => onNameChange(e.target.value)}
+          onFocus={onNameStart}
+          onBlur={onNameCommit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.currentTarget.blur();
+            } else if (e.key === 'Escape') {
+              e.currentTarget.blur();
+            }
+          }}
+          placeholder="Sin título"
+          aria-label="Nombre del documento"
+        />
+        {!leftPanelOpen ? <TopBarDivider /> : null}
       </div>
-      <input
-        className="min-w-0 max-w-[220px] border-0 bg-transparent text-[13px] font-semibold outline-none placeholder:text-[var(--cv-text-muted)]"
-        style={{ color: 'var(--cv-text)' }}
-        value={name}
-        title={name || undefined}
-        onChange={(e) => onNameChange(e.target.value)}
-        onFocus={onNameStart}
-        onBlur={onNameCommit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.currentTarget.blur();
-          } else if (e.key === 'Escape') {
-            e.currentTarget.blur();
-          }
-        }}
-        placeholder="Sin título"
-        aria-label="Nombre del documento"
-      />
 
-      <div className="mx-1 h-5 w-px" style={{ background: 'var(--cv-border)' }} />
-
-      <div className="flex items-center gap-0.5">
+      <div className="canvas-topbar-tools px-1.5">
         <WithHoverTooltip label="Deshacer" shortcut="Ctrl+Z" placement="bottom" variant="dark">
           <button
             type="button"
@@ -113,6 +132,28 @@ export default function TopBar({
             </button>
           </WithHoverTooltip>
         )}
+        {mode === 'design' && onToggleUiLock && (
+          <>
+            <TopBarDivider />
+            <WithHoverTooltip
+              label={uiLocked ? 'Desbloquear UI' : 'Bloquear UI'}
+              placement="bottom"
+              variant="dark"
+            >
+              <button
+                type="button"
+                className="canvas-icon-btn"
+                data-active={uiLocked}
+                data-testid="canvas-ui-lock"
+                onClick={onToggleUiLock}
+                aria-label={uiLocked ? 'Desbloquear UI' : 'Bloquear UI'}
+                aria-pressed={uiLocked}
+              >
+                {uiLocked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+              </button>
+            </WithHoverTooltip>
+          </>
+        )}
       </div>
 
       {/* Absolutely centered so it never shifts when side content changes (Figma-like). */}
@@ -128,7 +169,7 @@ export default function TopBar({
         />
       </div>
 
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex h-8 items-center gap-2 px-3">
         {status && (
           <span className="canvas-status-pill" role="status">
             {status}
@@ -146,4 +187,3 @@ export default function TopBar({
     </header>
   );
 }
-

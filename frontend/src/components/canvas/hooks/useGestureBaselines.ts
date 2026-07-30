@@ -1,7 +1,8 @@
 import { useCallback, useRef } from 'react';
-import { cloneDocument } from '../ops/document';
+import { cloneDocumentBaseline } from '../ops/document';
 import { rebuildGridSlots } from '../ops/gridLayout';
 import { setActivePageLayers, syncImagesPerPage } from '../ops/pages';
+import { syncLinkedStylesFromLayer } from '../ops/syncLinkedStyles';
 import type { CanvasDocument, CanvasLayer } from '../types';
 import type { useCanvasHistory } from './useCanvasHistory';
 
@@ -24,7 +25,7 @@ export function useGestureBaselines({ history, pageIndex }: UseGestureBaselinesO
   const setPageLayersLive = useCallback(
     (layers: CanvasLayer[]) => {
       if (!gestureBaselineRef.current) {
-        gestureBaselineRef.current = cloneDocument(history.document);
+        gestureBaselineRef.current = cloneDocumentBaseline(history.document, pageIndex);
       }
       // Called once at gesture end (Artboard keeps live preview local) — sync here is fine.
       history.updateSilent(
@@ -44,15 +45,18 @@ export function useGestureBaselines({ history, pageIndex }: UseGestureBaselinesO
   const onPanelChangeLive = useCallback(
     (layer: CanvasLayer) => {
       if (!panelBaselineRef.current) {
-        panelBaselineRef.current = cloneDocument(history.document);
+        panelBaselineRef.current = cloneDocumentBaseline(history.document, pageIndex);
       }
+      const prev = history.document.layers.find((l) => l.id === layer.id);
       let layers = history.document.layers.map((l) => (l.id === layer.id ? layer : l));
+      // Only cols/rows/gap rebuild touches siblings. Slot W/H edits stay per-cell.
       if (layer.type === 'grid') {
         layers = rebuildGridSlots(layers, layer.id);
       }
-      history.updateSilent(syncImagesPerPage({ ...history.document, layers }));
+      let doc = syncLinkedStylesFromLayer({ ...history.document, layers }, prev, layer);
+      history.updateSilent(syncImagesPerPage(doc));
     },
-    [history],
+    [history, pageIndex],
   );
 
   const onPanelCommitLive = useCallback(() => {

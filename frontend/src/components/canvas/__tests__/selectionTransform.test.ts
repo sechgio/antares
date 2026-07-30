@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createLayer } from '../constants';
 import { applyGridToImageSlots } from '../ops/gridLayout';
 import {
+  constrainMoveToAxis,
   isPointerClick,
   layersInMarquee,
   moveSelection,
@@ -34,6 +35,13 @@ describe('selectionTransform', () => {
     expect(isPointerClick(POINTER_CLICK_PX + 1, 0)).toBe(false);
     expect(isPointerClick(2, 2)).toBe(true);
     expect(isPointerClick(10, 10)).toBe(false);
+  });
+
+  it('constrainMoveToAxis locks to the dominant axis when Shift-like lock is on', () => {
+    expect(constrainMoveToAxis(10, 3, false)).toEqual({ dx: 10, dy: 3 });
+    expect(constrainMoveToAxis(10, 3, true)).toEqual({ dx: 10, dy: 0 });
+    expect(constrainMoveToAxis(3, 10, true)).toEqual({ dx: 0, dy: 10 });
+    expect(constrainMoveToAxis(-8, 8, true)).toEqual({ dx: -8, dy: 0 });
   });
 
   it('moveSelection allows negative coordinates (free canvas)', () => {
@@ -221,6 +229,64 @@ describe('selectionTransform', () => {
     expect(parseMm(next.find((l) => l.id === b.id)!.cssVars['--width'])).toBeCloseTo(30, 5);
   });
 
+  it('resizeSelection scales group descendants with the group box', () => {
+    const group = createLayer('group', {
+      id: 'g1',
+      cssVars: {
+        '--translate-x': '10mm',
+        '--translate-y': '10mm',
+        '--width': '40mm',
+        '--height': '20mm',
+        '--background-color': 'transparent',
+      },
+    });
+    const child = createLayer('rect', {
+      id: 'c1',
+      parentId: 'g1',
+      cssVars: {
+        '--translate-x': '20mm',
+        '--translate-y': '10mm',
+        '--width': '20mm',
+        '--height': '20mm',
+      },
+    });
+    const next = resizeSelection([group, child], ['g1'], 'e', 40, 0, { aspectLock: false });
+    expect(parseMm(next.find((l) => l.id === 'g1')!.cssVars['--width'])).toBeCloseTo(80, 5);
+    expect(parseMm(next.find((l) => l.id === 'c1')!.cssVars['--translate-x'])).toBeCloseTo(30, 5);
+    expect(parseMm(next.find((l) => l.id === 'c1')!.cssVars['--width'])).toBeCloseTo(40, 5);
+  });
+
+  it('rotateSelection rotates group descendants around selection center', () => {
+    const group = createLayer('group', {
+      id: 'g1',
+      cssVars: {
+        '--translate-x': '0mm',
+        '--translate-y': '0mm',
+        '--width': '40mm',
+        '--height': '20mm',
+        '--background-color': 'transparent',
+      },
+    });
+    const child = createLayer('rect', {
+      id: 'c1',
+      parentId: 'g1',
+      cssVars: {
+        '--translate-x': '20mm',
+        '--translate-y': '0mm',
+        '--width': '20mm',
+        '--height': '20mm',
+      },
+    });
+    const next = rotateSelection([group, child], ['g1'], 90);
+    const g = next.find((l) => l.id === 'g1')!;
+    const c = next.find((l) => l.id === 'c1')!;
+    expect(g.cssVars['--rotate']).toBe('90deg');
+    expect(c.cssVars['--rotate']).toBe('90deg');
+    // Group center is (20, 10); child center was (30, 10) → after 90° CCW around group center → (20, 20)
+    expect(parseMm(c.cssVars['--translate-x'])).toBeCloseTo(10, 5);
+    expect(parseMm(c.cssVars['--translate-y'])).toBeCloseTo(10, 5);
+  });
+
   it('resizeSelection relayouts grid image slots into the new box', () => {
     const grid = createLayer('grid', {
       meta: { cols: 2, rows: 2, gapMm: 2 },
@@ -257,6 +323,56 @@ describe('selectionTransform', () => {
     expect(parseMm(slotAfter.cssVars['--width'])).toBeGreaterThan(
       parseMm(slotBefore.cssVars['--width']),
     );
+  });
+
+  it('resizeSelection of one grid imageSlot does not change sibling slots', () => {
+    const grid = createLayer('grid', {
+      meta: { cols: 2, rows: 2, gapMm: 0 },
+      cssVars: {
+        '--translate-x': '0mm',
+        '--translate-y': '0mm',
+        '--width': '100mm',
+        '--height': '80mm',
+      },
+    });
+    const slots = [0, 1, 2, 3].map((i) =>
+      createLayer('imageSlot', {
+        parentId: grid.id,
+        meta: { index: i },
+      }),
+    );
+    const before = applyGridToImageSlots([grid, ...slots], grid.id);
+    const left = before.find((l) => l.parentId === grid.id && l.meta?.index === 0)!;
+    const right = before.find((l) => l.parentId === grid.id && l.meta?.index === 1)!;
+    const bottomLeft = before.find((l) => l.parentId === grid.id && l.meta?.index === 2)!;
+    const rightBefore = {
+      x: parseMm(right.cssVars['--translate-x']),
+      y: parseMm(right.cssVars['--translate-y']),
+      w: parseMm(right.cssVars['--width']),
+      h: parseMm(right.cssVars['--height']),
+    };
+    const bottomLeftBefore = {
+      x: parseMm(bottomLeft.cssVars['--translate-x']),
+      y: parseMm(bottomLeft.cssVars['--translate-y']),
+      w: parseMm(bottomLeft.cssVars['--width']),
+      h: parseMm(bottomLeft.cssVars['--height']),
+    };
+
+    const next = resizeSelection(before, [left.id], 'e', 20, 0, { aspectLock: false });
+    const leftAfter = next.find((l) => l.id === left.id)!;
+    const rightAfter = next.find((l) => l.id === right.id)!;
+    const bottomLeftAfter = next.find((l) => l.id === bottomLeft.id)!;
+    const gridAfter = next.find((l) => l.id === grid.id)!;
+
+    expect(parseMm(leftAfter.cssVars['--width'])).toBeCloseTo(70, 5);
+    expect(parseMm(rightAfter.cssVars['--translate-x'])).toBeCloseTo(rightBefore.x, 5);
+    expect(parseMm(rightAfter.cssVars['--translate-y'])).toBeCloseTo(rightBefore.y, 5);
+    expect(parseMm(rightAfter.cssVars['--width'])).toBeCloseTo(rightBefore.w, 5);
+    expect(parseMm(rightAfter.cssVars['--height'])).toBeCloseTo(rightBefore.h, 5);
+    expect(parseMm(bottomLeftAfter.cssVars['--translate-x'])).toBeCloseTo(bottomLeftBefore.x, 5);
+    expect(parseMm(bottomLeftAfter.cssVars['--width'])).toBeCloseTo(bottomLeftBefore.w, 5);
+    expect(parseMm(bottomLeftAfter.cssVars['--height'])).toBeCloseTo(bottomLeftBefore.h, 5);
+    expect(parseMm(gridAfter.cssVars['--width'])).toBeCloseTo(100, 5);
   });
 
   it('resizeSelection scales path points on line layers without changing stroke weight', () => {

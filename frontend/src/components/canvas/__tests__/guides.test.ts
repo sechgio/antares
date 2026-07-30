@@ -1,17 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
   clampGuidePos,
+  collectReferenceGaps,
   createGuide,
   formatGapMm,
+  formatSizeMm,
   guidesForPage,
   isGuideRemovalPoint,
   measureSelectionGaps,
   moveGuide,
   removeGuide,
+  snapEqualGaps,
   upsertGuide,
 } from '../ops/guides';
-import { snapMoveWithGuides, snapThresholdMm } from '../ops/selectionTransform';
-import { createEmptyDocument } from '../types';
+import { prepareSnapRails, snapMoveWithGuides, snapThresholdMm } from '../ops/selectionTransform';
+import { createEmptyDocument, resolvePageMarginMm, DEFAULT_PAGE_MARGIN_MM } from '../types';
 import { createLayer } from '../constants';
 import { MM_TO_PX } from '../ops/drawHelpers';
 
@@ -55,6 +58,11 @@ describe('guides', () => {
   it('formatGapMm', () => {
     expect(formatGapMm(10)).toBe('10 mm');
     expect(formatGapMm(10.25)).toBe('10.3 mm');
+  });
+
+  it('formatSizeMm', () => {
+    expect(formatSizeMm(40, 12)).toBe('40 × 12');
+    expect(formatSizeMm(40.25, 12.04)).toBe('40.3 × 12');
   });
 
   it('snapMoveWithGuides snaps to manual guide', () => {
@@ -103,5 +111,47 @@ describe('guides', () => {
     // Horizontal guide (axis y) removes over the top ruler strip.
     expect(isGuideRemovalPoint('y', 500, 50 + 20 + 3, rect, 20)).toBe(true);
     expect(isGuideRemovalPoint('y', 500, 50 + 20 + 4, rect, 20)).toBe(false);
+  });
+
+  it('resolvePageMarginMm defaults to 10 and allows 0', () => {
+    expect(resolvePageMarginMm(undefined)).toBe(DEFAULT_PAGE_MARGIN_MM);
+    expect(resolvePageMarginMm({})).toBe(DEFAULT_PAGE_MARGIN_MM);
+    expect(resolvePageMarginMm({ pageMarginMm: 0 })).toBe(0);
+    expect(resolvePageMarginMm({ pageMarginMm: 15 })).toBe(15);
+  });
+
+  it('prepareSnapRails includes page margin rails', () => {
+    const layer = createLayer('rect', {
+      cssVars: {
+        '--translate-x': '50mm',
+        '--translate-y': '50mm',
+        '--width': '20mm',
+        '--height': '20mm',
+      },
+    });
+    const rails = prepareSnapRails([layer], [layer.id], { widthMm: 210, heightMm: 297 }, [], 10);
+    expect(rails.xs).toContain(10);
+    expect(rails.xs).toContain(200);
+    expect(rails.ys).toContain(10);
+    expect(rails.ys).toContain(287);
+  });
+
+  it('snapEqualGaps snaps a third rect to match an 8mm sibling gap', () => {
+    const a = { x: 10, y: 10, w: 20, h: 10 };
+    const b = { x: 38, y: 10, w: 20, h: 10 }; // gap 8mm after a
+    const movingOrigin = { x: 70, y: 10, w: 20, h: 10 };
+    // Drag left so gap to b is ~8.3 → snap to 8
+    const result = snapEqualGaps(
+      movingOrigin,
+      -3.7,
+      0,
+      [a, b],
+      { widthMm: 210, heightMm: 297 },
+      0.5,
+      collectReferenceGaps([a, b], { widthMm: 210, heightMm: 297 }),
+    );
+    // After snap: moving.x = b.right + 8 = 58+8 = 66 → dx = 66 - 70 = -4
+    expect(result.dx).toBeCloseTo(-4, 5);
+    expect(result.labels.some((l) => l.axis === 'x' && Math.abs(l.valueMm - 8) < 0.01)).toBe(true);
   });
 });

@@ -113,7 +113,7 @@ export function createLayer(
         '--background-color': '#ffffff',
         '--border-width': '1px',
         '--border-color': '#000000',
-        '--border-radius': '10px',
+        '--border-radius': '0px',
         '--opacity': '100',
       },
     },

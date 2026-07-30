@@ -156,7 +156,7 @@ function LayerNode({
   const highlighted = selected || editing || pathEditing;
 
   const paintSource = isLine ? lineLayer.cssVars : layer.cssVars;
-  const paintCacheKey = `${paintVarsKey(paintSource, scale, isLine)}|${clipPath ?? ''}|${hasExplicitRadius ? 1 : 0}|${layer.type}`;
+  const paintCacheKey = `${paintVarsKey(paintSource, scale, isLine)}|${clipPath ?? ''}|${hasExplicitRadius ? 1 : 0}|${layer.type}|${moving ? 1 : 0}`;
   let paint: Record<string, string>;
   if (paintCacheRef.current?.key === paintCacheKey) {
     paint = paintCacheRef.current.paint;
@@ -176,6 +176,11 @@ function LayerNode({
       paint.borderRadius = '0px';
     } else if (!hasExplicitRadius && layer.type === 'ellipse') {
       paint.borderRadius = '50%';
+    }
+    // Defer expensive GPU effects while dragging (restore on commit).
+    if (moving) {
+      const { filter: _filter, boxShadow: _shadow, ...rest } = paint;
+      paint = rest;
     }
     paintCacheRef.current = { key: paintCacheKey, paint };
   }
@@ -217,7 +222,8 @@ function LayerNode({
     userSelect: editing ? 'text' : 'none',
     zIndex: highlighted ? 20 : 1,
     pointerEvents:
-      layer.type === 'group' && !selected
+      // Group/grid chrome is behind children; let slots receive hits unless selected.
+      (layer.type === 'group' || layer.type === 'grid') && !selected
         ? 'none'
         : interactive || editing
           ? 'auto'
@@ -225,7 +231,9 @@ function LayerNode({
     mixBlendMode: (layer.cssVars['--blend-mode'] as CSSProperties['mixBlendMode']) || undefined,
   };
 
-  if (highlighted) {
+  // Selection handles live on SelectionChromeOverlay; keep a light ring on the
+  // layer so locked/non-editable selections remain visible (Figma-like).
+  if (selected || editing || pathEditing) {
     if (paint.outline) {
       style.boxShadow = [paint.boxShadow, '0 0 0 1px var(--cv-accent)'].filter(Boolean).join(',');
     } else {

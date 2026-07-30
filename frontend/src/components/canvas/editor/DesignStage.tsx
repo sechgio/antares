@@ -1,5 +1,7 @@
 import { useCallback, useImperativeHandle, useMemo, type Ref } from 'react';
 import { createPortal } from 'react-dom';
+import { PanelLeft, PanelRight } from 'lucide-react';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import type { CanvasDocument, CanvasGuide, CanvasLayer, CanvasTool } from '../types';
 import { A4_HEIGHT_PX, A4_WIDTH_PX } from '../types';
 import { MM_TO_PX, type DrawRect } from '../ops/drawHelpers';
@@ -51,6 +53,16 @@ interface DesignStageProps {
   onToggleSnapToGrid?: () => void;
   /** Portal target in RightPanel header (next to Propiedades). */
   zoomPortalTarget?: HTMLElement | null;
+  /** Register DesignStage fallback slot when right panel is hidden. */
+  zoomFallbackSlotRef?: (el: HTMLDivElement | null) => void;
+  /** Show floating zoom slot (when right panel is collapsed). */
+  showZoomFallback?: boolean;
+  /** Reopen collapsed sidebars from stage edges. */
+  showLeftReopen?: boolean;
+  showRightReopen?: boolean;
+  onShowLeftPanel?: () => void;
+  onShowRightPanel?: () => void;
+  reopenDisabled?: boolean;
   children?: React.ReactNode;
 }
 
@@ -88,6 +100,13 @@ export default function DesignStage({
   snapToGrid = false,
   onToggleSnapToGrid,
   zoomPortalTarget = null,
+  zoomFallbackSlotRef,
+  showZoomFallback = false,
+  showLeftReopen = false,
+  showRightReopen = false,
+  onShowLeftPanel,
+  onShowRightPanel,
+  reopenDisabled = false,
   children,
 }: DesignStageProps) {
   const { zoom, pan, setZoom, setPan, animateTo, startInertia } = useSmoothViewport(0.85);
@@ -177,6 +196,46 @@ export default function DesignStage({
         snapToGrid={snapToGrid}
         onStartInertia={startInertia}
       />
+      {showLeftReopen && onShowLeftPanel ? (
+        <div className="pointer-events-auto absolute left-3 top-3 z-30">
+          <WithHoverTooltip label="Mostrar panel izquierdo" placement="bottom" variant="dark">
+            <button
+              type="button"
+              className="canvas-icon-btn canvas-panel-reopen"
+              data-testid="canvas-reopen-left-panel"
+              disabled={reopenDisabled}
+              onClick={onShowLeftPanel}
+              aria-label="Mostrar panel izquierdo"
+            >
+              <PanelLeft className="h-3.5 w-3.5" />
+            </button>
+          </WithHoverTooltip>
+        </div>
+      ) : null}
+      {showZoomFallback || showRightReopen ? (
+        <div
+          className="pointer-events-auto absolute right-3 top-3 z-30 flex items-center gap-0.5"
+          data-testid="canvas-stage-right-chrome"
+        >
+          {showRightReopen && onShowRightPanel ? (
+            <WithHoverTooltip label="Mostrar panel derecho" placement="bottom" variant="dark">
+              <button
+                type="button"
+                className="canvas-icon-btn canvas-panel-reopen"
+                data-testid="canvas-reopen-right-panel"
+                disabled={reopenDisabled}
+                onClick={onShowRightPanel}
+                aria-label="Mostrar panel derecho"
+              >
+                <PanelRight className="h-3.5 w-3.5" />
+              </button>
+            </WithHoverTooltip>
+          ) : null}
+          {showZoomFallback ? (
+            <div ref={zoomFallbackSlotRef} data-testid="canvas-zoom-slot-fallback" />
+          ) : null}
+        </div>
+      ) : null}
       {zoomPortalTarget
         ? createPortal(
             <ZoomMenu

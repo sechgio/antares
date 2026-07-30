@@ -34,8 +34,8 @@ import {
   distributeLayers,
   duplicateLayers,
   groupLayers,
+  moveLayerInTree,
   nudgeLayers,
-  reorderAmongSiblings,
   sendBackward,
   sendToBack,
   setLayerVisible,
@@ -64,10 +64,19 @@ import {
   setActivePageLayers,
   syncImagesPerPage,
 } from './ops/pages';
-import { applyGridToImageSlots, rebuildGridSlots } from './ops/gridLayout';
+import { applyGridToImageSlots, matchGridSlotsToSourceSize, rebuildGridSlots } from './ops/gridLayout';
 import { assignUniqueLogoSides, logoSideHasConflict, withAssignedLogoSide } from './ops/logoSide';
 import { isClickPlace, type DrawRect } from './ops/drawHelpers';
 import { moveGuide, removeGuide, upsertGuide } from './ops/guides';
+import { selectionBounds } from './ops/selectionTransform';
+import { syncLinkedStylesFromLayer } from './ops/syncLinkedStyles';
+import { colorStyleSwatches } from './ops/sharedStyles';
+import {
+  nextBothPanelsOpen,
+  PANEL_CHROME_KEYS,
+  readBoolLS,
+  writeBoolLS,
+} from './ops/panelChrome';
 import { canFocusFieldBinding, canInlineEditLayer, isEditableKeyboardTarget, isTypeToEditKey } from './ops/inlineEdit';
 import { matchHistoryShortcut } from './ops/historyShortcuts';
 import { cloneDocument } from './ops/document';
@@ -125,7 +134,11 @@ export default function CanvasView() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [pageIndex, setPageIndex] = useState(0);
   const viewportNavRef = useRef<ViewportNavApi | null>(null);
-  const [zoomPortalTarget, setZoomPortalTarget] = useState<HTMLDivElement | null>(null);
+  const [rightZoomSlot, setRightZoomSlot] = useState<HTMLDivElement | null>(null);
+  const [stageZoomSlot, setStageZoomSlot] = useState<HTMLDivElement | null>(null);
+  const [leftPanelOpen, setLeftPanelOpen] = useState(() => readBoolLS(PANEL_CHROME_KEYS.left, true));
+  const [rightPanelOpen, setRightPanelOpen] = useState(() => readBoolLS(PANEL_CHROME_KEYS.right, true));
+  const [uiLocked, setUiLocked] = useState(() => readBoolLS(PANEL_CHROME_KEYS.lock, false));
   const [tool, setTool] = useState<CanvasTool>('select');
   const toolBeforeSpaceRef = useRef<CanvasTool | null>(null);
   const [clipboard, setClipboard] = useState<CanvasLayer[]>([]);
@@ -142,10 +155,11 @@ export default function CanvasView() {
     () => history.document.layers.filter((l) => (l.pageIndex ?? 0) === pageIndex),
     [history.document.layers, pageIndex],
   );
-  const pageColors = useMemo(
-    () => collectDocumentColors(history.document.layers),
-    [history.document.layers],
-  );
+  const pageColors = useMemo(() => {
+    const fromLayers = collectDocumentColors(history.document.layers);
+    const fromStyles = colorStyleSwatches(history.document).map((s) => s.color);
+    return [...new Set([...fromLayers, ...fromStyles])];
+  }, [history.document]);
 
   const flashStatus = useCallback((message: string, ms = 2000) => {
     setStatus(message);
@@ -155,6 +169,16 @@ export default function CanvasView() {
       setStatus(null);
     }, ms);
   }, []);
+
+  useEffect(() => {
+    writeBoolLS(PANEL_CHROME_KEYS.left, leftPanelOpen);
+  }, [leftPanelOpen]);
+  useEffect(() => {
+    writeBoolLS(PANEL_CHROME_KEYS.right, rightPanelOpen);
+  }, [rightPanelOpen]);
+  useEffect(() => {
+    writeBoolLS(PANEL_CHROME_KEYS.lock, uiLocked);
+  }, [uiLocked]);
 
   useEffect(
     () => () => {
@@ -238,6 +262,40 @@ export default function CanvasView() {
     onPanelCommitLive,
   } = useGestureBaselines({ history, pageIndex });
 
+  const leftPanelOpenRef = useRef(leftPanelOpen);
+  const rightPanelOpenRef = useRef(rightPanelOpen);
+  const uiLockedRef = useRef(uiLocked);
+  leftPanelOpenRef.current = leftPanelOpen;
+  rightPanelOpenRef.current = rightPanelOpen;
+  uiLockedRef.current = uiLocked;
+
+  const toggleLeftPanel = useCallback(() => {
+    if (uiLockedRef.current) return;
+    setLeftPanelOpen((open) => !open);
+  }, []);
+
+  const toggleRightPanel = useCallback(() => {
+    if (uiLockedRef.current) return;
+    setRightPanelOpen((open) => {
+      if (open && panelBaselineRef.current) onPanelCommitLive();
+      return !open;
+    });
+  }, [onPanelCommitLive, panelBaselineRef]);
+
+  const toggleUiLock = useCallback(() => {
+    setUiLocked((locked) => !locked);
+  }, []);
+
+  const toggleBothPanels = useCallback(() => {
+    if (uiLockedRef.current) return;
+    const next = nextBothPanelsOpen(leftPanelOpenRef.current, rightPanelOpenRef.current);
+    if (!next && rightPanelOpenRef.current && panelBaselineRef.current) onPanelCommitLive();
+    setLeftPanelOpen(next);
+    setRightPanelOpen(next);
+  }, [onPanelCommitLive, panelBaselineRef]);
+
+  const zoomPortalTarget = rightPanelOpen ? rightZoomSlot : stageZoomSlot;
+
   const onSelect = (id: string | null, additive = false) => {
     if (editingLayerId && id !== editingLayerId) {
       commitInlineEdit();
@@ -272,6 +330,13 @@ export default function CanvasView() {
     (id: string, opts?: { seed?: string }) => {
       const layer = history.document.layers.find((l) => l.id === id);
       if (layer && isLayerContainer(layer)) {
+        // Grid: slots are independently selectable — selecting all kids locks
+        // multi-resize and blocks free per-cell sizing. Groups still drill in.
+        if (layer.type === 'grid') {
+          setTool('select');
+          setContextMenu(null);
+          return;
+        }
         const kids = childIdsOf(history.document.layers, id);
         if (kids.length) {
           setSelectedIds(kids);
@@ -309,6 +374,7 @@ export default function CanvasView() {
       if (mode !== 'design') return;
 
       const isDuplicateShortcut = (e.ctrlKey || e.metaKey) && e.code === 'KeyD';
+      const isGroupShortcut = (e.ctrlKey || e.metaKey) && e.code === 'KeyG';
       const getEditableIds = () =>
         selectedIds.filter((id) => {
           const layer = history.document.layers.find((l) => l.id === id);
@@ -320,6 +386,21 @@ export default function CanvasView() {
         const { layers, newIds } = duplicateLayers(history.document.layers, ids);
         setAllLayers(assignUniqueLogoSides(layers, newIds));
         setSelectedIds(newIds);
+      };
+      const runGroup = () => {
+        const editableIds = getEditableIds();
+        if (e.shiftKey && editableIds.length === 1) {
+          const layer = history.document.layers.find((l) => l.id === editableIds[0]);
+          if (layer?.type === 'group') {
+            setAllLayers(ungroupLayers(history.document.layers, layer.id));
+          }
+          return;
+        }
+        if (editableIds.length < 2) return;
+        const { layers, groupId } = groupLayers(history.document.layers, editableIds);
+        if (!groupId) return;
+        setAllLayers(layers);
+        setSelectedIds([groupId]);
       };
 
       if (pathEditingLayerId) {
@@ -347,6 +428,12 @@ export default function CanvasView() {
           runDuplicate();
           return;
         }
+        if (isGroupShortcut) {
+          e.preventDefault();
+          commitInlineEdit();
+          runGroup();
+          return;
+        }
         // Textarea / contentEditable: keep native undo while typing.
         if (isEditableKeyboardTarget(e.target)) return;
         if (historyChord) {
@@ -365,11 +452,21 @@ export default function CanvasView() {
         // Block tool / delete / nudge shortcuts while editing.
         return;
       }
-      // Allow undo/redo + Ctrl/Cmd+D even when focus is in panel inputs.
+      // Allow undo/redo + Ctrl/Cmd+D/G even when focus is in panel inputs.
       if (historyChord) {
         e.preventDefault();
         if (historyChord === 'redo') history.redo();
         else history.undo();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
+        e.preventDefault();
+        toggleBothPanels();
+        return;
+      }
+      if (isGroupShortcut) {
+        e.preventDefault();
+        runGroup();
         return;
       }
       if (isEditableKeyboardTarget(e.target) && !isDuplicateShortcut) return;
@@ -482,10 +579,39 @@ export default function CanvasView() {
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         if (!editableIds.length) return;
         e.preventDefault();
-        const step = e.shiftKey ? 10 : 1;
+        const step = e.altKey ? 0.1 : e.shiftKey ? 10 : 1;
         const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
         const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
         setAllLayers(nudgeLayers(history.document.layers, editableIds, dx, dy));
+      }
+
+      // Align / distribute shortcuts (Alt+letter, no Ctrl)
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        const alignKey = e.key.toLowerCase();
+        const alignMap: Record<string, 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom'> = {
+          a: 'left',
+          d: 'right',
+          w: 'top',
+          s: 'bottom',
+          h: 'center',
+          v: 'middle',
+        };
+        if (alignMap[alignKey] && editableIds.length) {
+          e.preventDefault();
+          setAllLayers(
+            alignLayers(history.document.layers, editableIds, alignMap[alignKey]!, { pageIndex }),
+          );
+          return;
+        }
+        if ((alignKey === 'x' || alignKey === 'y') && editableIds.length >= 3) {
+          e.preventDefault();
+          setAllLayers(
+            distributeLayers(history.document.layers, editableIds, alignKey === 'x' ? 'horizontal' : 'vertical', {
+              mode: 'gaps',
+            }),
+          );
+          return;
+        }
       }
 
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -527,19 +653,6 @@ export default function CanvasView() {
             snapToGrid: !doc.settings?.snapToGrid,
           },
         });
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'g') {
-        e.preventDefault();
-        if (e.shiftKey && editableIds.length === 1) {
-          const layer = history.document.layers.find((l) => l.id === editableIds[0]);
-          if (layer?.type === 'group') {
-            setAllLayers(ungroupLayers(history.document.layers, layer.id));
-          }
-        } else if (editableIds.length >= 2) {
-          const { layers, groupId } = groupLayers(history.document.layers, editableIds);
-          setAllLayers(layers);
-          setSelectedIds([groupId]);
-        }
       }
       if ((e.ctrlKey || e.metaKey) && (e.key === ']' || e.key === '}')) {
         e.preventDefault();
@@ -630,6 +743,7 @@ export default function CanvasView() {
     onInlineEditValue,
     previewOpen,
     pasteClipboard,
+    toggleBothPanels,
   ]);
 
   const selected = history.document.layers.find((l) => l.id === selectedId) || null;
@@ -911,6 +1025,10 @@ export default function CanvasView() {
     }
     if (layer.locked) return;
 
+    if (action === 'matchGridSlotSize') {
+      setAllLayers(matchGridSlotsToSourceSize(history.document.layers, id));
+      return;
+    }
     if (action === 'duplicate') {
       const { layers, newIds } = duplicateLayers(history.document.layers, [id]);
       setAllLayers(assignUniqueLogoSides(layers, newIds));
@@ -940,6 +1058,7 @@ export default function CanvasView() {
 
   const onAlign = (align: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => {
     if (!selectedIds.length) return;
+    if (panelBaselineRef.current) onPanelCommitLive();
     setAllLayers(
       alignLayers(history.document.layers, selectedIds, align, { pageIndex }),
     );
@@ -947,6 +1066,7 @@ export default function CanvasView() {
 
   const onDistribute = (axis: 'horizontal' | 'vertical') => {
     if (selectedIds.length < 3) return;
+    if (panelBaselineRef.current) onPanelCommitLive();
     setAllLayers(
       distributeLayers(history.document.layers, selectedIds, axis, { mode: 'gaps' }),
     );
@@ -957,8 +1077,12 @@ export default function CanvasView() {
     return layer && layer.type !== 'frame';
   });
 
-  const onReorderLayers = (draggedId: string, targetId: string, position: 'before' | 'after') => {
-    setAllLayers(reorderAmongSiblings(history.document.layers, draggedId, targetId, position));
+  const onMoveLayer = (
+    draggedId: string,
+    targetId: string,
+    position: 'before' | 'after' | 'inside',
+  ) => {
+    setAllLayers(moveLayerInTree(history.document.layers, draggedId, targetId, position));
   };
 
   if (loading) {
@@ -995,6 +1119,9 @@ export default function CanvasView() {
         onRedo={history.redo}
         onSave={() => void onSave()}
         onDuplicate={() => void onDuplicate()}
+        leftPanelOpen={leftPanelOpen}
+        uiLocked={uiLocked}
+        onToggleUiLock={toggleUiLock}
       />
 
       {mode === 'design' ? (
@@ -1009,6 +1136,9 @@ export default function CanvasView() {
         ) : (
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
           <LeftSidebar
+            open={leftPanelOpen}
+            onHidePanel={toggleLeftPanel}
+            hidePanelDisabled={uiLocked}
             documentName={history.document.name}
             docs={docs}
             documentId={history.document.id}
@@ -1044,7 +1174,24 @@ export default function CanvasView() {
             onRenamePage={(index, name) => {
               history.setDocument(renamePage(history.document, index, name));
             }}
-            onReorderSibling={onReorderLayers}
+            onMoveLayer={onMoveLayer}
+            onGroupSelected={() => {
+              const editable = selectedIds.filter((id) => {
+                const l = history.document.layers.find((x) => x.id === id);
+                return l && !l.locked && l.type !== 'frame';
+              });
+              if (editable.length < 2) return;
+              const { layers, groupId } = groupLayers(history.document.layers, editable);
+              if (!groupId) return;
+              setAllLayers(layers);
+              setSelectedIds([groupId]);
+            }}
+            onUngroupSelected={() => {
+              if (selectedIds.length !== 1) return;
+              const layer = history.document.layers.find((l) => l.id === selectedIds[0]);
+              if (!layer || layer.type !== 'group' || layer.locked) return;
+              setAllLayers(ungroupLayers(history.document.layers, layer.id));
+            }}
             onToggleVisible={(id, visible) => setAllLayers(setLayerVisible(history.document.layers, id, visible))}
             onToggleLocked={(id, locked) => setAllLayers(setLayerLocked(history.document.layers, id, locked))}
             onRenameLayer={(id, name) => {
@@ -1130,6 +1277,13 @@ export default function CanvasView() {
               });
             }}
             zoomPortalTarget={zoomPortalTarget}
+            zoomFallbackSlotRef={setStageZoomSlot}
+            showZoomFallback={!rightPanelOpen}
+            showLeftReopen={!leftPanelOpen}
+            showRightReopen={!rightPanelOpen}
+            onShowLeftPanel={toggleLeftPanel}
+            onShowRightPanel={toggleRightPanel}
+            reopenDisabled={uiLocked}
             onContextMenu={(layerId, x, y) => {
               const layer = layerId
                 ? history.document.layers.find((l) => l.id === layerId)
@@ -1144,6 +1298,10 @@ export default function CanvasView() {
                 canGroup: selectedIds.length >= 2 && (layerId ? selectedIds.includes(layerId) : false),
                 canUngroup: layer?.type === 'group',
                 canPaste: clipboard.length > 0,
+                canMatchGridSlotSize:
+                  layer?.type === 'imageSlot' &&
+                  Boolean(layer.parentId) &&
+                  history.document.layers.some((l) => l.id === layer.parentId && l.type === 'grid'),
                 editKind: canInlineEditLayer(layer)
                   ? 'text'
                   : canFocusFieldBinding(layer)
@@ -1208,23 +1366,46 @@ export default function CanvasView() {
             )}
           </DesignStage>
           <RightPanel
+            open={rightPanelOpen}
+            onHidePanel={toggleRightPanel}
+            hidePanelDisabled={uiLocked}
             layer={selected}
             selectedCount={selectedIds.length}
             selectedIds={selectedIds}
             pageColors={pageColors}
             onChange={(layer) => {
               if (panelBaselineRef.current) onPanelCommitLive();
+              const prev = history.document.layers.find((l) => l.id === layer.id);
               let layers = history.document.layers.map((l) => (l.id === layer.id ? layer : l));
+              // Only cols/rows/gap rebuild touches siblings. Slot W/H edits stay per-cell.
               if (layer.type === 'grid') {
                 layers = rebuildGridSlots(layers, layer.id);
               }
-              setAllLayers(layers);
+              const synced = syncLinkedStylesFromLayer(
+                { ...history.document, layers },
+                prev,
+                layer,
+              );
+              history.setDocument(syncImagesPerPage(synced));
             }}
             onChangeLive={onPanelChangeLive}
             onCommitLive={onPanelCommitLive}
             onDelete={onDeleteLayer}
             onAlign={onAlign}
             onDistribute={onDistribute}
+            onNudgeSelection={(dx, dy) => {
+              if (!dx && !dy) return;
+              if (panelBaselineRef.current) onPanelCommitLive();
+              setAllLayers(nudgeLayers(history.document.layers, editableSelectedIds, dx, dy));
+            }}
+            selectionOrigin={
+              editableSelectedIds.length > 1
+                ? (() => {
+                    const b = selectionBounds(history.document.layers, editableSelectedIds);
+                    return b ? { x: b.x, y: b.y } : null;
+                  })()
+                : null
+            }
             onBulkVisible={(visible) =>
               setAllLayers(setLayersVisible(history.document.layers, editableSelectedIds, visible))
             }
@@ -1251,7 +1432,7 @@ export default function CanvasView() {
             logoSideConflict={
               Boolean(selected?.type === 'logo' && logoSideHasConflict(history.document.layers, selected.id))
             }
-            zoomSlotRef={setZoomPortalTarget}
+            zoomSlotRef={setRightZoomSlot}
           />
         </div>
         )

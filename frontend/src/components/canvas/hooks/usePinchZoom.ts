@@ -1,4 +1,5 @@
 import { useEffect, useRef, type MutableRefObject, type RefObject } from 'react';
+import { createGestureRaf } from '../ops/gestureRaf';
 import { pinchViewport } from '../ops/viewportNav';
 
 interface PinchNav {
@@ -24,6 +25,7 @@ interface UsePinchZoomOptions {
  * gesture, and the content point under the fingers' midpoint follows them.
  * Extra-finger pointerdowns are stopped so single-pointer gestures do not
  * restart mid-pinch.
+ * Pointer moves are coalesced to one apply per animation frame (same as drag).
  */
 export function usePinchZoom(
   viewportRef: RefObject<HTMLElement | null>,
@@ -45,13 +47,14 @@ export function usePinchZoom(
       mid: { x: number; y: number };
     } | null = null;
     let pinched = false;
+    let viewportRect: DOMRect | null = null;
 
     const setActive = (value: boolean) => {
       if (activeRef) activeRef.current = value;
     };
 
     const centerRelative = (clientX: number, clientY: number) => {
-      const rect = el.getBoundingClientRect();
+      const rect = viewportRect ?? el.getBoundingClientRect();
       return { x: clientX - rect.left - rect.width / 2, y: clientY - rect.top - rect.height / 2 };
     };
 
@@ -68,6 +71,7 @@ export function usePinchZoom(
       if (!pair) return;
       const [a, b] = pair;
       const { zoom, pan } = navRef.current;
+      viewportRect = el.getBoundingClientRect();
       start = {
         zoom,
         pan: { ...pan },
@@ -94,6 +98,8 @@ export function usePinchZoom(
       navRef.current.onPan?.(next.pan);
     };
 
+    const raf = createGestureRaf(() => applyPinch());
+
     const onDown = (e: PointerEvent) => {
       if (e.pointerType !== 'touch') return;
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -109,12 +115,16 @@ export function usePinchZoom(
       if (!pt) return;
       pt.x = e.clientX;
       pt.y = e.clientY;
-      applyPinch();
+      if (start) raf.schedule(undefined);
     };
 
     const onUp = (e: PointerEvent) => {
       if (!pointers.delete(e.pointerId)) return;
-      if (start && pointers.size < 2) start = null;
+      if (start && pointers.size < 2) {
+        raf.flush();
+        start = null;
+        viewportRect = null;
+      }
       if (pointers.size === 0) {
         pinched = false;
         setActive(false);
@@ -129,6 +139,7 @@ export function usePinchZoom(
     el.addEventListener('pointerup', onUp);
     el.addEventListener('pointercancel', onUp);
     return () => {
+      raf.cancel();
       el.removeEventListener('pointerdown', onDown);
       el.removeEventListener('pointermove', onMove);
       el.removeEventListener('pointerup', onUp);

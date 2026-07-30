@@ -118,6 +118,40 @@ def test_normalize_accepts_new_layer_types() -> None:
     assert doc["pages"]
 
 
+def test_normalize_preserves_shared_styles_and_layer_links() -> None:
+    raw = create_empty_document()
+    raw["styles"] = [
+        {
+            "id": "style-1",
+            "name": "Brand red",
+            "kind": "color",
+            "cssVars": {"--background-color": "#FF0000", "--fill-visible": "1"},
+        }
+    ]
+    raw["layers"].append(
+        {
+            "id": "rect-1",
+            "type": "rect",
+            "name": "Box",
+            "value": "",
+            "fillStyleId": "style-1",
+            "cssVars": {
+                "--width": "40mm",
+                "--height": "20mm",
+                "--translate-x": "10mm",
+                "--translate-y": "10mm",
+                "--background-color": "#FF0000",
+            },
+        }
+    )
+    doc = normalize_document(raw)
+    assert len(doc["styles"]) == 1
+    assert doc["styles"][0]["id"] == "style-1"
+    assert doc["styles"][0]["kind"] == "color"
+    linked = next(l for l in doc["layers"] if l["id"] == "rect-1")
+    assert linked["fillStyleId"] == "style-1"
+
+
 def test_normalize_rejects_unknown_layer_types() -> None:
     raw = create_empty_document()
     raw["layers"].append(

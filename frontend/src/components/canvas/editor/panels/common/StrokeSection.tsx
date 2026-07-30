@@ -95,7 +95,7 @@ export default function StrokeSection({
               });
             }}
           />
-          <div className="mt-2 space-y-2">
+          <div className="mt-3 space-y-3">
             <label className="block">
               <span className="canvas-sublabel">Posición</span>
               <CanvasSelect
@@ -125,7 +125,7 @@ export default function StrokeSection({
             </label>
             <div>
               <span className="canvas-sublabel">Peso</span>
-              <div className="mt-0.5 flex items-center gap-2">
+              <div className="flex items-center gap-2">
                 <input
                   type="range"
                   className="h-1 min-w-0 flex-1 cursor-pointer appearance-none rounded-full outline-none [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-black/20 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-black/20 [&::-moz-range-thumb]:bg-white [&::-moz-range-track]:h-1 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-transparent"

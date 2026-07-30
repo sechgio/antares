@@ -35,15 +35,19 @@ function rectsOverlap(a: BBox, b: BBox): boolean {
 /**
  * Build a spatial index from the given layers.
  * Only indexes transformable layers (non-frame, visible, unlocked).
+ * `hitTest` returns candidates top-most first (higher document index wins).
  */
 export function buildSpatialIndex(layers: CanvasLayer[]): SpatialIndex {
   const grid = new Map<string, Cell>();
   const bboxes = new Map<string, BBox>();
+  const zOrder = new Map<string, number>();
 
-  for (const layer of layers) {
+  for (let i = 0; i < layers.length; i++) {
+    const layer = layers[i]!;
     if (layer.type === 'frame' || layer.visible === false || layer.locked) continue;
     const box = layerBoundsMm(layer);
     bboxes.set(layer.id, box);
+    zOrder.set(layer.id, i);
 
     const minCx = Math.floor(box.x / CELL_SIZE_MM);
     const minCy = Math.floor(box.y / CELL_SIZE_MM);
@@ -94,11 +98,16 @@ export function buildSpatialIndex(layers: CanvasLayer[]): SpatialIndex {
     const cy = Math.floor(y / CELL_SIZE_MM);
     const cell = grid.get(cellKey(cx, cy));
     if (!cell) return [];
-    // Return in reverse order (top-most first, since layers array is z-ordered)
-    return [...cell].reverse().filter((id) => {
+    const hits: string[] = [];
+    for (const id of cell) {
       const box = bboxes.get(id);
-      return box && x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h;
-    });
+      if (box && x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h) {
+        hits.push(id);
+      }
+    }
+    // Top-most first (document array order = paint order).
+    hits.sort((a, b) => (zOrder.get(b) ?? 0) - (zOrder.get(a) ?? 0));
+    return hits;
   }
 
   return { query, hitTest };
