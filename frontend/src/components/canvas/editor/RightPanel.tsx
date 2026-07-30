@@ -68,6 +68,7 @@ interface RightPanelProps {
   onSendBackward: () => void;
   /** Apply a canvas preset when nothing is selected. */
   onApplyPreset?: (presetId: string) => void;
+  /** Shared document styles catalog. */
   documentStyles?: CanvasSharedStyle[];
   onCreateStyle?: (kind: CanvasStyleKind) => void;
   onApplyStyle?: (styleId: string) => void;
@@ -331,7 +332,7 @@ export default memo(function RightPanel({
         </div>
       )}
 
-      {(selectedCount === 0 || selectedCount === 1) &&
+      {selectedCount === 1 &&
         onCreateStyle &&
         onApplyStyle &&
         onDetachStyle &&
@@ -340,8 +341,8 @@ export default memo(function RightPanel({
           <div className="border-b px-4 py-3" style={{ borderColor: 'var(--cv-border)' }}>
             <StylesSection
               styles={documentStyles}
-              layer={selectedCount === 1 ? layer : null}
-              canLink={Boolean(selectedCount === 1 && layer && layer.type !== 'frame' && !layer.locked)}
+              layer={layer}
+              canLink={Boolean(layer && layer.type !== 'frame' && !layer.locked)}
               onCreate={onCreateStyle}
               onApply={onApplyStyle}
               onDetach={onDetachStyle}

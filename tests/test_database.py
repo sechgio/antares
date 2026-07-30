@@ -64,6 +64,41 @@ class TestInitDb:
         assert lote["1"]["codigo"] == "1"
         assert lote["1"]["nombre"] == "Test"
 
+    def test_aborta_migracion_si_vaciaria_catalogo(self, db_path, monkeypatch, tmp_path) -> None:
+        """Renaming all columns must not silently wipe existing rows."""
+        from backend.core.exceptions import DatabaseError
+
+        config_path = tmp_path / "fields_config.json"
+        monkeypatch.setattr(
+            "backend.core.config_fields._config_file",
+            lambda: config_path,
+        )
+        save_fields([
+            {"name": "codigo", "type": "TEXT", "required": True},
+            {"name": "nombre", "type": "TEXT"},
+        ])
+        db.init_db()
+        import sqlite3
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("INSERT INTO imagenes (codigo, nombre) VALUES (?, ?)", ("KEEP", "Intact"))
+        conn.commit()
+        conn.close()
+
+        save_fields([
+            {"name": "archivo", "type": "TEXT", "required": True},
+            {"name": "cliente", "type": "TEXT"},
+        ])
+        with pytest.raises(DatabaseError, match="vacía|vaciar|abortada|catálogo"):
+            db.init_db()
+
+        # Catalog intact under previous schema
+        save_fields([
+            {"name": "codigo", "type": "TEXT", "required": True},
+            {"name": "nombre", "type": "TEXT"},
+        ])
+        rows = db.obtener_todos()
+        assert rows == [{"codigo": "KEEP", "nombre": "Intact"}]
+
 
 class TestBuscarLotePorCodigos:
     def test_encuentra_registro(self, db_path, monkeypatch, tmp_path) -> None:
@@ -90,6 +125,31 @@ class TestBuscarLotePorCodigos:
         assert resultado["ABC"]["nombre"] == "Producto"
         # Explicit projection: only configured field names (no extra/id columns)
         assert set(resultado["ABC"].keys()) == {"codigo", "nombre"}
+
+    def test_busca_case_insensitive(self, db_path, monkeypatch, tmp_path) -> None:
+        config_path = tmp_path / "fields_config.json"
+        monkeypatch.setattr(
+            "backend.core.config_fields._config_file",
+            lambda: config_path,
+        )
+        save_fields([
+            {"name": "codigo", "type": "TEXT", "required": True},
+            {"name": "nombre", "type": "TEXT"},
+        ])
+        db.init_db()
+        import sqlite3
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("INSERT INTO imagenes (codigo, nombre) VALUES (?, ?)", ("ABC", "Producto"))
+        conn.commit()
+        conn.close()
+
+        lote = db.buscar_lote_por_codigos(["abc"])
+        assert "abc" in lote
+        assert lote["abc"]["codigo"] == "ABC"
+
+        por_col = db.buscar_por_columna(["abc"], "codigo")
+        assert "abc" in por_col
+        assert por_col["abc"]["nombre"] == "Producto"
 
     def test_no_encuentra_retorna_vacio(self, db_path, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"
@@ -281,13 +341,48 @@ class TestImportarExcel:
         imported = db.importar_excel(str(excel_path))
         rows = db.obtener_todos()
 
-        assert imported == 1
+        assert imported == {"inserted": 1, "skipped": 0}
         assert rows == [{
             "codigo": "1",
             "marca": "Marca X",
             "nombre": "69466481",
             "modelo": "Modelo 2024",
         }]
+
+    def test_importacion_reporta_skipped_en_filas_invalidas(self, db_path, monkeypatch, tmp_path) -> None:
+        config_path = tmp_path / "fields_config.json"
+        monkeypatch.setattr(
+            "backend.core.config_fields._config_file",
+            lambda: config_path,
+        )
+        save_fields([
+            {"name": "codigo", "type": "TEXT", "required": True},
+            {"name": "nombre", "type": "TEXT"},
+        ])
+
+        pandas = pytest.importorskip("pandas")
+        excel_path = tmp_path / "mixed.xlsx"
+        pandas.DataFrame([
+            {"codigo": "OK1", "nombre": "Valido"},
+            {"codigo": "", "nombre": "Sin codigo"},
+            {"codigo": None, "nombre": "Nulo"},
+            {"codigo": "OK2", "nombre": "Otro"},
+        ]).to_excel(excel_path, index=False)
+
+        # Seed prior catalog that must be wiped on import
+        db.init_db()
+        import sqlite3
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("INSERT INTO imagenes (codigo, nombre) VALUES (?, ?)", ("OLD", "viejo"))
+        conn.commit()
+        conn.close()
+
+        result = db.importar_excel(str(excel_path))
+        assert result == {"inserted": 2, "skipped": 2}
+        rows = db.obtener_todos()
+        assert len(rows) == 2
+        assert {r["codigo"] for r in rows} == {"OK1", "OK2"}
+        assert all(r["codigo"] != "OLD" for r in rows)
 
     def test_importacion_sincroniza_esquema_con_columnas_del_excel(self, db_path, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"
@@ -309,7 +404,7 @@ class TestImportarExcel:
 
         imported = db.importar_excel(str(excel_path))
 
-        assert imported == 1
+        assert imported == {"inserted": 1, "skipped": 0}
         assert [f["name"] for f in load_fields()] == ["archivo", "cliente"]
         assert db.obtener_todos() == [{"archivo": "IMG-001.jpg", "cliente": "Cliente Norte"}]
 

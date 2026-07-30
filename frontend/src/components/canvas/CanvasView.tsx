@@ -22,7 +22,7 @@ import RightPanel from './editor/RightPanel';
 import TopBar from './editor/TopBar';
 import { useCanvasHistory } from './hooks/useCanvasHistory';
 import { useCanvasBootstrap } from './hooks/useCanvasBootstrap';
-import { useCanvasSync } from './hooks/useCanvasSync';
+import { isOpenDocumentDirty, useCanvasSync } from './hooks/useCanvasSync';
 import { useGestureBaselines } from './hooks/useGestureBaselines';
 import { useInlineEdit } from './hooks/useInlineEdit';
 import { CANVAS_SHORTCUTS } from './shortcuts';
@@ -135,6 +135,7 @@ export default function CanvasView() {
   // re-subscribe the focus listener on every keystroke/drag).
   const historyDocRef = useRef(history.document);
   const historyCanUndoRef = useRef(history.canUndo);
+  const openDirtyRef = useRef(false);
   historyDocRef.current = history.document;
   historyCanUndoRef.current = history.canUndo;
   const [mode, setMode] = useState<CanvasMode>('design');
@@ -227,9 +228,21 @@ export default function CanvasView() {
     }
   }, []);
 
+  /** Serialize save-then-switch so concurrent open/new/duplicate/delete cannot interleave. */
+  const docSwitchLockRef = useRef(false);
+  const withDocSwitchLock = useCallback(async (fn: () => Promise<void>) => {
+    if (docSwitchLockRef.current) return;
+    docSwitchLockRef.current = true;
+    try {
+      await fn();
+    } finally {
+      docSwitchLockRef.current = false;
+    }
+  }, []);
+
   const { runCloudSync } = useCanvasSync({
     historyDocRef,
-    historyCanUndoRef,
+    historyCanUndoRef: openDirtyRef,
     refreshList,
     replaceDocument: history.replaceDocument,
   });
@@ -264,11 +277,51 @@ export default function CanvasView() {
 
   const {
     panelBaselineRef,
+    gestureBaselineRef,
     setPageLayersLive,
     commitPageLayersGesture,
+    cancelPageLayersGesture,
     onPanelChangeLive,
     onPanelCommitLive,
   } = useGestureBaselines({ history, pageIndex });
+
+  const [gestureAbortToken, setGestureAbortToken] = useState(0);
+  openDirtyRef.current = isOpenDocumentDirty(
+    history.canUndo,
+    panelBaselineRef.current != null,
+    gestureBaselineRef.current != null,
+  );
+
+  /** Seal live panel edit and/or cancel in-flight gesture preview. */
+  const sealPanelAndAbortGesture = useCallback(() => {
+    if (panelBaselineRef.current) onPanelCommitLive();
+    const cancelled = cancelPageLayersGesture();
+    setGestureAbortToken((n) => n + 1);
+    return cancelled;
+  }, [cancelPageLayersGesture, onPanelCommitLive, panelBaselineRef]);
+
+  /** Undo/redo: cancel mid-gesture (revert) instead of committing then undoing. */
+  const runUndo = useCallback(() => {
+    if (gestureBaselineRef.current) {
+      cancelPageLayersGesture();
+      setGestureAbortToken((n) => n + 1);
+      return;
+    }
+    if (panelBaselineRef.current) onPanelCommitLive();
+    setGestureAbortToken((n) => n + 1);
+    history.undo();
+  }, [cancelPageLayersGesture, gestureBaselineRef, history, onPanelCommitLive, panelBaselineRef]);
+
+  const runRedo = useCallback(() => {
+    if (gestureBaselineRef.current) {
+      cancelPageLayersGesture();
+      setGestureAbortToken((n) => n + 1);
+      return;
+    }
+    if (panelBaselineRef.current) onPanelCommitLive();
+    setGestureAbortToken((n) => n + 1);
+    history.redo();
+  }, [cancelPageLayersGesture, gestureBaselineRef, history, onPanelCommitLive, panelBaselineRef]);
 
   const leftPanelOpenRef = useRef(leftPanelOpen);
   const rightPanelOpenRef = useRef(rightPanelOpen);
@@ -447,8 +500,8 @@ export default function CanvasView() {
         if (historyChord) {
           e.preventDefault();
           commitInlineEdit();
-          if (historyChord === 'redo') history.redo();
-          else history.undo();
+          if (historyChord === 'redo') runRedo();
+          else runUndo();
           return;
         }
         if (isTypeToEditKey(e.key, e) && !e.repeat) {
@@ -463,8 +516,8 @@ export default function CanvasView() {
       // Allow undo/redo + Ctrl/Cmd+D/G even when focus is in panel inputs.
       if (historyChord) {
         e.preventDefault();
-        if (historyChord === 'redo') history.redo();
-        else history.undo();
+        if (historyChord === 'redo') runRedo();
+        else runUndo();
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
@@ -579,6 +632,7 @@ export default function CanvasView() {
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (editableIds.length) {
+          sealPanelAndAbortGesture();
           setAllLayers(deleteLayers(history.document.layers, editableIds));
           setSelectedIds([]);
         }
@@ -587,6 +641,7 @@ export default function CanvasView() {
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         if (!editableIds.length) return;
         e.preventDefault();
+        sealPanelAndAbortGesture();
         const step = e.altKey ? 0.1 : e.shiftKey ? 10 : 1;
         const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
         const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
@@ -606,6 +661,7 @@ export default function CanvasView() {
         };
         if (alignMap[alignKey] && editableIds.length) {
           e.preventDefault();
+          sealPanelAndAbortGesture();
           setAllLayers(
             alignLayers(history.document.layers, editableIds, alignMap[alignKey]!, { pageIndex }),
           );
@@ -613,6 +669,7 @@ export default function CanvasView() {
         }
         if ((alignKey === 'x' || alignKey === 'y') && editableIds.length >= 3) {
           e.preventDefault();
+          sealPanelAndAbortGesture();
           setAllLayers(
             distributeLayers(history.document.layers, editableIds, alignKey === 'x' ? 'horizontal' : 'vertical', {
               mode: 'gaps',
@@ -733,9 +790,9 @@ export default function CanvasView() {
     mode,
     selectedIds,
     history.document,
-    history.undo,
-    history.redo,
     history.setDocument,
+    runUndo,
+    runRedo,
     onSave,
     clipboard,
     pageIndex,
@@ -752,6 +809,9 @@ export default function CanvasView() {
     previewOpen,
     pasteClipboard,
     toggleBothPanels,
+    sealPanelAndAbortGesture,
+    runUndo,
+    runRedo,
   ]);
 
   const selected = history.document.layers.find((l) => l.id === selectedId) || null;
@@ -856,79 +916,87 @@ export default function CanvasView() {
   };
 
   const onDuplicate = async () => {
-    try {
-      const savedRes = await api.canvasSave(history.document);
-      queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
-      const res = await api.canvasDuplicate(history.document.id);
-      const dup = normalizeDocument(res.document as CanvasDocument);
-      history.replaceDocument(dup);
-      setSelectedIds([]);
-      setPageIndex(0);
-      await refreshList();
-      flashStatus('Duplicado');
-      queueCanvasCloudPush(dup);
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Error al duplicar');
-    }
+    await withDocSwitchLock(async () => {
+      try {
+        const savedRes = await api.canvasSave(history.document);
+        queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
+        const res = await api.canvasDuplicate(history.document.id);
+        const dup = normalizeDocument(res.document as CanvasDocument);
+        history.replaceDocument(dup);
+        setSelectedIds([]);
+        setPageIndex(0);
+        await refreshList();
+        flashStatus('Duplicado');
+        queueCanvasCloudPush(dup);
+      } catch (err) {
+        setStatus(err instanceof Error ? err.message : 'Error al duplicar');
+      }
+    });
   };
 
   const onDeleteDoc = async () => {
-    try {
-      const deletedId = history.document.id;
-      await api.canvasDelete(deletedId);
-      queueCanvasCloudDelete(deletedId);
-      const list = await api.canvasList();
-      if (list.documents.length) {
-        const got = await api.canvasGet(list.documents[0].id);
-        history.replaceDocument(normalizeDocument(got.document as CanvasDocument));
-        setDocs(list.documents);
-      } else {
-        const created = await api.canvasCreate('Sin título');
-        const doc = normalizeDocument(created.document as CanvasDocument);
-        history.replaceDocument(doc);
-        setDocs([{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt }]);
-        queueCanvasCloudPush(doc);
+    await withDocSwitchLock(async () => {
+      try {
+        const deletedId = history.document.id;
+        await api.canvasDelete(deletedId);
+        queueCanvasCloudDelete(deletedId);
+        const list = await api.canvasList();
+        if (list.documents.length) {
+          const got = await api.canvasGet(list.documents[0].id);
+          history.replaceDocument(normalizeDocument(got.document as CanvasDocument));
+          setDocs(list.documents);
+        } else {
+          const created = await api.canvasCreate('Sin título');
+          const doc = normalizeDocument(created.document as CanvasDocument);
+          history.replaceDocument(doc);
+          setDocs([{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt }]);
+          queueCanvasCloudPush(doc);
+        }
+        setSelectedIds([]);
+        setPageIndex(0);
+        resetViewportPan();
+        flashStatus('Documento eliminado');
+      } catch (err) {
+        setStatus(err instanceof Error ? err.message : 'Error al eliminar');
       }
-      setSelectedIds([]);
-      setPageIndex(0);
-      resetViewportPan();
-      flashStatus('Documento eliminado');
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Error al eliminar');
-    }
+    });
   };
 
   const onOpenDoc = async (id: string) => {
     if (!id || id === history.document.id) return;
-    try {
-      const savedRes = await api.canvasSave(history.document);
-      queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
-      const res = await api.canvasGet(id);
-      history.replaceDocument(normalizeDocument(res.document as CanvasDocument));
-      setSelectedIds([]);
-      setPageIndex(0);
-      resetViewportPan();
-      await refreshList();
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Error al abrir');
-    }
+    await withDocSwitchLock(async () => {
+      try {
+        const savedRes = await api.canvasSave(history.document);
+        queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
+        const res = await api.canvasGet(id);
+        history.replaceDocument(normalizeDocument(res.document as CanvasDocument));
+        setSelectedIds([]);
+        setPageIndex(0);
+        resetViewportPan();
+        await refreshList();
+      } catch (err) {
+        setStatus(err instanceof Error ? err.message : 'Error al abrir');
+      }
+    });
   };
 
   const onNew = async () => {
-    try {
-      const savedRes = await api.canvasSave(history.document);
-      queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
-      const res = await api.canvasCreate('Sin título');
-      const doc = normalizeDocument(res.document as CanvasDocument);
-      history.replaceDocument(doc);
-      setSelectedIds([]);
-      setPageIndex(0);
-      resetViewportPan();
-      await refreshList();
-      queueCanvasCloudPush(doc);
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Error al crear');
-    }
+    await withDocSwitchLock(async () => {
+      try {
+        const savedRes = await api.canvasSave(history.document);
+        queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
+        const res = await api.canvasCreate('Sin título');
+        const doc = normalizeDocument(res.document as CanvasDocument);
+        history.replaceDocument(doc);
+        setSelectedIds([]);
+        setPageIndex(0);
+        resetViewportPan();
+        await refreshList();
+        queueCanvasCloudPush(doc);
+      } catch (err) {
+        setStatus(err instanceof Error ? err.message : 'Error al crear');
+      }
+    });
   };
 
   const onRename = (name: string) => {
@@ -1123,8 +1191,8 @@ export default function CanvasView() {
           setShowShortcuts(false);
           setPreviewOpen(false);
         }}
-        onUndo={history.undo}
-        onRedo={history.redo}
+        onUndo={runUndo}
+        onRedo={runRedo}
         onSave={() => void onSave()}
         onDuplicate={() => void onDuplicate()}
         leftPanelOpen={leftPanelOpen}
@@ -1220,6 +1288,7 @@ export default function CanvasView() {
             pathEditingLayerId={pathEditingLayerId}
             onSelect={onSelect}
             onSelectIds={(ids) => {
+              if (panelBaselineRef.current) onPanelCommitLive();
               if (editingLayerId && (ids.length !== 1 || ids[0] !== editingLayerId)) {
                 commitInlineEdit();
               }
@@ -1228,6 +1297,7 @@ export default function CanvasView() {
               }
               setSelectedIds(ids);
             }}
+            gestureAbortToken={gestureAbortToken}
             onChangeLayers={setPageLayers}
             onPreviewLayers={setPageLayersLive}
             onCommitGesture={commitPageLayersGesture}

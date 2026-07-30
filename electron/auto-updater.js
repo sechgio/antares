@@ -15,10 +15,32 @@ const { getMainWindow } = require('./window-manager');
 
 let _autoUpdater = null;
 let _updateInProgress = false;
+let _updateInProgressTimer = null;
 let _updateDownloaded = false;
 let _downloadProgress = 0;
 let _availableVersion = null;
 let _manualCheckRequested = false;
+
+/** If download never finishes/errors, clear the stuck flag so checks can resume. */
+const UPDATE_IN_PROGRESS_TIMEOUT_MS = 30 * 60 * 1000;
+
+function _clearUpdateInProgress() {
+  _updateInProgress = false;
+  if (_updateInProgressTimer) {
+    clearTimeout(_updateInProgressTimer);
+    _updateInProgressTimer = null;
+  }
+}
+
+function _armUpdateInProgress() {
+  _updateInProgress = true;
+  if (_updateInProgressTimer) clearTimeout(_updateInProgressTimer);
+  _updateInProgressTimer = setTimeout(() => {
+    console.warn('[auto-updater] _updateInProgress timed out; clearing stuck flag');
+    _updateInProgress = false;
+    _updateInProgressTimer = null;
+  }, UPDATE_IN_PROGRESS_TIMEOUT_MS);
+}
 
 function _loadAutoUpdater() {
   if (_autoUpdater) return _autoUpdater;
@@ -88,7 +110,7 @@ function setupAutoUpdater(isDev) {
   });
 
   updater.on('update-available', (info) => {
-    _updateInProgress = true;
+    _armUpdateInProgress();
     _updateDownloaded = false;
     _downloadProgress = 0;
     _availableVersion = info?.version || 'unknown';
@@ -125,7 +147,7 @@ function setupAutoUpdater(isDev) {
   });
 
   updater.on('update-downloaded', (info) => {
-    _updateInProgress = false;
+    _clearUpdateInProgress();
     _updateDownloaded = true;
     _downloadProgress = 100;
     _availableVersion = info?.version || _availableVersion;
@@ -138,7 +160,7 @@ function setupAutoUpdater(isDev) {
   });
 
   updater.on('error', (err) => {
-    _updateInProgress = false;
+    _clearUpdateInProgress();
     _downloadProgress = 0;
     console.warn('[auto-updater] error:', err && err.message ? err.message : err);
     _broadcastToRenderer('auto-update-status', {

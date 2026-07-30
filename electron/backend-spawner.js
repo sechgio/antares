@@ -258,11 +258,14 @@ async function startPythonBackend(isDev, attempt = 1) {
   }
 
   if (attempt === 1) {
-    // Clear the shutdown flag ONLY for a fresh start cycle (attempt === 1),
-    // never on retries — killPython() may have set it between a failure and
-    // the async retry backoff. Resetting it here would spawn a zombie backend
-    // that outlives the app. manualRestart() resets it explicitly instead.
-    _isShuttingDown = false;
+    // Never clear `_isShuttingDown` here. killPython() may race after the guard
+    // above; undoing it would spawn a zombie that outlives the app. Cold start
+    // begins with the flag already false; manualRestart re-checks before calling.
+    if (_isShuttingDown) {
+      console.log('[backend-spawner] Shutdown requested, aborting start.');
+      _clearStartCycle();
+      return;
+    }
     if (_currentStart?.inProgress) {
       console.warn('[backend-spawner] Start already in progress, skipping duplicate.');
       return;
@@ -704,14 +707,22 @@ async function manualRestart(isDev, { force = false } = {}) {
     }
 
     // Reset ANY state so startPythonBackend can proceed — even if previously fatal.
+    // Do NOT force `_isShuttingDown = false`: if quit raced after the re-check
+    // above, clearing the flag would spawn a zombie that outlives the app.
     _state = STATE.IDLE;
     _restartCount = 0;
     if (_restartResetTimer) clearTimeout(_restartResetTimer);
     _restartResetTimer = null;
     _lastError = null;
     _stderrBuffer = [];
-    _isShuttingDown = false;
     clearJobActivity();
+
+    // Final re-check immediately before start — killPython may have arrived
+    // during the synchronous reset above.
+    if (_isShuttingDown) {
+      console.warn('[backend-spawner] Manual restart aborted: shutdown arrived before start.');
+      return false;
+    }
 
     // Kill-and-replace: tell the UI to drop in-flight job state (unlike cold start).
     _notifyRenderer('backend.restarting', {

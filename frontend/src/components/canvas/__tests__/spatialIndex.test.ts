@@ -77,4 +77,14 @@ describe('buildSpatialIndex', () => {
     // hitTest at (45,45) — inside the layer but in a different cell from origin.
     expect(idx.hitTest(45, 45)).toEqual(['big']);
   });
+
+  it('indexes rotated AABB so hitTest catches corners outside the local box', () => {
+    // 20×10 at origin, rotated 90° → visual AABB ~10×20 centered on (10,5).
+    const rotated = rectLayer('rot', 0, 0, 20, 10);
+    rotated.cssVars['--rotate'] = '90deg';
+    const idx = buildSpatialIndex([rotated]);
+    // Inside rotated AABB (y up to ~15) but outside unrotated local box (y≤10).
+    expect(idx.hitTest(5, 12)).toEqual(['rot']);
+    expect(idx.query({ x: 0, y: 12, w: 10, h: 4 })).toEqual(['rot']);
+  });
 });

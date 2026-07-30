@@ -85,6 +85,7 @@ def parse_filename_parts(nombre_archivo: str | Path) -> tuple[str, str]:
         '1_1.jpg'        -> ('1', '1')
         '69466481-1.jpg' -> ('69466481', '1')
         '4210502 (2).jpg' -> ('4210502', '2')
+        'photo_2024.jpg' -> ('photo_2024', '1')  # año, no secuencia
         'abc.jpg'        -> ('abc', '1')  # fallback sin secuencia
 
     Args:
@@ -96,7 +97,10 @@ def parse_filename_parts(nombre_archivo: str | Path) -> tuple[str, str]:
     stem = Path(nombre_archivo).stem
     match = re.match(r"^(.+)[_-](\d+)$", stem)
     if match:
-        return match.group(1), match.group(2)
+        seq = match.group(2)
+        # Year-like false positives (photo_2024, trip-2019) stay as full stem.
+        if not (len(seq) == 4 and seq.startswith(("19", "20"))):
+            return match.group(1), seq
     match = re.match(r"^(.+) \((\d+)\)$", stem)
     if match:
         return match.group(1), match.group(2)

@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { cloneDocumentBaseline } from '../ops/document';
-import { rebuildGridSlots } from '../ops/gridLayout';
+import { applyLivePanelLayerChange } from '../ops/gridLayout';
 import { setActivePageLayers, syncImagesPerPage } from '../ops/pages';
 import { syncLinkedStylesFromLayer } from '../ops/syncLinkedStyles';
 import type { CanvasDocument, CanvasLayer } from '../types';
@@ -16,8 +16,8 @@ interface UseGestureBaselinesOptions {
  * gesture/panel is in flight, `commitFromBaseline` once on release so the
  * whole interaction is a single undo entry.
  *
- * `panelBaselineRef` is exposed so `onSelect` can detect an in-flight panel
- * edit and seal it when the user clicks elsewhere. */
+ * `panelBaselineRef` / `gestureBaselineRef` are exposed so CanvasView can seal
+ * panel edits and cancel in-flight gestures (undo, dirty sync gate). */
 export function useGestureBaselines({ history, pageIndex }: UseGestureBaselinesOptions) {
   const gestureBaselineRef = useRef<CanvasDocument | null>(null);
   const panelBaselineRef = useRef<CanvasDocument | null>(null);
@@ -27,7 +27,7 @@ export function useGestureBaselines({ history, pageIndex }: UseGestureBaselinesO
       if (!gestureBaselineRef.current) {
         gestureBaselineRef.current = cloneDocumentBaseline(history.document, pageIndex);
       }
-      // Called once at gesture end (Artboard keeps live preview local) — sync here is fine.
+      // First call (gesture start) captures baseline; later calls push live layers.
       history.updateSilent(
         syncImagesPerPage(setActivePageLayers(history.document, pageIndex, layers)),
       );
@@ -48,12 +48,8 @@ export function useGestureBaselines({ history, pageIndex }: UseGestureBaselinesO
         panelBaselineRef.current = cloneDocumentBaseline(history.document, pageIndex);
       }
       const prev = history.document.layers.find((l) => l.id === layer.id);
-      let layers = history.document.layers.map((l) => (l.id === layer.id ? layer : l));
-      // Only cols/rows/gap rebuild touches siblings. Slot W/H edits stay per-cell.
-      if (layer.type === 'grid') {
-        layers = rebuildGridSlots(layers, layer.id);
-      }
-      let doc = syncLinkedStylesFromLayer({ ...history.document, layers }, prev, layer);
+      const layers = applyLivePanelLayerChange(history.document.layers, prev, layer);
+      const doc = syncLinkedStylesFromLayer({ ...history.document, layers }, prev, layer);
       history.updateSilent(syncImagesPerPage(doc));
     },
     [history, pageIndex],
@@ -66,10 +62,21 @@ export function useGestureBaselines({ history, pageIndex }: UseGestureBaselinesO
     history.commitFromBaseline(baseline);
   }, [history]);
 
+  /** Revert in-flight gesture to the captured baseline (prefer cancel over commit). */
+  const cancelPageLayersGesture = useCallback(() => {
+    const baseline = gestureBaselineRef.current;
+    if (!baseline) return false;
+    gestureBaselineRef.current = null;
+    history.updateSilent(baseline);
+    return true;
+  }, [history]);
+
   return {
     panelBaselineRef,
+    gestureBaselineRef,
     setPageLayersLive,
     commitPageLayersGesture,
+    cancelPageLayersGesture,
     onPanelChangeLive,
     onPanelCommitLive,
   };

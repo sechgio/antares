@@ -1,10 +1,31 @@
-import type { CanvasDocument, CanvasLayer } from '../types';
+import type { CanvasDocument, CanvasLayer, LayerMeta, LayerPath } from '../types';
+
+function clonePath(path: LayerPath): LayerPath {
+  return {
+    closed: path.closed,
+    points: path.points.map((p) => ({
+      ...p,
+      hin: p.hin ? { ...p.hin } : p.hin,
+      hout: p.hout ? { ...p.hout } : p.hout,
+    })),
+  };
+}
+
+function cloneMeta(meta: LayerMeta): LayerMeta {
+  return {
+    ...meta,
+    colTracks: meta.colTracks ? [...meta.colTracks] : undefined,
+    rowTracks: meta.rowTracks ? [...meta.rowTracks] : undefined,
+    rules: meta.rules ? meta.rules.map((r) => ({ ...r })) : undefined,
+    path: meta.path ? clonePath(meta.path) : undefined,
+  };
+}
 
 function cloneLayer(l: CanvasLayer): CanvasLayer {
   return {
     ...l,
     cssVars: { ...l.cssVars },
-    meta: l.meta ? { ...l.meta } : undefined,
+    meta: l.meta ? cloneMeta(l.meta) : undefined,
   };
 }
 

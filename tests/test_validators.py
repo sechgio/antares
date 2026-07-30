@@ -47,6 +47,11 @@ class TestParseFilenameParts:
     def test_extrae_base_y_secuencia_del_sufijo_parentetico_de_windows(self) -> None:
         assert parse_filename_parts("4210502 (3).jpeg") == ("4210502", "3")
 
+    def test_no_trata_anio_como_secuencia(self) -> None:
+        """Trailing _2024 / -2019 are year-like, not sequence numbers."""
+        assert parse_filename_parts("photo_2024.jpg") == ("photo_2024", "1")
+        assert parse_filename_parts("vacation-2019.png") == ("vacation-2019", "1")
+
 
 class TestSafeUserPath:
     def test_rechaza_traversal_y_bytes_nulos(self) -> None:

@@ -63,6 +63,8 @@ interface DesignStageProps {
   onShowLeftPanel?: () => void;
   onShowRightPanel?: () => void;
   reopenDisabled?: boolean;
+  /** Increment to abort in-flight Artboard gestures without committing. */
+  gestureAbortToken?: number;
   children?: React.ReactNode;
 }
 
@@ -107,6 +109,7 @@ export default function DesignStage({
   onShowLeftPanel,
   onShowRightPanel,
   reopenDisabled = false,
+  gestureAbortToken = 0,
   children,
 }: DesignStageProps) {
   const { zoom, pan, setZoom, setPan, animateTo, startInertia } = useSmoothViewport(0.85);
@@ -195,6 +198,7 @@ export default function DesignStage({
         showRulers={showRulers}
         snapToGrid={snapToGrid}
         onStartInertia={startInertia}
+        gestureAbortToken={gestureAbortToken}
       />
       {showLeftReopen && onShowLeftPanel ? (
         <div className="pointer-events-auto absolute left-3 top-3 z-30">

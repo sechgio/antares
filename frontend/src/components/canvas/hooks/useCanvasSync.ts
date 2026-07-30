@@ -7,12 +7,21 @@ import type { useCanvasHistory } from './useCanvasHistory';
 interface UseCanvasSyncOptions {
   /** Ref to the current open document id (read inside sync without re-subscribing). */
   historyDocRef: React.MutableRefObject<CanvasDocument>;
-  /** Ref to the current undo-availability (dirty signal for reload gating). */
+  /** Ref to combined dirty signal (undo / panel / gesture baselines). */
   historyCanUndoRef: React.MutableRefObject<boolean>;
   /** Refresh the doc list (also used by docs hook). */
   refreshList: () => Promise<void>;
   /** Replace the open document after a remote-side reload. */
   replaceDocument: ReturnType<typeof useCanvasHistory>['replaceDocument'];
+}
+
+/** Dirty for cloud reload skip: undo stack, live panel edit, or in-flight gesture. */
+export function isOpenDocumentDirty(
+  canUndo: boolean,
+  hasPanelBaseline: boolean,
+  hasGestureBaseline: boolean,
+): boolean {
+  return canUndo || hasPanelBaseline || hasGestureBaseline;
 }
 
 /** Cloud sync: pull remote changes when the window regains focus.

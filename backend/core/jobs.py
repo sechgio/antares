@@ -134,6 +134,35 @@ class JobManager:
         self._jobs: dict[str, Job] = {}
         self._lock = threading.RLock()
         self.max_concurrent = max_concurrent
+        # Cross-job output path reservations (normalized key → job_id).
+        # Prevents concurrent conversion jobs writing the same destino path.
+        self._out_path_lock = threading.Lock()
+        self._reserved_out_paths: dict[str, str] = {}
+
+    def try_reserve_out_path(self, job_id: str, path_key: str) -> bool:
+        """Reserve an output path for ``job_id``.
+
+        Returns False if another job already holds the key. Re-claim by the
+        same job_id is allowed (idempotent).
+        """
+        with self._out_path_lock:
+            owner = self._reserved_out_paths.get(path_key)
+            if owner is not None and owner != job_id:
+                return False
+            self._reserved_out_paths[path_key] = job_id
+            return True
+
+    def get_out_path_owner(self, path_key: str) -> str | None:
+        """Return the job_id holding ``path_key``, or None."""
+        with self._out_path_lock:
+            return self._reserved_out_paths.get(path_key)
+
+    def release_out_paths(self, job_id: str) -> None:
+        """Release every output path reserved by ``job_id``."""
+        with self._out_path_lock:
+            stale = [k for k, owner in self._reserved_out_paths.items() if owner == job_id]
+            for key in stale:
+                del self._reserved_out_paths[key]
 
     def create_job(
         self,
@@ -193,6 +222,7 @@ class JobManager:
                 finally:
                     with j.state._lock:
                         j.state.running = False
+                    self.release_out_paths(j.id)
 
             job.thread = threading.Thread(
                 target=_wrapped_target,

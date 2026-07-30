@@ -132,6 +132,17 @@ const _invoke = async <T>(method: string, params?: Record<string, unknown> | obj
     if (err instanceof AntaresAPIError) {
       throw err;
     }
+    if (err && typeof err === 'object' && 'message' in err) {
+      const raw = err as { message?: unknown; code?: unknown; category?: unknown; details?: unknown };
+      throw new AntaresAPIError(
+        typeof raw.message === 'string' ? raw.message : String(raw.message ?? err),
+        typeof raw.code === 'number' ? raw.code : -32000,
+        typeof raw.category === 'string' ? raw.category : 'INTERNAL_ERROR',
+        raw.details && typeof raw.details === 'object' && !Array.isArray(raw.details)
+          ? raw.details as Record<string, unknown>
+          : undefined,
+      );
+    }
     if (err instanceof Error) {
       const rawErr = err as Error & { code?: number; category?: string; details?: Record<string, unknown> };
       throw new AntaresAPIError(
@@ -331,7 +342,8 @@ export const api = {
       'db_records',
       opts ?? {},
     ),
-  importExcel: (path: string) => _invoke<{ imported: number }>('db_import', { path }),
+  importExcel: (path: string) =>
+    _invoke<{ imported: number; inserted?: number; skipped?: number }>('db_import', { path }),
   clearDatabase: () => _invoke<{ cleared: number }>('db_clear'),
 
   getFields: () => _invoke<{ fields: DBField[] }>('db_fields'),

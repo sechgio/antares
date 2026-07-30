@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import os
 from pathlib import Path
 from typing import Any
 
@@ -152,7 +153,13 @@ def sellador_apply(params: dict[str, Any]) -> dict[str, Any]:
         if destination.suffix.lower() != ".pdf":
             destination = destination.with_suffix(".pdf")
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(result_bytes)
+        tmp_path = destination.with_suffix(destination.suffix + ".tmp")
+        try:
+            tmp_path.write_bytes(result_bytes)
+            os.replace(tmp_path, destination)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
         payload["saved_path"] = str(destination)
         payload["filename"] = destination.name
     elif len(result_bytes) > _MAX_INLINE_PDF_BYTES:

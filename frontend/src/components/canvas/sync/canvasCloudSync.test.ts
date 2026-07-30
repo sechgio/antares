@@ -1,6 +1,11 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { CanvasDocument } from '../types';
-import { isNewer, pushCanvasDocument, syncCanvasDocuments } from './canvasCloudSync';
+import {
+  isNewer,
+  pushCanvasDocument,
+  shouldPushCanvasRow,
+  syncCanvasDocuments,
+} from './canvasCloudSync';
 
 // ---------------------------------------------------------------------------
 // Mock infrastructure
@@ -120,6 +125,30 @@ describe('canvasCloudSync isNewer', () => {
   });
 });
 
+describe('shouldPushCanvasRow', () => {
+  it('pushes when remote row is missing', () => {
+    expect(shouldPushCanvasRow('2026-07-22T13:00:00Z', null, null)).toBe(true);
+  });
+
+  it('skips when remote is newer', () => {
+    expect(
+      shouldPushCanvasRow('2026-07-22T12:00:00Z', '2026-07-22T13:00:00Z', null),
+    ).toBe(false);
+  });
+
+  it('skips when remote is soft-deleted', () => {
+    expect(
+      shouldPushCanvasRow('2026-07-22T13:00:00Z', '2026-07-22T12:00:00Z', '2026-07-22T12:30:00Z'),
+    ).toBe(false);
+  });
+
+  it('pushes when local is newer and remote is not deleted', () => {
+    expect(
+      shouldPushCanvasRow('2026-07-22T13:00:00Z', '2026-07-22T12:00:00Z', null),
+    ).toBe(true);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // syncCanvasDocuments characterization tests
 // ---------------------------------------------------------------------------
@@ -154,7 +183,14 @@ describe('syncCanvasDocuments', () => {
 
     expect(result.pulled).toBe(1);
     expect(result.reloadOpenId).toBe('doc-1');
-    expect(vi.mocked(api.canvasSave)).toHaveBeenCalledWith(pulledDoc, { touch: false });
+    expect(vi.mocked(api.canvasSave)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'doc-1',
+        name: 'New',
+        updatedAt: '2026-07-22T12:00:00Z',
+      }),
+      { touch: false },
+    );
   });
 
   // --- Step 3a: openDirty prevents pull ---
@@ -247,7 +283,9 @@ describe('syncCanvasDocuments', () => {
 
     // Response 1: listRemoteCanvasMeta
     enqueue([remoteMeta]);
-    // Response 2: pushCanvasDocument upsert
+    // Response 2: pushCanvasDocument LWW select
+    enqueue({ updated_at: '2026-07-22T12:00:00Z', deleted_at: null });
+    // Response 3: pushCanvasDocument upsert
     enqueue(null);
 
     const result = await syncCanvasDocuments({});
@@ -326,7 +364,9 @@ describe('syncCanvasDocuments', () => {
 
     // Response 1: listRemoteCanvasMeta
     enqueue([remoteMeta]);
-    // Response 2: pushCanvasDocument upsert — RLS denial
+    // Response 2: pushCanvasDocument LWW select
+    enqueue({ updated_at: '2026-07-22T12:00:00Z', deleted_at: null });
+    // Response 3: pushCanvasDocument upsert — RLS denial
     enqueue(null, { message: 'RLS denied' });
 
     const result = await syncCanvasDocuments({});
@@ -351,7 +391,9 @@ describe('pushCanvasDocument', () => {
       updatedAt: '2026-07-22T12:00:00Z',
     });
 
-    // Response 1: pushCanvasDocument upsert
+    // Response 1: LWW select (no remote row)
+    enqueue(null);
+    // Response 2: upsert
     enqueue(null);
 
     const ok = await pushCanvasDocument(doc);
@@ -371,5 +413,16 @@ describe('pushCanvasDocument', () => {
       deleted_at: null,
     });
     expect(options).toEqual({ onConflict: 'id' });
+  });
+
+  it('skips upsert when remote is newer', async () => {
+    const doc = makeDoc({
+      id: 'doc-1',
+      updatedAt: '2026-07-22T12:00:00Z',
+    });
+    enqueue({ updated_at: '2026-07-22T13:00:00Z', deleted_at: null });
+    const ok = await pushCanvasDocument(doc);
+    expect(ok).toBe(false);
+    expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
   });
 });

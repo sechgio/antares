@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import io
+import os
 import shutil
 from pathlib import Path
 from typing import cast
@@ -116,6 +118,9 @@ def convertir_imagen(
 ) -> Path:
     """Convierte una imagen a otro formato.
 
+    Animated GIF/WEBP sources: only the **first frame** is converted. Frame
+    delays and multi-frame sequences are not preserved (Pillow opens frame 0).
+
     Args:
         ruta_origen: Ruta de la imagen origen.
         ruta_destino: Ruta de salida.
@@ -167,15 +172,21 @@ def convertir_imagen(
 
         ruta_destino.parent.mkdir(parents=True, exist_ok=True)
         save_kwargs = _build_save_kwargs(formato, calidad, keep_exif, img)
+        tmp_destino = ruta_destino.with_name(ruta_destino.name + ".tmp")
 
-        encoder = info.get("encoder")
-        if encoder is not None:
-            save_kwargs.setdefault("quality", calidad)
-            encoder(img, ruta_destino, formato, save_kwargs)
-            return ruta_destino
-
-        pil_formato = PIL_FORMAT_MAP.get(formato, formato)
-        img.save(ruta_destino, format=pil_formato, **save_kwargs)
+        try:
+            encoder = info.get("encoder")
+            if encoder is not None:
+                save_kwargs.setdefault("quality", calidad)
+                encoder(img, tmp_destino, formato, save_kwargs)
+            else:
+                pil_formato = PIL_FORMAT_MAP.get(formato, formato)
+                img.save(tmp_destino, format=pil_formato, **save_kwargs)
+            os.replace(tmp_destino, ruta_destino)
+        except Exception:
+            with contextlib.suppress(OSError):
+                tmp_destino.unlink(missing_ok=True)
+            raise
 
     return ruta_destino
 

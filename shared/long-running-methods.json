@@ -28,5 +28,6 @@
   "autoimg_sync_to_sheet",
   "autoimg_sync_from_sheet",
   "autoimg_rename_export",
-  "autoimg_bootstrap"
+  "autoimg_bootstrap",
+  "dialog_folder"
 ]

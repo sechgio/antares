@@ -50,7 +50,13 @@ def db_records(params: dict[str, Any]) -> dict[str, Any]:
 @with_locale
 @validate_params("path")
 def db_import(params: dict[str, Any]) -> dict[str, int]:
-    return {"imported": importar_excel(params.get("path", ""))}
+    stats = importar_excel(params.get("path", ""))
+    inserted = stats["inserted"]
+    return {
+        "imported": inserted,
+        "inserted": inserted,
+        "skipped": stats["skipped"],
+    }
 
 @with_locale
 @validate_params("path")

@@ -97,6 +97,7 @@ function PdfMultiViewer({ blob, desde, total, padLen, zoom }: { blob: Blob | nul
     const [pageImgs, setPageImgs] = useState<PageImg[]>([]);
     const [renderingPage, setRenderingPage] = useState(0);
     const [renderError, setRenderError] = useState<string | null>(null);
+    const [renderKey, setRenderKey] = useState(0);
     const rafId = useRef(0);
 
     useEffect(() => {
@@ -146,7 +147,7 @@ function PdfMultiViewer({ blob, desde, total, padLen, zoom }: { blob: Blob | nul
             // Data URLs don't need revocation; just drop refs
             setPageImgs([]);
         };
-    }, [blob]);
+    }, [blob, renderKey]);
 
     const isCapped = total > MAX_PREVIEW_PAGES;
     const previewCount = Math.min(total, MAX_PREVIEW_PAGES);
@@ -164,7 +165,7 @@ function PdfMultiViewer({ blob, desde, total, padLen, zoom }: { blob: Blob | nul
                 </div>
                 <div className="flex items-center gap-3">
                     <button
-                        onClick={() => setRenderError(null)}
+                        onClick={() => setRenderKey((value) => value + 1)}
                         className="flex items-center gap-1.5 bg-[var(--accent-primary)]/10 hover:bg-[var(--accent-primary)]/20 border border-[var(--accent-primary)]/30 text-[var(--accent-primary)] rounded-md px-4 py-2 text-[10px] tracking-wider transition-colors"
                         style={{ fontFamily: "'Roboto Mono', monospace" }}
                     >
@@ -541,8 +542,11 @@ export default function FormatosView() {
     const [previewLoading, setPreviewLoading] = useState(false);
     const [previewDesde, setPreviewDesde] = useState<number>(1);
     const [previewTotal, setPreviewTotal] = useState<number>(0);
-    const previewAbort = useRef(false);
+    const previewToken = useRef(0);
     const previewSkipEffectRef = useRef(false);
+
+    // Bump token on unmount so late in-flight results never setState.
+    useEffect(() => () => { previewToken.current += 1; }, []);
 
     const [showUpload, setShowUpload] = useState(false);
     const [mappingMode, setMappingMode] = useState(false);
@@ -594,32 +598,32 @@ export default function FormatosView() {
         if (!selected || !canGenerate) { setPreviewBlob(null); setPreviewLoading(false); return; }
         const capturedDesde = desde;
         const capturedHasta = hasta;
-        previewAbort.current = false;
+        const token = ++previewToken.current;
 
         const t = setTimeout(async () => {
-            if (previewAbort.current) return;
+            if (token !== previewToken.current) return;
             if (capturedDesde < numMin || capturedHasta < capturedDesde) return;
             setPreviewLoading(true);
             setError(null);
             try {
                 const preview = await fetchPreviewPdf(selected.id, capturedDesde, capturedHasta);
-                if (previewAbort.current) return;
+                if (token !== previewToken.current) return;
                 setPreviewBlob(preview.blob);
                 setPreviewDesde(preview.previewDesde);
                 setPreviewTotal(preview.previewTotal);
             } catch (err: any) {
                 const msg = err?.message || String(err);
                 console.warn('Preview error:', msg);
-                if (!previewAbort.current) {
+                if (token === previewToken.current) {
                     setError('Error en vista previa: ' + msg);
                 }
             } finally {
-                if (!previewAbort.current) setPreviewLoading(false);
+                if (token === previewToken.current) setPreviewLoading(false);
             }
         }, PREVIEW_DEBOUNCE_MS);
         return () => {
             clearTimeout(t);
-            previewAbort.current = true;
+            previewToken.current += 1;
         };
     }, [desde, hasta, selectedId, selected?.has_mapping, selected?.strategy, selected?.id, mappingMode, canGenerate, numMin]);
 

@@ -290,16 +290,15 @@ export function snapEqualGaps(
   const sel = { x: origin.x + dxMm, y: origin.y + dyMm, w: origin.w, h: origin.h };
 
   type Candidate = { dist: number; delta: number; label: DistanceLabel };
-  let bestX: Candidate | null = null;
-  let bestY: Candidate | null = null;
+  const best: { x: Candidate | null; y: Candidate | null } = { x: null, y: null };
 
   const considerX = (currentGap: number, nextDx: number, label: DistanceLabel) => {
     if (currentGap <= 0.05) return;
     for (const g of refs.x) {
       const dist = Math.abs(currentGap - g);
-      if (dist <= thresholdMm && (!bestX || dist < bestX.dist)) {
+      if (dist <= thresholdMm && (!best.x || dist < best.x.dist)) {
         const fromLeft = label.id.includes('left') || label.id.includes('page-left');
-        bestX = {
+        best.x = {
           dist,
           delta: nextDx + (g - currentGap),
           label: fromLeft
@@ -324,9 +323,9 @@ export function snapEqualGaps(
     if (currentGap <= 0.05) return;
     for (const g of refs.y) {
       const dist = Math.abs(currentGap - g);
-      if (dist <= thresholdMm && (!bestY || dist < bestY.dist)) {
+      if (dist <= thresholdMm && (!best.y || dist < best.y.dist)) {
         if (label.id.includes('top') || label.id.includes('page-top')) {
-          bestY = {
+          best.y = {
             dist,
             delta: nextDy + (g - currentGap),
             label: {
@@ -337,7 +336,7 @@ export function snapEqualGaps(
             },
           };
         } else {
-          bestY = {
+          best.y = {
             dist,
             delta: nextDy + (g - currentGap),
             label: {
@@ -460,10 +459,10 @@ export function snapEqualGaps(
   }
 
   const labels: DistanceLabel[] = [];
-  const dx = bestX ? bestX.delta : dxMm;
-  const dy = bestY ? bestY.delta : dyMm;
-  if (bestX) labels.push(bestX.label);
-  if (bestY) labels.push(bestY.label);
+  const dx = best.x ? best.x.delta : dxMm;
+  const dy = best.y ? best.y.delta : dyMm;
+  if (best.x) labels.push(best.x.label);
+  if (best.y) labels.push(best.y.label);
   return { dx, dy, labels };
 }
 

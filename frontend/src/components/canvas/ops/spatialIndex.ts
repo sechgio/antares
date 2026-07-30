@@ -8,7 +8,7 @@
  */
 
 import type { CanvasLayer } from '../types';
-import { layerBoundsMm } from './layerBounds';
+import { layerBounds } from './layerBounds';
 
 export type BBox = { x: number; y: number; w: number; h: number };
 
@@ -45,8 +45,8 @@ export function buildSpatialIndex(layers: CanvasLayer[]): SpatialIndex {
   for (let i = 0; i < layers.length; i++) {
     const layer = layers[i]!;
     if (layer.type === 'frame' || layer.visible === false || layer.locked) continue;
-    const box = layerBoundsMm(layer);
-    bboxes.set(layer.id, box);
+    const box = layerBounds(layer);
+    bboxes.set(layer.id, { x: box.x, y: box.y, w: box.w, h: box.h });
     zOrder.set(layer.id, i);
 
     const minCx = Math.floor(box.x / CELL_SIZE_MM);

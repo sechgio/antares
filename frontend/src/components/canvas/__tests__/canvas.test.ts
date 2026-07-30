@@ -962,6 +962,51 @@ describe('gridLayout', () => {
     expect(shrunk.filter((l) => l.parentId === gridId && l.type === 'imageSlot')).toHaveLength(4);
   });
 
+  it('rebuildGridSlots on empty grid does not steal other grid slots', () => {
+    const emptyId = newId();
+    const otherId = newId();
+    const otherSlotId = newId();
+    const layers = [
+      createLayer('grid', {
+        id: emptyId,
+        meta: { cols: 2, rows: 2, gapMm: 2 },
+        cssVars: {
+          '--width': '100mm',
+          '--height': '80mm',
+          '--translate-x': '0mm',
+          '--translate-y': '0mm',
+        },
+      }),
+      createLayer('grid', {
+        id: otherId,
+        meta: { cols: 1, rows: 1, gapMm: 2 },
+        cssVars: {
+          '--width': '40mm',
+          '--height': '40mm',
+          '--translate-x': '120mm',
+          '--translate-y': '0mm',
+        },
+      }),
+      createLayer('imageSlot', {
+        id: otherSlotId,
+        name: 'Foto other',
+        parentId: otherId,
+        meta: { index: 0 },
+        cssVars: {
+          '--width': '40mm',
+          '--height': '40mm',
+          '--translate-x': '120mm',
+          '--translate-y': '0mm',
+        },
+      }),
+    ];
+    const next = rebuildGridSlots(layers, emptyId);
+    expect(next.find((l) => l.id === otherSlotId)?.parentId).toBe(otherId);
+    const emptySlots = next.filter((l) => l.parentId === emptyId && l.type === 'imageSlot');
+    expect(emptySlots).toHaveLength(4);
+    expect(emptySlots.every((s) => s.id !== otherSlotId)).toBe(true);
+  });
+
   it('applyGridToImageSlots without imageCount uses designed meta cols×rows', () => {
     const gridId = newId();
     let layers = [
@@ -1125,9 +1170,77 @@ describe('document model', () => {
     expect(normalized.pages).toHaveLength(1);
     expect(normalized.layers[0].pageIndex).toBe(0);
   });
+
+  it('normalizeDocument repairs incomplete v2 and fills missing updatedAt with now', () => {
+    const before = Date.now();
+    const incomplete = {
+      ...createEmptyDocument('V2'),
+      version: 2 as const,
+      pages: undefined,
+      guides: undefined,
+      styles: undefined,
+      settings: undefined,
+      updatedAt: undefined,
+      layers: [
+        {
+          id: newId(),
+          type: 'text' as const,
+          name: 'T',
+          value: 'x',
+          cssVars: { '--width': '10mm', '--height': '5mm' },
+        },
+      ],
+    };
+    const normalized = normalizeDocument(incomplete);
+    expect(normalized.version).toBe(2);
+    expect(normalized.pages).toHaveLength(1);
+    expect(normalized.guides).toEqual([]);
+    expect(normalized.styles).toEqual([]);
+    expect(normalized.settings).toEqual({});
+    expect(normalized.layers[0].pageIndex).toBe(0);
+    expect(normalized.updatedAt).toBeTruthy();
+    expect(Date.parse(normalized.updatedAt!)).toBeGreaterThanOrEqual(before - 1000);
+    expect(Date.parse(normalized.updatedAt!)).not.toBe(0);
+  });
 });
 
 describe('page ops', () => {
+  it('duplicatePage remaps parentId within the copied page tree', () => {
+    let doc = createEmptyDocument('Pages');
+    const groupId = newId();
+    const childId = newId();
+    doc.layers.push(
+      {
+        id: groupId,
+        type: 'group',
+        name: 'Grupo',
+        value: '',
+        pageIndex: 0,
+        cssVars: { '--width': '80mm', '--height': '40mm' },
+      },
+      {
+        id: childId,
+        type: 'text',
+        name: 'Hijo',
+        value: 'x',
+        pageIndex: 0,
+        parentId: groupId,
+        cssVars: { '--width': '40mm', '--height': '10mm' },
+      },
+    );
+    const next = duplicatePage(doc, 0);
+    const copiedChild = next.layers.find(
+      (l) => (l.pageIndex ?? 0) === 1 && l.type === 'text' && l.name === 'Hijo',
+    );
+    const copiedGroup = next.layers.find(
+      (l) => (l.pageIndex ?? 0) === 1 && l.type === 'group' && l.name === 'Grupo',
+    );
+    expect(copiedGroup).toBeDefined();
+    expect(copiedChild).toBeDefined();
+    expect(copiedChild!.parentId).toBe(copiedGroup!.id);
+    expect(copiedChild!.parentId).not.toBe(groupId);
+  });
+
   it('duplicatePage copies layers and shifts later pages', () => {
     let doc = createEmptyDocument('Pages');
     doc = addPage(doc);
@@ -1300,6 +1413,22 @@ describe('viewportCulling', () => {
     expect(filterVisibleLayers([near, far], view).map((l) => l.id)).toEqual([near.id]);
     expect(filterVisibleLayers([near, far], view, new Set([far.id]))).toHaveLength(2);
     expect(filterVisibleLayers([near, far], null)).toHaveLength(2);
+  });
+
+  it('filterVisibleLayers uses rotated AABB for culling', () => {
+    // Local box is y=0..10; 90° rotation expands AABB to y≈-5..15.
+    // View only overlaps the tall AABB, not the flat local box.
+    const rotated = createLayer('rect', {
+      cssVars: {
+        '--width': '20mm',
+        '--height': '10mm',
+        '--translate-x': '0mm',
+        '--translate-y': '0mm',
+        '--rotate': '90deg',
+      },
+    });
+    const view = { x: 6, y: 12, w: 4, h: 4 };
+    expect(filterVisibleLayers([rotated], view).map((l) => l.id)).toEqual([rotated.id]);
   });
 });
 

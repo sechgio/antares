@@ -95,6 +95,43 @@ describe('canvas perf hot path', () => {
     expect(full.layers[1]).not.toBe(page1);
   });
 
+  it('cloneDocument deep-copies nested meta arrays and path points', () => {
+    const layer = createLayer('grid', {
+      id: 'g1',
+      meta: {
+        cols: 2,
+        rows: 2,
+        colTracks: [1, 2],
+        rowTracks: [3, 4],
+        rules: [{ whenImages: 4, cols: 2, rows: 2 }],
+        path: {
+          closed: false,
+          points: [{ x: 0, y: 0, hin: { x: 1, y: 1 }, hout: null }],
+        },
+      },
+    });
+    const doc: CanvasDocument = {
+      id: 'd1',
+      name: 'Doc',
+      version: 2,
+      updatedAt: new Date().toISOString(),
+      page: { widthMm: 210, heightMm: 297 },
+      layers: [layer],
+      fields: [],
+    };
+    const cloned = cloneDocument(doc);
+    expect(cloned.layers[0].meta?.colTracks).toEqual([1, 2]);
+    expect(cloned.layers[0].meta?.colTracks).not.toBe(layer.meta?.colTracks);
+    expect(cloned.layers[0].meta?.rowTracks).not.toBe(layer.meta?.rowTracks);
+    expect(cloned.layers[0].meta?.rules).not.toBe(layer.meta?.rules);
+    expect(cloned.layers[0].meta?.rules?.[0]).not.toBe(layer.meta?.rules?.[0]);
+    expect(cloned.layers[0].meta?.path?.points).not.toBe(layer.meta?.path?.points);
+    expect(cloned.layers[0].meta?.path?.points[0]).not.toBe(layer.meta?.path?.points[0]);
+    expect(cloned.layers[0].meta?.path?.points[0].hin).not.toBe(layer.meta?.path?.points[0].hin);
+    cloned.layers[0].meta!.colTracks![0] = 99;
+    expect(layer.meta?.colTracks?.[0]).toBe(1);
+  });
+
   it('spatial hitTest returns top-most layer first', () => {
     const bottom = createLayer('rect', {
       id: 'bottom',

@@ -448,6 +448,35 @@ def test_path_traversal_rejected(tmp_path: Path) -> None:
         store.get("../secrets")
 
 
+def test_list_uses_stem_when_body_id_mismatches(tmp_path: Path) -> None:
+    """list → get must work when filename stem ≠ document body id."""
+    import json
+
+    store = CanvasStore(tmp_path)
+    body = create_empty_document(name="Mismatch")
+    body["id"] = "inner-id"
+    (tmp_path / "file-stem.json").write_text(json.dumps(body), encoding="utf-8")
+
+    listed = store.list_documents()
+    assert len(listed) == 1
+    assert listed[0]["id"] == "file-stem"
+
+    by_stem = store.get("file-stem")
+    assert by_stem is not None
+    assert by_stem["id"] == "file-stem"
+    assert by_stem["name"] == "Mismatch"
+
+    # Transitional fallback: older clients may still ask by body id.
+    by_inner = store.get("inner-id")
+    assert by_inner is not None
+    assert by_inner["id"] == "file-stem"
+
+    # Save under the repaired id consolidates onto the stem file.
+    saved = store.save(by_stem)
+    assert saved["id"] == "file-stem"
+    assert (tmp_path / "file-stem.json").exists()
+
+
 def test_corrupt_document_is_logged_and_skipped(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     """A corrupt JSON file is skipped from listings (no crash) and logged."""
     store = CanvasStore(tmp_path)

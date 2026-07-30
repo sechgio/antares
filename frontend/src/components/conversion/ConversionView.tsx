@@ -143,12 +143,17 @@ export default function ConversionView() {
       }
 
       const applyResize = () => {
-        if (!options.resize) return;
+        if (!options.resize) {
+          setResizeEnabled(false);
+          return;
+        }
         const parts = String(options.resize).replace(/[()[\]]/g, '').split(',');
         if (parts.length === 2) {
           setResizeAncho(parts[0].trim());
           setResizeAlto(parts[1].trim());
           setResizeEnabled(true);
+        } else {
+          setResizeEnabled(false);
         }
       };
 
@@ -339,38 +344,48 @@ export default function ConversionView() {
       if (!proceed) return;
     }
     // Detect mapping Excel (ID + RENOMBRE columns) before falling back to catalog import.
-    if (files.length > 0) {
-      try {
-        const result = await api.dbParseMapping(excelPath, files);
-        if (result.mapping && Object.keys(result.mapping).length > 0) {
-          clearMapping();
-          setMappingPath(excelPath);
-          setMappingData(result.mapping);
-          setMappingColumns(result.columns ?? []);
-          setMappingIdColumn(result.id_column ?? '');
-          setMappingRenameColumn(result.rename_column ?? '');
-          setRenameSource('mapping');
-          setPatron('{renombre}{ext}');
-          setUsarRename(true);
-          setNamingMode('custom');
-          addToast({ message: `Mapeo cargado: ${Object.keys(result.mapping).length} entradas`, type: 'success' });
-          return;
-        }
-      } catch (err) {
-        if (!isMappingSchemaMismatch(err)) {
-          const msg = err instanceof Error ? err.message : String(err);
-          addToast({ message: `Error importando Excel: ${msg}`, type: 'error' });
-          return;
-        }
-        // Schema mismatch → not a mapping Excel, fall through to catalog import.
+    // Also runs when files is empty so a mapping workbook is not forced into SQLite catalog.
+    try {
+      const result = await api.dbParseMapping(excelPath, files);
+      if (result.mapping && Object.keys(result.mapping).length > 0) {
+        clearMapping();
+        setMappingPath(excelPath);
+        setMappingData(result.mapping);
+        setMappingColumns(result.columns ?? []);
+        setMappingIdColumn(result.id_column ?? '');
+        setMappingRenameColumn(result.rename_column ?? '');
+        setRenameSource('mapping');
+        setPatron('{renombre}{ext}');
+        setUsarRename(true);
+        setNamingMode('custom');
+        const count = Object.keys(result.mapping).length;
+        addToast({
+          message: files.length === 0
+            ? `Mapeo cargado: ${count} entradas. Agrega archivos para aplicar renombres.`
+            : `Mapeo cargado: ${count} entradas`,
+          type: 'success',
+        });
+        return;
       }
+    } catch (err) {
+      if (!isMappingSchemaMismatch(err)) {
+        const msg = err instanceof Error ? err.message : String(err);
+        addToast({ message: `Error importando Excel: ${msg}`, type: 'error' });
+        return;
+      }
+      // Schema mismatch → not a mapping Excel, fall through to catalog import.
     }
     try {
       const result = await api.importExcel(excelPath);
       clearMapping();
       await loadDbColumns();
       setRenameSource('catalog');
-      addToast({ message: `Base de datos importada: ${result.imported} registros`, type: 'success' });
+      const inserted = result.inserted ?? result.imported;
+      const skipped = result.skipped ?? 0;
+      const msg = skipped > 0
+        ? `Base de datos importada: ${inserted} registros (${skipped} omitidos)`
+        : `Base de datos importada: ${inserted} registros`;
+      addToast({ message: msg, type: 'success' });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       addToast({ message: `Error importando Excel: ${msg}`, type: 'error' });
@@ -444,9 +459,11 @@ export default function ConversionView() {
           skipPreviewForKeyOnlyRef.current = true;
           setKeyColumn(result.detected_key_column);
         }
-      } catch {
+      } catch (err) {
         if (requestToken !== previewToken.current) return;
         setRenamePreview([]);
+        const msg = err instanceof Error ? err.message : String(err);
+        addToast({ message: `Error en vista previa de renombre: ${msg}`, type: 'error' });
       } finally {
         previewInFlightRef.current = false;
         const queued = previewQueuedArgsRef.current;
@@ -469,7 +486,7 @@ export default function ConversionView() {
     }, 600);
 
     return () => window.clearTimeout(timer);
-  }, [files, usarRename, mappingMode, mappingData, patron, secuencia, useFilenameSeq, keyColumn, wordSeparator, sequenceMode, dbColumns.length]);
+  }, [files, usarRename, mappingMode, mappingData, patron, secuencia, useFilenameSeq, keyColumn, wordSeparator, sequenceMode, dbColumns.length, addToast]);
 
   const loadDbColumns = async () => {
     try {

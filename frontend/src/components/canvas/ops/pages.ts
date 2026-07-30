@@ -70,17 +70,26 @@ export function duplicatePage(doc: CanvasDocument, pageIndex: number): CanvasDoc
   const newPage = { id: newId(), name: copyName };
   pages.splice(pageIndex + 1, 0, newPage);
 
+  const pageLayers = doc.layers.filter((layer) => (layer.pageIndex ?? 0) === pageIndex);
+  const idMap = new Map<string, string>();
+  for (const layer of pageLayers) {
+    idMap.set(layer.id, newId());
+  }
+
   const layers = doc.layers.flatMap((layer) => {
     const idx = layer.pageIndex ?? 0;
     if (idx > pageIndex) return [{ ...layer, pageIndex: idx + 1 }];
     if (idx === pageIndex) {
+      const newParent =
+        layer.parentId && idMap.has(layer.parentId) ? idMap.get(layer.parentId) : layer.parentId;
       return [
         layer,
         {
           ...layer,
-          id: newId(),
+          id: idMap.get(layer.id)!,
           pageIndex: pageIndex + 1,
           name: layer.type === 'frame' ? copyName : layer.name,
+          parentId: newParent,
         },
       ];
     }

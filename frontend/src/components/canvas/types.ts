@@ -271,15 +271,23 @@ export function newId(): string {
   return `id-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-/** Upgrade v1 documents to the current schema. */
+/** Upgrade v1 / repair incomplete v2 documents to the current schema. */
 export function normalizeDocument(doc: CanvasDocument): CanvasDocument {
+  const needsUpgrade = doc.version !== DOCUMENT_VERSION;
+  const needsRepair =
+    !doc.pages?.length ||
+    doc.settings == null ||
+    doc.guides == null ||
+    doc.styles == null ||
+    doc.layers.some((layer) => layer.pageIndex == null);
+
   const upgraded =
-    doc.version === DOCUMENT_VERSION
+    !needsUpgrade && !needsRepair
       ? doc
       : {
           ...doc,
           version: DOCUMENT_VERSION as typeof DOCUMENT_VERSION,
-          pages: doc.pages ?? [{ id: newId(), name: 'Página 1' }],
+          pages: doc.pages?.length ? doc.pages : [{ id: newId(), name: 'Página 1' }],
           layers: doc.layers.map((layer) => ({
             ...layer,
             pageIndex: layer.pageIndex ?? 0,
@@ -291,7 +299,8 @@ export function normalizeDocument(doc: CanvasDocument): CanvasDocument {
   return {
     ...upgraded,
     styles: upgraded.styles ?? [],
-    updatedAt: upgraded.updatedAt || new Date(0).toISOString(),
+    // Missing timestamps must not sort as epoch (would always lose LWW).
+    updatedAt: upgraded.updatedAt || new Date().toISOString(),
   };
 }
 

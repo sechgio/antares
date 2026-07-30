@@ -42,6 +42,7 @@ import {
   DEFAULT_GRID_MM,
 } from '../ops/selectionTransform';
 import { buildSpatialIndex } from '../ops/spatialIndex';
+import { layerBounds } from '../ops/layerBounds';
 import { replaceLayerById } from '../ops/patchLayers';
 import {
   clampGuidePos,
@@ -119,6 +120,8 @@ interface ArtboardProps {
   gridSizeMm?: number;
   /** Start inertial panning after hand-tool drag release. */
   onStartInertia?: (velocity: { vx: number; vy: number }) => void;
+  /** Increment to drop local gesture preview without committing. */
+  gestureAbortToken?: number;
 }
 
 function cloneLayers(layers: CanvasLayer[]): CanvasLayer[] {
@@ -230,6 +233,7 @@ export default function Artboard({
   snapToGrid = false,
   gridSizeMm = DEFAULT_GRID_MM,
   onStartInertia,
+  gestureAbortToken = 0,
 }: ArtboardProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -322,6 +326,10 @@ export default function Artboard({
 
   const applyGestureLayers = useCallback((layers: CanvasLayer[]) => {
     if (pinchGestureRef.current) return;
+    // First frame: capture parent baseline so undo can cancel (revert) mid-gesture.
+    if (!gestureDirtyRef.current) {
+      onPreviewLayersRef.current?.(layersRef.current);
+    }
     gestureDirtyRef.current = true;
     gestureLayersRef.current = layers;
     layersRef.current = layers;
@@ -342,6 +350,20 @@ export default function Artboard({
       onChangeLayersRef.current(finalLayers);
     }
   }, []);
+
+  const prevAbortTokenRef = useRef(gestureAbortToken);
+  useEffect(() => {
+    if (gestureAbortToken === prevAbortTokenRef.current) return;
+    prevAbortTokenRef.current = gestureAbortToken;
+    gestureDirtyRef.current = false;
+    gestureLayersRef.current = null;
+    setGestureLayers(null);
+    setMarquee(null);
+    setDraft(null);
+    setGuidesIfChanged([]);
+    setDistanceLabelsIfChanged([]);
+    setLassoPts(null);
+  }, [gestureAbortToken, setGuidesIfChanged, setDistanceLabelsIfChanged]);
 
   const navRef = useRef({ zoom, pan, onZoom, onPan });
   navRef.current = { zoom, pan, onZoom, onPan };
@@ -584,11 +606,8 @@ export default function Artboard({
         return snap
           .filter((l) => !exclude.has(l.id) && l.type !== 'frame' && l.visible !== false && !l.locked)
           .map((l) => {
-            const x = parseMm(l.cssVars['--translate-x']);
-            const y = parseMm(l.cssVars['--translate-y']);
-            const w = parseMm(l.cssVars['--width'], 10);
-            const h = parseMm(l.cssVars['--height'], 10);
-            return { x, y, w, h };
+            const b = layerBounds(l);
+            return { x: b.x, y: b.y, w: b.w, h: b.h };
           });
       };
 

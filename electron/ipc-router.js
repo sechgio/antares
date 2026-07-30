@@ -72,8 +72,38 @@ function _getLongRunningMethods() {
 const REQUEST_TIMEOUT_MS = 30_000;         // per-request response timeout — most ops finish in <5s
 const LONG_REQUEST_TIMEOUT_MS = 900_000;   // 15 min for heavy operations (large PDF/ZIP batches)
 const STARTUP_WAIT_MS = 30_000;            // backend should start in <10s; 30s is a safe margin
-const MID_FLIGHT_RETRIES = 2;              // retries for transient mid-flight errors
+const MID_FLIGHT_RETRIES = 2;              // retries for transient mid-flight errors (idempotent only)
 const BACKEND_RESTART_MIN_INTERVAL_MS = 5_000;
+
+/**
+ * Mid-flight retries are only safe for idempotent reads. Mutators
+ * (process_start, db_import, canvas_save, …) must not be resent — the dying
+ * process may already have accepted the RPC.
+ */
+function _isIdempotentMethod(method) {
+  if (typeof method !== 'string') return false;
+  // Explicit safe reads that do not end in get/list/status.
+  if (
+    method === 'version'
+    || method === 'formats'
+    || method === 'preview'
+    || method === 'is_video'
+    || method === 'db_records'
+    || method === 'db_columns'
+    || method === 'db_fields'
+    || method === 'db_template'
+    || method === 'db_parse_mapping'
+    || method === 'db_validate_mapping'
+    || method === 'db_detect_key_column'
+    || method === 'theme_presets'
+    || method === 'theme_preset'
+    || method === 'panel_aviso_corte_template'
+    || method.includes('_autocomplete_')
+  ) {
+    return true;
+  }
+  return /(?:^|_)(?:get|list|status)$/.test(method);
+}
 
 let _lastBackendRestartAt = 0;
 
@@ -160,16 +190,20 @@ function _ensureListeners() {
   });
 
   proc.on('close', () => {
-    // Ignore late close from a process that was already replaced by a restart.
-    if (_attachedProcess !== proc) return;
-    _attachedProcess = null;
-    clearJobActivity();
-    for (const [, entry] of _pendingRequests) {
+    // Always reject requests that were sent on THIS process — even if a newer
+    // process already replaced `_attachedProcess`. Skipping that left orphans
+    // until the per-method timeout after kill+respawn races.
+    for (const [id, entry] of _pendingRequests) {
+      if (entry.proc !== proc) continue;
       clearTimeout(entry.timeout);
+      _pendingRequests.delete(id);
       entry.reject(new Error('Backend process exited while waiting for response'));
       decrementPendingRequests();
     }
-    _pendingRequests.clear();
+    // Only detach + clear job activity for the currently attached process.
+    if (_attachedProcess !== proc) return;
+    _attachedProcess = null;
+    clearJobActivity();
   });
 
   return true;
@@ -206,7 +240,7 @@ function _sendRequest(method, params) {
       reject(new Error(`IPC timeout: ${method}`));
     }, timeoutMs);
 
-    _pendingRequests.set(id, { resolve, reject, timeout: timeoutId });
+    _pendingRequests.set(id, { resolve, reject, timeout: timeoutId, proc });
     try {
       proc.stdin.write(JSON.stringify(request) + '\n');
     } catch (err) {
@@ -262,7 +296,7 @@ async function _callBackend(method, params) {
     if (!ready) throw _buildUnavailableError();
   }
 
-  // 2. Send, retrying on transient mid-flight failures.
+  // 2. Send, retrying on transient mid-flight failures — idempotent methods only.
   let lastErr = null;
   for (let attempt = 0; attempt <= MID_FLIGHT_RETRIES; attempt++) {
     try {
@@ -274,7 +308,9 @@ async function _callBackend(method, params) {
       const transient = msg.includes('Backend process exited')
         || msg.includes('Backend process not available')
         || msg.includes('stdin write failed');
-      if (!transient || attempt === MID_FLIGHT_RETRIES) throw err;
+      if (!transient || !_isIdempotentMethod(method) || attempt === MID_FLIGHT_RETRIES) {
+        throw err;
+      }
 
       console.warn(`[ipc-router] "${method}" transient failure (attempt ${attempt + 1}/${MID_FLIGHT_RETRIES + 1}): ${msg}. Waiting for backend...`);
       const ready = await waitForReady(STARTUP_WAIT_MS);
@@ -316,7 +352,19 @@ function registerIpcHandlers() {
       backendParams = { ...params, api_key: injected };
     }
 
-    return _callBackend(method, backendParams);
+    try {
+      return await _callBackend(method, backendParams);
+    } catch (err) {
+      // Electron's ipcMain.handle only reliably clones Error.message to the
+      // renderer. Re-throw a plain object so code/category/details survive.
+      const payload = {
+        message: err && err.message ? String(err.message) : String(err),
+        code: err && err.code !== undefined ? err.code : -32000,
+        category: err && err.category !== undefined ? err.category : 'INTERNAL_ERROR',
+        details: err && err.details !== undefined ? err.details : undefined,
+      };
+      throw payload;
+    }
   });
 
   ipcMain.handle('backend-status', async (event) => {
@@ -402,4 +450,11 @@ function registerIpcHandlers() {
   });
 }
 
-module.exports = { registerIpcHandlers, _ensureListeners, _isAllowedIpcSender };
+module.exports = {
+  registerIpcHandlers,
+  _ensureListeners,
+  _isAllowedIpcSender,
+  _sendRequest,
+  _callBackend,
+  _isIdempotentMethod,
+};

@@ -10,7 +10,12 @@ import { MeasurementBadge } from './CanvasRulers';
 
 const HANDLE = 7;
 const RADIUS_HANDLE = 8;
-const ROTATE_HANDLE_OFFSET = 24;
+/** Distance from selection top edge to rotate-knob center (screen px). */
+const ROTATE_HANDLE_OFFSET = 20;
+/** Rotate knob diameter (screen px) — slightly larger than resize squares. */
+const ROTATE_KNOB = 8;
+/** Air gap between stem ends and knob / north handle (screen px). */
+const ROTATE_STEM_GAP = 2;
 
 function handleStyle(left: number, top: number, cursor: string, cameraZoom: number): CSSProperties {
   const size = screenChromePx(HANDLE, cameraZoom);
@@ -85,8 +90,15 @@ export const SelectionChromeOverlay = memo(function SelectionChromeOverlay({
   const h = mmToScreenPx(bbox.h, 1);
   const rotateOffset = screenChromePx(ROTATE_HANDLE_OFFSET, zoom);
   const handleSize = screenChromePx(HANDLE, zoom);
+  const rotateKnob = screenChromePx(ROTATE_KNOB, zoom);
+  const stemGap = screenChromePx(ROTATE_STEM_GAP, zoom);
+  const stemWidth = screenChromePx(1, zoom);
   const rotateHandleX = x + w / 2;
   const rotateHandleY = y - rotateOffset;
+  // Stem sits in the clear air between knob and north handle (no T-junction).
+  const stemTop = rotateHandleY + rotateKnob / 2 + stemGap * 0.5;
+  const stemBottom = y - handleSize / 2 - stemGap;
+  const stemHeight = Math.max(0, stemBottom - stemTop);
 
   const radii = cornerRadii ?? { tl: 0, tr: 0, br: 0, bl: 0 };
   // Inset is already layout px (document CSS + min clearance under camera zoom).
@@ -142,19 +154,24 @@ export const SelectionChromeOverlay = memo(function SelectionChromeOverlay({
       />
       {showHandles && (
         <>
-          <div
-            style={{
-              position: 'absolute',
-              left: rotateHandleX,
-              top: y,
-              width: screenChromePx(1, zoom),
-              height: rotateOffset,
-              marginLeft: -screenChromePx(0.5, zoom),
-              background: 'var(--cv-accent)',
-              pointerEvents: 'none',
-              zIndex: 39,
-            }}
-          />
+          {stemHeight > 0 ? (
+            <div
+              aria-hidden
+              style={{
+                position: 'absolute',
+                left: rotateHandleX,
+                top: stemTop,
+                width: stemWidth,
+                height: stemHeight,
+                marginLeft: -stemWidth / 2,
+                borderRadius: stemWidth,
+                background: 'var(--cv-accent)',
+                opacity: 0.85,
+                pointerEvents: 'none',
+                zIndex: 39,
+              }}
+            />
+          ) : null}
           <WithHoverTooltip
             label="Rotar"
             shortcut="Shift · 15°"
@@ -164,10 +181,10 @@ export const SelectionChromeOverlay = memo(function SelectionChromeOverlay({
             style={{
               left: rotateHandleX,
               top: rotateHandleY,
-              width: handleSize,
-              height: handleSize,
-              marginLeft: -handleSize / 2,
-              marginTop: -handleSize / 2,
+              width: rotateKnob,
+              height: rotateKnob,
+              marginLeft: -rotateKnob / 2,
+              marginTop: -rotateKnob / 2,
               zIndex: 40,
             }}
           >
@@ -179,7 +196,8 @@ export const SelectionChromeOverlay = memo(function SelectionChromeOverlay({
                 height: '100%',
                 borderRadius: '50%',
                 background: 'var(--cv-accent)',
-                border: `${screenChromePx(1, zoom)}px solid #fff`,
+                border: `${screenChromePx(1.5, zoom)}px solid #fff`,
+                boxShadow: `0 0 0 ${screenChromePx(0.5, zoom)}px color-mix(in srgb, var(--cv-accent) 35%, transparent)`,
                 cursor: 'grab',
                 boxSizing: 'border-box',
               }}

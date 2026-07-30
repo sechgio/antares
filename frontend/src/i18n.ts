@@ -10,8 +10,12 @@ i18n
       es: { translation: es },
       en: { translation: en },
     },
+    // Explicit locale lock: no browser LanguageDetector; only es/en.
     lng: 'es',
     fallbackLng: 'es',
+    supportedLngs: ['es', 'en'],
+    load: 'languageOnly',
+    nonExplicitSupportedLngs: false,
     interpolation: {
       escapeValue: false,
     },

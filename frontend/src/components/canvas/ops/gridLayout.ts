@@ -107,13 +107,34 @@ export function layoutGridSlots(
 }
 
 function gridChildSlots(layers: CanvasLayer[], gridLayerId: string): CanvasLayer[] {
-  const byParent = layers.filter((l) => l.parentId === gridLayerId && l.type === 'imageSlot');
-  if (byParent.length) {
-    return [...byParent].sort((a, b) => (a.meta?.index ?? 0) - (b.meta?.index ?? 0));
-  }
   return layers
-    .filter((l) => l.type === 'imageSlot' && l.meta?.index != null)
+    .filter((l) => l.parentId === gridLayerId && l.type === 'imageSlot')
     .sort((a, b) => (a.meta?.index ?? 0) - (b.meta?.index ?? 0));
+}
+
+/** True when panel edits to cols/rows/gapMm require rebuilding child slots. */
+export function gridSlotLayoutMetaChanged(
+  prev: CanvasLayer['meta'] | undefined,
+  next: CanvasLayer['meta'] | undefined,
+): boolean {
+  return (
+    (prev?.cols ?? 2) !== (next?.cols ?? 2) ||
+    (prev?.rows ?? 2) !== (next?.rows ?? 2) ||
+    (prev?.gapMm ?? 2) !== (next?.gapMm ?? 2)
+  );
+}
+
+/** Apply a live panel layer edit; rebuilds grid children only when layout meta changes. */
+export function applyLivePanelLayerChange(
+  layers: CanvasLayer[],
+  prev: CanvasLayer | undefined,
+  layer: CanvasLayer,
+): CanvasLayer[] {
+  let next = layers.map((l) => (l.id === layer.id ? layer : l));
+  if (layer.type === 'grid' && gridSlotLayoutMetaChanged(prev?.meta, layer.meta)) {
+    next = rebuildGridSlots(next, layer.id);
+  }
+  return next;
 }
 
 function createGridImageSlot(gridId: string, pageIndex: number, index: number): CanvasLayer {

@@ -69,9 +69,13 @@ export default function EspaciosApp() {
   const pendingProyectoIdRef = useRef<string | null>(null);
   const pendingTareaIdRef = useRef<string | null>(null);
   const membersErrorToastedRef = useRef(false);
-  const pendingDeletesRef = useRef<
-    Map<string, { tarea: Tarea; timer: ReturnType<typeof setTimeout> }>
-  >(new Map());
+  type PendingDelete = {
+    tarea: Tarea;
+    timer: ReturnType<typeof setTimeout>;
+    cancelled: boolean;
+    committing: boolean;
+  };
+  const pendingDeletesRef = useRef<Map<string, PendingDelete>>(new Map());
   sidebarWidthRef.current = sidebarWidth;
 
   const { setActiveEspacioId, setActiveProyectoId, proyectos, tareas } = sync;
@@ -89,14 +93,18 @@ export default function EspaciosApp() {
 
   const commitDeleteRef = useRef(sync.commitDeleteTarea);
   commitDeleteRef.current = sync.commitDeleteTarea;
+  const addToastRef = useRef(addToast);
+  addToastRef.current = addToast;
 
   useEffect(() => {
     const pending = pendingDeletesRef.current;
     return () => {
-      for (const { timer, tarea } of pending.values()) {
-        clearTimeout(timer);
-        void commitDeleteRef.current(tarea.id).catch(() => {
-          /* best-effort commit on unmount */
+      for (const entry of pending.values()) {
+        clearTimeout(entry.timer);
+        entry.cancelled = true;
+        void commitDeleteRef.current(entry.tarea.id).catch((err) => {
+          const message = err instanceof Error ? err.message : 'No se pudo eliminar la tarea';
+          queueMicrotask(() => addToastRef.current({ message, type: 'error' }));
         });
       }
       pending.clear();
@@ -302,7 +310,10 @@ export default function EspaciosApp() {
 
       for (const tarea of snapshots) {
         const existing = pendingDeletesRef.current.get(tarea.id);
-        if (existing) clearTimeout(existing.timer);
+        if (existing) {
+          clearTimeout(existing.timer);
+          existing.cancelled = true;
+        }
         sync.softRemoveTarea(tarea.id);
         setSelectedIds((prev) => {
           if (!prev.has(tarea.id)) return prev;
@@ -311,17 +322,54 @@ export default function EspaciosApp() {
           return next;
         });
 
-        const timer = setTimeout(() => {
-          pendingDeletesRef.current.delete(tarea.id);
-          void sync.commitDeleteTarea(tarea.id).catch((err) => {
-            sync.restoreTarea(tarea);
-            addToast({
-              message: err instanceof Error ? err.message : 'No se pudo eliminar la tarea',
-              type: 'error',
+        const entry: PendingDelete = {
+          tarea,
+          cancelled: false,
+          committing: false,
+          timer: setTimeout(() => {
+          const current = pendingDeletesRef.current.get(tarea.id);
+          if (!current || current.cancelled) {
+            pendingDeletesRef.current.delete(tarea.id);
+            return;
+          }
+          current.committing = true;
+          void sync.commitDeleteTarea(tarea.id)
+            .then(() => {
+              const still = pendingDeletesRef.current.get(tarea.id);
+              pendingDeletesRef.current.delete(tarea.id);
+              if (still?.cancelled) {
+                // Undo won the race after the server delete started — drop the
+                // stale restored row and recreate so local matches the server.
+                sync.softRemoveTarea(tarea.id);
+                void sync.addTarea({
+                  title: tarea.title,
+                  description: tarea.description,
+                  status: tarea.status,
+                  assignee_id: tarea.assignee_id,
+                  start_date: tarea.start_date,
+                  due_date: tarea.due_date,
+                  sort_order: tarea.sort_order,
+                }).catch((err) => {
+                  addToast({
+                    message: err instanceof Error ? err.message : 'No se pudo restaurar la tarea',
+                    type: 'error',
+                  });
+                });
+              }
+            })
+            .catch((err) => {
+              const still = pendingDeletesRef.current.get(tarea.id);
+              pendingDeletesRef.current.delete(tarea.id);
+              if (!still || still.cancelled) return;
+              sync.restoreTarea(tarea);
+              addToast({
+                message: err instanceof Error ? err.message : 'No se pudo eliminar la tarea',
+                type: 'error',
+              });
             });
-          });
-        }, 6000);
-        pendingDeletesRef.current.set(tarea.id, { tarea, timer });
+        }, 6000),
+        };
+        pendingDeletesRef.current.set(tarea.id, entry);
       }
 
       const label =
@@ -340,7 +388,10 @@ export default function EspaciosApp() {
               const entry = pendingDeletesRef.current.get(tarea.id);
               if (entry) {
                 clearTimeout(entry.timer);
-                pendingDeletesRef.current.delete(tarea.id);
+                entry.cancelled = true;
+                if (!entry.committing) {
+                  pendingDeletesRef.current.delete(tarea.id);
+                }
               }
               sync.restoreTarea(tarea);
             }

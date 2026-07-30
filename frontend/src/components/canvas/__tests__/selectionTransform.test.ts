@@ -110,6 +110,20 @@ describe('selectionTransform', () => {
     expect(ids).toEqual([a.id]);
   });
 
+  it('layersInMarquee uses rotated AABB', () => {
+    const rotated = createLayer('rect', {
+      cssVars: {
+        '--translate-x': '0mm',
+        '--translate-y': '0mm',
+        '--width': '20mm',
+        '--height': '10mm',
+        '--rotate': '90deg',
+      },
+    });
+    // Marquee overlaps the tall rotated AABB (≈ x 5–15, y 0–20) but misses a flat-only local hit.
+    expect(layersInMarquee([rotated], { x: 0, y: 12, w: 10, h: 4 })).toEqual([rotated.id]);
+  });
+
   it('resizeSelection se grows width/height; Shift locks aspect', () => {
     const layer = createLayer('rect', {
       cssVars: {

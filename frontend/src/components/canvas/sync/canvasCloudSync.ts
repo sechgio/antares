@@ -43,6 +43,18 @@ export function isNewer(a?: string, b?: string): boolean {
   return left > right;
 }
 
+/** Whether a local push should overwrite the remote row (client-side LWW guard). */
+export function shouldPushCanvasRow(
+  localUpdatedAt: string | undefined,
+  remoteUpdatedAt: string | null | undefined,
+  remoteDeletedAt: string | null | undefined,
+): boolean {
+  if (remoteDeletedAt) return false;
+  if (!remoteUpdatedAt) return true;
+  if (!localUpdatedAt) return false;
+  return !isNewer(remoteUpdatedAt, localUpdatedAt);
+}
+
 async function sessionUserId(): Promise<string | null> {
   if (!supabase) return null;
   const { data } = await supabase.auth.getSession();
@@ -66,6 +78,20 @@ export async function pushCanvasDocument(doc: CanvasDocument): Promise<boolean> 
   if (!uid) return false;
 
   const updatedAt = doc.updatedAt || new Date().toISOString();
+
+  const { data: existing, error: selectError } = await supabase
+    .from('canvas_documents')
+    .select('updated_at, deleted_at')
+    .eq('id', doc.id)
+    .maybeSingle();
+  if (selectError) throw new Error(selectError.message);
+  if (
+    existing &&
+    !shouldPushCanvasRow(updatedAt, existing.updated_at, existing.deleted_at)
+  ) {
+    return false;
+  }
+
   const row = {
     id: doc.id,
     name: doc.name,

@@ -1,6 +1,7 @@
-// Regression: late close from a replaced backend must not detach the live process.
+// Regression: late close from a replaced backend must not detach the live process,
+// but MUST reject pending requests that were sent on the dead process.
+// Also: mid-flight retries only for idempotent methods.
 const { EventEmitter } = require('events');
-const path = require('path');
 
 let passed = 0;
 let failed = 0;
@@ -19,7 +20,10 @@ function makeFakeProc(pid) {
   const proc = new EventEmitter();
   proc.stdout = new EventEmitter();
   proc.stderr = new EventEmitter();
-  proc.stdin = { write: () => {}, end: () => {} };
+  proc.stdin = {
+    write: () => true,
+    end: () => {},
+  };
   proc.killed = false;
   proc.pid = pid;
   proc.kill = () => {
@@ -28,7 +32,7 @@ function makeFakeProc(pid) {
   return proc;
 }
 
-function loadIpcRouter({ currentProc, clearJobActivity }) {
+function loadIpcRouter({ currentProc, clearJobActivity, waitForReady }) {
   const electronPath = require.resolve('electron');
   require.cache[electronPath] = {
     id: electronPath,
@@ -49,7 +53,7 @@ function loadIpcRouter({ currentProc, clearJobActivity }) {
     exports: {
       getProcess: () => currentProc.ref,
       isReady: () => true,
-      waitForReady: async () => true,
+      waitForReady: waitForReady || (async () => true),
       getState: () => 'ready',
       getLastError: () => null,
       getStderrTail: () => '',
@@ -58,7 +62,7 @@ function loadIpcRouter({ currentProc, clearJobActivity }) {
       decrementPendingRequests: () => {},
       noteJobActivity: () => {},
       clearJobActivity,
-      STATE: { READY: 'ready' },
+      STATE: { READY: 'ready', FATAL: 'fatal', STARTING: 'starting', EXITED: 'exited' },
     },
   };
 
@@ -74,57 +78,179 @@ function loadIpcRouter({ currentProc, clearJobActivity }) {
     },
   };
 
-  // Bust ipc-router cache so mocks apply.
   const routerPath = require.resolve('../electron/ipc-router');
   delete require.cache[routerPath];
   return require(routerPath);
 }
 
-function run() {
+async function run() {
   console.log('Testing ipc-router process close identity...\n');
 
-  const currentProc = { ref: null };
-  let clearCalls = 0;
-  const { _ensureListeners } = loadIpcRouter({
-    currentProc,
-    clearJobActivity: () => {
-      clearCalls++;
-    },
-  });
+  // ── 4.1: attachment identity + pending reject on stale close ──
+  {
+    const currentProc = { ref: null };
+    let clearCalls = 0;
+    const { _ensureListeners, _sendRequest } = loadIpcRouter({
+      currentProc,
+      clearJobActivity: () => {
+        clearCalls++;
+      },
+    });
 
-  const procA = makeFakeProc(1001);
-  const procB = makeFakeProc(1002);
+    const procA = makeFakeProc(1001);
+    const procB = makeFakeProc(1002);
 
-  currentProc.ref = procA;
-  assert(_ensureListeners() === true, 'attach listeners to process A');
-  assert(procA.listenerCount('close') === 1, 'process A has one close listener');
+    currentProc.ref = procA;
+    assert(_ensureListeners() === true, 'attach listeners to process A');
+    assert(procA.listenerCount('close') === 1, 'process A has one close listener');
 
-  currentProc.ref = procB;
-  assert(_ensureListeners() === true, 'attach listeners to process B');
-  assert(procB.listenerCount('close') === 1, 'process B has one close listener');
+    const pendingA = _sendRequest('canvas_get', { id: 'doc-1' });
+    let pendingRejected = false;
+    let pendingMsg = '';
+    pendingA.catch((err) => {
+      pendingRejected = true;
+      pendingMsg = err.message || '';
+    });
 
-  // Late close from A must not clear attachment for B.
-  clearCalls = 0;
-  procA.emit('close', 1, null);
-  assert(clearCalls === 0, 'late close of A does not clear job activity');
+    currentProc.ref = procB;
+    assert(_ensureListeners() === true, 'attach listeners to process B');
+    assert(procB.listenerCount('close') === 1, 'process B has one close listener');
 
-  // Re-ensure should still see B as attached (no second close listener).
-  assert(_ensureListeners() === true, 'ensureListeners still true for B after A close');
-  assert(procB.listenerCount('close') === 1, 'process B still has exactly one close listener');
+    clearCalls = 0;
+    procA.emit('close', 1, null);
+    await Promise.resolve();
+    assert(clearCalls === 0, 'late close of A does not clear job activity');
+    assert(pendingRejected, 'late close of A rejects pending requests tagged to A');
+    assert(
+      pendingMsg.includes('Backend process exited'),
+      'pending reject message mentions process exit',
+    );
 
-  // Close of current attached process B should clear job activity once.
-  clearCalls = 0;
-  procB.emit('close', 0, null);
-  assert(clearCalls === 1, 'close of attached process clears job activity');
+    assert(_ensureListeners() === true, 'ensureListeners still true for B after A close');
+    assert(procB.listenerCount('close') === 1, 'process B still has exactly one close listener');
 
-  // After B dies, ensureListeners re-attaches when a new process appears.
-  const procC = makeFakeProc(1003);
-  currentProc.ref = procC;
-  assert(_ensureListeners() === true, 're-attach after real death');
-  assert(procC.listenerCount('close') === 1, 'process C has one close listener');
+    clearCalls = 0;
+    procB.emit('close', 0, null);
+    assert(clearCalls === 1, 'close of attached process clears job activity');
+
+    const procC = makeFakeProc(1003);
+    currentProc.ref = procC;
+    assert(_ensureListeners() === true, 're-attach after real death');
+    assert(procC.listenerCount('close') === 1, 'process C has one close listener');
+  }
+
+  // ── 4.2: mid-flight retries only for idempotent methods ──
+  console.log('\nTesting mid-flight retry idempotency...\n');
+  {
+    const currentProc = { ref: null };
+    const { _isIdempotentMethod } = loadIpcRouter({
+      currentProc,
+      clearJobActivity: () => {},
+    });
+
+    assert(_isIdempotentMethod('canvas_get') === true, 'canvas_get is idempotent');
+    assert(_isIdempotentMethod('canvas_list') === true, 'canvas_list is idempotent');
+    assert(_isIdempotentMethod('process_status') === true, 'process_status is idempotent');
+    assert(_isIdempotentMethod('version') === true, 'version is idempotent');
+    assert(_isIdempotentMethod('process_start') === false, 'process_start is NOT idempotent');
+    assert(_isIdempotentMethod('db_import') === false, 'db_import is NOT idempotent');
+    assert(_isIdempotentMethod('canvas_save') === false, 'canvas_save is NOT idempotent');
+    assert(_isIdempotentMethod('process_cancel') === false, 'process_cancel is NOT idempotent');
+  }
+
+  // Non-idempotent: process dies mid-flight → no retry (single write).
+  {
+    const currentProc = { ref: null };
+    let writeCount = 0;
+    let waitCalls = 0;
+    const { _callBackend, _ensureListeners } = loadIpcRouter({
+      currentProc,
+      clearJobActivity: () => {},
+      waitForReady: async () => {
+        waitCalls++;
+        return true;
+      },
+    });
+
+    const proc = makeFakeProc(2001);
+    proc.stdin.write = () => {
+      writeCount++;
+      process.nextTick(() => proc.emit('close', 1, null));
+      return true;
+    };
+    currentProc.ref = proc;
+    _ensureListeners();
+
+    let threw = false;
+    try {
+      await _callBackend('process_start', { files: [] });
+    } catch (err) {
+      threw = true;
+      assert(
+        (err.message || '').includes('Backend process exited'),
+        'non-idempotent fails with process-exited error',
+      );
+    }
+    assert(threw, 'non-idempotent method throws on mid-flight exit');
+    assert(writeCount === 1, 'non-idempotent method is not retried (one write)');
+    assert(waitCalls === 0, 'non-idempotent does not waitForReady for retry');
+  }
+
+  // Idempotent: process dies mid-flight → retries once and succeeds.
+  {
+    const currentProc = { ref: null };
+    let writeCount = 0;
+    let waitCalls = 0;
+    let ensureFn = null;
+
+    const { _callBackend, _ensureListeners } = loadIpcRouter({
+      currentProc,
+      clearJobActivity: () => {},
+      waitForReady: async () => {
+        waitCalls++;
+        const proc = makeFakeProc(2200 + writeCount);
+        proc.stdin.write = (payload) => {
+          writeCount++;
+          process.nextTick(() => {
+            try {
+              const req = JSON.parse(String(payload).trim());
+              proc.stdout.emit(
+                'data',
+                Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: req.id, result: { ok: true } }) + '\n'),
+              );
+            } catch {
+              /* ignore */
+            }
+          });
+          return true;
+        };
+        currentProc.ref = proc;
+        ensureFn();
+        return true;
+      },
+    });
+    ensureFn = _ensureListeners;
+
+    const first = makeFakeProc(2199);
+    first.stdin.write = () => {
+      writeCount++;
+      process.nextTick(() => first.emit('close', 1, null));
+      return true;
+    };
+    currentProc.ref = first;
+    _ensureListeners();
+
+    const result = await _callBackend('canvas_get', { id: 'x' });
+    assert(result && result.ok === true, 'idempotent method succeeds after retry');
+    assert(writeCount === 2, 'idempotent method retried once (two writes)');
+    assert(waitCalls >= 1, 'idempotent waits for backend before retry');
+  }
 
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
 }
 
-run();
+run().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
