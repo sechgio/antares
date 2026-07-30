@@ -131,9 +131,10 @@ class CanvasStore:
             path = self._path_for(str(doc_id))
             if not path.exists():
                 # Transitional: older list() may have exposed body id ≠ stem.
-                path = self._find_path_by_inner_id(str(doc_id))
-                if path is None:
+                fallback = self._find_path_by_inner_id(str(doc_id))
+                if fallback is None:
                     return None
+                path = fallback
             try:
                 raw = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
