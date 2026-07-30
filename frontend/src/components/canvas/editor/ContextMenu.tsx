@@ -10,6 +10,7 @@ import {
   EyeOff,
   Group,
   Layers,
+  LayoutGrid,
   Lock,
   Pencil,
   Trash2,
@@ -32,6 +33,7 @@ export type CanvasContextAction =
   | 'selectChildren'
   | 'group'
   | 'ungroup'
+  | 'matchGridSlotSize'
   | 'delete';
 
 export interface CanvasContextMenuState {
@@ -46,6 +48,8 @@ export interface CanvasContextMenuState {
   canPaste: boolean;
   /** When set, show "Editar texto/campo" at the top. */
   editKind?: 'text' | 'field' | null;
+  /** Show "Mismo tamaño para todos" for an imageSlot inside a grid. */
+  canMatchGridSlotSize?: boolean;
 }
 
 interface ContextMenuProps {
@@ -156,6 +160,17 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
       icon: Ungroup,
       disabled: !menu.canUngroup || menu.locked,
     },
+    ...(menu.canMatchGridSlotSize
+      ? [
+          {
+            id: 'matchGridSlotSize' as const,
+            label: 'Mismo tamaño para todos',
+            icon: LayoutGrid,
+            disabled: menu.locked,
+            sepBefore: true,
+          },
+        ]
+      : []),
     {
       id: 'bringFront',
       label: 'Traer al frente',

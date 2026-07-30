@@ -212,7 +212,13 @@ async function renderHtmlToPdf(params = {}, electronModules = {}) {
 
   if (pdfWindow.webContents.session && pdfWindow.webContents.session.webRequest) {
     const filter = (details, callback) => {
-      if (details.url.startsWith('data:') || allowedFileUrls.has(details.url)) {
+      const url = details.url || '';
+      if (
+        url.startsWith('data:')
+        || allowedFileUrls.has(url)
+        || url.startsWith('https://fonts.googleapis.com/')
+        || url.startsWith('https://fonts.gstatic.com/')
+      ) {
         callback({ cancel: false });
       } else {
         callback({ cancel: true });
@@ -250,6 +256,18 @@ async function renderHtmlToPdf(params = {}, electronModules = {}) {
 
     await pdfWindow.loadFile(htmlPath);
     await didFinishLoad;
+
+    // Wait for webfonts (Google Fonts) so printToPDF is not rasterized with fallbacks.
+    try {
+      await Promise.race([
+        pdfWindow.webContents.executeJavaScript(
+          'document.fonts && document.fonts.ready ? document.fonts.ready.then(() => true) : true',
+        ),
+        new Promise((resolve) => setTimeout(resolve, 5000)),
+      ]);
+    } catch {
+      /* fonts.ready unavailable — proceed with system fallbacks */
+    }
 
     const pdfBuffer = await Promise.race([
       pdfWindow.webContents.printToPDF({

@@ -50,10 +50,10 @@ export default function AppearanceSection({
           />
         )}
       </div>
-      <label className="mt-2 block">
+      <label className="mt-3 block">
         <span className="canvas-sublabel">Modo de fusión</span>
         <CanvasSelect
-          className="mt-1"
+          className="mt-0.5"
           value={parseBlendMode(layer.cssVars)}
           aria-label="Modo de fusión"
           onChange={(v) => {
@@ -72,7 +72,7 @@ export default function AppearanceSection({
         />
       </label>
       {showRadius && (
-        <div className="mt-2 grid grid-cols-2 gap-1">
+        <div className="mt-3 grid grid-cols-2 gap-2">
           {(
             [
               ['tl', 'TL'],

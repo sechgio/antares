@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useMemo, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import type { CanvasGuide } from '../types';
 import { MM_TO_PX } from '../ops/drawHelpers';
 import { clampGuidePos, createGuide, formatGapMm, isGuideRemovalPoint } from '../ops/guides';
@@ -17,6 +17,42 @@ interface CanvasRulersProps {
   onCancelCreate?: (id: string) => void;
 }
 
+/** Compact pill for sizes, gaps, and guide positions. */
+export function MeasurementBadge({
+  label,
+  style,
+  testId = 'canvas-measurement-badge',
+  danger = false,
+  accent = false,
+}: {
+  label: string;
+  style?: CSSProperties;
+  testId?: string;
+  danger?: boolean;
+  /** Use selection blue instead of magenta (guide position chips). */
+  accent?: boolean;
+}) {
+  const bg = danger ? 'var(--cv-danger)' : accent ? 'var(--cv-accent)' : 'var(--cv-accent-2)';
+  return (
+    <div
+      data-testid={testId}
+      style={{
+        background: bg,
+        color: '#fff',
+        fontSize: 11,
+        padding: '1px 6px',
+        borderRadius: 999,
+        whiteSpace: 'nowrap',
+        pointerEvents: 'none',
+        lineHeight: 1.4,
+        ...style,
+      }}
+    >
+      {label}
+    </div>
+  );
+}
+
 /** Floating label that follows the pointer while creating/dragging a guide. */
 export function GuidePositionChip({
   x,
@@ -30,30 +66,25 @@ export function GuidePositionChip({
   danger?: boolean;
 }) {
   return (
-    <div
-      data-testid="canvas-guide-chip"
+    <MeasurementBadge
+      testId="canvas-guide-chip"
+      label={label}
+      danger={danger}
+      accent={!danger}
       style={{
         position: 'fixed',
         left: x + 12,
         top: y + 12,
         zIndex: 80,
-        background: danger ? 'var(--cv-danger)' : 'var(--cv-accent)',
-        color: '#fff',
-        fontSize: 10,
-        padding: '1px 4px',
-        borderRadius: 2,
-        whiteSpace: 'nowrap',
-        pointerEvents: 'none',
       }}
-    >
-      {label}
-    </div>
+    />
   );
 }
 
 /**
  * Top + left rulers synced to the A4 page under the current pan/zoom.
  * Drag from a ruler into the canvas to create a persistent guide.
+ * Preview stays local until pointerup so CanvasView skips per-frame history writes.
  */
 function CanvasRulers({
   zoom,
@@ -67,6 +98,7 @@ function CanvasRulers({
   const frameW = Math.round(pageWidthMm * MM_TO_PX * zoom);
   const frameH = Math.round(pageHeightMm * MM_TO_PX * zoom);
   const [createChip, setCreateChip] = useState<{ posMm: number; x: number; y: number } | null>(null);
+  const [createPreview, setCreatePreview] = useState<CanvasGuide | null>(null);
 
   const ticksH = useMemo(() => {
     const stepMm = zoom >= 1.5 ? 5 : zoom >= 0.6 ? 10 : 20;
@@ -102,6 +134,9 @@ function CanvasRulers({
   const originX = `calc(50% + ${Math.round(pan.x) - RULER / 2}px - ${frameW / 2}px)`;
   const originY = `calc(50% + ${Math.round(pan.y) - RULER / 2}px - ${frameH / 2}px)`;
 
+  const pageLeftCss = `calc(50% + ${Math.round(pan.x)}px - ${frameW / 2}px)`;
+  const pageTopCss = `calc(50% + ${Math.round(pan.y)}px - ${frameH / 2}px)`;
+
   const startCreate = (axis: 'x' | 'y', e: ReactPointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -123,7 +158,7 @@ function CanvasRulers({
       return (client - pageTop) / (MM_TO_PX * zoom);
     };
 
-    // Coalesce per-event document updates to one apply per animation frame.
+    // Local preview only — commit on pointerup so history/CanvasView skip per-frame updates.
     const raf = createGestureRaf((ev: PointerEvent) => {
       if (cancelled) return;
       const pos = toMm(axis === 'x' ? ev.clientX : ev.clientY);
@@ -135,7 +170,7 @@ function CanvasRulers({
       } else {
         created = { ...created, posMm: clampGuidePos(pos, maxMm) };
       }
-      onCreateGuide(created);
+      setCreatePreview(created);
       setCreateChip({ posMm: created.posMm, x: ev.clientX, y: ev.clientY });
     });
 
@@ -145,10 +180,12 @@ function CanvasRulers({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('keydown', onKey);
       setCreateChip(null);
+      setCreatePreview(null);
     };
 
     const cancel = () => {
       cancelled = true;
+      // Nothing was committed to the document yet; cancel is a no-op for history.
       if (created) onCancelCreate?.(created.id);
       created = null;
       cleanup();
@@ -162,11 +199,12 @@ function CanvasRulers({
 
     const onUp = (ev: PointerEvent) => {
       raf.flush();
-      // Released back onto the ruler → no guide is created (Figma behavior).
       if (!cancelled && created) {
         const rect = viewportEl?.getBoundingClientRect();
         if (rect && isGuideRemovalPoint(axis, ev.clientX, ev.clientY, rect, RULER)) {
           onCancelCreate?.(created.id);
+        } else {
+          onCreateGuide(created);
         }
       }
       cleanup();
@@ -296,6 +334,37 @@ function CanvasRulers({
         </div>
       </div>
 
+      {createPreview &&
+        (createPreview.axis === 'x' ? (
+          <div
+            data-testid="canvas-guide-create-preview"
+            style={{
+              position: 'absolute',
+              left: `calc(${pageLeftCss} + ${createPreview.posMm * MM_TO_PX * zoom}px)`,
+              top: pageTopCss,
+              width: 1,
+              height: frameH,
+              background: 'var(--cv-accent)',
+              pointerEvents: 'none',
+              zIndex: 55,
+            }}
+          />
+        ) : (
+          <div
+            data-testid="canvas-guide-create-preview"
+            style={{
+              position: 'absolute',
+              top: `calc(${pageTopCss} + ${createPreview.posMm * MM_TO_PX * zoom}px)`,
+              left: pageLeftCss,
+              height: 1,
+              width: frameW,
+              background: 'var(--cv-accent)',
+              pointerEvents: 'none',
+              zIndex: 55,
+            }}
+          />
+        ))}
+
       {createChip && <GuidePositionChip x={createChip.x} y={createChip.y} label={formatGapMm(createChip.posMm)} />}
     </>
   );
@@ -304,4 +373,3 @@ function CanvasRulers({
 export default memo(CanvasRulers);
 
 export const RULER_SIZE = RULER;
-

@@ -70,17 +70,26 @@ export function duplicatePage(doc: CanvasDocument, pageIndex: number): CanvasDoc
   const newPage = { id: newId(), name: copyName };
   pages.splice(pageIndex + 1, 0, newPage);
 
+  const pageLayers = doc.layers.filter((layer) => (layer.pageIndex ?? 0) === pageIndex);
+  const idMap = new Map<string, string>();
+  for (const layer of pageLayers) {
+    idMap.set(layer.id, newId());
+  }
+
   const layers = doc.layers.flatMap((layer) => {
     const idx = layer.pageIndex ?? 0;
     if (idx > pageIndex) return [{ ...layer, pageIndex: idx + 1 }];
     if (idx === pageIndex) {
+      const newParent =
+        layer.parentId && idMap.has(layer.parentId) ? idMap.get(layer.parentId) : layer.parentId;
       return [
         layer,
         {
           ...layer,
-          id: newId(),
+          id: idMap.get(layer.id)!,
           pageIndex: pageIndex + 1,
           name: layer.type === 'frame' ? copyName : layer.name,
+          parentId: newParent,
         },
       ];
     }
@@ -111,9 +120,36 @@ export function setActivePageLayers(
   pageIndex: number,
   layers: CanvasLayer[],
 ): CanvasDocument {
-  const otherPages = doc.layers.filter((layer) => (layer.pageIndex ?? 0) !== pageIndex);
-  const normalized = layers.map((layer) => ({ ...layer, pageIndex }));
-  return { ...doc, layers: [...otherPages, ...normalized] };
+  // Replace active-page layers in place to preserve document array order.
+  // The incoming `layers` is the complete set for this page: existing layers
+  // keep their position, removed layers are dropped, new layers are inserted
+  // right after the last active-page layer (not at the very end of the array).
+  const byId = new Map(layers.map((l) => [l.id, { ...l, pageIndex }]));
+  const result: CanvasLayer[] = [];
+  const placed = new Set<string>();
+  let lastActiveIdx = -1;
+  for (const layer of doc.layers) {
+    if ((layer.pageIndex ?? 0) !== pageIndex) {
+      result.push(layer);
+      continue;
+    }
+    const next = byId.get(layer.id);
+    if (next) {
+      result.push(next);
+      placed.add(layer.id);
+      lastActiveIdx = result.length - 1;
+    }
+  }
+  const newLayers: CanvasLayer[] = [];
+  for (const layer of layers) {
+    if (!placed.has(layer.id)) {
+      newLayers.push({ ...layer, pageIndex });
+    }
+  }
+  if (newLayers.length) {
+    result.splice(lastActiveIdx + 1, 0, ...newLayers);
+  }
+  return { ...doc, layers: result };
 }
 
 export function chunkArray<T>(items: T[], perPage: number): T[][] {

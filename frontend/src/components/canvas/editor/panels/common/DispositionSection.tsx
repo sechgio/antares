@@ -19,7 +19,7 @@ import type { SectionProps } from '../types';
 export default function DispositionSection({
   layer,
   isLine,
-  emitLive,
+  mapLive,
   setVar,
   onCommitLive,
 }: SectionProps) {
@@ -31,8 +31,10 @@ export default function DispositionSection({
         <InlineNumField
           prefix="W"
           value={parseMm(layer.cssVars['--width'], 10)}
-          onChange={(n) => emitLive(resizeLayerAnchored(layer, 'width', n))}
+          onChange={(n) => mapLive((l) => resizeLayerAnchored(l, 'width', n))}
           onCommit={onCommitLive}
+          step={0.1}
+          suffix="mm"
         />
         <InlineNumField
           prefix="H"
@@ -41,8 +43,10 @@ export default function DispositionSection({
               ? Math.round(lineHeightMmFromStrokePx(lineStrokeWidthPx(layer)) * 100) / 100
               : parseMm(layer.cssVars['--height'], 10)
           }
-          onChange={(n) => emitLive(resizeLayerAnchored(layer, 'height', n))}
+          onChange={(n) => mapLive((l) => resizeLayerAnchored(l, 'height', n))}
           onCommit={onCommitLive}
+          step={0.1}
+          suffix={isLine ? undefined : 'mm'}
           title={isLine ? 'Grosor (derivado del trazo)' : undefined}
         />
         <WithHoverTooltip

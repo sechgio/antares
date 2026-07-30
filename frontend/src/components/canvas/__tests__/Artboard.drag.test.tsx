@@ -1,4 +1,4 @@
-import { act, fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createLayer } from '../constants';
 import Artboard from '../editor/Artboard';
@@ -56,6 +56,12 @@ describe('Artboard drag gestures', () => {
     return { ...utils, onChangeLayers };
   };
 
+  it('shows a size badge under the selection bbox', () => {
+    const layer = createLayer('rect'); // 50mm × 40mm
+    setup([layer], [layer.id]);
+    expect(screen.getByTestId('canvas-size-badge').textContent).toBe('50 × 40');
+  });
+
   it('coalesces pointermove to one preview per frame and commits once on pointerup', () => {
     const layer = createLayer('rect'); // x=20mm, y=100mm → translate(76px, 378px) at zoom 1
     const { container, onChangeLayers } = setup([layer], [layer.id]);
@@ -104,6 +110,48 @@ describe('Artboard drag gestures', () => {
     expect(committed.find((l) => l.id === b.id)!.cssVars['--translate-x']).toBe('40mm');
   });
 
+  it('Shift+drag moves with axis lock instead of aborting (Figma)', () => {
+    const layer = createLayer('rect'); // 20mm, 100mm
+    const document = createEmptyDocument('Test');
+    document.layers.push(layer);
+    const onChangeLayers = vi.fn();
+    const onSelectIds = vi.fn();
+    const { container } = render(
+      <Artboard
+        document={document}
+        selectedIds={[layer.id]}
+        zoom={1}
+        tool="select"
+        pan={{ x: 0, y: 0 }}
+        onPan={() => {}}
+        onSelect={() => {}}
+        onSelectIds={onSelectIds}
+        onChangeLayers={onChangeLayers}
+      />,
+    );
+    const node = container.querySelector<HTMLElement>(`[data-layer-id="${layer.id}"]`)!;
+    const mm = 96 / 25.4;
+    // Shift held: previously aborted the move (treated as multi-select only).
+    fireEvent.pointerDown(node, { button: 0, clientX: 100, clientY: 100, shiftKey: true });
+    fireEvent.pointerMove(window, {
+      clientX: 100 + 30 * mm,
+      clientY: 100 + 10 * mm,
+      shiftKey: true,
+    });
+    act(() => tick());
+    fireEvent.pointerUp(window, {
+      clientX: 100 + 30 * mm,
+      clientY: 100 + 10 * mm,
+      shiftKey: true,
+    });
+
+    expect(onChangeLayers).toHaveBeenCalledTimes(1);
+    const moved = (onChangeLayers.mock.calls[0][0] as CanvasLayer[]).find((l) => l.id === layer.id)!;
+    expect(moved.cssVars['--translate-x']).toBe('50mm'); // 20 + 30 (dominant axis)
+    expect(moved.cssVars['--translate-y']).toBe('100mm'); // locked
+    expect(onSelectIds).not.toHaveBeenCalled();
+  });
+
   it('treats a pointerdown + pointerup without travel as a click (no commit)', () => {
     const layer = createLayer('rect');
     const { container, onChangeLayers } = setup([layer], [layer.id]);
@@ -114,5 +162,178 @@ describe('Artboard drag gestures', () => {
     act(() => tick());
 
     expect(onChangeLayers).not.toHaveBeenCalled();
+  });
+
+  it('keeps selection ring on locked layers and hides resize handles', () => {
+    const layer = createLayer('rect', { locked: true });
+    const { container } = setup([layer], [layer.id]);
+    const node = container.querySelector<HTMLElement>(`[data-layer-id="${layer.id}"]`)!;
+    expect(node.style.outline).toContain('var(--cv-accent)');
+    expect(screen.queryByTestId('canvas-rotate-handle')).toBeNull();
+    expect(screen.queryByTestId('canvas-selection-chrome')).toBeNull();
+  });
+
+  it('shows selection chrome + handles for editable selection', () => {
+    const layer = createLayer('rect');
+    setup([layer], [layer.id]);
+    expect(screen.getByTestId('canvas-selection-chrome')).toBeTruthy();
+    expect(screen.getByTestId('canvas-rotate-handle')).toBeTruthy();
+  });
+
+  it('shows four corner-radius handles on a single editable rect', () => {
+    const layer = createLayer('rect');
+    setup([layer], [layer.id]);
+    expect(screen.getByTestId('canvas-radius-handle-tl')).toBeTruthy();
+    expect(screen.getByTestId('canvas-radius-handle-tr')).toBeTruthy();
+    expect(screen.getByTestId('canvas-radius-handle-br')).toBeTruthy();
+    expect(screen.getByTestId('canvas-radius-handle-bl')).toBeTruthy();
+  });
+
+  it('hides radius handles on line layers', () => {
+    const line = createLayer('line');
+    setup([line], [line.id]);
+    expect(screen.queryByTestId('canvas-radius-handle-tl')).toBeNull();
+  });
+
+  it('hides radius handles on clipped shapes', () => {
+    const poly = createLayer('polygon');
+    setup([poly], [poly.id]);
+    expect(screen.queryByTestId('canvas-radius-handle-tl')).toBeNull();
+  });
+
+  it('hides radius handles for multi-select', () => {
+    const a = createLayer('rect');
+    const b = createLayer('rect');
+    setup([a, b], [a.id, b.id]);
+    expect(screen.queryByTestId('canvas-radius-handle-tl')).toBeNull();
+  });
+
+  it('drags a radius handle to update --border-radius uniformly', () => {
+    const layer = createLayer('rect');
+    const { onChangeLayers } = setup([layer], [layer.id]);
+    const handle = screen.getByTestId('canvas-radius-handle-tl');
+
+    fireEvent.pointerDown(handle, { button: 0, clientX: 100, clientY: 100 });
+    // Toward center (+x, +y) increases TL radius.
+    fireEvent.pointerMove(window, { clientX: 140, clientY: 140 });
+    act(() => tick());
+    expect(screen.getByTestId('canvas-radius-badge').textContent).toMatch(/^Radius \d+$/);
+    fireEvent.pointerUp(window, { clientX: 140, clientY: 140 });
+
+    expect(onChangeLayers).toHaveBeenCalledTimes(1);
+    const committed = onChangeLayers.mock.calls[0][0] as CanvasLayer[];
+    const updated = committed.find((l) => l.id === layer.id)!;
+    const r = parseFloat(updated.cssVars['--border-radius'] || '0');
+    expect(r).toBeGreaterThan(0);
+    expect(updated.cssVars['--radius-tl']).toBeUndefined();
+  });
+
+  it('corner resize still works when radius handles are visible', () => {
+    const layer = createLayer('rect'); // 50×40 mm
+    const { onChangeLayers } = setup([layer], [layer.id]);
+    expect(screen.getByTestId('canvas-radius-handle-tl')).toBeTruthy();
+    const nw = screen.getByTestId('canvas-resize-handle-nw');
+
+    fireEvent.pointerDown(nw, { button: 0, clientX: 200, clientY: 200 });
+    // Drag NW outward (−x, −y) → larger box.
+    fireEvent.pointerMove(window, {
+      clientX: 200 - 10 * (96 / 25.4),
+      clientY: 200 - 10 * (96 / 25.4),
+    });
+    act(() => tick());
+    fireEvent.pointerUp(window, {
+      clientX: 200 - 10 * (96 / 25.4),
+      clientY: 200 - 10 * (96 / 25.4),
+    });
+
+    expect(onChangeLayers).toHaveBeenCalledTimes(1);
+    const committed = onChangeLayers.mock.calls[0][0] as CanvasLayer[];
+    const resized = committed.find((l) => l.id === layer.id)!;
+    // Width/height grow; radius must not be the only change.
+    expect(parseFloat(resized.cssVars['--width'])).toBeGreaterThan(50);
+    expect(parseFloat(resized.cssVars['--height'])).toBeGreaterThan(40);
+  });
+
+  it('pans with translate3d (not left/top layout)', () => {
+    const layer = createLayer('rect');
+    const document = createEmptyDocument('Test');
+    document.layers.push(layer);
+    const { container } = render(
+      <Artboard
+        document={document}
+        selectedIds={[]}
+        zoom={1}
+        tool="select"
+        pan={{ x: 40, y: -20 }}
+        onPan={() => {}}
+        onSelect={() => {}}
+        onSelectIds={() => {}}
+        onChangeLayers={() => {}}
+      />,
+    );
+    const panLayer = container.querySelector<HTMLElement>('[data-testid="canvas-pan-layer"]')!;
+    expect(panLayer.style.transform).toContain('translate3d');
+    expect(panLayer.style.transform).toContain('40px');
+    expect(panLayer.style.transform).toContain('-20px');
+    expect(panLayer.style.left).toBe('50%');
+    expect(panLayer.style.top).toBe('50%');
+  });
+
+  it('point-click on artboard selects top-most layer under cursor', () => {
+    const bottom = createLayer('rect', {
+      id: 'bottom',
+      cssVars: {
+        '--translate-x': '10mm',
+        '--translate-y': '10mm',
+        '--width': '40mm',
+        '--height': '40mm',
+      },
+    });
+    const top = createLayer('rect', {
+      id: 'top',
+      cssVars: {
+        '--translate-x': '15mm',
+        '--translate-y': '15mm',
+        '--width': '40mm',
+        '--height': '40mm',
+      },
+    });
+    const document = createEmptyDocument('Test');
+    document.layers.push(bottom, top);
+    const onSelect = vi.fn();
+    const onSelectIds = vi.fn();
+    const { container } = render(
+      <Artboard
+        document={document}
+        selectedIds={[]}
+        zoom={1}
+        tool="select"
+        pan={{ x: 0, y: 0 }}
+        onPan={() => {}}
+        onSelect={onSelect}
+        onSelectIds={onSelectIds}
+        onChangeLayers={() => {}}
+      />,
+    );
+    const artboard = container.querySelector('[data-testid="canvas-artboard"]')!;
+    // Mock frame rect so clientToMm maps 1:1 with mm→px at zoom 1.
+    const mmPx = 96 / 25.4;
+    vi.spyOn(artboard, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      right: 210 * mmPx,
+      bottom: 297 * mmPx,
+      width: 210 * mmPx,
+      height: 297 * mmPx,
+      x: 0,
+      y: 0,
+      toJSON() {
+        return {};
+      },
+    });
+    // Click at 20mm,20mm — inside both; top should win.
+    fireEvent.pointerDown(artboard, { button: 0, clientX: 20 * mmPx, clientY: 20 * mmPx });
+    fireEvent.pointerUp(window, { button: 0, clientX: 20 * mmPx, clientY: 20 * mmPx });
+    expect(onSelect).toHaveBeenCalledWith('top');
   });
 });

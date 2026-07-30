@@ -116,8 +116,14 @@ def _create_indexes(cursor: sqlite3.Cursor, fields: list[dict[str, Any]]) -> Non
         )
 
 
-def init_db() -> None:
-    """Inicializa la base de datos SQLite con la tabla principal según campos configurados."""
+def init_db(*, allow_catalog_wipe: bool = False) -> None:
+    """Inicializa la base de datos SQLite con la tabla principal según campos configurados.
+
+    Args:
+        allow_catalog_wipe: Si True, permite migraciones sin solapamiento de
+            columnas que vacían el catálogo (p. ej. import Excel con esquema
+            nuevo). Si False (default), esas migraciones abortan con error.
+    """
     fields = load_fields()
     conn = _get_connection()
     with _db_lock:
@@ -202,6 +208,17 @@ def init_db() -> None:
                             cursor.execute("ALTER TABLE imagenes_old RENAME TO imagenes")
                             raise DatabaseError(f"Migración fallida, esquema anterior preservado: {exc}") from exc
                     else:
+                        if old_rows and not allow_catalog_wipe:
+                            # Abort: dropping old data with zero column overlap would
+                            # silently empty the catalog (e.g. full column rename via UI).
+                            cursor.execute("DROP TABLE imagenes")
+                            cursor.execute("ALTER TABLE imagenes_old RENAME TO imagenes")
+                            raise DatabaseError(
+                                "Migración abortada: el nuevo esquema no conserva "
+                                "ninguna columna del catálogo existente y dejaría "
+                                "la tabla vacía. Conserva al menos una columna "
+                                "compartida o importa un Excel nuevo."
+                            )
                         if old_rows:
                             logger.info(
                                 "Migración sin solapamiento de columnas (%s → %s): "
@@ -236,14 +253,16 @@ def init_db() -> None:
             raise DatabaseError(f"Inicialización/migración de base de datos fallida: {exc}") from exc
 
 
-def importar_excel(excel_path: str) -> int:
+def importar_excel(excel_path: str) -> dict[str, int]:
     """Importa datos desde Excel (.xlsx) a SQLite.
 
     Args:
         excel_path: Ruta al archivo Excel.
 
     Returns:
-        Cantidad de registros importados.
+        Dict con ``inserted`` (filas válidas escritas) y ``skipped`` (filas
+        omitidas por campos required vacíos). El catálogo previo se vacía
+        siempre antes de insertar.
 
     Raises:
         ImportError: Si pandas no está instalado.
@@ -282,7 +301,7 @@ def importar_excel(excel_path: str) -> int:
         field_names = [f["name"] for f in fields]
 
         # Asegurar que el esquema de BD coincida con los campos, incluyendo columnas del Excel.
-        init_db()
+        init_db(allow_catalog_wipe=True)
         required = [f["name"] for f in fields if f.get("required")]
 
         # Validate all field names as safe SQL identifiers (defense in depth)
@@ -313,6 +332,7 @@ def importar_excel(excel_path: str) -> int:
             # Use executemany for bulk insert performance.
             # itertuples() is significantly faster than iterrows() for large DataFrames.
             all_values: list[list[Any]] = []
+            skipped = 0
             required_set = set(required)
             for row in df.itertuples(index=False):
                 row_dict = dict(zip(field_names, row, strict=False))
@@ -329,6 +349,8 @@ def importar_excel(excel_path: str) -> int:
                         values.append(None)
                 if valid:
                     all_values.append(values)
+                else:
+                    skipped += 1
 
             cursor.executemany(sql, all_values)
             inserted = len(all_values)
@@ -340,7 +362,7 @@ def importar_excel(excel_path: str) -> int:
                 conn.execute("ANALYZE imagenes")
             except sqlite3.Error:
                 logger.debug("ANALYZE after import failed", exc_info=True)
-            return inserted
+            return {"inserted": inserted, "skipped": skipped}
         except sqlite3.Error as exc:
             cursor.execute("ROLLBACK")
             msg = f"Error importando datos: {exc}"
@@ -400,13 +422,13 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
 
     Strategy: prefer a single-column ``codigo`` (or first field) lookup with a
     large chunk size, then fall back to multi-field OR only for unresolved codes
-    so multi-key catalogs keep working.
+    so multi-key catalogs keep working. Matching is case-insensitive (casefold).
 
     Args:
         codigos: Lista de códigos a buscar.
 
     Returns:
-        Dict {codigo: registro} para los códigos encontrados.
+        Dict {codigo: registro} keyed by the query code form provided.
     """
     if not codigos:
         return {}
@@ -417,10 +439,15 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
         if not field_names:
             return {}
 
-        unique_codes_set = {str(c).strip() for c in codigos if c}
-        if not unique_codes_set:
+        # casefold → first query spelling (results keyed by caller's form)
+        query_by_fold: dict[str, str] = {}
+        for raw in codigos:
+            text = str(raw).strip()
+            if text:
+                query_by_fold.setdefault(text.casefold(), text)
+        if not query_by_fold:
             return {}
-        unique_codes = list(unique_codes_set)
+        folded_codes = list(query_by_fold.keys())
 
         result: dict[str, dict[str, Any]] = {}
         # Track which DB row each code was first resolved to, so collisions (the
@@ -431,6 +458,9 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
 
         preferred = "codigo" if "codigo" in field_names else field_names[0]
 
+        def _query_key_for(val: str) -> str | None:
+            return query_by_fold.get(val.casefold())
+
         def _scan_column(codes: list[str], column: str) -> None:
             CHUNK = 900
             for i in range(0, len(codes), CHUNK):
@@ -438,7 +468,7 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
                 placeholders = ", ".join(["?"] * len(chunk))
                 cursor.execute(
                     f"SELECT rowid AS __antares_rowid__, {cols} FROM imagenes "
-                    f"WHERE {_qi(column)} IN ({placeholders})",
+                    f"WHERE lower({_qi(column)}) IN ({placeholders})",
                     chunk,
                 )
                 for row in cursor.fetchall():
@@ -446,13 +476,14 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
                     row_id = row_dict.pop("__antares_rowid__")
                     for fn in field_names:
                         val = str(row_dict.get(fn, "") or "").strip()
-                        if val and val in unique_codes_set:
-                            _record_code_match(result, code_rowids, val, row_id, row_dict)
+                        query_key = _query_key_for(val) if val else None
+                        if query_key:
+                            _record_code_match(result, code_rowids, query_key, row_id, row_dict)
 
         # Pass 1: fast path on preferred key column.
-        _scan_column(unique_codes, preferred)
+        _scan_column(folded_codes, preferred)
 
-        unresolved = [c for c in unique_codes if c not in result]
+        unresolved = [c for c in folded_codes if query_by_fold[c] not in result]
         if unresolved and len(field_names) > 1:
             # Pass 2: multi-field OR only for codes still missing.
             # safe margin for SQLite param limit; clamp to >=1 so a schema with
@@ -463,7 +494,7 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
                 chunk = unresolved[i:i + CHUNK]
                 placeholders = ", ".join(["?"] * len(chunk))
                 conditions = " OR ".join(
-                    [f"{_qi(fn)} IN ({placeholders})" for fn in other_fields]
+                    [f"lower({_qi(fn)}) IN ({placeholders})" for fn in other_fields]
                 )
                 params = chunk * len(other_fields)
                 cursor.execute(
@@ -475,13 +506,17 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
                     row_id = row_dict.pop("__antares_rowid__")
                     for fn in field_names:
                         val = str(row_dict.get(fn, "") or "").strip()
-                        if val and val in unique_codes_set:
-                            _record_code_match(result, code_rowids, val, row_id, row_dict)
+                        query_key = _query_key_for(val) if val else None
+                        if query_key:
+                            _record_code_match(result, code_rowids, query_key, row_id, row_dict)
         return result
 
 
 def buscar_por_columna(codigos: list[str], column: str) -> dict[str, dict[str, Any]]:
     """Busca múltiples códigos en una columna específica de la BD.
+
+    Matching is case-insensitive (casefold). Result keys use the caller's
+    query spelling.
 
     Args:
         codigos: Lista de códigos a buscar.
@@ -500,10 +535,15 @@ def buscar_por_columna(codigos: list[str], column: str) -> dict[str, dict[str, A
         field_names = set(field_names_list)
         if safe_column not in field_names:
             return {}
-        unique_codes_set = {str(c).strip() for c in codigos if c}
-        if not unique_codes_set:
+
+        query_by_fold: dict[str, str] = {}
+        for raw in codigos:
+            text = str(raw).strip()
+            if text:
+                query_by_fold.setdefault(text.casefold(), text)
+        if not query_by_fold:
             return {}
-        unique_codes = list(unique_codes_set)
+        folded_codes = list(query_by_fold.keys())
 
         result: dict[str, dict[str, Any]] = {}
         # Track which DB row each code was first resolved to, so collisions (the
@@ -512,20 +552,21 @@ def buscar_por_columna(codigos: list[str], column: str) -> dict[str, dict[str, A
         code_rowids: dict[str, int] = {}
         CHUNK = 900  # safe margin for SQLite param limit
         cols = ", ".join(_qi(fn) for fn in field_names_list)
-        for i in range(0, len(unique_codes), CHUNK):
-            chunk = unique_codes[i:i + CHUNK]
+        for i in range(0, len(folded_codes), CHUNK):
+            chunk = folded_codes[i:i + CHUNK]
             placeholders = ", ".join(["?"] * len(chunk))
             cursor.execute(
                 f"SELECT rowid AS __antares_rowid__, {cols} FROM imagenes "
-                f"WHERE {_qi(safe_column)} IN ({placeholders})",
+                f"WHERE lower({_qi(safe_column)}) IN ({placeholders})",
                 chunk,
             )
             for row in cursor.fetchall():
                 row_dict = dict(row)
                 row_id = row_dict.pop("__antares_rowid__")
                 val = str(row_dict.get(safe_column, "") or "").strip()
-                if val and val in unique_codes_set:
-                    _record_code_match(result, code_rowids, val, row_id, row_dict)
+                query_key = query_by_fold.get(val.casefold()) if val else None
+                if query_key:
+                    _record_code_match(result, code_rowids, query_key, row_id, row_dict)
         return result
 
 

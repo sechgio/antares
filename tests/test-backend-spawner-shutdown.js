@@ -35,17 +35,19 @@ async function run() {
   const originalPlatform = process.platform;
   let syncTaskkillCalls = 0;
   let asyncTaskkillCalls = 0;
+  let spawnCount = 0;
 
   Object.defineProperty(process, 'platform', { value: 'win32' });
 
   childProcess.spawn = () => {
+    spawnCount++;
     const fakeProcess = new EventEmitter();
     fakeProcess.stdout = new EventEmitter();
     fakeProcess.stderr = new EventEmitter();
     fakeProcess.stdin = new EventEmitter();
     fakeProcess.stdin.end = () => {};
     fakeProcess.killed = false;
-    fakeProcess.pid = 54321;
+    fakeProcess.pid = 54321 + spawnCount;
     fakeProcess.kill = () => {
       fakeProcess.killed = true;
     };
@@ -66,7 +68,12 @@ async function run() {
 
   const backendSpawnerPath = require.resolve('../electron/backend-spawner.js');
   delete require.cache[backendSpawnerPath];
-  const { startPythonBackend, killPython } = require('../electron/backend-spawner.js');
+  const {
+    startPythonBackend,
+    killPython,
+    manualRestart,
+    isReady,
+  } = require('../electron/backend-spawner.js');
 
   try {
     await startPythonBackend(true);
@@ -74,6 +81,13 @@ async function run() {
 
     assert(syncTaskkillCalls === 0, 'Shutdown should not use blocking taskkill');
     assert(asyncTaskkillCalls === 1, 'Shutdown should schedule taskkill asynchronously on Windows');
+
+    // 4.4: manualRestart must not undo quit / spawn a zombie after killPython.
+    const spawnBefore = spawnCount;
+    const restarted = await manualRestart(true, { force: true });
+    assert(restarted === false, 'manualRestart aborts when shutdown is in progress');
+    assert(!isReady(), 'backend stays not-ready after quit + aborted restart');
+    assert(spawnCount === spawnBefore, 'manualRestart does not spawn after killPython');
   } finally {
     childProcess.spawn = originalSpawn;
     childProcess.execFileSync = originalExecFileSync;

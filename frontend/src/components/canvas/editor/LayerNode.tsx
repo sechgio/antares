@@ -56,6 +56,16 @@ function imgStyleFromCssVars(cssVars: CanvasLayer['cssVars']): CSSProperties {
   return style;
 }
 
+/** Fingerprint paint-relevant cssVars (position translate excluded — applied separately). */
+function paintVarsKey(vars: CanvasLayer['cssVars'], scale: number, lineOverride: boolean): string {
+  let key = `${scale}|${lineOverride ? 1 : 0}`;
+  for (const k of Object.keys(vars).sort()) {
+    if (k === '--translate-x' || k === '--translate-y') continue;
+    key += `|${k}=${vars[k as keyof typeof vars] ?? ''}`;
+  }
+  return key;
+}
+
 function LayerNode({
   layer,
   selected,
@@ -75,6 +85,7 @@ function LayerNode({
   onStartPathEdit,
 }: LayerNodeProps) {
   const editorRef = useRef<HTMLTextAreaElement>(null);
+  const paintCacheRef = useRef<{ key: string; paint: Record<string, string> } | null>(null);
   // Keep latest callbacks behind refs so memo can ignore handler identity without going stale.
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
@@ -144,23 +155,34 @@ function LayerNode({
   const canEditField = canFocusFieldBinding(layer);
   const highlighted = selected || editing || pathEditing;
 
-  const paintVars = isLine
-    ? {
-        ...lineLayer.cssVars,
-        '--background-color': 'transparent',
-        '--fill-visible': '0',
-        '--border-width': '0px',
-        '--stroke-visible': '0',
-        '--border': '',
-      }
-    : layer.cssVars;
-
-  const paint = buildLayerPaintStyle(paintVars, { scale });
-
-  if (clipPath) {
-    paint.borderRadius = '0px';
-  } else if (!hasExplicitRadius && layer.type === 'ellipse') {
-    paint.borderRadius = '50%';
+  const paintSource = isLine ? lineLayer.cssVars : layer.cssVars;
+  const paintCacheKey = `${paintVarsKey(paintSource, scale, isLine)}|${clipPath ?? ''}|${hasExplicitRadius ? 1 : 0}|${layer.type}|${moving ? 1 : 0}`;
+  let paint: Record<string, string>;
+  if (paintCacheRef.current?.key === paintCacheKey) {
+    paint = paintCacheRef.current.paint;
+  } else {
+    const paintVars = isLine
+      ? {
+          ...paintSource,
+          '--background-color': 'transparent',
+          '--fill-visible': '0',
+          '--border-width': '0px',
+          '--stroke-visible': '0',
+          '--border': '',
+        }
+      : paintSource;
+    paint = buildLayerPaintStyle(paintVars, { scale });
+    if (clipPath) {
+      paint.borderRadius = '0px';
+    } else if (!hasExplicitRadius && layer.type === 'ellipse') {
+      paint.borderRadius = '50%';
+    }
+    // Defer expensive GPU effects while dragging (restore on commit).
+    if (moving) {
+      const { filter: _filter, boxShadow: _shadow, ...rest } = paint;
+      paint = rest;
+    }
+    paintCacheRef.current = { key: paintCacheKey, paint };
   }
 
   // Position via translate; keep rotate/flip from paint (do not clobber).
@@ -200,7 +222,8 @@ function LayerNode({
     userSelect: editing ? 'text' : 'none',
     zIndex: highlighted ? 20 : 1,
     pointerEvents:
-      layer.type === 'group' && !selected
+      // Group/grid chrome is behind children; let slots receive hits unless selected.
+      (layer.type === 'group' || layer.type === 'grid') && !selected
         ? 'none'
         : interactive || editing
           ? 'auto'
@@ -208,7 +231,9 @@ function LayerNode({
     mixBlendMode: (layer.cssVars['--blend-mode'] as CSSProperties['mixBlendMode']) || undefined,
   };
 
-  if (highlighted) {
+  // Selection handles live on SelectionChromeOverlay; keep a light ring on the
+  // layer so locked/non-editable selections remain visible (Figma-like).
+  if (selected || editing || pathEditing) {
     if (paint.outline) {
       style.boxShadow = [paint.boxShadow, '0 0 0 1px var(--cv-accent)'].filter(Boolean).join(',');
     } else {

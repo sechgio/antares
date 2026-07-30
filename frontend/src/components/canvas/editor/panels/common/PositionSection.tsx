@@ -18,7 +18,7 @@ export default function PositionSection({
     <div className="canvas-section">
       <SectionHeader title="Posición" />
       <span className="canvas-sublabel">Alineación</span>
-      <div className="mb-2 flex flex-wrap gap-1">
+      <div className="mb-3 flex flex-wrap gap-1">
         {ALIGN_ITEMS.map(({ align, icon: Icon, label }) => (
           <WithHoverTooltip key={align} label={label} placement="bottom" variant="dark">
             <button
@@ -38,15 +38,19 @@ export default function PositionSection({
           value={parseMm(layer.cssVars['--translate-x'])}
           onChange={(n) => setVarLive('--translate-x', mm(n))}
           onCommit={onCommitLive}
+          step={0.1}
+          suffix="mm"
         />
         <InlineNumField
           prefix="Y"
           value={parseMm(layer.cssVars['--translate-y'])}
           onChange={(n) => setVarLive('--translate-y', mm(n))}
           onCommit={onCommitLive}
+          step={0.1}
+          suffix="mm"
         />
       </div>
-      <div className="mt-2 flex items-center gap-1">
+      <div className="mt-3 flex items-center gap-1">
         <InlineNumField
           prefix=""
           value={parseFloat(layer.cssVars['--rotate'] || '0') || 0}

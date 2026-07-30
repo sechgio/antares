@@ -1,8 +1,7 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type HTMLAttributes, type RefObject } from 'react';
 import {
   ChevronDown,
   ChevronRight,
-  ChevronUp,
   Eye,
   EyeOff,
   FileText,
@@ -28,6 +27,8 @@ import {
   Pentagon,
   Lock,
   Unlock,
+  Ungroup,
+  PanelLeftClose,
 } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { ancestorIds, buildLayerTree, flattenLayerTree, isLayerContainer } from '../ops/layerTree';
@@ -53,10 +54,38 @@ interface LeftSidebarProps {
   onRemovePage: (index: number) => void;
   onDuplicatePage: (index: number) => void;
   onRenamePage: (index: number, name: string) => void;
-  onReorderSibling: (draggedId: string, targetId: string, position: 'before' | 'after') => void;
+  onMoveLayer: (
+    draggedId: string,
+    targetId: string,
+    position: 'before' | 'after' | 'inside',
+  ) => void;
+  onGroupSelected: () => void;
+  onUngroupSelected: () => void;
   onToggleVisible: (id: string, visible: boolean) => void;
   onToggleLocked: (id: string, locked: boolean) => void;
   onRenameLayer: (id: string, name: string) => void;
+  /** When false, panel collapses via CSS but stays mounted. */
+  open?: boolean;
+  /** Hide this sidebar (Archivos header). */
+  onHidePanel?: () => void;
+  hidePanelDisabled?: boolean;
+}
+
+type CapasDropPosition = 'before' | 'after' | 'inside';
+
+function capasDropPosition(
+  layer: CanvasLayer,
+  clientY: number,
+  rowTop: number,
+  rowHeight: number,
+): CapasDropPosition {
+  const y = clientY - rowTop;
+  if (isLayerContainer(layer)) {
+    if (y < rowHeight / 3) return 'before';
+    if (y > (rowHeight * 2) / 3) return 'after';
+    return 'inside';
+  }
+  return y < rowHeight / 2 ? 'before' : 'after';
 }
 
 function layerIcon(type: CanvasLayer['type']) {
@@ -79,6 +108,195 @@ function layerIcon(type: CanvasLayer['type']) {
   return <Layers className="h-3 w-3" />;
 }
 
+/** Capas row: chevron + type icon + name; lock/eye on hover (Figma-like). */
+interface LayerRowProps {
+  layer: CanvasLayer;
+  depth: number;
+  hasChildren: boolean;
+  expanded: boolean;
+  selected: boolean;
+  renaming: boolean;
+  renameDraft: string;
+  dropPosition: CapasDropPosition | null;
+  layerRenameRef: RefObject<HTMLInputElement>;
+  onToggleExpanded: (id: string) => void;
+  onSelect: (id: string, additive?: boolean) => void;
+  onStartRename: (id: string, name: string) => void;
+  onRenameDraftChange: (value: string) => void;
+  onCommitRename: () => void;
+  onCancelRename: () => void;
+  onToggleVisible: (id: string, visible: boolean) => void;
+  onToggleLocked: (id: string, locked: boolean) => void;
+  onMoveLayer: (draggedId: string, targetId: string, position: CapasDropPosition) => void;
+  onDropHover: (id: string, position: CapasDropPosition | null) => void;
+}
+
+const LayerRow = memo(function LayerRow({
+  layer,
+  depth,
+  hasChildren,
+  expanded,
+  selected,
+  renaming,
+  renameDraft,
+  dropPosition,
+  layerRenameRef,
+  onToggleExpanded,
+  onSelect,
+  onStartRename,
+  onRenameDraftChange,
+  onCommitRename,
+  onCancelRename,
+  onToggleVisible,
+  onToggleLocked,
+  onMoveLayer,
+  onDropHover,
+}: LayerRowProps) {
+  const dragGhostRef = useRef<HTMLDivElement | null>(null);
+  const hidden = layer.visible === false;
+  const locked = Boolean(layer.locked);
+
+  return (
+    <li>
+      <div
+        className="canvas-list-row"
+        data-layer-id={layer.id}
+        data-selected={selected}
+        data-dimmed={hidden}
+        data-locked={locked}
+        data-drop={dropPosition ?? undefined}
+        draggable={!locked && !renaming}
+        onDragStart={(e) => {
+          if (locked) {
+            e.preventDefault();
+            return;
+          }
+          e.dataTransfer.setData('text/plain', layer.id);
+          e.dataTransfer.effectAllowed = 'move';
+          const ghost = document.createElement('div');
+          ghost.className = 'canvas-layer-drag-ghost';
+          ghost.textContent = layer.name;
+          document.body.appendChild(ghost);
+          dragGhostRef.current = ghost;
+          e.dataTransfer.setDragImage(ghost, 12, 12);
+        }}
+        onDragEnd={() => {
+          dragGhostRef.current?.remove();
+          dragGhostRef.current = null;
+          onDropHover(layer.id, null);
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = 'move';
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          onDropHover(layer.id, capasDropPosition(layer, e.clientY, rect.top, rect.height));
+        }}
+        onDragLeave={(e) => {
+          const related = e.relatedTarget as Node | null;
+          if (related && e.currentTarget.contains(related)) return;
+          onDropHover(layer.id, null);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onDropHover(layer.id, null);
+          const draggedId = e.dataTransfer.getData('text/plain');
+          if (!draggedId || draggedId === layer.id) return;
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          onMoveLayer(
+            draggedId,
+            layer.id,
+            capasDropPosition(layer, e.clientY, rect.top, rect.height),
+          );
+        }}
+        style={{ paddingLeft: `${8 + depth * 16}px` }}
+      >
+        {hasChildren ? (
+          <button
+            type="button"
+            className="canvas-list-chevron"
+            aria-label={expanded ? 'Colapsar' : 'Expandir'}
+            draggable={false}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => onToggleExpanded(layer.id)}
+          >
+            {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          </button>
+        ) : (
+          <span className="canvas-list-chevron-spacer" aria-hidden />
+        )}
+        {renaming ? (
+          <div className="canvas-list-label">
+            <span className="canvas-list-type-icon">{layerIcon(layer.type)}</span>
+            <input
+              ref={layerRenameRef}
+              className="canvas-input canvas-input--inline min-w-0 flex-1"
+              value={renameDraft}
+              aria-label="Nombre de capa"
+              onChange={(e) => onRenameDraftChange(e.target.value)}
+              onBlur={onCommitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  onCommitRename();
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  onCancelRename();
+                }
+              }}
+            />
+          </div>
+        ) : (
+          <div
+            role="button"
+            tabIndex={0}
+            className="canvas-list-label"
+            onClick={(e) => onSelect(layer.id, e.shiftKey || e.ctrlKey || e.metaKey)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelect(layer.id, e.shiftKey || e.ctrlKey || e.metaKey);
+              }
+            }}
+            onDoubleClick={(e) => {
+              e.preventDefault();
+              if (locked) return;
+              onStartRename(layer.id, layer.name);
+            }}
+          >
+            <span className="canvas-list-type-icon">{layerIcon(layer.type)}</span>
+            <span className="canvas-list-name">{layer.name}</span>
+          </div>
+        )}
+        <div className="canvas-list-row-actions">
+          <button
+            type="button"
+            className="canvas-list-action"
+            aria-label={locked ? 'Desbloquear' : 'Bloquear'}
+            draggable={false}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => onToggleLocked(layer.id, !locked)}
+          >
+            {locked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
+          </button>
+          <button
+            type="button"
+            className="canvas-list-action"
+            aria-label="Visibilidad"
+            draggable={false}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => onToggleVisible(layer.id, hidden)}
+          >
+            {hidden ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+          </button>
+        </div>
+      </div>
+    </li>
+  );
+});
+
 export default memo(function LeftSidebar({
   documentName,
   docs,
@@ -97,25 +315,51 @@ export default memo(function LeftSidebar({
   onRemovePage,
   onDuplicatePage,
   onRenamePage,
-  onReorderSibling,
+  onMoveLayer,
+  onGroupSelected,
+  onUngroupSelected,
   onToggleVisible,
   onToggleLocked,
   onRenameLayer,
+  open = true,
+  onHidePanel,
+  hidePanelDisabled = false,
 }: LeftSidebarProps) {
   const tree = useMemo(() => buildLayerTree(layers), [layers]);
   const containerIds = useMemo(
     () => layers.filter((l) => isLayerContainer(l)).map((l) => l.id),
     [layers],
   );
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const canGroupSelected = useMemo(() => {
+    let n = 0;
+    for (const id of selectedIds) {
+      const layer = layers.find((l) => l.id === id);
+      if (layer && !layer.locked && layer.type !== 'frame') n += 1;
+      if (n >= 2) return true;
+    }
+    return false;
+  }, [layers, selectedIds]);
+  const canUngroupSelected = useMemo(() => {
+    if (selectedIds.length !== 1) return false;
+    const layer = layers.find((l) => l.id === selectedIds[0]);
+    return Boolean(layer && layer.type === 'group' && !layer.locked);
+  }, [layers, selectedIds]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set(containerIds));
   const [layerQuery, setLayerQuery] = useState('');
   const [pageMenu, setPageMenu] = useState<PageContextMenuState | null>(null);
   const [renamingIndex, setRenamingIndex] = useState<number | null>(null);
   const [renamingLayerId, setRenamingLayerId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
+  const [dropHover, setDropHover] = useState<{
+    id: string;
+    position: CapasDropPosition;
+  } | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const layerRenameRef = useRef<HTMLInputElement>(null);
   const layerListRef = useRef<HTMLUListElement>(null);
+  const layersRef = useRef(layers);
+  layersRef.current = layers;
 
   const fileOptions = useMemo(() => {
     const byId = new Map(docs.map((d) => [d.id, d]));
@@ -141,11 +385,11 @@ export default memo(function LeftSidebar({
     });
   }, [containerIds]);
 
-  // Expand ancestors + scroll selected Capas row into view.
+  // Expand ancestors + scroll selected Capas row into view (selection-driven, not every layers edit).
   useEffect(() => {
     const id = selectedIds[0];
     if (!id) return;
-    const ancestors = ancestorIds(layers, id);
+    const ancestors = ancestorIds(layersRef.current, id);
     if (ancestors.length) {
       setExpandedIds((prev) => {
         const next = new Set(prev);
@@ -163,7 +407,7 @@ export default memo(function LeftSidebar({
       const el = layerListRef.current?.querySelector(`[data-layer-id="${id}"]`);
       el?.scrollIntoView({ block: 'nearest' });
     });
-  }, [selectedIds, layers]);
+  }, [selectedIds]);
 
   useEffect(() => {
     if (renamingIndex === null) return;
@@ -183,21 +427,48 @@ export default memo(function LeftSidebar({
     setRenamingIndex(null);
   };
 
-  const commitLayerRename = () => {
+  const commitLayerRename = useCallback(() => {
     if (renamingLayerId === null) return;
     const name = renameDraft.trim();
     if (name) onRenameLayer(renamingLayerId, name);
     setRenamingLayerId(null);
-  };
+  }, [renamingLayerId, renameDraft, onRenameLayer]);
 
-  const toggleExpanded = (id: string) => {
+  const cancelLayerRename = useCallback(() => {
+    setRenamingLayerId(null);
+  }, []);
+
+  const toggleExpanded = useCallback((id: string) => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  };
+  }, []);
+
+  const startLayerRename = useCallback((id: string, name: string) => {
+    setRenameDraft(name);
+    setRenamingLayerId(id);
+  }, []);
+
+  const onDropHover = useCallback((id: string, position: CapasDropPosition | null) => {
+    if (position === 'inside') {
+      setExpandedIds((prev) => {
+        if (prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.add(id);
+        return next;
+      });
+    }
+    setDropHover((prev) => {
+      if (position == null) {
+        return prev?.id === id ? null : prev;
+      }
+      if (prev?.id === id && prev.position === position) return prev;
+      return { id, position };
+    });
+  }, []);
 
   const rows = useMemo(() => {
     const query = layerQuery.trim().toLowerCase();
@@ -222,9 +493,50 @@ export default memo(function LeftSidebar({
   }, [tree, expandedIds, layerQuery, containerIds, layers]);
   const pageLabel = (i: number) => pages?.[i]?.name ?? `Página ${i + 1}`;
 
+  /** Windowed Capas list — skip mounting off-screen rows when the tree is large. */
+  const LAYER_ROW_H = 28;
+  const LAYER_OVERSCAN = 8;
+  const LAYER_VIRTUALIZE_AT = 80;
+  const [layerScrollTop, setLayerScrollTop] = useState(0);
+  const [layerListHeight, setLayerListHeight] = useState(400);
+  useEffect(() => {
+    const el = layerListRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const h = entries[0]?.contentRect.height;
+      if (h && h > 0) setLayerListHeight(h);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const virtualizeLayers = rows.length >= LAYER_VIRTUALIZE_AT;
+  const layerWindow = useMemo(() => {
+    if (!virtualizeLayers) {
+      return { start: 0, end: rows.length, padTop: 0, padBottom: 0 };
+    }
+    const visible = Math.ceil(layerListHeight / LAYER_ROW_H) + LAYER_OVERSCAN * 2;
+    const start = Math.max(0, Math.floor(layerScrollTop / LAYER_ROW_H) - LAYER_OVERSCAN);
+    const end = Math.min(rows.length, start + visible);
+    return {
+      start,
+      end,
+      padTop: start * LAYER_ROW_H,
+      padBottom: Math.max(0, (rows.length - end) * LAYER_ROW_H),
+    };
+  }, [virtualizeLayers, rows.length, layerListHeight, layerScrollTop]);
+  const visibleRows = virtualizeLayers ? rows.slice(layerWindow.start, layerWindow.end) : rows;
+
   return (
     <aside
-      className="canvas-panel flex h-full w-[248px] shrink-0 flex-col overflow-hidden border-r"
+      className={
+        open
+          ? 'canvas-panel canvas-panel-chrome flex h-full w-[248px] shrink-0 flex-col overflow-hidden border-r'
+          : 'canvas-panel canvas-panel-chrome flex h-full w-0 min-w-0 shrink-0 flex-col overflow-hidden border-r-0'
+      }
+      data-open={open ? 'true' : 'false'}
+      data-testid="canvas-left-panel"
+      aria-hidden={!open}
+      {...(!open ? ({ inert: '' } as HTMLAttributes<HTMLElement>) : {})}
     >
       <div className="border-b px-2 py-2" style={{ borderColor: 'var(--cv-border)' }}>
         <div className="canvas-section-title mb-1.5 flex items-center justify-between px-1">
@@ -245,6 +557,20 @@ export default memo(function LeftSidebar({
                 <Trash2 className="h-3 w-3" />
               </button>
             </WithHoverTooltip>
+            {onHidePanel && (
+              <WithHoverTooltip label="Ocultar panel izquierdo" placement="bottom" variant="dark">
+                <button
+                  type="button"
+                  className="canvas-icon-btn !h-6 !w-6"
+                  data-testid="canvas-toggle-left-panel"
+                  disabled={hidePanelDisabled}
+                  onClick={onHidePanel}
+                  aria-label="Ocultar panel izquierdo"
+                >
+                  <PanelLeftClose className="h-3 w-3" />
+                </button>
+              </WithHoverTooltip>
+            )}
           </div>
         </div>
         <CanvasSelect
@@ -286,7 +612,7 @@ export default memo(function LeftSidebar({
               <input
                 key={pages?.[i]?.id ?? i}
                 ref={renameInputRef}
-                className="canvas-input w-full !py-1.5 text-[12px]"
+                className="canvas-input canvas-input--inline w-full py-1.5"
                 value={renameDraft}
                 aria-label="Nombre de página"
                 onChange={(e) => setRenameDraft(e.target.value)}
@@ -348,7 +674,29 @@ export default memo(function LeftSidebar({
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="canvas-section-title flex items-center gap-1.5 px-3 pt-3">
           <Layers className="h-3 w-3" />
-          Capas
+          <span className="min-w-0 flex-1">Capas</span>
+          <WithHoverTooltip label="Agrupar (Ctrl+G)" placement="bottom" variant="dark">
+            <button
+              type="button"
+              className="canvas-icon-btn !h-6 !w-6"
+              aria-label="Agrupar"
+              disabled={!canGroupSelected}
+              onClick={onGroupSelected}
+            >
+              <Group className="h-3.5 w-3.5" />
+            </button>
+          </WithHoverTooltip>
+          <WithHoverTooltip label="Desagrupar (Ctrl+Shift+G)" placement="bottom" variant="dark">
+            <button
+              type="button"
+              className="canvas-icon-btn !h-6 !w-6"
+              aria-label="Desagrupar"
+              disabled={!canUngroupSelected}
+              onClick={onUngroupSelected}
+            >
+              <Ungroup className="h-3.5 w-3.5" />
+            </button>
+          </WithHoverTooltip>
         </div>
         <div className="px-2 pb-1.5 pt-1">
           <input
@@ -360,162 +708,48 @@ export default memo(function LeftSidebar({
             onChange={(e) => setLayerQuery(e.target.value)}
           />
         </div>
-        <ul ref={layerListRef} className="flex-1 overflow-y-auto px-1 pb-3">
-          {rows.map((row) => {
+        <ul
+          ref={layerListRef}
+          className="flex-1 overflow-y-auto px-1 pb-3"
+          onScroll={
+            virtualizeLayers
+              ? (e) => setLayerScrollTop((e.currentTarget as HTMLUListElement).scrollTop)
+              : undefined
+          }
+        >
+          {layerWindow.padTop > 0 && (
+            <li aria-hidden style={{ height: layerWindow.padTop, listStyle: 'none' }} />
+          )}
+          {visibleRows.map((row) => {
             const { layer, depth, hasChildren } = row;
-            const expanded = expandedIds.has(layer.id);
-            const parentKey =
-              layer.parentId && layers.some((l) => l.id === layer.parentId) ? layer.parentId : undefined;
-            const siblingCapas = layers
-              .filter((l) => {
-                if (l.type === 'frame') return false;
-                const p = l.parentId && layers.some((x) => x.id === l.parentId) ? l.parentId : undefined;
-                return p === parentKey;
-              })
-              .reverse();
-            const sibIndex = siblingCapas.findIndex((l) => l.id === layer.id);
             return (
-              <li key={layer.id}>
-                <div
-                  className="canvas-list-row"
-                  data-layer-id={layer.id}
-                  data-selected={selectedIds.includes(layer.id)}
-                  data-dimmed={layer.visible === false}
-                  draggable={!layer.locked && renamingLayerId !== layer.id}
-                  onDragStart={(e) => {
-                    if (layer.locked) {
-                      e.preventDefault();
-                      return;
-                    }
-                    e.dataTransfer.setData('text/plain', layer.id);
-                    e.dataTransfer.effectAllowed = 'move';
-                  }}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = 'move';
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const draggedId = e.dataTransfer.getData('text/plain');
-                    if (!draggedId || draggedId === layer.id) return;
-                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    const position = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-                    onReorderSibling(draggedId, layer.id, position);
-                  }}
-                  style={{ color: 'var(--cv-text)', paddingLeft: `${4 + depth * 12}px` }}
-                >
-                  {hasChildren ? (
-                    <button
-                      type="button"
-                      className="canvas-icon-btn !h-5 !w-5 shrink-0"
-                      style={{ color: 'var(--cv-text-muted)' }}
-                      aria-label={expanded ? 'Colapsar' : 'Expandir'}
-                      onClick={() => toggleExpanded(layer.id)}
-                    >
-                      {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                    </button>
-                  ) : (
-                    <span className="inline-block h-5 w-5 shrink-0" aria-hidden />
-                  )}
-                  {renamingLayerId === layer.id ? (
-                    <input
-                      ref={layerRenameRef}
-                      className="canvas-input min-w-0 flex-1 !px-1 !py-0 text-[11px]"
-                      value={renameDraft}
-                      aria-label="Nombre de capa"
-                      onChange={(e) => setRenameDraft(e.target.value)}
-                      onBlur={commitLayerRename}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          commitLayerRename();
-                        }
-                        if (e.key === 'Escape') {
-                          e.preventDefault();
-                          setRenamingLayerId(null);
-                        }
-                      }}
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-0.5 text-left"
-                      onClick={(e) => onSelect(layer.id, e.shiftKey || e.ctrlKey || e.metaKey)}
-                      onDoubleClick={(e) => {
-                        e.preventDefault();
-                        if (layer.locked) return;
-                        setRenameDraft(layer.name);
-                        setRenamingLayerId(layer.id);
-                      }}
-                    >
-                      <span style={{ color: 'var(--cv-text-muted)' }}>{layerIcon(layer.type)}</span>
-                      <span className="min-w-0 flex-1 truncate">{layer.name}</span>
-                      {layer.meta?.key && (
-                        <span
-                          className="max-w-[72px] shrink-0 truncate rounded px-1 text-[9px] uppercase tracking-wide"
-                          style={{
-                            background: 'var(--cv-hover)',
-                            color: 'var(--cv-text-muted)',
-                          }}
-                          title={layer.meta.key}
-                        >
-                          {layer.meta.key}
-                        </span>
-                      )}
-                    </button>
-                  )}
-                  <WithHoverTooltip label="Visibilidad" placement="left" variant="dark">
-                    <button
-                      type="button"
-                      className="canvas-icon-btn !h-6 !w-6"
-                      aria-label="Visibilidad"
-                      onClick={() => onToggleVisible(layer.id, layer.visible === false)}
-                    >
-                      {layer.visible === false ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                    </button>
-                  </WithHoverTooltip>
-                  <WithHoverTooltip label={layer.locked ? 'Desbloquear' : 'Bloquear'} placement="left" variant="dark">
-                    <button
-                      type="button"
-                      className="canvas-icon-btn !h-6 !w-6"
-                      aria-label={layer.locked ? 'Desbloquear' : 'Bloquear'}
-                      onClick={() => onToggleLocked(layer.id, !layer.locked)}
-                    >
-                      {layer.locked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
-                    </button>
-                  </WithHoverTooltip>
-                  <WithHoverTooltip label="Subir" placement="left" variant="dark">
-                    <button
-                      type="button"
-                      className="canvas-icon-btn !h-6 !w-6"
-                      aria-label="Subir"
-                      disabled={sibIndex <= 0 || layer.locked}
-                      onClick={() => {
-                        const prev = siblingCapas[sibIndex - 1];
-                        if (prev) onReorderSibling(layer.id, prev.id, 'before');
-                      }}
-                    >
-                      <ChevronUp className="h-3 w-3" />
-                    </button>
-                  </WithHoverTooltip>
-                  <WithHoverTooltip label="Bajar" placement="left" variant="dark">
-                    <button
-                      type="button"
-                      className="canvas-icon-btn !h-6 !w-6"
-                      aria-label="Bajar"
-                      disabled={sibIndex < 0 || sibIndex >= siblingCapas.length - 1 || layer.locked}
-                      onClick={() => {
-                        const nextLayer = siblingCapas[sibIndex + 1];
-                        if (nextLayer) onReorderSibling(layer.id, nextLayer.id, 'after');
-                      }}
-                    >
-                      <ChevronDown className="h-3 w-3" />
-                    </button>
-                  </WithHoverTooltip>
-                </div>
-              </li>
+              <LayerRow
+                key={layer.id}
+                layer={layer}
+                depth={depth}
+                hasChildren={hasChildren}
+                expanded={expandedIds.has(layer.id)}
+                selected={selectedIdSet.has(layer.id)}
+                renaming={renamingLayerId === layer.id}
+                renameDraft={renamingLayerId === layer.id ? renameDraft : ''}
+                dropPosition={dropHover?.id === layer.id ? dropHover.position : null}
+                layerRenameRef={layerRenameRef}
+                onToggleExpanded={toggleExpanded}
+                onSelect={onSelect}
+                onStartRename={startLayerRename}
+                onRenameDraftChange={setRenameDraft}
+                onCommitRename={commitLayerRename}
+                onCancelRename={cancelLayerRename}
+                onToggleVisible={onToggleVisible}
+                onToggleLocked={onToggleLocked}
+                onMoveLayer={onMoveLayer}
+                onDropHover={onDropHover}
+              />
             );
           })}
+          {layerWindow.padBottom > 0 && (
+            <li aria-hidden style={{ height: layerWindow.padBottom, listStyle: 'none' }} />
+          )}
           {rows.length === 0 && (
             <li className="canvas-empty-hint">
               Sin capas. Usa la barra inferior o un preset.

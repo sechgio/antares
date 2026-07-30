@@ -1,10 +1,13 @@
 /** Register absolute paths with Electron allowlist (drag-drop / thumbnails). */
-export function registerLocalPath(path: string | undefined | null): void {
-  if (!path) return;
+export function registerLocalPath(path: string | undefined | null): Promise<void> {
+  if (!path) return Promise.resolve();
   const fn = window.electronAPI?.registerLocalPath;
-  if (fn) void fn(path).catch(() => {});
+  if (!fn) return Promise.resolve();
+  return fn(path).then(() => undefined).catch(() => undefined);
 }
 
-export function registerLocalPaths(paths: Iterable<string>): void {
-  for (const p of paths) registerLocalPath(p);
+export function registerLocalPaths(paths: Iterable<string>): Promise<void> {
+  const list = [...paths].filter((p): p is string => Boolean(p));
+  if (list.length === 0) return Promise.resolve();
+  return Promise.all(list.map((p) => registerLocalPath(p))).then(() => undefined);
 }

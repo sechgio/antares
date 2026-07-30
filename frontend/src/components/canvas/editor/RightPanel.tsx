@@ -1,15 +1,17 @@
-import { memo, useState } from 'react';
+import { memo, useEffect, useRef, useState, type HTMLAttributes } from 'react';
 import {
   AlignHorizontalDistributeCenter,
   AlignVerticalDistributeCenter,
   Eye,
   EyeOff,
   Lock,
+  PanelRightClose,
   Trash2,
   Unlock,
 } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
-import type { CanvasLayer } from '../types';
+import type { CanvasLayer, CanvasSharedStyle, CanvasStyleKind } from '../types';
+import InlineNumField from './InlineNumField';
 import {
   applyLineStrokeWeight,
   clampStrokeWeight,
@@ -23,6 +25,7 @@ import {
 import { exportSelectionPng } from '../ops/exportPng';
 import { clipPathForLayerType } from '../ops/shapePaths';
 import TemplatesSection from './TemplatesSection';
+import StylesSection from './StylesSection';
 import { ALIGN_ITEMS, BulkOpacityField, SectionHeader, ZOrderButtons } from './panels/shared';
 import PositionSection from './panels/common/PositionSection';
 import DispositionSection from './panels/common/DispositionSection';
@@ -48,6 +51,10 @@ interface RightPanelProps {
   onDelete: (id: string) => void;
   onAlign: (align: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => void;
   onDistribute: (axis: 'horizontal' | 'vertical') => void;
+  /** Nudge multi-selection by dx/dy mm (shared X/Y fields). */
+  onNudgeSelection?: (dxMm: number, dyMm: number) => void;
+  /** Selection AABB origin for multi-select X/Y fields. */
+  selectionOrigin?: { x: number; y: number } | null;
   onBulkVisible: (visible: boolean) => void;
   onBulkLocked: (locked: boolean) => void;
   onBulkOpacity: (opacity: number) => void;
@@ -61,10 +68,22 @@ interface RightPanelProps {
   onSendBackward: () => void;
   /** Apply a canvas preset when nothing is selected. */
   onApplyPreset?: (presetId: string) => void;
+  /** Shared document styles catalog. */
+  documentStyles?: CanvasSharedStyle[];
+  onCreateStyle?: (kind: CanvasStyleKind) => void;
+  onApplyStyle?: (styleId: string) => void;
+  onDetachStyle?: (kind: CanvasStyleKind) => void;
+  onRemoveStyle?: (styleId: string) => void;
+  onRenameStyle?: (styleId: string, name: string) => void;
   /** True when another logo layer shares this layer's side. */
   logoSideConflict?: boolean;
   /** Mount point for viewport ZoomMenu (portal from DesignStage). */
   zoomSlotRef?: (el: HTMLDivElement | null) => void;
+  /** When false, panel collapses via CSS but stays mounted. */
+  open?: boolean;
+  /** Hide this sidebar (next to zoom). */
+  onHidePanel?: () => void;
+  hidePanelDisabled?: boolean;
 }
 
 export default memo(function RightPanel({
@@ -78,6 +97,8 @@ export default memo(function RightPanel({
   onDelete,
   onAlign,
   onDistribute,
+  onNudgeSelection,
+  selectionOrigin = null,
   onBulkVisible,
   onBulkLocked,
   onBulkOpacity,
@@ -87,15 +108,38 @@ export default memo(function RightPanel({
   onSendBack,
   onSendBackward,
   onApplyPreset,
+  documentStyles = [],
+  onCreateStyle,
+  onApplyStyle,
+  onDetachStyle,
+  onRemoveStyle,
+  onRenameStyle,
   logoSideConflict = false,
   zoomSlotRef,
+  open = true,
+  onHidePanel,
+  hidePanelDisabled = false,
 }: RightPanelProps) {
   const [exportScale, setExportScale] = useState(1);
   const [exporting, setExporting] = useState(false);
 
+  // Latest layer for live edits: props lag behind rapid field changes (X then Y),
+  // so setVarLive must accumulate on the last emit, not the stale prop snapshot.
+  const liveLayerRef = useRef<CanvasLayer | null>(layer);
+  useEffect(() => {
+    liveLayerRef.current = layer;
+  }, [layer]);
+
   const emitLive = (next: CanvasLayer) => {
+    liveLayerRef.current = next;
     if (onChangeLive) onChangeLive(next);
     else onChange(next);
+  };
+
+  const mapLive = (fn: (current: CanvasLayer) => CanvasLayer) => {
+    const base = liveLayerRef.current;
+    if (!base) return;
+    emitLive(fn(base));
   };
 
   const setVar = (key: string, value: string) => {
@@ -104,8 +148,9 @@ export default memo(function RightPanel({
   };
 
   const setVarLive = (key: string, value: string) => {
-    if (!layer) return;
-    emitLive({ ...layer, cssVars: { ...layer.cssVars, [key]: value } });
+    const base = liveLayerRef.current;
+    if (!base) return;
+    emitLive({ ...base, cssVars: { ...base.cssVars, [key]: value } });
   };
 
   const setVars = (patch: Record<string, string>) => {
@@ -114,8 +159,9 @@ export default memo(function RightPanel({
   };
 
   const setVarsLive = (patch: Record<string, string>) => {
-    if (!layer) return;
-    emitLive({ ...layer, cssVars: { ...layer.cssVars, ...patch } });
+    const base = liveLayerRef.current;
+    if (!base) return;
+    emitLive({ ...base, cssVars: { ...base.cssVars, ...patch } });
   };
 
   const setMeta = (patch: NonNullable<CanvasLayer['meta']>) => {
@@ -124,8 +170,9 @@ export default memo(function RightPanel({
   };
 
   const setMetaLive = (patch: NonNullable<CanvasLayer['meta']>) => {
-    if (!layer) return;
-    emitLive({ ...layer, meta: { ...layer.meta, ...patch } });
+    const base = liveLayerRef.current;
+    if (!base) return;
+    emitLive({ ...base, meta: { ...base.meta, ...patch } });
   };
 
   const hasSelection = Boolean(layer && layer.type !== 'frame');
@@ -157,9 +204,10 @@ export default memo(function RightPanel({
   );
 
   const setStrokeWeight = (raw: number) => {
-    if (!layer) return;
-    if (layer.type === 'line') {
-      emitLive(applyLineStrokeWeight(layer, raw));
+    const base = liveLayerRef.current;
+    if (!base) return;
+    if (base.type === 'line') {
+      emitLive(applyLineStrokeWeight(base, raw));
       return;
     }
     const px = clampStrokeWeight(raw);
@@ -174,6 +222,7 @@ export default memo(function RightPanel({
     pageColors,
     onChange,
     emitLive,
+    mapLive,
     setVar,
     setVarLive,
     setVars,
@@ -200,12 +249,19 @@ export default memo(function RightPanel({
 
   return (
     <aside
-      className="flex h-full w-[260px] shrink-0 flex-col border-l"
+      className={
+        open
+          ? 'canvas-panel-chrome flex h-full w-[272px] shrink-0 flex-col overflow-hidden border-l'
+          : 'canvas-panel-chrome flex h-full w-0 min-w-0 shrink-0 flex-col overflow-hidden border-l-0'
+      }
       style={{ background: 'var(--cv-panel)', borderColor: 'var(--cv-border)' }}
+      data-open={open ? 'true' : 'false'}
       data-testid="canvas-right-panel"
+      aria-hidden={!open}
+      {...(!open ? ({ inert: '' } as HTMLAttributes<HTMLElement>) : {})}
     >
       <div
-        className="relative z-20 flex items-center justify-between gap-2 border-b px-3 py-2.5"
+        className="relative z-20 flex items-center justify-between gap-2 border-b px-4 py-3"
         style={{ borderColor: 'var(--cv-border)' }}
       >
         <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -221,6 +277,20 @@ export default memo(function RightPanel({
             className="relative shrink-0"
             data-testid="canvas-zoom-slot"
           />
+          {onHidePanel && (
+            <WithHoverTooltip label="Ocultar panel derecho" placement="bottom" variant="dark">
+              <button
+                type="button"
+                className="canvas-icon-btn !h-7 !w-7 shrink-0"
+                data-testid="canvas-toggle-right-panel"
+                disabled={hidePanelDisabled}
+                onClick={onHidePanel}
+                aria-label="Ocultar panel derecho"
+              >
+                <PanelRightClose className="h-3.5 w-3.5" />
+              </button>
+            </WithHoverTooltip>
+          )}
         </div>
         {hasSelection && layer && selectedCount === 1 && (
           <div className="flex items-center gap-0.5">
@@ -257,7 +327,7 @@ export default memo(function RightPanel({
       </div>
 
       {selectedCount === 0 && onApplyPreset && (
-        <div className="border-b px-2 py-2" style={{ borderColor: 'var(--cv-border)' }}>
+        <div className="border-b px-4 py-3" style={{ borderColor: 'var(--cv-border)' }}>
           <TemplatesSection onApplyPreset={onApplyPreset} tooltipPlacement="left" />
         </div>
       )}
@@ -265,6 +335,24 @@ export default memo(function RightPanel({
       {selectedCount > 1 && (
         <div className="canvas-section">
           <div className="canvas-section-title">Alinear ({selectedCount})</div>
+          {selectionOrigin && onNudgeSelection && (
+            <div className="mb-2 flex gap-2">
+              <InlineNumField
+                prefix="X"
+                value={selectionOrigin.x}
+                onChange={(n) => onNudgeSelection(n - selectionOrigin.x, 0)}
+                step={0.1}
+                suffix="mm"
+              />
+              <InlineNumField
+                prefix="Y"
+                value={selectionOrigin.y}
+                onChange={(n) => onNudgeSelection(0, n - selectionOrigin.y)}
+                step={0.1}
+                suffix="mm"
+              />
+            </div>
+          )}
           <div className="flex flex-wrap gap-1">
             {ALIGN_ITEMS.map(({ align, icon: Icon, label }) => (
               <WithHoverTooltip key={align} label={label} placement="bottom" variant="dark">
@@ -415,7 +503,24 @@ export default memo(function RightPanel({
           {/* Shape name + z-order block (commits directly via onChange). */}
           {shape && <ShapeSection {...sectionProps} />}
 
-          <div className="p-3">
+          {onCreateStyle &&
+            onApplyStyle &&
+            onDetachStyle &&
+            onRemoveStyle &&
+            onRenameStyle && (
+              <StylesSection
+                styles={documentStyles}
+                layer={layer}
+                canLink={Boolean(layer && layer.type !== 'frame' && !layer.locked)}
+                onCreate={onCreateStyle}
+                onApply={onApplyStyle}
+                onDetach={onDetachStyle}
+                onRemove={onRemoveStyle}
+                onRename={onRenameStyle}
+              />
+            )}
+
+          <div className="px-4 py-4">
             <button
               type="button"
               className="canvas-danger-btn flex w-full items-center justify-center gap-2 rounded-md px-3 py-2 text-[12px] transition-colors"

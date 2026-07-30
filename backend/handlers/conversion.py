@@ -341,6 +341,13 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
         key_column = resolved_key
         # Buscamos por código parseado y por stem completo para máxima compatibilidad
         db_cache = buscar_por_columna(list(set(codigos_list + stems)), key_column)
+        # Prefer full-stem catalog hits over parsed code_seq splits.
+        for f in files:
+            name = Path(f).name
+            stem = Path(f).stem
+            if stem in db_cache:
+                codigos_manuales[name] = stem
+                file_seqs[name] = "1"
         res = _preview_with_db(
             engine,
             files,
@@ -365,7 +372,13 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
         # Empty key_column: match process path (buscar_lote_por_codigos across
         # all fields). Do NOT auto-detect a single column here — that made
         # preview disagree with on-disk rename results.
-        db_cache = buscar_lote_por_codigos(codigos_list)
+        db_cache = buscar_lote_por_codigos(list(set(codigos_list + stems)))
+        for f in files:
+            name = Path(f).name
+            stem = Path(f).stem
+            if stem in db_cache:
+                codigos_manuales[name] = stem
+                file_seqs[name] = "1"
 
         def lookup(codigo: str) -> dict[str, Any] | None:
             return db_cache.get(codigo)
@@ -704,6 +717,7 @@ def _run_conversion_job(job: Job) -> None:
                     chunk_tasks = _dedupe_chunk_out_paths(
                         raw_tasks,
                         reserved_out_paths,
+                        job_id=job_id,
                         log=_warn_dedupe,
                     )
                     futures = []
@@ -1038,8 +1052,9 @@ def _prepare_chunk_tasks(
             for i, rec in enumerate(all_records):
                 db_cache[str(global_offset + i)] = rec
         else:
+            stems = [Path(f).stem for f in chunk_files]
             codigos = [parse_filename_parts(Path(f).name)[0] for f in chunk_files]
-            db_cache = lookup_fn(codigos)
+            db_cache = lookup_fn(list(set(codigos + stems)))
 
     tasks: list[tuple[str, Path, bool]] = []
     for idx, fpath in enumerate(chunk_files):
@@ -1054,8 +1069,10 @@ def _prepare_chunk_tasks(
             elif key_column:
                 codigo, seq = parse_filename_parts(p.name)
                 stem = p.stem
-                # Intentamos buscar por el código parseado o por el stem completo
-                datos = db_cache.get(codigo) or db_cache.get(stem)
+                # Prefer full stem so catalog keys like photo_2024 win over split.
+                datos = db_cache.get(stem) or db_cache.get(codigo)
+                if datos and stem in db_cache:
+                    codigo, seq = stem, "1"
                 nuevo_nombre = _apply_catalog_rename(engine, p, datos, codigo, seq, key_column) if datos else p.name
             elif use_column_rename:
                 codigo, seq = parse_filename_parts(p.name)
@@ -1063,7 +1080,10 @@ def _prepare_chunk_tasks(
                 nuevo_nombre = _apply_catalog_rename(engine, p, datos, codigo, seq, "") if datos else p.name
             else:
                 codigo, seq = parse_filename_parts(p.name)
-                datos = db_cache.get(codigo)
+                stem = p.stem
+                datos = db_cache.get(stem) or db_cache.get(codigo)
+                if datos and stem in db_cache:
+                    codigo, seq = stem, "1"
                 nuevo_nombre = _apply_catalog_rename(engine, p, datos, codigo, seq, "") if datos else p.name
             if is_video_file or not conversion_enabled:
                 out_path = Path(destino) / nuevo_nombre
@@ -1088,15 +1108,30 @@ def _out_path_key(path: Path) -> str:
 _MAX_OUT_PATH_DEDUP_ATTEMPTS = 10_000
 
 
-def _path_is_taken(path: Path, reserved: set[str]) -> bool:
-    """True if path is reserved in-batch or already exists on disk."""
-    return _out_path_key(path) in reserved or path.exists()
+def _claim_out_path(
+    path: Path,
+    reserved: set[str],
+    *,
+    job_id: str | None = None,
+) -> bool:
+    """Try to claim ``path`` for this batch (and optionally cross-job).
+
+    Returns False if already reserved in-batch, on disk, or held by another job.
+    """
+    key = _out_path_key(path)
+    if key in reserved or path.exists():
+        return False
+    if job_id is not None and not get_job_manager().try_reserve_out_path(job_id, key):
+        return False
+    reserved.add(key)
+    return True
 
 
 def _dedupe_chunk_out_paths(
     tasks: list[tuple[str, Path, bool]],
     reserved: set[str],
     *,
+    job_id: str | None = None,
     log: Callable[[str], None] | None = None,
 ) -> list[tuple[str, Path, bool]]:
     """Ensure each task writes to a unique path within the batch and on disk.
@@ -1104,15 +1139,15 @@ def _dedupe_chunk_out_paths(
     Mapping mode already fails the job on collisions; catalog / plain rename can
     still map two inputs to the same destination and silently overwrite. Auto-suffix
     (``name-2.ext``) preserves both files without changing unique renames.
-    Also avoids overwriting pre-existing files from a previous run.
+    Also avoids overwriting pre-existing files from a previous run, and paths
+    reserved by a concurrent conversion job targeting the same destino.
     """
     if not tasks:
         return tasks
 
     result: list[tuple[str, Path, bool]] = []
     for fpath, out_path, is_video_file in tasks:
-        if not _path_is_taken(out_path, reserved):
-            reserved.add(_out_path_key(out_path))
+        if _claim_out_path(out_path, reserved, job_id=job_id):
             result.append((fpath, out_path, is_video_file))
             continue
 
@@ -1122,11 +1157,20 @@ def _dedupe_chunk_out_paths(
         n = 2
         candidate = parent / f"{stem}-{n}{suffix}"
         attempts = 0
-        while _path_is_taken(candidate, reserved) and attempts < _MAX_OUT_PATH_DEDUP_ATTEMPTS:
+        claimed = False
+        while attempts < _MAX_OUT_PATH_DEDUP_ATTEMPTS:
+            if _claim_out_path(candidate, reserved, job_id=job_id):
+                claimed = True
+                break
             n += 1
             attempts += 1
             candidate = parent / f"{stem}-{n}{suffix}"
-        reserved.add(_out_path_key(candidate))
+        if not claimed:
+            # Best-effort pin after exhausting attempts (same as prior behavior).
+            key = _out_path_key(candidate)
+            reserved.add(key)
+            if job_id is not None:
+                get_job_manager().try_reserve_out_path(job_id, key)
         if log is not None:
             reason = "ya existe en disco" if out_path.exists() else "ya reservado"
             log(

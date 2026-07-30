@@ -5,6 +5,7 @@
  */
 
 import { api } from '../api';
+import { registerLocalPath } from './registerLocalPath';
 
 const MAX_CACHE = 200;
 const MIN_CONCURRENCY = 4;
@@ -95,6 +96,8 @@ export async function getLocalThumbnail(
 
   const promise = (async (): Promise<string | null> => {
     try {
+      // Allowlist must be registered before local_thumbnail asserts the path.
+      await registerLocalPath(filePath);
       const result = await runLimited(() => api.localThumbnail({ path: filePath, maxEdge: edge }));
       if (result && typeof result.dataUrl === 'string' && result.dataUrl.startsWith('data:')) {
         cacheSet(key, result.dataUrl);

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { api } from '../api';
+import { api, AntaresAPIError } from '../api';
 
 // Mock electronAPI
 const mockInvoke = vi.fn();
@@ -31,6 +31,28 @@ describe('API Client', () => {
     await expect(api.version()).rejects.toThrow('Backend no disponible');
     expect(mockInvoke).toHaveBeenCalledTimes(1);
   }, 30000);
+
+  it('should preserve code and category from structured IPC errors', async () => {
+    mockInvoke.mockRejectedValue({
+      message: 'Archivo bloqueado',
+      code: -32002,
+      category: 'RESOURCE_LOCKED',
+      details: { path: 'C:\\out.jpg' },
+    });
+
+    try {
+      await api.version();
+      expect.unreachable('expected AntaresAPIError');
+    } catch (err) {
+      expect(err).toBeInstanceOf(AntaresAPIError);
+      const apiErr = err as AntaresAPIError;
+      expect(apiErr.message).toBe('Archivo bloqueado');
+      expect(apiErr.code).toBe(-32002);
+      expect(apiErr.category).toBe('RESOURCE_LOCKED');
+      expect(apiErr.isResourceLockedError()).toBe(true);
+      expect(apiErr.details).toEqual({ path: 'C:\\out.jpg' });
+    }
+  });
 
   it('should validate response types', async () => {
     mockInvoke.mockResolvedValue({ formats: ['JPEG', 'PNG'] });

@@ -47,10 +47,10 @@ export function useProcessRunner() {
       setStatus(s);
       setRunning(s.running);
     } catch (err) {
+      // Keep optimistic/running state: a transient getStatus failure must not
+      // look like the job finished. Surface the error so the UI can retry poll.
       if (runningRef.current) {
-        setRunning(false);
         setPollError(pollErrorMessage(err));
-        setStatus((prev) => (prev ? { ...prev, running: false } : prev));
       }
     }
   }, []);

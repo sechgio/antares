@@ -1,3 +1,4 @@
+import { clampGridDim } from '../../../ops/gridLayout';
 import { NumField, SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
 
@@ -9,13 +10,13 @@ export default function GridSection({ layer, setMetaLive, onCommitLive }: Sectio
         <NumField
           label="Cols"
           value={layer.meta?.cols ?? 2}
-          onChange={(n) => setMetaLive({ cols: Math.max(1, Math.floor(n)) })}
+          onChange={(n) => setMetaLive({ cols: clampGridDim(n) })}
           onCommit={onCommitLive}
         />
         <NumField
           label="Rows"
           value={layer.meta?.rows ?? 2}
-          onChange={(n) => setMetaLive({ rows: Math.max(1, Math.floor(n)) })}
+          onChange={(n) => setMetaLive({ rows: clampGridDim(n) })}
           onCommit={onCommitLive}
         />
       </div>
@@ -23,7 +24,7 @@ export default function GridSection({ layer, setMetaLive, onCommitLive }: Sectio
         <NumField
           label="Gap"
           value={layer.meta?.gapMm ?? 2}
-          onChange={(n) => setMetaLive({ gapMm: Math.max(0, n) })}
+          onChange={(n) => setMetaLive({ gapMm: Math.max(0, Math.min(n, 50)) })}
           onCommit={onCommitLive}
           suffix="mm"
         />

@@ -6,7 +6,7 @@
 
 import type { CanvasLayer } from '../types';
 import { MM_TO_PX } from './drawHelpers';
-import { layerBoundsMm, type RectMm } from './layerBounds';
+import { layerBounds, layerBoundsMm, type RectMm } from './layerBounds';
 
 // Re-export for existing importers of these symbols from viewportCulling.
 export type { RectMm };
@@ -56,6 +56,6 @@ export function filterVisibleLayers(
 ): CanvasLayer[] {
   if (!viewRect) return layers;
   return layers.filter(
-    (layer) => (alwaysIds?.has(layer.id) ?? false) || rectsOverlapMm(layerBoundsMm(layer), viewRect),
+    (layer) => (alwaysIds?.has(layer.id) ?? false) || rectsOverlapMm(layerBounds(layer), viewRect),
   );
 }

@@ -118,6 +118,45 @@ def test_normalize_accepts_new_layer_types() -> None:
     assert doc["pages"]
 
 
+def test_normalize_preserves_shared_styles_and_layer_links() -> None:
+    raw = create_empty_document()
+    raw["styles"] = [
+        {
+            "id": "style-1",
+            "name": "Brand red",
+            "kind": "color",
+            "cssVars": {"--background-color": "#FF0000", "--fill-visible": "1"},
+        }
+    ]
+    raw["layers"].append(
+        {
+            "id": "rect-1",
+            "type": "rect",
+            "name": "Box",
+            "value": "",
+            "fillStyleId": "style-1",
+            "cssVars": {
+                "--width": "40mm",
+                "--height": "20mm",
+                "--translate-x": "10mm",
+                "--translate-y": "10mm",
+                "--background-color": "#FF0000",
+            },
+        }
+    )
+    doc = normalize_document(raw)
+    assert len(doc["styles"]) == 1
+    assert doc["styles"][0]["id"] == "style-1"
+    assert doc["styles"][0]["kind"] == "color"
+    assert doc["styles"][0]["cssVars"] == {
+        "--background-color": "#FF0000",
+        "--fill-visible": "1",
+    }
+    assert "--width" not in doc["styles"][0]["cssVars"]
+    linked = next(layer for layer in doc["layers"] if layer["id"] == "rect-1")
+    assert linked["fillStyleId"] == "style-1"
+
+
 def test_normalize_rejects_unknown_layer_types() -> None:
     raw = create_empty_document()
     raw["layers"].append(
@@ -179,8 +218,49 @@ def test_normalize_preserves_editor_settings_and_guides() -> None:
     assert doc["settings"]["imagesPerPage"] == 4
     assert doc["settings"]["gridRules"] == [{"whenImages": 4, "cols": 2, "rows": 2}]
     assert doc["guides"] == [
-        {"id": "g-x", "axis": "x", "posMm": 42.0},
-        {"id": "g-y", "axis": "y", "posMm": 10.5},
+        {"id": "g-x", "axis": "x", "posMm": 42.0, "pageIndex": 0},
+        {"id": "g-y", "axis": "y", "posMm": 10.5, "pageIndex": 0},
+    ]
+
+
+def test_normalize_preserves_grid_tracks() -> None:
+    raw = create_empty_document()
+    raw["layers"] = [
+        {
+            "id": "grid-1",
+            "type": "grid",
+            "name": "Grid",
+            "cssVars": {
+                "--width": "100mm",
+                "--height": "100mm",
+                "--translate-x": "0mm",
+                "--translate-y": "0mm",
+            },
+            "meta": {
+                "cols": 2,
+                "rows": 2,
+                "gapMm": 2.0,
+                "colTracks": [1.5, 2.0],
+                "rowTracks": [1.0, 3.0],
+            },
+        }
+    ]
+    doc = normalize_document(raw)
+    grid = next(layer for layer in doc["layers"] if layer["id"] == "grid-1")
+    assert grid["meta"]["colTracks"] == [1.5, 2.0]
+    assert grid["meta"]["rowTracks"] == [1.0, 3.0]
+
+
+def test_normalize_preserves_guide_page_index() -> None:
+    raw = create_empty_document()
+    raw["guides"] = [
+        {"id": "g-p1", "axis": "x", "posMm": 20, "pageIndex": 1},
+        {"id": "g-bad", "axis": "y", "posMm": 5, "pageIndex": -3},
+    ]
+    doc = normalize_document(raw)
+    assert doc["guides"] == [
+        {"id": "g-p1", "axis": "x", "posMm": 20.0, "pageIndex": 1},
+        {"id": "g-bad", "axis": "y", "posMm": 5.0, "pageIndex": 0},
     ]
 
 
@@ -368,6 +448,35 @@ def test_path_traversal_rejected(tmp_path: Path) -> None:
         store.get("../secrets")
 
 
+def test_list_uses_stem_when_body_id_mismatches(tmp_path: Path) -> None:
+    """list → get must work when filename stem ≠ document body id."""
+    import json
+
+    store = CanvasStore(tmp_path)
+    body = create_empty_document(name="Mismatch")
+    body["id"] = "inner-id"
+    (tmp_path / "file-stem.json").write_text(json.dumps(body), encoding="utf-8")
+
+    listed = store.list_documents()
+    assert len(listed) == 1
+    assert listed[0]["id"] == "file-stem"
+
+    by_stem = store.get("file-stem")
+    assert by_stem is not None
+    assert by_stem["id"] == "file-stem"
+    assert by_stem["name"] == "Mismatch"
+
+    # Transitional fallback: older clients may still ask by body id.
+    by_inner = store.get("inner-id")
+    assert by_inner is not None
+    assert by_inner["id"] == "file-stem"
+
+    # Save under the repaired id consolidates onto the stem file.
+    saved = store.save(by_stem)
+    assert saved["id"] == "file-stem"
+    assert (tmp_path / "file-stem.json").exists()
+
+
 def test_corrupt_document_is_logged_and_skipped(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     """A corrupt JSON file is skipped from listings (no crash) and logged."""
     store = CanvasStore(tmp_path)
@@ -456,4 +565,51 @@ def test_normalize_preserves_layer_meta_path() -> None:
     assert len(path["points"]) == 2
     assert path["points"][0]["x"] == 0.0
     assert path["points"][1]["hin"] == {"x": -2.0, "y": 0.0}
+
+
+def test_normalize_clamps_out_of_range_page_index() -> None:
+    """A layer whose pageIndex exceeds the page count is clamped to the last page."""
+    raw = create_empty_document()
+    raw["pages"] = [{"id": "p1", "name": "Página 1"}, {"id": "p2", "name": "Página 2"}]
+    raw["layers"].append(
+        {
+            "id": "ghost",
+            "type": "text",
+            "name": "Ghost",
+            "value": "x",
+            "pageIndex": 999,
+            "cssVars": {
+                "--width": "40mm",
+                "--height": "10mm",
+                "--translate-x": "10mm",
+                "--translate-y": "10mm",
+            },
+        }
+    )
+    doc = normalize_document(raw)
+    ghost = next(layer for layer in doc["layers"] if layer["id"] == "ghost")
+    assert ghost["pageIndex"] == 1
+
+
+def test_duplicate_document_drops_orphan_parent_id() -> None:
+    """A layer whose parentId points to a non-existent layer loses the dangling ref on duplicate."""
+    raw = create_empty_document()
+    raw["layers"].append(
+        {
+            "id": "child",
+            "type": "text",
+            "name": "Child",
+            "value": "x",
+            "parentId": "does-not-exist",
+            "cssVars": {
+                "--width": "40mm",
+                "--height": "10mm",
+                "--translate-x": "10mm",
+                "--translate-y": "10mm",
+            },
+        }
+    )
+    doc = duplicate_document(raw)
+    child = next(layer for layer in doc["layers"] if layer["type"] == "text" and layer["name"] == "Child")
+    assert "parentId" not in child
 

@@ -144,6 +144,29 @@ class TestConvertirImagen:
         assert resultado == salida
         assert salida.read_text(encoding="utf-8") == "TXTIMG:RGB:100x100:77"
 
+    def test_escribe_via_tmp_y_replace(self, imagen_rgb, tmp_path, monkeypatch) -> None:
+        """Destination must appear via tmp + os.replace (atomic on same volume)."""
+        import backend.core.converter as conv
+
+        replace_calls: list[tuple[str, str]] = []
+        real_replace = os.replace
+
+        def tracking_replace(src, dst):
+            replace_calls.append((str(src), str(dst)))
+            return real_replace(src, dst)
+
+        monkeypatch.setattr(conv.os, "replace", tracking_replace)
+
+        salida = tmp_path / "atomic.jpg"
+        resultado = convertir_imagen(imagen_rgb, salida, "JPEG", calidad=90)
+        assert resultado == salida
+        assert salida.exists()
+        assert not list(tmp_path.glob("*.tmp"))
+        assert len(replace_calls) == 1
+        src, dst = replace_calls[0]
+        assert Path(src).name == "atomic.jpg.tmp"
+        assert Path(dst) == salida
+
 
 class TestConvertirAPreview:
     """Vista previa: cap de 400px (B1), cache por mtime (B2), path por defecto."""

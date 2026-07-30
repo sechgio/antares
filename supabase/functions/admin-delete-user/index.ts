@@ -1,19 +1,16 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-const ALLOWED_ORIGINS = [
-  "http://localhost:5173",
-  "https://yoyxclndjevkzzclhdcv.supabase.co",
-];
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 function corsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get("Origin");
+  const envUrl = Deno.env.get("SUPABASE_URL");
+  const allowedOrigins = [
+    "http://localhost:5173",
+    ...(envUrl ? [envUrl] : []),
+  ];
   const allow =
     !origin ||
     origin === "null" ||
-    ALLOWED_ORIGINS.includes(origin) ||
+    allowedOrigins.includes(origin) ||
     origin.includes("localhost:5173");
 
   const headers: Record<string, string> = {
@@ -27,6 +24,9 @@ function corsHeaders(req: Request): Record<string, string> {
   }
   return headers;
 }
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 interface DeleteUserBody {
   user_id?: string;

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import shutil
@@ -89,6 +90,17 @@ class CanvasStore:
             raise ValueError(msg)
         return self.docs_dir / f"{safe}.json"
 
+    def _find_path_by_inner_id(self, doc_id: str) -> Path | None:
+        """Locate a file whose body id matches when filename stem differs."""
+        for path in self.docs_dir.glob("*.json"):
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                continue
+            if isinstance(raw, dict) and str(raw.get("id") or "") == doc_id:
+                return path
+        return None
+
     def list_documents(self) -> list[dict[str, str]]:
         with self._lock:
             items: list[dict[str, str]] = []
@@ -97,7 +109,9 @@ class CanvasStore:
                     raw = json.loads(path.read_text(encoding="utf-8"))
                     if not isinstance(raw, dict):
                         continue
-                    doc_id = str(raw.get("id") or path.stem)
+                    # Stem is the lookup key for get()/delete(); prefer it over a
+                    # mismatched body id so list → get never 404s.
+                    doc_id = path.stem
                     doc_name = str(raw.get("name") or "Sin título")
                     updated_at = str(raw.get("updatedAt") or "")
                 except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
@@ -116,13 +130,21 @@ class CanvasStore:
         with self._lock:
             path = self._path_for(str(doc_id))
             if not path.exists():
-                return None
+                # Transitional: older list() may have exposed body id ≠ stem.
+                fallback = self._find_path_by_inner_id(str(doc_id))
+                if fallback is None:
+                    return None
+                path = fallback
             try:
                 raw = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
                 logger.warning("Could not read canvas document %s: %s", path, exc)
                 return None
-            return normalize_document(raw)
+            doc = normalize_document(raw)
+            # Keep body id aligned with filename so the next save hits the same file.
+            if doc["id"] != path.stem:
+                doc["id"] = path.stem
+            return doc
 
     def save(self, document: dict[str, Any], *, touch: bool = True) -> dict[str, Any]:
         with self._lock:
@@ -131,6 +153,11 @@ class CanvasStore:
                 doc["updatedAt"] = utc_now_iso()
             path = self._path_for(doc["id"])
             self.docs_dir.mkdir(parents=True, exist_ok=True)
+            # Drop orphan files that still carry this id under a different stem.
+            orphan = self._find_path_by_inner_id(doc["id"])
+            if orphan is not None and orphan != path:
+                with contextlib.suppress(OSError):
+                    orphan.unlink()
             tmp = path.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(doc, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
             tmp.replace(path)

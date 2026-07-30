@@ -57,6 +57,8 @@ def create_empty_document(*, name: str = "Sin título") -> dict[str, Any]:
         "page": {"widthMm": A4_WIDTH_MM, "heightMm": A4_HEIGHT_MM},
         "pages": [{"id": page_id, "name": "Página 1"}],
         "settings": {},
+        "guides": [],
+        "styles": [],
         "layers": [
             {
                 "id": _new_id(),
@@ -78,8 +80,10 @@ def create_empty_document(*, name: str = "Sin título") -> dict[str, Any]:
     }
 
 
-def _normalize_css_vars(raw: Any) -> dict[str, str]:
+def _normalize_css_vars(raw: Any, *, with_geometry_defaults: bool = True) -> dict[str, str]:
     if not isinstance(raw, dict):
+        if not with_geometry_defaults:
+            return {}
         return {
             "--width": "40mm",
             "--height": "10mm",
@@ -90,10 +94,11 @@ def _normalize_css_vars(raw: Any) -> dict[str, str]:
     for key, value in raw.items():
         if isinstance(key, str) and isinstance(value, (str, int, float)):
             out[key] = str(value)
-    out.setdefault("--width", "40mm")
-    out.setdefault("--height", "10mm")
-    out.setdefault("--translate-x", "10mm")
-    out.setdefault("--translate-y", "10mm")
+    if with_geometry_defaults:
+        out.setdefault("--width", "40mm")
+        out.setdefault("--height", "10mm")
+        out.setdefault("--translate-x", "10mm")
+        out.setdefault("--translate-y", "10mm")
     return out
 
 
@@ -175,7 +180,27 @@ def _normalize_meta(raw: Any) -> dict[str, Any] | None:
             if "closed" in raw_path:
                 path_dict["closed"] = bool(raw_path["closed"])
             cleaned["path"] = path_dict
+    for track_key in ("colTracks", "rowTracks"):
+        tracks = _normalize_track_list(raw.get(track_key))
+        if tracks is not None:
+            cleaned[track_key] = tracks
     return cleaned or None
+
+
+def _normalize_track_list(raw: Any) -> list[float] | None:
+    """Keep positive float track weights; omit key if invalid (do not invent defaults)."""
+    if not isinstance(raw, list) or not raw:
+        return None
+    tracks: list[float] = []
+    for item in raw:
+        try:
+            value = float(item)
+        except (TypeError, ValueError):
+            return None
+        if value <= 0 or value != value:  # NaN check
+            return None
+        tracks.append(value)
+    return tracks
 
 
 def _normalize_layer(raw: Any) -> dict[str, Any] | None:
@@ -203,6 +228,10 @@ def _normalize_layer(raw: Any) -> dict[str, Any] | None:
     meta = _normalize_meta(raw.get("meta"))
     if meta:
         layer["meta"] = meta
+    for key in ("fillStyleId", "textStyleId", "effectStyleId"):
+        val = raw.get(key)
+        if isinstance(val, str) and val.strip():
+            layer[key] = val.strip()
     return layer
 
 
@@ -260,6 +289,13 @@ def _normalize_settings(raw: Any) -> dict[str, Any]:
                 out["gridSizeMm"] = size
         except (TypeError, ValueError):
             pass
+    if "pageMarginMm" in raw:
+        try:
+            margin = float(raw["pageMarginMm"])
+            if margin >= 0:
+                out["pageMarginMm"] = margin
+        except (TypeError, ValueError):
+            pass
     if isinstance(raw.get("gridRules"), list):
         rules = []
         for item in raw["gridRules"]:
@@ -280,6 +316,26 @@ def _normalize_settings(raw: Any) -> dict[str, Any]:
     return out
 
 
+_STYLE_KINDS = frozenset({"color", "text", "effect"})
+
+
+def _normalize_styles(raw: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        return []
+    styles: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("kind") or "")
+        if kind not in _STYLE_KINDS:
+            continue
+        style_id = str(item.get("id") or "").strip() or _new_id()
+        name = str(item.get("name") or kind).strip() or kind
+        css = _normalize_css_vars(item.get("cssVars"), with_geometry_defaults=False)
+        styles.append({"id": style_id, "name": name, "kind": kind, "cssVars": css})
+    return styles
+
+
 def _normalize_guides(raw: Any) -> list[dict[str, Any]]:
     if not isinstance(raw, list):
         return []
@@ -295,7 +351,13 @@ def _normalize_guides(raw: Any) -> list[dict[str, Any]]:
         except (TypeError, ValueError):
             continue
         guide_id = str(item.get("id") or "").strip() or _new_id()
-        guides.append({"id": guide_id, "axis": axis, "posMm": pos_mm})
+        try:
+            page_index = int(item.get("pageIndex", 0))
+        except (TypeError, ValueError):
+            page_index = 0
+        if page_index < 0:
+            page_index = 0
+        guides.append({"id": guide_id, "axis": axis, "posMm": pos_mm, "pageIndex": page_index})
     return guides
 
 
@@ -328,15 +390,22 @@ def normalize_document(raw: Any) -> dict[str, Any]:
     updated_raw = raw.get("updatedAt")
     updated_at = str(updated_raw).strip() if isinstance(updated_raw, str) and str(updated_raw).strip() else ""
 
+    pages = _normalize_pages(raw.get("pages"))
+    # Clamp pageIndex into the valid page range so a stale/legacy index cannot
+    # create invisible "ghost" layers on a non-existent page.
+    last_page = len(pages) - 1
+    layers = [{**layer, "pageIndex": min(layer.get("pageIndex", 0), last_page)} for layer in layers]
+
     return {
         "version": DOCUMENT_VERSION,
         "id": str(raw.get("id") or _new_id()),
         "name": str(raw.get("name") or "Sin título").strip() or "Sin título",
         "updatedAt": updated_at or utc_now_iso(),
         "page": {"widthMm": max(1, width_mm), "heightMm": max(1, height_mm)},
-        "pages": _normalize_pages(raw.get("pages")),
+        "pages": pages,
         "settings": _normalize_settings(raw.get("settings")),
         "guides": _normalize_guides(raw.get("guides")),
+        "styles": _normalize_styles(raw.get("styles")),
         "layers": layers,
         "fields": _normalize_fields(raw.get("fields")),
     }
@@ -380,7 +449,12 @@ def duplicate_document(
     for layer in doc["layers"]:
         parent = layer.get("parentId")
         if parent:
-            layer["parentId"] = id_map.get(parent, parent)
+            if parent in id_map:
+                layer["parentId"] = id_map[parent]
+            else:
+                # Parent was not duplicated (orphan reference in source) — drop
+                # the dangling id instead of pointing at a non-existent layer.
+                layer.pop("parentId", None)
     for field in doc["fields"]:
         field["id"] = _new_id()
     for page in doc.get("pages") or []:

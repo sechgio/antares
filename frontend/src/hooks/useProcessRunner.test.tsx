@@ -263,7 +263,7 @@ describe('useProcessRunner', () => {
     expect(result.current.running).toBe(true);
   });
 
-  it('clears running and surfaces error when pollStatus fails while running', async () => {
+  it('keeps running and surfaces error when pollStatus fails while running', async () => {
     mockApi.getStatus.mockRejectedValue(new Error('IPC down'));
 
     const { result } = renderHook(() => useProcessRunner());
@@ -278,9 +278,9 @@ describe('useProcessRunner', () => {
       await result.current.pollStatus();
     });
 
-    expect(result.current.running).toBe(false);
+    expect(result.current.running).toBe(true);
     expect(result.current.pollError).toBe('IPC down');
-    expect(result.current.status?.running).toBe(false);
+    expect(result.current.status?.running).toBe(true);
   });
 
   it('sets running=true optimistically before startProcess resolves', async () => {

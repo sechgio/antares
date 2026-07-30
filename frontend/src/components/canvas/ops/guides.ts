@@ -228,8 +228,255 @@ export function measureSelectionGaps(
   return labels;
 }
 
+function boxesOverlapOnAxis(
+  a0: number,
+  a1: number,
+  b0: number,
+  b1: number,
+): boolean {
+  return Math.max(a0, b0) < Math.min(a1, b1);
+}
+
+/** Unique positive gaps between non-overlapping sibling boxes (and page edges). */
+export function collectReferenceGaps(
+  others: RectMm[],
+  page: { widthMm: number; heightMm: number },
+): { x: number[]; y: number[] } {
+  const xs = new Set<number>();
+  const ys = new Set<number>();
+
+  for (const o of others) {
+    if (o.x > 0.05) xs.add(o.x);
+    const rightGap = page.widthMm - (o.x + o.w);
+    if (rightGap > 0.05) xs.add(rightGap);
+    if (o.y > 0.05) ys.add(o.y);
+    const bottomGap = page.heightMm - (o.y + o.h);
+    if (bottomGap > 0.05) ys.add(bottomGap);
+  }
+
+  for (let i = 0; i < others.length; i++) {
+    for (let j = 0; j < others.length; j++) {
+      if (i === j) continue;
+      const a = others[i]!;
+      const b = others[j]!;
+      if (boxesOverlapOnAxis(a.y, a.y + a.h, b.y, b.y + b.h)) {
+        const gap = b.x - (a.x + a.w);
+        if (gap > 0.05) xs.add(gap);
+      }
+      if (boxesOverlapOnAxis(a.x, a.x + a.w, b.x, b.x + b.w)) {
+        const gap = b.y - (a.y + a.h);
+        if (gap > 0.05) ys.add(gap);
+      }
+    }
+  }
+
+  return { x: [...xs], y: [...ys] };
+}
+
+/**
+ * Snap move deltas so selection gaps match other equal spacings in the scene.
+ * Returns adjusted dx/dy and spacing badges for matched gaps.
+ */
+export function snapEqualGaps(
+  origin: RectMm,
+  dxMm: number,
+  dyMm: number,
+  others: RectMm[],
+  page: { widthMm: number; heightMm: number },
+  thresholdMm: number,
+  referenceGaps?: { x: number[]; y: number[] },
+): { dx: number; dy: number; labels: DistanceLabel[] } {
+  const refs = referenceGaps ?? collectReferenceGaps(others, page);
+  const sel = { x: origin.x + dxMm, y: origin.y + dyMm, w: origin.w, h: origin.h };
+
+  type Candidate = { dist: number; delta: number; label: DistanceLabel };
+  const best: { x: Candidate | null; y: Candidate | null } = { x: null, y: null };
+
+  const considerX = (currentGap: number, nextDx: number, label: DistanceLabel) => {
+    if (currentGap <= 0.05) return;
+    for (const g of refs.x) {
+      const dist = Math.abs(currentGap - g);
+      if (dist <= thresholdMm && (!best.x || dist < best.x.dist)) {
+        const fromLeft = label.id.includes('left') || label.id.includes('page-left');
+        best.x = {
+          dist,
+          delta: nextDx + (g - currentGap),
+          label: fromLeft
+            ? {
+                ...label,
+                valueMm: g,
+                x: label.x1 + g / 2,
+                x2: label.x1 + g,
+              }
+            : {
+                ...label,
+                valueMm: g,
+                x: label.x2 - g / 2,
+                x1: label.x2 - g,
+              },
+        };
+      }
+    }
+  };
+
+  const considerY = (currentGap: number, nextDy: number, label: DistanceLabel) => {
+    if (currentGap <= 0.05) return;
+    for (const g of refs.y) {
+      const dist = Math.abs(currentGap - g);
+      if (dist <= thresholdMm && (!best.y || dist < best.y.dist)) {
+        if (label.id.includes('top') || label.id.includes('page-top')) {
+          best.y = {
+            dist,
+            delta: nextDy + (g - currentGap),
+            label: {
+              ...label,
+              valueMm: g,
+              y: label.y1 + g / 2,
+              y2: label.y1 + g,
+            },
+          };
+        } else {
+          best.y = {
+            dist,
+            delta: nextDy + (g - currentGap),
+            label: {
+              ...label,
+              valueMm: g,
+              y: label.y2 - g / 2,
+              y1: label.y2 - g,
+            },
+          };
+        }
+      }
+    }
+  };
+
+  const cx = sel.x + sel.w / 2;
+  const cy = sel.y + sel.h / 2;
+
+  considerX(sel.x, dxMm, {
+    id: 'eq-page-left',
+    axis: 'x',
+    x: sel.x / 2,
+    y: cy,
+    valueMm: sel.x,
+    x1: 0,
+    y1: cy,
+    x2: sel.x,
+    y2: cy,
+  });
+  const toRight = page.widthMm - (sel.x + sel.w);
+  considerX(toRight, dxMm, {
+    id: 'eq-page-right',
+    axis: 'x',
+    x: sel.x + sel.w + toRight / 2,
+    y: cy,
+    valueMm: toRight,
+    x1: sel.x + sel.w,
+    y1: cy,
+    x2: page.widthMm,
+    y2: cy,
+  });
+  considerY(sel.y, dyMm, {
+    id: 'eq-page-top',
+    axis: 'y',
+    x: cx,
+    y: sel.y / 2,
+    valueMm: sel.y,
+    x1: cx,
+    y1: 0,
+    x2: cx,
+    y2: sel.y,
+  });
+  const toBottom = page.heightMm - (sel.y + sel.h);
+  considerY(toBottom, dyMm, {
+    id: 'eq-page-bottom',
+    axis: 'y',
+    x: cx,
+    y: sel.y + sel.h + toBottom / 2,
+    valueMm: toBottom,
+    x1: cx,
+    y1: sel.y + sel.h,
+    x2: cx,
+    y2: page.heightMm,
+  });
+
+  for (const o of others) {
+    if (boxesOverlapOnAxis(sel.y, sel.y + sel.h, o.y, o.y + o.h)) {
+      const gapLeft = sel.x - (o.x + o.w);
+      const midY = (Math.max(sel.y, o.y) + Math.min(sel.y + sel.h, o.y + o.h)) / 2;
+      considerX(gapLeft, dxMm, {
+        id: `eq-left-${Math.round(o.x)}`,
+        axis: 'x',
+        x: o.x + o.w + gapLeft / 2,
+        y: midY,
+        valueMm: gapLeft,
+        x1: o.x + o.w,
+        y1: midY,
+        x2: sel.x,
+        y2: midY,
+      });
+      const gapRight = o.x - (sel.x + sel.w);
+      considerX(gapRight, dxMm, {
+        id: `eq-right-${Math.round(o.x)}`,
+        axis: 'x',
+        x: sel.x + sel.w + gapRight / 2,
+        y: midY,
+        valueMm: gapRight,
+        x1: sel.x + sel.w,
+        y1: midY,
+        x2: o.x,
+        y2: midY,
+      });
+    }
+    if (boxesOverlapOnAxis(sel.x, sel.x + sel.w, o.x, o.x + o.w)) {
+      const gapTop = sel.y - (o.y + o.h);
+      const midX = (Math.max(sel.x, o.x) + Math.min(sel.x + sel.w, o.x + o.w)) / 2;
+      considerY(gapTop, dyMm, {
+        id: `eq-top-${Math.round(o.y)}`,
+        axis: 'y',
+        x: midX,
+        y: o.y + o.h + gapTop / 2,
+        valueMm: gapTop,
+        x1: midX,
+        y1: o.y + o.h,
+        x2: midX,
+        y2: sel.y,
+      });
+      const gapBottom = o.y - (sel.y + sel.h);
+      considerY(gapBottom, dyMm, {
+        id: `eq-bottom-${Math.round(o.y)}`,
+        axis: 'y',
+        x: midX,
+        y: sel.y + sel.h + gapBottom / 2,
+        valueMm: gapBottom,
+        x1: midX,
+        y1: sel.y + sel.h,
+        x2: midX,
+        y2: o.y,
+      });
+    }
+  }
+
+  const labels: DistanceLabel[] = [];
+  const dx = best.x ? best.x.delta : dxMm;
+  const dy = best.y ? best.y.delta : dyMm;
+  if (best.x) labels.push(best.x.label);
+  if (best.y) labels.push(best.y.label);
+  return { dx, dy, labels };
+}
+
+function formatMmNumber(valueMm: number): string {
+  const rounded = Math.round(valueMm * 10) / 10;
+  return Number.isInteger(rounded) ? `${rounded}` : rounded.toFixed(1);
+}
+
 /** Format mm for distance chips (1 decimal when needed). */
 export function formatGapMm(valueMm: number): string {
-  const rounded = Math.round(valueMm * 10) / 10;
-  return Number.isInteger(rounded) ? `${rounded} mm` : `${rounded.toFixed(1)} mm`;
+  return `${formatMmNumber(valueMm)} mm`;
+}
+
+/** Size badge under selection (e.g. "40 × 12") — no unit suffix. */
+export function formatSizeMm(wMm: number, hMm: number): string {
+  return `${formatMmNumber(wMm)} × ${formatMmNumber(hMm)}`;
 }

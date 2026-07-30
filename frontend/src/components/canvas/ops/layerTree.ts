@@ -17,17 +17,27 @@ export function isLayerContainer(layer: CanvasLayer): boolean {
   return CONTAINER_TYPES.has(layer.type);
 }
 
-/** Expand ids to include all descendants linked via parentId. */
+/** Expand ids to include all descendants linked via parentId.
+ *  O(n) index + O(k + descendants) BFS — not O(n × depth). */
 export function expandWithDescendants(layers: CanvasLayer[], ids: string[]): string[] {
+  if (ids.length === 0) return [];
+  const childrenByParent = new Map<string, string[]>();
+  for (const layer of layers) {
+    if (!layer.parentId) continue;
+    const list = childrenByParent.get(layer.parentId);
+    if (list) list.push(layer.id);
+    else childrenByParent.set(layer.parentId, [layer.id]);
+  }
   const idSet = new Set(ids);
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const layer of layers) {
-      if (layer.parentId && idSet.has(layer.parentId) && !idSet.has(layer.id)) {
-        idSet.add(layer.id);
-        grew = true;
-      }
+  const stack = [...ids];
+  while (stack.length) {
+    const id = stack.pop()!;
+    const kids = childrenByParent.get(id);
+    if (!kids) continue;
+    for (const kid of kids) {
+      if (idSet.has(kid)) continue;
+      idSet.add(kid);
+      stack.push(kid);
     }
   }
   return [...idSet];

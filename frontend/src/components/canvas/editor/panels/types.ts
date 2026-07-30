@@ -19,6 +19,8 @@ export interface SectionProps {
   // Mutators.
   onChange: (layer: CanvasLayer) => void;
   emitLive: (layer: CanvasLayer) => void;
+  /** Apply a transform to the latest live layer (survives rapid multi-field edits). */
+  mapLive: (fn: (layer: CanvasLayer) => CanvasLayer) => void;
   setVar: (key: string, value: string) => void;
   setVarLive: (key: string, value: string) => void;
   setVars: (patch: Record<string, string>) => void;

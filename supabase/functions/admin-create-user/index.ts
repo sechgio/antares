@@ -1,16 +1,16 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-const ALLOWED_ORIGINS = [
-  "http://localhost:5173",
-  "https://yoyxclndjevkzzclhdcv.supabase.co",
-];
-
 function corsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get("Origin");
+  const envUrl = Deno.env.get("SUPABASE_URL");
+  const allowedOrigins = [
+    "http://localhost:5173",
+    ...(envUrl ? [envUrl] : []),
+  ];
   const allow =
     !origin ||
     origin === "null" ||
-    ALLOWED_ORIGINS.includes(origin) ||
+    allowedOrigins.includes(origin) ||
     origin.includes("localhost:5173");
 
   const headers: Record<string, string> = {

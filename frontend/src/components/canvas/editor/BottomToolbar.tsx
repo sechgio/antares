@@ -2,7 +2,6 @@ import { memo, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ArrowUpRight,
-  Check,
   CheckSquare,
   ChevronDown,
   Circle,
@@ -43,6 +42,7 @@ const SHAPE_MENU_ITEMS: {
   icon: typeof Type;
   title: string;
   tip: string;
+  sepBefore?: boolean;
 }[] = [
   { id: 'rect', icon: Square, title: 'Rectángulo', tip: 'R' },
   { id: 'line', icon: Slash, title: 'Línea', tip: 'L' },
@@ -53,7 +53,7 @@ const SHAPE_MENU_ITEMS: {
   { id: 'diamond', icon: Diamond, title: 'Rombo', tip: '' },
   { id: 'hexagon', icon: Hexagon, title: 'Hexágono', tip: '' },
   { id: 'pentagon', icon: Pentagon, title: 'Pentágono', tip: '' },
-  { id: 'image', icon: ImageIcon, title: 'Imagen/vídeo...', tip: 'Ctrl+Shift+K' },
+  { id: 'image', icon: ImageIcon, title: 'Imagen', tip: 'Ctrl+Shift+K', sepBefore: true },
 ];
 
 const CONTENT: { id: CanvasTool; icon: typeof Type; title: string; tip: string }[] = [
@@ -70,7 +70,7 @@ const LAYOUT: { id: CanvasTool; icon: typeof Type; title: string; tip: string }[
   { id: 'signature', icon: PenLine, title: 'Firma', tip: '' },
 ];
 
-const MENU_WIDTH = 248;
+const MENU_WIDTH = 220;
 const MENU_GAP = 8;
 
 type MenuCoords = { left: number; top: number };
@@ -168,7 +168,7 @@ function ShapeToolMenu({ tool, onTool }: BottomToolbarProps) {
               onTool(lastShapeTool);
             }}
           >
-            <Icon className="h-[15px] w-[15px]" strokeWidth={shapeActive ? 2 : 1.75} />
+            <Icon className="h-4 w-4" strokeWidth={shapeActive ? 2 : 1.5} />
           </button>
         </WithHoverTooltip>
         <WithHoverTooltip label="Más formas" placement="top" variant="dark">
@@ -185,7 +185,7 @@ function ShapeToolMenu({ tool, onTool }: BottomToolbarProps) {
               toggleMenu();
             }}
           >
-            <ChevronDown className="h-3 w-3" strokeWidth={2.25} />
+            <ChevronDown className="h-3 w-3" strokeWidth={2} />
           </button>
         </WithHoverTooltip>
       </div>
@@ -207,33 +207,32 @@ function ShapeToolMenu({ tool, onTool }: BottomToolbarProps) {
                 pointerEvents: 'auto',
               }}
             >
-              {SHAPE_MENU_ITEMS.map(({ id, icon: ItemIcon, title, tip }) => {
+              {SHAPE_MENU_ITEMS.map(({ id, icon: ItemIcon, title, tip, sepBefore }) => {
                 const checked = isMenuItemChecked(id, tool, lastShapeTool);
                 return (
-                  <button
-                    key={id}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={checked}
-                    className="canvas-shape-menu-item"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      selectTool(id);
-                    }}
-                  >
-                    <span className="canvas-shape-menu-check" aria-hidden>
-                      {checked ? <Check className="h-3.5 w-3.5" strokeWidth={2.75} /> : null}
-                    </span>
-                    <span className="canvas-shape-menu-icon" aria-hidden>
-                      <ItemIcon className="h-4 w-4" strokeWidth={1.75} />
-                    </span>
-                    <span className="canvas-shape-menu-label">{title}</span>
-                    {tip ? <span className="canvas-shape-menu-tip">{tip}</span> : null}
-                  </button>
+                  <div key={id}>
+                    {sepBefore ? <div className="canvas-shape-menu-sep" role="separator" /> : null}
+                    <button
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={checked}
+                      className="canvas-shape-menu-item"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        selectTool(id);
+                      }}
+                    >
+                      <span className="canvas-shape-menu-icon" aria-hidden>
+                        <ItemIcon className="h-3.5 w-3.5" strokeWidth={1.75} />
+                      </span>
+                      <span className="canvas-shape-menu-label">{title}</span>
+                      {tip ? <span className="canvas-shape-menu-tip">{tip}</span> : null}
+                    </button>
+                  </div>
                 );
               })}
             </div>,
-            document.body,
+            (rootRef.current?.closest('.canvas-app') as HTMLElement | null) ?? document.body,
           )
         : null}
     </div>
@@ -266,7 +265,7 @@ function ToolGroup({
                 onTool(id);
               }}
             >
-              <Icon className="h-[15px] w-[15px]" strokeWidth={active ? 2 : 1.75} />
+              <Icon className="h-4 w-4" strokeWidth={active ? 2 : 1.5} />
             </button>
           </WithHoverTooltip>
         );

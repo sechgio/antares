@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { clampZoom, nextZoomPreset } from '../ops/viewportNav';
@@ -30,6 +31,15 @@ interface ZoomAction {
   checked?: boolean;
 }
 
+interface MenuBox {
+  top: number;
+  left: number;
+}
+
+const MENU_WIDTH = 260;
+const MENU_GAP = 6;
+const MENU_EDGE = 8;
+
 export default function ZoomMenu({
   zoom,
   onZoom,
@@ -42,15 +52,38 @@ export default function ZoomMenu({
 }: ZoomMenuProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
+  const [menuBox, setMenuBox] = useState<MenuBox | null>(null);
+  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const menuId = useId();
   const pct = Math.round(zoom * 100);
 
-  // On open: seed draft with current pct and focus/select the input.
-  useEffect(() => {
-    if (!open) return;
+  const updateMenuBox = useCallback(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    // Right-align under trigger (same as previous absolute right:0).
+    const left = Math.max(
+      MENU_EDGE,
+      Math.min(rect.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - MENU_EDGE),
+    );
+    setMenuBox({ top: rect.bottom + MENU_GAP, left });
+  }, []);
+
+  // On open: seed draft, resolve portal host, position menu, focus input.
+  useLayoutEffect(() => {
+    if (!open) {
+      setMenuBox(null);
+      setPortalRoot(null);
+      return;
+    }
     setDraft(`${pct}%`);
+    const host =
+      (rootRef.current?.closest('.canvas-app') as HTMLElement | null) ?? document.body;
+    setPortalRoot(host);
+    updateMenuBox();
     const t = window.setTimeout(() => {
       inputRef.current?.focus();
       inputRef.current?.select();
@@ -58,7 +91,7 @@ export default function ZoomMenu({
     return () => window.clearTimeout(t);
     // Only on open transition — pct changes while open are handled below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, updateMenuBox]);
 
   // While open, keep draft in sync with pct — but never clobber what the user
   // is actively typing. If the input is focused, the animated zoom must not
@@ -75,15 +108,23 @@ export default function ZoomMenu({
       if (e.key === 'Escape') setOpen(false);
     };
     const onPointer = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (rootRef.current?.contains(target)) return;
+      if (menuRef.current?.contains(target)) return;
+      setOpen(false);
     };
+    const onLayout = () => updateMenuBox();
     window.addEventListener('keydown', onKey);
     window.addEventListener('mousedown', onPointer);
+    window.addEventListener('resize', onLayout);
+    window.addEventListener('scroll', onLayout, true);
     return () => {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('mousedown', onPointer);
+      window.removeEventListener('resize', onLayout);
+      window.removeEventListener('scroll', onLayout, true);
     };
-  }, [open]);
+  }, [open, updateMenuBox]);
 
   const commitDraft = () => {
     const next = parseZoomPercent(draft);
@@ -187,59 +228,69 @@ export default function ZoomMenu({
           onClick={() => setOpen((v) => !v)}
         >
           <span>{pct}%</span>
-          <ChevronDown className="h-3.5 w-3.5 opacity-80" strokeWidth={2.5} />
+          <ChevronDown className="h-2.5 w-2.5 opacity-70" strokeWidth={2.5} aria-hidden />
         </button>
       </WithHoverTooltip>
 
-      {open && (
-        <div
-          id={menuId}
-          className="canvas-zoom-menu"
-          role="menu"
-          data-testid="canvas-zoom-menu"
-        >
-          <div className="canvas-zoom-menu-pad">
-            <input
-              ref={inputRef}
-              className="canvas-zoom-menu-input"
-              value={draft}
-              aria-label="Porcentaje de zoom"
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  commitDraft();
-                }
-              }}
-              onBlur={() => {
-                const next = parseZoomPercent(draft);
-                if (next != null) onZoom(next);
-                else setDraft(`${pct}%`);
-              }}
-            />
-          </div>
+      {open &&
+        portalRoot &&
+        createPortal(
+          <div
+            ref={menuRef}
+            id={menuId}
+            className="canvas-zoom-menu"
+            role="menu"
+            data-testid="canvas-zoom-menu"
+            style={{
+              top: menuBox?.top ?? -9999,
+              left: menuBox?.left ?? -9999,
+              visibility: menuBox ? 'visible' : 'hidden',
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="canvas-zoom-menu-pad">
+              <input
+                ref={inputRef}
+                className="canvas-zoom-menu-input"
+                value={draft}
+                aria-label="Porcentaje de zoom"
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    commitDraft();
+                  }
+                }}
+                onBlur={() => {
+                  const next = parseZoomPercent(draft);
+                  if (next != null) onZoom(next);
+                  else setDraft(`${pct}%`);
+                }}
+              />
+            </div>
 
-          <div className="canvas-zoom-menu-sep" />
+            <div className="canvas-zoom-menu-sep" />
 
-          <div className="canvas-zoom-menu-pad py-1">
-            {actions.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                role="menuitem"
-                className="canvas-zoom-menu-item"
-                onClick={() => runAndClose(item.run)}
-              >
-                <span className="canvas-zoom-menu-check" aria-hidden>
-                  {item.checked ? <Check className="h-3 w-3" strokeWidth={2.5} /> : null}
-                </span>
-                <span className="min-w-0 flex-1 text-left">{item.label}</span>
-                {item.tip && <span className="canvas-zoom-menu-tip">{item.tip}</span>}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+            <div className="canvas-zoom-menu-pad py-1">
+              {actions.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="menuitem"
+                  className="canvas-zoom-menu-item"
+                  onClick={() => runAndClose(item.run)}
+                >
+                  <span className="canvas-zoom-menu-check" aria-hidden>
+                    {item.checked ? <Check className="h-3 w-3" strokeWidth={2.5} /> : null}
+                  </span>
+                  <span className="min-w-0 flex-1 text-left">{item.label}</span>
+                  {item.tip ? <span className="canvas-zoom-menu-tip">{item.tip}</span> : null}
+                </button>
+              ))}
+            </div>
+          </div>,
+          portalRoot,
+        )}
     </div>
   );
 }

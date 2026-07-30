@@ -4,7 +4,39 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from backend.core.jobs import JobManager
 from backend.handlers.conversion import _dedupe_chunk_out_paths, _out_path_key
+
+
+def test_cross_job_reservation_blocks_other_job() -> None:
+    """Two jobs must not claim the same normalized out path."""
+    mgr = JobManager()
+    key = _out_path_key(Path("out/same.jpg"))
+    assert mgr.try_reserve_out_path("job_a", key) is True
+    assert mgr.try_reserve_out_path("job_b", key) is False
+    assert mgr.try_reserve_out_path("job_a", key) is True  # same job re-claim ok
+    mgr.release_out_paths("job_a")
+    assert mgr.try_reserve_out_path("job_b", key) is True
+
+
+def test_dedupe_renames_when_other_job_holds_path(monkeypatch) -> None:
+    """In-batch dedupe must treat another job's reservation as taken."""
+    mgr = JobManager()
+    monkeypatch.setattr(
+        "backend.handlers.conversion.get_job_manager",
+        lambda: mgr,
+    )
+    key = _out_path_key(Path("out/same.jpg"))
+    assert mgr.try_reserve_out_path("job_other", key)
+
+    reserved: set[str] = set()
+    result = _dedupe_chunk_out_paths(
+        [("a.jpg", Path("out/same.jpg"), False)],
+        reserved,
+        job_id="job_mine",
+    )
+    assert result[0][1] == Path("out/same-2.jpg")
+    assert mgr.get_out_path_owner(_out_path_key(Path("out/same-2.jpg"))) == "job_mine"
 
 
 def test_dedupe_leaves_unique_paths_unchanged() -> None:

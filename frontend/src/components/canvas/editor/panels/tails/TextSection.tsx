@@ -1,9 +1,20 @@
-import { AlignCenter, AlignLeft, AlignRight, Italic, Strikethrough, Underline } from 'lucide-react';
+import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyEnd,
+  AlignVerticalJustifyStart,
+  Italic,
+  Strikethrough,
+  Underline,
+} from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
 
 import CanvasSelect from '../../CanvasSelect';
+import FontPicker from '../../FontPicker';
 import InlineNumField from '../../InlineNumField';
 import {
   formatFontSizePt,
@@ -13,6 +24,18 @@ import {
   parseLetterSpacingPx,
   parseLineHeight,
 } from '../../../ops/textTypography';
+
+const TEXT_H_ALIGN = [
+  { icon: AlignLeft, align: 'left', label: 'Alinear izquierda' },
+  { icon: AlignCenter, align: 'center', label: 'Alinear centro' },
+  { icon: AlignRight, align: 'right', label: 'Alinear derecha' },
+] as const;
+
+const TEXT_V_ALIGN = [
+  { icon: AlignVerticalJustifyStart, align: 'flex-start', label: 'Alinear arriba' },
+  { icon: AlignVerticalJustifyCenter, align: 'center', label: 'Alinear al centro vertical' },
+  { icon: AlignVerticalJustifyEnd, align: 'flex-end', label: 'Alinear abajo' },
+] as const;
 
 /** Text inspector — matches `text` and `field`. The textarea only renders for
  *  `text`; `field` shows the color/family/align controls but no editable value
@@ -110,17 +133,11 @@ export default function TextSection({
           </button>
         </WithHoverTooltip>
       </div>
-      <CanvasSelect
+      <FontPicker
         className="mb-2"
         value={v['--font-family'] || 'Segoe UI, Arial, sans-serif'}
         onChange={(val) => setVar('--font-family', val)}
         aria-label="Familia de fuente"
-        options={[
-          { value: 'Segoe UI, Arial, sans-serif', label: 'Segoe UI' },
-          { value: 'Arial, sans-serif', label: 'Arial' },
-          { value: 'Georgia, serif', label: 'Georgia' },
-          { value: 'Consolas, monospace', label: 'Consolas' },
-        ]}
       />
       <CanvasSelect
         className="mb-2"
@@ -134,45 +151,43 @@ export default function TextSection({
           { value: 'capitalize', label: 'Capitalizar' },
         ]}
       />
-      <div className="mb-2 flex gap-1">
-        {[
-          { icon: AlignLeft, align: 'left', label: 'Alinear izquierda' },
-          { icon: AlignCenter, align: 'center', label: 'Alinear centro' },
-          { icon: AlignRight, align: 'right', label: 'Alinear derecha' },
-        ].map(({ icon: Icon, align, label }) => (
-          <WithHoverTooltip key={align} label={label} placement="bottom" variant="dark">
-            <button
-              type="button"
-              className="canvas-icon-btn"
-              aria-label={label}
-              data-active={v['--text-align'] === align}
-              onClick={() => setVar('--text-align', align)}
-            >
-              <Icon className="h-3.5 w-3.5" />
-            </button>
-          </WithHoverTooltip>
-        ))}
-      </div>
-      <div className="mb-2 flex gap-1">
-        {[
-          { align: 'flex-start', label: 'Alinear arriba' },
-          { align: 'center', label: 'Alinear al centro vertical' },
-          { align: 'flex-end', label: 'Alinear abajo' },
-        ].map(({ align, label }) => (
-          <WithHoverTooltip key={align} label={label} placement="bottom" variant="dark">
-            <button
-              type="button"
-              className="canvas-icon-btn flex-1"
-              aria-label={label}
-              data-active={(v['--text-valign'] || 'center') === align}
-              onClick={() => setVar('--text-valign', align)}
-            >
-              <span className="text-[10px] font-medium">
-                {align === 'flex-start' ? 'Sup' : align === 'center' ? 'Med' : 'Inf'}
-              </span>
-            </button>
-          </WithHoverTooltip>
-        ))}
+      <span className="canvas-sublabel">Alineación</span>
+      <div className="mb-2 flex items-stretch gap-1">
+        <div className="flex min-w-0 flex-1 gap-0.5" role="group" aria-label="Alineación horizontal">
+          {TEXT_H_ALIGN.map(({ icon: Icon, align, label }) => (
+            <WithHoverTooltip key={align} label={label} placement="bottom" variant="dark">
+              <button
+                type="button"
+                className="canvas-icon-btn !h-8 !w-auto min-w-0 flex-1"
+                aria-label={label}
+                data-active={v['--text-align'] === align}
+                onClick={() => setVar('--text-align', align)}
+              >
+                <Icon className="h-3.5 w-3.5" />
+              </button>
+            </WithHoverTooltip>
+          ))}
+        </div>
+        <div
+          className="mx-0.5 w-px shrink-0 self-stretch"
+          style={{ background: 'var(--cv-border)' }}
+          aria-hidden
+        />
+        <div className="flex min-w-0 flex-1 gap-0.5" role="group" aria-label="Alineación vertical">
+          {TEXT_V_ALIGN.map(({ icon: Icon, align, label }) => (
+            <WithHoverTooltip key={align} label={label} placement="bottom" variant="dark">
+              <button
+                type="button"
+                className="canvas-icon-btn !h-8 !w-auto min-w-0 flex-1"
+                aria-label={label}
+                data-active={(v['--text-valign'] || 'center') === align}
+                onClick={() => setVar('--text-valign', align)}
+              >
+                <Icon className="h-3.5 w-3.5" />
+              </button>
+            </WithHoverTooltip>
+          ))}
+        </div>
       </div>
       <div className="mb-2 flex items-center gap-2">
         <InlineNumField

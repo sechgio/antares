@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createLayer } from '../constants';
-import { DEFAULT_GRID_RULES, layoutGridSlots, rebuildGridSlots, resolveGridLayout, applyGridToImageSlots } from '../ops/gridLayout';
+import {
+  DEFAULT_GRID_RULES,
+  layoutGridSlots,
+  rebuildGridSlots,
+  resolveGridLayout,
+  applyGridToImageSlots,
+  matchGridSlotsToSourceSize,
+} from '../ops/gridLayout';
 import {
   alignLayers,
   bringToFront,
@@ -901,6 +908,16 @@ describe('gridLayout', () => {
     expect(slots[2].y).toBe(42);
   });
 
+  it('layoutGridSlots respects unequal col/row tracks', () => {
+    const slots = layoutGridSlots(0, 0, 100, 80, 2, 2, 0, {
+      cols: [3, 1],
+      rows: [1, 1],
+    });
+    expect(slots[0]!.w).toBeCloseTo(75, 5);
+    expect(slots[1]!.w).toBeCloseTo(25, 5);
+    expect(slots[1]!.x).toBeCloseTo(75, 5);
+  });
+
   it('rebuildGridSlots expands and shrinks child slots to cols×rows', () => {
     const gridId = newId();
     let layers: ReturnType<typeof createLayer>[] = [
@@ -945,6 +962,51 @@ describe('gridLayout', () => {
     expect(shrunk.filter((l) => l.parentId === gridId && l.type === 'imageSlot')).toHaveLength(4);
   });
 
+  it('rebuildGridSlots on empty grid does not steal other grid slots', () => {
+    const emptyId = newId();
+    const otherId = newId();
+    const otherSlotId = newId();
+    const layers = [
+      createLayer('grid', {
+        id: emptyId,
+        meta: { cols: 2, rows: 2, gapMm: 2 },
+        cssVars: {
+          '--width': '100mm',
+          '--height': '80mm',
+          '--translate-x': '0mm',
+          '--translate-y': '0mm',
+        },
+      }),
+      createLayer('grid', {
+        id: otherId,
+        meta: { cols: 1, rows: 1, gapMm: 2 },
+        cssVars: {
+          '--width': '40mm',
+          '--height': '40mm',
+          '--translate-x': '120mm',
+          '--translate-y': '0mm',
+        },
+      }),
+      createLayer('imageSlot', {
+        id: otherSlotId,
+        name: 'Foto other',
+        parentId: otherId,
+        meta: { index: 0 },
+        cssVars: {
+          '--width': '40mm',
+          '--height': '40mm',
+          '--translate-x': '120mm',
+          '--translate-y': '0mm',
+        },
+      }),
+    ];
+    const next = rebuildGridSlots(layers, emptyId);
+    expect(next.find((l) => l.id === otherSlotId)?.parentId).toBe(otherId);
+    const emptySlots = next.filter((l) => l.parentId === emptyId && l.type === 'imageSlot');
+    expect(emptySlots).toHaveLength(4);
+    expect(emptySlots.every((s) => s.id !== otherSlotId)).toBe(true);
+  });
+
   it('applyGridToImageSlots without imageCount uses designed meta cols×rows', () => {
     const gridId = newId();
     let layers = [
@@ -967,6 +1029,123 @@ describe('gridLayout', () => {
     // 3 columns → third slot shares the first row (same Y as first, larger X)
     expect(parseMm(slots[0].cssVars['--translate-y'])).toBe(parseMm(slots[2].cssVars['--translate-y']));
     expect(parseMm(slots[2].cssVars['--translate-x'])).toBeGreaterThan(parseMm(slots[1].cssVars['--translate-x']));
+  });
+
+  it('matchGridSlotsToSourceSize equalizes all cells to the source slot size', () => {
+    const gridId = newId();
+    let layers = [
+      createLayer('grid', {
+        id: gridId,
+        meta: { cols: 2, rows: 2, gapMm: 2 },
+        cssVars: {
+          '--width': '100mm',
+          '--height': '80mm',
+          '--translate-x': '10mm',
+          '--translate-y': '5mm',
+        },
+      }),
+      ...[0, 1, 2, 3].map((i) =>
+        createLayer('imageSlot', { id: `slot-${i}`, parentId: gridId, meta: { index: i } }),
+      ),
+    ];
+    layers = applyGridToImageSlots(layers, gridId);
+    layers = layers.map((l) =>
+      l.id === 'slot-0'
+        ? {
+            ...l,
+            cssVars: {
+              ...l.cssVars,
+              '--width': '70mm',
+              '--height': '50mm',
+            },
+          }
+        : l,
+    );
+    const sourceBefore = layers.find((l) => l.id === 'slot-0')!;
+    const sourceW = parseMm(sourceBefore.cssVars['--width']);
+    const sourceH = parseMm(sourceBefore.cssVars['--height']);
+    expect(sourceW).toBeCloseTo(70, 5);
+    expect(sourceH).toBeCloseTo(50, 5);
+
+    const next = matchGridSlotsToSourceSize(layers, 'slot-0');
+    const grid = next.find((l) => l.id === gridId)!;
+    const slots = next.filter((l) => l.parentId === gridId && l.type === 'imageSlot');
+    expect(slots).toHaveLength(4);
+    for (const s of slots) {
+      expect(parseMm(s.cssVars['--width'])).toBeCloseTo(sourceW, 5);
+      expect(parseMm(s.cssVars['--height'])).toBeCloseTo(sourceH, 5);
+    }
+    // Larger cells still grow the grid to fit (gap preserved).
+    expect(parseMm(grid.cssVars['--width'])).toBeCloseTo(sourceW * 2 + 2, 5);
+    expect(parseMm(grid.cssVars['--height'])).toBeCloseTo(sourceH * 2 + 2, 5);
+    expect(parseMm(grid.cssVars['--translate-x'])).toBeCloseTo(10, 5);
+    expect(parseMm(grid.cssVars['--translate-y'])).toBeCloseTo(5, 5);
+    expect(grid.meta?.gapMm).toBe(2);
+    expect(grid.meta?.colTracks).toEqual([1, 1]);
+    expect(grid.meta?.rowTracks).toEqual([1, 1]);
+  });
+
+  it('matchGridSlotsToSourceSize does not shrink the grid frame for smaller cells', () => {
+    const gridId = newId();
+    let layers = [
+      createLayer('grid', {
+        id: gridId,
+        meta: { cols: 2, rows: 2, gapMm: 2 },
+        cssVars: {
+          '--width': '100mm',
+          '--height': '80mm',
+          '--translate-x': '10mm',
+          '--translate-y': '5mm',
+        },
+      }),
+      ...[0, 1, 2, 3].map((i) =>
+        createLayer('imageSlot', { id: `slot-${i}`, parentId: gridId, meta: { index: i } }),
+      ),
+    ];
+    layers = applyGridToImageSlots(layers, gridId);
+    layers = layers.map((l) =>
+      l.id === 'slot-0'
+        ? {
+            ...l,
+            cssVars: {
+              ...l.cssVars,
+              '--width': '30mm',
+              '--height': '20mm',
+            },
+          }
+        : l,
+    );
+
+    const next = matchGridSlotsToSourceSize(layers, 'slot-0');
+    const grid = next.find((l) => l.id === gridId)!;
+    const slots = next.filter((l) => l.parentId === gridId && l.type === 'imageSlot');
+    expect(slots).toHaveLength(4);
+    for (const s of slots) {
+      expect(parseMm(s.cssVars['--width'])).toBeCloseTo(30, 5);
+      expect(parseMm(s.cssVars['--height'])).toBeCloseTo(20, 5);
+    }
+    // Outer frame stays put; gap between cells stays 2mm; content is centered.
+    expect(parseMm(grid.cssVars['--width'])).toBeCloseTo(100, 5);
+    expect(parseMm(grid.cssVars['--height'])).toBeCloseTo(80, 5);
+    expect(parseMm(grid.cssVars['--translate-x'])).toBeCloseTo(10, 5);
+    expect(parseMm(grid.cssVars['--translate-y'])).toBeCloseTo(5, 5);
+    expect(grid.meta?.gapMm).toBe(2);
+    // content = 30*2+2=62 by 20*2+2=42 → pad (100-62)/2=19, (80-42)/2=19
+    const slot0 = slots.find((s) => s.meta?.index === 0)!;
+    const slot1 = slots.find((s) => s.meta?.index === 1)!;
+    expect(parseMm(slot0.cssVars['--translate-x'])).toBeCloseTo(10 + 19, 5);
+    expect(parseMm(slot0.cssVars['--translate-y'])).toBeCloseTo(5 + 19, 5);
+    expect(parseMm(slot1.cssVars['--translate-x'])).toBeCloseTo(10 + 19 + 30 + 2, 5);
+    expect(parseMm(slot1.cssVars['--translate-y'])).toBeCloseTo(5 + 19, 5);
+  });
+
+  it('matchGridSlotsToSourceSize is a no-op for non-grid slots', () => {
+    const lone = createLayer('imageSlot', { id: 'lone' });
+    const rect = createLayer('rect', { id: 'r1' });
+    const layers = [lone, rect];
+    expect(matchGridSlotsToSourceSize(layers, 'lone')).toBe(layers);
+    expect(matchGridSlotsToSourceSize(layers, 'r1')).toBe(layers);
+    expect(matchGridSlotsToSourceSize(layers, 'missing')).toBe(layers);
   });
 });
 
@@ -1047,9 +1226,77 @@ describe('document model', () => {
     expect(normalized.pages).toHaveLength(1);
     expect(normalized.layers[0].pageIndex).toBe(0);
   });
+
+  it('normalizeDocument repairs incomplete v2 and fills missing updatedAt with now', () => {
+    const before = Date.now();
+    const incomplete = {
+      ...createEmptyDocument('V2'),
+      version: 2 as const,
+      pages: undefined,
+      guides: undefined,
+      styles: undefined,
+      settings: undefined,
+      updatedAt: undefined,
+      layers: [
+        {
+          id: newId(),
+          type: 'text' as const,
+          name: 'T',
+          value: 'x',
+          cssVars: { '--width': '10mm', '--height': '5mm' },
+        },
+      ],
+    };
+    const normalized = normalizeDocument(incomplete);
+    expect(normalized.version).toBe(2);
+    expect(normalized.pages).toHaveLength(1);
+    expect(normalized.guides).toEqual([]);
+    expect(normalized.styles).toEqual([]);
+    expect(normalized.settings).toEqual({});
+    expect(normalized.layers[0].pageIndex).toBe(0);
+    expect(normalized.updatedAt).toBeTruthy();
+    expect(Date.parse(normalized.updatedAt!)).toBeGreaterThanOrEqual(before - 1000);
+    expect(Date.parse(normalized.updatedAt!)).not.toBe(0);
+  });
 });
 
 describe('page ops', () => {
+  it('duplicatePage remaps parentId within the copied page tree', () => {
+    let doc = createEmptyDocument('Pages');
+    const groupId = newId();
+    const childId = newId();
+    doc.layers.push(
+      {
+        id: groupId,
+        type: 'group',
+        name: 'Grupo',
+        value: '',
+        pageIndex: 0,
+        cssVars: { '--width': '80mm', '--height': '40mm' },
+      },
+      {
+        id: childId,
+        type: 'text',
+        name: 'Hijo',
+        value: 'x',
+        pageIndex: 0,
+        parentId: groupId,
+        cssVars: { '--width': '40mm', '--height': '10mm' },
+      },
+    );
+    const next = duplicatePage(doc, 0);
+    const copiedChild = next.layers.find(
+      (l) => (l.pageIndex ?? 0) === 1 && l.type === 'text' && l.name === 'Hijo',
+    );
+    const copiedGroup = next.layers.find(
+      (l) => (l.pageIndex ?? 0) === 1 && l.type === 'group' && l.name === 'Grupo',
+    );
+    expect(copiedGroup).toBeDefined();
+    expect(copiedChild).toBeDefined();
+    expect(copiedChild!.parentId).toBe(copiedGroup!.id);
+    expect(copiedChild!.parentId).not.toBe(groupId);
+  });
+
   it('duplicatePage copies layers and shifts later pages', () => {
     let doc = createEmptyDocument('Pages');
     doc = addPage(doc);
@@ -1222,6 +1469,22 @@ describe('viewportCulling', () => {
     expect(filterVisibleLayers([near, far], view).map((l) => l.id)).toEqual([near.id]);
     expect(filterVisibleLayers([near, far], view, new Set([far.id]))).toHaveLength(2);
     expect(filterVisibleLayers([near, far], null)).toHaveLength(2);
+  });
+
+  it('filterVisibleLayers uses rotated AABB for culling', () => {
+    // Local box is y=0..10; 90° rotation expands AABB to y≈-5..15.
+    // View only overlaps the tall AABB, not the flat local box.
+    const rotated = createLayer('rect', {
+      cssVars: {
+        '--width': '20mm',
+        '--height': '10mm',
+        '--translate-x': '0mm',
+        '--translate-y': '0mm',
+        '--rotate': '90deg',
+      },
+    });
+    const view = { x: 6, y: 12, w: 4, h: 4 };
+    expect(filterVisibleLayers([rotated], view).map((l) => l.id)).toEqual([rotated.id]);
   });
 });
 
