@@ -15,7 +15,8 @@ from __future__ import annotations
 import importlib
 import logging
 import threading
-from typing import TYPE_CHECKING, Any, Callable, cast
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, cast
 
 from backend.handlers.common import (
     process_state,
