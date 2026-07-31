@@ -166,13 +166,13 @@ export default function FontPicker({
               height: menuBox?.maxHeight ?? MENU_MAX_H,
               maxHeight: menuBox?.maxHeight ?? MENU_MAX_H,
               visibility: menuBox ? 'visible' : 'hidden',
-              background: '#ffffff',
+              background: 'var(--cv-panel-elevated, #ffffff)',
               borderColor: 'var(--cv-border-strong, #c9d0d8)',
               boxShadow: 'var(--cv-shadow-float, 0 12px 28px rgba(26, 35, 50, 0.14))',
             }}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--cv-border,#e2e8f0)] bg-white px-2.5 py-2">
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--cv-border,#e2e8f0)] bg-[var(--cv-panel-elevated)] px-2.5 py-2">
               <span
                 className="truncate text-[12px] font-medium text-[var(--cv-text,#1a2332)]"
                 style={{ fontFamily: selected?.stack ?? value }}
@@ -189,7 +189,7 @@ export default function FontPicker({
               </button>
             </div>
 
-            <div className="relative shrink-0 border-b border-[var(--cv-border,#e2e8f0)] bg-white px-2 py-1.5">
+            <div className="relative shrink-0 border-b border-[var(--cv-border,#e2e8f0)] bg-[var(--cv-panel-elevated)] px-2 py-1.5">
               <Search className="pointer-events-none absolute left-4 top-1/2 h-3 w-3 -translate-y-1/2 text-[var(--cv-text-muted)]" />
               <input
                 ref={searchRef}
@@ -202,7 +202,7 @@ export default function FontPicker({
               />
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto bg-white p-1">
+            <div className="min-h-0 flex-1 overflow-y-auto bg-[var(--cv-panel-elevated)] p-1">
               {filtered.length === 0 ? (
                 <p className="px-2 py-3 text-center text-[11px] text-[var(--cv-text-muted)]">
                   Sin resultados
