@@ -251,10 +251,9 @@ export default memo(function RightPanel({
     <aside
       className={
         open
-          ? 'canvas-panel-chrome flex h-full w-[272px] shrink-0 flex-col overflow-hidden border-l'
-          : 'canvas-panel-chrome flex h-full w-0 min-w-0 shrink-0 flex-col overflow-hidden border-l-0'
+          ? 'canvas-panel canvas-panel-chrome flex h-full w-[272px] shrink-0 flex-col overflow-hidden border-l'
+          : 'canvas-panel canvas-panel-chrome flex h-full w-0 min-w-0 shrink-0 flex-col overflow-hidden border-l-0'
       }
-      style={{ background: 'var(--cv-panel)', borderColor: 'var(--cv-border)' }}
       data-open={open ? 'true' : 'false'}
       data-testid="canvas-right-panel"
       aria-hidden={!open}

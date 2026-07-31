@@ -64,6 +64,10 @@ scratch/_smoke*.db
 .claude/
 .codex/
 .commandcode/
+.cursor/hooks.json
+.cursor/skills/
+.github/hooks/
+.github/skills/
 .devin/
 .factory/
 .hypothesis/

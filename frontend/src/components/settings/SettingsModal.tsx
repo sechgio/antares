@@ -2,13 +2,19 @@ import React, { Suspense, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { History, Palette, X, Users, PawPrint, type LucideIcon } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
-import AppearanceView from './AppearanceView';
-import HistoryView from '../history/HistoryView';
-import PanelView from './PanelView';
 import { CONFIG_SECTION_DEFINITIONS, type ConfigSectionId } from '../../navigation';
 import { useAuth } from '../../auth/AuthContext';
 
+const AppearanceView = React.lazy(() => import('./AppearanceView'));
+const HistoryView = React.lazy(() => import('../history/HistoryView'));
+const PanelView = React.lazy(() => import('./PanelView'));
 const PetdexView = React.lazy(() => import('./PetdexView'));
+
+const sectionFallback = (
+  <div className="flex h-full items-center justify-center text-xs text-[var(--text-muted)]">
+    Cargando...
+  </div>
+);
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -198,26 +204,28 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
           <div className="relative min-h-0 flex-1 overflow-hidden">
             {section === 'appearance' && (
               <div className="h-full overflow-y-auto">
-                <AppearanceView />
+                <Suspense fallback={sectionFallback}>
+                  <AppearanceView />
+                </Suspense>
               </div>
             )}
             {section === 'history' && (
               <div className="h-full overflow-hidden">
-                <HistoryView />
+                <Suspense fallback={sectionFallback}>
+                  <HistoryView />
+                </Suspense>
               </div>
             )}
             {section === 'panel' && (
               <div className="h-full overflow-y-auto">
-                <PanelView />
+                <Suspense fallback={sectionFallback}>
+                  <PanelView />
+                </Suspense>
               </div>
             )}
             {section === 'petdex' && (
               <div className="h-full overflow-y-auto">
-                <Suspense fallback={
-                  <div className="flex h-full items-center justify-center text-xs text-[var(--text-muted)]">
-                    Cargando Petdex...
-                  </div>
-                }>
+                <Suspense fallback={sectionFallback}>
                   <PetdexView />
                 </Suspense>
               </div>

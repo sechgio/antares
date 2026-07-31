@@ -108,7 +108,9 @@ export async function fetchTareas(proyectoId: string): Promise<Tarea[]> {
   const client = requireClient();
   const { data, error } = await client
     .from('tareas')
-    .select('*')
+    .select(
+      'id, proyecto_id, title, description, status, assignee_id, start_date, due_date, sort_order, created_by, created_at, updated_at',
+    )
     .eq('proyecto_id', proyectoId)
     .order('sort_order')
     .order('created_at');

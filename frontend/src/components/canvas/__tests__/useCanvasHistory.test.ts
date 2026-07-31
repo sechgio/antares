@@ -231,4 +231,14 @@ describe('useCanvasHistory gesture coalesce', () => {
     expect(parseMm(result.current.document.layers.find((l) => l.type === 'image')!.cssVars['--translate-x'])).toBe(0);
     expect(result.current.document.layers.find((l) => l.type === 'image')!.value).toBe(largeValue);
   });
+
+  it('updateSilent is a no-op when the document reference is unchanged', () => {
+    const base = createEmptyDocument('Test');
+    const { result } = renderHook(() => useCanvasHistory(base));
+    const before = result.current.document;
+    act(() => {
+      result.current.updateSilent(before);
+    });
+    expect(result.current.document).toBe(before);
+  });
 });

@@ -254,6 +254,59 @@ describe('Artboard drag gestures', () => {
     expect(parseFloat(resized.cssVars['--height'])).toBeGreaterThan(40);
   });
 
+  it('coalesces resize to DOM geometry mid-gesture and commits once on pointerup', () => {
+    const layer = createLayer('rect'); // 50×40 mm
+    const { container, onChangeLayers } = setup([layer], [layer.id]);
+    const node = container.querySelector<HTMLElement>(`[data-layer-id="${layer.id}"]`)!;
+    const se = screen.getByTestId('canvas-resize-handle-se');
+    const mm = 96 / 25.4;
+    const baseW = parseFloat(node.style.width);
+    const baseH = parseFloat(node.style.height);
+
+    fireEvent.pointerDown(se, { button: 0, clientX: 300, clientY: 300 });
+    fireEvent.pointerMove(window, { clientX: 300 + 10 * mm, clientY: 300 + 10 * mm });
+    fireEvent.pointerMove(window, { clientX: 300 + 20 * mm, clientY: 300 + 20 * mm });
+    expect(onChangeLayers).not.toHaveBeenCalled();
+    expect(parseFloat(node.style.width)).toBe(baseW);
+
+    act(() => tick());
+    expect(onChangeLayers).not.toHaveBeenCalled();
+    expect(parseFloat(node.style.width)).toBeGreaterThan(baseW);
+    expect(parseFloat(node.style.height)).toBeGreaterThan(baseH);
+    expect(node.style.willChange).toBe('transform');
+
+    fireEvent.pointerUp(window, { clientX: 300 + 20 * mm, clientY: 300 + 20 * mm });
+    expect(onChangeLayers).toHaveBeenCalledTimes(1);
+    const committed = onChangeLayers.mock.calls[0][0] as CanvasLayer[];
+    const resized = committed.find((l) => l.id === layer.id)!;
+    expect(parseFloat(resized.cssVars['--width'])).toBeGreaterThan(50);
+    expect(parseFloat(resized.cssVars['--height'])).toBeGreaterThan(40);
+  });
+
+  it('coalesces rotate to DOM transform mid-gesture and commits once on pointerup', () => {
+    const layer = createLayer('rect');
+    const { container, onChangeLayers } = setup([layer], [layer.id]);
+    const node = container.querySelector<HTMLElement>(`[data-layer-id="${layer.id}"]`)!;
+    const handle = screen.getByTestId('canvas-rotate-handle');
+
+    fireEvent.pointerDown(handle, { button: 0, clientX: 400, clientY: 100 });
+    fireEvent.pointerMove(window, { clientX: 450, clientY: 120 });
+    fireEvent.pointerMove(window, { clientX: 500, clientY: 150 });
+    expect(onChangeLayers).not.toHaveBeenCalled();
+
+    act(() => tick());
+    expect(onChangeLayers).not.toHaveBeenCalled();
+    expect(node.style.transform).toMatch(/rotate\(/);
+    expect(node.style.willChange).toBe('transform');
+
+    fireEvent.pointerUp(window, { clientX: 500, clientY: 150 });
+    expect(onChangeLayers).toHaveBeenCalledTimes(1);
+    const committed = onChangeLayers.mock.calls[0][0] as CanvasLayer[];
+    const rotated = committed.find((l) => l.id === layer.id)!;
+    expect(rotated.cssVars['--rotate']).toBeTruthy();
+    expect(rotated.cssVars['--rotate']).not.toBe('0deg');
+  });
+
   it('pans with translate3d (not left/top layout)', () => {
     const layer = createLayer('rect');
     const document = createEmptyDocument('Test');
@@ -335,5 +388,34 @@ describe('Artboard drag gestures', () => {
     fireEvent.pointerDown(artboard, { button: 0, clientX: 20 * mmPx, clientY: 20 * mmPx });
     fireEvent.pointerUp(window, { button: 0, clientX: 20 * mmPx, clientY: 20 * mmPx });
     expect(onSelect).toHaveBeenCalledWith('top');
+  });
+
+  it('coalesces wheel pan/zoom to one camera update per animation frame', () => {
+    const layer = createLayer('rect');
+    const document = createEmptyDocument('Test');
+    document.layers.push(layer);
+    const onPan = vi.fn();
+    const onZoom = vi.fn();
+    const { container } = render(
+      <Artboard
+        document={document}
+        selectedIds={[]}
+        zoom={1}
+        tool="hand"
+        pan={{ x: 0, y: 0 }}
+        onPan={onPan}
+        onZoom={onZoom}
+        onSelect={() => {}}
+        onSelectIds={() => {}}
+        onChangeLayers={() => {}}
+      />,
+    );
+    const viewport = container.querySelector('[data-testid="canvas-viewport"]')!;
+    fireEvent.wheel(viewport, { deltaY: 40, deltaX: 0 });
+    fireEvent.wheel(viewport, { deltaY: 40, deltaX: 0 });
+    fireEvent.wheel(viewport, { deltaY: 40, deltaX: 0 });
+    expect(onPan).not.toHaveBeenCalled();
+    act(() => tick());
+    expect(onPan).toHaveBeenCalledTimes(1);
   });
 });

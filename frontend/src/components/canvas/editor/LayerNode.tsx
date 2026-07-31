@@ -46,7 +46,11 @@ interface LayerNodeProps {
   onStartPathEdit?: (id: string) => void;
 }
 
+const imgStyleCache = new WeakMap<CanvasLayer['cssVars'], CSSProperties>();
+
 function imgStyleFromCssVars(cssVars: CanvasLayer['cssVars']): CSSProperties {
+  const cached = imgStyleCache.get(cssVars);
+  if (cached) return cached;
   const style: CSSProperties = {};
   for (const part of imageContentInlineStyle(cssVars).split(';')) {
     if (!part) continue;
@@ -58,6 +62,7 @@ function imgStyleFromCssVars(cssVars: CanvasLayer['cssVars']): CSSProperties {
     (style as Record<string, string>)[camel as string] = value;
   }
   style.imageRendering = 'auto';
+  imgStyleCache.set(cssVars, style);
   return style;
 }
 

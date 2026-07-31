@@ -1,6 +1,7 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { cloneDocumentBaseline } from '../ops/document';
 import { applyLivePanelLayerChange } from '../ops/gridLayout';
+import { createGestureRaf } from '../ops/gestureRaf';
 import { setActivePageLayers, syncImagesPerPage } from '../ops/pages';
 import { syncLinkedStylesFromLayer } from '../ops/syncLinkedStyles';
 import type { CanvasDocument, CanvasLayer } from '../types';
@@ -21,16 +22,39 @@ interface UseGestureBaselinesOptions {
 export function useGestureBaselines({ history, pageIndex }: UseGestureBaselinesOptions) {
   const gestureBaselineRef = useRef<CanvasDocument | null>(null);
   const panelBaselineRef = useRef<CanvasDocument | null>(null);
+  const historyRef = useRef(history);
+  const pageIndexRef = useRef(pageIndex);
+  historyRef.current = history;
+  pageIndexRef.current = pageIndex;
+
+  const applyPanelLayerRef = useRef<(layer: CanvasLayer) => void>(() => {});
+  applyPanelLayerRef.current = (layer: CanvasLayer) => {
+    const hist = historyRef.current;
+    const idx = pageIndexRef.current;
+    if (!panelBaselineRef.current) {
+      panelBaselineRef.current = cloneDocumentBaseline(hist.document, idx);
+    }
+    const prev = hist.document.layers.find((l) => l.id === layer.id);
+    const layers = applyLivePanelLayerChange(hist.document.layers, prev, layer);
+    const doc = syncLinkedStylesFromLayer({ ...hist.document, layers }, prev, layer);
+    hist.updateSilent(syncImagesPerPage(doc));
+  };
+
+  const panelRafRef = useRef(
+    createGestureRaf((layer: CanvasLayer) => applyPanelLayerRef.current(layer)),
+  );
+  useEffect(() => () => panelRafRef.current.cancel(), []);
 
   const setPageLayersLive = useCallback(
     (layers: CanvasLayer[]) => {
       if (!gestureBaselineRef.current) {
         gestureBaselineRef.current = cloneDocumentBaseline(history.document, pageIndex);
       }
-      // First call (gesture start) captures baseline; later calls push live layers.
-      history.updateSilent(
-        syncImagesPerPage(setActivePageLayers(history.document, pageIndex, layers)),
-      );
+      const layered = setActivePageLayers(history.document, pageIndex, layers);
+      // Gesture-start baseline passes identical layer refs — skip the React commit
+      // (avoid syncImagesPerPage stamping settings and forcing a Capas re-render).
+      if (layered === history.document) return;
+      history.updateSilent(syncImagesPerPage(layered));
     },
     [history, pageIndex],
   );
@@ -42,20 +66,19 @@ export function useGestureBaselines({ history, pageIndex }: UseGestureBaselinesO
     history.commitFromBaseline(baseline);
   }, [history]);
 
-  const onPanelChangeLive = useCallback(
-    (layer: CanvasLayer) => {
-      if (!panelBaselineRef.current) {
-        panelBaselineRef.current = cloneDocumentBaseline(history.document, pageIndex);
-      }
-      const prev = history.document.layers.find((l) => l.id === layer.id);
-      const layers = applyLivePanelLayerChange(history.document.layers, prev, layer);
-      const doc = syncLinkedStylesFromLayer({ ...history.document, layers }, prev, layer);
-      history.updateSilent(syncImagesPerPage(doc));
-    },
-    [history, pageIndex],
-  );
+  const onPanelChangeLive = useCallback((layer: CanvasLayer) => {
+    // Mark dirty immediately so focus/undo gates see an in-flight panel edit.
+    if (!panelBaselineRef.current) {
+      panelBaselineRef.current = cloneDocumentBaseline(
+        historyRef.current.document,
+        pageIndexRef.current,
+      );
+    }
+    panelRafRef.current.schedule(layer);
+  }, []);
 
   const onPanelCommitLive = useCallback(() => {
+    panelRafRef.current.flush();
     const baseline = panelBaselineRef.current;
     if (!baseline) return;
     panelBaselineRef.current = null;

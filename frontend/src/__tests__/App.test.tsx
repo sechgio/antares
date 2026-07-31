@@ -125,8 +125,24 @@ describe('App', () => {
         },
         { timeout: 5000 },
       );
+      // Wait for the lazy canvas chunk to settle so Vitest does not tear down mid-import.
+      if (tab.id === 'canvas') {
+        await waitFor(() => {
+          expect(document.querySelector('.canvas-app')).toBeTruthy();
+        }, { timeout: 15000 });
+      }
     }
-  }, 60000);
+  }, 90000);
+
+  it('opens settings lazily from the title bar', async () => {
+    render(<App />);
+    await screen.findByRole('button', { name: 'Conversión' }, { timeout: 5000 });
+
+    expect(screen.queryByTestId('settings-modal')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('titlebar-settings-button'));
+    expect(await screen.findByTestId('settings-modal', {}, { timeout: 8000 })).toBeInTheDocument();
+  });
 
   it('opens search from Ctrl+K without rendering a header search button', async () => {
     render(<App />);

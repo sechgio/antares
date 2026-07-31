@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { api } from '../../../api';
-import { queueCanvasCloudPush } from '../sync/canvasCloudSync';
+import { queueCanvasCloudPush } from '../sync/cloudQueue';
 import {
   createEmptyDocument,
   normalizeDocument,

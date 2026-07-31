@@ -9,10 +9,11 @@ function handleWindowAction(action: 'minimizeWindow' | 'maximizeWindow' | 'close
 
 interface TitleBarProps {
   onOpenSettings?: () => void;
+  onPrefetchSettings?: () => void;
   onOpenEspacios?: () => void;
 }
 
-export default function TitleBar({ onOpenSettings, onOpenEspacios }: TitleBarProps) {
+export default function TitleBar({ onOpenSettings, onPrefetchSettings, onOpenEspacios }: TitleBarProps) {
   return (
     <div
       data-testid="app-titlebar"
@@ -28,6 +29,8 @@ export default function TitleBar({ onOpenSettings, onOpenEspacios }: TitleBarPro
               data-testid="titlebar-settings-button"
               aria-label="Configuración"
               onClick={onOpenSettings}
+              onMouseEnter={onPrefetchSettings}
+              onFocus={onPrefetchSettings}
               className="app-titlebar-button flex h-full w-10 items-center justify-center text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
             >
               <Settings size={14} strokeWidth={1.8} className="transition-transform duration-300 group-hover:rotate-45" />

@@ -1,6 +1,6 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../../api';
-import { syncCanvasDocuments, type SyncConflict } from '../sync/canvasCloudSync';
+import type { SyncConflict } from '../sync/canvasCloudSync';
 import { normalizeDocument, type CanvasDocument } from '../types';
 import type { useCanvasHistory } from './useCanvasHistory';
 
@@ -39,10 +39,14 @@ export function useCanvasSync({
   replaceDocument,
   onConflict,
 }: UseCanvasSyncOptions) {
+  const [syncing, setSyncing] = useState(false);
+
   const runCloudSync = useCallback(async () => {
+    setSyncing(true);
     try {
       const openId = historyDocRef.current.id;
       const openDirty = historyCanUndoRef.current;
+      const { syncCanvasDocuments } = await import('../sync/canvasCloudSync');
       const result = await syncCanvasDocuments({
         openDocumentId: openId,
         openDirty,
@@ -69,6 +73,8 @@ export function useCanvasSync({
       }
     } catch {
       /* offline / auth — local cache remains usable */
+    } finally {
+      setSyncing(false);
     }
   }, [historyDocRef, historyCanUndoRef, refreshList, replaceDocument, onConflict]);
 
@@ -80,5 +86,5 @@ export function useCanvasSync({
     return () => window.removeEventListener('focus', onFocus);
   }, [runCloudSync]);
 
-  return { runCloudSync };
+  return { runCloudSync, syncing };
 }

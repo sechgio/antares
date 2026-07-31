@@ -251,4 +251,25 @@ describe('setActivePageLayers', () => {
     const updated = setActivePageLayers(doc, 0, [p0a, fresh]);
     expect(updated.layers.map((l) => l.id)).toEqual(['p0a', 'fresh', 'p1b']);
   });
+
+  it('preserves layer object identity when pageIndex already matches', () => {
+    const p0a = createLayer('rect', { id: 'p0a', pageIndex: 0 });
+    const p0b = createLayer('rect', { id: 'p0b', pageIndex: 0 });
+    const p1 = createLayer('text', { id: 'p1', pageIndex: 1 });
+    const doc = makeDoc([p0a, p1, p0b]);
+    const moved = { ...p0a, cssVars: { ...p0a.cssVars, '--translate-x': '30mm' } };
+
+    const updated = setActivePageLayers(doc, 0, [moved, p0b]);
+    expect(updated.layers[0]).toBe(moved);
+    expect(updated.layers[1]).toBe(p1);
+    expect(updated.layers[2]).toBe(p0b);
+    expect(updated.layers[0]).not.toBe(p0a);
+  });
+
+  it('returns the same document ref when active page layers are unchanged', () => {
+    const p0a = createLayer('rect', { id: 'p0a', pageIndex: 0 });
+    const p1 = createLayer('text', { id: 'p1', pageIndex: 1 });
+    const doc = makeDoc([p0a, p1]);
+    expect(setActivePageLayers(doc, 0, [p0a])).toBe(doc);
+  });
 });

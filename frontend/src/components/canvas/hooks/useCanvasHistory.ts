@@ -52,6 +52,7 @@ export function useCanvasHistory(initial: CanvasDocument) {
   }, []);
 
   const updateSilent = useCallback((next: CanvasDocument) => {
+    if (next === documentRef.current) return;
     documentRef.current = next;
     setDocumentState(next);
   }, []);

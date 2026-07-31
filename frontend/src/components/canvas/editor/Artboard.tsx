@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -57,8 +58,13 @@ import {
 import { duplicateLayers } from '../ops/layerOps';
 import { expandWithDescendants } from '../ops/layerTree';
 import { wheelPanDelta, wheelZoomFactor, zoomAtCursor } from '../ops/viewportNav';
-import { filterVisibleLayers, visiblePageRectMm } from '../ops/viewportCulling';
+import { CULLING_MARGIN_MM, filterVisibleLayers, visiblePageRectMm } from '../ops/viewportCulling';
 import { createGestureRaf } from '../ops/gestureRaf';
+import {
+  applyLayerDomGeometry,
+  clearLayerDomGestureStyles,
+  setCanvasGestureActive,
+} from '../ops/imperativeLayerDom';
 import {
   computeRadiusFromDrag,
   layerSupportsCornerRadius,
@@ -124,8 +130,16 @@ interface ArtboardProps {
   gestureAbortToken?: number;
 }
 
-function cloneLayers(layers: CanvasLayer[]): CanvasLayer[] {
-  return layers.map((l) => ({ ...l, cssVars: { ...l.cssVars }, meta: l.meta ? { ...l.meta } : undefined }));
+/** Snapshot for a gesture. Deep-clones only `deepIds` (selection); shares other refs. */
+function cloneLayers(layers: CanvasLayer[], deepIds?: ReadonlySet<string>): CanvasLayer[] {
+  if (!deepIds || deepIds.size === 0) {
+    return layers.map((l) => ({ ...l, cssVars: { ...l.cssVars }, meta: l.meta ? { ...l.meta } : undefined }));
+  }
+  return layers.map((l) =>
+    deepIds.has(l.id)
+      ? { ...l, cssVars: { ...l.cssVars }, meta: l.meta ? { ...l.meta } : undefined }
+      : l,
+  );
 }
 
 /** Cache artboard client rect for a gesture; refresh if camera zoom changes mid-drag. */
@@ -201,7 +215,7 @@ const SmartGuidesOverlay = memo(function SmartGuidesOverlay({
   );
 });
 
-export default function Artboard({
+function Artboard({
   document,
   selectedIds,
   zoom,
@@ -273,15 +287,26 @@ export default function Artboard({
     setDistanceLabels(next);
   }, []);
   const [panning, setPanning] = useState(false);
+  /** True briefly while pan/zoom is changing — defers GPU filters and widens cull margin. */
+  const [cameraMoving, setCameraMoving] = useState(false);
   /** True while a two-finger pinch is (or was, until all fingers lift) active. */
   const pinchGestureRef = useRef(false);
   /** Viewport size in CSS px — drives layer culling (virtualized rendering). */
   const [viewportSize, setViewportSize] = useState<{ w: number; h: number } | null>(null);
   /** Live gesture preview stays in Artboard so CanvasView/sidebars skip per-frame updates. */
   const [gestureLayers, setGestureLayers] = useState<CanvasLayer[] | null>(null);
+  /**
+   * Selection-move uses DOM transforms mid-drag (no setGestureLayers per frame).
+   * `gestureActive` flips once so LayerNode gets `moving` / will-change without
+   * reconciling every layer each frame; chrome bbox is tracked separately.
+   */
+  const [gestureActive, setGestureActive] = useState(false);
+  const [gestureBbox, setGestureBbox] = useState<RectMm | null>(null);
   const didFit = useRef(false);
   const gestureDirtyRef = useRef(false);
   const gestureLayersRef = useRef<CanvasLayer[] | null>(null);
+  /** Ids being moved via imperative DOM preview (selection move only). */
+  const imperativeMoveIdsRef = useRef<string[] | null>(null);
   const layersRef = useRef(document.layers);
 
   const onPreviewLayersRef = useRef(onPreviewLayers);
@@ -329,6 +354,7 @@ export default function Artboard({
     // First frame: capture parent baseline so undo can cancel (revert) mid-gesture.
     if (!gestureDirtyRef.current) {
       onPreviewLayersRef.current?.(layersRef.current);
+      setCanvasGestureActive(true);
     }
     gestureDirtyRef.current = true;
     gestureLayersRef.current = layers;
@@ -339,9 +365,18 @@ export default function Artboard({
   const endGesture = useCallback(() => {
     if (!gestureDirtyRef.current) return;
     const finalLayers = gestureLayersRef.current;
+    const ids = imperativeMoveIdsRef.current;
+    const frame = frameRef.current;
+    if (frame && finalLayers && ids?.length) {
+      clearLayerDomGestureStyles(frame, finalLayers, ids);
+    }
     gestureDirtyRef.current = false;
     gestureLayersRef.current = null;
+    imperativeMoveIdsRef.current = null;
     setGestureLayers(null);
+    setGestureActive(false);
+    setGestureBbox(null);
+    setCanvasGestureActive(false);
     if (!finalLayers) return;
     if (onPreviewLayersRef.current) {
       onPreviewLayersRef.current(finalLayers);
@@ -351,19 +386,53 @@ export default function Artboard({
     }
   }, []);
 
+  /** Mid-gesture DOM preview (move/resize/rotate): no per-frame LayerNode reconcile. */
+  const applyImperativePreview = useCallback((moved: CanvasLayer[], nextIds: string[]) => {
+    if (pinchGestureRef.current) return;
+    if (!gestureDirtyRef.current) {
+      onPreviewLayersRef.current?.(layersRef.current);
+      gestureDirtyRef.current = true;
+      setGestureActive(true);
+      setCanvasGestureActive(true);
+    }
+    gestureLayersRef.current = moved;
+    layersRef.current = moved;
+    imperativeMoveIdsRef.current = nextIds;
+    const frame = frameRef.current;
+    if (frame) applyLayerDomGeometry(frame, moved, nextIds);
+  }, []);
+
   const prevAbortTokenRef = useRef(gestureAbortToken);
   useEffect(() => {
     if (gestureAbortToken === prevAbortTokenRef.current) return;
     prevAbortTokenRef.current = gestureAbortToken;
+    const layers = gestureLayersRef.current;
+    const ids = imperativeMoveIdsRef.current;
+    const frame = frameRef.current;
+    if (frame && layers && ids?.length) {
+      clearLayerDomGestureStyles(frame, layers, ids);
+    }
     gestureDirtyRef.current = false;
     gestureLayersRef.current = null;
+    imperativeMoveIdsRef.current = null;
     setGestureLayers(null);
+    setGestureActive(false);
+    setGestureBbox(null);
+    setCanvasGestureActive(false);
     setMarquee(null);
     setDraft(null);
     setGuidesIfChanged([]);
     setDistanceLabelsIfChanged([]);
     setLassoPts(null);
   }, [gestureAbortToken, setGuidesIfChanged, setDistanceLabelsIfChanged]);
+
+  /** Re-apply DOM geometry after React chrome commits wipe inline styles. */
+  useLayoutEffect(() => {
+    if (!gestureActive || !imperativeMoveIdsRef.current || !gestureLayersRef.current) return;
+    const frame = frameRef.current;
+    if (!frame) return;
+    applyLayerDomGeometry(frame, gestureLayersRef.current, imperativeMoveIdsRef.current);
+  }, [gestureActive, guides, distanceLabels, gestureBbox]);
 
   const navRef = useRef({ zoom, pan, onZoom, onPan });
   navRef.current = { zoom, pan, onZoom, onPan };
@@ -384,7 +453,13 @@ export default function Artboard({
   selectedIdsRef.current = selectedIds;
 
   const displayLayers = gestureLayers ?? document.layers;
-  layersRef.current = displayLayers;
+  // Keep layersRef on the live gesture snapshot while imperative move is in flight
+  // (gestureLayers state stays null so LayerNodes skip per-frame reconciliation).
+  if (gestureDirtyRef.current && gestureLayersRef.current) {
+    layersRef.current = gestureLayersRef.current;
+  } else {
+    layersRef.current = displayLayers;
+  }
 
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const contentLayers = useMemo(
@@ -403,12 +478,21 @@ export default function Artboard({
   const layerById = useMemo(() => new Map(displayLayers.map((l) => [l.id, l])), [displayLayers]);
 
   // Virtualized rendering: only mount layers inside the visible page region.
+  // Widen overscan while the camera moves so layers do not thrash mount/unmount mid-pan.
   const viewRectMm = useMemo(
     () =>
       viewportSize
-        ? visiblePageRectMm(viewportSize.w, viewportSize.h, pan, zoom, A4_WIDTH_PX, A4_HEIGHT_PX)
+        ? visiblePageRectMm(
+            viewportSize.w,
+            viewportSize.h,
+            pan,
+            zoom,
+            A4_WIDTH_PX,
+            A4_HEIGHT_PX,
+            cameraMoving || panning ? CULLING_MARGIN_MM * 3 : CULLING_MARGIN_MM,
+          )
         : null,
-    [viewportSize, pan, zoom],
+    [viewportSize, pan, zoom, cameraMoving, panning],
   );
   const renderLayers = useMemo(() => {
     const always = new Set(selectedIds);
@@ -426,6 +510,7 @@ export default function Artboard({
     [layerById, selectedIds],
   );
   const bbox = useMemo(() => selectionBounds(displayLayers, editableSelected), [displayLayers, editableSelected]);
+  const chromeBbox = gestureBbox ?? bbox;
   const [radiusDrag, setRadiusDrag] = useState<{
     label: string;
     corner: CornerId;
@@ -499,17 +584,39 @@ export default function Artboard({
     return () => ro.disconnect();
   }, []);
 
+  // After the last pan/zoom tick, restore GPU effects once the camera settles.
+  const cameraPrimedRef = useRef(false);
+  useEffect(() => {
+    if (!cameraPrimedRef.current) {
+      cameraPrimedRef.current = true;
+      return;
+    }
+    setCameraMoving(true);
+    const timer = window.setTimeout(() => setCameraMoving(false), 140);
+    return () => window.clearTimeout(timer);
+  }, [pan.x, pan.y, zoom]);
+
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
+    // Viewport client rect is stable across pan/zoom; refresh only on resize.
+    let viewportRect = el.getBoundingClientRect();
+    let rectDirty = false;
+    const refreshViewportRect = () => {
+      viewportRect = el.getBoundingClientRect();
+      rectDirty = false;
+    };
+    const ro = new ResizeObserver(() => {
+      rectDirty = true;
+    });
+    ro.observe(el);
+    // Coalesce wheel bursts to one camera update per frame (matches drag RAF policy).
+    const raf = createGestureRaf((e: WheelEvent) => {
       const { zoom: z, pan: p, onZoom: setZ, onPan: setP } = navRef.current;
-      const rect = el.getBoundingClientRect();
+      if (rectDirty) refreshViewportRect();
       const cursor = {
-        x: e.clientX - rect.left - rect.width / 2,
-        y: e.clientY - rect.top - rect.height / 2,
+        x: e.clientX - viewportRect.left - viewportRect.width / 2,
+        y: e.clientY - viewportRect.top - viewportRect.height / 2,
       };
 
       if (e.ctrlKey || e.metaKey) {
@@ -522,9 +629,18 @@ export default function Artboard({
 
       const d = wheelPanDelta(e.deltaX, e.deltaY, e.shiftKey);
       setP({ x: p.x - d.x, y: p.y - d.y });
+    });
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      raf.schedule(e);
     };
     el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
+    return () => {
+      raf.cancel();
+      ro.disconnect();
+      el.removeEventListener('wheel', onWheel);
+    };
   }, []);
 
   const startPanDrag = (e: ReactPointerEvent) => {
@@ -583,9 +699,14 @@ export default function Artboard({
       startClientY: number,
       options?: { onClickWithoutDrag?: () => void; duplicate?: boolean },
     ) => {
-      let snapshot = cloneLayers(layersRef.current);
+      let snapshot = cloneLayers(
+        layersRef.current,
+        new Set(expandWithDescendants(layersRef.current, ids)),
+      );
       let moveIds = ids;
       let didDuplicate = false;
+      /** Alt-duplicate needs a React commit so new LayerNodes mount; stay on that path. */
+      let useReactPreview = false;
       gestureDirtyRef.current = false;
       let dragging = false;
       const marginMm = pageMarginRef.current;
@@ -598,7 +719,12 @@ export default function Artboard({
         snapshot = layers;
         moveIds = newIds;
         onSelectIdsRef.current(newIds);
+        useReactPreview = true;
         applyGestureLayers(snapshot);
+      };
+
+      const applyMovePreview = (moved: CanvasLayer[], nextMoveIds: string[]) => {
+        applyImperativePreview(moved, nextMoveIds);
       };
 
       const buildOthers = (snap: CanvasLayer[], moving: string[]) => {
@@ -705,14 +831,17 @@ export default function Artboard({
         }
         setGuidesIfChanged(nextGuides);
         const moved = moveSelection(snapshot, moveIds, dx, dy);
-        applyGestureLayers(moved);
+        if (useReactPreview) applyGestureLayers(moved);
+        else applyMovePreview(moved, moveIds);
         // Distances always while dragging when neighbors/page gaps exist;
         // equal-gap badges take priority when present.
         const bounds = selectionBounds(moved, moveIds);
         if (bounds) {
+          setGestureBbox(bounds);
           const measured = measureSelectionGaps(bounds, othersRects, pageSizeRef.current);
           setDistanceLabelsIfChanged(equalGapLabels.length ? equalGapLabels : measured);
         } else {
+          setGestureBbox(null);
           setDistanceLabelsIfChanged([]);
         }
       });
@@ -730,7 +859,7 @@ export default function Artboard({
       window.addEventListener('pointermove', onMovePtr);
       window.addEventListener('pointerup', onUp);
     },
-    [applyGestureLayers, endGesture, setGuidesIfChanged, setDistanceLabelsIfChanged],
+    [applyGestureLayers, applyImperativePreview, endGesture, setGuidesIfChanged, setDistanceLabelsIfChanged],
   );
 
   const handleLayerPointerDown = useCallback(
@@ -786,7 +915,10 @@ export default function Artboard({
     e.stopPropagation();
     e.preventDefault();
     if (!editableSelected.length) return;
-    const snapshot = cloneLayers(layersRef.current);
+    const snapshot = cloneLayers(
+      layersRef.current,
+      new Set(expandWithDescendants(layersRef.current, editableSelected)),
+    );
     const startX = e.clientX;
     const startY = e.clientY;
     const ids = [...editableSelected];
@@ -828,9 +960,9 @@ export default function Artboard({
       } else {
         setGuidesIfChanged([]);
       }
-      applyGestureLayers(
-        resizeSelection(snapshot, ids, corner, 0, 0, { targetBox: nextBox }),
-      );
+      const resized = resizeSelection(snapshot, ids, corner, 0, 0, { targetBox: nextBox });
+      applyImperativePreview(resized, ids);
+      setGestureBbox(selectionBounds(resized, ids));
     });
     const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
     const onUp = () => {
@@ -848,7 +980,10 @@ export default function Artboard({
     e.stopPropagation();
     e.preventDefault();
     if (!bbox || !editableSelected.length || !frameRef.current) return;
-    const snapshot = cloneLayers(layersRef.current);
+    const snapshot = cloneLayers(
+      layersRef.current,
+      new Set(expandWithDescendants(layersRef.current, editableSelected)),
+    );
     const ids = [...editableSelected];
     const cx = bbox.x + bbox.w / 2;
     const cy = bbox.y + bbox.h / 2;
@@ -861,7 +996,9 @@ export default function Artboard({
       const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
       const angle = angleFromCenter(cx, cy, cur.xMm, cur.yMm);
       const delta = angle - startAngle;
-      applyGestureLayers(rotateSelection(snapshot, ids, delta, { snap15: ev.shiftKey }));
+      const rotated = rotateSelection(snapshot, ids, delta, { snap15: ev.shiftKey });
+      applyImperativePreview(rotated, ids);
+      setGestureBbox(selectionBounds(rotated, ids));
     });
     const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
     const onUp = () => {
@@ -879,7 +1016,7 @@ export default function Artboard({
     e.preventDefault();
     if (editableSelected.length !== 1) return;
     const id = editableSelected[0]!;
-    const snapshot = cloneLayers(layersRef.current);
+    const snapshot = cloneLayers(layersRef.current, new Set([id]));
     const layer = snapshot.find((l) => l.id === id);
     if (!layer || !layerSupportsCornerRadius(layer)) return;
     const startRadius = cornerRadiusPx(layer.cssVars, corner);
@@ -1401,8 +1538,8 @@ export default function Artboard({
               key={layer.id}
               layer={layer}
               selected={selectedIdSet.has(layer.id)}
-              moving={gestureLayers !== null && selectedIdSet.has(layer.id)}
-              panning={panning}
+              moving={(gestureLayers !== null || gestureActive) && selectedIdSet.has(layer.id)}
+              panning={panning || cameraMoving}
               interactive={interactive && !panning}
               editing={editingLayerId === layer.id}
               pathEditing={pathEditingLayerId === layer.id}
@@ -1612,9 +1749,9 @@ export default function Artboard({
             />
           )}
 
-          {bbox && interactive && !panning && !editingLayerId && (
+          {chromeBbox && interactive && !panning && !editingLayerId && (
             <SelectionChromeOverlay
-              bbox={bbox}
+              bbox={chromeBbox}
               zoom={zoom}
               showRadiusHandles={showRadiusHandles}
               cornerRadii={cornerRadii}
@@ -1630,3 +1767,5 @@ export default function Artboard({
     </div>
   );
 }
+
+export default memo(Artboard);

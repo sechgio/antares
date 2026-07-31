@@ -11,6 +11,7 @@ import EspaciosWelcome from './components/EspaciosWelcome';
 import FilterBar from './components/filters/FilterBar';
 import ProjectHeader from './components/ProjectHeader';
 import SpaceSidebar from './components/SpaceSidebar';
+import TareasLoadingSkeleton from './components/TareasLoadingSkeleton';
 import TaskForm from './components/TaskForm';
 import ViewTabs from './components/ViewTabs';
 import BoardView from './components/views/BoardView';
@@ -845,6 +846,8 @@ export default function EspaciosApp() {
                     actionLabel={sync.activeEspacioId ? 'Nuevo proyecto' : undefined}
                     onAction={sync.activeEspacioId ? () => setCreateModal('proyecto') : undefined}
                   />
+                ) : sync.tareasLoading && sync.tareas.length === 0 ? (
+                  <TareasLoadingSkeleton view={activeView} />
                 ) : filtersHideAll ? (
                   <EmptyState
                     icon={SearchX}

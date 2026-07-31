@@ -194,10 +194,12 @@ export async function syncCanvasDocuments(options: SyncOptions = {}): Promise<Sy
 
 async function runSync(options: SyncOptions): Promise<SyncResult> {
   const empty: SyncResult = { pulled: 0, pushed: 0, deletedLocal: 0, skipped: false, pushErrors: 0 };
-  const remote = await listRemoteCanvasMeta();
+  const [remote, localRes] = await Promise.all([
+    listRemoteCanvasMeta(),
+    api.canvasList(),
+  ]);
   if (!remote) return { ...empty, skipped: true, reason: 'no-session' };
 
-  const localRes = await api.canvasList();
   const localList = localRes.documents as LocalSummary[];
   const localById = new Map(localList.map((d) => [d.id, d]));
   const remoteById = new Map(remote.map((r) => [r.id, r]));
@@ -235,9 +237,9 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
 
   if (toPullIds.length > 0) {
     const docs = await fetchRemoteDocuments(toPullIds);
+    await Promise.all(docs.map((doc) => api.canvasSave(doc, { touch: false })));
+    pulled = docs.length;
     for (const doc of docs) {
-      await api.canvasSave(doc, { touch: false });
-      pulled += 1;
       if (options.openDocumentId === doc.id && !options.openDirty) {
         reloadOpenId = doc.id;
       }

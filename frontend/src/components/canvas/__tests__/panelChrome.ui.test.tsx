@@ -55,6 +55,16 @@ describe('TopBar UI lock', () => {
     expect(screen.queryByTestId('canvas-toggle-left-panel')).not.toBeInTheDocument();
     expect(screen.queryByTestId('canvas-toggle-right-panel')).not.toBeInTheDocument();
   });
+
+  it('aligns trailing actions to the right panel column when open', () => {
+    const { container, rerender } = render(
+      <TopBar {...baseProps} leftPanelOpen rightPanelOpen />,
+    );
+    expect(container.querySelector('.canvas-topbar-trailing--panel')).toBeTruthy();
+    rerender(<TopBar {...baseProps} leftPanelOpen rightPanelOpen={false} />);
+    expect(container.querySelector('.canvas-topbar-trailing--panel')).toBeNull();
+    expect(container.querySelector('.canvas-topbar-trailing')).toBeTruthy();
+  });
 });
 
 describe('RightPanel hide control', () => {

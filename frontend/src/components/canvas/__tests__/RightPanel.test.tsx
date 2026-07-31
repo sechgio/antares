@@ -388,7 +388,7 @@ describe('RightPanel shape inspector', () => {
     expect(screen.getByTestId('canvas-zoom-slot')).toBeTruthy();
   });
 
-  it('shows Plantillas under Propiedades when nothing is selected', () => {
+  it('shows Plantillas under Propiedades when nothing is selected', async () => {
     const onApplyPreset = vi.fn();
     render(
       <RightPanel
@@ -400,7 +400,11 @@ describe('RightPanel shape inspector', () => {
       />,
     );
     expect(screen.getByText('Plantillas')).toBeTruthy();
-    fireEvent.click(screen.getByLabelText('Aplicar plantilla Panel fotográfico'));
+    // TemplatesSection loads presets lazily via hover/focus; trigger it in tests.
+    const section = screen.getByTestId('canvas-templates-section');
+    fireEvent.mouseEnter(section);
+    const button = await screen.findByLabelText('Aplicar plantilla Panel fotográfico');
+    fireEvent.click(button);
     expect(onApplyPreset).toHaveBeenCalledWith('report');
   });
 

@@ -3,14 +3,11 @@ import { api } from '../../api';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import './canvas.css';
 import { createLayer } from './constants';
-import { CANVAS_PRESETS } from './presets';
-import {
-  queueCanvasCloudDelete,
-  queueCanvasCloudPush,
-  type SyncConflict,
-} from './sync/canvasCloudSync';
+import { loadCanvasPresets } from './presets/loadPresets';
+import { queueCanvasCloudDelete, queueCanvasCloudPush } from './sync/cloudQueue';
+import type { SyncConflict } from './sync/canvasCloudSync';
 import type { SyncConflictChoice } from './hooks/useCanvasSync';
-import SyncConflictModal from './editor/SyncConflictModal';
+import SyncConflictBar from './editor/SyncConflictBar';
 import BottomToolbar from './editor/BottomToolbar';
 import ContextMenu, {
   type CanvasContextAction,
@@ -263,7 +260,7 @@ export default function CanvasView() {
     setSyncConflict(null);
   }, []);
 
-  const { runCloudSync } = useCanvasSync({
+  const { runCloudSync, syncing: docsSyncing } = useCanvasSync({
     historyDocRef,
     historyCanUndoRef: openDirtyRef,
     refreshList,
@@ -279,11 +276,16 @@ export default function CanvasView() {
     runCloudSync,
   });
 
+  const lastSavedHistorySigRef = useRef<string>('');
+
   // Debounced history persistence on disk (~500ms after stack mutations)
   useEffect(() => {
     const docId = history.document.id;
     if (!docId) return;
+    const sig = `${docId}:${history.past.length}:${history.future.length}`;
+    if (lastSavedHistorySigRef.current === sig) return;
     const timer = setTimeout(() => {
+      lastSavedHistorySigRef.current = sig;
       api.canvasSaveHistory(docId, history.past, history.future).catch(() => {});
     }, 500);
     return () => clearTimeout(timer);
@@ -396,7 +398,7 @@ export default function CanvasView() {
 
   const zoomPortalTarget = rightPanelOpen ? rightZoomSlot : stageZoomSlot;
 
-  const onSelect = (id: string | null, additive = false) => {
+  const onSelect = useCallback((id: string | null, additive = false) => {
     if (editingLayerId && id !== editingLayerId) {
       commitInlineEdit();
     }
@@ -416,7 +418,7 @@ export default function CanvasView() {
     } else {
       setSelectedIds([id]);
     }
-  };
+  }, [editingLayerId, pathEditingLayerId, commitInlineEdit, onPanelCommitLive, panelBaselineRef]);
 
   const zoomToFit = useCallback(() => {
     viewportNavRef.current?.zoomToFit();
@@ -1064,14 +1066,16 @@ export default function CanvasView() {
   };
 
   const onApplyPreset = (presetId: string) => {
-    const preset = CANVAS_PRESETS.find((p) => p.id === presetId);
-    if (!preset) return;
-    const doc = preset.create();
-    doc.id = history.document.id;
-    doc.name = history.document.name;
-    history.setDocument(syncImagesPerPage(doc));
-    setSelectedIds([]);
-    setPageIndex(0);
+    void loadCanvasPresets().then((presets) => {
+      const preset = presets.find((p) => p.id === presetId);
+      if (!preset) return;
+      const doc = preset.create();
+      doc.id = history.document.id;
+      doc.name = history.document.name;
+      history.setDocument(syncImagesPerPage(doc));
+      setSelectedIds([]);
+      setPageIndex(0);
+    });
   };
 
   const onDeleteLayer = (id: string) => {
@@ -1219,13 +1223,115 @@ export default function CanvasView() {
     return Number.isFinite(n) ? clampOpacity(n) : undefined;
   }, [history.document.layers, editableSelectedIdSet]);
 
-  const onMoveLayer = (
-    draggedId: string,
-    targetId: string,
-    position: 'before' | 'after' | 'inside',
-  ) => {
-    setAllLayers(moveLayerInTree(history.document.layers, draggedId, targetId, position));
-  };
+  const onMoveLayer = useCallback(
+    (draggedId: string, targetId: string, position: 'before' | 'after' | 'inside') => {
+      setAllLayers(moveLayerInTree(history.document.layers, draggedId, targetId, position));
+    },
+    // setAllLayers closes over history.document; re-bind when layers change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [history.document.layers],
+  );
+
+  const onOpenDocRef = useRef(onOpenDoc);
+  onOpenDocRef.current = onOpenDoc;
+  const onNewRef = useRef(onNew);
+  onNewRef.current = onNew;
+  const onDeleteDocRef = useRef(onDeleteDoc);
+  onDeleteDocRef.current = onDeleteDoc;
+
+  const onSidebarOpenDoc = useCallback((id: string) => {
+    void onOpenDocRef.current(id);
+  }, []);
+
+  const onSidebarNew = useCallback(() => {
+    void onNewRef.current();
+  }, []);
+
+  const onSidebarDeleteDoc = useCallback(() => {
+    void onDeleteDocRef.current();
+  }, []);
+
+  const onAddPage = useCallback(() => {
+    const next = syncImagesPerPage(addPage(history.document));
+    history.setDocument(next);
+    setPageIndex(getPageCount(next) - 1);
+  }, [history]);
+
+  const onRemovePage = useCallback(
+    (index: number) => {
+      const next = syncImagesPerPage(removePage(history.document, index));
+      history.setDocument(next);
+      setPageIndex((prev) => {
+        if (index < prev) return prev - 1;
+        if (index === prev) return Math.min(prev, Math.max(0, getPageCount(next) - 1));
+        return prev;
+      });
+    },
+    [history],
+  );
+
+  const onDuplicatePage = useCallback(
+    (index: number) => {
+      const next = syncImagesPerPage(duplicatePage(history.document, index));
+      history.setDocument(next);
+      setPageIndex(index + 1);
+    },
+    [history],
+  );
+
+  const onRenamePage = useCallback(
+    (index: number, name: string) => {
+      history.setDocument(renamePage(history.document, index, name));
+    },
+    [history],
+  );
+
+  const onGroupSelected = useCallback(() => {
+    const editable = selectedIds.filter((id) => {
+      const l = history.document.layers.find((x) => x.id === id);
+      return l && !l.locked && l.type !== 'frame';
+    });
+    if (editable.length < 2) return;
+    const { layers, groupId } = groupLayers(history.document.layers, editable);
+    if (!groupId) return;
+    setAllLayers(layers);
+    setSelectedIds([groupId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIds, history.document.layers]);
+
+  const onUngroupSelected = useCallback(() => {
+    if (selectedIds.length !== 1) return;
+    const layer = history.document.layers.find((l) => l.id === selectedIds[0]);
+    if (!layer || layer.type !== 'group' || layer.locked) return;
+    setAllLayers(ungroupLayers(history.document.layers, layer.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIds, history.document.layers]);
+
+  const onToggleVisible = useCallback(
+    (id: string, visible: boolean) => {
+      setAllLayers(setLayerVisible(history.document.layers, id, visible));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [history.document.layers],
+  );
+
+  const onToggleLocked = useCallback(
+    (id: string, locked: boolean) => {
+      setAllLayers(setLayerLocked(history.document.layers, id, locked));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [history.document.layers],
+  );
+
+  const onRenameLayer = useCallback(
+    (id: string, name: string) => {
+      const layer = history.document.layers.find((l) => l.id === id);
+      if (!layer || layer.locked || layer.type === 'frame') return;
+      setAllLayers(history.document.layers.map((l) => (l.id === id ? { ...l, name } : l)));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [history.document.layers],
+  );
 
   if (loading) {
     return (
@@ -1263,6 +1369,7 @@ export default function CanvasView() {
         onSave={() => void onSave()}
         onDuplicate={() => void onDuplicate()}
         leftPanelOpen={leftPanelOpen}
+        rightPanelOpen={rightPanelOpen}
         uiLocked={uiLocked}
         onToggleUiLock={toggleUiLock}
       />
@@ -1285,63 +1392,27 @@ export default function CanvasView() {
             documentName={history.document.name}
             docs={docs}
             documentId={history.document.id}
+            docsSyncing={docsSyncing}
             layers={pageLayers}
             selectedIds={selectedIds}
             pageIndex={pageIndex}
             pageCount={getPageCount(history.document)}
             pages={history.document.pages}
-            onSelect={(id, additive) => onSelect(id, additive)}
-            onOpenDoc={(id) => void onOpenDoc(id)}
-            onNew={() => void onNew()}
-            onDeleteDoc={() => void onDeleteDoc()}
+            onSelect={onSelect}
+            onOpenDoc={onSidebarOpenDoc}
+            onNew={onSidebarNew}
+            onDeleteDoc={onSidebarDeleteDoc}
             onPageChange={setPageIndex}
-            onAddPage={() => {
-              const next = syncImagesPerPage(addPage(history.document));
-              history.setDocument(next);
-              setPageIndex(getPageCount(next) - 1);
-            }}
-            onRemovePage={(index) => {
-              const next = syncImagesPerPage(removePage(history.document, index));
-              history.setDocument(next);
-              setPageIndex((prev) => {
-                if (index < prev) return prev - 1;
-                if (index === prev) return Math.min(prev, Math.max(0, getPageCount(next) - 1));
-                return prev;
-              });
-            }}
-            onDuplicatePage={(index) => {
-              const next = syncImagesPerPage(duplicatePage(history.document, index));
-              history.setDocument(next);
-              setPageIndex(index + 1);
-            }}
-            onRenamePage={(index, name) => {
-              history.setDocument(renamePage(history.document, index, name));
-            }}
+            onAddPage={onAddPage}
+            onRemovePage={onRemovePage}
+            onDuplicatePage={onDuplicatePage}
+            onRenamePage={onRenamePage}
             onMoveLayer={onMoveLayer}
-            onGroupSelected={() => {
-              const editable = selectedIds.filter((id) => {
-                const l = history.document.layers.find((x) => x.id === id);
-                return l && !l.locked && l.type !== 'frame';
-              });
-              if (editable.length < 2) return;
-              const { layers, groupId } = groupLayers(history.document.layers, editable);
-              if (!groupId) return;
-              setAllLayers(layers);
-              setSelectedIds([groupId]);
-            }}
-            onUngroupSelected={() => {
-              if (selectedIds.length !== 1) return;
-              const layer = history.document.layers.find((l) => l.id === selectedIds[0]);
-              if (!layer || layer.type !== 'group' || layer.locked) return;
-              setAllLayers(ungroupLayers(history.document.layers, layer.id));
-            }}
-            onToggleVisible={(id, visible) => setAllLayers(setLayerVisible(history.document.layers, id, visible))}
-            onToggleLocked={(id, locked) => setAllLayers(setLayerLocked(history.document.layers, id, locked))}
-            onRenameLayer={(id, name) => {
-              const layer = history.document.layers.find((l) => l.id === id);
-              if (!layer || layer.locked || layer.type === 'frame') return;
-              setAllLayers(history.document.layers.map((l) => (l.id === id ? { ...l, name } : l)));
-            }}
+            onGroupSelected={onGroupSelected}
+            onUngroupSelected={onUngroupSelected}
+            onToggleVisible={onToggleVisible}
+            onToggleLocked={onToggleLocked}
+            onRenameLayer={onRenameLayer}
           />
           <DesignStage
             navRef={viewportNavRef}
@@ -1475,6 +1546,9 @@ export default function CanvasView() {
               />
             )}
             <BottomToolbar tool={tool} onTool={setTool} />
+            {syncConflict && (
+              <SyncConflictBar conflict={syncConflict} onResolve={onConflictResolve} />
+            )}
             {showShortcuts && (
               <div className="canvas-shortcuts-panel" data-testid="canvas-shortcuts-panel">
                 <div className="canvas-section-title mb-2 flex items-center justify-between">
@@ -1601,9 +1675,6 @@ export default function CanvasView() {
         </Suspense>
       )}
     </div>
-    {syncConflict && (
-      <SyncConflictModal conflict={syncConflict} onResolve={onConflictResolve} />
-    )}
     </>
   );
 }

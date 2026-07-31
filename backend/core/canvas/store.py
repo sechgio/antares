@@ -238,8 +238,15 @@ class CanvasStore:
             norm_past = [self._normalize_history_item(d) for d in past[-max_history:] if isinstance(d, dict)]
             norm_future = [self._normalize_history_item(d) for d in future[-max_history:] if isinstance(d, dict)]
             payload = {"past": norm_past, "future": norm_future}
+            encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+            if path.exists():
+                try:
+                    if path.read_text(encoding="utf-8") == encoded:
+                        return True
+                except OSError:
+                    pass
             tmp = path.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+            tmp.write_text(encoded, encoding="utf-8")
             tmp.replace(path)
             return True
 
@@ -256,8 +263,9 @@ class CanvasStore:
                 with contextlib.suppress(OSError):
                     orphan.unlink()
                 self._drop_index_entry(orphan.stem)
+            encoded = json.dumps(doc, ensure_ascii=False, separators=(",", ":"))
             tmp = path.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(doc, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+            tmp.write_text(encoded, encoding="utf-8")
             tmp.replace(path)
             self._refresh_index_entry(doc, path)
             return doc

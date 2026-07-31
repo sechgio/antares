@@ -31,8 +31,19 @@ describe('Canvas Theme Alignment', () => {
     expect(canvasCss).toMatch(/\.canvas-color-picker\s*\{[^}]*background:\s*var\(--cv-panel-elevated\)/);
   });
 
+  it('keeps topbar and side panels on the same appearance surface', () => {
+    expect(canvasCss).toMatch(/\.canvas-topbar\s*\{[^}]*background:\s*var\(--cv-panel\)/);
+    expect(canvasCss).toMatch(/\.canvas-panel\s*\{[^}]*background:\s*var\(--cv-panel\)/);
+    expect(canvasCss).toMatch(/\.canvas-topbar-trailing--panel\s*\{[^}]*width:\s*272px/);
+  });
+
   it('preserves white paper sheet background on the artboard', () => {
     const artboardTsx = readFileSync(resolve(__dirname, '../editor/Artboard.tsx'), 'utf8');
     expect(artboardTsx).toMatch(/background:\s*['"]#ffffff['"]/);
+  });
+
+  it('styles RightPanel with canvas-panel like LeftSidebar', () => {
+    const rightPanel = readFileSync(resolve(__dirname, '../editor/RightPanel.tsx'), 'utf8');
+    expect(rightPanel).toMatch(/canvas-panel canvas-panel-chrome/);
   });
 });

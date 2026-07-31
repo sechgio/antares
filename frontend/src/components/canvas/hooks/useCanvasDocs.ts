@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { api } from '../../../api';
-import { CANVAS_PRESETS } from '../presets';
+import { loadCanvasPresets } from '../presets/loadPresets';
 import {
   queueCanvasCloudDelete,
   queueCanvasCloudPush,
-} from '../sync/canvasCloudSync';
+} from '../sync/cloudQueue';
 import { syncImagesPerPage } from '../ops/pages';
 import {
   normalizeDocument,
@@ -203,15 +203,17 @@ export function useCanvasDocs({
 
   const onApplyPreset = useCallback(
     (presetId: string) => {
-      const preset = CANVAS_PRESETS.find((p) => p.id === presetId);
-      if (!preset) return;
-      const doc = preset.create();
-      doc.id = history.document.id;
-      doc.name = history.document.name;
-      history.setDocument(syncImagesPerPage(doc));
-      setSelectedIds([]);
-      setPageIndex(0);
-      triggerDebouncedSave(doc);
+      void loadCanvasPresets().then((presets) => {
+        const preset = presets.find((p) => p.id === presetId);
+        if (!preset) return;
+        const doc = preset.create();
+        doc.id = history.document.id;
+        doc.name = history.document.name;
+        history.setDocument(syncImagesPerPage(doc));
+        setSelectedIds([]);
+        setPageIndex(0);
+        triggerDebouncedSave(doc);
+      });
     },
     [history, setSelectedIds, setPageIndex, triggerDebouncedSave],
   );
