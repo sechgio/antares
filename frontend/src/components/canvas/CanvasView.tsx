@@ -7,7 +7,10 @@ import { CANVAS_PRESETS } from './presets';
 import {
   queueCanvasCloudDelete,
   queueCanvasCloudPush,
+  type SyncConflict,
 } from './sync/canvasCloudSync';
+import type { SyncConflictChoice } from './hooks/useCanvasSync';
+import SyncConflictModal from './editor/SyncConflictModal';
 import BottomToolbar from './editor/BottomToolbar';
 import ContextMenu, {
   type CanvasContextAction,
@@ -244,11 +247,28 @@ export default function CanvasView() {
     }
   }, []);
 
+  const [syncConflict, setSyncConflict] = useState<SyncConflict | null>(null);
+  const conflictResolverRef = useRef<((choice: SyncConflictChoice | null) => void) | null>(null);
+
+  const handleConflict = useCallback((conflict: SyncConflict): Promise<SyncConflictChoice | null> => {
+    return new Promise((resolve) => {
+      conflictResolverRef.current = resolve;
+      setSyncConflict(conflict);
+    });
+  }, []);
+
+  const onConflictResolve = useCallback((choice: SyncConflictChoice) => {
+    conflictResolverRef.current?.(choice);
+    conflictResolverRef.current = null;
+    setSyncConflict(null);
+  }, []);
+
   const { runCloudSync } = useCanvasSync({
     historyDocRef,
     historyCanUndoRef: openDirtyRef,
     refreshList,
     replaceDocument: history.replaceDocument,
+    onConflict: handleConflict,
   });
 
   useCanvasBootstrap({
@@ -1211,6 +1231,7 @@ export default function CanvasView() {
   }
 
   return (
+    <>
     <div className="canvas-app flex h-full min-h-0 flex-col">
       <TopBar
         name={history.document.name}
@@ -1589,5 +1610,9 @@ export default function CanvasView() {
         </Suspense>
       )}
     </div>
+    {syncConflict && (
+      <SyncConflictModal conflict={syncConflict} onResolve={onConflictResolve} />
+    )}
+    </>
   );
 }

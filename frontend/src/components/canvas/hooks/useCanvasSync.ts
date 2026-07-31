@@ -1,8 +1,10 @@
 import { useCallback, useEffect } from 'react';
 import { api } from '../../../api';
-import { syncCanvasDocuments } from '../sync/canvasCloudSync';
+import { syncCanvasDocuments, type SyncConflict } from '../sync/canvasCloudSync';
 import { normalizeDocument, type CanvasDocument } from '../types';
 import type { useCanvasHistory } from './useCanvasHistory';
+
+export type SyncConflictChoice = 'use-remote' | 'keep-local';
 
 interface UseCanvasSyncOptions {
   /** Ref to the current open document id (read inside sync without re-subscribing). */
@@ -13,6 +15,8 @@ interface UseCanvasSyncOptions {
   refreshList: () => Promise<void>;
   /** Replace the open document after a remote-side reload. */
   replaceDocument: ReturnType<typeof useCanvasHistory>['replaceDocument'];
+  /** Called when the open doc has local edits and a newer version exists in cloud. */
+  onConflict?: (conflict: SyncConflict) => Promise<SyncConflictChoice | null>;
 }
 
 /** Dirty for cloud reload skip: undo stack, live panel edit, or in-flight gesture. */
@@ -33,6 +37,7 @@ export function useCanvasSync({
   historyCanUndoRef,
   refreshList,
   replaceDocument,
+  onConflict,
 }: UseCanvasSyncOptions) {
   const runCloudSync = useCallback(async () => {
     try {
@@ -44,6 +49,20 @@ export function useCanvasSync({
       });
       if (result.skipped) return;
       await refreshList();
+
+      // Handle conflict on the open document.
+      if (result.conflict && onConflict) {
+        const choice = await onConflict(result.conflict);
+        if (choice === 'use-remote') {
+          const remote = result.conflict.remoteDoc;
+          await api.canvasSave(remote, { touch: false });
+          replaceDocument(remote);
+          await refreshList();
+        }
+        // 'keep-local' / null: do nothing — user keeps editing; next save pushes.
+        return;
+      }
+
       if (result.reloadOpenId && result.reloadOpenId === openId && !historyCanUndoRef.current) {
         const got = await api.canvasGet(result.reloadOpenId);
         replaceDocument(normalizeDocument(got.document as CanvasDocument));
@@ -51,7 +70,7 @@ export function useCanvasSync({
     } catch {
       /* offline / auth — local cache remains usable */
     }
-  }, [historyDocRef, historyCanUndoRef, refreshList, replaceDocument]);
+  }, [historyDocRef, historyCanUndoRef, refreshList, replaceDocument, onConflict]);
 
   useEffect(() => {
     const onFocus = () => {
