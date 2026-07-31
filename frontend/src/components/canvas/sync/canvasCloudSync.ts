@@ -17,6 +17,14 @@ export type CanvasRemoteMeta = {
   deleted_at: string | null;
 };
 
+/** Conflict detected: remote is newer but the open doc has unsaved local edits. */
+export type SyncConflict = {
+  localDoc: CanvasDocument;
+  remoteDoc: CanvasDocument;
+  remoteUpdatedAt: string;
+  localUpdatedAt: string;
+};
+
 export type SyncResult = {
   pulled: number;
   pushed: number;
@@ -29,6 +37,8 @@ export type SyncResult = {
   pushErrors: number;
   /** Last push error message, if any. */
   lastError?: string;
+  /** Conflict on the currently open document (dirty local vs newer remote). */
+  conflict?: SyncConflict;
 };
 
 type LocalSummary = { id: string; name: string; updatedAt?: string };
@@ -198,8 +208,10 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
   let pushErrors = 0;
   let lastError: string | undefined;
   let reloadOpenId: string | undefined;
+  let conflict: SyncConflict | undefined;
 
   const toPullIds: string[] = [];
+  let conflictRemoteMeta: CanvasRemoteMeta | undefined;
   for (const r of remote) {
     if (r.deleted_at) {
       if (localById.has(r.id)) {
@@ -212,7 +224,11 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
     }
     const local = localById.get(r.id);
     if (!local || isNewer(r.updated_at, local.updatedAt)) {
-      if (options.openDocumentId === r.id && options.openDirty) continue;
+      if (options.openDocumentId === r.id && options.openDirty) {
+        // Conflict: open doc has unsaved edits but remote is newer.
+        conflictRemoteMeta = r;
+        continue;
+      }
       toPullIds.push(r.id);
     }
   }
@@ -225,6 +241,28 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
       if (options.openDocumentId === doc.id && !options.openDirty) {
         reloadOpenId = doc.id;
       }
+    }
+  }
+
+  // Build the conflict payload if the open doc diverged from cloud.
+  if (conflictRemoteMeta && options.openDocumentId) {
+    try {
+      const [remoteDocs, localGot] = await Promise.all([
+        fetchRemoteDocuments([conflictRemoteMeta.id]),
+        api.canvasGet(options.openDocumentId),
+      ]);
+      const remoteDoc = remoteDocs[0];
+      const localDoc = normalizeDocument(localGot.document as CanvasDocument);
+      if (remoteDoc) {
+        conflict = {
+          localDoc,
+          remoteDoc,
+          remoteUpdatedAt: conflictRemoteMeta.updated_at,
+          localUpdatedAt: localDoc.updatedAt || '',
+        };
+      }
+    } catch {
+      // Fetch failed — degrade to the old skip behavior.
     }
   }
 
@@ -243,7 +281,7 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
     }
   }
 
-  return { pulled, pushed, deletedLocal, reloadOpenId, skipped: false, pushErrors, lastError };
+  return { pulled, pushed, deletedLocal, reloadOpenId, skipped: false, pushErrors, lastError, conflict };
 }
 
 /** Fire-and-forget push after a successful local save.
