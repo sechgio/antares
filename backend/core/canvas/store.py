@@ -68,6 +68,44 @@ def migrate_legacy_canvas_documents(*, source: Path, dest: Path) -> int:
     return copied
 
 
+def _extract_doc_meta(path: Path) -> tuple[str, str] | None:
+    """Fast extraction of (name, updatedAt) from a canvas document file."""
+    try:
+        size = path.stat().st_size
+        if size < 65536:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                return str(raw.get("name") or "Sin título"), str(raw.get("updatedAt") or "")
+            return None
+
+        with path.open("r", encoding="utf-8", errors="ignore") as f:
+            head = f.read(8192)
+
+        import re
+        name_match = re.search(r'"name"\s*:\s*"((?:[^"\\]|\\.)*)"', head)
+        updated_match = re.search(r'"updatedAt"\s*:\s*"((?:[^"\\]|\\.)*)"', head)
+
+        if name_match:
+            try:
+                doc_name = json.loads(f'"{name_match.group(1)}"')
+            except Exception:
+                doc_name = name_match.group(1)
+        else:
+            doc_name = "Sin título"
+
+        updated_at = updated_match.group(1) if updated_match else ""
+
+        if not name_match:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                return str(raw.get("name") or "Sin título"), str(raw.get("updatedAt") or "")
+
+        return str(doc_name), str(updated_at)
+    except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        logger.warning("Skipping unreadable canvas document %s: %s", path, exc)
+        return None
+
+
 class CanvasStore:
     def __init__(
         self,
@@ -114,21 +152,13 @@ class CanvasStore:
         with self._lock:
             items: list[dict[str, str]] = []
             for path in sorted(self.docs_dir.glob("*.json")):
-                try:
-                    raw = json.loads(path.read_text(encoding="utf-8"))
-                    if not isinstance(raw, dict):
-                        continue
-                    # Stem is the lookup key for get()/delete(); prefer it over a
-                    # mismatched body id so list → get never 404s.
-                    doc_id = path.stem
-                    doc_name = str(raw.get("name") or "Sin título")
-                    updated_at = str(raw.get("updatedAt") or "")
-                except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
-                    logger.warning("Skipping unreadable canvas document %s: %s", path, exc)
+                meta = _extract_doc_meta(path)
+                if meta is None:
                     continue
+                doc_name, updated_at = meta
                 items.append(
                     {
-                        "id": doc_id,
+                        "id": path.stem,
                         "name": doc_name,
                         "updatedAt": updated_at,
                     }

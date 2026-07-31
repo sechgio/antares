@@ -1,7 +1,6 @@
 import React, { useState, Suspense, useMemo, useCallback, useEffect } from 'react';
 import Sidebar from './components/layout/Sidebar';
 import TitleBar from './components/layout/TitleBar';
-import BackendStatusBar from './components/layout/BackendStatusBar';
 import SettingsModal from './components/settings/SettingsModal';
 import PetMascot from './components/layout/PetMascot';
 import { ToastProvider } from './hooks/useToast';
@@ -226,7 +225,6 @@ function AppContent() {
       <CommandPalette isOpen={commandOpen} onClose={closeCommandPalette} items={commandItems} />
       <Dialog />
       <ToastContainer />
-      <BackendStatusBar />
       <PetMascot />
     </div>
   );
