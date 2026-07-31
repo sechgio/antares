@@ -1,6 +1,24 @@
-import { describe, it, expect } from 'vitest';
-import { isNewer, shouldPushCanvasRow } from '../sync/canvasCloudSync';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { isNewer, shouldPushCanvasRow, withTimeout } from '../sync/canvasCloudSync';
 import type { SyncConflict } from '../sync/canvasCloudSync';
+
+describe('withTimeout', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('resolves when the promise wins', async () => {
+    await expect(withTimeout(Promise.resolve(42), 1000, 'test')).resolves.toBe(42);
+  });
+
+  it('rejects when the timer wins', async () => {
+    vi.useFakeTimers();
+    const pending = withTimeout(new Promise<number>(() => {}), 50, 'test-hang');
+    const assertion = expect(pending).rejects.toThrow(/test-hang timed out after 50ms/);
+    await vi.advanceTimersByTimeAsync(50);
+    await assertion;
+  });
+});
 
 describe('isNewer', () => {
   it('returns true when a is later than b', () => {

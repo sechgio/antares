@@ -13,6 +13,7 @@ import {
   buildLayerPaintStyle,
   DEFAULT_LAYER_FONT,
   DEFAULT_LINE_HEIGHT,
+  keepSpreadOnlyShadows,
 } from '../ops/layerPaint';
 import { imageContentInlineStyle } from '../ops/layerStyle';
 import { ensureLinePath } from '../ops/pathGeometry';
@@ -188,7 +189,10 @@ function LayerNode({
   const highlighted = selected || editing || pathEditing;
 
   const paintSource = isLine ? lineLayer.cssVars : layer.cssVars;
-  const paintCacheKey = `${paintVarsKey(paintSource, scale, isLine)}|${clipPath ?? ''}|${hasExplicitRadius ? 1 : 0}|${layer.type}|${moving || panning ? 1 : 0}`;
+  // moving (layer drag) strips filter + box-shadow; panning (camera zoom) strips filter only,
+  // so outside strokes (rendered as box-shadow) don't flicker on zoom. Key must distinguish them.
+  const paintDefer = moving ? 2 : panning ? 1 : 0;
+  const paintCacheKey = `${paintVarsKey(paintSource, scale, isLine)}|${clipPath ?? ''}|${hasExplicitRadius ? 1 : 0}|${layer.type}|${paintDefer}`;
   let paint: Record<string, string>;
   if (paintCacheRef.current?.key === paintCacheKey) {
     paint = paintCacheRef.current.paint;
@@ -210,9 +214,19 @@ function LayerNode({
       paint.borderRadius = '50%';
     }
     // Defer expensive GPU effects while dragging or camera panning (restore on commit/stop).
+    // - moving (layer drag): strip filter + box-shadow (full degradation).
+    // - panning (camera zoom): strip filter + blurred/offset shadows, but keep spread-only
+    //   box-shadows (outside strokes/frames) so borders don't flicker on zoom.
     if (moving || panning) {
-      const { filter: _filter, boxShadow: _shadow, ...rest } = paint;
-      paint = rest;
+      const { filter: _filter, ...rest } = paint;
+      if (moving) {
+        const { boxShadow: _shadow, ...rest2 } = rest;
+        paint = rest2;
+      } else {
+        const { boxShadow, ...rest2 } = rest;
+        const kept = boxShadow ? keepSpreadOnlyShadows(boxShadow) : '';
+        paint = kept ? { ...rest2, boxShadow: kept } : rest2;
+      }
     }
     paintCacheRef.current = { key: paintCacheKey, paint };
   }

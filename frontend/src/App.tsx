@@ -130,6 +130,8 @@ function DisabledUserNotice({ onSignOut }: { onSignOut: () => Promise<void> }) {
 function AppContent() {
   const { user, loading: authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<TabId>(DEFAULT_TAB);
+  /** Once visited, Canvas stays mounted (hidden) so docs/picker/history survive tab switches. */
+  const [canvasMounted, setCanvasMounted] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<ConfigSectionId>('appearance');
@@ -137,7 +139,10 @@ function AppContent() {
 
   const openCommandPalette = useCallback(() => setCommandOpen(true), []);
   const handleTabChange = useCallback((tab: TabId) => {
-    if (tab === 'canvas') prefetchCanvasView();
+    if (tab === 'canvas') {
+      prefetchCanvasView();
+      setCanvasMounted(true);
+    }
     setActiveTab(tab);
   }, []);
   const openSettings = useCallback((section: ConfigSectionId = 'appearance') => {
@@ -223,7 +228,9 @@ function AppContent() {
   const needsCloudAuth = CLOUD_AUTH_TABS.has(activeTab);
   const cloudAuthBlocked = needsCloudAuth && !user;
   const isFullBleed = FULL_BLEED_TABS.has(activeTab);
-  const ActiveView = VIEWS[activeTab];
+  const showCanvas = activeTab === 'canvas';
+  const ActiveView = showCanvas ? null : VIEWS[activeTab];
+  const CanvasKeepAlive = VIEWS.canvas;
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]">
@@ -250,12 +257,25 @@ function AppContent() {
               )
             ) : (
               <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">Cargando...</div>}>
-                {/* Full-bleed tools own their scroll; padded tools scroll in this shell. */}
-                <div className={`h-full min-h-0 ${isFullBleed ? 'overflow-hidden' : 'overflow-y-auto px-6 py-4'}`}>
-                  <ErrorBoundary key={activeTab}>
-                    <ActiveView />
-                  </ErrorBoundary>
-                </div>
+                {canvasMounted && (
+                  <div
+                    data-testid="canvas-keep-alive"
+                    className={`h-full min-h-0 overflow-hidden ${showCanvas ? '' : 'hidden'}`}
+                    aria-hidden={!showCanvas}
+                    {...(!showCanvas ? ({ inert: '' } as React.HTMLAttributes<HTMLDivElement>) : {})}
+                  >
+                    <ErrorBoundary>
+                      <CanvasKeepAlive active={showCanvas} />
+                    </ErrorBoundary>
+                  </div>
+                )}
+                {ActiveView && (
+                  <div className={`h-full min-h-0 ${isFullBleed ? 'overflow-hidden' : 'overflow-y-auto px-6 py-4'}`}>
+                    <ErrorBoundary key={activeTab}>
+                      <ActiveView />
+                    </ErrorBoundary>
+                  </div>
+                )}
               </Suspense>
             )}
           </main>

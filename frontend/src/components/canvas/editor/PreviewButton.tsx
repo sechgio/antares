@@ -6,9 +6,11 @@ import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 interface PreviewButtonProps {
   active: boolean;
   onToggle: () => void;
+  /** Icon-only when trailing chrome is crowded (e.g. sync conflict visible). */
+  compact?: boolean;
 }
 
-export default function PreviewButton({ active, onToggle }: PreviewButtonProps) {
+export default function PreviewButton({ active, onToggle, compact = false }: PreviewButtonProps) {
   const [hovered, setHovered] = useState(false);
   const showPause = active || hovered;
 
@@ -22,19 +24,21 @@ export default function PreviewButton({ active, onToggle }: PreviewButtonProps) 
         onClick={onToggle}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.96 }}
-        className="canvas-btn-primary canvas-preview-btn"
+        className={
+          compact
+            ? 'canvas-btn-primary canvas-btn-primary--icon canvas-preview-btn'
+            : 'canvas-btn-primary canvas-preview-btn'
+        }
       >
         <span className="relative inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
           <AnimatePresence mode="popLayout" initial={false}>
             {!showPause ? (
               <motion.span
                 key="play"
-                initial={{ scale: 0.5, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.5, opacity: 0 }}
-                transition={{ type: 'spring', stiffness: 600, damping: 25 }}
+                initial={{ scale: 0.95, opacity: 0, filter: 'blur(2px)' }}
+                animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
+                exit={{ scale: 0.95, opacity: 0, filter: 'blur(2px)' }}
+                transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
                 className="absolute inset-0 flex items-center justify-center"
               >
                 <Play className="h-3.5 w-3.5" />
@@ -42,10 +46,10 @@ export default function PreviewButton({ active, onToggle }: PreviewButtonProps) 
             ) : (
               <motion.span
                 key="pause"
-                initial={{ scale: 0.5, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.5, opacity: 0 }}
-                transition={{ type: 'spring', stiffness: 600, damping: 25 }}
+                initial={{ scale: 0.95, opacity: 0, filter: 'blur(2px)' }}
+                animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
+                exit={{ scale: 0.95, opacity: 0, filter: 'blur(2px)' }}
+                transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
                 className="absolute inset-0 flex items-center justify-center"
               >
                 <Pause className="h-3.5 w-3.5" />
@@ -53,7 +57,7 @@ export default function PreviewButton({ active, onToggle }: PreviewButtonProps) 
             )}
           </AnimatePresence>
         </span>
-        Vista previa
+        {!compact ? 'Vista previa' : null}
       </motion.button>
     </WithHoverTooltip>
   );

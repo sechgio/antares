@@ -5,7 +5,7 @@ import './canvas.css';
 import { createLayer } from './constants';
 import { loadCanvasPresets } from './presets/loadPresets';
 import { queueCanvasCloudDelete, queueCanvasCloudPush } from './sync/cloudQueue';
-import type { SyncConflict } from './sync/canvasCloudSync';
+import { isNewer, type SyncConflict } from './sync/canvasCloudSync';
 import type { SyncConflictChoice } from './hooks/useCanvasSync';
 import SyncConflictBar from './editor/SyncConflictBar';
 import BottomToolbar from './editor/BottomToolbar';
@@ -132,16 +132,14 @@ const DEFAULT_SIZES: Partial<Record<PlaceableTool, { w: number; h: number }>> = 
   signature: { w: 60, h: 20 },
 };
 
-export default function CanvasView() {
+export default function CanvasView({ active = true }: { active?: boolean }) {
   const history = useCanvasHistory(createEmptyDocument('Sin título'));
   // Refs mirror history state so runCloudSync can read the latest values
   // without depending on `history` (which changes on every mutation and would
   // re-subscribe the focus listener on every keystroke/drag).
   const historyDocRef = useRef(history.document);
-  const historyCanUndoRef = useRef(history.canUndo);
   const openDirtyRef = useRef(false);
   historyDocRef.current = history.document;
-  historyCanUndoRef.current = history.canUndo;
   const [mode, setMode] = useState<CanvasMode>('design');
   const [docs, setDocs] = useState<CanvasDocumentSummary[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -245,28 +243,65 @@ export default function CanvasView() {
   }, []);
 
   const [syncConflict, setSyncConflict] = useState<SyncConflict | null>(null);
-  const conflictResolverRef = useRef<((choice: SyncConflictChoice | null) => void) | null>(null);
+  const syncConflictRef = useRef<SyncConflict | null>(null);
+  /** After Mantener, ignore the same remote timestamp until a newer one arrives. */
+  const dismissedRemoteAtRef = useRef<string | null>(null);
 
-  const handleConflict = useCallback((conflict: SyncConflict): Promise<SyncConflictChoice | null> => {
-    return new Promise((resolve) => {
-      conflictResolverRef.current = resolve;
-      setSyncConflict(conflict);
-    });
+  const handleConflict = useCallback((conflict: SyncConflict) => {
+    if (syncConflictRef.current) return;
+    if (
+      dismissedRemoteAtRef.current &&
+      !isNewer(conflict.remoteUpdatedAt, dismissedRemoteAtRef.current)
+    ) {
+      return;
+    }
+    syncConflictRef.current = conflict;
+    setSyncConflict(conflict);
   }, []);
 
-  const onConflictResolve = useCallback((choice: SyncConflictChoice) => {
-    conflictResolverRef.current?.(choice);
-    conflictResolverRef.current = null;
-    setSyncConflict(null);
-  }, []);
+  const onConflictResolve = useCallback(
+    (choice: SyncConflictChoice) => {
+      const conflict = syncConflictRef.current;
+      syncConflictRef.current = null;
+      setSyncConflict(null);
+      if (!conflict) return;
+
+      if (choice === 'keep-local') {
+        dismissedRemoteAtRef.current = conflict.remoteUpdatedAt;
+        return;
+      }
+
+      dismissedRemoteAtRef.current = null;
+      void (async () => {
+        try {
+          await api.canvasSave(conflict.remoteDoc, { touch: false });
+          history.replaceDocument(conflict.remoteDoc);
+          await refreshList();
+        } catch {
+          /* local remains; next sync retries */
+        }
+      })();
+    },
+    [history, refreshList],
+  );
 
   const { runCloudSync, syncing: docsSyncing } = useCanvasSync({
     historyDocRef,
-    historyCanUndoRef: openDirtyRef,
+    openDirtyRef,
     refreshList,
     replaceDocument: history.replaceDocument,
     onConflict: handleConflict,
+    active,
   });
+
+  // Drop stale conflict UI when the open document changes.
+  useEffect(() => {
+    if (!syncConflictRef.current) return;
+    if (syncConflictRef.current.localDoc.id === history.document.id) return;
+    syncConflictRef.current = null;
+    setSyncConflict(null);
+    dismissedRemoteAtRef.current = null;
+  }, [history.document.id]);
 
   useCanvasBootstrap({
     replaceDocument: history.replaceDocument,
@@ -300,6 +335,8 @@ export default function CanvasView() {
       const saved = normalizeDocument(res.document as CanvasDocument);
       history.replaceDocument(saved);
       history.restoreHistory(currentPast, currentFuture);
+      history.hasUnsavedEditsRef.current = false;
+      dismissedRemoteAtRef.current = null;
       await refreshList();
       flashStatus('Guardado');
       queueCanvasCloudPush(saved);
@@ -328,7 +365,7 @@ export default function CanvasView() {
 
   const [gestureAbortToken, setGestureAbortToken] = useState(0);
   openDirtyRef.current = isOpenDocumentDirty(
-    history.canUndo,
+    history.hasUnsavedEditsRef.current,
     panelBaselineRef.current != null,
     gestureBaselineRef.current != null,
   );
@@ -819,6 +856,7 @@ export default function CanvasView() {
   });
 
   useEffect(() => {
+    if (!active) return;
     const onKeyDown = (e: KeyboardEvent) => onKeyDownRef.current(e);
     const onKeyUp = (e: KeyboardEvent) => {
       if (mode !== 'design') return;
@@ -834,7 +872,7 @@ export default function CanvasView() {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [mode]);
+  }, [mode, active]);
 
   const selected = history.document.layers.find((l) => l.id === selectedId) || null;
   const selectedLine =
@@ -1344,7 +1382,7 @@ export default function CanvasView() {
 
   return (
     <>
-    <div className="canvas-app flex h-full min-h-0 flex-col">
+    <div className="canvas-app relative flex h-full min-h-0 flex-col">
       <TopBar
         name={history.document.name}
         mode={mode}
@@ -1372,6 +1410,11 @@ export default function CanvasView() {
         rightPanelOpen={rightPanelOpen}
         uiLocked={uiLocked}
         onToggleUiLock={toggleUiLock}
+        syncConflictSlot={
+          syncConflict ? (
+            <SyncConflictBar conflict={syncConflict} onResolve={onConflictResolve} />
+          ) : null
+        }
       />
 
       {mode === 'design' ? (
@@ -1546,9 +1589,6 @@ export default function CanvasView() {
               />
             )}
             <BottomToolbar tool={tool} onTool={setTool} />
-            {syncConflict && (
-              <SyncConflictBar conflict={syncConflict} onResolve={onConflictResolve} />
-            )}
             {showShortcuts && (
               <div className="canvas-shortcuts-panel" data-testid="canvas-shortcuts-panel">
                 <div className="canvas-section-title mb-2 flex items-center justify-between">
@@ -1671,7 +1711,7 @@ export default function CanvasView() {
         )
       ) : (
         <Suspense fallback={<div className="canvas-app canvas-loading">Cargando generador…</div>}>
-          <GeneratePanel document={history.document} />
+          <GeneratePanel document={history.document} openDirty={openDirtyRef.current} />
         </Suspense>
       )}
     </div>

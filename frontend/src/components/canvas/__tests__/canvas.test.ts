@@ -183,7 +183,7 @@ describe('canvas renderHtml', () => {
     expect(merged.match(/class="page"/g)?.length).toBe(2);
   });
 
-  it('keeps field and logo layer paint in export (WYSIWYG)', () => {
+  it('keeps field paint and strips filled-logo placeholder chrome', () => {
     const doc = createEmptyDocument('Clean export');
     const field = createLayer('field', {
       id: 'field-nis',
@@ -239,9 +239,10 @@ describe('canvas renderHtml', () => {
     expect(fieldStyle).toMatch(/(?:^|;)\s*border:/);
     expect(fieldStyle).toContain('dashed');
 
-    expect(logoStyle.toLowerCase()).toContain('#eef2ff');
-    expect(logoStyle).toMatch(/(?:^|;)\s*border:/);
-    expect(logoStyle).toContain('dashed');
+    // Filled logos drop placeholder fill/border (pre-WYSIWYG clean export).
+    expect(logoStyle).toContain('background-color:transparent');
+    expect(logoStyle).not.toMatch(/#eef2ff/i);
+    expect(logoStyle).not.toContain('dashed');
 
     expect(rectStyle).toMatch(/background-color:/);
     expect(rectStyle).not.toContain('background-color:transparent');
@@ -1257,6 +1258,36 @@ describe('document model', () => {
     expect(normalized.updatedAt).toBeTruthy();
     expect(Date.parse(normalized.updatedAt!)).toBeGreaterThanOrEqual(before - 1000);
     expect(Date.parse(normalized.updatedAt!)).not.toBe(0);
+  });
+
+  it('normalizeDocument clamps pageIndex into the page range', () => {
+    const doc = createEmptyDocument('Clamp');
+    doc.pages = [
+      { id: newId(), name: 'P1' },
+      { id: newId(), name: 'P2' },
+    ];
+    doc.layers = [
+      {
+        ...doc.layers[0]!,
+        pageIndex: 99,
+      },
+      {
+        id: newId(),
+        type: 'text',
+        name: 'T',
+        value: 'x',
+        pageIndex: -3,
+        cssVars: {
+          '--width': '10mm',
+          '--height': '5mm',
+          '--translate-x': '0mm',
+          '--translate-y': '0mm',
+        },
+      },
+    ];
+    const normalized = normalizeDocument(doc);
+    expect(normalized.layers[0]!.pageIndex).toBe(1);
+    expect(normalized.layers[1]!.pageIndex).toBe(0);
   });
 });
 

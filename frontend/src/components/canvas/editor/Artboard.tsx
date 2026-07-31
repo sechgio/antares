@@ -61,6 +61,10 @@ import { wheelPanDelta, wheelZoomFactor, zoomAtCursor } from '../ops/viewportNav
 import { CULLING_MARGIN_MM, filterVisibleLayers, visiblePageRectMm } from '../ops/viewportCulling';
 import { createGestureRaf } from '../ops/gestureRaf';
 import {
+  abortActivePointerGestureSession,
+  createPointerGestureSession,
+} from '../ops/pointerGestureSession';
+import {
   applyLayerDomGeometry,
   clearLayerDomGestureStyles,
   setCanvasGestureActive,
@@ -406,6 +410,8 @@ function Artboard({
   useEffect(() => {
     if (gestureAbortToken === prevAbortTokenRef.current) return;
     prevAbortTokenRef.current = gestureAbortToken;
+    // Kill window listeners + RAF first so late pointermove/up cannot re-arm or commit.
+    abortActivePointerGestureSession();
     const layers = gestureLayersRef.current;
     const ids = imperativeMoveIdsRef.current;
     const frame = frameRef.current;
@@ -424,7 +430,13 @@ function Artboard({
     setGuidesIfChanged([]);
     setDistanceLabelsIfChanged([]);
     setLassoPts(null);
+    setGuideDrag(null);
+    setPanning(false);
+    setRadiusDrag(null);
   }, [gestureAbortToken, setGuidesIfChanged, setDistanceLabelsIfChanged]);
+
+  // Unmount mid-gesture must not leave window listeners calling into stale closures.
+  useEffect(() => () => abortActivePointerGestureSession(), []);
 
   /** Re-apply DOM geometry after React chrome commits wipe inline styles. */
   useLayoutEffect(() => {
@@ -664,32 +676,34 @@ function Artboard({
         y: origin.y + (ev.clientY - startY),
       });
     });
-    const onMovePtr = (ev: PointerEvent) => {
-      if (pinchGestureRef.current) return;
-      const now = performance.now();
-      const dt = Math.max(1, now - lastT);
-      // Exponential moving average for smooth velocity
-      const instantVx = (ev.clientX - lastX) / dt * 16; // normalize to ~60fps frame
-      const instantVy = (ev.clientY - lastY) / dt * 16;
-      vx = vx * 0.6 + instantVx * 0.4;
-      vy = vy * 0.6 + instantVy * 0.4;
-      lastX = ev.clientX;
-      lastY = ev.clientY;
-      lastT = now;
-      raf.schedule(ev);
-    };
-    const onUp = () => {
-      raf.flush();
-      setPanning(false);
-      window.removeEventListener('pointermove', onMovePtr);
-      window.removeEventListener('pointerup', onUp);
-      // Trigger inertial glide if velocity is significant
-      if (!pinchGestureRef.current && onStartInertia && (Math.abs(vx) > 1 || Math.abs(vy) > 1)) {
-        onStartInertia({ vx, vy });
-      }
-    };
-    window.addEventListener('pointermove', onMovePtr);
-    window.addEventListener('pointerup', onUp);
+    createPointerGestureSession({
+      onMove: (ev) => {
+        if (pinchGestureRef.current) return;
+        const now = performance.now();
+        const dt = Math.max(1, now - lastT);
+        // Exponential moving average for smooth velocity
+        const instantVx = (ev.clientX - lastX) / dt * 16; // normalize to ~60fps frame
+        const instantVy = (ev.clientY - lastY) / dt * 16;
+        vx = vx * 0.6 + instantVx * 0.4;
+        vy = vy * 0.6 + instantVy * 0.4;
+        lastX = ev.clientX;
+        lastY = ev.clientY;
+        lastT = now;
+        raf.schedule(ev);
+      },
+      onEnd: () => {
+        raf.flush();
+        setPanning(false);
+        // Trigger inertial glide if velocity is significant
+        if (!pinchGestureRef.current && onStartInertia && (Math.abs(vx) > 1 || Math.abs(vy) > 1)) {
+          onStartInertia({ vx, vy });
+        }
+      },
+      onAbort: () => {
+        raf.cancel();
+        setPanning(false);
+      },
+    });
   };
 
   const beginSelectionMove = useCallback(
@@ -845,19 +859,22 @@ function Artboard({
           setDistanceLabelsIfChanged([]);
         }
       });
-      const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
-      const onUp = () => {
-        raf.flush();
-        setGuidesIfChanged([]);
-        setDistanceLabelsIfChanged([]);
-        endGesture();
-        window.removeEventListener('pointermove', onMovePtr);
-        window.removeEventListener('pointerup', onUp);
-        // Figma: Shift/Ctrl+click toggles selection only when there was no drag.
-        if (!dragging) options?.onClickWithoutDrag?.();
-      };
-      window.addEventListener('pointermove', onMovePtr);
-      window.addEventListener('pointerup', onUp);
+      createPointerGestureSession({
+        onMove: (ev) => raf.schedule(ev),
+        onEnd: () => {
+          raf.flush();
+          setGuidesIfChanged([]);
+          setDistanceLabelsIfChanged([]);
+          endGesture();
+          // Figma: Shift/Ctrl+click toggles selection only when there was no drag.
+          if (!dragging) options?.onClickWithoutDrag?.();
+        },
+        onAbort: () => {
+          raf.cancel();
+          setGuidesIfChanged([]);
+          setDistanceLabelsIfChanged([]);
+        },
+      });
     },
     [applyGestureLayers, applyImperativePreview, endGesture, setGuidesIfChanged, setDistanceLabelsIfChanged],
   );
@@ -964,16 +981,18 @@ function Artboard({
       applyImperativePreview(resized, ids);
       setGestureBbox(selectionBounds(resized, ids));
     });
-    const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
-    const onUp = () => {
-      raf.flush();
-      setGuidesIfChanged([]);
-      endGesture();
-      window.removeEventListener('pointermove', onMovePtr);
-      window.removeEventListener('pointerup', onUp);
-    };
-    window.addEventListener('pointermove', onMovePtr);
-    window.addEventListener('pointerup', onUp);
+    createPointerGestureSession({
+      onMove: (ev) => raf.schedule(ev),
+      onEnd: () => {
+        raf.flush();
+        setGuidesIfChanged([]);
+        endGesture();
+      },
+      onAbort: () => {
+        raf.cancel();
+        setGuidesIfChanged([]);
+      },
+    });
   };
 
   const startRotate = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -1000,15 +1019,14 @@ function Artboard({
       applyImperativePreview(rotated, ids);
       setGestureBbox(selectionBounds(rotated, ids));
     });
-    const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
-    const onUp = () => {
-      raf.flush();
-      endGesture();
-      window.removeEventListener('pointermove', onMovePtr);
-      window.removeEventListener('pointerup', onUp);
-    };
-    window.addEventListener('pointermove', onMovePtr);
-    window.addEventListener('pointerup', onUp);
+    createPointerGestureSession({
+      onMove: (ev) => raf.schedule(ev),
+      onEnd: () => {
+        raf.flush();
+        endGesture();
+      },
+      onAbort: () => raf.cancel(),
+    });
   };
 
   const startRadiusResize = (e: ReactPointerEvent<HTMLDivElement>, corner: CornerId) => {
@@ -1043,16 +1061,18 @@ function Artboard({
       );
       setRadiusDrag({ label: `Radius ${Math.round(nextR)}`, corner });
     });
-    const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
-    const onUp = () => {
-      raf.flush();
-      setRadiusDrag(null);
-      endGesture();
-      window.removeEventListener('pointermove', onMovePtr);
-      window.removeEventListener('pointerup', onUp);
-    };
-    window.addEventListener('pointermove', onMovePtr);
-    window.addEventListener('pointerup', onUp);
+    createPointerGestureSession({
+      onMove: (ev) => raf.schedule(ev),
+      onEnd: () => {
+        raf.flush();
+        setRadiusDrag(null);
+        endGesture();
+      },
+      onAbort: () => {
+        raf.cancel();
+        setRadiusDrag(null);
+      },
+    });
   };
 
   const beginMarquee = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -1080,53 +1100,59 @@ function Artboard({
         h: Math.abs(cur.yMm - origin.yMm),
       });
     });
-    const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
-    const onUp = (ev: PointerEvent) => {
-      raf.cancel();
-      window.removeEventListener('pointermove', onMovePtr);
-      window.removeEventListener('pointerup', onUp);
-      const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
-      if (pinchGestureRef.current) {
-        setMarquee(null);
-        return;
-      }
-      const box: RectMm = {
-        x: Math.min(origin.xMm, cur.xMm),
-        y: Math.min(origin.yMm, cur.yMm),
-        w: Math.abs(cur.xMm - origin.xMm),
-        h: Math.abs(cur.yMm - origin.yMm),
-      };
-      setMarquee(null);
-      const currentLayers = layersRef.current;
-      if (box.w < 1 && box.h < 1) {
-        // Point pick via spatial index so culled (unmounted) layers remain selectable.
-        const hits = buildSpatialIndex(currentLayers).hitTest(cur.xMm, cur.yMm);
-        const top = hits[0];
-        if (top) {
-          if (ev.shiftKey) {
-            const merged = Array.from(new Set([...selectedIdsRef.current, top]));
-            onSelectIds(merged);
-          } else {
-            onSelect(top);
-          }
-        } else if (!ev.shiftKey) {
-          onSelect(null);
+    createPointerGestureSession({
+      onMove: (ev) => raf.schedule(ev),
+      onEnd: (ev) => {
+        raf.cancel();
+        if (!ev) {
+          setMarquee(null);
+          return;
         }
-        return;
-      }
-      const hit =
-        currentLayers.length > 30
-          ? buildSpatialIndex(currentLayers).query(box)
-          : layersInMarquee(currentLayers, box);
-      if (ev.shiftKey) {
-        const merged = Array.from(new Set([...selectedIdsRef.current, ...hit]));
-        onSelectIds(merged);
-      } else {
-        onSelectIds(hit);
-      }
-    };
-    window.addEventListener('pointermove', onMovePtr);
-    window.addEventListener('pointerup', onUp);
+        const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
+        if (pinchGestureRef.current) {
+          setMarquee(null);
+          return;
+        }
+        const box: RectMm = {
+          x: Math.min(origin.xMm, cur.xMm),
+          y: Math.min(origin.yMm, cur.yMm),
+          w: Math.abs(cur.xMm - origin.xMm),
+          h: Math.abs(cur.yMm - origin.yMm),
+        };
+        setMarquee(null);
+        const currentLayers = layersRef.current;
+        if (box.w < 1 && box.h < 1) {
+          // Point pick via spatial index so culled (unmounted) layers remain selectable.
+          const hits = buildSpatialIndex(currentLayers).hitTest(cur.xMm, cur.yMm);
+          const top = hits[0];
+          if (top) {
+            if (ev.shiftKey) {
+              const merged = Array.from(new Set([...selectedIdsRef.current, top]));
+              onSelectIds(merged);
+            } else {
+              onSelect(top);
+            }
+          } else if (!ev.shiftKey) {
+            onSelect(null);
+          }
+          return;
+        }
+        const hit =
+          currentLayers.length > 30
+            ? buildSpatialIndex(currentLayers).query(box)
+            : layersInMarquee(currentLayers, box);
+        if (ev.shiftKey) {
+          const merged = Array.from(new Set([...selectedIdsRef.current, ...hit]));
+          onSelectIds(merged);
+        } else {
+          onSelectIds(hit);
+        }
+      },
+      onAbort: () => {
+        raf.cancel();
+        setMarquee(null);
+      },
+    });
   };
 
   const beginPathPointDrag = (
@@ -1150,17 +1176,14 @@ function Artboard({
           : dragLineHandle(current, pointIndex, kind, cur.xMm, cur.yMm, !ev.altKey);
       applyGestureLayers(replaceLayerById(layersRef.current, next));
     });
-    const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
-
-    const onUp = () => {
-      raf.flush();
-      window.removeEventListener('pointermove', onMovePtr);
-      window.removeEventListener('pointerup', onUp);
-      endGesture();
-    };
-
-    window.addEventListener('pointermove', onMovePtr);
-    window.addEventListener('pointerup', onUp);
+    createPointerGestureSession({
+      onMove: (ev) => raf.schedule(ev),
+      onEnd: () => {
+        raf.flush();
+        endGesture();
+      },
+      onAbort: () => raf.cancel(),
+    });
   };
 
   const beginBend = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -1186,17 +1209,14 @@ function Artboard({
       const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
       applyAt(cur.xMm, cur.yMm);
     });
-    const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
-
-    const onUp = () => {
-      raf.flush();
-      window.removeEventListener('pointermove', onMovePtr);
-      window.removeEventListener('pointerup', onUp);
-      endGesture();
-    };
-
-    window.addEventListener('pointermove', onMovePtr);
-    window.addEventListener('pointerup', onUp);
+    createPointerGestureSession({
+      onMove: (ev) => raf.schedule(ev),
+      onEnd: () => {
+        raf.flush();
+        endGesture();
+      },
+      onAbort: () => raf.cancel(),
+    });
   };
 
   const beginCut = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -1235,34 +1255,34 @@ function Artboard({
       pts.push({ x: cur.xMm, y: cur.yMm });
       setLassoPts([...pts]);
     });
-    const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
-
-    const onUp = () => {
-      raf.flush();
-      window.removeEventListener('pointermove', onMovePtr);
-      window.removeEventListener('pointerup', onUp);
-      setLassoPts(null);
-      if (pinchGestureRef.current || pts.length < 3) return;
-      const hit = layersRef.current
-        .filter((l) => l.type !== 'frame' && l.visible !== false && !l.locked)
-        .filter((l) => {
-          if (l.type === 'line') return lineIntersectsPolygon(l, pts);
-          const x = parseMm(l.cssVars['--translate-x']);
-          const y = parseMm(l.cssVars['--translate-y']);
-          const w = parseMm(l.cssVars['--width'], 10);
-          const h = parseMm(l.cssVars['--height'], 10);
-          return rectIntersectsPolygon({ x, y, w, h }, pts);
-        })
-        .map((l) => l.id);
-      if (e.shiftKey) {
-        onSelectIds(Array.from(new Set([...selectedIdsRef.current, ...hit])));
-      } else {
-        onSelectIds(hit);
-      }
-    };
-
-    window.addEventListener('pointermove', onMovePtr);
-    window.addEventListener('pointerup', onUp);
+    createPointerGestureSession({
+      onMove: (ev) => raf.schedule(ev),
+      onEnd: () => {
+        raf.flush();
+        setLassoPts(null);
+        if (pinchGestureRef.current || pts.length < 3) return;
+        const hit = layersRef.current
+          .filter((l) => l.type !== 'frame' && l.visible !== false && !l.locked)
+          .filter((l) => {
+            if (l.type === 'line') return lineIntersectsPolygon(l, pts);
+            const x = parseMm(l.cssVars['--translate-x']);
+            const y = parseMm(l.cssVars['--translate-y']);
+            const w = parseMm(l.cssVars['--width'], 10);
+            const h = parseMm(l.cssVars['--height'], 10);
+            return rectIntersectsPolygon({ x, y, w, h }, pts);
+          })
+          .map((l) => l.id);
+        if (e.shiftKey) {
+          onSelectIds(Array.from(new Set([...selectedIdsRef.current, ...hit])));
+        } else {
+          onSelectIds(hit);
+        }
+      },
+      onAbort: () => {
+        raf.cancel();
+        setLassoPts(null);
+      },
+    });
   };
 
   const beginDraw = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -1291,37 +1311,38 @@ function Artboard({
       }
       setDraft(next);
     });
-    const onMovePtr = (ev: PointerEvent) => raf.schedule(ev);
-
-    const onUp = (ev: PointerEvent) => {
-      raf.cancel();
-      window.removeEventListener('pointermove', onMovePtr);
-      window.removeEventListener('pointerup', onUp);
-      if (!drawStart.current) {
+    createPointerGestureSession({
+      onMove: (ev) => raf.schedule(ev),
+      onEnd: (ev) => {
+        raf.cancel();
+        if (!drawStart.current || !ev) {
+          setDraft(null);
+          return;
+        }
+        const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
+        let result = normalizeDrawRect(drawStart.current.xMm, drawStart.current.yMm, cur.xMm, cur.yMm, {
+          constrainSquare:
+            ev.shiftKey && isSquareConstrainTool(tool),
+        });
+        if (tool === 'line') {
+          result.x0 = drawStart.current.xMm;
+          result.y0 = drawStart.current.yMm;
+          result.x1 = cur.xMm;
+          result.y1 = cur.yMm;
+        }
+        if (isClickPlace(result)) {
+          result = { x: drawStart.current.xMm, y: drawStart.current.yMm, w: 0, h: 0 };
+        }
+        drawStart.current = null;
         setDraft(null);
-        return;
-      }
-      const cur = clientToMm(ev.clientX, ev.clientY, frameRect.read(), zoomRef.current);
-      let result = normalizeDrawRect(drawStart.current.xMm, drawStart.current.yMm, cur.xMm, cur.yMm, {
-        constrainSquare:
-          ev.shiftKey && isSquareConstrainTool(tool),
-      });
-      if (tool === 'line') {
-        result.x0 = drawStart.current.xMm;
-        result.y0 = drawStart.current.yMm;
-        result.x1 = cur.xMm;
-        result.y1 = cur.yMm;
-      }
-      if (isClickPlace(result)) {
-        result = { x: drawStart.current.xMm, y: drawStart.current.yMm, w: 0, h: 0 };
-      }
-      drawStart.current = null;
-      setDraft(null);
-      if (!pinchGestureRef.current) onDrawLayer(tool, result);
-    };
-
-    window.addEventListener('pointermove', onMovePtr);
-    window.addEventListener('pointerup', onUp);
+        if (!pinchGestureRef.current) onDrawLayer(tool, result);
+      },
+      onAbort: () => {
+        raf.cancel();
+        drawStart.current = null;
+        setDraft(null);
+      },
+    });
   };
 
   /** Drag an existing guide: live preview, drop on the ruler to remove, Esc to cancel. */
@@ -1349,34 +1370,26 @@ function Artboard({
       setGuideDrag({ id: g.id, posMm: lastPos, clientX: ev.clientX, clientY: ev.clientY, willRemove });
     });
 
-    const cleanup = () => {
-      raf.cancel();
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('keydown', onKey);
-    };
-
-    const onMove = (ev: PointerEvent) => raf.schedule(ev);
-
-    const onKey = (ev: KeyboardEvent) => {
-      if (ev.key !== 'Escape') return;
-      cancelled = true;
-      cleanup();
-      setGuideDrag(null);
-    };
-
-    const onUp = () => {
-      raf.flush();
-      cleanup();
-      setGuideDrag(null);
-      if (cancelled) return;
-      if (willRemove) onRemoveGuide?.(g.id);
-      else if (lastPos !== original) onMoveGuide?.(g.id, lastPos);
-    };
-
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('keydown', onKey);
+    let session: ReturnType<typeof createPointerGestureSession>;
+    session = createPointerGestureSession({
+      onMove: (ev) => raf.schedule(ev),
+      onEnd: () => {
+        raf.flush();
+        setGuideDrag(null);
+        if (cancelled) return;
+        if (willRemove) onRemoveGuide?.(g.id);
+        else if (lastPos !== original) onMoveGuide?.(g.id, lastPos);
+      },
+      onKeyDown: (ev) => {
+        if (ev.key !== 'Escape') return;
+        cancelled = true;
+        session.abort();
+      },
+      onAbort: () => {
+        raf.cancel();
+        setGuideDrag(null);
+      },
+    });
   };
 
   const onCanvasPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {

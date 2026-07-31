@@ -38,6 +38,34 @@ export function scaleCssVarsForZoom(vars: LayerCssVars, scale: number): LayerCss
   return next;
 }
 
+/**
+ * Keep only spread-only box-shadows (offset 0 0 0 …) — the stroke/frame kind — from a
+ * combined box-shadow string. Used during camera zoom to preserve frames (cheap) while
+ * deferring blurred/offset decorative shadows (expensive). Splits respecting parens so
+ * rgba(…,…) colors are not broken on their commas.
+ */
+export function keepSpreadOnlyShadows(boxShadow: string): string {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i <= boxShadow.length; i++) {
+    const c = boxShadow[i];
+    if (c === '(') depth++;
+    else if (c === ')') depth--;
+    else if ((c === ',' || i === boxShadow.length) && depth === 0) {
+      const shadow = boxShadow.slice(start, i).trim();
+      start = i + 1;
+      if (!shadow) continue;
+      const toks = shadow.split(/\s+/);
+      // First three tokens are offset-x, offset-y, blur; spread-only when all are zero.
+      if (parseFloat(toks[0]) === 0 && parseFloat(toks[1]) === 0 && parseFloat(toks[2]) === 0) {
+        parts.push(shadow);
+      }
+    }
+  }
+  return parts.join(', ');
+}
+
 /** Convert `prop:value` declarations from cssVarsToStyleParts into a style map. */
 export function cssDeclarationsToStyle(parts: string[]): Record<string, string> {
   const style: Record<string, string> = {};

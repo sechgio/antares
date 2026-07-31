@@ -234,6 +234,7 @@ class CanvasCmykRenderer:
 
         elif l_type in ("line", "arrow"):
             # Horizontal or diagonal line within rect bounds
+            # (path-edited lines with meta.path are not expanded yet — midline fallback).
             p1 = fitz.Point(x, y + h / 2)
             p2 = fitz.Point(x + w, y + h / 2)
             shape.draw_line(p1, p2)
@@ -281,3 +282,21 @@ class CanvasCmykRenderer:
                     # Render placeholder if image fails to load
                     shape.draw_rect(rect)
                     shape.finish(color=(0, 0, 0, 0.5))
+
+        elif l_type == "group":
+            # Children are separate layers; the group frame is chrome-only.
+            return
+
+        else:
+            # Clipped shapes / table / grid / checkbox / signature: bbox fallback
+            # so print never silently drops them. Full fidelity remains RGB HTML.
+            if bg_cmyk or border_cmyk:
+                shape.draw_rect(rect)
+                shape.finish(
+                    color=border_cmyk,
+                    fill=bg_cmyk,
+                    width=border_width_pt or 1.0,
+                )
+            else:
+                shape.draw_rect(rect)
+                shape.finish(color=(0.0, 0.0, 0.0, 0.35), width=0.5)

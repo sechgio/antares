@@ -178,6 +178,8 @@ describe('useCanvasHistory gesture coalesce', () => {
     expect(result.current.canRedo).toBe(true);
     expect(result.current.past.length).toBe(MAX_HISTORY);
     expect(result.current.future.length).toBe(1);
+    // Restored undo history must not mark the document unsaved.
+    expect(result.current.hasUnsavedEditsRef.current).toBe(false);
 
     act(() => {
       result.current.undo();
@@ -240,5 +242,48 @@ describe('useCanvasHistory gesture coalesce', () => {
       result.current.updateSilent(before);
     });
     expect(result.current.document).toBe(before);
+  });
+
+  it('tracks unsaved edits on setDocument and clears on replaceDocument', () => {
+    const base = createEmptyDocument('Test');
+    const text = createLayer('text');
+    text.cssVars['--translate-x'] = '0mm';
+    base.layers.push(text);
+
+    const { result } = renderHook(() => useCanvasHistory(base));
+    expect(result.current.hasUnsavedEditsRef.current).toBe(false);
+
+    act(() => {
+      result.current.setDocument(withMovedText(result.current.document, 10));
+    });
+    expect(result.current.hasUnsavedEditsRef.current).toBe(true);
+    expect(result.current.canUndo).toBe(true);
+
+    const savedPast = result.current.past;
+    const saved = cloneDoc(result.current.document);
+    saved.updatedAt = '2026-07-31T12:00:00.000Z';
+    act(() => {
+      result.current.replaceDocument(saved);
+      result.current.restoreHistory(savedPast, []);
+    });
+    // Post-save with restored undo stack: canUndo may be true, unsaved must be false.
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.hasUnsavedEditsRef.current).toBe(false);
+  });
+
+  it('marks unsaved on commitFromBaseline', () => {
+    const base = createEmptyDocument('Test');
+    const text = createLayer('text');
+    text.cssVars['--translate-x'] = '0mm';
+    base.layers.push(text);
+
+    const { result } = renderHook(() => useCanvasHistory(base));
+    const baseline = cloneDoc(result.current.document);
+
+    act(() => {
+      result.current.updateSilent(withMovedText(result.current.document, 12));
+      result.current.commitFromBaseline(baseline);
+    });
+    expect(result.current.hasUnsavedEditsRef.current).toBe(true);
   });
 });

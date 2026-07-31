@@ -18,29 +18,38 @@ function makeConflict(name = 'PANEL 2'): SyncConflict {
 }
 
 describe('SyncConflictBar', () => {
-  it('renders a non-modal chip with doc name and actions', () => {
+  it('renders icon actions next to tools chrome', () => {
     const onResolve = vi.fn();
     render(<SyncConflictBar conflict={makeConflict()} onResolve={onResolve} />);
 
     expect(screen.getByTestId('sync-conflict-bar')).toBeInTheDocument();
-    expect(screen.queryByTestId('sync-conflict-overlay')).not.toBeInTheDocument();
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-    expect(screen.getByText(/PANEL 2/)).toBeInTheDocument();
+    expect(screen.getByTestId('sync-conflict-keep-local')).toHaveAttribute(
+      'aria-label',
+      'Mantener mi versión',
+    );
+    expect(screen.getByTestId('sync-conflict-use-remote')).toHaveAttribute(
+      'aria-label',
+      'Usar versión en la nube',
+    );
   });
 
-  it('keeps local on Mantener and Esc', () => {
+  it('keeps local on HardDrive icon', () => {
     const onResolve = vi.fn();
     render(<SyncConflictBar conflict={makeConflict()} onResolve={onResolve} />);
 
     fireEvent.click(screen.getByTestId('sync-conflict-keep-local'));
     expect(onResolve).toHaveBeenCalledWith('keep-local');
-
-    onResolve.mockClear();
-    fireEvent.keyDown(window, { key: 'Escape' });
-    expect(onResolve).toHaveBeenCalledWith('keep-local');
   });
 
-  it('uses remote on Actualizar', () => {
+  it('does not dismiss on Escape', () => {
+    const onResolve = vi.fn();
+    render(<SyncConflictBar conflict={makeConflict()} onResolve={onResolve} />);
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onResolve).not.toHaveBeenCalled();
+  });
+
+  it('uses remote on CloudDownload icon', () => {
     const onResolve = vi.fn();
     render(<SyncConflictBar conflict={makeConflict()} onResolve={onResolve} />);
 

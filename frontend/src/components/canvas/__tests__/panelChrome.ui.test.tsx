@@ -65,6 +65,19 @@ describe('TopBar UI lock', () => {
     expect(container.querySelector('.canvas-topbar-trailing--panel')).toBeNull();
     expect(container.querySelector('.canvas-topbar-trailing')).toBeTruthy();
   });
+
+  it('renders sync conflict slot beside the UI lock tools', () => {
+    render(
+      <TopBar
+        {...baseProps}
+        onToggleUiLock={vi.fn()}
+        syncConflictSlot={<div data-testid="sync-conflict-bar">sync</div>}
+      />,
+    );
+    const tools = document.querySelector('.canvas-topbar-tools');
+    expect(tools?.querySelector('[data-testid="sync-conflict-bar"]')).toBeTruthy();
+    expect(document.querySelector('.canvas-topbar-trailing [data-testid="sync-conflict-bar"]')).toBeNull();
+  });
 });
 
 describe('RightPanel hide control', () => {

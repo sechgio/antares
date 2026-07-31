@@ -69,7 +69,7 @@ interface LeftSidebarProps {
   /** Hide this sidebar (Archivos header). */
   onHidePanel?: () => void;
   hidePanelDisabled?: boolean;
-  /** Cloud sync in flight — pulse Archivos select until list refreshes. */
+  /** Cloud sync in flight — pulse Archivos select (keep mounted; no skeleton swap). */
   docsSyncing?: boolean;
 }
 
@@ -584,20 +584,15 @@ export default memo(function LeftSidebar({
             )}
           </div>
         </div>
-        {docsSyncing ? (
-          <div
-            className="h-8 w-full animate-pulse rounded-md bg-[var(--bg-elevated)]"
-            aria-busy="true"
-            aria-label="Sincronizando archivos"
-          />
-        ) : (
+        <div aria-busy={docsSyncing || undefined}>
           <CanvasSelect
             value={documentId}
             onChange={(val) => onOpenDoc(val)}
             aria-label="Archivo abierto"
+            className={docsSyncing ? 'animate-pulse' : undefined}
             options={fileOptions.map((d) => ({ value: d.id, label: d.name }))}
           />
-        )}
+        </div>
       </div>
 
       <div className="border-b px-3 py-2" style={{ borderColor: 'var(--cv-border)' }}>

@@ -96,6 +96,52 @@ def test_canvas_cmyk_renderer():
     pdf_doc.close()
 
 
+def test_cmyk_renderer_bbox_fallback_for_unsupported_types():
+    """Clipped shapes / table / checkbox must not be silently dropped."""
+    doc = create_empty_document(name="Fallback")
+    for i, l_type in enumerate(("star", "table", "checkbox", "polygon", "grid")):
+        doc["layers"].append(
+            {
+                "id": f"layer-{l_type}",
+                "type": l_type,
+                "name": l_type,
+                "pageIndex": 0,
+                "cssVars": {
+                    "--width": "30mm",
+                    "--height": "20mm",
+                    "--translate-x": f"{10 + i * 35}mm",
+                    "--translate-y": "40mm",
+                    "--background-color": "#00AA00",
+                    "--border-color": "#000000",
+                    "--border-width": "0.5mm",
+                },
+            }
+        )
+    # Group is chrome-only — must not crash.
+    doc["layers"].append(
+        {
+            "id": "layer-group",
+            "type": "group",
+            "name": "Grupo",
+            "pageIndex": 0,
+            "cssVars": {
+                "--width": "10mm",
+                "--height": "10mm",
+                "--translate-x": "0mm",
+                "--translate-y": "0mm",
+            },
+        }
+    )
+
+    pdf_bytes = CanvasCmykRenderer(document=doc).render()
+    assert pdf_bytes.startswith(b"%PDF")
+    pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    assert len(pdf_doc) == 1
+    # Drawings present beyond an empty page (fallback rects were painted).
+    assert len(pdf_doc[0].get_drawings()) > 0
+    pdf_doc.close()
+
+
 def test_convert_pdf_bytes_to_cmyk():
     doc = create_empty_document(name="Basic Doc")
     renderer = CanvasCmykRenderer(document=doc)

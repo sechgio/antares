@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, type ReactNode } from 'react';
 import { Copy, Keyboard, Lock, Redo2, Undo2, Unlock } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import type { CanvasMode } from '../types';
@@ -32,6 +32,8 @@ interface TopBarProps {
   leftPanelOpen?: boolean;
   /** When true, actions span matches right panel width so the edge aligns. */
   rightPanelOpen?: boolean;
+  /** Inline sync-conflict chip (TopBar chrome — never over the artboard). */
+  syncConflictSlot?: ReactNode;
 }
 
 function TopBarDivider() {
@@ -60,6 +62,7 @@ function TopBar({
   onToggleUiLock,
   leftPanelOpen = true,
   rightPanelOpen = true,
+  syncConflictSlot,
 }: TopBarProps) {
   return (
     <header className="canvas-topbar relative flex shrink-0 items-center">
@@ -158,6 +161,12 @@ function TopBar({
             </WithHoverTooltip>
           </>
         )}
+        {syncConflictSlot ? (
+          <>
+            <TopBarDivider />
+            {syncConflictSlot}
+          </>
+        ) : null}
       </div>
 
       {/* Absolutely centered so it never shifts when side content changes (Figma-like). */}

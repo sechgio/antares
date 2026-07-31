@@ -203,10 +203,15 @@ describe('syncCanvasDocuments', () => {
       updated_at: '2026-07-22T12:00:00Z',
       deleted_at: null,
     };
+    const remoteDoc = makeDoc({ id: 'doc-1', name: 'New', updatedAt: '2026-07-22T12:00:00Z' });
+    const localFull = makeDoc({ id: 'doc-1', name: 'Old', updatedAt: '2026-07-01T00:00:00Z' });
 
     vi.mocked(api.canvasList).mockResolvedValue({ documents: [localDoc] });
+    vi.mocked(api.canvasGet).mockResolvedValue({ document: localFull });
 
+    // listRemote + fetchRemoteDocuments for conflict payload
     enqueue([remoteMeta]);
+    enqueue([{ document: remoteDoc, updated_at: '2026-07-22T12:00:00Z' }]);
 
     const result = await syncCanvasDocuments({
       openDocumentId: 'doc-1',
@@ -215,6 +220,9 @@ describe('syncCanvasDocuments', () => {
 
     expect(result.pulled).toBe(0);
     expect(result.reloadOpenId).toBeUndefined();
+    expect(result.conflict).toBeDefined();
+    expect(result.conflict!.remoteDoc.name).toBe('New');
+    expect(result.conflict!.localDoc.name).toBe('Old');
     expect(vi.mocked(api.canvasSave)).not.toHaveBeenCalled();
   });
 
@@ -374,6 +382,35 @@ describe('syncCanvasDocuments', () => {
     expect(result.pushErrors).toBe(1);
     expect(result.lastError).toContain('RLS denied');
     expect(result.pushed).toBe(0);
+  });
+
+  it('coalesces a retry after sync-in-flight skip', async () => {
+    let releaseSession!: (value: unknown) => void;
+    const gate = new Promise((resolve) => {
+      releaseSession = resolve;
+    });
+    supabaseMock.getSession
+      .mockImplementationOnce(() => gate)
+      .mockResolvedValue({ data: { session: { user: { id: 'user-1' } } } });
+
+    vi.mocked(api.canvasList).mockResolvedValue({ documents: [] });
+    enqueue([]); // first sync listRemote
+    enqueue([]); // retry listRemote
+
+    const first = syncCanvasDocuments({ openDocumentId: 'doc-a', openDirty: false });
+    // Let the first call take the mutex (await sessionUserId).
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const skipped = await syncCanvasDocuments({ openDocumentId: 'doc-b', openDirty: true });
+    expect(skipped).toMatchObject({ skipped: true, reason: 'sync-in-flight' });
+
+    releaseSession({ data: { session: { user: { id: 'user-1' } } } });
+    await first;
+
+    await vi.waitFor(() => {
+      expect(supabaseMock.getSession.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
   });
 });
 

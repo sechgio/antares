@@ -43,6 +43,27 @@ export type SyncResult = {
 
 type LocalSummary = { id: string; name: string; updatedAt?: string };
 
+/** Bound every Supabase round-trip so a hung HTTPS never sticks the sync mutex. */
+export const CLOUD_SYNC_TIMEOUT_MS = 30_000;
+
+export async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 export function isNewer(a?: string, b?: string): boolean {
   if (!a) return false;
   if (!b) return true;
@@ -67,7 +88,11 @@ export function shouldPushCanvasRow(
 
 async function sessionUserId(): Promise<string | null> {
   if (!supabase) return null;
-  const { data } = await supabase.auth.getSession();
+  const { data } = await withTimeout(
+    supabase.auth.getSession(),
+    CLOUD_SYNC_TIMEOUT_MS,
+    'canvas-auth-session',
+  );
   return data.session?.user?.id ?? null;
 }
 
@@ -75,9 +100,11 @@ export async function listRemoteCanvasMeta(): Promise<CanvasRemoteMeta[] | null>
   if (!supabase) return null;
   const uid = await sessionUserId();
   if (!uid) return null;
-  const { data, error } = await supabase
-    .from('canvas_documents')
-    .select('id, name, updated_at, deleted_at');
+  const { data, error } = await withTimeout(
+    supabase.from('canvas_documents').select('id, name, updated_at, deleted_at'),
+    CLOUD_SYNC_TIMEOUT_MS,
+    'canvas-list-remote',
+  );
   if (error) throw new Error(error.message);
   return (data ?? []) as CanvasRemoteMeta[];
 }
@@ -89,11 +116,15 @@ export async function pushCanvasDocument(doc: CanvasDocument): Promise<boolean> 
 
   const updatedAt = doc.updatedAt || new Date().toISOString();
 
-  const { data: existing, error: selectError } = await supabase
-    .from('canvas_documents')
-    .select('updated_at, deleted_at, created_by')
-    .eq('id', doc.id)
-    .maybeSingle();
+  const { data: existing, error: selectError } = await withTimeout(
+    supabase
+      .from('canvas_documents')
+      .select('updated_at, deleted_at, created_by')
+      .eq('id', doc.id)
+      .maybeSingle(),
+    CLOUD_SYNC_TIMEOUT_MS,
+    'canvas-push-select',
+  );
   if (selectError) throw new Error(selectError.message);
   if (
     existing &&
@@ -117,9 +148,11 @@ export async function pushCanvasDocument(doc: CanvasDocument): Promise<boolean> 
 
   // Atomic upsert on PK — avoids the select-then-insert/update race where two
   // concurrent pushes could both see "no existing row" and duplicate.
-  const { error } = await supabase
-    .from('canvas_documents')
-    .upsert(row, { onConflict: 'id' });
+  const { error } = await withTimeout(
+    supabase.from('canvas_documents').upsert(row, { onConflict: 'id' }),
+    CLOUD_SYNC_TIMEOUT_MS,
+    'canvas-push-upsert',
+  );
   if (error) throw new Error(error.message);
   return true;
 }
@@ -129,21 +162,29 @@ export async function markRemoteCanvasDeleted(id: string): Promise<boolean> {
   const uid = await sessionUserId();
   if (!uid) return false;
   const now = new Date().toISOString();
-  const { error } = await supabase
-    .from('canvas_documents')
-    .update({ deleted_at: now, updated_at: now, updated_by: uid })
-    .eq('id', id);
+  const { error } = await withTimeout(
+    supabase
+      .from('canvas_documents')
+      .update({ deleted_at: now, updated_at: now, updated_by: uid })
+      .eq('id', id),
+    CLOUD_SYNC_TIMEOUT_MS,
+    'canvas-mark-deleted',
+  );
   if (error) throw new Error(error.message);
   return true;
 }
 
 async function fetchRemoteDocuments(ids: string[]): Promise<CanvasDocument[]> {
   if (!supabase || ids.length === 0) return [];
-  const { data, error } = await supabase
-    .from('canvas_documents')
-    .select('document, updated_at')
-    .in('id', ids)
-    .is('deleted_at', null);
+  const { data, error } = await withTimeout(
+    supabase
+      .from('canvas_documents')
+      .select('document, updated_at')
+      .in('id', ids)
+      .is('deleted_at', null),
+    CLOUD_SYNC_TIMEOUT_MS,
+    'canvas-fetch-remote',
+  );
   if (error) throw new Error(error.message);
   const out: CanvasDocument[] = [];
   for (const row of data ?? []) {
@@ -169,6 +210,16 @@ export type SyncOptions = {
 // doc that was just locally edited and pushed. Declared before use so the
 // queued-push waiter never hits a TDZ violation.
 let syncPromise: Promise<unknown> | null = null;
+/** Coalesced options for one retry after the in-flight sync unlocks. */
+let pendingSyncOptions: SyncOptions | null = null;
+
+function mergeSyncOptions(a: SyncOptions | null, b: SyncOptions): SyncOptions {
+  return {
+    openDocumentId: b.openDocumentId ?? a?.openDocumentId,
+    // Prefer dirty=true so a later dirty caller is not overwritten by a clean retry.
+    openDirty: Boolean(a?.openDirty || b.openDirty),
+  };
+}
 
 /**
  * Merge cloud ↔ local without blocking the editor.
@@ -177,18 +228,30 @@ let syncPromise: Promise<unknown> | null = null;
 export async function syncCanvasDocuments(options: SyncOptions = {}): Promise<SyncResult> {
   const empty: SyncResult = { pulled: 0, pushed: 0, deletedLocal: 0, skipped: false, pushErrors: 0 };
   if (!supabase) return { ...empty, skipped: true, reason: 'no-supabase' };
-  const uid = await sessionUserId();
-  if (!uid) return { ...empty, skipped: true, reason: 'no-session' };
-  if (syncPromise) return { ...empty, skipped: true, reason: 'sync-in-flight' };
+  if (syncPromise) {
+    pendingSyncOptions = mergeSyncOptions(pendingSyncOptions, options);
+    return { ...empty, skipped: true, reason: 'sync-in-flight' };
+  }
   let releaseSync!: () => void;
   syncPromise = new Promise<void>((resolve) => {
     releaseSync = resolve;
   });
   try {
+    const uid = await sessionUserId();
+    if (!uid) return { ...empty, skipped: true, reason: 'no-session' };
     return await runSync(options);
+  } catch (err) {
+    const lastError = err instanceof Error ? err.message : String(err);
+    return { ...empty, skipped: true, reason: 'error', lastError };
   } finally {
     releaseSync();
     syncPromise = null;
+    const next = pendingSyncOptions;
+    pendingSyncOptions = null;
+    if (next) {
+      // Fire-and-forget coalesced retry — caller of the skipped sync already returned.
+      void syncCanvasDocuments(next);
+    }
   }
 }
 

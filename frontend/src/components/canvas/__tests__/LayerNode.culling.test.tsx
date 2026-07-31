@@ -47,7 +47,7 @@ describe('LayerNode viewport culling and performance', () => {
     expect(screen.getByText('Texto Seleccionado')).toBeTruthy();
   });
 
-  it('simplifies paint styles (strips filter/boxShadow) when panning is true', () => {
+  it('strips filter and blurred shadows when panning, but keeps spread-only (frame) shadows', () => {
     const layer = createLayer('rect', {
       cssVars: {
         '--width': '40mm',
@@ -86,8 +86,54 @@ describe('LayerNode viewport culling and performance', () => {
     );
 
     const elPanning = container.querySelector('[data-layer-id]') as HTMLElement;
+    // Blurred/offset shadow is deferred during camera zoom.
     expect(elPanning.style.boxShadow).toBe('');
     expect(elPanning.style.filter).toBe('');
+  });
+
+  it('keeps spread-only box-shadow (outside stroke / frame) during panning to avoid flicker', () => {
+    const layer = createLayer('rect', {
+      cssVars: {
+        '--width': '40mm',
+        '--height': '40mm',
+        '--translate-x': '10mm',
+        '--translate-y': '10mm',
+        '--stroke-align': 'outside',
+        '--border-width': '2px',
+        '--border-color': '#000000',
+        '--stroke-visible': '1',
+      },
+    });
+
+    const { container, rerender } = render(
+      <LayerNode
+        layer={layer}
+        selected={false}
+        interactive
+        scale={1}
+        panning={false}
+        {...baseHandlers}
+      />,
+    );
+
+    const elNormal = container.querySelector('[data-layer-id]') as HTMLElement;
+    const frameShadow = elNormal.style.boxShadow;
+    expect(frameShadow).toMatch(/0 0 0 2px/);
+
+    rerender(
+      <LayerNode
+        layer={layer}
+        selected={false}
+        interactive
+        scale={1}
+        panning={true}
+        {...baseHandlers}
+      />,
+    );
+
+    const elPanning = container.querySelector('[data-layer-id]') as HTMLElement;
+    // Frame (spread-only shadow) must survive camera zoom — no flicker.
+    expect(elPanning.style.boxShadow).toBe(frameShadow);
   });
 
   it('adds loading="lazy" attribute to image layers', () => {

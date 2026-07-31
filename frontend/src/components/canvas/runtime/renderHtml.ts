@@ -56,8 +56,24 @@ function paintVarsToInline(vars: CanvasLayer['cssVars']): string {
     .join(';');
 }
 
-/** Line layers clear box paint (SVG stroke carries the visual); other types keep design chrome. */
-function cssVarsForExport(layer: CanvasLayer): CanvasLayer['cssVars'] {
+/** Drop editor placeholder fill/border — used for filled logos (clean Generar/PDF). */
+export function stripPlaceholderChrome(vars: CanvasLayer['cssVars']): CanvasLayer['cssVars'] {
+  return {
+    ...vars,
+    '--background-color': 'transparent',
+    '--fill-visible': '0',
+    '--stroke-visible': '0',
+    '--border-width': '0px',
+    '--border': '',
+  };
+}
+
+/**
+ * Line layers clear box paint (SVG stroke carries the visual).
+ * Filled logos drop placeholder chrome so brand marks sit on the page without a grey box.
+ * Empty logo/field slots keep design chrome (WYSIWYG placeholders).
+ */
+function cssVarsForExport(layer: CanvasLayer, ctx?: FillContext): CanvasLayer['cssVars'] {
   if (layer.type === 'line') {
     const ensured = ensureLinePath(layer);
     return {
@@ -68,6 +84,10 @@ function cssVarsForExport(layer: CanvasLayer): CanvasLayer['cssVars'] {
       '--stroke-visible': '0',
       '--border': '',
     };
+  }
+  if (layer.type === 'logo') {
+    const src = layer.meta?.side === 'right' ? ctx?.logoRight : ctx?.logoLeft;
+    if (src) return stripPlaceholderChrome(layer.cssVars);
   }
   return layer.cssVars;
 }
@@ -250,7 +270,7 @@ export function renderCanvasHtml(
       const x = parseMm(ensured.cssVars['--translate-x']);
       const y = parseMm(ensured.cssVars['--translate-y']);
       const w = parseMm(ensured.cssVars['--width'], 10);
-      const exportVars = cssVarsForExport(ensured);
+      const exportVars = cssVarsForExport(ensured, ctx);
       const h = parseMm(exportVars['--height'] ?? ensured.cssVars['--height'], 10);
       const resolved = resolveLayerContent(ensured, ctx);
       if (ensured.visible === false) return '';

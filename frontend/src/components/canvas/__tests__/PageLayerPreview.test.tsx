@@ -24,8 +24,12 @@ describe('documentWithFill', () => {
     };
     const filled = documentWithFill(doc, ctx);
     expect(filled.layers.find((l) => l.id === 'f1')?.meta?.fallback).toBe('99');
-    expect(filled.layers.find((l) => l.id === 'l1')?.type).toBe('image');
-    expect(filled.layers.find((l) => l.id === 'l1')?.value).toContain('LOGO');
+    const filledLogo = filled.layers.find((l) => l.id === 'l1');
+    expect(filledLogo?.type).toBe('image');
+    expect(filledLogo?.value).toContain('LOGO');
+    expect(filledLogo?.cssVars['--background-color']).toBe('transparent');
+    expect(filledLogo?.cssVars['--fill-visible']).toBe('0');
+    expect(filledLogo?.cssVars['--border-width']).toBe('0px');
     expect(filled.layers.find((l) => l.id === 's1')?.type).toBe('image');
     expect(filled.layers.find((l) => l.id === 'c1')?.meta?.checked).toBe(true);
     expect(filled.layers.find((l) => l.id === 'g1')?.value).toBe('Ana');

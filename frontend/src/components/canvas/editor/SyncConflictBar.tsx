@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { CloudOff } from 'lucide-react';
+import { CloudDownload, HardDrive } from 'lucide-react';
+import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import type { SyncConflict } from '../sync/canvasCloudSync';
 import type { SyncConflictChoice } from '../hooks/useCanvasSync';
 
@@ -8,18 +8,8 @@ interface SyncConflictBarProps {
   onResolve: (choice: SyncConflictChoice) => void;
 }
 
+/** Icon-only sync conflict actions — lives next to the UI-lock control. */
 export default function SyncConflictBar({ conflict, onResolve }: SyncConflictBarProps) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onResolve('keep-local');
-      }
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [onResolve]);
-
   const docName = conflict.remoteDoc.name || conflict.localDoc.name || 'documento';
 
   return (
@@ -28,30 +18,30 @@ export default function SyncConflictBar({ conflict, onResolve }: SyncConflictBar
       data-testid="sync-conflict-bar"
       role="status"
       aria-live="polite"
+      aria-label={`Versión más nueva en la nube · ${docName}`}
     >
-      <CloudOff size={14} strokeWidth={2} className="canvas-sync-conflict-bar__icon" aria-hidden />
-      <p className="canvas-sync-conflict-bar__text">
-        Versión más nueva en la nube
-        <span className="canvas-sync-conflict-bar__name"> · {docName}</span>
-      </p>
-      <div className="canvas-sync-conflict-bar__actions">
+      <WithHoverTooltip label={`Mantener mi versión · ${docName}`} placement="bottom" variant="dark">
         <button
           type="button"
           data-testid="sync-conflict-keep-local"
-          className="canvas-sync-conflict-bar__btn"
+          className="canvas-icon-btn"
+          aria-label="Mantener mi versión"
           onClick={() => onResolve('keep-local')}
         >
-          Mantener
+          <HardDrive className="h-3.5 w-3.5" />
         </button>
+      </WithHoverTooltip>
+      <WithHoverTooltip label={`Usar versión en la nube · ${docName}`} placement="bottom" variant="dark">
         <button
           type="button"
           data-testid="sync-conflict-use-remote"
-          className="canvas-sync-conflict-bar__btn canvas-sync-conflict-bar__btn--primary"
+          className="canvas-icon-btn"
+          aria-label="Usar versión en la nube"
           onClick={() => onResolve('use-remote')}
         >
-          Actualizar
+          <CloudDownload className="h-3.5 w-3.5" />
         </button>
-      </div>
+      </WithHoverTooltip>
     </div>
   );
 }
