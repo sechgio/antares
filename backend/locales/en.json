@@ -1,9 +1,5 @@
 {
-  "error.file_not_found": "Image not found: {path}",
-  "error.unsupported_format": "Unsupported format: {format}",
   "error.process_failed": "Error processing {file}: {error}",
-  "error.backend_timeout": "IPC timeout: backend is not responding",
-  "error.backend_start_failed": "The backend could not start. Try restarting the application.",
   "error.process_already_running": "A process is already running",
   "error.no_files_to_process": "No files to process",
   "error.no_destination": "No destination folder specified",
