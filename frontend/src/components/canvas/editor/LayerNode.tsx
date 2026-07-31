@@ -18,6 +18,7 @@ import { imageContentInlineStyle } from '../ops/layerStyle';
 import { ensureLinePath } from '../ops/pathGeometry';
 import { buildLineSvgContent } from '../ops/lineSvg';
 import { parseTableData } from '../ops/tableData';
+import { getBlobUrl } from '../utils/imageBlobStore';
 
 interface LayerNodeProps {
   layer: CanvasLayer;
@@ -435,7 +436,7 @@ function LayerNode({
         />
       ) : layer.type === 'image' && layer.value ? (
         <img
-          src={layer.value}
+          src={getBlobUrl(layer.value)}
           alt=""
           draggable={false}
           decoding="async"

@@ -187,4 +187,48 @@ describe('useCanvasHistory gesture coalesce', () => {
       35,
     );
   });
+
+  it('dramatically reduces memory footprint for history with large Base64 image layers', () => {
+    const base = createEmptyDocument('RAM Test');
+    const largeValue = 'data:image/png;base64,' + 'X'.repeat(5 * 1024 * 1024); // 5 MB image
+    const imageLayer = createLayer('image');
+    imageLayer.value = largeValue;
+    imageLayer.cssVars['--translate-x'] = '0mm';
+    base.layers.push(imageLayer);
+
+    const { result } = renderHook(() => useCanvasHistory(base));
+
+    // Perform 20 moves on the image layer
+    for (let i = 1; i <= 20; i++) {
+      act(() => {
+        result.current.setDocument({
+          ...result.current.document,
+          layers: result.current.document.layers.map((l) =>
+            l.type === 'image'
+              ? { ...l, cssVars: { ...l.cssVars, '--translate-x': `${i}mm` } }
+              : l,
+          ),
+        });
+      });
+    }
+
+    expect(result.current.past.length).toBe(20);
+
+    // Calculate total JSON string size of past stack
+    const pastJsonSize = JSON.stringify(result.current.past).length;
+
+    // 20 full document copies with a 5MB image would be > 100 MB.
+    // With structural diffs, unchanged value is NOT duplicated across history steps.
+    // Total size of 20 diffs should be well under 100 KB (102,400 bytes)!
+    expect(pastJsonSize).toBeLessThan(100 * 1024);
+
+    // Verify undo still works all 20 steps back to 0mm
+    act(() => {
+      for (let i = 0; i < 20; i++) {
+        result.current.undo();
+      }
+    });
+    expect(parseMm(result.current.document.layers.find((l) => l.type === 'image')!.cssVars['--translate-x'])).toBe(0);
+    expect(result.current.document.layers.find((l) => l.type === 'image')!.value).toBe(largeValue);
+  });
 });

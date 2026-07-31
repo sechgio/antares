@@ -68,6 +68,44 @@ def migrate_legacy_canvas_documents(*, source: Path, dest: Path) -> int:
     return copied
 
 
+def _extract_doc_meta(path: Path) -> tuple[str, str] | None:
+    """Fast extraction of (name, updatedAt) from a canvas document file."""
+    try:
+        size = path.stat().st_size
+        if size < 65536:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                return str(raw.get("name") or "Sin título"), str(raw.get("updatedAt") or "")
+            return None
+
+        with path.open("r", encoding="utf-8", errors="ignore") as f:
+            head = f.read(8192)
+
+        import re
+        name_match = re.search(r'"name"\s*:\s*"((?:[^"\\]|\\.)*)"', head)
+        updated_match = re.search(r'"updatedAt"\s*:\s*"((?:[^"\\]|\\.)*)"', head)
+
+        if name_match:
+            try:
+                doc_name = json.loads(f'"{name_match.group(1)}"')
+            except Exception:
+                doc_name = name_match.group(1)
+        else:
+            doc_name = "Sin título"
+
+        updated_at = updated_match.group(1) if updated_match else ""
+
+        if not name_match:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                return str(raw.get("name") or "Sin título"), str(raw.get("updatedAt") or "")
+
+        return str(doc_name), str(updated_at)
+    except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        logger.warning("Skipping unreadable canvas document %s: %s", path, exc)
+        return None
+
+
 class CanvasStore:
     def __init__(
         self,
@@ -107,8 +145,8 @@ class CanvasStore:
     def _rebuild_index_if_stale(self) -> None:
         """Rebuild the inner-id index and listing cache if the file set changed.
 
-        Single pass over *.json: reads name/updatedAt (light parse, no
-        normalize_document) and maps body id → path. After the first build,
+        Single pass over *.json: reads name/updatedAt/id (light parse, no
+        normalize_document) and maps body id -> path. After the first build,
         save()/delete() maintain the index incrementally, so steady-state
         operations are O(1) instead of O(docs).
         """
@@ -164,6 +202,11 @@ class CanvasStore:
                 doc["id"] = path.stem
             return doc
 
+    def _normalize_history_item(self, item: dict[str, Any]) -> dict[str, Any]:
+        if isinstance(item, dict) and item.get("type") == "diff":
+            return item
+        return normalize_document(item)
+
     def get_history(self, doc_id: str) -> dict[str, list[dict[str, Any]]]:
         with self._lock:
             path = self._history_path_for(str(doc_id))
@@ -175,8 +218,8 @@ class CanvasStore:
                     return {"past": [], "future": []}
                 past_raw = raw.get("past")
                 future_raw = raw.get("future")
-                past = [normalize_document(item) for item in past_raw if isinstance(item, dict)] if isinstance(past_raw, list) else []
-                future = [normalize_document(item) for item in future_raw if isinstance(item, dict)] if isinstance(future_raw, list) else []
+                past = [self._normalize_history_item(item) for item in past_raw if isinstance(item, dict)] if isinstance(past_raw, list) else []
+                future = [self._normalize_history_item(item) for item in future_raw if isinstance(item, dict)] if isinstance(future_raw, list) else []
                 return {"past": past, "future": future}
             except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
                 logger.warning("Could not read canvas history for %s: %s", doc_id, exc)
@@ -192,8 +235,8 @@ class CanvasStore:
         with self._lock:
             path = self._history_path_for(str(doc_id))
             self.history_dir.mkdir(parents=True, exist_ok=True)
-            norm_past = [normalize_document(d) for d in past[-max_history:] if isinstance(d, dict)]
-            norm_future = [normalize_document(d) for d in future[-max_history:] if isinstance(d, dict)]
+            norm_past = [self._normalize_history_item(d) for d in past[-max_history:] if isinstance(d, dict)]
+            norm_future = [self._normalize_history_item(d) for d in future[-max_history:] if isinstance(d, dict)]
             payload = {"past": norm_past, "future": norm_future}
             tmp = path.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")

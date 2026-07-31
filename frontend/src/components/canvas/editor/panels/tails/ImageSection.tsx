@@ -5,6 +5,8 @@ import type { SectionProps } from '../types';
 
 import CanvasSelect from '../../CanvasSelect';
 
+import { registerImageBlob } from '../../../utils/imageBlobStore';
+
 export default function ImageSection({ layer, onChange, setVar, setVarLive, onCommitLive }: SectionProps) {
   return (
     <div className="canvas-section">
@@ -16,9 +18,15 @@ export default function ImageSection({ layer, onChange, setVar, setVarLive, onCo
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (!file) return;
-          const reader = new FileReader();
-          reader.onload = () => onChange({ ...layer, value: String(reader.result || '') });
-          reader.readAsDataURL(file);
+          registerImageBlob(file)
+            .then((registered) => {
+              onChange({ ...layer, value: registered.url });
+            })
+            .catch(() => {
+              const reader = new FileReader();
+              reader.onload = () => onChange({ ...layer, value: String(reader.result || '') });
+              reader.readAsDataURL(file);
+            });
         }}
       />
       <label className="mt-2 block text-[11px]" style={{ color: 'var(--cv-text-secondary)' }}>

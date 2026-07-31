@@ -494,8 +494,8 @@ export const api = {
   canvasExportCmykPdf: (body: CanvasExportCmykPdfBody) =>
     _invoke<HtmlToPdfResponse>('canvas_export_cmyk_pdf', body),
   canvasGetHistory: (id: string) =>
-    _invoke<{ past: import('./components/canvas/types').CanvasDocument[]; future: import('./components/canvas/types').CanvasDocument[] }>('canvas_get_history', { id }),
-  canvasSaveHistory: (id: string, past: import('./components/canvas/types').CanvasDocument[], future: import('./components/canvas/types').CanvasDocument[]) =>
+    _invoke<{ past: import('./components/canvas/utils/canvasDiff').HistoryStep[]; future: import('./components/canvas/utils/canvasDiff').HistoryStep[] }>('canvas_get_history', { id }),
+  canvasSaveHistory: (id: string, past: import('./components/canvas/utils/canvasDiff').HistoryStep[], future: import('./components/canvas/utils/canvasDiff').HistoryStep[]) =>
     _invoke<{ success: boolean }>('canvas_save_history', { id, past, future }),
 
   // ─── Render HTML to PDF via Electron ─────────────────────────────────────

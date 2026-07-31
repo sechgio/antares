@@ -88,7 +88,15 @@ function capasDropPosition(
   return y < rowHeight / 2 ? 'before' : 'after';
 }
 
-function layerIcon(type: CanvasLayer['type']) {
+import { getThumbnailUrl } from '../utils/imageBlobStore';
+
+function layerIcon(type: CanvasLayer['type'], value?: string) {
+  if (type === 'image' && value) {
+    const thumb = getThumbnailUrl(value);
+    if (thumb) {
+      return <img src={thumb} className="h-3 w-3 object-cover rounded-[2px]" alt="" />;
+    }
+  }
   if (type === 'text' || type === 'field') return <Type className="h-3 w-3" />;
   if (type === 'rect') return <Square className="h-3 w-3" />;
   if (type === 'table') return <Table2 className="h-3 w-3" />;
@@ -228,7 +236,7 @@ const LayerRow = memo(function LayerRow({
         )}
         {renaming ? (
           <div className="canvas-list-label">
-            <span className="canvas-list-type-icon">{layerIcon(layer.type)}</span>
+            <span className="canvas-list-type-icon">{layerIcon(layer.type, layer.value)}</span>
             <input
               ref={layerRenameRef}
               className="canvas-input canvas-input--inline min-w-0 flex-1"
@@ -266,7 +274,7 @@ const LayerRow = memo(function LayerRow({
               onStartRename(layer.id, layer.name);
             }}
           >
-            <span className="canvas-list-type-icon">{layerIcon(layer.type)}</span>
+            <span className="canvas-list-type-icon">{layerIcon(layer.type, layer.value)}</span>
             <span className="canvas-list-name">{layer.name}</span>
           </div>
         )}
