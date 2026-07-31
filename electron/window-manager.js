@@ -83,7 +83,6 @@ function createWindow(isDev) {
   });
 
   mainWindow.webContents.setBackgroundThrottling(false);
-  mainWindow.maximize();
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
@@ -111,6 +110,7 @@ function createWindow(isDev) {
   });
 
   mainWindow.once('ready-to-show', () => {
+    mainWindow.maximize();
     mainWindow.show();
   });
   mainWindow.on('closed', () => { mainWindow = null; });

@@ -543,6 +543,25 @@ async function _autoRestart() {
   }
 }
 
+/**
+ * Whitelist only the env vars the Python backend needs instead of cloning the
+ * entire process.env (Windows env block limit ~32K; avoids leaking unrelated
+ * secrets and keeps the child env block small).
+ */
+const _CHILD_ENV_WHITELIST = [
+  'PATH', 'SYSTEMROOT', 'TEMP', 'TMP', 'PYTHONIOENCODING', 'PYTHONUTF8',
+  'LOCALAPPDATA', 'APPDATA', 'USERPROFILE', 'HOME', 'PATHEXT', 'LANG', 'LC_ALL',
+];
+function _buildChildEnv() {
+  const env = {};
+  for (const key of _CHILD_ENV_WHITELIST) {
+    if (process.env[key] !== undefined) env[key] = process.env[key];
+  }
+  env.PYTHONIOENCODING = 'utf-8';
+  env.PYTHONUTF8 = '1';
+  return env;
+}
+
 function _spawn(isDev) {
   let { cmd, args } = getBackendCommand(isDev, process.platform, __dirname);
 
@@ -555,7 +574,7 @@ function _spawn(isDev) {
 
   pythonProcess = spawn(cmd, args, {
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+    env: _buildChildEnv(),
   });
 
   pythonProcess.stderr.on('data', _recordStderr);
