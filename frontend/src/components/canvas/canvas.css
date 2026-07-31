@@ -1,35 +1,35 @@
-/* Canvas — scoped chrome (does not affect other Antares tools) */
+/* Canvas — scoped chrome aligned with active appearance theme */
 .canvas-app {
-  --cv-bg: #eef1f4;
-  --cv-bg-deep: #e4e9ef;
-  --cv-panel: #fbfcfd;
-  --cv-panel-elevated: #ffffff;
-  --cv-border: #e2e6eb;
-  --cv-border-strong: #c9d0d8;
-  --cv-text: #1a2332;
-  --cv-text-muted: #8b95a5;
-  --cv-text-secondary: #5c6778;
-  --cv-hover: #f0f3f7;
-  --cv-active: #e8f3fb;
-  --cv-accent: #0d99ff;       /* Figma Blue 500 — selección, foco, acción primaria */
-  --cv-accent-hover: #0b8ce8;
-  --cv-accent-soft: rgba(13, 153, 255, 0.14);
+  --cv-bg: var(--bg-base, #eef1f4);
+  --cv-bg-deep: var(--bg-base, #e4e9ef);
+  --cv-panel: var(--bg-surface, #fbfcfd);
+  --cv-panel-elevated: var(--bg-elevated, #ffffff);
+  --cv-border: var(--border-subtle, #e2e6eb);
+  --cv-border-strong: var(--border-medium, #c9d0d8);
+  --cv-text: var(--text-primary, #1a2332);
+  --cv-text-muted: var(--text-muted, #8b95a5);
+  --cv-text-secondary: var(--text-secondary, #5c6778);
+  --cv-hover: color-mix(in srgb, var(--text-primary, #1a2332) 7%, var(--bg-surface, #fbfcfd));
+  --cv-active: color-mix(in srgb, var(--accent-primary, #0d99ff) 14%, var(--bg-surface, #fbfcfd));
+  --cv-accent: var(--accent-primary, #0d99ff);
+  --cv-accent-hover: var(--accent-primary-hover, #0b8ce8);
+  --cv-accent-soft: var(--accent-primary-glow, rgba(13, 153, 255, 0.14));
   --cv-accent-2: #d931c8;     /* Figma spacing guides (magenta) */
-  --cv-danger: #e03e2f;       /* Figma Red 500 — eliminar, quitar guía */
-  --cv-danger-soft: #fef2f1;
-  --cv-warn-bg: #fff8f0;
-  --cv-warn-text: #b45309;
-  --cv-canvas-dot: #c5ccd6;
-  --cv-artboard-shadow: 0 1px 2px rgba(26, 35, 50, 0.06), 0 12px 32px rgba(26, 35, 50, 0.08);
-  --cv-shadow: 0 1px 2px rgba(26, 35, 50, 0.04), 0 4px 16px rgba(26, 35, 50, 0.06);
-  --cv-shadow-float: 0 4px 6px rgba(26, 35, 50, 0.04), 0 12px 28px rgba(26, 35, 50, 0.1);
+  --cv-danger: var(--accent-red, #e03e2f);
+  --cv-danger-soft: color-mix(in srgb, var(--cv-danger) 12%, var(--bg-surface, #ffffff));
+  --cv-warn-bg: color-mix(in srgb, var(--accent-yellow, #F59E0B) 12%, var(--bg-surface, #ffffff));
+  --cv-warn-text: var(--accent-yellow, #b45309);
+  --cv-canvas-dot: color-mix(in srgb, var(--text-primary, #1a2332) 18%, transparent);
+  --cv-artboard-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 12px 32px rgba(0, 0, 0, 0.16);
+  --cv-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 4px 16px rgba(0, 0, 0, 0.12);
+  --cv-shadow-float: 0 4px 6px rgba(0, 0, 0, 0.08), 0 12px 28px rgba(0, 0, 0, 0.2);
   --cv-radius: 8px;
   --cv-radius-sm: 6px;
   /* Figma-like inspector rhythm (right Properties panel) */
   --cv-inspector-pad-x: 16px;
   --cv-inspector-pad-y: 16px;
   --cv-inspector-gap: 8px;
-  --cv-font: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --cv-font: var(--app-interface-font, "Segoe UI", "Helvetica Neue", Arial, sans-serif);
   font-family: var(--cv-font);
   color: var(--cv-text);
   background: var(--cv-bg);
@@ -220,7 +220,7 @@ select.canvas-input option {
 }
 
 .canvas-paint-row:hover {
-  background: #e8ecf1;
+  background: var(--cv-hover);
 }
 
 .canvas-swatch {
@@ -438,12 +438,9 @@ select.canvas-input option {
   z-index: 120;
   width: 240px;
   border-radius: 12px;
-  background: #ffffff;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.04),
-    0 8px 28px rgba(0, 0, 0, 0.14),
-    0 2px 6px rgba(0, 0, 0, 0.06);
+  background: var(--cv-panel-elevated);
+  border: 1px solid var(--cv-border-strong);
+  box-shadow: var(--cv-shadow-float);
   padding: 10px;
   font-family: var(--cv-font);
   color: var(--cv-text);
@@ -469,7 +466,7 @@ select.canvas-input option {
 }
 
 .canvas-color-picker-tab[data-active='true'] {
-  background: #f0f0f0;
+  background: var(--cv-hover);
   color: var(--cv-text);
 }
 
@@ -542,7 +539,7 @@ select.canvas-input option {
   min-width: 0;
   height: 28px;
   border-radius: 6px;
-  background: #f5f5f5;
+  background: var(--cv-hover);
   padding: 0 8px;
   gap: 6px;
 }
@@ -575,7 +572,7 @@ select.canvas-input option {
   width: 58px;
   flex-shrink: 0;
   border-radius: 6px;
-  background: #f5f5f5;
+  background: var(--cv-hover);
   padding: 0 6px;
   gap: 2px;
 }
@@ -782,7 +779,6 @@ select.canvas-input option {
   height: 44px;
   background: var(--cv-panel-elevated);
   border-bottom: 1px solid var(--cv-border);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 .canvas-topbar-leading {
@@ -886,7 +882,7 @@ select.canvas-input option {
   padding: 0 12px;
   font-size: 12px;
   font-weight: 600;
-  color: #fff;
+  color: var(--text-on-accent, #ffffff);
   cursor: pointer;
   transition: background 0.12s ease, box-shadow 0.12s ease;
 }
@@ -911,14 +907,12 @@ select.canvas-input option {
   align-items: center;
   gap: 2px;
   overflow: visible;
-  border: 1px solid #e5e5e5;
+  border: 1px solid var(--cv-border-strong);
   border-radius: 16px;
-  background: #ffffff;
+  background: var(--cv-panel-elevated);
   padding: 6px;
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.04),
-    0 4px 12px rgba(0, 0, 0, 0.06),
-    0 12px 32px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--cv-shadow-float);
+  color: var(--cv-text);
 }
 
 .canvas-toolbar-sep {
@@ -927,7 +921,7 @@ select.canvas-input option {
   margin: 0 4px;
   flex-shrink: 0;
   align-self: center;
-  background: #e5e5e5;
+  background: var(--cv-border);
 }
 
 /* Contextual path-edit toolbar (above bottom tools) */
@@ -940,14 +934,12 @@ select.canvas-input option {
   transform: translateX(-50%);
   align-items: center;
   gap: 1px;
-  border: 1px solid #e5e5e5;
+  border: 1px solid var(--cv-border-strong);
   border-radius: 12px;
-  background: #ffffff;
+  background: var(--cv-panel-elevated);
   padding: 3px;
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.04),
-    0 4px 12px rgba(0, 0, 0, 0.06),
-    0 12px 32px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--cv-shadow-float);
+  color: var(--cv-text);
 }
 
 .canvas-path-edit-btn {
@@ -960,27 +952,27 @@ select.canvas-input option {
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: #1a2332;
+  color: var(--cv-text);
   cursor: pointer;
 }
 
 .canvas-path-edit-btn:hover {
-  background: #f0f3f7;
+  background: var(--cv-hover);
 }
 
 .canvas-path-edit-btn.is-active {
-  background: #0e8fd6;
-  color: #fff;
+  background: var(--cv-accent);
+  color: var(--text-on-accent, #ffffff);
 }
 
 .canvas-path-edit-sep {
   width: 1px;
   height: 16px;
   margin: 0 3px;
-  background: #e5e5e5;
+  background: var(--cv-border);
 }
 
-/* Figma-like tool toggle: hover tile + solid blue active */
+/* Figma-like tool toggle: hover tile + solid active */
 .canvas-toolbar-tool {
   display: inline-flex;
   align-items: center;
@@ -991,7 +983,7 @@ select.canvas-input option {
   border: none;
   border-radius: 10px;
   background: transparent;
-  color: #333333;
+  color: var(--cv-text-secondary);
   cursor: pointer;
   transition:
     background 0.1s ease,
@@ -1001,33 +993,33 @@ select.canvas-input option {
 }
 
 .canvas-toolbar-tool:hover:not(:disabled):not([data-active="true"]) {
-  background: #f0f0f0;
-  color: #1a1a1a;
+  background: var(--cv-hover);
+  color: var(--cv-text);
 }
 
 .canvas-toolbar-tool:active:not(:disabled):not([data-active="true"]) {
-  background: #e5e5e5;
+  background: var(--cv-border);
   transform: scale(0.96);
 }
 
 .canvas-toolbar-tool[data-active="true"] {
   background: var(--cv-accent);
-  color: #ffffff;
+  color: var(--text-on-accent, #ffffff);
 }
 
 .canvas-toolbar-tool[data-active="true"]:hover {
   background: var(--cv-accent-hover);
-  color: #ffffff;
+  color: var(--text-on-accent, #ffffff);
 }
 
 .canvas-toolbar-tool[data-active="true"]:active {
-  background: #0a7fd4;
+  background: var(--cv-accent-hover);
   transform: scale(0.96);
 }
 
 .canvas-toolbar-tool:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--cv-accent);
+  box-shadow: 0 0 0 2px var(--cv-panel-elevated), 0 0 0 4px var(--cv-accent);
 }
 
 .canvas-toolbar-tool:disabled {
@@ -1045,7 +1037,7 @@ select.canvas-input option {
 }
 
 .canvas-shape-split[data-open='true'] {
-  background: #f0f0f0;
+  background: var(--cv-hover);
 }
 
 .canvas-shape-split-main {
@@ -1057,7 +1049,7 @@ select.canvas-input option {
   border-radius: 0 10px 10px 0;
   width: 18px;
   margin-left: -1px;
-  color: #666666;
+  color: var(--cv-text-muted);
 }
 
 .canvas-shape-split-chevron[data-active='true'] {
@@ -1445,10 +1437,10 @@ select.canvas-input option {
   text-overflow: ellipsis;
   white-space: nowrap;
   border-radius: 6px;
-  background: #ffffff;
-  color: #1a1a1a;
-  border: 1px solid rgba(13, 153, 255, 0.45);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  background: var(--cv-panel-elevated);
+  color: var(--cv-text);
+  border: 1px solid var(--cv-accent);
+  box-shadow: var(--cv-shadow-float);
   padding: 4px 10px;
   font-size: 12px;
   font-weight: 500;
@@ -1528,19 +1520,17 @@ select.canvas-input option {
   animation: canvas-pulse 1.1s ease-in-out infinite;
 }
 
-/* Figma-style dark context menu — matches the zoom/shape menus and dark tooltips. */
+/* Context menu aligned with appearance theme */
 .canvas-context-menu {
   position: fixed;
   z-index: 80;
   min-width: 208px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--cv-border-strong);
   border-radius: 8px;
-  background: #2c2c2c;
+  background: var(--cv-panel-elevated);
   padding: 4px;
-  box-shadow:
-    0 8px 28px rgba(0, 0, 0, 0.28),
-    0 0 0 1px rgba(0, 0, 0, 0.2);
-  color: #f5f5f5;
+  box-shadow: var(--cv-shadow-float);
+  color: var(--cv-text);
   transform-origin: top left;
   animation: canvas-context-menu-in 0.12s ease-out;
 }
@@ -1549,8 +1539,8 @@ select.canvas-input option {
   padding: 8px 10px;
   font-size: 11px;
   line-height: 1.35;
-  color: rgba(255, 255, 255, 0.45);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--cv-text-muted);
+  border-bottom: 1px solid var(--cv-border);
   margin-bottom: 2px;
 }
 
@@ -1564,17 +1554,17 @@ select.canvas-input option {
   background: transparent;
   padding: 6px 8px;
   font-size: 12px;
-  color: #f5f5f5;
+  color: var(--cv-text);
   cursor: pointer;
   transition: background 0.08s ease;
 }
 
 .canvas-context-item:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--cv-hover);
 }
 
 .canvas-context-item:active:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--cv-active);
 }
 
 .canvas-context-item:disabled {
@@ -1583,20 +1573,20 @@ select.canvas-input option {
 }
 
 .canvas-context-item[data-danger='true'] {
-  color: #ff7b70;
+  color: var(--cv-danger);
 }
 
 .canvas-context-sep {
   height: 1px;
   margin: 4px 6px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--cv-border);
 }
 
-/* kbd chips inside the dark menu (base .canvas-kbd stays light for the shortcuts panel). */
+/* kbd chips inside the menu */
 .canvas-context-menu .canvas-kbd {
-  border-color: rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.5);
+  border-color: var(--cv-border);
+  background: var(--cv-hover);
+  color: var(--cv-text-secondary);
 }
 
 @keyframes canvas-context-menu-in {
@@ -1661,9 +1651,10 @@ select.canvas-input option {
   width: min(280px, calc(100% - 24px));
   max-height: min(420px, calc(100% - 96px));
   overflow-y: auto;
-  border: 1px solid var(--cv-border);
+  border: 1px solid var(--cv-border-strong);
   border-radius: 12px;
-  background: rgba(251, 252, 253, 0.96);
+  background: color-mix(in srgb, var(--cv-panel-elevated) 96%, transparent);
+  color: var(--cv-text);
   padding: 12px;
   box-shadow: var(--cv-shadow-float);
   backdrop-filter: blur(12px);

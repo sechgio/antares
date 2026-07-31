@@ -44,9 +44,8 @@ def group_stamp_pages(page_indices: list[int]) -> dict[int, int]:
 
 
 def _prepare_stamp_image(stamp_bytes: bytes, width_pt: float, height_pt: float) -> tuple[Image.Image, float, float]:
-    img: Image.Image = Image.open(io.BytesIO(stamp_bytes))
-    if img.mode not in ("RGB", "RGBA"):
-        img = img.convert("RGBA")
+    with Image.open(io.BytesIO(stamp_bytes)) as opened:
+        img = opened.copy() if opened.mode in ("RGB", "RGBA") else opened.convert("RGBA")
 
     orig_w, orig_h = img.size
     target_px_w = max(1, round(width_pt * STAMP_EXPORT_DPI / 72.0))

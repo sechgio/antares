@@ -170,7 +170,8 @@ def _crop_footer_bar(img: Image.Image) -> Image.Image:
 
 def _measure_footer_band_height(jpg_path: str) -> int:
     """Mide la altura (px) de la banda negra principal en una plantilla JPG."""
-    img = Image.open(jpg_path).convert("RGB")
+    with Image.open(jpg_path) as opened:
+        img = opened.convert("RGB")
     w, h = img.size
     black_rows: list[int] = []
     step = max(1, w // 30)
@@ -203,7 +204,8 @@ def _get_footer_image(width: int, height: int) -> Image.Image | None:
         if not os.path.exists(logo_path):
             logo_path = os.path.join(assets_dir, "footer_horizontal.png")
         if os.path.exists(logo_path):
-            src = Image.open(logo_path).convert("RGBA")
+            with Image.open(logo_path) as opened:
+                src = opened.convert("RGBA")
             bar_h = _crop_footer_bar(src.convert("RGB")).height
             logo = src.crop((0, 0, src.width, bar_h))
             scale = width / logo.width
@@ -265,7 +267,8 @@ def _map_cache_key(
 
 def _screenshot_has_map_tiles(screenshot_bytes: bytes) -> bool:
     """Rechaza capturas con cuadrícula gris sin calles cargadas."""
-    img = Image.open(BytesIO(screenshot_bytes)).convert("RGB")
+    with Image.open(BytesIO(screenshot_bytes)) as opened:
+        img = opened.convert("RGB")
     w, h = img.size
     light_gray = 0
     chroma = 0
@@ -337,7 +340,8 @@ def _center_crop_to_aspect(img: Image.Image, width: int, height: int) -> Image.I
 
 def _normalize_map_screenshot(screenshot_bytes: bytes, width: int, height: int) -> bytes:
     """Canvas → recorte de márgenes + escala exacta. Usado en preview y export PDF."""
-    img = Image.open(BytesIO(screenshot_bytes)).convert("RGB")
+    with Image.open(BytesIO(screenshot_bytes)) as opened:
+        img = opened.convert("RGB")
     if img.size != (width, height):
         img = _center_crop_to_aspect(img, width, height)
     img = _trim_map_gutters(img)
@@ -450,7 +454,9 @@ def _fetch_xyz_tiles_map(lat: float, lon: float, width: int, height: int, zoom: 
         if not tile_bytes:
             return col, row, None
         try:
-            return col, row, Image.open(BytesIO(tile_bytes)).convert("RGB")
+            with Image.open(BytesIO(tile_bytes)) as tile:
+                decoded = tile.convert("RGB")
+            return col, row, decoded
         except Exception:
             logger.debug("Tile decode failed for %s", _redact_url_for_log(url), exc_info=True)
             return col, row, None
@@ -480,7 +486,8 @@ def _fetch_google_static_map(lat: float, lon: float, width: int, height: int, zo
     if not data:
         return Image.new("RGB", (width, height), (215, 215, 215))
     try:
-        return Image.open(BytesIO(data)).convert("RGB")
+        with Image.open(BytesIO(data)) as opened:
+            return opened.convert("RGB")
     except Exception:
         logger.debug("Google Static Maps decode failed", exc_info=True)
         return Image.new("RGB", (width, height), (215, 215, 215))
@@ -753,7 +760,8 @@ def _get_pin_rgba() -> Image.Image | None:
     if _pin_cache is None:
         pin_path = os.path.join(resource_path("assets/ubicaciones"), "pin.png")
         if os.path.exists(pin_path):
-            _pin_cache = Image.open(pin_path).convert("RGBA")
+            with Image.open(pin_path) as opened:
+                _pin_cache = opened.convert("RGBA")
     return _pin_cache
 
 
@@ -794,7 +802,8 @@ def _compose_ubicacion_image(
     final_img = Image.new("RGB", (out_w, out_h), _BG_RGB)
 
     map_height = out_h - footer_height
-    mapa = Image.open(BytesIO(screenshot_bytes)).convert("RGBA")
+    with Image.open(BytesIO(screenshot_bytes)) as opened:
+        mapa = opened.convert("RGBA")
     resample = Image.Resampling.LANCZOS
     target_map_size = (out_w, map_height)
     if mapa.size != target_map_size:
