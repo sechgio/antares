@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { api } from '../../../api';
 import { CANVAS_PRESETS } from '../presets';
 import {
@@ -12,6 +12,10 @@ import {
   type CanvasDocumentSummary,
 } from '../types';
 import type { useCanvasHistory } from './useCanvasHistory';
+import {
+  hydrateDocumentImages,
+  serializeDocumentImages,
+} from '../utils/imageBlobStore';
 
 interface UseCanvasDocsOptions {
   history: ReturnType<typeof useCanvasHistory>;
@@ -24,11 +28,7 @@ interface UseCanvasDocsOptions {
   refreshList: () => Promise<void>;
 }
 
-/** Document lifecycle: save, duplicate, delete, open, new, rename, apply preset.
- *
- * The "switch document" family (onDuplicate/onDeleteDoc/onOpenDoc/onNew) shares
- * a common spine: save current → fetch/create/delete target → replaceDocument →
- * reset selection+page+viewport → refreshList → cloud push/delete. */
+/** Document lifecycle: save, duplicate, delete, open, new, rename, apply preset. */
 export function useCanvasDocs({
   history,
   setDocs,
@@ -40,27 +40,58 @@ export function useCanvasDocs({
   refreshList,
 }: UseCanvasDocsOptions) {
   const renameBaselineRef = useRef<CanvasDocument | null>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelPendingSave = useCallback(() => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+  }, []);
+
+  const triggerDebouncedSave = useCallback(
+    (doc: CanvasDocument, delayMs = 2000) => {
+      cancelPendingSave();
+      saveTimeoutRef.current = setTimeout(async () => {
+        try {
+          const serialDoc = await serializeDocumentImages(doc);
+          const res = await api.canvasSave(serialDoc);
+          const saved = normalizeDocument(res.document as CanvasDocument);
+          queueCanvasCloudPush(saved);
+        } catch {
+          // silent failure for background autosave
+        }
+      }, delayMs);
+    },
+    [cancelPendingSave]
+  );
 
   const onSave = useCallback(async () => {
+    cancelPendingSave();
     try {
-      const res = await api.canvasSave(history.document);
+      const serialDoc = await serializeDocumentImages(history.document);
+      const res = await api.canvasSave(serialDoc);
       const saved = normalizeDocument(res.document as CanvasDocument);
-      history.replaceDocument(saved);
+      const hydrated = await hydrateDocumentImages(saved);
+      history.replaceDocument(hydrated);
       await refreshList();
       flashStatus('Guardado');
       queueCanvasCloudPush(saved);
     } catch (err) {
       flashStatus(err instanceof Error ? err.message : 'Error al guardar');
     }
-  }, [history, refreshList, flashStatus]);
+  }, [cancelPendingSave, history, refreshList, flashStatus]);
 
   const onDuplicate = useCallback(async () => {
+    cancelPendingSave();
     try {
-      const savedRes = await api.canvasSave(history.document);
+      const serialDoc = await serializeDocumentImages(history.document);
+      const savedRes = await api.canvasSave(serialDoc);
       queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
       const res = await api.canvasDuplicate(history.document.id);
       const dup = normalizeDocument(res.document as CanvasDocument);
-      history.replaceDocument(dup);
+      const hydrated = await hydrateDocumentImages(dup);
+      history.replaceDocument(hydrated);
       setSelectedIds([]);
       setPageIndex(0);
       await refreshList();
@@ -69,9 +100,10 @@ export function useCanvasDocs({
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Error al duplicar');
     }
-  }, [history, refreshList, flashStatus, setSelectedIds, setPageIndex, setStatus]);
+  }, [cancelPendingSave, history, refreshList, flashStatus, setSelectedIds, setPageIndex, setStatus]);
 
   const onDeleteDoc = useCallback(async () => {
+    cancelPendingSave();
     try {
       const deletedId = history.document.id;
       await api.canvasDelete(deletedId);
@@ -79,12 +111,15 @@ export function useCanvasDocs({
       const list = await api.canvasList();
       if (list.documents.length) {
         const got = await api.canvasGet(list.documents[0].id);
-        history.replaceDocument(normalizeDocument(got.document as CanvasDocument));
+        const doc = normalizeDocument(got.document as CanvasDocument);
+        const hydrated = await hydrateDocumentImages(doc);
+        history.replaceDocument(hydrated);
         setDocs(list.documents);
       } else {
         const created = await api.canvasCreate('Sin título');
         const doc = normalizeDocument(created.document as CanvasDocument);
-        history.replaceDocument(doc);
+        const hydrated = await hydrateDocumentImages(doc);
+        history.replaceDocument(hydrated);
         setDocs([{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt }]);
         queueCanvasCloudPush(doc);
       }
@@ -95,16 +130,20 @@ export function useCanvasDocs({
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Error al eliminar');
     }
-  }, [history, setDocs, setSelectedIds, setPageIndex, resetViewportPan, flashStatus, setStatus]);
+  }, [cancelPendingSave, history, setDocs, setSelectedIds, setPageIndex, resetViewportPan, flashStatus, setStatus]);
 
   const onOpenDoc = useCallback(
     async (id: string) => {
       if (!id || id === history.document.id) return;
+      cancelPendingSave();
       try {
-        const savedRes = await api.canvasSave(history.document);
+        const serialDoc = await serializeDocumentImages(history.document);
+        const savedRes = await api.canvasSave(serialDoc);
         queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
         const res = await api.canvasGet(id);
-        history.replaceDocument(normalizeDocument(res.document as CanvasDocument));
+        const doc = normalizeDocument(res.document as CanvasDocument);
+        const hydrated = await hydrateDocumentImages(doc);
+        history.replaceDocument(hydrated);
         setSelectedIds([]);
         setPageIndex(0);
         resetViewportPan();
@@ -113,16 +152,19 @@ export function useCanvasDocs({
         setStatus(err instanceof Error ? err.message : 'Error al abrir');
       }
     },
-    [history, setSelectedIds, setPageIndex, resetViewportPan, refreshList, setStatus],
+    [cancelPendingSave, history, setSelectedIds, setPageIndex, resetViewportPan, refreshList, setStatus],
   );
 
   const onNew = useCallback(async () => {
+    cancelPendingSave();
     try {
-      const savedRes = await api.canvasSave(history.document);
+      const serialDoc = await serializeDocumentImages(history.document);
+      const savedRes = await api.canvasSave(serialDoc);
       queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
       const res = await api.canvasCreate('Sin título');
       const doc = normalizeDocument(res.document as CanvasDocument);
-      history.replaceDocument(doc);
+      const hydrated = await hydrateDocumentImages(doc);
+      history.replaceDocument(hydrated);
       setSelectedIds([]);
       setPageIndex(0);
       resetViewportPan();
@@ -131,23 +173,22 @@ export function useCanvasDocs({
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Error al crear');
     }
-  }, [history, setSelectedIds, setPageIndex, resetViewportPan, refreshList, setStatus]);
+  }, [cancelPendingSave, history, setSelectedIds, setPageIndex, resetViewportPan, refreshList, setStatus]);
 
   const onRename = useCallback(
     (name: string) => {
-      history.updateSilent({ ...history.document, name });
+      const nextDoc = { ...history.document, name };
+      history.updateSilent(nextDoc);
+      triggerDebouncedSave(nextDoc);
       setDocs((prev) => {
         const next = prev.map((d) => (d.id === history.document.id ? { ...d, name } : d));
         if (next.some((d) => d.id === history.document.id)) return next;
         return [...next, { id: history.document.id, name }];
       });
     },
-    [history, setDocs],
+    [history, setDocs, triggerDebouncedSave],
   );
 
-  // Capture the document snapshot at focus time so the rename can be committed
-  // to history as a single undoable entry on blur/Enter (instead of one entry
-  // per keystroke). Mirrors the gesture pattern used elsewhere in the canvas.
   const onRenameStart = useCallback(() => {
     renameBaselineRef.current = history.document;
   }, [history.document]);
@@ -157,7 +198,8 @@ export function useCanvasDocs({
     renameBaselineRef.current = null;
     if (!baseline || baseline.name === history.document.name) return;
     history.commitFromBaseline(baseline);
-  }, [history]);
+    triggerDebouncedSave(history.document);
+  }, [history, triggerDebouncedSave]);
 
   const onApplyPreset = useCallback(
     (presetId: string) => {
@@ -169,9 +211,16 @@ export function useCanvasDocs({
       history.setDocument(syncImagesPerPage(doc));
       setSelectedIds([]);
       setPageIndex(0);
+      triggerDebouncedSave(doc);
     },
-    [history, setSelectedIds, setPageIndex],
+    [history, setSelectedIds, setPageIndex, triggerDebouncedSave],
   );
+
+  useEffect(() => {
+    return () => {
+      cancelPendingSave();
+    };
+  }, [cancelPendingSave]);
 
   return {
     onSave,
@@ -183,5 +232,6 @@ export function useCanvasDocs({
     onRenameStart,
     onRenameCommit,
     onApplyPreset,
+    triggerDebouncedSave,
   };
 }
