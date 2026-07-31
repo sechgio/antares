@@ -64,7 +64,7 @@ function imgStyleFromCssVars(cssVars: CanvasLayer['cssVars']): CSSProperties {
 /** Fingerprint paint-relevant cssVars (position translate excluded — applied separately). */
 function paintVarsKey(vars: CanvasLayer['cssVars'], scale: number, lineOverride: boolean): string {
   let key = `${scale}|${lineOverride ? 1 : 0}`;
-  for (const k of Object.keys(vars).sort()) {
+  for (const k of Object.keys(vars)) {
     if (k === '--translate-x' || k === '--translate-y') continue;
     key += `|${k}=${vars[k as keyof typeof vars] ?? ''}`;
   }

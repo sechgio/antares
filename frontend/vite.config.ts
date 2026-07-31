@@ -65,6 +65,14 @@ export default defineConfig(({ mode }) => ({
           'vendor-pdfjs': ['pdfjs-dist'],
           'vendor-data': ['xlsx'],
           'vendor-i18n': ['i18next', 'react-i18next'],
+          'vendor-fullcalendar': [
+            '@fullcalendar/react',
+            '@fullcalendar/daygrid',
+            '@fullcalendar/timegrid',
+            '@fullcalendar/interaction',
+          ],
+          'vendor-supabase': ['@supabase/supabase-js'],
+          'vendor-dnd': ['@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities'],
         },
         assetFileNames: (assetInfo) => {
           const info = assetInfo.name || ''
