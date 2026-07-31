@@ -469,8 +469,10 @@ export default function CanvasView() {
     [clipboard, history.document.layers, pageIndex, setAllLayers],
   );
 
+  const onKeyDownRef = useRef<(e: KeyboardEvent) => void>(() => {});
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+    onKeyDownRef.current = (e: KeyboardEvent) => {
       if (mode !== 'design') return;
 
       const isDuplicateShortcut = (e.ctrlKey || e.metaKey) && e.code === 'KeyD';
@@ -729,7 +731,8 @@ export default function CanvasView() {
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
         e.preventDefault();
         const deepIds = expandWithDescendants(history.document.layers, editableIds);
-        const copies = history.document.layers.filter((l) => deepIds.includes(l.id));
+        const deepIdSet = new Set(deepIds);
+        const copies = history.document.layers.filter((l) => deepIdSet.has(l.id));
         setClipboard(copies.map((l) => ({ ...l, cssVars: { ...l.cssVars } })));
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
@@ -811,6 +814,10 @@ export default function CanvasView() {
         }
       }
     };
+  });
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => onKeyDownRef.current(e);
     const onKeyUp = (e: KeyboardEvent) => {
       if (mode !== 'design') return;
       if (e.code === 'Space') {
@@ -819,39 +826,13 @@ export default function CanvasView() {
         if (prev) setTool(prev);
       }
     };
-    window.addEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     return () => {
-      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [
-    mode,
-    selectedIds,
-    history.document,
-    history.setDocument,
-    runUndo,
-    runRedo,
-    onSave,
-    clipboard,
-    pageIndex,
-    pageLayers,
-    tool,
-    zoomToFit,
-    zoomToSelection,
-    editingLayerId,
-    pathEditingLayerId,
-    commitInlineEdit,
-    startInlineEdit,
-    startContainerOrInlineEdit,
-    onInlineEditValue,
-    previewOpen,
-    pasteClipboard,
-    toggleBothPanels,
-    sealPanelAndAbortGesture,
-    runUndo,
-    runRedo,
-  ]);
+  }, [mode]);
 
   const selected = history.document.layers.find((l) => l.id === selectedId) || null;
   const selectedLine =
@@ -1125,7 +1106,8 @@ export default function CanvasView() {
         return l && !l.locked && l.type !== 'frame';
       });
       const deepIds = expandWithDescendants(history.document.layers, editable);
-      const copies = history.document.layers.filter((l) => deepIds.includes(l.id));
+      const deepIdSet = new Set(deepIds);
+      const copies = history.document.layers.filter((l) => deepIdSet.has(l.id));
       setClipboard(copies.map((l) => ({ ...l, cssVars: { ...l.cssVars } })));
       return;
     }
@@ -1208,10 +1190,34 @@ export default function CanvasView() {
     );
   };
 
-  const editableSelectedIds = selectedIds.filter((id) => {
-    const layer = history.document.layers.find((l) => l.id === id);
-    return layer && layer.type !== 'frame';
-  });
+  const editableSelectedIds = useMemo(
+    () => selectedIds.filter((id) => {
+      const layer = history.document.layers.find((l) => l.id === id);
+      return layer && layer.type !== 'frame';
+    }),
+    [selectedIds, history.document.layers],
+  );
+
+  const editableSelectedIdSet = useMemo(
+    () => new Set(editableSelectedIds),
+    [editableSelectedIds],
+  );
+
+  const selectionOrigin = useMemo(() => {
+    if (editableSelectedIds.length <= 1) return null;
+    const b = selectionBounds(history.document.layers, editableSelectedIds);
+    return b ? { x: b.x, y: b.y } : null;
+  }, [history.document.layers, editableSelectedIds]);
+
+  const bulkOpacityValue = useMemo(() => {
+    const sel = history.document.layers.filter((l) => editableSelectedIdSet.has(l.id));
+    if (sel.length === 0) return undefined;
+    const first = sel[0].cssVars['--opacity'];
+    const allSame = sel.every((l) => l.cssVars['--opacity'] === first);
+    if (!allSame) return null;
+    const n = Number(first ?? '100');
+    return Number.isFinite(n) ? clampOpacity(n) : undefined;
+  }, [history.document.layers, editableSelectedIdSet]);
 
   const onMoveLayer = (
     draggedId: string,
@@ -1566,14 +1572,7 @@ export default function CanvasView() {
               if (panelBaselineRef.current) onPanelCommitLive();
               setAllLayers(nudgeLayers(history.document.layers, editableSelectedIds, dx, dy));
             }}
-            selectionOrigin={
-              editableSelectedIds.length > 1
-                ? (() => {
-                    const b = selectionBounds(history.document.layers, editableSelectedIds);
-                    return b ? { x: b.x, y: b.y } : null;
-                  })()
-                : null
-            }
+            selectionOrigin={selectionOrigin}
             onBulkVisible={(visible) =>
               setAllLayers(setLayersVisible(history.document.layers, editableSelectedIds, visible))
             }
@@ -1583,15 +1582,7 @@ export default function CanvasView() {
             onBulkOpacity={(opacity) =>
               setAllLayers(setLayersOpacity(history.document.layers, editableSelectedIds, opacity))
             }
-            bulkOpacityValue={(() => {
-              const sel = history.document.layers.filter((l) => editableSelectedIds.includes(l.id));
-              if (sel.length === 0) return undefined;
-              const first = sel[0].cssVars['--opacity'];
-              const allSame = sel.every((l) => l.cssVars['--opacity'] === first);
-              if (!allSame) return null;
-              const n = Number(first ?? '100');
-              return Number.isFinite(n) ? clampOpacity(n) : undefined;
-            })()}
+            bulkOpacityValue={bulkOpacityValue}
             onBringFront={() => setAllLayers(bringToFront(history.document.layers, selectedIds))}
             onBringForward={() => setAllLayers(bringForward(history.document.layers, selectedIds))}
             onSendBack={() => setAllLayers(sendToBack(history.document.layers, selectedIds))}

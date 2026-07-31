@@ -186,7 +186,7 @@ export default function QueuePanel({
 
                   <div className="relative h-7 w-7 shrink-0 overflow-hidden rounded-md bg-[var(--bg-surface)]">
                     {item.preview ? (
-                      <img src={item.preview} alt={item.originalName} className="h-full w-full object-cover" />
+                      <img src={item.preview} alt={item.originalName} loading="lazy" decoding="async" className="h-full w-full object-cover" />
                     ) : (
                       <div className="flex h-full items-center justify-center">
                         <ImageIcon size={11} className="text-[var(--text-secondary)]" />

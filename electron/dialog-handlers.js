@@ -133,25 +133,50 @@ const FOLDER_SCAN_EXTENSIONS = new Set([
   '.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v', '.3gp', '.mpg', '.mpeg',
 ]);
 
+const FOLDER_SCAN_CONCURRENCY = 8;
+
 async function _scanFolderRecursive(dirPath, extensions) {
   const results = [];
-  let entries;
-  try {
-    entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
-  } catch {
-    return results;
-  }
-  for (const entry of entries) {
-    const fullPath = path.join(dirPath, entry.name);
-    if (entry.isDirectory()) {
-      const sub = await _scanFolderRecursive(fullPath, extensions);
-      for (const p of sub) results.push(p);
-    } else if (entry.isFile()) {
-      const ext = path.extname(entry.name).toLowerCase();
-      if (extensions.has(ext)) results.push(fullPath);
-    }
-  }
+  const pending = [dirPath];
+  let active = 0;
+  await new Promise((resolve) => {
+    const schedule = () => {
+      while (active < FOLDER_SCAN_CONCURRENCY && pending.length > 0) {
+        const dir = pending.shift();
+        active++;
+        _scanOneDir(dir, extensions, results, pending).finally(() => {
+          active--;
+          if (pending.length === 0 && active === 0) resolve();
+          else schedule();
+        });
+      }
+      if (pending.length === 0 && active === 0) resolve();
+    };
+    schedule();
+  });
   return results;
+}
+
+async function _scanOneDir(dirPath, extensions, results, pending) {
+  let dir;
+  try {
+    dir = await fs.promises.opendir(dirPath);
+  } catch {
+    return;
+  }
+  try {
+    for await (const entry of dir) {
+      const fullPath = path.join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(fullPath);
+      } else if (entry.isFile()) {
+        const ext = path.extname(entry.name).toLowerCase();
+        if (extensions.has(ext)) results.push(fullPath);
+      }
+    }
+  } catch {
+    // ignore read errors mid-iteration
+  }
 }
 
 async function renderHtmlToPdf(params = {}, electronModules = {}) {
@@ -174,12 +199,11 @@ async function renderHtmlToPdf(params = {}, electronModules = {}) {
     throw new Error('BrowserWindow no disponible para generar PDF');
   }
 
-  // Use a dedicated session partition so the webRequest interceptor we
-  // register below cannot leak into the main renderer's session (which
-  // shares the default session and would lose network connectivity after
-  // the first PDF render). A unique partition per call also means a stale
-  // interceptor from a previous call cannot block this one.
-  const partitionName = `pdf-render-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  // Use a single shared session partition for all PDF renders. Interceptors
+  // are set + cleared within each render (clearInterceptors in finally), so
+  // they cannot leak across calls. A shared partition lets Electron reuse its
+  // HTTP cache (e.g. Google Fonts) instead of re-downloading every render.
+  const partitionName = 'pdf-render';
   const pdfSession = (session && typeof session.fromPartition === 'function')
     ? session.fromPartition(partitionName)
     : null;
@@ -305,12 +329,8 @@ async function renderHtmlToPdf(params = {}, electronModules = {}) {
     if (!pdfWindow.isDestroyed()) {
       pdfWindow.close();
     }
-    // Best-effort cleanup of the partition's storage so partitions don't
-    // accumulate across calls. Errors here are harmless — the partition is
-    // unique per call and will be reaped by Electron when the process exits.
-    if (pdfSession) {
-      try { await pdfSession.clearStorageData(); } catch { /* noop */ }
-    }
+    // The shared partition is reused across renders — do NOT clear its
+    // storage data so the HTTP cache (fonts) persists between calls.
     if (tempDir) {
       // Retry removal on Windows where EBUSY is common right after window close
       let attempts = 0;

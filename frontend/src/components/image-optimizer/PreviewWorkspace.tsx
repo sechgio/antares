@@ -144,7 +144,7 @@ export default function PreviewWorkspace({
                 >
                   <div className="relative aspect-[3/4] w-full overflow-hidden bg-[var(--bg-surface)]">
                     {thumb ? (
-                      <img src={thumb} alt={item.originalName} className="h-full w-full object-cover" />
+                      <img src={thumb} alt={item.originalName} loading="lazy" decoding="async" className="h-full w-full object-cover" />
                     ) : (
                       <div className="flex h-full items-center justify-center">
                         <Sparkles size={14} className="text-[var(--text-muted)]" />

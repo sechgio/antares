@@ -690,3 +690,73 @@ def test_canvas_history_ipc_handlers(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert res_get_updated["past"][0]["name"] == "Past IPC"
 
 
+def test_store_index_avoids_full_rescan_on_steady_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """After the initial build, save()/list_documents() must not re-read every doc from disk.
+
+    Regression for the O(docs) per-save/scan that parsed all *.json on each operation.
+    """
+    store = CanvasStore(tmp_path)
+    for i in range(5):
+        store.create(name=f"Doc {i}")
+
+    # Prime the index with one list call.
+    store.list_documents()
+
+    read_calls = 0
+    original_read_text = Path.read_text
+
+    def counting_read_text(self, *args, **kwargs):
+        nonlocal read_calls
+        read_calls += 1
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", counting_read_text)
+
+    # Steady-state operations: save an existing doc, then list.
+    first_doc = store.list_documents()[0]
+    doc = store.get(first_doc["id"])
+    assert doc is not None
+    store.save(doc, touch=False)
+    store.list_documents()
+
+    # The index should be up to date, so no file re-reads are needed for the
+    # listing (get() still reads its own file, which is expected).
+    assert read_calls == 1, f"Expected 1 read (the get), got {read_calls}"
+
+    # Creating a new doc must update the index incrementally without re-reading all.
+    read_calls = 0
+    store.create(name="New Doc")
+    store.list_documents()
+    assert read_calls == 0, f"Expected 0 reads (incremental index update), got {read_calls}"
+
+    # Deleting must also update incrementally.
+    read_calls = 0
+    all_docs = store.list_documents()
+    store.delete(all_docs[0]["id"])
+    store.list_documents()
+    assert read_calls == 0, f"Expected 0 reads (incremental delete), got {read_calls}"
+
+
+def test_store_index_detects_external_file_changes(tmp_path: Path) -> None:
+    """Files written externally (not via save()) must appear on the next list."""
+    import json
+
+    store = CanvasStore(tmp_path)
+    store.create(name="Original")
+    store.list_documents()  # prime the index
+
+    # External write, bypassing the store API.
+    body = create_empty_document(name="External")
+    body["id"] = "ext-id"
+    (tmp_path / "ext.json").write_text(json.dumps(body), encoding="utf-8")
+
+    listed = store.list_documents()
+    names = {item["name"] for item in listed}
+    assert "External" in names
+
+    by_inner = store.get("ext-id")
+    assert by_inner is not None
+    assert by_inner["name"] == "External"
+
+
+

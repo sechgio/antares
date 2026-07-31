@@ -1,7 +1,7 @@
 import './technical-reports.css';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { Download, FilePlus2, Files, RefreshCw, Trash2, Upload } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
 import DatabasePanel from './DatabasePanel';
@@ -17,14 +17,21 @@ export default function TechnicalReportsApp() {
   const [reports, setReports] = useState<TechnicalReportListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [formData, setFormData] = useState<TechnicalReport | null>(null);
-  const [savedSnapshot, setSavedSnapshot] = useState<string>('');
+  const [dirtyCount, setDirtyCount] = useState(0);
   const [busy, setBusy] = useState(false);
   const [logoLeft, setLogoLeft] = useState<string | null>(null);
   const [logoRight, setLogoRight] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const selectGenRef = useRef(0);
 
-  const hasChanges = useMemo(() => Boolean(formData && JSON.stringify(formData) !== savedSnapshot), [formData, savedSnapshot]);
+  const hasChanges = dirtyCount > 0;
+
+  const patchForm = useCallback((report: TechnicalReport) => {
+    setFormData(report);
+    setDirtyCount((c) => c + 1);
+  }, []);
+
+  const markClean = useCallback(() => setDirtyCount(0), []);
 
   const loadReports = useCallback(async () => {
     setBusy(true);
@@ -59,14 +66,14 @@ export default function TechnicalReportsApp() {
       if (gen !== selectGenRef.current) return;
       setSelectedId(id);
       setFormData(report);
-      setSavedSnapshot(JSON.stringify(report));
+      markClean();
     } catch (error) {
       if (gen !== selectGenRef.current) return;
       addToast({ message: error instanceof Error ? error.message : 'No se pudo abrir el informe', type: 'error' });
     } finally {
       if (gen === selectGenRef.current) setBusy(false);
     }
-  }, [addToast, dialog, hasChanges]);
+  }, [addToast, dialog, hasChanges, markClean]);
 
   const createReport = useCallback(async () => {
     setBusy(true);
@@ -75,14 +82,14 @@ export default function TechnicalReportsApp() {
       await loadReports();
       setSelectedId(report.id);
       setFormData(report);
-      setSavedSnapshot(JSON.stringify(report));
+      markClean();
       addToast({ message: 'Informe creado', type: 'success' });
     } catch (error) {
       addToast({ message: error instanceof Error ? error.message : 'No se pudo crear el informe', type: 'error' });
     } finally {
       setBusy(false);
     }
-  }, [addToast, loadReports]);
+  }, [addToast, loadReports, markClean]);
 
   const saveReport = useCallback(async () => {
     if (!formData) return;
@@ -90,7 +97,7 @@ export default function TechnicalReportsApp() {
     try {
       const saved = await technicalReportsApi.update(formData.id, formData);
       setFormData(saved);
-      setSavedSnapshot(JSON.stringify(saved));
+      markClean();
       await loadReports();
       addToast({ message: 'Informe guardado', type: 'success' });
     } catch (error) {
@@ -98,7 +105,7 @@ export default function TechnicalReportsApp() {
     } finally {
       setBusy(false);
     }
-  }, [addToast, formData, loadReports]);
+  }, [addToast, formData, loadReports, markClean]);
 
   const deleteReport = useCallback(async () => {
     if (!selectedId) return;
@@ -115,7 +122,7 @@ export default function TechnicalReportsApp() {
       await technicalReportsApi.delete(selectedId);
       setSelectedId(null);
       setFormData(null);
-      setSavedSnapshot('');
+      markClean();
       await loadReports();
       addToast({ message: 'Informe eliminado', type: 'success' });
     } catch (error) {
@@ -123,7 +130,7 @@ export default function TechnicalReportsApp() {
     } finally {
       setBusy(false);
     }
-  }, [addToast, dialog, loadReports, selectedId]);
+  }, [addToast, dialog, loadReports, markClean, selectedId]);
 
   const clearReports = useCallback(async () => {
     const confirmed = await dialog.confirm({
@@ -140,14 +147,14 @@ export default function TechnicalReportsApp() {
       setReports([]);
       setSelectedId(null);
       setFormData(null);
-      setSavedSnapshot('');
+      markClean();
       addToast({ message: 'Base de informes limpiada', type: 'success' });
     } catch (error) {
       addToast({ message: error instanceof Error ? error.message : 'No se pudo limpiar la base', type: 'error' });
     } finally {
       setBusy(false);
     }
-  }, [addToast, dialog]);
+  }, [addToast, dialog, markClean]);
 
   const importFile = useCallback(async (file: File) => {
     setBusy(true);
@@ -156,7 +163,7 @@ export default function TechnicalReportsApp() {
       const result = await technicalReportsApi.importFile(file.name, content);
       setSelectedId(null);
       setFormData(null);
-      setSavedSnapshot('');
+      markClean();
       await loadReports();
       addToast({ message: `${result.imported_count} informes importados`, type: 'success' });
     } catch (error) {
@@ -164,7 +171,7 @@ export default function TechnicalReportsApp() {
     } finally {
       setBusy(false);
     }
-  }, [addToast, loadReports]);
+  }, [addToast, loadReports, markClean]);
 
   const changeLogo = useCallback(async (side: 'left' | 'right', file: File | null) => {
     if (!file) {
@@ -190,7 +197,7 @@ export default function TechnicalReportsApp() {
         : formData;
       if (hasChanges) {
         setFormData(reportForRender);
-        setSavedSnapshot(JSON.stringify(reportForRender));
+        markClean();
         await loadReports();
       }
       const rendered = await technicalReportsApi.renderHtml({
@@ -209,7 +216,7 @@ export default function TechnicalReportsApp() {
     } finally {
       setBusy(false);
     }
-  }, [addToast, formData, hasChanges, loadReports, logoLeft, logoRight]);
+  }, [addToast, formData, hasChanges, loadReports, logoLeft, logoRight, markClean]);
 
   const exportConsolidated = useCallback(async () => {
     if (reports.length === 0) return;
@@ -288,7 +295,7 @@ export default function TechnicalReportsApp() {
           busy={busy}
           logoLeft={logoLeft}
           logoRight={logoRight}
-          onChange={setFormData}
+          onChange={patchForm}
           onSave={saveReport}
           onDelete={deleteReport}
           onLogoChange={changeLogo}
