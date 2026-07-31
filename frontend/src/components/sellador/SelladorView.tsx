@@ -645,7 +645,7 @@ export default function SelladorView() {
                         )}
                       </div>
                       {page.url ? (
-                        <img src={page.url} alt={`Página ${page.pageNum}`} className="block w-full" />
+                        <img src={page.url} alt={`Página ${page.pageNum}`} loading="lazy" decoding="async" className="block w-full" />
                       ) : previewLoading ? (
                         <div className="flex items-center justify-center py-16 text-[var(--text-muted)]">
                           <Loader2 size={16} className="animate-spin" />
