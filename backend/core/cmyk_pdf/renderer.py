@@ -77,7 +77,7 @@ def _map_font_family(family: Any) -> str:
 
 def _text_align(css_vars: dict[str, Any]) -> int:
     align = str(css_vars.get("--text-align") or "left").strip().lower()
-    return _TEXT_ALIGN.get(align, fitz.TEXT_ALIGN_LEFT)
+    return cast(int, _TEXT_ALIGN.get(align, fitz.TEXT_ALIGN_LEFT))
 
 
 def _prepare_image_for_rect(

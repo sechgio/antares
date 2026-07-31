@@ -15,7 +15,7 @@ from __future__ import annotations
 import importlib
 import logging
 import threading
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 from backend.handlers.common import (
     process_state,
@@ -153,7 +153,7 @@ class HandlerRegistry:
         handler = self.get(key)
         if handler is None:
             raise KeyError(key)
-        return handler
+        return cast(Callable[[dict[str, Any]], Any], handler)
 
     def keys(self) -> Any:
         self.warm()
