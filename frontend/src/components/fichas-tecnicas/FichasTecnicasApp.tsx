@@ -47,18 +47,19 @@ export default function FichasTecnicasApp() {
   const [fichas, setFichas] = useState<FichaTecnicaListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(draft.selectedId);
   const [formData, setFormData] = useState<FichaTecnica | null>(draft.formData);
-  const [savedSnapshot, setSavedSnapshot] = useState(() =>
-    draft.formData ? JSON.stringify(draft.formData) : '',
-  );
+  const [dirtyCount, setDirtyCount] = useState(0);
   const [busy, setBusy] = useState(false);
   const [logoLeft, setLogoLeft] = useState<string | null>(null);
   const [focusMode, setFocusMode] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
 
-  const hasChanges = useMemo(
-    () => Boolean(formData && JSON.stringify(formData) !== savedSnapshot),
-    [formData, savedSnapshot],
-  );
+  const hasChanges = dirtyCount > 0;
+
+  const patchForm = useCallback((ficha: FichaTecnica) => {
+    setFormData(ficha);
+    setDirtyCount((c) => c + 1);
+  }, []);
+
   const currentIndex = useMemo(
     () => fichas.findIndex((ficha) => ficha.id === selectedId),
     [fichas, selectedId],
@@ -67,7 +68,7 @@ export default function FichasTecnicasApp() {
   const applyFicha = useCallback((ficha: FichaTecnica | null) => {
     setSelectedId(ficha?.id ?? null);
     setFormData(ficha);
-    setSavedSnapshot(ficha ? JSON.stringify(ficha) : '');
+    setDirtyCount(0);
   }, []);
 
   const clearSelection = useCallback(() => {
@@ -401,7 +402,7 @@ export default function FichasTecnicasApp() {
             hasChanges={hasChanges}
             busy={busy}
             logoLeft={logoLeft}
-            onChange={setFormData}
+            onChange={patchForm}
             onSave={() => void saveFicha()}
             onDelete={() => void deleteFicha()}
             onLogoChange={(file) => void changeLogo(file)}
