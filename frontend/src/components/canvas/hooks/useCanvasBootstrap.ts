@@ -47,14 +47,16 @@ export function useCanvasBootstrap({
             const doc = normalizeDocument(got.document as CanvasDocument);
             replaceDocument(doc);
             if (restoreHistory) {
-              try {
-                const hist = await api.canvasGetHistory(doc.id);
-                if (!cancelled && (hist.past?.length || hist.future?.length)) {
-                  restoreHistory(hist.past, hist.future);
+              void (async () => {
+                try {
+                  const hist = await api.canvasGetHistory(doc.id);
+                  if (!cancelled && (hist.past?.length || hist.future?.length)) {
+                    restoreHistory(hist.past, hist.future);
+                  }
+                } catch {
+                  // history restore is best-effort
                 }
-              } catch {
-                // history restore is best-effort
-              }
+              })();
             }
           }
         } else {
