@@ -332,6 +332,33 @@ describe('Artboard drag gestures', () => {
     expect(panLayer.style.top).toBe('50%');
   });
 
+  it('zooms with a compositor transform, not CSS zoom (pinch/zoom jank)', () => {
+    const layer = createLayer('rect');
+    const document = createEmptyDocument('Test');
+    document.layers.push(layer);
+    const { container } = render(
+      <Artboard
+        document={document}
+        selectedIds={[]}
+        zoom={1.5}
+        tool="select"
+        pan={{ x: 0, y: 0 }}
+        onPan={() => {}}
+        onSelect={() => {}}
+        onSelectIds={() => {}}
+        onChangeLayers={() => {}}
+      />,
+    );
+    const artboard = container.querySelector<HTMLElement>('[data-testid="canvas-artboard"]')!;
+    // CSS `zoom` re-rasterizes the whole artboard on every zoom frame (measured
+    // pinch jank that scales with painted layers). The camera must stay on the
+    // compositor: scale + will-change, never the `zoom` property.
+    expect(artboard.style.zoom).toBe('');
+    expect(artboard.style.transform).toContain('scale(1.5)');
+    expect(artboard.style.transformOrigin).toBe('top left');
+    expect(artboard.style.willChange).toBe('transform');
+  });
+
   it('point-click on artboard selects top-most layer under cursor', () => {
     const bottom = createLayer('rect', {
       id: 'bottom',

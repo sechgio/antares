@@ -1469,8 +1469,12 @@ function Artboard({
             position: 'relative',
             width: designW,
             height: designH,
-            // Camera zoom (Chromium/Electron): re-rasterizes crisply without reflowing text.
-            zoom,
+            // Compositor-only camera: CSS `zoom` re-rasterizes the whole artboard on
+            // every zoom frame (pinch jank that scales with painted layers).
+            transform: `scale(${zoom})`,
+            transformOrigin: 'top left',
+            willChange: 'transform',
+            backfaceVisibility: 'hidden',
             background: '#ffffff',
             boxShadow: '0 0 0 1px rgba(0,0,0,0.08), 0 12px 40px rgba(0,0,0,0.14)',
             cursor: canPanTool || panning ? cursor : placing ? 'crosshair' : 'default',
