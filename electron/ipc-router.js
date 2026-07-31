@@ -37,27 +37,31 @@ let _attachedProcess = null;               // process instance we have listeners
 
 /**
  * Resolve IPC allowlist (+ long-running set).
- * In unpackaged/dev builds, bust require cache so new methods in ipc-methods.js
- * are picked up without a full Electron restart (Vite HMR does not reload main).
+ *
+ * The module is cached after first load. In dev, `reloadIpcMethods()` busts
+ * the cache so edits to `ipc-methods.js` are picked up without a full
+ * Electron restart (Vite HMR does not reload main). `registerIpcHandlers`
+ * calls it once at registration; per-call hot-reload is unnecessary and was
+ * re-requiring 4 modules on every IPC call.
  */
+let _ipcMethodsCache = null;
+
 function _loadIpcMethods() {
-  const isPackaged = (() => {
+  if (_ipcMethodsCache) return _ipcMethodsCache;
+  _ipcMethodsCache = require('./ipc-methods');
+  return _ipcMethodsCache;
+}
+
+function reloadIpcMethods() {
+  for (const rel of ['./ipc-methods', './autoimg-ipc-methods', './ubicaciones-ipc-methods', '../shared/long-running-methods.json']) {
     try {
-      return require('electron').app.isPackaged;
+      delete require.cache[require.resolve(rel)];
     } catch {
-      return false;
-    }
-  })();
-  if (!isPackaged) {
-    for (const rel of ['./ipc-methods', './autoimg-ipc-methods', './ubicaciones-ipc-methods', '../shared/long-running-methods.json']) {
-      try {
-        delete require.cache[require.resolve(rel)];
-      } catch {
-        // ignore missing modules
-      }
+      // ignore missing modules
     }
   }
-  return require('./ipc-methods');
+  _ipcMethodsCache = null;
+  return _loadIpcMethods();
 }
 
 function _getAllowedMethods() {
@@ -320,7 +324,46 @@ async function _callBackend(method, params) {
   throw lastErr || _buildUnavailableError();
 }
 
+/**
+ * Prefix-based dispatch for native (non-backend) IPC handlers.
+ * Returns 'dialog' | 'autoimg' | 'ubicaciones' | null so the router only
+ * invokes the single handler that could match, instead of probing all three.
+ * The handlers still do their own Set-based authoritative check.
+ */
+const _DIALOG_NATIVE_METHODS = new Set(['html_to_pdf', 'local_thumbnail', 'register_local_path']);
+function _dispatchNative(method) {
+  if (method.startsWith('dialog_') || _DIALOG_NATIVE_METHODS.has(method)) return 'dialog';
+  if (method.startsWith('autoimg_')) return 'autoimg';
+  if (method.startsWith('ubicaciones_keys_')) return 'ubicaciones';
+  return null;
+}
+
+/**
+ * Session-lifetime cache for resolved map provider API keys.
+ * `resolveProviderApiKey` does OS keychain I/O (safeStorage) on every call;
+ * keys do not change during a session so we cache the result.
+ */
+const _apiKeyCache = new Map();
+function _resolveCachedApiKey(provider, fallbackFromRenderer) {
+  const cacheKey = `${provider || ''}::${String(fallbackFromRenderer || '')}`;
+  if (_apiKeyCache.has(cacheKey)) return _apiKeyCache.get(cacheKey);
+  const { resolveProviderApiKey } = require('./ubicaciones-secure-keys');
+  const resolved = resolveProviderApiKey(provider, fallbackFromRenderer);
+  _apiKeyCache.set(cacheKey, resolved);
+  return resolved;
+}
+
 function registerIpcHandlers() {
+  // Pick up the latest allowlist once at registration. In dev this replaces
+  // the per-call cache bust that previously ran on every ipc-call.
+  let isPackaged = false;
+  try {
+    isPackaged = require('electron').app.isPackaged;
+  } catch {
+    /* tests */
+  }
+  if (!isPackaged) reloadIpcMethods();
+
   ipcMain.handle('ipc-call', async (event, method, params) => {
     if (!_isAllowedIpcSender(event)) {
       throw new Error('IPC call rejected: untrusted sender frame');
@@ -331,24 +374,26 @@ function registerIpcHandlers() {
     }
 
     // Dialog / native methods are handled in Electron main without touching Python.
+    // Prefix-based dispatch avoids three sequential probes per non-native call.
     const win = getMainWindow();
     const { BrowserWindow, session, nativeImage } = require('electron');
-    const dialogResult = await handleDialogCall(method, params, dialog, win, { BrowserWindow, session, nativeImage });
-    if (dialogResult.handled) return dialogResult.result;
-
-    const autoimgResult = await handleAutoimgCall(method, params);
-    if (autoimgResult.handled) return autoimgResult.result;
-
-    const ubicacionesResult = await handleUbicacionesCall(method, params);
-    if (ubicacionesResult.handled) return ubicacionesResult.result;
+    const nativeHandler = _dispatchNative(method);
+    if (nativeHandler) {
+      const result = nativeHandler === 'dialog'
+        ? await handleDialogCall(method, params, dialog, win, { BrowserWindow, session, nativeImage })
+        : nativeHandler === 'autoimg'
+          ? await handleAutoimgCall(method, params)
+          : await handleUbicacionesCall(method, params);
+      if (result.handled) return result.result;
+    }
 
     // Inject map provider secrets from OS-backed store so the renderer never
     // needs to hold plaintext API keys for preview/generate.
     let backendParams = params;
     if (method === 'preview_ubicacion' || method === 'generar_ubicaciones') {
-      const { resolveProviderApiKey } = require('./ubicaciones-secure-keys');
       const provider = params && typeof params === 'object' ? params.provider : '';
-      const injected = resolveProviderApiKey(provider, params?.api_key);
+      const fallback = params?.api_key;
+      const injected = _resolveCachedApiKey(provider, fallback);
       backendParams = { ...params, api_key: injected };
     }
 
@@ -457,4 +502,5 @@ module.exports = {
   _sendRequest,
   _callBackend,
   _isIdempotentMethod,
+  reloadIpcMethods,
 };

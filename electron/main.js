@@ -2,7 +2,6 @@ const { app, BrowserWindow, Menu } = require('electron');
 const { createWindow } = require('./window-manager');
 const { startPythonBackend, killPython } = require('./backend-spawner');
 const { registerIpcHandlers } = require('./ipc-router');
-const { setupAutoUpdater } = require('./auto-updater');
 
 // Prevent unhandled rejections from crashing the process
 // (e.g. auto-updater 404, dialog errors, etc.)
@@ -23,6 +22,7 @@ app.whenReady().then(async () => {
   });
   // Kick off auto-update check (no-op in dev / unpackaged builds).
   try {
+    const { setupAutoUpdater } = require('./auto-updater');
     setupAutoUpdater(isDev);
   } catch (err) {
     console.warn('[main] setupAutoUpdater threw:', err && err.message);
@@ -38,6 +38,12 @@ let _shutdownStarted = false;
 function _shutdownOnce() {
   if (_shutdownStarted) return;
   _shutdownStarted = true;
+  try {
+    const { cleanupAutoUpdater } = require('./auto-updater');
+    cleanupAutoUpdater();
+  } catch (err) {
+    console.warn('[main] cleanupAutoUpdater threw during shutdown:', err && err.message);
+  }
   try {
     killPython();
   } catch (err) {

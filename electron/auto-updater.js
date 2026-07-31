@@ -20,6 +20,8 @@ let _updateDownloaded = false;
 let _downloadProgress = 0;
 let _availableVersion = null;
 let _manualCheckRequested = false;
+let _periodicCheckTimer = null;
+let _lastLoggedPercent = -1;
 
 /** If download never finishes/errors, clear the stuck flag so checks can resume. */
 const UPDATE_IN_PROGRESS_TIMEOUT_MS = 30 * 60 * 1000;
@@ -113,6 +115,7 @@ function setupAutoUpdater(isDev) {
     _armUpdateInProgress();
     _updateDownloaded = false;
     _downloadProgress = 0;
+    _lastLoggedPercent = -1;
     _availableVersion = info?.version || 'unknown';
     console.log('[auto-updater] versión disponible:', info?.version);
     _broadcastToRenderer('auto-update-status', {
@@ -137,7 +140,11 @@ function setupAutoUpdater(isDev) {
   updater.on('download-progress', (p) => {
     if (p && Number.isFinite(p.percent)) {
       _downloadProgress = p.percent;
-      console.log(`[auto-updater] descargando ${p.percent.toFixed(1)}%`);
+      const rounded = Math.round(p.percent);
+      if (rounded !== _lastLoggedPercent) {
+        _lastLoggedPercent = rounded;
+        console.log(`[auto-updater] descargando ${p.percent.toFixed(1)}%`);
+      }
       _broadcastToRenderer('auto-update-status', {
         status: 'downloading',
         version: _availableVersion,
@@ -177,7 +184,9 @@ function setupAutoUpdater(isDev) {
     });
   }, 8_000);
 
-  setInterval(() => {
+  // Retain the handle so shutdown can clear it; otherwise the dangling timer
+  // keeps the process alive and prevents a clean exit.
+  _periodicCheckTimer = setInterval(() => {
     if (_updateInProgress) return;
     updater.checkForUpdates().catch(() => {});
   }, 6 * 60 * 60 * 1000);
@@ -218,4 +227,16 @@ function setupAutoUpdater(isDev) {
   });
 }
 
-module.exports = { setupAutoUpdater };
+/** Clear the periodic update-check timer so the process can exit cleanly. */
+function cleanupAutoUpdater() {
+  if (_periodicCheckTimer) {
+    clearInterval(_periodicCheckTimer);
+    _periodicCheckTimer = null;
+  }
+  if (_updateInProgressTimer) {
+    clearTimeout(_updateInProgressTimer);
+    _updateInProgressTimer = null;
+  }
+}
+
+module.exports = { setupAutoUpdater, cleanupAutoUpdater };
