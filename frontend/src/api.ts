@@ -110,6 +110,62 @@ function parseProcessStatus(raw: unknown): ProcessStatus {
 
 const LONG_RUNNING_METHODS = new Set<string>(longRunningMethods);
 
+/** Must match electron/ipc-router.js — structured fields survive only inside Error.message. */
+const ANTARES_IPC_ERROR_PREFIX = 'ANTARES_IPC_ERROR:';
+const ELECTRON_INVOKE_PREFIX = /^Error invoking remote method '[^']+': (?:Error: )?/;
+
+function stripElectronInvokePrefix(message: string): string {
+  return message.replace(ELECTRON_INVOKE_PREFIX, '');
+}
+
+function antaresErrorFromPayload(raw: {
+  message?: unknown;
+  code?: unknown;
+  category?: unknown;
+  details?: unknown;
+}, fallbackMessage: string): AntaresAPIError {
+  return new AntaresAPIError(
+    typeof raw.message === 'string' ? raw.message : fallbackMessage,
+    typeof raw.code === 'number' ? raw.code : -32000,
+    typeof raw.category === 'string' ? raw.category : 'INTERNAL_ERROR',
+    raw.details && typeof raw.details === 'object' && !Array.isArray(raw.details)
+      ? raw.details as Record<string, unknown>
+      : undefined,
+  );
+}
+
+/** Recover structured IPC errors encoded by the main process (or plain-object rejects in tests). */
+function parseIpcInvokeError(err: unknown): AntaresAPIError | null {
+  if (err instanceof AntaresAPIError) return err;
+
+  if (err instanceof Error) {
+    const body = stripElectronInvokePrefix(err.message);
+    if (body.startsWith(ANTARES_IPC_ERROR_PREFIX)) {
+      try {
+        const payload = JSON.parse(body.slice(ANTARES_IPC_ERROR_PREFIX.length)) as {
+          message?: unknown;
+          code?: unknown;
+          category?: unknown;
+          details?: unknown;
+        };
+        return antaresErrorFromPayload(payload, body);
+      } catch {
+        return new AntaresAPIError(body);
+      }
+    }
+    return null;
+  }
+
+  // Plain object (unit tests; Electron itself does not deliver this shape).
+  if (err && typeof err === 'object' && 'message' in err) {
+    return antaresErrorFromPayload(
+      err as { message?: unknown; code?: unknown; category?: unknown; details?: unknown },
+      String(err),
+    );
+  }
+  return null;
+}
+
 const _invoke = async <T>(method: string, params?: Record<string, unknown> | object): Promise<T> => {
   if (!window.electronAPI) {
     throw new AntaresAPIError('Electron IPC no disponible', -32000, 'INTERNAL_ERROR');
@@ -129,28 +185,10 @@ const _invoke = async <T>(method: string, params?: Record<string, unknown> | obj
     ]);
     return result as T;
   } catch (err: unknown) {
-    if (err instanceof AntaresAPIError) {
-      throw err;
-    }
-    if (err && typeof err === 'object' && 'message' in err) {
-      const raw = err as { message?: unknown; code?: unknown; category?: unknown; details?: unknown };
-      throw new AntaresAPIError(
-        typeof raw.message === 'string' ? raw.message : String(raw.message ?? err),
-        typeof raw.code === 'number' ? raw.code : -32000,
-        typeof raw.category === 'string' ? raw.category : 'INTERNAL_ERROR',
-        raw.details && typeof raw.details === 'object' && !Array.isArray(raw.details)
-          ? raw.details as Record<string, unknown>
-          : undefined,
-      );
-    }
+    const parsed = parseIpcInvokeError(err);
+    if (parsed) throw parsed;
     if (err instanceof Error) {
-      const rawErr = err as Error & { code?: number; category?: string; details?: Record<string, unknown> };
-      throw new AntaresAPIError(
-        rawErr.message,
-        rawErr.code ?? -32000,
-        rawErr.category ?? 'INTERNAL_ERROR',
-        rawErr.details,
-      );
+      throw new AntaresAPIError(stripElectronInvokePrefix(err.message));
     }
     throw new AntaresAPIError(String(err));
   } finally {

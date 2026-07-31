@@ -7,6 +7,7 @@ import {
   type CanvasDocument,
   type CanvasDocumentSummary,
 } from '../types';
+import { hydrateDocumentImages } from '../utils/imageBlobStore';
 import type { useCanvasHistory } from './useCanvasHistory';
 
 interface UseCanvasBootstrapOptions {
@@ -45,7 +46,7 @@ export function useCanvasBootstrap({
           const got = await api.canvasGet(list.documents[0].id);
           if (!cancelled) {
             const doc = normalizeDocument(got.document as CanvasDocument);
-            replaceDocument(doc);
+            replaceDocument(await hydrateDocumentImages(doc));
             if (restoreHistory) {
               void (async () => {
                 try {
@@ -63,7 +64,7 @@ export function useCanvasBootstrap({
           const created = await api.canvasCreate('Sin título');
           if (!cancelled) {
             const doc = normalizeDocument(created.document as CanvasDocument);
-            replaceDocument(doc);
+            replaceDocument(await hydrateDocumentImages(doc));
             setDocs([{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt }]);
             queueCanvasCloudPush(doc);
           }

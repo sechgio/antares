@@ -1,5 +1,21 @@
 /** PNG export helpers for canvas layers / selection. */
 
+const SELECTION_RING = '0 0 0 1px var(--cv-accent)';
+
+/** Quita chrome de selección y transform del clon, conservando sombras reales. */
+export function stripSelectionChrome(el: HTMLElement): HTMLElement {
+  const clone = el.cloneNode(true) as HTMLElement;
+  clone.removeAttribute('data-selected');
+  clone.style.transform = 'none';
+  const shadows = (clone.style.boxShadow || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s && s !== SELECTION_RING);
+  clone.style.boxShadow = shadows.join(',') || 'none';
+  clone.querySelectorAll('[data-handle]').forEach((handle) => handle.remove());
+  return clone;
+}
+
 async function downloadDataUrl(dataUrl: string, filename: string) {
   const a = document.createElement('a');
   a.href = dataUrl;
@@ -19,8 +35,7 @@ export async function exportLayerPng(layerId: string, name: string, scale: numbe
   wrap.setAttribute('data-testid', 'canvas-export-wrap');
   wrap.style.cssText = `position:fixed;left:-100000px;top:0;width:${width}px;height:${height}px;overflow:hidden;background:transparent;pointer-events:none;`;
 
-  const clone = el.cloneNode(true) as HTMLElement;
-  clone.removeAttribute('data-selected');
+  const clone = stripSelectionChrome(el);
   clone.style.position = 'relative';
   clone.style.left = '0';
   clone.style.top = '0';
@@ -28,8 +43,6 @@ export async function exportLayerPng(layerId: string, name: string, scale: numbe
   clone.style.height = '100%';
   clone.style.margin = '0';
   clone.style.outline = 'none';
-  clone.style.boxShadow = 'none';
-  clone.querySelectorAll('[data-handle]').forEach((handle) => handle.remove());
 
   wrap.appendChild(clone);
   document.body.appendChild(wrap);
@@ -94,8 +107,7 @@ export async function exportSelectionPng(
   wrap.style.cssText = `position:fixed;left:-100000px;top:0;width:${width}px;height:${height}px;overflow:hidden;background:transparent;pointer-events:none;`;
 
   for (const item of rects) {
-    const clone = item.el.cloneNode(true) as HTMLElement;
-    clone.removeAttribute('data-selected');
+    const clone = stripSelectionChrome(item.el);
     clone.style.position = 'absolute';
     clone.style.left = `${item.left - minX}px`;
     clone.style.top = `${item.top - minY}px`;
@@ -103,8 +115,6 @@ export async function exportSelectionPng(
     clone.style.height = `${item.height}px`;
     clone.style.margin = '0';
     clone.style.outline = 'none';
-    clone.style.boxShadow = 'none';
-    clone.querySelectorAll('[data-handle]').forEach((handle) => handle.remove());
     wrap.appendChild(clone);
   }
 

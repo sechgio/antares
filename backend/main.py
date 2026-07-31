@@ -165,19 +165,22 @@ def _validate_encoding() -> None:
 _validate_encoding()
 
 
+def _user_error_message(exc: Exception) -> str | AntaresBaseException:
+    """User-safe message: typed exceptions pass through; unexpected ones become generic."""
+    if isinstance(exc, AntaresBaseException):
+        return exc
+    if isinstance(exc, (ValueError, FileNotFoundError, ImportError)):
+        return str(exc)
+    return "Error interno del servidor"
+
+
 def _dispatch(handler, params, msg_id, method_name) -> None:
     """Run a handler in a worker thread and send its response back."""
     try:
         result = handler(params)
         send_response(result, msg_id)
     except Exception as exc:
-        user_msg: str | AntaresBaseException
-        if isinstance(exc, AntaresBaseException):
-            user_msg = exc
-        elif isinstance(exc, (ValueError, FileNotFoundError, ImportError)):
-            user_msg = str(exc)
-        else:
-            user_msg = f"{type(exc).__name__}: {exc}"
+        user_msg = _user_error_message(exc)
         logger.exception("Error en %s: %s\n%s", method_name, user_msg, traceback.format_exc())
         send_response(None, msg_id, error=user_msg)
 
@@ -277,8 +280,8 @@ def main() -> None:
                     _consecutive_errors = max(0, _consecutive_errors - 1)
                     continue  # Parse error, already responded
 
-                if msg.method in HANDLERS:
-                    handler = HANDLERS[msg.method]
+                handler = HANDLERS.get(msg.method)
+                if handler is not None:
                     if msg.method in SYNC_METHODS:
                         # Answer immediately so liveness checks stay green while
                         # heavy conversion/PDF work occupies the scheduler pool.

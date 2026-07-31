@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && node --max-old-space-size=4096 node_modules/vite/bin/vite.js build",
+    "build": "tsc && node --max-old-space-size=4096 node_modules/vite/bin/vite.js build && node scripts/canvas-appear-budget.mjs",
+    "check:canvas-budget": "node scripts/canvas-appear-budget.mjs",
     "preview": "vite preview",
     "test": "vitest run"
   },

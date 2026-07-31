@@ -46,4 +46,9 @@ describe('Canvas Theme Alignment', () => {
     const rightPanel = readFileSync(resolve(__dirname, '../editor/RightPanel.tsx'), 'utf8');
     expect(rightPanel).toMatch(/canvas-panel canvas-panel-chrome/);
   });
+
+  it('renders a flat canvas viewport background aligned with appearance theme without dots', () => {
+    expect(canvasCss).toMatch(/\.canvas-dot-bg\s*\{[^}]*background-color:\s*var\(--cv-bg-deep\)/);
+    expect(canvasCss).not.toMatch(/\.canvas-dot-bg\s*\{[^}]*radial-gradient/);
+  });
 });

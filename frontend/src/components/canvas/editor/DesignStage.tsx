@@ -44,6 +44,7 @@ interface DesignStageProps {
   onCommitEdit: () => void;
   onContextMenu: (layerId: string | null, clientX: number, clientY: number) => void;
   onUpsertGuide?: (guide: CanvasGuide) => void;
+  onCommitGuideCreate?: (guide: CanvasGuide) => void;
   onMoveGuide?: (id: string, posMm: number) => void;
   onRemoveGuide?: (id: string) => void;
   onCancelGuideCreate?: (id: string) => void;
@@ -94,6 +95,7 @@ export default function DesignStage({
   onCommitEdit,
   onContextMenu,
   onUpsertGuide,
+  onCommitGuideCreate,
   onMoveGuide,
   onRemoveGuide,
   onCancelGuideCreate,
@@ -192,6 +194,7 @@ export default function DesignStage({
         onCommitEdit={onCommitEdit}
         onContextMenu={onContextMenu}
         onUpsertGuide={onUpsertGuide}
+        onCommitGuideCreate={onCommitGuideCreate}
         onMoveGuide={onMoveGuide}
         onRemoveGuide={onRemoveGuide}
         onCancelGuideCreate={onCancelGuideCreate}
@@ -221,6 +224,9 @@ export default function DesignStage({
           className="pointer-events-auto absolute right-3 top-3 z-30 flex items-center gap-0.5"
           data-testid="canvas-stage-right-chrome"
         >
+          {showZoomFallback ? (
+            <div ref={zoomFallbackSlotRef} data-testid="canvas-zoom-slot-fallback" />
+          ) : null}
           {showRightReopen && onShowRightPanel ? (
             <WithHoverTooltip label="Mostrar panel derecho" placement="bottom" variant="dark">
               <button
@@ -234,9 +240,6 @@ export default function DesignStage({
                 <PanelRight className="h-3.5 w-3.5" />
               </button>
             </WithHoverTooltip>
-          ) : null}
-          {showZoomFallback ? (
-            <div ref={zoomFallbackSlotRef} data-testid="canvas-zoom-slot-fallback" />
           ) : null}
         </div>
       ) : null}

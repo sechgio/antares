@@ -2,15 +2,134 @@
 
 from __future__ import annotations
 
+import logging
+import math
 import os
 from typing import Any, cast
 
 import fitz  # PyMuPDF
-from PIL import Image
+from PIL import Image, ImageOps
 
 from backend.core.cmyk_pdf.color import convert_pil_to_cmyk_bytes, css_color_to_cmyk
 
+logger = logging.getLogger(__name__)
+
 MM_TO_PT = 72.0 / 25.4  # ~2.834645669 pt per mm
+
+_FONT_MAP: dict[str, str] = {
+    "sans-serif": "helv",
+    "arial": "helv",
+    "helvetica": "helv",
+    "open sans": "helv",
+    "inter": "helv",
+    "serif": "tiro",
+    "times": "tiro",
+    "georgia": "tiro",
+    "times new roman": "tiro",
+    "monospace": "cour",
+    "courier": "cour",
+    "consolas": "cour",
+}
+
+_TEXT_ALIGN: dict[str, int] = {
+    "left": fitz.TEXT_ALIGN_LEFT,
+    "center": fitz.TEXT_ALIGN_CENTER,
+    "right": fitz.TEXT_ALIGN_RIGHT,
+    "justify": fitz.TEXT_ALIGN_JUSTIFY,
+}
+
+
+def _parse_rotate_deg(css_vars: dict[str, Any]) -> float:
+    raw = css_vars.get("--rotate") or "0deg"
+    s = str(raw).strip().lower().removesuffix("deg").strip()
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
+
+def _rotate_point(x: float, y: float, cx: float, cy: float, deg: float) -> tuple[float, float]:
+    if deg == 0:
+        return x, y
+    rad = math.radians(deg)
+    cos_a = math.cos(rad)
+    sin_a = math.sin(rad)
+    dx, dy = x - cx, y - cy
+    return cx + dx * cos_a - dy * sin_a, cy + dx * sin_a + dy * cos_a
+
+
+def _rotated_polygon(rect: fitz.Rect, deg: float) -> list[fitz.Point]:
+    cx = (rect.x0 + rect.x1) / 2
+    cy = (rect.y0 + rect.y1) / 2
+    corners = [
+        (rect.x0, rect.y0),
+        (rect.x1, rect.y0),
+        (rect.x1, rect.y1),
+        (rect.x0, rect.y1),
+    ]
+    return [fitz.Point(*_rotate_point(x, y, cx, cy, deg)) for x, y in corners]
+
+
+def _map_font_family(family: Any) -> str:
+    key = str(family or "").strip().lower().strip('"').strip("'")
+    return _FONT_MAP.get(key, "helv")
+
+
+def _text_align(css_vars: dict[str, Any]) -> int:
+    align = str(css_vars.get("--text-align") or "left").strip().lower()
+    return _TEXT_ALIGN.get(align, fitz.TEXT_ALIGN_LEFT)
+
+
+def _prepare_image_for_rect(
+    pil_img: Image.Image,
+    rect: fitz.Rect,
+    object_fit: Any,
+    dpi: int,
+) -> tuple[bytes, fitz.Rect]:
+    """Resize/crop image for object-fit before CMYK embed."""
+    fit = str(object_fit or "fill").strip().lower()
+    w_pt, h_pt = rect.width, rect.height
+    w_px = max(1, int(w_pt * dpi / 72))
+    h_px = max(1, int(h_pt * dpi / 72))
+    resample = Image.Resampling.LANCZOS
+
+    if fit == "cover":
+        processed = ImageOps.fit(pil_img, (w_px, h_px), method=resample)
+        return convert_pil_to_cmyk_bytes(processed, dpi=dpi), rect
+    if fit == "contain":
+        processed = ImageOps.contain(pil_img, (w_px, h_px), method=resample)
+        cw, ch = processed.size
+        sub_w_pt = cw * 72.0 / dpi
+        sub_h_pt = ch * 72.0 / dpi
+        sub_x0 = rect.x0 + (w_pt - sub_w_pt) / 2
+        sub_y0 = rect.y0 + (h_pt - sub_h_pt) / 2
+        sub_rect = fitz.Rect(sub_x0, sub_y0, sub_x0 + sub_w_pt, sub_y0 + sub_h_pt)
+        return convert_pil_to_cmyk_bytes(processed, dpi=dpi), sub_rect
+
+    processed = pil_img.resize((w_px, h_px), resample)
+    return convert_pil_to_cmyk_bytes(processed, dpi=dpi), rect
+
+
+def _draw_shape_rect(
+    shape: fitz.Shape,
+    rect: fitz.Rect,
+    rotate_deg: float,
+    *,
+    bg_cmyk: tuple[float, float, float, float] | None,
+    border_cmyk: tuple[float, float, float, float] | None,
+    border_width_pt: float,
+) -> None:
+    if rotate_deg:
+        poly = _rotated_polygon(rect, rotate_deg)
+        shape.draw_quad(fitz.Quad(poly[0], poly[1], poly[2], poly[3]))
+    else:
+        shape.draw_rect(rect)
+    if bg_cmyk or border_cmyk:
+        shape.finish(
+            color=border_cmyk,
+            fill=bg_cmyk,
+            width=border_width_pt or 1.0,
+        )
 
 
 
@@ -43,15 +162,46 @@ def _parse_length_pt(val_str: Any, default_mm: float = 0.0) -> float:
 
 
 def _resolve_template_value(val: str, ctx: dict[str, Any]) -> str:
-    """Substitute {{field_key}} or field values from context."""
+    """Substitute {{key}} from ctx['values'] (wins) then ctx['data']."""
     if not val or "{{" not in val:
         return val
     out = val
-    for key, item in ctx.get("values", {}).items():
+    values = ctx.get("values") or {}
+    data = ctx.get("data") or {}
+    # values take precedence; fall back to data for keys not in values.
+    merged: dict[str, Any] = {**data, **values}
+    for key, item in merged.items():
         placeholder = f"{{{{{key}}}}}"
         if placeholder in out:
             out = out.replace(placeholder, str(item or ""))
     return out
+
+
+def _resolve_image_src(layer: dict[str, Any], ctx: dict[str, Any]) -> str:
+    """Resolve image/logo/imageSlot src — same contract as renderHtml.ts."""
+    meta = layer.get("meta") or {}
+    l_type = layer.get("type", "")
+
+    if l_type == "logo":
+        side = meta.get("side")
+        if side == "right":
+            return str(ctx.get("logoRight") or "")
+        # Default logo side is left (matches frontend).
+        return str(ctx.get("logoLeft") or "")
+
+    if "index" in meta:
+        try:
+            index = int(meta["index"])
+        except (TypeError, ValueError):
+            index = -1
+        if index >= 0:
+            images = ctx.get("images") or []
+            try:
+                return str(images[index] or "")
+            except IndexError:
+                return ""
+
+    return str(layer.get("value") or "")
 
 
 class CanvasCmykRenderer:
@@ -129,6 +279,10 @@ class CanvasCmykRenderer:
                 shape = page.new_shape()
 
                 for layer in page_layers:
+                    # Text/image write to the page stream directly: flush pending
+                    # vector ops first so z-order matches document order.
+                    if layer.get("type") in ("text", "field", "image", "logo", "imageSlot"):
+                        shape = self._flush_shape(page, shape)
                     self._render_layer(page, shape, layer, ctx, origin_x_pt, origin_y_pt, local_image_paths)
 
                 shape.commit()
@@ -136,6 +290,16 @@ class CanvasCmykRenderer:
         pdf_bytes = cast(bytes, pdf.tobytes(clean=True, deflate=True))
         pdf.close()
         return pdf_bytes
+
+    def _flush_shape(self, page: fitz.Page, shape: fitz.Shape) -> fitz.Shape:
+        """Commit accumulated vector ops and start a fresh shape.
+
+        Text/image layers write straight to the page content stream, so any
+        pending shape must be committed BEFORE them or it would paint on top
+        (inverted z-order).
+        """
+        shape.commit()
+        return page.new_shape()
 
     def _draw_crop_marks(self, page: fitz.Page, trim: fitz.Rect, margin_pt: float) -> None:
         """Draw prepress crop marks outside trim box."""
@@ -213,17 +377,21 @@ class CanvasCmykRenderer:
         border_cmyk = css_color_to_cmyk(border_color_str) if border_color_str and border_width_pt > 0 else None
 
         rect = fitz.Rect(x, y, x + w, y + h)
+        rotate_deg = _parse_rotate_deg(css_vars)
 
         if l_type in ("rect", "frame"):
-            shape.draw_rect(rect)
-            if bg_cmyk or border_cmyk:
-                shape.finish(
-                    color=border_cmyk,
-                    fill=bg_cmyk,
-                    width=border_width_pt or 1.0,
-                )
+            _draw_shape_rect(
+                shape,
+                rect,
+                rotate_deg,
+                bg_cmyk=bg_cmyk,
+                border_cmyk=border_cmyk,
+                border_width_pt=border_width_pt,
+            )
 
         elif l_type == "ellipse":
+            if rotate_deg:
+                logger.warning("CMYK renderer skips rotation for ellipse layers (not a true rotated oval)")
             shape.draw_oval(rect)
             if bg_cmyk or border_cmyk:
                 shape.finish(
@@ -243,14 +411,21 @@ class CanvasCmykRenderer:
 
         elif l_type in ("text", "field"):
             raw_val = str(layer.get("value") or "")
+            if not raw_val:
+                key = (layer.get("meta") or {}).get("key")
+                if key:
+                    data = ctx.get("data") or {}
+                    raw_val = str(data.get(key) or "")
             text_val = _resolve_template_value(raw_val, ctx)
 
             if bg_cmyk or border_cmyk:
-                shape.draw_rect(rect)
-                shape.finish(
-                    color=border_cmyk,
-                    fill=bg_cmyk,
-                    width=border_width_pt,
+                _draw_shape_rect(
+                    shape,
+                    rect,
+                    rotate_deg,
+                    bg_cmyk=bg_cmyk,
+                    border_cmyk=border_cmyk,
+                    border_width_pt=border_width_pt,
                 )
 
             color_str = css_vars.get("--color") or css_vars.get("color") or "#000000"
@@ -258,30 +433,45 @@ class CanvasCmykRenderer:
             font_size_pt = _parse_length_pt(css_vars.get("--font-size"), 4)  # default font size
             font_size_pt = max(6.0, font_size_pt)
 
-            # Insert text in PyMuPDF with CMYK fill color
             page.insert_textbox(
                 rect,
                 text_val,
                 fontsize=font_size_pt,
-                fontname="helv",
+                fontname=_map_font_family(css_vars.get("--font-family")),
                 fill=text_cmyk,
+                align=_text_align(css_vars),
+                rotate=round(rotate_deg),
             )
 
         elif l_type in ("image", "logo", "imageSlot"):
-            # Resolve image source
-            raw_val = str(layer.get("value") or "")
-            resolved_src = _resolve_template_value(raw_val, ctx)
+            resolved_src = _resolve_image_src(layer, ctx)
+            if resolved_src:
+                resolved_src = _resolve_template_value(resolved_src, ctx)
 
             img_path = local_image_paths.get(resolved_src) or resolved_src
-            if os.path.exists(img_path):
+            object_fit = css_vars.get("--object-fit")
+            if resolved_src and os.path.exists(img_path):
                 try:
                     with Image.open(img_path) as pil_img:
-                        cmyk_bytes = convert_pil_to_cmyk_bytes(pil_img, dpi=self.dpi)
-                        page.insert_image(rect, stream=cmyk_bytes)
+                        cmyk_bytes, insert_rect = _prepare_image_for_rect(
+                            pil_img,
+                            rect,
+                            object_fit,
+                            self.dpi,
+                        )
+                        page.insert_image(
+                            insert_rect,
+                            stream=cmyk_bytes,
+                            rotate=round(rotate_deg),
+                        )
                 except Exception:
                     # Render placeholder if image fails to load
                     shape.draw_rect(rect)
                     shape.finish(color=(0, 0, 0, 0.5))
+            else:
+                # Empty / missing src → grey placeholder (no crash).
+                shape.draw_rect(rect)
+                shape.finish(color=(0, 0, 0, 0.5))
 
         elif l_type == "group":
             # Children are separate layers; the group frame is chrome-only.

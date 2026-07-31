@@ -56,4 +56,30 @@ describe('SyncConflictBar', () => {
     fireEvent.click(screen.getByTestId('sync-conflict-use-remote'));
     expect(onResolve).toHaveBeenCalledWith('use-remote');
   });
+
+  it('remoteDeleted shows delete-local action instead of use-remote', () => {
+    const onResolve = vi.fn();
+    const localDoc = createEmptyDocument('Zombie');
+    const conflict: SyncConflict = {
+      localDoc,
+      remoteDoc: null,
+      localUpdatedAt: localDoc.updatedAt!,
+      remoteUpdatedAt: '2026-07-31T12:00:00.000Z',
+      remoteDeleted: true,
+    };
+
+    render(<SyncConflictBar conflict={conflict} onResolve={onResolve} />);
+
+    expect(screen.getByTestId('sync-conflict-bar')).toHaveAttribute(
+      'aria-label',
+      expect.stringContaining('Borrado en la nube'),
+    );
+    expect(screen.getByTestId('sync-conflict-use-remote')).toHaveAttribute(
+      'aria-label',
+      'Eliminar localmente',
+    );
+
+    fireEvent.click(screen.getByTestId('sync-conflict-use-remote'));
+    expect(onResolve).toHaveBeenCalledWith('use-remote');
+  });
 });

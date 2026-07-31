@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../../api';
-import type { SyncConflict } from '../sync/canvasCloudSync';
+import type { SyncConflict, SyncResult } from '../sync/canvasCloudSync';
 import { normalizeDocument, type CanvasDocument } from '../types';
+import { hydrateDocumentImages } from '../utils/imageBlobStore';
 import type { useCanvasHistory } from './useCanvasHistory';
 
 export type SyncConflictChoice = 'use-remote' | 'keep-local';
@@ -49,33 +50,55 @@ export function useCanvasSync({
   active = true,
 }: UseCanvasSyncOptions) {
   const [syncing, setSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
 
   const runCloudSync = useCallback(async () => {
     setSyncing(true);
+    setSyncStatus('syncing');
     try {
       const openId = historyDocRef.current.id;
       const openDirty = openDirtyRef.current;
+
+      const applySyncResult = async (result: SyncResult) => {
+        if (result.skipped) return;
+        try {
+          await refreshList();
+          if (result.conflict && onConflict) {
+            onConflict(result.conflict);
+            setSyncStatus('synced');
+            return;
+          }
+          if (result.reloadOpenId && result.reloadOpenId === openId && !openDirtyRef.current) {
+            const got = await api.canvasGet(result.reloadOpenId);
+            const doc = normalizeDocument(got.document as CanvasDocument);
+            replaceDocument(await hydrateDocumentImages(doc));
+          }
+          setSyncStatus(result.pushErrors > 0 ? 'error' : 'synced');
+        } finally {
+          setSyncing(false);
+        }
+      };
+
       const { syncCanvasDocuments } = await import('../sync/canvasCloudSync');
       const result = await syncCanvasDocuments({
         openDocumentId: openId,
         openDirty,
+        followUp: (retryResult) => {
+          void applySyncResult(retryResult);
+        },
       });
-      if (result.skipped) return;
-      await refreshList();
-
-      // Notify UI without awaiting — keep syncing=false so the sidebar stays usable.
-      if (result.conflict && onConflict) {
-        onConflict(result.conflict);
-        return;
-      }
-
-      if (result.reloadOpenId && result.reloadOpenId === openId && !openDirtyRef.current) {
-        const got = await api.canvasGet(result.reloadOpenId);
-        replaceDocument(normalizeDocument(got.document as CanvasDocument));
+      if (!result.skipped) {
+        await applySyncResult(result);
+      } else if (result.reason === 'sync-in-flight') {
+        // Keep syncing/status until followUp finishes the coalesced retry.
+      } else {
+        // Offline / no session / hard skip: nothing to wait for.
+        setSyncStatus('idle');
+        setSyncing(false);
       }
     } catch {
-      /* offline / auth — local cache remains usable */
-    } finally {
+      // Unexpected sync failure (import/network). Surface error; local docs stay usable.
+      setSyncStatus('error');
       setSyncing(false);
     }
   }, [historyDocRef, openDirtyRef, refreshList, replaceDocument, onConflict]);
@@ -89,5 +112,5 @@ export function useCanvasSync({
     return () => window.removeEventListener('focus', onFocus);
   }, [runCloudSync, active]);
 
-  return { runCloudSync, syncing };
+  return { runCloudSync, syncing, syncStatus };
 }

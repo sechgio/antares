@@ -8,6 +8,7 @@ import { queueCanvasCloudDelete, queueCanvasCloudPush } from './sync/cloudQueue'
 import { isNewer, type SyncConflict } from './sync/canvasCloudSync';
 import type { SyncConflictChoice } from './hooks/useCanvasSync';
 import SyncConflictBar from './editor/SyncConflictBar';
+import SyncStatusBadge from './editor/SyncStatusBadge';
 import BottomToolbar from './editor/BottomToolbar';
 import ContextMenu, {
   type CanvasContextAction,
@@ -26,6 +27,7 @@ import { isOpenDocumentDirty, useCanvasSync } from './hooks/useCanvasSync';
 import { useGestureBaselines } from './hooks/useGestureBaselines';
 import { useInlineEdit } from './hooks/useInlineEdit';
 import { CANVAS_SHORTCUTS } from './shortcuts';
+import { hydrateDocumentImages, serializeDocumentImages } from './utils/imageBlobStore';
 import {
   alignLayers,
   bringForward,
@@ -226,12 +228,16 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       const res = await api.canvasList();
       setDocs(res.documents);
     } catch {
-      setDocs([]);
+      // Transient IPC/backend failure: keep the last known list.
     }
   }, []);
 
   /** Serialize save-then-switch so concurrent open/new/duplicate/delete cannot interleave. */
+  /** Pre-edit snapshot while a guide is being dragged out of the rulers (live preview). */
+  const guideCreateBaselineRef = useRef<CanvasDocument | null>(null);
+
   const docSwitchLockRef = useRef(false);
+  const onDeleteDocRef = useRef<() => Promise<void>>(async () => {});
   const withDocSwitchLock = useCallback(async (fn: () => Promise<void>) => {
     if (docSwitchLockRef.current) return;
     docSwitchLockRef.current = true;
@@ -268,14 +274,32 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
 
       if (choice === 'keep-local') {
         dismissedRemoteAtRef.current = conflict.remoteUpdatedAt;
+        if (conflict.remoteDeleted) {
+          void (async () => {
+            try {
+              const got = await api.canvasGet(conflict.localDoc.id);
+              const doc = normalizeDocument(got.document as CanvasDocument);
+              await queueCanvasCloudPush(doc, { forceResurrect: true });
+              await refreshList();
+            } catch {
+              // Soft-resurrect failed (offline/RLS); local doc stays; next sync retries.
+            }
+          })();
+        }
+        return;
+      }
+
+      if (conflict.remoteDeleted) {
+        dismissedRemoteAtRef.current = null;
+        void onDeleteDocRef.current();
         return;
       }
 
       dismissedRemoteAtRef.current = null;
       void (async () => {
         try {
-          await api.canvasSave(conflict.remoteDoc, { touch: false });
-          history.replaceDocument(conflict.remoteDoc);
+          await api.canvasSave(conflict.remoteDoc!, { touch: false });
+          history.replaceDocument(await hydrateDocumentImages(conflict.remoteDoc!));
           await refreshList();
         } catch {
           /* local remains; next sync retries */
@@ -285,7 +309,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     [history, refreshList],
   );
 
-  const { runCloudSync, syncing: docsSyncing } = useCanvasSync({
+  const { runCloudSync, syncing: docsSyncing, syncStatus } = useCanvasSync({
     historyDocRef,
     openDirtyRef,
     refreshList,
@@ -330,10 +354,12 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     try {
       const currentPast = history.past;
       const currentFuture = history.future;
-      const res = await api.canvasSave(history.document);
+      const serialized = await serializeDocumentImages(history.document);
+      const res = await api.canvasSave(serialized);
       await api.canvasSaveHistory(history.document.id, currentPast, currentFuture).catch(() => {});
       const saved = normalizeDocument(res.document as CanvasDocument);
-      history.replaceDocument(saved);
+      const hydrated = await hydrateDocumentImages(saved);
+      history.replaceDocument(hydrated);
       history.restoreHistory(currentPast, currentFuture);
       history.hasUnsavedEditsRef.current = false;
       dismissedRemoteAtRef.current = null;
@@ -978,12 +1004,12 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   const onDuplicate = async () => {
     await withDocSwitchLock(async () => {
       try {
-        const savedRes = await api.canvasSave(history.document);
+        const savedRes = await api.canvasSave(await serializeDocumentImages(history.document));
         await api.canvasSaveHistory(history.document.id, history.past, history.future).catch(() => {});
         queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
         const res = await api.canvasDuplicate(history.document.id);
         const dup = normalizeDocument(res.document as CanvasDocument);
-        history.replaceDocument(dup);
+        history.replaceDocument(await hydrateDocumentImages(dup));
         setSelectedIds([]);
         setPageIndex(0);
         await refreshList();
@@ -1005,7 +1031,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         if (list.documents.length) {
           const got = await api.canvasGet(list.documents[0].id);
           const doc = normalizeDocument(got.document as CanvasDocument);
-          history.replaceDocument(doc);
+          history.replaceDocument(await hydrateDocumentImages(doc));
           try {
             const hist = await api.canvasGetHistory(doc.id);
             if (hist.past?.length || hist.future?.length) {
@@ -1018,7 +1044,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         } else {
           const created = await api.canvasCreate('Sin título');
           const doc = normalizeDocument(created.document as CanvasDocument);
-          history.replaceDocument(doc);
+          history.replaceDocument(await hydrateDocumentImages(doc));
           setDocs([{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt }]);
           queueCanvasCloudPush(doc);
         }
@@ -1036,12 +1062,12 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     if (!id || id === history.document.id) return;
     await withDocSwitchLock(async () => {
       try {
-        const savedRes = await api.canvasSave(history.document);
+        const savedRes = await api.canvasSave(await serializeDocumentImages(history.document));
         await api.canvasSaveHistory(history.document.id, history.past, history.future).catch(() => {});
         queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
         const res = await api.canvasGet(id);
         const doc = normalizeDocument(res.document as CanvasDocument);
-        history.replaceDocument(doc);
+        history.replaceDocument(await hydrateDocumentImages(doc));
         try {
           const hist = await api.canvasGetHistory(doc.id);
           if (hist.past?.length || hist.future?.length) {
@@ -1063,12 +1089,12 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   const onNew = async () => {
     await withDocSwitchLock(async () => {
       try {
-        const savedRes = await api.canvasSave(history.document);
+        const savedRes = await api.canvasSave(await serializeDocumentImages(history.document));
         await api.canvasSaveHistory(history.document.id, history.past, history.future).catch(() => {});
         queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
         const res = await api.canvasCreate('Sin título');
         const doc = normalizeDocument(res.document as CanvasDocument);
-        history.replaceDocument(doc);
+        history.replaceDocument(await hydrateDocumentImages(doc));
         setSelectedIds([]);
         setPageIndex(0);
         resetViewportPan();
@@ -1274,7 +1300,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   onOpenDocRef.current = onOpenDoc;
   const onNewRef = useRef(onNew);
   onNewRef.current = onNew;
-  const onDeleteDocRef = useRef(onDeleteDoc);
   onDeleteDocRef.current = onDeleteDoc;
 
   const onSidebarOpenDoc = useCallback((id: string) => {
@@ -1299,6 +1324,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     (index: number) => {
       const next = syncImagesPerPage(removePage(history.document, index));
       history.setDocument(next);
+      setSelectedIds((prev) => prev.filter((id) => next.layers.some((l) => l.id === id)));
       setPageIndex((prev) => {
         if (index < prev) return prev - 1;
         if (index === prev) return Math.min(prev, Math.max(0, getPageCount(next) - 1));
@@ -1413,7 +1439,9 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         syncConflictSlot={
           syncConflict ? (
             <SyncConflictBar conflict={syncConflict} onResolve={onConflictResolve} />
-          ) : null
+          ) : (
+            <SyncStatusBadge status={syncStatus} />
+          )
         }
       />
 
@@ -1499,8 +1527,21 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
             onCommitEdit={commitInlineEdit}
             onUpsertGuide={(guide) => {
               const exists = history.document.guides?.some((g) => g.id === guide.id);
-              if (exists) history.updateSilent(upsertGuide(history.document, guide));
-              else history.setDocument(upsertGuide(history.document, guide));
+              if (!exists) {
+                guideCreateBaselineRef.current = history.document;
+              }
+              history.updateSilent(upsertGuide(history.document, guide));
+            }}
+            onCommitGuideCreate={(guide) => {
+              const baseline = guideCreateBaselineRef.current;
+              guideCreateBaselineRef.current = null;
+              const next = upsertGuide(history.document, guide);
+              if (baseline) {
+                history.updateSilent(next);
+                history.commitFromBaseline(baseline);
+              } else {
+                history.setDocument(next);
+              }
             }}
             onMoveGuide={(id, posMm) => {
               // Called once on pointerup (Artboard keeps live preview local during drag).
@@ -1510,7 +1551,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
               history.setDocument(removeGuide(history.document, id));
             }}
             onCancelGuideCreate={(id) => {
-              // Silent: creation already pushed its history entry; aborting leaves no trace.
+              guideCreateBaselineRef.current = null;
               history.updateSilent(removeGuide(history.document, id));
             }}
             showRulers={history.document.settings?.showRulers !== false}
@@ -1625,6 +1666,13 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
             )}
           </DesignStage>
           <RightPanel
+            documentId={history.document.id}
+            onVersionRestored={(doc) => {
+              void (async () => {
+                history.replaceDocument(await hydrateDocumentImages(doc));
+                await refreshList();
+              })();
+            }}
             open={rightPanelOpen}
             onHidePanel={toggleRightPanel}
             hidePanelDisabled={uiLocked}

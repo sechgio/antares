@@ -50,7 +50,7 @@ function isPetMascotEnabled(): boolean {
   }
 }
 
-const VIEWS: Record<TabId, React.LazyExoticComponent<React.ComponentType>> = {
+const VIEWS: Record<TabId, React.LazyExoticComponent<React.ComponentType<{ active?: boolean }>>> = {
   espacios: EspaciosView,
   convert: ConversionView,
   formatos: FormatosView,

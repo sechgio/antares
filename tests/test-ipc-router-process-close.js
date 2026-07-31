@@ -246,6 +246,23 @@ async function run() {
     assert(waitCalls >= 1, 'idempotent waits for backend before retry');
   }
 
+  {
+    // Regression: plain-object throws from ipcMain.handle become
+    // "Error invoking remote method 'ipc-call': [object Object]" in the renderer.
+    delete require.cache[require.resolve('../electron/ipc-router')];
+    const { _toRendererIpcError, ANTARES_IPC_ERROR_PREFIX } = require('../electron/ipc-router');
+    const err = new Error('Template not found: report.html');
+    err.code = -32000;
+    err.category = 'INTERNAL_ERROR';
+    const wrapped = _toRendererIpcError(err);
+    assert(wrapped instanceof Error, 'renderer error is an Error instance');
+    assert(wrapped.message.startsWith(ANTARES_IPC_ERROR_PREFIX), 'message uses ANTARES_IPC_ERROR prefix');
+    const payload = JSON.parse(wrapped.message.slice(ANTARES_IPC_ERROR_PREFIX.length));
+    assert(payload.message === 'Template not found: report.html', 'payload preserves backend message');
+    assert(payload.code === -32000, 'payload preserves code');
+    assert(payload.category === 'INTERNAL_ERROR', 'payload preserves category');
+  }
+
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
 }

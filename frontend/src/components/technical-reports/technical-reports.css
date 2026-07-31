@@ -778,6 +778,42 @@
   text-wrap: pretty;
 }
 
+/* ── Fichas técnicas: auto-scale preview paper ─────────────────────────── */
+
+.ft-preview-scroll {
+  container-type: inline-size;
+}
+
+@container (max-width: 840px) {
+  .ficha-preview-container {
+    zoom: 0.92;
+  }
+}
+
+@container (max-width: 740px) {
+  .ficha-preview-container {
+    zoom: 0.82;
+  }
+}
+
+@container (max-width: 640px) {
+  .ficha-preview-container {
+    zoom: 0.7;
+  }
+}
+
+@container (max-width: 520px) {
+  .ficha-preview-container {
+    zoom: 0.56;
+  }
+}
+
+@container (max-width: 420px) {
+  .ficha-preview-container {
+    zoom: 0.44;
+  }
+}
+
 @media (prefers-reduced-transparency: reduce) {
   .ft-app .tr-header,
   .ft-db-header,
@@ -1845,6 +1881,7 @@
   border-radius: 8px;
   border: 1px solid var(--border-subtle);
   padding: 10px 16px 16px;
+  container-type: inline-size;
 }
 
 .tr-paper {
@@ -1858,6 +1895,37 @@
   font-family: "Segoe UI", Calibri, Arial, sans-serif;
   font-size: 7.5pt;
   line-height: 1.15;
+}
+
+/* Auto-scale paper to fit preview container at any width */
+@container (max-width: 840px) {
+  .tr-paper {
+    zoom: 0.92;
+  }
+}
+
+@container (max-width: 740px) {
+  .tr-paper {
+    zoom: 0.82;
+  }
+}
+
+@container (max-width: 640px) {
+  .tr-paper {
+    zoom: 0.7;
+  }
+}
+
+@container (max-width: 520px) {
+  .tr-paper {
+    zoom: 0.56;
+  }
+}
+
+@container (max-width: 420px) {
+  .tr-paper {
+    zoom: 0.44;
+  }
 }
 
 .tr-paper-empty {
@@ -1994,6 +2062,12 @@
   min-height: 100%;
 }
 
+/* ── Mobile tab bar (hidden on large screens) ──────────────────────────── */
+
+.tr-mobile-tabs {
+  display: none;
+}
+
 @media (max-width: 1200px) {
   .tr-workspace {
     grid-template-columns: 280px minmax(520px, 1fr);
@@ -2002,3 +2076,141 @@
     display: none;
   }
 }
+
+/* ── Small-screen layout (tabbed panel switching) ──────────────────────── */
+
+@media (max-width: 900px) {
+  .tr-header h1 {
+    font-size: 15px;
+  }
+
+  /* Hide button labels, keep icons only (text nodes can't be targeted directly) */
+  .tr-header-actions .tr-primary:not(.tr-icon-button),
+  .tr-header-actions .tr-secondary:not(.tr-icon-button) {
+    font-size: 0;
+    gap: 0;
+    width: 32px;
+    min-width: 32px;
+    padding: 0;
+  }
+
+  .tr-header-actions {
+    gap: 4px;
+  }
+
+  .tr-header {
+    gap: 8px;
+    padding: 0 10px;
+  }
+
+  /* Show tab bar */
+  .tr-mobile-tabs {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    padding: 0 10px;
+    height: 36px;
+    min-height: 36px;
+    border-bottom: 1px solid var(--border-subtle);
+    background: var(--bg-base);
+  }
+
+  .tr-mobile-tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 0 8px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition-property: color, border-color;
+    transition-duration: 120ms;
+    transition-timing-function: ease-out;
+  }
+
+  .tr-mobile-tab:hover {
+    color: var(--text-secondary);
+  }
+
+  .tr-mobile-tab.is-active {
+    color: var(--accent-primary);
+    border-bottom-color: var(--accent-primary);
+  }
+
+  /* Switch to single-column stacked layout */
+  .tr-workspace {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  /* Panel switching via data-attribute */
+  .tr-workspace > .tr-panel,
+  .tr-workspace > .tr-database,
+  .tr-workspace > .tr-preview-wrap,
+  .tr-workspace > .tr-form {
+    display: none;
+    flex: 1;
+    min-height: 0;
+    border-radius: 0;
+    border: none;
+  }
+
+  .tr-workspace[data-mobile-tab="db"] > .tr-database,
+  .tr-workspace[data-mobile-tab="db"] > .tr-panel:first-child {
+    display: flex;
+  }
+
+  .tr-workspace[data-mobile-tab="preview"] > .tr-preview-wrap {
+    display: flex;
+    overflow: auto;
+  }
+
+  .tr-workspace[data-mobile-tab="form"] > .tr-form {
+    display: flex;
+  }
+
+  /* Preview panel: remove borders in mobile layout */
+  .tr-preview-wrap {
+    padding: 8px;
+    border-radius: 0;
+  }
+}
+
+/* ── Extra-small screens ───────────────────────────────────────────────── */
+
+@media (max-width: 600px) {
+  .tr-header h1 {
+    font-size: 13px;
+  }
+
+  .tr-mobile-tab span {
+    display: none;
+  }
+
+  .tr-mobile-tabs {
+    height: 32px;
+    min-height: 32px;
+  }
+
+  .tr-diameter-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .tr-grid-2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tr-grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+

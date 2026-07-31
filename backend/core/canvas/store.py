@@ -20,6 +20,14 @@ from backend.utils.paths import resource_path, user_data_path
 
 logger = logging.getLogger(__name__)
 
+# Diffs larger than this are un-renderable and would blow the IPC 64MB cap when stacked.
+_MAX_HISTORY_ENTRY_BYTES = 8 * 1024 * 1024
+
+
+def _history_entry_size_ok(item: dict[str, Any]) -> bool:
+    encoded = json.dumps(item, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return len(encoded) <= _MAX_HISTORY_ENTRY_BYTES
+
 _store_instance: CanvasStore | None = None
 _store_lock = threading.Lock()
 
@@ -218,8 +226,16 @@ class CanvasStore:
                     return {"past": [], "future": []}
                 past_raw = raw.get("past")
                 future_raw = raw.get("future")
-                past = [self._normalize_history_item(item) for item in past_raw if isinstance(item, dict)] if isinstance(past_raw, list) else []
-                future = [self._normalize_history_item(item) for item in future_raw if isinstance(item, dict)] if isinstance(future_raw, list) else []
+                past = [
+                    self._normalize_history_item(item)
+                    for item in past_raw
+                    if isinstance(item, dict) and _history_entry_size_ok(item)
+                ] if isinstance(past_raw, list) else []
+                future = [
+                    self._normalize_history_item(item)
+                    for item in future_raw
+                    if isinstance(item, dict) and _history_entry_size_ok(item)
+                ] if isinstance(future_raw, list) else []
                 return {"past": past, "future": future}
             except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
                 logger.warning("Could not read canvas history for %s: %s", doc_id, exc)
@@ -235,8 +251,24 @@ class CanvasStore:
         with self._lock:
             path = self._history_path_for(str(doc_id))
             self.history_dir.mkdir(parents=True, exist_ok=True)
-            norm_past = [self._normalize_history_item(d) for d in past[-max_history:] if isinstance(d, dict)]
-            norm_future = [self._normalize_history_item(d) for d in future[-max_history:] if isinstance(d, dict)]
+            norm_past: list[dict[str, Any]] = []
+            for d in past[-max_history:]:
+                if not isinstance(d, dict):
+                    continue
+                item = self._normalize_history_item(d)
+                if not _history_entry_size_ok(item):
+                    logger.warning("Dropping oversized canvas history entry for %s", doc_id)
+                    continue
+                norm_past.append(item)
+            norm_future: list[dict[str, Any]] = []
+            for d in future[-max_history:]:
+                if not isinstance(d, dict):
+                    continue
+                item = self._normalize_history_item(d)
+                if not _history_entry_size_ok(item):
+                    logger.warning("Dropping oversized canvas history entry for %s", doc_id)
+                    continue
+                norm_future.append(item)
             payload = {"past": norm_past, "future": norm_future}
             encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
             if path.exists():

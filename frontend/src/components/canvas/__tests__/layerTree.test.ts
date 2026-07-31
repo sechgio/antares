@@ -128,7 +128,7 @@ describe('reorderAmongSiblings', () => {
     const a = createLayer('text', { id: 'a' });
     const b = createLayer('text', { id: 'b', locked: true });
     const next = setLayersOpacity([a, b], ['a', 'b'], 40);
-    expect(next.find((l) => l.id === 'a')!.cssVars['--opacity']).toBe('40%');
+    expect(next.find((l) => l.id === 'a')!.cssVars['--opacity']).toBe('40');
     expect(next.find((l) => l.id === 'b')!.cssVars['--opacity']).toBeUndefined();
   });
 });

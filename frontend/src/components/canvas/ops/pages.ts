@@ -50,7 +50,14 @@ export function removePage(doc: CanvasDocument, pageIndex: number): CanvasDocume
       if (current > pageIndex) return { ...layer, pageIndex: current - 1 };
       return layer;
     });
-  return { ...doc, pages, layers };
+  const guides = (doc.guides ?? [])
+    .filter((guide) => (guide.pageIndex ?? 0) !== pageIndex)
+    .map((guide) => {
+      const current = guide.pageIndex ?? 0;
+      if (current > pageIndex) return { ...guide, pageIndex: current - 1 };
+      return guide;
+    });
+  return { ...doc, pages, layers, guides };
 }
 
 function ensurePages(doc: CanvasDocument): Array<{ id: string; name: string }> {
@@ -96,7 +103,21 @@ export function duplicatePage(doc: CanvasDocument, pageIndex: number): CanvasDoc
     return [layer];
   });
 
-  return { ...doc, version: DOCUMENT_VERSION, pages, layers };
+  const sourceGuides = (doc.guides ?? []).filter((guide) => (guide.pageIndex ?? 0) === pageIndex);
+  const guides = [
+    ...(doc.guides ?? []).map((guide) => {
+      const idx = guide.pageIndex ?? 0;
+      if (idx > pageIndex) return { ...guide, pageIndex: idx + 1 };
+      return guide;
+    }),
+    ...sourceGuides.map((guide) => ({
+      ...guide,
+      id: newId(),
+      pageIndex: pageIndex + 1,
+    })),
+  ];
+
+  return { ...doc, version: DOCUMENT_VERSION, pages, layers, guides };
 }
 
 export function renamePage(doc: CanvasDocument, pageIndex: number, name: string): CanvasDocument {
@@ -254,8 +275,11 @@ export function planMultiPageRender(
   const slotPerPage = templateImagesPerPage(doc);
   // Slots win when present; options/settings only apply when the template has no slots.
   const hasSlots = doc.layers.some((l) => l.type === 'imageSlot');
+  const page0Slots = doc.layers.some((l) => l.type === 'imageSlot' && (l.pageIndex ?? 0) === 0);
+  // Photo pagination requires slots on page 0; otherwise fall back to settings capacity.
+  const slotPagination = hasSlots && page0Slots;
   const configured = options?.imagesPerPage ?? doc.settings?.imagesPerPage;
-  const perPage = hasSlots
+  const perPage = slotPagination
     ? slotPerPage
     : configured && configured > 0
       ? configured

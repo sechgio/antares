@@ -57,22 +57,36 @@ export default defineConfig(({ mode }) => ({
     },
     rollupOptions: {
       output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom'],
-          'vendor-ui': ['framer-motion', 'lucide-react'],
-          'vendor-jspdf': ['jspdf'],
-          'vendor-html-to-image': ['html-to-image'],
-          'vendor-pdfjs': ['pdfjs-dist'],
-          'vendor-data': ['xlsx'],
-          'vendor-i18n': ['i18next', 'react-i18next'],
-          'vendor-fullcalendar': [
-            '@fullcalendar/react',
-            '@fullcalendar/daygrid',
-            '@fullcalendar/timegrid',
-            '@fullcalendar/interaction',
-          ],
-          'vendor-supabase': ['@supabase/supabase-js'],
-          'vendor-dnd': ['@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities'],
+        // Function form + onlyExplicitManualChunks: object-form manualChunks let
+        // Rollup merge shared deps (react/react-dom, vite preload helper) into
+        // the first overlapping vendor (jspdf/dnd/i18n). Result: Canvas statically
+        // imported ~371KB jsPDF for `__vitePreload`, and the entry modulepreloaded
+        // dnd because react-dom lived inside it. See vite#16429 / rollup onlyExplicitManualChunks.
+        onlyExplicitManualChunks: true,
+        manualChunks(id) {
+          if (id.includes('\0vite/preload-helper')) return 'vite-preload'
+          const n = id.replace(/\\/g, '/')
+          if (n.includes('/node_modules/react-dom/') || n.includes('/node_modules/scheduler/')) {
+            return 'vendor-react'
+          }
+          // Exact /react/ package — not react-i18next / react-dom / etc.
+          if (n.includes('/node_modules/react/')) return 'vendor-react'
+          if (n.includes('/node_modules/jspdf/') || n.includes('/node_modules/jspdf-')) {
+            return 'vendor-jspdf'
+          }
+          if (n.includes('/node_modules/html-to-image/')) return 'vendor-html-to-image'
+          if (n.includes('/node_modules/pdfjs-dist/')) return 'vendor-pdfjs'
+          if (n.includes('/node_modules/xlsx/')) return 'vendor-data'
+          if (n.includes('/node_modules/i18next/') || n.includes('/node_modules/react-i18next/')) {
+            return 'vendor-i18n'
+          }
+          if (n.includes('/node_modules/@fullcalendar/')) return 'vendor-fullcalendar'
+          if (n.includes('/node_modules/@supabase/')) return 'vendor-supabase'
+          if (n.includes('/node_modules/@dnd-kit/')) return 'vendor-dnd'
+          if (n.includes('/node_modules/framer-motion/') || n.includes('/node_modules/lucide-react/')) {
+            return 'vendor-ui'
+          }
+          return undefined
         },
         assetFileNames: (assetInfo) => {
           const info = assetInfo.name || ''

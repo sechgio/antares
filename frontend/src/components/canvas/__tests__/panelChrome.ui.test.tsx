@@ -1,8 +1,10 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import TopBar from '../editor/TopBar';
+import { createEmptyDocument } from '../types';
 import { createLayer } from '../constants';
 import RightPanel from '../editor/RightPanel';
+import DesignStage from '../editor/DesignStage';
 
 const baseProps = {
   name: 'Doc',
@@ -112,5 +114,34 @@ describe('RightPanel hide control', () => {
     expect(screen.getByTestId('canvas-toggle-right-panel')).toBeDisabled();
     fireEvent.click(screen.getByTestId('canvas-toggle-right-panel'));
     expect(onHidePanel).not.toHaveBeenCalled();
+  });
+});
+
+describe('DesignStage right chrome layout', () => {
+  it('places zoom selector on the left and show right panel button on the right', () => {
+    const document = createEmptyDocument('Test');
+    render(
+      <DesignStage
+        document={document}
+        pageLayers={[]}
+        zoom={1}
+        viewportPosition={{ x: 0, y: 0 }}
+        activePage={0}
+        selectedIds={[]}
+        onZoom={vi.fn()}
+        onViewportChange={vi.fn()}
+        onSelect={vi.fn()}
+        onUpdateLayer={vi.fn()}
+        onShowRightPanel={vi.fn()}
+        showZoomFallback
+        showRightReopen
+      />,
+    );
+
+    const chrome = screen.getByTestId('canvas-stage-right-chrome');
+    const children = Array.from(chrome.children);
+    expect(children.length).toBe(2);
+    expect(children[0]).toHaveAttribute('data-testid', 'canvas-zoom-slot-fallback');
+    expect(children[1].querySelector('[data-testid="canvas-reopen-right-panel"]')).toBeTruthy();
   });
 });

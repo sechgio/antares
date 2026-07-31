@@ -14,6 +14,8 @@ interface CanvasRulersProps {
   pageHeightMm: number;
   pageIndex: number;
   onCreateGuide: (guide: CanvasGuide) => void;
+  /** Commit a guide after ruler drag completes on the canvas. */
+  onCommitGuideCreate?: (guide: CanvasGuide) => void;
   /** Abort an in-progress guide creation (Esc, or released back onto the ruler). */
   onCancelCreate?: (id: string) => void;
 }
@@ -94,6 +96,7 @@ function CanvasRulers({
   pageHeightMm,
   pageIndex,
   onCreateGuide,
+  onCommitGuideCreate,
   onCancelCreate,
 }: CanvasRulersProps) {
   const frameW = Math.round(pageWidthMm * MM_TO_PX * zoom);
@@ -168,8 +171,10 @@ function CanvasRulers({
         const delta = Math.abs((axis === 'x' ? ev.clientX : ev.clientY) - startClient);
         if (delta < 4) return;
         created = createGuide(axis, clampGuidePos(pos, maxMm), pageIndex);
+        onCreateGuide(created);
       } else {
         created = { ...created, posMm: clampGuidePos(pos, maxMm) };
+        onCreateGuide(created);
       }
       setCreatePreview(created);
       setCreateChip({ posMm: created.posMm, x: ev.clientX, y: ev.clientY });
@@ -187,7 +192,7 @@ function CanvasRulers({
         if (rect && isGuideRemovalPoint(axis, ev.clientX, ev.clientY, rect, RULER)) {
           onCancelCreate?.(created.id);
         } else {
-          onCreateGuide(created);
+          (onCommitGuideCreate ?? onCreateGuide)(created);
         }
       },
       onKeyDown: (ev) => {

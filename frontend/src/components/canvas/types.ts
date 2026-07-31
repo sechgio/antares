@@ -271,6 +271,13 @@ export function newId(): string {
   return `id-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+/** Mirror of ops/pages.ts getPageCount — kept local to avoid import cycles. */
+function pageCountFromDoc(doc: CanvasDocument): number {
+  if (doc.pages?.length) return doc.pages.length;
+  const indices = doc.layers.map((l) => l.pageIndex ?? 0);
+  return indices.length ? Math.max(...indices) + 1 : 1;
+}
+
 /** Upgrade v1 / repair incomplete v2 documents to the current schema. */
 export function normalizeDocument(doc: CanvasDocument): CanvasDocument {
   const needsUpgrade = doc.version !== DOCUMENT_VERSION;
@@ -287,7 +294,14 @@ export function normalizeDocument(doc: CanvasDocument): CanvasDocument {
       : {
           ...doc,
           version: DOCUMENT_VERSION as typeof DOCUMENT_VERSION,
-          pages: doc.pages?.length ? doc.pages : [{ id: newId(), name: 'Página 1' }],
+          // Legacy docs without `pages`: synthesize from max pageIndex so
+          // multipage layouts are not collapsed onto page 0 (ops/pages.ts:6-10).
+          pages: doc.pages?.length
+            ? doc.pages
+            : Array.from({ length: pageCountFromDoc(doc) }, (_, i) => ({
+                id: newId(),
+                name: `Página ${i + 1}`,
+              })),
           layers: doc.layers.map((layer) => ({
             ...layer,
             pageIndex: layer.pageIndex ?? 0,

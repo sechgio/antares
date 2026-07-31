@@ -125,7 +125,11 @@ def _normalize_meta(raw: Any) -> dict[str, Any] | None:
             cleaned["gapMm"] = 2.0
     for bool_key in ("showDate", "showCoords", "showFilename", "checked"):
         if bool_key in raw:
-            cleaned[bool_key] = bool(raw[bool_key])
+            value = raw[bool_key]
+            if isinstance(value, str):
+                cleaned[bool_key] = value.strip().lower() not in ("", "0", "false", "no", "off")
+            else:
+                cleaned[bool_key] = bool(value)
     if "rowsData" in raw and raw["rowsData"] is not None:
         cleaned["rowsData"] = str(raw["rowsData"])
     if isinstance(raw.get("rules"), list):
@@ -394,7 +398,9 @@ def normalize_document(raw: Any) -> dict[str, Any]:
     # Clamp pageIndex into the valid page range so a stale/legacy index cannot
     # create invisible "ghost" layers on a non-existent page.
     last_page = len(pages) - 1
-    layers = [{**layer, "pageIndex": min(layer.get("pageIndex", 0), last_page)} for layer in layers]
+    layers = [
+        {**layer, "pageIndex": min(max(0, int(layer.get("pageIndex", 0))), last_page)} for layer in layers
+    ]
 
     return {
         "version": DOCUMENT_VERSION,

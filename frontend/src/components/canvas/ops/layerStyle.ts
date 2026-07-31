@@ -743,8 +743,8 @@ export function cssVarsToStyleParts(vars: LayerCssVars): string[] {
     else if (prop === 'text-transform' && value && value !== 'none') parts.push(`text-transform:${value}`);
     else if (prop === 'color') parts.push(`color:${value}`);
     else if (prop === 'opacity') {
-      const n = Number(value);
-      parts.push(`opacity:${n > 1 ? n / 100 : n}`);
+      const n = Number(String(value).replace('%', ''));
+      parts.push(`opacity:${Number.isFinite(n) ? (n > 1 ? n / 100 : n) : 1}`);
     } else if (prop === 'object-fit') parts.push(`object-fit:${value}`);
     else if (prop === 'line-height') parts.push(`line-height:${value}`);
     else if (prop === 'blend-mode' && value !== 'normal') parts.push(`mix-blend-mode:${value}`);

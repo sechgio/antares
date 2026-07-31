@@ -121,6 +121,7 @@ interface ArtboardProps {
   editingSelectAll?: boolean;
   onStartPathEdit?: (id: string) => void;
   onUpsertGuide?: (guide: CanvasGuide) => void;
+  onCommitGuideCreate?: (guide: CanvasGuide) => void;
   onMoveGuide?: (id: string, posMm: number) => void;
   onRemoveGuide?: (id: string) => void;
   /** Abort an in-progress guide creation from the rulers (silent, no history). */
@@ -244,6 +245,7 @@ function Artboard({
   editingSelectAll = true,
   onStartPathEdit,
   onUpsertGuide,
+  onCommitGuideCreate,
   onMoveGuide,
   onRemoveGuide,
   onCancelGuideCreate,
@@ -551,11 +553,16 @@ function Artboard({
 
   const onUpsertGuideRef = useRef(onUpsertGuide);
   onUpsertGuideRef.current = onUpsertGuide;
+  const onCommitGuideCreateRef = useRef(onCommitGuideCreate);
+  onCommitGuideCreateRef.current = onCommitGuideCreate;
   const onCancelGuideCreateRef = useRef(onCancelGuideCreate);
   onCancelGuideCreateRef.current = onCancelGuideCreate;
   // Stable identity so memoized rulers skip re-rendering on every gesture frame.
   const handleCreateGuide = useCallback((guide: CanvasGuide) => {
     onUpsertGuideRef.current?.(guide);
+  }, []);
+  const handleCommitGuideCreate = useCallback((guide: CanvasGuide) => {
+    (onCommitGuideCreateRef.current ?? onUpsertGuideRef.current)?.(guide);
   }, []);
   const handleCancelGuideCreate = useCallback((id: string) => {
     onCancelGuideCreateRef.current?.(id);
@@ -1445,6 +1452,7 @@ function Artboard({
           pageHeightMm={document.page.heightMm}
           pageIndex={pageIndex}
           onCreateGuide={handleCreateGuide}
+          onCommitGuideCreate={handleCommitGuideCreate}
           onCancelCreate={handleCancelGuideCreate}
         />
       )}

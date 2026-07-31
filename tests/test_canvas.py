@@ -14,6 +14,7 @@ from backend.core.canvas.models import (
     normalize_document,
 )
 from backend.core.canvas.store import CanvasStore, migrate_legacy_canvas_documents
+from backend.core.exceptions import NotFoundError, ValidationError
 from backend.handlers import canvas as canvas_handlers
 
 
@@ -527,8 +528,14 @@ def test_handlers_with_injected_store(tmp_path: Path, monkeypatch: pytest.Monkey
     assert dup["document"]["id"] != created["document"]["id"]
 
     canvas_handlers.canvas_delete({"id": created["document"]["id"]})
-    with pytest.raises(ValueError):
+    with pytest.raises(NotFoundError, match="Documento no encontrado"):
         canvas_handlers.canvas_get({"id": created["document"]["id"]})
+
+    with pytest.raises(NotFoundError, match="Documento no encontrado"):
+        canvas_handlers.canvas_delete({"id": "missing-id"})
+
+    with pytest.raises(ValidationError, match="document debe ser un objeto"):
+        canvas_handlers.canvas_save({"document": "not-an-object"})
 
 
 def test_normalize_preserves_layer_meta_path() -> None:
@@ -589,6 +596,87 @@ def test_normalize_clamps_out_of_range_page_index() -> None:
     doc = normalize_document(raw)
     ghost = next(layer for layer in doc["layers"] if layer["id"] == "ghost")
     assert ghost["pageIndex"] == 1
+
+
+def test_normalize_clamps_negative_page_index_to_zero() -> None:
+    doc = create_empty_document(name="Neg")
+    doc["layers"][0]["pageIndex"] = -5
+    normalized = normalize_document(doc)
+    assert normalized["layers"][0]["pageIndex"] == 0
+
+
+def test_normalize_meta_bool_strings() -> None:
+    raw = create_empty_document()
+    raw["layers"].append(
+        {
+            "id": "cb-false",
+            "type": "checkbox",
+            "name": "Off",
+            "value": "",
+            "pageIndex": 0,
+            "meta": {"checked": "false"},
+            "cssVars": {
+                "--width": "10mm",
+                "--height": "10mm",
+                "--translate-x": "0mm",
+                "--translate-y": "0mm",
+            },
+        }
+    )
+    raw["layers"].append(
+        {
+            "id": "cb-true",
+            "type": "checkbox",
+            "name": "On",
+            "value": "",
+            "pageIndex": 0,
+            "meta": {"checked": "true"},
+            "cssVars": {
+                "--width": "10mm",
+                "--height": "10mm",
+                "--translate-x": "20mm",
+                "--translate-y": "0mm",
+            },
+        }
+    )
+    raw["layers"].append(
+        {
+            "id": "cb-bool",
+            "type": "checkbox",
+            "name": "Bool",
+            "value": "",
+            "pageIndex": 0,
+            "meta": {"checked": True},
+            "cssVars": {
+                "--width": "10mm",
+                "--height": "10mm",
+                "--translate-x": "40mm",
+                "--translate-y": "0mm",
+            },
+        }
+    )
+    raw["layers"].append(
+        {
+            "id": "slot",
+            "type": "imageSlot",
+            "name": "Foto",
+            "value": "",
+            "pageIndex": 0,
+            "meta": {"index": 0, "showDate": "0"},
+            "cssVars": {
+                "--width": "40mm",
+                "--height": "40mm",
+                "--translate-x": "0mm",
+                "--translate-y": "20mm",
+            },
+        }
+    )
+    doc = normalize_document(raw)
+    by_id = {layer["id"]: layer for layer in doc["layers"]}
+    assert by_id["cb-false"]["meta"]["checked"] is False
+    assert by_id["cb-true"]["meta"]["checked"] is True
+    assert by_id["cb-bool"]["meta"]["checked"] is True
+    assert by_id["slot"]["meta"]["showDate"] is False
 
 
 def test_duplicate_document_drops_orphan_parent_id() -> None:
@@ -758,5 +846,40 @@ def test_store_index_detects_external_file_changes(tmp_path: Path) -> None:
     assert by_inner is not None
     assert by_inner["name"] == "External"
 
+
+def test_save_history_drops_oversized_entries(tmp_path: Path) -> None:
+    store = CanvasStore(tmp_path)
+    created = store.create(name="Hist")
+    doc_id = created["id"]
+    huge = {"type": "diff", "ops": [{"v": "x" * (9 * 1024 * 1024)}]}
+    small = {"type": "diff", "ops": [{"v": "ok"}]}
+    assert store.save_history(doc_id, [huge, small], []) is True
+    hist = store.get_history(doc_id)
+    assert hist["past"] == [small]
+    assert hist["future"] == []
+
+
+def test_get_history_skips_oversized_entries_on_disk(tmp_path: Path) -> None:
+    import json
+
+    store = CanvasStore(tmp_path)
+    created = store.create(name="Hist")
+    doc_id = created["id"]
+    path = store._history_path_for(doc_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "past": [
+                    {"type": "diff", "ops": [{"v": "x" * (9 * 1024 * 1024)}]},
+                    {"type": "diff", "ops": [{"v": "keep"}]},
+                ],
+                "future": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    hist = store.get_history(doc_id)
+    assert hist["past"] == [{"type": "diff", "ops": [{"v": "keep"}]}]
 
 

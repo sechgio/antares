@@ -1289,6 +1289,28 @@ describe('document model', () => {
     expect(normalized.layers[0]!.pageIndex).toBe(1);
     expect(normalized.layers[1]!.pageIndex).toBe(0);
   });
+
+  it('normalizeDocument preserves legacy multipage layout without pages array', () => {
+    const css = {
+      '--width': '10mm',
+      '--height': '5mm',
+      '--translate-x': '0mm',
+      '--translate-y': '0mm',
+    };
+    const legacy = {
+      ...createEmptyDocument('Legacy multi'),
+      version: 1 as const,
+      pages: undefined,
+      layers: [
+        { id: newId(), type: 'text' as const, name: 'P0', value: 'a', pageIndex: 0, cssVars: css },
+        { id: newId(), type: 'text' as const, name: 'P1', value: 'b', pageIndex: 1, cssVars: css },
+        { id: newId(), type: 'text' as const, name: 'P2', value: 'c', pageIndex: 2, cssVars: css },
+      ],
+    };
+    const normalized = normalizeDocument(legacy);
+    expect(normalized.pages).toHaveLength(3);
+    expect(normalized.layers.map((l) => l.pageIndex)).toEqual([0, 1, 2]);
+  });
 });
 
 describe('page ops', () => {

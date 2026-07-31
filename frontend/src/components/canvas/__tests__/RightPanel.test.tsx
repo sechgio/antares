@@ -97,6 +97,18 @@ describe('layerStyle', () => {
     expect(css).toContain('border:2px solid');
   });
 
+  it('cssVarsToStyleParts parses opacity as plain number, legacy %, and invalid', () => {
+    const base = {
+      '--width': '10mm',
+      '--height': '10mm',
+      '--translate-x': '0mm',
+      '--translate-y': '0mm',
+    };
+    expect(cssVarsToStyleParts({ ...base, '--opacity': '40' }).join(';')).toContain('opacity:0.4');
+    expect(cssVarsToStyleParts({ ...base, '--opacity': '40%' }).join(';')).toContain('opacity:0.4');
+    expect(cssVarsToStyleParts({ ...base, '--opacity': 'abc' }).join(';')).toContain('opacity:1');
+  });
+
   it('resolveFillColor and resolveStrokeStyle honor opacity and visibility', () => {
     expect(
       resolveFillColor({

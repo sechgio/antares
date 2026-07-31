@@ -732,8 +732,6 @@ select.canvas-input option {
 
 .canvas-dot-bg {
   background-color: var(--cv-bg-deep);
-  background-image: radial-gradient(var(--cv-canvas-dot) 1px, transparent 1px);
-  background-size: 18px 18px;
 }
 
 /* Tool cursor hints (data-canvas-tool set on viewport — instant CSS, no CanvasView work). */
@@ -1759,12 +1757,13 @@ select.canvas-input option {
 .canvas-zoom-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  height: 22px;
-  border: 1px solid transparent;
-  border-radius: var(--cv-radius-sm);
-  background: transparent;
-  padding: 0 4px 0 6px;
+  gap: 4px;
+  height: 32px;
+  border: 1px solid var(--cv-border);
+  border-radius: 8px;
+  background: var(--cv-panel-elevated);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  padding: 0 8px 0 10px;
   font-family: inherit;
   font-size: 11px;
   font-weight: 550;
