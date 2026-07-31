@@ -1,3 +1,4 @@
+import { memo, type ReactNode } from 'react';
 import { Copy, Keyboard, Lock, Redo2, Undo2, Unlock } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import type { CanvasMode } from '../types';
@@ -29,13 +30,17 @@ interface TopBarProps {
   onToggleUiLock?: () => void;
   /** When true, brand+name span matches left sidebar width so the edge aligns. */
   leftPanelOpen?: boolean;
+  /** When true, actions span matches right panel width so the edge aligns. */
+  rightPanelOpen?: boolean;
+  /** Inline sync-conflict chip (TopBar chrome — never over the artboard). */
+  syncConflictSlot?: ReactNode;
 }
 
 function TopBarDivider() {
   return <div className="canvas-topbar-divider" aria-hidden />;
 }
 
-export default function TopBar({
+function TopBar({
   name,
   mode,
   canUndo,
@@ -56,6 +61,8 @@ export default function TopBar({
   uiLocked = false,
   onToggleUiLock,
   leftPanelOpen = true,
+  rightPanelOpen = true,
+  syncConflictSlot,
 }: TopBarProps) {
   return (
     <header className="canvas-topbar relative flex shrink-0 items-center">
@@ -154,6 +161,12 @@ export default function TopBar({
             </WithHoverTooltip>
           </>
         )}
+        {syncConflictSlot ? (
+          <>
+            <TopBarDivider />
+            {syncConflictSlot}
+          </>
+        ) : null}
       </div>
 
       {/* Absolutely centered so it never shifts when side content changes (Figma-like). */}
@@ -169,7 +182,13 @@ export default function TopBar({
         />
       </div>
 
-      <div className="ml-auto flex h-8 items-center gap-2 px-3">
+      <div
+        className={
+          rightPanelOpen
+            ? 'canvas-topbar-trailing canvas-topbar-trailing--panel'
+            : 'canvas-topbar-trailing'
+        }
+      >
         {status && (
           <span className="canvas-status-pill" role="status">
             {status}
@@ -187,3 +206,5 @@ export default function TopBar({
     </header>
   );
 }
+
+export default memo(TopBar);

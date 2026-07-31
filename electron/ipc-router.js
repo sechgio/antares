@@ -78,6 +78,22 @@ const LONG_REQUEST_TIMEOUT_MS = 900_000;   // 15 min for heavy operations (large
 const STARTUP_WAIT_MS = 30_000;            // backend should start in <10s; 30s is a safe margin
 const MID_FLIGHT_RETRIES = 2;              // retries for transient mid-flight errors (idempotent only)
 const BACKEND_RESTART_MIN_INTERVAL_MS = 5_000;
+/** Prefix for structured IPC errors embedded in Error.message (Electron only clones message). */
+const ANTARES_IPC_ERROR_PREFIX = 'ANTARES_IPC_ERROR:';
+
+/**
+ * Encode code/category/details inside Error.message so they survive ipcMain.handle.
+ * Plain-object throws are stringified as "[object Object]" by Electron and break the UI.
+ */
+function _toRendererIpcError(err) {
+  const payload = {
+    message: err && err.message ? String(err.message) : String(err),
+    code: err && err.code !== undefined ? err.code : -32000,
+    category: err && err.category !== undefined ? err.category : 'INTERNAL_ERROR',
+    details: err && err.details !== undefined ? err.details : undefined,
+  };
+  return new Error(ANTARES_IPC_ERROR_PREFIX + JSON.stringify(payload));
+}
 
 /**
  * Mid-flight retries are only safe for idempotent reads. Mutators
@@ -400,15 +416,10 @@ function registerIpcHandlers() {
     try {
       return await _callBackend(method, backendParams);
     } catch (err) {
-      // Electron's ipcMain.handle only reliably clones Error.message to the
-      // renderer. Re-throw a plain object so code/category/details survive.
-      const payload = {
-        message: err && err.message ? String(err.message) : String(err),
-        code: err && err.code !== undefined ? err.code : -32000,
-        category: err && err.category !== undefined ? err.category : 'INTERNAL_ERROR',
-        details: err && err.details !== undefined ? err.details : undefined,
-      };
-      throw payload;
+      // Electron ipcMain.handle only clones Error.message to the renderer.
+      // Throwing a plain object becomes "Error invoking remote method …: [object Object]"
+      // and loses the real backend message (templates, reports, etc. look "broken").
+      throw _toRendererIpcError(err);
     }
   });
 
@@ -502,5 +513,7 @@ module.exports = {
   _sendRequest,
   _callBackend,
   _isIdempotentMethod,
+  _toRendererIpcError,
+  ANTARES_IPC_ERROR_PREFIX,
   reloadIpcMethods,
 };

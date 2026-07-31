@@ -3,14 +3,12 @@ import { api } from '../../api';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import './canvas.css';
 import { createLayer } from './constants';
-import { CANVAS_PRESETS } from './presets';
-import {
-  queueCanvasCloudDelete,
-  queueCanvasCloudPush,
-  type SyncConflict,
-} from './sync/canvasCloudSync';
+import { loadCanvasPresets } from './presets/loadPresets';
+import { queueCanvasCloudDelete, queueCanvasCloudPush } from './sync/cloudQueue';
+import { isNewer, type SyncConflict } from './sync/canvasCloudSync';
 import type { SyncConflictChoice } from './hooks/useCanvasSync';
-import SyncConflictModal from './editor/SyncConflictModal';
+import SyncConflictBar from './editor/SyncConflictBar';
+import SyncStatusBadge from './editor/SyncStatusBadge';
 import BottomToolbar from './editor/BottomToolbar';
 import ContextMenu, {
   type CanvasContextAction,
@@ -29,6 +27,7 @@ import { isOpenDocumentDirty, useCanvasSync } from './hooks/useCanvasSync';
 import { useGestureBaselines } from './hooks/useGestureBaselines';
 import { useInlineEdit } from './hooks/useInlineEdit';
 import { CANVAS_SHORTCUTS } from './shortcuts';
+import { hydrateDocumentImages, serializeDocumentImages } from './utils/imageBlobStore';
 import {
   alignLayers,
   bringForward,
@@ -135,16 +134,14 @@ const DEFAULT_SIZES: Partial<Record<PlaceableTool, { w: number; h: number }>> = 
   signature: { w: 60, h: 20 },
 };
 
-export default function CanvasView() {
+export default function CanvasView({ active = true }: { active?: boolean }) {
   const history = useCanvasHistory(createEmptyDocument('Sin título'));
   // Refs mirror history state so runCloudSync can read the latest values
   // without depending on `history` (which changes on every mutation and would
   // re-subscribe the focus listener on every keystroke/drag).
   const historyDocRef = useRef(history.document);
-  const historyCanUndoRef = useRef(history.canUndo);
   const openDirtyRef = useRef(false);
   historyDocRef.current = history.document;
-  historyCanUndoRef.current = history.canUndo;
   const [mode, setMode] = useState<CanvasMode>('design');
   const [docs, setDocs] = useState<CanvasDocumentSummary[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -231,12 +228,16 @@ export default function CanvasView() {
       const res = await api.canvasList();
       setDocs(res.documents);
     } catch {
-      setDocs([]);
+      // Transient IPC/backend failure: keep the last known list.
     }
   }, []);
 
   /** Serialize save-then-switch so concurrent open/new/duplicate/delete cannot interleave. */
+  /** Pre-edit snapshot while a guide is being dragged out of the rulers (live preview). */
+  const guideCreateBaselineRef = useRef<CanvasDocument | null>(null);
+
   const docSwitchLockRef = useRef(false);
+  const onDeleteDocRef = useRef<() => Promise<void>>(async () => {});
   const withDocSwitchLock = useCallback(async (fn: () => Promise<void>) => {
     if (docSwitchLockRef.current) return;
     docSwitchLockRef.current = true;
@@ -248,28 +249,83 @@ export default function CanvasView() {
   }, []);
 
   const [syncConflict, setSyncConflict] = useState<SyncConflict | null>(null);
-  const conflictResolverRef = useRef<((choice: SyncConflictChoice | null) => void) | null>(null);
+  const syncConflictRef = useRef<SyncConflict | null>(null);
+  /** After Mantener, ignore the same remote timestamp until a newer one arrives. */
+  const dismissedRemoteAtRef = useRef<string | null>(null);
 
-  const handleConflict = useCallback((conflict: SyncConflict): Promise<SyncConflictChoice | null> => {
-    return new Promise((resolve) => {
-      conflictResolverRef.current = resolve;
-      setSyncConflict(conflict);
-    });
+  const handleConflict = useCallback((conflict: SyncConflict) => {
+    if (syncConflictRef.current) return;
+    if (
+      dismissedRemoteAtRef.current &&
+      !isNewer(conflict.remoteUpdatedAt, dismissedRemoteAtRef.current)
+    ) {
+      return;
+    }
+    syncConflictRef.current = conflict;
+    setSyncConflict(conflict);
   }, []);
 
-  const onConflictResolve = useCallback((choice: SyncConflictChoice) => {
-    conflictResolverRef.current?.(choice);
-    conflictResolverRef.current = null;
-    setSyncConflict(null);
-  }, []);
+  const onConflictResolve = useCallback(
+    (choice: SyncConflictChoice) => {
+      const conflict = syncConflictRef.current;
+      syncConflictRef.current = null;
+      setSyncConflict(null);
+      if (!conflict) return;
 
-  const { runCloudSync } = useCanvasSync({
+      if (choice === 'keep-local') {
+        dismissedRemoteAtRef.current = conflict.remoteUpdatedAt;
+        if (conflict.remoteDeleted) {
+          void (async () => {
+            try {
+              const got = await api.canvasGet(conflict.localDoc.id);
+              const doc = normalizeDocument(got.document as CanvasDocument);
+              await queueCanvasCloudPush(doc, { forceResurrect: true });
+              await refreshList();
+            } catch {
+              // Soft-resurrect failed (offline/RLS); local doc stays; next sync retries.
+            }
+          })();
+        }
+        return;
+      }
+
+      if (conflict.remoteDeleted) {
+        dismissedRemoteAtRef.current = null;
+        void onDeleteDocRef.current();
+        return;
+      }
+
+      dismissedRemoteAtRef.current = null;
+      void (async () => {
+        try {
+          await api.canvasSave(conflict.remoteDoc!, { touch: false });
+          history.replaceDocument(await hydrateDocumentImages(conflict.remoteDoc!));
+          await refreshList();
+        } catch {
+          /* local remains; next sync retries */
+        }
+      })();
+    },
+    [history, refreshList],
+  );
+
+  const { runCloudSync, syncing: docsSyncing, syncStatus } = useCanvasSync({
     historyDocRef,
-    historyCanUndoRef: openDirtyRef,
+    openDirtyRef,
     refreshList,
     replaceDocument: history.replaceDocument,
     onConflict: handleConflict,
+    active,
   });
+
+  // Drop stale conflict UI when the open document changes.
+  useEffect(() => {
+    if (!syncConflictRef.current) return;
+    if (syncConflictRef.current.localDoc.id === history.document.id) return;
+    syncConflictRef.current = null;
+    setSyncConflict(null);
+    dismissedRemoteAtRef.current = null;
+  }, [history.document.id]);
 
   useCanvasBootstrap({
     replaceDocument: history.replaceDocument,
@@ -279,11 +335,16 @@ export default function CanvasView() {
     runCloudSync,
   });
 
+  const lastSavedHistorySigRef = useRef<string>('');
+
   // Debounced history persistence on disk (~500ms after stack mutations)
   useEffect(() => {
     const docId = history.document.id;
     if (!docId) return;
+    const sig = `${docId}:${history.past.length}:${history.future.length}`;
+    if (lastSavedHistorySigRef.current === sig) return;
     const timer = setTimeout(() => {
+      lastSavedHistorySigRef.current = sig;
       api.canvasSaveHistory(docId, history.past, history.future).catch(() => {});
     }, 500);
     return () => clearTimeout(timer);
@@ -293,11 +354,15 @@ export default function CanvasView() {
     try {
       const currentPast = history.past;
       const currentFuture = history.future;
-      const res = await api.canvasSave(history.document);
+      const serialized = await serializeDocumentImages(history.document);
+      const res = await api.canvasSave(serialized);
       await api.canvasSaveHistory(history.document.id, currentPast, currentFuture).catch(() => {});
       const saved = normalizeDocument(res.document as CanvasDocument);
-      history.replaceDocument(saved);
+      const hydrated = await hydrateDocumentImages(saved);
+      history.replaceDocument(hydrated);
       history.restoreHistory(currentPast, currentFuture);
+      history.hasUnsavedEditsRef.current = false;
+      dismissedRemoteAtRef.current = null;
       await refreshList();
       flashStatus('Guardado');
       queueCanvasCloudPush(saved);
@@ -326,7 +391,7 @@ export default function CanvasView() {
 
   const [gestureAbortToken, setGestureAbortToken] = useState(0);
   openDirtyRef.current = isOpenDocumentDirty(
-    history.canUndo,
+    history.hasUnsavedEditsRef.current,
     panelBaselineRef.current != null,
     gestureBaselineRef.current != null,
   );
@@ -396,7 +461,7 @@ export default function CanvasView() {
 
   const zoomPortalTarget = rightPanelOpen ? rightZoomSlot : stageZoomSlot;
 
-  const onSelect = (id: string | null, additive = false) => {
+  const onSelect = useCallback((id: string | null, additive = false) => {
     if (editingLayerId && id !== editingLayerId) {
       commitInlineEdit();
     }
@@ -416,7 +481,7 @@ export default function CanvasView() {
     } else {
       setSelectedIds([id]);
     }
-  };
+  }, [editingLayerId, pathEditingLayerId, commitInlineEdit, onPanelCommitLive, panelBaselineRef]);
 
   const zoomToFit = useCallback(() => {
     viewportNavRef.current?.zoomToFit();
@@ -817,6 +882,7 @@ export default function CanvasView() {
   });
 
   useEffect(() => {
+    if (!active) return;
     const onKeyDown = (e: KeyboardEvent) => onKeyDownRef.current(e);
     const onKeyUp = (e: KeyboardEvent) => {
       if (mode !== 'design') return;
@@ -832,7 +898,7 @@ export default function CanvasView() {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [mode]);
+  }, [mode, active]);
 
   const selected = history.document.layers.find((l) => l.id === selectedId) || null;
   const selectedLine =
@@ -938,12 +1004,12 @@ export default function CanvasView() {
   const onDuplicate = async () => {
     await withDocSwitchLock(async () => {
       try {
-        const savedRes = await api.canvasSave(history.document);
+        const savedRes = await api.canvasSave(await serializeDocumentImages(history.document));
         await api.canvasSaveHistory(history.document.id, history.past, history.future).catch(() => {});
         queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
         const res = await api.canvasDuplicate(history.document.id);
         const dup = normalizeDocument(res.document as CanvasDocument);
-        history.replaceDocument(dup);
+        history.replaceDocument(await hydrateDocumentImages(dup));
         setSelectedIds([]);
         setPageIndex(0);
         await refreshList();
@@ -965,7 +1031,7 @@ export default function CanvasView() {
         if (list.documents.length) {
           const got = await api.canvasGet(list.documents[0].id);
           const doc = normalizeDocument(got.document as CanvasDocument);
-          history.replaceDocument(doc);
+          history.replaceDocument(await hydrateDocumentImages(doc));
           try {
             const hist = await api.canvasGetHistory(doc.id);
             if (hist.past?.length || hist.future?.length) {
@@ -978,7 +1044,7 @@ export default function CanvasView() {
         } else {
           const created = await api.canvasCreate('Sin título');
           const doc = normalizeDocument(created.document as CanvasDocument);
-          history.replaceDocument(doc);
+          history.replaceDocument(await hydrateDocumentImages(doc));
           setDocs([{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt }]);
           queueCanvasCloudPush(doc);
         }
@@ -996,12 +1062,12 @@ export default function CanvasView() {
     if (!id || id === history.document.id) return;
     await withDocSwitchLock(async () => {
       try {
-        const savedRes = await api.canvasSave(history.document);
+        const savedRes = await api.canvasSave(await serializeDocumentImages(history.document));
         await api.canvasSaveHistory(history.document.id, history.past, history.future).catch(() => {});
         queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
         const res = await api.canvasGet(id);
         const doc = normalizeDocument(res.document as CanvasDocument);
-        history.replaceDocument(doc);
+        history.replaceDocument(await hydrateDocumentImages(doc));
         try {
           const hist = await api.canvasGetHistory(doc.id);
           if (hist.past?.length || hist.future?.length) {
@@ -1023,12 +1089,12 @@ export default function CanvasView() {
   const onNew = async () => {
     await withDocSwitchLock(async () => {
       try {
-        const savedRes = await api.canvasSave(history.document);
+        const savedRes = await api.canvasSave(await serializeDocumentImages(history.document));
         await api.canvasSaveHistory(history.document.id, history.past, history.future).catch(() => {});
         queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
         const res = await api.canvasCreate('Sin título');
         const doc = normalizeDocument(res.document as CanvasDocument);
-        history.replaceDocument(doc);
+        history.replaceDocument(await hydrateDocumentImages(doc));
         setSelectedIds([]);
         setPageIndex(0);
         resetViewportPan();
@@ -1064,14 +1130,16 @@ export default function CanvasView() {
   };
 
   const onApplyPreset = (presetId: string) => {
-    const preset = CANVAS_PRESETS.find((p) => p.id === presetId);
-    if (!preset) return;
-    const doc = preset.create();
-    doc.id = history.document.id;
-    doc.name = history.document.name;
-    history.setDocument(syncImagesPerPage(doc));
-    setSelectedIds([]);
-    setPageIndex(0);
+    void loadCanvasPresets().then((presets) => {
+      const preset = presets.find((p) => p.id === presetId);
+      if (!preset) return;
+      const doc = preset.create();
+      doc.id = history.document.id;
+      doc.name = history.document.name;
+      history.setDocument(syncImagesPerPage(doc));
+      setSelectedIds([]);
+      setPageIndex(0);
+    });
   };
 
   const onDeleteLayer = (id: string) => {
@@ -1219,13 +1287,115 @@ export default function CanvasView() {
     return Number.isFinite(n) ? clampOpacity(n) : undefined;
   }, [history.document.layers, editableSelectedIdSet]);
 
-  const onMoveLayer = (
-    draggedId: string,
-    targetId: string,
-    position: 'before' | 'after' | 'inside',
-  ) => {
-    setAllLayers(moveLayerInTree(history.document.layers, draggedId, targetId, position));
-  };
+  const onMoveLayer = useCallback(
+    (draggedId: string, targetId: string, position: 'before' | 'after' | 'inside') => {
+      setAllLayers(moveLayerInTree(history.document.layers, draggedId, targetId, position));
+    },
+    // setAllLayers closes over history.document; re-bind when layers change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [history.document.layers],
+  );
+
+  const onOpenDocRef = useRef(onOpenDoc);
+  onOpenDocRef.current = onOpenDoc;
+  const onNewRef = useRef(onNew);
+  onNewRef.current = onNew;
+  onDeleteDocRef.current = onDeleteDoc;
+
+  const onSidebarOpenDoc = useCallback((id: string) => {
+    void onOpenDocRef.current(id);
+  }, []);
+
+  const onSidebarNew = useCallback(() => {
+    void onNewRef.current();
+  }, []);
+
+  const onSidebarDeleteDoc = useCallback(() => {
+    void onDeleteDocRef.current();
+  }, []);
+
+  const onAddPage = useCallback(() => {
+    const next = syncImagesPerPage(addPage(history.document));
+    history.setDocument(next);
+    setPageIndex(getPageCount(next) - 1);
+  }, [history]);
+
+  const onRemovePage = useCallback(
+    (index: number) => {
+      const next = syncImagesPerPage(removePage(history.document, index));
+      history.setDocument(next);
+      setSelectedIds((prev) => prev.filter((id) => next.layers.some((l) => l.id === id)));
+      setPageIndex((prev) => {
+        if (index < prev) return prev - 1;
+        if (index === prev) return Math.min(prev, Math.max(0, getPageCount(next) - 1));
+        return prev;
+      });
+    },
+    [history],
+  );
+
+  const onDuplicatePage = useCallback(
+    (index: number) => {
+      const next = syncImagesPerPage(duplicatePage(history.document, index));
+      history.setDocument(next);
+      setPageIndex(index + 1);
+    },
+    [history],
+  );
+
+  const onRenamePage = useCallback(
+    (index: number, name: string) => {
+      history.setDocument(renamePage(history.document, index, name));
+    },
+    [history],
+  );
+
+  const onGroupSelected = useCallback(() => {
+    const editable = selectedIds.filter((id) => {
+      const l = history.document.layers.find((x) => x.id === id);
+      return l && !l.locked && l.type !== 'frame';
+    });
+    if (editable.length < 2) return;
+    const { layers, groupId } = groupLayers(history.document.layers, editable);
+    if (!groupId) return;
+    setAllLayers(layers);
+    setSelectedIds([groupId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIds, history.document.layers]);
+
+  const onUngroupSelected = useCallback(() => {
+    if (selectedIds.length !== 1) return;
+    const layer = history.document.layers.find((l) => l.id === selectedIds[0]);
+    if (!layer || layer.type !== 'group' || layer.locked) return;
+    setAllLayers(ungroupLayers(history.document.layers, layer.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIds, history.document.layers]);
+
+  const onToggleVisible = useCallback(
+    (id: string, visible: boolean) => {
+      setAllLayers(setLayerVisible(history.document.layers, id, visible));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [history.document.layers],
+  );
+
+  const onToggleLocked = useCallback(
+    (id: string, locked: boolean) => {
+      setAllLayers(setLayerLocked(history.document.layers, id, locked));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [history.document.layers],
+  );
+
+  const onRenameLayer = useCallback(
+    (id: string, name: string) => {
+      const layer = history.document.layers.find((l) => l.id === id);
+      if (!layer || layer.locked || layer.type === 'frame') return;
+      setAllLayers(history.document.layers.map((l) => (l.id === id ? { ...l, name } : l)));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [history.document.layers],
+  );
 
   if (loading) {
     return (
@@ -1238,7 +1408,7 @@ export default function CanvasView() {
 
   return (
     <>
-    <div className="canvas-app flex h-full min-h-0 flex-col">
+    <div className="canvas-app relative flex h-full min-h-0 flex-col">
       <TopBar
         name={history.document.name}
         mode={mode}
@@ -1263,8 +1433,16 @@ export default function CanvasView() {
         onSave={() => void onSave()}
         onDuplicate={() => void onDuplicate()}
         leftPanelOpen={leftPanelOpen}
+        rightPanelOpen={rightPanelOpen}
         uiLocked={uiLocked}
         onToggleUiLock={toggleUiLock}
+        syncConflictSlot={
+          syncConflict ? (
+            <SyncConflictBar conflict={syncConflict} onResolve={onConflictResolve} />
+          ) : (
+            <SyncStatusBadge status={syncStatus} />
+          )
+        }
       />
 
       {mode === 'design' ? (
@@ -1285,63 +1463,27 @@ export default function CanvasView() {
             documentName={history.document.name}
             docs={docs}
             documentId={history.document.id}
+            docsSyncing={docsSyncing}
             layers={pageLayers}
             selectedIds={selectedIds}
             pageIndex={pageIndex}
             pageCount={getPageCount(history.document)}
             pages={history.document.pages}
-            onSelect={(id, additive) => onSelect(id, additive)}
-            onOpenDoc={(id) => void onOpenDoc(id)}
-            onNew={() => void onNew()}
-            onDeleteDoc={() => void onDeleteDoc()}
+            onSelect={onSelect}
+            onOpenDoc={onSidebarOpenDoc}
+            onNew={onSidebarNew}
+            onDeleteDoc={onSidebarDeleteDoc}
             onPageChange={setPageIndex}
-            onAddPage={() => {
-              const next = syncImagesPerPage(addPage(history.document));
-              history.setDocument(next);
-              setPageIndex(getPageCount(next) - 1);
-            }}
-            onRemovePage={(index) => {
-              const next = syncImagesPerPage(removePage(history.document, index));
-              history.setDocument(next);
-              setPageIndex((prev) => {
-                if (index < prev) return prev - 1;
-                if (index === prev) return Math.min(prev, Math.max(0, getPageCount(next) - 1));
-                return prev;
-              });
-            }}
-            onDuplicatePage={(index) => {
-              const next = syncImagesPerPage(duplicatePage(history.document, index));
-              history.setDocument(next);
-              setPageIndex(index + 1);
-            }}
-            onRenamePage={(index, name) => {
-              history.setDocument(renamePage(history.document, index, name));
-            }}
+            onAddPage={onAddPage}
+            onRemovePage={onRemovePage}
+            onDuplicatePage={onDuplicatePage}
+            onRenamePage={onRenamePage}
             onMoveLayer={onMoveLayer}
-            onGroupSelected={() => {
-              const editable = selectedIds.filter((id) => {
-                const l = history.document.layers.find((x) => x.id === id);
-                return l && !l.locked && l.type !== 'frame';
-              });
-              if (editable.length < 2) return;
-              const { layers, groupId } = groupLayers(history.document.layers, editable);
-              if (!groupId) return;
-              setAllLayers(layers);
-              setSelectedIds([groupId]);
-            }}
-            onUngroupSelected={() => {
-              if (selectedIds.length !== 1) return;
-              const layer = history.document.layers.find((l) => l.id === selectedIds[0]);
-              if (!layer || layer.type !== 'group' || layer.locked) return;
-              setAllLayers(ungroupLayers(history.document.layers, layer.id));
-            }}
-            onToggleVisible={(id, visible) => setAllLayers(setLayerVisible(history.document.layers, id, visible))}
-            onToggleLocked={(id, locked) => setAllLayers(setLayerLocked(history.document.layers, id, locked))}
-            onRenameLayer={(id, name) => {
-              const layer = history.document.layers.find((l) => l.id === id);
-              if (!layer || layer.locked || layer.type === 'frame') return;
-              setAllLayers(history.document.layers.map((l) => (l.id === id ? { ...l, name } : l)));
-            }}
+            onGroupSelected={onGroupSelected}
+            onUngroupSelected={onUngroupSelected}
+            onToggleVisible={onToggleVisible}
+            onToggleLocked={onToggleLocked}
+            onRenameLayer={onRenameLayer}
           />
           <DesignStage
             navRef={viewportNavRef}
@@ -1385,8 +1527,21 @@ export default function CanvasView() {
             onCommitEdit={commitInlineEdit}
             onUpsertGuide={(guide) => {
               const exists = history.document.guides?.some((g) => g.id === guide.id);
-              if (exists) history.updateSilent(upsertGuide(history.document, guide));
-              else history.setDocument(upsertGuide(history.document, guide));
+              if (!exists) {
+                guideCreateBaselineRef.current = history.document;
+              }
+              history.updateSilent(upsertGuide(history.document, guide));
+            }}
+            onCommitGuideCreate={(guide) => {
+              const baseline = guideCreateBaselineRef.current;
+              guideCreateBaselineRef.current = null;
+              const next = upsertGuide(history.document, guide);
+              if (baseline) {
+                history.updateSilent(next);
+                history.commitFromBaseline(baseline);
+              } else {
+                history.setDocument(next);
+              }
             }}
             onMoveGuide={(id, posMm) => {
               // Called once on pointerup (Artboard keeps live preview local during drag).
@@ -1396,7 +1551,7 @@ export default function CanvasView() {
               history.setDocument(removeGuide(history.document, id));
             }}
             onCancelGuideCreate={(id) => {
-              // Silent: creation already pushed its history entry; aborting leaves no trace.
+              guideCreateBaselineRef.current = null;
               history.updateSilent(removeGuide(history.document, id));
             }}
             showRulers={history.document.settings?.showRulers !== false}
@@ -1511,6 +1666,13 @@ export default function CanvasView() {
             )}
           </DesignStage>
           <RightPanel
+            documentId={history.document.id}
+            onVersionRestored={(doc) => {
+              void (async () => {
+                history.replaceDocument(await hydrateDocumentImages(doc));
+                await refreshList();
+              })();
+            }}
             open={rightPanelOpen}
             onHidePanel={toggleRightPanel}
             hidePanelDisabled={uiLocked}
@@ -1597,13 +1759,10 @@ export default function CanvasView() {
         )
       ) : (
         <Suspense fallback={<div className="canvas-app canvas-loading">Cargando generador…</div>}>
-          <GeneratePanel document={history.document} />
+          <GeneratePanel document={history.document} openDirty={openDirtyRef.current} />
         </Suspense>
       )}
     </div>
-    {syncConflict && (
-      <SyncConflictModal conflict={syncConflict} onResolve={onConflictResolve} />
-    )}
     </>
   );
 }

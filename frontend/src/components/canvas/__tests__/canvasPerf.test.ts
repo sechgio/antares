@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createLayer } from '../constants';
 import { cloneDocument, cloneDocumentBaseline } from '../ops/document';
 import { expandWithDescendants } from '../ops/layerTree';
+import { setActivePageLayers } from '../ops/pages';
 import { patchLayersById, replaceLayerById } from '../ops/patchLayers';
 import { moveSelection, rotateSelection } from '../ops/selectionTransform';
 import { buildSpatialIndex } from '../ops/spatialIndex';
@@ -163,5 +164,91 @@ describe('canvas perf hot path', () => {
       if (next[i] === layers[i]) same += 1;
     }
     expect(same).toBe(99);
+  });
+
+  it('setActivePageLayers preserves untouched refs across a 200-layer page', () => {
+    const pageLayers = makeLayers(200).map((l) => ({ ...l, pageIndex: 0 }));
+    const doc: CanvasDocument = {
+      id: 'd1',
+      name: 'Doc',
+      version: 2,
+      updatedAt: new Date().toISOString(),
+      page: { widthMm: 210, heightMm: 297 },
+      layers: pageLayers,
+      fields: [],
+    };
+    const moved = moveSelection(pageLayers, ['l0'], 5, 0);
+    const t0 = performance.now();
+    const next = setActivePageLayers(doc, 0, moved);
+    const elapsed = performance.now() - t0;
+    let same = 0;
+    for (let i = 0; i < pageLayers.length; i++) {
+      if (next.layers[i] === pageLayers[i]) same += 1;
+    }
+    expect(same).toBe(199);
+    expect(next.layers[0]).not.toBe(pageLayers[0]);
+    expect(elapsed).toBeLessThan(50);
+  });
+
+  it('setActivePageLayers no-op is referentially equal (gesture-start baseline)', () => {
+    const layers = makeLayers(80).map((l) => ({ ...l, pageIndex: 0 }));
+    const doc: CanvasDocument = {
+      id: 'd1',
+      name: 'Doc',
+      version: 2,
+      updatedAt: new Date().toISOString(),
+      page: { widthMm: 210, heightMm: 297 },
+      layers,
+      fields: [],
+    };
+    expect(setActivePageLayers(doc, 0, layers)).toBe(doc);
+  });
+
+  it('layerDomTransform matches translate + rotate composition', async () => {
+    const { layerDomTransform, applyLayerDomTransforms } = await import('../ops/imperativeLayerDom');
+    const layer = createLayer('rect', {
+      id: 'r1',
+      cssVars: {
+        '--translate-x': '10mm',
+        '--translate-y': '20mm',
+        '--width': '8mm',
+        '--height': '8mm',
+        '--rotate': '15deg',
+      },
+    });
+    expect(layerDomTransform(layer)).toContain('translate(');
+    expect(layerDomTransform(layer)).toContain('rotate(15deg)');
+
+    const root = document.createElement('div');
+    const node = document.createElement('div');
+    node.dataset.layerId = 'r1';
+    root.appendChild(node);
+    applyLayerDomTransforms(root, [layer], ['r1']);
+    expect(node.style.transform).toContain('translate(');
+    expect(node.style.willChange).toBe('transform');
+  });
+
+  it('applyLayerDomGeometry writes size + transform; clear drops will-change', async () => {
+    const { applyLayerDomGeometry, clearLayerDomGestureStyles } = await import('../ops/imperativeLayerDom');
+    const layer = createLayer('rect', {
+      id: 'r2',
+      cssVars: {
+        '--translate-x': '10mm',
+        '--translate-y': '20mm',
+        '--width': '25mm',
+        '--height': '12mm',
+      },
+    });
+    const root = document.createElement('div');
+    const node = document.createElement('div');
+    node.dataset.layerId = 'r2';
+    root.appendChild(node);
+    applyLayerDomGeometry(root, [layer], ['r2']);
+    expect(node.style.transform).toContain('translate(');
+    expect(node.style.width).toBe(`${Math.round((25 * 96) / 25.4)}px`);
+    expect(node.style.height).toBe(`${Math.round((12 * 96) / 25.4)}px`);
+    expect(node.style.willChange).toBe('transform');
+    clearLayerDomGestureStyles(root, [layer], ['r2']);
+    expect(node.style.willChange).toBe('');
   });
 });

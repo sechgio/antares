@@ -10,7 +10,7 @@ import {
   Unlock,
 } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
-import type { CanvasLayer, CanvasSharedStyle, CanvasStyleKind } from '../types';
+import type { CanvasDocument, CanvasLayer, CanvasSharedStyle, CanvasStyleKind } from '../types';
 import InlineNumField from './InlineNumField';
 import {
   applyLineStrokeWeight,
@@ -38,8 +38,11 @@ import ShapeSection from './panels/tails/ShapeSection';
 import { TAIL_SECTIONS } from './panels/registry';
 import type { SectionProps, ZOrderCallbacks } from './panels/types';
 import CanvasSelect from './CanvasSelect';
+import CanvasVersionsPanel from './CanvasVersionsPanel';
 
 interface RightPanelProps {
+  documentId?: string;
+  onVersionRestored?: (doc: CanvasDocument) => void;
   layer: CanvasLayer | null;
   selectedCount: number;
   selectedIds?: string[];
@@ -87,6 +90,8 @@ interface RightPanelProps {
 }
 
 export default memo(function RightPanel({
+  documentId,
+  onVersionRestored,
   layer,
   selectedCount,
   selectedIds = [],
@@ -120,8 +125,9 @@ export default memo(function RightPanel({
   onHidePanel,
   hidePanelDisabled = false,
 }: RightPanelProps) {
-  const [exportScale, setExportScale] = useState(1);
+  const [activeTab, setActiveTab] = useState<'properties' | 'versions'>('properties');
   const [exporting, setExporting] = useState(false);
+  const [exportScale, setExportScale] = useState(1);
 
   // Latest layer for live edits: props lag behind rapid field changes (X then Y),
   // so setVarLive must accumulate on the last emit, not the stale prop snapshot.
@@ -251,27 +257,47 @@ export default memo(function RightPanel({
     <aside
       className={
         open
-          ? 'canvas-panel-chrome flex h-full w-[272px] shrink-0 flex-col overflow-hidden border-l'
-          : 'canvas-panel-chrome flex h-full w-0 min-w-0 shrink-0 flex-col overflow-hidden border-l-0'
+          ? 'canvas-panel canvas-panel-chrome flex h-full w-[272px] shrink-0 flex-col overflow-hidden border-l'
+          : 'canvas-panel canvas-panel-chrome flex h-full w-0 min-w-0 shrink-0 flex-col overflow-hidden border-l-0'
       }
-      style={{ background: 'var(--cv-panel)', borderColor: 'var(--cv-border)' }}
       data-open={open ? 'true' : 'false'}
       data-testid="canvas-right-panel"
       aria-hidden={!open}
       {...(!open ? ({ inert: '' } as HTMLAttributes<HTMLElement>) : {})}
     >
       <div
-        className="relative z-20 flex items-center justify-between gap-2 border-b px-4 py-3"
+        className="relative z-20 flex items-center justify-between gap-2 border-b px-4 py-2"
         style={{ borderColor: 'var(--cv-border)' }}
       >
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <span className="canvas-section-title !mb-0 truncate">
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setActiveTab('properties')}
+            className={`px-2 py-1 text-xs font-semibold rounded transition-colors ${
+              activeTab === 'properties'
+                ? 'bg-[var(--cv-bg-hover)] text-[var(--cv-text)]'
+                : 'text-[var(--cv-text-muted)] hover:text-[var(--cv-text)]'
+            }`}
+          >
             {selectedCount > 1
               ? `${selectedCount} seleccionados`
               : hasSelection && layer
                 ? layerPanelTitle(layer)
                 : 'Propiedades'}
-          </span>
+          </button>
+          {documentId && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('versions')}
+              className={`px-2 py-1 text-xs font-semibold rounded transition-colors ${
+                activeTab === 'versions'
+                  ? 'bg-[var(--cv-bg-hover)] text-[var(--cv-text)]'
+                  : 'text-[var(--cv-text-muted)] hover:text-[var(--cv-text)]'
+              }`}
+            >
+              Versiones
+            </button>
+          )}
           <div
             ref={zoomSlotRef}
             className="relative shrink-0"
@@ -281,7 +307,7 @@ export default memo(function RightPanel({
             <WithHoverTooltip label="Ocultar panel derecho" placement="bottom" variant="dark">
               <button
                 type="button"
-                className="canvas-icon-btn !h-7 !w-7 shrink-0"
+                className="canvas-icon-btn shrink-0 ml-auto"
                 data-testid="canvas-toggle-right-panel"
                 disabled={hidePanelDisabled}
                 onClick={onHidePanel}
@@ -292,7 +318,7 @@ export default memo(function RightPanel({
             </WithHoverTooltip>
           )}
         </div>
-        {hasSelection && layer && selectedCount === 1 && (
+        {activeTab === 'properties' && hasSelection && layer && selectedCount === 1 && (
           <div className="flex items-center gap-0.5">
             <WithHoverTooltip
               label={layer.visible !== false ? 'Ocultar' : 'Mostrar'}
@@ -326,11 +352,15 @@ export default memo(function RightPanel({
         )}
       </div>
 
-      {selectedCount === 0 && onApplyPreset && (
-        <div className="border-b px-4 py-3" style={{ borderColor: 'var(--cv-border)' }}>
-          <TemplatesSection onApplyPreset={onApplyPreset} tooltipPlacement="left" />
-        </div>
-      )}
+      {activeTab === 'versions' && documentId ? (
+        <CanvasVersionsPanel documentId={documentId} onVersionRestored={onVersionRestored} />
+      ) : (
+        <>
+          {selectedCount === 0 && onApplyPreset && (
+            <div className="border-b px-4 py-3" style={{ borderColor: 'var(--cv-border)' }}>
+              <TemplatesSection onApplyPreset={onApplyPreset} tooltipPlacement="left" />
+            </div>
+          )}
 
       {selectedCount > 1 && (
         <div className="canvas-section">
@@ -552,6 +582,8 @@ export default memo(function RightPanel({
             </button>
           </div>
         </div>
+      )}
+        </>
       )}
     </aside>
   );

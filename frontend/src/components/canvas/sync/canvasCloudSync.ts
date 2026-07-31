@@ -20,9 +20,11 @@ export type CanvasRemoteMeta = {
 /** Conflict detected: remote is newer but the open doc has unsaved local edits. */
 export type SyncConflict = {
   localDoc: CanvasDocument;
-  remoteDoc: CanvasDocument;
+  /** null when the remote row is soft-deleted */
+  remoteDoc: CanvasDocument | null;
   remoteUpdatedAt: string;
   localUpdatedAt: string;
+  remoteDeleted?: boolean;
 };
 
 export type SyncResult = {
@@ -42,6 +44,27 @@ export type SyncResult = {
 };
 
 type LocalSummary = { id: string; name: string; updatedAt?: string };
+
+/** Bound every Supabase round-trip so a hung HTTPS never sticks the sync mutex. */
+export const CLOUD_SYNC_TIMEOUT_MS = 30_000;
+
+export async function withTimeout<T>(
+  promise: PromiseLike<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
 
 export function isNewer(a?: string, b?: string): boolean {
   if (!a) return false;
@@ -67,7 +90,11 @@ export function shouldPushCanvasRow(
 
 async function sessionUserId(): Promise<string | null> {
   if (!supabase) return null;
-  const { data } = await supabase.auth.getSession();
+  const { data } = await withTimeout(
+    supabase.auth.getSession(),
+    CLOUD_SYNC_TIMEOUT_MS,
+    'canvas-auth-session',
+  );
   return data.session?.user?.id ?? null;
 }
 
@@ -75,30 +102,54 @@ export async function listRemoteCanvasMeta(): Promise<CanvasRemoteMeta[] | null>
   if (!supabase) return null;
   const uid = await sessionUserId();
   if (!uid) return null;
-  const { data, error } = await supabase
-    .from('canvas_documents')
-    .select('id, name, updated_at, deleted_at');
+  const { data, error } = await withTimeout(
+    supabase.from('canvas_documents').select('id, name, updated_at, deleted_at'),
+    CLOUD_SYNC_TIMEOUT_MS,
+    'canvas-list-remote',
+  );
   if (error) throw new Error(error.message);
   return (data ?? []) as CanvasRemoteMeta[];
 }
 
-export async function pushCanvasDocument(doc: CanvasDocument): Promise<boolean> {
+export async function pushCanvasDocument(
+  doc: CanvasDocument,
+  options?: { forceResurrect?: boolean },
+): Promise<boolean> {
   if (!supabase) return false;
   const uid = await sessionUserId();
   if (!uid) return false;
 
   const updatedAt = doc.updatedAt || new Date().toISOString();
 
-  const { data: existing, error: selectError } = await supabase
-    .from('canvas_documents')
-    .select('updated_at, deleted_at, created_by')
-    .eq('id', doc.id)
-    .maybeSingle();
+  const { data: existing, error: selectError } = await withTimeout(
+    supabase
+      .from('canvas_documents')
+      .select('updated_at, deleted_at, created_by')
+      .eq('id', doc.id)
+      .maybeSingle(),
+    CLOUD_SYNC_TIMEOUT_MS,
+    'canvas-push-select',
+  );
   if (selectError) throw new Error(selectError.message);
   if (
     existing &&
+    !options?.forceResurrect &&
     !shouldPushCanvasRow(updatedAt, existing.updated_at, existing.deleted_at)
   ) {
+    try {
+      await withTimeout(
+        supabase.from('canvas_document_versions').insert({
+          document_id: doc.id,
+          document: doc,
+          created_by: uid,
+          created_at: updatedAt,
+        }),
+        CLOUD_SYNC_TIMEOUT_MS,
+        'canvas-push-skip-preserve',
+      );
+    } catch {
+      // Ignore preserve errors so main skip flow completes cleanly
+    }
     return false;
   }
 
@@ -117,9 +168,11 @@ export async function pushCanvasDocument(doc: CanvasDocument): Promise<boolean> 
 
   // Atomic upsert on PK — avoids the select-then-insert/update race where two
   // concurrent pushes could both see "no existing row" and duplicate.
-  const { error } = await supabase
-    .from('canvas_documents')
-    .upsert(row, { onConflict: 'id' });
+  const { error } = await withTimeout(
+    supabase.from('canvas_documents').upsert(row, { onConflict: 'id' }),
+    CLOUD_SYNC_TIMEOUT_MS,
+    'canvas-push-upsert',
+  );
   if (error) throw new Error(error.message);
   return true;
 }
@@ -129,21 +182,29 @@ export async function markRemoteCanvasDeleted(id: string): Promise<boolean> {
   const uid = await sessionUserId();
   if (!uid) return false;
   const now = new Date().toISOString();
-  const { error } = await supabase
-    .from('canvas_documents')
-    .update({ deleted_at: now, updated_at: now, updated_by: uid })
-    .eq('id', id);
+  const { error } = await withTimeout(
+    supabase
+      .from('canvas_documents')
+      .update({ deleted_at: now, updated_at: now, updated_by: uid })
+      .eq('id', id),
+    CLOUD_SYNC_TIMEOUT_MS,
+    'canvas-mark-deleted',
+  );
   if (error) throw new Error(error.message);
   return true;
 }
 
 async function fetchRemoteDocuments(ids: string[]): Promise<CanvasDocument[]> {
   if (!supabase || ids.length === 0) return [];
-  const { data, error } = await supabase
-    .from('canvas_documents')
-    .select('document, updated_at')
-    .in('id', ids)
-    .is('deleted_at', null);
+  const { data, error } = await withTimeout(
+    supabase
+      .from('canvas_documents')
+      .select('document, updated_at')
+      .in('id', ids)
+      .is('deleted_at', null),
+    CLOUD_SYNC_TIMEOUT_MS,
+    'canvas-fetch-remote',
+  );
   if (error) throw new Error(error.message);
   const out: CanvasDocument[] = [];
   for (const row of data ?? []) {
@@ -162,6 +223,11 @@ export type SyncOptions = {
   openDocumentId?: string;
   /** When true, never overwrite the open document from cloud. */
   openDirty?: boolean;
+  /**
+   * Called with the coalesced retry's SyncResult when this call was skipped
+   * because another sync was in flight. Not invoked for the in-flight caller.
+   */
+  followUp?: (result: SyncResult) => void;
 };
 
 // Module-level mutex: focus events and GeneratePanel can both fire sync in
@@ -169,6 +235,20 @@ export type SyncOptions = {
 // doc that was just locally edited and pushed. Declared before use so the
 // queued-push waiter never hits a TDZ violation.
 let syncPromise: Promise<unknown> | null = null;
+/** Coalesced options for one retry after the in-flight sync unlocks. */
+let pendingSyncOptions: SyncOptions | null = null;
+/** Side-effects callback from the skipped caller (refreshList / conflict / reload). */
+let pendingSyncFollowUp: ((result: SyncResult) => void) | null = null;
+/** Chain of in-flight sync/push/delete ops — pushes never overtake a coalesced retry. */
+let opChain: Promise<unknown> = Promise.resolve();
+
+function mergeSyncOptions(a: SyncOptions | null, b: SyncOptions): SyncOptions {
+  return {
+    openDocumentId: b.openDocumentId ?? a?.openDocumentId,
+    // Prefer dirty=true so a later dirty caller is not overwritten by a clean retry.
+    openDirty: Boolean(a?.openDirty || b.openDirty),
+  };
+}
 
 /**
  * Merge cloud ↔ local without blocking the editor.
@@ -177,27 +257,58 @@ let syncPromise: Promise<unknown> | null = null;
 export async function syncCanvasDocuments(options: SyncOptions = {}): Promise<SyncResult> {
   const empty: SyncResult = { pulled: 0, pushed: 0, deletedLocal: 0, skipped: false, pushErrors: 0 };
   if (!supabase) return { ...empty, skipped: true, reason: 'no-supabase' };
-  const uid = await sessionUserId();
-  if (!uid) return { ...empty, skipped: true, reason: 'no-session' };
-  if (syncPromise) return { ...empty, skipped: true, reason: 'sync-in-flight' };
+  if (syncPromise) {
+    pendingSyncOptions = mergeSyncOptions(pendingSyncOptions, options);
+    if (options.followUp) pendingSyncFollowUp = options.followUp;
+    return { ...empty, skipped: true, reason: 'sync-in-flight' };
+  }
   let releaseSync!: () => void;
   syncPromise = new Promise<void>((resolve) => {
     releaseSync = resolve;
   });
-  try {
-    return await runSync(options);
-  } finally {
-    releaseSync();
-    syncPromise = null;
-  }
+  const run = (async (): Promise<SyncResult> => {
+    try {
+      const uid = await sessionUserId();
+      if (!uid) return { ...empty, skipped: true, reason: 'no-session' };
+      return await runSync(options);
+    } catch (err) {
+      const lastError = err instanceof Error ? err.message : String(err);
+      return { ...empty, skipped: true, reason: 'error', lastError };
+    } finally {
+      releaseSync();
+      syncPromise = null;
+      const next = pendingSyncOptions;
+      const followUp = pendingSyncFollowUp;
+      pendingSyncOptions = null;
+      pendingSyncFollowUp = null;
+      if (next) {
+        // Retry starts here so opChain (updated by this call) includes it before
+        // any queued push's microtask runs.
+        const retry = syncCanvasDocuments(next);
+        void retry
+          .then((retryResult) => {
+            followUp?.(retryResult);
+          })
+          .catch(() => {
+            followUp?.({ ...empty, skipped: true, reason: 'error' });
+          });
+      }
+    }
+  })();
+  opChain = run.catch(() => {
+    // Sync errors are returned as SyncResult; keep opChain from rejecting forever.
+  });
+  return run;
 }
 
 async function runSync(options: SyncOptions): Promise<SyncResult> {
   const empty: SyncResult = { pulled: 0, pushed: 0, deletedLocal: 0, skipped: false, pushErrors: 0 };
-  const remote = await listRemoteCanvasMeta();
+  const [remote, localRes] = await Promise.all([
+    listRemoteCanvasMeta(),
+    api.canvasList(),
+  ]);
   if (!remote) return { ...empty, skipped: true, reason: 'no-session' };
 
-  const localRes = await api.canvasList();
   const localList = localRes.documents as LocalSummary[];
   const localById = new Map(localList.map((d) => [d.id, d]));
   const remoteById = new Map(remote.map((r) => [r.id, r]));
@@ -212,10 +323,20 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
 
   const toPullIds: string[] = [];
   let conflictRemoteMeta: CanvasRemoteMeta | undefined;
+  let conflictRemoteDeletedMeta: CanvasRemoteMeta | undefined;
   for (const r of remote) {
     if (r.deleted_at) {
       if (localById.has(r.id)) {
-        if (options.openDocumentId === r.id) continue;
+        if (options.openDocumentId === r.id) {
+          if (options.openDirty) {
+            conflictRemoteDeletedMeta = r;
+          } else {
+            await api.canvasDelete(r.id);
+            deletedLocal += 1;
+            localById.delete(r.id);
+          }
+          continue;
+        }
         await api.canvasDelete(r.id);
         deletedLocal += 1;
         localById.delete(r.id);
@@ -223,7 +344,9 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
       continue;
     }
     const local = localById.get(r.id);
-    if (!local || isNewer(r.updated_at, local.updatedAt)) {
+    const localTime = local?.updatedAt || '';
+    const remoteNewer = localTime ? isNewer(r.updated_at, localTime) : false;
+    if (!local || remoteNewer) {
       if (options.openDocumentId === r.id && options.openDirty) {
         // Conflict: open doc has unsaved edits but remote is newer.
         conflictRemoteMeta = r;
@@ -235,9 +358,9 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
 
   if (toPullIds.length > 0) {
     const docs = await fetchRemoteDocuments(toPullIds);
+    await Promise.all(docs.map((doc) => api.canvasSave(doc, { touch: false })));
+    pulled = docs.length;
     for (const doc of docs) {
-      await api.canvasSave(doc, { touch: false });
-      pulled += 1;
       if (options.openDocumentId === doc.id && !options.openDirty) {
         reloadOpenId = doc.id;
       }
@@ -245,7 +368,21 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
   }
 
   // Build the conflict payload if the open doc diverged from cloud.
-  if (conflictRemoteMeta && options.openDocumentId) {
+  if (conflictRemoteDeletedMeta && options.openDocumentId) {
+    try {
+      const localGot = await api.canvasGet(options.openDocumentId);
+      const localDoc = normalizeDocument(localGot.document as CanvasDocument);
+      conflict = {
+        localDoc,
+        remoteDoc: null,
+        remoteUpdatedAt: conflictRemoteDeletedMeta.updated_at,
+        localUpdatedAt: localDoc.updatedAt || '',
+        remoteDeleted: true,
+      };
+    } catch {
+      // Fetch failed — degrade to the old skip behavior.
+    }
+  } else if (conflictRemoteMeta && options.openDocumentId) {
     try {
       const [remoteDocs, localGot] = await Promise.all([
         fetchRemoteDocuments([conflictRemoteMeta.id]),
@@ -269,7 +406,9 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
   for (const local of localById.values()) {
     const r = remoteById.get(local.id);
     if (r?.deleted_at) continue;
-    if (r && !isNewer(local.updatedAt, r.updated_at)) continue;
+    const localTime = local.updatedAt || '';
+    const localIsNewer = !localTime ? Boolean(r) : isNewer(localTime, r?.updated_at);
+    if (r && !localIsNewer) continue;
     try {
       const got = await api.canvasGet(local.id);
       const ok = await pushCanvasDocument(normalizeDocument(got.document as CanvasDocument));
@@ -285,19 +424,81 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
 }
 
 /** Fire-and-forget push after a successful local save.
- *  Waits for any in-flight sync so the push's select-then-upsert cannot race
- *  the sync's own LWW guard on the same document. */
-export function queueCanvasCloudPush(doc: CanvasDocument): void {
-  void (syncPromise ?? Promise.resolve())
-    .catch(() => {})
-    .then(() => pushCanvasDocument(doc))
-    .catch(() => {
-      /* local already saved */
-    });
+ *  Serialized behind opChain so pushes never overtake a sync's LWW guard
+ *  or a coalesced retry. Resolves when this push finishes (errors swallowed —
+ *  local is already saved). */
+export function queueCanvasCloudPush(
+  doc: CanvasDocument,
+  options?: { forceResurrect?: boolean },
+): Promise<void> {
+  const next = opChain.then(() => pushCanvasDocument(doc, options));
+  // Keep the chain alive after a failed push so later ops are not stuck.
+  opChain = next.catch(() => {});
+  return next.then(() => undefined).catch(() => undefined);
 }
 
-export function queueCanvasCloudDelete(id: string): void {
-  void markRemoteCanvasDeleted(id).catch(() => {
-    /* local already deleted */
-  });
+export function queueCanvasCloudDelete(id: string): Promise<void> {
+  const next = opChain.then(() => markRemoteCanvasDeleted(id));
+  opChain = next.catch(() => {});
+  return next.then(() => undefined).catch(() => undefined);
 }
+
+export type CanvasVersionEntry = {
+  id: string;
+  document_id: string;
+  document?: CanvasDocument;
+  created_by: string | null;
+  created_at: string;
+};
+
+export async function listCanvasVersions(documentId: string): Promise<CanvasVersionEntry[]> {
+  if (!supabase) return [];
+  const uid = await sessionUserId();
+  if (!uid) return [];
+  const { data, error } = await withTimeout(
+    supabase
+      .from('canvas_document_versions')
+      .select('id, document_id, created_by, created_at')
+      .eq('document_id', documentId)
+      .order('created_at', { ascending: false })
+      .limit(50),
+    CLOUD_SYNC_TIMEOUT_MS,
+    'canvas-list-versions',
+  );
+  if (error) throw new Error(error.message);
+  return (data ?? []) as CanvasVersionEntry[];
+}
+
+export async function restoreCanvasVersion(
+  documentId: string,
+  versionId: string,
+): Promise<CanvasDocument | null> {
+  if (!supabase) return null;
+  const uid = await sessionUserId();
+  if (!uid) return null;
+
+  const { data, error } = await withTimeout(
+    supabase
+      .from('canvas_document_versions')
+      .select('document')
+      .eq('id', versionId)
+      .eq('document_id', documentId)
+      .single(),
+    CLOUD_SYNC_TIMEOUT_MS,
+    'canvas-fetch-version',
+  );
+  if (error || !data?.document) return null;
+
+  const { serializeDocumentImages } = await import('../utils/imageBlobStore');
+  const restoredDoc = normalizeDocument({
+    ...(data.document as CanvasDocument),
+    updatedAt: new Date().toISOString(),
+  });
+  const serialized = await serializeDocumentImages(restoredDoc);
+
+  await api.canvasSave(serialized, { touch: true });
+  await queueCanvasCloudPush(serialized, { forceResurrect: true });
+
+  return serialized;
+}
+

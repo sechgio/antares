@@ -36,6 +36,7 @@ const SIDEBAR_WIDTH_COLLAPSED = 44;
 interface SidebarProps {
   activeTab: TabId;
   onTabChange: (tab: TabId) => void;
+  onPrefetchTab?: (tab: TabId) => void;
 }
 
 const ICONS: Record<TabId, ComponentType<{ className?: string }>> = {
@@ -98,7 +99,7 @@ function readStoredExpanded(): boolean {
   }
 }
 
-export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
+export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: SidebarProps) {
   const { t } = useTranslation();
   const { user, signOut } = useAuth();
   const { addToast } = useToast();
@@ -191,6 +192,8 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
                   <button
                     type="button"
                     onClick={() => onTabChange(tabId)}
+                    onMouseEnter={() => onPrefetchTab?.(tabId)}
+                    onFocus={() => onPrefetchTab?.(tabId)}
                     aria-label={tab.label}
                     aria-current={isActive ? 'page' : undefined}
                     data-active={isActive ? 'true' : undefined}

@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && node --max-old-space-size=4096 node_modules/vite/bin/vite.js build",
+    "build": "tsc && node --max-old-space-size=4096 node_modules/vite/bin/vite.js build && node scripts/canvas-appear-budget.mjs",
+    "check:canvas-budget": "node scripts/canvas-appear-budget.mjs",
     "preview": "vite preview",
     "test": "vitest run"
   },
@@ -13,6 +14,7 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@fontsource-variable/inter": "^5.3.0",
     "@fullcalendar/daygrid": "^6.1.21",
     "@fullcalendar/interaction": "^6.1.21",
     "@fullcalendar/react": "^6.1.21",

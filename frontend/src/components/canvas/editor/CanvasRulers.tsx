@@ -3,6 +3,7 @@ import type { CanvasGuide } from '../types';
 import { MM_TO_PX } from '../ops/drawHelpers';
 import { clampGuidePos, createGuide, formatGapMm, isGuideRemovalPoint } from '../ops/guides';
 import { createGestureRaf } from '../ops/gestureRaf';
+import { createPointerGestureSession } from '../ops/pointerGestureSession';
 
 const RULER = 20;
 
@@ -13,6 +14,8 @@ interface CanvasRulersProps {
   pageHeightMm: number;
   pageIndex: number;
   onCreateGuide: (guide: CanvasGuide) => void;
+  /** Commit a guide after ruler drag completes on the canvas. */
+  onCommitGuideCreate?: (guide: CanvasGuide) => void;
   /** Abort an in-progress guide creation (Esc, or released back onto the ruler). */
   onCancelCreate?: (id: string) => void;
 }
@@ -93,6 +96,7 @@ function CanvasRulers({
   pageHeightMm,
   pageIndex,
   onCreateGuide,
+  onCommitGuideCreate,
   onCancelCreate,
 }: CanvasRulersProps) {
   const frameW = Math.round(pageWidthMm * MM_TO_PX * zoom);
@@ -167,52 +171,43 @@ function CanvasRulers({
         const delta = Math.abs((axis === 'x' ? ev.clientX : ev.clientY) - startClient);
         if (delta < 4) return;
         created = createGuide(axis, clampGuidePos(pos, maxMm), pageIndex);
+        onCreateGuide(created);
       } else {
         created = { ...created, posMm: clampGuidePos(pos, maxMm) };
+        onCreateGuide(created);
       }
       setCreatePreview(created);
       setCreateChip({ posMm: created.posMm, x: ev.clientX, y: ev.clientY });
     });
 
-    const cleanup = () => {
-      raf.cancel();
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('keydown', onKey);
-      setCreateChip(null);
-      setCreatePreview(null);
-    };
-
-    const cancel = () => {
-      cancelled = true;
-      // Nothing was committed to the document yet; cancel is a no-op for history.
-      if (created) onCancelCreate?.(created.id);
-      created = null;
-      cleanup();
-    };
-
-    const onMove = (ev: PointerEvent) => raf.schedule(ev);
-
-    const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === 'Escape') cancel();
-    };
-
-    const onUp = (ev: PointerEvent) => {
-      raf.flush();
-      if (!cancelled && created) {
+    let session: ReturnType<typeof createPointerGestureSession>;
+    session = createPointerGestureSession({
+      onMove: (ev) => raf.schedule(ev),
+      onEnd: (ev) => {
+        raf.flush();
+        setCreateChip(null);
+        setCreatePreview(null);
+        if (!ev || cancelled || !created) return;
         const rect = viewportEl?.getBoundingClientRect();
         if (rect && isGuideRemovalPoint(axis, ev.clientX, ev.clientY, rect, RULER)) {
           onCancelCreate?.(created.id);
         } else {
-          onCreateGuide(created);
+          (onCommitGuideCreate ?? onCreateGuide)(created);
         }
-      }
-      cleanup();
-    };
-
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('keydown', onKey);
+      },
+      onKeyDown: (ev) => {
+        if (ev.key !== 'Escape') return;
+        cancelled = true;
+        if (created) onCancelCreate?.(created.id);
+        created = null;
+        session.abort();
+      },
+      onAbort: () => {
+        raf.cancel();
+        setCreateChip(null);
+        setCreatePreview(null);
+      },
+    });
   };
 
 

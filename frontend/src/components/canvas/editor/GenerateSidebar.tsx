@@ -424,6 +424,9 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
 
               {colorMode === 'cmyk' ? (
                 <div className="space-y-1.5 rounded-md border p-1.5" style={{ borderColor: 'var(--cv-border-strong)', background: 'var(--cv-hover)' }}>
+                  <p className="text-[9px] leading-snug" style={{ color: 'var(--cv-text-muted)' }}>
+                    Formas recortadas, tablas y grids se imprimen como caja; usa RGB si necesitas fidelidad total.
+                  </p>
                   <div className="space-y-1">
                     <span className="text-[9px] font-medium" style={{ color: 'var(--cv-text-muted)' }}>Perfil ICC Imprenta</span>
                     <CanvasSelect

@@ -50,7 +50,14 @@ export function removePage(doc: CanvasDocument, pageIndex: number): CanvasDocume
       if (current > pageIndex) return { ...layer, pageIndex: current - 1 };
       return layer;
     });
-  return { ...doc, pages, layers };
+  const guides = (doc.guides ?? [])
+    .filter((guide) => (guide.pageIndex ?? 0) !== pageIndex)
+    .map((guide) => {
+      const current = guide.pageIndex ?? 0;
+      if (current > pageIndex) return { ...guide, pageIndex: current - 1 };
+      return guide;
+    });
+  return { ...doc, pages, layers, guides };
 }
 
 function ensurePages(doc: CanvasDocument): Array<{ id: string; name: string }> {
@@ -96,7 +103,21 @@ export function duplicatePage(doc: CanvasDocument, pageIndex: number): CanvasDoc
     return [layer];
   });
 
-  return { ...doc, version: DOCUMENT_VERSION, pages, layers };
+  const sourceGuides = (doc.guides ?? []).filter((guide) => (guide.pageIndex ?? 0) === pageIndex);
+  const guides = [
+    ...(doc.guides ?? []).map((guide) => {
+      const idx = guide.pageIndex ?? 0;
+      if (idx > pageIndex) return { ...guide, pageIndex: idx + 1 };
+      return guide;
+    }),
+    ...sourceGuides.map((guide) => ({
+      ...guide,
+      id: newId(),
+      pageIndex: pageIndex + 1,
+    })),
+  ];
+
+  return { ...doc, version: DOCUMENT_VERSION, pages, layers, guides };
 }
 
 export function renamePage(doc: CanvasDocument, pageIndex: number, name: string): CanvasDocument {
@@ -115,6 +136,10 @@ export function renamePage(doc: CanvasDocument, pageIndex: number, name: string)
   return { ...doc, version: DOCUMENT_VERSION, pages, layers };
 }
 
+function withPageIndex(layer: CanvasLayer, pageIndex: number): CanvasLayer {
+  return (layer.pageIndex ?? 0) === pageIndex ? layer : { ...layer, pageIndex };
+}
+
 export function setActivePageLayers(
   doc: CanvasDocument,
   pageIndex: number,
@@ -124,10 +149,14 @@ export function setActivePageLayers(
   // The incoming `layers` is the complete set for this page: existing layers
   // keep their position, removed layers are dropped, new layers are inserted
   // right after the last active-page layer (not at the very end of the array).
-  const byId = new Map(layers.map((l) => [l.id, { ...l, pageIndex }]));
+  //
+  // Identity-preserving: reuse layer object refs when pageIndex already matches
+  // so React.memo(LayerNode) and history diffs skip untouched nodes.
+  const byId = new Map(layers.map((l) => [l.id, l]));
   const result: CanvasLayer[] = [];
   const placed = new Set<string>();
   let lastActiveIdx = -1;
+  let mutated = false;
   for (const layer of doc.layers) {
     if ((layer.pageIndex ?? 0) !== pageIndex) {
       result.push(layer);
@@ -135,19 +164,34 @@ export function setActivePageLayers(
     }
     const next = byId.get(layer.id);
     if (next) {
-      result.push(next);
+      const stamped = withPageIndex(next, pageIndex);
+      if (stamped !== layer) mutated = true;
+      result.push(stamped);
       placed.add(layer.id);
       lastActiveIdx = result.length - 1;
+    } else {
+      mutated = true;
     }
   }
   const newLayers: CanvasLayer[] = [];
   for (const layer of layers) {
     if (!placed.has(layer.id)) {
-      newLayers.push({ ...layer, pageIndex });
+      newLayers.push(withPageIndex(layer, pageIndex));
+      mutated = true;
     }
   }
   if (newLayers.length) {
     result.splice(lastActiveIdx + 1, 0, ...newLayers);
+  }
+  if (!mutated && result.length === doc.layers.length) {
+    let same = true;
+    for (let i = 0; i < result.length; i++) {
+      if (result[i] !== doc.layers[i]) {
+        same = false;
+        break;
+      }
+    }
+    if (same) return doc;
   }
   return { ...doc, layers: result };
 }
@@ -231,8 +275,11 @@ export function planMultiPageRender(
   const slotPerPage = templateImagesPerPage(doc);
   // Slots win when present; options/settings only apply when the template has no slots.
   const hasSlots = doc.layers.some((l) => l.type === 'imageSlot');
+  const page0Slots = doc.layers.some((l) => l.type === 'imageSlot' && (l.pageIndex ?? 0) === 0);
+  // Photo pagination requires slots on page 0; otherwise fall back to settings capacity.
+  const slotPagination = hasSlots && page0Slots;
   const configured = options?.imagesPerPage ?? doc.settings?.imagesPerPage;
-  const perPage = hasSlots
+  const perPage = slotPagination
     ? slotPerPage
     : configured && configured > 0
       ? configured

@@ -59,6 +59,19 @@ function isDeepEqual(a: unknown, b: unknown): boolean {
   return true;
 }
 
+function isShallowEqualDict(a: Record<string, unknown> | undefined | null, b: Record<string, unknown> | undefined | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  for (let i = 0; i < keysA.length; i++) {
+    const k = keysA[i];
+    if (a[k] !== b[k]) return false;
+  }
+  return true;
+}
+
 function computeLayerDiff(prev: CanvasLayer, next: CanvasLayer): Partial<CanvasLayer> | null {
   if (prev === next) return null;
   const changes: Partial<CanvasLayer> = {};
@@ -85,13 +98,13 @@ function computeLayerDiff(prev: CanvasLayer, next: CanvasLayer): Partial<CanvasL
   }
 
   // Compare cssVars
-  if (!isDeepEqual(prev.cssVars, next.cssVars)) {
+  if (prev.cssVars !== next.cssVars && !isShallowEqualDict(prev.cssVars as unknown as Record<string, unknown>, next.cssVars as unknown as Record<string, unknown>)) {
     changes.cssVars = { ...next.cssVars };
     hasChanges = true;
   }
 
   // Compare meta
-  if (!isDeepEqual(prev.meta, next.meta)) {
+  if (prev.meta !== next.meta && !isShallowEqualDict(prev.meta as unknown as Record<string, unknown>, next.meta as unknown as Record<string, unknown>) && !isDeepEqual(prev.meta, next.meta)) {
     changes.meta = next.meta ? { ...next.meta } : undefined;
     hasChanges = true;
   }
@@ -125,8 +138,10 @@ export function computeDocumentDiff(prev: CanvasDocument, next: CanvasDocument):
   ];
 
   for (const key of docKeys) {
-    if (!isDeepEqual(prev[key], next[key])) {
-      (docPatch[key] as unknown) = next[key];
+    const pVal = prev[key];
+    const nVal = next[key];
+    if (pVal !== nVal && !isDeepEqual(pVal, nVal)) {
+      (docPatch[key] as unknown) = nVal;
       docChanged = true;
     }
   }
@@ -136,58 +151,102 @@ export function computeDocumentDiff(prev: CanvasDocument, next: CanvasDocument):
   }
 
   // 2. Layer-level diff
-  const prevLayerMap = new Map<string, CanvasLayer>();
-  for (const layer of prev.layers) {
-    prevLayerMap.set(layer.id, layer);
-  }
+  if (prev.layers !== next.layers) {
+    const prevLayers = prev.layers;
+    const nextLayers = next.layers;
 
-  const nextLayerMap = new Map<string, CanvasLayer>();
-  for (const layer of next.layers) {
-    nextLayerMap.set(layer.id, layer);
-  }
-
-  // Added layers
-  const addedLayers: CanvasLayer[] = [];
-  for (const layer of next.layers) {
-    if (!prevLayerMap.has(layer.id)) {
-      addedLayers.push(layer);
-    }
-  }
-  if (addedLayers.length > 0) {
-    diff.addedLayers = addedLayers;
-  }
-
-  // Removed layers
-  const removedLayerIds: string[] = [];
-  for (const layer of prev.layers) {
-    if (!nextLayerMap.has(layer.id)) {
-      removedLayerIds.push(layer.id);
-    }
-  }
-  if (removedLayerIds.length > 0) {
-    diff.removedLayerIds = removedLayerIds;
-  }
-
-  // Modified layers
-  const modifiedLayers: LayerPatch[] = [];
-  for (const nextLayer of next.layers) {
-    const prevLayer = prevLayerMap.get(nextLayer.id);
-    if (prevLayer) {
-      const changes = computeLayerDiff(prevLayer, nextLayer);
-      if (changes) {
-        modifiedLayers.push({ id: nextLayer.id, changes });
+    // Check if layer count and layer order are identical (the common edit case)
+    let sameOrderAndIds = prevLayers.length === nextLayers.length;
+    if (sameOrderAndIds) {
+      for (let i = 0; i < prevLayers.length; i++) {
+        if (prevLayers[i].id !== nextLayers[i].id) {
+          sameOrderAndIds = false;
+          break;
+        }
       }
     }
-  }
-  if (modifiedLayers.length > 0) {
-    diff.modifiedLayers = modifiedLayers;
-  }
 
-  // Layer order check
-  const prevOrder = prev.layers.map((l) => l.id);
-  const nextOrder = next.layers.map((l) => l.id);
-  if (!isDeepEqual(prevOrder, nextOrder)) {
-    diff.layerOrder = nextOrder;
+    if (sameOrderAndIds) {
+      const modifiedLayers: LayerPatch[] = [];
+      for (let i = 0; i < nextLayers.length; i++) {
+        const prevLayer = prevLayers[i];
+        const nextLayer = nextLayers[i];
+        if (prevLayer !== nextLayer) {
+          const changes = computeLayerDiff(prevLayer, nextLayer);
+          if (changes) {
+            modifiedLayers.push({ id: nextLayer.id, changes });
+          }
+        }
+      }
+      if (modifiedLayers.length > 0) {
+        diff.modifiedLayers = modifiedLayers;
+      }
+    } else {
+      // General case (layer added, removed, or re-ordered)
+      const prevLayerMap = new Map<string, CanvasLayer>();
+      for (let i = 0; i < prevLayers.length; i++) {
+        prevLayerMap.set(prevLayers[i].id, prevLayers[i]);
+      }
+
+      const nextLayerMap = new Map<string, CanvasLayer>();
+      for (let i = 0; i < nextLayers.length; i++) {
+        nextLayerMap.set(nextLayers[i].id, nextLayers[i]);
+      }
+
+      // Added layers
+      const addedLayers: CanvasLayer[] = [];
+      for (let i = 0; i < nextLayers.length; i++) {
+        const layer = nextLayers[i];
+        if (!prevLayerMap.has(layer.id)) {
+          addedLayers.push(layer);
+        }
+      }
+      if (addedLayers.length > 0) {
+        diff.addedLayers = addedLayers;
+      }
+
+      // Removed layers
+      const removedLayerIds: string[] = [];
+      for (let i = 0; i < prevLayers.length; i++) {
+        const layer = prevLayers[i];
+        if (!nextLayerMap.has(layer.id)) {
+          removedLayerIds.push(layer.id);
+        }
+      }
+      if (removedLayerIds.length > 0) {
+        diff.removedLayerIds = removedLayerIds;
+      }
+
+      // Modified layers
+      const modifiedLayers: LayerPatch[] = [];
+      for (let i = 0; i < nextLayers.length; i++) {
+        const nextLayer = nextLayers[i];
+        const prevLayer = prevLayerMap.get(nextLayer.id);
+        if (prevLayer && prevLayer !== nextLayer) {
+          const changes = computeLayerDiff(prevLayer, nextLayer);
+          if (changes) {
+            modifiedLayers.push({ id: nextLayer.id, changes });
+          }
+        }
+      }
+      if (modifiedLayers.length > 0) {
+        diff.modifiedLayers = modifiedLayers;
+      }
+
+      // Layer order check
+      let orderChanged = prevLayers.length !== nextLayers.length;
+      if (!orderChanged) {
+        for (let i = 0; i < prevLayers.length; i++) {
+          if (prevLayers[i].id !== nextLayers[i].id) {
+            orderChanged = true;
+            break;
+          }
+        }
+      }
+      if (orderChanged) {
+        diff.layerOrder = nextLayers.map((l) => l.id);
+      }
+    }
   }
 
   return diff;

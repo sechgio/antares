@@ -290,7 +290,7 @@ export function setLayersLocked(layers: CanvasLayer[], ids: string[], locked: bo
 
 export function setLayersOpacity(layers: CanvasLayer[], ids: string[], opacity: number): CanvasLayer[] {
   const idSet = new Set(ids);
-  const value = `${Math.max(0, Math.min(100, Math.round(opacity)))}%`;
+  const value = `${Math.max(0, Math.min(100, Math.round(opacity)))}`;
   return layers.map((layer) => {
     if (!idSet.has(layer.id) || isLocked(layer) || layer.type === 'frame') return layer;
     return { ...layer, cssVars: { ...layer.cssVars, '--opacity': value } };

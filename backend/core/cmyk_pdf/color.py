@@ -9,10 +9,15 @@ from PIL import Image
 
 
 def hex_to_rgb(hex_str: str) -> tuple[float, float, float]:
-    """Convert hex color string (#RGB or #RRGGBB) to RGB floats in range [0.0, 1.0]."""
+    """Convert hex color string (#RGB, #RRGGBB, or #RRGGBBAA) to RGB floats [0.0, 1.0].
+
+    Eight-digit hex drops the alpha channel: CMYK print has no transparency.
+    """
     cleaned = hex_str.lstrip("#").strip()
     if len(cleaned) == 3:
         cleaned = "".join(c * 2 for c in cleaned)
+    if len(cleaned) == 8:
+        cleaned = cleaned[:6]  # drop alpha; CMYK has no transparency
     if len(cleaned) != 6:
         return (0.0, 0.0, 0.0)
     try:
@@ -56,6 +61,18 @@ def parse_css_color_to_rgb(color_str: str) -> tuple[float, float, float]:
         "grey": (0.5, 0.5, 0.5),
         "lightgray": (0.83, 0.83, 0.83),
         "darkgray": (0.66, 0.66, 0.66),
+        "orange": (1.0, 0.647, 0.0),
+        "purple": (0.5, 0.0, 0.5),
+        "brown": (0.647, 0.165, 0.165),
+        "pink": (1.0, 0.753, 0.796),
+        "lime": (0.0, 1.0, 0.0),
+        "teal": (0.0, 0.5, 0.5),
+        "navy": (0.0, 0.0, 0.5),
+        "silver": (0.75, 0.75, 0.75),
+        "gold": (1.0, 0.843, 0.0),
+        "maroon": (0.5, 0.0, 0.0),
+        "olive": (0.5, 0.5, 0.0),
+        "aqua": (0.0, 1.0, 1.0),
     }
     return named_colors.get(val, (0.0, 0.0, 0.0))
 

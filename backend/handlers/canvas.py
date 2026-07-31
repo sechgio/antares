@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from backend.core import canvas as _canvas_core
+from backend.core.exceptions import NotFoundError, ValidationError
 from backend.handlers.common import validate_params, with_locale
 
 
@@ -19,8 +20,7 @@ def canvas_get(params: dict[str, Any]) -> dict[str, Any]:
     doc_id = str(params["id"])
     document = _canvas_core.get_canvas_store().get(doc_id)
     if document is None:
-        msg = f"Document not found: {doc_id}"
-        raise ValueError(msg)
+        raise NotFoundError("Documento no encontrado")
     return {"document": document}
 
 
@@ -29,8 +29,7 @@ def canvas_get(params: dict[str, Any]) -> dict[str, Any]:
 def canvas_save(params: dict[str, Any]) -> dict[str, Any]:
     document = params["document"]
     if not isinstance(document, dict):
-        msg = "document must be an object"
-        raise ValueError(msg)
+        raise ValidationError("document debe ser un objeto")
     touch = params.get("touch", True)
     if not isinstance(touch, bool):
         touch = True
@@ -51,8 +50,7 @@ def canvas_delete(params: dict[str, Any]) -> dict[str, Any]:
     doc_id = str(params["id"])
     deleted = _canvas_core.get_canvas_store().delete(doc_id)
     if not deleted:
-        msg = f"Document not found: {doc_id}"
-        raise ValueError(msg)
+        raise NotFoundError("Documento no encontrado")
     return {"success": True, "deleted_id": doc_id}
 
 

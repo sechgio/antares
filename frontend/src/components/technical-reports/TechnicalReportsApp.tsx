@@ -1,6 +1,6 @@
 import './technical-reports.css';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
-import { Download, FilePlus2, Files, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { Database, Download, Eye, FilePlus2, Files, PenLine, RefreshCw, Trash2, Upload } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
@@ -21,6 +21,7 @@ export default function TechnicalReportsApp() {
   const [busy, setBusy] = useState(false);
   const [logoLeft, setLogoLeft] = useState<string | null>(null);
   const [logoRight, setLogoRight] = useState<string | null>(null);
+  const [mobileTab, setMobileTab] = useState<'db' | 'preview' | 'form'>('db');
   const importInputRef = useRef<HTMLInputElement>(null);
   const selectGenRef = useRef(0);
 
@@ -282,7 +283,22 @@ export default function TechnicalReportsApp() {
         />
       </header>
 
-      <div className="tr-workspace">
+      <nav className="tr-mobile-tabs">
+        <button className={`tr-mobile-tab${mobileTab === 'db' ? ' is-active' : ''}`} onClick={() => setMobileTab('db')}>
+          <Database size={14} />
+          <span>Informes</span>
+        </button>
+        <button className={`tr-mobile-tab${mobileTab === 'preview' ? ' is-active' : ''}`} onClick={() => setMobileTab('preview')}>
+          <Eye size={14} />
+          <span>Vista previa</span>
+        </button>
+        <button className={`tr-mobile-tab${mobileTab === 'form' ? ' is-active' : ''}`} onClick={() => setMobileTab('form')}>
+          <PenLine size={14} />
+          <span>Editar</span>
+        </button>
+      </nav>
+
+      <div className="tr-workspace" data-mobile-tab={mobileTab}>
         <DatabasePanel
           reports={reports}
           selectedId={selectedId}

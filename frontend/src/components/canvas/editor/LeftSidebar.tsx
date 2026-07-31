@@ -69,6 +69,8 @@ interface LeftSidebarProps {
   /** Hide this sidebar (Archivos header). */
   onHidePanel?: () => void;
   hidePanelDisabled?: boolean;
+  /** Cloud sync in flight — pulse Archivos select (keep mounted; no skeleton swap). */
+  docsSyncing?: boolean;
 }
 
 type CapasDropPosition = 'before' | 'after' | 'inside';
@@ -332,6 +334,7 @@ export default memo(function LeftSidebar({
   open = true,
   onHidePanel,
   hidePanelDisabled = false,
+  docsSyncing = false,
 }: LeftSidebarProps) {
   const tree = useMemo(() => buildLayerTree(layers), [layers]);
   const containerIds = useMemo(
@@ -581,12 +584,15 @@ export default memo(function LeftSidebar({
             )}
           </div>
         </div>
-        <CanvasSelect
-          value={documentId}
-          onChange={(val) => onOpenDoc(val)}
-          aria-label="Archivo abierto"
-          options={fileOptions.map((d) => ({ value: d.id, label: d.name }))}
-        />
+        <div aria-busy={docsSyncing || undefined}>
+          <CanvasSelect
+            value={documentId}
+            onChange={(val) => onOpenDoc(val)}
+            aria-label="Archivo abierto"
+            className={docsSyncing ? 'animate-pulse' : undefined}
+            options={fileOptions.map((d) => ({ value: d.id, label: d.name }))}
+          />
+        </div>
       </div>
 
       <div className="border-b px-3 py-2" style={{ borderColor: 'var(--cv-border)' }}>

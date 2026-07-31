@@ -1,8 +1,6 @@
 import React, { useState, Suspense, useMemo, useCallback, useEffect } from 'react';
 import Sidebar from './components/layout/Sidebar';
 import TitleBar from './components/layout/TitleBar';
-import SettingsModal from './components/settings/SettingsModal';
-import PetMascot from './components/layout/PetMascot';
 import { ToastProvider } from './hooks/useToast';
 import { DialogProvider } from './hooks/useDialog';
 import { useKeyboardShortcut } from './hooks/useKeyboardShortcut';
@@ -13,7 +11,11 @@ import ErrorBoundary from './components/ui/ErrorBoundary';
 import { DEFAULT_TAB, FULL_BLEED_TABS, TAB_DEFINITIONS, CONFIG_SECTION_DEFINITIONS, type TabId, type ConfigSectionId } from './navigation';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import LoginScreen from './auth/LoginScreen';
+import EspaciosAuthSkeleton from './components/espacios/components/EspaciosAuthSkeleton';
 import { subscribeHistoryReexecute } from './components/history/historyEvents';
+
+const SettingsModal = React.lazy(() => import('./components/settings/SettingsModal'));
+const PetMascot = React.lazy(() => import('./components/layout/PetMascot'));
 
 const ConversionView = React.lazy(() => import('./components/conversion/ConversionView'));
 const FormatosView = React.lazy(() => import('./components/formatos/FormatosView'));
@@ -32,7 +34,23 @@ const FichasTecnicasView = React.lazy(() => import('./components/fichas-tecnicas
 const EspaciosView = React.lazy(() => import('./components/espacios'));
 const CanvasView = React.lazy(() => import('./components/canvas'));
 
-const VIEWS: Record<TabId, React.LazyExoticComponent<React.ComponentType>> = {
+function prefetchSettingsModal() {
+  void import('./components/settings/SettingsModal');
+}
+
+function prefetchCanvasView() {
+  void import('./components/canvas');
+}
+
+function isPetMascotEnabled(): boolean {
+  try {
+    return localStorage.getItem('petdex_enabled') === 'true';
+  } catch {
+    return false;
+  }
+}
+
+const VIEWS: Record<TabId, React.LazyExoticComponent<React.ComponentType<{ active?: boolean }>>> = {
   espacios: EspaciosView,
   convert: ConversionView,
   formatos: FormatosView,
@@ -112,19 +130,49 @@ function DisabledUserNotice({ onSignOut }: { onSignOut: () => Promise<void> }) {
 function AppContent() {
   const { user, loading: authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<TabId>(DEFAULT_TAB);
+  /** Once visited, Canvas stays mounted (hidden) so docs/picker/history survive tab switches. */
+  const [canvasMounted, setCanvasMounted] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<ConfigSectionId>('appearance');
+  const [petEnabled, setPetEnabled] = useState(isPetMascotEnabled);
 
   const openCommandPalette = useCallback(() => setCommandOpen(true), []);
-  const handleTabChange = useCallback((tab: TabId) => setActiveTab(tab), []);
+  const handleTabChange = useCallback((tab: TabId) => {
+    if (tab === 'canvas') {
+      prefetchCanvasView();
+      setCanvasMounted(true);
+    }
+    setActiveTab(tab);
+  }, []);
   const openSettings = useCallback((section: ConfigSectionId = 'appearance') => {
+    prefetchSettingsModal();
     setSettingsSection(section);
     setSettingsOpen(true);
   }, []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const openAppearanceSettings = useCallback(() => openSettings('appearance'), [openSettings]);
   const closeCommandPalette = useCallback(() => setCommandOpen(false), []);
+
+  // Prefetch settings chunk after first paint so open feels instant.
+  // Skip in Vitest to avoid EnvironmentTeardownError from pending dynamic imports.
+  useEffect(() => {
+    if (import.meta.env.MODE === 'test') return;
+    const ric = window.requestIdleCallback?.bind(window);
+    if (ric) {
+      const id = ric(() => prefetchSettingsModal(), { timeout: 2500 });
+      return () => window.cancelIdleCallback?.(id);
+    }
+    const t = window.setTimeout(prefetchSettingsModal, 1);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  // Mount PetMascot only when Petdex enables it (same session or prior).
+  useEffect(() => {
+    const sync = () => setPetEnabled(isPetMascotEnabled());
+    window.addEventListener('petdex-config-changed', sync);
+    return () => window.removeEventListener('petdex-config-changed', sync);
+  }, []);
 
   useKeyboardShortcut('k', openCommandPalette, { ctrl: true, preventDefault: true });
   useKeyboardShortcut('e', () => handleTabChange('espacios'), { ctrl: true, shift: true, preventDefault: true });
@@ -180,52 +228,77 @@ function AppContent() {
   const needsCloudAuth = CLOUD_AUTH_TABS.has(activeTab);
   const cloudAuthBlocked = needsCloudAuth && !user;
   const isFullBleed = FULL_BLEED_TABS.has(activeTab);
-  const ActiveView = VIEWS[activeTab];
+  const showCanvas = activeTab === 'canvas';
+  const ActiveView = showCanvas ? null : VIEWS[activeTab];
+  const CanvasKeepAlive = VIEWS.canvas;
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]">
       <TitleBar
         onOpenSettings={openAppearanceSettings}
+        onPrefetchSettings={prefetchSettingsModal}
         onOpenEspacios={() => handleTabChange('espacios')}
       />
       <div className="flex min-h-0 flex-1">
         <Sidebar
           activeTab={activeTab}
           onTabChange={handleTabChange}
+          onPrefetchTab={(tab) => {
+            if (tab === 'canvas') prefetchCanvasView();
+          }}
         />
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
           <main className="flex-1 overflow-hidden relative">
             {cloudAuthBlocked ? (
               authLoading ? (
-                <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">
-                  Cargando sesión...
-                </div>
+                <EspaciosAuthSkeleton />
               ) : (
                 <LoginScreen />
               )
             ) : (
               <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">Cargando...</div>}>
-                {/* Full-bleed tools own their scroll; padded tools scroll in this shell. */}
-                <div className={`h-full min-h-0 ${isFullBleed ? 'overflow-hidden' : 'overflow-y-auto px-6 py-4'}`}>
-                  <ErrorBoundary key={activeTab}>
-                    <ActiveView />
-                  </ErrorBoundary>
-                </div>
+                {canvasMounted && (
+                  <div
+                    data-testid="canvas-keep-alive"
+                    className={`h-full min-h-0 overflow-hidden ${showCanvas ? '' : 'hidden'}`}
+                    aria-hidden={!showCanvas}
+                    {...(!showCanvas ? ({ inert: '' } as React.HTMLAttributes<HTMLDivElement>) : {})}
+                  >
+                    <ErrorBoundary>
+                      <CanvasKeepAlive active={showCanvas} />
+                    </ErrorBoundary>
+                  </div>
+                )}
+                {ActiveView && (
+                  <div className={`h-full min-h-0 ${isFullBleed ? 'overflow-hidden' : 'overflow-y-auto px-6 py-4'}`}>
+                    <ErrorBoundary key={activeTab}>
+                      <ActiveView />
+                    </ErrorBoundary>
+                  </div>
+                )}
               </Suspense>
             )}
           </main>
         </div>
       </div>
-      <SettingsModal
-        isOpen={settingsOpen}
-        section={settingsSection}
-        onSectionChange={setSettingsSection}
-        onClose={closeSettings}
-      />
+      {settingsOpen && (
+        <Suspense fallback={null}>
+          <SettingsModal
+            isOpen={settingsOpen}
+            section={settingsSection}
+            onSectionChange={setSettingsSection}
+            onClose={closeSettings}
+          />
+        </Suspense>
+      )}
       <CommandPalette isOpen={commandOpen} onClose={closeCommandPalette} items={commandItems} />
       <Dialog />
       <ToastContainer />
-      <PetMascot />
+      {petEnabled && (
+        <Suspense fallback={null}>
+          <PetMascot />
+        </Suspense>
+      )}
     </div>
   );
 }

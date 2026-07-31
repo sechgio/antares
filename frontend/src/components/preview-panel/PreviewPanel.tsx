@@ -702,7 +702,7 @@ const PreviewPanel = forwardRef<HTMLIFrameElement, PreviewPanelProps>(
         <iframe
           ref={ref}
           srcDoc={renderedHtml}
-          sandbox="allow-same-origin allow-modals"
+          sandbox="allow-same-origin allow-scripts allow-modals"
           title="Vista previa de plantilla"
           className="bg-white text-black shadow-2xl"
           scrolling={isFixedA4TemplatePreview(customTemplate) ? 'no' : undefined}

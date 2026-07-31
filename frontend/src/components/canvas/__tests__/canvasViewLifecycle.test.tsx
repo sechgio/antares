@@ -1,0 +1,366 @@
+/**
+ * CanvasView lifecycle tests (plan 010).
+ *
+ * Mocks heavy editor chrome (DesignStage, RightPanel, …) so we can assert
+ * save-on-switch, history debounce, and sync conflict without mounting Artboard.
+ * LeftSidebar + TopBar + SyncConflictBar stay real for the UI paths under test.
+ */
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createEmptyDocument, type CanvasDocument } from '../types';
+
+const syncCanvasDocuments = vi.fn();
+
+vi.mock('../../../api', () => ({
+  api: {
+    canvasList: vi.fn(),
+    canvasGet: vi.fn(),
+    canvasSave: vi.fn(async (doc: CanvasDocument) => ({ document: doc })),
+    canvasCreate: vi.fn(),
+    canvasDelete: vi.fn(async () => ({ success: true })),
+    canvasDuplicate: vi.fn(),
+    canvasGetHistory: vi.fn(async () => ({ past: [], future: [] })),
+    canvasSaveHistory: vi.fn(async () => ({ success: true })),
+  },
+}));
+
+vi.mock('../../../lib/supabase', () => ({
+  supabase: null,
+}));
+
+vi.mock('../sync/canvasCloudSync', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../sync/canvasCloudSync')>();
+  return {
+    ...actual,
+    syncCanvasDocuments: (...args: unknown[]) => syncCanvasDocuments(...args),
+  };
+});
+
+vi.mock('../sync/cloudQueue', () => ({
+  queueCanvasCloudPush: vi.fn(),
+  queueCanvasCloudDelete: vi.fn(),
+}));
+
+vi.mock('../utils/imageBlobStore', () => ({
+  serializeDocumentImages: vi.fn(async (doc: CanvasDocument) => doc),
+  hydrateDocumentImages: vi.fn(async (doc: CanvasDocument) => doc),
+}));
+
+vi.mock('../presets/loadPresets', () => ({
+  loadCanvasPresets: vi.fn(async () => []),
+}));
+
+vi.mock('../editor/DesignStage', () => ({
+  default: () => <div data-testid="mock-design-stage" />,
+}));
+
+vi.mock('../editor/RightPanel', () => ({
+  default: () => null,
+}));
+
+vi.mock('../editor/BottomToolbar', () => ({
+  default: () => null,
+}));
+
+vi.mock('../editor/PreviewViewport', () => ({
+  default: () => null,
+}));
+
+vi.mock('../editor/PageLayerPreview', () => ({
+  default: () => null,
+}));
+
+vi.mock('../editor/ContextMenu', () => ({
+  default: () => null,
+}));
+
+vi.mock('../editor/PathEditToolbar', () => ({
+  default: () => null,
+}));
+
+vi.mock('../editor/GeneratePanel', () => ({
+  default: () => null,
+}));
+
+import { api } from '../../../api';
+import CanvasView from '../CanvasView';
+
+function makeDoc(id: string, name = id): CanvasDocument {
+  const doc = createEmptyDocument(name);
+  doc.id = id;
+  doc.updatedAt = '2026-07-31T10:00:00.000Z';
+  return doc;
+}
+
+describe('CanvasView lifecycle', () => {
+  const docA = makeDoc('doc-a', 'Alpha');
+  const docB = makeDoc('doc-b', 'Beta');
+
+  beforeEach(() => {
+    vi.useRealTimers();
+    syncCanvasDocuments.mockReset();
+    syncCanvasDocuments.mockResolvedValue({
+      pulled: 0,
+      pushed: 0,
+      deletedLocal: 0,
+      skipped: true,
+      reason: 'no-supabase',
+      pushErrors: 0,
+    });
+
+    vi.mocked(api.canvasList).mockResolvedValue({
+      documents: [
+        { id: docA.id, name: docA.name, updatedAt: docA.updatedAt! },
+        { id: docB.id, name: docB.name, updatedAt: docB.updatedAt! },
+      ],
+    });
+    vi.mocked(api.canvasGet).mockImplementation(async (id: string) => ({
+      document: id === docB.id ? docB : docA,
+    }));
+    vi.mocked(api.canvasSave).mockImplementation(async (doc: CanvasDocument) => ({ document: doc }));
+    vi.mocked(api.canvasCreate).mockResolvedValue({ document: makeDoc('doc-new', 'Sin título') });
+    vi.mocked(api.canvasDuplicate).mockResolvedValue({ document: makeDoc('doc-dup', 'Alpha copia') });
+    vi.mocked(api.canvasGetHistory).mockResolvedValue({ past: [], future: [] });
+    vi.mocked(api.canvasSaveHistory).mockResolvedValue({ success: true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function renderReady() {
+    render(<CanvasView active />);
+    await waitFor(() => {
+      expect(screen.queryByTestId('mock-design-stage')).toBeTruthy();
+    });
+    // Bootstrap finished (loading veil gone / stage visible).
+    await waitFor(() => {
+      expect(api.canvasList).toHaveBeenCalled();
+    });
+  }
+
+  it('smoke: renders without throwing', async () => {
+    await renderReady();
+    expect(screen.getByTestId('mock-design-stage')).toBeInTheDocument();
+  });
+
+  it('save-on-switch: canvasSave(A) before canvasGet(B) when opening another doc', async () => {
+    const callOrder: string[] = [];
+    vi.mocked(api.canvasSave).mockImplementation(async (doc: CanvasDocument) => {
+      callOrder.push(`save:${doc.id}`);
+      return { document: doc };
+    });
+    vi.mocked(api.canvasGet).mockImplementation(async (id: string) => {
+      callOrder.push(`get:${id}`);
+      return { document: id === docB.id ? docB : docA };
+    });
+
+    await renderReady();
+    // Bootstrap may have called get for A — clear order after ready.
+    callOrder.length = 0;
+    vi.mocked(api.canvasSave).mockClear();
+    vi.mocked(api.canvasGet).mockClear();
+    vi.mocked(api.canvasGet).mockImplementation(async (id: string) => {
+      callOrder.push(`get:${id}`);
+      return { document: id === docB.id ? docB : docA };
+    });
+    vi.mocked(api.canvasSave).mockImplementation(async (doc: CanvasDocument) => {
+      callOrder.push(`save:${doc.id}`);
+      return { document: doc };
+    });
+
+    const fileSelect = screen.getByLabelText('Archivo abierto');
+    fireEvent.change(fileSelect, { target: { value: docB.id } });
+
+    await waitFor(() => {
+      expect(callOrder).toContain(`save:${docA.id}`);
+      expect(callOrder).toContain(`get:${docB.id}`);
+    });
+    expect(callOrder.indexOf(`save:${docA.id}`)).toBeLessThan(callOrder.indexOf(`get:${docB.id}`));
+    expect(vi.mocked(api.canvasGetHistory)).toHaveBeenCalledWith(docB.id);
+  });
+
+  it('save-on-switch: canvasSave before canvasCreate on Nuevo', async () => {
+    await renderReady();
+    vi.mocked(api.canvasSave).mockClear();
+    vi.mocked(api.canvasCreate).mockClear();
+
+    const callOrder: string[] = [];
+    vi.mocked(api.canvasSave).mockImplementation(async (doc: CanvasDocument) => {
+      callOrder.push(`save:${doc.id}`);
+      return { document: doc };
+    });
+    vi.mocked(api.canvasCreate).mockImplementation(async () => {
+      callOrder.push('create');
+      return { document: makeDoc('doc-new', 'Sin título') };
+    });
+
+    fireEvent.click(screen.getByLabelText('Nuevo'));
+
+    await waitFor(() => {
+      expect(callOrder).toContain('create');
+    });
+    expect(callOrder[0]?.startsWith('save:')).toBe(true);
+    expect(callOrder.indexOf('create')).toBeGreaterThan(callOrder.findIndex((c) => c.startsWith('save:')));
+  });
+
+  it('debounces canvasSaveHistory 500ms and skips when signature unchanged', async () => {
+    await renderReady();
+    vi.mocked(api.canvasSaveHistory).mockClear();
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+    // Add a page → past grows (discrete history entry).
+    fireEvent.click(screen.getByLabelText('Añadir página'));
+
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(api.canvasSaveHistory).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(250);
+    });
+    expect(api.canvasSaveHistory).toHaveBeenCalled();
+    const firstCall = vi.mocked(api.canvasSaveHistory).mock.calls.at(-1)!;
+    expect(firstCall[1].length).toBeGreaterThanOrEqual(1);
+
+    const callsAfterFirst = vi.mocked(api.canvasSaveHistory).mock.calls.length;
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(vi.mocked(api.canvasSaveHistory).mock.calls.length).toBe(callsAfterFirst);
+  });
+
+  it('conflict keep-local dismisses without replace; same remote ts does not reappear; use-remote saves', async () => {
+    const localDoc = makeDoc('doc-a', 'Local');
+    const remoteDoc = makeDoc('doc-a', 'Remote');
+    remoteDoc.updatedAt = '2026-07-31T12:00:00.000Z';
+    localDoc.updatedAt = '2026-07-31T10:00:00.000Z';
+
+    const conflict = {
+      localDoc,
+      remoteDoc,
+      localUpdatedAt: localDoc.updatedAt!,
+      remoteUpdatedAt: remoteDoc.updatedAt!,
+    };
+
+    // Bootstrap sync skips; later focus sync returns conflict once.
+    let syncCalls = 0;
+    syncCanvasDocuments.mockImplementation(async () => {
+      syncCalls += 1;
+      if (syncCalls === 1) {
+        return {
+          pulled: 0,
+          pushed: 0,
+          deletedLocal: 0,
+          skipped: true,
+          reason: 'no-supabase',
+          pushErrors: 0,
+        };
+      }
+      return {
+        pulled: 0,
+        pushed: 0,
+        deletedLocal: 0,
+        skipped: false,
+        pushErrors: 0,
+        conflict,
+      };
+    });
+
+    vi.mocked(api.canvasList).mockResolvedValue({
+      documents: [{ id: localDoc.id, name: localDoc.name, updatedAt: localDoc.updatedAt! }],
+    });
+    vi.mocked(api.canvasGet).mockResolvedValue({ document: localDoc });
+
+    await renderReady();
+
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('sync-conflict-bar')).toBeInTheDocument();
+    });
+
+    const saveCallsBefore = vi.mocked(api.canvasSave).mock.calls.length;
+    fireEvent.click(screen.getByTestId('sync-conflict-keep-local'));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('sync-conflict-bar')).toBeNull();
+    });
+    expect(vi.mocked(api.canvasSave).mock.calls.length).toBe(saveCallsBefore);
+
+    // Same remote ts → dismissed; bar must not reappear.
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByTestId('sync-conflict-bar')).toBeNull();
+
+    // Newer remote → bar again; use-remote persists.
+    const newer = {
+      ...conflict,
+      remoteUpdatedAt: '2026-07-31T13:00:00.000Z',
+      remoteDoc: { ...remoteDoc, updatedAt: '2026-07-31T13:00:00.000Z', name: 'Remote2' },
+    };
+    syncCanvasDocuments.mockResolvedValue({
+      pulled: 0,
+      pushed: 0,
+      deletedLocal: 0,
+      skipped: false,
+      pushErrors: 0,
+      conflict: newer,
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('sync-conflict-bar')).toBeInTheDocument();
+    });
+
+    vi.mocked(api.canvasSave).mockClear();
+    fireEvent.click(screen.getByTestId('sync-conflict-use-remote'));
+
+    await waitFor(() => {
+      expect(api.canvasSave).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Remote2' }),
+        { touch: false },
+      );
+    });
+    expect(screen.queryByTestId('sync-conflict-bar')).toBeNull();
+  });
+
+  it('keeps sidebar docs when refreshList fails transiently', async () => {
+    await renderReady();
+    expect(screen.getByLabelText('Archivo abierto')).toBeInTheDocument();
+
+    vi.mocked(api.canvasList).mockRejectedValueOnce(new Error('IPC down'));
+    fireEvent.click(screen.getByLabelText('Guardar'));
+
+    await waitFor(() => {
+      expect(api.canvasSave).toHaveBeenCalled();
+    });
+    const select = screen.getByLabelText('Archivo abierto') as HTMLSelectElement;
+    expect([...select.options].map((o) => o.value)).toEqual(
+      expect.arrayContaining([docA.id, docB.id]),
+    );
+
+    vi.mocked(api.canvasList).mockResolvedValue({
+      documents: [
+        { id: docA.id, name: docA.name, updatedAt: docA.updatedAt! },
+        { id: docB.id, name: docB.name, updatedAt: docB.updatedAt! },
+        { id: 'doc-c', name: 'Gamma', updatedAt: '2026-07-31T12:00:00.000Z' },
+      ],
+    });
+    fireEvent.click(screen.getByLabelText('Guardar'));
+    await waitFor(() => {
+      const sel = screen.getByLabelText('Archivo abierto') as HTMLSelectElement;
+      expect([...sel.options].some((o) => o.value === 'doc-c')).toBe(true);
+    });
+  });
+});

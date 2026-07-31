@@ -8,7 +8,7 @@ import { isOpenDocumentDirty } from '../hooks/useCanvasSync';
 import { parseMm } from '../types';
 
 describe('isOpenDocumentDirty', () => {
-  it('is dirty when canUndo', () => {
+  it('is dirty when has unsaved edits', () => {
     expect(isOpenDocumentDirty(true, false, false)).toBe(true);
   });
 
@@ -20,7 +20,8 @@ describe('isOpenDocumentDirty', () => {
     expect(isOpenDocumentDirty(false, false, true)).toBe(true);
   });
 
-  it('is clean when none of the signals are set', () => {
+  it('is clean when undo history alone would have been true but unsaved is false', () => {
+    // Restored undo stack / post-save history must not count as dirty.
     expect(isOpenDocumentDirty(false, false, false)).toBe(false);
   });
 });

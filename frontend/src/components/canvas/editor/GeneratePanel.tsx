@@ -17,6 +17,8 @@ const PAGE_STACK_GAP_PX = 24;
 
 interface GeneratePanelProps {
   document: CanvasDocument;
+  /** When true, cloud sync must not delete/overwrite this open design doc. */
+  openDirty?: boolean;
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -28,8 +30,15 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
-export default function GeneratePanel({ document: designDocument }: GeneratePanelProps) {
+export default function GeneratePanel({
+  document: designDocument,
+  openDirty = false,
+}: GeneratePanelProps) {
   const previewRef = useRef<PreviewViewportHandle>(null);
+  const openDocIdRef = useRef(designDocument.id);
+  const openDirtyRef = useRef(openDirty);
+  openDocIdRef.current = designDocument.id;
+  openDirtyRef.current = openDirty;
 
   const [docs, setDocs] = useState<CanvasDocumentSummary[]>([]);
   const [externalDoc, setExternalDoc] = useState<CanvasDocument | null>(null);
@@ -70,7 +79,10 @@ export default function GeneratePanel({ document: designDocument }: GeneratePane
     void (async () => {
       try {
         const { syncCanvasDocuments } = await import('../sync/canvasCloudSync');
-        await syncCanvasDocuments();
+        await syncCanvasDocuments({
+          openDocumentId: openDocIdRef.current,
+          openDirty: openDirtyRef.current,
+        });
         if (cancelled) return;
         const res = await api.canvasList();
         if (!cancelled) setDocs(res.documents);

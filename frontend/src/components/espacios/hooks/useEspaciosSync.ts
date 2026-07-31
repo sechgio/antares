@@ -92,6 +92,8 @@ export function useEspaciosSync(userId: string | undefined) {
   const [activeEspacioId, setActiveEspacioId] = useState<string | null>(null);
   const [activeProyectoId, setActiveProyectoId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  /** True while fetchTareas is in flight for the active project (avoids empty-state flash). */
+  const [tareasLoading, setTareasLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** Non-fatal nested load errors (proyectos/tareas/columns) for UI toast. */
   const [warning, setWarning] = useState<string | null>(null);
@@ -148,19 +150,27 @@ export function useEspaciosSync(userId: string | undefined) {
       setActiveProyectoId(null);
       setTareas([]);
       setBoardColumns([]);
+      setTareasLoading(false);
     }
     return data;
   }, []);
 
   const loadTareas = useCallback(async (proyectoId: string) => {
     const requestId = ++tareasRequestRef.current;
-    const data = await fetchTareas(proyectoId);
-    if (requestId !== tareasRequestRef.current) return data;
-    // Never re-inject soft-deleted tasks while undo window is open.
-    const pending = pendingDeleteIdsRef.current;
-    setTareas(pending.size ? data.filter((t) => !pending.has(t.id)) : data);
-    setWarning(null);
-    return data;
+    setTareasLoading(true);
+    try {
+      const data = await fetchTareas(proyectoId);
+      if (requestId !== tareasRequestRef.current) return data;
+      // Never re-inject soft-deleted tasks while undo window is open.
+      const pending = pendingDeleteIdsRef.current;
+      setTareas(pending.size ? data.filter((t) => !pending.has(t.id)) : data);
+      setWarning(null);
+      setTareasLoading(false);
+      return data;
+    } catch (err) {
+      if (requestId === tareasRequestRef.current) setTareasLoading(false);
+      throw err;
+    }
   }, []);
 
   const loadBoardColumns = useCallback(async (proyectoId: string) => {
@@ -195,6 +205,7 @@ export function useEspaciosSync(userId: string | undefined) {
         setActiveProyectoId(null);
         setTareas([]);
         setBoardColumns([]);
+        setTareasLoading(false);
         return;
       }
 
@@ -211,9 +222,11 @@ export function useEspaciosSync(userId: string | undefined) {
       if (!proyectoId) {
         setTareas([]);
         setBoardColumns([]);
+        setTareasLoading(false);
         return;
       }
 
+      setTareasLoading(true);
       const [tareasData, columnsData] = await Promise.all([
         fetchTareas(proyectoId),
         fetchBoardColumns(proyectoId),
@@ -221,9 +234,11 @@ export function useEspaciosSync(userId: string | undefined) {
       if (requestId !== reloadAllRequestRef.current) return;
       setTareas(tareasData);
       setBoardColumns(columnsData);
+      setTareasLoading(false);
     } catch (err) {
       if (requestId !== reloadAllRequestRef.current) return;
       setError(errorMessage(err, 'Error al cargar ESPACIOS'));
+      setTareasLoading(false);
     } finally {
       if (requestId === reloadAllRequestRef.current) {
         setLoading(false);
@@ -245,6 +260,7 @@ export function useEspaciosSync(userId: string | undefined) {
       setActiveProyectoId(null);
       setTareas([]);
       setBoardColumns([]);
+      setTareasLoading(false);
       return;
     }
     // Clear nested data immediately so UI never shows stale proyecto/tareas.
@@ -260,6 +276,7 @@ export function useEspaciosSync(userId: string | undefined) {
         setActiveProyectoId(null);
         setTareas([]);
         setBoardColumns([]);
+        setTareasLoading(false);
         setWarning(message);
       }
     });
@@ -269,10 +286,12 @@ export function useEspaciosSync(userId: string | undefined) {
     if (!activeProyectoId) {
       setTareas([]);
       setBoardColumns([]);
+      setTareasLoading(false);
       return;
     }
     setTareas([]);
     setBoardColumns(fallbackBoardColumns(activeProyectoId));
+    setTareasLoading(true);
     void loadTareas(activeProyectoId).catch((err) => {
       const message = errorMessage(err, 'Error al cargar tareas');
       console.error('[espacios] loadTareas failed:', message);
@@ -298,6 +317,7 @@ export function useEspaciosSync(userId: string | undefined) {
       setProyectos([]);
       setTareas([]);
       setBoardColumns([]);
+      setTareasLoading(false);
     }
   }, [espacios, activeEspacioId]);
 
@@ -306,6 +326,7 @@ export function useEspaciosSync(userId: string | undefined) {
       setActiveProyectoId(proyectos[0]?.id ?? null);
       setTareas([]);
       setBoardColumns([]);
+      setTareasLoading(false);
     }
   }, [proyectos, activeProyectoId]);
 
@@ -620,6 +641,7 @@ export function useEspaciosSync(userId: string | undefined) {
     setActiveEspacioId,
     setActiveProyectoId,
     loading,
+    tareasLoading,
     error,
     warning,
     clearWarning,

@@ -6,7 +6,7 @@ import { MM_TO_PX } from '../ops/drawHelpers';
 /**
  * Guide creation from rulers (Figma parity): drag out of a ruler creates a
  * guide with a live position chip; releasing back on the ruler or pressing
- * Esc cancels the creation. Document commit happens only on pointerup.
+ * Esc cancels the creation. History commits only on pointerup confirm.
  */
 describe('CanvasRulers guide creation', () => {
   let frames: Map<number, FrameRequestCallback>;
@@ -37,6 +37,7 @@ describe('CanvasRulers guide creation', () => {
 
   const setup = () => {
     const onCreateGuide = vi.fn();
+    const onCommitGuideCreate = vi.fn();
     const onCancelCreate = vi.fn();
     render(
       <CanvasRulers
@@ -46,15 +47,15 @@ describe('CanvasRulers guide creation', () => {
         pageHeightMm={297}
         pageIndex={2}
         onCreateGuide={onCreateGuide}
+        onCommitGuideCreate={onCommitGuideCreate}
         onCancelCreate={onCancelCreate}
       />,
     );
-    return { onCreateGuide, onCancelCreate };
+    return { onCreateGuide, onCommitGuideCreate, onCancelCreate };
   };
 
   it('aligns tick origin with the page edge despite the ruler strip offset', () => {
     setup();
-    // jsdom constant-folds calc sums: -(frame/2) - RULER/2 → single negative term.
     const frameW = Math.round(210 * MM_TO_PX);
     const topTicks = screen.getByTestId('canvas-ruler-top').firstElementChild as HTMLElement;
     expect(topTicks.style.left).toBe(`calc(50% - ${frameW / 2 + 10}px)`);
@@ -64,11 +65,10 @@ describe('CanvasRulers guide creation', () => {
   });
 
   it('creates a horizontal guide dragged out of the top ruler, with a position chip', () => {
-    const { onCreateGuide, onCancelCreate } = setup();
+    const { onCreateGuide, onCommitGuideCreate, onCancelCreate } = setup();
     const top = screen.getByTestId('canvas-ruler-top');
     fireEvent.pointerDown(top, { button: 0, clientX: 200, clientY: 5 });
 
-    // Still inside the ruler strip (< 4px travel) → nothing created yet.
     act(() => {
       fireEvent.pointerMove(window, { clientX: 200, clientY: 6 });
       tick();
@@ -80,53 +80,50 @@ describe('CanvasRulers guide creation', () => {
       fireEvent.pointerMove(window, { clientX: 200, clientY: 120 });
       tick();
     });
-    // Preview is local — document not written until pointerup.
-    expect(onCreateGuide).not.toHaveBeenCalled();
+    expect(onCreateGuide).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('canvas-guide-create-preview')).toBeTruthy();
     expect(screen.getByTestId('canvas-guide-chip').textContent).toMatch(/mm$/);
 
-    // Released over the canvas → the guide commits once.
     act(() => {
       fireEvent.pointerUp(window, { clientX: 200, clientY: 120 });
     });
-    expect(onCreateGuide).toHaveBeenCalledTimes(1);
-    const guide = onCreateGuide.mock.calls[0][0];
+    expect(onCommitGuideCreate).toHaveBeenCalledTimes(1);
+    const guide = onCommitGuideCreate.mock.calls[0][0];
     expect(guide.axis).toBe('y');
     expect(guide.pageIndex).toBe(2);
     expect(guide.posMm).toBeGreaterThan(0);
     expect(onCancelCreate).not.toHaveBeenCalled();
     expect(screen.queryByTestId('canvas-guide-chip')).toBeNull();
-    expect(screen.queryByTestId('canvas-guide-create-preview')).toBeNull();
   });
 
   it('clamps a vertical guide to the page extent', () => {
-    const { onCreateGuide, onCancelCreate } = setup();
+    const { onCreateGuide, onCommitGuideCreate, onCancelCreate } = setup();
     const left = screen.getByTestId('canvas-ruler-left');
     fireEvent.pointerDown(left, { button: 0, clientX: 5, clientY: 300 });
     act(() => {
       fireEvent.pointerMove(window, { clientX: 5000, clientY: 300 });
       tick();
     });
-    expect(onCreateGuide).not.toHaveBeenCalled();
+    expect(onCreateGuide).toHaveBeenCalledTimes(1);
     act(() => {
       fireEvent.pointerUp(window, { clientX: 5000, clientY: 300 });
     });
-    expect(onCreateGuide).toHaveBeenCalledTimes(1);
-    const guide = onCreateGuide.mock.calls[0][0];
+    expect(onCommitGuideCreate).toHaveBeenCalledTimes(1);
+    const guide = onCommitGuideCreate.mock.calls[0][0];
     expect(guide.axis).toBe('x');
     expect(guide.posMm).toBe(210);
     expect(onCancelCreate).not.toHaveBeenCalled();
   });
 
   it('cancels creation when released back onto the ruler', () => {
-    const { onCreateGuide, onCancelCreate } = setup();
+    const { onCreateGuide, onCommitGuideCreate, onCancelCreate } = setup();
     const top = screen.getByTestId('canvas-ruler-top');
     fireEvent.pointerDown(top, { button: 0, clientX: 200, clientY: 5 });
     act(() => {
       fireEvent.pointerMove(window, { clientX: 200, clientY: 120 });
       tick();
     });
-    expect(screen.getByTestId('canvas-guide-create-preview')).toBeTruthy();
+    expect(onCreateGuide).toHaveBeenCalled();
     act(() => {
       fireEvent.pointerMove(window, { clientX: 200, clientY: 10 });
       tick();
@@ -134,12 +131,12 @@ describe('CanvasRulers guide creation', () => {
     act(() => {
       fireEvent.pointerUp(window, { clientX: 200, clientY: 10 });
     });
-    expect(onCreateGuide).not.toHaveBeenCalled();
+    expect(onCommitGuideCreate).not.toHaveBeenCalled();
     expect(onCancelCreate).toHaveBeenCalledTimes(1);
   });
 
   it('Esc aborts creation and ignores further moves', () => {
-    const { onCreateGuide, onCancelCreate } = setup();
+    const { onCreateGuide, onCommitGuideCreate, onCancelCreate } = setup();
     const top = screen.getByTestId('canvas-ruler-top');
     fireEvent.pointerDown(top, { button: 0, clientX: 200, clientY: 5 });
     act(() => {
@@ -150,13 +147,14 @@ describe('CanvasRulers guide creation', () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     });
     expect(onCancelCreate).toHaveBeenCalledTimes(1);
-    expect(onCreateGuide).not.toHaveBeenCalled();
+    expect(onCommitGuideCreate).not.toHaveBeenCalled();
     expect(screen.queryByTestId('canvas-guide-chip')).toBeNull();
     act(() => {
       fireEvent.pointerMove(window, { clientX: 200, clientY: 200 });
       tick();
       fireEvent.pointerUp(window, { clientX: 200, clientY: 200 });
     });
-    expect(onCreateGuide).not.toHaveBeenCalled();
+    expect(onCommitGuideCreate).not.toHaveBeenCalled();
+    expect(onCreateGuide.mock.calls.length).toBe(1);
   });
 });

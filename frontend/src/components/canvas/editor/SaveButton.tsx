@@ -17,8 +17,6 @@ export default function SaveButton({ onSave }: SaveButtonProps) {
       onClick={onSave}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      whileHover={{ scale: 1.02 }}
-      whileTap={{ scale: 0.96 }}
       className="canvas-btn-primary"
     >
       <span className="relative inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
@@ -26,10 +24,10 @@ export default function SaveButton({ onSave }: SaveButtonProps) {
           {!hovered ? (
             <motion.span
               key="save"
-              initial={{ scale: 0.5, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.5, opacity: 0 }}
-              transition={{ type: 'spring', stiffness: 600, damping: 25 }}
+              initial={{ scale: 0.95, opacity: 0, filter: 'blur(2px)' }}
+              animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
+              exit={{ scale: 0.95, opacity: 0, filter: 'blur(2px)' }}
+              transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
               className="absolute inset-0 flex items-center justify-center"
             >
               <Save className="h-3.5 w-3.5" />
@@ -37,10 +35,10 @@ export default function SaveButton({ onSave }: SaveButtonProps) {
           ) : (
             <motion.span
               key="check"
-              initial={{ scale: 0.5, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.5, opacity: 0 }}
-              transition={{ type: 'spring', stiffness: 600, damping: 25 }}
+              initial={{ scale: 0.95, opacity: 0, filter: 'blur(2px)' }}
+              animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
+              exit={{ scale: 0.95, opacity: 0, filter: 'blur(2px)' }}
+              transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
               className="absolute inset-0 flex items-center justify-center"
             >
               <Check className="h-3.5 w-3.5" />

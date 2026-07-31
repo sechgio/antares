@@ -1,7 +1,7 @@
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { CanvasDocument, CanvasLayer } from '../types';
 import { A4_HEIGHT_PX, A4_WIDTH_PX } from '../types';
-import type { FillContext } from '../runtime/renderHtml';
+import { stripPlaceholderChrome, type FillContext } from '../runtime/renderHtml';
 import { getActivePageLayers } from '../ops/pages';
 import { parseTableData } from '../ops/tableData';
 import LayerNode from './LayerNode';
@@ -26,7 +26,13 @@ export function documentWithFill(doc: CanvasDocument, ctx: FillContext): CanvasD
       if (layer.type === 'logo') {
         const src = layer.meta?.side === 'right' ? ctx.logoRight : ctx.logoLeft;
         if (!src) return layer;
-        return { ...layer, type: 'image' as const, value: src };
+        // Match PDF export: drop placeholder fill/border behind filled logos.
+        return {
+          ...layer,
+          type: 'image' as const,
+          value: src,
+          cssVars: stripPlaceholderChrome(layer.cssVars),
+        };
       }
       if (layer.type === 'imageSlot') {
         const src = ctx.images[layer.meta?.index ?? 0];

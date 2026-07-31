@@ -97,6 +97,18 @@ describe('layerStyle', () => {
     expect(css).toContain('border:2px solid');
   });
 
+  it('cssVarsToStyleParts parses opacity as plain number, legacy %, and invalid', () => {
+    const base = {
+      '--width': '10mm',
+      '--height': '10mm',
+      '--translate-x': '0mm',
+      '--translate-y': '0mm',
+    };
+    expect(cssVarsToStyleParts({ ...base, '--opacity': '40' }).join(';')).toContain('opacity:0.4');
+    expect(cssVarsToStyleParts({ ...base, '--opacity': '40%' }).join(';')).toContain('opacity:0.4');
+    expect(cssVarsToStyleParts({ ...base, '--opacity': 'abc' }).join(';')).toContain('opacity:1');
+  });
+
   it('resolveFillColor and resolveStrokeStyle honor opacity and visibility', () => {
     expect(
       resolveFillColor({
@@ -388,7 +400,7 @@ describe('RightPanel shape inspector', () => {
     expect(screen.getByTestId('canvas-zoom-slot')).toBeTruthy();
   });
 
-  it('shows Plantillas under Propiedades when nothing is selected', () => {
+  it('shows Plantillas under Propiedades when nothing is selected', async () => {
     const onApplyPreset = vi.fn();
     render(
       <RightPanel
@@ -400,7 +412,11 @@ describe('RightPanel shape inspector', () => {
       />,
     );
     expect(screen.getByText('Plantillas')).toBeTruthy();
-    fireEvent.click(screen.getByLabelText('Aplicar plantilla Panel fotográfico'));
+    // TemplatesSection loads presets lazily via hover/focus; trigger it in tests.
+    const section = screen.getByTestId('canvas-templates-section');
+    fireEvent.mouseEnter(section);
+    const button = await screen.findByLabelText('Aplicar plantilla Panel fotográfico');
+    fireEvent.click(button);
     expect(onApplyPreset).toHaveBeenCalledWith('report');
   });
 

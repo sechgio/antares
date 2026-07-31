@@ -4,6 +4,7 @@ import {
   cssDeclarationsToStyle,
   DEFAULT_LAYER_COLOR,
   DEFAULT_LAYER_FONT,
+  keepSpreadOnlyShadows,
   scaleCssVarsForZoom,
 } from '../ops/layerPaint';
 import type { LayerCssVars } from '../types';
@@ -95,5 +96,29 @@ describe('buildLayerPaintStyle', () => {
   it('scales the default font-size when scale > 1 (single-scale only)', () => {
     const style = buildLayerPaintStyle(vars({}), { scale: 2 });
     expect(style.fontSize).toBe('22px');
+  });
+});
+
+describe('keepSpreadOnlyShadows', () => {
+  it('keeps a spread-only shadow (frame/stroke) and drops blurred/offset ones', () => {
+    const combined = '0 10px 20px rgba(0,0,0,0.5), 0 0 0 2px #000000';
+    expect(keepSpreadOnlyShadows(combined)).toBe('0 0 0 2px #000000');
+  });
+
+  it('returns empty when all shadows are blurred/offset', () => {
+    expect(keepSpreadOnlyShadows('4px 4px 2px rgba(0,0,0,0.5)')).toBe('');
+  });
+
+  it('returns the shadow unchanged when it is already spread-only', () => {
+    expect(keepSpreadOnlyShadows('0 0 0 3px rgba(255,0,0,1)')).toBe('0 0 0 3px rgba(255,0,0,1)');
+  });
+
+  it('handles rgba() commas without splitting inside parens', () => {
+    const combined = '0 5px 10px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255,255,255,0.8)';
+    expect(keepSpreadOnlyShadows(combined)).toBe('0 0 0 1px rgba(255,255,255,0.8)');
+  });
+
+  it('returns empty for an empty string', () => {
+    expect(keepSpreadOnlyShadows('')).toBe('');
   });
 });

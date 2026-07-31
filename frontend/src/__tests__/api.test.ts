@@ -54,6 +54,28 @@ describe('API Client', () => {
     }
   });
 
+  it('should decode ANTARES_IPC_ERROR payloads wrapped by Electron invoke', async () => {
+    const payload = {
+      message: 'Template not found: report.html',
+      code: -32000,
+      category: 'INTERNAL_ERROR',
+    };
+    mockInvoke.mockRejectedValue(
+      new Error(`Error invoking remote method 'ipc-call': Error: ANTARES_IPC_ERROR:${JSON.stringify(payload)}`),
+    );
+
+    try {
+      await api.templatesList();
+      expect.unreachable('expected AntaresAPIError');
+    } catch (err) {
+      expect(err).toBeInstanceOf(AntaresAPIError);
+      const apiErr = err as AntaresAPIError;
+      expect(apiErr.message).toBe('Template not found: report.html');
+      expect(apiErr.code).toBe(-32000);
+      expect(apiErr.category).toBe('INTERNAL_ERROR');
+    }
+  });
+
   it('should validate response types', async () => {
     mockInvoke.mockResolvedValue({ formats: ['JPEG', 'PNG'] });
     

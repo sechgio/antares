@@ -20,6 +20,8 @@ export function useCanvasHistory(initial: CanvasDocument) {
   const documentRef = useRef(document);
   const pastRef = useRef(past);
   const futureRef = useRef(future);
+  /** True after discrete edits until replaceDocument (load / save / cloud apply). */
+  const hasUnsavedEditsRef = useRef(false);
   documentRef.current = document;
   pastRef.current = past;
   futureRef.current = future;
@@ -37,6 +39,7 @@ export function useCanvasHistory(initial: CanvasDocument) {
     pastRef.current = nextPast;
     futureRef.current = [];
     documentRef.current = next;
+    hasUnsavedEditsRef.current = true;
     setPast(nextPast);
     setFuture([]);
     setDocumentState(next);
@@ -46,12 +49,14 @@ export function useCanvasHistory(initial: CanvasDocument) {
     pastRef.current = [];
     futureRef.current = [];
     documentRef.current = next;
+    hasUnsavedEditsRef.current = false;
     setPast([]);
     setFuture([]);
     setDocumentState(next);
   }, []);
 
   const updateSilent = useCallback((next: CanvasDocument) => {
+    if (next === documentRef.current) return;
     documentRef.current = next;
     setDocumentState(next);
   }, []);
@@ -67,6 +72,7 @@ export function useCanvasHistory(initial: CanvasDocument) {
     const nextPast = [...pastRef.current.slice(-(MAX_HISTORY - 1)), step];
     pastRef.current = nextPast;
     futureRef.current = [];
+    hasUnsavedEditsRef.current = true;
     setPast(nextPast);
     setFuture([]);
   }, []);
@@ -143,6 +149,7 @@ export function useCanvasHistory(initial: CanvasDocument) {
       redo,
       canUndo,
       canRedo,
+      hasUnsavedEditsRef,
     }),
     [
       document,
