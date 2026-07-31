@@ -20,7 +20,7 @@ from .errors import (
     RenderingError,
 )
 from .importer import parse_excel_bytes
-from .matcher import build_panels, compile_match_rule, match_image_to_row
+from .matcher import build_panels, match_image_to_row
 from .models import (
     MAX_EXCEL_ROWS,
     MAX_IMAGE_BYTES,
@@ -57,7 +57,6 @@ __all__ = [
     "PanelImageRef",
     "RenderingError",
     "build_panels",
-    "compile_match_rule",
     "deserialize_panel",
     "match_image_to_row",
     "parse_excel_bytes",
