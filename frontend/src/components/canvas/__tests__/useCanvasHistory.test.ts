@@ -158,4 +158,33 @@ describe('useCanvasHistory gesture coalesce', () => {
       20,
     );
   });
+
+  it('restoreHistory updates past and future stacks and respects MAX_HISTORY', () => {
+    const base = createEmptyDocument('Test');
+    const text = createLayer('text');
+    text.cssVars['--translate-x'] = '0mm';
+    base.layers.push(text);
+
+    const { result } = renderHook(() => useCanvasHistory(base));
+
+    const pastDocs = Array.from({ length: 35 }, (_, i) => withMovedText(cloneDoc(base), i + 1));
+    const futureDocs = [withMovedText(cloneDoc(base), 100)];
+
+    act(() => {
+      result.current.restoreHistory(pastDocs, futureDocs);
+    });
+
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.canRedo).toBe(true);
+    expect(result.current.past.length).toBe(MAX_HISTORY);
+    expect(result.current.future.length).toBe(1);
+
+    act(() => {
+      result.current.undo();
+    });
+
+    expect(parseMm(result.current.document.layers.find((l) => l.type === 'text')!.cssVars['--translate-x'])).toBe(
+      35,
+    );
+  });
 });

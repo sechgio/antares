@@ -554,4 +554,46 @@ describe('RightPanel creative freedom controls', () => {
     expect(remaining).toHaveLength(1);
     expect(remaining[0].color).toBe('#FF0000');
   });
+
+  it('renders disabled distribution buttons when selectedCount is 2', () => {
+    const onDistribute = vi.fn();
+    render(
+      <RightPanel
+        layer={createLayer('rect')}
+        onChange={vi.fn()}
+        {...panelProps}
+        selectedCount={2}
+        onDistribute={onDistribute}
+      />,
+    );
+    const horizBtn = screen.getByTestId('canvas-distribute-horizontal');
+    const vertBtn = screen.getByTestId('canvas-distribute-vertical');
+
+    expect(horizBtn).toBeDisabled();
+    expect(vertBtn).toBeDisabled();
+  });
+
+  it('renders enabled distribution buttons and triggers onDistribute when selectedCount is 3+', () => {
+    const onDistribute = vi.fn();
+    render(
+      <RightPanel
+        layer={createLayer('rect')}
+        onChange={vi.fn()}
+        {...panelProps}
+        selectedCount={3}
+        onDistribute={onDistribute}
+      />,
+    );
+    const horizBtn = screen.getByTestId('canvas-distribute-horizontal');
+    const vertBtn = screen.getByTestId('canvas-distribute-vertical');
+
+    expect(horizBtn).not.toBeDisabled();
+    expect(vertBtn).not.toBeDisabled();
+
+    fireEvent.click(horizBtn);
+    expect(onDistribute).toHaveBeenCalledWith('horizontal');
+
+    fireEvent.click(vertBtn);
+    expect(onDistribute).toHaveBeenCalledWith('vertical');
+  });
 });

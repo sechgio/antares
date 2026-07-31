@@ -367,30 +367,51 @@ export default memo(function RightPanel({
               </WithHoverTooltip>
             ))}
           </div>
-          {selectedCount >= 3 && (
-            <div className="mt-2 flex gap-1">
-              <WithHoverTooltip label="Distribuir horizontal" placement="bottom" variant="dark">
+          <div className="mt-3">
+            <span className="canvas-sublabel">Distribución Equitativa</span>
+            <div className="flex gap-1">
+              <WithHoverTooltip
+                label={
+                  selectedCount >= 3
+                    ? 'Espaciado uniforme horizontal'
+                    : 'Espaciado uniforme horizontal (requiere al menos 3 objetos)'
+                }
+                placement="bottom"
+                variant="dark"
+              >
                 <button
                   type="button"
                   className="canvas-icon-btn"
-                  aria-label="Distribuir horizontal"
+                  aria-label="Espaciado uniforme horizontal"
+                  data-testid="canvas-distribute-horizontal"
+                  disabled={selectedCount < 3}
                   onClick={() => onDistribute('horizontal')}
                 >
                   <AlignHorizontalDistributeCenter className="h-3.5 w-3.5" />
                 </button>
               </WithHoverTooltip>
-              <WithHoverTooltip label="Distribuir vertical" placement="bottom" variant="dark">
+              <WithHoverTooltip
+                label={
+                  selectedCount >= 3
+                    ? 'Espaciado uniforme vertical'
+                    : 'Espaciado uniforme vertical (requiere al menos 3 objetos)'
+                }
+                placement="bottom"
+                variant="dark"
+              >
                 <button
                   type="button"
                   className="canvas-icon-btn"
-                  aria-label="Distribuir vertical"
+                  aria-label="Espaciado uniforme vertical"
+                  data-testid="canvas-distribute-vertical"
+                  disabled={selectedCount < 3}
                   onClick={() => onDistribute('vertical')}
                 >
                   <AlignVerticalDistributeCenter className="h-3.5 w-3.5" />
                 </button>
               </WithHoverTooltip>
             </div>
-          )}
+          </div>
           <div className="mt-2 flex gap-1">
             <ZOrderButtons
               onBringFront={onBringFront}

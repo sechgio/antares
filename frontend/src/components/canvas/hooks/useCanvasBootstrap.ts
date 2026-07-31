@@ -12,6 +12,8 @@ import type { useCanvasHistory } from './useCanvasHistory';
 interface UseCanvasBootstrapOptions {
   /** Replace the open document after list/create/get resolves. */
   replaceDocument: ReturnType<typeof useCanvasHistory>['replaceDocument'];
+  /** Restore history stack (past and future) for the loaded document. */
+  restoreHistory?: ReturnType<typeof useCanvasHistory>['restoreHistory'];
   /** Set the docs sidebar list. */
   setDocs: React.Dispatch<React.SetStateAction<CanvasDocumentSummary[]>>;
   /** Set the loading veil visibility. */
@@ -26,6 +28,7 @@ interface UseCanvasBootstrapOptions {
  * unmount. Triggers the initial cloud sync once the open document is ready. */
 export function useCanvasBootstrap({
   replaceDocument,
+  restoreHistory,
   setDocs,
   setLoading,
   runCloudSync,
@@ -40,7 +43,20 @@ export function useCanvasBootstrap({
         setDocs(list.documents);
         if (list.documents.length > 0) {
           const got = await api.canvasGet(list.documents[0].id);
-          if (!cancelled) replaceDocument(normalizeDocument(got.document as CanvasDocument));
+          if (!cancelled) {
+            const doc = normalizeDocument(got.document as CanvasDocument);
+            replaceDocument(doc);
+            if (restoreHistory) {
+              try {
+                const hist = await api.canvasGetHistory(doc.id);
+                if (!cancelled && (hist.past?.length || hist.future?.length)) {
+                  restoreHistory(hist.past, hist.future);
+                }
+              } catch {
+                // history restore is best-effort
+              }
+            }
+          }
         } else {
           const created = await api.canvasCreate('Sin título');
           if (!cancelled) {

@@ -154,4 +154,36 @@ describe('guides', () => {
     expect(result.dx).toBeCloseTo(-4, 5);
     expect(result.labels.some((l) => l.axis === 'x' && Math.abs(l.valueMm - 8) < 0.01)).toBe(true);
   });
+
+  it('measureSelectionGaps measures all consecutive gaps in a multi-object sequence', () => {
+    const a = { x: 10, y: 10, w: 20, h: 10 };
+    const sel = { x: 40, y: 10, w: 20, h: 10 }; // gap 10mm from a
+    const c = { x: 75, y: 10, w: 20, h: 10 }; // gap 15mm from sel
+    const labels = measureSelectionGaps(sel, [a, c], { widthMm: 210, heightMm: 297 });
+
+    // Should measure both A-sel gap (10mm) and sel-C gap (15mm)
+    const xGaps = labels.filter((l) => l.axis === 'x');
+    expect(xGaps.some((l) => Math.abs(l.valueMm - 10) < 0.01)).toBe(true);
+    expect(xGaps.some((l) => Math.abs(l.valueMm - 15) < 0.01)).toBe(true);
+  });
+
+  it('snapEqualGaps highlights all matching equal gaps in the sequence', () => {
+    const a = { x: 10, y: 10, w: 20, h: 10 }; // right edge = 30
+    const b = { x: 45, y: 10, w: 20, h: 10 }; // left = 45, gap = 15mm after a, right = 65
+    const movingOrigin = { x: 80.2, y: 10, w: 20, h: 10 }; // gap ~15.2mm from b
+    // Drag left to position at x=80 (gap 15mm from b)
+    const result = snapEqualGaps(
+      movingOrigin,
+      -0.2,
+      0,
+      [a, b],
+      { widthMm: 210, heightMm: 297 },
+      0.5,
+      collectReferenceGaps([a, b], { widthMm: 210, heightMm: 297 }),
+    );
+    expect(result.dx).toBeCloseTo(-0.2, 5);
+    // Should contain equal gap labels for both A-B and B-moving
+    const matched15mm = result.labels.filter((l) => l.axis === 'x' && Math.abs(l.valueMm - 15) < 0.1);
+    expect(matched15mm.length).toBeGreaterThanOrEqual(2);
+  });
 });

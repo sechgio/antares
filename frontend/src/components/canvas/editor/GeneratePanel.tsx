@@ -52,6 +52,10 @@ export default function GeneratePanel({ document: designDocument }: GeneratePane
   const [searchOrder, setSearchOrder] = useState('');
   const [exportScope, setExportScope] = useState<GenerateExportScope>('single');
   const [pdfQuality, setPdfQuality] = useState<PdfQuality>('high');
+  const [colorMode, setColorMode] = useState<'rgb' | 'cmyk'>('rgb');
+  const [colorProfile, setColorProfile] = useState('cmyk_iso_coated_v2');
+  const [bleedMm, setBleedMm] = useState(0);
+  const [showCropMarks, setShowCropMarks] = useState(false);
   const [requiresImages, setRequiresImages] = useState(true);
   const [showPlaceholders, setShowPlaceholders] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -261,6 +265,10 @@ export default function GeneratePanel({ document: designDocument }: GeneratePane
         filename,
         outputPath,
         localImagePaths,
+        colorMode,
+        colorProfile,
+        bleedMm,
+        showCropMarks,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al exportar PDF');
@@ -309,6 +317,14 @@ export default function GeneratePanel({ document: designDocument }: GeneratePane
         onExportScope={setExportScope}
         pdfQuality={pdfQuality}
         onPdfQuality={setPdfQuality}
+        colorMode={colorMode}
+        onColorMode={setColorMode}
+        colorProfile={colorProfile}
+        onColorProfile={setColorProfile}
+        bleedMm={bleedMm}
+        onBleedMm={setBleedMm}
+        showCropMarks={showCropMarks}
+        onShowCropMarks={setShowCropMarks}
         showPlaceholders={showPlaceholders}
         onShowPlaceholders={setShowPlaceholders}
         busy={busy}

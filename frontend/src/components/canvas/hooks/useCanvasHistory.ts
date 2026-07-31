@@ -82,14 +82,26 @@ export function useCanvasHistory(initial: CanvasDocument) {
     setDocumentState(next);
   }, []);
 
+  const restoreHistory = useCallback((nextPast: CanvasDocument[], nextFuture: CanvasDocument[]) => {
+    const safePast = nextPast.slice(-MAX_HISTORY);
+    const safeFuture = nextFuture.slice(-MAX_HISTORY);
+    pastRef.current = safePast;
+    futureRef.current = safeFuture;
+    setPast(safePast);
+    setFuture(safeFuture);
+  }, []);
+
   const canUndo = past.length > 0;
   const canRedo = future.length > 0;
 
   return useMemo(
     () => ({
       document,
+      past,
+      future,
       setDocument,
       replaceDocument,
+      restoreHistory,
       updateSilent,
       commitFromBaseline,
       undo,
@@ -99,8 +111,11 @@ export function useCanvasHistory(initial: CanvasDocument) {
     }),
     [
       document,
+      past,
+      future,
       setDocument,
       replaceDocument,
+      restoreHistory,
       updateSilent,
       commitFromBaseline,
       undo,

@@ -73,6 +73,14 @@ export interface GenerateSidebarProps {
   onExportScope: (v: GenerateExportScope) => void;
   pdfQuality: PdfQuality;
   onPdfQuality: (v: PdfQuality) => void;
+  colorMode: 'rgb' | 'cmyk';
+  onColorMode: (v: 'rgb' | 'cmyk') => void;
+  colorProfile: string;
+  onColorProfile: (v: string) => void;
+  bleedMm: number;
+  onBleedMm: (v: number) => void;
+  showCropMarks: boolean;
+  onShowCropMarks: (v: boolean) => void;
   showPlaceholders: boolean;
   onShowPlaceholders: (v: boolean) => void;
   busy: boolean;
@@ -92,6 +100,8 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
     dragData, setDragData, dragImages, setDragImages, onExcel,
     searchOrder, onSearchOrder, rowIndex, onRowIndex,
     exportScope, onExportScope, pdfQuality, onPdfQuality,
+    colorMode, onColorMode, colorProfile, onColorProfile,
+    bleedMm, onBleedMm, showCropMarks, onShowCropMarks,
     showPlaceholders, onShowPlaceholders, busy, onExport, onPrint, error,
   } = props;
 
@@ -400,18 +410,69 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
               </div>
 
               <div className="space-y-1">
-                <span className="text-[9px] font-medium" style={{ color: 'var(--cv-text-muted)' }}>Calidad</span>
+                <span className="text-[9px] font-medium" style={{ color: 'var(--cv-text-muted)' }}>Espacio de Color</span>
                 <GenerateSegmented
-                  aria-label="Calidad del PDF"
-                  value={pdfQuality}
-                  onChange={onPdfQuality}
+                  aria-label="Espacio de Color PDF"
+                  value={colorMode}
+                  onChange={onColorMode}
                   options={[
-                    { value: 'max', label: 'Max' },
-                    { value: 'high', label: 'Buena' },
-                    { value: 'low', label: 'Baja' },
+                    { value: 'rgb', label: 'RGB (Digital)' },
+                    { value: 'cmyk', label: 'CMYK (Imprenta)' },
                   ]}
                 />
               </div>
+
+              {colorMode === 'cmyk' ? (
+                <div className="space-y-1.5 rounded-md border p-1.5" style={{ borderColor: 'var(--cv-border-strong)', background: 'var(--cv-hover)' }}>
+                  <div className="space-y-1">
+                    <span className="text-[9px] font-medium" style={{ color: 'var(--cv-text-muted)' }}>Perfil ICC Imprenta</span>
+                    <CanvasSelect
+                      value={colorProfile}
+                      onChange={onColorProfile}
+                      aria-label="Perfil ICC"
+                      options={[
+                        { value: 'cmyk_iso_coated_v2', label: 'ISO Coated v2 (ECI)' },
+                        { value: 'cmyk_swop', label: 'US Web Coated (SWOP)' },
+                        { value: 'cmyk_device', label: 'DeviceCMYK Directo' },
+                      ]}
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <span className="text-[9px] font-medium" style={{ color: 'var(--cv-text-muted)' }}>Sangrado (Bleed)</span>
+                    <GenerateSegmented
+                      aria-label="Sangrado Bleed"
+                      value={String(bleedMm)}
+                      onChange={(v) => onBleedMm(Number(v))}
+                      options={[
+                        { value: '0', label: '0 mm' },
+                        { value: '3', label: '3 mm' },
+                        { value: '5', label: '5 mm' },
+                      ]}
+                    />
+                  </div>
+
+                  <CanvasToggle
+                    checked={showCropMarks}
+                    onChange={onShowCropMarks}
+                    label="Marcas de corte y registro"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <span className="text-[9px] font-medium" style={{ color: 'var(--cv-text-muted)' }}>Calidad</span>
+                  <GenerateSegmented
+                    aria-label="Calidad del PDF"
+                    value={pdfQuality}
+                    onChange={onPdfQuality}
+                    options={[
+                      { value: 'max', label: 'Max' },
+                      { value: 'high', label: 'Buena' },
+                      { value: 'low', label: 'Baja' },
+                    ]}
+                  />
+                </div>
+              )}
 
               <CanvasToggle checked={showPlaceholders} onChange={onShowPlaceholders} label="Mostrar placeholders" />
 

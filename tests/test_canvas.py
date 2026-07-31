@@ -613,3 +613,80 @@ def test_duplicate_document_drops_orphan_parent_id() -> None:
     child = next(layer for layer in doc["layers"] if layer["type"] == "text" and layer["name"] == "Child")
     assert "parentId" not in child
 
+
+def test_canvas_history_store_roundtrip(tmp_path: Path) -> None:
+    store = CanvasStore(tmp_path)
+    created = store.create(name="Doc History")
+    doc_id = created["id"]
+
+    past_doc = create_empty_document(name="Past")
+    past_doc["id"] = doc_id
+    future_doc = create_empty_document(name="Future")
+    future_doc["id"] = doc_id
+
+    store.save_history(doc_id, [past_doc], [future_doc])
+
+    loaded = store.get_history(doc_id)
+    assert len(loaded["past"]) == 1
+    assert loaded["past"][0]["name"] == "Past"
+    assert len(loaded["future"]) == 1
+    assert loaded["future"][0]["name"] == "Future"
+
+
+def test_canvas_history_max_history_capping(tmp_path: Path) -> None:
+    store = CanvasStore(tmp_path)
+    created = store.create(name="Doc Cap")
+    doc_id = created["id"]
+
+    past_stack = [create_empty_document(name=f"Past-{i}") for i in range(40)]
+    store.save_history(doc_id, past_stack, [], max_history=30)
+
+    loaded = store.get_history(doc_id)
+    assert len(loaded["past"]) == 30
+    assert loaded["past"][0]["name"] == "Past-10"
+    assert loaded["past"][-1]["name"] == "Past-39"
+
+
+def test_canvas_history_corrupt_file_returns_empty(tmp_path: Path) -> None:
+    store = CanvasStore(tmp_path)
+    created = store.create(name="Corrupt Hist")
+    doc_id = created["id"]
+
+    hist_file = store._history_path_for(doc_id)
+    hist_file.write_text("invalid json content{{{", encoding="utf-8")
+
+    loaded = store.get_history(doc_id)
+    assert loaded == {"past": [], "future": []}
+
+
+def test_canvas_history_deleted_on_doc_delete(tmp_path: Path) -> None:
+    store = CanvasStore(tmp_path)
+    created = store.create(name="To Delete")
+    doc_id = created["id"]
+
+    store.save_history(doc_id, [create_empty_document()], [])
+    hist_file = store._history_path_for(doc_id)
+    assert hist_file.exists()
+
+    assert store.delete(doc_id) is True
+    assert not hist_file.exists()
+
+
+def test_canvas_history_ipc_handlers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    store = CanvasStore(tmp_path)
+    monkeypatch.setattr("backend.core.canvas.get_canvas_store", lambda: store)
+
+    created = canvas_handlers.canvas_create({"name": "IPC Hist"})
+    doc_id = created["document"]["id"]
+
+    res_get = canvas_handlers.canvas_get_history({"id": doc_id})
+    assert res_get == {"past": [], "future": []}
+
+    past_doc = create_empty_document(name="Past IPC")
+    canvas_handlers.canvas_save_history({"id": doc_id, "past": [past_doc], "future": []})
+
+    res_get_updated = canvas_handlers.canvas_get_history({"id": doc_id})
+    assert len(res_get_updated["past"]) == 1
+    assert res_get_updated["past"][0]["name"] == "Past IPC"
+
+

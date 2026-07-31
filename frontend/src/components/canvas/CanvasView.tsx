@@ -253,16 +253,31 @@ export default function CanvasView() {
 
   useCanvasBootstrap({
     replaceDocument: history.replaceDocument,
+    restoreHistory: history.restoreHistory,
     setDocs,
     setLoading,
     runCloudSync,
   });
 
+  // Debounced history persistence on disk (~500ms after stack mutations)
+  useEffect(() => {
+    const docId = history.document.id;
+    if (!docId) return;
+    const timer = setTimeout(() => {
+      api.canvasSaveHistory(docId, history.past, history.future).catch(() => {});
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [history.document.id, history.past, history.future]);
+
   const onSave = useCallback(async () => {
     try {
+      const currentPast = history.past;
+      const currentFuture = history.future;
       const res = await api.canvasSave(history.document);
+      await api.canvasSaveHistory(history.document.id, currentPast, currentFuture).catch(() => {});
       const saved = normalizeDocument(res.document as CanvasDocument);
       history.replaceDocument(saved);
+      history.restoreHistory(currentPast, currentFuture);
       await refreshList();
       flashStatus('Guardado');
       queueCanvasCloudPush(saved);
@@ -923,6 +938,7 @@ export default function CanvasView() {
     await withDocSwitchLock(async () => {
       try {
         const savedRes = await api.canvasSave(history.document);
+        await api.canvasSaveHistory(history.document.id, history.past, history.future).catch(() => {});
         queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
         const res = await api.canvasDuplicate(history.document.id);
         const dup = normalizeDocument(res.document as CanvasDocument);
@@ -947,7 +963,16 @@ export default function CanvasView() {
         const list = await api.canvasList();
         if (list.documents.length) {
           const got = await api.canvasGet(list.documents[0].id);
-          history.replaceDocument(normalizeDocument(got.document as CanvasDocument));
+          const doc = normalizeDocument(got.document as CanvasDocument);
+          history.replaceDocument(doc);
+          try {
+            const hist = await api.canvasGetHistory(doc.id);
+            if (hist.past?.length || hist.future?.length) {
+              history.restoreHistory(hist.past, hist.future);
+            }
+          } catch {
+            // history restore is best-effort
+          }
           setDocs(list.documents);
         } else {
           const created = await api.canvasCreate('Sin título');
@@ -971,9 +996,19 @@ export default function CanvasView() {
     await withDocSwitchLock(async () => {
       try {
         const savedRes = await api.canvasSave(history.document);
+        await api.canvasSaveHistory(history.document.id, history.past, history.future).catch(() => {});
         queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
         const res = await api.canvasGet(id);
-        history.replaceDocument(normalizeDocument(res.document as CanvasDocument));
+        const doc = normalizeDocument(res.document as CanvasDocument);
+        history.replaceDocument(doc);
+        try {
+          const hist = await api.canvasGetHistory(doc.id);
+          if (hist.past?.length || hist.future?.length) {
+            history.restoreHistory(hist.past, hist.future);
+          }
+        } catch {
+          // history restore is best-effort
+        }
         setSelectedIds([]);
         setPageIndex(0);
         resetViewportPan();
@@ -988,6 +1023,7 @@ export default function CanvasView() {
     await withDocSwitchLock(async () => {
       try {
         const savedRes = await api.canvasSave(history.document);
+        await api.canvasSaveHistory(history.document.id, history.past, history.future).catch(() => {});
         queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
         const res = await api.canvasCreate('Sin título');
         const doc = normalizeDocument(res.document as CanvasDocument);
