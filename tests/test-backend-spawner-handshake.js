@@ -31,6 +31,7 @@ async function run() {
   const originalSpawn = childProcess.spawn;
   const originalSetTimeout = global.setTimeout;
   const originalClearTimeout = global.clearTimeout;
+  const inertTimers = new Set();
   let handshakeTimer = null;
   let clearedHandshakeTimer = null;
   let fakeProcess = null;
@@ -53,15 +54,21 @@ async function run() {
   };
 
   global.setTimeout = (fn, delay, ...args) => {
-    if (delay === 30_000) {
-      handshakeTimer = { fn, delay };
-      return handshakeTimer;
+    if (delay === 30_000 || delay === 60_000) {
+      const timer = { fn, delay, args };
+      inertTimers.add(timer);
+      // The handshake timer is the first 30s/60s timer created by the spawn flow.
+      if (!handshakeTimer) handshakeTimer = timer;
+      return timer;
     }
     return originalSetTimeout(fn, delay, ...args);
   };
   global.clearTimeout = (timer) => {
-    if (timer === handshakeTimer) {
-      clearedHandshakeTimer = timer;
+    if (inertTimers.has(timer)) {
+      inertTimers.delete(timer);
+      if (timer === handshakeTimer) {
+        clearedHandshakeTimer = timer;
+      }
       return undefined;
     }
     return originalClearTimeout(timer);
