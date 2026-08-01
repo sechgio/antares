@@ -37,7 +37,6 @@ import locale
 import logging
 import os
 import signal
-import threading
 import time
 import traceback
 import warnings
@@ -231,19 +230,17 @@ def main() -> None:
             logger.exception("Failed to emit db_init_failed notification")
         sys.exit(1)
 
+    # Warm all handler modules synchronously BEFORE the ready handshake. Loading
+    # them lazily in a background thread made the first fichas/formatos/reports
+    # requests contend with that thread for Python's global import lock, which
+    # can hang an IPC call well past the timeout. HANDLERS.warm() iterates with
+    # per-module try/except, so a slow or failing module delays readiness but
+    # never aborts startup.
+    HANDLERS.warm()
+
     send_notification("ready", {"status": "ok"})
 
     logger.info(t("info.backend_ready"))
-
-    # Warm heavy handler imports off the critical path so the first light IPC
-    # (version / theme) is not blocked by Pillow/PyMuPDF/WeasyPrint loads.
-    def _warm_handlers() -> None:
-        try:
-            HANDLERS.warm()
-        except Exception:
-            logger.exception("Background handler warm-up failed")
-
-    threading.Thread(target=_warm_handlers, name="handler-warmup", daemon=True).start()
 
     # Plugins are opt-in: set ANTARES_ENABLE_PLUGINS=1 to load user_data/plugins/*.py
     # at startup. Default off so installs without plugins pay no import/exec cost.
