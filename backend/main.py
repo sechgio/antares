@@ -117,6 +117,8 @@ HEAVY_METHODS = {
     "generar_ubicaciones",
     "preview_ubicacion",
     "evidencia_volanteo_render",
+    # Long-running canvas export — must not starve light IPC (version/status/theme).
+    "canvas_export_cmyk_pdf",
 }
 
 # Handlers that must answer on the IPC reader thread. Health probes and UI

@@ -127,6 +127,26 @@ excludes=[
         'test',
         'tests',
         'playwright',
+        # ML / vision stacks often present in the builder's site-packages.
+        # If PyInstaller pulls them in, the onefile extract exceeds the IPC
+        # handshake budget and the packaged app looks "totally broken"
+        # (templates_list never returns, every tool times out). Antares does
+        # not import these — exclude unconditionally.
+        'torch',
+        'torchvision',
+        'torchaudio',
+        'tensorflow',
+        'tensorboard',
+        'keras',
+        'cv2',
+        'sklearn',
+        'scikit-learn',
+        'sympy',
+        'transformers',
+        'onnx',
+        'onnxruntime',
+        'jax',
+        'jaxlib',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,

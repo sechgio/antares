@@ -27,7 +27,7 @@ const STATE = Object.freeze({
   FATAL: 'fatal',
 });
 
-const HANDSHAKE_TIMEOUT_MS = 30_000;    // single spawn attempt timeout
+const HANDSHAKE_TIMEOUT_MS = 60_000;    // onefile extract + AV scan can exceed 30s on cold start
 const AUTO_RESTART_LIMIT = 8;            // max consecutive auto-restarts before FATAL
 const MAX_RESTART_BACKOFF_SEC = 30;      // cap backoff at 30s
 const RESTART_RESET_MS = 60_000;         // time of stability before counter resets
@@ -547,15 +547,44 @@ async function _autoRestart() {
  * Whitelist only the env vars the Python backend needs instead of cloning the
  * entire process.env (Windows env block limit ~32K; avoids leaking unrelated
  * secrets and keeps the child env block small).
+ *
+ * Regression note (post-0.10.20): the first whitelist omitted Windows shell
+ * identity vars, SSL/proxy, XDG paths, and ANTARES_* flags that ubicaciones
+ * and subprocess helpers read via os.environ — keep those prefixes/keys.
  */
 const _CHILD_ENV_WHITELIST = [
-  'PATH', 'SYSTEMROOT', 'TEMP', 'TMP', 'PYTHONIOENCODING', 'PYTHONUTF8',
-  'LOCALAPPDATA', 'APPDATA', 'USERPROFILE', 'HOME', 'PATHEXT', 'LANG', 'LC_ALL',
+  // Process / paths
+  'PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'OS',
+  'TEMP', 'TMP', 'PYTHONIOENCODING', 'PYTHONUTF8',
+  // User data roots (backend/utils/paths.py)
+  'LOCALAPPDATA', 'APPDATA', 'USERPROFILE', 'HOME', 'HOMEDRIVE', 'HOMEPATH',
+  'XDG_DATA_HOME', 'USERNAME', 'USER',
+  // Locale
+  'LANG', 'LC_ALL', 'LC_CTYPE',
+  // Native libs / TLS / corporate proxy (maps, HTTPS fetch)
+  'ProgramData', 'ProgramFiles', 'ProgramFiles(x86)',
+  'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE',
+  'SSL_CERT_FILE', 'SSL_CERT_DIR', 'REQUESTS_CA_BUNDLE', 'CURL_CA_BUNDLE',
+  'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy',
 ];
-function _buildChildEnv() {
+/** Dev-only: never inject into the frozen AntaresBackend.exe (breaks MEIPASS imports). */
+const _CHILD_ENV_DEV_ONLY = ['PYTHONPATH', 'VIRTUAL_ENV'];
+
+function _buildChildEnv(isDev = false) {
   const env = {};
   for (const key of _CHILD_ENV_WHITELIST) {
     if (process.env[key] !== undefined) env[key] = process.env[key];
+  }
+  if (isDev) {
+    for (const key of _CHILD_ENV_DEV_ONLY) {
+      if (process.env[key] !== undefined) env[key] = process.env[key];
+    }
+  }
+  // Feature flags + map keys the backend reads (ANTARES_MAP_PROVIDER, etc.)
+  for (const key of Object.keys(process.env)) {
+    if (key.startsWith('ANTARES_') && process.env[key] !== undefined) {
+      env[key] = process.env[key];
+    }
   }
   env.PYTHONIOENCODING = 'utf-8';
   env.PYTHONUTF8 = '1';
@@ -574,7 +603,7 @@ function _spawn(isDev) {
 
   pythonProcess = spawn(cmd, args, {
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: _buildChildEnv(),
+    env: _buildChildEnv(isDev),
   });
 
   pythonProcess.stderr.on('data', _recordStderr);
@@ -775,5 +804,6 @@ module.exports = {
   noteJobActivity,
   clearJobActivity,
   hasRecentJobActivity,
+  _buildChildEnv,
   STATE,
 };

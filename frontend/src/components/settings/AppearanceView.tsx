@@ -358,9 +358,34 @@ export default function AppearanceView() {
   useEffect(() => { setLanguage(i18n.language); }, [i18n.language]);
 
   const refresh = useCallback(async () => {
-    const backendTheme = await api.getTheme();
     const cachedTheme = readCachedActiveTheme();
-    const initialTheme = cachedTheme || backendTheme;
+    let backendTheme: ThemeConfig | null = null;
+    try {
+      backendTheme = await api.getTheme();
+    } catch {
+      // IPC fetch failed — use cached theme or fallback
+    }
+
+    const initialTheme = cachedTheme || backendTheme || ({
+      name: 'Slate Professional',
+      bg: '#0F172A',
+      bg_secondary: '#172033',
+      fg: '#F8FAFC',
+      fg_muted: '#94A3B8',
+      fg_secondary: '#CBD5E1',
+      fg_tertiary: '#64748B',
+      accent: '#3B82F6',
+      accent_light: '#93C5FD',
+      accent_hover: '#2563EB',
+      accent_dark: '#1E40AF',
+      border: '#334155',
+      blue_hover: '#14B8A6',
+      error: '#EF4444',
+      warning: '#F59E0B',
+      success: '#22C55E',
+      orange: '#38BDF8',
+    } as ThemeConfig);
+
     const nextMode = (initialTheme?.mode as ThemeMode) || 'dark';
     const nextAccent = accentKeyForTheme(initialTheme);
     const nextLanguage = initialTheme?.language || i18n.language || 'es';
@@ -379,8 +404,12 @@ export default function AppearanceView() {
       applyThemeToCSS(initialTheme, nextMode, nextAccent);
     }
 
-    const presetResponse = await api.getPresets();
-    setPresets(presetResponse.presets);
+    try {
+      const presetResponse = await api.getPresets();
+      setPresets(presetResponse.presets || []);
+    } catch {
+      setPresets([]);
+    }
   }, [i18n.language]);
 
   useEffect(() => { refresh(); }, [refresh]);

@@ -305,13 +305,15 @@ function AppContent() {
 
 function App() {
   return (
-    <ToastProvider>
-      <DialogProvider>
-        <AuthProvider>
-          <AuthGate />
-        </AuthProvider>
-      </DialogProvider>
-    </ToastProvider>
+    <ErrorBoundary>
+      <ToastProvider>
+        <DialogProvider>
+          <AuthProvider>
+            <AuthGate />
+          </AuthProvider>
+        </DialogProvider>
+      </ToastProvider>
+    </ErrorBoundary>
   );
 }
 

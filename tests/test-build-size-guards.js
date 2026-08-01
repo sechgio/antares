@@ -22,7 +22,7 @@ function readProjectFile(...parts) {
 console.log('Testing build size guardrails...\n');
 
 const spec = readProjectFile('backend', 'backend.spec');
-for (const moduleName of ['scipy', 'numba', 'llvmlite']) {
+for (const moduleName of ['scipy', 'numba', 'llvmlite', 'torch', 'tensorflow', 'cv2']) {
   assert(spec.includes(`'${moduleName}'`) || spec.includes(`"${moduleName}"`), `PyInstaller should exclude optional heavy module ${moduleName}`);
 }
 // pandas submodules (pandas._testing, pandas.io.json, pandas.io.parquet,

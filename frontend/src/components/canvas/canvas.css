@@ -663,17 +663,19 @@ select.canvas-input option {
 }
 
 .canvas-danger-btn {
-  color: var(--cv-danger);
-  background: rgba(242, 72, 34, 0.08);
+  color: var(--cv-text-secondary);
+  background: transparent;
 }
 
 .canvas-danger-btn:hover {
-  background: rgba(242, 72, 34, 0.16);
+  color: var(--cv-danger);
+  background: var(--cv-danger-soft);
 }
 
 .canvas-danger-btn:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(224, 62, 47, 0.2);
+  color: var(--cv-danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cv-danger) 20%, transparent);
 }
 
 .canvas-icon-btn {

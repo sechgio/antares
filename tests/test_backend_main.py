@@ -63,6 +63,7 @@ def test_heavy_methods_include_fichas_and_evidencia() -> None:
     assert "fichas_tecnicas_render_html" in backend_main.HEAVY_METHODS
     assert "fichas_tecnicas_render_consolidated_html" in backend_main.HEAVY_METHODS
     assert "evidencia_volanteo_render" in backend_main.HEAVY_METHODS
+    assert "canvas_export_cmyk_pdf" in backend_main.HEAVY_METHODS
 
 
 def test_classify_init_db_failure_is_fatal_message() -> None:

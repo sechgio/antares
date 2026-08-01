@@ -1,9 +1,9 @@
 (function () {
   try {
+    var root = document.documentElement;
     var cache = localStorage.getItem('hc_theme_css_cache');
     if (cache) {
       var vars = JSON.parse(cache);
-      var root = document.documentElement;
       for (var key in vars) {
         if (Object.prototype.hasOwnProperty.call(vars, key)) {
           root.style.setProperty(key, vars[key]);

@@ -75,7 +75,7 @@ function _getLongRunningMethods() {
 // Budgets
 const REQUEST_TIMEOUT_MS = 30_000;         // per-request response timeout — most ops finish in <5s
 const LONG_REQUEST_TIMEOUT_MS = 900_000;   // 15 min for heavy operations (large PDF/ZIP batches)
-const STARTUP_WAIT_MS = 30_000;            // backend should start in <10s; 30s is a safe margin
+const STARTUP_WAIT_MS = 60_000;            // align with backend-spawner handshake (onefile + AV)
 const MID_FLIGHT_RETRIES = 2;              // retries for transient mid-flight errors (idempotent only)
 const BACKEND_RESTART_MIN_INTERVAL_MS = 5_000;
 /** Prefix for structured IPC errors embedded in Error.message (Electron only clones message). */
@@ -355,18 +355,12 @@ function _dispatchNative(method) {
 }
 
 /**
- * Session-lifetime cache for resolved map provider API keys.
- * `resolveProviderApiKey` does OS keychain I/O (safeStorage) on every call;
- * keys do not change during a session so we cache the result.
+ * Resolve map provider API keys (cached inside ubicaciones-secure-keys;
+ * cache clears on ubicaciones_keys_set so mid-session key changes apply).
  */
-const _apiKeyCache = new Map();
 function _resolveCachedApiKey(provider, fallbackFromRenderer) {
-  const cacheKey = `${provider || ''}::${String(fallbackFromRenderer || '')}`;
-  if (_apiKeyCache.has(cacheKey)) return _apiKeyCache.get(cacheKey);
   const { resolveProviderApiKey } = require('./ubicaciones-secure-keys');
-  const resolved = resolveProviderApiKey(provider, fallbackFromRenderer);
-  _apiKeyCache.set(cacheKey, resolved);
-  return resolved;
+  return resolveProviderApiKey(provider, fallbackFromRenderer);
 }
 
 function registerIpcHandlers() {

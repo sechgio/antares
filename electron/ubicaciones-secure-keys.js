@@ -49,20 +49,37 @@ function getMaskedUbicacionesApiKeys() {
   return { keys, configured };
 }
 
+/** Session cache — avoid OS keychain I/O on every preview/generate call. */
+const _resolveCache = new Map();
+
+function clearProviderApiKeyCache() {
+  _resolveCache.clear();
+}
+
 function setUbicacionesApiKeys(keys) {
   const safe = _sanitizeKeys(keys);
   writeSecureJson(FILE, NS, safe);
+  // Keys changed — drop stale empty/old resolutions so the next IPC injects fresh values.
+  clearProviderApiKeyCache();
   return safe;
 }
 
 function resolveProviderApiKey(provider, fallbackFromRenderer) {
+  const cacheKey = `${provider || ''}::${String(fallbackFromRenderer || '')}`;
+  if (_resolveCache.has(cacheKey)) return _resolveCache.get(cacheKey);
+
   const full = getUbicacionesApiKeys();
   const fromStore = full[String(provider || '').trim()] || '';
-  if (fromStore) return fromStore;
-  const fb = String(fallbackFromRenderer || '').trim();
-  // Ignore masked placeholders from the renderer.
-  if (!fb || fb.startsWith('••••')) return '';
-  return fb.slice(0, 512);
+  let resolved = '';
+  if (fromStore) {
+    resolved = fromStore;
+  } else {
+    const fb = String(fallbackFromRenderer || '').trim();
+    // Ignore masked placeholders from the renderer.
+    if (fb && !fb.startsWith('••••')) resolved = fb.slice(0, 512);
+  }
+  _resolveCache.set(cacheKey, resolved);
+  return resolved;
 }
 
 module.exports = {
@@ -73,4 +90,5 @@ module.exports = {
   getMaskedUbicacionesApiKeys,
   setUbicacionesApiKeys,
   resolveProviderApiKey,
+  clearProviderApiKeyCache,
 };
