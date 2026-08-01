@@ -49,6 +49,9 @@ export default function HistoryView() {
 
   const [filtersOpen, setFiltersOpen] = useState(false);
 
+  const runsRef = useRef<HistoryRun[]>([]);
+  runsRef.current = runs;
+
   const reqId = useRef(0);
 
   const typeFilters = useMemo(() => getTypeFilters(t), [t]);
@@ -56,56 +59,35 @@ export default function HistoryView() {
 
 
   const loadPage = useCallback(async (reset: boolean) => {
-
     const id = ++reqId.current;
-
     setLoadingRuns(true);
-
     try {
-
-      const offset = reset ? 0 : runs.length;
-
+      const currentRuns = runsRef.current;
+      const offset = reset ? 0 : currentRuns.length;
       const params: { limit: number; offset: number; run_type?: string } = {
-
         limit: HISTORY_PAGE_SIZE + 1,
-
         offset,
-
       };
-
       if (activeType !== 'all') params.run_type = activeType;
 
       const r = await api.historyList(params);
-
       if (id !== reqId.current) return;
 
-      const page = (r.runs as HistoryRun[]).slice(0, HISTORY_PAGE_SIZE);
+      const rawRuns = (r?.runs as HistoryRun[]) || [];
+      const page = rawRuns.slice(0, HISTORY_PAGE_SIZE);
 
-      const nextRuns = reset ? page : [...runs, ...page];
-
-      setHasMoreRuns((r.runs as HistoryRun[]).length > HISTORY_PAGE_SIZE);
-
-      setRuns(nextRuns);
-
-      if (selected && !nextRuns.some((run) => run.id === selected.id)) setSelected(null);
-
+      setHasMoreRuns(rawRuns.length > HISTORY_PAGE_SIZE);
+      setRuns((prev) => {
+        const nextRuns = reset ? page : [...prev, ...page];
+        if (selected && !nextRuns.some((run) => run.id === selected.id)) setSelected(null);
+        return nextRuns;
+      });
     } catch {
-
-      if (id === reqId.current) addToast({ message: t('history.errors.load'), type: 'error' });
-
+      if (id === reqId.current) addToast({ message: t('history.errors.load') || 'Error al cargar el historial', type: 'error' });
     } finally {
-
       if (id === reqId.current) setLoadingRuns(false);
-
     }
-
-    // We intentionally exclude `runs` from deps to avoid a feedback loop;
-
-    // we compare it via a ref-style pattern by reading the closure snapshot.
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-
-  }, [activeType, runs, selected, t, addToast]);
+  }, [activeType, selected, t, addToast]);
 
 
 

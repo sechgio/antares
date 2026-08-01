@@ -608,6 +608,90 @@ describe('syncCanvasDocuments', () => {
     // followUp is only for coalesced retries; primary caller applies when !skipped.
     expect(followUp).not.toHaveBeenCalled();
   });
+
+  // --- Guarded (first-boot) sync: never clobber an existing local doc ---
+
+  it('guarded: does NOT delete a local doc when remote is soft-deleted', async () => {
+    const localDoc = { id: 'doc-1', name: 'Old', updatedAt: '2026-07-01T00:00:00Z' };
+    const remoteMeta = {
+      id: 'doc-1',
+      name: 'Old',
+      updated_at: '2026-07-22T12:00:00Z',
+      deleted_at: '2026-07-22T12:00:00Z',
+    };
+
+    vi.mocked(api.canvasList).mockResolvedValue({ documents: [localDoc] });
+    enqueue([remoteMeta]);
+
+    const result = await syncCanvasDocuments({ guarded: true, openDocumentId: 'doc-1', openDirty: false });
+
+    expect(result.deletedLocal).toBe(0);
+    expect(vi.mocked(api.canvasDelete)).not.toHaveBeenCalled();
+  });
+
+  it('guarded: surfaces remote-deleted conflict for the open doc instead of deleting', async () => {
+    const localDoc = { id: 'doc-1', name: 'Old', updatedAt: '2026-07-01T00:00:00Z' };
+    const localFull = makeDoc({ id: 'doc-1', name: 'Old', updatedAt: '2026-07-01T00:00:00Z' });
+    const remoteMeta = {
+      id: 'doc-1',
+      name: 'Old',
+      updated_at: '2026-07-22T12:00:00Z',
+      deleted_at: '2026-07-22T12:00:00Z',
+    };
+
+    vi.mocked(api.canvasList).mockResolvedValue({ documents: [localDoc] });
+    vi.mocked(api.canvasGet).mockResolvedValue({ document: localFull });
+    enqueue([remoteMeta]);
+
+    const result = await syncCanvasDocuments({ guarded: true, openDocumentId: 'doc-1', openDirty: false });
+
+    expect(result.deletedLocal).toBe(0);
+    expect(vi.mocked(api.canvasDelete)).not.toHaveBeenCalled();
+    expect(result.conflict).toMatchObject({ remoteDeleted: true });
+  });
+
+  it('guarded: does NOT overwrite an existing local doc with a newer remote', async () => {
+    const localDoc = { id: 'doc-1', name: 'Old', updatedAt: '2026-07-01T00:00:00Z' };
+    const remoteMeta = {
+      id: 'doc-1',
+      name: 'New',
+      updated_at: '2026-07-22T12:00:00Z',
+      deleted_at: null,
+    };
+
+    vi.mocked(api.canvasList).mockResolvedValue({ documents: [localDoc] });
+    enqueue([remoteMeta]);
+
+    const result = await syncCanvasDocuments({ guarded: true, openDocumentId: 'doc-other', openDirty: false });
+
+    expect(result.pulled).toBe(0);
+    expect(vi.mocked(api.canvasSave)).not.toHaveBeenCalled();
+  });
+
+  it('guarded: DOES pull a remote doc that has no local counterpart', async () => {
+    // Local list has only doc-a; remote has doc-remote (not present locally).
+    const localDoc = { id: 'doc-a', name: 'A', updatedAt: '2026-07-01T00:00:00Z' };
+    const remoteMeta = {
+      id: 'doc-remote',
+      name: 'RemoteOnly',
+      updated_at: '2026-07-22T12:00:00Z',
+      deleted_at: null,
+    };
+    const pulledDoc = makeDoc({ id: 'doc-remote', name: 'RemoteOnly', updatedAt: '2026-07-22T12:00:00Z' });
+
+    vi.mocked(api.canvasList).mockResolvedValue({ documents: [localDoc] });
+    vi.mocked(api.canvasSave).mockResolvedValue({ document: pulledDoc });
+    enqueue([remoteMeta]);
+    enqueue([{ document: pulledDoc, updated_at: '2026-07-22T12:00:00Z' }]);
+
+    const result = await syncCanvasDocuments({ guarded: true, openDocumentId: 'doc-a', openDirty: false });
+
+    expect(result.pulled).toBe(1);
+    expect(vi.mocked(api.canvasSave)).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'doc-remote' }),
+      { touch: false },
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------

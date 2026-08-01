@@ -12,11 +12,19 @@ _config_path_cache: dict[str, Path] = {}
 def resource_path(relative_path: str) -> Path:
     """
     Resuelve la ruta absoluta a un recurso empaquetado.
-    En ejecución desde fuente usa la ruta del módulo.
+    En ejecución desde fuente usa la raíz del repo.
     En PyInstaller onefile usa sys._MEIPASS (directorio temporal de extracción).
+    En onedir (sin _MEIPASS) usa el directorio del ejecutable / `_internal`.
     """
-    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        base = Path(sys._MEIPASS)
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            base = Path(meipass)
+        else:
+            base = Path(sys.executable).resolve().parent
+            internal = base / "_internal"
+            if internal.is_dir():
+                base = internal
     else:
         base = Path(__file__).resolve().parent.parent.parent
     return base / relative_path

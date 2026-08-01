@@ -30,3 +30,26 @@ def test_templates_list_and_get_across_multiple_dirs(tmp_path: Path, monkeypatch
 
     get_bundled = templates.template_get({"name": "bundled_report.html"})
     assert "Bundled Report" in get_bundled["content"]
+
+
+def test_empty_user_templates_dir_does_not_hide_bundled(tmp_path: Path, monkeypatch) -> None:
+    """Installer regression: empty user templates dir must not hide bundled HTML."""
+    user = tmp_path / "user_templates"
+    bundled = tmp_path / "bundled"
+    user.mkdir()
+    bundled.mkdir()
+    (bundled / "report.html").write_text("<html></html>", encoding="utf-8")
+
+    monkeypatch.setattr(templates, "user_data_path", lambda _rel: user)
+    monkeypatch.setattr(
+        templates,
+        "resource_path",
+        lambda rel: bundled if rel.endswith("templates") or rel.endswith("templates/") else tmp_path / "nope",
+    )
+
+    dirs = templates._preview_template_dirs()
+    assert all(d.resolve() != user.resolve() for d in dirs)
+    assert any(d.resolve() == bundled.resolve() for d in dirs)
+
+    names = [t["name"] for t in templates.templates_list({})["templates"]]
+    assert "report.html" in names

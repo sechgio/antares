@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import {
   CheckCircle, AlertCircle, RotateCcw, ChevronLeft, ChevronRight, ChevronDown,
@@ -270,24 +270,32 @@ export default function PreviewPanelView() {
   }, [customColumns]);
 
   // ─── Load backend templates ───
-  useEffect(() => {
-    if (backendState !== 'ready') return;
-
-    let cancelled = false;
-    api.templatesList().then(res => {
-      if (cancelled) return;
-      // Canvas is an independent tool — never mix its docs into this selector.
-      setAvailableTemplates(
-        (res.templates || []).filter(
-          (t) => t.source !== 'canvas' && !String(t.filename || '').startsWith('canvas:'),
-        ),
+  const loadTemplates = useCallback(async () => {
+    try {
+      const res = await api.templatesList();
+      const templates = (res.templates || []).filter(
+        (t) => t.source !== 'canvas' && !String(t.filename || '').startsWith('canvas:'),
       );
-    }).catch(() => {
+      setAvailableTemplates(templates);
+      return templates;
+    } catch {
+      return [];
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadTemplates().then((templates) => {
       if (cancelled) return;
-      addToast({ message: 'Error cargando plantillas', type: 'error' });
+      if (!templates || templates.length === 0) {
+        const timer = setTimeout(() => {
+          if (!cancelled) void loadTemplates();
+        }, 1500);
+        return () => clearTimeout(timer);
+      }
     });
     return () => { cancelled = true; };
-  }, [backendState, addToast]);
+  }, [backendState, loadTemplates]);
 
   // ─── Logo upload ───
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>, side: 'left' | 'right') => {

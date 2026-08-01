@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from backend.core.database import get_db_path
@@ -93,16 +94,23 @@ HISTORIAL_MIGRATIONS: list[Migration] = [
 ]
 
 
+_ensured_dbs: set[Path] = set()
+
+
 def _ensure_table() -> None:
     """Idempotently migrate the historial schema to the latest version.
 
-    Safe to call on every access. Records applied migrations in
-    ``_schema_migrations`` so a process restart or a code downgrade does not
-    re-apply work.
+    Runs once per database file to avoid lock contention and write commits
+    on every SELECT query.
     """
-    db = get_db_path()
+    db_path = get_db_path()
+    resolved_db = db_path.resolve() if db_path.exists() else db_path
+    if resolved_db in _ensured_dbs:
+        return
     with _db_lock:
-        conn = get_connection(db)
+        if resolved_db in _ensured_dbs:
+            return
+        conn = get_connection(db_path)
         manager = MigrationManager(conn)
         manager.apply_all(HISTORIAL_MIGRATIONS)
         # Safety net for rows written by code that pre-dated the run_type column.
@@ -110,6 +118,7 @@ def _ensure_table() -> None:
             "UPDATE historial SET run_type = 'conversion' WHERE run_type IS NULL"
         )
         conn.commit()
+        _ensured_dbs.add(resolved_db)
 
 
 def save_run(

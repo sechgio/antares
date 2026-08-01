@@ -3,6 +3,7 @@
 import json
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -11,6 +12,14 @@ import pytest
 from backend.version import __version__
 
 BACKEND_SCRIPT = Path(__file__).parent.parent / "backend" / "main.py"
+
+
+def _drain_stderr(proc: subprocess.Popen, sink: list[str]) -> None:
+    """Drain stderr so warm-up logs cannot fill the Windows pipe and deadlock IPC."""
+    if proc.stderr is None:
+        return
+    for line in iter(proc.stderr.readline, ""):
+        sink.append(line)
 
 
 @pytest.fixture
@@ -24,7 +33,11 @@ def backend_process():
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        encoding="utf-8",
     )
+    stderr_lines: list[str] = []
+    threading.Thread(target=_drain_stderr, args=(proc, stderr_lines), daemon=True).start()
+
     # Wait for ready message (max 10 seconds)
     buffer = ""
     start = time.time()
@@ -40,13 +53,11 @@ def backend_process():
         except json.JSONDecodeError:
             continue
     else:
-        # Print stderr for debugging before killing
-        stderr_data = proc.stderr.read() if proc.stderr else ""
         proc.kill()
         pytest.fail(
             f"Backend did not send ready message within 10 seconds.\n"
             f"stdout buffer: {buffer!r}\n"
-            f"stderr: {stderr_data!r}",
+            f"stderr: {''.join(stderr_lines)!r}",
         )
 
     yield proc

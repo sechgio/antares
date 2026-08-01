@@ -10,6 +10,16 @@ import {
 import { hydrateDocumentImages } from '../utils/imageBlobStore';
 import type { useCanvasHistory } from './useCanvasHistory';
 
+/** Dev-only startup timing helper; no-ops in production. */
+function perfMark(label: string) {
+  if (import.meta.env.MODE !== 'development') return;
+  if (typeof performance !== 'undefined' && typeof performance.mark === 'function') {
+    performance.mark(label);
+  }
+  // eslint-disable-next-line no-console
+  console.debug(`[canvas-boot] ${label}`, `${performance.now().toFixed(1)}ms`);
+}
+
 interface UseCanvasBootstrapOptions {
   /** Replace the open document after list/create/get resolves. */
   replaceDocument: ReturnType<typeof useCanvasHistory>['replaceDocument'];
@@ -19,8 +29,8 @@ interface UseCanvasBootstrapOptions {
   setDocs: React.Dispatch<React.SetStateAction<CanvasDocumentSummary[]>>;
   /** Set the loading veil visibility. */
   setLoading: React.Dispatch<React.SetStateAction<boolean>>;
-  /** One-shot cloud sync after the initial load. */
-  runCloudSync: () => Promise<void>;
+  /** One-shot cloud sync after the initial load (guarded never clobbers disk). */
+  runCloudSync: (guardedOverride?: boolean) => Promise<void>;
 }
 
 /** Mount bootstrap: list docs → open first (or create one) → unblock loading.
@@ -41,12 +51,15 @@ export function useCanvasBootstrap({
       try {
         const list = await api.canvasList();
         if (cancelled) return;
+        perfMark('list');
         setDocs(list.documents);
         if (list.documents.length > 0) {
           const got = await api.canvasGet(list.documents[0].id);
           if (!cancelled) {
+            perfMark('get');
             const doc = normalizeDocument(got.document as CanvasDocument);
             replaceDocument(await hydrateDocumentImages(doc));
+            perfMark('replace');
             if (restoreHistory) {
               void (async () => {
                 try {
@@ -54,6 +67,7 @@ export function useCanvasBootstrap({
                   if (!cancelled && (hist.past?.length || hist.future?.length)) {
                     restoreHistory(hist.past, hist.future);
                   }
+                  perfMark('history');
                 } catch {
                   // history restore is best-effort
                 }
@@ -63,10 +77,12 @@ export function useCanvasBootstrap({
         } else {
           const created = await api.canvasCreate('Sin título');
           if (!cancelled) {
+            perfMark('get');
             const doc = normalizeDocument(created.document as CanvasDocument);
             replaceDocument(await hydrateDocumentImages(doc));
             setDocs([{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt }]);
             queueCanvasCloudPush(doc);
+            perfMark('replace');
           }
         }
       } catch {
@@ -74,11 +90,17 @@ export function useCanvasBootstrap({
           const doc = createEmptyDocument();
           replaceDocument(doc);
           setDocs([{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt }]);
+          perfMark('replace');
         }
       } finally {
         if (!cancelled) setLoading(false);
+        perfMark('ready');
       }
-      if (!cancelled) void runCloudSync();
+      if (!cancelled) {
+        // Guarded: this first sync after mount must never clobber documents
+        // that already exist on disk (see SyncOptions.guarded).
+        void runCloudSync(true).finally(() => perfMark('sync'));
+      }
     })();
     return () => {
       cancelled = true;

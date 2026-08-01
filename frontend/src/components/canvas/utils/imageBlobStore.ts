@@ -22,75 +22,10 @@ function generateBlobId(): string {
 }
 
 /**
- * Creates a resized 400px max-dimension thumbnail Blob from a source image or Blob.
- */
-export async function createThumbnailBlob(
-  source: Blob | HTMLImageElement,
-  maxDimension = 400
-): Promise<{ thumbnailBlob: Blob; thumbnailUrl: string }> {
-  let img: HTMLImageElement;
-  let shouldRevokeImgUrl = false;
-
-  if (source instanceof Blob) {
-    img = new Image();
-    const tempUrl = URL.createObjectURL(source);
-    shouldRevokeImgUrl = true;
-    img.src = tempUrl;
-    await Promise.race([
-      new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-      }),
-      new Promise((resolve) => setTimeout(resolve, 100)),
-    ]);
-  } else {
-    img = source;
-  }
-
-  const { naturalWidth: w, naturalHeight: h } = img;
-  if (shouldRevokeImgUrl && img.src.startsWith('blob:')) {
-    URL.revokeObjectURL(img.src);
-  }
-
-  if (!w || !h) {
-    const fallbackBlob = source instanceof Blob ? source : new Blob([]);
-    return {
-      thumbnailBlob: fallbackBlob,
-      thumbnailUrl: source instanceof Blob ? URL.createObjectURL(fallbackBlob) : img.src,
-    };
-  }
-
-  const scale = Math.min(1, maxDimension / Math.max(w, h));
-  const targetW = Math.max(1, Math.round(w * scale));
-  const targetH = Math.max(1, Math.round(h * scale));
-
-  if (typeof document !== 'undefined') {
-    const canvas = document.createElement('canvas');
-    canvas.width = targetW;
-    canvas.height = targetH;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.drawImage(img, 0, 0, targetW, targetH);
-      const thumbnailBlob = await new Promise<Blob>((resolve) => {
-        canvas.toBlob((b) => resolve(b || new Blob([])), 'image/jpeg', 0.85);
-      });
-      return {
-        thumbnailBlob,
-        thumbnailUrl: URL.createObjectURL(thumbnailBlob),
-      };
-    }
-  }
-
-  const fallback = source instanceof Blob ? source : new Blob([]);
-  return {
-    thumbnailBlob: fallback,
-    thumbnailUrl: source instanceof Blob ? URL.createObjectURL(fallback) : img.src,
-  };
-}
-
-/**
  * Registers an image Blob or File into the in-memory Blob Store.
- * Creates an ObjectURL and a 400px thumbnail.
+ * Creates an ObjectURL. Thumbnails/dimensions are intentionally NOT computed
+ * here: decoding + re-encoding every image on the main thread was the dominant
+ * startup bottleneck, and renderers fall back to the full ObjectURL.
  */
 export async function registerImageBlob(
   fileOrBlob: Blob | File,
@@ -99,38 +34,13 @@ export async function registerImageBlob(
   const blobId = generateBlobId();
   const url = URL.createObjectURL(fileOrBlob);
 
-  let width = 0;
-  let height = 0;
-  let thumbnailUrl = url;
-
-  if (typeof document !== 'undefined') {
-    try {
-      const img = new Image();
-      img.src = url;
-      await Promise.race([
-        new Promise((resolve, reject) => {
-          img.onload = resolve;
-          img.onerror = reject;
-        }),
-        new Promise((resolve) => setTimeout(resolve, 100)),
-      ]);
-      width = img.naturalWidth;
-      height = img.naturalHeight;
-
-      const thumbResult = await createThumbnailBlob(img, 400);
-      thumbnailUrl = thumbResult.thumbnailUrl;
-    } catch {
-      thumbnailUrl = url;
-    }
-  }
-
   const registered: RegisteredBlob = {
     blobId,
     blob: fileOrBlob,
     url,
-    thumbnailUrl,
-    width,
-    height,
+    thumbnailUrl: url,
+    width: 0,
+    height: 0,
     dataUrl: existingDataUrl,
   };
 
@@ -138,27 +48,6 @@ export async function registerImageBlob(
   urlToBlobIdMap.set(url, blobId);
 
   return registered;
-}
-
-/**
- * Converts a Base64 DataURL string into a Blob and registers it.
- */
-export async function registerDataUrlImage(dataUrl: string): Promise<RegisteredBlob> {
-  if (!dataUrl.startsWith('data:')) {
-    const existingId = urlToBlobIdMap.get(dataUrl);
-    if (existingId && blobMap.has(existingId)) {
-      return blobMap.get(existingId)!;
-    }
-  }
-
-  try {
-    const res = await fetch(dataUrl);
-    const blob = await res.blob();
-    return await registerImageBlob(blob, dataUrl);
-  } catch {
-    const dummyBlob = new Blob([dataUrl], { type: 'text/plain' });
-    return await registerImageBlob(dummyBlob, dataUrl);
-  }
 }
 
 /**
@@ -235,23 +124,16 @@ export async function serializeDocumentImages(doc: CanvasDocument): Promise<Canv
 }
 
 /**
- * Hydrates a document loaded from disk / IPC by registering heavy base64 dataURLs
- * as in-memory Blobs and ObjectURLs for light, fast rendering during the active session.
+ * Hydrates a document loaded from disk / IPC for rendering.
+ *
+ * Startup fast-path: images are kept as their persistent `dataUrl` and
+ * rendered directly (LayerNode and the sidebar already fall back to the raw
+ * value), so opening a document no longer decodes + re-encodes a thumbnail
+ * for every image on the main thread. In-session image drops go through
+ * `registerImageBlob` above, which yields lightweight blob: ObjectURLs.
  */
 export async function hydrateDocumentImages(doc: CanvasDocument): Promise<CanvasDocument> {
-  const updatedLayers: CanvasLayer[] = await Promise.all(
-    doc.layers.map(async (layer) => {
-      if ((layer.type === 'image' || layer.type === 'logo') && layer.value) {
-        if (layer.value.startsWith('data:image/')) {
-          const registered = await registerDataUrlImage(layer.value);
-          return { ...layer, value: registered.url };
-        }
-      }
-      return layer;
-    })
-  );
-
-  return { ...doc, layers: updatedLayers };
+  return doc;
 }
 
 /**

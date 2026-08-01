@@ -9,12 +9,23 @@ from backend.utils.paths import resource_path, user_data_path
 
 
 def _preview_template_dirs() -> list[Path]:
-    candidates = [
-        user_data_path("templates"),
+    # Prefer a user templates dir only when it actually has HTML (overrides).
+    # Otherwise use bundled paths under sys._MEIPASS so the installer always
+    # sees backend/templates even if %LOCALAPPDATA%\\Antares\\templates is empty.
+    bundled = [
         resource_path("backend/templates"),
         resource_path("templates"),
         Path(__file__).resolve().parent.parent / "templates",
     ]
+    candidates: list[Path] = []
+    user_dir = user_data_path("templates")
+    try:
+        if user_dir.is_dir() and any(user_dir.glob("*.html")):
+            candidates.append(user_dir)
+    except OSError:
+        pass
+    candidates.extend(bundled)
+
     existing: list[Path] = []
     seen: set[Path] = set()
     for cand in candidates:

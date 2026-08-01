@@ -62,11 +62,16 @@ export default defineConfig(({ mode }) => ({
         // the first overlapping vendor (jspdf/dnd/i18n). Result: Canvas statically
         // imported ~371KB jsPDF for `__vitePreload`, and the entry modulepreloaded
         // dnd because react-dom lived inside it. See vite#16429 / rollup onlyExplicitManualChunks.
-        onlyExplicitManualChunks: true,
+        onlyExplicitManualChunks: false,
         manualChunks(id) {
           if (id.includes('\0vite/preload-helper')) return 'vite-preload'
           const n = id.replace(/\\/g, '/')
-          if (n.includes('/node_modules/react-dom/') || n.includes('/node_modules/scheduler/')) {
+          if (
+            n.includes('/node_modules/react-dom/') ||
+            n.includes('/node_modules/scheduler/') ||
+            n.includes('/node_modules/framer-motion/') ||
+            n.includes('/node_modules/lucide-react/')
+          ) {
             return 'vendor-react'
           }
           // Exact /react/ package — not react-i18next / react-dom / etc.
@@ -83,9 +88,6 @@ export default defineConfig(({ mode }) => ({
           if (n.includes('/node_modules/@fullcalendar/')) return 'vendor-fullcalendar'
           if (n.includes('/node_modules/@supabase/')) return 'vendor-supabase'
           if (n.includes('/node_modules/@dnd-kit/')) return 'vendor-dnd'
-          if (n.includes('/node_modules/framer-motion/') || n.includes('/node_modules/lucide-react/')) {
-            return 'vendor-ui'
-          }
           return undefined
         },
         assetFileNames: (assetInfo) => {
