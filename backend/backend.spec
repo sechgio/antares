@@ -34,12 +34,39 @@ _hidden = [
     'backend.core.fichas_tecnicas.database',
     'backend.core.fichas_tecnicas.importer',
     'backend.core.fichas_tecnicas.rendering',
+    'backend.core.canvas',
+    'backend.core.canvas.store',
+    'backend.core.canvas.models',
     'backend.utils.validators',
     'backend.utils.paths',
     'backend.ipc_protocol',
     'backend.handlers',
+    'backend.handlers.common',
+    # CRITICAL: handlers load via importlib (lazy registry). PyInstaller cannot
+    # see those dynamic imports — without these hiddenimports the frozen exe
+    # starts (ready) but every IPC method fails with ModuleNotFoundError
+    # (templates_list, canvas_*, etc.). At v0.10.20 these were static imports.
+    'backend.handlers.info',
+    'backend.handlers.theme',
+    'backend.handlers.history',
+    'backend.handlers.database',
+    'backend.handlers.templates',
+    'backend.handlers.canvas',
+    'backend.handlers.conversion',
+    'backend.handlers.formatos',
+    'backend.handlers.optimizer',
+    'backend.handlers.sellador',
+    'backend.handlers.technical_reports',
+    'backend.handlers.fichas_tecnicas',
+    'backend.handlers.panel_aviso_corte',
+    'backend.handlers.ubicaciones',
+    'backend.handlers.evidencia_volanteo',
     'backend.version',
 ]
+# Collect every backend.handlers submodule as a safety net for future features.
+_hidden += collect_submodules('backend.handlers')
+_hidden += collect_submodules('backend.core')
+
 # Collect ALL submodules from heavy third-party deps so PyInstaller does not
 # miss dynamically-loaded ones (pandas._config.localization caused a startup
 # crash in v0.10.10/v0.10.11 — see CHANGELOG).

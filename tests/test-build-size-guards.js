@@ -45,6 +45,10 @@ assert(
 );
 assert(spec.includes("'ssl'"), 'PyInstaller should include ssl for WeasyPrint HTTPSHandler');
 assert(spec.includes("strip=False"), 'PyInstaller must not strip binaries (corrupts ssl DLLs on Windows)');
+assert(spec.includes("'backend.handlers.templates'"), 'PyInstaller must hide-import lazy templates handler');
+assert(spec.includes("'backend.handlers.canvas'"), 'PyInstaller must hide-import lazy canvas handler');
+assert(spec.includes("collect_submodules('backend.handlers')") || spec.includes('collect_submodules("backend.handlers")'),
+  'PyInstaller should collect_submodules(backend.handlers) as safety net for lazy registry');
 assert(spec.includes("backend/templates"), 'PyInstaller should bundle backend HTML templates for report generator');
 
 const builderConfig = readProjectFile('electron-builder.yml');
