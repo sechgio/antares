@@ -288,6 +288,23 @@ export function normalizeDocument(doc: CanvasDocument): CanvasDocument {
     doc.styles == null ||
     doc.layers.some((layer) => layer.pageIndex == null);
 
+  // Fast-path: current version, complete structure, and valid pageIndex range.
+  // Avoids walking every layer on every open for already-normalized documents.
+  if (!needsUpgrade && !needsRepair) {
+    const lastPage = Math.max(0, (doc.pages?.length ?? 1) - 1);
+    const clampNeeded = doc.layers.some(
+      (layer) => (layer.pageIndex ?? 0) > lastPage || (layer.pageIndex ?? 0) < 0,
+    );
+    if (!clampNeeded) {
+      return {
+        ...doc,
+        styles: doc.styles ?? [],
+        // Missing timestamps must not sort as epoch (would always lose LWW).
+        updatedAt: doc.updatedAt || new Date().toISOString(),
+      };
+    }
+  }
+
   const upgraded =
     !needsUpgrade && !needsRepair
       ? doc

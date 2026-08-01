@@ -14,7 +14,7 @@ describe('imageBlobStore', () => {
     clearBlobStore();
   });
 
-  it('registers a Blob and generates ObjectURL and thumbnail', async () => {
+  it('registers a Blob and generates an ObjectURL', async () => {
     const fakeBlob = new Blob(['fake image content'], { type: 'image/png' });
     const registered = await registerImageBlob(fakeBlob);
 
@@ -24,10 +24,10 @@ describe('imageBlobStore', () => {
     expect(getThumbnailUrl(registered.blobId)).toBeDefined();
   });
 
-  it('hydrates base64 image layers into light ObjectURLs', async () => {
+  it('hydrates base64 image layers without decoding (keeps dataUrl for direct render)', async () => {
     const doc = createEmptyDocument('Test Doc');
     const base64Data =
-      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA****************************************************************Jggg==';
 
     doc.layers.push({
       id: 'img1',
@@ -46,7 +46,9 @@ describe('imageBlobStore', () => {
     const imgLayer = hydrated.layers.find((l) => l.id === 'img1');
 
     expect(imgLayer).toBeDefined();
-    expect(imgLayer?.value).toMatch(/^blob:/);
+    expect(imgLayer?.value).toBe(base64Data);
+    // Renderers fall back to the raw value, so a dataUrl is directly displayable.
+    expect(getBlobUrl(imgLayer?.value)).toBe(base64Data);
   });
 
   it('serializes ObjectURL layers back to persistent DataURLs for saving', async () => {
@@ -97,7 +99,10 @@ describe('imageBlobStore', () => {
 
     const hydrated = await hydrateDocumentImages(serialized);
     for (const layer of hydrated.layers.filter((l) => l.type === 'image' || l.type === 'logo')) {
-      expect(layer.value).toMatch(/^blob:/);
+      // Hydrate is now a startup fast-path: images stay as the persistent
+      // dataUrl (renderers fall back to the raw value) instead of being
+      // re-decoded to blob: on the main thread.
+      expect(layer.value).toMatch(/^data:/);
     }
   });
 });

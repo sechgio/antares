@@ -586,6 +586,20 @@ function Artboard({
   }, [onZoom, onPan]);
 
   // Track viewport size for layer culling (cheap; updates only on resize).
+  // Synchronously measure on first layout so culling applies from the very
+  // first painted frame instead of mounting every layer while viewportSize
+  // is still null.
+  useLayoutEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    if (!viewportSize) {
+      const { width, height } = el.getBoundingClientRect();
+      if (width >= 1 && height >= 1) {
+        setViewportSize({ w: width, h: height });
+      }
+    }
+  }, [viewportSize]);
+
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
