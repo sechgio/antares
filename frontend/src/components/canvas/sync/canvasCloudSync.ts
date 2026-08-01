@@ -224,6 +224,17 @@ export type SyncOptions = {
   /** When true, never overwrite the open document from cloud. */
   openDirty?: boolean;
   /**
+   * Guarded (first-boot) sync: never destroy or overwrite a document that
+   * already exists locally. Local-first principle — the on-disk JSON is the
+   * source of truth and must never be silently clobbered just because a
+   * background startup sync saw a divergent/stale remote row. In guarded mode
+   * the sync only: pushes local docs up (so they survive), pulls remote docs
+   * that have no local counterpart, and surfaces any divergence on an existing
+   * local doc as a conflict for the user to resolve — it never calls
+   * canvasDelete on a present local doc nor overwrites it with a remote.
+   */
+  guarded?: boolean;
+  /**
    * Called with the coalesced retry's SyncResult when this call was skipped
    * because another sync was in flight. Not invoked for the in-flight caller.
    */
@@ -247,6 +258,8 @@ function mergeSyncOptions(a: SyncOptions | null, b: SyncOptions): SyncOptions {
     openDocumentId: b.openDocumentId ?? a?.openDocumentId,
     // Prefer dirty=true so a later dirty caller is not overwritten by a clean retry.
     openDirty: Boolean(a?.openDirty || b.openDirty),
+    // Prefer guarded=true so a first-boot sync is not repeated as an unguarded one.
+    guarded: Boolean(a?.guarded || b.guarded),
   };
 }
 
@@ -327,6 +340,15 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
   for (const r of remote) {
     if (r.deleted_at) {
       if (localById.has(r.id)) {
+        if (options.guarded) {
+          // First boot: never destroy a local doc just because the remote row
+          // was soft-deleted elsewhere. Surface it as a conflict when it's the
+          // open doc so the user decides; otherwise keep the local doc intact.
+          if (options.openDocumentId === r.id) {
+            conflictRemoteDeletedMeta = r;
+          }
+          continue;
+        }
         if (options.openDocumentId === r.id) {
           if (options.openDirty) {
             conflictRemoteDeletedMeta = r;
@@ -346,10 +368,19 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
     const local = localById.get(r.id);
     const localTime = local?.updatedAt || '';
     const remoteNewer = localTime ? isNewer(r.updated_at, localTime) : false;
-    if (!local || remoteNewer) {
+    if (!local) {
+      toPullIds.push(r.id);
+    } else if (remoteNewer) {
+      // Unchanged unguarded behavior: a dirty open doc conflicts; a clean one
+      // (or a non-open doc) is pulled so the remote wins by LWW.
       if (options.openDocumentId === r.id && options.openDirty) {
-        // Conflict: open doc has unsaved edits but remote is newer.
         conflictRemoteMeta = r;
+        continue;
+      }
+      if (options.guarded) {
+        // First boot: the local doc already exists and is the source of truth.
+        // Do not overwrite it with a divergent remote; a later unguarded sync
+        // (or an explicit conflict resolution) can reconcile it.
         continue;
       }
       toPullIds.push(r.id);

@@ -363,4 +363,53 @@ describe('CanvasView lifecycle', () => {
       expect([...sel.options].some((o) => o.value === 'doc-c')).toBe(true);
     });
   });
+
+  it('autosaves the open doc after a debounce when it becomes dirty', async () => {
+    await renderReady();
+    vi.mocked(api.canvasSave).mockClear();
+
+    vi.useFakeTimers();
+    try {
+      // Add a page → discrete history edit marks the doc dirty.
+      fireEvent.click(screen.getByLabelText('Añadir página'));
+
+      await act(async () => {
+        vi.advanceTimersByTime(1199);
+      });
+      expect(api.canvasSave).not.toHaveBeenCalled();
+
+      // Cross the debounce window; then flush onSave's async chain.
+      await act(async () => {
+        vi.advanceTimersByTime(10);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(api.canvasSave).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('registers beforeunload and blocks close while the doc is dirty', async () => {
+    await renderReady();
+
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    fireEvent.click(screen.getByLabelText('Añadir página'));
+
+    // Re-render flushes the effect that registers the beforeunload listener.
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const registered = addSpy.mock.calls.find((c) => c[0] === 'beforeunload');
+    expect(registered).toBeTruthy();
+    const handler = registered![1] as (e: BeforeUnloadEvent) => void;
+
+    const ev = { returnValue: '', preventDefault: vi.fn() } as unknown as BeforeUnloadEvent;
+    handler(ev);
+    expect(ev.preventDefault).toHaveBeenCalled();
+    expect(ev.returnValue).toBe('');
+
+    addSpy.mockRestore();
+  });
 });

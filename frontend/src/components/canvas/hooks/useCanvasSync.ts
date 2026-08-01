@@ -26,6 +26,12 @@ interface UseCanvasSyncOptions {
    * background tab cannot silently replaceDocument / pulse docsSyncing.
    */
   active?: boolean;
+  /**
+   * First-boot guarded sync: never delete or overwrite an existing local doc.
+   * Set on the initial run after mount so opening the app cannot clobber the
+   * documents you saved on disk. Later focus/refresh syncs use normal LWW.
+   */
+  guarded?: boolean;
 }
 
 /** Dirty for cloud reload skip: unsaved edits, live panel edit, or in-flight gesture. */
@@ -48,16 +54,18 @@ export function useCanvasSync({
   replaceDocument,
   onConflict,
   active = true,
+  guarded = false,
 }: UseCanvasSyncOptions) {
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
 
-  const runCloudSync = useCallback(async () => {
+  const runCloudSync = useCallback(async (guardedOverride?: boolean) => {
     setSyncing(true);
     setSyncStatus('syncing');
     try {
       const openId = historyDocRef.current.id;
       const openDirty = openDirtyRef.current;
+      const effectiveGuarded = guardedOverride ?? guarded;
 
       const applySyncResult = async (result: SyncResult) => {
         if (result.skipped) return;
@@ -83,6 +91,7 @@ export function useCanvasSync({
       const result = await syncCanvasDocuments({
         openDocumentId: openId,
         openDirty,
+        guarded: effectiveGuarded,
         followUp: (retryResult) => {
           void applySyncResult(retryResult);
         },
@@ -101,7 +110,7 @@ export function useCanvasSync({
       setSyncStatus('error');
       setSyncing(false);
     }
-  }, [historyDocRef, openDirtyRef, refreshList, replaceDocument, onConflict]);
+  }, [historyDocRef, openDirtyRef, refreshList, replaceDocument, onConflict, guarded]);
 
   useEffect(() => {
     if (!active) return;

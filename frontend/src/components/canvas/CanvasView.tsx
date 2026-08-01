@@ -134,6 +134,9 @@ const DEFAULT_SIZES: Partial<Record<PlaceableTool, { w: number; h: number }>> = 
   signature: { w: 60, h: 20 },
 };
 
+/** Debounce before autosaving the open canvas document after unsaved edits. */
+const AUTOSAVE_DEBOUNCE_MS = 1200;
+
 export default function CanvasView({ active = true }: { active?: boolean }) {
   const history = useCanvasHistory(createEmptyDocument('Sin título'));
   // Refs mirror history state so runCloudSync can read the latest values
@@ -350,7 +353,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     return () => clearTimeout(timer);
   }, [history.document.id, history.past, history.future]);
 
-  const onSave = useCallback(async () => {
+  const onSave = useCallback(async (opts?: { silent?: boolean }) => {
     try {
       const currentPast = history.past;
       const currentFuture = history.future;
@@ -364,10 +367,10 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       history.hasUnsavedEditsRef.current = false;
       dismissedRemoteAtRef.current = null;
       await refreshList();
-      flashStatus('Guardado');
+      if (!opts?.silent) flashStatus('Guardado');
       queueCanvasCloudPush(saved);
     } catch (err) {
-      flashStatus(err instanceof Error ? err.message : 'Error al guardar');
+      if (!opts?.silent) flashStatus(err instanceof Error ? err.message : 'Error al guardar');
     }
   }, [history, refreshList, flashStatus]);
 
@@ -395,6 +398,49 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     panelBaselineRef.current != null,
     gestureBaselineRef.current != null,
   );
+
+  // ─── Autosave + close protection ─────────────────────────────────────────
+  // Debounced autosave: persist the open doc shortly after it becomes dirty so
+  // unsaved edits are not lost on app/window close. A ref tracks in-flight
+  // saves so a fast repeat never overlaps the IPC round-trip.
+  const autosavePendingRef = useRef(false);
+  useEffect(() => {
+    if (!active) return;
+    if (!history.hasUnsavedEditsRef.current) return;
+    if (autosavePendingRef.current) return;
+    const timer = window.setTimeout(() => {
+      if (autosavePendingRef.current) return;
+      autosavePendingRef.current = true;
+      onSave({ silent: true }).finally(() => {
+        autosavePendingRef.current = false;
+      });
+    }, AUTOSAVE_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+    // Autosave reacts to a changing dirty flag; hasUnsavedEditsRef flips on edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [history.document, active, onSave]);
+
+  // Beforeunload: warn and fire a best-effort save when the open doc is dirty.
+  const onBeforeUnload = useCallback(
+    (e: BeforeUnloadEvent) => {
+      if (!history.hasUnsavedEditsRef.current) return;
+      if (!autosavePendingRef.current) {
+        autosavePendingRef.current = true;
+        onSave({ silent: true }).finally(() => {
+          autosavePendingRef.current = false;
+        });
+      }
+      // Electron honors the returnValue/void form to show a native dialog.
+      e.preventDefault();
+      e.returnValue = '';
+    },
+    [onSave],
+  );
+  useEffect(() => {
+    if (!active) return;
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [active, onBeforeUnload]);
 
   /** Seal live panel edit and/or cancel in-flight gesture preview. */
   const sealPanelAndAbortGesture = useCallback(() => {
