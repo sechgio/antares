@@ -1,5 +1,8 @@
 /** CSS clip-path values for vector-like shape layers. */
 
+import type { CanvasLayer } from '../types';
+import { parseMm } from '../types';
+
 export const SHAPE_CLIP_PATHS = {
   polygon: 'polygon(50% 0%, 0% 100%, 100% 100%)',
   star: 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)',
@@ -16,6 +19,79 @@ export function clipPathForLayerType(type: string): string | undefined {
     return SHAPE_CLIP_PATHS[type as ClippedShapeType];
   }
   return undefined;
+}
+
+/** Build a CSS polygon/circle clip from meta.path points (layer-local mm → %). */
+export function clipPathFromMetaPath(layer: CanvasLayer): string | undefined {
+  const points = layer.meta?.path?.points;
+  if (!points?.length) return undefined;
+  const w = Math.max(0.01, parseMm(layer.cssVars['--width'], 40));
+  const h = Math.max(0.01, parseMm(layer.cssVars['--height'], 40));
+
+  // Single-point or near-circular 2-pt path → circle at bbox center.
+  if (points.length === 1) {
+    return 'circle(50% at 50% 50%)';
+  }
+  if (points.length === 2 && Math.abs(w - h) < 0.01) {
+    return 'circle(50% at 50% 50%)';
+  }
+
+  const parts = points.map((pt) => {
+    const px = Math.round((pt.x / w) * 10000) / 100;
+    const py = Math.round((pt.y / h) * 10000) / 100;
+    return `${px}% ${py}%`;
+  });
+  return `polygon(${parts.join(', ')})`;
+}
+
+/**
+ * Clip-path for a single operand/shape layer (no boolean recursion).
+ * Used by booleanOps to avoid circular imports with clipPathForLayer.
+ */
+export function clipPathForOperandLayer(layer: CanvasLayer): string | undefined {
+  const byType = clipPathForLayerType(layer.type);
+  if (byType) return byType;
+  if (layer.type === 'ellipse') return 'ellipse(50% 50% at 50% 50%)';
+  const fromPath = clipPathFromMetaPath(layer);
+  if (fromPath) return fromPath;
+  return undefined;
+}
+
+/** Outline approximation for type:'boolean' from operand silhouettes (CSS composition). */
+function clipPathForBooleanLayer(
+  layer: CanvasLayer,
+  allLayers: CanvasLayer[],
+): string | undefined {
+  const ops = layer.meta?.ops;
+  if (!ops?.length) return undefined;
+  const byId = new Map(allLayers.map((l) => [l.id, l]));
+  let fallback: string | undefined;
+  for (const entry of ops) {
+    const src = byId.get(entry.layerId);
+    if (!src) continue;
+    const clip = clipPathForOperandLayer(src);
+    if (!clip) continue;
+    if (entry.op !== 'subtract') return clip;
+    fallback ??= clip;
+  }
+  return fallback;
+}
+
+/**
+ * Resolve clip-path for any layer:
+ * - predefined shape types
+ * - meta.path geometry
+ * - type:'boolean' via operand outline approximation (CSS composition, not geometric solver)
+ */
+export function clipPathForLayer(
+  layer: CanvasLayer,
+  allLayers?: CanvasLayer[],
+): string | undefined {
+  if (layer.type === 'boolean') {
+    if (!allLayers?.length) return undefined;
+    return clipPathForBooleanLayer(layer, allLayers);
+  }
+  return clipPathForOperandLayer(layer);
 }
 
 export const SHAPE_TOOLS = new Set([
@@ -59,4 +135,3 @@ const SQUARE_CONSTRAIN_TOOLS = new Set([
 export function isSquareConstrainTool(tool: string): boolean {
   return SQUARE_CONSTRAIN_TOOLS.has(tool);
 }
-

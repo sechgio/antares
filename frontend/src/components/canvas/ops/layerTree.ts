@@ -11,7 +11,7 @@ export interface FlatLayerRow {
   hasChildren: boolean;
 }
 
-const CONTAINER_TYPES = new Set(['group', 'grid']);
+const CONTAINER_TYPES = new Set(['group', 'grid', 'frame', 'component']);
 
 export function isLayerContainer(layer: CanvasLayer): boolean {
   return CONTAINER_TYPES.has(layer.type);

@@ -1,7 +1,10 @@
 import type { CanvasLayer } from '../types';
 import { mm, newId, parseMm } from '../types';
+import { relayoutAutoFrame } from './autoLayout';
 import { layerBounds } from './layerBounds';
 import { expandWithDescendants, isLayerContainer } from './layerTree';
+import { patchLayersById } from './patchLayers';
+import { applyParentConstraint, type ParentResizeDelta } from './resizeConstraints';
 
 const NUDGE_OFFSET_MM = 5;
 
@@ -526,4 +529,111 @@ export function setLayerVisible(layers: CanvasLayer[], id: string, visible: bool
 
 export function setLayerLocked(layers: CanvasLayer[], id: string, locked: boolean): CanvasLayer[] {
   return setLayersLocked(layers, [id], locked);
+}
+
+function isAutoLayoutContainer(layer: CanvasLayer): boolean {
+  return layer.type === 'frame' || layer.type === 'group' || layer.type === 'component';
+}
+
+/**
+ * After a frame/group resize: apply parent constraints to direct children,
+ * then optionally run auto-layout (overwrites child positions).
+ * Children without constraintH/V are left alone (unless autoLayout relayouts them).
+ */
+export function propagateContainerResize(
+  layers: CanvasLayer[],
+  containerId: string,
+  delta: ParentResizeDelta,
+): CanvasLayer[] {
+  const container = layers.find((l) => l.id === containerId);
+  if (!container || !isAutoLayoutContainer(container)) return layers;
+  if (delta.dx === 0 && delta.dy === 0 && delta.dw === 0 && delta.dh === 0) {
+    return layers;
+  }
+
+  const parentBefore = {
+    x: parseMm(container.cssVars['--translate-x']) - delta.dx,
+    y: parseMm(container.cssVars['--translate-y']) - delta.dy,
+    w: Math.max(1, parseMm(container.cssVars['--width'], 10) - delta.dw),
+    h: Math.max(1, parseMm(container.cssVars['--height'], 10) - delta.dh),
+  };
+
+  const directChildren = layers.filter((l) => l.parentId === containerId);
+  const updates = new Map<string, CanvasLayer>();
+  for (const child of directChildren) {
+    if (child.visible === false) continue;
+    const cH = child.meta?.constraintH;
+    const cV = child.meta?.constraintV;
+    if (!cH && !cV) continue;
+    updates.set(child.id, applyParentConstraint(child, delta, cH, cV, parentBefore));
+  }
+
+  let next = patchLayersById(layers, updates);
+  const frame = next.find((l) => l.id === containerId);
+  if (!frame?.meta?.autoLayout) return next;
+
+  const kids = next.filter((l) => l.parentId === containerId);
+  const { frame: laidFrame, children: laidKids } = relayoutAutoFrame(frame, kids);
+  const layoutUpdates = new Map<string, CanvasLayer>([[laidFrame.id, laidFrame]]);
+  for (const kid of laidKids) layoutUpdates.set(kid.id, kid);
+  return patchLayersById(next, layoutUpdates);
+}
+
+/** True when a single-root container resize should use constraint/auto-layout path. */
+export function containerUsesLayoutConstraints(
+  layers: CanvasLayer[],
+  containerId: string,
+): boolean {
+  const container = layers.find((l) => l.id === containerId);
+  if (!container || !isAutoLayoutContainer(container)) return false;
+  if (container.meta?.autoLayout) return true;
+  return layers.some(
+    (l) =>
+      l.parentId === containerId &&
+      l.visible !== false &&
+      Boolean(l.meta?.constraintH || l.meta?.constraintV),
+  );
+}
+
+/** Relayout children when autoLayout meta is present/changed (no parent delta). */
+export function applyAutoLayoutIfNeeded(layers: CanvasLayer[], containerId: string): CanvasLayer[] {
+  const frame = layers.find((l) => l.id === containerId);
+  if (!frame || !isAutoLayoutContainer(frame) || !frame.meta?.autoLayout) return layers;
+  const kids = layers.filter((l) => l.parentId === containerId);
+  const { frame: laidFrame, children: laidKids } = relayoutAutoFrame(frame, kids);
+  const updates = new Map<string, CanvasLayer>([[laidFrame.id, laidFrame]]);
+  for (const kid of laidKids) updates.set(kid.id, kid);
+  return patchLayersById(layers, updates);
+}
+
+/**
+ * Panel live/commit hook: after a container W/H/pos or autoLayout edit,
+ * propagate constraints and/or run auto-layout on children.
+ */
+export function applyContainerLayoutPanelEffects(
+  layers: CanvasLayer[],
+  prev: CanvasLayer | undefined,
+  layer: CanvasLayer,
+): CanvasLayer[] {
+  const isContainer =
+    layer.type === 'frame' || layer.type === 'group' || layer.type === 'component';
+  if (!isContainer) return layers;
+
+  let next = layers;
+  if (prev) {
+    const dx = parseMm(layer.cssVars['--translate-x']) - parseMm(prev.cssVars['--translate-x']);
+    const dy = parseMm(layer.cssVars['--translate-y']) - parseMm(prev.cssVars['--translate-y']);
+    const dw = parseMm(layer.cssVars['--width'], 10) - parseMm(prev.cssVars['--width'], 10);
+    const dh = parseMm(layer.cssVars['--height'], 10) - parseMm(prev.cssVars['--height'], 10);
+    if (dx !== 0 || dy !== 0 || dw !== 0 || dh !== 0) {
+      next = propagateContainerResize(next, layer.id, { dx, dy, dw, dh });
+    }
+  }
+
+  const autoChanged =
+    JSON.stringify(prev?.meta?.autoLayout ?? null) !== JSON.stringify(layer.meta?.autoLayout ?? null);
+  if (autoChanged && layer.meta?.autoLayout) {
+    next = applyAutoLayoutIfNeeded(next, layer.id);
+  }
+  return next;
 }

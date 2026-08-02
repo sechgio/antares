@@ -252,6 +252,85 @@ def test_normalize_preserves_grid_tracks() -> None:
     assert grid["meta"]["rowTracks"] == [1.0, 3.0]
 
 
+def test_normalize_meta_preserves_valid_auto_layout() -> None:
+    raw = create_empty_document()
+    raw["layers"].append(
+        {
+            "id": "grp",
+            "type": "group",
+            "name": "Stack",
+            "value": "",
+            "pageIndex": 0,
+            "meta": {
+                "autoLayout": {
+                    "direction": "row",
+                    "gapMm": 4,
+                    "padMm": 2.5,
+                    "alignMain": "center",
+                    "alignCross": "stretch",
+                    "sizing": "hug",
+                },
+                "constraintH": "end",
+                "constraintV": "scale",
+            },
+            "cssVars": {
+                "--width": "100mm",
+                "--height": "40mm",
+                "--translate-x": "0mm",
+                "--translate-y": "0mm",
+            },
+        }
+    )
+    doc = normalize_document(raw)
+    grp = next(layer for layer in doc["layers"] if layer["id"] == "grp")
+    assert grp["meta"]["autoLayout"] == {
+        "direction": "row",
+        "gapMm": 4.0,
+        "padMm": 2.5,
+        "alignMain": "center",
+        "alignCross": "stretch",
+        "sizing": "hug",
+    }
+    assert grp["meta"]["constraintH"] == "end"
+    assert grp["meta"]["constraintV"] == "scale"
+
+
+def test_normalize_meta_omits_invalid_auto_layout() -> None:
+    raw = create_empty_document()
+    raw["layers"].append(
+        {
+            "id": "bad",
+            "type": "group",
+            "name": "Bad",
+            "value": "",
+            "pageIndex": 0,
+            "meta": {
+                "autoLayout": {
+                    "direction": "diagonal",
+                    "gapMm": -1,
+                    "padMm": 2,
+                    "alignMain": "center",
+                    "alignCross": "start",
+                    "sizing": "hug",
+                },
+                "constraintH": "diagonal",
+                "key": "keep-me",
+            },
+            "cssVars": {
+                "--width": "40mm",
+                "--height": "10mm",
+                "--translate-x": "0mm",
+                "--translate-y": "0mm",
+            },
+        }
+    )
+    doc = normalize_document(raw)
+    bad = next(layer for layer in doc["layers"] if layer["id"] == "bad")
+    assert "autoLayout" not in bad["meta"]
+    assert "constraintH" not in bad["meta"]
+    assert bad["meta"]["key"] == "keep-me"
+
+
 def test_normalize_preserves_guide_page_index() -> None:
     raw = create_empty_document()
     raw["guides"] = [
@@ -917,5 +996,185 @@ def test_get_history_skips_oversized_entries_on_disk(tmp_path: Path) -> None:
     )
     hist = store.get_history(doc_id)
     assert hist["past"] == [{"type": "diff", "ops": [{"v": "keep"}]}]
+
+
+def test_normalize_allows_component_layer_type() -> None:
+    raw = create_empty_document()
+    raw["layers"].append(
+        {
+            "id": "comp-1",
+            "type": "component",
+            "name": "Botón",
+            "value": "",
+            "meta": {"componentId": "comp-1"},
+            "cssVars": {
+                "--width": "40mm",
+                "--height": "12mm",
+                "--translate-x": "10mm",
+                "--translate-y": "10mm",
+                "--background-color": "#3366FF",
+            },
+        }
+    )
+    doc = normalize_document(raw)
+    types = [layer["type"] for layer in doc["layers"]]
+    assert "component" in types
+    master = next(layer for layer in doc["layers"] if layer["id"] == "comp-1")
+    assert master["meta"]["componentId"] == "comp-1"
+
+
+def test_normalize_preserves_instance_meta_fields() -> None:
+    raw = create_empty_document()
+    raw["layers"].append(
+        {
+            "id": "inst-1",
+            "type": "component",
+            "name": "Botón instancia",
+            "value": "",
+            "meta": {
+                "instanceOf": "comp-1",
+                "variant": "primary",
+                "overrideVars": {
+                    "--translate-x": "50mm",
+                    "--background-color": "#FF0000",
+                },
+            },
+            "cssVars": {
+                "--width": "40mm",
+                "--height": "12mm",
+                "--translate-x": "50mm",
+                "--translate-y": "10mm",
+                "--background-color": "#FF0000",
+            },
+        }
+    )
+    doc = normalize_document(raw)
+    inst = next(layer for layer in doc["layers"] if layer["id"] == "inst-1")
+    assert inst["meta"]["instanceOf"] == "comp-1"
+    assert inst["meta"]["variant"] == "primary"
+    assert inst["meta"]["overrideVars"]["--translate-x"] == "50mm"
+    assert inst["meta"]["overrideVars"]["--background-color"] == "#FF0000"
+
+
+def test_normalize_omits_invalid_instance_meta() -> None:
+    raw = create_empty_document()
+    raw["layers"].append(
+        {
+            "id": "inst-bad",
+            "type": "component",
+            "name": "Bad",
+            "value": "",
+            "meta": {
+                "instanceOf": "   ",
+                "variant": "",
+                "overrideVars": {
+                    "--width": 40,
+                    123: "nope",
+                    "--bad": {"nested": True},
+                },
+                "componentId": "",
+            },
+            "cssVars": {
+                "--width": "40mm",
+                "--height": "12mm",
+                "--translate-x": "0mm",
+                "--translate-y": "0mm",
+            },
+        }
+    )
+    doc = normalize_document(raw)
+    inst = next(layer for layer in doc["layers"] if layer["id"] == "inst-bad")
+    meta = inst.get("meta") or {}
+    assert "instanceOf" not in meta
+    assert "variant" not in meta
+    assert "componentId" not in meta
+    assert meta.get("overrideVars") == {"--width": "40"}
+
+
+def test_normalize_allows_boolean_layer_type() -> None:
+    raw = create_empty_document()
+    raw["layers"].append(
+        {
+            "id": "bool-1",
+            "type": "boolean",
+            "name": "Booleana",
+            "value": "",
+            "meta": {
+                "ops": [
+                    {"op": "union", "layerId": "a"},
+                    {"op": "subtract", "layerId": "b"},
+                ]
+            },
+            "cssVars": {
+                "--width": "40mm",
+                "--height": "40mm",
+                "--translate-x": "10mm",
+                "--translate-y": "10mm",
+            },
+        }
+    )
+    doc = normalize_document(raw)
+    types = [layer["type"] for layer in doc["layers"]]
+    assert "boolean" in types
+    layer = next(layer for layer in doc["layers"] if layer["id"] == "bool-1")
+    assert layer["meta"]["ops"] == [
+        {"op": "union", "layerId": "a"},
+        {"op": "subtract", "layerId": "b"},
+    ]
+
+
+def test_normalize_preserves_mask_and_boolean_ops() -> None:
+    raw = create_empty_document()
+    raw["layers"].append(
+        {
+            "id": "masked-1",
+            "type": "image",
+            "name": "Foto",
+            "value": "",
+            "meta": {"maskLayerId": "mask-shape"},
+            "cssVars": {
+                "--width": "40mm",
+                "--height": "40mm",
+                "--translate-x": "0mm",
+                "--translate-y": "0mm",
+            },
+        }
+    )
+    doc = normalize_document(raw)
+    layer = next(layer for layer in doc["layers"] if layer["id"] == "masked-1")
+    assert layer["meta"]["maskLayerId"] == "mask-shape"
+
+
+def test_normalize_omits_invalid_mask_and_ops() -> None:
+    raw = create_empty_document()
+    raw["layers"].append(
+        {
+            "id": "bad-bool",
+            "type": "boolean",
+            "name": "Bad",
+            "value": "",
+            "meta": {
+                "maskLayerId": "   ",
+                "ops": [
+                    {"op": "merge", "layerId": "a"},
+                    {"op": "union", "layerId": ""},
+                    {"op": "intersect", "layerId": "ok"},
+                    "not-a-dict",
+                    {"op": "exclude"},
+                ],
+            },
+            "cssVars": {
+                "--width": "40mm",
+                "--height": "40mm",
+                "--translate-x": "0mm",
+                "--translate-y": "0mm",
+            },
+        }
+    )
+    doc = normalize_document(raw)
+    layer = next(layer for layer in doc["layers"] if layer["id"] == "bad-bool")
+    meta = layer.get("meta") or {}
+    assert "maskLayerId" not in meta
+    assert meta.get("ops") == [{"op": "intersect", "layerId": "ok"}]
 
 

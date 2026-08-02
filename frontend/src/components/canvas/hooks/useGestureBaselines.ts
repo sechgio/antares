@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { cloneDocumentBaseline } from '../ops/document';
 import { applyLivePanelLayerChange } from '../ops/gridLayout';
+import { applyContainerLayoutPanelEffects } from '../ops/layerOps';
 import { createGestureRaf } from '../ops/gestureRaf';
 import { setActivePageLayers, syncImagesPerPage } from '../ops/pages';
+import { syncComponentFromLayer } from '../ops/components';
 import { syncLinkedStylesFromLayer } from '../ops/syncLinkedStyles';
 import type { CanvasDocument, CanvasLayer } from '../types';
 import type { useCanvasHistory } from './useCanvasHistory';
@@ -35,8 +37,13 @@ export function useGestureBaselines({ history, pageIndex }: UseGestureBaselinesO
       panelBaselineRef.current = cloneDocumentBaseline(hist.document, idx);
     }
     const prev = hist.document.layers.find((l) => l.id === layer.id);
-    const layers = applyLivePanelLayerChange(hist.document.layers, prev, layer);
-    const doc = syncLinkedStylesFromLayer({ ...hist.document, layers }, prev, layer);
+    const layers = applyContainerLayoutPanelEffects(
+      applyLivePanelLayerChange(hist.document.layers, prev, layer),
+      prev,
+      layer,
+    );
+    const styleSynced = syncLinkedStylesFromLayer({ ...hist.document, layers }, prev, layer);
+    const doc = syncComponentFromLayer(styleSynced, prev, layer);
     hist.updateSilent(syncImagesPerPage(doc));
   };
 

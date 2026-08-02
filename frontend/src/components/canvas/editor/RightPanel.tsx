@@ -34,7 +34,7 @@ import StrokeSection from './panels/common/StrokeSection';
 import EffectsSection from './panels/common/EffectsSection';
 import ExportSection from './panels/common/ExportSection';
 import ShapeSection from './panels/tails/ShapeSection';
-import { TAIL_SECTIONS } from './panels/registry';
+import { TAIL_SECTIONS, LAYOUT_SECTIONS } from './panels/registry';
 import type { SectionProps, ZOrderCallbacks } from './panels/types';
 import CanvasSelect from './CanvasSelect';
 import CanvasVersionsPanel from './CanvasVersionsPanel';
@@ -77,6 +77,10 @@ interface RightPanelProps {
   onDetachStyle?: (kind: CanvasStyleKind) => void;
   onRemoveStyle?: (styleId: string) => void;
   onRenameStyle?: (styleId: string, name: string) => void;
+  /** All layers (component master resolution for instances). */
+  layers?: CanvasLayer[];
+  /** Create an instance of the selected component master. */
+  onInstantiateComponent?: () => void;
   /** True when another logo layer shares this layer's side. */
   logoSideConflict?: boolean;
   /** Mount point for viewport ZoomMenu (portal from DesignStage). */
@@ -118,6 +122,8 @@ export default memo(function RightPanel({
   onDetachStyle,
   onRemoveStyle,
   onRenameStyle,
+  layers = [],
+  onInstantiateComponent,
   logoSideConflict = false,
   zoomSlotRef,
   open = true,
@@ -225,6 +231,8 @@ export default memo(function RightPanel({
   const sectionProps: SectionProps = {
     layer: layer as CanvasLayer,
     pageColors,
+    layers,
+    selectedIds,
     onChange,
     emitLive,
     mapLive,
@@ -236,6 +244,7 @@ export default memo(function RightPanel({
     setMetaLive,
     onCommitLive,
     onAlign,
+    onInstantiateComponent,
     logoSideConflict,
     zOrder,
     shape,
@@ -512,6 +521,9 @@ export default memo(function RightPanel({
         <div className="min-h-0 flex-1 overflow-y-auto">
           <PositionSection {...sectionProps} />
           <DispositionSection {...sectionProps} />
+          {LAYOUT_SECTIONS.filter((s) => s.test(layer)).map((s, i) => (
+            <s.Component key={`layout-${i}`} {...sectionProps} />
+          ))}
           <AppearanceSection {...sectionProps} />
           <FillSection {...sectionProps} />
           <StrokeSection {...sectionProps} />

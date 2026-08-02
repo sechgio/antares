@@ -2,9 +2,12 @@
  * Resize constraints (Figma/Canva-like): a 9-point anchor pins an edge, corner
  * or the center of a layer so inspector W/H edits grow away from that anchor
  * instead of always from the top-left corner.
+ *
+ * Parent-relative constraints (constraintH/V) live alongside the manual anchor
+ * and respond to parent resize deltas — see applyParentConstraint.
  */
 
-import type { CanvasLayer } from '../types';
+import type { CanvasLayer, FrameConstraint } from '../types';
 import { mm, parseMm } from '../types';
 import { resizeWithAspectLock } from './layerStyle';
 
@@ -86,4 +89,74 @@ export function resizeLayerAnchored(
     },
     parseResizeAnchor(layer.cssVars['--resize-anchor']),
   );
+}
+
+export type ParentResizeDelta = { dx: number; dy: number; dw: number; dh: number };
+
+/**
+ * Adjust a child when its parent container moves/resizes, according to
+ * horizontal/vertical FrameConstraint values (start | end | center | scale).
+ * Child geometry is absolute page-space (same as --translate-x/y elsewhere).
+ */
+export function applyParentConstraint(
+  child: CanvasLayer,
+  parentDelta: ParentResizeDelta,
+  cH: FrameConstraint | undefined,
+  cV: FrameConstraint | undefined,
+  parentBefore?: { x: number; y: number; w: number; h: number },
+): CanvasLayer {
+  const { dx, dy, dw, dh } = parentDelta;
+  const x = parseMm(child.cssVars['--translate-x']);
+  const y = parseMm(child.cssVars['--translate-y']);
+  const w = Math.max(1, parseMm(child.cssVars['--width'], 10));
+  const h = Math.max(1, parseMm(child.cssVars['--height'], 10));
+
+  const axis = (
+    constraint: FrameConstraint | undefined,
+    start: number,
+    size: number,
+    dStart: number,
+    dSize: number,
+    parentStart: number,
+    parentSize: number,
+  ): { start: number; size: number } => {
+    if (!constraint) return { start, size };
+    if (constraint === 'start') {
+      return { start: start + dStart, size };
+    }
+    if (constraint === 'end') {
+      // Pin end edge to parent end: keep start inset, grow/shrink with dw/dh.
+      return { start: start + dStart, size: Math.max(1, size + dSize) };
+    }
+    if (constraint === 'center') {
+      return { start: start + dStart + dSize / 2, size };
+    }
+    // scale
+    if (!(parentSize > 0)) return { start: start + dStart, size };
+    const sx = (parentSize + dSize) / parentSize;
+    const rel = start - parentStart;
+    return {
+      start: parentStart + dStart + rel * sx,
+      size: Math.max(1, size * sx),
+    };
+  };
+
+  const px = parentBefore?.x ?? 0;
+  const py = parentBefore?.y ?? 0;
+  const pw = parentBefore?.w && parentBefore.w > 0 ? parentBefore.w : 1;
+  const ph = parentBefore?.h && parentBefore.h > 0 ? parentBefore.h : 1;
+
+  const nextH = axis(cH, x, w, dx, dw, px, pw);
+  const nextV = axis(cV, y, h, dy, dh, py, ph);
+
+  return {
+    ...child,
+    cssVars: {
+      ...child.cssVars,
+      '--translate-x': mm(nextH.start),
+      '--translate-y': mm(nextV.start),
+      '--width': mm(nextH.size),
+      '--height': mm(nextV.size),
+    },
+  };
 }

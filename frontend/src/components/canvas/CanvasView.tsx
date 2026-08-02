@@ -46,6 +46,7 @@ import {
   setLayersOpacity,
   setLayersVisible,
   ungroupLayers,
+  applyContainerLayoutPanelEffects,
 } from './ops/layerOps';
 import { childIdsOf, expandWithDescendants, isLayerContainer } from './ops/layerTree';
 import {
@@ -75,6 +76,7 @@ import { assignUniqueLogoSides, logoSideHasConflict, withAssignedLogoSide } from
 import { isClickPlace, placeRectCssVars, type DrawRect } from './ops/drawHelpers';
 import { moveGuide, removeGuide, upsertGuide } from './ops/guides';
 import { selectionBounds } from './ops/selectionTransform';
+import { instantiateComponent, syncComponentFromLayer } from './ops/components';
 import { syncLinkedStylesFromLayer } from './ops/syncLinkedStyles';
 import {
   applyStyleToLayers,
@@ -1044,7 +1046,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       : null;
 
   const addLayerAt = (type: PlaceableTool, rect: DrawRect) => {
-    const layerType = type as Exclude<CanvasLayerType, 'frame' | 'group'>;
+    const layerType = type as Exclude<CanvasLayerType, 'frame' | 'group' | 'component'>;
     let layer = createLayer(layerType);
     if (layerType === 'logo') {
       layer = withAssignedLogoSide(layer, history.document.layers);
@@ -1836,12 +1838,17 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
               if (panelBaselineRef.current) onPanelCommitLive();
               const prev = history.document.layers.find((l) => l.id === layer.id);
               // Same gate as live path: only cols/rows/gap rebuild sibling slots.
-              const layers = applyLivePanelLayerChange(history.document.layers, prev, layer);
-              const synced = syncLinkedStylesFromLayer(
+              const layers = applyContainerLayoutPanelEffects(
+                applyLivePanelLayerChange(history.document.layers, prev, layer),
+                prev,
+                layer,
+              );
+              const styleSynced = syncLinkedStylesFromLayer(
                 { ...history.document, layers },
                 prev,
                 layer,
               );
+              const synced = syncComponentFromLayer(styleSynced, prev, layer);
               history.setDocument(syncImagesPerPage(synced));
             }}
             onChangeLive={onPanelChangeLive}
@@ -1849,6 +1856,23 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
             onDelete={onDeleteLayer}
             onAlign={onAlign}
             onDistribute={onDistribute}
+            layers={history.document.layers}
+            onInstantiateComponent={() => {
+              if (!selected || selectedIds.length !== 1) return;
+              if (!selected.meta?.componentId || selected.meta.instanceOf) return;
+              if (panelBaselineRef.current) onPanelCommitLive();
+              const { instance, childLayers } = instantiateComponent(
+                selected,
+                history.document,
+              );
+              history.setDocument(
+                syncImagesPerPage({
+                  ...history.document,
+                  layers: [...history.document.layers, instance, ...childLayers],
+                }),
+              );
+              setSelectedIds([instance.id]);
+            }}
             documentStyles={history.document.styles ?? []}
             onCreateStyle={(kind: CanvasStyleKind) => {
               if (selectedIds.length !== 1) return;

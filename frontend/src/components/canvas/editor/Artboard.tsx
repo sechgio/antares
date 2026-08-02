@@ -513,6 +513,14 @@ function Artboard({
       : null;
 
   const layerById = useMemo(() => new Map(displayLayers.map((l) => [l.id, l])), [displayLayers]);
+  const masterById = useMemo(() => {
+    const map = new Map<string, CanvasLayer>();
+    for (const l of displayLayers) {
+      if (l.meta?.componentId) map.set(l.meta.componentId, l);
+      else if (l.type === 'component' && !l.meta?.instanceOf) map.set(l.id, l);
+    }
+    return map;
+  }, [displayLayers]);
 
   // Virtualized rendering: only mount layers inside the visible page region.
   // Widen overscan while the camera moves so layers do not thrash mount/unmount mid-pan.
@@ -1624,6 +1632,10 @@ function Artboard({
             <LayerNode
               key={layer.id}
               layer={layer}
+              masterLayer={
+                layer.meta?.instanceOf ? masterById.get(layer.meta.instanceOf) ?? null : null
+              }
+              documentLayers={displayLayers}
               selected={selectedIdSet.has(layer.id)}
               moving={(gestureLayers !== null || gestureActive) && selectedIdSet.has(layer.id)}
               panning={panning || cameraMoving}

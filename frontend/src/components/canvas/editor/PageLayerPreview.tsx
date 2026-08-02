@@ -100,6 +100,11 @@ export default function PageLayerPreview({
   const layers = getActivePageLayers(document, pageIndex).filter(
     (l): l is CanvasLayer => l.type !== 'frame' && l.visible !== false,
   );
+  const masterById = new Map<string, CanvasLayer>();
+  for (const l of layers) {
+    if (l.meta?.componentId) masterById.set(l.meta.componentId, l);
+    else if (l.type === 'component' && !l.meta?.instanceOf) masterById.set(l.id, l);
+  }
 
   return (
     <div
@@ -120,6 +125,10 @@ export default function PageLayerPreview({
         <LayerNode
           key={layer.id}
           layer={layer}
+          masterLayer={
+            layer.meta?.instanceOf ? masterById.get(layer.meta.instanceOf) ?? null : null
+          }
+          documentLayers={layers}
           selected={false}
           interactive={false}
           scale={scale}
