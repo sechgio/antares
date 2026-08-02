@@ -75,22 +75,10 @@ function unifyBBox(layers: CanvasLayer[]): Pick<LayerCssVars, '--width' | '--hei
   };
 }
 
-/**
- * Build a type:'boolean' layer from a base + operands.
- * Empty operands → return base unchanged (legacy-safe).
- * Default operand op is `union` when not specified on the operand entry.
- *
- * Note: converts `base` in place (same id). Operand layers stay in the document
- * and are referenced by meta.ops; the boolean layer's own fill covers the unified
- * bbox as the base contribution (CSS composition, not geometric merge).
- */
-export function composeBoolean(
-  base: CanvasLayer,
+function normalizeBooleanOperands(
   operands: Array<CanvasLayer | { layer: CanvasLayer; op?: BooleanOpKind }>,
-): CanvasLayer {
-  if (!operands.length) return base;
-
-  const normalized = operands.map((entry) =>
+): Array<{ layer: CanvasLayer; op: BooleanOpKind }> {
+  return operands.map((entry) =>
     typeof entry === 'object' && entry !== null && 'layer' in entry && (entry as { layer: CanvasLayer }).layer
       ? {
           layer: (entry as { layer: CanvasLayer; op?: BooleanOpKind }).layer,
@@ -98,7 +86,24 @@ export function composeBoolean(
         }
       : { layer: entry as CanvasLayer, op: 'union' as BooleanOpKind },
   );
+}
 
+/**
+ * Build a type:'boolean' layer from a base + operands.
+ * Empty operands → return base unchanged (legacy-safe).
+ * Default operand op is `union` when not specified on the operand entry.
+ *
+ * Note: converts `base` in place (same id). Operand layers stay in the document
+ * and are referenced by meta.ops; callers should hide them (see
+ * {@link applyBooleanCompose}) so they are not painted twice.
+ */
+export function composeBoolean(
+  base: CanvasLayer,
+  operands: Array<CanvasLayer | { layer: CanvasLayer; op?: BooleanOpKind }>,
+): CanvasLayer {
+  if (!operands.length) return base;
+
+  const normalized = normalizeBooleanOperands(operands);
   const bbox = unifyBBox([base, ...normalized.map((n) => n.layer)]);
   const ops: BooleanOperandRef[] = normalized.map((n) => ({
     op: n.op,
@@ -118,6 +123,38 @@ export function composeBoolean(
       ops,
     },
   };
+}
+
+/**
+ * Compose a boolean layer and hide operand layers so Artboard does not paint
+ * them both standalone and inside the boolean stack.
+ */
+export function applyBooleanCompose(
+  layers: CanvasLayer[],
+  base: CanvasLayer,
+  operands: Array<CanvasLayer | { layer: CanvasLayer; op?: BooleanOpKind }>,
+): CanvasLayer[] {
+  if (!operands.length) return layers;
+  const normalized = normalizeBooleanOperands(operands);
+  const composed = composeBoolean(base, normalized);
+  const hideIds = new Set(normalized.map((n) => n.layer.id));
+  return layers.map((layer) => {
+    if (layer.id === composed.id) return composed;
+    if (hideIds.has(layer.id)) return { ...layer, visible: false };
+    return layer;
+  });
+}
+
+/** Layer ids that must not paint as standalone nodes (boolean operands / masks). */
+export function compositionHiddenLayerIds(layers: CanvasLayer[]): Set<string> {
+  const hide = new Set<string>();
+  for (const layer of layers) {
+    for (const op of layer.meta?.ops ?? []) {
+      if (op.layerId) hide.add(op.layerId);
+    }
+    if (layer.meta?.maskLayerId) hide.add(layer.meta.maskLayerId);
+  }
+  return hide;
 }
 
 function blendForOp(op: BooleanOpKind): string | undefined {

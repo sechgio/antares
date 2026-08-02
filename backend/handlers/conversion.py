@@ -469,7 +469,13 @@ def _slim_process_status(job: Job) -> dict[str, Any]:
     summary = job.to_dict()
     raw_params = job.params or {}
     files = raw_params.get("files") or []
-    file_count = len(files) if isinstance(files, list) else 0
+    if isinstance(files, list) and files:
+        file_count = len(files)
+    else:
+        # After JobManager._slim_completed_job, ``files`` is [] and the
+        # original length lives in ``params.file_count``.
+        stored = raw_params.get("file_count")
+        file_count = stored if isinstance(stored, int) else 0
     return {
         **summary,
         "logs": logs,
@@ -681,7 +687,7 @@ def _run_conversion_job(job: Job) -> None:
                         exc_info=True,
                     )
             # Snapshot of existing basenames for O(1) collision checks (refreshed
-            # as we claim). Avoids N× path.exists() on the job thread.
+            # as we claim). Avoids Nx path.exists() on the job thread.
             # None means scandir failed → _claim_out_path uses exists() fallback.
             disk_out_keys: set[str] | None = _scan_dest_out_keys(destino) if destino else set()
 
@@ -1289,7 +1295,7 @@ def _dedupe_chunk_out_paths(
     Also avoids overwriting pre-existing files from a previous run, and paths
     reserved by a concurrent conversion job targeting the same destino.
 
-    Prefer a pre-scanned ``disk_keys`` set (updated on claim) over N× ``exists``.
+    Prefer a pre-scanned ``disk_keys`` set (updated on claim) over Nx ``exists``.
     """
     if not tasks:
         return tasks

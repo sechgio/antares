@@ -1851,6 +1851,15 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
               const synced = syncComponentFromLayer(styleSynced, prev, layer);
               history.setDocument(syncImagesPerPage(synced));
             }}
+            onReplaceLayers={(nextLayers) => {
+              if (panelBaselineRef.current) onPanelCommitLive();
+              history.setDocument(
+                syncImagesPerPage({
+                  ...history.document,
+                  layers: nextLayers,
+                }),
+              );
+            }}
             onChangeLive={onPanelChangeLive}
             onCommitLive={onPanelCommitLive}
             onDelete={onDeleteLayer}

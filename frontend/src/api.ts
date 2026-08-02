@@ -282,6 +282,10 @@ export interface PreviewResult {
   collisions?: MappingCollision[];
   detected_key_column?: string;
   detected_key_column_matches?: number;
+  /** True when the backend capped the preview batch (see total_files). */
+  truncated?: boolean;
+  /** Full input file count before preview truncation. */
+  total_files?: number;
 }
 
 export interface TechnicalReportsListBody {
@@ -686,7 +690,7 @@ export const api = {
   autoimgFoldersAdd: (body: { name: string; folder_id: string; activo: boolean }) => _invoke<{ success: boolean }>('autoimg_folders_add', body),
   autoimgFoldersRemove: (body: { folder_id: string }) => _invoke<{ success: boolean }>('autoimg_folders_remove', body),
   autoimgFoldersToggle: (body: { folder_id: string; activo: boolean }) => _invoke<{ success: boolean }>('autoimg_folders_toggle', body),
-  autoimgScanAndSync: () => _invoke<{ success: boolean; updated: number; new_rows: number; logs: string[]; folder_errors: number; scan: { results: { folder_summary: Array<{ name: string; count: number; nis_found: number; error?: string }>; nis_results: Array<{ nis: string; count: number; folders: string[]; estado: string }> }; summary: { total: number; completos: number; faltantes: number; sobrantes: number; sin_sgio: number }; folders_failed: number } }>('autoimg_scan_and_sync'),
+  autoimgScanAndSync: () => _invoke<{ success: boolean; updated: number; new_rows: number; logs: string[]; folder_errors: number; scan: { summary: { total: number; completos: number; faltantes: number; sobrantes: number; sin_sgio: number }; folders_failed: number } }>('autoimg_scan_and_sync'),
   autoimgSyncToSheet: () => _invoke<{ success: boolean; updated: number; new_rows: number; logs: string[] }>('autoimg_sync_to_sheet'),
   autoimgSyncFromSheet: () => _invoke<{ success: boolean; rows: string[][]; arrastre?: Array<{ nis: string; sgio: string; motivo: string; fecha: string; observacion: string }> }>('autoimg_sync_from_sheet'),
   autoimgRenameExport: (body: { dest_folder_id: string; only_completos?: boolean }) =>

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import CanvasSelect from '../../CanvasSelect';
-import { composeBoolean, type BooleanOpKind } from '../../../ops/booleanOps';
+import { applyBooleanCompose, composeBoolean, type BooleanOpKind } from '../../../ops/booleanOps';
 import { isShapeLayer } from '../../../ops/layerStyle';
 import type { CanvasLayer } from '../../../types';
 import { SectionHeader } from '../shared';
@@ -28,6 +28,7 @@ export default function BooleanMaskSection({
   layers = [],
   selectedIds = [],
   onChange,
+  onReplaceLayers,
   setMeta,
 }: SectionProps) {
   const [combineTargetId, setCombineTargetId] = useState('');
@@ -56,16 +57,29 @@ export default function BooleanMaskSection({
       onChange(clearMetaKey(layer, 'maskLayerId'));
       return;
     }
+    if (onReplaceLayers) {
+      const nextTarget = { ...layer, meta: { ...layer.meta, maskLayerId } };
+      onReplaceLayers(
+        layers.map((l) => {
+          if (l.id === nextTarget.id) return nextTarget;
+          if (l.id === maskLayerId) return { ...l, visible: false };
+          return l;
+        }),
+      );
+      return;
+    }
     setMeta({ maskLayerId });
   };
 
   const combineWith = (operands: CanvasLayer[], op: BooleanOpKind) => {
     if (!operands.length) return;
-    const next = composeBoolean(
-      layer,
-      operands.map((operand) => ({ layer: operand, op })),
-    );
-    onChange(next);
+    const entries = operands.map((operand) => ({ layer: operand, op }));
+    if (onReplaceLayers) {
+      onReplaceLayers(applyBooleanCompose(layers, layer, entries));
+      return;
+    }
+    // Fallback: update boolean only (operands may still paint until reload).
+    onChange(composeBoolean(layer, entries));
   };
 
   const setOpAt = (index: number, op: BooleanOpKind) => {

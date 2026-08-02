@@ -159,6 +159,24 @@ function LayerNode({
     () => (layer.type === 'line' ? buildLineSvgContent(lineLayer) : ''),
     [layer.type, lineLayer],
   );
+  // Hooks must stay above early returns (visible / offscreen culling).
+  const clipPath = useMemo(() => {
+    // Mask takes priority: clip this layer to the mask silhouette (CSS composition).
+    const maskId = layer.meta?.maskLayerId;
+    if (maskId && documentLayers.length) {
+      const maskLayer = documentLayers.find((l) => l.id === maskId);
+      if (maskLayer) {
+        const maskClip = clipPathForLayer(maskLayer, documentLayers);
+        if (maskClip) return maskClip;
+      }
+    }
+    return clipPathForLayer(layer, documentLayers);
+  }, [layer, documentLayers]);
+
+  const booleanRender = useMemo(() => {
+    if (layer.type !== 'boolean') return null;
+    return resolveBooleanRender(layer, documentLayers);
+  }, [layer, documentLayers]);
 
   if (layer.type === 'frame' || layer.visible === false) return null;
 
@@ -189,23 +207,6 @@ function LayerNode({
       />
     );
   }
-  const clipPath = useMemo(() => {
-    // Mask takes priority: clip this layer to the mask silhouette (CSS composition).
-    const maskId = layer.meta?.maskLayerId;
-    if (maskId && documentLayers.length) {
-      const maskLayer = documentLayers.find((l) => l.id === maskId);
-      if (maskLayer) {
-        const maskClip = clipPathForLayer(maskLayer, documentLayers);
-        if (maskClip) return maskClip;
-      }
-    }
-    return clipPathForLayer(layer, documentLayers);
-  }, [layer, documentLayers]);
-
-  const booleanRender = useMemo(() => {
-    if (layer.type !== 'boolean') return null;
-    return resolveBooleanRender(layer, documentLayers);
-  }, [layer, documentLayers]);
 
   const hasExplicitRadius = Boolean(
     layer.cssVars['--border-radius'] ||

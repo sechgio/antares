@@ -59,6 +59,7 @@ import { duplicateLayers } from '../ops/layerOps';
 import { expandWithDescendants } from '../ops/layerTree';
 import { wheelPanDelta, wheelZoomFactor, zoomAtCursor } from '../ops/viewportNav';
 import { CULLING_MARGIN_MM, filterVisibleLayers, visiblePageRectMm } from '../ops/viewportCulling';
+import { compositionHiddenLayerIds } from '../ops/booleanOps';
 import { createGestureRaf } from '../ops/gestureRaf';
 import {
   abortActivePointerGestureSession,
@@ -543,7 +544,12 @@ function Artboard({
     const always = new Set(selectedIds);
     if (editingLayerId) always.add(editingLayerId);
     if (pathEditingLayerId) always.add(pathEditingLayerId);
-    return filterVisibleLayers(contentLayers, viewRectMm, always);
+    // Boolean operands / mask silhouettes are painted by the composed layer —
+    // skip standalone nodes to avoid ghost duplicates (even if still visible).
+    const compositionHidden = compositionHiddenLayerIds(contentLayers);
+    return filterVisibleLayers(contentLayers, viewRectMm, always).filter(
+      (layer) => !compositionHidden.has(layer.id),
+    );
   }, [contentLayers, viewRectMm, selectedIds, editingLayerId, pathEditingLayerId]);
 
   const editableSelected = useMemo(

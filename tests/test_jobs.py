@@ -143,13 +143,34 @@ class TestJobManager:
         assert len(mgr.list_jobs()) == 2
 
     def test_slim_completed_job_drops_files_list(self):
-        mgr = JobManager()
         files = [f"C:/tmp/{i}.jpg" for i in range(200)]
         job = Job(id="slim_me", job_type="conversion", params={"files": files, "destino": "C:/out"})
         JobManager._slim_completed_job(job)
         assert job.params["files"] == []
         assert job.params["file_count"] == 200
         assert job.params["destino"] == "C:/out"
+
+    def test_process_status_uses_stored_file_count_after_slim(self):
+        from backend.core.jobs import get_job_manager
+        from backend.handlers.conversion import process_status
+
+        files = [f"C:/tmp/{i}.jpg" for i in range(75)]
+        job = Job(
+            id="status_after_slim",
+            job_type="conversion",
+            params={"files": files, "destino": "C:/out", "formato": "jpg"},
+        )
+        JobManager._slim_completed_job(job)
+        mgr = get_job_manager()
+        mgr._jobs["status_after_slim"] = job
+        try:
+            status = process_status({"job_id": "status_after_slim"})
+            assert status["params"]["file_count"] == 75
+            assert status["params"]["destino"] == "C:/out"
+            assert status["params"]["formato"] == "jpg"
+            assert "files" not in (status.get("params") or {})
+        finally:
+            del mgr._jobs["status_after_slim"]
 
     def test_create_job_slims_params_after_finish(self):
         import time

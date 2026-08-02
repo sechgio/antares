@@ -22,6 +22,8 @@ export interface SectionProps {
   selectedIds?: string[];
   // Mutators.
   onChange: (layer: CanvasLayer) => void;
+  /** Replace the full layer list (boolean compose hides operands in one undo step). */
+  onReplaceLayers?: (layers: CanvasLayer[]) => void;
   emitLive: (layer: CanvasLayer) => void;
   /** Apply a transform to the latest live layer (survives rapid multi-field edits). */
   mapLive: (fn: (layer: CanvasLayer) => CanvasLayer) => void;

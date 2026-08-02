@@ -47,6 +47,8 @@ interface RightPanelProps {
   selectedIds?: string[];
   pageColors: string[];
   onChange: (layer: CanvasLayer) => void;
+  /** Replace the full layer list (multi-layer panel commits such as boolean compose). */
+  onReplaceLayers?: (layers: CanvasLayer[]) => void;
   /** Live updates without undo (typing). Pair with onCommitLive on blur. */
   onChangeLive?: (layer: CanvasLayer) => void;
   onCommitLive?: () => void;
@@ -100,6 +102,7 @@ export default memo(function RightPanel({
   selectedIds = [],
   pageColors,
   onChange,
+  onReplaceLayers,
   onChangeLive,
   onCommitLive,
   onDelete,
@@ -234,6 +237,7 @@ export default memo(function RightPanel({
     layers,
     selectedIds,
     onChange,
+    onReplaceLayers,
     emitLive,
     mapLive,
     setVar,

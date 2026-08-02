@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createLayer } from '../../constants';
 import { mm, parseMm } from '../../types';
-import { composeBoolean, resolveBooleanRender } from '../booleanOps';
+import {
+  applyBooleanCompose,
+  composeBoolean,
+  compositionHiddenLayerIds,
+  resolveBooleanRender,
+} from '../booleanOps';
 
 describe('composeBoolean', () => {
   it('unifies bbox of base + operands', () => {
@@ -42,6 +47,30 @@ describe('composeBoolean', () => {
     expect(result).toBe(base);
     expect(result.type).toBe('rect');
     expect(result.meta?.ops).toBeUndefined();
+  });
+});
+
+describe('applyBooleanCompose', () => {
+  it('hides operand layers so they are not painted twice', () => {
+    const base = createLayer('rect', { id: 'base' });
+    const other = createLayer('ellipse', { id: 'other' });
+    const next = applyBooleanCompose([base, other], base, [{ layer: other, op: 'union' }]);
+    const composed = next.find((l) => l.id === 'base');
+    const operand = next.find((l) => l.id === 'other');
+    expect(composed?.type).toBe('boolean');
+    expect(operand?.visible).toBe(false);
+    expect(compositionHiddenLayerIds(next).has('other')).toBe(true);
+  });
+});
+
+describe('compositionHiddenLayerIds', () => {
+  it('includes mask silhouettes', () => {
+    const target = createLayer('rect', {
+      id: 'target',
+      meta: { maskLayerId: 'mask' },
+    });
+    const mask = createLayer('ellipse', { id: 'mask' });
+    expect(compositionHiddenLayerIds([target, mask]).has('mask')).toBe(true);
   });
 });
 
