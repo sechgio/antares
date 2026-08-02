@@ -142,6 +142,36 @@ class TestJobManager:
         assert removed == 3
         assert len(mgr.list_jobs()) == 2
 
+    def test_slim_completed_job_drops_files_list(self):
+        mgr = JobManager()
+        files = [f"C:/tmp/{i}.jpg" for i in range(200)]
+        job = Job(id="slim_me", job_type="conversion", params={"files": files, "destino": "C:/out"})
+        JobManager._slim_completed_job(job)
+        assert job.params["files"] == []
+        assert job.params["file_count"] == 200
+        assert job.params["destino"] == "C:/out"
+
+    def test_create_job_slims_params_after_finish(self):
+        import time
+
+        mgr = JobManager(max_concurrent=4)
+        files = [f"C:/tmp/{i}.jpg" for i in range(100)]
+
+        def _noop(job: Job) -> None:
+            job.result = {"ok_count": len(job.params.get("files") or [])}
+
+        started = mgr.create_job("conversion", {"files": files}, _noop, job_id="slim_after")
+        assert started["started"] is True
+        job = mgr.get_job("slim_after")
+        assert job is not None
+        assert job.thread is not None
+        job.thread.join(timeout=2.0)
+        # Allow finally block to run
+        time.sleep(0.05)
+        assert job.params.get("files") == []
+        assert job.params.get("file_count") == 100
+        assert job.result == {"ok_count": 100}
+
     def test_default_job_id_constant(self):
         assert DEFAULT_JOB_ID == "default"
 
