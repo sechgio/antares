@@ -114,6 +114,24 @@ def test_render_pdf_empty_panels_raises() -> None:
         render_pdf(panels=(), logos={}, images={}, export_mode="include_empty")
 
 
+def test_render_pdf_rejects_over_max_panels(monkeypatch: pytest.MonkeyPatch) -> None:
+    import backend.core.panel_aviso_corte.rendering as rendering_mod
+
+    monkeypatch.setattr(rendering_mod, "MAX_PANELS", 2)
+    panels = tuple(_make_panel() for _ in range(3))
+    with pytest.raises(RenderingError, match="máximo de 2 paneles"):
+        render_pdf(panels=panels, logos={}, images={}, export_mode="include_empty")
+
+
+def test_render_docx_rejects_over_max_panels(monkeypatch: pytest.MonkeyPatch) -> None:
+    import backend.core.panel_aviso_corte.rendering as rendering_mod
+
+    monkeypatch.setattr(rendering_mod, "MAX_PANELS", 2)
+    panels = tuple(_make_panel() for _ in range(3))
+    with pytest.raises(RenderingError, match="máximo de 2 paneles"):
+        render_docx(panels=panels, logos={}, images={}, export_mode="include_empty")
+
+
 def test_render_docx_empty_panels_raises() -> None:
     with pytest.raises(RenderingError, match="No hay paneles"):
         render_docx(panels=(), logos={}, images={}, export_mode="include_empty")

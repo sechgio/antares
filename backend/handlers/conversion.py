@@ -269,12 +269,20 @@ def _preview_detect_fields(
     }, probe
 
 
+MAX_PREVIEW_FILES = 200
+
+
 @with_locale
 @validate_params("files")
 def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     from backend.core.database import buscar_lote_por_codigos, buscar_por_columna, obtener_todos
 
     files = params.get("files", [])
+    total_files = len(files) if isinstance(files, list) else 0
+    truncated = False
+    if isinstance(files, list) and total_files > MAX_PREVIEW_FILES:
+        files = files[:MAX_PREVIEW_FILES]
+        truncated = True
     patron = params.get("patron", "")
     secuencia = params.get("secuencia", 1)
     use_column_rename = params.get("use_column_rename", False)
@@ -401,6 +409,9 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     payload: dict[str, Any] = {
         "preview": [{"origen": Path(orig).name, "nuevo": nuev, "en_bd": en_bd} for orig, nuev, en_bd in res],
     }
+    if truncated:
+        payload["truncated"] = True
+        payload["total_files"] = total_files
     if detect_fields:
         payload.update(detect_fields)
     if collisions:

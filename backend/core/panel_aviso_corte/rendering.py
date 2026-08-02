@@ -15,6 +15,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from backend.utils.pdf_html import write_pdf_sanitized
 
 from .errors import RenderingError
+from .models import MAX_PANELS
 
 if TYPE_CHECKING:
     from .models import ExportMode, Panel, PanelImageRef
@@ -207,6 +208,9 @@ def render_pdf(
     if not panels:
         msg = "No hay paneles para exportar"
         raise RenderingError(msg)
+    if len(panels) > MAX_PANELS:
+        msg = f"El PDF excede el máximo de {MAX_PANELS} paneles"
+        raise RenderingError(msg)
 
     template_file = resolve_panel_template_file(template_id)
     try:
@@ -286,6 +290,9 @@ def render_docx(
     panels = _panels_for_export(panels, export_mode)
     if not panels:
         msg = "No hay paneles para exportar"
+        raise RenderingError(msg)
+    if len(panels) > MAX_PANELS:
+        msg = f"El documento excede el máximo de {MAX_PANELS} paneles"
         raise RenderingError(msg)
 
     try:

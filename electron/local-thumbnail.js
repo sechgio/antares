@@ -8,6 +8,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const fsp = fs.promises;
 const crypto = require('crypto');
 const os = require('os');
 const { assertAllowedReadPath } = require('./path-allowlist');
@@ -19,6 +20,7 @@ const JPEG_QUALITY = 60;
 const DISK_CACHE_MAX_FILES = 400;
 
 let _cacheDir = null;
+let _trimScheduled = false;
 
 /**
  * @param {string} [dir]
@@ -89,49 +91,62 @@ function _cacheKey(resolved, mtimeMs, edge) {
     .digest('hex');
 }
 
-function _readDiskCache(cachePath) {
+async function _readDiskCache(cachePath) {
   try {
-    if (!fs.existsSync(cachePath)) return null;
-    const buf = fs.readFileSync(cachePath);
+    const buf = await fsp.readFile(cachePath);
     if (!buf || !buf.length) return null;
     return `data:image/jpeg;base64,${buf.toString('base64')}`;
-  } catch {
+  } catch (err) {
+    if (err && (err.code === 'ENOENT' || err.code === 'ENOTDIR')) return null;
     return null;
   }
 }
 
-function _writeDiskCache(cacheDir, cachePath, jpegBuf) {
+function _scheduleTrim(cacheDir) {
+  if (_trimScheduled) return;
+  _trimScheduled = true;
+  setImmediate(() => {
+    _trimScheduled = false;
+    _trimDiskCache(cacheDir).catch(() => {
+      /* ignore */
+    });
+  });
+}
+
+async function _writeDiskCache(cacheDir, cachePath, jpegBuf) {
   try {
-    fs.mkdirSync(cacheDir, { recursive: true });
+    await fsp.mkdir(cacheDir, { recursive: true });
     const tmp = `${cachePath}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, jpegBuf);
-    fs.renameSync(tmp, cachePath);
-    _trimDiskCache(cacheDir);
+    await fsp.writeFile(tmp, jpegBuf);
+    await fsp.rename(tmp, cachePath);
+    _scheduleTrim(cacheDir);
   } catch {
     /* disk full / permissions — non-fatal */
   }
 }
 
-function _trimDiskCache(cacheDir) {
+async function _trimDiskCache(cacheDir) {
   try {
-    const entries = fs.readdirSync(cacheDir)
-      .filter((name) => name.endsWith('.jpg'))
-      .map((name) => {
-        const full = path.join(cacheDir, name);
-        let mtimeMs = 0;
-        try {
-          mtimeMs = fs.statSync(full).mtimeMs;
-        } catch {
-          mtimeMs = 0;
-        }
-        return { full, mtimeMs };
-      })
-      .sort((a, b) => a.mtimeMs - b.mtimeMs);
+    const names = await fsp.readdir(cacheDir);
+    const entries = [];
+    for (const name of names) {
+      if (!name.endsWith('.jpg')) continue;
+      const full = path.join(cacheDir, name);
+      let mtimeMs = 0;
+      try {
+        const st = await fsp.stat(full);
+        mtimeMs = st.mtimeMs;
+      } catch {
+        mtimeMs = 0;
+      }
+      entries.push({ full, mtimeMs });
+    }
+    entries.sort((a, b) => a.mtimeMs - b.mtimeMs);
     const excess = entries.length - DISK_CACHE_MAX_FILES;
     if (excess <= 0) return;
     for (let i = 0; i < excess; i += 1) {
       try {
-        fs.unlinkSync(entries[i].full);
+        await fsp.unlink(entries[i].full);
       } catch {
         /* ignore */
       }
@@ -157,14 +172,15 @@ async function createLocalThumbnail(filePath, maxEdge, nativeImage) {
 
   let mtimeMs = 0;
   try {
-    mtimeMs = fs.statSync(resolved).mtimeMs;
+    const st = await fsp.stat(resolved);
+    mtimeMs = st.mtimeMs;
   } catch {
     throw new Error('unable to load image');
   }
 
   const cacheDir = getThumbnailCacheDir();
   const cachePath = path.join(cacheDir, `${_cacheKey(resolved, mtimeMs, edge)}.jpg`);
-  const cached = _readDiskCache(cachePath);
+  const cached = await _readDiskCache(cachePath);
   if (cached) return { dataUrl: cached };
 
   let image = null;
@@ -202,7 +218,7 @@ async function createLocalThumbnail(filePath, maxEdge, nativeImage) {
     const buf = image.toJPEG(JPEG_QUALITY);
     if (buf && buf.length) {
       const jpegBuf = Buffer.from(buf);
-      _writeDiskCache(cacheDir, cachePath, jpegBuf);
+      await _writeDiskCache(cacheDir, cachePath, jpegBuf);
       return { dataUrl: `data:image/jpeg;base64,${jpegBuf.toString('base64')}` };
     }
   }
@@ -220,4 +236,7 @@ module.exports = {
   createLocalThumbnail,
   setThumbnailCacheDir,
   getThumbnailCacheDir,
+  // Test helpers (not part of public IPC contract)
+  _trimDiskCache,
+  DISK_CACHE_MAX_FILES,
 };

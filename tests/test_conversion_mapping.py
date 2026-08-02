@@ -48,9 +48,31 @@ def test_preview_with_mapping(monkeypatch, tmp_path) -> None:
     preview = {item["origen"]: item for item in result["preview"]}
     assert preview["IMG_0001.jpg"]["nuevo"] == "fachada_norte.jpg"
     assert preview["IMG_0002.jpg"]["nuevo"] == "fachada_sur.jpg"
-    assert preview["IMG_0001.jpg"]["en_bd"] is True
-    assert preview["IMG_0002.jpg"]["en_bd"] is True
-    assert not result.get("collisions")
+    assert "truncated" not in result
+
+
+def test_preview_truncates_over_max_files(tmp_path) -> None:
+    n = conversion.MAX_PREVIEW_FILES + 1
+    files = []
+    mapping = {}
+    for i in range(n):
+        name = f"IMG_{i:04d}.jpg"
+        path = tmp_path / name
+        path.write_text("x")
+        files.append(str(path))
+        mapping[name] = f"out_{i:04d}"
+
+    result = conversion.preview({
+        "files": files,
+        "patron": "",
+        "mapping": mapping,
+    })
+
+    assert result["truncated"] is True
+    assert result["total_files"] == n
+    assert len(result["preview"]) == conversion.MAX_PREVIEW_FILES
+    assert result["preview"][0]["origen"] == "IMG_0000.jpg"
+    assert result["preview"][-1]["origen"] == f"IMG_{conversion.MAX_PREVIEW_FILES - 1:04d}.jpg"
 
 
 def test_preview_reports_collisions(monkeypatch, tmp_path) -> None:

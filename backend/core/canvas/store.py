@@ -76,14 +76,18 @@ def migrate_legacy_canvas_documents(*, source: Path, dest: Path) -> int:
     return copied
 
 
-def _extract_doc_meta(path: Path) -> tuple[str, str] | None:
-    """Fast extraction of (name, updatedAt) from a canvas document file."""
+def _extract_doc_meta(path: Path) -> tuple[str, str, str] | None:
+    """Fast extraction of (name, updatedAt, id) from a canvas document file."""
     try:
         size = path.stat().st_size
         if size < 65536:
             raw = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(raw, dict):
-                return str(raw.get("name") or "Sin título"), str(raw.get("updatedAt") or "")
+                return (
+                    str(raw.get("name") or "Sin título"),
+                    str(raw.get("updatedAt") or ""),
+                    str(raw.get("id") or ""),
+                )
             return None
 
         with path.open("r", encoding="utf-8", errors="ignore") as f:
@@ -92,6 +96,7 @@ def _extract_doc_meta(path: Path) -> tuple[str, str] | None:
         import re
         name_match = re.search(r'"name"\s*:\s*"((?:[^"\\]|\\.)*)"', head)
         updated_match = re.search(r'"updatedAt"\s*:\s*"((?:[^"\\]|\\.)*)"', head)
+        id_match = re.search(r'"id"\s*:\s*"((?:[^"\\]|\\.)*)"', head)
 
         if name_match:
             try:
@@ -102,13 +107,18 @@ def _extract_doc_meta(path: Path) -> tuple[str, str] | None:
             doc_name = "Sin título"
 
         updated_at = updated_match.group(1) if updated_match else ""
+        inner_id = id_match.group(1) if id_match else ""
 
-        if not name_match:
+        if not name_match or not id_match:
             raw = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(raw, dict):
-                return str(raw.get("name") or "Sin título"), str(raw.get("updatedAt") or "")
+                return (
+                    str(raw.get("name") or "Sin título"),
+                    str(raw.get("updatedAt") or ""),
+                    str(raw.get("id") or ""),
+                )
 
-        return str(doc_name), str(updated_at)
+        return str(doc_name), str(updated_at), str(inner_id)
     except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
         logger.warning("Skipping unreadable canvas document %s: %s", path, exc)
         return None
@@ -165,19 +175,13 @@ class CanvasStore:
         self._inner_id_index = {}
         self._listing_cache = []
         for path in sorted(self.docs_dir.glob("*.json")):
-            try:
-                raw = json.loads(path.read_text(encoding="utf-8"))
-                if not isinstance(raw, dict):
-                    continue
-                doc_id = path.stem
-                doc_name = str(raw.get("name") or "Sin título")
-                updated_at = str(raw.get("updatedAt") or "")
-                inner_id = str(raw.get("id") or "")
-                if inner_id:
-                    self._inner_id_index[inner_id] = path
-            except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
-                logger.warning("Skipping unreadable canvas document %s: %s", path, exc)
+            meta = _extract_doc_meta(path)
+            if meta is None:
                 continue
+            doc_name, updated_at, inner_id = meta
+            doc_id = path.stem
+            if inner_id:
+                self._inner_id_index[inner_id] = path
             self._listing_cache.append({"id": doc_id, "name": doc_name, "updatedAt": updated_at})
 
     def _find_path_by_inner_id(self, doc_id: str) -> Path | None:

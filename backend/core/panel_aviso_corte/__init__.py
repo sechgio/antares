@@ -26,6 +26,7 @@ from .models import (
     MAX_IMAGE_BYTES,
     MAX_IMAGES_PER_PANEL,
     MAX_LOGO_BYTES,
+    MAX_PANELS,
     ExcelSource,
     ExportMode,
     MatchResult,
@@ -40,6 +41,7 @@ from .serialization import deserialize_panel, serialize_panel
 
 __all__ = [
     "MAX_EXCEL_ROWS",
+    "MAX_PANELS",
     "MAX_IMAGES_PER_PANEL",
     "MAX_IMAGE_BYTES",
     "MAX_LOGO_BYTES",

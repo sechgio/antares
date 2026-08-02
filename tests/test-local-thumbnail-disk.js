@@ -13,10 +13,16 @@ function assert(condition, message) {
   }
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function main() {
   const {
     createLocalThumbnail,
     setThumbnailCacheDir,
+    _trimDiskCache,
+    DISK_CACHE_MAX_FILES,
   } = require('../electron/local-thumbnail');
   const { registerAllowedReadPath, clearAllowedReadPaths } = require('../electron/path-allowlist');
 
@@ -47,12 +53,34 @@ async function main() {
   assert(first.dataUrl.startsWith('data:image/jpeg'), 'first thumb is jpeg data url');
   assert(createFromPathCalls === 1, 'first call decodes image');
 
+  // Allow deferred trim setImmediate to flush without affecting cache hit.
+  await sleep(20);
+
   const cachedFiles = fs.readdirSync(cacheDir).filter((n) => n.endsWith('.jpg') && n !== 'source.jpg');
   assert(cachedFiles.length >= 1, 'disk cache file written');
 
   const second = await createLocalThumbnail(src, 64, nativeImage);
   assert(second.dataUrl === first.dataUrl, 'second call returns same data url');
   assert(createFromPathCalls === 1, 'second call hits disk cache (no re-decode)');
+
+  // Deferred trim must not delete a valid entry when under the cap.
+  await _trimDiskCache(cacheDir);
+  const afterTrim = fs.readdirSync(cacheDir).filter((n) => n.endsWith('.jpg') && n !== 'source.jpg');
+  assert(afterTrim.length >= 1, 'trim keeps cache entries under max');
+
+  // Force excess cache files and ensure trim removes oldest.
+  const excess = 5;
+  for (let i = 0; i < DISK_CACHE_MAX_FILES + excess; i += 1) {
+    const fake = path.join(cacheDir, `pad-${String(i).padStart(4, '0')}.jpg`);
+    fs.writeFileSync(fake, Buffer.from(`pad-${i}`));
+    // Stagger mtimes so sort is deterministic on some filesystems.
+    const past = new Date(Date.now() - (DISK_CACHE_MAX_FILES + excess - i) * 1000);
+    fs.utimesSync(fake, past, past);
+  }
+  await _trimDiskCache(cacheDir);
+  const jpgCount = fs.readdirSync(cacheDir).filter((n) => n.endsWith('.jpg')).length;
+  // source.jpg + cached thumb + pads, but trim only counts *.jpg and caps at MAX.
+  assert(jpgCount <= DISK_CACHE_MAX_FILES, `trim caps jpg files at ${DISK_CACHE_MAX_FILES}, got ${jpgCount}`);
 
   console.log('[PASS] local-thumbnail disk cache OK.');
 }

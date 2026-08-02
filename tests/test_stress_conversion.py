@@ -79,6 +79,75 @@ def test_conversion_queue_accepts_10k_files(monkeypatch, tmp_path) -> None:
     _run_conversion_stress(monkeypatch, tmp_path, 10_000)
 
 
+@pytest.mark.slow
+def test_conversion_copy_real_io_small_files(monkeypatch, tmp_path) -> None:
+    """Real disk I/O stress — does not mock ``copiar_archivo``.
+
+    Opt-in via ``pytest -m slow`` / ``npm run test:stress``. Soft time budget
+    and optional RSS delta (psutil) catch regressions without being CI-fragile.
+    """
+    import time
+
+    n = 200
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    files: list[str] = []
+    # Minimal JPEG SOI/EOI + padding — enough for a real filesystem copy.
+    payload = b"\xff\xd8\xff\xd9" + (b"x" * 64)
+    for index in range(n):
+        path = src_dir / f"img_{index:05d}.jpg"
+        path.write_bytes(payload)
+        files.append(str(path))
+
+    dest = tmp_path / "out"
+    dest.mkdir()
+
+    monkeypatch.setattr(conversion, "get_scheduler", lambda: _ImmediateScheduler())
+    monkeypatch.setattr(conversion, "es_video", lambda _path: False)
+    monkeypatch.setattr("backend.core.history.save_run", lambda **_kwargs: None)
+    monkeypatch.setattr(conversion, "send_notification", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 500)
+
+    rss0 = None
+    proc = None
+    try:
+        import psutil
+
+        proc = psutil.Process()
+        rss0 = proc.memory_info().rss
+    except Exception:
+        proc = None
+        rss0 = None
+
+    t0 = time.perf_counter()
+    job = Job(
+        id="stress-io",
+        job_type="conversion",
+        params={
+            "files": files,
+            "destino": str(dest),
+            "conversion_enabled": False,
+            "usar_rename": False,
+            "locale": "es",
+        },
+    )
+    with job.state._lock:
+        job.state.running = True
+        job.state.total = n
+
+    conversion._run_conversion_job(job)
+    elapsed = time.perf_counter() - t0
+
+    assert job.result is not None
+    assert job.result["ok_count"] == n
+    assert job.result["err_count"] == 0
+    assert len(list(dest.glob("*.jpg"))) == n
+    assert elapsed < 30.0, f"copy I/O too slow: {elapsed:.2f}s"
+    if proc is not None and rss0 is not None:
+        delta = proc.memory_info().rss - rss0
+        assert delta < 200 * 1024 * 1024, f"RSS grew {delta} bytes"
+
+
 def test_process_start_accepts_large_file_list(monkeypatch, tmp_path) -> None:
     mgr = JobManager(max_concurrent=2)
     monkeypatch.setattr(conversion, "get_job_manager", lambda: mgr)

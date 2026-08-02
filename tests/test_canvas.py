@@ -495,6 +495,42 @@ def test_corrupt_document_is_logged_and_skipped(tmp_path: Path, caplog: pytest.L
     assert any("broken.json" in record.getMessage() for record in caplog.records)
 
 
+def test_list_large_document_uses_extract_doc_meta(tmp_path: Path) -> None:
+    """Listing a large canvas doc must succeed via light meta extraction (no full normalize)."""
+    import json
+
+    store = CanvasStore(tmp_path)
+    body = create_empty_document(name="Large Doc")
+    body["id"] = "inner-large"
+    body["updatedAt"] = "2026-08-02T12:00:00.000Z"
+    # Fake dataURL payload pushes file well past the 64 KiB head-parse threshold.
+    body["layers"].append(
+        {
+            "id": "img1",
+            "type": "image",
+            "name": "Pad",
+            "value": f"data:image/jpeg;base64,{'A' * 80_000}",
+            "pageIndex": 0,
+            "cssVars": {},
+        },
+    )
+    path = tmp_path / "large-stem.json"
+    path.write_text(json.dumps(body), encoding="utf-8")
+    assert path.stat().st_size >= 65536
+
+    listed = store.list_documents()
+    assert len(listed) == 1
+    assert listed[0]["id"] == "large-stem"
+    assert listed[0]["name"] == "Large Doc"
+    assert listed[0]["updatedAt"] == "2026-08-02T12:00:00.000Z"
+
+    # Inner-id index must also be populated from light meta (not full rebuild parse).
+    by_inner = store.get("inner-large")
+    assert by_inner is not None
+    assert by_inner["id"] == "large-stem"
+    assert by_inner["name"] == "Large Doc"
+
+
 def test_corrupt_document_get_returns_none_and_logs(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     """Reading a specific corrupt file returns None and logs a warning."""
     store = CanvasStore(tmp_path)

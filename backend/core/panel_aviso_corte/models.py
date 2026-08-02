@@ -24,6 +24,9 @@ MAX_IMAGES_PER_PANEL: int = 4
 #: Límite superior de filas aceptadas al importar un Excel.
 MAX_EXCEL_ROWS: int = 10_000
 
+#: Tope de paneles en un PDF/DOCX consolidado (alineado a formatos MAX_UPLOAD_PDF_PAGES).
+MAX_PANELS: int = 1000
+
 #: Tamaño máximo (bytes) admitido para cada logo del encabezado (5 MB).
 MAX_LOGO_BYTES: int = 5 * 1024 * 1024
 
@@ -310,6 +313,7 @@ class MatchResult:
 
 __all__ = [
     "MAX_EXCEL_ROWS",
+    "MAX_PANELS",
     "MAX_IMAGES_PER_PANEL",
     "MAX_IMAGE_BYTES",
     "MAX_LOGO_BYTES",

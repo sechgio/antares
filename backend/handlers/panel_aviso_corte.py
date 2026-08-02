@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.core.panel_aviso_corte import build_panels, parse_excel_bytes, render_docx, render_pdf
-from backend.core.panel_aviso_corte.models import MatchRule
+from backend.core.panel_aviso_corte.models import MAX_EXCEL_ROWS, MatchRule
 from backend.core.panel_aviso_corte.serialization import deserialize_panel
 from backend.handlers.common import validate_params, with_locale
 
@@ -43,6 +43,9 @@ def panel_aviso_corte_compute_match(params: dict[str, Any]) -> dict[str, Any]:
     export_mode = str(params.get("export_mode", "skip_empty"))
     if not rows:
         msg = "rows es requerido"
+        raise ValueError(msg)
+    if len(rows) > MAX_EXCEL_ROWS:
+        msg = f"El Excel excede el máximo de {MAX_EXCEL_ROWS} filas"
         raise ValueError(msg)
     if not key_column:
         msg = "key_column es requerido"
