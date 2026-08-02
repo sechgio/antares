@@ -54,3 +54,32 @@ class TestEmitHeartbeat:
         assert calls == [
             ("job.job-abc.heartbeat", {"running": True, "job_id": "job-abc"}),
         ]
+
+    def test_run_conversion_emits_immediate_heartbeat_before_work(self, monkeypatch, tmp_path) -> None:
+        """First heartbeat must land at T≈0 so Electron grace covers post-start."""
+        from backend.core.jobs import Job
+
+        calls: list[str] = []
+        monkeypatch.setattr(
+            conversion,
+            "send_notification",
+            lambda method, params: calls.append(method),
+        )
+        monkeypatch.setattr(conversion, "set_locale", lambda *_a, **_k: None)
+
+        job = Job(
+            id="default",
+            job_type="conversion",
+            params={"files": [], "destino": str(tmp_path), "locale": "es"},
+        )
+        with job.state._lock:
+            job.state.running = True
+
+        conversion._run_conversion_job(job)
+
+        assert "job.default.heartbeat" in calls
+        assert "process.heartbeat" in calls
+        # Immediate emit is the first notification, before complete.
+        assert calls.index("job.default.heartbeat") < calls.index("process.complete") or (
+            "process.complete" not in calls and calls[0] == "job.default.heartbeat"
+        )

@@ -116,7 +116,11 @@ HEAVY_METHODS = {
     "generar_ubicaciones",
     "preview_ubicacion",
     "evidencia_volanteo_render",
-    # Long-running canvas export — must not starve light IPC (version/status/theme).
+    # Canvas persist/load can carry large DataURL payloads — keep off the light
+    # pool so version/process_status probes stay responsive.
+    "canvas_get",
+    "canvas_save",
+    "canvas_save_history",
     "canvas_export_cmyk_pdf",
 }
 

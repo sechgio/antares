@@ -543,6 +543,10 @@ def _run_conversion_job(job: Job) -> None:
                 daemon=True,
             )
             heartbeat_thread.start()
+            # Emit once immediately so Electron job-activity grace starts before
+            # the wait-first loop's first pulse (~15s). Closes the post-process_start
+            # window where health probes could force-restart a live job.
+            _emit_heartbeat(job_id, is_default)
 
             set_locale(params.get("locale", "es"))
             files = params.get("files", [])

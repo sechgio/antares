@@ -30,5 +30,8 @@
   "autoimg_rename_export",
   "autoimg_bootstrap",
   "canvas_export_cmyk_pdf",
+  "canvas_get",
+  "canvas_save",
+  "canvas_save_history",
   "dialog_folder"
 ]

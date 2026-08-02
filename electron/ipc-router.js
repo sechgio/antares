@@ -202,6 +202,12 @@ function _ensureListeners() {
             }
             entry.reject(err);
           } else {
+            // Mark job activity as soon as process_start accepts work — before the
+            // first Python heartbeat (~15s wait-first). Prevents health-probe
+            // force-restarts in the post-start window with pending=0.
+            if (entry.method === 'process_start' && msg.result && msg.result.started) {
+              noteJobActivity();
+            }
             entry.resolve(msg.result);
           }
         }
@@ -260,7 +266,7 @@ function _sendRequest(method, params) {
       reject(new Error(`IPC timeout: ${method}`));
     }, timeoutMs);
 
-    _pendingRequests.set(id, { resolve, reject, timeout: timeoutId, proc });
+    _pendingRequests.set(id, { resolve, reject, timeout: timeoutId, proc, method });
     try {
       proc.stdin.write(JSON.stringify(request) + '\n');
     } catch (err) {

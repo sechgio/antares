@@ -32,7 +32,7 @@ function makeFakeProc(pid) {
   return proc;
 }
 
-function loadIpcRouter({ currentProc, clearJobActivity, waitForReady }) {
+function loadIpcRouter({ currentProc, clearJobActivity, noteJobActivity, waitForReady }) {
   const electronPath = require.resolve('electron');
   require.cache[electronPath] = {
     id: electronPath,
@@ -60,7 +60,7 @@ function loadIpcRouter({ currentProc, clearJobActivity, waitForReady }) {
       manualRestart: async () => true,
       incrementPendingRequests: () => {},
       decrementPendingRequests: () => {},
-      noteJobActivity: () => {},
+      noteJobActivity: noteJobActivity || (() => {}),
       clearJobActivity,
       STATE: { READY: 'ready', FATAL: 'fatal', STARTING: 'starting', EXITED: 'exited' },
     },
@@ -244,6 +244,77 @@ async function run() {
     assert(result && result.ok === true, 'idempotent method succeeds after retry');
     assert(writeCount === 2, 'idempotent method retried once (two writes)');
     assert(waitCalls >= 1, 'idempotent waits for backend before retry');
+  }
+
+  // process_start with started:true marks job activity without waiting for heartbeat.
+  {
+    const currentProc = { ref: null };
+    let noteCalls = 0;
+    const { _sendRequest, _ensureListeners } = loadIpcRouter({
+      currentProc,
+      clearJobActivity: () => {},
+      noteJobActivity: () => {
+        noteCalls += 1;
+      },
+    });
+
+    const proc = makeFakeProc(3001);
+    proc.stdin.write = (payload) => {
+      process.nextTick(() => {
+        const req = JSON.parse(String(payload).trim());
+        proc.stdout.emit(
+          'data',
+          Buffer.from(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: req.id,
+              result: { started: true, job_id: 'default' },
+            }) + '\n',
+          ),
+        );
+      });
+      return true;
+    };
+    currentProc.ref = proc;
+    _ensureListeners();
+
+    const result = await _sendRequest('process_start', { files: ['a.jpg'], destino: 'out' });
+    assert(result && result.started === true, 'process_start resolves with started:true');
+    assert(noteCalls === 1, 'noteJobActivity called once when process_start starts');
+
+    noteCalls = 0;
+    proc.stdin.write = (payload) => {
+      process.nextTick(() => {
+        const req = JSON.parse(String(payload).trim());
+        proc.stdout.emit(
+          'data',
+          Buffer.from(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: req.id,
+              result: { started: false, reason: 'already_running' },
+            }) + '\n',
+          ),
+        );
+      });
+      return true;
+    };
+    await _sendRequest('process_start', { files: ['a.jpg'], destino: 'out' });
+    assert(noteCalls === 0, 'noteJobActivity skipped when process_start does not start');
+
+    noteCalls = 0;
+    proc.stdin.write = (payload) => {
+      process.nextTick(() => {
+        const req = JSON.parse(String(payload).trim());
+        proc.stdout.emit(
+          'data',
+          Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: req.id, result: { ok: true } }) + '\n'),
+        );
+      });
+      return true;
+    };
+    await _sendRequest('version', {});
+    assert(noteCalls === 0, 'noteJobActivity not called for unrelated methods');
   }
 
   {

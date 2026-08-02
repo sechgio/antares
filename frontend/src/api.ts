@@ -37,6 +37,10 @@ declare global {
 
 const IPC_TIMEOUT = 30_000;           // default timeout — most ops finish in <5s
 const IPC_LONG_TIMEOUT = 900_000;     // 15 min for large PDF/ZIP/image batches
+// Renderer backstop must outlive Electron main's IPC timeout so main always
+// clears `_pendingRequests` first. Without this buffer the FE race (started
+// before waitForReady) can reject while main+backend still hold the request.
+const FE_TIMEOUT_BUFFER_MS = 10_000;
 // No frontend retry layer: the Electron main process (ipc-router._callBackend)
 // already waits for backend readiness and retries transient mid-flight failures
 // with waitForReady() between attempts. A second retry layer here multiplied
@@ -171,7 +175,8 @@ const _invoke = async <T>(method: string, params?: Record<string, unknown> | obj
     throw new AntaresAPIError('Electron IPC no disponible', -32000, 'INTERNAL_ERROR');
   }
 
-  const timeoutMs = LONG_RUNNING_METHODS.has(method) ? IPC_LONG_TIMEOUT : IPC_TIMEOUT;
+  const timeoutMs =
+    (LONG_RUNNING_METHODS.has(method) ? IPC_LONG_TIMEOUT : IPC_TIMEOUT) + FE_TIMEOUT_BUFFER_MS;
   // Single attempt: retry logic lives in ipc-router._callBackend (main process),
   // which can actually wait for the backend to recover. The timeout race is a
   // backstop for the case where the main process never resolves the invoke.
