@@ -223,6 +223,7 @@ class JobManager:
                     with j.state._lock:
                         j.state.running = False
                     self.release_out_paths(j.id)
+                    self._slim_completed_job(j)
 
             job.thread = threading.Thread(
                 target=_wrapped_target,
@@ -263,6 +264,24 @@ class JobManager:
                 return {"cancelled": False, "reason": "job_not_running"}
             job.state.cancel_requested = True
         return {"cancelled": True, "job_id": job_id}
+
+    @staticmethod
+    def _slim_completed_job(job: Job) -> None:
+        """Drop heavyweight params retained after a job finishes.
+
+        Status IPC already omits full ``files`` lists; keeping thousands of
+        path strings on completed Job objects only burns RAM until cleanup.
+        """
+        params = job.params
+        if not isinstance(params, dict):
+            return
+        files = params.get("files")
+        if not isinstance(files, list) or not files:
+            return
+        slim = dict(params)
+        slim["file_count"] = len(files)
+        slim["files"] = []
+        job.params = slim
 
     def cleanup_completed(self, max_remaining: int = MAX_COMPLETED_JOBS) -> int:
         """Remove old completed/failed jobs to free memory.

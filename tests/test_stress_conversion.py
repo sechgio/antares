@@ -44,7 +44,7 @@ def _stress_params(tmp_path, file_count: int) -> dict:
 def _run_conversion_stress(monkeypatch, tmp_path, file_count: int) -> None:
     monkeypatch.setattr(conversion, "get_scheduler", lambda: _ImmediateScheduler())
     monkeypatch.setattr(conversion, "es_video", lambda _path: False)
-    monkeypatch.setattr(conversion, "copiar_archivo", lambda _src, _dst: None)
+    monkeypatch.setattr(conversion, "copiar_archivo", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **_kwargs: None)
     monkeypatch.setattr(conversion, "send_notification", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 500)

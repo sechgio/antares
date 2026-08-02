@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
-from concurrent.futures import Future
+from concurrent.futures import CancelledError, Future
 from pathlib import Path
 
 from backend.core.jobs import Job
@@ -155,7 +155,12 @@ def test_conversion_cancel_discards_prefetched_chunk(monkeypatch, tmp_path) -> N
                 first_heavy_started.set()
                 release_heavy.wait(timeout=5)
                 if cancel_check and cancel_check():
-                    future.cancel()
+                    # Bare Future.cancel() succeeds even while our thread runs;
+                    # always finish the future so the job loop cannot stall.
+                    try:
+                        future.set_exception(CancelledError())
+                    except Exception:
+                        future.cancel()
                     return
                 if not future.cancelled():
                     future.set_result(fn(task))
@@ -252,7 +257,104 @@ def test_conversion_cancel_releases_visible_state_without_waiting_for_slow_worke
     assert job.result == {"ok_count": 0, "err_count": 0, "cancelled": True}
 
 
-def test_conversion_job_notifies_complete_on_unexpected_error(monkeypatch) -> None:
+def test_progress_notifications_throttled_by_interval(monkeypatch, tmp_path) -> None:
+    """Progress IPC must not emit on every 1% — interval + first + last only."""
+    notifies: list[dict] = []
+
+    class _Immediate:
+        def submit_heavy(self, fn, task, *, block=False, cancel_check=None):  # type: ignore[no-untyped-def]
+            fut = Future()
+            fut.set_result(fn(task))
+            return fut
+
+        @property
+        def heavy_capacity(self) -> int:
+            return 4
+
+    monkeypatch.setattr(conversion, "get_scheduler", lambda: _Immediate())
+    monkeypatch.setattr(conversion, "es_video", lambda _path: False)
+    monkeypatch.setattr(conversion, "copiar_archivo", lambda *_a, **_k: None)
+    monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 50)
+    monkeypatch.setattr(
+        conversion,
+        "_emit_progress_notifications",
+        lambda _jid, data, _default: notifies.append(dict(data)),
+    )
+    monkeypatch.setattr(conversion, "_emit_heartbeat", lambda *_a, **_k: None)
+    monkeypatch.setattr("backend.core.history.save_run", lambda **_k: None)
+
+    # Stay within the 0.5s notify interval for middle files; last always emits.
+    times = iter([1000.0] + [1000.1] * 200)
+    monkeypatch.setattr(conversion.time, "time", lambda: next(times, 1000.1))
+
+    n = 50
+    dest = tmp_path / "out"
+    dest.mkdir()
+    job = Job(
+        id="throttle",
+        job_type="conversion",
+        params={
+            "files": [str(tmp_path / f"{i}.jpg") for i in range(n)],
+            "destino": str(dest),
+            "conversion_enabled": False,
+            "usar_rename": False,
+        },
+    )
+    with job.state._lock:
+        job.state.running = True
+        job.state.total = n
+    conversion._run_conversion_job(job)
+
+    # First + last only while clock stays inside the interval.
+    assert len(notifies) == 2
+    assert notifies[0]["progress"] >= 1
+    assert notifies[-1]["progress"] == 100
+
+
+def test_save_run_receives_duration_ms(monkeypatch, tmp_path) -> None:
+    captured: dict = {}
+
+    class _Immediate:
+        def submit_heavy(self, fn, task, *, block=False, cancel_check=None):  # type: ignore[no-untyped-def]
+            fut = Future()
+            fut.set_result(fn(task))
+            return fut
+
+        @property
+        def heavy_capacity(self) -> int:
+            return 2
+
+    def fake_save_run(**kwargs):  # type: ignore[no-untyped-def]
+        captured.update(kwargs)
+        return 1
+
+    monkeypatch.setattr(conversion, "get_scheduler", lambda: _Immediate())
+    monkeypatch.setattr(conversion, "es_video", lambda _path: False)
+    monkeypatch.setattr(conversion, "copiar_archivo", lambda *_a, **_k: None)
+    monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 10)
+    monkeypatch.setattr(conversion, "_emit_heartbeat", lambda *_a, **_k: None)
+    monkeypatch.setattr(conversion, "send_notification", lambda *_a, **_k: None)
+    monkeypatch.setattr("backend.core.history.save_run", fake_save_run)
+
+    dest = tmp_path / "out"
+    dest.mkdir()
+    job = Job(
+        id="dur",
+        job_type="conversion",
+        params={
+            "files": [str(tmp_path / "a.jpg")],
+            "destino": str(dest),
+            "conversion_enabled": False,
+            "usar_rename": False,
+        },
+    )
+    with job.state._lock:
+        job.state.running = True
+        job.state.total = 1
+    conversion._run_conversion_job(job)
+    assert "duration_ms" in captured
+    assert isinstance(captured["duration_ms"], int)
+    assert captured["duration_ms"] >= 0
     """Unexpected exceptions must still emit complete so the UI does not hang."""
     completes: list[tuple[int, int]] = []
 

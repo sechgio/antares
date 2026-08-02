@@ -69,8 +69,13 @@ class WorkScheduler:
             thread_name_prefix="handler-pool",
         )
 
+        # Outstanding budget (running + queued reservations) for backpressure.
         self.heavy_capacity = self.heavy_workers + self.heavy_queue_limit
         self._heavy_slots = threading.BoundedSemaphore(self.heavy_capacity)
+        # Separate run budget: at most heavy_workers heavy fns execute at once,
+        # even when the unified pool has light_workers + heavy_workers threads
+        # and many tasks are already reserved via _heavy_slots.
+        self._heavy_run_slots = threading.BoundedSemaphore(self.heavy_workers)
         self._lock = threading.RLock()
         self._heavy_outstanding = 0
         self._heavy_active = 0
@@ -117,6 +122,9 @@ class WorkScheduler:
             self._heavy_submitted += 1
 
         def _wrapped() -> Any:
+            # Acquire run slot only when actually executing — cancelled-before-run
+            # tasks never reach here, so they cannot leak run slots.
+            self._heavy_run_slots.acquire()
             with self._lock:
                 self._heavy_active += 1
             try:
@@ -126,17 +134,19 @@ class WorkScheduler:
                     self._heavy_active -= 1
                     self._heavy_outstanding -= 1
                     self._heavy_completed += 1
+                self._heavy_run_slots.release()
                 self._heavy_slots.release()
 
         future = self._executor.submit(_wrapped)
 
         def _release_if_cancelled(fut: Future) -> None:
             # If the future was cancelled before _wrapped started running, the
-            # finally above never executed, so the reserved slot and the
-            # outstanding counter would leak for the rest of the session (every
-            # batch cancellation permanently shrank heavy_capacity). fut.cancelled()
-            # is True only when the future never ran, so this never double-releases
-            # against the finally path.
+            # finally above never executed, so the reserved outstanding slot and
+            # the outstanding counter would leak for the rest of the session
+            # (every batch cancellation permanently shrank heavy_capacity).
+            # Run slots are only acquired inside _wrapped, so cancel-before-run
+            # never held one. fut.cancelled() is True only when the future never
+            # ran, so this never double-releases against the finally path.
             if fut.cancelled():
                 with self._lock:
                     self._heavy_outstanding -= 1
@@ -178,6 +188,7 @@ class WorkScheduler:
                 "heavy_capacity": self.heavy_capacity,
                 "heavy_outstanding": self._heavy_outstanding,
                 "heavy_active": self._heavy_active,
+                "heavy_run_slots": max(0, self.heavy_workers - self._heavy_active),
                 "heavy_queued": queued,
                 "heavy_rejected": self._heavy_rejected,
                 "heavy_cancelled_waits": self._heavy_cancelled_waits,

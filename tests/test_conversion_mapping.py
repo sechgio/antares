@@ -199,7 +199,7 @@ def test_run_conversion_job_resolves_sep_placeholder(monkeypatch, tmp_path) -> N
     monkeypatch.setattr(conversion, "get_scheduler", lambda: scheduler)
     monkeypatch.setattr(conversion, "es_video", lambda _path: False)
     monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 10)
-    monkeypatch.setattr(conversion, "copiar_archivo", lambda src_path, out_path: copied.append((str(src_path), str(out_path))))
+    monkeypatch.setattr(conversion, "copiar_archivo", lambda src_path, out_path, **_kwargs: copied.append((str(src_path), str(out_path))))
     monkeypatch.setattr(conversion, "_notify_complete", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **_kwargs: None)
     monkeypatch.setattr(
@@ -274,7 +274,7 @@ def test_run_conversion_job_with_mapping_rename_only(monkeypatch, tmp_path) -> N
     monkeypatch.setattr(conversion, "get_scheduler", lambda: scheduler)
     monkeypatch.setattr(conversion, "es_video", lambda _path: False)
     monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 10)
-    monkeypatch.setattr(conversion, "copiar_archivo", lambda src_path, out_path: copied.append((str(src_path), str(out_path))))
+    monkeypatch.setattr(conversion, "copiar_archivo", lambda src_path, out_path, **_kwargs: copied.append((str(src_path), str(out_path))))
     monkeypatch.setattr(conversion, "_notify_complete", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **_kwargs: None)
 
@@ -322,7 +322,7 @@ def test_run_conversion_job_with_mapping_path_and_columns(monkeypatch, tmp_path)
     monkeypatch.setattr(conversion, "get_scheduler", lambda: scheduler)
     monkeypatch.setattr(conversion, "es_video", lambda _path: False)
     monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 10)
-    monkeypatch.setattr(conversion, "copiar_archivo", lambda src_path, out_path: copied.append((str(src_path), str(out_path))))
+    monkeypatch.setattr(conversion, "copiar_archivo", lambda src_path, out_path, **_kwargs: copied.append((str(src_path), str(out_path))))
     monkeypatch.setattr(conversion, "_notify_complete", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **_kwargs: None)
 

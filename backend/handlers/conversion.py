@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 import threading
 import time
 from collections.abc import Callable
-from concurrent.futures import ALL_COMPLETED, CancelledError, Future, wait
+from concurrent.futures import ALL_COMPLETED, CancelledError, Future, as_completed, wait
 from pathlib import Path
 from typing import Any, cast
 
@@ -560,10 +561,13 @@ def _run_conversion_job(job: Job) -> None:
             _emit_heartbeat(job_id, is_default)
 
             set_locale(params.get("locale", "es"))
+            job_t0 = time.perf_counter()
             files = params.get("files", [])
             destino = params.get("destino", "")
             formato = params.get("formato", "JPEG")
             calidad = params.get("calidad", 95)
+            # Opt-in Huffman optimize (default off — same quality, less encode CPU).
+            optimize_jpeg = bool(params.get("optimize_jpeg", False))
             conversion_enabled = params.get("conversion_enabled", True)
             resize_ancho = params.get("resize_ancho")
             resize_alto = params.get("resize_alto")
@@ -664,6 +668,23 @@ def _run_conversion_job(job: Job) -> None:
             ext_dest = FORMATOS_SOPORTADOS[formato]["ext"] if conversion_enabled else None
             total = len(files)
 
+            # Create destination once when possible; fall back to per-file mkdir.
+            ensure_dir_per_file = True
+            if destino:
+                try:
+                    Path(destino).mkdir(parents=True, exist_ok=True)
+                    ensure_dir_per_file = False
+                except OSError:
+                    logger.debug(
+                        "Could not pre-create destino=%s; using per-file ensure_dir",
+                        destino,
+                        exc_info=True,
+                    )
+            # Snapshot of existing basenames for O(1) collision checks (refreshed
+            # as we claim). Avoids N× path.exists() on the job thread.
+            # None means scandir failed → _claim_out_path uses exists() fallback.
+            disk_out_keys: set[str] | None = _scan_dest_out_keys(destino) if destino else set()
+
             completed = 0
 
             def _process_one(task: tuple[str, Path, bool]) -> tuple[bool, str, str]:
@@ -674,9 +695,18 @@ def _run_conversion_job(job: Job) -> None:
                         if state.cancel_requested:
                             raise CancelledError()
                     if is_video_file or not conversion_enabled:
-                        copiar_archivo(fpath, out_path)
+                        copiar_archivo(fpath, out_path, ensure_dir=ensure_dir_per_file)
                     else:
-                        convertir_imagen(fpath, out_path, formato, calidad, resize, keep_exif)
+                        convertir_imagen(
+                            fpath,
+                            out_path,
+                            formato,
+                            calidad,
+                            resize,
+                            keep_exif,
+                            optimize=optimize_jpeg,
+                            ensure_dir=ensure_dir_per_file,
+                        )
                     return (True, out_path.name, "")
                 except CancelledError:
                     raise
@@ -688,7 +718,6 @@ def _run_conversion_job(job: Job) -> None:
             cancelled = False
             _last_notify_time = 0.0
             _NOTIFY_INTERVAL = 0.5
-            _min_progress_delta = 1  # Minimum progress change to trigger notification (1%)
             futures: list = []
             # Track output paths across chunks so same-name collisions never overwrite.
             reserved_out_paths: set[str] = set()
@@ -697,6 +726,9 @@ def _run_conversion_job(job: Job) -> None:
             prefetched_raw: list[tuple[str, Path, bool]] | None = None
             prefetched_for_start: int | None = None
             submit_light = getattr(scheduler, "submit_light", None)
+            # Sliding window: keep at most heavy_capacity futures in flight so
+            # progress/cancel update while the rest of the chunk is still queued.
+            max_in_flight = max(1, int(getattr(scheduler, "heavy_capacity", 8) or 8))
 
             def _warn_dedupe(msg: str) -> None:
                 log_message(msg, "warn", state=state)
@@ -714,6 +746,59 @@ def _run_conversion_job(job: Job) -> None:
                     key_column=key_column,
                     mapping_index=mapping_index,
                 )
+
+            def _handle_completion(success: bool, name: str, error: str) -> None:
+                nonlocal completed, cancelled, _last_notify_time
+                with state._lock:
+                    if state.cancel_requested:
+                        cancelled = True
+                        return
+                completed += 1
+                with state._lock:
+                    if success:
+                        state.ok_count += 1
+                        log_message(
+                            f"{'Renombrado' if not conversion_enabled else 'Procesado'}: {name}",
+                            "ok",
+                            state=state,
+                        )
+                    else:
+                        state.err_count += 1
+                        log_message(
+                            t("error.process_failed", file=name, error=error),
+                            "error",
+                            state=state,
+                        )
+                    state.progress = int((completed / total) * 100)
+                    state.current_file = name
+                    progress = state.progress
+                    current_file = state.current_file
+                    ok_count = state.ok_count
+                    err_count = state.err_count
+
+                now = time.time()
+                is_last = completed == total
+                # Interval + first + last only (no OR on 1% that flooded stdio).
+                should_notify = (
+                    is_last
+                    or _last_notify_time == 0.0
+                    or (now - _last_notify_time >= _NOTIFY_INTERVAL)
+                )
+                if should_notify:
+                    _last_notify_time = now
+                    notif_data = {
+                        "progress": progress,
+                        "current_file": current_file,
+                        "ok_count": ok_count,
+                        "err_count": err_count,
+                        "job_id": job_id,
+                    }
+                    _emit_progress_notifications(job_id, notif_data, is_default)
+
+                with state._lock:
+                    if state.cancel_requested and not cancelled:
+                        cancelled = True
+                        log_message(t("info.process_cancelled"), "warn", state=state)
 
             try:
                 for chunk_start in range(0, len(files), CHUNK_SIZE):
@@ -734,9 +819,19 @@ def _run_conversion_job(job: Job) -> None:
                         reserved_out_paths,
                         job_id=job_id,
                         log=_warn_dedupe,
+                        disk_keys=disk_out_keys,
                     )
+
+                    task_queue = list(chunk_tasks)
+                    in_flight: dict[Future, None] = {}
                     futures = []
-                    for task in chunk_tasks:
+
+                    def _submit_one() -> bool:
+                        """Submit next task; return False if cancelled via None future."""
+                        nonlocal cancelled
+                        if not task_queue:
+                            return True
+                        task = task_queue.pop(0)
                         future = scheduler.submit_heavy(
                             _process_one,
                             task,
@@ -745,13 +840,20 @@ def _run_conversion_job(job: Job) -> None:
                         )
                         if future is None:
                             cancelled = True
-                            break
+                            return False
+                        in_flight[future] = None
                         futures.append(future)
+                        return True
+
+                    # Seed window so heavy work starts before we wait on results.
+                    while len(in_flight) < max_in_flight and task_queue:
+                        if not _submit_one():
+                            break
 
                     if cancelled:
-                        for future in futures:
+                        for future in list(in_flight):
                             future.cancel()
-                        wait(futures, timeout=_CANCEL_GRACE_SECONDS, return_when=ALL_COMPLETED)
+                        wait(list(in_flight), timeout=_CANCEL_GRACE_SECONDS, return_when=ALL_COMPLETED)
                         break
 
                     with state._lock:
@@ -759,9 +861,9 @@ def _run_conversion_job(job: Job) -> None:
                             cancelled = True
                             log_message(t("info.process_cancelled"), "warn", state=state)
                     if cancelled:
-                        for future in futures:
+                        for future in list(in_flight):
                             future.cancel()
-                        wait(futures, timeout=_CANCEL_GRACE_SECONDS, return_when=ALL_COMPLETED)
+                        wait(list(in_flight), timeout=_CANCEL_GRACE_SECONDS, return_when=ALL_COMPLETED)
                         break
 
                     # Kick off prepare for the next chunk while this chunk converts.
@@ -780,55 +882,39 @@ def _run_conversion_job(job: Job) -> None:
                             logger.debug("Chunk prefetch submit_light failed; will prepare sync", exc_info=True)
                             prefetch_future = None
 
-                    for future in futures:
-                        if future.cancelled():
-                            continue
-                        try:
-                            success, name, error = future.result()
-                        except CancelledError:
-                            continue
+                    while in_flight:
+                        # as_completed for real Futures; sync test doubles finish in submit.
+                        if all(isinstance(f, Future) for f in in_flight):
+                            done_fut = next(as_completed(list(in_flight.keys())))
+                        else:
+                            done_fut = next(iter(in_flight))
+                        in_flight.pop(done_fut, None)
+                        if not done_fut.cancelled():
+                            try:
+                                success, name, error = done_fut.result()
+                            except CancelledError:
+                                pass
+                            else:
+                                _handle_completion(success, name, error)
+
                         with state._lock:
                             if state.cancel_requested:
                                 cancelled = True
-                                continue
-                        completed += 1
-                        with state._lock:
-                            if success:
-                                state.ok_count += 1
-                                log_message(f"{'Renombrado' if not conversion_enabled else 'Procesado'}: {name}", "ok", state=state)
-                            else:
-                                state.err_count += 1
-                                log_message(t("error.process_failed", file=name, error=error), "error", state=state)
-                            old_progress = state.progress
-                            state.progress = int((completed / total) * 100)
-                            state.current_file = name
-                            progress = state.progress
-                            current_file = state.current_file
-                            ok_count = state.ok_count
-                            err_count = state.err_count
-                            progress_delta = progress - old_progress
 
-                        now = time.time()
-                        is_last = completed == total
-                        # Adaptive throttling: notify if enough time passed OR significant progress change
-                        should_notify = is_last or (now - _last_notify_time >= _NOTIFY_INTERVAL) or (progress_delta >= _min_progress_delta)
-                        if should_notify:
-                            _last_notify_time = now
-                            notif_data = {
-                                "progress": progress, "current_file": current_file,
-                                "ok_count": ok_count, "err_count": err_count,
-                                "job_id": job_id,
-                            }
-                            _emit_progress_notifications(job_id, notif_data, is_default)
-
-                        # Check cancellation between completions
-                        with state._lock:
-                            if state.cancel_requested and not cancelled:
-                                cancelled = True
-                                log_message(t("info.process_cancelled"), "warn", state=state)
                         if cancelled:
-                            for pending in futures:
+                            for pending in list(in_flight):
                                 pending.cancel()
+                            task_queue.clear()
+                            break
+
+                        while len(in_flight) < max_in_flight and task_queue and not cancelled:
+                            if not _submit_one():
+                                break
+
+                        if cancelled:
+                            for pending in list(in_flight):
+                                pending.cancel()
+                            task_queue.clear()
                             break
 
                     # Resolve prefetch after the current chunk's heavy work (or cancel).
@@ -870,12 +956,14 @@ def _run_conversion_job(job: Job) -> None:
             from backend.core.history import save_run
             rename_source = "mapping" if mapping_index else ("catalog" if key_column else "none")
             sequence_mode = _resolve_sequence_mode(params)
+            duration_ms = int((time.perf_counter() - job_t0) * 1000)
             try:
                 save_run(
                     files=[str(f) for f in files],
                     options={
                         "formato": formato,
                         "calidad": calidad,
+                        "optimize_jpeg": optimize_jpeg,
                         "conversion_enabled": conversion_enabled,
                         "resize": str(resize) if resize else None,
                         "keep_exif": keep_exif,
@@ -897,6 +985,7 @@ def _run_conversion_job(job: Job) -> None:
                     },
                     patron=patron, formato=formato, calidad=calidad,
                     resize=str(resize) if resize else None, ok_count=ok_count, err_count=err_count,
+                    duration_ms=duration_ms,
                 )
             except Exception:
                 logger.exception("Failed to save conversion history for job %s", job_id)
@@ -1025,16 +1114,49 @@ HANDLERS = {
 
 
 def _calculate_chunk_size() -> int:
-    """Choose an adaptive chunk size without materializing the full batch."""
+    """Choose an adaptive chunk size without materializing the full batch.
+
+    Caps by ``heavy_capacity * 4`` so huge RAM machines do not pick C=1000
+    when the scheduler can only run a handful of heavy tasks at once (progress
+    valleys + futures bloat).
+    """
+    size = 500
     if psutil is not None:
         try:
             available_gb = psutil.virtual_memory().available / (1024 ** 3)
             target_ram_per_chunk = available_gb * 0.25
             chunk_size = int((target_ram_per_chunk * 1024) / 5)
-            return max(50, min(chunk_size, 1000))
+            size = max(50, min(chunk_size, 1000))
         except Exception:
-            return 500
-    return 500
+            size = 500
+    try:
+        cap = int(getattr(get_scheduler(), "heavy_capacity", 0) or 0)
+        if cap > 0:
+            size = min(size, max(50, cap * 4))
+    except Exception:
+        pass
+    return size
+
+
+def _scan_dest_out_keys(destino: str | Path) -> set[str] | None:
+    """Return normalized out-path keys for names already present in ``destino``.
+
+    Returns an empty set when the directory does not exist yet. Returns
+    ``None`` when the scan fails for other OS errors so callers fall back to
+    per-path ``exists()`` instead of treating the destination as empty.
+    """
+    dest = Path(destino)
+    keys: set[str] = set()
+    try:
+        with os.scandir(dest) as entries:
+            for entry in entries:
+                keys.add(_out_path_key(dest / entry.name))
+    except FileNotFoundError:
+        return keys
+    except OSError:
+        logger.debug("scandir failed for destino=%s; falling back to exists()", dest, exc_info=True)
+        return None
+    return keys
 
 
 def _prepare_chunk_tasks(
@@ -1128,17 +1250,26 @@ def _claim_out_path(
     reserved: set[str],
     *,
     job_id: str | None = None,
+    disk_keys: set[str] | None = None,
 ) -> bool:
     """Try to claim ``path`` for this batch (and optionally cross-job).
 
     Returns False if already reserved in-batch, on disk, or held by another job.
+    When ``disk_keys`` is provided, membership replaces per-call ``path.exists()``.
     """
     key = _out_path_key(path)
-    if key in reserved or path.exists():
+    if key in reserved:
+        return False
+    if disk_keys is not None:
+        if key in disk_keys:
+            return False
+    elif path.exists():
         return False
     if job_id is not None and not get_job_manager().try_reserve_out_path(job_id, key):
         return False
     reserved.add(key)
+    if disk_keys is not None:
+        disk_keys.add(key)
     return True
 
 
@@ -1148,6 +1279,7 @@ def _dedupe_chunk_out_paths(
     *,
     job_id: str | None = None,
     log: Callable[[str], None] | None = None,
+    disk_keys: set[str] | None = None,
 ) -> list[tuple[str, Path, bool]]:
     """Ensure each task writes to a unique path within the batch and on disk.
 
@@ -1156,13 +1288,15 @@ def _dedupe_chunk_out_paths(
     (``name-2.ext``) preserves both files without changing unique renames.
     Also avoids overwriting pre-existing files from a previous run, and paths
     reserved by a concurrent conversion job targeting the same destino.
+
+    Prefer a pre-scanned ``disk_keys`` set (updated on claim) over N× ``exists``.
     """
     if not tasks:
         return tasks
 
     result: list[tuple[str, Path, bool]] = []
     for fpath, out_path, is_video_file in tasks:
-        if _claim_out_path(out_path, reserved, job_id=job_id):
+        if _claim_out_path(out_path, reserved, job_id=job_id, disk_keys=disk_keys):
             result.append((fpath, out_path, is_video_file))
             continue
 
@@ -1174,7 +1308,7 @@ def _dedupe_chunk_out_paths(
         attempts = 0
         claimed = False
         while attempts < _MAX_OUT_PATH_DEDUP_ATTEMPTS:
-            if _claim_out_path(candidate, reserved, job_id=job_id):
+            if _claim_out_path(candidate, reserved, job_id=job_id, disk_keys=disk_keys):
                 claimed = True
                 break
             n += 1
@@ -1184,9 +1318,13 @@ def _dedupe_chunk_out_paths(
             # Best-effort pin after exhausting attempts (same as prior behavior).
             key = _out_path_key(candidate)
             reserved.add(key)
+            if disk_keys is not None:
+                disk_keys.add(key)
             if job_id is not None:
                 get_job_manager().try_reserve_out_path(job_id, key)
         if log is not None:
+            # exists() only on the rare collision path (keeps log accurate vs
+            # disk_keys which also tracks newly claimed not-yet-written paths).
             reason = "ya existe en disco" if out_path.exists() else "ya reservado"
             log(
                 f"Colisión de salida: '{out_path.name}' {reason}; "

@@ -83,19 +83,42 @@ def test_dedupe_is_case_insensitive() -> None:
     assert _out_path_key(result[0][1]) == _out_path_key(Path("out/photo.jpg"))
 
 
-def test_dedupe_suffixes_when_destination_exists_on_disk(tmp_path) -> None:
+def test_dedupe_falls_back_to_exists_when_disk_keys_is_none(tmp_path) -> None:
+    """disk_keys=None must keep path.exists() anti-overwrite behavior."""
     existing = tmp_path / "a.jpg"
     existing.write_bytes(b"old")
-    tasks = [
-        ("src/new.jpg", tmp_path / "a.jpg", False),
-    ]
-    logs: list[str] = []
     reserved: set[str] = set()
-    result = _dedupe_chunk_out_paths(tasks, reserved, log=logs.append)
+    result = _dedupe_chunk_out_paths(
+        [("src/new.jpg", tmp_path / "a.jpg", False)],
+        reserved,
+        disk_keys=None,
+    )
     assert result[0][1] == tmp_path / "a-2.jpg"
-    assert existing.exists()
     assert existing.read_bytes() == b"old"
-    assert logs and "existe en disco" in logs[0]
+
+
+def test_dedupe_uses_disk_keys_without_exists(tmp_path, monkeypatch) -> None:
+    """Pre-scanned disk_keys must block claims without calling path.exists()."""
+    existing = tmp_path / "a.jpg"
+    existing.write_bytes(b"old")
+    keys = {_out_path_key(existing)}
+    exists_calls = {"n": 0}
+    real_exists = Path.exists
+
+    def counting_exists(self):  # type: ignore[no-untyped-def]
+        exists_calls["n"] += 1
+        return real_exists(self)
+
+    monkeypatch.setattr(Path, "exists", counting_exists)
+    reserved: set[str] = set()
+    result = _dedupe_chunk_out_paths(
+        [("src/new.jpg", tmp_path / "a.jpg", False)],
+        reserved,
+        disk_keys=keys,
+    )
+    assert result[0][1] == tmp_path / "a-2.jpg"
+    assert _out_path_key(tmp_path / "a-2.jpg") in keys
+    assert exists_calls["n"] == 0
 
 
 def test_dedupe_spans_chunks_via_shared_reserved_set() -> None:

@@ -12,7 +12,12 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from backend.core.converter import _build_save_kwargs, convertir_a_preview, convertir_imagen
+from backend.core.converter import (
+    _build_save_kwargs,
+    convertir_a_preview,
+    convertir_imagen,
+    copiar_archivo,
+)
 from backend.core.format_registry import get_registry
 
 
@@ -35,9 +40,15 @@ def imagen_rgba(tmp_path):
 
 
 class TestBuildSaveKwargs:
-    def test_jpeg_high_quality_includes_optimize(self) -> None:
+    def test_jpeg_high_quality_omits_optimize_by_default(self) -> None:
         img = Image.new("RGB", (10, 10))
         kwargs = _build_save_kwargs("JPEG", 95, False, img)
+        assert kwargs == {"quality": 95}
+        assert "optimize" not in kwargs
+
+    def test_jpeg_optimize_true_includes_optimize(self) -> None:
+        img = Image.new("RGB", (10, 10))
+        kwargs = _build_save_kwargs("JPEG", 95, False, img, optimize=True)
         assert kwargs == {"quality": 95, "optimize": True}
 
     def test_webp_high_quality_omits_optimize(self) -> None:
@@ -166,6 +177,47 @@ class TestConvertirImagen:
         src, dst = replace_calls[0]
         assert Path(src).name == "atomic.jpg.tmp"
         assert Path(dst) == salida
+
+    def test_ensure_dir_false_writes_when_parent_exists(self, imagen_rgb, tmp_path, monkeypatch) -> None:
+        """With ensure_dir=False, skip mkdir but still write if parent exists."""
+        out_dir = tmp_path / "already_there"
+        out_dir.mkdir()
+        salida = out_dir / "out.jpg"
+
+        mkdir_calls: list[Path] = []
+        real_mkdir = Path.mkdir
+
+        def tracking_mkdir(self, *args, **kwargs):
+            mkdir_calls.append(self)
+            return real_mkdir(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "mkdir", tracking_mkdir)
+
+        resultado = convertir_imagen(imagen_rgb, salida, "JPEG", ensure_dir=False)
+        assert resultado == salida
+        assert salida.exists()
+        assert salida.parent not in mkdir_calls
+
+
+class TestCopiarArchivo:
+    def test_ensure_dir_false_skips_mkdir(self, imagen_rgb, tmp_path, monkeypatch) -> None:
+        out_dir = tmp_path / "copy_dest"
+        out_dir.mkdir()
+        destino = out_dir / "copied.png"
+
+        mkdir_calls: list[Path] = []
+        real_mkdir = Path.mkdir
+
+        def tracking_mkdir(self, *args, **kwargs):
+            mkdir_calls.append(self)
+            return real_mkdir(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "mkdir", tracking_mkdir)
+
+        resultado = copiar_archivo(imagen_rgb, destino, ensure_dir=False)
+        assert resultado == destino
+        assert destino.exists()
+        assert destino.parent not in mkdir_calls
 
 
 class TestConvertirAPreview:

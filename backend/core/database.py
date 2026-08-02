@@ -104,7 +104,13 @@ def _table_matches_config(cursor: sqlite3.Cursor, fields: list[dict[str, Any]]) 
 
 
 def _create_indexes(cursor: sqlite3.Cursor, fields: list[dict[str, Any]]) -> None:
-    """Create indexes on all queryable fields to avoid full-table scans."""
+    """Create indexes on all queryable fields to avoid full-table scans.
+
+    Also creates expression indexes on ``lower(col)`` so case-insensitive
+    lookups (``WHERE lower(col) IN (...)``) can use an index instead of a
+    full scan. Plain UNIQUE indexes stay on the raw column (case-sensitive
+    uniqueness); lower() indexes are always non-unique.
+    """
     if not fields:
         return
 
@@ -113,6 +119,11 @@ def _create_indexes(cursor: sqlite3.Cursor, fields: list[dict[str, Any]]) -> Non
         unique_clause = "UNIQUE" if f.get("unique") else ""
         cursor.execute(
             f"CREATE {unique_clause} INDEX IF NOT EXISTS idx_imagenes_{name} ON imagenes({_qi(name)})"
+        )
+        # Expression index matching buscar_* queries: lower(col) IN (...)
+        cursor.execute(
+            f"CREATE INDEX IF NOT EXISTS idx_imagenes_lower_{name} "
+            f"ON imagenes(lower({_qi(name)}))"
         )
 
 
