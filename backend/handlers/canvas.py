@@ -93,17 +93,20 @@ def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
     )
     pdf_bytes = renderer.render(local_image_paths=local_image_paths)
 
-    saved_path: str | None = None
     if output_path:
         out = Path(output_path)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(pdf_bytes)
-        saved_path = str(out)
+        # Mirror formatos/sellador: skip Base64 when writing to disk so large
+        # CMYK PDFs do not bounce through the 64 MB JSON-RPC IPC ceiling.
+        return {
+            "filename": out.name,
+            "saved_path": str(out),
+        }
 
     encoded = base64.b64encode(pdf_bytes).decode("ascii")
     return {
         "filename": filename,
-        "saved_path": saved_path,
         "pdf_base64": encoded,
     }
 

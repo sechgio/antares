@@ -179,8 +179,30 @@ def test_canvas_export_cmyk_pdf_handler():
 
     assert "pdf_base64" in res
     assert "filename" in res
+    assert "saved_path" not in res
     decoded = base64.b64decode(res["pdf_base64"])
     assert decoded.startswith(b"%PDF")
+
+
+def test_canvas_export_cmyk_pdf_writes_to_output_path_without_base64(tmp_path):
+    doc = create_empty_document(name="IPC Disk Doc")
+    output_path = tmp_path / "canvas_out.pdf"
+    res = canvas_export_cmyk_pdf(
+        {
+            "document": doc,
+            "color_profile": "cmyk_iso_coated_v2",
+            "bleed_mm": 3.0,
+            "show_crop_marks": True,
+            "outputPath": str(output_path),
+            "filename": "ignored_when_path_set.pdf",
+        }
+    )
+
+    assert res["saved_path"] == str(output_path)
+    assert res["filename"] == "canvas_out.pdf"
+    assert "pdf_base64" not in res
+    assert output_path.exists()
+    assert output_path.read_bytes().startswith(b"%PDF")
 
 
 def _page0_contents(pdf_bytes: bytes) -> bytes:

@@ -1,7 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_BATCH_SETTINGS } from './presets';
 import { BatchSettings, ImageItem } from './types';
-import { arrayBufferToBase64, buildDownloadNameMap, buildExportNameMap, buildZipFilename, previewFilenames, resolveExportFilename, reorderImageItems } from './utils';
+import {
+  arrayBufferToBase64,
+  buildDownloadNameMap,
+  buildExportNameMap,
+  buildZipFilename,
+  previewFilenames,
+  resolveExportFilename,
+  reorderImageItems,
+  SAVE_CHUNK_SIZE,
+  saveEntriesInChunks,
+} from './utils';
 
 function makeItem(id: string, originalName: string): ImageItem {
   return {
@@ -154,5 +164,75 @@ describe('arrayBufferToBase64', () => {
     const decoded = Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0));
     expect(decoded.length).toBe(bytes.length);
     expect(decoded.every((value, index) => value === bytes[index])).toBe(true);
+  });
+});
+
+describe('saveEntriesInChunks', () => {
+  function makeEntries(count: number) {
+    return Array.from({ length: count }, (_, i) => ({
+      filename: `foto_${String(i + 1).padStart(3, '0')}.jpg`,
+      blob: new Blob([`pixel-${i}`], { type: 'image/jpeg' }),
+    }));
+  }
+
+  it(`splits IPC calls when the batch exceeds SAVE_CHUNK_SIZE (${SAVE_CHUNK_SIZE})`, async () => {
+    const saveFiles = vi.fn(async ({ files }) => ({
+      saved_count: files.length,
+      skipped_count: 0,
+    }));
+    const progress: Array<[number, number]> = [];
+    const total = SAVE_CHUNK_SIZE + 3;
+
+    const result = await saveEntriesInChunks({
+      entries: makeEntries(total),
+      outputFolder: 'C:\\out',
+      saveFiles,
+      onProgress: (current, t) => progress.push([current, t]),
+      encodeBuffer: () => 'YQ==',
+    });
+
+    expect(saveFiles).toHaveBeenCalledTimes(2);
+    expect(saveFiles.mock.calls[0][0].files).toHaveLength(SAVE_CHUNK_SIZE);
+    expect(saveFiles.mock.calls[1][0].files).toHaveLength(3);
+    expect(result).toEqual({ saved_count: total, skipped_count: 0, cancelled: false });
+    expect(progress.at(-1)).toEqual([total, total]);
+  });
+
+  it('aggregates saved and skipped counts across chunks', async () => {
+    const saveFiles = vi
+      .fn()
+      .mockResolvedValueOnce({ saved_count: 2, skipped_count: 1 })
+      .mockResolvedValueOnce({ saved_count: 1, skipped_count: 0 });
+
+    const result = await saveEntriesInChunks({
+      entries: makeEntries(3),
+      outputFolder: '/tmp/out',
+      chunkSize: 2,
+      saveFiles,
+      encodeBuffer: () => 'YQ==',
+    });
+
+    expect(result).toEqual({ saved_count: 3, skipped_count: 1, cancelled: false });
+  });
+
+  it('stops before the next IPC call when shouldCancel becomes true', async () => {
+    let cancelAfterFirstChunk = false;
+    const saveFiles = vi.fn(async ({ files }) => {
+      cancelAfterFirstChunk = true;
+      return { saved_count: files.length, skipped_count: 0 };
+    });
+
+    const result = await saveEntriesInChunks({
+      entries: makeEntries(5),
+      outputFolder: '/tmp/out',
+      chunkSize: 2,
+      saveFiles,
+      shouldCancel: () => cancelAfterFirstChunk,
+      encodeBuffer: () => 'YQ==',
+    });
+
+    expect(saveFiles).toHaveBeenCalledTimes(1);
+    expect(result.cancelled).toBe(true);
+    expect(result.saved_count).toBe(2);
   });
 });
