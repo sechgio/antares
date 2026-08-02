@@ -178,13 +178,15 @@ describe('useCanvasHistory gesture coalesce', () => {
     expect(result.current.canRedo).toBe(true);
     expect(result.current.past.length).toBe(MAX_HISTORY);
     expect(result.current.future.length).toBe(1);
-    // Restored undo history must not mark the document unsaved.
+    // Restored undo history alone must not mark the document unsaved.
     expect(result.current.hasUnsavedEditsRef.current).toBe(false);
 
     act(() => {
       result.current.undo();
     });
 
+    // Performing undo after restore diverges from the saved open doc.
+    expect(result.current.hasUnsavedEditsRef.current).toBe(true);
     expect(parseMm(result.current.document.layers.find((l) => l.type === 'text')!.cssVars['--translate-x'])).toBe(
       35,
     );
@@ -269,6 +271,46 @@ describe('useCanvasHistory gesture coalesce', () => {
     // Post-save with restored undo stack: canUndo may be true, unsaved must be false.
     expect(result.current.canUndo).toBe(true);
     expect(result.current.hasUnsavedEditsRef.current).toBe(false);
+
+    act(() => {
+      result.current.undo();
+    });
+    // Undo after save must mark dirty so cloud sync does not clobber memory.
+    expect(result.current.hasUnsavedEditsRef.current).toBe(true);
+
+    act(() => {
+      result.current.markSaved();
+    });
+    expect(result.current.hasUnsavedEditsRef.current).toBe(false);
+  });
+
+  it('marks unsaved on redo after undo', () => {
+    const base = createEmptyDocument('Test');
+    const text = createLayer('text');
+    text.cssVars['--translate-x'] = '0mm';
+    base.layers.push(text);
+
+    const { result } = renderHook(() => useCanvasHistory(base));
+    act(() => {
+      result.current.setDocument(withMovedText(result.current.document, 10));
+    });
+    act(() => {
+      result.current.markSaved();
+    });
+    expect(result.current.hasUnsavedEditsRef.current).toBe(false);
+
+    act(() => {
+      result.current.undo();
+    });
+    expect(result.current.hasUnsavedEditsRef.current).toBe(true);
+
+    act(() => {
+      result.current.markSaved();
+    });
+    act(() => {
+      result.current.redo();
+    });
+    expect(result.current.hasUnsavedEditsRef.current).toBe(true);
   });
 
   it('marks unsaved on commitFromBaseline', () => {

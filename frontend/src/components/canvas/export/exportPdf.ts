@@ -1,6 +1,7 @@
 import { api } from '../../../api';
-import type { CanvasDocument } from '../types';
-import { renderMultiPageHtmlAsync } from '../ops/pages';
+import type { CanvasDocument, CanvasLayer } from '../types';
+import { newId } from '../types';
+import { planMultiPageRender, renderMultiPageHtmlAsync } from '../ops/pages';
 import { mergeCanvasHtmlDocuments, type FillContext } from '../runtime/renderHtml';
 
 /** Yield to the event loop so large bulk exports do not freeze the UI. */
@@ -29,13 +30,53 @@ export interface ExportCanvasPdfOptions {
   showCropMarks?: boolean;
 }
 
+/**
+ * Expand each FillContext via planMultiPageRender into a flat document where
+ * pageIndex 0..N-1 aligns 1:1 with contexts (pair_context_pages on the backend).
+ */
+function expandCmykDocument(
+  document: CanvasDocument,
+  contexts: FillContext[],
+): { document: CanvasDocument; contexts: FillContext[] } {
+  const pages: Array<{ id: string; name: string }> = [];
+  const layers: CanvasLayer[] = [];
+  const paired: FillContext[] = [];
+  let pageIndex = 0;
+
+  for (const raw of contexts) {
+    const ctx: FillContext = {
+      data: raw.data ?? {},
+      images: raw.images ?? [],
+      logoLeft: raw.logoLeft ?? null,
+      logoRight: raw.logoRight ?? null,
+      imageMeta: raw.imageMeta,
+    };
+    const plan = planMultiPageRender(document, ctx);
+    for (const { pageDoc, pageCtx } of plan) {
+      pages.push({ id: newId(), name: `Página ${pageIndex + 1}` });
+      for (const layer of pageDoc.layers) {
+        layers.push({ ...layer, pageIndex });
+      }
+      paired.push(pageCtx);
+      pageIndex += 1;
+    }
+  }
+
+  return {
+    document: { ...document, pages, layers },
+    contexts: paired,
+  };
+}
+
 export async function exportCanvasPdf(
   options: ExportCanvasPdfOptions,
 ): Promise<{ saved_path?: string; filename: string; pdf_base64?: string }> {
   if (options.colorMode === 'cmyk') {
+    const expanded = expandCmykDocument(options.document, options.contexts);
     return api.canvasExportCmykPdf({
-      document: options.document,
-      contexts: options.contexts,
+      document: expanded.document,
+      contexts: expanded.contexts,
+      pair_context_pages: true,
       color_profile: options.colorProfile || 'cmyk_iso_coated_v2',
       dpi: options.dpi || 300,
       bleed_mm: options.bleedMm || 0.0,
@@ -62,4 +103,3 @@ export async function exportCanvasPdf(
     localImagePaths: options.localImagePaths,
   });
 }
-

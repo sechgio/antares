@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef } from 'react';
+import { Fragment, useEffect, useRef, type ComponentType } from 'react';
 import {
   ArrowDownToLine,
   ArrowUpToLine,
@@ -6,8 +6,6 @@ import {
   ChevronDown,
   ClipboardPaste,
   Copy,
-  Eye,
-  EyeOff,
   Group,
   Layers,
   LayoutGrid,
@@ -17,6 +15,7 @@ import {
   Ungroup,
   Unlock,
 } from 'lucide-react';
+import { Eye, EyeSlash } from './VisibilityIcon';
 
 export type CanvasContextAction =
   | 'edit'
@@ -62,7 +61,7 @@ interface MenuItem {
   id: CanvasContextAction;
   label: string;
   tip?: string;
-  icon: typeof Copy;
+  icon: ComponentType<{ className?: string; size?: string | number }>;
   danger?: boolean;
   disabled?: boolean;
   /** Render a group separator above this item. */
@@ -135,7 +134,7 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
     {
       id: 'toggleVisible',
       label: menu.visible ? 'Ocultar' : 'Mostrar',
-      icon: menu.visible ? EyeOff : Eye,
+      icon: menu.visible ? EyeSlash : Eye,
       disabled: !hasLayer,
     },
     {

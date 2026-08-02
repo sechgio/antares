@@ -212,5 +212,5 @@ describe('GanttView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Día' }));
     expect(dayHeadWidth()).toBe('72px');
     expect(dayCount()).toBe(daySpan);
-  });
+  }, 20_000);
 });

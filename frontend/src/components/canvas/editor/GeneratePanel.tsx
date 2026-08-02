@@ -4,6 +4,7 @@ import type { PdfQuality } from '../../../utils/pdfAssets';
 import { imageToPdfSource } from '../../../utils/pdfAssets';
 import type { CanvasDocument, CanvasDocumentSummary } from '../types';
 import { A4_HEIGHT_PX, A4_WIDTH_PX, normalizeDocument } from '../types';
+import { collectDemoFieldKeys } from '../runtime/demoFill';
 import { buildRowData, matchesRecordId, naturalSortByName, parseSpreadsheetFile } from '../runtime/excel';
 import { type FillContext } from '../runtime/renderHtml';
 import { planMultiPageDocuments, renderMultiPageHtml } from '../ops/pages';
@@ -17,8 +18,12 @@ const PAGE_STACK_GAP_PX = 24;
 
 interface GeneratePanelProps {
   document: CanvasDocument;
-  /** When true, cloud sync must not delete/overwrite this open design doc. */
-  openDirty?: boolean;
+  /**
+   * Unused on mount: Generar only lists via canvasList.
+   * Shell focus sync (useCanvasSync) already covers cloud pull — do not call here.
+   * Kept optional so CanvasView can keep passing it without a pull on open.
+   */
+  runCloudSync?: () => Promise<void>;
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -32,13 +37,8 @@ function readFileAsDataUrl(file: File): Promise<string> {
 
 export default function GeneratePanel({
   document: designDocument,
-  openDirty = false,
 }: GeneratePanelProps) {
   const previewRef = useRef<PreviewViewportHandle>(null);
-  const openDocIdRef = useRef(designDocument.id);
-  const openDirtyRef = useRef(openDirty);
-  openDocIdRef.current = designDocument.id;
-  openDirtyRef.current = openDirty;
 
   const [docs, setDocs] = useState<CanvasDocumentSummary[]>([]);
   const [externalDoc, setExternalDoc] = useState<CanvasDocument | null>(null);
@@ -78,12 +78,7 @@ export default function GeneratePanel({
     let cancelled = false;
     void (async () => {
       try {
-        const { syncCanvasDocuments } = await import('../sync/canvasCloudSync');
-        await syncCanvasDocuments({
-          openDocumentId: openDocIdRef.current,
-          openDirty: openDirtyRef.current,
-        });
-        if (cancelled) return;
+        // List only — shell focus sync already covers cloud; do not pull here.
         const res = await api.canvasList();
         if (!cancelled) setDocs(res.documents);
       } catch {
@@ -95,12 +90,10 @@ export default function GeneratePanel({
     };
   }, []);
 
-  const fieldKeys = useMemo(() => {
-    const fromLayers = templateDoc.layers
-      .filter((l) => l.type === 'field' && l.meta?.key)
-      .map((l) => l.meta!.key!);
-    return [...new Set(fromLayers)];
-  }, [templateDoc.layers]);
+  const fieldKeys = useMemo(
+    () => collectDemoFieldKeys(templateDoc),
+    [templateDoc],
+  );
 
   const layerCount = templateDoc.layers.filter((l) => l.type !== 'frame').length;
   const templateValid = layerCount > 0;
@@ -172,7 +165,8 @@ export default function GeneratePanel({
             if (s.token && s.localPath) localImagePaths[s.token] = s.localPath;
           }
         }
-        contexts.push({ data, images: urls, logoLeft, logoRight });
+        const imageMeta = matched.map((f) => ({ name: f.name }));
+        contexts.push({ data, images: urls, logoLeft, logoRight, imageMeta });
       }
       return { contexts, localImagePaths };
     },

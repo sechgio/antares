@@ -35,28 +35,27 @@ describe('planMultiPageRender photo pagination', () => {
     expect(plan[2]!.pageCtx.images).toHaveLength(1);
   });
 
-  it('falls back to settings when page 0 has no slots', () => {
+  it('skips cover without slots; chunks land on first slot page', () => {
     const doc = createEmptyDocument('Cover');
     doc.pages = [
       { id: newId(), name: 'Portada' },
       { id: newId(), name: 'Fotos' },
     ];
+    // settings.imagesPerPage must be ignored when the doc has imageSlots.
     doc.settings = { imagesPerPage: 2 };
     doc.layers = [
       { ...doc.layers[0]!, pageIndex: 0 },
       ...Array.from({ length: 4 }, (_, i) => slot(1, i)),
     ];
     const plan = planMultiPageRender(doc, ctx(5));
-    // Settings capacity 2 → 3 pages; no silent loss of the first chunk onto a slot-less page.
+    // Cover (empty) + chunk of 4 + chunk of 1 — never assign a chunk to the cover.
     expect(plan).toHaveLength(3);
-    expect(plan.every((p) => p.pageCtx.images.length <= 2)).toBe(true);
-    expect(plan.flatMap((p) => p.pageCtx.images)).toEqual([
-      'img-0',
-      'img-1',
-      'img-2',
-      'img-3',
-      'img-4',
-    ]);
+    expect(plan[0]!.pageCtx.images).toEqual([]);
+    expect(plan[0]!.pageDoc.layers.every((l) => l.type !== 'imageSlot')).toBe(true);
+    expect(plan[1]!.pageCtx.images).toEqual(['img-0', 'img-1', 'img-2', 'img-3']);
+    expect(plan[1]!.pageDoc.layers.filter((l) => l.type === 'imageSlot')).toHaveLength(4);
+    expect(plan[2]!.pageCtx.images).toEqual(['img-4']);
+    expect(plan[2]!.pageDoc.layers.filter((l) => l.type === 'imageSlot')).toHaveLength(4);
   });
 
   it('uses settings.imagesPerPage when template has no slots', () => {

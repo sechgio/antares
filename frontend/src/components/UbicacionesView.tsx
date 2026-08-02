@@ -496,7 +496,7 @@ export const UbicacionesView: React.FC = () => {
           const respFormato = r.data?.formato;
           if (respFormato && respFormato !== currentFormato) return;
           if (r.data?.image_path) {
-            registerLocalPath(r.data.image_path);
+            await registerLocalPath(r.data.image_path);
           }
           setPreview(r.data ?? null);
           hasPreviewRef.current = !!r.data;
@@ -651,7 +651,7 @@ export const UbicacionesView: React.FC = () => {
   }, []);
 
   const loadExcelFile = useCallback(
-    (file: File) => {
+    async (file: File) => {
       const path = window.electronAPI?.getPathForFile?.(file) || '';
       if (!path) {
         setExcelFile(null);
@@ -666,7 +666,7 @@ export const UbicacionesView: React.FC = () => {
         });
         return;
       }
-      registerLocalPath(path);
+      await registerLocalPath(path);
       setExcelFile(file);
       setResult(null);
       setPreview(null);
@@ -749,7 +749,7 @@ export const UbicacionesView: React.FC = () => {
           setResult({ success: false, error: 'No se pudo resolver la ruta del archivo Excel.' });
           return;
         }
-        registerLocalPath(path);
+        await registerLocalPath(path);
       }
 
       const {

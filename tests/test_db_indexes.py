@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from backend.core.config_fields import get_field_names
 from backend.core.database import get_db_path, init_db
 
 
@@ -18,7 +19,12 @@ def test_indexes_created() -> None:
         explicit_indexes = [idx for idx in indexes if not idx[1].startswith("sqlite_autoindex")]
         assert len(explicit_indexes) > 0, "No explicit indexes found on imagenes table"
 
-        # Each explicit index must reference at least one column
+        index_names = {idx[1] for idx in explicit_indexes}
+        for field_name in get_field_names():
+            assert f"idx_imagenes_{field_name}" in index_names
+            assert f"idx_imagenes_lower_{field_name}" in index_names
+
+        # Each explicit index must reference at least one column (cid=-2 for exprs)
         for idx in explicit_indexes:
             idx_name = idx[1]
             info = conn.execute(f"PRAGMA index_info({idx_name})").fetchall()

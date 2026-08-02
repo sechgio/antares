@@ -5,7 +5,7 @@ import type { SectionProps } from '../types';
 
 import CanvasSelect from '../../CanvasSelect';
 
-import { registerImageBlob } from '../../../utils/imageBlobStore';
+import { registerImageBlob, releaseImageBlob } from '../../../utils/imageBlobStore';
 
 export default function ImageSection({ layer, onChange, setVar, setVarLive, onCommitLive }: SectionProps) {
   return (
@@ -18,13 +18,18 @@ export default function ImageSection({ layer, onChange, setVar, setVarLive, onCo
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (!file) return;
+          const previous = layer.value;
           registerImageBlob(file)
             .then((registered) => {
+              releaseImageBlob(previous);
               onChange({ ...layer, value: registered.url });
             })
             .catch(() => {
               const reader = new FileReader();
-              reader.onload = () => onChange({ ...layer, value: String(reader.result || '') });
+              reader.onload = () => {
+                releaseImageBlob(previous);
+                onChange({ ...layer, value: String(reader.result || '') });
+              };
               reader.readAsDataURL(file);
             });
         }}

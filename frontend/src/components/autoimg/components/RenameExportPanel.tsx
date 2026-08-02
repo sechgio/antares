@@ -37,7 +37,10 @@ export default function RenameExportPanel({ onDone }: RenameExportPanelProps) {
       .then((cfg) => {
         if (cfg.folder_id) setFolderInput(cfg.folder_id);
       })
-      .catch(() => {});
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : 'No se pudo cargar la carpeta destino';
+        setError(message);
+      });
   }, []);
 
   useEffect(() => {

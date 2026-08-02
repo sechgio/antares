@@ -59,6 +59,32 @@ def test_render_pdf_empty_pages_raises() -> None:
         render_pdf(doc, {}, {})
 
 
+def test_render_pdf_rejects_over_max_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+    import backend.core.evidencia_volanteo.rendering as rendering_mod
+
+    monkeypatch.setattr(rendering_mod, "MAX_PAGES", 2)
+    doc = EvidenciaDocument(
+        title="T",
+        cuadrante="C",
+        pages=tuple(EvidenciaPage(images=()) for _ in range(3)),
+    )
+    with pytest.raises(RenderingError, match="máximo de 2 páginas"):
+        render_pdf(doc, {}, {})
+
+
+def test_render_docx_rejects_over_max_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+    import backend.core.evidencia_volanteo.rendering as rendering_mod
+
+    monkeypatch.setattr(rendering_mod, "MAX_PAGES", 2)
+    doc = EvidenciaDocument(
+        title="T",
+        cuadrante="C",
+        pages=tuple(EvidenciaPage(images=()) for _ in range(3)),
+    )
+    with pytest.raises(RenderingError, match="máximo de 2 páginas"):
+        render_docx(doc, {}, {})
+
+
 def test_render_docx_empty_pages_raises() -> None:
     doc = EvidenciaDocument(title="T", cuadrante="C", pages=())
     with pytest.raises(RenderingError, match="No hay páginas"):

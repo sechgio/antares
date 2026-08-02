@@ -95,6 +95,8 @@ export function useCanvasHistory(initial: CanvasDocument) {
     pastRef.current = nextPast;
     futureRef.current = nextFuture;
     documentRef.current = prev;
+    // Undo leaves memory ≠ last save; cloud sync must treat the open doc as dirty.
+    hasUnsavedEditsRef.current = true;
     setPast(nextPast);
     setFuture(nextFuture);
     setDocumentState(prev);
@@ -118,6 +120,8 @@ export function useCanvasHistory(initial: CanvasDocument) {
     futureRef.current = nextFuture;
     pastRef.current = nextPast;
     documentRef.current = next;
+    // Same as undo: redo mutates the open document relative to the last save.
+    hasUnsavedEditsRef.current = true;
     setFuture(nextFuture);
     setPast(nextPast);
     setDocumentState(next);
@@ -130,6 +134,11 @@ export function useCanvasHistory(initial: CanvasDocument) {
     futureRef.current = safeFuture;
     setPast(safePast);
     setFuture(safeFuture);
+  }, []);
+
+  /** Clear dirty after a successful save without wiping undo/redo stacks. */
+  const markSaved = useCallback(() => {
+    hasUnsavedEditsRef.current = false;
   }, []);
 
   const canUndo = past.length > 0;
@@ -147,6 +156,7 @@ export function useCanvasHistory(initial: CanvasDocument) {
       commitFromBaseline,
       undo,
       redo,
+      markSaved,
       canUndo,
       canRedo,
       hasUnsavedEditsRef,
@@ -162,6 +172,7 @@ export function useCanvasHistory(initial: CanvasDocument) {
       commitFromBaseline,
       undo,
       redo,
+      markSaved,
       canUndo,
       canRedo,
     ],

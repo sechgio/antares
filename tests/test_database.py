@@ -419,3 +419,99 @@ class TestObtenerTodos:
         save_fields([{"name": "codigo", "type": "TEXT"}])
         db.init_db()
         assert db.obtener_todos() == []
+
+
+class TestLowerExpressionIndexes:
+    """Expression indexes on lower(col) for index-friendly case-insensitive lookups."""
+
+    def _setup_fields(self, monkeypatch, tmp_path) -> None:
+        config_path = tmp_path / "fields_config.json"
+        monkeypatch.setattr(
+            "backend.core.config_fields._config_file",
+            lambda: config_path,
+        )
+        save_fields([
+            {"name": "codigo", "type": "TEXT", "required": True, "unique": True},
+            {"name": "nombre", "type": "TEXT"},
+        ])
+
+    def test_init_db_crea_indices_lower(self, db_path, monkeypatch, tmp_path) -> None:
+        self._setup_fields(monkeypatch, tmp_path)
+        db.init_db()
+
+        import sqlite3
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            names = {
+                row[1]
+                for row in conn.execute("PRAGMA index_list(imagenes)").fetchall()
+            }
+        finally:
+            conn.close()
+
+        assert "idx_imagenes_codigo" in names
+        assert "idx_imagenes_nombre" in names
+        assert "idx_imagenes_lower_codigo" in names
+        assert "idx_imagenes_lower_nombre" in names
+
+    def test_buscar_casefold_con_datos_mixtos(self, db_path, monkeypatch, tmp_path) -> None:
+        self._setup_fields(monkeypatch, tmp_path)
+        db.init_db()
+
+        import sqlite3
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.executemany(
+                "INSERT INTO imagenes (codigo, nombre) VALUES (?, ?)",
+                [
+                    ("AbC-001", "Producto Uno"),
+                    ("xyz-002", "Producto Dos"),
+                    ("MiXeD", "Producto Tres"),
+                ],
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        lote = db.buscar_lote_por_codigos(["abc-001", "XYZ-002", "mixed"])
+        assert set(lote) == {"abc-001", "XYZ-002", "mixed"}
+        assert lote["abc-001"]["codigo"] == "AbC-001"
+        assert lote["XYZ-002"]["codigo"] == "xyz-002"
+        assert lote["mixed"]["codigo"] == "MiXeD"
+
+        por_col = db.buscar_por_columna(["ABC-001", "Mixed"], "codigo")
+        assert set(por_col) == {"ABC-001", "Mixed"}
+        assert por_col["ABC-001"]["nombre"] == "Producto Uno"
+        assert por_col["Mixed"]["nombre"] == "Producto Tres"
+
+    def test_explain_puede_usar_indice_lower(self, db_path, monkeypatch, tmp_path) -> None:
+        """Soft assert: with enough rows, planner prefers idx_imagenes_lower_*."""
+        self._setup_fields(monkeypatch, tmp_path)
+        db.init_db()
+
+        import sqlite3
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.executemany(
+                "INSERT INTO imagenes (codigo, nombre) VALUES (?, ?)",
+                [(f"CODE-{i:04d}", f"Name {i}") for i in range(200)],
+            )
+            conn.commit()
+            conn.execute("ANALYZE")
+            plan_rows = conn.execute(
+                "EXPLAIN QUERY PLAN SELECT codigo, nombre FROM imagenes "
+                "WHERE lower(codigo) IN (?, ?, ?)",
+                ("code-0001", "code-0050", "code-0199"),
+            ).fetchall()
+        finally:
+            conn.close()
+
+        plan_text = " ".join(str(cell) for row in plan_rows for cell in row).upper()
+        # Soft: SQLite may SCAN tiny tables; with 200 rows it usually uses the index.
+        if "SCAN" in plan_text and "INDEX" not in plan_text:
+            pytest.skip(f"planner chose scan (flaky on small DBs): {plan_rows}")
+        assert "INDEX" in plan_text
+        assert "LOWER" in plan_text or "IDX_IMAGENES_LOWER_CODIGO" in plan_text

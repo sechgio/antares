@@ -51,6 +51,8 @@ export default function ConversionView() {
   const [mappingRenameColumn, setMappingRenameColumn] = useState('');
   const [mappingColumns, setMappingColumns] = useState<string[]>([]);
   const [renamePreview, setRenamePreview] = useState<PreviewItem[]>([]);
+  const [previewTruncated, setPreviewTruncated] = useState(false);
+  const [previewTotalFiles, setPreviewTotalFiles] = useState<number | null>(null);
 
   const mappingMode = renameSource === 'mapping';
   const mappingResult = useMemo(
@@ -307,6 +309,8 @@ export default function ConversionView() {
     setMappingRenameColumn('');
     setRenameSource(dbColumns.length > 0 ? 'catalog' : 'none');
     setRenamePreview([]);
+    setPreviewTruncated(false);
+    setPreviewTotalFiles(null);
   }, [dbColumns.length]);
 
   // B-06: reload the mapping Excel with new column choices, guarded by a
@@ -410,6 +414,8 @@ export default function ConversionView() {
   useEffect(() => {
     if (!usarRename || files.length === 0) {
       setRenamePreview([]);
+      setPreviewTruncated(false);
+      setPreviewTotalFiles(null);
       previewQueuedArgsRef.current = null;
       return undefined;
     }
@@ -423,7 +429,9 @@ export default function ConversionView() {
     // For very large file lists, sample the first 200 files for the preview
     // to avoid sending a massive payload to the backend on every keystroke.
     const PREVIEW_SAMPLE_LIMIT = 200;
-    const previewFiles = files.length > PREVIEW_SAMPLE_LIMIT ? files.slice(0, PREVIEW_SAMPLE_LIMIT) : files;
+    const clientTruncated = files.length > PREVIEW_SAMPLE_LIMIT;
+    const previewFiles = clientTruncated ? files.slice(0, PREVIEW_SAMPLE_LIMIT) : files;
+    const clientTotalFiles = files.length;
 
     const body: PreviewBody = mappingMode && mappingData
       ? {
@@ -449,6 +457,16 @@ export default function ConversionView() {
         const result = await api.preview(requestBody);
         if (requestToken !== previewToken.current) return;
         setRenamePreview(result.preview);
+        // Prefer backend truncation flag; also mark when the client sampled the request.
+        const truncated = Boolean(result.truncated) || clientTruncated;
+        setPreviewTruncated(truncated);
+        setPreviewTotalFiles(
+          typeof result.total_files === 'number'
+            ? result.total_files
+            : truncated
+              ? clientTotalFiles
+              : null,
+        );
         if (
           !mappingMode
           && dbColumns.length > 1
@@ -462,6 +480,8 @@ export default function ConversionView() {
       } catch (err) {
         if (requestToken !== previewToken.current) return;
         setRenamePreview([]);
+        setPreviewTruncated(false);
+        setPreviewTotalFiles(null);
         const msg = err instanceof Error ? err.message : String(err);
         addToast({ message: `Error en vista previa de renombre: ${msg}`, type: 'error' });
       } finally {
@@ -856,6 +876,8 @@ export default function ConversionView() {
               mappingIdColumn={mappingIdColumn}
               mappingRenameColumn={mappingRenameColumn}
               renamePreview={renamePreview}
+              previewTruncated={previewTruncated}
+              previewTotalFiles={previewTotalFiles}
               onClearMapping={clearMapping}
               namingMode={namingMode}
               onNamingModeChange={(mode) => {

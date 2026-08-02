@@ -2,8 +2,6 @@ import { memo, useEffect, useRef, useState, type HTMLAttributes } from 'react';
 import {
   AlignHorizontalDistributeCenter,
   AlignVerticalDistributeCenter,
-  Eye,
-  EyeOff,
   Lock,
   PanelRightClose,
   Trash2,
@@ -12,6 +10,7 @@ import {
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import type { CanvasDocument, CanvasLayer, CanvasSharedStyle, CanvasStyleKind } from '../types';
 import InlineNumField from './InlineNumField';
+import { EyeSlash, VisibilityIcon } from './VisibilityIcon';
 import {
   applyLineStrokeWeight,
   clampStrokeWeight,
@@ -35,7 +34,7 @@ import StrokeSection from './panels/common/StrokeSection';
 import EffectsSection from './panels/common/EffectsSection';
 import ExportSection from './panels/common/ExportSection';
 import ShapeSection from './panels/tails/ShapeSection';
-import { TAIL_SECTIONS } from './panels/registry';
+import { TAIL_SECTIONS, LAYOUT_SECTIONS } from './panels/registry';
 import type { SectionProps, ZOrderCallbacks } from './panels/types';
 import CanvasSelect from './CanvasSelect';
 import CanvasVersionsPanel from './CanvasVersionsPanel';
@@ -48,6 +47,8 @@ interface RightPanelProps {
   selectedIds?: string[];
   pageColors: string[];
   onChange: (layer: CanvasLayer) => void;
+  /** Replace the full layer list (multi-layer panel commits such as boolean compose). */
+  onReplaceLayers?: (layers: CanvasLayer[]) => void;
   /** Live updates without undo (typing). Pair with onCommitLive on blur. */
   onChangeLive?: (layer: CanvasLayer) => void;
   onCommitLive?: () => void;
@@ -78,6 +79,10 @@ interface RightPanelProps {
   onDetachStyle?: (kind: CanvasStyleKind) => void;
   onRemoveStyle?: (styleId: string) => void;
   onRenameStyle?: (styleId: string, name: string) => void;
+  /** All layers (component master resolution for instances). */
+  layers?: CanvasLayer[];
+  /** Create an instance of the selected component master. */
+  onInstantiateComponent?: () => void;
   /** True when another logo layer shares this layer's side. */
   logoSideConflict?: boolean;
   /** Mount point for viewport ZoomMenu (portal from DesignStage). */
@@ -97,6 +102,7 @@ export default memo(function RightPanel({
   selectedIds = [],
   pageColors,
   onChange,
+  onReplaceLayers,
   onChangeLive,
   onCommitLive,
   onDelete,
@@ -119,6 +125,8 @@ export default memo(function RightPanel({
   onDetachStyle,
   onRemoveStyle,
   onRenameStyle,
+  layers = [],
+  onInstantiateComponent,
   logoSideConflict = false,
   zoomSlotRef,
   open = true,
@@ -181,7 +189,7 @@ export default memo(function RightPanel({
     emitLive({ ...base, meta: { ...base.meta, ...patch } });
   };
 
-  const hasSelection = Boolean(layer && layer.type !== 'frame');
+  const hasSelection = Boolean(layer && !(layer.type === 'frame' && layer.locked));
   const shape = layer ? isShapeLayer(layer) : false;
   const isLine = layer?.type === 'line';
   const showRadius = layer ? !clipPathForLayerType(layer.type) && layer.type !== 'line' : false;
@@ -226,7 +234,10 @@ export default memo(function RightPanel({
   const sectionProps: SectionProps = {
     layer: layer as CanvasLayer,
     pageColors,
+    layers,
+    selectedIds,
     onChange,
+    onReplaceLayers,
     emitLive,
     mapLive,
     setVar,
@@ -237,6 +248,7 @@ export default memo(function RightPanel({
     setMetaLive,
     onCommitLive,
     onAlign,
+    onInstantiateComponent,
     logoSideConflict,
     zOrder,
     shape,
@@ -331,7 +343,7 @@ export default memo(function RightPanel({
                 aria-label="Visible"
                 onClick={() => onChange({ ...layer, visible: layer.visible === false })}
               >
-                {layer.visible !== false ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                <VisibilityIcon visible={layer.visible !== false} className="h-3.5 w-3.5" />
               </button>
             </WithHoverTooltip>
             <WithHoverTooltip
@@ -451,12 +463,12 @@ export default memo(function RightPanel({
             />
             <WithHoverTooltip label="Mostrar" placement="bottom" variant="dark">
               <button type="button" className="canvas-icon-btn" aria-label="Mostrar" onClick={() => onBulkVisible(true)}>
-                <Eye className="h-3.5 w-3.5" />
+                <VisibilityIcon visible className="h-3.5 w-3.5" />
               </button>
             </WithHoverTooltip>
             <WithHoverTooltip label="Ocultar" placement="bottom" variant="dark">
               <button type="button" className="canvas-icon-btn" aria-label="Ocultar" onClick={() => onBulkVisible(false)}>
-                <EyeOff className="h-3.5 w-3.5" />
+                <EyeSlash className="h-3.5 w-3.5" />
               </button>
             </WithHoverTooltip>
             <WithHoverTooltip label="Bloquear" placement="bottom" variant="dark">
@@ -513,6 +525,9 @@ export default memo(function RightPanel({
         <div className="min-h-0 flex-1 overflow-y-auto">
           <PositionSection {...sectionProps} />
           <DispositionSection {...sectionProps} />
+          {LAYOUT_SECTIONS.filter((s) => s.test(layer)).map((s, i) => (
+            <s.Component key={`layout-${i}`} {...sectionProps} />
+          ))}
           <AppearanceSection {...sectionProps} />
           <FillSection {...sectionProps} />
           <StrokeSection {...sectionProps} />

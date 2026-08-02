@@ -16,8 +16,14 @@ export interface ZOrderCallbacks {
 export interface SectionProps {
   layer: CanvasLayer;
   pageColors: string[];
+  /** All document layers (for resolving component masters / variants). */
+  layers?: CanvasLayer[];
+  /** Selected layer ids (multi-select combine for boolean ops). */
+  selectedIds?: string[];
   // Mutators.
   onChange: (layer: CanvasLayer) => void;
+  /** Replace the full layer list (boolean compose hides operands in one undo step). */
+  onReplaceLayers?: (layers: CanvasLayer[]) => void;
   emitLive: (layer: CanvasLayer) => void;
   /** Apply a transform to the latest live layer (survives rapid multi-field edits). */
   mapLive: (fn: (layer: CanvasLayer) => CanvasLayer) => void;
@@ -31,6 +37,8 @@ export interface SectionProps {
   onAlign: (align: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => void;
   logoSideConflict?: boolean;
   zOrder: ZOrderCallbacks;
+  /** Instantiate the selected component master into the document. */
+  onInstantiateComponent?: () => void;
   // Derived single-selection flags.
   shape: boolean;
   isLine: boolean;

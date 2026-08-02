@@ -105,7 +105,7 @@ def test_rename_fails_when_keycolumn_doesnt_contain_file_codes(monkeypatch, tmp_
     monkeypatch.setattr(conversion, "get_scheduler", lambda: scheduler)
     monkeypatch.setattr(conversion, "es_video", lambda _p: False)
     monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 10)
-    monkeypatch.setattr(conversion, "copiar_archivo", lambda s, d: copied.append((str(s), str(d))))
+    monkeypatch.setattr(conversion, "copiar_archivo", lambda s, d, **_kwargs: copied.append((str(s), str(d))))
     monkeypatch.setattr(conversion, "_notify_complete", lambda *a, **k: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **k: None)
 
@@ -142,7 +142,7 @@ def test_rename_works_when_keycolumn_matches_file_codes(monkeypatch, tmp_path):
     monkeypatch.setattr(conversion, "get_scheduler", lambda: scheduler)
     monkeypatch.setattr(conversion, "es_video", lambda _p: False)
     monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 10)
-    monkeypatch.setattr(conversion, "copiar_archivo", lambda s, d: copied.append((str(s), str(d))))
+    monkeypatch.setattr(conversion, "copiar_archivo", lambda s, d, **_kwargs: copied.append((str(s), str(d))))
     monkeypatch.setattr(conversion, "_notify_complete", lambda *a, **k: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **k: None)
 
@@ -323,7 +323,7 @@ def test_fix_process_auto_detects_correct_keycolumn(monkeypatch, tmp_path):
     monkeypatch.setattr(conversion, "get_scheduler", lambda: scheduler)
     monkeypatch.setattr(conversion, "es_video", lambda _p: False)
     monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 10)
-    monkeypatch.setattr(conversion, "copiar_archivo", lambda s, d: copied.append((str(s), str(d))))
+    monkeypatch.setattr(conversion, "copiar_archivo", lambda s, d, **_kwargs: copied.append((str(s), str(d))))
     monkeypatch.setattr(conversion, "_notify_complete", lambda *a, **k: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **k: None)
 
@@ -367,7 +367,7 @@ def test_fix_process_auto_detects_when_keycolumn_empty(monkeypatch, tmp_path):
     monkeypatch.setattr(conversion, "get_scheduler", lambda: scheduler)
     monkeypatch.setattr(conversion, "es_video", lambda _p: False)
     monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 10)
-    monkeypatch.setattr(conversion, "copiar_archivo", lambda s, d: copied.append((str(s), str(d))))
+    monkeypatch.setattr(conversion, "copiar_archivo", lambda s, d, **_kwargs: copied.append((str(s), str(d))))
     monkeypatch.setattr(conversion, "_notify_complete", lambda *a, **k: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **k: None)
 

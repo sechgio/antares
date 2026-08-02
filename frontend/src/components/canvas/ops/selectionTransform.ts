@@ -3,6 +3,10 @@ import { mm, parseMm } from '../types';
 import { MM_TO_PX } from './drawHelpers';
 import { applyLineStrokeWeight, mmToPxLength } from './layerStyle';
 import { layerBounds, layerLocalBounds, parseRotateDeg, type RectMm } from './layerBounds';
+import {
+  containerUsesLayoutConstraints,
+  propagateContainerResize,
+} from './layerOps';
 import { expandWithDescendants } from './layerTree';
 import { patchLayersById } from './patchLayers';
 import { ensureLinePath, scalePathPoints } from './pathGeometry';
@@ -15,12 +19,14 @@ export type HandlePos = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 export type SmartGuide = { axis: 'x' | 'y'; pos: number };
 
 export const SNAP_THRESHOLD_MM = 0.5;
+/** Cap so low zoom does not inflate screen-px snap into page-lock (≈66mm at z=0.02). */
+export const SNAP_THRESHOLD_MAX_MM = 10;
 export const POINTER_CLICK_PX = 4;
 
 /** Screen-pixel snap feel (~5px) converted to mm at current zoom. */
 export function snapThresholdMm(zoom: number, screenPx = 5): number {
   const z = Math.max(0.05, zoom);
-  return screenPx / (MM_TO_PX * z);
+  return Math.min(screenPx / (MM_TO_PX * z), SNAP_THRESHOLD_MAX_MM);
 }
 
 export const DEFAULT_GRID_MM = 5;
@@ -229,6 +235,34 @@ export function resizeSelection(
         x: origin.x + origin.w / 2 - nextBox.w / 2,
         y: origin.y + origin.h / 2 - nextBox.h / 2,
       };
+    }
+  }
+
+  // Single container with constraints/autoLayout: resize the container only,
+  // then propagate (avoids double-scaling children via the uniform path).
+  if (ids.length === 1) {
+    const rootId = ids[0]!;
+    const root = layers.find((l) => l.id === rootId);
+    if (root && containerUsesLayoutConstraints(layers, rootId)) {
+      const local = layerLocalBounds(root);
+      const resized: CanvasLayer = {
+        ...root,
+        cssVars: {
+          ...root.cssVars,
+          '--translate-x': mm(nextBox.x),
+          '--translate-y': mm(nextBox.y),
+          '--width': mm(Math.max(1, nextBox.w)),
+          '--height': mm(Math.max(1, nextBox.h)),
+        },
+      };
+      const delta = {
+        dx: nextBox.x - local.x,
+        dy: nextBox.y - local.y,
+        dw: nextBox.w - local.w,
+        dh: nextBox.h - local.h,
+      };
+      const withRoot = patchLayersById(layers, new Map([[rootId, resized]]));
+      return propagateContainerResize(withRoot, rootId, delta);
     }
   }
 

@@ -23,7 +23,3 @@ export async function loadCanvasPresets(): Promise<ReadonlyArray<CanvasPreset>> 
   }
   return inflight;
 }
-
-export function prefetchCanvasPresets(): void {
-  void loadCanvasPresets();
-}

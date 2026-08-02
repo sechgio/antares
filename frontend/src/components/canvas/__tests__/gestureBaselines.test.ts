@@ -20,8 +20,12 @@ describe('isOpenDocumentDirty', () => {
     expect(isOpenDocumentDirty(false, false, true)).toBe(true);
   });
 
+  it('is dirty when rename baseline is active', () => {
+    expect(isOpenDocumentDirty(false, false, false, true)).toBe(true);
+  });
+
   it('is clean when undo history alone would have been true but unsaved is false', () => {
-    // Restored undo stack / post-save history must not count as dirty.
+    // Restored undo stack alone is not dirty; performing undo sets hasUnsavedEdits.
     expect(isOpenDocumentDirty(false, false, false)).toBe(false);
   });
 });

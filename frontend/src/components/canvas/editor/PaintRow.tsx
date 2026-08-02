@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Eye, EyeOff, Minus } from 'lucide-react';
+import { Minus } from 'lucide-react';
 import { clampOpacity, normalizeHex } from '../ops/layerStyle';
 import ColorPicker from './ColorPicker';
+import { VisibilityIcon } from './VisibilityIcon';
 
 interface PaintRowProps {
   color: string;
@@ -109,7 +110,7 @@ export default function PaintRow({
             aria-label={visible ? 'Ocultar' : 'Mostrar'}
             onClick={() => onVisibleChange(!visible)}
           >
-            {visible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+            <VisibilityIcon visible={visible} className="h-3 w-3" />
           </button>
         )}
         <button type="button" className="canvas-paint-icon" aria-label="Quitar" onClick={onRemove}>

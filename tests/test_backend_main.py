@@ -64,6 +64,9 @@ def test_heavy_methods_include_fichas_and_evidencia() -> None:
     assert "fichas_tecnicas_render_consolidated_html" in backend_main.HEAVY_METHODS
     assert "evidencia_volanteo_render" in backend_main.HEAVY_METHODS
     assert "canvas_export_cmyk_pdf" in backend_main.HEAVY_METHODS
+    assert "canvas_get" in backend_main.HEAVY_METHODS
+    assert "canvas_save" in backend_main.HEAVY_METHODS
+    assert "canvas_save_history" in backend_main.HEAVY_METHODS
 
 
 def test_classify_init_db_failure_is_fatal_message() -> None:
@@ -83,3 +86,35 @@ def test_sync_methods_are_liveness_safe() -> None:
 def test_process_start_is_not_heavy() -> None:
     """Start only spawns a job thread; must not consume heavy slots."""
     assert "process_start" not in backend_main.HEAVY_METHODS
+
+
+def test_maybe_log_ipc_timing_logs_slow_handlers(monkeypatch) -> None:
+    logged: list[tuple] = []
+    monkeypatch.delenv("ANTARES_IPC_TELEMETRY", raising=False)
+    monkeypatch.setattr(
+        backend_main.logger,
+        "log",
+        lambda level, msg, *args: logged.append((level, msg % args if args else msg)),
+    )
+
+    backend_main._maybe_log_ipc_timing("canvas_save", 100.0, ok=True)
+    assert logged == []
+
+    backend_main._maybe_log_ipc_timing("canvas_save", 6_000.0, ok=True)
+    assert len(logged) == 1
+    assert "canvas_save" in logged[0][1]
+    assert "elapsed_ms" in logged[0][1]
+
+
+def test_maybe_log_ipc_timing_verbose_logs_fast_handlers(monkeypatch) -> None:
+    logged: list[tuple] = []
+    monkeypatch.setenv("ANTARES_IPC_TELEMETRY", "1")
+    monkeypatch.setattr(
+        backend_main.logger,
+        "log",
+        lambda level, msg, *args: logged.append((level, msg % args if args else msg)),
+    )
+
+    backend_main._maybe_log_ipc_timing("version", 2.0, ok=True)
+    assert len(logged) == 1
+    assert "version" in logged[0][1]

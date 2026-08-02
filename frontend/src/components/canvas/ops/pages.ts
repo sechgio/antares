@@ -209,7 +209,7 @@ export function chunkImages(images: string[], perPage: number): string[][] {
   return chunkArray(images, perPage);
 }
 
-/** Photo capacity of the template page (page 0), else max slots on any page. */
+/** Photo capacity: slots on the first page that has imageSlots, else settings. */
 export function templateImagesPerPage(doc: CanvasDocument): number {
   const byPage = new Map<number, number>();
   for (const layer of doc.layers) {
@@ -221,9 +221,8 @@ export function templateImagesPerPage(doc: CanvasDocument): number {
     const fallback = doc.settings?.imagesPerPage;
     return fallback && fallback > 0 ? fallback : 1;
   }
-  const page0 = byPage.get(0);
-  if (page0 && page0 > 0) return page0;
-  return Math.max(...byPage.values());
+  const firstSlotPage = Math.min(...byPage.keys());
+  return byPage.get(firstSlotPage) ?? 1;
 }
 
 /** Keep settings.imagesPerPage aligned with template image slots. */
@@ -272,14 +271,19 @@ export function planMultiPageRender(
   ctx: FillContext,
   options?: { imagesPerPage?: number },
 ): Array<{ pageDoc: CanvasDocument; pageCtx: FillContext }> {
-  const slotPerPage = templateImagesPerPage(doc);
+  const slotPages = new Set<number>();
+  for (const layer of doc.layers) {
+    if (layer.type !== 'imageSlot') continue;
+    slotPages.add(layer.pageIndex ?? 0);
+  }
+  const hasSlots = slotPages.size > 0;
+  const firstSlotPage = hasSlots ? Math.min(...slotPages) : -1;
+  const lastSlotPage = hasSlots ? Math.max(...slotPages) : -1;
+
   // Slots win when present; options/settings only apply when the template has no slots.
-  const hasSlots = doc.layers.some((l) => l.type === 'imageSlot');
-  const page0Slots = doc.layers.some((l) => l.type === 'imageSlot' && (l.pageIndex ?? 0) === 0);
-  // Photo pagination requires slots on page 0; otherwise fall back to settings capacity.
-  const slotPagination = hasSlots && page0Slots;
+  const slotPerPage = templateImagesPerPage(doc);
   const configured = options?.imagesPerPage ?? doc.settings?.imagesPerPage;
-  const perPage = slotPagination
+  const perPage = hasSlots
     ? slotPerPage
     : configured && configured > 0
       ? configured
@@ -287,24 +291,62 @@ export function planMultiPageRender(
   const imageChunks = chunkImages(ctx.images, perPage);
   const imageMetaChunks = ctx.imageMeta ? chunkArray(ctx.imageMeta, perPage) : undefined;
   const docPageCount = getPageCount(doc);
-  // Paginate by image chunks when more images than one page of slots; else use design pages
   const useImagePagination = perPage > 0 && ctx.images.length > perPage;
+
+  const emptyMeta = ctx.imageMeta ? ([] as NonNullable<FillContext['imageMeta']>) : undefined;
+  const slice = (
+    sourcePage: number,
+    images: string[],
+    imageMeta: FillContext['imageMeta'],
+  ): { pageDoc: CanvasDocument; pageCtx: FillContext } => ({
+    pageDoc: { ...doc, layers: getActivePageLayers(doc, sourcePage) },
+    pageCtx: { ...ctx, images, imageMeta },
+  });
+
+  // Cover / trailing pages without slots must not receive photo chunks.
+  if (hasSlots && useImagePagination) {
+    const plan: Array<{ pageDoc: CanvasDocument; pageCtx: FillContext }> = [];
+    for (let i = 0; i < firstSlotPage; i += 1) {
+      plan.push(slice(i, [], emptyMeta));
+    }
+    for (let c = 0; c < imageChunks.length; c += 1) {
+      const chunk = imageChunks[c]!;
+      const metaChunk = imageMetaChunks ? (imageMetaChunks[c] ?? []) : undefined;
+      for (let i = firstSlotPage; i <= lastSlotPage; i += 1) {
+        plan.push(slice(i, chunk, metaChunk));
+      }
+    }
+    for (let i = lastSlotPage + 1; i < docPageCount; i += 1) {
+      plan.push(slice(i, [], emptyMeta));
+    }
+    return plan;
+  }
+
+  if (hasSlots) {
+    return Array.from({ length: docPageCount }, (_, pageIndex) => {
+      const pageHasSlots = slotPages.has(pageIndex);
+      return slice(
+        pageIndex,
+        pageHasSlots ? ctx.images : [],
+        pageHasSlots ? ctx.imageMeta : emptyMeta,
+      );
+    });
+  }
+
+  // No slots: settings-based pagination (legacy).
   const totalPages = useImagePagination
     ? Math.max(docPageCount, imageChunks.length)
     : docPageCount;
 
   return Array.from({ length: totalPages }, (_, pageIndex) => {
     const sourcePage = Math.min(pageIndex, docPageCount - 1);
-    const pageDoc: CanvasDocument = {
-      ...doc,
-      layers: getActivePageLayers(doc, sourcePage),
-    };
-    const pageCtx: FillContext = {
-      ...ctx,
-      images: useImagePagination ? (imageChunks[pageIndex] ?? []) : ctx.images,
-      imageMeta: useImagePagination && imageMetaChunks ? (imageMetaChunks[pageIndex] ?? []) : ctx.imageMeta,
-    };
-    return { pageDoc, pageCtx };
+    return slice(
+      sourcePage,
+      useImagePagination ? (imageChunks[pageIndex] ?? []) : ctx.images,
+      useImagePagination && imageMetaChunks
+        ? (imageMetaChunks[pageIndex] ?? [])
+        : ctx.imageMeta,
+    );
   });
 }
 

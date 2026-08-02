@@ -7,7 +7,7 @@ const VISIBLE_LIMIT = 10;
 
 interface Props {
   images: LocalImage[];
-  onAdd: (files: File[]) => string[];
+  onAdd: (files: File[]) => string[] | Promise<string[]>;
   onRemove: (index: number) => void;
   onClear: () => void;
 }
@@ -18,10 +18,10 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
   const [errors, setErrors] = useState<string[]>([]);
   const [expanded, setExpanded] = useState(false);
 
-  const handleFiles = useCallback((files: FileList | null) => {
+  const handleFiles = useCallback(async (files: FileList | null) => {
     if (!files) return;
     const fileList = Array.from(files);
-    const errs = onAdd(fileList);
+    const errs = await onAdd(fileList);
     if (errs.length) setErrors(errs);
   }, [onAdd]);
 

@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { cloneDocumentBaseline } from '../ops/document';
 import { applyLivePanelLayerChange } from '../ops/gridLayout';
+import { applyContainerLayoutPanelEffects } from '../ops/layerOps';
 import { createGestureRaf } from '../ops/gestureRaf';
 import { setActivePageLayers, syncImagesPerPage } from '../ops/pages';
+import {
+  bakeAllInstances,
+  bakeInstanceOverrides,
+  findComponentMaster,
+  syncChangedMasters,
+  syncComponentFromLayer,
+} from '../ops/components';
 import { syncLinkedStylesFromLayer } from '../ops/syncLinkedStyles';
 import type { CanvasDocument, CanvasLayer } from '../types';
 import type { useCanvasHistory } from './useCanvasHistory';
@@ -34,9 +42,21 @@ export function useGestureBaselines({ history, pageIndex }: UseGestureBaselinesO
     if (!panelBaselineRef.current) {
       panelBaselineRef.current = cloneDocumentBaseline(hist.document, idx);
     }
-    const prev = hist.document.layers.find((l) => l.id === layer.id);
-    const layers = applyLivePanelLayerChange(hist.document.layers, prev, layer);
-    const doc = syncLinkedStylesFromLayer({ ...hist.document, layers }, prev, layer);
+    let nextLayer = layer;
+    if (layer.meta?.instanceOf) {
+      nextLayer = bakeInstanceOverrides(
+        layer,
+        findComponentMaster(hist.document.layers, layer.meta.instanceOf),
+      );
+    }
+    const prev = hist.document.layers.find((l) => l.id === nextLayer.id);
+    const layers = applyContainerLayoutPanelEffects(
+      applyLivePanelLayerChange(hist.document.layers, prev, nextLayer),
+      prev,
+      nextLayer,
+    );
+    const styleSynced = syncLinkedStylesFromLayer({ ...hist.document, layers }, prev, nextLayer);
+    const doc = syncComponentFromLayer(styleSynced, prev, nextLayer);
     hist.updateSilent(syncImagesPerPage(doc));
   };
 
@@ -63,6 +83,11 @@ export function useGestureBaselines({ history, pageIndex }: UseGestureBaselinesO
     const baseline = gestureBaselineRef.current;
     if (!baseline) return;
     gestureBaselineRef.current = null;
+    let doc = bakeAllInstances(history.document);
+    doc = syncChangedMasters(doc, baseline);
+    if (doc !== history.document) {
+      history.updateSilent(syncImagesPerPage(doc));
+    }
     history.commitFromBaseline(baseline);
   }, [history]);
 

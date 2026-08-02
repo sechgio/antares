@@ -120,16 +120,24 @@ cd antares
 npm install
 cd frontend && npm install && cd ..
 
-# Configurar dependencias de Python
+# Crear venv del proyecto e instalar dependencias Python + PyInstaller
+# (usa Python 3.10+ del sistema; evita el `python` de otros venv del PATH)
+python -m venv venv312
+.\venv312\Scripts\Activate.ps1   # Windows PowerShell
 pip install -e ".[dev]"
+pip install pyinstaller
 ```
 
 ### 2. Ejecutar en Modo Desarrollo
 
 ```bash
+# Modo dev: Vite (:5173) + Electron + backend Python (sin instalador, hot reload)
 npm run dev
+
+# Preview empaquetado sin instalador (win-unpacked; build completo, más lento)
+npm run preview:unpacked
 ```
-Este comando inicia el servidor Vite en `:5173` y lanza la aplicación Electron en modo desarrollo.
+`npm run dev` no genera instalador ni `win-unpacked`: abre Electron contra Vite en desarrollo.
 
 ### 3. Verificación y Calidad de Código
 

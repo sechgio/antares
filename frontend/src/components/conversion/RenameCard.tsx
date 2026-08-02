@@ -15,6 +15,10 @@ interface RenameCardProps {
   mappingIdColumn?: string;
   mappingRenameColumn?: string;
   renamePreview?: PreviewItem[];
+  /** Backend capped the rename preview batch. */
+  previewTruncated?: boolean;
+  /** Full file count before preview truncation. */
+  previewTotalFiles?: number | null;
   onClearMapping?: () => void;
   namingMode: string;
   onNamingModeChange: (mode: string) => void;
@@ -113,6 +117,8 @@ export default function RenameCard(props: RenameCardProps) {
     mappingIdColumn = '',
     mappingRenameColumn = '',
     renamePreview = [],
+    previewTruncated = false,
+    previewTotalFiles = null,
     onClearMapping,
     onMappingIdColumnChange,
     onMappingRenameColumnChange,
@@ -236,6 +242,17 @@ export default function RenameCard(props: RenameCardProps) {
 
       {usarRename && (
         <div className="space-y-6">
+          {previewTruncated && (
+            <div className="flex items-center gap-2 rounded-lg border border-[var(--accent-yellow)]/30 bg-[var(--accent-yellow)]/10 px-3 py-2 text-[11px] text-[var(--accent-yellow)]">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              <span>
+                Vista previa limitada a {renamePreview.length || 200} archivo
+                {(renamePreview.length || 200) === 1 ? '' : 's'}
+                {typeof previewTotalFiles === 'number' ? ` de ${previewTotalFiles}` : ''}.
+                El renombrado completo al procesar no se ve afectado.
+              </span>
+            </div>
+          )}
           {!mappingMode && !hasCatalog ? (
             <div className="rounded-xl border border-dashed border-[var(--border-medium)] p-6 text-center space-y-3">
               <Database className="h-8 w-8 mx-auto text-[var(--text-muted)] opacity-50" />

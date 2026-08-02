@@ -147,6 +147,7 @@ export const LAYER_TYPE_LABELS: Record<CanvasLayerType, string> = {
   text: 'Texto',
   image: 'Imagen',
   frame: 'Página',
+  component: 'Componente',
   field: 'Campo',
   logo: 'Logo',
   imageSlot: 'Slot de foto',
@@ -164,6 +165,7 @@ export const LAYER_TYPE_LABELS: Record<CanvasLayerType, string> = {
   diamond: 'Rombo',
   hexagon: 'Hexágono',
   pentagon: 'Pentágono',
+  boolean: 'Booleana',
 };
 
 export function isShapeLayer(layer: CanvasLayer): boolean {

@@ -447,12 +447,19 @@ async function _scanAllCore() {
 
   const dedupStrategy = drive.parseDedupStrategy(await _readConfigValue('DEDUP_STRATEGY'));
   const merged = drive.mergeNisMaps(nisMaps, dedupStrategy);
+  // Retain fields needed by sync / IPC summary / renameExport.
+  // Keep slim Drive file stubs (id + name only) — buildRenameJobs needs them;
+  // drop modifiedTime and other bulky metadata after merge.
   const nisResults = Object.entries(merged).map(([nis, data]) => ({
     nis,
     count: data.count,
-    files: data.files,
     folders: data.folders,
     estado: drive.computeEstado(data.count),
+    files: (data.files || []).map((f) => ({
+      id: f.id,
+      name: f.name,
+      slot: f.slot,
+    })),
   }));
 
   _lastScanResults = { folder_summary: folderSummary, nis_results: nisResults };
@@ -484,12 +491,16 @@ async function scanAndSync() {
   return _runLocked('scan_sync', async () => {
     const scanResult = await _scanAllCore();
     const syncResult = await _syncToSheetCore();
+    // Do not IPC-clone full nis_results (UI only uses logs/updated/new_rows).
     return {
       success: syncResult.success,
       updated: syncResult.updated,
       new_rows: syncResult.new_rows,
       logs: syncResult.logs,
-      scan: scanResult,
+      scan: {
+        summary: scanResult.summary,
+        folders_failed: scanResult.folders_failed,
+      },
       folder_errors: scanResult.folders_failed,
     };
   });

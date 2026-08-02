@@ -110,10 +110,12 @@ export async function serializeDocumentImages(doc: CanvasDocument): Promise<Canv
         }
 
         if (reg) {
-          if (!reg.dataUrl) {
-            reg.dataUrl = await blobToDataUrl(reg.blob);
-          }
-          return { ...layer, value: reg.dataUrl };
+          // Compute a persistent data URL for the saved document, but do not
+          // keep it on the RegisteredBlob — that would retain ~2× the bytes
+          // (Blob + base64) for the whole session while keep-alive holds the store.
+          const dataUrl = reg.dataUrl ?? (await blobToDataUrl(reg.blob));
+          if (reg.dataUrl) delete reg.dataUrl;
+          return { ...layer, value: dataUrl };
         }
       }
       return layer;
@@ -134,6 +136,26 @@ export async function serializeDocumentImages(doc: CanvasDocument): Promise<Canv
  */
 export async function hydrateDocumentImages(doc: CanvasDocument): Promise<CanvasDocument> {
   return doc;
+}
+
+/**
+ * Revokes a single managed ObjectURL (by blobId or blob: URL) and removes it from the store.
+ */
+export function releaseImageBlob(value: string | undefined): void {
+  if (!value) return;
+
+  const blobId = blobMap.has(value) ? value : urlToBlobIdMap.get(value);
+  if (!blobId) return;
+
+  const reg = blobMap.get(blobId);
+  if (!reg) return;
+
+  if (reg.url.startsWith('blob:')) URL.revokeObjectURL(reg.url);
+  if (reg.thumbnailUrl && reg.thumbnailUrl !== reg.url && reg.thumbnailUrl.startsWith('blob:')) {
+    URL.revokeObjectURL(reg.thumbnailUrl);
+  }
+  urlToBlobIdMap.delete(reg.url);
+  blobMap.delete(blobId);
 }
 
 /**

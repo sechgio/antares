@@ -10,6 +10,28 @@ import GridSection from './tails/GridSection';
 import CheckboxSection from './tails/CheckboxSection';
 import SignatureSection from './tails/SignatureSection';
 import TableSection from './tails/TableSection';
+import AutoLayoutSection, { ConstraintsSection } from './common/AutoLayoutSection';
+import InstanceSection from './common/InstanceSection';
+import BooleanMaskSection, { showBooleanMaskSection } from './common/BooleanMaskSection';
+
+/** Layout/constraint sections rendered with the common inspectors. */
+export const LAYOUT_SECTIONS: PanelSection[] = [
+  { test: (l) => l.type === 'frame' || l.type === 'group' || l.type === 'component', Component: AutoLayoutSection },
+  {
+    test: (l) => Boolean(l.parentId),
+    Component: ConstraintsSection,
+  },
+  {
+    test: (l) =>
+      Boolean(l.meta?.instanceOf) ||
+      l.type === 'frame' ||
+      l.type === 'component' ||
+      l.type === 'group' ||
+      l.type === 'rect',
+    Component: InstanceSection,
+  },
+  { test: showBooleanMaskSection, Component: BooleanMaskSection },
+];
 
 /** Ordered type-specific tail sections. Render ALL matching entries (in
  *  order): `field` matches both TextSection and FieldSection, so a field layer

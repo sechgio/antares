@@ -118,4 +118,23 @@ const multi = buildRenameJobs(
 );
 assert(multi.jobs.length === 2, 'dos destinos distintos');
 
+// Slim scan stubs (id + name only, no modifiedTime) must still plan rename jobs.
+const slimScanJobs = buildRenameJobs(
+  [
+    {
+      nis: '6553447',
+      count: 3,
+      files: [
+        { id: 'f1', name: '6553447_1.jpg' },
+        { id: 'f2', name: '6553447_2.jpg' },
+        { id: 'f3', name: '6553447_3.jpg' },
+      ],
+    },
+  ],
+  new Map([['6553447', { sgio: '70942759', destino: 'SECTOR A' }]]),
+  { onlyCompletos: true },
+);
+assert(slimScanJobs.jobs.length === 3, 'slim files stubs producen 3 jobs');
+assert(slimScanJobs.skipped.length === 0, 'slim files stubs no omiten NIS');
+
 console.log('[PASS] autoimg-rename: SGIO + DESTINO + plan de jobs');

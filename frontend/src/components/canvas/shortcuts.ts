@@ -3,7 +3,7 @@ export const CANVAS_SHORTCUTS: Array<{ keys: string; action: string }> = [
   { keys: 'V', action: 'Seleccionar' },
   { keys: 'H / Espacio', action: 'Mano (pan)' },
   { keys: 'R / O / L', action: 'Rectángulo / Elipse / Línea' },
-  { keys: 'Shift+L', action: 'Flecha' },
+  { keys: 'Shift+L / P / S / D / H / N', action: 'Flecha / Polígono / Estrella / Rombo / Hexágono / Pentágono' },
   { keys: 'P / C / U', action: 'Curvar / Cortar / Lazo (línea)' },
   { keys: 'Ctrl+Shift+K', action: 'Imagen' },
   { keys: 'T / F', action: 'Texto / Campo Excel' },

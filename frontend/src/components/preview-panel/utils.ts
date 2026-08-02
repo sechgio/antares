@@ -2,6 +2,9 @@
  * Utilidades para el Generador de Reportes
  */
 
+// Basename match (optional `[-_]\d+` suffix); keep in sync with canvas/runtime/excel.ts
+import { matchesRecordId as matchesRecordIdCanvas } from '../canvas/runtime/excel';
+
 export function formatDateValue(value: string | number | undefined): string {
   if (!value || value === '-') return '-';
   const text = String(value).trim();
@@ -66,16 +69,8 @@ export function chunkItems<T>(items: T[], size: number): T[][] {
   return chunks;
 }
 
-// Match image name to record ID with exact prefix matching
 export function matchesRecordId(imageName: string, recordId: string | number): boolean {
-  const id = String(recordId).trim();
-  const name = imageName.toLowerCase();
-  const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const regex = new RegExp(
-    `^${escapedId}(?:[-_]\\d+)?\\.(jpg|jpeg|png|gif|webp)$`,
-    'i'
-  );
-  return regex.test(name);
+  return matchesRecordIdCanvas(imageName, String(recordId));
 }
 
 export function naturalSortByName(a: File, b: File): number {

@@ -47,6 +47,24 @@ describe('demoFill', () => {
     expect(ctx.imageMeta?.[0]?.name).toBe('foto-1.jpg');
   });
 
+  it('collectDemoFieldKeys includes signature and table keys', () => {
+    const doc = createEmptyDocument('Keys');
+    doc.layers.push(
+      { ...createLayer('signature'), id: newId(), meta: { key: 'FIRMA' } },
+      {
+        ...createLayer('table'),
+        id: newId(),
+        meta: {
+          rowsData: JSON.stringify({
+            cells: [['a', 'b']],
+            fieldKeys: [['NIS', null]],
+          }),
+        },
+      },
+    );
+    expect(collectDemoFieldKeys(doc).sort()).toEqual(['FIRMA', 'NIS'].sort());
+  });
+
   it('renderDemoPreviewHtml embeds sample field values', () => {
     const doc = createEmptyDocument('Demo');
     doc.layers.push({

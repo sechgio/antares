@@ -2,8 +2,6 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type HTMLAttri
 import {
   ChevronDown,
   ChevronRight,
-  Eye,
-  EyeOff,
   FileText,
   Group,
   Image as ImageIcon,
@@ -33,6 +31,7 @@ import {
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { ancestorIds, buildLayerTree, flattenLayerTree, isLayerContainer } from '../ops/layerTree';
 import type { CanvasDocumentSummary, CanvasLayer } from '../types';
+import { VisibilityIcon } from './VisibilityIcon';
 import PageContextMenu, { type PageContextMenuState } from './PageContextMenu';
 import CanvasSelect from './CanvasSelect';
 
@@ -299,7 +298,7 @@ const LayerRow = memo(function LayerRow({
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => onToggleVisible(layer.id, hidden)}
           >
-            {hidden ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+            <VisibilityIcon visible={!hidden} className="h-3 w-3" />
           </button>
         </div>
       </div>
@@ -354,7 +353,7 @@ export default memo(function LeftSidebar({
   const canUngroupSelected = useMemo(() => {
     if (selectedIds.length !== 1) return false;
     const layer = layers.find((l) => l.id === selectedIds[0]);
-    return Boolean(layer && layer.type === 'group' && !layer.locked);
+    return Boolean(layer && (layer.type === 'group' || layer.type === 'component') && !layer.locked);
   }, [layers, selectedIds]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set(containerIds));
   const [layerQuery, setLayerQuery] = useState('');

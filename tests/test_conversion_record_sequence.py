@@ -106,7 +106,7 @@ def test_conversion_mantiene_secuencia_por_fila_entre_bloques(monkeypatch, tmp_p
     scheduler = _RecordingScheduler()
     monkeypatch.setattr(conversion, "get_scheduler", lambda: scheduler)
     monkeypatch.setattr(conversion, "es_video", lambda _path: False)
-    monkeypatch.setattr(conversion, "copiar_archivo", lambda *_args: None)
+    monkeypatch.setattr(conversion, "copiar_archivo", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 2)
     monkeypatch.setattr(conversion, "_resolve_key_column", lambda key, _files, _columns, **_kw: key)
     monkeypatch.setattr(conversion, "_notify_complete", lambda *_args, **_kwargs: None)

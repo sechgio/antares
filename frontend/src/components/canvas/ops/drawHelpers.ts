@@ -90,6 +90,29 @@ export function isClickPlace(rect: DrawRect, thresholdMm = 3): boolean {
   return rect.w < thresholdMm && rect.h < thresholdMm;
 }
 
+/**
+ * CSS translate/size vars for placing a layer.
+ * Allows negative x/y (free canvas), matching moveSelection.
+ */
+export function placeRectCssVars(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): {
+  '--translate-x': string;
+  '--translate-y': string;
+  '--width': string;
+  '--height': string;
+} {
+  return {
+    '--translate-x': `${x}mm`,
+    '--translate-y': `${y}mm`,
+    '--width': `${w}mm`,
+    '--height': `${h}mm`,
+  };
+}
+
 export const PLACE_TOOLS = new Set([
   'rect',
   'ellipse',

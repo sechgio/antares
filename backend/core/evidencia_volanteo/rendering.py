@@ -38,6 +38,7 @@ from .layout import (
     TITLE_FONT_PT,
     layout_context,
 )
+from .models import MAX_PAGES
 
 if TYPE_CHECKING:
     from .models import EvidenciaDocument
@@ -282,6 +283,9 @@ def render_pdf(
     if not document.pages:
         msg = "No hay páginas para exportar"
         raise RenderingError(msg)
+    if len(document.pages) > MAX_PAGES:
+        msg = f"El PDF excede el máximo de {MAX_PAGES} páginas"
+        raise RenderingError(msg)
 
     try:
         template = _jinja_env.get_template("evidencia-volanteo.html")
@@ -325,6 +329,9 @@ def render_docx(
 ) -> tuple[bytes, str]:
     if not document.pages:
         msg = "No hay páginas para exportar"
+        raise RenderingError(msg)
+    if len(document.pages) > MAX_PAGES:
+        msg = f"El documento excede el máximo de {MAX_PAGES} páginas"
         raise RenderingError(msg)
 
     from docx import Document

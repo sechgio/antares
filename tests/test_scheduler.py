@@ -111,6 +111,74 @@ def test_cancelled_queued_heavy_future_releases_slot() -> None:
         release.set()
         scheduler.shutdown(wait=True)
 
+def test_heavy_run_concurrency_capped_at_heavy_workers() -> None:
+    """Outstanding may fill capacity, but concurrent heavy fn execution must
+    stay ≤ heavy_workers even when the unified pool is larger."""
+    from backend.core.scheduler import SchedulerBusy, WorkScheduler
+
+    heavy_workers = 2
+    queue_limit = 4
+    release = threading.Event()
+    active = 0
+    max_active = 0
+    lock = threading.Lock()
+    saw_capacity = threading.Event()
+
+    def blocker() -> None:
+        nonlocal active, max_active
+        with lock:
+            active += 1
+            if active > max_active:
+                max_active = active
+            if active == heavy_workers:
+                saw_capacity.set()
+        release.wait(timeout=5)
+        with lock:
+            active -= 1
+
+    # Pool = light + heavy = 6 threads — without a run-slot gate, all 6 heavy
+    # tasks reserved at capacity could execute concurrently.
+    scheduler = WorkScheduler(
+        light_workers=4,
+        heavy_workers=heavy_workers,
+        heavy_queue_limit=queue_limit,
+    )
+    futures = []
+    try:
+        for _ in range(scheduler.heavy_capacity):
+            futures.append(scheduler.submit_heavy(blocker))
+
+        assert scheduler.heavy_capacity == heavy_workers + queue_limit
+        assert saw_capacity.wait(timeout=2)
+
+        # Steady state: capacity reserved, but only heavy_workers running.
+        deadline = time.monotonic() + 0.3
+        while time.monotonic() < deadline:
+            metrics = scheduler.metrics()
+            with lock:
+                assert active <= heavy_workers
+                assert max_active <= heavy_workers
+            assert metrics["heavy_active"] <= heavy_workers
+            assert metrics["heavy_outstanding"] == scheduler.heavy_capacity
+            assert metrics["heavy_run_slots"] == heavy_workers - metrics["heavy_active"]
+            time.sleep(0.01)
+
+        with pytest.raises(SchedulerBusy):
+            scheduler.submit_heavy(blocker)
+
+        metrics = scheduler.metrics()
+        assert metrics["heavy_outstanding"] == scheduler.heavy_capacity
+        assert metrics["heavy_active"] <= heavy_workers
+        assert metrics["heavy_queued"] >= queue_limit
+        with lock:
+            assert max_active == heavy_workers
+    finally:
+        release.set()
+        for fut in futures:
+            fut.result(timeout=5)
+        scheduler.shutdown(wait=True)
+
+
 def test_detect_limits_allows_8_heavy_on_high_ram(monkeypatch) -> None:
     from backend.core import scheduler as sched
 

@@ -61,6 +61,8 @@ def es_video(ruta: str | Path) -> bool:
 def copiar_archivo(
     ruta_origen: str | Path,
     ruta_destino: str | Path,
+    *,
+    ensure_dir: bool = True,
 ) -> Path:
     """Copia un archivo sin conversión, preservando metadatos."""
     ruta_origen = Path(ruta_origen)
@@ -70,7 +72,8 @@ def copiar_archivo(
         msg = f"No se encontró el archivo: {ruta_origen}"
         raise FileNotFoundError(msg)
 
-    ruta_destino.parent.mkdir(parents=True, exist_ok=True)
+    if ensure_dir:
+        ruta_destino.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(ruta_origen, ruta_destino)
 
     return ruta_destino
@@ -95,13 +98,20 @@ def _ensure_mode(img: Image.Image, target_modes: tuple[str, ...]) -> Image.Image
     return img.convert(target_mode)
 
 
-def _build_save_kwargs(formato: str, calidad: int, keep_exif: bool, img: Image.Image) -> dict:
+def _build_save_kwargs(
+    formato: str,
+    calidad: int,
+    keep_exif: bool,
+    img: Image.Image,
+    optimize: bool | None = None,
+) -> dict:
     """Construye kwargs para img.save según el formato."""
     kwargs: dict = {}
     upper_fmt = formato.upper()
     if upper_fmt in ("JPEG", "JPG", "WEBP"):
         kwargs["quality"] = max(1, min(100, int(calidad)))
-    if upper_fmt in ("JPEG", "JPG") and calidad >= 90:
+    # optimize is opt-in only; do not auto-enable based on quality.
+    if upper_fmt in ("JPEG", "JPG") and optimize is True:
         kwargs["optimize"] = True
     if keep_exif and "exif" in img.info:
         kwargs["exif"] = img.info["exif"]
@@ -115,6 +125,9 @@ def convertir_imagen(
     calidad: int = 95,
     resize: tuple[int, int] | list[int] | None = None,
     keep_exif: bool = False,
+    *,
+    optimize: bool = False,
+    ensure_dir: bool = True,
 ) -> Path:
     """Convierte una imagen a otro formato.
 
@@ -128,6 +141,8 @@ def convertir_imagen(
         calidad: Calidad 1-100 para formatos con compresión (JPEG, WEBP).
         resize: Tupla (ancho, alto) opcional para redimensionar.
         keep_exif: Preservar metadatos EXIF.
+        optimize: Si True, pasa optimize=True a Pillow (JPEG/JPG). Opt-in.
+        ensure_dir: Si True, crea el directorio padre del destino.
 
     Returns:
         Path del archivo generado.
@@ -170,8 +185,9 @@ def convertir_imagen(
                 raise ValueError(msg)
             img = img.resize((rw, rh), _LANCZOS)
 
-        ruta_destino.parent.mkdir(parents=True, exist_ok=True)
-        save_kwargs = _build_save_kwargs(formato, calidad, keep_exif, img)
+        if ensure_dir:
+            ruta_destino.parent.mkdir(parents=True, exist_ok=True)
+        save_kwargs = _build_save_kwargs(formato, calidad, keep_exif, img, optimize=optimize)
         tmp_destino = ruta_destino.with_name(ruta_destino.name + ".tmp")
 
         try:

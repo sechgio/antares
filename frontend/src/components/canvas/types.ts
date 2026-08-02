@@ -18,6 +18,7 @@ export type CanvasLayerType =
   | 'text'
   | 'image'
   | 'frame'
+  | 'component'
   | 'field'
   | 'logo'
   | 'imageSlot'
@@ -34,7 +35,8 @@ export type CanvasLayerType =
   | 'star'
   | 'diamond'
   | 'hexagon'
-  | 'pentagon';
+  | 'pentagon'
+  | 'boolean';
 
 export interface LayerCssVars {
   '--width': string;
@@ -155,6 +157,20 @@ export type CanvasTool =
 
 export type CanvasMode = 'design' | 'generate';
 
+export type AutoLayoutDirection = 'row' | 'col';
+export type AutoLayoutAlign = 'start' | 'center' | 'end' | 'stretch';
+export type AutoLayoutSizing = 'hug' | 'fixed';
+export type FrameConstraint = 'start' | 'end' | 'center' | 'scale';
+
+export interface LayerAutoLayout {
+  direction: AutoLayoutDirection;
+  gapMm: number;
+  padMm: number;
+  alignMain: AutoLayoutAlign;
+  alignCross: AutoLayoutAlign;
+  sizing: AutoLayoutSizing;
+}
+
 export interface LayerMeta {
   key?: string;
   fallback?: string;
@@ -177,6 +193,29 @@ export interface LayerMeta {
   pageIndex?: number;
   /** Vector geometry for line layers (mm relative to layer origin). */
   path?: LayerPath;
+  /** Auto-layout stack on frame/group containers (positions children via cssVars). */
+  autoLayout?: LayerAutoLayout;
+  /** Horizontal constraint relative to parent container. */
+  constraintH?: FrameConstraint;
+  /** Vertical constraint relative to parent container. */
+  constraintV?: FrameConstraint;
+  /** Id of the master component this layer instances (instances only). */
+  instanceOf?: string;
+  /** Subset of cssVars this instance overrides; wins over master (+ variant). */
+  overrideVars?: Partial<LayerCssVars>;
+  /** Variant key on the master (e.g. 'primary'). */
+  variant?: string;
+  /** Present only on the master; equals the master's own layer id. */
+  componentId?: string;
+  /** Named variant patches on the master (partial cssVars per key). */
+  variants?: Record<string, Partial<LayerCssVars>>;
+  /** Id of the layer whose silhouette clips this layer (CSS clip-path composition). */
+  maskLayerId?: string;
+  /**
+   * Boolean operands for type:'boolean' layers.
+   * Visual CSS composition only — not an exact geometric boolean solver.
+   */
+  ops?: Array<{ op: 'union' | 'subtract' | 'intersect' | 'exclude'; layerId: string }>;
 }
 
 export interface CanvasLayer {

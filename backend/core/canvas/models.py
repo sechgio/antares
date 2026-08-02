@@ -19,6 +19,7 @@ ALLOWED_LAYER_TYPES = frozenset(
         "text",
         "image",
         "frame",
+        "component",
         "field",
         "logo",
         "imageSlot",
@@ -36,6 +37,7 @@ ALLOWED_LAYER_TYPES = frozenset(
         "diamond",
         "hexagon",
         "pentagon",
+        "boolean",
     }
 )
 A4_WIDTH_MM = 210
@@ -188,7 +190,109 @@ def _normalize_meta(raw: Any) -> dict[str, Any] | None:
         tracks = _normalize_track_list(raw.get(track_key))
         if tracks is not None:
             cleaned[track_key] = tracks
+    auto_layout = _normalize_auto_layout(raw.get("autoLayout"))
+    if auto_layout is not None:
+        cleaned["autoLayout"] = auto_layout
+    for constraint_key in ("constraintH", "constraintV"):
+        constraint = _normalize_frame_constraint(raw.get(constraint_key))
+        if constraint is not None:
+            cleaned[constraint_key] = constraint
+    instance_of = raw.get("instanceOf")
+    if isinstance(instance_of, str) and instance_of.strip():
+        cleaned["instanceOf"] = instance_of.strip()
+    override_vars = raw.get("overrideVars")
+    if isinstance(override_vars, dict):
+        ov = _normalize_css_vars(override_vars, with_geometry_defaults=False)
+        if ov:
+            cleaned["overrideVars"] = ov
+    variant = raw.get("variant")
+    if isinstance(variant, str) and variant.strip():
+        cleaned["variant"] = variant.strip()
+    component_id = raw.get("componentId")
+    if isinstance(component_id, str) and component_id.strip():
+        cleaned["componentId"] = component_id.strip()
+    variants_raw = raw.get("variants")
+    if isinstance(variants_raw, dict):
+        variants_out: dict[str, dict[str, str]] = {}
+        for key, value in variants_raw.items():
+            if not isinstance(key, str) or not key.strip():
+                continue
+            if not isinstance(value, dict):
+                continue
+            patch = _normalize_css_vars(value, with_geometry_defaults=False)
+            if patch:
+                variants_out[key.strip()] = patch
+        if variants_out:
+            cleaned["variants"] = variants_out
+    mask_layer_id = raw.get("maskLayerId")
+    if isinstance(mask_layer_id, str) and mask_layer_id.strip():
+        cleaned["maskLayerId"] = mask_layer_id.strip()
+    ops_out = _normalize_boolean_ops(raw.get("ops"))
+    if ops_out is not None:
+        cleaned["ops"] = ops_out
     return cleaned or None
+
+
+_ALLOWED_BOOLEAN_OPS = frozenset({"union", "subtract", "intersect", "exclude"})
+
+
+def _normalize_boolean_ops(raw: Any) -> list[dict[str, str]] | None:
+    """Keep valid boolean ops entries; omit key entirely if none valid."""
+    if not isinstance(raw, list) or not raw:
+        return None
+    ops_out: list[dict[str, str]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        op = item.get("op")
+        layer_id = item.get("layerId")
+        if op not in _ALLOWED_BOOLEAN_OPS:
+            continue
+        if not isinstance(layer_id, str) or not layer_id.strip():
+            continue
+        ops_out.append({"op": str(op), "layerId": layer_id.strip()})
+    return ops_out or None
+
+
+_AUTO_LAYOUT_ALIGNS = frozenset({"start", "center", "end", "stretch"})
+_FRAME_CONSTRAINTS = frozenset({"start", "end", "center", "scale"})
+
+
+def _normalize_auto_layout(raw: Any) -> dict[str, Any] | None:
+    """Keep a valid autoLayout object; omit key entirely if invalid (no defaults)."""
+    if not isinstance(raw, dict):
+        return None
+    direction = raw.get("direction")
+    if direction not in ("row", "col"):
+        return None
+    sizing = raw.get("sizing")
+    if sizing not in ("hug", "fixed"):
+        return None
+    align_main = raw.get("alignMain")
+    align_cross = raw.get("alignCross")
+    if align_main not in _AUTO_LAYOUT_ALIGNS or align_cross not in _AUTO_LAYOUT_ALIGNS:
+        return None
+    try:
+        gap_mm = float(raw["gapMm"])
+        pad_mm = float(raw["padMm"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if gap_mm < 0 or pad_mm < 0 or gap_mm != gap_mm or pad_mm != pad_mm:
+        return None
+    return {
+        "direction": direction,
+        "gapMm": gap_mm,
+        "padMm": pad_mm,
+        "alignMain": align_main,
+        "alignCross": align_cross,
+        "sizing": sizing,
+    }
+
+
+def _normalize_frame_constraint(raw: Any) -> str | None:
+    if raw in _FRAME_CONSTRAINTS:
+        return str(raw)
+    return None
 
 
 def _normalize_track_list(raw: Any) -> list[float] | None:
@@ -461,6 +565,20 @@ def duplicate_document(
                 # Parent was not duplicated (orphan reference in source) — drop
                 # the dangling id instead of pointing at a non-existent layer.
                 layer.pop("parentId", None)
+        meta = layer.get("meta")
+        if isinstance(meta, dict):
+            for key in ("instanceOf", "componentId", "maskLayerId"):
+                val = meta.get(key)
+                if isinstance(val, str) and val in id_map:
+                    meta[key] = id_map[val]
+            ops = meta.get("ops")
+            if isinstance(ops, list):
+                for entry in ops:
+                    if not isinstance(entry, dict):
+                        continue
+                    lid = entry.get("layerId")
+                    if isinstance(lid, str) and lid in id_map:
+                        entry["layerId"] = id_map[lid]
     for field in doc["fields"]:
         field["id"] = _new_id()
     for page in doc.get("pages") or []:

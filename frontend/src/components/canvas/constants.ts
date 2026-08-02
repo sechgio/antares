@@ -14,10 +14,10 @@ export const DEFAULT_FIELD_KEYS = [
 ] as const;
 
 export function createLayer(
-  type: Exclude<CanvasLayerType, 'frame'>,
+  type: Exclude<CanvasLayerType, 'frame' | 'component'>,
   overrides?: Partial<CanvasLayer>,
 ): CanvasLayer {
-  const base: Record<Exclude<CanvasLayerType, 'frame'>, CanvasLayer> = {
+  const base: Record<Exclude<CanvasLayerType, 'frame' | 'component'>, CanvasLayer> = {
     text: {
       id: newId(),
       type: 'text',
@@ -329,6 +329,20 @@ export function createLayer(
         '--background-color': '#ffffff',
         '--border-width': '1px',
         '--border-color': '#000000',
+        '--opacity': '100',
+      },
+    },
+    boolean: {
+      id: newId(),
+      type: 'boolean',
+      name: 'Booleana',
+      value: '',
+      cssVars: {
+        '--width': mm(40),
+        '--height': mm(40),
+        '--translate-x': mm(20),
+        '--translate-y': mm(260),
+        '--background-color': '#ffffff',
         '--opacity': '100',
       },
     },

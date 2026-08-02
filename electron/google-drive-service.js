@@ -228,8 +228,19 @@ async function getDriveStatus() {
 
 const PREVIEW_LIMIT = 4;
 const PREVIEW_TTL_MS = 10 * 60 * 1000;
+/** Align with FolderPreviewStrip SESSION_CACHE_MAX — hard cap on retained thumbs. */
+const PREVIEW_CACHE_MAX = 30;
 /** @type {Map<string, { at: number, result: { folder_id: string, thumbs: Array<{ id: string, name: string, dataUrl: string | null }> } }>} */
 const previewCache = new Map();
+
+function _setPreviewCache(folderId, entry) {
+  if (previewCache.has(folderId)) previewCache.delete(folderId);
+  previewCache.set(folderId, entry);
+  while (previewCache.size > PREVIEW_CACHE_MAX) {
+    const oldest = previewCache.keys().next().value;
+    previewCache.delete(oldest);
+  }
+}
 
 function shrinkThumbnailUrl(url) {
   const raw = String(url || '');
@@ -262,8 +273,11 @@ async function fetchThumbnailDataUrl(thumbnailLink, accessToken) {
 async function previewFolder(input, { limit = PREVIEW_LIMIT, force = false } = {}) {
   const folderId = assertValidFolderId(input);
   const cached = previewCache.get(folderId);
-  if (!force && cached && Date.now() - cached.at < PREVIEW_TTL_MS) {
-    return cached.result;
+  if (!force && cached) {
+    if (Date.now() - cached.at < PREVIEW_TTL_MS) {
+      return cached.result;
+    }
+    previewCache.delete(folderId);
   }
 
   const tokens = await getValidTokens();
@@ -290,7 +304,7 @@ async function previewFolder(input, { limit = PREVIEW_LIMIT, force = false } = {
   );
 
   const result = { folder_id: folderId, thumbs };
-  previewCache.set(folderId, { at: Date.now(), result });
+  _setPreviewCache(folderId, { at: Date.now(), result });
   return result;
 }
 

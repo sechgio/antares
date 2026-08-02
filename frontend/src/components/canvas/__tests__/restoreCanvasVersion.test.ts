@@ -31,6 +31,11 @@ const supabaseMock = vi.hoisted(() => {
 vi.mock('../utils/imageBlobStore', () => ({
   serializeDocumentImages: (...args: unknown[]) =>
     serializeDocumentImages(...(args as [CanvasDocument])),
+  hydrateDocumentImages: vi.fn(async (doc: CanvasDocument) => doc),
+  clearBlobStore: vi.fn(),
+  releaseImageBlob: vi.fn(),
+  getBlobUrl: vi.fn((v: string) => v),
+  getThumbnailUrl: vi.fn((v: string) => v),
 }));
 
 vi.mock('../../../api', () => ({

@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   clearBlobStore,
   getBlobUrl,
   getThumbnailUrl,
   hydrateDocumentImages,
   registerImageBlob,
+  releaseImageBlob,
   serializeDocumentImages,
 } from '../utils/imageBlobStore';
 import { createEmptyDocument } from '../types';
@@ -22,6 +23,22 @@ describe('imageBlobStore', () => {
     expect(registered.url).toMatch(/^blob:/);
     expect(getBlobUrl(registered.blobId)).toBe(registered.url);
     expect(getThumbnailUrl(registered.blobId)).toBeDefined();
+  });
+
+  it('releases a registered blob by url and by blobId', async () => {
+    const revokeSpy = vi.spyOn(URL, 'revokeObjectURL');
+    const byUrl = await registerImageBlob(new Blob(['a'], { type: 'image/png' }));
+    const byId = await registerImageBlob(new Blob(['b'], { type: 'image/png' }));
+
+    releaseImageBlob(byUrl.url);
+    expect(getBlobUrl(byUrl.blobId)).toBe(byUrl.blobId);
+    expect(revokeSpy).toHaveBeenCalledWith(byUrl.url);
+
+    releaseImageBlob(byId.blobId);
+    expect(getBlobUrl(byId.blobId)).toBe(byId.blobId);
+    expect(revokeSpy).toHaveBeenCalledWith(byId.url);
+
+    revokeSpy.mockRestore();
   });
 
   it('hydrates base64 image layers without decoding (keeps dataUrl for direct render)', async () => {
@@ -74,6 +91,8 @@ describe('imageBlobStore', () => {
 
     expect(imgLayer).toBeDefined();
     expect(imgLayer?.value).toMatch(/^data:/);
+    // Registered blob must not retain the dataUrl copy after serialize.
+    expect(registered.dataUrl).toBeUndefined();
   });
 
   it('roundtrips blob URL and blobId through serialize then hydrate', async () => {

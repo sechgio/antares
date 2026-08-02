@@ -94,6 +94,8 @@ describe('guides', () => {
     const at2 = snapThresholdMm(2, 5);
     expect(at1).toBeCloseTo(5 / MM_TO_PX, 5);
     expect(at2).toBeCloseTo(at1 / 2, 5);
+    // Low zoom is capped (see SNAP_THRESHOLD_MAX_MM in selectionTransform).
+    expect(snapThresholdMm(0.02, 5)).toBeLessThan(5 / (MM_TO_PX * 0.02));
   });
 
   it('clampGuidePos clamps to the page extent', () => {

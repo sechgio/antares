@@ -1,8 +1,26 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createLayer } from '../constants';
-import Artboard from '../editor/Artboard';
+import Artboard, { createFrameRectCache } from '../editor/Artboard';
 import { createEmptyDocument, type CanvasLayer } from '../types';
+
+describe('createFrameRectCache', () => {
+  it('re-reads getBoundingClientRect when zoomRef changes mid-gesture', () => {
+    const frame = document.createElement('div');
+    const rects = [
+      { left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100, x: 0, y: 0, toJSON() {} },
+      { left: 10, top: 20, width: 200, height: 200, right: 210, bottom: 220, x: 10, y: 20, toJSON() {} },
+    ] as DOMRect[];
+    let calls = 0;
+    frame.getBoundingClientRect = () => rects[calls++]!;
+    const zoomRef = { current: 1 };
+    const cache = createFrameRectCache(frame, zoomRef);
+    expect(cache.read()).toBe(rects[0]);
+    expect(cache.read()).toBe(rects[0]); // cached
+    zoomRef.current = 2;
+    expect(cache.read()).toBe(rects[1]);
+  });
+});
 
 /**
  * Drag gestures are coalesced to one state update per animation frame
@@ -162,6 +180,73 @@ describe('Artboard drag gestures', () => {
     act(() => tick());
 
     expect(onChangeLayers).not.toHaveBeenCalled();
+  });
+
+  it('pointercancel aborts move without committing (reverts DOM preview)', () => {
+    const layer = createLayer('rect'); // 20mm, 100mm → translate(76px, 378px)
+    const { container, onChangeLayers } = setup([layer], [layer.id]);
+    const node = container.querySelector<HTMLElement>(`[data-layer-id="${layer.id}"]`)!;
+    const origin = node.style.transform;
+    const mm = 96 / 25.4;
+
+    fireEvent.pointerDown(node, { button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(window, { clientX: 100 + 30 * mm, clientY: 100 });
+    act(() => tick());
+    expect(node.style.transform).not.toBe(origin);
+
+    act(() => {
+      window.dispatchEvent(new PointerEvent('pointercancel'));
+    });
+
+    expect(onChangeLayers).not.toHaveBeenCalled();
+    expect(node.style.transform).toBe(origin);
+    expect(node.style.willChange).toBe('');
+  });
+
+  it('Escape aborts move without committing (Figma cancel)', () => {
+    const layer = createLayer('rect');
+    const { container, onChangeLayers } = setup([layer], [layer.id]);
+    const node = container.querySelector<HTMLElement>(`[data-layer-id="${layer.id}"]`)!;
+    const origin = node.style.transform;
+    const mm = 96 / 25.4;
+
+    fireEvent.pointerDown(node, { button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(window, { clientX: 100 + 25 * mm, clientY: 100 });
+    act(() => tick());
+    expect(node.style.transform).not.toBe(origin);
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    });
+
+    expect(onChangeLayers).not.toHaveBeenCalled();
+    expect(node.style.transform).toBe(origin);
+
+    act(() => {
+      fireEvent.pointerUp(window, { clientX: 100 + 25 * mm, clientY: 100 });
+    });
+    expect(onChangeLayers).not.toHaveBeenCalled();
+  });
+
+  it('Escape aborts resize without committing', () => {
+    const layer = createLayer('rect'); // 50×40 mm
+    const { container, onChangeLayers } = setup([layer], [layer.id]);
+    const node = container.querySelector<HTMLElement>(`[data-layer-id="${layer.id}"]`)!;
+    const se = screen.getByTestId('canvas-resize-handle-se');
+    const mm = 96 / 25.4;
+    const baseW = parseFloat(node.style.width);
+
+    fireEvent.pointerDown(se, { button: 0, clientX: 300, clientY: 300 });
+    fireEvent.pointerMove(window, { clientX: 300 + 20 * mm, clientY: 300 + 20 * mm });
+    act(() => tick());
+    expect(parseFloat(node.style.width)).toBeGreaterThan(baseW);
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    });
+
+    expect(onChangeLayers).not.toHaveBeenCalled();
+    expect(parseFloat(node.style.width)).toBeCloseTo(baseW, 0);
   });
 
   it('keeps selection ring on locked layers and hides resize handles', () => {

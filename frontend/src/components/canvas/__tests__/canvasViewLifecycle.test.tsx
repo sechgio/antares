@@ -44,6 +44,10 @@ vi.mock('../sync/cloudQueue', () => ({
 vi.mock('../utils/imageBlobStore', () => ({
   serializeDocumentImages: vi.fn(async (doc: CanvasDocument) => doc),
   hydrateDocumentImages: vi.fn(async (doc: CanvasDocument) => doc),
+  clearBlobStore: vi.fn(),
+  releaseImageBlob: vi.fn(),
+  getBlobUrl: vi.fn((v: string) => v),
+  getThumbnailUrl: vi.fn((v: string) => v),
 }));
 
 vi.mock('../presets/loadPresets', () => ({
@@ -84,6 +88,7 @@ vi.mock('../editor/GeneratePanel', () => ({
 
 import { api } from '../../../api';
 import CanvasView from '../CanvasView';
+import { queueCanvasCloudPush } from '../sync/cloudQueue';
 
 function makeDoc(id: string, name = id): CanvasDocument {
   const doc = createEmptyDocument(name);
@@ -232,7 +237,7 @@ describe('CanvasView lifecycle', () => {
     expect(vi.mocked(api.canvasSaveHistory).mock.calls.length).toBe(callsAfterFirst);
   });
 
-  it('conflict keep-local dismisses without replace; same remote ts does not reappear; use-remote saves', async () => {
+  it('conflict keep-local consolidates with save+push force; same remote ts does not reappear; use-remote saves', async () => {
     const localDoc = makeDoc('doc-a', 'Local');
     const remoteDoc = makeDoc('doc-a', 'Remote');
     remoteDoc.updatedAt = '2026-07-31T12:00:00.000Z';
@@ -284,13 +289,23 @@ describe('CanvasView lifecycle', () => {
       expect(screen.getByTestId('sync-conflict-bar')).toBeInTheDocument();
     });
 
-    const saveCallsBefore = vi.mocked(api.canvasSave).mock.calls.length;
+    vi.mocked(api.canvasSave).mockClear();
+    vi.mocked(queueCanvasCloudPush).mockClear();
     fireEvent.click(screen.getByTestId('sync-conflict-keep-local'));
 
     await waitFor(() => {
       expect(screen.queryByTestId('sync-conflict-bar')).toBeNull();
     });
-    expect(vi.mocked(api.canvasSave).mock.calls.length).toBe(saveCallsBefore);
+    await waitFor(() => {
+      expect(api.canvasSave).toHaveBeenCalledWith(
+        expect.objectContaining({ id: localDoc.id }),
+        { touch: true },
+      );
+    });
+    expect(queueCanvasCloudPush).toHaveBeenCalledWith(
+      expect.objectContaining({ id: localDoc.id }),
+      { forceResurrect: true },
+    );
 
     // Same remote ts → dismissed; bar must not reappear.
     await act(async () => {
@@ -381,6 +396,36 @@ describe('CanvasView lifecycle', () => {
       // Cross the debounce window; then flush onSave's async chain.
       await act(async () => {
         vi.advanceTimersByTime(10);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(api.canvasSave).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('flushes autosave when active becomes false before the debounce fires', async () => {
+    const { rerender } = render(<CanvasView active />);
+    await waitFor(() => {
+      expect(screen.queryByTestId('mock-design-stage')).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(api.canvasList).toHaveBeenCalled();
+    });
+
+    vi.mocked(api.canvasSave).mockClear();
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByLabelText('Añadir página'));
+
+      await act(async () => {
+        vi.advanceTimersByTime(200);
+      });
+      expect(api.canvasSave).not.toHaveBeenCalled();
+
+      await act(async () => {
+        rerender(<CanvasView active={false} />);
         await Promise.resolve();
         await Promise.resolve();
       });

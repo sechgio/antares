@@ -21,20 +21,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+import jsonschema  # type: ignore
+
 logger = logging.getLogger(__name__)
-
-# Optional dependency. Imported lazily to keep the core runtime lean.
-try:  # pragma: no cover - exercised in environments where jsonschema is installed
-    import jsonschema  # type: ignore
-
-    _JSONSCHEMA_AVAILABLE = True
-except ImportError:  # pragma: no cover
-    jsonschema = None  # type: ignore[assignment]
-    _JSONSCHEMA_AVAILABLE = False
-    logger.warning(
-        "jsonschema no está instalado; la validación de payloads de historial "
-        "queda desactivada. TODO: agregar jsonschema a pyproject.toml."
-    )
 
 
 # ─── Schema fragments ──────────────────────────────────────────────────────
@@ -630,20 +619,11 @@ def get_run_type(run_type: str) -> RunTypeMeta:
 
 
 def validate_run_payload(run_type: str, options: Any, files: Any) -> None:
-    """Validate a payload against the registry schema. Raises ``ValueError`` for unknown types.
-
-    Behavior when ``jsonschema`` is not installed: logs a warning and returns
-    without raising (degraded validation). The run is then persisted with
-    ``schema_version=0`` to mark it as "unvalidated".
-    """
+    """Validate a payload against the registry schema. Raises ``ValueError`` for unknown types."""
     meta = RUN_TYPE_REGISTRY.get(run_type)
     if meta is None:
         msg = f"Unknown run_type: {run_type!r}. Registered types: {ALL_RUN_TYPES}"
         raise ValueError(msg)
-
-    if not _JSONSCHEMA_AVAILABLE:
-        # FIXME: agregar jsonschema a pyproject.toml para validación estricta.
-        return
 
     if meta.options_schema:
         jsonschema.validate(instance=options or {}, schema=meta.options_schema)  # type: ignore[union-attr]

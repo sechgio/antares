@@ -221,6 +221,12 @@ async function fetchRemoteDocuments(ids: string[]): Promise<CanvasDocument[]> {
 
 export type SyncOptions = {
   openDocumentId?: string;
+  /**
+   * In-memory open document for conflict.localDoc. Prefer this over disk so
+   * unsaved edits are not dropped when building SyncConflict. Falls back to
+   * api.canvasGet when omitted (compat).
+   */
+  openDocument?: CanvasDocument;
   /** When true, never overwrite the open document from cloud. */
   openDirty?: boolean;
   /**
@@ -256,11 +262,25 @@ let opChain: Promise<unknown> = Promise.resolve();
 function mergeSyncOptions(a: SyncOptions | null, b: SyncOptions): SyncOptions {
   return {
     openDocumentId: b.openDocumentId ?? a?.openDocumentId,
+    openDocument: b.openDocument ?? a?.openDocument,
     // Prefer dirty=true so a later dirty caller is not overwritten by a clean retry.
     openDirty: Boolean(a?.openDirty || b.openDirty),
     // Prefer guarded=true so a first-boot sync is not repeated as an unguarded one.
     guarded: Boolean(a?.guarded || b.guarded),
   };
+}
+
+/** Prefer in-memory open doc for conflict payloads; fall back to disk. */
+async function resolveConflictLocalDoc(options: SyncOptions): Promise<CanvasDocument | null> {
+  if (
+    options.openDocument &&
+    (!options.openDocumentId || options.openDocument.id === options.openDocumentId)
+  ) {
+    return normalizeDocument(options.openDocument);
+  }
+  if (!options.openDocumentId) return null;
+  const localGot = await api.canvasGet(options.openDocumentId);
+  return normalizeDocument(localGot.document as CanvasDocument);
 }
 
 /**
@@ -340,23 +360,15 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
   for (const r of remote) {
     if (r.deleted_at) {
       if (localById.has(r.id)) {
-        if (options.guarded) {
-          // First boot: never destroy a local doc just because the remote row
-          // was soft-deleted elsewhere. Surface it as a conflict when it's the
-          // open doc so the user decides; otherwise keep the local doc intact.
-          if (options.openDocumentId === r.id) {
-            conflictRemoteDeletedMeta = r;
-          }
+        if (options.openDocumentId === r.id) {
+          // Soft-delete of the currently open doc is always a conflict —
+          // never auto-delete the document the user is viewing (dirty or clean).
+          conflictRemoteDeletedMeta = r;
           continue;
         }
-        if (options.openDocumentId === r.id) {
-          if (options.openDirty) {
-            conflictRemoteDeletedMeta = r;
-          } else {
-            await api.canvasDelete(r.id);
-            deletedLocal += 1;
-            localById.delete(r.id);
-          }
+        if (options.guarded) {
+          // First boot: never destroy a non-open local doc just because the
+          // remote row was soft-deleted elsewhere; keep the local doc intact.
           continue;
         }
         await api.canvasDelete(r.id);
@@ -401,27 +413,27 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
   // Build the conflict payload if the open doc diverged from cloud.
   if (conflictRemoteDeletedMeta && options.openDocumentId) {
     try {
-      const localGot = await api.canvasGet(options.openDocumentId);
-      const localDoc = normalizeDocument(localGot.document as CanvasDocument);
-      conflict = {
-        localDoc,
-        remoteDoc: null,
-        remoteUpdatedAt: conflictRemoteDeletedMeta.updated_at,
-        localUpdatedAt: localDoc.updatedAt || '',
-        remoteDeleted: true,
-      };
+      const localDoc = await resolveConflictLocalDoc(options);
+      if (localDoc) {
+        conflict = {
+          localDoc,
+          remoteDoc: null,
+          remoteUpdatedAt: conflictRemoteDeletedMeta.updated_at,
+          localUpdatedAt: localDoc.updatedAt || '',
+          remoteDeleted: true,
+        };
+      }
     } catch {
       // Fetch failed — degrade to the old skip behavior.
     }
   } else if (conflictRemoteMeta && options.openDocumentId) {
     try {
-      const [remoteDocs, localGot] = await Promise.all([
+      const [remoteDocs, localDoc] = await Promise.all([
         fetchRemoteDocuments([conflictRemoteMeta.id]),
-        api.canvasGet(options.openDocumentId),
+        resolveConflictLocalDoc(options),
       ]);
       const remoteDoc = remoteDocs[0];
-      const localDoc = normalizeDocument(localGot.document as CanvasDocument);
-      if (remoteDoc) {
+      if (remoteDoc && localDoc) {
         conflict = {
           localDoc,
           remoteDoc,

@@ -28,6 +28,18 @@ describe('layerTree', () => {
     expect(tree.find((n) => n.layer.id === 'g1')!.children.map((c) => c.layer.id)).toEqual(['a']);
   });
 
+  it('expands children under component containers', () => {
+    const comp = {
+      ...createLayer('group', { id: 'c1', name: 'Comp' }),
+      type: 'component' as const,
+      meta: { componentId: 'c1' },
+    };
+    const child = createLayer('text', { id: 't1', parentId: 'c1' });
+    const tree = buildLayerTree([comp, child]);
+    const node = tree.find((n) => n.layer.id === 'c1')!;
+    expect(node.children.map((c) => c.layer.id)).toEqual(['t1']);
+  });
+
   it('flatten respects collapsed parents', () => {
     const group = createLayer('group', { id: 'g1' });
     const a = createLayer('text', { id: 'a', parentId: 'g1' });

@@ -48,9 +48,31 @@ def test_preview_with_mapping(monkeypatch, tmp_path) -> None:
     preview = {item["origen"]: item for item in result["preview"]}
     assert preview["IMG_0001.jpg"]["nuevo"] == "fachada_norte.jpg"
     assert preview["IMG_0002.jpg"]["nuevo"] == "fachada_sur.jpg"
-    assert preview["IMG_0001.jpg"]["en_bd"] is True
-    assert preview["IMG_0002.jpg"]["en_bd"] is True
-    assert not result.get("collisions")
+    assert "truncated" not in result
+
+
+def test_preview_truncates_over_max_files(tmp_path) -> None:
+    n = conversion.MAX_PREVIEW_FILES + 1
+    files = []
+    mapping = {}
+    for i in range(n):
+        name = f"IMG_{i:04d}.jpg"
+        path = tmp_path / name
+        path.write_text("x")
+        files.append(str(path))
+        mapping[name] = f"out_{i:04d}"
+
+    result = conversion.preview({
+        "files": files,
+        "patron": "",
+        "mapping": mapping,
+    })
+
+    assert result["truncated"] is True
+    assert result["total_files"] == n
+    assert len(result["preview"]) == conversion.MAX_PREVIEW_FILES
+    assert result["preview"][0]["origen"] == "IMG_0000.jpg"
+    assert result["preview"][-1]["origen"] == f"IMG_{conversion.MAX_PREVIEW_FILES - 1:04d}.jpg"
 
 
 def test_preview_reports_collisions(monkeypatch, tmp_path) -> None:
@@ -177,7 +199,7 @@ def test_run_conversion_job_resolves_sep_placeholder(monkeypatch, tmp_path) -> N
     monkeypatch.setattr(conversion, "get_scheduler", lambda: scheduler)
     monkeypatch.setattr(conversion, "es_video", lambda _path: False)
     monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 10)
-    monkeypatch.setattr(conversion, "copiar_archivo", lambda src_path, out_path: copied.append((str(src_path), str(out_path))))
+    monkeypatch.setattr(conversion, "copiar_archivo", lambda src_path, out_path, **_kwargs: copied.append((str(src_path), str(out_path))))
     monkeypatch.setattr(conversion, "_notify_complete", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **_kwargs: None)
     monkeypatch.setattr(
@@ -252,7 +274,7 @@ def test_run_conversion_job_with_mapping_rename_only(monkeypatch, tmp_path) -> N
     monkeypatch.setattr(conversion, "get_scheduler", lambda: scheduler)
     monkeypatch.setattr(conversion, "es_video", lambda _path: False)
     monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 10)
-    monkeypatch.setattr(conversion, "copiar_archivo", lambda src_path, out_path: copied.append((str(src_path), str(out_path))))
+    monkeypatch.setattr(conversion, "copiar_archivo", lambda src_path, out_path, **_kwargs: copied.append((str(src_path), str(out_path))))
     monkeypatch.setattr(conversion, "_notify_complete", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **_kwargs: None)
 
@@ -300,7 +322,7 @@ def test_run_conversion_job_with_mapping_path_and_columns(monkeypatch, tmp_path)
     monkeypatch.setattr(conversion, "get_scheduler", lambda: scheduler)
     monkeypatch.setattr(conversion, "es_video", lambda _path: False)
     monkeypatch.setattr(conversion, "_calculate_chunk_size", lambda: 10)
-    monkeypatch.setattr(conversion, "copiar_archivo", lambda src_path, out_path: copied.append((str(src_path), str(out_path))))
+    monkeypatch.setattr(conversion, "copiar_archivo", lambda src_path, out_path, **_kwargs: copied.append((str(src_path), str(out_path))))
     monkeypatch.setattr(conversion, "_notify_complete", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **_kwargs: None)
 

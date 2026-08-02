@@ -37,6 +37,10 @@ declare global {
 
 const IPC_TIMEOUT = 30_000;           // default timeout — most ops finish in <5s
 const IPC_LONG_TIMEOUT = 900_000;     // 15 min for large PDF/ZIP/image batches
+// Renderer backstop must outlive Electron main's IPC timeout so main always
+// clears `_pendingRequests` first. Without this buffer the FE race (started
+// before waitForReady) can reject while main+backend still hold the request.
+const FE_TIMEOUT_BUFFER_MS = 10_000;
 // No frontend retry layer: the Electron main process (ipc-router._callBackend)
 // already waits for backend readiness and retries transient mid-flight failures
 // with waitForReady() between attempts. A second retry layer here multiplied
@@ -171,7 +175,8 @@ const _invoke = async <T>(method: string, params?: Record<string, unknown> | obj
     throw new AntaresAPIError('Electron IPC no disponible', -32000, 'INTERNAL_ERROR');
   }
 
-  const timeoutMs = LONG_RUNNING_METHODS.has(method) ? IPC_LONG_TIMEOUT : IPC_TIMEOUT;
+  const timeoutMs =
+    (LONG_RUNNING_METHODS.has(method) ? IPC_LONG_TIMEOUT : IPC_TIMEOUT) + FE_TIMEOUT_BUFFER_MS;
   // Single attempt: retry logic lives in ipc-router._callBackend (main process),
   // which can actually wait for the backend to recover. The timeout race is a
   // backstop for the case where the main process never resolves the invoke.
@@ -277,6 +282,10 @@ export interface PreviewResult {
   collisions?: MappingCollision[];
   detected_key_column?: string;
   detected_key_column_matches?: number;
+  /** True when the backend capped the preview batch (see total_files). */
+  truncated?: boolean;
+  /** Full input file count before preview truncation. */
+  total_files?: number;
 }
 
 export interface TechnicalReportsListBody {
@@ -328,6 +337,8 @@ export interface HtmlToPdfBody {
 export interface CanvasExportCmykPdfBody {
   document: import('./components/canvas/types').CanvasDocument;
   contexts?: unknown[];
+  /** When true, render context[i] with page i (1:1) instead of cartesian product. */
+  pair_context_pages?: boolean;
   color_profile?: string;
   dpi?: number;
   bleed_mm?: number;
@@ -679,7 +690,7 @@ export const api = {
   autoimgFoldersAdd: (body: { name: string; folder_id: string; activo: boolean }) => _invoke<{ success: boolean }>('autoimg_folders_add', body),
   autoimgFoldersRemove: (body: { folder_id: string }) => _invoke<{ success: boolean }>('autoimg_folders_remove', body),
   autoimgFoldersToggle: (body: { folder_id: string; activo: boolean }) => _invoke<{ success: boolean }>('autoimg_folders_toggle', body),
-  autoimgScanAndSync: () => _invoke<{ success: boolean; updated: number; new_rows: number; logs: string[]; folder_errors: number; scan: { results: { folder_summary: Array<{ name: string; count: number; nis_found: number; error?: string }>; nis_results: Array<{ nis: string; count: number; folders: string[]; estado: string }> }; summary: { total: number; completos: number; faltantes: number; sobrantes: number; sin_sgio: number }; folders_failed: number } }>('autoimg_scan_and_sync'),
+  autoimgScanAndSync: () => _invoke<{ success: boolean; updated: number; new_rows: number; logs: string[]; folder_errors: number; scan: { summary: { total: number; completos: number; faltantes: number; sobrantes: number; sin_sgio: number }; folders_failed: number } }>('autoimg_scan_and_sync'),
   autoimgSyncToSheet: () => _invoke<{ success: boolean; updated: number; new_rows: number; logs: string[] }>('autoimg_sync_to_sheet'),
   autoimgSyncFromSheet: () => _invoke<{ success: boolean; rows: string[][]; arrastre?: Array<{ nis: string; sgio: string; motivo: string; fecha: string; observacion: string }> }>('autoimg_sync_from_sheet'),
   autoimgRenameExport: (body: { dest_folder_id: string; only_completos?: boolean }) =>

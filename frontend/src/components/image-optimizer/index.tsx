@@ -30,6 +30,7 @@ import {
   resolveSettingsForItem,
   reorderImageItems,
   revokeItemUrls,
+  saveEntriesInChunks,
   syncStaleState,
   downloadBlob,
 } from './utils';
@@ -57,6 +58,7 @@ export default function ImageOptimizer() {
   const downloadMenuAnchorRef = useRef<HTMLDivElement>(null);
   const itemsRef = useRef<ImageItem[]>([]);
   const settingsRef = useRef<BatchSettings>(settings);
+  const saveCancelledRef = useRef(false);
 
   const updateDownloadMenuPosition = useCallback(() => {
     const anchor = downloadMenuAnchorRef.current;
@@ -417,27 +419,39 @@ export default function ImageOptimizer() {
   const writeEntriesToFolder = useCallback(async (entries: DownloadEntry[], folder: string) => {
     const nameMap = getExportNameMap();
 
+    saveCancelledRef.current = false;
     setIsProcessing(true);
     setProcessingProgress({ current: 0, total: entries.length });
     setProcessingMessage('Guardando archivos en carpeta...');
 
     try {
-      const files: Array<{ filename: string; content_b64: string }> = [];
-      for (let index = 0; index < entries.length; index += 1) {
-        const entry = entries[index];
-        const filename = nameMap.get(entry.item.id) || entry.item.originalName;
-        const buffer = await entry.blob.arrayBuffer();
-        files.push({
-          filename,
-          content_b64: arrayBufferToBase64(buffer),
-        });
-        setProcessingProgress({ current: index + 1, total: entries.length });
-      }
+      const namedEntries = entries.map((entry) => ({
+        filename: nameMap.get(entry.item.id) || entry.item.originalName,
+        blob: entry.blob,
+      }));
 
-      const result = await api.imageOptimizerSaveFiles({ files, output_folder: folder });
-      const saved = result?.saved_count ?? 0;
-      const skipped = result?.skipped_count ?? 0;
-      if (saved === 0) {
+      const result = await saveEntriesInChunks({
+        entries: namedEntries,
+        outputFolder: folder,
+        saveFiles: (body) => api.imageOptimizerSaveFiles(body),
+        shouldCancel: () => saveCancelledRef.current,
+        onProgress: (current, total) => setProcessingProgress({ current, total }),
+        encodeBuffer: arrayBufferToBase64,
+      });
+
+      const saved = result.saved_count;
+      const skipped = result.skipped_count;
+      if (result.cancelled) {
+        if (saved === 0) {
+          addToast('Guardado cancelado. No se escribio ningun archivo.', 'info', 4200);
+        } else {
+          addToast(
+            `Guardado cancelado. ${saved} archivo(s) escritos antes de detener.${skipped > 0 ? ` ${skipped} omitido(s).` : ''} Carpeta: ${folder}`,
+            'info',
+            5200,
+          );
+        }
+      } else if (saved === 0) {
         addToast('No se pudo guardar ningun archivo en la carpeta.', 'error', 4200);
       } else if (skipped === 0) {
         addToast(`Guardados ${saved} archivo(s) en: ${folder}`, 'success', 4200);
@@ -449,6 +463,7 @@ export default function ImageOptimizer() {
       const message = error instanceof Error ? error.message : 'Error desconocido';
       addToast(`No se pudo guardar en la carpeta: ${message}.`, 'error', 4600);
     } finally {
+      saveCancelledRef.current = false;
       setIsProcessing(false);
       setProcessingMessage('');
       setProcessingProgress({ current: 0, total: 0 });

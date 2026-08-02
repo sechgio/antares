@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+
+from backend.core.evidencia_volanteo import RenderingError
 from backend.handlers import evidencia_volanteo as handler_module
 
 
@@ -102,6 +105,37 @@ def test_render_pdf_uses_preview_html_when_provided(monkeypatch) -> None:
     assert called["html"] is True
     assert called["legacy"] is False
     assert resp["filename"] == "preview.pdf"
+
+
+def test_render_pdf_html_path_rejects_over_max_pages(monkeypatch) -> None:
+    """Production PDF export sends html — cap must apply before WeasyPrint."""
+    called = {"html": False}
+
+    def fake_render_pdf_html(html):  # type: ignore[no-untyped-def]
+        called["html"] = True
+        return b"%PDF", "preview.pdf"
+
+    monkeypatch.setattr(handler_module, "MAX_PAGES", 2)
+    monkeypatch.setattr(handler_module, "render_pdf_html", fake_render_pdf_html)
+
+    pages = [
+        {"cuadrante": "A", "images": []},
+        {"cuadrante": "B", "images": []},
+        {"cuadrante": "C", "images": []},
+    ]
+    with pytest.raises(RenderingError, match="máximo de 2 páginas"):
+        handler_module.evidencia_volanteo_render(
+            {
+                "title": "EVIDENCIAS FOTOGRAFICAS",
+                "pages": pages,
+                "logos": {},
+                "images": {},
+                "format": "pdf",
+                "html": "<html><body>Vista previa</body></html>",
+            },
+        )
+
+    assert called["html"] is False
 
 
 def test_render_handles_null_images_and_logos(monkeypatch) -> None:

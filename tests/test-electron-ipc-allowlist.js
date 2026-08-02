@@ -15,13 +15,51 @@ const API_PATH = path.join(ROOT, 'frontend', 'src', 'api.ts');
 const ALLOWLIST_PATH = path.join(ROOT, 'electron', 'ipc-methods.js');
 const LONG_RUNNING_PATH = path.join(ROOT, 'shared', 'long-running-methods.json');
 
+/**
+ * Extract method names from `_invoke('method')` / `_invoke<...>('method')`.
+ * Skips the `_invoke` definition itself (first param is typed `method: string`).
+ * Balances nested generics (e.g. `Array<{…}>`) before reading the string literal.
+ */
 function extractApiMethods(source) {
   const methods = new Set();
-  // Matches: _invoke<...>('method_name', ...) or _invoke<...>('method_name')
-  const invokeRe = /_invoke\s*<[^>]+>\s*\(\s*['"]([a-zA-Z0-9_]+)['"]/g;
-  let match;
-  while ((match = invokeRe.exec(source)) !== null) {
-    methods.add(match[1]);
+  const invokeAt = /_invoke\b/g;
+  let at;
+  while ((at = invokeAt.exec(source)) !== null) {
+    let i = at.index + at[0].length;
+    while (i < source.length && /\s/.test(source[i])) i++;
+
+    // Optional type args: balance `<…>` including nested generics.
+    if (source[i] === '<') {
+      let depth = 0;
+      for (; i < source.length; i++) {
+        const ch = source[i];
+        if (ch === '<') depth++;
+        else if (ch === '>') {
+          depth--;
+          if (depth === 0) {
+            i++;
+            break;
+          }
+        }
+      }
+      while (i < source.length && /\s/.test(source[i])) i++;
+    }
+
+    if (source[i] !== '(') continue;
+    i++;
+    while (i < source.length && /\s/.test(source[i])) i++;
+
+    const quote = source[i];
+    if (quote !== "'" && quote !== '"') continue;
+    i++;
+    let name = '';
+    while (i < source.length && source[i] !== quote) {
+      name += source[i];
+      i++;
+    }
+    if (/^[a-zA-Z0-9_]+$/.test(name)) {
+      methods.add(name);
+    }
   }
   return methods;
 }

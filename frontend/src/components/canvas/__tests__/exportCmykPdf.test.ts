@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../../../api';
 import { exportCanvasPdf } from '../export/exportPdf';
-import { createEmptyDocument } from '../types';
+import { createEmptyDocument, newId } from '../types';
+import type { FillContext } from '../runtime/renderHtml';
 
 vi.mock('../../../api', () => ({
   api: {
@@ -9,6 +10,10 @@ vi.mock('../../../api', () => ({
     canvasExportCmykPdf: vi.fn(),
   },
 }));
+
+function emptyCtx(images: string[] = []): FillContext {
+  return { data: {}, images, logoLeft: null, logoRight: null };
+}
 
 describe('exportCanvasPdf with CMYK color mode', () => {
   beforeEach(() => {
@@ -23,7 +28,7 @@ describe('exportCanvasPdf with CMYK color mode', () => {
 
     const result = await exportCanvasPdf({
       document: doc,
-      contexts: [{ images: [] }],
+      contexts: [emptyCtx()],
       filename: 'doc.pdf',
       colorMode: 'rgb',
     });
@@ -42,7 +47,7 @@ describe('exportCanvasPdf with CMYK color mode', () => {
 
     const result = await exportCanvasPdf({
       document: doc,
-      contexts: [{ images: [] }],
+      contexts: [emptyCtx()],
       filename: 'cmyk_doc.pdf',
       colorMode: 'cmyk',
       colorProfile: 'cmyk_iso_coated_v2',
@@ -56,9 +61,61 @@ describe('exportCanvasPdf with CMYK color mode', () => {
         bleed_mm: 3.0,
         show_crop_marks: true,
         filename: 'cmyk_doc.pdf',
+        pair_context_pages: true,
       }),
     );
     expect(api.htmlToPdf).not.toHaveBeenCalled();
     expect(result.saved_path).toBe('/path/cmyk_doc.pdf');
+  });
+
+  it('CMYK expands 4-slot doc + 9 images into 3 paired photo pages', async () => {
+    const doc = createEmptyDocument('CMYK slots');
+    for (let i = 0; i < 4; i += 1) {
+      doc.layers.push({
+        id: newId(),
+        type: 'imageSlot',
+        name: `Foto ${i + 1}`,
+        value: '',
+        pageIndex: 0,
+        meta: { index: i },
+        cssVars: {
+          '--width': '40mm',
+          '--height': '40mm',
+          '--translate-x': '0mm',
+          '--translate-y': '0mm',
+        },
+      });
+    }
+    (api.canvasExportCmykPdf as ReturnType<typeof vi.fn>).mockResolvedValue({
+      filename: 'photos.pdf',
+      saved_path: '/path/photos.pdf',
+    });
+
+    await exportCanvasPdf({
+      document: doc,
+      contexts: [emptyCtx(Array.from({ length: 9 }, (_, i) => `img-${i}`))],
+      filename: 'photos.pdf',
+      colorMode: 'cmyk',
+    });
+
+    expect(api.canvasExportCmykPdf).toHaveBeenCalledTimes(1);
+    const body = (api.canvasExportCmykPdf as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      document: { pages?: unknown[]; layers: Array<{ pageIndex?: number; type: string }> };
+      contexts: Array<{ images: string[] }>;
+      pair_context_pages?: boolean;
+    };
+    expect(body.pair_context_pages).toBe(true);
+    expect(body.contexts).toHaveLength(3);
+    expect(body.contexts[0]!.images).toEqual(['img-0', 'img-1', 'img-2', 'img-3']);
+    expect(body.contexts[1]!.images).toEqual(['img-4', 'img-5', 'img-6', 'img-7']);
+    expect(body.contexts[2]!.images).toEqual(['img-8']);
+    expect(body.document.pages).toHaveLength(3);
+    // Each expanded page carries its own remapped imageSlots.
+    for (let p = 0; p < 3; p += 1) {
+      const slots = body.document.layers.filter(
+        (l) => l.type === 'imageSlot' && (l.pageIndex ?? 0) === p,
+      );
+      expect(slots).toHaveLength(4);
+    }
   });
 });

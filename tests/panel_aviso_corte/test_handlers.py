@@ -44,6 +44,19 @@ def test_render_pdf_forwards_export_mode(monkeypatch) -> None:
     assert captured["export_mode"] == "skip_empty"
 
 
+def test_compute_match_rejects_over_max_excel_rows(monkeypatch) -> None:
+    monkeypatch.setattr(handler_module, "MAX_EXCEL_ROWS", 2)
+    with pytest.raises(ValueError, match="máximo de 2 filas"):
+        handler_module.panel_aviso_corte_compute_match(
+            {
+                "rows": [{"ID": "1"}, {"ID": "2"}, {"ID": "3"}],
+                "key_column": "ID",
+                "strategy": "exact",
+                "image_names": ["1.jpg"],
+            },
+        )
+
+
 def test_render_docx_forwards_export_mode(monkeypatch) -> None:
     captured: dict[str, object] = {}
 

@@ -474,3 +474,82 @@ export function revokeItemUrls(item: ImageItem): void {
     URL.revokeObjectURL(item.resultPreview);
   }
 }
+
+/** Max files per `image_optimizer_save_files` IPC call (avoids 64 MB JSON-RPC cliff). */
+export const SAVE_CHUNK_SIZE = 25;
+
+export type OptimizerSaveFilePayload = { filename: string; content_b64: string };
+
+export type OptimizerSaveFilesFn = (body: {
+  files: OptimizerSaveFilePayload[];
+  output_folder: string;
+}) => Promise<{ saved_count?: number; skipped_count?: number } | null | undefined>;
+
+export type SaveEntriesInChunksResult = {
+  saved_count: number;
+  skipped_count: number;
+  cancelled: boolean;
+};
+
+/**
+ * Encode blobs and persist via chunked IPC so a large batch never materializes
+ * the full Base64 payload in one JSON-RPC request.
+ */
+export async function saveEntriesInChunks(options: {
+  entries: Array<{ filename: string; blob: Blob }>;
+  outputFolder: string;
+  saveFiles: OptimizerSaveFilesFn;
+  chunkSize?: number;
+  shouldCancel?: () => boolean;
+  onProgress?: (current: number, total: number) => void;
+  encodeBuffer?: (buffer: ArrayBuffer) => string;
+}): Promise<SaveEntriesInChunksResult> {
+  const {
+    entries,
+    outputFolder,
+    saveFiles,
+    chunkSize = SAVE_CHUNK_SIZE,
+    shouldCancel,
+    onProgress,
+    encodeBuffer = arrayBufferToBase64,
+  } = options;
+
+  const total = entries.length;
+  let savedCount = 0;
+  let skippedCount = 0;
+  let completed = 0;
+
+  onProgress?.(0, total);
+
+  for (let start = 0; start < total; start += chunkSize) {
+    if (shouldCancel?.()) {
+      return { saved_count: savedCount, skipped_count: skippedCount, cancelled: true };
+    }
+
+    const slice = entries.slice(start, start + chunkSize);
+    const files: OptimizerSaveFilePayload[] = [];
+    for (const entry of slice) {
+      if (shouldCancel?.()) {
+        return { saved_count: savedCount, skipped_count: skippedCount, cancelled: true };
+      }
+      const buffer = await entry.blob.arrayBuffer();
+      files.push({
+        filename: entry.filename,
+        content_b64: encodeBuffer(buffer),
+      });
+      completed += 1;
+      onProgress?.(completed, total);
+    }
+
+    if (shouldCancel?.()) {
+      return { saved_count: savedCount, skipped_count: skippedCount, cancelled: true };
+    }
+
+    const result = await saveFiles({ files, output_folder: outputFolder });
+    savedCount += result?.saved_count ?? 0;
+    skippedCount += result?.skipped_count ?? 0;
+  }
+
+  return { saved_count: savedCount, skipped_count: skippedCount, cancelled: false };
+}
+

@@ -2,13 +2,15 @@ import { memo, useEffect, useMemo, useRef, type CSSProperties, type PointerEvent
 import type { CanvasLayer } from '../types';
 import { parseMm } from '../types';
 import { mmToScreenPx } from '../ops/drawHelpers';
+import { applyInstanceOverrides } from '../ops/components';
+import { resolveBooleanRender } from '../ops/booleanOps';
 import {
   canFocusFieldBinding,
   canInlineEditLayer,
   fieldDesignLabel,
   justifyContentForTextAlign,
 } from '../ops/inlineEdit';
-import { clipPathForLayerType } from '../ops/shapePaths';
+import { clipPathForLayer } from '../ops/shapePaths';
 import {
   buildLayerPaintStyle,
   DEFAULT_LAYER_FONT,
@@ -23,6 +25,10 @@ import { getBlobUrl } from '../utils/imageBlobStore';
 
 interface LayerNodeProps {
   layer: CanvasLayer;
+  /** Master component when `layer.meta.instanceOf` is set — used to resolve overrides. */
+  masterLayer?: CanvasLayer | null;
+  /** Document layers for mask / boolean operand resolution. */
+  documentLayers?: CanvasLayer[];
   selected: boolean;
   interactive: boolean;
   scale: number;
@@ -78,7 +84,9 @@ function paintVarsKey(vars: CanvasLayer['cssVars'], scale: number, lineOverride:
 }
 
 function LayerNode({
-  layer,
+  layer: layerProp,
+  masterLayer = null,
+  documentLayers = [],
   selected,
   interactive,
   scale,
@@ -97,6 +105,13 @@ function LayerNode({
   onCommitEdit,
   onStartPathEdit,
 }: LayerNodeProps) {
+  const layer = useMemo(() => {
+    if (!layerProp.meta?.instanceOf) return layerProp;
+    return {
+      ...layerProp,
+      cssVars: applyInstanceOverrides(layerProp, masterLayer ?? undefined),
+    };
+  }, [layerProp, masterLayer]);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const paintCacheRef = useRef<{ key: string; paint: Record<string, string> } | null>(null);
   // Keep latest callbacks behind refs so memo can ignore handler identity without going stale.
@@ -144,6 +159,24 @@ function LayerNode({
     () => (layer.type === 'line' ? buildLineSvgContent(lineLayer) : ''),
     [layer.type, lineLayer],
   );
+  // Hooks must stay above early returns (visible / offscreen culling).
+  const clipPath = useMemo(() => {
+    // Mask takes priority: clip this layer to the mask silhouette (CSS composition).
+    const maskId = layer.meta?.maskLayerId;
+    if (maskId && documentLayers.length) {
+      const maskLayer = documentLayers.find((l) => l.id === maskId);
+      if (maskLayer) {
+        const maskClip = clipPathForLayer(maskLayer, documentLayers);
+        if (maskClip) return maskClip;
+      }
+    }
+    return clipPathForLayer(layer, documentLayers);
+  }, [layer, documentLayers]);
+
+  const booleanRender = useMemo(() => {
+    if (layer.type !== 'boolean') return null;
+    return resolveBooleanRender(layer, documentLayers);
+  }, [layer, documentLayers]);
 
   if (layer.type === 'frame' || layer.visible === false) return null;
 
@@ -174,7 +207,7 @@ function LayerNode({
       />
     );
   }
-  const clipPath = clipPathForLayerType(layer.type);
+
   const hasExplicitRadius = Boolean(
     layer.cssVars['--border-radius'] ||
       layer.cssVars['--radius-tl'] ||
@@ -269,8 +302,8 @@ function LayerNode({
     userSelect: editing ? 'text' : 'none',
     zIndex: highlighted ? 20 : 1,
     pointerEvents:
-      // Group/grid chrome is behind children; let slots receive hits unless selected.
-      (layer.type === 'group' || layer.type === 'grid') && !selected
+      // Group/grid/component chrome is behind children; let slots receive hits unless selected.
+      (layer.type === 'group' || layer.type === 'grid' || layer.type === 'component') && !selected
         ? 'none'
         : interactive || editing
           ? 'auto'
@@ -310,6 +343,8 @@ function LayerNode({
     label = '';
   else if (layer.type === 'grid') label = `Grid ${layer.meta?.cols ?? 2}×${layer.meta?.rows ?? 2}`;
   else if (layer.type === 'group') label = 'Grupo';
+  else if (layer.type === 'component') label = layer.meta?.instanceOf ? 'Instancia' : 'Componente';
+  else if (layer.type === 'boolean') label = '';
   else if (layer.type === 'image') label = layer.value ? '' : 'Imagen';
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -453,6 +488,38 @@ function LayerNode({
             cursor: 'text',
           }}
         />
+      ) : layer.type === 'boolean' && booleanRender ? (
+        <div
+          data-testid="canvas-boolean-stack"
+          style={{
+            position: 'relative',
+            width: '100%',
+            height: '100%',
+            // Isolation so mix-blend-mode approximates boolean ops within this stack.
+            isolation: 'isolate',
+            pointerEvents: 'none',
+          }}
+        >
+          {booleanRender.order.map((item) => (
+            <div
+              key={item.layerId}
+              data-boolean-operand={item.layerId}
+              style={{
+                position: 'absolute',
+                left: mmToScreenPx(item.offsetXMm, scale),
+                top: mmToScreenPx(item.offsetYMm, scale),
+                width: mmToScreenPx(item.widthMm, scale),
+                height: mmToScreenPx(item.heightMm, scale),
+                backgroundColor: item.inverted
+                  ? '#000000'
+                  : item.backgroundColor || layer.cssVars['--background-color'] || '#ffffff',
+                clipPath: item.clipPath,
+                mixBlendMode: (item.blendMode as CSSProperties['mixBlendMode']) || undefined,
+                opacity: item.inverted ? 1 : undefined,
+              }}
+            />
+          ))}
+        </div>
       ) : layer.type === 'image' && layer.value ? (
         <img
           src={getBlobUrl(layer.value)}
@@ -578,6 +645,8 @@ function LayerNode({
 
 export default memo(LayerNode, (prev, next) =>
   prev.layer === next.layer &&
+  prev.masterLayer === next.masterLayer &&
+  prev.documentLayers === next.documentLayers &&
   prev.selected === next.selected &&
   prev.interactive === next.interactive &&
   prev.scale === next.scale &&

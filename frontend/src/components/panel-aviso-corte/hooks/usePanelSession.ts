@@ -18,7 +18,7 @@ import type {
   PanelMatchPanelResponse,
   PanelVM,
 } from '../types';
-import { registerLocalPath } from '../../../utils/registerLocalPath';
+import { registerLocalPaths } from '../../../utils/registerLocalPath';
 import {
   buildExcelPreviewPanels,
   normalizePanelDateStr,
@@ -42,7 +42,7 @@ export interface PanelSession {
   setHeaderForm: (v: HeaderFormState) => void;
   setLogoLeft: (file: File | null) => string | null;
   setLogoRight: (file: File | null) => string | null;
-  addImages: (files: File[]) => string[];
+  addImages: (files: File[]) => string[] | Promise<string[]>;
   removeImage: (index: number) => void;
   clearImages: () => void;
   setExcelSource: (src: ExcelSource | null) => void;
@@ -137,7 +137,7 @@ export function usePanelSession(): PanelSession {
     return null;
   }, [logoRight, validateLogo]);
 
-  const addImages = useCallback((files: File[]): string[] => {
+  const addImages = useCallback(async (files: File[]): Promise<string[]> => {
     const newErrors: string[] = [];
     const accepted: LocalImage[] = [];
     for (const file of files) {
@@ -147,9 +147,11 @@ export function usePanelSession(): PanelSession {
         continue;
       }
       const localPath = window.electronAPI?.getPathForFile(file) || undefined;
-      if (localPath) registerLocalPath(localPath);
       accepted.push({ file, objectUrl: URL.createObjectURL(file), localPath });
     }
+    await registerLocalPaths(
+      accepted.map((img) => img.localPath).filter((p): p is string => Boolean(p)),
+    );
     setImages((prev) => [...prev, ...accepted]);
     return newErrors;
   }, []);
