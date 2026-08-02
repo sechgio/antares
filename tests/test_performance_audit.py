@@ -99,6 +99,17 @@ def test_preview_cache_is_bounded() -> None:
     assert cache.get("key_19")["data"] == 19
 
 
+def test_preview_cache_skips_data_uri_payloads() -> None:
+    """Embedded data-URI previews must not be retained in the LRU cache."""
+    from backend.core.preview_cache import PreviewCache
+
+    cache = PreviewCache(max_size=10, ttl_seconds=300)
+    cache.set("data", {"preview": "data:image/jpeg;base64," + ("A" * 1000)})
+    cache.set("path", {"preview": "file:///tmp/x.jpg", "preview_path": "/tmp/x.jpg"})
+    assert cache.get("data") is None
+    assert cache.get("path") is not None
+
+
 def test_preview_cache_respects_ttl() -> None:
     """Preview cache must expire entries after TTL."""
     from backend.core.preview_cache import PreviewCache

@@ -110,10 +110,12 @@ export async function serializeDocumentImages(doc: CanvasDocument): Promise<Canv
         }
 
         if (reg) {
-          if (!reg.dataUrl) {
-            reg.dataUrl = await blobToDataUrl(reg.blob);
-          }
-          return { ...layer, value: reg.dataUrl };
+          // Compute a persistent data URL for the saved document, but do not
+          // keep it on the RegisteredBlob — that would retain ~2× the bytes
+          // (Blob + base64) for the whole session while keep-alive holds the store.
+          const dataUrl = reg.dataUrl ?? (await blobToDataUrl(reg.blob));
+          if (reg.dataUrl) delete reg.dataUrl;
+          return { ...layer, value: dataUrl };
         }
       }
       return layer;

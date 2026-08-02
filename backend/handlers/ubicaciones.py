@@ -70,8 +70,10 @@ _MAP_OVERLAY_ALPHA = 120
 _BG_RGB = (246, 246, 246)
 
 # ── Asset caches (fonts, footers, excel) ─────────────────────────────────────
-_font_cache: dict[tuple[str, int], ImageFont.FreeTypeFont | ImageFont.ImageFont] = {}
-_footer_cache: dict[tuple[int, int, int], Image.Image | None] = {}
+_font_cache: OrderedDict[tuple[str, int], ImageFont.FreeTypeFont | ImageFont.ImageFont] = OrderedDict()
+_footer_cache: OrderedDict[tuple[int, int, int], Image.Image | None] = OrderedDict()
+_MAX_FONT_CACHE = 32
+_MAX_FOOTER_CACHE = 8
 _excel_cache: OrderedDict[str, tuple[float, pd.DataFrame, tuple[Any, ...]]] = OrderedDict()
 _MAX_EXCEL_CACHE = 8
 _map_screenshot_cache: dict[tuple[Any, ...], bytes] = {}
@@ -139,15 +141,23 @@ def _colorize_pin(pin_rgba: Image.Image, target_rgb: tuple[int, int, int]) -> Im
 
 def _get_font(bold: bool, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     key = ("arialbd" if bold else "arial", size)
-    if key not in _font_cache:
+    with _cache_lock:
+        cached = _font_cache.get(key)
+        if cached is not None:
+            _font_cache.move_to_end(key)
+            return cached
+    try:
+        font: ImageFont.FreeTypeFont | ImageFont.ImageFont = ImageFont.truetype(f"{key[0]}.ttf", size)
+    except Exception:
         try:
-            _font_cache[key] = ImageFont.truetype(f"{key[0]}.ttf", size)
+            font = ImageFont.truetype("arial.ttf", size)
         except Exception:
-            try:
-                _font_cache[key] = ImageFont.truetype("arial.ttf", size)
-            except Exception:
-                _font_cache[key] = ImageFont.load_default()
-    return _font_cache[key]
+            font = ImageFont.load_default()
+    with _cache_lock:
+        _font_cache[key] = font
+        _font_cache.move_to_end(key)
+        _trim_cache(_font_cache, _MAX_FONT_CACHE)
+    return font
 
 
 def _crop_footer_bar(img: Image.Image) -> Image.Image:
@@ -198,32 +208,37 @@ def _measure_footer_band_height(jpg_path: str) -> int:
 def _get_footer_image(width: int, height: int) -> Image.Image | None:
     """Pega logo_footer.png en barra negra; escala por ancho (como plantillas JPG)."""
     key = (_FOOTER_LAYOUT_VERSION, width, height)
-    if key not in _footer_cache:
-        assets_dir = resource_path("assets/ubicaciones")
-        logo_path = os.path.join(assets_dir, "logo_footer.png")
-        if not os.path.exists(logo_path):
-            logo_path = os.path.join(assets_dir, "footer_horizontal.png")
-        if os.path.exists(logo_path):
-            with Image.open(logo_path) as opened:
-                src = opened.convert("RGBA")
-            bar_h = _crop_footer_bar(src.convert("RGB")).height
-            logo = src.crop((0, 0, src.width, bar_h))
-            scale = width / logo.width
-            new_w = width
-            new_h = max(1, round(logo.height * scale))
-            if new_h > height:
-                scale = height / logo.height
-                new_h = height
-                new_w = max(1, round(logo.width * scale))
-            logo_resized = logo.resize((new_w, new_h), Image.Resampling.LANCZOS)
-            footer = Image.new("RGB", (width, height), (0, 0, 0))
-            x = (width - new_w) // 2
-            y = (height - new_h) // 2
-            footer.paste(logo_resized, (x, y), logo_resized)
-            _footer_cache[key] = footer
-        else:
-            _footer_cache[key] = None
-    return _footer_cache[key]
+    with _cache_lock:
+        if key in _footer_cache:
+            _footer_cache.move_to_end(key)
+            return _footer_cache[key]
+    footer: Image.Image | None = None
+    assets_dir = resource_path("assets/ubicaciones")
+    logo_path = os.path.join(assets_dir, "logo_footer.png")
+    if not os.path.exists(logo_path):
+        logo_path = os.path.join(assets_dir, "footer_horizontal.png")
+    if os.path.exists(logo_path):
+        with Image.open(logo_path) as opened:
+            src = opened.convert("RGBA")
+        bar_h = _crop_footer_bar(src.convert("RGB")).height
+        logo = src.crop((0, 0, src.width, bar_h))
+        scale = width / logo.width
+        new_w = width
+        new_h = max(1, round(logo.height * scale))
+        if new_h > height:
+            scale = height / logo.height
+            new_h = height
+            new_w = max(1, round(logo.width * scale))
+        logo_resized = logo.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        footer = Image.new("RGB", (width, height), (0, 0, 0))
+        x = (width - new_w) // 2
+        y = (height - new_h) // 2
+        footer.paste(logo_resized, (x, y), logo_resized)
+    with _cache_lock:
+        _footer_cache[key] = footer
+        _footer_cache.move_to_end(key)
+        _trim_cache(_footer_cache, _MAX_FOOTER_CACHE)
+    return footer
 
 
 def _map_opts_fingerprint(map_opts: dict[str, Any] | None) -> tuple[Any, ...]:

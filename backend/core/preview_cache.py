@@ -41,12 +41,21 @@ class PreviewCache:
             return value
 
     def set(self, key: str, value: Any) -> None:
-        """Add item to cache, evicting oldest if necessary. Skips oversized values."""
+        """Add item to cache, evicting oldest if necessary. Skips oversized values.
+
+        Data-URI / embedded base64 previews are never cached: a full fill of
+        ``max_size`` x ``max_entry_bytes`` would retain tens of MB for little
+        benefit versus path-mode (file://) entries.
+        """
         size = 0
         if isinstance(value, (str, bytes)):
             size = len(value)
+            if isinstance(value, str) and value.startswith("data:"):
+                return
         elif isinstance(value, dict):
             preview = value.get("preview")
+            if isinstance(preview, str) and preview.startswith("data:"):
+                return
             if isinstance(preview, (str, bytes)):
                 size = len(preview)
         if size > self.max_entry_bytes:

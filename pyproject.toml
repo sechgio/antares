@@ -51,6 +51,12 @@ ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "backend/main.py" = ["E402"]
+# B023: in _run_batch_conversion the closure _submit_one captures task_queue /
+# in_flight / futures, which are reassigned inside the for-chunk loop and the
+# closure is always invoked in the same iteration (never stored/deferred), so the
+# late-binding capture is correct. ruff's B023 trips because they look like loop
+# variables but are not the loop iterator (chunk_start).
+"backend/handlers/conversion.py" = ["B023"]
 
 [tool.mypy]
 python_version = "3.10"

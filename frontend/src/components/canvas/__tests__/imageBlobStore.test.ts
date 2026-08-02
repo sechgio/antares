@@ -91,6 +91,8 @@ describe('imageBlobStore', () => {
 
     expect(imgLayer).toBeDefined();
     expect(imgLayer?.value).toMatch(/^data:/);
+    // Registered blob must not retain the dataUrl copy after serialize.
+    expect(registered.dataUrl).toBeUndefined();
   });
 
   it('roundtrips blob URL and blobId through serialize then hydrate', async () => {

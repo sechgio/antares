@@ -14,6 +14,11 @@ vi.mock('../sync/canvasCloudSync', () => ({
 
 vi.mock('../utils/imageBlobStore', () => ({
   hydrateDocumentImages: vi.fn(async (doc: unknown) => doc),
+  serializeDocumentImages: vi.fn(async (doc: unknown) => doc),
+  clearBlobStore: vi.fn(),
+  releaseImageBlob: vi.fn(),
+  getBlobUrl: vi.fn((v: string) => v),
+  getThumbnailUrl: vi.fn((v: string) => v),
 }));
 
 vi.mock('../../../api', () => ({

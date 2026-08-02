@@ -44,6 +44,10 @@ vi.mock('../sync/cloudQueue', () => ({
 vi.mock('../utils/imageBlobStore', () => ({
   serializeDocumentImages: vi.fn(async (doc: CanvasDocument) => doc),
   hydrateDocumentImages: vi.fn(async (doc: CanvasDocument) => doc),
+  clearBlobStore: vi.fn(),
+  releaseImageBlob: vi.fn(),
+  getBlobUrl: vi.fn((v: string) => v),
+  getThumbnailUrl: vi.fn((v: string) => v),
 }));
 
 vi.mock('../presets/loadPresets', () => ({
