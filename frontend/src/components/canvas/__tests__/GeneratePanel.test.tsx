@@ -108,6 +108,15 @@ describe('GeneratePanel wizard', () => {
     expect(screen.getByText(/Diseño actual · 1 capas/)).toBeTruthy();
   });
 
+  it('lists templates via canvasList without calling runCloudSync on mount', async () => {
+    const runCloudSync = vi.fn().mockResolvedValue(undefined);
+    const design = docWithLayers('Diseño actual', 'doc-design');
+    render(<GeneratePanel document={design} runCloudSync={runCloudSync} />);
+
+    await waitFor(() => expect(canvasList).toHaveBeenCalled());
+    expect(runCloudSync).not.toHaveBeenCalled();
+  });
+
   it('syncs generate preview when the design document changes', async () => {
     const design = docWithLayers('Diseño actual', 'doc-design');
     const { rerender } = render(<GeneratePanel document={design} />);
@@ -275,5 +284,43 @@ describe('GeneratePanel wizard', () => {
       expect(within(listbox).getByRole('option', { name: 'CENTRO' })).toBeTruthy();
       expect(within(listbox).getByRole('option', { name: 'DIRECCIONES AFECTADAS' })).toBeTruthy();
     });
+  });
+
+  it('includes checkbox, signature and table field keys in mapping', async () => {
+    const design = createEmptyDocument('Widgets');
+    design.id = 'doc-design';
+    design.layers.push(
+      { ...createLayer('field'), meta: { key: 'NIS', fallback: '-' } },
+      { ...createLayer('checkbox'), meta: { key: 'OK' } },
+      { ...createLayer('signature'), meta: { key: 'FIRMA' } },
+      {
+        ...createLayer('table'),
+        meta: {
+          rowsData: JSON.stringify({
+            cells: [['', '']],
+            fieldKeys: [[null, 'DIRECCION']],
+          }),
+        },
+      },
+    );
+
+    const { container } = render(<GeneratePanel document={design} />);
+
+    const fileInput = container.querySelector('input[accept=".csv,.xlsx,.xls"]') as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: {
+        files: [
+          new File(['ID,NIS,OK,FIRMA,DIRECCION\n1,100,1,JP,Calle 1'], 'datos.csv', {
+            type: 'text/csv',
+          }),
+        ],
+      },
+    });
+
+    await waitFor(() => expect(screen.getByText('1 registros cargados')).toBeTruthy());
+
+    for (const key of ['NIS', 'OK', 'FIRMA', 'DIRECCION']) {
+      expect(screen.getByLabelText(`Mapeo ${key}`)).toBeTruthy();
+    }
   });
 });

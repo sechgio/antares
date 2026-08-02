@@ -4,6 +4,7 @@
  * Artboard attaches many ephemeral pointermove/up listeners; without a shared
  * abort path, OS pointercancel / mid-drag undo / unmount leave listeners+RAF
  * alive and can re-commit. One session owns attach, finish, and abort.
+ * pointercancel and Escape take abort (revert), never onEnd commit.
  */
 
 export type PointerGestureSession = {
@@ -18,13 +19,13 @@ export type PointerGestureSession = {
 export type PointerGestureSessionOptions = {
   onMove: (ev: PointerEvent) => void;
   /**
-   * Called once on pointerup or pointercancel (not on abort()).
-   * `reason` distinguishes intentional release vs OS cancel.
+   * Called once on intentional pointerup (not on abort() / pointercancel).
+   * OS pointercancel takes the abort path so mid-gesture cancel never commits.
    */
-  onEnd: (ev: PointerEvent | null, reason: 'up' | 'cancel') => void;
+  onEnd: (ev: PointerEvent | null, reason: 'up') => void;
   /** Optional extra window listeners cleaned with the session (e.g. keydown). */
   onKeyDown?: (ev: KeyboardEvent) => void;
-  /** Called when abort() runs (after listeners removed). */
+  /** Called when abort() / pointercancel runs (after listeners removed). */
   onAbort?: () => void;
 };
 
@@ -82,16 +83,17 @@ export function createPointerGestureSession(
     options.onMove(ev);
   };
 
-  const finish = (ev: PointerEvent | null, reason: 'up' | 'cancel') => {
+  const finish = (ev: PointerEvent | null) => {
     if (finished) return;
     finished = true;
     detach();
     if (activeSession === session) activeSession = null;
-    options.onEnd(ev, reason);
+    options.onEnd(ev, 'up');
   };
 
-  onUp = (ev: PointerEvent) => finish(ev, 'up');
-  onCancel = (ev: PointerEvent) => finish(ev, 'cancel');
+  onUp = (ev: PointerEvent) => finish(ev);
+  // OS cancel / lost capture: same as supersede — revert, never commit.
+  onCancel = () => session.abort();
   onKey = options.onKeyDown
     ? (ev: KeyboardEvent) => {
         if (finished) return;

@@ -6,8 +6,6 @@ import {
   ChevronDown,
   ClipboardPaste,
   Copy,
-  Eye,
-  EyeOff,
   Group,
   Layers,
   LayoutGrid,
@@ -17,6 +15,7 @@ import {
   Ungroup,
   Unlock,
 } from 'lucide-react';
+import { Eye, EyeSlash } from './VisibilityIcon';
 
 export type CanvasContextAction =
   | 'edit'
@@ -135,7 +134,7 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
     {
       id: 'toggleVisible',
       label: menu.visible ? 'Ocultar' : 'Mostrar',
-      icon: menu.visible ? EyeOff : Eye,
+      icon: menu.visible ? EyeSlash : Eye,
       disabled: !hasLayer,
     },
     {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createLayer } from '../constants';
 import { applyGridToImageSlots } from '../ops/gridLayout';
+import { MM_TO_PX } from '../ops/drawHelpers';
 import {
   constrainMoveToAxis,
   isPointerClick,
@@ -10,14 +11,26 @@ import {
   resizeSelection,
   rotateSelection,
   selectionBounds,
+  SNAP_THRESHOLD_MAX_MM,
   snapMoveWithGuides,
   snapRectToGrid,
+  snapThresholdMm,
   snapToGridMm,
   type HandlePos,
 } from '../ops/selectionTransform';
 import { parseMm } from '../types';
 
 describe('selectionTransform', () => {
+  it('snapThresholdMm scales with zoom but caps at low zoom', () => {
+    const at1 = snapThresholdMm(1, 5);
+    const at2 = snapThresholdMm(2, 5);
+    expect(at1).toBeCloseTo(5 / MM_TO_PX, 5);
+    expect(at2).toBeCloseTo(at1 / 2, 5);
+    // Uncapped 5/(MM_TO_PX*0.02) ≈ 66mm — must not feel like page-lock.
+    expect(snapThresholdMm(0.02, 5)).toBe(SNAP_THRESHOLD_MAX_MM);
+    expect(snapThresholdMm(0.05, 5)).toBeLessThanOrEqual(SNAP_THRESHOLD_MAX_MM);
+  });
+
   it('snapToGridMm and snapRectToGrid align to step', () => {
     expect(snapToGridMm(12.4, 5)).toBe(10);
     expect(snapToGridMm(12.6, 5)).toBe(15);

@@ -29,6 +29,10 @@ export default function GridSection({ layer, setMetaLive, onCommitLive }: Sectio
           suffix="mm"
         />
       </div>
+      <p className="mt-2 text-[11px] leading-snug" style={{ color: 'var(--cv-text-muted)' }}>
+        El export en Generar es WYSIWYG: usa las posiciones guardadas. Las reglas de cuadrícula
+        aplican al diseñar o reconstruir, no reordenan automáticamente al exportar.
+      </p>
     </div>
   );
 }

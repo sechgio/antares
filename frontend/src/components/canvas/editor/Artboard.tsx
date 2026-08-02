@@ -135,6 +135,14 @@ interface ArtboardProps {
   gestureAbortToken?: number;
 }
 
+/** Figma: Escape cancels in-flight pointer gesture without commit. */
+function escapeToAbort(getSession: () => { abort: () => void }): (ev: KeyboardEvent) => void {
+  return (ev) => {
+    if (ev.key !== 'Escape') return;
+    getSession().abort();
+  };
+}
+
 /** Snapshot for a gesture. Deep-clones only `deepIds` (selection); shares other refs. */
 function cloneLayers(layers: CanvasLayer[], deepIds?: ReadonlySet<string>): CanvasLayer[] {
   if (!deepIds || deepIds.size === 0) {
@@ -148,7 +156,7 @@ function cloneLayers(layers: CanvasLayer[], deepIds?: ReadonlySet<string>): Canv
 }
 
 /** Cache artboard client rect for a gesture; refresh if camera zoom changes mid-drag. */
-function createFrameRectCache(
+export function createFrameRectCache(
   frame: HTMLElement,
   zoomRef: { current: number },
 ): { read: () => DOMRect } {
@@ -408,34 +416,49 @@ function Artboard({
     if (frame) applyLayerDomGeometry(frame, moved, nextIds);
   }, []);
 
+  /**
+   * Abort path shared by Esc / pointercancel / gestureAbortToken:
+   * restore DOM from pre-gesture layers (when provided), clear will-change + flags.
+   * Must not call endGesture (no commit).
+   */
+  const abortGesturePreview = useCallback(
+    (restore?: { layers: CanvasLayer[]; ids: string[] }) => {
+      const frame = frameRef.current;
+      const ids = restore?.ids ?? imperativeMoveIdsRef.current;
+      if (frame && restore && ids?.length) {
+        applyLayerDomGeometry(frame, restore.layers, ids, { willChange: false });
+        clearLayerDomGestureStyles(frame, restore.layers, ids);
+        layersRef.current = restore.layers;
+      } else if (frame && gestureLayersRef.current && ids?.length) {
+        clearLayerDomGestureStyles(frame, gestureLayersRef.current, ids);
+      }
+      gestureDirtyRef.current = false;
+      gestureLayersRef.current = null;
+      imperativeMoveIdsRef.current = null;
+      setGestureLayers(null);
+      setGestureActive(false);
+      setGestureBbox(null);
+      setCanvasGestureActive(false);
+      setGuidesIfChanged([]);
+      setDistanceLabelsIfChanged([]);
+    },
+    [setGuidesIfChanged, setDistanceLabelsIfChanged],
+  );
+
   const prevAbortTokenRef = useRef(gestureAbortToken);
   useEffect(() => {
     if (gestureAbortToken === prevAbortTokenRef.current) return;
     prevAbortTokenRef.current = gestureAbortToken;
     // Kill window listeners + RAF first so late pointermove/up cannot re-arm or commit.
     abortActivePointerGestureSession();
-    const layers = gestureLayersRef.current;
-    const ids = imperativeMoveIdsRef.current;
-    const frame = frameRef.current;
-    if (frame && layers && ids?.length) {
-      clearLayerDomGestureStyles(frame, layers, ids);
-    }
-    gestureDirtyRef.current = false;
-    gestureLayersRef.current = null;
-    imperativeMoveIdsRef.current = null;
-    setGestureLayers(null);
-    setGestureActive(false);
-    setGestureBbox(null);
-    setCanvasGestureActive(false);
+    abortGesturePreview();
     setMarquee(null);
     setDraft(null);
-    setGuidesIfChanged([]);
-    setDistanceLabelsIfChanged([]);
     setLassoPts(null);
     setGuideDrag(null);
     setPanning(false);
     setRadiusDrag(null);
-  }, [gestureAbortToken, setGuidesIfChanged, setDistanceLabelsIfChanged]);
+  }, [gestureAbortToken, abortGesturePreview]);
 
   // Unmount mid-gesture must not leave window listeners calling into stale closures.
   useEffect(() => () => abortActivePointerGestureSession(), []);
@@ -734,9 +757,10 @@ function Artboard({
       startClientY: number,
       options?: { onClickWithoutDrag?: () => void; duplicate?: boolean },
     ) => {
+      const originLayers = layersRef.current;
       let snapshot = cloneLayers(
-        layersRef.current,
-        new Set(expandWithDescendants(layersRef.current, ids)),
+        originLayers,
+        new Set(expandWithDescendants(originLayers, ids)),
       );
       let moveIds = ids;
       let didDuplicate = false;
@@ -880,7 +904,8 @@ function Artboard({
           setDistanceLabelsIfChanged([]);
         }
       });
-      createPointerGestureSession({
+      let session: ReturnType<typeof createPointerGestureSession>;
+      session = createPointerGestureSession({
         onMove: (ev) => raf.schedule(ev),
         onEnd: () => {
           raf.flush();
@@ -890,14 +915,22 @@ function Artboard({
           // Figma: Shift/Ctrl+click toggles selection only when there was no drag.
           if (!dragging) options?.onClickWithoutDrag?.();
         },
+        onKeyDown: escapeToAbort(() => session),
         onAbort: () => {
           raf.cancel();
-          setGuidesIfChanged([]);
-          setDistanceLabelsIfChanged([]);
+          // Restore pre-gesture layers (original ids — not Alt-duplicate moveIds).
+          abortGesturePreview({ layers: originLayers, ids });
         },
       });
     },
-    [applyGestureLayers, applyImperativePreview, endGesture, setGuidesIfChanged, setDistanceLabelsIfChanged],
+    [
+      abortGesturePreview,
+      applyGestureLayers,
+      applyImperativePreview,
+      endGesture,
+      setGuidesIfChanged,
+      setDistanceLabelsIfChanged,
+    ],
   );
 
   const handleLayerPointerDown = useCallback(
@@ -953,9 +986,10 @@ function Artboard({
     e.stopPropagation();
     e.preventDefault();
     if (!editableSelected.length) return;
+    const originLayers = layersRef.current;
     const snapshot = cloneLayers(
-      layersRef.current,
-      new Set(expandWithDescendants(layersRef.current, editableSelected)),
+      originLayers,
+      new Set(expandWithDescendants(originLayers, editableSelected)),
     );
     const startX = e.clientX;
     const startY = e.clientY;
@@ -1002,16 +1036,18 @@ function Artboard({
       applyImperativePreview(resized, ids);
       setGestureBbox(selectionBounds(resized, ids));
     });
-    createPointerGestureSession({
+    let session: ReturnType<typeof createPointerGestureSession>;
+    session = createPointerGestureSession({
       onMove: (ev) => raf.schedule(ev),
       onEnd: () => {
         raf.flush();
         setGuidesIfChanged([]);
         endGesture();
       },
+      onKeyDown: escapeToAbort(() => session),
       onAbort: () => {
         raf.cancel();
-        setGuidesIfChanged([]);
+        abortGesturePreview({ layers: originLayers, ids });
       },
     });
   };
@@ -1020,15 +1056,16 @@ function Artboard({
     e.stopPropagation();
     e.preventDefault();
     if (!bbox || !editableSelected.length || !frameRef.current) return;
+    const originLayers = layersRef.current;
     const snapshot = cloneLayers(
-      layersRef.current,
-      new Set(expandWithDescendants(layersRef.current, editableSelected)),
+      originLayers,
+      new Set(expandWithDescendants(originLayers, editableSelected)),
     );
     const ids = [...editableSelected];
     const cx = bbox.x + bbox.w / 2;
     const cy = bbox.y + bbox.h / 2;
     const frameRect = createFrameRectCache(frameRef.current, zoomRef);
-    const start = clientToMm(e.clientX, e.clientY, frameRect.read(), zoom);
+    const start = clientToMm(e.clientX, e.clientY, frameRect.read(), zoomRef.current);
     const startAngle = angleFromCenter(cx, cy, start.xMm, start.yMm);
     gestureDirtyRef.current = false;
 
@@ -1040,13 +1077,18 @@ function Artboard({
       applyImperativePreview(rotated, ids);
       setGestureBbox(selectionBounds(rotated, ids));
     });
-    createPointerGestureSession({
+    let session: ReturnType<typeof createPointerGestureSession>;
+    session = createPointerGestureSession({
       onMove: (ev) => raf.schedule(ev),
       onEnd: () => {
         raf.flush();
         endGesture();
       },
-      onAbort: () => raf.cancel(),
+      onKeyDown: escapeToAbort(() => session),
+      onAbort: () => {
+        raf.cancel();
+        abortGesturePreview({ layers: originLayers, ids });
+      },
     });
   };
 
@@ -1055,7 +1097,8 @@ function Artboard({
     e.preventDefault();
     if (editableSelected.length !== 1) return;
     const id = editableSelected[0]!;
-    const snapshot = cloneLayers(layersRef.current, new Set([id]));
+    const originLayers = layersRef.current;
+    const snapshot = cloneLayers(originLayers, new Set([id]));
     const layer = snapshot.find((l) => l.id === id);
     if (!layer || !layerSupportsCornerRadius(layer)) return;
     const startRadius = cornerRadiusPx(layer.cssVars, corner);
@@ -1082,16 +1125,19 @@ function Artboard({
       );
       setRadiusDrag({ label: `Radius ${Math.round(nextR)}`, corner });
     });
-    createPointerGestureSession({
+    let session: ReturnType<typeof createPointerGestureSession>;
+    session = createPointerGestureSession({
       onMove: (ev) => raf.schedule(ev),
       onEnd: () => {
         raf.flush();
         setRadiusDrag(null);
         endGesture();
       },
+      onKeyDown: escapeToAbort(() => session),
       onAbort: () => {
         raf.cancel();
         setRadiusDrag(null);
+        abortGesturePreview({ layers: originLayers, ids: [id] });
       },
     });
   };
@@ -1104,7 +1150,7 @@ function Artboard({
     e.stopPropagation();
     e.preventDefault();
     const frameRect = createFrameRectCache(frameRef.current, zoomRef);
-    const { xMm, yMm } = clientToMm(e.clientX, e.clientY, frameRect.read(), zoom);
+    const { xMm, yMm } = clientToMm(e.clientX, e.clientY, frameRect.read(), zoomRef.current);
     const origin = { xMm, yMm };
     setMarquee({ x: xMm, y: yMm, w: 0, h: 0 });
     if (!e.shiftKey) onSelectIds([]);
@@ -1121,7 +1167,8 @@ function Artboard({
         h: Math.abs(cur.yMm - origin.yMm),
       });
     });
-    createPointerGestureSession({
+    let session: ReturnType<typeof createPointerGestureSession>;
+    session = createPointerGestureSession({
       onMove: (ev) => raf.schedule(ev),
       onEnd: (ev) => {
         raf.cancel();
@@ -1169,6 +1216,7 @@ function Artboard({
           onSelectIds(hit);
         }
       },
+      onKeyDown: escapeToAbort(() => session),
       onAbort: () => {
         raf.cancel();
         setMarquee(null);
@@ -1217,7 +1265,7 @@ function Artboard({
     if (!targetId) return;
     if (pathEditingLayerId !== targetId) onStartPathEdit?.(targetId);
     const frameRect = createFrameRectCache(frameRef.current, zoomRef);
-    const start = clientToMm(e.clientX, e.clientY, frameRect.read(), zoom);
+    const start = clientToMm(e.clientX, e.clientY, frameRect.read(), zoomRef.current);
     const applyAt = (xMm: number, yMm: number) => {
       const current = layersRef.current.find((l) => l.id === targetId);
       if (!current || current.type !== 'line') return;
@@ -1250,7 +1298,7 @@ function Artboard({
     if (!targetId) return;
     if (pathEditingLayerId !== targetId) onStartPathEdit?.(targetId);
     const frameRect = createFrameRectCache(frameRef.current, zoomRef);
-    const cur = clientToMm(e.clientX, e.clientY, frameRect.read(), zoom);
+    const cur = clientToMm(e.clientX, e.clientY, frameRect.read(), zoomRef.current);
     const current = layersRef.current.find((l) => l.id === targetId);
     if (!current || current.type !== 'line') return;
     const split = cutLineAt(current, cur.xMm, cur.yMm);
@@ -1266,7 +1314,7 @@ function Artboard({
     e.stopPropagation();
     e.preventDefault();
     const frameRect = createFrameRectCache(frameRef.current, zoomRef);
-    const start = clientToMm(e.clientX, e.clientY, frameRect.read(), zoom);
+    const start = clientToMm(e.clientX, e.clientY, frameRect.read(), zoomRef.current);
     const pts: Array<{ x: number; y: number }> = [{ x: start.xMm, y: start.yMm }];
     setLassoPts(pts);
 
@@ -1311,7 +1359,7 @@ function Artboard({
     e.stopPropagation();
     e.preventDefault();
     const frameRect = createFrameRectCache(frameRef.current, zoomRef);
-    const { xMm, yMm } = clientToMm(e.clientX, e.clientY, frameRect.read(), zoom);
+    const { xMm, yMm } = clientToMm(e.clientX, e.clientY, frameRect.read(), zoomRef.current);
     drawStart.current = { xMm, yMm };
     setDraft({ x: xMm, y: yMm, w: 0, h: 0 });
 

@@ -111,6 +111,7 @@ export function useCanvasSync({
       const { syncCanvasDocuments } = await import('../sync/canvasCloudSync');
       const result = await syncCanvasDocuments({
         openDocumentId: openId,
+        openDocument: historyDocRef.current,
         openDirty,
         guarded: effectiveGuarded,
         followUp: (retryResult) => {

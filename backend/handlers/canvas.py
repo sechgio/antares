@@ -77,6 +77,7 @@ def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
     dpi = int(params.get("dpi") or 300)
     bleed_mm = float(params.get("bleed_mm") or 0.0)
     show_crop_marks = bool(params.get("show_crop_marks", False))
+    pair_context_pages = bool(params.get("pair_context_pages", False))
     filename = str(params.get("filename") or "canvas_cmyk.pdf")
     output_path = params.get("outputPath")
     local_image_paths = params.get("localImagePaths") or {}
@@ -88,6 +89,7 @@ def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
         dpi=dpi,
         bleed_mm=bleed_mm,
         show_crop_marks=show_crop_marks,
+        pair_context_pages=pair_context_pages,
     )
     pdf_bytes = renderer.render(local_image_paths=local_image_paths)
 

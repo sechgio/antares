@@ -79,6 +79,13 @@ describe('useCanvasSync conflict handling', () => {
     });
     // Resolution is owned by the UI — sync must not apply remote itself.
     expect(replaceDocument).not.toHaveBeenCalled();
+    expect(syncCanvasDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        openDocumentId: 'doc-1',
+        openDocument: localDoc,
+        openDirty: true,
+      }),
+    );
   });
 
   it('surfaces conflict when reloadOpenId is set but doc dirtied mid-sync', async () => {

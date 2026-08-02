@@ -423,6 +423,82 @@ def test_cmyk_renderer_multiple_contexts_and_pages():
         pdf_doc.close()
 
 
+def test_cmyk_renderer_pair_context_pages():
+    """pair_context_pages=True pairs context[i] with page i (no cartesian product)."""
+    doc = create_empty_document(name="Paired")
+    doc["pages"] = [
+        {"id": "page-1", "name": "Página 1"},
+        {"id": "page-2", "name": "Página 2"},
+        {"id": "page-3", "name": "Página 3"},
+    ]
+    doc["layers"] = [
+        {
+            "id": "layer-a",
+            "type": "text",
+            "name": "A",
+            "value": "{{v}}",
+            "pageIndex": 0,
+            "cssVars": {
+                "--width": "80mm",
+                "--height": "15mm",
+                "--translate-x": "10mm",
+                "--translate-y": "10mm",
+                "--color": "#000000",
+                "--font-size": "12pt",
+            },
+        },
+        {
+            "id": "layer-b",
+            "type": "text",
+            "name": "B",
+            "value": "{{v}}",
+            "pageIndex": 1,
+            "cssVars": {
+                "--width": "80mm",
+                "--height": "15mm",
+                "--translate-x": "10mm",
+                "--translate-y": "10mm",
+                "--color": "#000000",
+                "--font-size": "12pt",
+            },
+        },
+        {
+            "id": "layer-c",
+            "type": "text",
+            "name": "C",
+            "value": "{{v}}",
+            "pageIndex": 2,
+            "cssVars": {
+                "--width": "80mm",
+                "--height": "15mm",
+                "--translate-x": "10mm",
+                "--translate-y": "10mm",
+                "--color": "#000000",
+                "--font-size": "12pt",
+            },
+        },
+    ]
+
+    pdf_bytes = CanvasCmykRenderer(
+        document=doc,
+        contexts=[
+            {"data": {"v": "ONE"}},
+            {"data": {"v": "TWO"}},
+            {"data": {"v": "THREE"}},
+        ],
+        pair_context_pages=True,
+    ).render()
+
+    pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        assert len(pdf_doc) == 3  # paired, not 3×3=9
+        assert "ONE" in pdf_doc[0].get_text()
+        assert "TWO" in pdf_doc[1].get_text()
+        assert "THREE" in pdf_doc[2].get_text()
+    finally:
+        pdf_doc.close()
+
+
 def test_cmyk_renderer_rotated_rect():
     """Rotated rect draws a quad path instead of a plain axis-aligned fill."""
     doc = create_empty_document(name="Rotate rect")

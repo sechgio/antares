@@ -2,8 +2,6 @@ import { memo, useEffect, useRef, useState, type HTMLAttributes } from 'react';
 import {
   AlignHorizontalDistributeCenter,
   AlignVerticalDistributeCenter,
-  Eye,
-  EyeOff,
   Lock,
   PanelRightClose,
   Trash2,
@@ -12,6 +10,7 @@ import {
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import type { CanvasDocument, CanvasLayer, CanvasSharedStyle, CanvasStyleKind } from '../types';
 import InlineNumField from './InlineNumField';
+import { EyeSlash, VisibilityIcon } from './VisibilityIcon';
 import {
   applyLineStrokeWeight,
   clampStrokeWeight,
@@ -331,7 +330,7 @@ export default memo(function RightPanel({
                 aria-label="Visible"
                 onClick={() => onChange({ ...layer, visible: layer.visible === false })}
               >
-                {layer.visible !== false ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                <VisibilityIcon visible={layer.visible !== false} className="h-3.5 w-3.5" />
               </button>
             </WithHoverTooltip>
             <WithHoverTooltip
@@ -451,12 +450,12 @@ export default memo(function RightPanel({
             />
             <WithHoverTooltip label="Mostrar" placement="bottom" variant="dark">
               <button type="button" className="canvas-icon-btn" aria-label="Mostrar" onClick={() => onBulkVisible(true)}>
-                <Eye className="h-3.5 w-3.5" />
+                <VisibilityIcon visible className="h-3.5 w-3.5" />
               </button>
             </WithHoverTooltip>
             <WithHoverTooltip label="Ocultar" placement="bottom" variant="dark">
               <button type="button" className="canvas-icon-btn" aria-label="Ocultar" onClick={() => onBulkVisible(false)}>
-                <EyeOff className="h-3.5 w-3.5" />
+                <EyeSlash className="h-3.5 w-3.5" />
               </button>
             </WithHoverTooltip>
             <WithHoverTooltip label="Bloquear" placement="bottom" variant="dark">

@@ -48,11 +48,11 @@ const SHAPE_MENU_ITEMS: {
   { id: 'line', icon: Slash, title: 'Línea', tip: 'L' },
   { id: 'arrow', icon: ArrowUpRight, title: 'Flecha', tip: 'Shift+L' },
   { id: 'ellipse', icon: Circle, title: 'Elipse', tip: 'O' },
-  { id: 'polygon', icon: Triangle, title: 'Polígono', tip: '' },
-  { id: 'star', icon: Star, title: 'Estrella', tip: '' },
-  { id: 'diamond', icon: Diamond, title: 'Rombo', tip: '' },
-  { id: 'hexagon', icon: Hexagon, title: 'Hexágono', tip: '' },
-  { id: 'pentagon', icon: Pentagon, title: 'Pentágono', tip: '' },
+  { id: 'polygon', icon: Triangle, title: 'Polígono', tip: 'Shift+P' },
+  { id: 'star', icon: Star, title: 'Estrella', tip: 'Shift+S' },
+  { id: 'diamond', icon: Diamond, title: 'Rombo', tip: 'Shift+D' },
+  { id: 'hexagon', icon: Hexagon, title: 'Hexágono', tip: 'Shift+H' },
+  { id: 'pentagon', icon: Pentagon, title: 'Pentágono', tip: 'Shift+N' },
   { id: 'image', icon: ImageIcon, title: 'Imagen', tip: 'Ctrl+Shift+K', sepBefore: true },
 ];
 

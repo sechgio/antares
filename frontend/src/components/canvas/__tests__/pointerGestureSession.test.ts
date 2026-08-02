@@ -30,12 +30,32 @@ describe('createPointerGestureSession', () => {
     expect(onMove).not.toHaveBeenCalled();
   });
 
-  it('treats pointercancel like end with reason cancel', () => {
+  it('pointercancel aborts without calling onEnd (no commit)', () => {
     const onEnd = vi.fn();
-    createPointerGestureSession({ onMove: () => {}, onEnd });
+    const onAbort = vi.fn();
+    const session = createPointerGestureSession({ onMove: () => {}, onEnd, onAbort });
     window.dispatchEvent(new PointerEvent('pointercancel'));
-    expect(onEnd).toHaveBeenCalledTimes(1);
-    expect(onEnd.mock.calls[0]![1]).toBe('cancel');
+    expect(onAbort).toHaveBeenCalledTimes(1);
+    expect(onEnd).not.toHaveBeenCalled();
+    expect(session.aborted).toBe(true);
+    expect(getActivePointerGestureSession()).toBeNull();
+  });
+
+  it('Escape via onKeyDown can abort without onEnd', () => {
+    const onEnd = vi.fn();
+    const onAbort = vi.fn();
+    let session: ReturnType<typeof createPointerGestureSession>;
+    session = createPointerGestureSession({
+      onMove: () => {},
+      onEnd,
+      onAbort,
+      onKeyDown: (ev) => {
+        if (ev.key === 'Escape') session.abort();
+      },
+    });
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(onAbort).toHaveBeenCalledTimes(1);
+    expect(onEnd).not.toHaveBeenCalled();
   });
 
   it('abort skips onEnd, runs onAbort, and blocks later move/up', () => {

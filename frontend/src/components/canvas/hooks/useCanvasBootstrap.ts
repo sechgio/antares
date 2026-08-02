@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { api } from '../../../api';
 import { queueCanvasCloudPush } from '../sync/cloudQueue';
 import {
-  createEmptyDocument,
   normalizeDocument,
   type CanvasDocument,
   type CanvasDocumentSummary,
@@ -86,11 +85,24 @@ export function useCanvasBootstrap({
           }
         }
       } catch {
+        // List/get failed — try creating a real persisted doc; never invent a
+        // memory-only phantom that would look syncable but vanish on reload.
         if (!cancelled) {
-          const doc = createEmptyDocument();
-          replaceDocument(doc);
-          setDocs([{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt }]);
-          perfMark('replace');
+          try {
+            const created = await api.canvasCreate('Sin título');
+            if (!cancelled) {
+              const doc = normalizeDocument(created.document as CanvasDocument);
+              replaceDocument(await hydrateDocumentImages(doc));
+              setDocs([{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt }]);
+              queueCanvasCloudPush(doc);
+              perfMark('replace');
+            }
+          } catch {
+            if (!cancelled) {
+              setDocs([]);
+              perfMark('replace');
+            }
+          }
         }
       } finally {
         if (!cancelled) setLoading(false);

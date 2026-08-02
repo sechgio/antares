@@ -215,6 +215,7 @@ class CanvasCmykRenderer:
         dpi: int = 300,
         bleed_mm: float = 0.0,
         show_crop_marks: bool = False,
+        pair_context_pages: bool = False,
     ) -> None:
         self.document = document
         self.contexts = contexts or [{}]
@@ -222,6 +223,9 @@ class CanvasCmykRenderer:
         self.dpi = max(150, min(1200, dpi))
         self.bleed_mm = max(0.0, bleed_mm)
         self.show_crop_marks = show_crop_marks
+        # When True and len(contexts)==len(pages), pair context[i] with page i.
+        # Otherwise keep legacy cartesian product (N contexts × M pages).
+        self.pair_context_pages = pair_context_pages
 
         page_meta = document.get("page", {})
         self.page_w_mm = float(page_meta.get("widthMm", 210))
@@ -246,46 +250,56 @@ class CanvasCmykRenderer:
         pages = self.document.get("pages") or [{"id": "page-1"}]
         layers = self.document.get("layers") or []
 
-        for ctx in self.contexts:
-            for page_idx in range(len(pages)):
-                page = pdf.new_page(width=media_w_pt, height=media_h_pt)
-                media_rect = fitz.Rect(0, 0, media_w_pt, media_h_pt)
-                page.set_mediabox(media_rect)
+        if self.pair_context_pages and len(self.contexts) == len(pages):
+            render_pairs: list[tuple[dict[str, Any], int]] = [
+                (self.contexts[i], i) for i in range(len(pages))
+            ]
+        else:
+            render_pairs = [
+                (ctx, page_idx)
+                for ctx in self.contexts
+                for page_idx in range(len(pages))
+            ]
 
-                # Set PDF geometry boxes (TrimBox & BleedBox)
-                mbox = page.mediabox
-                trim_rect = fitz.Rect(
-                    max(mbox.x0, origin_x_pt),
-                    max(mbox.y0, origin_y_pt),
-                    min(mbox.x1, origin_x_pt + trim_w_pt),
-                    min(mbox.y1, origin_y_pt + trim_h_pt),
-                )
-                bleed_rect = fitz.Rect(
-                    max(mbox.x0, origin_x_pt - bleed_pt),
-                    max(mbox.y0, origin_y_pt - bleed_pt),
-                    min(mbox.x1, origin_x_pt + trim_w_pt + bleed_pt),
-                    min(mbox.y1, origin_y_pt + trim_h_pt + bleed_pt),
-                )
-                page.set_trimbox(trim_rect)
-                page.set_bleedbox(bleed_rect)
+        for ctx, page_idx in render_pairs:
+            page = pdf.new_page(width=media_w_pt, height=media_h_pt)
+            media_rect = fitz.Rect(0, 0, media_w_pt, media_h_pt)
+            page.set_mediabox(media_rect)
 
-                if self.show_crop_marks and crop_margin_pt > 0:
-                    self._draw_crop_marks(page, trim_rect, crop_margin_pt)
+            # Set PDF geometry boxes (TrimBox & BleedBox)
+            mbox = page.mediabox
+            trim_rect = fitz.Rect(
+                max(mbox.x0, origin_x_pt),
+                max(mbox.y0, origin_y_pt),
+                min(mbox.x1, origin_x_pt + trim_w_pt),
+                min(mbox.y1, origin_y_pt + trim_h_pt),
+            )
+            bleed_rect = fitz.Rect(
+                max(mbox.x0, origin_x_pt - bleed_pt),
+                max(mbox.y0, origin_y_pt - bleed_pt),
+                min(mbox.x1, origin_x_pt + trim_w_pt + bleed_pt),
+                min(mbox.y1, origin_y_pt + trim_h_pt + bleed_pt),
+            )
+            page.set_trimbox(trim_rect)
+            page.set_bleedbox(bleed_rect)
 
-                # Render page layers
-                page_layers = [
-                    layer for layer in layers if layer.get("pageIndex", 0) == page_idx and layer.get("visible", True)
-                ]
-                shape = page.new_shape()
+            if self.show_crop_marks and crop_margin_pt > 0:
+                self._draw_crop_marks(page, trim_rect, crop_margin_pt)
 
-                for layer in page_layers:
-                    # Text/image write to the page stream directly: flush pending
-                    # vector ops first so z-order matches document order.
-                    if layer.get("type") in ("text", "field", "image", "logo", "imageSlot"):
-                        shape = self._flush_shape(page, shape)
-                    self._render_layer(page, shape, layer, ctx, origin_x_pt, origin_y_pt, local_image_paths)
+            # Render page layers
+            page_layers = [
+                layer for layer in layers if layer.get("pageIndex", 0) == page_idx and layer.get("visible", True)
+            ]
+            shape = page.new_shape()
 
-                shape.commit()
+            for layer in page_layers:
+                # Text/image write to the page stream directly: flush pending
+                # vector ops first so z-order matches document order.
+                if layer.get("type") in ("text", "field", "image", "logo", "imageSlot"):
+                    shape = self._flush_shape(page, shape)
+                self._render_layer(page, shape, layer, ctx, origin_x_pt, origin_y_pt, local_image_paths)
+
+            shape.commit()
 
         pdf_bytes = cast(bytes, pdf.tobytes(clean=True, deflate=True))
         pdf.close()

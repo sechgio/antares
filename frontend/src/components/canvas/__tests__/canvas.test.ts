@@ -31,6 +31,7 @@ import {
   isPlaceTool,
   mmToScreenPx,
   normalizeDrawRect,
+  placeRectCssVars,
   scaleCssLength,
 } from '../ops/drawHelpers';
 import { clampZoom, fitZoomForViewport, MAX_ZOOM, MIN_ZOOM, nextZoomPreset, pinchViewport, wheelPanDelta, zoomAtCursor } from '../ops/viewportNav';
@@ -545,6 +546,10 @@ describe('canvas excel helpers', () => {
     expect(matchesRecordId('ABC-1.jpg', 'ABC')).toBe(true);
     expect(matchesRecordId('ABC_2.png', 'ABC')).toBe(true);
     expect(matchesRecordId('XYZ-1.jpg', 'ABC')).toBe(false);
+    // Basename semantics: extension optional; exact id also matches
+    expect(matchesRecordId('ABC', 'ABC')).toBe(true);
+    expect(matchesRecordId('ABC-1', 'ABC')).toBe(true);
+    expect(matchesRecordId('ABC.pdf', 'ABC')).toBe(true);
   });
 
   it('builds row data from mappings', () => {
@@ -1179,6 +1184,16 @@ describe('drawHelpers', () => {
   it('isClickPlace detects tiny drags', () => {
     expect(isClickPlace({ x: 1, y: 1, w: 1, h: 1 })).toBe(true);
     expect(isClickPlace({ x: 1, y: 1, w: 20, h: 10 })).toBe(false);
+  });
+
+  it('placeRectCssVars allows negative translate (free canvas)', () => {
+    expect(placeRectCssVars(-12, -5, 40, 30)).toEqual({
+      '--translate-x': '-12mm',
+      '--translate-y': '-5mm',
+      '--width': '40mm',
+      '--height': '30mm',
+    });
+    expect(placeRectCssVars(0, 10, 20, 15)['--translate-x']).toBe('0mm');
   });
 
   it('isPlaceTool recognizes draw tools', () => {

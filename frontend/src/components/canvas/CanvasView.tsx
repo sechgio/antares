@@ -72,7 +72,7 @@ import {
   matchGridSlotsToSourceSize,
 } from './ops/gridLayout';
 import { assignUniqueLogoSides, logoSideHasConflict, withAssignedLogoSide } from './ops/logoSide';
-import { isClickPlace, type DrawRect } from './ops/drawHelpers';
+import { isClickPlace, placeRectCssVars, type DrawRect } from './ops/drawHelpers';
 import { moveGuide, removeGuide, upsertGuide } from './ops/guides';
 import { selectionBounds } from './ops/selectionTransform';
 import { syncLinkedStylesFromLayer } from './ops/syncLinkedStyles';
@@ -92,6 +92,8 @@ import {
 } from './ops/panelChrome';
 import { canFocusFieldBinding, canInlineEditLayer, isEditableKeyboardTarget, isTypeToEditKey } from './ops/inlineEdit';
 import { matchHistoryShortcut } from './ops/historyShortcuts';
+import { parseClipboardLayers, writeClipboardLayersText } from './ops/clipboardLayers';
+import { nextZoomPreset } from './ops/viewportNav';
 import { cloneDocument } from './ops/document';
 import {
   A4_HEIGHT_PX,
@@ -277,18 +279,22 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
 
       if (choice === 'keep-local') {
         dismissedRemoteAtRef.current = conflict.remoteUpdatedAt;
-        if (conflict.remoteDeleted) {
-          void (async () => {
-            try {
-              const got = await api.canvasGet(conflict.localDoc.id);
-              const doc = normalizeDocument(got.document as CanvasDocument);
-              await queueCanvasCloudPush(doc, { forceResurrect: true });
-              await refreshList();
-            } catch {
-              // Soft-resurrect failed (offline/RLS); local doc stays; next sync retries.
-            }
-          })();
-        }
+        void (async () => {
+          try {
+            // Prefer in-memory open doc so unsaved edits win over stale conflict.localDoc.
+            const mem =
+              historyDocRef.current.id === conflict.localDoc.id
+                ? historyDocRef.current
+                : conflict.localDoc;
+            const serialized = await serializeDocumentImages(mem);
+            const res = await api.canvasSave(serialized, { touch: true });
+            const saved = normalizeDocument(res.document as CanvasDocument);
+            await queueCanvasCloudPush(saved, { forceResurrect: true });
+            await refreshList();
+          } catch {
+            // Consolidate failed (offline/RLS); dismissal stays; next sync retries.
+          }
+        })();
         return;
       }
 
@@ -364,8 +370,12 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       const hydrated = await hydrateDocumentImages(saved);
       history.replaceDocument(hydrated);
       history.restoreHistory(currentPast, currentFuture);
-      history.hasUnsavedEditsRef.current = false;
-      dismissedRemoteAtRef.current = null;
+      history.markSaved();
+      // Don't drop keep-local dismissal until local timestamp has beaten the remote we dismissed.
+      const dismissed = dismissedRemoteAtRef.current;
+      if (!dismissed || (saved.updatedAt && isNewer(saved.updatedAt, dismissed))) {
+        dismissedRemoteAtRef.current = null;
+      }
       await refreshList();
       if (!opts?.silent) flashStatus('Guardado');
       queueCanvasCloudPush(saved);
@@ -408,21 +418,35 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   // unsaved edits are not lost on app/window close. A ref tracks in-flight
   // saves so a fast repeat never overlaps the IPC round-trip.
   const autosavePendingRef = useRef(false);
+  const flushAutosave = useCallback(() => {
+    if (!history.hasUnsavedEditsRef.current) return;
+    if (autosavePendingRef.current) return;
+    autosavePendingRef.current = true;
+    onSave({ silent: true }).finally(() => {
+      autosavePendingRef.current = false;
+    });
+  }, [onSave]);
+  const flushAutosaveRef = useRef(flushAutosave);
+  flushAutosaveRef.current = flushAutosave;
+
   useEffect(() => {
     if (!active) return;
     if (!history.hasUnsavedEditsRef.current) return;
     if (autosavePendingRef.current) return;
-    const timer = window.setTimeout(() => {
-      if (autosavePendingRef.current) return;
-      autosavePendingRef.current = true;
-      onSave({ silent: true }).finally(() => {
-        autosavePendingRef.current = false;
-      });
-    }, AUTOSAVE_DEBOUNCE_MS);
+    const timer = window.setTimeout(() => flushAutosaveRef.current(), AUTOSAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
     // Autosave reacts to a changing dirty flag; hasUnsavedEditsRef flips on edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [history.document, active, onSave]);
+  }, [history.document, active]);
+
+  // Flush pending dirty edits when the Canvas tab hides (debounce would be cancelled).
+  useEffect(() => {
+    if (active) return;
+    flushAutosaveRef.current();
+  }, [active]);
+
+  // Flush on unmount so a dirty open tab does not lose the last debounce window.
+  useEffect(() => () => flushAutosaveRef.current(), []);
 
   // Beforeunload: warn and fire a best-effort save when the open doc is dirty.
   const onBeforeUnload = useCallback(
@@ -565,10 +589,10 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     [history.document.layers, startInlineEdit],
   );
 
-  const pasteClipboard = useCallback(
-    (offsetMm?: number) => {
-      if (!clipboard.length) return;
-      const withIds = clipboard.map((l) => ({ ...l, pageIndex }));
+  const applyPasteLayers = useCallback(
+    (source: CanvasLayer[], offsetMm?: number) => {
+      if (!source.length) return;
+      const withIds = source.map((l) => ({ ...l, pageIndex }));
       const clipIds = new Set(withIds.map((l) => l.id));
       const roots = withIds.filter((l) => !l.parentId || !clipIds.has(l.parentId));
       const temp = [...history.document.layers, ...withIds];
@@ -581,8 +605,33 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       setAllLayers(assignUniqueLogoSides(layers.filter((l) => !originalClipIds.has(l.id)), newIds));
       setSelectedIds(newIds);
     },
-    [clipboard, history.document.layers, pageIndex, setAllLayers],
+    [history.document.layers, pageIndex, setAllLayers],
   );
+
+  const pasteClipboard = useCallback(
+    async (offsetMm?: number) => {
+      if (clipboard.length) {
+        applyPasteLayers(clipboard, offsetMm);
+        return;
+      }
+      try {
+        const text = await navigator.clipboard?.readText?.();
+        const parsed = text ? parseClipboardLayers(text) : null;
+        if (!parsed?.length) return;
+        setClipboard(parsed);
+        applyPasteLayers(parsed, offsetMm);
+      } catch {
+        /* permission / unavailable — keep in-memory paste behavior */
+      }
+    },
+    [applyPasteLayers, clipboard],
+  );
+
+  const copyLayersToClipboard = useCallback((layers: CanvasLayer[]) => {
+    const copies = layers.map((l) => ({ ...l, cssVars: { ...l.cssVars } }));
+    setClipboard(copies);
+    writeClipboardLayersText(copies);
+  }, []);
 
   const onKeyDownRef = useRef<(e: KeyboardEvent) => void>(() => {});
 
@@ -669,8 +718,10 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         // Block tool / delete / nudge shortcuts while editing.
         return;
       }
-      // Allow undo/redo + Ctrl/Cmd+D/G even when focus is in panel inputs.
+      // History chords: canvas document undo. Inspector INPUT/TEXTAREA keep
+      // native field undo — inline canvas editor is handled above (editingLayerId).
       if (historyChord) {
+        if (isEditableKeyboardTarget(e.target)) return;
         e.preventDefault();
         if (historyChord === 'redo') runRedo();
         else runUndo();
@@ -703,10 +754,10 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       const plainKey = !e.ctrlKey && !e.metaKey && !e.altKey;
       if (plainKey) {
         if (e.key === 'v' || e.key === 'V') setTool('select');
-        if (e.key === 'h' || e.key === 'H') setTool('hand');
+        if ((e.key === 'h' || e.key === 'H') && !e.shiftKey) setTool('hand');
         if (e.key === 't' || e.key === 'T') setTool('text');
         if ((e.key === 'r' || e.key === 'R') && !e.shiftKey) setTool('rect');
-        if (e.key === 'o' || e.key === 'O') setTool('ellipse');
+        if ((e.key === 'o' || e.key === 'O') && !e.shiftKey) setTool('ellipse');
         if (e.key === 'f' || e.key === 'F') setTool('field');
         if (e.key === 'l' || e.key === 'L') {
           setTool(e.shiftKey ? 'arrow' : 'line');
@@ -726,7 +777,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         if (e.key === 'g' || e.key === 'G') setTool('grid');
         if (e.key === 'b' || e.key === 'B') setTool('table');
         if (e.key === 'm' || e.key === 'M') setTool('image');
-        if (e.key === 'p' || e.key === 'P') {
+        if ((e.key === 'p' || e.key === 'P') && !e.shiftKey) {
           const lineId =
             pathEditingLayerId ||
             selectedIds.find((id) => history.document.layers.find((l) => l.id === id)?.type === 'line');
@@ -735,6 +786,14 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
             setSelectedIds([lineId]);
             setTool('bend');
           }
+        }
+        // Extra shape tools (Shift+letter; avoid letters used plain above / Ctrl chords).
+        if (e.shiftKey) {
+          if (e.key === 'p' || e.key === 'P') setTool('polygon');
+          else if (e.key === 's' || e.key === 'S') setTool('star');
+          else if (e.key === 'd' || e.key === 'D') setTool('diamond');
+          else if (e.key === 'h' || e.key === 'H') setTool('hexagon');
+          else if (e.key === 'n' || e.key === 'N') setTool('pentagon');
         }
       }
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'k' || e.key === 'K')) {
@@ -747,14 +806,14 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         if (toolBeforeSpaceRef.current == null) toolBeforeSpaceRef.current = tool;
         setTool('hand');
       }
-      // Zoom shortcuts (OpenPencil: Ctrl/⌘ + / - / 0; Shift+1 = fit)
+      // Zoom shortcuts: same preset ladder as ZoomMenu (MIN 0.02 … MAX 256).
       if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) {
         e.preventDefault();
-        viewportNavRef.current?.setZoom((z) => Math.min(4, Math.round((z + 0.1) * 100) / 100));
+        viewportNavRef.current?.setZoom((z) => nextZoomPreset(z, 'in'));
       }
       if ((e.ctrlKey || e.metaKey) && e.key === '-') {
         e.preventDefault();
-        viewportNavRef.current?.setZoom((z) => Math.max(0.2, Math.round((z - 0.1) * 100) / 100));
+        viewportNavRef.current?.setZoom((z) => nextZoomPreset(z, 'out'));
       }
       if ((e.ctrlKey || e.metaKey) && e.key === '0') {
         e.preventDefault();
@@ -848,11 +907,11 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         const deepIds = expandWithDescendants(history.document.layers, editableIds);
         const deepIdSet = new Set(deepIds);
         const copies = history.document.layers.filter((l) => deepIdSet.has(l.id));
-        setClipboard(copies.map((l) => ({ ...l, cssVars: { ...l.cssVars } })));
+        copyLayersToClipboard(copies);
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
         e.preventDefault();
-        pasteClipboard(e.shiftKey ? 0 : undefined);
+        void pasteClipboard(e.shiftKey ? 0 : undefined);
       }
       if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'R' || e.key === 'r')) {
         e.preventDefault();
@@ -878,14 +937,18 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       }
       if ((e.ctrlKey || e.metaKey) && (e.key === ']' || e.key === '}')) {
         e.preventDefault();
+        sealPanelAndAbortGesture();
         setAllLayers(bringForward(history.document.layers, editableIds));
       } else if (e.key === ']' || e.key === '}') {
+        sealPanelAndAbortGesture();
         setAllLayers(bringToFront(history.document.layers, editableIds));
       }
       if ((e.ctrlKey || e.metaKey) && (e.key === '[' || e.key === '{')) {
         e.preventDefault();
+        sealPanelAndAbortGesture();
         setAllLayers(sendBackward(history.document.layers, editableIds));
       } else if (e.key === '[' || e.key === '{') {
+        sealPanelAndAbortGesture();
         setAllLayers(sendToBack(history.document.layers, editableIds));
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
@@ -899,6 +962,18 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         setShowShortcuts((v) => !v);
       }
       if (e.key === 'Escape') {
+        // Mid-gesture / live panel: cancel or seal first (Figma) — do not clear selection.
+        if (gestureBaselineRef.current) {
+          e.preventDefault();
+          cancelPageLayersGesture();
+          setGestureAbortToken((n) => n + 1);
+          return;
+        }
+        if (panelBaselineRef.current) {
+          e.preventDefault();
+          onPanelCommitLive();
+          return;
+        }
         setContextMenu(null);
         setShowShortcuts(false);
         if (previewOpen) {
@@ -981,10 +1056,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     const y = useDefault ? rect.y : rect.y;
     layer.cssVars = {
       ...layer.cssVars,
-      '--translate-x': mm(Math.max(0, x)),
-      '--translate-y': mm(Math.max(0, y)),
-      '--width': mm(w),
-      '--height': mm(h),
+      ...placeRectCssVars(x, y, w, h),
     };
     if (type === 'ellipse') {
       layer.cssVars['--border-radius'] = '50%';
@@ -1210,11 +1282,11 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     const id = contextMenu?.layerId;
 
     if (action === 'paste') {
-      pasteClipboard();
+      void pasteClipboard();
       return;
     }
     if (action === 'pasteInPlace') {
-      pasteClipboard(0);
+      void pasteClipboard(0);
       return;
     }
 
@@ -1235,14 +1307,16 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       const deepIds = expandWithDescendants(history.document.layers, editable);
       const deepIdSet = new Set(deepIds);
       const copies = history.document.layers.filter((l) => deepIdSet.has(l.id));
-      setClipboard(copies.map((l) => ({ ...l, cssVars: { ...l.cssVars } })));
+      copyLayersToClipboard(copies);
       return;
     }
     if (action === 'toggleLock') {
+      sealPanelAndAbortGesture();
       setAllLayers(setLayerLocked(history.document.layers, id, !layer.locked));
       return;
     }
     if (action === 'toggleVisible') {
+      sealPanelAndAbortGesture();
       setAllLayers(setLayerVisible(history.document.layers, id, layer.visible === false));
       return;
     }
@@ -1258,6 +1332,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         return l && !l.locked && l.type !== 'frame';
       });
       if (editable.length < 2) return;
+      sealPanelAndAbortGesture();
       const { layers, groupId } = groupLayers(history.document.layers, editable);
       setAllLayers(layers);
       setSelectedIds([groupId]);
@@ -1265,39 +1340,55 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     }
     if (action === 'ungroup') {
       if (layer.type !== 'group') return;
+      sealPanelAndAbortGesture();
       setAllLayers(ungroupLayers(history.document.layers, id));
       return;
     }
     if (layer.locked) return;
 
+    const mutateRoots = selectedIds.includes(id) ? selectedIds : [id];
+
     if (action === 'matchGridSlotSize') {
+      sealPanelAndAbortGesture();
       setAllLayers(matchGridSlotsToSourceSize(history.document.layers, id));
       return;
     }
     if (action === 'duplicate') {
-      const { layers, newIds } = duplicateLayers(history.document.layers, [id]);
+      sealPanelAndAbortGesture();
+      const editable = mutateRoots.filter((lid) => {
+        const l = history.document.layers.find((x) => x.id === lid);
+        return l && !l.locked && l.type !== 'frame';
+      });
+      if (!editable.length) return;
+      const { layers, newIds } = duplicateLayers(history.document.layers, editable);
       setAllLayers(assignUniqueLogoSides(layers, newIds));
       setSelectedIds(newIds);
       return;
     }
     if (action === 'bringFront') {
-      setAllLayers(bringToFront(history.document.layers, [id]));
+      sealPanelAndAbortGesture();
+      setAllLayers(bringToFront(history.document.layers, mutateRoots));
       return;
     }
     if (action === 'bringForward') {
-      setAllLayers(bringForward(history.document.layers, [id]));
+      sealPanelAndAbortGesture();
+      setAllLayers(bringForward(history.document.layers, mutateRoots));
       return;
     }
     if (action === 'sendBack') {
-      setAllLayers(sendToBack(history.document.layers, [id]));
+      sealPanelAndAbortGesture();
+      setAllLayers(sendToBack(history.document.layers, mutateRoots));
       return;
     }
     if (action === 'sendBackward') {
-      setAllLayers(sendBackward(history.document.layers, [id]));
+      sealPanelAndAbortGesture();
+      setAllLayers(sendBackward(history.document.layers, mutateRoots));
       return;
     }
     if (action === 'delete') {
-      onDeleteLayer(id);
+      sealPanelAndAbortGesture();
+      setAllLayers(deleteLayers(history.document.layers, mutateRoots));
+      setSelectedIds((prev) => prev.filter((x) => !mutateRoots.includes(x)));
     }
   };
 
@@ -1656,7 +1747,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
                 isContainer: Boolean(layer && isLayerContainer(layer)),
                 canGroup: selectedIds.length >= 2 && (layerId ? selectedIds.includes(layerId) : false),
                 canUngroup: layer?.type === 'group',
-                canPaste: clipboard.length > 0,
+                canPaste: true,
                 canMatchGridSlotSize:
                   layer?.type === 'imageSlot' &&
                   Boolean(layer.parentId) &&
@@ -1794,20 +1885,35 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
               setAllLayers(nudgeLayers(history.document.layers, editableSelectedIds, dx, dy));
             }}
             selectionOrigin={selectionOrigin}
-            onBulkVisible={(visible) =>
-              setAllLayers(setLayersVisible(history.document.layers, editableSelectedIds, visible))
-            }
-            onBulkLocked={(locked) =>
-              setAllLayers(setLayersLocked(history.document.layers, editableSelectedIds, locked))
-            }
-            onBulkOpacity={(opacity) =>
-              setAllLayers(setLayersOpacity(history.document.layers, editableSelectedIds, opacity))
-            }
+            onBulkVisible={(visible) => {
+              sealPanelAndAbortGesture();
+              setAllLayers(setLayersVisible(history.document.layers, editableSelectedIds, visible));
+            }}
+            onBulkLocked={(locked) => {
+              sealPanelAndAbortGesture();
+              setAllLayers(setLayersLocked(history.document.layers, editableSelectedIds, locked));
+            }}
+            onBulkOpacity={(opacity) => {
+              sealPanelAndAbortGesture();
+              setAllLayers(setLayersOpacity(history.document.layers, editableSelectedIds, opacity));
+            }}
             bulkOpacityValue={bulkOpacityValue}
-            onBringFront={() => setAllLayers(bringToFront(history.document.layers, selectedIds))}
-            onBringForward={() => setAllLayers(bringForward(history.document.layers, selectedIds))}
-            onSendBack={() => setAllLayers(sendToBack(history.document.layers, selectedIds))}
-            onSendBackward={() => setAllLayers(sendBackward(history.document.layers, selectedIds))}
+            onBringFront={() => {
+              sealPanelAndAbortGesture();
+              setAllLayers(bringToFront(history.document.layers, selectedIds));
+            }}
+            onBringForward={() => {
+              sealPanelAndAbortGesture();
+              setAllLayers(bringForward(history.document.layers, selectedIds));
+            }}
+            onSendBack={() => {
+              sealPanelAndAbortGesture();
+              setAllLayers(sendToBack(history.document.layers, selectedIds));
+            }}
+            onSendBackward={() => {
+              sealPanelAndAbortGesture();
+              setAllLayers(sendBackward(history.document.layers, selectedIds));
+            }}
             onApplyPreset={onApplyPreset}
             logoSideConflict={
               Boolean(selected?.type === 'logo' && logoSideHasConflict(history.document.layers, selected.id))

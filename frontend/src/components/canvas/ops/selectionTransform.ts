@@ -15,12 +15,14 @@ export type HandlePos = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 export type SmartGuide = { axis: 'x' | 'y'; pos: number };
 
 export const SNAP_THRESHOLD_MM = 0.5;
+/** Cap so low zoom does not inflate screen-px snap into page-lock (≈66mm at z=0.02). */
+export const SNAP_THRESHOLD_MAX_MM = 10;
 export const POINTER_CLICK_PX = 4;
 
 /** Screen-pixel snap feel (~5px) converted to mm at current zoom. */
 export function snapThresholdMm(zoom: number, screenPx = 5): number {
   const z = Math.max(0.05, zoom);
-  return screenPx / (MM_TO_PX * z);
+  return Math.min(screenPx / (MM_TO_PX * z), SNAP_THRESHOLD_MAX_MM);
 }
 
 export const DEFAULT_GRID_MM = 5;

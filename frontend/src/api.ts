@@ -328,6 +328,8 @@ export interface HtmlToPdfBody {
 export interface CanvasExportCmykPdfBody {
   document: import('./components/canvas/types').CanvasDocument;
   contexts?: unknown[];
+  /** When true, render context[i] with page i (1:1) instead of cartesian product. */
+  pair_context_pages?: boolean;
   color_profile?: string;
   dpi?: number;
   bleed_mm?: number;

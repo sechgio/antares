@@ -242,6 +242,39 @@ describe('syncCanvasDocuments', () => {
     expect(vi.mocked(api.canvasSave)).not.toHaveBeenCalled();
   });
 
+  it('prefers SyncOptions.openDocument for conflict.localDoc over disk', async () => {
+    const localDoc = { id: 'doc-1', name: 'Disk', updatedAt: '2026-07-01T00:00:00Z' };
+    const remoteMeta = {
+      id: 'doc-1',
+      name: 'New',
+      updated_at: '2026-07-22T12:00:00Z',
+      deleted_at: null,
+    };
+    const remoteDoc = makeDoc({ id: 'doc-1', name: 'New', updatedAt: '2026-07-22T12:00:00Z' });
+    const diskFull = makeDoc({ id: 'doc-1', name: 'Disk', updatedAt: '2026-07-01T00:00:00Z' });
+    const memoryDoc = makeDoc({
+      id: 'doc-1',
+      name: 'Unsaved memory',
+      updatedAt: '2026-07-01T00:00:00Z',
+    });
+
+    vi.mocked(api.canvasList).mockResolvedValue({ documents: [localDoc] });
+    vi.mocked(api.canvasGet).mockResolvedValue({ document: diskFull });
+
+    enqueue([remoteMeta]);
+    enqueue([{ document: remoteDoc, updated_at: '2026-07-22T12:00:00Z' }]);
+
+    const result = await syncCanvasDocuments({
+      openDocumentId: 'doc-1',
+      openDocument: memoryDoc,
+      openDirty: true,
+    });
+
+    expect(result.conflict).toBeDefined();
+    expect(result.conflict!.localDoc.name).toBe('Unsaved memory');
+    expect(vi.mocked(api.canvasGet)).not.toHaveBeenCalled();
+  });
+
   // --- Step 3b: open dirty + remote deleted → conflict (not silent skip) ---
 
   it('reports remoteDeleted conflict when open doc is dirty and remote is deleted', async () => {
