@@ -4,7 +4,7 @@ copyright: Copyright © 2026 Antares
 directories:
   output: dist-electron
   buildResources: assets
-compression: maximum
+compression: normal
 files:
   - "!frontend/src/**/*"
   - "!frontend/public/**/*"
