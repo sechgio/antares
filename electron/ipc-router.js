@@ -78,6 +78,11 @@ const LONG_REQUEST_TIMEOUT_MS = 900_000;   // 15 min for heavy operations (large
 const STARTUP_WAIT_MS = 60_000;            // align with backend-spawner handshake (onefile + AV)
 const MID_FLIGHT_RETRIES = 2;              // retries for transient mid-flight errors (idempotent only)
 const BACKEND_RESTART_MIN_INTERVAL_MS = 5_000;
+// Cheap IPC telemetry: always warn on slow/large calls; full log when ANTARES_IPC_TELEMETRY=1.
+const IPC_TELEMETRY_SLOW_MS = 5_000;
+const IPC_TELEMETRY_LARGE_BYTES = 1 * 1024 * 1024;
+
+let _ipcBackpressureWaits = 0;
 /** Prefix for structured IPC errors embedded in Error.message (Electron only clones message). */
 const ANTARES_IPC_ERROR_PREFIX = 'ANTARES_IPC_ERROR:';
 
@@ -192,6 +197,9 @@ function _ensureListeners() {
           clearTimeout(entry.timeout);
           _pendingRequests.delete(String(msg.id));
           decrementPendingRequests();
+          if (typeof entry.responseBytes !== 'number' || entry.responseBytes === 0) {
+            entry.responseBytes = _estimateJsonBytes(msg);
+          }
           if (msg.error) {
             const errMsg = typeof msg.error === 'object' ? (msg.error.message || JSON.stringify(msg.error)) : String(msg.error);
             const err = new Error(errMsg);
@@ -239,6 +247,103 @@ function _getTimeoutForMethod(method) {
   return _getLongRunningMethods().has(method) ? LONG_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
 }
 
+function _ipcTelemetryVerbose() {
+  const raw = String(process.env.ANTARES_IPC_TELEMETRY || '').trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes';
+}
+
+function _estimateJsonBytes(value) {
+  try {
+    return Buffer.byteLength(JSON.stringify(value), 'utf8');
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Log cheap IPC timing/size signals. Verbose mode logs every call; otherwise
+ * only slow or large payloads (regression smoke without drowning stderr).
+ */
+function _logIpcTelemetry({
+  method,
+  elapsedMs,
+  requestBytes = 0,
+  responseBytes = 0,
+  outcome = 'ok',
+  waitedForDrain = false,
+}) {
+  const slow = elapsedMs >= IPC_TELEMETRY_SLOW_MS;
+  const large = requestBytes >= IPC_TELEMETRY_LARGE_BYTES || responseBytes >= IPC_TELEMETRY_LARGE_BYTES;
+  if (!_ipcTelemetryVerbose() && !slow && !large && !waitedForDrain) return;
+
+  const line = `[ipc-router] method=${method} elapsed_ms=${Math.round(elapsedMs)} ` +
+    `request_bytes=${requestBytes} response_bytes=${responseBytes} outcome=${outcome}` +
+    (waitedForDrain ? ' backpressure=1' : '');
+  if (slow || large || waitedForDrain || outcome !== 'ok') {
+    console.warn(line);
+  } else {
+    console.log(line);
+  }
+}
+
+function getIpcBackpressureWaits() {
+  return _ipcBackpressureWaits;
+}
+
+function resetIpcBackpressureWaits() {
+  _ipcBackpressureWaits = 0;
+}
+
+/**
+ * Write one JSON-RPC line to Python stdin. If the pipe buffer is full
+ * (`write` returns false), wait for `drain` before resolving so callers do
+ * not pile unbounded serialized payloads onto a stalled child.
+ *
+ * Note: stubs that return `undefined` are treated as success (only `false`
+ * means backpressure), matching Node's Writable contract.
+ */
+function _writeStdinWithBackpressure(proc, payload) {
+  return new Promise((resolve, reject) => {
+    if (!proc || !proc.stdin || typeof proc.stdin.write !== 'function') {
+      reject(new Error('Backend stdin is not writable'));
+      return;
+    }
+    let settled = false;
+    const finish = (waitedForDrain) => {
+      if (settled) return;
+      settled = true;
+      resolve({ waitedForDrain: !!waitedForDrain });
+    };
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
+
+    let ok;
+    try {
+      ok = proc.stdin.write(payload);
+    } catch (err) {
+      fail(err);
+      return;
+    }
+
+    if (ok !== false) {
+      finish(false);
+      return;
+    }
+
+    _ipcBackpressureWaits += 1;
+    const onDrain = () => finish(true);
+    const onError = (err) => {
+      proc.stdin.removeListener('drain', onDrain);
+      fail(err instanceof Error ? err : new Error(String(err)));
+    };
+    proc.stdin.once('drain', onDrain);
+    proc.stdin.once('error', onError);
+  });
+}
+
 function _sendRequest(method, params) {
   const proc = getProcess();
   if (!proc || proc.killed) {
@@ -248,12 +353,54 @@ function _sendRequest(method, params) {
 
   const id = crypto.randomUUID();
   const request = { jsonrpc: '2.0', id, method, params };
+  const line = `${JSON.stringify(request)}\n`;
+  const requestBytes = Buffer.byteLength(line, 'utf8');
   const timeoutMs = _getTimeoutForMethod(method);
+  const startedAt = Date.now();
 
   incrementPendingRequests();
 
   return new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
+    let settled = false;
+
+    const settle = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      fn(value);
+    };
+
+    const entry = {
+      method,
+      proc,
+      responseBytes: 0,
+      waitedForDrain: false,
+      timeout: null,
+      resolve: (result) => {
+        _logIpcTelemetry({
+          method,
+          elapsedMs: Date.now() - startedAt,
+          requestBytes,
+          responseBytes: entry.responseBytes || 0,
+          outcome: 'ok',
+          waitedForDrain: entry.waitedForDrain,
+        });
+        settle(resolve, result);
+      },
+      reject: (err) => {
+        const outcome = err && err.message && /timeout/i.test(err.message) ? 'timeout' : 'error';
+        _logIpcTelemetry({
+          method,
+          elapsedMs: Date.now() - startedAt,
+          requestBytes,
+          responseBytes: entry.responseBytes || 0,
+          outcome,
+          waitedForDrain: entry.waitedForDrain,
+        });
+        settle(reject, err);
+      },
+    };
+
+    entry.timeout = setTimeout(() => {
       _pendingRequests.delete(id);
       decrementPendingRequests();
       const win = getMainWindow();
@@ -263,18 +410,19 @@ function _sendRequest(method, params) {
           message: `IPC timeout: el backend no respondió a "${method}" en ${timeoutMs / 1000}s`,
         });
       }
-      reject(new Error(`IPC timeout: ${method}`));
+      entry.reject(new Error(`IPC timeout: ${method}`));
     }, timeoutMs);
 
-    _pendingRequests.set(id, { resolve, reject, timeout: timeoutId, proc, method });
-    try {
-      proc.stdin.write(JSON.stringify(request) + '\n');
-    } catch (err) {
-      clearTimeout(timeoutId);
+    _pendingRequests.set(id, entry);
+
+    _writeStdinWithBackpressure(proc, line).then((writeResult) => {
+      entry.waitedForDrain = !!(writeResult && writeResult.waitedForDrain);
+    }).catch((err) => {
+      clearTimeout(entry.timeout);
       _pendingRequests.delete(id);
       decrementPendingRequests();
-      reject(new Error(`Backend stdin write failed: ${err.message}`));
-    }
+      entry.reject(new Error(`Backend stdin write failed: ${err.message}`));
+    });
   });
 }
 
@@ -514,6 +662,11 @@ module.exports = {
   _callBackend,
   _isIdempotentMethod,
   _toRendererIpcError,
+  _writeStdinWithBackpressure,
+  _logIpcTelemetry,
+  _estimateJsonBytes,
+  getIpcBackpressureWaits,
+  resetIpcBackpressureWaits,
   ANTARES_IPC_ERROR_PREFIX,
   reloadIpcMethods,
 };

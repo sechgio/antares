@@ -179,12 +179,37 @@ def _user_error_message(exc: Exception) -> str | AntaresBaseException:
     return "Error interno del servidor"
 
 
+def _ipc_telemetry_verbose() -> bool:
+    raw = os.environ.get("ANTARES_IPC_TELEMETRY", "").strip().lower()
+    return raw in {"1", "true", "yes"}
+
+
+def _maybe_log_ipc_timing(method_name: str, elapsed_ms: float, *, ok: bool) -> None:
+    """Cheap handler timing. Always warn when slow; log every call if env enabled."""
+    slow = elapsed_ms >= 5_000.0
+    if not _ipc_telemetry_verbose() and not slow:
+        return
+    level = logging.WARNING if slow or not ok else logging.INFO
+    logger.log(
+        level,
+        "ipc method=%s elapsed_ms=%.1f ok=%s",
+        method_name,
+        elapsed_ms,
+        ok,
+    )
+
+
 def _dispatch(handler, params, msg_id, method_name) -> None:
     """Run a handler in a worker thread and send its response back."""
+    t0 = time.perf_counter()
     try:
         result = handler(params)
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        _maybe_log_ipc_timing(method_name, elapsed_ms, ok=True)
         send_response(result, msg_id)
     except Exception as exc:
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        _maybe_log_ipc_timing(method_name, elapsed_ms, ok=False)
         user_msg = _user_error_message(exc)
         logger.exception("Error en %s: %s\n%s", method_name, user_msg, traceback.format_exc())
         send_response(None, msg_id, error=user_msg)
