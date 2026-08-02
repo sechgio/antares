@@ -513,7 +513,7 @@ def test_cmyk_renderer_pair_context_pages():
 
     pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     try:
-        assert len(pdf_doc) == 3  # paired, not 3×3=9
+        assert len(pdf_doc) == 3  # paired, not 3x3=9
         assert "ONE" in pdf_doc[0].get_text()
         assert "TWO" in pdf_doc[1].get_text()
         assert "THREE" in pdf_doc[2].get_text()

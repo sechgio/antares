@@ -832,12 +832,16 @@ def _run_conversion_job(job: Job) -> None:
                     in_flight: dict[Future, None] = {}
                     futures = []
 
-                    def _submit_one() -> bool:
+                    def _submit_one(
+                        _task_queue: list = task_queue,
+                        _in_flight: dict[Future, None] = in_flight,
+                        _futures: list = futures,
+                    ) -> bool:
                         """Submit next task; return False if cancelled via None future."""
                         nonlocal cancelled
-                        if not task_queue:
+                        if not _task_queue:
                             return True
-                        task = task_queue.pop(0)
+                        task = _task_queue.pop(0)
                         future = scheduler.submit_heavy(
                             _process_one,
                             task,
@@ -847,8 +851,8 @@ def _run_conversion_job(job: Job) -> None:
                         if future is None:
                             cancelled = True
                             return False
-                        in_flight[future] = None
-                        futures.append(future)
+                        _in_flight[future] = None
+                        _futures.append(future)
                         return True
 
                     # Seed window so heavy work starts before we wait on results.

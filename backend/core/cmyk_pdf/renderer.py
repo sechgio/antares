@@ -224,7 +224,7 @@ class CanvasCmykRenderer:
         self.bleed_mm = max(0.0, bleed_mm)
         self.show_crop_marks = show_crop_marks
         # When True and len(contexts)==len(pages), pair context[i] with page i.
-        # Otherwise keep legacy cartesian product (N contexts × M pages).
+        # Otherwise keep legacy cartesian product (N contexts x M pages).
         self.pair_context_pages = pair_context_pages
 
         page_meta = document.get("page", {})
