@@ -34,13 +34,14 @@ interface UseCanvasSyncOptions {
   guarded?: boolean;
 }
 
-/** Dirty for cloud reload skip: unsaved edits, live panel edit, or in-flight gesture. */
+/** Dirty for cloud reload skip: unsaved edits, live panel/gesture, or in-flight rename. */
 export function isOpenDocumentDirty(
   hasUnsavedEdits: boolean,
   hasPanelBaseline: boolean,
   hasGestureBaseline: boolean,
+  hasRenameBaseline = false,
 ): boolean {
-  return hasUnsavedEdits || hasPanelBaseline || hasGestureBaseline;
+  return hasUnsavedEdits || hasPanelBaseline || hasGestureBaseline || hasRenameBaseline;
 }
 
 /** Cloud sync: pull remote changes when the window regains focus.
@@ -68,7 +69,13 @@ export function useCanvasSync({
       const effectiveGuarded = guardedOverride ?? guarded;
 
       const applySyncResult = async (result: SyncResult) => {
-        if (result.skipped) return;
+        if (result.skipped) {
+          // Coalesced followUp can land as skipped (offline / no session / error);
+          // always clear the syncing pulse so the UI does not stick.
+          setSyncStatus(result.reason === 'error' ? 'error' : 'idle');
+          setSyncing(false);
+          return;
+        }
         try {
           await refreshList();
           if (result.conflict && onConflict) {
@@ -76,10 +83,24 @@ export function useCanvasSync({
             setSyncStatus('synced');
             return;
           }
-          if (result.reloadOpenId && result.reloadOpenId === openId && !openDirtyRef.current) {
-            const got = await api.canvasGet(result.reloadOpenId);
-            const doc = normalizeDocument(got.document as CanvasDocument);
-            replaceDocument(await hydrateDocumentImages(doc));
+          if (result.reloadOpenId && result.reloadOpenId === openId) {
+            if (!openDirtyRef.current) {
+              const got = await api.canvasGet(result.reloadOpenId);
+              const doc = normalizeDocument(got.document as CanvasDocument);
+              replaceDocument(await hydrateDocumentImages(doc));
+            } else if (onConflict) {
+              // Disk was updated during sync, but the open doc dirtied mid-flight.
+              // Surface a conflict instead of leaving memory stale without UI.
+              const got = await api.canvasGet(result.reloadOpenId);
+              const remoteDoc = normalizeDocument(got.document as CanvasDocument);
+              const localDoc = historyDocRef.current;
+              onConflict({
+                localDoc,
+                remoteDoc,
+                remoteUpdatedAt: remoteDoc.updatedAt || '',
+                localUpdatedAt: localDoc.updatedAt || '',
+              });
+            }
           }
           setSyncStatus(result.pushErrors > 0 ? 'error' : 'synced');
         } finally {

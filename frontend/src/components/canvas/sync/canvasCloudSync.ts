@@ -340,23 +340,15 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
   for (const r of remote) {
     if (r.deleted_at) {
       if (localById.has(r.id)) {
-        if (options.guarded) {
-          // First boot: never destroy a local doc just because the remote row
-          // was soft-deleted elsewhere. Surface it as a conflict when it's the
-          // open doc so the user decides; otherwise keep the local doc intact.
-          if (options.openDocumentId === r.id) {
-            conflictRemoteDeletedMeta = r;
-          }
+        if (options.openDocumentId === r.id) {
+          // Soft-delete of the currently open doc is always a conflict —
+          // never auto-delete the document the user is viewing (dirty or clean).
+          conflictRemoteDeletedMeta = r;
           continue;
         }
-        if (options.openDocumentId === r.id) {
-          if (options.openDirty) {
-            conflictRemoteDeletedMeta = r;
-          } else {
-            await api.canvasDelete(r.id);
-            deletedLocal += 1;
-            localById.delete(r.id);
-          }
+        if (options.guarded) {
+          // First boot: never destroy a non-open local doc just because the
+          // remote row was soft-deleted elsewhere; keep the local doc intact.
           continue;
         }
         await api.canvasDelete(r.id);

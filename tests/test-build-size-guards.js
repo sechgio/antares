@@ -53,7 +53,7 @@ assert(spec.includes("backend/templates"), 'PyInstaller should bundle backend HT
 
 const builderConfig = readProjectFile('electron-builder.yml');
 assert(/electronLanguages:\s*\n\s*-\s*es\s*\n\s*-\s*en-US/m.test(builderConfig), 'electron-builder should keep only Spanish and English Electron locales');
-assert(builderConfig.includes('compression: maximum'), 'electron-builder should use maximum compression for installer artifacts');
+assert(builderConfig.includes('compression: normal'), 'electron-builder should use normal compression for installer artifacts (release speed)');
 assert(builderConfig.includes('- "assets/icon.ico"'), 'electron-builder should keep only the runtime window icon from assets');
 assert(!builderConfig.includes('- "assets/**/*"'), 'electron-builder should not duplicate all assets inside app.asar');
 assert(!/extraResources:\s*\n\s*-\s*from:\s*assets/m.test(builderConfig), 'electron-builder should not duplicate assets as external resources');
@@ -68,6 +68,8 @@ for (const staleName of ['AntaresBackend.exe', 'HidroConvertBackend.exe']) {
   assert(backendBuild.includes(staleName), `backend build should guard against stale ${staleName}`);
 }
 assert(backendBuild.includes('rmSync'), 'backend build should clean stale PyInstaller output before rebuilding');
+assert(backendBuild.includes('venv312'), 'backend build should prefer the local venv312 Python over PATH');
+assert(backendBuild.includes('resolvePythonCommand'), 'backend build should resolve Python before invoking PyInstaller');
 
 const packageJson = JSON.parse(readProjectFile('package.json'));
 assert(packageJson.scripts['clean:dist-electron'] === 'node scripts/clean-dist-electron.js', 'package scripts should expose a safe Electron output cleanup command');
@@ -78,6 +80,12 @@ assert(packageJson.scripts['dist'] === 'npm run build:win', 'dist should delegat
 assert(packageJson.scripts['dist:dir'].includes('npm run clean:dist-electron && electron-builder'), 'dist:dir should clean stale Electron artifacts before packaging');
 assert(packageJson.scripts['dist:dir'].includes('electron-builder --win --dir'), 'dist:dir should produce an unpacked Windows build');
 assert(!packageJson.scripts['dist:dir'].includes('npm run clean:after-package'), 'dist:dir should keep unpacked output for inspection');
+assert(packageJson.scripts['dev'].includes('electron electron/main.js'), 'dev should run Vite + Electron without packaging an installer');
+assert(packageJson.scripts['preview:unpacked'] === 'npm run dist:dir && node scripts/run-unpacked.js', 'preview:unpacked should package dir and launch without installer');
+assert(fs.existsSync(path.join(__dirname, '..', 'scripts', 'run-unpacked.js')), 'run-unpacked script should exist for packaged preview');
+const runUnpacked = readProjectFile('scripts', 'run-unpacked.js');
+assert(runUnpacked.includes('AntaresBackend.exe'), 'run-unpacked should refuse to launch without packaged backend exe');
+assert(/['"]resources['"]\s*,\s*['"]backend['"]/.test(runUnpacked), 'run-unpacked should look for backend under resources/backend');
 assert(!packageJson.scripts['build:mac'], 'build:mac should not exist (Windows-only installer)');
 assert(!packageJson.scripts['build:linux'], 'build:linux should not exist (Windows-only installer)');
 assert(!packageJson.scripts['build:all'], 'build:all should not exist (Windows-only installer)');
@@ -88,6 +96,7 @@ assert(!builderConfig.includes('\nlinux:'), 'electron-builder should not define 
 const electronClean = readProjectFile('scripts', 'clean-dist-electron.js');
 assert(electronClean.includes('dist-electron'), 'Electron cleanup should target dist-electron only');
 assert(electronClean.includes('assertInsideProject'), 'Electron cleanup should verify the output path before deleting');
+assert(electronClean.includes('EBUSY'), 'Electron cleanup should explain EBUSY when Antares.exe is locked');
 
 const afterPackageClean = readProjectFile('scripts', 'clean-after-package.js');
 for (const stalePath of ['win-unpacked', 'frontend', 'backend']) {

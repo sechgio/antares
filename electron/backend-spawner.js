@@ -182,6 +182,20 @@ function _clearStartCycle() {
   _currentStart = null;
 }
 
+/**
+ * Drop the start-cycle slot only if `myAbort` still owns it. An aborted cycle
+ * that resumes after a successor claimed `_currentStart` must not clear the
+ * successor's slot. When we do still own the slot and the ready gate is
+ * pending with no successor, reject it so waitForReady() callers do not hang.
+ */
+function _releaseStartCycleIfOwned(myAbort) {
+  if (!myAbort || _currentStart?.abort !== myAbort) return;
+  _clearStartCycle();
+  if (_readyGatePending) {
+    _readyReject?.(new Error('Backend start aborted'));
+  }
+}
+
 function _preemptStartCycle(reason) {
   _abortController(
     _currentStart?.abort,
@@ -278,16 +292,21 @@ async function startPythonBackend(isDev, attempt = 1) {
     _notifyRenderer('backend.starting', { attempt: 1, limit: getAutoRestartLimit() });
   }
 
-  const cycleSignal = _currentStart?.abort?.signal;
+  // Capture this cycle's abort controller. After a preempt, a successor may own
+  // `_currentStart` / `pythonProcess`; abort cleanup must not touch those.
+  const myAbort = _currentStart?.abort;
+  const cycleSignal = myAbort?.signal;
 
   try {
-    await _spawn(isDev);
+    const myPid = await _spawn(isDev);
     if (_isShuttingDown || cycleSignal?.aborted) {
       // A shutdown or preempt was requested while the spawn was in flight.
       console.log('[backend-spawner] Start cycle aborted after spawn.');
-      _forceKillProcess(pythonProcess);
-      pythonProcess = null;
-      _clearStartCycle();
+      if (pythonProcess?.pid === myPid) {
+        _forceKillProcess(pythonProcess);
+        pythonProcess = null;
+      }
+      _releaseStartCycleIfOwned(myAbort);
       return;
     }
     _lastError = null;
@@ -300,7 +319,7 @@ async function startPythonBackend(isDev, attempt = 1) {
     _notifyRenderer('backend.ready', { version: _resolveAppVersion() });
   } catch (err) {
     if (cycleSignal?.aborted) {
-      _clearStartCycle();
+      _releaseStartCycleIfOwned(myAbort);
       return;
     }
 
@@ -347,7 +366,7 @@ async function startPythonBackend(isDev, attempt = 1) {
     await _sleep(1000 * backoffSec, cycleSignal);
     if (_isShuttingDown || cycleSignal?.aborted) {
       console.log('[backend-spawner] Start cycle aborted during retry delay.');
-      _clearStartCycle();
+      _releaseStartCycleIfOwned(myAbort);
       return;
     }
     return startPythonBackend(isDev, attempt + 1);
@@ -606,13 +625,15 @@ function _spawn(isDev) {
     env: _buildChildEnv(isDev),
   });
 
-  pythonProcess.stderr.on('data', _recordStderr);
-  pythonProcess.stdin.on('error', (err) => {
+  const spawnedProcess = pythonProcess;
+  const spawnedPid = spawnedProcess.pid;
+
+  spawnedProcess.stderr.on('data', _recordStderr);
+  spawnedProcess.stdin.on('error', (err) => {
     console.error('[backend-spawner] stdin error:', err.message);
   });
 
-  const spawnedPid = pythonProcess.pid;
-  pythonProcess.on('close', (code, signal) => {
+  spawnedProcess.on('close', (code, signal) => {
     console.log(`[backend-spawner] Python backend exited (code=${code}, signal=${signal})`);
     const wasReady = _state === STATE.READY;
     // Only null out pythonProcess if it still references this closed process.
@@ -635,7 +656,7 @@ function _spawn(isDev) {
     }
   });
 
-  pythonProcess.on('error', (err) => {
+  spawnedProcess.on('error', (err) => {
     console.error('[backend-spawner] Failed to start Python backend:', err);
     // The handshake promise below will reject on timeout; no dialog here —
     // let startPythonBackend() decide how to surface the failure.
@@ -655,18 +676,19 @@ function _spawn(isDev) {
           if (msg.method === 'ready') {
             handshakeDone = true;
             clearTimeout(handshakeTimer);
-            pythonProcess.stdout.off('data', onData);
-            resolve();
+            spawnedProcess.stdout.off('data', onData);
+            resolve(spawnedPid);
             return;
           }
         } catch { /* not JSON yet */ }
       }
     };
-    pythonProcess.stdout.on('data', onData);
+    spawnedProcess.stdout.on('data', onData);
 
     const handshakeTimer = setTimeout(() => {
-      pythonProcess?.stdout.off('data', onData);
-      if (pythonProcess && !pythonProcess.killed) {
+      spawnedProcess.stdout.off('data', onData);
+      // Only kill if this handshake's process is still the active one.
+      if (pythonProcess && pythonProcess.pid === spawnedPid && !pythonProcess.killed) {
         _forceKillProcess(pythonProcess);
       }
       const tail = getStderrTail();
@@ -675,9 +697,9 @@ function _spawn(isDev) {
       reject(new Error(`Python backend handshake timeout (>${HANDSHAKE_TIMEOUT_MS / 1000}s)${detail}`));
     }, HANDSHAKE_TIMEOUT_MS);
 
-    pythonProcess.once('close', (code, signal) => {
+    spawnedProcess.once('close', (code, signal) => {
       clearTimeout(handshakeTimer);
-      pythonProcess?.stdout.off('data', onData);
+      spawnedProcess.stdout.off('data', onData);
       if (!handshakeDone) {
         handshakeDone = true;
         const tail = getStderrTail();

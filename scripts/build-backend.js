@@ -29,12 +29,21 @@ function removePath(targetPath) {
   fs.rmSync(targetPath, { recursive: true, force: true });
 }
 
+function resolvePythonCommand() {
+  const venvPy = path.join(projectRoot, 'venv312', 'Scripts', 'python.exe');
+  if (fs.existsSync(venvPy)) {
+    return venvPy;
+  }
+  return 'python';
+}
+
 async function main() {
   if (!fs.existsSync(distDir)) {
     fs.mkdirSync(distDir, { recursive: true });
   }
 
-  console.log('[build-backend] Building Python backend with PyInstaller...');
+  const pythonCmd = resolvePythonCommand();
+  console.log(`[build-backend] Building Python backend with PyInstaller (${pythonCmd})...`);
 
   removePath(pyInstallerBuild);
   removePath(pyInstallerDist);
@@ -44,7 +53,7 @@ async function main() {
 
   try {
     execSync(
-      `python -m PyInstaller "${specFile}" --noconfirm`,
+      `"${pythonCmd}" -m PyInstaller "${specFile}" --noconfirm`,
       {
         cwd: backendDir,
         stdio: 'inherit',

@@ -17,8 +17,11 @@ const PAGE_STACK_GAP_PX = 24;
 
 interface GeneratePanelProps {
   document: CanvasDocument;
-  /** When true, cloud sync must not delete/overwrite this open design doc. */
-  openDirty?: boolean;
+  /**
+   * Shell sync path (useCanvasSync.runCloudSync): guarded/conflict/reload/refresh.
+   * Prefer this over calling syncCanvasDocuments directly.
+   */
+  runCloudSync?: () => Promise<void>;
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -32,13 +35,9 @@ function readFileAsDataUrl(file: File): Promise<string> {
 
 export default function GeneratePanel({
   document: designDocument,
-  openDirty = false,
+  runCloudSync,
 }: GeneratePanelProps) {
   const previewRef = useRef<PreviewViewportHandle>(null);
-  const openDocIdRef = useRef(designDocument.id);
-  const openDirtyRef = useRef(openDirty);
-  openDocIdRef.current = designDocument.id;
-  openDirtyRef.current = openDirty;
 
   const [docs, setDocs] = useState<CanvasDocumentSummary[]>([]);
   const [externalDoc, setExternalDoc] = useState<CanvasDocument | null>(null);
@@ -78,11 +77,8 @@ export default function GeneratePanel({
     let cancelled = false;
     void (async () => {
       try {
-        const { syncCanvasDocuments } = await import('../sync/canvasCloudSync');
-        await syncCanvasDocuments({
-          openDocumentId: openDocIdRef.current,
-          openDirty: openDirtyRef.current,
-        });
+        // Reuse CanvasView sync so conflict / reload / refresh share one pipeline.
+        if (runCloudSync) await runCloudSync();
         if (cancelled) return;
         const res = await api.canvasList();
         if (!cancelled) setDocs(res.documents);
@@ -93,7 +89,7 @@ export default function GeneratePanel({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [runCloudSync]);
 
   const fieldKeys = useMemo(() => {
     const fromLayers = templateDoc.layers

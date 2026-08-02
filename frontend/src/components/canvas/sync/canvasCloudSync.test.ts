@@ -275,8 +275,9 @@ describe('syncCanvasDocuments', () => {
     expect(result.conflict!.localDoc.name).toBe('Old');
   });
 
-  it('deletes open doc locally when remote is deleted and open doc is clean', async () => {
+  it('surfaces conflict for open doc soft-delete even when openDirty is false', async () => {
     const localDoc = { id: 'doc-1', name: 'Old', updatedAt: '2026-07-01T00:00:00Z' };
+    const localFull = makeDoc({ id: 'doc-1', name: 'Old', updatedAt: '2026-07-01T00:00:00Z' });
     const remoteMeta = {
       id: 'doc-1',
       name: 'Old',
@@ -285,7 +286,7 @@ describe('syncCanvasDocuments', () => {
     };
 
     vi.mocked(api.canvasList).mockResolvedValue({ documents: [localDoc] });
-    vi.mocked(api.canvasDelete).mockResolvedValue({ success: true, deleted_id: 'doc-1' });
+    vi.mocked(api.canvasGet).mockResolvedValue({ document: localFull });
 
     enqueue([remoteMeta]);
 
@@ -294,14 +295,20 @@ describe('syncCanvasDocuments', () => {
       openDirty: false,
     });
 
-    expect(result.deletedLocal).toBe(1);
+    expect(result.deletedLocal).toBe(0);
     expect(result.reloadOpenId).toBeUndefined();
-    expect(vi.mocked(api.canvasDelete)).toHaveBeenCalledWith('doc-1');
+    expect(vi.mocked(api.canvasDelete)).not.toHaveBeenCalled();
+    expect(result.conflict).toMatchObject({
+      remoteDeleted: true,
+      remoteDoc: null,
+      remoteUpdatedAt: '2026-07-22T12:00:00Z',
+    });
+    expect(result.conflict!.localDoc.name).toBe('Old');
   });
 
   // --- Step 4: remote-deleted removes local doc ---
 
-  it('deletes local doc when remote is deleted and openDirty is false', async () => {
+  it('deletes local doc when remote is deleted and it is not the open doc', async () => {
     const localDoc = { id: 'doc-1', name: 'Old', updatedAt: '2026-07-01T00:00:00Z' };
     const remoteMeta = {
       id: 'doc-1',

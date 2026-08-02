@@ -18,7 +18,7 @@ import {
   resolveCuadranteForPage,
 } from '../utils/cuadranteRanges';
 import { loadSession, saveSession, storedToSession } from '../utils/storage';
-import { registerLocalPath } from '../../../utils/registerLocalPath';
+import { registerLocalPaths } from '../../../utils/registerLocalPath';
 
 const SAVE_DEBOUNCE_MS = 400;
 
@@ -174,7 +174,7 @@ export function useEvidenciaSession() {
     return null;
   }, [logoLeft, logoRight, validateLogo]);
 
-  const addImages = useCallback((files: File[]): string[] => {
+  const addImages = useCallback(async (files: File[]): Promise<string[]> => {
     dirtyRef.current = true;
     const errors: string[] = [];
     const accepted: LocalImage[] = [];
@@ -188,10 +188,12 @@ export function useEvidenciaSession() {
         continue;
       }
       const localPath = window.electronAPI?.getPathForFile?.(file) || undefined;
-      if (localPath) registerLocalPath(localPath);
       accepted.push({ file, objectUrl: URL.createObjectURL(file), localPath });
     }
     if (accepted.length > 0) {
+      await registerLocalPaths(
+        accepted.map((img) => img.localPath).filter((p): p is string => Boolean(p)),
+      );
       setImages((prev) => [...prev, ...accepted]);
     }
     return errors;

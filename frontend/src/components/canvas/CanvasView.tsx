@@ -393,10 +393,14 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   } = useGestureBaselines({ history, pageIndex });
 
   const [gestureAbortToken, setGestureAbortToken] = useState(0);
+  // Capture rename baseline near other dirty signals so openDirtyRef can
+  // treat an in-progress rename as dirty (updateSilent alone does not).
+  const renameBaselineRef = useRef<typeof history.document | null>(null);
   openDirtyRef.current = isOpenDocumentDirty(
     history.hasUnsavedEditsRef.current,
     panelBaselineRef.current != null,
     gestureBaselineRef.current != null,
+    renameBaselineRef.current != null,
   );
 
   // ─── Autosave + close protection ─────────────────────────────────────────
@@ -1164,14 +1168,23 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   // Capture the document snapshot at focus time so the rename can be committed
   // to history as a single undoable entry on blur/Enter (instead of one entry
   // per keystroke). Mirrors the gesture pattern used elsewhere in the canvas.
-  const renameBaselineRef = useRef<typeof history.document | null>(null);
   const onRenameStart = () => {
     renameBaselineRef.current = history.document;
+    // Sync reads this ref without waiting for a re-render.
+    openDirtyRef.current = true;
   };
   const onRenameCommit = () => {
     const baseline = renameBaselineRef.current;
     renameBaselineRef.current = null;
-    if (!baseline || baseline.name === history.document.name) return;
+    if (!baseline || baseline.name === history.document.name) {
+      openDirtyRef.current = isOpenDocumentDirty(
+        history.hasUnsavedEditsRef.current,
+        panelBaselineRef.current != null,
+        gestureBaselineRef.current != null,
+        false,
+      );
+      return;
+    }
     history.commitFromBaseline(baseline);
   };
 
@@ -1805,7 +1818,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         )
       ) : (
         <Suspense fallback={<div className="canvas-app canvas-loading">Cargando generador…</div>}>
-          <GeneratePanel document={history.document} openDirty={openDirtyRef.current} />
+          <GeneratePanel document={history.document} runCloudSync={runCloudSync} />
         </Suspense>
       )}
     </div>
