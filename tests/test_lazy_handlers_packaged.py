@@ -9,13 +9,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from backend.handlers import _EXACT_MODULE, _HANDLER_GROUPS, _PREFIX_MODULE
+from backend.handlers import _EXACT_MODULE, _HANDLER_MODULES, _PREFIX_MODULE
 
 
 def test_all_lazy_handler_modules_are_in_pyinstaller_spec() -> None:
     spec = (Path(__file__).resolve().parent.parent / "backend" / "backend.spec").read_text(encoding="utf-8")
     modules = {
-        *(mod for mod, _attr in _HANDLER_GROUPS),
+        *_HANDLER_MODULES,
         *_EXACT_MODULE.values(),
         *(mod for _prefix, mod in _PREFIX_MODULE),
     }

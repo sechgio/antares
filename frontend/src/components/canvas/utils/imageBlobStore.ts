@@ -137,6 +137,26 @@ export async function hydrateDocumentImages(doc: CanvasDocument): Promise<Canvas
 }
 
 /**
+ * Revokes a single managed ObjectURL (by blobId or blob: URL) and removes it from the store.
+ */
+export function releaseImageBlob(value: string | undefined): void {
+  if (!value) return;
+
+  const blobId = blobMap.has(value) ? value : urlToBlobIdMap.get(value);
+  if (!blobId) return;
+
+  const reg = blobMap.get(blobId);
+  if (!reg) return;
+
+  if (reg.url.startsWith('blob:')) URL.revokeObjectURL(reg.url);
+  if (reg.thumbnailUrl && reg.thumbnailUrl !== reg.url && reg.thumbnailUrl.startsWith('blob:')) {
+    URL.revokeObjectURL(reg.thumbnailUrl);
+  }
+  urlToBlobIdMap.delete(reg.url);
+  blobMap.delete(blobId);
+}
+
+/**
  * Revokes all managed ObjectURLs to free browser memory when tearing down or clearing.
  */
 export function clearBlobStore(): void {

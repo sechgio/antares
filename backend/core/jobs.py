@@ -232,7 +232,8 @@ class JobManager:
             self._jobs[job_id] = job
             job.thread.start()
 
-            return {"started": True, "job_id": job_id}
+        self.cleanup_completed()
+        return {"started": True, "job_id": job_id}
 
     def get_job(self, job_id: str) -> Job | None:
         """Get a job by ID."""

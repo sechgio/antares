@@ -27,7 +27,7 @@ import { isOpenDocumentDirty, useCanvasSync } from './hooks/useCanvasSync';
 import { useGestureBaselines } from './hooks/useGestureBaselines';
 import { useInlineEdit } from './hooks/useInlineEdit';
 import { CANVAS_SHORTCUTS } from './shortcuts';
-import { hydrateDocumentImages, serializeDocumentImages } from './utils/imageBlobStore';
+import { hydrateDocumentImages, serializeDocumentImages, clearBlobStore } from './utils/imageBlobStore';
 import {
   alignLayers,
   bringForward,
@@ -99,7 +99,6 @@ import {
   A4_HEIGHT_PX,
   A4_WIDTH_PX,
   createEmptyDocument,
-  mm,
   normalizeDocument,
   type CanvasDocument,
   type CanvasDocumentSummary,
@@ -447,6 +446,9 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
 
   // Flush on unmount so a dirty open tab does not lose the last debounce window.
   useEffect(() => () => flushAutosaveRef.current(), []);
+
+  // Revoke in-memory ObjectURLs when leaving the canvas view.
+  useEffect(() => () => clearBlobStore(), []);
 
   // Beforeunload: warn and fire a best-effort save when the open doc is dirty.
   const onBeforeUnload = useCallback(

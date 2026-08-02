@@ -28,23 +28,23 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# (module path, HANDLERS attribute name) — used by warm() only.
-_HANDLER_GROUPS: tuple[tuple[str, str], ...] = (
-    ("backend.handlers.info", "HANDLERS"),
-    ("backend.handlers.theme", "HANDLERS"),
-    ("backend.handlers.history", "HANDLERS"),
-    ("backend.handlers.database", "HANDLERS"),
-    ("backend.handlers.templates", "HANDLERS"),
-    ("backend.handlers.canvas", "HANDLERS"),
-    ("backend.handlers.conversion", "HANDLERS"),
-    ("backend.handlers.formatos", "HANDLERS"),
-    ("backend.handlers.optimizer", "HANDLERS"),
-    ("backend.handlers.sellador", "HANDLERS"),
-    ("backend.handlers.technical_reports", "HANDLERS"),
-    ("backend.handlers.fichas_tecnicas", "HANDLERS"),
-    ("backend.handlers.panel_aviso_corte", "HANDLERS"),
-    ("backend.handlers.ubicaciones", "HANDLERS"),
-    ("backend.handlers.evidencia_volanteo", "HANDLERS"),
+# Module paths eagerly imported by warm().
+_HANDLER_MODULES: tuple[str, ...] = (
+    "backend.handlers.info",
+    "backend.handlers.theme",
+    "backend.handlers.history",
+    "backend.handlers.database",
+    "backend.handlers.templates",
+    "backend.handlers.canvas",
+    "backend.handlers.conversion",
+    "backend.handlers.formatos",
+    "backend.handlers.optimizer",
+    "backend.handlers.sellador",
+    "backend.handlers.technical_reports",
+    "backend.handlers.fichas_tecnicas",
+    "backend.handlers.panel_aviso_corte",
+    "backend.handlers.ubicaciones",
+    "backend.handlers.evidencia_volanteo",
 )
 
 # Exact method → module for names that do not follow a feature prefix.
@@ -127,7 +127,7 @@ class HandlerRegistry:
 
     def warm(self) -> None:
         """Eagerly load all handler modules (call from a background thread)."""
-        for mod_name, _attr in _HANDLER_GROUPS:
+        for mod_name in _HANDLER_MODULES:
             try:
                 self._load_module(mod_name)
             except Exception:

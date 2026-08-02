@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef } from 'react';
+import { Fragment, useEffect, useRef, type ComponentType } from 'react';
 import {
   ArrowDownToLine,
   ArrowUpToLine,
@@ -61,7 +61,7 @@ interface MenuItem {
   id: CanvasContextAction;
   label: string;
   tip?: string;
-  icon: typeof Copy;
+  icon: ComponentType<{ className?: string; size?: string | number }>;
   danger?: boolean;
   disabled?: boolean;
   /** Render a group separator above this item. */
