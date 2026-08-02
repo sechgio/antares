@@ -21,9 +21,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-logger = logging.getLogger(__name__)
-
 import jsonschema  # type: ignore
+
+logger = logging.getLogger(__name__)
 
 
 # ─── Schema fragments ──────────────────────────────────────────────────────
