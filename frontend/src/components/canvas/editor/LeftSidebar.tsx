@@ -353,7 +353,7 @@ export default memo(function LeftSidebar({
   const canUngroupSelected = useMemo(() => {
     if (selectedIds.length !== 1) return false;
     const layer = layers.find((l) => l.id === selectedIds[0]);
-    return Boolean(layer && layer.type === 'group' && !layer.locked);
+    return Boolean(layer && (layer.type === 'group' || layer.type === 'component') && !layer.locked);
   }, [layers, selectedIds]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set(containerIds));
   const [layerQuery, setLayerQuery] = useState('');

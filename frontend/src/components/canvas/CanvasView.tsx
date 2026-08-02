@@ -76,7 +76,7 @@ import { assignUniqueLogoSides, logoSideHasConflict, withAssignedLogoSide } from
 import { isClickPlace, placeRectCssVars, type DrawRect } from './ops/drawHelpers';
 import { moveGuide, removeGuide, upsertGuide } from './ops/guides';
 import { selectionBounds } from './ops/selectionTransform';
-import { instantiateComponent, syncComponentFromLayer } from './ops/components';
+import { instantiateComponent, bakeInstanceOverrides, findComponentMaster, syncComponentFromLayer } from './ops/components';
 import { syncLinkedStylesFromLayer } from './ops/syncLinkedStyles';
 import {
   applyStyleToLayers,
@@ -661,7 +661,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         const editableIds = getEditableIds();
         if (e.shiftKey && editableIds.length === 1) {
           const layer = history.document.layers.find((l) => l.id === editableIds[0]);
-          if (layer?.type === 'group') {
+          if (layer?.type === 'group' || layer?.type === 'component') {
             setAllLayers(ungroupLayers(history.document.layers, layer.id));
           }
           return;
@@ -1343,7 +1343,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       return;
     }
     if (action === 'ungroup') {
-      if (layer.type !== 'group') return;
+      if (layer.type !== 'group' && layer.type !== 'component') return;
       sealPanelAndAbortGesture();
       setAllLayers(ungroupLayers(history.document.layers, id));
       return;
@@ -1520,7 +1520,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   const onUngroupSelected = useCallback(() => {
     if (selectedIds.length !== 1) return;
     const layer = history.document.layers.find((l) => l.id === selectedIds[0]);
-    if (!layer || layer.type !== 'group' || layer.locked) return;
+    if (!layer || (layer.type !== 'group' && layer.type !== 'component') || layer.locked) return;
     setAllLayers(ungroupLayers(history.document.layers, layer.id));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIds, history.document.layers]);
@@ -1750,7 +1750,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
                 visible: layer?.visible !== false,
                 isContainer: Boolean(layer && isLayerContainer(layer)),
                 canGroup: selectedIds.length >= 2 && (layerId ? selectedIds.includes(layerId) : false),
-                canUngroup: layer?.type === 'group',
+                canUngroup: layer?.type === 'group' || layer?.type === 'component',
                 canPaste: true,
                 canMatchGridSlotSize:
                   layer?.type === 'imageSlot' &&
@@ -1836,19 +1836,26 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
             pageColors={pageColors}
             onChange={(layer) => {
               if (panelBaselineRef.current) onPanelCommitLive();
-              const prev = history.document.layers.find((l) => l.id === layer.id);
+              let nextLayer = layer;
+              if (layer.meta?.instanceOf) {
+                nextLayer = bakeInstanceOverrides(
+                  layer,
+                  findComponentMaster(history.document.layers, layer.meta.instanceOf),
+                );
+              }
+              const prev = history.document.layers.find((l) => l.id === nextLayer.id);
               // Same gate as live path: only cols/rows/gap rebuild sibling slots.
               const layers = applyContainerLayoutPanelEffects(
-                applyLivePanelLayerChange(history.document.layers, prev, layer),
+                applyLivePanelLayerChange(history.document.layers, prev, nextLayer),
                 prev,
-                layer,
+                nextLayer,
               );
               const styleSynced = syncLinkedStylesFromLayer(
                 { ...history.document, layers },
                 prev,
-                layer,
+                nextLayer,
               );
-              const synced = syncComponentFromLayer(styleSynced, prev, layer);
+              const synced = syncComponentFromLayer(styleSynced, prev, nextLayer);
               history.setDocument(syncImagesPerPage(synced));
             }}
             onReplaceLayers={(nextLayers) => {

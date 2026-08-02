@@ -1091,6 +1091,77 @@ def test_normalize_omits_invalid_instance_meta() -> None:
     assert meta.get("overrideVars") == {"--width": "40"}
 
 
+def test_normalize_preserves_component_variants() -> None:
+    raw = create_empty_document()
+    raw["layers"].append(
+        {
+            "id": "comp-1",
+            "type": "component",
+            "name": "Botón",
+            "value": "",
+            "meta": {
+                "componentId": "comp-1",
+                "variants": {
+                    "primary": {"--background-color": "#3366FF"},
+                    "bad": "nope",
+                    "": {"--background-color": "#000"},
+                },
+            },
+            "cssVars": {
+                "--width": "40mm",
+                "--height": "12mm",
+                "--translate-x": "10mm",
+                "--translate-y": "10mm",
+            },
+        }
+    )
+    doc = normalize_document(raw)
+    master = next(layer for layer in doc["layers"] if layer["id"] == "comp-1")
+    assert master["meta"]["variants"] == {"primary": {"--background-color": "#3366FF"}}
+
+
+def test_duplicate_document_remaps_instanceOf_and_componentId() -> None:
+    raw = create_empty_document()
+    raw["layers"].append(
+        {
+            "id": "comp-1",
+            "type": "component",
+            "name": "Master",
+            "value": "",
+            "meta": {"componentId": "comp-1"},
+            "cssVars": {
+                "--width": "40mm",
+                "--height": "12mm",
+                "--translate-x": "10mm",
+                "--translate-y": "10mm",
+            },
+        }
+    )
+    raw["layers"].append(
+        {
+            "id": "inst-1",
+            "type": "component",
+            "name": "Inst",
+            "value": "",
+            "meta": {"instanceOf": "comp-1", "overrideVars": {"--translate-x": "50mm"}},
+            "cssVars": {
+                "--width": "40mm",
+                "--height": "12mm",
+                "--translate-x": "50mm",
+                "--translate-y": "10mm",
+            },
+        }
+    )
+    dup = duplicate_document(raw)
+    by_name = {layer["name"]: layer for layer in dup["layers"]}
+    master = by_name["Master"]
+    inst = by_name["Inst"]
+    assert master["id"] != "comp-1"
+    assert master["meta"]["componentId"] == master["id"]
+    assert inst["meta"]["instanceOf"] == master["id"]
+    assert inst["meta"]["overrideVars"]["--translate-x"] == "50mm"
+
+
 def test_normalize_allows_boolean_layer_type() -> None:
     raw = create_empty_document()
     raw["layers"].append(

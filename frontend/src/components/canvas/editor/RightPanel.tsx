@@ -189,7 +189,7 @@ export default memo(function RightPanel({
     emitLive({ ...base, meta: { ...base.meta, ...patch } });
   };
 
-  const hasSelection = Boolean(layer && layer.type !== 'frame');
+  const hasSelection = Boolean(layer && !(layer.type === 'frame' && layer.locked));
   const shape = layer ? isShapeLayer(layer) : false;
   const isLine = layer?.type === 'line';
   const showRadius = layer ? !clipPathForLayerType(layer.type) && layer.type !== 'line' : false;
