@@ -5,6 +5,21 @@ Todas las versiones notables de Antares se documentan aquí.
 Formato basado en [Keep a Changelog](https://keepachangelog.com/),
 y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
+## [0.11.4] — 2026-08-03
+
+### Fixed
+- **IPC**: Endurecimiento de manejo de solicitudes IPC — preservación del tamaño completo para líneas IPC sobredimensionadas y recuperación ante solicitudes oversize.
+- **IPC**: Validación de entradas IPC con códigos de error estructurados.
+- **Persistencia**: Escrituras de archivos destructivos atomizadas para prevenir corrupción.
+- **Persistencia**: Preservación de bases de datos JSON corruptas en lugar de descartarlas (fichas técnicas, reportes técnicos, panel aviso corte).
+- **Canvas**: Corrección de solapamiento del header del panel derecho.
+
+### Security
+- **IPC**: Endurecimiento general del transporte IPC entre Electron y backend (backend, router, main).
+
+### Tests
+- Cobertura de recuperación ante solicitudes IPC oversize, validación IPC, persistencia de bases de datos corruptas, y cierre de proceso IPC.
+
 ## [0.11.3] — 2026-07-30
 
 ### Added
