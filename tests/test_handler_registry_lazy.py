@@ -108,9 +108,9 @@ def test_unknown_method_does_not_eager_load_all_modules(monkeypatch: pytest.Monk
 def test_warm_core_skips_deferred_modules(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ready handshake must not wait on sellador/ubicaciones/fichas imports."""
     from backend.handlers import (
-        HandlerRegistry,
         _CORE_HANDLER_MODULES,
         _DEFERRED_HANDLER_MODULES,
+        HandlerRegistry,
     )
 
     imported: list[str] = []
@@ -138,9 +138,9 @@ def test_warm_core_faster_than_full_warm_when_deferred_are_slow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from backend.handlers import (
-        HandlerRegistry,
         _CORE_HANDLER_MODULES,
         _DEFERRED_HANDLER_MODULES,
+        HandlerRegistry,
     )
 
     for name in (*_CORE_HANDLER_MODULES, *_DEFERRED_HANDLER_MODULES):
@@ -166,8 +166,8 @@ def test_warm_core_faster_than_full_warm_when_deferred_are_slow(
     full_ms = (time.perf_counter() - t1) * 1000
 
     assert core_ms < full_ms, f"expected warm_core ({core_ms:.0f}ms) < warm all ({full_ms:.0f}ms)"
-    # With 8 deferred × 50ms, full warm should be clearly slower than core.
-    assert full_ms - core_ms >= 200, f"expected ≥200ms gap, got core={core_ms:.0f} full={full_ms:.0f}"
+    # With 8 deferred x 50ms, full warm should be clearly slower than core.
+    assert full_ms - core_ms >= 200, f"expected >=200ms gap, got core={core_ms:.0f} full={full_ms:.0f}"
 
 
 def test_every_electron_backend_method_resolves() -> None:
