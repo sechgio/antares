@@ -199,7 +199,7 @@ def _read_limited_line(stream: Any, *, binary: bool) -> tuple[str | bytes | None
         newline = b"\n" if binary else "\n"
         if total > _MAX_PAYLOAD_SIZE:
             if newline not in piece:
-                _drain_line(stream, binary)
+                total += _drain_line(stream, binary)
             return prefix, total, True
 
         parts.append(piece)
@@ -215,12 +215,14 @@ def _join_parts(parts: list[str | bytes]) -> str | bytes:
     return "".join(parts)  # type: ignore[arg-type]
 
 
-def _drain_line(stream: Any, binary: bool) -> None:
+def _drain_line(stream: Any, binary: bool) -> int:
     newline = b"\n" if binary else "\n"
+    total = 0
     while True:
         piece = stream.readline(_read_size())
+        total += _piece_size(piece)
         if not piece or newline in piece:
-            return
+            return total
 
 
 def read_message() -> IPCMessage | None:
