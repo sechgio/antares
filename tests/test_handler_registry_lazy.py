@@ -105,6 +105,71 @@ def test_unknown_method_does_not_eager_load_all_modules(monkeypatch: pytest.Monk
     assert imports == []
 
 
+def test_warm_core_skips_deferred_modules(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ready handshake must not wait on sellador/ubicaciones/fichas imports."""
+    from backend.handlers import (
+        _CORE_HANDLER_MODULES,
+        _DEFERRED_HANDLER_MODULES,
+        HandlerRegistry,
+    )
+
+    imported: list[str] = []
+    orig_import = importlib.import_module
+
+    def tracking_import(name: str, package: str | None = None):  # type: ignore[no-untyped-def]
+        if name.startswith("backend.handlers."):
+            imported.append(name)
+        return orig_import(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", tracking_import)
+
+    reg = HandlerRegistry()
+    # Pre-import core so tracking only sees deferred if warm_core wrongly loads them.
+    for name in _CORE_HANDLER_MODULES:
+        importlib.import_module(name)
+    imported.clear()
+
+    reg.warm_core()
+    deferred_hits = [m for m in imported if m in _DEFERRED_HANDLER_MODULES]
+    assert deferred_hits == [], f"warm_core must not import deferred: {deferred_hits}"
+
+
+def test_warm_core_faster_than_full_warm_when_deferred_are_slow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.handlers import (
+        _CORE_HANDLER_MODULES,
+        _DEFERRED_HANDLER_MODULES,
+        HandlerRegistry,
+    )
+
+    for name in (*_CORE_HANDLER_MODULES, *_DEFERRED_HANDLER_MODULES):
+        importlib.import_module(name)
+
+    orig_import = importlib.import_module
+
+    def slow_deferred(name: str, package: str | None = None):  # type: ignore[no-untyped-def]
+        if name in _DEFERRED_HANDLER_MODULES:
+            time.sleep(0.05)
+        return orig_import(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", slow_deferred)
+
+    core_reg = HandlerRegistry()
+    t0 = time.perf_counter()
+    core_reg.warm_core()
+    core_ms = (time.perf_counter() - t0) * 1000
+
+    full_reg = HandlerRegistry()
+    t1 = time.perf_counter()
+    full_reg.warm()
+    full_ms = (time.perf_counter() - t1) * 1000
+
+    assert core_ms < full_ms, f"expected warm_core ({core_ms:.0f}ms) < warm all ({full_ms:.0f}ms)"
+    # With 8 deferred x 50ms, full warm should be clearly slower than core.
+    assert full_ms - core_ms >= 200, f"expected >=200ms gap, got core={core_ms:.0f} full={full_ms:.0f}"
+
+
 def test_every_electron_backend_method_resolves() -> None:
     """Keep prefix/exact routing aligned with electron/ipc-methods.js allowlist."""
     import re

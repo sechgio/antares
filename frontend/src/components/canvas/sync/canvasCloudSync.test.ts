@@ -815,6 +815,27 @@ describe('opChain push serialization', () => {
     });
   });
 
+  it('coalesces five pushes of the same id into one upsert (last-write-wins)', async () => {
+    enqueue(null); // LWW select
+    enqueue(null); // upsert
+
+    const upsert = supabaseMock.chainable.upsert as ReturnType<typeof vi.fn>;
+    const names: string[] = [];
+    upsert.mockImplementation((row: { id: string; name: string }) => {
+      names.push(row.name);
+      return supabaseMock.chainable;
+    });
+
+    for (let i = 0; i < 5; i++) {
+      queueCanvasCloudPush(makeDoc({ id: 'doc-same', name: `v${i}`, updatedAt: '2026-07-22T12:00:00Z' }));
+    }
+
+    await vi.waitFor(() => {
+      expect(names).toEqual(['v4']);
+    });
+    expect(upsert).toHaveBeenCalledTimes(1);
+  });
+
   it('runs push immediately when opChain is idle', async () => {
     enqueue(null);
     enqueue(null);

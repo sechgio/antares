@@ -44,8 +44,11 @@ export function expandWithDescendants(layers: CanvasLayer[], ids: string[]): str
 }
 
 /** Ancestor chain from parent up to root (nearest parent first). */
-export function ancestorIds(layers: CanvasLayer[], id: string): string[] {
-  const byId = new Map(layers.map((l) => [l.id, l]));
+export function ancestorIds(
+  layers: CanvasLayer[] | Map<string, CanvasLayer>,
+  id: string,
+): string[] {
+  const byId = layers instanceof Map ? layers : new Map(layers.map((l) => [l.id, l]));
   const out: string[] = [];
   let current = byId.get(id);
   const seen = new Set<string>();

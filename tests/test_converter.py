@@ -98,26 +98,49 @@ class TestConvertirImagen:
         with Image.open(salida) as img:
             assert "exif" in img.info
 
-    def test_aplica_exif_transpose(self, tmp_path, monkeypatch) -> None:
-        """Phone photos store Orientation tags; pixels must be baked upright."""
+    def test_aplica_exif_transpose_when_oriented(self, tmp_path, monkeypatch) -> None:
+        """Phone photos with Orientation≠1 must bake pixels upright via exif_transpose."""
         from PIL import ImageOps
 
         from backend.core import converter
 
         origen = tmp_path / "oriented.jpg"
-        Image.new("RGB", (20, 10), color=(255, 0, 0)).save(origen, "JPEG")
+        img = Image.new("RGB", (20, 10), color=(255, 0, 0))
+        exif = img.getexif()
+        exif[0x0112] = 6  # Rotate 90 CW
+        img.save(origen, "JPEG", exif=exif)
         salida = tmp_path / "out.jpg"
 
         calls: list[bool] = []
         original = ImageOps.exif_transpose
 
-        def spy(img: Image.Image) -> Image.Image | None:
+        def spy(source: Image.Image) -> Image.Image | None:
             calls.append(True)
-            return original(img)
+            return original(source)
 
         monkeypatch.setattr(converter.ImageOps, "exif_transpose", spy)
         convertir_imagen(origen, salida, "JPEG")
-        assert calls, "exif_transpose must run during conversion"
+        assert calls, "exif_transpose must run when Orientation requires transpose"
+        with Image.open(salida) as out:
+            assert out.size == (10, 20)
+
+    def test_skips_exif_transpose_when_upright(self, tmp_path, monkeypatch) -> None:
+        """Missing/Orientation=1 must not call exif_transpose (avoids no-op Image.copy)."""
+        from backend.core import converter
+
+        origen = tmp_path / "upright.jpg"
+        Image.new("RGB", (20, 10), color=(255, 0, 0)).save(origen, "JPEG")
+        salida = tmp_path / "out.jpg"
+
+        calls: list[bool] = []
+
+        def spy(source: Image.Image) -> Image.Image | None:
+            calls.append(True)
+            return source
+
+        monkeypatch.setattr(converter.ImageOps, "exif_transpose", spy)
+        convertir_imagen(origen, salida, "JPEG")
+        assert not calls, "exif_transpose must be skipped for upright images"
         assert salida.exists()
 
     def test_calidad_limitada_rango(self, imagen_rgb, tmp_path) -> None:
