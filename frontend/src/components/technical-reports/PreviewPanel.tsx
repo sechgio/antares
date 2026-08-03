@@ -108,7 +108,7 @@ export default function PreviewPanel({ report, logoLeft, logoRight }: Props) {
       <div className="tr-paper">
         <header className="tr-paper-header">
           <div className="tr-paper-logo">{logoLeft && <img src={logoLeft} alt="Logo izquierdo" />}</div>
-          <h2>Informe Técnico de Limpieza y<br />Desinfección de Reservorios y Cisternas</h2>
+          <h2>Limpieza y Desinfección de Reservorios y Cisternas<br />Centro de Servicio Villa El Salvador</h2>
           <div className="tr-paper-logo">{logoRight && <img src={logoRight} alt="Logo derecho" />}</div>
         </header>
 

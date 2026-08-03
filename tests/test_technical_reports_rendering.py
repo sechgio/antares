@@ -10,7 +10,8 @@ def test_render_report_html_contains_report_fields() -> None:
 
     html = render_report_html(report)
 
-    assert "Informe Técnico" in html
+    assert "Limpieza y Desinfección de Reservorios y Cisternas" in html
+    assert "Centro de Servicio Villa El Salvador" in html
     assert "RES-99" in html
     assert "page-container" in html
 
