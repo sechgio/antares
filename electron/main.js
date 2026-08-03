@@ -39,6 +39,12 @@ function _shutdownOnce() {
   if (_shutdownStarted) return;
   _shutdownStarted = true;
   try {
+    const { cleanupAutoSync } = require('./autoimg-sync-engine');
+    cleanupAutoSync();
+  } catch (err) {
+    console.warn('[main] cleanupAutoSync threw during shutdown:', err && err.message);
+  }
+  try {
     const { cleanupAutoUpdater } = require('./auto-updater');
     cleanupAutoUpdater();
   } catch (err) {

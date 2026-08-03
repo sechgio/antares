@@ -32,7 +32,14 @@ function makeFakeProc(pid) {
   return proc;
 }
 
-function loadIpcRouter({ currentProc, clearJobActivity, noteJobActivity, waitForReady }) {
+function loadIpcRouter({
+  currentProc,
+  clearJobActivity,
+  noteJobActivity,
+  waitForReady,
+  incrementPendingRequests,
+  decrementPendingRequests,
+}) {
   const electronPath = require.resolve('electron');
   require.cache[electronPath] = {
     id: electronPath,
@@ -58,8 +65,8 @@ function loadIpcRouter({ currentProc, clearJobActivity, noteJobActivity, waitFor
       getLastError: () => null,
       getStderrTail: () => '',
       manualRestart: async () => true,
-      incrementPendingRequests: () => {},
-      decrementPendingRequests: () => {},
+      incrementPendingRequests: incrementPendingRequests || (() => {}),
+      decrementPendingRequests: decrementPendingRequests || (() => {}),
       noteJobActivity: noteJobActivity || (() => {}),
       clearJobActivity,
       STATE: { READY: 'ready', FATAL: 'fatal', STARTING: 'starting', EXITED: 'exited' },
@@ -139,7 +146,57 @@ async function run() {
     assert(procC.listenerCount('close') === 1, 'process C has one close listener');
   }
 
-  // ── 4.2: mid-flight retries only for idempotent methods ──
+  // ── 4.2: timeout + late stdin failure release exactly once ──
+  console.log('\nTesting idempotent pending-request release...\n');
+  {
+    const currentProc = { ref: null };
+    let incrementCalls = 0;
+    let decrementCalls = 0;
+    const { _sendRequest, _ensureListeners } = loadIpcRouter({
+      currentProc,
+      clearJobActivity: () => {},
+      incrementPendingRequests: () => {
+        incrementCalls++;
+      },
+      decrementPendingRequests: () => {
+        decrementCalls++;
+      },
+    });
+
+    const originalSetTimeout = global.setTimeout;
+    global.setTimeout = (fn, delay, ...args) => (
+      delay === 30_000 ? originalSetTimeout(fn, 0, ...args) : originalSetTimeout(fn, delay, ...args)
+    );
+
+    try {
+      const proc = makeFakeProc(1501);
+      const stdin = new EventEmitter();
+      stdin.end = () => {};
+      stdin.write = () => {
+        originalSetTimeout(() => stdin.emit('error', new Error('late EPIPE')), 10);
+        return false;
+      };
+      proc.stdin = stdin;
+      currentProc.ref = proc;
+      _ensureListeners();
+
+      let rejected = false;
+      try {
+        await _sendRequest('version', {});
+      } catch (err) {
+        rejected = /IPC timeout: version/.test(err.message);
+      }
+      await new Promise((resolve) => originalSetTimeout(resolve, 20));
+
+      assert(incrementCalls === 1, 'request increments pending count once');
+      assert(rejected, 'timeout rejects the request before the late stdin error');
+      assert(decrementCalls === 1, 'timeout and late stdin error release the request once');
+    } finally {
+      global.setTimeout = originalSetTimeout;
+    }
+  }
+
+  // ── 4.3: mid-flight retries only for idempotent methods ──
   console.log('\nTesting mid-flight retry idempotency...\n');
   {
     const currentProc = { ref: null };

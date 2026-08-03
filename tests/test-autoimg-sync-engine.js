@@ -9,21 +9,48 @@ function assert(condition, message) {
   }
 }
 
-function main() {
-  const { buildFolderErrorSummary, formatFolderErrorScan } = require('../electron/autoimg-sync-engine');
-  const {
-    resolveNotasForSync,
-    countSinSgioRows,
-    countBdImgEstadoMetrics,
-    countScanSinSgio,
-    buildNisRowIndexMap,
-    applyScanResultsToRows,
-    buildScanResultRow,
-    parseArrastreRows,
-    parseFoldersFromValues,
-    parseResumenMetrics,
-    configValueFromRows,
-  } = require('../electron/autoimg-sheet-rows');
+async function main() {
+  const originalSetInterval = global.setInterval;
+  const originalClearInterval = global.clearInterval;
+  let timerHandle = null;
+  let clearCount = 0;
+  global.setInterval = (callback, delay) => {
+    timerHandle = { callback, delay };
+    return timerHandle;
+  };
+  global.clearInterval = (handle) => {
+    if (handle === timerHandle) clearCount++;
+  };
+
+  try {
+    const {
+      buildFolderErrorSummary,
+      formatFolderErrorScan,
+      setAutoSync,
+      cleanupAutoSync,
+    } = require('../electron/autoimg-sync-engine');
+    const {
+      resolveNotasForSync,
+      countSinSgioRows,
+      countBdImgEstadoMetrics,
+      countScanSinSgio,
+      buildNisRowIndexMap,
+      applyScanResultsToRows,
+      buildScanResultRow,
+      parseArrastreRows,
+      parseFoldersFromValues,
+      parseResumenMetrics,
+      configValueFromRows,
+    } = require('../electron/autoimg-sheet-rows');
+
+    const autoSync = await setAutoSync(true);
+    assert(autoSync.enabled === true, 'setAutoSync activa el auto-sync');
+    assert(timerHandle && timerHandle.delay === 5 * 60_000, 'setAutoSync crea el intervalo esperado');
+    assert(typeof cleanupAutoSync === 'function', 'el motor expone cleanupAutoSync');
+    cleanupAutoSync();
+    assert(clearCount === 1, 'cleanupAutoSync cancela el intervalo activo');
+    cleanupAutoSync();
+    assert(clearCount === 1, 'cleanupAutoSync es idempotente');
 
   assert(
     resolveNotasForSync({ isNewRow: true, existingNotas: '', sgio: '' }) === 'NUEVO (sin SGIO)',
@@ -157,7 +184,14 @@ function main() {
   assert(scanCompletos !== fromRows.completos,
     'métricas solo-scan divergen de BD_IMG mergeado (regresión RESUMEN)');
 
-  console.log('[PASS] AutoIMG sync-engine helpers OK.');
+    console.log('[PASS] AutoIMG sync-engine helpers OK.');
+  } finally {
+    global.setInterval = originalSetInterval;
+    global.clearInterval = originalClearInterval;
+  }
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

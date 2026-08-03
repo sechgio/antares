@@ -72,6 +72,162 @@ def test_parse_errors_skip_without_orphan_response(monkeypatch) -> None:
     assert stdout.getvalue() == ""
 
 
+class _FragmentedTextStdin:
+    def __init__(self, data: str, fragment_size: int = 3) -> None:
+        self.data = data
+        self.fragment_size = fragment_size
+        self.readline_sizes: list[int] = []
+
+    def readline(self, size: int = -1) -> str:
+        if size < 0:
+            raise AssertionError("readline must receive a bounded size")
+        self.readline_sizes.append(size)
+        newline = self.data.find("\n")
+        end = len(self.data) if newline < 0 else newline + 1
+        amount = min(size, self.fragment_size, end)
+        chunk = self.data[:amount]
+        self.data = self.data[amount:]
+        return chunk
+
+
+class _BoundedBinaryStdin:
+    def __init__(self, data: bytes) -> None:
+        self.data = data
+        self.readline_sizes: list[int] = []
+        self.read_sizes: list[int] = []
+
+    @property
+    def buffer(self):
+        return self
+
+    def readline(self, size: int = -1) -> bytes:
+        if size < 0:
+            raise AssertionError("readline must receive a hard limit")
+        self.readline_sizes.append(size)
+        newline = self.data.find(b"\n")
+        end = len(self.data) if newline < 0 else newline + 1
+        amount = min(size, end)
+        chunk = self.data[:amount]
+        self.data = self.data[amount:]
+        return chunk
+
+    def read(self, size: int = -1) -> bytes:
+        if size < 0:
+            raise AssertionError("read must receive a bounded size")
+        self.read_sizes.append(size)
+        chunk = self.data[:size]
+        self.data = self.data[size:]
+        return chunk
+
+
+def test_fragmented_text_stream_parses_utf8_and_preserves_next_message(monkeypatch) -> None:
+    monkeypatch.setattr(ipc_protocol, "_MAX_PAYLOAD_SIZE", 1024)
+    first = '{"jsonrpc":"2.0","id":"utf8","method":"version","params":{"label":"café"}}\n'
+    second = '{"jsonrpc":"2.0","id":"after-text","method":"version","params":{}}\n'
+    stdin = _FragmentedTextStdin(first + second)
+    stdout = io.StringIO()
+    monkeypatch.setattr(ipc_protocol.sys, "stdin", stdin)
+    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
+
+    first_message = ipc_protocol.read_message()
+    second_message = ipc_protocol.read_message()
+
+    assert isinstance(first_message, IPCMessage)
+    assert first_message.id == "utf8"
+    assert isinstance(second_message, IPCMessage)
+    assert second_message.id == "after-text"
+    assert stdin.readline_sizes
+    assert all(size > 0 for size in stdin.readline_sizes)
+
+
+def test_oversized_binary_line_is_bounded_and_preserves_next_message(monkeypatch) -> None:
+    monkeypatch.setattr(ipc_protocol, "_MAX_PAYLOAD_SIZE", 1024)
+    oversized = (
+        b'{"jsonrpc":"2.0","id":"too-large","method":"version","params":{"data":"'
+        + b"x" * 2_000
+        + b'"}}\n'
+    )
+    valid = b'{"jsonrpc":"2.0","id":"after","method":"version","params":{}}\n'
+    stdin = _BoundedBinaryStdin(oversized + valid)
+    stdout = io.StringIO()
+    monkeypatch.setattr(ipc_protocol.sys, "stdin", stdin)
+    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
+
+    first = ipc_protocol.read_message()
+    second = ipc_protocol.read_message()
+
+    assert first is ipc_protocol._SKIP
+    response = stdout.getvalue()
+    assert '"id": "too-large"' in response
+    assert '"code": -32600' in response
+    assert isinstance(second, IPCMessage)
+    assert second.id == "after"
+    assert second.method == "version"
+    assert stdin.readline_sizes
+    assert all(0 < size <= 1025 for size in stdin.readline_sizes)
+
+
+def test_payload_exactly_at_limit_is_accepted(monkeypatch) -> None:
+    request = '{"jsonrpc":"2.0","id":"exact","method":"version","params":{}}\n'
+    monkeypatch.setattr(ipc_protocol, "_MAX_PAYLOAD_SIZE", len(request.encode("utf-8")))
+    stdin = io.StringIO(request)
+    stdout = io.StringIO()
+    monkeypatch.setattr(ipc_protocol.sys, "stdin", stdin)
+    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
+
+    result = ipc_protocol.read_message()
+
+    assert isinstance(result, IPCMessage)
+    assert result.id == "exact"
+
+
+def test_multibyte_payload_is_limited_in_utf8_bytes(monkeypatch) -> None:
+    request = '{"jsonrpc":"2.0","id":"utf8-limit","method":"version","params":{"label":"€€","data":"' + "x" * 220 + '"}}\n'
+    request_size = len(request.encode("utf-8"))
+    monkeypatch.setattr(ipc_protocol, "_MAX_PAYLOAD_SIZE", 256)
+    assert request_size > ipc_protocol._MAX_PAYLOAD_SIZE
+    stdin = io.StringIO(request)
+    stdout = io.StringIO()
+    monkeypatch.setattr(ipc_protocol.sys, "stdin", stdin)
+    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
+
+    result = ipc_protocol.read_message()
+
+    assert result is ipc_protocol._SKIP
+    assert '"id": "utf8-limit"' in stdout.getvalue()
+    assert '"code": -32600' in stdout.getvalue()
+    assert "bytes" in stdout.getvalue()
+
+
+def test_oversized_text_line_without_id_does_not_write_orphan_response(monkeypatch) -> None:
+    monkeypatch.setattr(ipc_protocol, "_MAX_PAYLOAD_SIZE", 32)
+    stdin = _FragmentedTextStdin("x" * 100, fragment_size=5)
+    stdout = io.StringIO()
+    monkeypatch.setattr(ipc_protocol.sys, "stdin", stdin)
+    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
+
+    result = ipc_protocol.read_message()
+
+    assert result is ipc_protocol._SKIP
+    assert stdout.getvalue() == ""
+
+
+def test_oversized_line_at_eof_is_skipped(monkeypatch) -> None:
+    monkeypatch.setattr(ipc_protocol, "_MAX_PAYLOAD_SIZE", 256)
+    stdin = _FragmentedTextStdin('{"jsonrpc":"2.0","id":"eof","data":"' + "x" * 300, fragment_size=5)
+    stdout = io.StringIO()
+    monkeypatch.setattr(ipc_protocol.sys, "stdin", stdin)
+    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
+
+    result = ipc_protocol.read_message()
+    end = ipc_protocol.read_message()
+
+    assert result is ipc_protocol._SKIP
+    assert end is None
+    assert '"id": "eof"' in stdout.getvalue()
+    assert '"code": -32600' in stdout.getvalue()
+
+
 def test_inbound_payload_over_max_is_skipped(monkeypatch) -> None:
     """Oversized stdin lines without a parseable id must not be json.loads'd."""
     monkeypatch.setattr(ipc_protocol, "_MAX_PAYLOAD_SIZE", 64)

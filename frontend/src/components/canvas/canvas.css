@@ -678,6 +678,24 @@ select.canvas-input option {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--cv-danger) 20%, transparent);
 }
 
+.canvas-right-panel-header {
+  min-width: 0;
+}
+
+.canvas-right-panel-tabs,
+.canvas-right-panel-actions {
+  min-width: 0;
+}
+
+.canvas-right-panel-tab {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.canvas-right-panel-actions {
+  gap: 2px;
+}
+
 .canvas-icon-btn {
   display: inline-flex;
   align-items: center;

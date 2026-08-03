@@ -191,6 +191,10 @@ function _applyAutoSyncTimer(enabled) {
   }, AUTO_SYNC_INTERVAL_MS);
 }
 
+function cleanupAutoSync() {
+  _applyAutoSyncTimer(false);
+}
+
 function _restoreAutoSyncFromConfig(configRows) {
   const value = configValueFromRows(configRows, AUTO_SYNC_CONFIG_KEY);
   if (!value) return;
@@ -983,6 +987,7 @@ module.exports = {
   getStatus,
   bootstrap,
   setAutoSync,
+  cleanupAutoSync,
   cancelOperation,
   getOperationStatus,
   listArrastre,

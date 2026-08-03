@@ -278,30 +278,39 @@ export default memo(function RightPanel({
       {...(!open ? ({ inert: '' } as HTMLAttributes<HTMLElement>) : {})}
     >
       <div
-        className="relative z-20 flex items-center justify-between gap-2 border-b px-4 py-2"
+        className="canvas-right-panel-header relative z-20 flex items-center gap-2 border-b px-4 py-2"
         style={{ borderColor: 'var(--cv-border)' }}
       >
-        <div className="flex min-w-0 flex-1 items-center gap-1">
+        <div className="canvas-right-panel-tabs flex min-w-0 flex-1 items-center gap-1">
           <button
             type="button"
             onClick={() => setActiveTab('properties')}
-            className={`px-2 py-1 text-xs font-semibold rounded transition-colors ${
+            className={`canvas-right-panel-tab min-w-0 flex-1 px-2 py-1 text-xs font-semibold rounded transition-colors ${
               activeTab === 'properties'
                 ? 'bg-[var(--cv-bg-hover)] text-[var(--cv-text)]'
                 : 'text-[var(--cv-text-muted)] hover:text-[var(--cv-text)]'
             }`}
+            title={
+              selectedCount > 1
+                ? `${selectedCount} seleccionados`
+                : hasSelection && layer
+                  ? layerPanelTitle(layer)
+                  : 'Propiedades'
+            }
           >
-            {selectedCount > 1
-              ? `${selectedCount} seleccionados`
-              : hasSelection && layer
-                ? layerPanelTitle(layer)
-                : 'Propiedades'}
+            <span className="block truncate">
+              {selectedCount > 1
+                ? `${selectedCount} seleccionados`
+                : hasSelection && layer
+                  ? layerPanelTitle(layer)
+                  : 'Propiedades'}
+            </span>
           </button>
           {documentId && (
             <button
               type="button"
               onClick={() => setActiveTab('versions')}
-              className={`px-2 py-1 text-xs font-semibold rounded transition-colors ${
+              className={`canvas-right-panel-tab shrink-0 px-2 py-1 text-xs font-semibold rounded transition-colors ${
                 activeTab === 'versions'
                   ? 'bg-[var(--cv-bg-hover)] text-[var(--cv-text)]'
                   : 'text-[var(--cv-text-muted)] hover:text-[var(--cv-text)]'
@@ -319,7 +328,7 @@ export default memo(function RightPanel({
             <WithHoverTooltip label="Ocultar panel derecho" placement="bottom" variant="dark">
               <button
                 type="button"
-                className="canvas-icon-btn shrink-0 ml-auto"
+                className="canvas-icon-btn shrink-0"
                 data-testid="canvas-toggle-right-panel"
                 disabled={hidePanelDisabled}
                 onClick={onHidePanel}
@@ -331,7 +340,7 @@ export default memo(function RightPanel({
           )}
         </div>
         {activeTab === 'properties' && hasSelection && layer && selectedCount === 1 && (
-          <div className="flex items-center gap-0.5">
+          <div className="canvas-right-panel-actions flex shrink-0 items-center gap-0.5">
             <WithHoverTooltip
               label={layer.visible !== false ? 'Ocultar' : 'Mostrar'}
               placement="bottom"
