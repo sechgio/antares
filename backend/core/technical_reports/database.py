@@ -1,15 +1,29 @@
 from __future__ import annotations
 
 import json
+import logging
+import shutil
 import sys
 import threading
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from backend.core.exceptions import DatabaseError
 from backend.core.technical_reports.models import TechnicalReport, create_empty_report, next_technical_report_number
 from backend.utils.paths import resource_path, user_data_path
 
 DEFAULT_DB_PATH = user_data_path("technical_reports.json") if getattr(sys, "frozen", False) else resource_path("data/technical_reports.json")
+
+logger = logging.getLogger(__name__)
+
+
+def _backup_corrupt_file(path: Path) -> Path:
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    backup_path = path.with_name(f"{path.name}.corrupt.{timestamp}.bak")
+    shutil.copy2(path, backup_path)
+    return backup_path
+
 
 # Module-level singleton — prevents concurrent instances from clobbering each other's data.
 _db_instance: TechnicalReportsDB | None = None
@@ -40,8 +54,15 @@ class TechnicalReportsDB:
                 return
             try:
                 raw = json.loads(self.db_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                raw = {}
+            except json.JSONDecodeError as exc:
+                try:
+                    backup_path = _backup_corrupt_file(self.db_path)
+                except OSError as backup_exc:
+                    msg = f"JSON corrupto en {self.db_path}; no se pudo crear el backup"
+                    raise DatabaseError(msg) from backup_exc
+                logger.error("JSON corrupto en %s; backup creado en %s", self.db_path, backup_path)
+                msg = f"JSON corrupto en {self.db_path}; backup creado en {backup_path}"
+                raise DatabaseError(msg) from exc
             if isinstance(raw, list):
                 reports = [TechnicalReport.normalize(item) for item in raw if isinstance(item, dict)]
                 self._items = {report["id"]: report for report in reports}

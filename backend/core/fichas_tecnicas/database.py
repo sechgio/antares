@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import shutil
 import sys
 import threading
 from copy import deepcopy
@@ -10,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from backend.core.exceptions import DatabaseError
 from backend.core.fichas_tecnicas.models import (
     FichaTecnica,
     create_empty_ficha,
@@ -22,6 +25,16 @@ DEFAULT_DB_PATH = (
     if getattr(sys, "frozen", False)
     else resource_path("data/fichas_tecnicas.json")
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _backup_corrupt_file(path: Path) -> Path:
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    backup_path = path.with_name(f"{path.name}.corrupt.{timestamp}.bak")
+    shutil.copy2(path, backup_path)
+    return backup_path
+
 
 _db_instance: FichasTecnicasDB | None = None
 _db_instance_lock = threading.Lock()
@@ -51,8 +64,15 @@ class FichasTecnicasDB:
                 return
             try:
                 raw = json.loads(self.db_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                raw = {}
+            except json.JSONDecodeError as exc:
+                try:
+                    backup_path = _backup_corrupt_file(self.db_path)
+                except OSError as backup_exc:
+                    msg = f"JSON corrupto en {self.db_path}; no se pudo crear el backup"
+                    raise DatabaseError(msg) from backup_exc
+                logger.error("JSON corrupto en %s; backup creado en %s", self.db_path, backup_path)
+                msg = f"JSON corrupto en {self.db_path}; backup creado en {backup_path}"
+                raise DatabaseError(msg) from exc
             if isinstance(raw, list):
                 fichas = [FichaTecnica.normalize(item) for item in raw if isinstance(item, dict)]
                 self._items = {f["id"]: f for f in fichas}
