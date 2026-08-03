@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  applySavedDocumentKeepingImages,
   clearBlobStore,
   getBlobUrl,
   getThumbnailUrl,
@@ -123,5 +124,36 @@ describe('imageBlobStore', () => {
       // re-decoded to blob: on the main thread.
       expect(layer.value).toMatch(/^data:/);
     }
+  });
+
+  it('applySavedDocumentKeepingImages keeps blob refs after save (no dataUrl in editor)', async () => {
+    const file = new File(['x'], 'a.png', { type: 'image/png' });
+    const reg = await registerImageBlob(file);
+    const css = {
+      '--width': '50mm',
+      '--height': '40mm',
+      '--translate-x': '0mm',
+      '--translate-y': '0mm',
+    };
+    const editor = createEmptyDocument('Editor');
+    editor.layers = [
+      { id: 'img', type: 'image', name: 'Foto', value: reg.url, cssVars: css },
+      { id: 'logo', type: 'logo', name: 'Logo', value: reg.blobId, cssVars: css },
+      { id: 'rect', type: 'rect', name: 'R', value: '', cssVars: css },
+    ];
+    const saved = await serializeDocumentImages(editor);
+    saved.updatedAt = '2026-08-03T12:00:00.000Z';
+    saved.name = 'Renamed';
+
+    const forEditor = applySavedDocumentKeepingImages(editor, saved);
+    expect(forEditor.updatedAt).toBe('2026-08-03T12:00:00.000Z');
+    expect(forEditor.name).toBe('Renamed');
+    expect(forEditor.layers.find((l) => l.id === 'img')?.value).toBe(reg.url);
+    expect(forEditor.layers.find((l) => l.id === 'logo')?.value).toBe(reg.blobId);
+    // Persisted copy still has data URLs for IPC/cloud.
+    expect(saved.layers.find((l) => l.id === 'img')?.value).toMatch(/^data:/);
+    // Editor must not hold megabyte data: strings after save.
+    const editorImg = forEditor.layers.find((l) => l.id === 'img')?.value ?? '';
+    expect(editorImg.startsWith('data:')).toBe(false);
   });
 });

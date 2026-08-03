@@ -496,8 +496,9 @@ export default memo(function LeftSidebar({
     const flat = flattenLayerTree(tree, expandAll);
     const matchIds = new Set(flat.filter((r) => matches(r.layer)).map((r) => r.layer.id));
     const keep = new Set(matchIds);
+    const byId = new Map(layers.map((l) => [l.id, l]));
     for (const id of matchIds) {
-      for (const aid of ancestorIds(layers, id)) keep.add(aid);
+      for (const aid of ancestorIds(byId, id)) keep.add(aid);
     }
     return flat.filter((r) => keep.has(r.layer.id));
   }, [tree, expandedIds, layerQuery, containerIds, layers]);

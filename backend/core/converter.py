@@ -48,6 +48,22 @@ PIL_FORMAT_MAP: dict[str, str] = {
     "JPG": "JPEG",
 }
 
+# EXIF Orientation tag. Pillow's ImageOps.exif_transpose copies the buffer even
+# when Orientation is missing/1 (no-op) — skip that copy on the hot path.
+_EXIF_ORIENTATION = 0x0112
+_TRANSPOSE_ORIENTATIONS = frozenset({2, 3, 4, 5, 6, 7, 8})
+
+
+def _bake_orientation(source_img: Image.Image) -> Image.Image:
+    """Bake EXIF Orientation into pixels; avoid no-op buffer copy when upright."""
+    try:
+        orientation = source_img.getexif().get(_EXIF_ORIENTATION, 1)
+    except Exception:
+        orientation = 1
+    if orientation not in _TRANSPOSE_ORIENTATIONS:
+        return source_img
+    return ImageOps.exif_transpose(source_img) or source_img
+
 _LANCZOS = getattr(Image, "Resampling", Image).LANCZOS
 
 
@@ -172,8 +188,7 @@ def convertir_imagen(
 
         # Bake EXIF Orientation into pixels so phone photos are upright even
         # when keep_exif is False (default) or the destination strips tags.
-        # Use a separate Image variable: exif_transpose returns Image, not ImageFile.
-        working: Image.Image = ImageOps.exif_transpose(source_img) or source_img
+        working: Image.Image = _bake_orientation(source_img)
 
         info = _registry[formato]
         img: Image.Image = _ensure_mode(working, info["modes"])
@@ -271,7 +286,7 @@ def convertir_a_preview(
 
     with Image.open(ruta_origen) as source_img:
         # Match convertir_imagen: bake Orientation so preview is upright.
-        working: Image.Image = ImageOps.exif_transpose(source_img) or source_img
+        working: Image.Image = _bake_orientation(source_img)
 
         orig_w, orig_h = working.size
         orig_size_kb = round(stat.st_size / 1024, 1)

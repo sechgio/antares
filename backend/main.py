@@ -259,15 +259,16 @@ def main() -> None:
             logger.exception("Failed to emit db_init_failed notification")
         sys.exit(1)
 
-    # Warm all handler modules synchronously BEFORE the ready handshake. Loading
-    # them lazily in a background thread made the first fichas/formatos/reports
-    # requests contend with that thread for Python's global import lock, which
-    # can hang an IPC call well past the timeout. HANDLERS.warm() iterates with
-    # per-module try/except, so a slow or failing module delays readiness but
-    # never aborts startup.
-    HANDLERS.warm()
+    # Warm core handlers BEFORE ready so preview/canvas/catalog work immediately.
+    # Deferred feature modules (sellador, ubicaciones, fichas, …) warm AFTER ready
+    # but still synchronously before the stdin loop — avoids GIL contention with
+    # first-request lazy imports while letting Electron paint sooner.
+    # Per-module try/except: a failing module delays readiness but never aborts.
+    HANDLERS.warm_core()
 
     send_notification("ready", {"status": "ok"})
+
+    HANDLERS.warm_deferred()
 
     logger.info(t("info.backend_ready"))
 

@@ -47,6 +47,22 @@ _HANDLER_MODULES: tuple[str, ...] = (
     "backend.handlers.evidencia_volanteo",
 )
 
+# Default tab (preview) + catalog/canvas: must be ready before the handshake.
+_CORE_HANDLER_MODULES: tuple[str, ...] = (
+    "backend.handlers.info",
+    "backend.handlers.theme",
+    "backend.handlers.history",
+    "backend.handlers.database",
+    "backend.handlers.templates",
+    "backend.handlers.canvas",
+    "backend.handlers.conversion",
+)
+
+# Feature modules warmed after ready so cold start does not pay pandas/Weasy/etc.
+_DEFERRED_HANDLER_MODULES: tuple[str, ...] = tuple(
+    m for m in _HANDLER_MODULES if m not in _CORE_HANDLER_MODULES
+)
+
 # Exact method → module for names that do not follow a feature prefix.
 _EXACT_MODULE: dict[str, str] = {
     "version": "backend.handlers.info",
@@ -125,14 +141,22 @@ class HandlerRegistry:
                 self._map.update(group)
                 self._loaded_modules.add(mod_name)
 
-    def warm(self) -> None:
-        """Eagerly load all handler modules (call from a background thread)."""
-        for mod_name in _HANDLER_MODULES:
+    def warm(self, modules: tuple[str, ...] | None = None) -> None:
+        """Eagerly load handler modules. Default: all. Prefer warm_core + warm_deferred at boot."""
+        for mod_name in modules if modules is not None else _HANDLER_MODULES:
             try:
                 self._load_module(mod_name)
             except Exception:
                 logger.exception("Handler warm-up failed for %s", mod_name)
         logger.info("Handler registry warmed (%d methods)", len(self._map))
+
+    def warm_core(self) -> None:
+        """Load modules needed before the ready handshake (preview + canvas + catalog)."""
+        self.warm(_CORE_HANDLER_MODULES)
+
+    def warm_deferred(self) -> None:
+        """Load remaining feature modules after ready (still sync before the IPC loop)."""
+        self.warm(_DEFERRED_HANDLER_MODULES)
 
     def get(self, key: str, default: Any = None) -> Any:
         with self._lock:

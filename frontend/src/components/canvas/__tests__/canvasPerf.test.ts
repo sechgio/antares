@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createLayer } from '../constants';
 import { cloneDocument, cloneDocumentBaseline } from '../ops/document';
-import { expandWithDescendants } from '../ops/layerTree';
+import { ancestorIds, expandWithDescendants } from '../ops/layerTree';
 import { setActivePageLayers } from '../ops/pages';
 import { patchLayersById, replaceLayerById } from '../ops/patchLayers';
 import { moveSelection, rotateSelection } from '../ops/selectionTransform';
@@ -250,5 +250,33 @@ describe('canvas perf hot path', () => {
     expect(node.style.willChange).toBe('transform');
     clearLayerDomGestureStyles(root, [layer], ['r2']);
     expect(node.style.willChange).toBe('');
+  });
+
+  it('layerNeedsDocumentLayers is false for plain rects (memo ignores displayLayers identity)', async () => {
+    const { layerNeedsDocumentLayers } = await import('../editor/LayerNode');
+    const rect = createLayer('rect', { id: 'r1' });
+    const masked = createLayer('rect', { id: 'r2', meta: { maskLayerId: 'm1' } });
+    const bool = createLayer('boolean', { id: 'b1' });
+    expect(layerNeedsDocumentLayers(rect)).toBe(false);
+    expect(layerNeedsDocumentLayers(masked)).toBe(true);
+    expect(layerNeedsDocumentLayers(bool)).toBe(true);
+  });
+
+  it('ancestorIds with prebuilt Map stays linear for many matches', () => {
+    const layers = [];
+    for (let i = 0; i < 200; i++) {
+      layers.push(
+        createLayer(i % 10 === 0 ? 'group' : 'rect', {
+          id: `n${i}`,
+          parentId: i === 0 ? undefined : `n${Math.floor((i - 1) / 2)}`,
+        }),
+      );
+    }
+    const byId = new Map(layers.map((l) => [l.id, l]));
+    const t0 = performance.now();
+    for (let i = 100; i < 200; i++) {
+      ancestorIds(byId, `n${i}`);
+    }
+    expect(performance.now() - t0).toBeLessThan(50);
   });
 });

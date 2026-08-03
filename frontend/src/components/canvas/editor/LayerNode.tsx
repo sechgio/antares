@@ -643,10 +643,18 @@ function LayerNode({
   );
 }
 
+/** Only mask/boolean layers read `documentLayers`; others must ignore array identity. */
+export function layerNeedsDocumentLayers(layer: CanvasLayer): boolean {
+  return layer.type === 'boolean' || Boolean(layer.meta?.maskLayerId);
+}
+
 export default memo(LayerNode, (prev, next) =>
   prev.layer === next.layer &&
   prev.masterLayer === next.masterLayer &&
-  prev.documentLayers === next.documentLayers &&
+  (
+    (!layerNeedsDocumentLayers(prev.layer) && !layerNeedsDocumentLayers(next.layer)) ||
+    prev.documentLayers === next.documentLayers
+  ) &&
   prev.selected === next.selected &&
   prev.interactive === next.interactive &&
   prev.scale === next.scale &&

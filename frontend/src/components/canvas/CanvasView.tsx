@@ -27,7 +27,7 @@ import { isOpenDocumentDirty, useCanvasSync } from './hooks/useCanvasSync';
 import { useGestureBaselines } from './hooks/useGestureBaselines';
 import { useInlineEdit } from './hooks/useInlineEdit';
 import { CANVAS_SHORTCUTS } from './shortcuts';
-import { hydrateDocumentImages, serializeDocumentImages, clearBlobStore } from './utils/imageBlobStore';
+import { hydrateDocumentImages, serializeDocumentImages, applySavedDocumentKeepingImages, clearBlobStore } from './utils/imageBlobStore';
 import {
   alignLayers,
   bringForward,
@@ -368,8 +368,9 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       const res = await api.canvasSave(serialized);
       await api.canvasSaveHistory(history.document.id, currentPast, currentFuture).catch(() => {});
       const saved = normalizeDocument(res.document as CanvasDocument);
-      const hydrated = await hydrateDocumentImages(saved);
-      history.replaceDocument(hydrated);
+      // Keep blob:/blobId in the editor; `saved` (data URLs) goes to cloud only.
+      const forEditor = applySavedDocumentKeepingImages(history.document, saved);
+      history.replaceDocument(forEditor);
       history.restoreHistory(currentPast, currentFuture);
       history.markSaved();
       // Don't drop keep-local dismissal until local timestamp has beaten the remote we dismissed.

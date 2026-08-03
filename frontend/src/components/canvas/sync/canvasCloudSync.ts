@@ -259,6 +259,13 @@ let pendingSyncFollowUp: ((result: SyncResult) => void) | null = null;
 /** Chain of in-flight sync/push/delete ops — pushes never overtake a coalesced retry. */
 let opChain: Promise<unknown> = Promise.resolve();
 
+/** Last-write-wins pending pushes by document id (flushed once onto opChain). */
+const pendingPushById = new Map<
+  string,
+  { doc: CanvasDocument; options?: { forceResurrect?: boolean } }
+>();
+let pushFlushQueued = false;
+
 function mergeSyncOptions(a: SyncOptions | null, b: SyncOptions): SyncOptions {
   return {
     openDocumentId: b.openDocumentId ?? a?.openDocumentId,
@@ -468,16 +475,27 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
 
 /** Fire-and-forget push after a successful local save.
  *  Serialized behind opChain so pushes never overtake a sync's LWW guard
- *  or a coalesced retry. Resolves when this push finishes (errors swallowed —
- *  local is already saved). */
+ *  or a coalesced retry. Multiple pushes for the same id collapse to the
+ *  latest doc (last-write-wins) before the next flush runs. */
 export function queueCanvasCloudPush(
   doc: CanvasDocument,
   options?: { forceResurrect?: boolean },
 ): Promise<void> {
-  const next = opChain.then(() => pushCanvasDocument(doc, options));
-  // Keep the chain alive after a failed push so later ops are not stuck.
-  opChain = next.catch(() => {});
-  return next.then(() => undefined).catch(() => undefined);
+  pendingPushById.set(doc.id, { doc, options });
+  if (!pushFlushQueued) {
+    pushFlushQueued = true;
+    const flush = opChain.then(async () => {
+      pushFlushQueued = false;
+      const batch = Array.from(pendingPushById.values());
+      pendingPushById.clear();
+      for (const item of batch) {
+        await pushCanvasDocument(item.doc, item.options);
+      }
+    });
+    // Keep the chain alive after a failed push so later ops are not stuck.
+    opChain = flush.catch(() => {});
+  }
+  return opChain.then(() => undefined).catch(() => undefined);
 }
 
 export function queueCanvasCloudDelete(id: string): Promise<void> {

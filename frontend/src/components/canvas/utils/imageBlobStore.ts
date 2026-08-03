@@ -126,6 +126,33 @@ export async function serializeDocumentImages(doc: CanvasDocument): Promise<Canv
 }
 
 /**
+ * After a successful save, keep the editor's live image/logo values (blob:/blobId)
+ * instead of swapping in persisted data: URLs. Avoids ~2× RAM (Blob + base64)
+ * while Canvas keep-alive holds the store. Cloud/disk still get data URLs via
+ * the serialized doc used for IPC / queueCanvasCloudPush.
+ */
+export function applySavedDocumentKeepingImages(
+  editorDoc: CanvasDocument,
+  savedDoc: CanvasDocument,
+): CanvasDocument {
+  const editorById = new Map(editorDoc.layers.map((l) => [l.id, l]));
+  let changed = false;
+  const layers = savedDoc.layers.map((layer) => {
+    if (layer.type !== 'image' && layer.type !== 'logo') return layer;
+    const prev = editorById.get(layer.id);
+    if (!prev?.value || prev.value === layer.value) return layer;
+    const keepLive =
+      prev.value.startsWith('blob:') ||
+      blobMap.has(prev.value) ||
+      urlToBlobIdMap.has(prev.value);
+    if (!keepLive) return layer;
+    changed = true;
+    return { ...layer, value: prev.value };
+  });
+  return changed ? { ...savedDoc, layers } : savedDoc;
+}
+
+/**
  * Hydrates a document loaded from disk / IPC for rendering.
  *
  * Startup fast-path: images are kept as their persistent `dataUrl` and
