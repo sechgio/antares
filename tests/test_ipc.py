@@ -95,6 +95,66 @@ def _rpc_call(proc, method: str, params: dict, timeout: float = 5.0):
     pytest.fail(f"No response for {method} within {timeout}s")
 
 
+def test_oversized_request_does_not_desynchronize_real_backend() -> None:
+    project_root = BACKEND_SCRIPT.parent.parent
+    env = os.environ.copy()
+    env["ANTARES_IPC_MAX_PAYLOAD_SIZE"] = "1024"
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "backend.main"],
+        cwd=str(project_root),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        env=env,
+    )
+    stderr_lines: list[str] = []
+    threading.Thread(target=_drain_stderr, args=(proc, stderr_lines), daemon=True).start()
+
+    try:
+        start = time.time()
+        while time.time() - start < 10:
+            line = proc.stdout.readline()
+            if line and json.loads(line).get("method") == "ready":
+                break
+        else:
+            pytest.fail(f"Backend did not become ready: {''.join(stderr_lines)}")
+
+        oversized = {
+            "jsonrpc": "2.0",
+            "id": "too-large-real",
+            "method": "version",
+            "params": {"data": "x" * 2_000},
+        }
+        valid = {
+            "jsonrpc": "2.0",
+            "id": "after-large-real",
+            "method": "version",
+            "params": {},
+        }
+        proc.stdin.write(json.dumps(oversized) + "\n" + json.dumps(valid) + "\n")
+        proc.stdin.flush()
+
+        responses = {}
+        start = time.time()
+        while time.time() - start < 10 and len(responses) < 2:
+            line = proc.stdout.readline()
+            if not line:
+                continue
+            message = json.loads(line)
+            if message.get("id") in {"too-large-real", "after-large-real"}:
+                responses[message["id"]] = message
+
+        assert responses["too-large-real"]["error"]["code"] == -32600
+        assert responses["after-large-real"]["result"]["version"] == __version__
+        assert proc.poll() is None
+    finally:
+        proc.stdin.close()
+        proc.kill()
+        proc.wait()
+
+
 class TestIPC:
     def test_version(self, backend_process) -> None:
         resp = _rpc_call(backend_process, "version", {})
