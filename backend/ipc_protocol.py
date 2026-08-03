@@ -172,22 +172,22 @@ def _piece_size(piece: str | bytes) -> int:
         return len(piece)
 
 
-def _read_limited_line(stream: Any) -> tuple[str | bytes | None, int, bool]:
+def _read_size() -> int:
+    return max(1, min(_READ_CHUNK_SIZE, _MAX_PAYLOAD_SIZE + 1))
+
+
+def _read_limited_line(stream: Any, *, binary: bool) -> tuple[str | bytes | None, int, bool]:
     parts: list[str | bytes] = []
-    prefix: str | bytes = b""
+    prefix: str | bytes = b"" if binary else ""
     total = 0
-    binary: bool | None = None
 
     while True:
-        read_size = max(1, min(_READ_CHUNK_SIZE, _MAX_PAYLOAD_SIZE - total + 1))
+        read_size = max(1, min(_read_size(), _MAX_PAYLOAD_SIZE - total + 1))
         piece = stream.readline(read_size)
         if not piece:
             if total == 0:
                 return None, 0, False
             return _join_parts(parts), total, False
-        if binary is None:
-            binary = isinstance(piece, bytes)
-            prefix = b"" if binary else ""
         if binary != isinstance(piece, bytes):
             raise TypeError("stdin returned mixed text and binary chunks")
 
@@ -218,7 +218,7 @@ def _join_parts(parts: list[str | bytes]) -> str | bytes:
 def _drain_line(stream: Any, binary: bool) -> None:
     newline = b"\n" if binary else "\n"
     while True:
-        piece = stream.readline(_READ_CHUNK_SIZE)
+        piece = stream.readline(_read_size())
         if not piece or newline in piece:
             return
 
@@ -232,8 +232,11 @@ def read_message() -> IPCMessage | None:
     and the caller would block until its own timeout.
     """
     try:
-        stdin = getattr(sys.stdin, "buffer", sys.stdin)
-        line, line_bytes, oversized = _read_limited_line(stdin)
+        stdin = getattr(sys.stdin, "buffer", None)
+        binary = stdin is not None
+        if not binary:
+            stdin = sys.stdin
+        line, line_bytes, oversized = _read_limited_line(stdin, binary=binary)
         if line is None:
             return None
         if isinstance(line, bytes):

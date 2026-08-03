@@ -1,6 +1,7 @@
 """IPC integration tests — spawn real Python backend and verify JSON-RPC."""
 
 import json
+import os
 import subprocess
 import sys
 import threading

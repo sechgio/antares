@@ -196,7 +196,7 @@ function _ensureListeners() {
           const entry = _pendingRequests.get(String(msg.id));
           clearTimeout(entry.timeout);
           _pendingRequests.delete(String(msg.id));
-          decrementPendingRequests();
+          entry.releasePending();
           if (typeof entry.responseBytes !== 'number' || entry.responseBytes === 0) {
             entry.responseBytes = _estimateJsonBytes(msg);
           }
@@ -232,7 +232,7 @@ function _ensureListeners() {
       clearTimeout(entry.timeout);
       _pendingRequests.delete(id);
       entry.reject(new Error('Backend process exited while waiting for response'));
-      decrementPendingRequests();
+      entry.releasePending();
     }
     // Only detach + clear job activity for the currently attached process.
     if (_attachedProcess !== proc) return;
@@ -374,7 +374,13 @@ function _sendRequest(method, params) {
       proc,
       responseBytes: 0,
       waitedForDrain: false,
+      pendingReleased: false,
       timeout: null,
+      releasePending: () => {
+        if (entry.pendingReleased) return;
+        entry.pendingReleased = true;
+        decrementPendingRequests();
+      },
       resolve: (result) => {
         _logIpcTelemetry({
           method,
@@ -402,7 +408,7 @@ function _sendRequest(method, params) {
 
     entry.timeout = setTimeout(() => {
       _pendingRequests.delete(id);
-      decrementPendingRequests();
+      entry.releasePending();
       const win = getMainWindow();
       if (win && !win.isDestroyed()) {
         win.webContents.send('ipc-notify', 'ipc.error', {
@@ -420,7 +426,7 @@ function _sendRequest(method, params) {
     }).catch((err) => {
       clearTimeout(entry.timeout);
       _pendingRequests.delete(id);
-      decrementPendingRequests();
+      entry.releasePending();
       entry.reject(new Error(`Backend stdin write failed: ${err.message}`));
     });
   });
