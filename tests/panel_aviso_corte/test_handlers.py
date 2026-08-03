@@ -280,3 +280,25 @@ def test_template_writes_excel_with_expected_columns(tmp_path) -> None:
         "MOTIVO",
     ]
     assert len(df) == 4
+
+
+def test_template_rejects_existing_destination_without_overwrite(tmp_path) -> None:
+    saved = tmp_path / "plantilla.xlsx"
+    original = b"archivo existente"
+    saved.write_bytes(original)
+
+    with pytest.raises(FileExistsError, match="ya existe"):
+        handler_module.panel_aviso_corte_template({"path": str(saved)})
+
+    assert saved.read_bytes() == original
+
+
+def test_template_overwrites_existing_destination_explicitly(tmp_path) -> None:
+    saved = tmp_path / "plantilla.xlsx"
+    saved.write_bytes(b"archivo existente")
+
+    result = handler_module.panel_aviso_corte_template({"path": str(saved), "overwrite": True})
+
+    assert result["path"] == str(saved)
+    assert saved.read_bytes() != b"archivo existente"
+    assert saved.stat().st_size > 0

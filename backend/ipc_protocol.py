@@ -149,6 +149,8 @@ def _json_default(obj: Any) -> Any:
 _SKIP = object()
 
 _REQUEST_ID_RE = re.compile(r'"id"\s*:\s*(?:"([^"\\]*(?:\\.[^"\\]*)*)"|(-?\d+))')
+_READ_CHUNK_SIZE = 64 * 1024
+_REQUEST_ID_PREFIX_SIZE = 4096
 
 
 def _try_extract_request_id(line: str) -> str | int | None:
@@ -161,6 +163,66 @@ def _try_extract_request_id(line: str) -> str | int | None:
     return int(match.group(2))
 
 
+def _piece_size(piece: str | bytes) -> int:
+    if isinstance(piece, bytes):
+        return len(piece)
+    try:
+        return len(piece.encode("utf-8"))
+    except UnicodeEncodeError:
+        return len(piece)
+
+
+def _read_limited_line(stream: Any) -> tuple[str | bytes | None, int, bool]:
+    parts: list[str | bytes] = []
+    prefix: str | bytes = b""
+    total = 0
+    binary: bool | None = None
+
+    while True:
+        read_size = max(1, min(_READ_CHUNK_SIZE, _MAX_PAYLOAD_SIZE - total + 1))
+        piece = stream.readline(read_size)
+        if not piece:
+            if total == 0:
+                return None, 0, False
+            return _join_parts(parts), total, False
+        if binary is None:
+            binary = isinstance(piece, bytes)
+            prefix = b"" if binary else ""
+        if binary != isinstance(piece, bytes):
+            raise TypeError("stdin returned mixed text and binary chunks")
+
+        piece_size = _piece_size(piece)
+        total += piece_size
+        if len(prefix) < _REQUEST_ID_PREFIX_SIZE:
+            prefix += piece[:_REQUEST_ID_PREFIX_SIZE - len(prefix)]
+
+        newline = b"\n" if binary else "\n"
+        if total > _MAX_PAYLOAD_SIZE:
+            if newline not in piece:
+                _drain_line(stream, binary)
+            return prefix, total, True
+
+        parts.append(piece)
+        if newline in piece:
+            return _join_parts(parts), total, False
+
+
+def _join_parts(parts: list[str | bytes]) -> str | bytes:
+    if not parts:
+        return ""
+    if isinstance(parts[0], bytes):
+        return b"".join(parts)  # type: ignore[arg-type]
+    return "".join(parts)  # type: ignore[arg-type]
+
+
+def _drain_line(stream: Any, binary: bool) -> None:
+    newline = b"\n" if binary else "\n"
+    while True:
+        piece = stream.readline(_READ_CHUNK_SIZE)
+        if not piece or newline in piece:
+            return
+
+
 def read_message() -> IPCMessage | None:
     """Lee una línea JSON desde stdin. Returns None on EOF, _SKIP on parse error.
 
@@ -170,15 +232,13 @@ def read_message() -> IPCMessage | None:
     and the caller would block until its own timeout.
     """
     try:
-        line = sys.stdin.readline()
-        if not line:
-            return None  # EOF — pipe closed
-        # Mirror outbound _MAX_PAYLOAD_SIZE so a huge line cannot OOM the process.
-        try:
-            line_bytes = len(line.encode("utf-8"))
-        except UnicodeEncodeError:
-            line_bytes = len(line)
-        if line_bytes > _MAX_PAYLOAD_SIZE:
+        stdin = getattr(sys.stdin, "buffer", sys.stdin)
+        line, line_bytes, oversized = _read_limited_line(stdin)
+        if line is None:
+            return None
+        if isinstance(line, bytes):
+            line = line.decode("utf-8")
+        if oversized:
             logger.error(
                 "Inbound IPC payload too large: %d bytes (max: %d)",
                 line_bytes,
@@ -195,20 +255,16 @@ def read_message() -> IPCMessage | None:
                 )
             return _SKIP  # type: ignore[return-value]
         data = json.loads(line)
-        # Try to recover an id from the partially-parsed payload so the
-        # frontend can correlate the error response with the original request.
         msg_id = data.get("id") if isinstance(data, dict) else None
         try:
             return IPCMessage(data)
         except (ValueError, AntaresBaseException) as exc:
-            # Malformed message but we know the id → send a proper error response.
             if msg_id is not None:
                 send_response(None, msg_id, error=exc)
             else:
                 logger.error("Invalid IPC message with no id: %s", exc)
             return _SKIP  # type: ignore[return-value]
     except json.JSONDecodeError as exc:
-        # Cannot correlate to any request → log only, do not send orphan response.
         logger.error("JSON inválido en stdin: %s", exc)
         return _SKIP  # type: ignore[return-value]
     except Exception:

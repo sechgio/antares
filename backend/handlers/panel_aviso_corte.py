@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import base64
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -163,6 +165,10 @@ def panel_aviso_corte_template(params: dict[str, Any]) -> dict[str, Any]:
         path = f"{path}.xlsx"
 
     destination = Path(path).expanduser()
+    overwrite = params.get("overwrite") is True
+    if destination.exists() and not overwrite:
+        msg = f"El archivo de destino ya existe: {destination}"
+        raise FileExistsError(msg)
     destination.parent.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -190,7 +196,26 @@ def panel_aviso_corte_template(params: dict[str, Any]) -> dict[str, Any]:
     for i, row in enumerate(data):
         df.loc[i] = row
 
-    df.to_excel(destination, index=False, engine="openpyxl")
+    if not overwrite:
+        with pd.ExcelWriter(destination, engine="openpyxl", mode="x") as writer:
+            df.to_excel(writer, index=False)
+        return {"path": str(destination)}
+
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=destination.parent,
+            prefix=f".{destination.stem}-",
+            suffix=destination.suffix,
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+        df.to_excel(temporary_path, index=False, engine="openpyxl")
+        os.replace(temporary_path, destination)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
     return {"path": str(destination)}
 
 HANDLERS = {

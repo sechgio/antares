@@ -62,7 +62,7 @@ function step(label, fn) {
     console.error(`    ${err.message}`);
     // Re-throw only the message so we don't dump stack traces
     const e = new Error(err.message || 'Step failed');
-    e.code = err.code || 1;
+    e.code = err.status || err.code || 1;
     throw e;
   }
 }
@@ -186,7 +186,7 @@ function validateChangelog(version) {
 function runQualityGate() {
   console.log('');
   // Lint
-  const lintResult = trySh('npm run lint:python 2>&1', { silent: true });
+  const lintResult = sh('npm run lint:python 2>&1', { silent: true });
   if (lintResult && lintResult.includes('error')) {
     // Check if it actually found lint errors vs just printed nothing
     const lintLines = lintResult.split('\n').filter(l => l.includes('error')).length;
@@ -196,13 +196,13 @@ function runQualityGate() {
   }
 
   // Typecheck backend
-  const tcBackend = trySh('npm run typecheck:backend 2>&1', { silent: true });
+  const tcBackend = sh('npm run typecheck:backend 2>&1', { silent: true });
   if (tcBackend && (tcBackend.includes('error') || tcBackend.includes('Error'))) {
     throw new Error(`Typecheck de backend falló:\n${tcBackend.slice(0, 500)}`);
   }
 
   // Typecheck frontend
-  const tcFrontend = trySh('npm run typecheck:frontend 2>&1', { silent: true });
+  const tcFrontend = sh('npm run typecheck:frontend 2>&1', { silent: true });
   if (tcFrontend && tcFrontend.includes('error')) {
     throw new Error(`Typecheck de frontend falló:\n${tcFrontend.slice(0, 500)}`);
   }

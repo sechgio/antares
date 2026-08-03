@@ -619,7 +619,7 @@ export const api = {
     output_path?: string;
     export_mode?: string;
   }) => _invoke<{ pdf_base64: string; content_base64?: string; saved_path?: string; filename: string; format?: string; mime_type?: string }>('panel_aviso_corte_render_pdf', body),
-  panelAvisoCorteTemplate: (body: { path: string }) => _invoke<{ path: string }>('panel_aviso_corte_template', body),
+  panelAvisoCorteTemplate: (body: { path: string; overwrite?: boolean }) => _invoke<{ path: string }>('panel_aviso_corte_template', body),
 
   // ─── Evidencia Volanteo ───────────────────────────────────────────────
   evidenciaVolanteoRender: (body: {
