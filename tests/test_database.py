@@ -31,6 +31,38 @@ class TestInitDb:
         db.init_db()
         assert db_path.exists()
 
+    def test_init_db_tolera_campo_id_en_config_antigua(self, db_path, monkeypatch, tmp_path) -> None:
+        """Regresión: fields con name=id chocaba con la PK → duplicate column name: id."""
+        import json
+        import sqlite3
+
+        config_path = tmp_path / "fields_config.json"
+        config_path.write_text(
+            json.dumps({
+                "fields": [
+                    {"name": "id", "type": "TEXT"},
+                    {"name": "nombre", "type": "TEXT"},
+                ],
+            }),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            "backend.core.config_fields._config_file",
+            lambda: config_path,
+        )
+        from backend.core.config_fields import _invalidate_fields_cache
+
+        _invalidate_fields_cache()
+
+        db.init_db()
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            cols = [row[1] for row in conn.execute("PRAGMA table_info(imagenes)").fetchall()]
+        finally:
+            conn.close()
+        assert cols == ["id", "nombre"]
+
     def test_migra_datos_cuando_cambia_esquema(self, db_path, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"
         monkeypatch.setattr(

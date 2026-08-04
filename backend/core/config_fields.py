@@ -41,6 +41,9 @@ _SQLITE_KEYWORDS: set[str] = {
     "where", "with", "without",
 }
 
+# Columnas del esquema interno de imagenes; no pueden usarse como campos de catálogo.
+_RESERVED_FIELD_NAMES: frozenset[str] = frozenset({"id"})
+
 _CONFIG_PATH: Path | None = None
 
 
@@ -57,7 +60,7 @@ def _validar_nombre_campo(nombre: str) -> bool:
         return False
     if not re.fullmatch(r"[a-z_][a-z0-9_]*", nombre):
         return False
-    return nombre not in _SQLITE_KEYWORDS
+    return nombre not in _RESERVED_FIELD_NAMES and nombre not in _SQLITE_KEYWORDS
 
 
 def _validar_tipo_campo(tipo: str) -> bool:
