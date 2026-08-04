@@ -60,9 +60,7 @@ def _validar_nombre_campo(nombre: str) -> bool:
         return False
     if not re.fullmatch(r"[a-z_][a-z0-9_]*", nombre):
         return False
-    if nombre in _RESERVED_FIELD_NAMES or nombre in _SQLITE_KEYWORDS:
-        return False
-    return True
+    return nombre not in _RESERVED_FIELD_NAMES and nombre not in _SQLITE_KEYWORDS
 
 
 def _validar_tipo_campo(tipo: str) -> bool:
