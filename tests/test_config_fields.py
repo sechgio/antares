@@ -90,3 +90,37 @@ class TestConfigFields:
         loaded = load_fields()
         assert loaded[0]["name"] == "codigo"
         assert loaded[0]["type"] == "TEXT"
+
+    def test_rechaza_nombre_reservado_id(self, monkeypatch, tmp_path) -> None:
+        """`id` es la PK interna de imagenes; no puede ser campo de catálogo."""
+        config_path = tmp_path / "fields_config.json"
+        monkeypatch.setattr(
+            "backend.core.config_fields._config_file",
+            lambda: config_path,
+        )
+        saved = save_fields([
+            {"name": "id", "type": "TEXT"},
+            {"name": "nombre", "type": "TEXT"},
+        ])
+        assert [f["name"] for f in saved] == ["nombre"]
+        assert get_field_names() == ["nombre"]
+
+    def test_load_ignora_id_en_disco(self, monkeypatch, tmp_path) -> None:
+        """Config antigua con campo `id` no debe cargar ese nombre."""
+        import json
+
+        config_path = tmp_path / "fields_config.json"
+        config_path.write_text(
+            json.dumps({
+                "fields": [
+                    {"name": "id", "type": "TEXT"},
+                    {"name": "nombre", "type": "TEXT"},
+                ],
+            }),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            "backend.core.config_fields._config_file",
+            lambda: config_path,
+        )
+        assert [f["name"] for f in load_fields()] == ["nombre"]

@@ -79,6 +79,9 @@ def _build_schema(fields: list[dict[str, Any]]) -> str:
     columns = ["id INTEGER PRIMARY KEY AUTOINCREMENT"]
     for f in fields:
         name = _validate_identifier(f["name"])
+        # Defensa: `id` es la PK interna; un field homónimo rompería CREATE TABLE.
+        if name == "id":
+            continue
         quoted_name = _qi(name)
         ftype = f["type"]
         constraints: list[str] = []
