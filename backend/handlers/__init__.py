@@ -41,6 +41,7 @@ _HANDLER_MODULES: tuple[str, ...] = (
     "backend.handlers.optimizer",
     "backend.handlers.sellador",
     "backend.handlers.technical_reports",
+    "backend.handlers.informes_v2",
     "backend.handlers.fichas_tecnicas",
     "backend.handlers.panel_aviso_corte",
     "backend.handlers.ubicaciones",
@@ -84,6 +85,7 @@ _EXACT_MODULE: dict[str, str] = {
 # Longest-prefix-first feature routing (checked after exact matches).
 _PREFIX_MODULE: tuple[tuple[str, str], ...] = (
     ("fichas_tecnicas_", "backend.handlers.fichas_tecnicas"),
+    ("informes_v2_", "backend.handlers.informes_v2"),
     ("technical_reports_", "backend.handlers.technical_reports"),
     ("panel_aviso_corte_", "backend.handlers.panel_aviso_corte"),
     ("evidencia_volanteo_", "backend.handlers.evidencia_volanteo"),

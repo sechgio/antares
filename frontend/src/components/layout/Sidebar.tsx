@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import {
   Camera,
   ClipboardList,
+  ClipboardPen,
   FileBarChart2,
   FileStack,
   FileText,
@@ -48,6 +49,7 @@ const ICONS: Record<TabId, ComponentType<{ className?: string }>> = {
   volantes: Megaphone,
   reportesCampo: Camera,
   technicalReports: ClipboardList,
+  informesV2: ClipboardPen,
   imageOptimizer: Image,
   previewPanel: LayoutDashboard,
   canvas: Paintbrush,
@@ -71,6 +73,7 @@ const NAV_GROUPS: { id: string; label: string; tabs: TabId[] }[] = [
     tabs: [
       'reportesCampo',
       'technicalReports',
+      'informesV2',
       'previewPanel',
       'canvas',
       'panelAvisoCorte',

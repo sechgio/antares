@@ -62,6 +62,10 @@ def test_heavy_methods_include_fichas_and_evidencia() -> None:
     assert "fichas_tecnicas_import_file" in backend_main.HEAVY_METHODS
     assert "fichas_tecnicas_render_html" in backend_main.HEAVY_METHODS
     assert "fichas_tecnicas_render_consolidated_html" in backend_main.HEAVY_METHODS
+    assert "informes_v2_import_file" in backend_main.HEAVY_METHODS
+    assert "informes_v2_download_template" in backend_main.HEAVY_METHODS
+    assert "informes_v2_render_html" in backend_main.HEAVY_METHODS
+    assert "informes_v2_render_consolidated_html" in backend_main.HEAVY_METHODS
     assert "evidencia_volanteo_render" in backend_main.HEAVY_METHODS
     assert "canvas_export_cmyk_pdf" in backend_main.HEAVY_METHODS
     assert "canvas_get" in backend_main.HEAVY_METHODS

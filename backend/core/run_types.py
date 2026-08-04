@@ -136,6 +136,16 @@ _INFORME_TECNICO_OPTIONS_SCHEMA: dict[str, Any] = {
     },
 }
 
+_INFORME_V2_OPTIONS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": True,
+    "properties": {
+        "type": {"type": "string"},
+        "reportId": {},
+        "count": {"type": "integer", "minimum": 0},
+    },
+}
+
 _FICHA_TECNICA_OPTIONS_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": True,
@@ -585,6 +595,15 @@ RUN_TYPE_REGISTRY: dict[str, RunTypeMeta] = {
         description_key="history.runTypes.informeTecnicoDesc",
         color_token="var(--accent-cyan, #22d3ee)",
         options_schema=_INFORME_TECNICO_OPTIONS_SCHEMA,
+        files_schema=_ANY_ARRAY,
+        stats=_informe_tecnico_stats(),
+    ),
+    "informe_v2": RunTypeMeta(
+        id="informe_v2",
+        label_key="history.runTypes.informeV2",
+        description_key="history.runTypes.informeV2Desc",
+        color_token="var(--accent-sky, #38bdf8)",
+        options_schema=_INFORME_V2_OPTIONS_SCHEMA,
         files_schema=_ANY_ARRAY,
         stats=_informe_tecnico_stats(),
     ),

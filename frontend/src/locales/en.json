@@ -132,6 +132,8 @@
   "history.runTypes.evidenciaVolanteoDesc": "Photographic flyer evidence",
   "history.runTypes.informeTecnico": "Technical Report",
   "history.runTypes.informeTecnicoDesc": "Technical reports",
+  "history.runTypes.informeV2": "Report v2",
+  "history.runTypes.informeV2Desc": "Informes v2 with photo panel",
   "history.runTypes.fichaTecnica": "Technical Sheet",
   "history.runTypes.fichaTecnicaDesc": "Activity evaluation technical sheets",
   "history.runTypes._unknown": "Unknown",
