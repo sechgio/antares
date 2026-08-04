@@ -648,13 +648,44 @@ export function layerNeedsDocumentLayers(layer: CanvasLayer): boolean {
   return layer.type === 'boolean' || Boolean(layer.meta?.maskLayerId);
 }
 
+/** Layer ids whose identity affects mask/boolean rendering for `layer`. */
+function documentLayerDependencyIds(layer: CanvasLayer): string[] {
+  const ids: string[] = [];
+  const maskId = layer.meta?.maskLayerId;
+  if (maskId) ids.push(maskId);
+  if (layer.type === 'boolean' && layer.meta?.ops?.length) {
+    for (const op of layer.meta.ops) {
+      if (op.layerId) ids.push(op.layerId);
+    }
+  }
+  return ids;
+}
+
+/**
+ * True when `documentLayers` identity changed but none of the mask/boolean
+ * operands this node reads changed by reference — safe to skip re-render.
+ */
+export function documentLayersRelevantEqual(
+  layer: CanvasLayer,
+  prevLayers: CanvasLayer[] | undefined,
+  nextLayers: CanvasLayer[] | undefined,
+): boolean {
+  if (prevLayers === nextLayers) return true;
+  if (!layerNeedsDocumentLayers(layer)) return true;
+  const prev = prevLayers ?? [];
+  const next = nextLayers ?? [];
+  const ids = documentLayerDependencyIds(layer);
+  if (ids.length === 0) return true;
+  for (const id of ids) {
+    if (prev.find((l) => l.id === id) !== next.find((l) => l.id === id)) return false;
+  }
+  return true;
+}
+
 export default memo(LayerNode, (prev, next) =>
   prev.layer === next.layer &&
   prev.masterLayer === next.masterLayer &&
-  (
-    (!layerNeedsDocumentLayers(prev.layer) && !layerNeedsDocumentLayers(next.layer)) ||
-    prev.documentLayers === next.documentLayers
-  ) &&
+  documentLayersRelevantEqual(next.layer, prev.documentLayers, next.documentLayers) &&
   prev.selected === next.selected &&
   prev.interactive === next.interactive &&
   prev.scale === next.scale &&

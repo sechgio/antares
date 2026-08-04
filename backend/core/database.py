@@ -74,10 +74,15 @@ def get_db_path() -> Path:
     return user_data_path("catalogo.db")
 
 
+def _data_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Fields that become data columns. Reserved PK ``id`` is never duplicated."""
+    return [f for f in fields if str(f.get("name", "")).lower() != "id"]
+
+
 def _build_schema(fields: list[dict[str, Any]]) -> str:
     """Construye la sentencia CREATE TABLE a partir de la configuración de campos."""
     columns = ["id INTEGER PRIMARY KEY AUTOINCREMENT"]
-    for f in fields:
+    for f in _data_fields(fields):
         name = _validate_identifier(f["name"])
         # Defensa: `id` es la PK interna; un field homónimo rompería CREATE TABLE.
         if name == "id":
@@ -114,10 +119,11 @@ def _create_indexes(cursor: sqlite3.Cursor, fields: list[dict[str, Any]]) -> Non
     full scan. Plain UNIQUE indexes stay on the raw column (case-sensitive
     uniqueness); lower() indexes are always non-unique.
     """
-    if not fields:
+    data_fields = _data_fields(fields)
+    if not data_fields:
         return
 
-    for f in fields:
+    for f in data_fields:
         name = _validate_identifier(f["name"])
         unique_clause = "UNIQUE" if f.get("unique") else ""
         cursor.execute(
@@ -179,16 +185,19 @@ def init_db(*, allow_catalog_wipe: bool = False) -> None:
                     # de puros defaults/placeholder, además de chocar con UNIQUE.
                     preserved_cols = [c for c in old_cols if c in expected_cols and c != "id"]
                     if old_rows and preserved_cols:
-                        new_col_names = [_validate_identifier(f["name"]) for f in fields]
+                        data_fields = _data_fields(fields)
+                        new_col_names = [_validate_identifier(f["name"]) for f in data_fields]
                         placeholders = ", ".join(["?"] * len(new_col_names))
                         col_names = ", ".join(_qi(c) for c in new_col_names)
                         defaults = {"INTEGER": 0, "REAL": 0.0, "TEXT": "", "BLOB": b""}
                         try:
-                            all_values: list[list[Any]] = []
+                            insert_sql = f"INSERT INTO imagenes ({col_names}) VALUES ({placeholders})"
+                            chunk: list[list[Any]] = []
+                            chunk_size = 500
                             for i, row in enumerate(old_rows):
                                 row_dict = dict(zip(old_cols, row, strict=False))
                                 values: list[Any] = []
-                                for f in fields:
+                                for f in data_fields:
                                     col = f["name"]
                                     if col in row_dict and row_dict[col] is not None:
                                         values.append(row_dict[col])
@@ -210,11 +219,12 @@ def init_db(*, allow_catalog_wipe: bool = False) -> None:
                                         values.append(default)
                                     else:
                                         values.append(None)
-                                values_list = values
-                                all_values.append(values_list)
-                            cursor.executemany(
-                                f"INSERT INTO imagenes ({col_names}) VALUES ({placeholders})", all_values
-                            )
+                                chunk.append(values)
+                                if len(chunk) >= chunk_size:
+                                    cursor.executemany(insert_sql, chunk)
+                                    chunk.clear()
+                            if chunk:
+                                cursor.executemany(insert_sql, chunk)
                             cursor.execute("DROP TABLE imagenes_old")
                         except sqlite3.Error as exc:
                             logger.error("Fallo migración de datos, se mantiene tabla antigua: %s", exc)
@@ -294,7 +304,13 @@ def importar_excel(excel_path: str) -> dict[str, int]:
         raise FileNotFoundError(msg)
 
     with _db_lock:
-        df = pd.read_excel(excel_path, dtype=str, engine="openpyxl")
+        # read_only lowers peak RAM; keep formulas as stored text (no data_only).
+        df = pd.read_excel(
+            excel_path,
+            dtype=str,
+            engine="openpyxl",
+            engine_kwargs={"read_only": True},
+        )
         df.columns = _normalize_excel_columns(list(df.columns))
 
         existing_fields = {f["name"]: f for f in load_fields()}
@@ -343,9 +359,10 @@ def importar_excel(excel_path: str) -> dict[str, int]:
             col_names = ", ".join(_qi(fn) for fn in field_names)
             sql = f"INSERT INTO imagenes ({col_names}) VALUES ({placeholders})"
 
-            # Use executemany for bulk insert performance.
-            # itertuples() is significantly faster than iterrows() for large DataFrames.
-            all_values: list[list[Any]] = []
+            # Chunked executemany: avoid retaining every row's values list at once.
+            chunk: list[list[Any]] = []
+            chunk_size = 500
+            inserted = 0
             skipped = 0
             required_set = set(required)
             for row in df.itertuples(index=False):
@@ -362,12 +379,17 @@ def importar_excel(excel_path: str) -> dict[str, int]:
                     else:
                         values.append(None)
                 if valid:
-                    all_values.append(values)
+                    chunk.append(values)
+                    if len(chunk) >= chunk_size:
+                        cursor.executemany(sql, chunk)
+                        inserted += len(chunk)
+                        chunk.clear()
                 else:
                     skipped += 1
 
-            cursor.executemany(sql, all_values)
-            inserted = len(all_values)
+            if chunk:
+                cursor.executemany(sql, chunk)
+                inserted += len(chunk)
 
             cursor.execute("COMMIT")
             # Full-table reload: refresh planner stats so indexes stay effective
@@ -707,7 +729,12 @@ def parse_id_rename_mapping_full(
         msg = f"No se encontró el archivo: {excel_path}"
         raise FileNotFoundError(msg)
 
-    df = pd.read_excel(excel_path, dtype=str, engine="openpyxl")
+    df = pd.read_excel(
+        excel_path,
+        dtype=str,
+        engine="openpyxl",
+        engine_kwargs={"read_only": True},
+    )
     df.columns = _normalize_excel_columns(list(df.columns))
     columns = list(df.columns)
 

@@ -20,7 +20,10 @@ def test_indexes_created() -> None:
         assert len(explicit_indexes) > 0, "No explicit indexes found on imagenes table"
 
         index_names = {idx[1] for idx in explicit_indexes}
+        # Reserved PK ``id`` is not indexed as a data column (see _data_fields).
         for field_name in get_field_names():
+            if field_name.lower() == "id":
+                continue
             assert f"idx_imagenes_{field_name}" in index_names
             assert f"idx_imagenes_lower_{field_name}" in index_names
 

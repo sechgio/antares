@@ -27,7 +27,17 @@ import { isOpenDocumentDirty, useCanvasSync } from './hooks/useCanvasSync';
 import { useGestureBaselines } from './hooks/useGestureBaselines';
 import { useInlineEdit } from './hooks/useInlineEdit';
 import { CANVAS_SHORTCUTS } from './shortcuts';
-import { hydrateDocumentImages, serializeDocumentImages, applySavedDocumentKeepingImages, clearBlobStore } from './utils/imageBlobStore';
+import {
+  hydrateDocumentImages,
+  serializeDocumentImages,
+  applySavedDocumentKeepingImages,
+  clearBlobStore,
+  collectImageRefsFromHistory,
+  collectImageRefsFromLayers,
+  registerImageBlob,
+  sweepOrphanBlobs,
+  trackImageRef,
+} from './utils/imageBlobStore';
 import {
   alignLayers,
   bringForward,
@@ -267,8 +277,16 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     ) {
       return;
     }
+    // Keep full docs only in the ref. React state holds a layers-stripped
+    // copy so the conflict bar does not retain megabyte image payloads.
     syncConflictRef.current = conflict;
-    setSyncConflict(conflict);
+    setSyncConflict({
+      ...conflict,
+      localDoc: { ...conflict.localDoc, layers: [] },
+      remoteDoc: conflict.remoteDoc
+        ? { ...conflict.remoteDoc, layers: [] }
+        : null,
+    });
   }, []);
 
   const onConflictResolve = useCallback(
@@ -453,6 +471,25 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   // Revoke in-memory ObjectURLs when leaving the canvas view.
   useEffect(() => () => clearBlobStore(), []);
 
+  // Keep-alive rarely unmounts CanvasView — sweep orphans when live refs shrink
+  // (layer delete, image replace, doc switch / history clear, clipboard clear).
+  useEffect(() => {
+    const live = collectImageRefsFromLayers(history.document.layers);
+    for (const ref of collectImageRefsFromHistory(history.past)) live.add(ref);
+    for (const ref of collectImageRefsFromHistory(history.future)) live.add(ref);
+    for (const layer of clipboard) {
+      if (layer.type === 'image' || layer.type === 'logo') trackImageRef(live, layer.value);
+    }
+    const conflict = syncConflictRef.current;
+    if (conflict) {
+      for (const ref of collectImageRefsFromLayers(conflict.localDoc.layers)) live.add(ref);
+      if (conflict.remoteDoc) {
+        for (const ref of collectImageRefsFromLayers(conflict.remoteDoc.layers)) live.add(ref);
+      }
+    }
+    sweepOrphanBlobs(live);
+  }, [history.document, history.past, history.future, clipboard]);
+
   // Beforeunload: warn and fire a best-effort save when the open doc is dirty.
   const onBeforeUnload = useCallback(
     (e: BeforeUnloadEvent) => {
@@ -635,7 +672,31 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   const copyLayersToClipboard = useCallback((layers: CanvasLayer[]) => {
     const copies = layers.map((l) => ({ ...l, cssVars: { ...l.cssVars } }));
     setClipboard(copies);
-    writeClipboardLayersText(copies);
+    // Prefer blob: refs in the OS clipboard payload so we do not stringify
+    // megabyte data: URLs. In-memory paste uses `clipboard` state immediately.
+    void (async () => {
+      const rewritten = await Promise.all(
+        copies.map(async (l) => {
+          if (
+            (l.type === 'image' || l.type === 'logo') &&
+            typeof l.value === 'string' &&
+            l.value.startsWith('data:')
+          ) {
+            try {
+              const res = await fetch(l.value);
+              const blob = await res.blob();
+              const reg = await registerImageBlob(blob);
+              return { ...l, value: reg.url };
+            } catch {
+              return l;
+            }
+          }
+          return l;
+        }),
+      );
+      setClipboard(rewritten);
+      writeClipboardLayersText(rewritten);
+    })();
   }, []);
 
   const onKeyDownRef = useRef<(e: KeyboardEvent) => void>(() => {});

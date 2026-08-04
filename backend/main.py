@@ -264,15 +264,16 @@ def main() -> None:
         sys.exit(1)
 
     # Warm core handlers BEFORE ready so preview/canvas/catalog work immediately.
-    # Deferred feature modules (sellador, ubicaciones, fichas, …) warm AFTER ready
-    # but still synchronously before the stdin loop — avoids GIL contention with
-    # first-request lazy imports while letting Electron paint sooner.
-    # Per-module try/except: a failing module delays readiness but never aborts.
+    # Deferred feature modules (sellador, ubicaciones, fichas, …) stay lazy on
+    # first use so baseline RSS stays low. Opt in to the legacy eager warm with
+    # ANTARES_WARM_DEFERRED=1 when cold-start latency on first feature use matters
+    # more than memory. Per-module try/except: a failing module never aborts ready.
     HANDLERS.warm_core()
 
     send_notification("ready", {"status": "ok"})
 
-    HANDLERS.warm_deferred()
+    if os.environ.get("ANTARES_WARM_DEFERRED", "").strip().lower() in {"1", "true", "yes"}:
+        HANDLERS.warm_deferred()
 
     logger.info(t("info.backend_ready"))
 

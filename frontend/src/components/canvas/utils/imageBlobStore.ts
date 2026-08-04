@@ -1,4 +1,6 @@
 import type { CanvasDocument, CanvasLayer } from '../types';
+import type { CanvasDiff, HistoryStep } from './canvasDiff';
+import { isHistoryStepDiff } from './canvasDiff';
 
 export interface RegisteredBlob {
   blobId: string;
@@ -12,6 +14,76 @@ export interface RegisteredBlob {
 
 const blobMap = new Map<string, RegisteredBlob>();
 const urlToBlobIdMap = new Map<string, string>();
+
+/** True when a layer value may point at a managed ObjectURL / blobId. */
+function isManagedImageValue(value: string | undefined): value is string {
+  if (!value) return false;
+  return value.startsWith('blob:') || value.startsWith('img_blob_') || blobMap.has(value);
+}
+
+/** Add a layer image value (and its paired blobId/url) to a live-ref set. */
+export function trackImageRef(live: Set<string>, value: string | undefined): void {
+  if (!value || !isManagedImageValue(value)) return;
+  live.add(value);
+  const reg = blobMap.get(value);
+  if (reg) {
+    live.add(reg.blobId);
+    live.add(reg.url);
+    return;
+  }
+  const blobId = urlToBlobIdMap.get(value);
+  if (blobId) {
+    live.add(blobId);
+    const byUrl = blobMap.get(blobId);
+    if (byUrl) live.add(byUrl.url);
+  }
+}
+
+/** Collect managed image refs from image/logo layers. */
+export function collectImageRefsFromLayers(layers: Iterable<CanvasLayer>): Set<string> {
+  const live = new Set<string>();
+  for (const layer of layers) {
+    if (layer.type === 'image' || layer.type === 'logo') {
+      trackImageRef(live, layer.value);
+    }
+  }
+  return live;
+}
+
+function collectImageRefsFromDiff(diff: CanvasDiff, live: Set<string>): void {
+  if (diff.addedLayers) {
+    for (const layer of diff.addedLayers) {
+      if (layer.type === 'image' || layer.type === 'logo') {
+        trackImageRef(live, layer.value);
+      }
+    }
+  }
+  if (diff.modifiedLayers) {
+    for (const patch of diff.modifiedLayers) {
+      if (typeof patch.changes.value === 'string') {
+        trackImageRef(live, patch.changes.value);
+      }
+    }
+  }
+}
+
+/** Collect managed image refs retained by undo/redo history steps. */
+export function collectImageRefsFromHistory(steps: Iterable<HistoryStep>): Set<string> {
+  const live = new Set<string>();
+  for (const step of steps) {
+    if (isHistoryStepDiff(step)) {
+      collectImageRefsFromDiff(step.undoDiff, live);
+      collectImageRefsFromDiff(step.redoDiff, live);
+    } else {
+      for (const layer of step.layers) {
+        if (layer.type === 'image' || layer.type === 'logo') {
+          trackImageRef(live, layer.value);
+        }
+      }
+    }
+  }
+  return live;
+}
 
 /** Helper to generate unique blob IDs */
 function generateBlobId(): string {
@@ -183,6 +255,31 @@ export function releaseImageBlob(value: string | undefined): void {
   }
   urlToBlobIdMap.delete(reg.url);
   blobMap.delete(blobId);
+}
+
+/**
+ * Revokes managed ObjectURLs that are not referenced by any live value
+ * (current doc, history, clipboard, …). Essential under Canvas keep-alive,
+ * where `clearBlobStore` rarely runs because CanvasView stays mounted.
+ *
+ * @returns number of blobs released
+ */
+export function sweepOrphanBlobs(liveRefs: Iterable<string>): number {
+  const live = liveRefs instanceof Set ? liveRefs : new Set(liveRefs);
+  // Expand live set with paired blobId/url for any registered hits.
+  for (const value of [...live]) {
+    trackImageRef(live, value);
+  }
+
+  let released = 0;
+  for (const blobId of [...blobMap.keys()]) {
+    const reg = blobMap.get(blobId);
+    if (!reg) continue;
+    if (live.has(blobId) || live.has(reg.url)) continue;
+    releaseImageBlob(blobId);
+    released += 1;
+  }
+  return released;
 }
 
 /**

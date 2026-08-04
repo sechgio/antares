@@ -47,6 +47,18 @@ vi.mock('../utils/imageBlobStore', () => ({
   applySavedDocumentKeepingImages: vi.fn((_editor: CanvasDocument, saved: CanvasDocument) => saved),
   clearBlobStore: vi.fn(),
   releaseImageBlob: vi.fn(),
+  sweepOrphanBlobs: vi.fn(() => 0),
+  collectImageRefsFromLayers: vi.fn(() => new Set<string>()),
+  collectImageRefsFromHistory: vi.fn(() => new Set<string>()),
+  trackImageRef: vi.fn(),
+  registerImageBlob: vi.fn(async (blob: Blob) => ({
+    blobId: 'img_blob_mock',
+    blob,
+    url: 'blob:mock',
+    thumbnailUrl: 'blob:mock',
+    width: 0,
+    height: 0,
+  })),
   getBlobUrl: vi.fn((v: string) => v),
   getThumbnailUrl: vi.fn((v: string) => v),
 }));
