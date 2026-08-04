@@ -196,6 +196,14 @@ async function run() {
   const expectedFileUrl = pathToFileURL(realImagePath).toString();
   assert(pdfWithLocalImage.handled === true, 'html_to_pdf should accept disk-backed image references');
   assert(!localImageWindow.loadedHtml.includes('antares-local-image:row-1-img-0'), 'html_to_pdf should remove local image tokens before rendering');
+  assert(
+    localImageWindow.loadedHtml.includes(expectedFileUrl),
+    'html_to_pdf should keep allowlisted file:// image URLs after sanitization',
+  );
+  assert(
+    !localImageWindow.loadedHtml.includes('file:///etc/passwd'),
+    'html_to_pdf should still strip unregistered file:// URLs',
+  );
 
   let allowedDecision = null;
   localImageWindow.onBeforeRequest({ url: expectedFileUrl }, (decision) => { allowedDecision = decision; });

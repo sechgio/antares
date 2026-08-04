@@ -26,6 +26,7 @@ const ReportesCampoView = React.lazy(() => import('./components/reportes-campo')
 const ImageOptimizerView = React.lazy(() => import('./components/image-optimizer'));
 const PreviewPanelView = React.lazy(() => import('./components/preview-panel/PreviewPanelView'));
 const TechnicalReportsView = React.lazy(() => import('./components/technical-reports'));
+const InformesV2View = React.lazy(() => import('./components/informes-v2'));
 const PanelAvisoCorteView = React.lazy(() => import('./components/panel-aviso-corte'));
 const UbicacionesView = React.lazy(() => import('./components/UbicacionesView').then(m => ({ default: m.UbicacionesView })));
 const EvidenciaVolanteoView = React.lazy(() => import('./components/evidencia-volanteo'));
@@ -59,6 +60,7 @@ const VIEWS: Record<TabId, React.LazyExoticComponent<React.ComponentType<{ activ
   volantes: VolantesView,
   reportesCampo: ReportesCampoView,
   technicalReports: TechnicalReportsView,
+  informesV2: InformesV2View,
   imageOptimizer: ImageOptimizerView,
   previewPanel: PreviewPanelView,
   canvas: CanvasView,
@@ -193,6 +195,7 @@ function AppContent() {
   useKeyboardShortcut('a', () => handleTabChange('autoimg'), { ctrl: true, shift: true, preventDefault: true });
   useKeyboardShortcut('f', () => handleTabChange('fichasTecnicas'), { ctrl: true, shift: true, preventDefault: true });
   useKeyboardShortcut('i', () => handleTabChange('technicalReports'), { ctrl: true, shift: true, preventDefault: true });
+  useKeyboardShortcut('j', () => handleTabChange('informesV2'), { ctrl: true, shift: true, preventDefault: true });
   useKeyboardShortcut('d', () => openSettings('petdex'), { ctrl: true, shift: true, preventDefault: true });
 
   // History "Reejecutar" only has a listener inside ConversionView, which is

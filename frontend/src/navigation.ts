@@ -7,6 +7,7 @@ export const TAB_DEFINITIONS = [
   { id: 'volantes', label: 'Generar Volantes', shortcut: 'Ctrl+5', shortcutKey: '5', fullBleed: true },
   { id: 'reportesCampo', label: 'Reportes de Campo', shortcut: 'Ctrl+8', shortcutKey: '8', fullBleed: true },
   { id: 'technicalReports', label: 'Informes técnicos', shortcut: 'Ctrl+Shift+I', shortcutKey: 'i', shortcutShift: true, fullBleed: true },
+  { id: 'informesV2', label: 'Informes v2', shortcut: 'Ctrl+Shift+J', shortcutKey: 'j', shortcutShift: true, fullBleed: true },
   { id: 'imageOptimizer', label: 'Optimizador', commandLabel: 'Optimizador de Imágenes', shortcut: 'Ctrl+9', shortcutKey: '9', fullBleed: true },
   { id: 'previewPanel', label: 'Generador Reportes', commandLabel: 'Generador de Reportes', shortcut: 'Ctrl+0', shortcutKey: '0', fullBleed: true },
   { id: 'canvas', label: 'Canvas', commandLabel: 'Canvas / Canva (Editor)', shortcut: 'Ctrl+Alt+C', shortcutKey: 'c', shortcutAlt: true, fullBleed: true },

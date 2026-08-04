@@ -132,6 +132,8 @@
   "history.runTypes.evidenciaVolanteoDesc": "Evidencias fotográficas de volanteo",
   "history.runTypes.informeTecnico": "Informe Técnico",
   "history.runTypes.informeTecnicoDesc": "Informes técnicos",
+  "history.runTypes.informeV2": "Informe v2",
+  "history.runTypes.informeV2Desc": "Informes v2 con panel fotográfico",
   "history.runTypes.fichaTecnica": "Ficha Técnica",
   "history.runTypes.fichaTecnicaDesc": "Fichas técnicas de evaluación",
   "history.runTypes._unknown": "Desconocido",

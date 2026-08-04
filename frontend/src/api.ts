@@ -307,6 +307,25 @@ export interface TechnicalReportsRenderBody {
   logo_right?: string | null;
 }
 
+export interface InformesV2ListBody {
+  q?: string;
+  status?: string;
+  summary?: boolean;
+}
+
+export interface InformesV2ImportBody {
+  filename: string;
+  content_b64: string;
+}
+
+export interface InformesV2RenderBody {
+  id?: string;
+  report?: unknown;
+  logo_left?: string | null;
+  logo_right?: string | null;
+  images?: Array<{ path: string; name?: string }>;
+}
+
 export interface FichasTecnicasListBody {
   cliente?: string;
   distrito?: string;
@@ -576,6 +595,33 @@ export const api = {
     _invoke<{ html: string; filename: string }>('technical_reports_render_html', body),
   technicalReportsRenderConsolidatedHtml: (body?: { report_ids?: string[]; logo_left?: string | null; logo_right?: string | null }) =>
     _invoke<{ html: string; filename: string; count: number }>('technical_reports_render_consolidated_html', body),
+
+  // ─── Informes v2 ───────────────────────────────────────────────────────
+  informesV2List: (body?: InformesV2ListBody) =>
+    _invoke<{ reports: unknown[] }>('informes_v2_list', body),
+  informesV2Get: (id: string) =>
+    _invoke<{ report: unknown }>('informes_v2_get', { id }),
+  informesV2Create: (report?: unknown) =>
+    _invoke<{ success: boolean; report: unknown }>('informes_v2_create', report ? { report } : {}),
+  informesV2Update: (id: string, report: unknown) =>
+    _invoke<{ success: boolean; report: unknown }>('informes_v2_update', { id, report }),
+  informesV2Delete: (id: string) =>
+    _invoke<{ success: boolean; deleted_id: string }>('informes_v2_delete', { id }),
+  informesV2Clear: () =>
+    _invoke<{ success: boolean; deleted_count: number; message: string }>('informes_v2_clear'),
+  informesV2ImportFile: (body: InformesV2ImportBody) =>
+    _invoke<{ success: boolean; message: string; deleted_count: number; imported_count: number; total_rows_in_file: number }>('informes_v2_import_file', body),
+  informesV2DownloadTemplate: () =>
+    _invoke<{ filename: string; content_b64: string; mime: string }>('informes_v2_download_template'),
+  informesV2RenderHtml: (body: InformesV2RenderBody) =>
+    _invoke<{ html: string; filename: string }>('informes_v2_render_html', body),
+  informesV2RenderConsolidatedHtml: (body?: {
+    report_ids?: string[];
+    logo_left?: string | null;
+    logo_right?: string | null;
+    images_by_id?: Record<string, Array<{ path: string; name?: string }>>;
+  }) =>
+    _invoke<{ html: string; filename: string; count: number }>('informes_v2_render_consolidated_html', body),
 
   // ─── Fichas Técnicas ───────────────────────────────────────────────────
   fichasTecnicasList: (body?: FichasTecnicasListBody) =>

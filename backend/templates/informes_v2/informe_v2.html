@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Informe v2 — Limpieza y Desinfección</title>
+    <style>
+        /* Mirrors frontend informes-v2.css (.iv2-*) so PDF == preview */
+        @page { size: A4 portrait; margin: 0; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+            width: 210mm;
+            background: #fff;
+            color: #111;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 9px;
+            line-height: 1.15;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .page {
+            width: 210mm;
+            height: 297mm;
+            max-height: 297mm;
+            padding: 3.5mm 4.5mm;
+            page-break-after: always;
+            page-break-inside: avoid;
+            break-inside: avoid;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            background: #fff;
+        }
+        .page:last-child { page-break-after: avoid; }
+
+        .iv2-header {
+            flex: 0 0 auto;
+            display: grid;
+            grid-template-columns: 90px 1fr 100px;
+            gap: 4px;
+            align-items: center;
+            border: 1.2px solid #1a1a1a;
+            padding: 3px 5px;
+            margin-bottom: 2mm;
+        }
+        .iv2-logo {
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .iv2-logo img {
+            max-width: 100%;
+            max-height: 30px;
+            object-fit: contain;
+        }
+        .iv2-title { text-align: center; }
+        .iv2-title h1 {
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            line-height: 1.15;
+            margin: 0;
+        }
+        .iv2-title h2 {
+            font-size: 10px;
+            font-weight: 700;
+            margin: 1px 0 0;
+            text-transform: uppercase;
+        }
+
+        .iv2-info {
+            flex: 0 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1px 10px;
+            border: 1.2px solid #1a1a1a;
+            padding: 3px 6px;
+            margin-bottom: 2mm;
+        }
+        .iv2-info strong { font-weight: 700; }
+
+        .iv2-table {
+            flex: 0 0 auto;
+            width: 100%;
+            table-layout: fixed;
+            border-collapse: collapse;
+            margin-bottom: 1.5mm;
+            font-size: 8px;
+        }
+        .iv2-table .iv2-col-label { width: 22%; }
+        .iv2-table .iv2-col-d { width: 5.25%; }
+        .iv2-table .iv2-col-st { width: 5.5%; }
+        .iv2-table .iv2-col-obs { width: 25%; }
+        .iv2-table th,
+        .iv2-table td {
+            border: 1px solid #222;
+            padding: 0 2px;
+            height: 14px;
+            text-align: center;
+            vertical-align: middle;
+            overflow: hidden;
+        }
+        .iv2-table th {
+            background: #f0f0f0;
+            font-weight: 700;
+        }
+        .iv2-corner-label {
+            text-align: center;
+            vertical-align: middle;
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: 0.2px;
+            background: #e8e8e8;
+            white-space: nowrap;
+        }
+        .iv2-table td.iv2-row-label,
+        .iv2-medidas-table td.iv2-row-label,
+        .iv2-row-label {
+            text-align: left !important;
+            font-weight: 700;
+            white-space: nowrap;
+            line-height: 1.05;
+            font-size: 7.5px;
+            padding-left: 4px !important;
+            padding-right: 2px !important;
+        }
+        .iv2-obs { text-align: left; }
+        .iv2-total td {
+            font-weight: 700;
+            background: #fafafa;
+        }
+
+        .iv2-medidas-table .iv2-medidas-obs {
+            text-align: left;
+            font-weight: 400;
+            background: #fff;
+            padding: 2px 4px;
+            height: auto;
+            min-height: 14px;
+        }
+
+        .iv2-photo-section {
+            flex: 1 1 auto;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            overflow: hidden;
+        }
+        .iv2-photo-title {
+            flex: 0 0 auto;
+            text-align: center;
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+            border: 1.2px solid #222;
+            border-bottom: none;
+            padding: 2px;
+            background: #f5f5f5;
+        }
+        .iv2-photo-grid {
+            flex: 1 1 auto;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-rows: repeat(2, minmax(0, 1fr));
+            gap: 2px;
+            border: 1.2px solid #222;
+            padding: 2px;
+            min-height: 0;
+        }
+        .iv2-photo-cell {
+            border: 1px solid #bbb;
+            background: #fafafa;
+            overflow: hidden;
+            min-height: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .iv2-photo-cell img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        @media print {
+            .page {
+                height: 297mm;
+                max-height: 297mm;
+                overflow: hidden;
+            }
+        }
+    </style>
+</head>
+<body>
+{% for report in reports %}
+{% set valv_totals = sum_diameter_columns(report.valvulas, VALVULA_ROWS) %}
+{% set valv_oper, valv_noop = sum_oper_no_op(report.valvulas, VALVULA_ROWS) %}
+{% set lin_totals = sum_diameter_columns(report.linea, LINEA_ROWS) %}
+{% set lin_oper, lin_noop = sum_oper_no_op(report.linea, LINEA_ROWS) %}
+<div class="page">
+    <header class="iv2-header">
+        <div class="iv2-logo">
+            {% if logo_left %}<img src="{{ logo_left }}" alt="Logo izquierdo">{% endif %}
+        </div>
+        <div class="iv2-title">
+            <h1>Limpieza y Desinfección de Reservorios y Cisternas</h1>
+            <h2>Centro de Servicio Villa El Salvador</h2>
+        </div>
+        <div class="iv2-logo">
+            {% if logo_right %}<img src="{{ logo_right }}" alt="Logo derecho">{% endif %}
+        </div>
+    </header>
+
+    <div class="iv2-info">
+        <div><strong>ESTACION:</strong> {{ report.header.estacion }}</div>
+        <div><strong>DISTRITO:</strong> {{ report.header.distrito }}</div>
+        <div><strong>TIPO:</strong> {{ report.header.tipo }}</div>
+        <div><strong>FECHA DE EJECUCION:</strong> {{ report.header.fecha_ejecucion }}</div>
+        <div><strong>VOLUMEN:</strong> {% if report.header.volumen %}{{ report.header.volumen }} m³{% endif %}</div>
+        <div><strong>SUMINISTRO:</strong> {{ report.header.suministro }}</div>
+        <div><strong>UBICACIÓN:</strong> {{ report.header.ubicacion }}</div>
+        <div><strong>SGIO:</strong> {{ report.header.sgio }}</div>
+    </div>
+
+    <table class="iv2-table">
+        <colgroup>
+            <col class="iv2-col-label" />
+            {% for d in DIAMETERS %}<col class="iv2-col-d" />{% endfor %}
+            <col class="iv2-col-st" />
+            <col class="iv2-col-st" />
+            <col class="iv2-col-obs" />
+        </colgroup>
+        <thead>
+            <tr>
+                <th rowspan="2" class="iv2-corner-label">VÁLVULAS</th>
+                <th colspan="{{ DIAMETERS|length }}">DIAMETRO DE VALVULAS</th>
+                <th colspan="2">ESTADO</th>
+                <th rowspan="2">OBSERVACIONES</th>
+            </tr>
+            <tr>
+                {% for d in DIAMETERS %}<th>{{ d }}"</th>{% endfor %}
+                <th>OPER.</th>
+                <th>NO OP.</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for key in VALVULA_ROWS %}
+            {% set row = report.valvulas[key] %}
+            <tr>
+                <td class="iv2-row-label">{{ VALVULA_LABELS[key] }}</td>
+                {% for d in DIAMETERS %}
+                <td>{% if row.diametros[d] %}{{ row.diametros[d] }}{% endif %}</td>
+                {% endfor %}
+                <td>{% if row.oper %}{{ row.oper }}{% endif %}</td>
+                <td>{% if row.no_op %}{{ row.no_op }}{% endif %}</td>
+                <td class="iv2-obs">{{ row.observaciones }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="iv2-total">
+                <td class="iv2-row-label">TOTAL</td>
+                {% for d in DIAMETERS %}<td>{% if valv_totals[d] %}{{ valv_totals[d] }}{% endif %}</td>{% endfor %}
+                <td>{% if valv_oper %}{{ valv_oper }}{% endif %}</td>
+                <td>{% if valv_noop %}{{ valv_noop }}{% endif %}</td>
+                <td></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <table class="iv2-table">
+        <colgroup>
+            <col class="iv2-col-label" />
+            {% for d in DIAMETERS %}<col class="iv2-col-d" />{% endfor %}
+            <col class="iv2-col-st" />
+            <col class="iv2-col-st" />
+            <col class="iv2-col-obs" />
+        </colgroup>
+        <thead>
+            <tr>
+                <th rowspan="2" class="iv2-corner-label">LÍNEA</th>
+                <th colspan="{{ DIAMETERS|length }}">DIAMETRO DE TUBERIA</th>
+                <th colspan="2">ESTADO</th>
+                <th rowspan="2">OBSERVACIONES</th>
+            </tr>
+            <tr>
+                {% for d in DIAMETERS %}<th>{{ d }}"</th>{% endfor %}
+                <th>OPER.</th>
+                <th>NO OP.</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for key in LINEA_ROWS %}
+            {% set row = report.linea[key] %}
+            <tr>
+                <td class="iv2-row-label">{{ LINEA_LABELS[key] }}</td>
+                {% for d in DIAMETERS %}
+                <td>{% if row.diametros[d] %}{{ row.diametros[d] }}{% endif %}</td>
+                {% endfor %}
+                <td>{% if row.oper %}{{ row.oper }}{% endif %}</td>
+                <td>{% if row.no_op %}{{ row.no_op }}{% endif %}</td>
+                <td class="iv2-obs">{{ row.observaciones }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="iv2-total">
+                <td class="iv2-row-label">TOTAL</td>
+                {% for d in DIAMETERS %}<td>{% if lin_totals[d] %}{{ lin_totals[d] }}{% endif %}</td>{% endfor %}
+                <td>{% if lin_oper %}{{ lin_oper }}{% endif %}</td>
+                <td>{% if lin_noop %}{{ lin_noop }}{% endif %}</td>
+                <td></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <table class="iv2-table iv2-medidas-table">
+        <thead>
+            <tr>
+                <th class="iv2-corner-label">MEDIDAS</th>
+                <th>U.M.</th>
+                <th>CANTIDAD</th>
+                <th></th>
+                <th>U.M.</th>
+                <th>CANTIDAD</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="iv2-row-label">LARGO</td>
+                <td>M</td>
+                <td>{{ report.medidas.largo }}</td>
+                <td class="iv2-row-label">ALTURA DE REBOSE</td>
+                <td>M</td>
+                <td>{{ report.medidas.altura_rebose }}</td>
+            </tr>
+            <tr>
+                <td class="iv2-row-label">ANCHO</td>
+                <td>M</td>
+                <td>{{ report.medidas.ancho }}</td>
+                <td class="iv2-row-label">ALTURA TOTAL</td>
+                <td>M</td>
+                <td>{{ report.medidas.altura_total }}</td>
+            </tr>
+            <tr>
+                <td class="iv2-row-label">DIAMETRO</td>
+                <td>M</td>
+                <td>{{ report.medidas.diametro }}</td>
+                <td class="iv2-row-label">TIRANTE DE LIMPIEZA</td>
+                <td>M</td>
+                <td>{{ report.medidas.tirante_limpieza }}</td>
+            </tr>
+            <tr>
+                <td colspan="6" class="iv2-medidas-obs">
+                    <strong>OBSERVACION:</strong> {{ report.medidas.observacion }}
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="iv2-photo-section">
+        <div class="iv2-photo-title">Panel Fotográfico — Estructura</div>
+        <div class="iv2-photo-grid">
+            {% for photo in report._photos %}
+            <div class="iv2-photo-cell">
+                {% if photo %}<img src="{{ photo.path }}" alt="{{ photo.name }}">{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endfor %}
+</body>
+</html>

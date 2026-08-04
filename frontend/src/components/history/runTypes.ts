@@ -318,6 +318,22 @@ const RUN_TYPES = {
       stat('ok', 'history.stats.ok', (run) => run.ok_count, 'text-cyan-400'),
     ],
   },
+  informe_v2: {
+    id: 'informe_v2',
+    labelKey: 'history.runTypes.informeV2',
+    descriptionKey: 'history.runTypes.informeV2Desc',
+    colorClass: 'text-sky-400',
+    badgeClass: 'text-sky-400 border-sky-400/20 bg-sky-400/10',
+    showPatron: false,
+    showOptions: true,
+    filterGroup: 'default' as const,
+    reexecute: false,
+    fileListKey: 'history.fileList.default',
+    stats: [
+      stat('type', 'history.stats.status', (_run, _files, options) => String(opt(options, 'type') ?? '—')),
+      stat('ok', 'history.stats.ok', (run) => run.ok_count, 'text-sky-400'),
+    ],
+  },
   ficha_tecnica: {
     id: 'ficha_tecnica',
     labelKey: 'history.runTypes.fichaTecnica',

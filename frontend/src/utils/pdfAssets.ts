@@ -23,6 +23,13 @@ export async function fileToBase64(file: File): Promise<string> {
 }
 
 export function getElectronFilePath(file: File): string | null {
+  // Electron 32+ removed File.path — preload exposes webUtils.getPathForFile.
+  try {
+    const fromApi = window.electronAPI?.getPathForFile?.(file);
+    if (typeof fromApi === 'string' && fromApi.trim()) return fromApi.trim();
+  } catch {
+    /* preload unavailable (unit tests / non-Electron) */
+  }
   const maybePath = (file as File & { path?: unknown }).path;
   return typeof maybePath === 'string' && maybePath.trim() ? maybePath : null;
 }

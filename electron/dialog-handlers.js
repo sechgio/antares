@@ -186,13 +186,19 @@ async function renderHtmlToPdf(params = {}, electronModules = {}) {
   }
 
   const localImages = _localImageEntries(params.localImagePaths);
-  const htmlWithLocalImages = _injectLocalImageUrls(html, localImages);
   const allowedFileUrls = new Set(localImages.map(entry => entry.fileUrl));
 
   const MAX_HTML_BYTES = 150 * 1024 * 1024; // 150 MB
   if (Buffer.byteLength(html, 'utf8') > MAX_HTML_BYTES) {
     throw new Error('HTML excede el tamaño máximo permitido (150 MB)');
   }
+
+  // Sanitize BEFORE injecting allowlisted file:// URLs. The sanitizer strips
+  // file: from src/href (defense-in-depth against arbitrary local reads);
+  // tokens like antares-local-image:* survive sanitization, then we expand
+  // only registered paths into file:// for printToPDF.
+  const sanitizedHtml = sanitizeHtmlForPdf(html);
+  const htmlWithLocalImages = _injectLocalImageUrls(sanitizedHtml, localImages);
 
   const { BrowserWindow, session } = electronModules;
   if (!BrowserWindow) {
@@ -269,7 +275,7 @@ async function renderHtmlToPdf(params = {}, electronModules = {}) {
     const htmlPath = path.join(tempDir, 'render.html');
     const htmlUrl = pathToFileURL(htmlPath).toString();
     allowedFileUrls.add(htmlUrl);
-    await fs.promises.writeFile(htmlPath, sanitizeHtmlForPdf(htmlWithLocalImages), 'utf8');
+    await fs.promises.writeFile(htmlPath, htmlWithLocalImages, 'utf8');
 
     const didFinishLoad = new Promise((resolve, reject) => {
       pdfWindow.webContents.once('did-finish-load', resolve);
