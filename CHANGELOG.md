@@ -5,6 +5,17 @@ Todas las versiones notables de Antares se documentan aquí.
 Formato basado en [Keep a Changelog](https://keepachangelog.com/),
 y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
+## [0.11.5] — 2026-08-04
+
+### Added
+- **Informes v2**: Nuevo módulo con CRUD local, importación desde plantilla Excel, matching de fotos/logos, preview en UI y generación PDF (individual y consolidado).
+
+### Changed
+- **Informes técnicos**: Título actualizado a Centro de Servicio Villa El Salvador (dos líneas) en vista previa y plantilla de exportación.
+- **Conversión**: Skip de `exif_transpose` cuando Orientation falta o es 1 (~40% más rápido en JPEG verticales).
+- **Canvas**: Memo de LayerNode corregido; preservación de blob tras save; coalescencia de pushes cloud por documento.
+- **Backend**: Warm solo de handlers core antes de ready; diferimiento de sellador/ubicaciones/fichas hasta después del handshake.
+
 ## [0.11.4] — 2026-08-03
 
 ### Fixed
