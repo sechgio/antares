@@ -178,7 +178,7 @@ describe('Artboard guide dragging', () => {
       />,
     );
     const atHalf = screen.getByTestId('canvas-manual-guide') as HTMLElement;
-    // Inside CSS zoom 0.5, layout width 20px → 10px on screen.
+    // Inside camera scale 0.5, layout width 20px → 10px on screen.
     expect(atHalf.style.width).toBe('20px');
   });
 });

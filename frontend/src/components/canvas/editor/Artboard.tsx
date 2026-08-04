@@ -1488,7 +1488,7 @@ function Artboard({
   };
 
   // Figma-like camera: page is always laid out at design resolution (A4 CSS px).
-  // CSS `zoom` on the artboard is the camera — it must NOT re-layout layers/text.
+  // Compositor `scale()` is the camera — it must NOT re-layout layers/text.
   const designW = A4_WIDTH_PX;
   const designH = A4_HEIGHT_PX;
   const visualW = Math.round(A4_WIDTH_PX * zoom);

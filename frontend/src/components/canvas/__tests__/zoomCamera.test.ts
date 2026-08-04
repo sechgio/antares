@@ -5,8 +5,9 @@ import { A4_HEIGHT_PX, A4_WIDTH_PX } from '../types';
 /**
  * Figma camera contract:
  * - Layer paint/layout is ALWAYS computed at design resolution (scale=1).
- * - Viewport zoom is a CSS `zoom` on the page frame (camera), not a re-layout.
+ * - Viewport zoom is a compositor `scale()` on the page frame (camera), not a re-layout.
  * - Therefore text wrapping / metrics never change when the user zooms.
+ * - PreviewViewport may still use CSS `zoom` for crisp iframe rasterization.
  */
 describe('Figma-like zoom camera (layout invariant)', () => {
   it('design-resolution paint ignores camera zoom (always scale=1)', () => {

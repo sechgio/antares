@@ -128,6 +128,57 @@ describe('Artboard drag gestures', () => {
     expect(committed.find((l) => l.id === b.id)!.cssVars['--translate-x']).toBe('40mm');
   });
 
+  it('Alt+drag duplicates then moves the copy in one commit (Figma)', () => {
+    const layer = createLayer('rect'); // 20mm, 100mm
+    const document = createEmptyDocument('Test');
+    document.layers.push(layer);
+    const onChangeLayers = vi.fn();
+    const onSelectIds = vi.fn();
+    const { container } = render(
+      <Artboard
+        document={document}
+        selectedIds={[layer.id]}
+        zoom={1}
+        tool="select"
+        pan={{ x: 0, y: 0 }}
+        onPan={() => {}}
+        onSelect={() => {}}
+        onSelectIds={onSelectIds}
+        onChangeLayers={onChangeLayers}
+      />,
+    );
+    const node = container.querySelector<HTMLElement>(`[data-layer-id="${layer.id}"]`)!;
+    const mm = 96 / 25.4;
+
+    fireEvent.pointerDown(node, { button: 0, clientX: 100, clientY: 100, altKey: true });
+    fireEvent.pointerMove(window, {
+      clientX: 100 + 20 * mm,
+      clientY: 100,
+      altKey: true,
+    });
+    act(() => tick());
+    fireEvent.pointerUp(window, {
+      clientX: 100 + 20 * mm,
+      clientY: 100,
+      altKey: true,
+    });
+
+    expect(onSelectIds).toHaveBeenCalled();
+    const newIds = onSelectIds.mock.calls[0]![0] as string[];
+    expect(newIds).toHaveLength(1);
+    expect(newIds[0]).not.toBe(layer.id);
+
+    expect(onChangeLayers).toHaveBeenCalledTimes(1);
+    const committed = onChangeLayers.mock.calls[0][0] as CanvasLayer[];
+    const original = committed.find((l) => l.id === layer.id)!;
+    const copy = committed.find((l) => l.id === newIds[0])!;
+    expect(original).toBeTruthy();
+    expect(copy).toBeTruthy();
+    // Original stays put; the duplicate receives the drag delta.
+    expect(original.cssVars['--translate-x']).toBe('20mm');
+    expect(copy.cssVars['--translate-x']).toBe('40mm');
+  });
+
   it('Shift+drag moves with axis lock instead of aborting (Figma)', () => {
     const layer = createLayer('rect'); // 20mm, 100mm
     const document = createEmptyDocument('Test');
