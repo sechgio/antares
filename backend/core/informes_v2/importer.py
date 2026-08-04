@@ -385,7 +385,7 @@ TEMPLATE_HEADERS: list[str] = [
     "SGIO",
 ]
 
-for section, label in [
+for _section, label in [
     ("conduccion", "Valv Cond"),
     ("impulsion", "Valv Imp"),
     ("aduccion", "Valv Aduc"),
@@ -398,7 +398,7 @@ for section, label in [
     TEMPLATE_HEADERS.append(f"{label} No Op")
     TEMPLATE_HEADERS.append(f"{label} Obs")
 
-for section, label in [
+for _section, label in [
     ("aduccion", "Lin Aduccion"),
     ("alimentacion", "Lin Alimentacion"),
     ("impulsion_rebombeo", "Lin Impulsion"),
