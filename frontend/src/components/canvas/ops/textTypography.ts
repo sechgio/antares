@@ -58,8 +58,8 @@ export function ensureCssUnit(raw: string, defaultUnit: string): string {
 }
 
 /**
- * Screen-constant chrome size under CSS camera zoom (Figma: handles don't grow/shrink).
- * Inside a `zoom: Z` frame, layout px of `screenPx / Z` paints as `screenPx` on screen.
+ * Screen-constant chrome size under camera zoom (Figma: handles don't grow/shrink).
+ * Inside a scaled/zoomed frame at Z, layout px of `screenPx / Z` paints as `screenPx` on screen.
  */
 export function screenChromePx(screenPx: number, cameraZoom: number): number {
   const z = cameraZoom > 0 ? cameraZoom : 1;
