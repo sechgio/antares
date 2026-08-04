@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 import sqlite3
 import threading
 from pathlib import Path
@@ -19,15 +20,19 @@ _db_read_conn_path: str | None = None
 def _apply_pragmas(conn: sqlite3.Connection) -> None:
     """Shared performance pragmas for write and read pools.
 
-    temp_store=MEMORY speeds sorts/hashes for large IN lookups; on very low-RAM
-    machines this trades disk spill for a larger peak memory footprint alongside
-    the 16MB page cache.
+    Defaults favour a smaller RSS footprint: 4 MiB page cache, 16 MiB mmap, and
+    temp_store=FILE. Set ANTARES_SQLITE_TEMP_STORE=MEMORY to keep temp tables in
+    RAM when a machine has headroom and large IN-lookup sorts dominate.
     """
+    temp_store = os.environ.get("ANTARES_SQLITE_TEMP_STORE", "FILE").strip().upper()
+    if temp_store not in {"FILE", "MEMORY"}:
+        temp_store = "FILE"
+
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
-    conn.execute("PRAGMA cache_size=-16000")
-    conn.execute("PRAGMA temp_store=MEMORY")
-    conn.execute("PRAGMA mmap_size=67108864")
+    conn.execute("PRAGMA cache_size=-4000")
+    conn.execute(f"PRAGMA temp_store={temp_store}")
+    conn.execute("PRAGMA mmap_size=16777216")
     conn.execute("PRAGMA page_size=4096")
     conn.row_factory = sqlite3.Row
 

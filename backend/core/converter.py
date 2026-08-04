@@ -222,6 +222,26 @@ def convertir_imagen(
     return ruta_destino
 
 
+# Mirror ubicaciones disk-preview cap so the converter cache cannot grow without bound.
+_MAX_PREVIEW_CACHE_FILES = 200
+
+
+def _trim_preview_cache_files(cache_dir: Path) -> None:
+    try:
+        files = sorted(
+            (p for p in cache_dir.iterdir() if p.is_file() and not p.name.endswith(".tmp")),
+            key=lambda p: p.stat().st_mtime,
+        )
+        excess = len(files) - _MAX_PREVIEW_CACHE_FILES
+        if excess <= 0:
+            return
+        for stale in files[:excess]:
+            with contextlib.suppress(OSError):
+                stale.unlink()
+    except OSError:
+        return
+
+
 def convertir_a_preview(
     ruta_origen: str | Path,
     formato_salida: str = "PNG",
@@ -338,6 +358,7 @@ def convertir_a_preview(
         tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
         tmp_path.write_bytes(raw)
         tmp_path.replace(out_path)
+        _trim_preview_cache_files(cache_dir)
         result = {
             "preview": out_path.resolve().as_uri(),
             "preview_path": str(out_path.resolve()),

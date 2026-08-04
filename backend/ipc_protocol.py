@@ -97,20 +97,28 @@ def send_response(
     else:
         payload["result"] = result
     try:
-        json_str = json.dumps(payload, ensure_ascii=False, default=_json_default)
-        # Validate payload size before sending
-        if len(json_str.encode('utf-8')) > _MAX_PAYLOAD_SIZE:
-            logger.error("Response payload too large: %d bytes (max: %d)", len(json_str), _MAX_PAYLOAD_SIZE)
-            # Send error response instead of oversized payload
+        # Encode once: size check and write share the same UTF-8 buffer.
+        encoded = json.dumps(payload, ensure_ascii=False, default=_json_default).encode("utf-8")
+        if len(encoded) > _MAX_PAYLOAD_SIZE:
+            logger.error(
+                "Response payload too large: %d bytes (max: %d)",
+                len(encoded),
+                _MAX_PAYLOAD_SIZE,
+            )
             error_payload = {
                 "jsonrpc": "2.0",
                 "id": msg_id,
-                "error": {"code": -32001, "message": f"Response too large ({len(json_str)} bytes)"}
+                "error": {"code": -32001, "message": f"Response too large ({len(encoded)} bytes)"},
             }
-            json_str = json.dumps(error_payload, ensure_ascii=False)
+            encoded = json.dumps(error_payload, ensure_ascii=False).encode("utf-8")
         with _stdout_lock:
-            sys.stdout.write(json_str + "\n")
-            sys.stdout.flush()
+            out = getattr(sys.stdout, "buffer", None)
+            if out is not None:
+                out.write(encoded + b"\n")
+                out.flush()
+            else:
+                sys.stdout.write(encoded.decode("utf-8") + "\n")
+                sys.stdout.flush()
     except Exception as exc:
         # If stdout is broken (e.g., Electron closed the pipe), log to stderr
         # but DO NOT crash the backend process.
@@ -125,14 +133,22 @@ def send_notification(method: str, params: dict[str, Any]) -> None:
         "params": params,
     }
     try:
-        json_str = json.dumps(payload, ensure_ascii=False, default=_json_default)
-        # Validate payload size before sending
-        if len(json_str.encode('utf-8')) > _MAX_PAYLOAD_SIZE:
-            logger.error("Notification payload too large: %d bytes (max: %d), dropping", len(json_str), _MAX_PAYLOAD_SIZE)
+        encoded = json.dumps(payload, ensure_ascii=False, default=_json_default).encode("utf-8")
+        if len(encoded) > _MAX_PAYLOAD_SIZE:
+            logger.error(
+                "Notification payload too large: %d bytes (max: %d), dropping",
+                len(encoded),
+                _MAX_PAYLOAD_SIZE,
+            )
             return  # Drop oversized notifications to prevent pipe blocking
         with _stdout_lock:
-            sys.stdout.write(json_str + "\n")
-            sys.stdout.flush()
+            out = getattr(sys.stdout, "buffer", None)
+            if out is not None:
+                out.write(encoded + b"\n")
+                out.flush()
+            else:
+                sys.stdout.write(encoded.decode("utf-8") + "\n")
+                sys.stdout.flush()
     except Exception as exc:
         # If stdout is broken, log to stderr but DO NOT crash the backend.
         logger.error("Failed to write notification to stdout: %s", exc)

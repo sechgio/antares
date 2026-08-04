@@ -253,13 +253,20 @@ describe('canvas perf hot path', () => {
   });
 
   it('layerNeedsDocumentLayers is false for plain rects (memo ignores displayLayers identity)', async () => {
-    const { layerNeedsDocumentLayers } = await import('../editor/LayerNode');
+    const { documentLayersRelevantEqual, layerNeedsDocumentLayers } = await import('../editor/LayerNode');
     const rect = createLayer('rect', { id: 'r1' });
+    const mask = createLayer('rect', { id: 'm1' });
     const masked = createLayer('rect', { id: 'r2', meta: { maskLayerId: 'm1' } });
-    const bool = createLayer('boolean', { id: 'b1' });
+    const bool = createLayer('boolean', { id: 'b1', meta: { ops: [{ op: 'union', layerId: 'm1' }] } });
     expect(layerNeedsDocumentLayers(rect)).toBe(false);
     expect(layerNeedsDocumentLayers(masked)).toBe(true);
     expect(layerNeedsDocumentLayers(bool)).toBe(true);
+    const layersA = [mask, masked];
+    const layersB = [mask, { ...masked, name: 'renamed-unrelated' }];
+    // Same mask layer ref → masked node skips re-render despite array identity change.
+    expect(documentLayersRelevantEqual(masked, layersA, layersB)).toBe(true);
+    const layersC = [{ ...mask, name: 'mask-moved' }, masked];
+    expect(documentLayersRelevantEqual(masked, layersA, layersC)).toBe(false);
   });
 
   it('ancestorIds with prebuilt Map stays linear for many matches', () => {

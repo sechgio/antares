@@ -26,19 +26,47 @@ interface GeneratePanelProps {
   runCloudSync?: () => Promise<void>;
 }
 
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
+function revokeIfBlobUrl(url: string | null | undefined): void {
+  if (url && url.startsWith('blob:')) URL.revokeObjectURL(url);
+}
+
+/** Revoke after two animation frames so the new preview can paint first. */
+function revokeBlobUrlsAfterPaint(urls: string[]): void {
+  if (urls.length === 0) return;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      for (const u of urls) revokeIfBlobUrl(u);
+    });
   });
+}
+
+/** Persist blob:/http(s) URLs to data: for PDF export (cross-context safe). */
+async function toPersistentUrl(url: string | null): Promise<string | null> {
+  if (!url) return null;
+  if (url.startsWith('data:')) return url;
+  if (!url.startsWith('blob:') && !url.startsWith('http://') && !url.startsWith('https://')) {
+    return url;
+  }
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return url;
+  }
 }
 
 export default function GeneratePanel({
   document: designDocument,
 }: GeneratePanelProps) {
   const previewRef = useRef<PreviewViewportHandle>(null);
+  /** Preview ObjectURLs created for the current row — revoked on refresh/unmount. */
+  const previewObjectUrlsRef = useRef<string[]>([]);
 
   const [docs, setDocs] = useState<CanvasDocumentSummary[]>([]);
   const [externalDoc, setExternalDoc] = useState<CanvasDocument | null>(null);
@@ -57,6 +85,34 @@ export default function GeneratePanel({
   const [images, setImages] = useState<File[]>([]);
   const [logoLeft, setLogoLeft] = useState<string | null>(null);
   const [logoRight, setLogoRight] = useState<string | null>(null);
+
+  const setLogoLeftSafe = useCallback((url: string | null) => {
+    setLogoLeft((prev) => {
+      if (prev && prev !== url) revokeIfBlobUrl(prev);
+      return url;
+    });
+  }, []);
+  const setLogoRightSafe = useCallback((url: string | null) => {
+    setLogoRight((prev) => {
+      if (prev && prev !== url) revokeIfBlobUrl(prev);
+      return url;
+    });
+  }, []);
+
+  const logoLeftRef = useRef(logoLeft);
+  const logoRightRef = useRef(logoRight);
+  logoLeftRef.current = logoLeft;
+  logoRightRef.current = logoRight;
+  useEffect(
+    () => () => {
+      revokeIfBlobUrl(logoLeftRef.current);
+      revokeIfBlobUrl(logoRightRef.current);
+      for (const u of previewObjectUrlsRef.current) revokeIfBlobUrl(u);
+      previewObjectUrlsRef.current = [];
+    },
+    [],
+  );
+
   const [rowIndex, setRowIndex] = useState(0);
   const [searchOrder, setSearchOrder] = useState('');
   const [exportScope, setExportScope] = useState<GenerateExportScope>('single');
@@ -154,8 +210,10 @@ export default function GeneratePanel({
           .sort((a, b) => naturalSortByName(a.name, b.name));
 
         let urls: string[];
+        let logos: { logoLeft: string | null; logoRight: string | null };
         if (quality === 'preview') {
-          urls = await Promise.all(matched.map((f) => readFileAsDataUrl(f)));
+          urls = matched.map((f) => URL.createObjectURL(f));
+          logos = { logoLeft, logoRight };
         } else {
           const sources = await Promise.all(
             matched.map((f, idx) => imageToPdfSource(f, quality, `row-${i}-img-${idx}`)),
@@ -164,9 +222,14 @@ export default function GeneratePanel({
           for (const s of sources) {
             if (s.token && s.localPath) localImagePaths[s.token] = s.localPath;
           }
+          // PDF path needs durable data: URLs — blob: is session-local.
+          logos = {
+            logoLeft: await toPersistentUrl(logoLeft),
+            logoRight: await toPersistentUrl(logoRight),
+          };
         }
         const imageMeta = matched.map((f) => ({ name: f.name }));
-        contexts.push({ data, images: urls, logoLeft, logoRight, imageMeta });
+        contexts.push({ data, images: urls, ...logos, imageMeta });
       }
       return { contexts, localImagePaths };
     },
@@ -183,12 +246,16 @@ export default function GeneratePanel({
         // Match design artboard: empty data → field.meta.fallback ("-"), Logo L/R, Foto N.
         ctx = { data: {}, images: [], logoLeft, logoRight };
       }
+      const prevPreviewUrls = previewObjectUrlsRef.current;
+      previewObjectUrlsRef.current = ctx.images.filter((u) => u.startsWith('blob:'));
       // Screen preview uses LayerNode (same as Diseño). HTML kept for print/PDF only.
       const plan = planMultiPageDocuments(templateDoc, ctx);
       setPreviewPages(plan.map(({ pageDoc, pageCtx }) => documentWithFill(pageDoc, pageCtx)));
       const html = renderMultiPageHtml(templateDoc, ctx, { forScreen: true });
       setPreviewHtml(html);
       setError(null);
+      // Wait until after paint so <img> of the new row is not left on a revoked blob:.
+      revokeBlobUrlsAfterPaint(prevPreviewUrls);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al renderizar preview');
     }
@@ -290,8 +357,8 @@ export default function GeneratePanel({
         completedCount={completedCount}
         logoLeft={logoLeft}
         logoRight={logoRight}
-        onLogoLeft={setLogoLeft}
-        onLogoRight={setLogoRight}
+        onLogoLeft={setLogoLeftSafe}
+        onLogoRight={setLogoRightSafe}
         templateValid={templateValid}
         templateOptions={templateOptions}
         selectedTemplateId={selectedTemplateId}

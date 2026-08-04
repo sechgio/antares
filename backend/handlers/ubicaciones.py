@@ -76,8 +76,11 @@ _MAX_FONT_CACHE = 32
 _MAX_FOOTER_CACHE = 8
 _excel_cache: OrderedDict[str, tuple[float, pd.DataFrame, tuple[Any, ...]]] = OrderedDict()
 _MAX_EXCEL_CACHE = 8
-_map_screenshot_cache: dict[tuple[Any, ...], bytes] = {}
-_map_screenshot_working_cache: dict[tuple[Any, ...], bytes] = {}
+# Single shared LRU for map screenshots. Validated vs working is tracked with a
+# side set so callers keep the same hit/miss semantics without retaining up to
+# 2x buffers for the same key.
+_map_screenshot_store: OrderedDict[tuple[Any, ...], bytes] = OrderedDict()
+_map_screenshot_validated: set[tuple[Any, ...]] = set()
 _preview_composed_cache: dict[tuple[int, int, tuple[str, float], int, str], dict[str, Any]] = {}
 _preview_excel_ctx: tuple[str, float] | None = None
 # Guarda las caches mutadas desde el thread daemon de prefetch (B1): sin lock,
@@ -86,6 +89,56 @@ _preview_excel_ctx: tuple[str, float] | None = None
 _cache_lock = threading.Lock()
 _MAX_MAP_CACHE = 40
 _MAX_COMPOSED_CACHE = 80
+
+
+class _MapScreenshotCacheView:
+    """Dict-like view over the shared map LRU (validated-only or full store)."""
+
+    def __init__(self, *, validated_only: bool) -> None:
+        self._validated_only = validated_only
+
+    def clear(self) -> None:
+        with _cache_lock:
+            _map_screenshot_store.clear()
+            _map_screenshot_validated.clear()
+
+    def get(self, key: tuple[Any, ...], default: bytes | None = None) -> bytes | None:
+        with _cache_lock:
+            if key not in _map_screenshot_store:
+                return default
+            if self._validated_only and key not in _map_screenshot_validated:
+                return default
+            _map_screenshot_store.move_to_end(key)
+            return _map_screenshot_store[key]
+
+    def __setitem__(self, key: tuple[Any, ...], value: bytes) -> None:
+        with _cache_lock:
+            _map_screenshot_store[key] = value
+            _map_screenshot_store.move_to_end(key)
+            if self._validated_only:
+                _map_screenshot_validated.add(key)
+            # Working writes must not mark validated; a later validated write upgrades.
+            while len(_map_screenshot_store) > _MAX_MAP_CACHE:
+                old_key, _ = _map_screenshot_store.popitem(last=False)
+                _map_screenshot_validated.discard(old_key)
+
+    def __contains__(self, key: object) -> bool:
+        if not isinstance(key, tuple):
+            return False
+        with _cache_lock:
+            return key in _map_screenshot_store and (
+                not self._validated_only or key in _map_screenshot_validated
+            )
+
+    def __len__(self) -> int:
+        with _cache_lock:
+            if self._validated_only:
+                return sum(1 for k in _map_screenshot_store if k in _map_screenshot_validated)
+            return len(_map_screenshot_store)
+
+
+_map_screenshot_cache = _MapScreenshotCacheView(validated_only=True)
+_map_screenshot_working_cache = _MapScreenshotCacheView(validated_only=False)
 # Filas procesadas en paralelo durante export batch. El cuello es red (OSM tiles
 # / Google Static), no CPU: 4 workers dan ~4x speedup manteniéndose cortés con la
 # política de uso de OSM. Local al handler (no usa submit_heavy del scheduler: el
@@ -647,13 +700,10 @@ def _get_cached_map_screenshot(
         lat, lon, cap_w, cap_h, zoom,
         provider=provider, api_key=_resolve_api_key(map_opts),
     )
-    with _cache_lock:
-        _map_screenshot_working_cache[key] = screenshot
-        _trim_cache(_map_screenshot_working_cache, _MAX_MAP_CACHE)
+    # Shared LRU: one buffer per key. Working write first; upgrade if tiles OK.
+    _map_screenshot_working_cache[key] = screenshot
     if _screenshot_has_map_tiles(screenshot):
-        with _cache_lock:
-            _map_screenshot_cache[key] = screenshot
-            _trim_cache(_map_screenshot_cache, _MAX_MAP_CACHE)
+        _map_screenshot_cache[key] = screenshot
     return screenshot
 
 

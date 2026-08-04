@@ -1,7 +1,146 @@
+import json
+import os
+import subprocess
 import sys
+import time
 from concurrent.futures import Future
+from pathlib import Path
+from unittest.mock import MagicMock
 
 from backend import main as backend_main
+
+
+def _run_main_until_eof(monkeypatch, *, warm_env: str | None) -> dict[str, int]:
+    """Drive main() through ready handshake then EOF on stdin; count warm calls."""
+    counts = {"warm_core": 0, "warm_deferred": 0, "ready": 0}
+
+    if warm_env is None:
+        monkeypatch.delenv("ANTARES_WARM_DEFERRED", raising=False)
+    else:
+        monkeypatch.setenv("ANTARES_WARM_DEFERRED", warm_env)
+
+    monkeypatch.setattr(backend_main, "init_db", lambda: None)
+
+    class FakeHandlers:
+        def warm_core(self) -> None:
+            counts["warm_core"] += 1
+
+        def warm_deferred(self) -> None:
+            counts["warm_deferred"] += 1
+
+        def get(self, _method: str):
+            return None
+
+    monkeypatch.setattr(backend_main, "HANDLERS", FakeHandlers())
+
+    def fake_notify(method: str, params: dict) -> None:
+        if method == "ready":
+            counts["ready"] += 1
+
+    monkeypatch.setattr(backend_main, "send_notification", fake_notify)
+    monkeypatch.setattr(backend_main, "read_message", lambda: None)  # EOF → exit loop
+    monkeypatch.setattr(backend_main, "close_connection", lambda: None)
+
+    scheduler = MagicMock()
+    monkeypatch.setattr(backend_main, "get_scheduler", lambda: scheduler)
+
+    backend_main.main()
+    scheduler.shutdown.assert_called_once_with(wait=True)
+    return counts
+
+
+def test_main_skips_warm_deferred_by_default(monkeypatch) -> None:
+    counts = _run_main_until_eof(monkeypatch, warm_env=None)
+    assert counts["warm_core"] == 1
+    assert counts["ready"] == 1
+    assert counts["warm_deferred"] == 0
+
+
+def test_main_warms_deferred_when_env_enabled(monkeypatch) -> None:
+    counts = _run_main_until_eof(monkeypatch, warm_env="1")
+    assert counts["warm_core"] == 1
+    assert counts["ready"] == 1
+    assert counts["warm_deferred"] == 1
+
+
+def test_main_warms_deferred_for_true_yes_env(monkeypatch) -> None:
+    for value in ("true", "YES"):
+        counts = _run_main_until_eof(monkeypatch, warm_env=value)
+        assert counts["warm_deferred"] == 1, f"expected warm for ANTARES_WARM_DEFERRED={value!r}"
+
+
+def test_backend_boot_smoke_ready_and_lazy_deferred_methods(tmp_path: Path) -> None:
+    """Subprocess smoke: ready handshake + core/deferred methods resolve (lazy OK)."""
+    root = Path(__file__).resolve().parent.parent
+    # Isolate catalog from the developer's real %LOCALAPPDATA%\\Antares DB.
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    env["LOCALAPPDATA"] = str(tmp_path)
+    env["XDG_DATA_HOME"] = str(tmp_path / "xdg")
+    env.pop("ANTARES_WARM_DEFERRED", None)
+
+    proc = subprocess.Popen(
+        [sys.executable, str(root / "backend" / "main.py")],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=str(root),
+        env=env,
+    )
+    assert proc.stdin is not None and proc.stdout is not None
+
+    def _readline(timeout_s: float = 30.0) -> dict:
+        deadline = time.time() + timeout_s
+        while time.time() < deadline:
+            line = proc.stdout.readline()
+            if not line:
+                err = (proc.stderr.read() or b"").decode("utf-8", "replace")[-1500:]
+                raise AssertionError(f"stdout EOF before message; stderr tail:\n{err}")
+            return json.loads(line.decode("utf-8"))
+        raise AssertionError("timeout waiting for backend line")
+
+    try:
+        ready = None
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            msg = _readline(timeout_s=max(1.0, deadline - time.time()))
+            if msg.get("method") == "ready":
+                ready = msg
+                break
+        assert ready is not None, "backend did not emit ready"
+        assert ready.get("params", {}).get("status") == "ok"
+
+        def rpc(method: str, mid: int, params: dict | None = None) -> dict:
+            req = {"jsonrpc": "2.0", "id": mid, "method": method, "params": params or {}}
+            proc.stdin.write((json.dumps(req) + "\n").encode("utf-8"))
+            proc.stdin.flush()
+            deadline_rpc = time.time() + 20
+            while time.time() < deadline_rpc:
+                msg = _readline(timeout_s=max(1.0, deadline_rpc - time.time()))
+                if msg.get("id") == mid:
+                    return msg
+            raise AssertionError(f"timeout waiting for response id={mid} ({method})")
+
+        version = rpc("version", 1)
+        assert "result" in version and "error" not in version
+
+        canvas = rpc("canvas_list", 2)
+        assert canvas.get("error", {}).get("code") != -32601, canvas
+
+        # Deferred module: must resolve (validation error OK; METHOD_NOT_FOUND not OK).
+        sellador = rpc("sellador_apply", 3, {})
+        assert sellador.get("error", {}).get("code") != -32601, sellador
+        assert "error" in sellador or "result" in sellador
+
+        formatos = rpc("formatos_list", 4)
+        assert formatos.get("error", {}).get("code") != -32601, formatos
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
 
 
 def test_utf8_locale_candidates_on_windows_exclude_bare_es_mx(monkeypatch) -> None:

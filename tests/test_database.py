@@ -19,6 +19,18 @@ def db_path(tmp_path, monkeypatch):
 
 
 class TestInitDb:
+    def test_build_schema_skips_reserved_id_field(self) -> None:
+        """Config may list id; PK column must not be duplicated in CREATE TABLE."""
+        sql = db._build_schema(
+            [
+                {"name": "id", "type": "TEXT"},
+                {"name": "nombre", "type": "TEXT"},
+            ]
+        )
+        assert sql.count("id") == 1
+        assert "nombre" in sql
+        assert '"id" TEXT' not in sql
+
     def test_crea_tabla_si_no_existe(self, db_path, monkeypatch, tmp_path) -> None:
         monkeypatch.setattr(
             "backend.core.config_fields._config_file",

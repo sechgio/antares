@@ -2,12 +2,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   applySavedDocumentKeepingImages,
   clearBlobStore,
+  collectImageRefsFromLayers,
   getBlobUrl,
   getThumbnailUrl,
   hydrateDocumentImages,
   registerImageBlob,
   releaseImageBlob,
   serializeDocumentImages,
+  sweepOrphanBlobs,
 } from '../utils/imageBlobStore';
 import { createEmptyDocument } from '../types';
 
@@ -124,6 +126,34 @@ describe('imageBlobStore', () => {
       // re-decoded to blob: on the main thread.
       expect(layer.value).toMatch(/^data:/);
     }
+  });
+
+  it('sweepOrphanBlobs revokes ObjectURLs not referenced by live layers', async () => {
+    const revokeSpy = vi.spyOn(URL, 'revokeObjectURL');
+    const keep = await registerImageBlob(new Blob(['keep'], { type: 'image/png' }));
+    const drop = await registerImageBlob(new Blob(['drop'], { type: 'image/png' }));
+
+    const doc = createEmptyDocument('Sweep');
+    doc.layers.push({
+      id: 'img1',
+      type: 'image',
+      name: 'Keep',
+      value: keep.url,
+      cssVars: {
+        '--width': '50mm',
+        '--height': '40mm',
+        '--translate-x': '0mm',
+        '--translate-y': '0mm',
+      },
+    });
+
+    const live = collectImageRefsFromLayers(doc.layers);
+    expect(sweepOrphanBlobs(live)).toBe(1);
+    expect(getBlobUrl(keep.blobId)).toBe(keep.url);
+    expect(getBlobUrl(drop.blobId)).toBe(drop.blobId);
+    expect(revokeSpy).toHaveBeenCalledWith(drop.url);
+
+    revokeSpy.mockRestore();
   });
 
   it('applySavedDocumentKeepingImages keeps blob refs after save (no dataUrl in editor)', async () => {

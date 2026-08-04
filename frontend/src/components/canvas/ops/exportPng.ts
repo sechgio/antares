@@ -2,6 +2,20 @@
 
 const SELECTION_RING = '0 0 0 1px var(--cv-accent)';
 
+/**
+ * html-to-image `cacheBust:true` re-fetches every image (extra peak RAM).
+ * Safe to skip when all `<img>` srcs are already in-memory blob:/data: URLs.
+ */
+export function needsImageCacheBust(root: HTMLElement): boolean {
+  const imgs = root.querySelectorAll('img');
+  for (let i = 0; i < imgs.length; i++) {
+    const src = imgs[i]?.getAttribute('src') || imgs[i]?.src || '';
+    if (!src) continue;
+    if (!(src.startsWith('blob:') || src.startsWith('data:'))) return true;
+  }
+  return false;
+}
+
 /** Quita chrome de selección y transform del clon, conservando sombras reales. */
 export function stripSelectionChrome(el: HTMLElement): HTMLElement {
   const clone = el.cloneNode(true) as HTMLElement;
@@ -49,7 +63,10 @@ export async function exportLayerPng(layerId: string, name: string, scale: numbe
 
   try {
     const { toPng } = await import('html-to-image');
-    const dataUrl = await toPng(wrap, { pixelRatio: scale, cacheBust: true });
+    const dataUrl = await toPng(wrap, {
+      pixelRatio: scale,
+      cacheBust: needsImageCacheBust(wrap),
+    });
     await downloadDataUrl(dataUrl, name || 'layer');
   } catch (err) {
     console.error('Error exporting layer PNG:', err);
@@ -121,7 +138,10 @@ export async function exportSelectionPng(
   document.body.appendChild(wrap);
   try {
     const { toPng } = await import('html-to-image');
-    const dataUrl = await toPng(wrap, { pixelRatio: scale, cacheBust: true });
+    const dataUrl = await toPng(wrap, {
+      pixelRatio: scale,
+      cacheBust: needsImageCacheBust(wrap),
+    });
     await downloadDataUrl(dataUrl, name || 'seleccion');
   } catch (err) {
     console.error('Error exporting selection PNG:', err);

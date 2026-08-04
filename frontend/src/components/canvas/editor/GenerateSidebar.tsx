@@ -26,15 +26,6 @@ function dashedStyle(active: boolean) {
   } as const;
 }
 
-async function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
-
 export interface GenerateSidebarProps {
   stepStates: boolean[];
   completedCount: number;
@@ -149,9 +140,10 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
                     type="file"
                     hidden
                     accept="image/*"
-                    onChange={async (e) => {
+                    onChange={(e) => {
                       const f = e.target.files?.[0];
-                      const url = f ? await readFileAsDataUrl(f) : null;
+                      // ObjectURL for sidebar/preview; parent revokes on replace/unmount.
+                      const url = f ? URL.createObjectURL(f) : null;
                       if (side === 'left') onLogoLeft(url);
                       else onLogoRight(url);
                     }}

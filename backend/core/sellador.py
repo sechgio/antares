@@ -44,8 +44,10 @@ def group_stamp_pages(page_indices: list[int]) -> dict[int, int]:
 
 
 def _prepare_stamp_image(stamp_bytes: bytes, width_pt: float, height_pt: float) -> tuple[Image.Image, float, float]:
-    with Image.open(io.BytesIO(stamp_bytes)) as opened:
-        img = opened.copy() if opened.mode in ("RGB", "RGBA") else opened.convert("RGBA")
+    # load() keeps pixel data after close; avoid Image.copy() for RGB/RGBA.
+    opened = Image.open(io.BytesIO(stamp_bytes))
+    opened.load()
+    img: Image.Image = opened.convert("RGBA") if opened.mode not in ("RGB", "RGBA") else opened
 
     orig_w, orig_h = img.size
     target_px_w = max(1, round(width_pt * STAMP_EXPORT_DPI / 72.0))
@@ -78,8 +80,12 @@ def _build_png_overlay_pdf(img: Image.Image, dpi: float = STAMP_EXPORT_DPI) -> b
     alpha = img.split()[3]
     rgb_bytes = rgb.tobytes()
     alpha_bytes = alpha.tobytes()
+    rgb.close()
+    alpha.close()
     rgb_stream = zlib.compress(rgb_bytes, level=1)
+    del rgb_bytes
     alpha_stream = zlib.compress(alpha_bytes, level=1)
+    del alpha_bytes
 
     objects: list[bytes] = []
     objects.append(_pdf_object(b"<< /Type /Catalog /Pages 2 0 R >>", 1))
@@ -99,6 +105,7 @@ def _build_png_overlay_pdf(img: Image.Image, dpi: float = STAMP_EXPORT_DPI) -> b
         f"/SMask 5 0 R >>"
     )
     objects.append(_pdf_object(rgb_obj.encode("ascii") + b"stream\n" + rgb_stream + b"\nendstream", 4))
+    del rgb_stream
 
     alpha_obj = (
         f"<< /Type /XObject /Subtype /Image /Width {width_px} /Height {height_px} "
@@ -106,23 +113,27 @@ def _build_png_overlay_pdf(img: Image.Image, dpi: float = STAMP_EXPORT_DPI) -> b
         f"/Filter /FlateDecode /Length {len(alpha_stream)} >>"
     )
     objects.append(_pdf_object(alpha_obj.encode("ascii") + b"stream\n" + alpha_stream + b"\nendstream", 5))
+    del alpha_stream
 
     content = f"q {width_pt:.4f} 0 0 {height_pt:.4f} 0 0 cm /Im1 Do Q\n".encode("ascii")
     objects.append(_pdf_object(f"<< /Length {len(content)} >>\nstream\n".encode("ascii") + content + b"endstream", 6))
 
-    pdf = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n"
+    # Build with a bytearray to avoid quadratic pdf += copies on large stamps.
+    pdf = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
     offsets: list[int] = []
     for obj in objects:
         offsets.append(len(pdf))
-        pdf += obj
+        pdf.extend(obj)
 
     xref_offset = len(pdf)
-    pdf += f"xref\n0 {len(objects) + 1}\n".encode("ascii")
-    pdf += b"0000000000 65535 f \n"
+    pdf.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
+    pdf.extend(b"0000000000 65535 f \n")
     for offset in offsets:
-        pdf += f"{offset:010d} 00000 n \n".encode("ascii")
-    pdf += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF".encode("ascii")
-    return pdf
+        pdf.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    pdf.extend(
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF".encode("ascii")
+    )
+    return bytes(pdf)
 
 
 def _stamp_image_to_pdf_page(img: Image.Image) -> bytes:
