@@ -39,9 +39,14 @@ def resolve_pdf_bytes(params: dict) -> bytes:
 
 def resolve_stamp_bytes(params: dict) -> bytes:
     stamp_path = str(params.get("stamp_path") or "").strip()
+    raw = str(params.get("stamp_b64", "") or "").strip()
     if stamp_path:
-        return read_user_file(stamp_path, "Sello", max_bytes=MAX_STAMP_BYTES)
-    raw = str(params.get("stamp_b64", "") or "")
+        try:
+            return read_user_file(stamp_path, "Sello", max_bytes=MAX_STAMP_BYTES)
+        except ValueError:
+            if not raw:
+                raise
+            # Path unreadable — fall back to in-memory base64 from the renderer.
     if not raw:
         msg = "Imagen de sello requerida"
         raise ValueError(msg)
