@@ -3,6 +3,8 @@ import {
   DEFAULT_MEDIDA_LABEL_DIAMETRO,
   DEFAULT_MEDIDA_LABEL_DIAMETRO_INTERNO,
   DEFAULT_SGIO_LABEL,
+  DEFAULT_TITULO_LINEA1,
+  DEFAULT_TITULO_LINEA2,
   type TechnicalReport,
 } from './types';
 
@@ -15,7 +17,19 @@ interface Props {
 const EMPTY_REPORT: TechnicalReport = {
   id: '',
   metadata: { informe_id: 0, dia: 0, mes: '', anio: 0, pagina: '' },
-  header: { cs: '', contratista: '', sgio: '', sgio_label: DEFAULT_SGIO_LABEL, codigo_infraestructura: '', ubicacion: '', suministro: '', tipo: 'ELEVADO', volumen: 0 },
+  header: {
+    cs: '',
+    contratista: '',
+    sgio: '',
+    sgio_label: DEFAULT_SGIO_LABEL,
+    titulo_linea1: DEFAULT_TITULO_LINEA1,
+    titulo_linea2: DEFAULT_TITULO_LINEA2,
+    codigo_infraestructura: '',
+    ubicacion: '',
+    suministro: '',
+    tipo: 'ELEVADO',
+    volumen: 0,
+  },
   inspeccion: {
     caja_registro: 'unchecked', marco_tapa: 'unchecked', escalera_interior: 'unchecked', escalera_exterior: 'unchecked',
     cuba_interior: 'unchecked', cuba_exterior: 'unchecked', loza_fondo: 'unchecked', loza_techo_interior: 'unchecked',
@@ -108,7 +122,11 @@ export default function PreviewPanel({ report, logoLeft, logoRight }: Props) {
       <div className="tr-paper">
         <header className="tr-paper-header">
           <div className="tr-paper-logo">{logoLeft && <img src={logoLeft} alt="Logo izquierdo" />}</div>
-          <h2>Limpieza y Desinfección de Reservorios y Cisternas<br />Centro de Servicio Villa El Salvador</h2>
+          <h2>
+            {data.header.titulo_linea1 || DEFAULT_TITULO_LINEA1}
+            <br />
+            {data.header.titulo_linea2 || DEFAULT_TITULO_LINEA2}
+          </h2>
           <div className="tr-paper-logo">{logoRight && <img src={logoRight} alt="Logo derecho" />}</div>
         </header>
 
