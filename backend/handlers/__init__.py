@@ -1,8 +1,8 @@
 """Handler modules — feature-scoped IPC handlers aggregated into a single registry.
 
 Heavy feature modules (conversion/Pillow, sellador/PyMuPDF, ubicaciones, PDF
-renderers, etc.) are imported lazily on first method dispatch so the backend can
-emit ``ready`` without paying full import cost at process start.
+renderers, etc.) are imported lazily on targeted registry lookup. Backend startup
+warms them in core/deferred phases before emitting operational ``ready``.
 
 Critical: resolving one method must import only that method's module. An
 eager load of every handler group on the IPC reader thread caused
@@ -59,7 +59,7 @@ _CORE_HANDLER_MODULES: tuple[str, ...] = (
     "backend.handlers.conversion",
 )
 
-# Feature modules warmed after ready so cold start does not pay pandas/Weasy/etc.
+# Feature modules warmed after core, before the operational ready handshake.
 _DEFERRED_HANDLER_MODULES: tuple[str, ...] = tuple(
     m for m in _HANDLER_MODULES if m not in _CORE_HANDLER_MODULES
 )
@@ -157,7 +157,7 @@ class HandlerRegistry:
         self.warm(_CORE_HANDLER_MODULES)
 
     def warm_deferred(self) -> None:
-        """Load remaining feature modules after ready (still sync before the IPC loop)."""
+        """Load remaining feature modules after core and before operational ready."""
         self.warm(_DEFERRED_HANDLER_MODULES)
 
     def get(self, key: str, default: Any = None) -> Any:

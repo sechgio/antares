@@ -150,6 +150,27 @@ class TestJobManager:
         assert job.params["file_count"] == 200
         assert job.params["destino"] == "C:/out"
 
+    def test_slim_completed_job_keeps_only_status_allowlist(self):
+        files = [f"C:/tmp/{i}.jpg" for i in range(50)]
+        job = Job(
+            id="slim_allowlist",
+            job_type="conversion",
+            params={
+                "files": files,
+                "destino": "C:/out",
+                "formato": "JPEG",
+                "mapping": {str(i): f"col_{i}" for i in range(100)},
+                "rename_patterns": ["a", "b", "c"],
+                "extra_blob": "x" * 10_000,
+            },
+        )
+        JobManager._slim_completed_job(job)
+        assert set(job.params) == {"file_count", "destino", "formato", "files"}
+        assert job.params["files"] == []
+        assert job.params["file_count"] == 50
+        assert job.params["destino"] == "C:/out"
+        assert job.params["formato"] == "JPEG"
+
     def test_process_status_uses_stored_file_count_after_slim(self):
         from backend.core.jobs import get_job_manager
         from backend.handlers.conversion import process_status

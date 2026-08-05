@@ -106,7 +106,7 @@ def test_unknown_method_does_not_eager_load_all_modules(monkeypatch: pytest.Monk
 
 
 def test_warm_core_skips_deferred_modules(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Ready handshake must not wait on sellador/ubicaciones/fichas imports."""
+    """The core phase stays isolated from deferred feature imports."""
     from backend.handlers import (
         _CORE_HANDLER_MODULES,
         _DEFERRED_HANDLER_MODULES,

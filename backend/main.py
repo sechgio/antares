@@ -42,6 +42,7 @@ import traceback
 import warnings
 from concurrent.futures import Future
 
+from backend.core import ipc_phase_telemetry
 from backend.core.database import init_db
 from backend.core.exceptions import AntaresBaseException, MethodNotFoundError
 from backend.core.plugins import load_plugins_from_dir
@@ -205,17 +206,23 @@ def _maybe_log_ipc_timing(method_name: str, elapsed_ms: float, *, ok: bool) -> N
 
 def _dispatch(handler, params, msg_id, method_name) -> None:
     """Run a handler in a worker thread and send its response back."""
+    ipc_phase_telemetry.mark(msg_id, "dispatch_start")
+    ipc_phase_telemetry.set_fields(msg_id, method=method_name)
     t0 = time.perf_counter()
     try:
         result = handler(params)
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
         _maybe_log_ipc_timing(method_name, elapsed_ms, ok=True)
+        ipc_phase_telemetry.mark(msg_id, "handler_end")
+        ipc_phase_telemetry.set_fields(msg_id, handler_ok=True, handler_ms=elapsed_ms)
         send_response(result, msg_id)
     except Exception as exc:
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
         _maybe_log_ipc_timing(method_name, elapsed_ms, ok=False)
         user_msg = _user_error_message(exc)
         logger.exception("Error en %s: %s\n%s", method_name, user_msg, traceback.format_exc())
+        ipc_phase_telemetry.mark(msg_id, "handler_end")
+        ipc_phase_telemetry.set_fields(msg_id, handler_ok=False, handler_ms=elapsed_ms, ok=False)
         send_response(None, msg_id, error=user_msg)
 
 
@@ -229,6 +236,9 @@ def _log_future_exception(future: Future) -> None:
 
 def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
     """Submit one handler onto the appropriate scheduler lane."""
+    lane = "heavy" if method_name in HEAVY_METHODS else "light"
+    ipc_phase_telemetry.set_fields(msg_id, method=method_name, lane=lane)
+    ipc_phase_telemetry.mark(msg_id, "enqueue")
     scheduler = get_scheduler()
     try:
         if method_name in HEAVY_METHODS:
@@ -237,6 +247,13 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
             future = scheduler.submit_light(_dispatch, handler, params, msg_id, method_name)
     except SchedulerBusy:
         logger.warning("Heavy scheduler saturated while accepting %s: %s", method_name, scheduler.metrics())
+        ipc_phase_telemetry.set_fields(
+            msg_id,
+            rejected="heavy_queue_full",
+            ok=False,
+            lane=lane,
+            method=method_name,
+        )
         send_response(None, msg_id, error="Backend ocupado: cola de trabajo pesada llena")
         return None
     if future is not None:
@@ -263,18 +280,13 @@ def main() -> None:
             logger.exception("Failed to emit db_init_failed notification")
         sys.exit(1)
 
-    # Warm core handlers BEFORE ready so preview/canvas/catalog work immediately.
-    # Deferred feature modules (sellador, ubicaciones, fichas, …) warm AFTER ready
-    # but still synchronously before the stdin loop — avoids GIL contention with
-    # first-request lazy imports while letting Electron paint sooner.
+    # Warm handlers before the operational handshake so every request accepted
+    # after "ready" can be read and dispatched immediately. Keep core/deferred
+    # phases separate to isolate feature import failures and preserve the
+    # registry's targeted lazy-loading behavior outside startup.
     # Per-module try/except: a failing module delays readiness but never aborts.
     HANDLERS.warm_core()
-
-    send_notification("ready", {"status": "ok"})
-
     HANDLERS.warm_deferred()
-
-    logger.info(t("info.backend_ready"))
 
     # Plugins are opt-in: set ANTARES_ENABLE_PLUGINS=1 to load user_data/plugins/*.py
     # at startup. Default off so installs without plugins pay no import/exec cost.
@@ -293,6 +305,13 @@ def main() -> None:
     # Track consecutive errors to avoid spamming logs on persistent issues
     _consecutive_errors = 0
     _MAX_CONSECUTIVE_ERRORS = 100
+
+    # This is the operational readiness contract consumed by Electron. Keep it
+    # immediately before the stdin loop: no synchronous startup work may follow.
+    # A process asked to stop during warm-up must never advertise readiness.
+    if not _shutdown_requested:
+        logger.info(t("info.backend_ready"))
+        send_notification("ready", {"status": "ok"})
 
     try:
         while True:
@@ -318,10 +337,12 @@ def main() -> None:
                     if msg.method in SYNC_METHODS:
                         # Answer immediately so liveness checks stay green while
                         # heavy conversion/PDF work occupies the scheduler pool.
+                        ipc_phase_telemetry.set_fields(msg.id, method=msg.method, lane="sync")
                         _dispatch(handler, msg.params, msg.id, msg.method)
                     else:
                         _submit_handler(handler, msg.params, msg.id, msg.method)
                 else:
+                    ipc_phase_telemetry.set_fields(msg.id, method=msg.method, lane="-", ok=False)
                     send_response(None, msg.id, error=MethodNotFoundError(f"Método desconocido: {msg.method}"))
                 _consecutive_errors = 0
             except Exception as exc:

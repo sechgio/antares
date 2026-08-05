@@ -1,6 +1,7 @@
 """Tests for IPC input validation."""
 
 import io
+import json
 
 import pytest
 
@@ -288,3 +289,73 @@ def test_invalid_params_with_known_id_sends_structured_error(monkeypatch) -> Non
     assert '"id": "p1"' in out
     assert '"code": -32602' in out
     assert '"category": "VALIDATION_ERROR"' in out
+
+
+class _CountingByteStdout:
+    """Stdout double that only accepts binary writes via ``.buffer``."""
+
+    def __init__(self) -> None:
+        self.buffer = io.BytesIO()
+        self.buffer_write_count = 0
+        self.text_write_count = 0
+        original_write = self.buffer.write
+
+        def counting_write(data: bytes) -> int:
+            self.buffer_write_count += 1
+            return original_write(data)
+
+        self.buffer.write = counting_write  # type: ignore[method-assign]
+
+    def write(self, _data: str) -> int:
+        self.text_write_count += 1
+        raise AssertionError("send_* must write UTF-8 bytes via stdout.buffer")
+
+    def flush(self) -> None:
+        return None
+
+
+def test_send_response_encodes_once_and_writes_bytes(monkeypatch) -> None:
+    stdout = _CountingByteStdout()
+    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
+
+    ipc_protocol.send_response({"ok": True, "label": "café"}, "r1")
+
+    assert stdout.text_write_count == 0
+    assert stdout.buffer_write_count == 1
+    line = stdout.buffer.getvalue()
+    assert line.endswith(b"\n")
+    payload = json.loads(line.decode("utf-8"))
+    assert payload["id"] == "r1"
+    assert payload["result"]["label"] == "café"
+
+
+def test_send_response_rejects_oversized_payload_with_utf8_byte_size(monkeypatch) -> None:
+    monkeypatch.setattr(ipc_protocol, "_MAX_PAYLOAD_SIZE", 64)
+    stdout = _CountingByteStdout()
+    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
+
+    ipc_protocol.send_response({"data": "x" * 200}, "big")
+
+    line = stdout.buffer.getvalue().decode("utf-8")
+    payload = json.loads(line)
+    assert payload["id"] == "big"
+    assert payload["error"]["code"] == -32001
+    assert "bytes" in payload["error"]["message"]
+    # Message must report the UTF-8 size of the oversized result payload, not char count.
+    assert "200" not in payload["error"]["message"] or "Response too large" in payload["error"]["message"]
+    oversized_json = json.dumps(
+        {"jsonrpc": "2.0", "id": "big", "result": {"data": "x" * 200}},
+        ensure_ascii=False,
+    )
+    assert str(len(oversized_json.encode("utf-8"))) in payload["error"]["message"]
+
+
+def test_send_notification_drops_oversized_without_writing(monkeypatch) -> None:
+    monkeypatch.setattr(ipc_protocol, "_MAX_PAYLOAD_SIZE", 32)
+    stdout = _CountingByteStdout()
+    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
+
+    ipc_protocol.send_notification("progress", {"chunk": "y" * 200})
+
+    assert stdout.buffer_write_count == 0
+    assert stdout.buffer.getvalue() == b""
