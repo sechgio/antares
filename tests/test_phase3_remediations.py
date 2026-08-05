@@ -5,24 +5,43 @@ from __future__ import annotations
 import base64
 import io
 import json
+from pathlib import Path
 
 import pytest
 
 from backend import ipc_protocol
 from backend import main as backend_main
 from backend.core.exceptions import ValidationError
-from backend.core.sellador_io import MAX_PDF_BYTES, read_user_file
+from backend.core.sellador_io import MAX_PDF_BYTES, read_user_file, resolve_stamp_bytes
 from backend.handlers.database import db_records
 from backend.handlers.history import history_list
-from backend.handlers.sellador import sellador_apply, sellador_inspect_pdf
+from backend.handlers.sellador import _estimate_b64_decoded_size, sellador_apply, sellador_inspect_pdf
 from backend.utils.html_sanitizer import sanitize_html_for_pdf
 
 
-def test_read_user_file_rejects_oversized_pdf(tmp_path) -> None:
+def test_read_user_file_rejects_oversized_pdf(tmp_path: Path) -> None:
     pdf_path = tmp_path / "big.pdf"
     pdf_path.write_bytes(b"%PDF" + b"x" * (MAX_PDF_BYTES + 1))
     with pytest.raises(ValueError, match="demasiado grande"):
         read_user_file(str(pdf_path), "PDF", max_bytes=MAX_PDF_BYTES)
+
+
+def test_resolve_stamp_bytes_falls_back_to_b64_when_path_missing(tmp_path: Path) -> None:
+    png = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00"
+        b"\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    missing = tmp_path / "gone.png"
+    raw = base64.b64encode(png).decode("ascii")
+    out = resolve_stamp_bytes({"stamp_path": str(missing), "stamp_b64": raw})
+    assert out == png
+
+
+def test_estimate_b64_size_accounts_for_padding() -> None:
+    raw = base64.b64encode(b"x" * (10 * 1024 * 1024)).decode("ascii")
+
+    assert _estimate_b64_decoded_size(raw) == 10 * 1024 * 1024
 
 
 def test_sellador_apply_rejects_oversized_base64() -> None:

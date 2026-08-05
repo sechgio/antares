@@ -20,7 +20,8 @@ def _estimate_b64_decoded_size(value: str) -> int:
     if "," in raw and raw.lower().startswith("data:"):
         raw = raw.split(",", 1)[1]
     raw = "".join(raw.split())
-    return (len(raw) * 3) // 4
+    padding = len(raw) - len(raw.rstrip("="))
+    return max(0, (len(raw) * 3) // 4 - padding)
 
 
 def _reject_oversized_b64(value: str, *, max_bytes: int, label: str) -> None:

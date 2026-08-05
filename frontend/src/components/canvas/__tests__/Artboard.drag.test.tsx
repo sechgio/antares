@@ -179,6 +179,129 @@ describe('Artboard drag gestures', () => {
     expect(copy.cssVars['--translate-x']).toBe('40mm');
   });
 
+  it('restores the original selection when Alt+drag is cancelled', () => {
+    const layer = createLayer('rect');
+    const document = createEmptyDocument('Test');
+    document.layers.push(layer);
+    const onChangeLayers = vi.fn();
+    const onSelect = vi.fn();
+    const onSelectIds = vi.fn();
+    const { container } = render(
+      <Artboard
+        document={document}
+        selectedIds={[]}
+        zoom={1}
+        tool="select"
+        pan={{ x: 0, y: 0 }}
+        onPan={() => {}}
+        onSelect={onSelect}
+        onSelectIds={onSelectIds}
+        onChangeLayers={onChangeLayers}
+      />,
+    );
+    const node = container.querySelector<HTMLElement>(`[data-layer-id="${layer.id}"]`)!;
+    const mm = 96 / 25.4;
+
+    fireEvent.pointerDown(node, {
+      button: 0,
+      clientX: 100,
+      clientY: 100,
+      altKey: true,
+    });
+    fireEvent.pointerMove(window, {
+      clientX: 100 + 20 * mm,
+      clientY: 100,
+      altKey: true,
+    });
+    act(() => tick());
+    expect(onSelectIds).toHaveBeenCalledTimes(1);
+    expect(onSelectIds.mock.calls[0]![0]).not.toEqual([layer.id]);
+
+    window.dispatchEvent(new PointerEvent('pointercancel'));
+
+    expect(onChangeLayers).not.toHaveBeenCalled();
+    expect(onSelect).toHaveBeenCalledWith(layer.id, false);
+    expect(onSelectIds).toHaveBeenLastCalledWith([layer.id]);
+  });
+
+  it('aborts a selection drag when a second touch starts a pinch', () => {
+    const layer = createLayer('rect');
+    const document = createEmptyDocument('Test');
+    document.layers.push(layer);
+    const onChangeLayers = vi.fn();
+    const onSelectIds = vi.fn();
+    const onPan = vi.fn();
+    const onZoom = vi.fn();
+    const { container } = render(
+      <Artboard
+        document={document}
+        selectedIds={[layer.id]}
+        zoom={1}
+        tool="select"
+        pan={{ x: 0, y: 0 }}
+        onPan={onPan}
+        onZoom={onZoom}
+        onSelect={() => {}}
+        onSelectIds={onSelectIds}
+        onChangeLayers={onChangeLayers}
+      />,
+    );
+    const node = container.querySelector<HTMLElement>(`[data-layer-id="${layer.id}"]`)!;
+    const mm = 96 / 25.4;
+
+    fireEvent.pointerDown(node, {
+      pointerId: 1,
+      pointerType: 'touch',
+      button: 0,
+      clientX: 100,
+      clientY: 100,
+    });
+    fireEvent.pointerMove(node, {
+      pointerId: 1,
+      pointerType: 'touch',
+      clientX: 100 + 20 * mm,
+      clientY: 100,
+    });
+    act(() => tick());
+
+    fireEvent.pointerDown(node, {
+      pointerId: 2,
+      pointerType: 'touch',
+      button: 0,
+      clientX: 250,
+      clientY: 100,
+    });
+    fireEvent.pointerMove(node, {
+      pointerId: 1,
+      pointerType: 'touch',
+      clientX: 80,
+      clientY: 100,
+    });
+    fireEvent.pointerMove(node, {
+      pointerId: 2,
+      pointerType: 'touch',
+      clientX: 270,
+      clientY: 100,
+    });
+    act(() => tick());
+    fireEvent.pointerUp(node, {
+      pointerId: 1,
+      pointerType: 'touch',
+      clientX: 80,
+      clientY: 100,
+    });
+    fireEvent.pointerUp(node, {
+      pointerId: 2,
+      pointerType: 'touch',
+      clientX: 270,
+      clientY: 100,
+    });
+
+    expect(onChangeLayers).not.toHaveBeenCalled();
+    expect(onPan).toHaveBeenCalled();
+    expect(onZoom).toHaveBeenCalled();
+  });
+
   it('Shift+drag moves with axis lock instead of aborting (Figma)', () => {
     const layer = createLayer('rect'); // 20mm, 100mm
     const document = createEmptyDocument('Test');

@@ -34,6 +34,7 @@ import {
 } from './utils';
 
 const MAX_IN_MEMORY_BYTES = 8 * 1024 * 1024;
+const MAX_STAMP_BYTES = 10 * 1024 * 1024;
 
 function formatFileSize(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -258,13 +259,18 @@ export default function SelladorView() {
       addToast({ message: 'Selecciona una imagen PNG o JPG para el sello.', type: 'error' });
       return;
     }
+    if (file.size > MAX_STAMP_BYTES) {
+      addToast({ message: 'El sello es demasiado grande (máx. 10 MB).', type: 'error' });
+      return;
+    }
     try {
       const localPath = getElectronFilePath(file);
       if (stampPreviewUrl) URL.revokeObjectURL(stampPreviewUrl);
       const previewUrl = URL.createObjectURL(file);
       setStampFile(file);
       setStampPath(localPath);
-      setStampBase64(localPath ? null : await fileToBase64(file));
+      // Keep base64 even when path exists — backend falls back if path fails.
+      setStampBase64(await fileToBase64(file));
       setStampPreviewUrl(previewUrl);
       if (pageSize) {
         await initializePositions(pageSize, previewUrl);
@@ -374,7 +380,8 @@ export default function SelladorView() {
       const stampPlacements = toBackendStampPlacements(resolvedPlacements);
       const res = await api.selladorApply({
         ...(pdfPath ? { pdf_path: pdfPath } : { pdf_b64: pdfBase64! }),
-        ...(stampPath ? { stamp_path: stampPath } : { stamp_b64: stampBase64! }),
+        ...(stampPath ? { stamp_path: stampPath } : {}),
+        ...(stampBase64 ? { stamp_b64: stampBase64 } : {}),
         stamp_count: resolvedPlacements.length,
         x: primaryRect.x,
         y: primaryRect.y,
