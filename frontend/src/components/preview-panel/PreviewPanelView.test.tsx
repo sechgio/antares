@@ -67,10 +67,9 @@ describe('PreviewPanelView column mapping', () => {
 
     const form = nameInput.closest('form');
     expect(form).toBeTruthy();
-    const mappingSelect = within(form!).getByDisplayValue('-- Seleccionar Columna --') as HTMLSelectElement;
-
-    fireEvent.change(mappingSelect, { target: { value: 'SGIO' } });
-    fireEvent.keyDown(mappingSelect, { key: 'Enter', code: 'Enter' });
+    fireEvent.click(within(form!).getByRole('button', { name: 'Columna del Excel a Mapear' }));
+    fireEvent.click(screen.getByRole('option', { name: 'SGIO' }));
+    fireEvent.keyDown(nameInput, { key: 'Enter', code: 'Enter' });
 
     expect(await screen.findByText('SGIO EXTRA')).toBeInTheDocument();
   });
