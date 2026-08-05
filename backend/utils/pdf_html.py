@@ -32,7 +32,7 @@ def _thread_font_config() -> Any:
     """Return a thread-local WeasyPrint FontConfiguration, creating it once."""
     config = getattr(_FONT_CONFIG, "value", None)
     if config is None:
-        from weasyprint.text.fonts import FontConfiguration
+        from weasyprint.text.fonts import FontConfiguration  # type: ignore[import-untyped]
 
         config = FontConfiguration()
         _FONT_CONFIG.value = config
