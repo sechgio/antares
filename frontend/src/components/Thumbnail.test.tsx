@@ -72,7 +72,7 @@ describe('Thumbnail', () => {
     expect(getLocalThumbnail).toHaveBeenCalledWith(absPath, 256);
   });
 
-  it('falls back to file:// when local thumbnail fails', async () => {
+  it('shows placeholder when local thumbnail fails (no file:// under CSP)', async () => {
     getLocalThumbnail.mockResolvedValue(null);
 
     const { container } = render(<Thumbnail path={absPath} variant="card" />);
@@ -81,9 +81,8 @@ describe('Thumbnail', () => {
     });
 
     await waitFor(() => {
-      const img = container.querySelector('img');
-      expect(img).not.toBeNull();
-      expect(img?.getAttribute('src')).toBe(`file://${absPath}`);
+      expect(container.querySelector('img')).toBeNull();
+      expect(container.querySelector('svg')).not.toBeNull();
     });
   });
 

@@ -459,6 +459,8 @@ export default function PreviewPanelView() {
 
   const handleCustomColumnKeyDown = (event: React.KeyboardEvent<HTMLFormElement>) => {
     if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+    // Solo desde inputs de texto: el picker usa Enter para elegir opción.
+    if ((event.target as HTMLElement).tagName !== 'INPUT') return;
     event.preventDefault();
     addCustomColumn();
   };
@@ -504,6 +506,10 @@ export default function PreviewPanelView() {
     data.length > 0 && (exportScope === 'all' || selectedIndex !== ''),
   ], [logoLeft, logoRight, templateStatus, data.length, idColumn, requiresImages, images.length, exportScope, selectedIndex]);
   const completedCount = stepStates.filter(Boolean).length;
+  const columnOptions = useMemo(
+    () => headers.map((h) => ({ value: h, label: h })),
+    [headers],
+  );
 
   const canPrevRow = selectedIndex !== '' && parseInt(selectedIndex) > 0;
   const canNextRow = selectedIndex !== '' && parseInt(selectedIndex) < data.length - 1;
@@ -761,54 +767,59 @@ export default function PreviewPanelView() {
             <div className="space-y-1.5">
               <div>
                 <label className="block text-[var(--text-muted)] text-[9px] mb-0.5 font-semibold uppercase">Columna ID (Clave)</label>
-                <select
-                  className="w-full h-7 rounded-md border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-2 text-[10px] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]"
+                <TemplatePicker
+                  aria-label="Columna ID (Clave)"
+                  placeholder="-- Seleccionar ID --"
                   value={idColumn}
-                  onChange={e => setIdColumn(e.target.value)}
-                >
-                  <option value="">-- Seleccionar ID --</option>
-                  {headers.map(h => <option key={h} value={h}>{h}</option>)}
-                </select>
+                  options={columnOptions}
+                  onChange={setIdColumn}
+                />
               </div>
 
               <div className="space-y-1 max-h-40 overflow-y-auto pr-0.5">
-                {REPORT_FIELDS.map(field => (
-                  <div key={field.id} className="grid grid-cols-[80px_1fr] gap-1.5 items-center">
-                    <span className="text-[var(--text-muted)] text-[9px] uppercase font-medium truncate" title={field.label}>{field.label}</span>
-                    <select
-                      className={`h-[22px] rounded border bg-[var(--bg-elevated)] px-1 text-[9px] text-[var(--text-primary)] outline-none ${mappings[field.id] ? 'border-l-2 border-l-green-500 border-[var(--border-medium)]' : 'border-[var(--border-medium)]'}`}
-                      value={mappings[field.id] || ''}
-                      onChange={e => setMappings(prev => ({ ...prev, [field.id]: e.target.value }))}
-                    >
-                      <option value="">Ignorar</option>
-                      {headers.map(h => <option key={h} value={h}>{h}</option>)}
-                    </select>
-                  </div>
-                ))}
+                {REPORT_FIELDS.map(field => {
+                  const mapped = mappings[field.id] || '';
+                  return (
+                    <div key={field.id} className="grid grid-cols-[80px_1fr] gap-1.5 items-center">
+                      <span className="text-[var(--text-muted)] text-[9px] uppercase font-medium truncate" title={field.label}>{field.label}</span>
+                      <TemplatePicker
+                        aria-label={field.label}
+                        placeholder="Ignorar"
+                        value={mapped}
+                        options={columnOptions}
+                        onChange={(next) => setMappings((prev) => ({ ...prev, [field.id]: next }))}
+                        triggerClassName={mapped ? 'border-l-2 border-l-[var(--accent-green)]' : undefined}
+                      />
+                    </div>
+                  );
+                })}
 
-                {customColumns.map(col => (
-                  <div key={col.id} className="grid grid-cols-[1fr_auto_auto] gap-1.5 items-center bg-[var(--bg-elevated)] rounded px-1.5 py-0.5">
-                    <span className="text-[var(--text-primary)] text-[9px] uppercase font-medium">{col.name}</span>
-                    <select
-                      className={`h-[22px] rounded border bg-[var(--bg-base)] px-1 text-[9px] text-[var(--text-primary)] outline-none ${mappings[col.id] ? 'border-l-2 border-l-[var(--accent-primary)]' : 'border-[var(--border-medium)]'}`}
-                      value={mappings[col.id] ?? col.mappedTo}
-                      onChange={e => setMappings(prev => ({ ...prev, [col.id]: e.target.value }))}
-                    >
-                      <option value="">Ignorar</option>
-                      {headers.map(h => <option key={h} value={h}>{h}</option>)}
-                    </select>
-                    <WithHoverTooltip label="Eliminar" placement="bottom">
-                      <button
-                        type="button"
-                        aria-label="Eliminar"
-                        onClick={() => removeCustomColumn(col.id)}
-                        className="text-[var(--accent-red)] hover:opacity-80 text-[9px] px-0.5 hover:bg-[var(--accent-red)]/20 rounded transition-colors"
-                      >
-                        ✕
-                      </button>
-                    </WithHoverTooltip>
-                  </div>
-                ))}
+                {customColumns.map(col => {
+                  const mapped = mappings[col.id] ?? col.mappedTo;
+                  return (
+                    <div key={col.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] gap-1.5 items-center bg-[var(--bg-elevated)] rounded px-1.5 py-0.5">
+                      <span className="text-[var(--text-primary)] text-[9px] uppercase font-medium truncate" title={col.name}>{col.name}</span>
+                      <TemplatePicker
+                        aria-label={col.name}
+                        placeholder="Ignorar"
+                        value={mapped}
+                        options={columnOptions}
+                        onChange={(next) => setMappings((prev) => ({ ...prev, [col.id]: next }))}
+                        triggerClassName={mapped ? 'border-l-2 border-l-[var(--accent-primary)]' : undefined}
+                      />
+                      <WithHoverTooltip label="Eliminar" placement="bottom">
+                        <button
+                          type="button"
+                          aria-label="Eliminar"
+                          onClick={() => removeCustomColumn(col.id)}
+                          className="text-[var(--accent-red)] hover:opacity-80 text-[9px] px-0.5 hover:bg-[var(--accent-red)]/20 rounded transition-colors"
+                        >
+                          ✕
+                        </button>
+                      </WithHoverTooltip>
+                    </div>
+                  );
+                })}
               </div>
 
               <button onClick={() => setShowColumnModal(true)} className="w-full border border-dashed border-[var(--border-medium)] hover:border-[var(--text-secondary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] rounded-md py-1 text-center hover:bg-[var(--bg-elevated)] transition-all flex items-center justify-center gap-1.5 text-[10px]">
@@ -875,17 +886,19 @@ export default function PreviewPanelView() {
                   className="w-full pl-7 pr-2 py-1 bg-[var(--bg-elevated)] border border-[var(--border-medium)] rounded-md text-[var(--text-primary)] text-[10px] outline-none focus:border-[var(--accent-primary)] placeholder:text-[var(--text-muted)]"
                 />
               </div>
-              <select
-                className="w-full h-7 rounded-md border border-[var(--border-medium)] bg-[var(--bg-elevated)] text-[var(--text-primary)] font-semibold px-2 text-[10px] outline-none focus:border-[var(--accent-primary)] disabled:opacity-50"
+              <TemplatePicker
+                aria-label="Seleccionar fila"
+                placeholder="-- Seleccionar Fila --"
                 value={selectedIndex}
-                onChange={e => setSelectedIndex(e.target.value)}
+                options={data.map((row, idx) => ({
+                  value: String(idx),
+                  label: `${idx + 1}. ${idColumn ? String(row[idColumn]) : `Fila ${idx + 1}`}`,
+                }))}
+                onChange={setSelectedIndex}
                 disabled={exportScope === 'all'}
-              >
-                <option value="">-- Seleccionar Fila --</option>
-                {data.map((row, idx) => (
-                  <option key={idx} value={idx}>{idx + 1}. {idColumn ? String(row[idColumn]) : `Fila ${idx + 1}`}</option>
-                ))}
-              </select>
+                maxMenuHeight={280}
+                triggerClassName="font-semibold"
+              />
 
               <div className="space-y-1.5 border-t border-[var(--border-subtle)] pt-1.5">
                 <div className="space-y-1">
@@ -1072,10 +1085,13 @@ export default function PreviewPanelView() {
                 </div>
                 <div>
                   <label className="block text-[var(--text-secondary)] text-[11px] mb-1 font-medium uppercase">Columna del Excel a Mapear</label>
-                  <select value={newColumnMapping} onChange={e => setNewColumnMapping(e.target.value)} className="w-full h-8 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-2 text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]">
-                    <option value="">-- Seleccionar Columna --</option>
-                    {headers.map(h => <option key={h} value={h}>{h}</option>)}
-                  </select>
+                  <TemplatePicker
+                    aria-label="Columna del Excel a Mapear"
+                    placeholder="-- Seleccionar Columna --"
+                    value={newColumnMapping}
+                    options={columnOptions}
+                    onChange={setNewColumnMapping}
+                  />
                 </div>
               </div>
               <div className="flex gap-3 mt-4">

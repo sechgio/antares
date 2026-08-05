@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getLocalThumbnail, _resetLocalThumbForTests } from './localThumb';
+import { getLocalThumbnail, getLocalImageDataUrl, _resetLocalThumbForTests } from './localThumb';
 
 const localThumbnail = vi.fn();
+const localImageDataUrl = vi.fn();
 
 vi.mock('../api', () => ({
   api: {
     localThumbnail: (...args: unknown[]) => localThumbnail(...args),
+    localImageDataUrl: (...args: unknown[]) => localImageDataUrl(...args),
   },
 }));
 
@@ -13,6 +15,7 @@ describe('getLocalThumbnail', () => {
   beforeEach(() => {
     _resetLocalThumbForTests();
     localThumbnail.mockReset();
+    localImageDataUrl.mockReset();
   });
 
   it('returns data URL on success and caches it', async () => {
@@ -66,7 +69,7 @@ describe('getLocalThumbnail', () => {
     expect(localThumbnail).toHaveBeenCalledTimes(2);
   });
 
-  it('returns null on IPC failure so caller can fall back to file://', async () => {
+  it('returns null on IPC failure so caller can show a placeholder', async () => {
     localThumbnail.mockRejectedValueOnce(new Error('nativeImage not available'));
 
     const result = await getLocalThumbnail('C:\\photos\\missing.jpg');
@@ -82,5 +85,22 @@ describe('getLocalThumbnail', () => {
   it('returns null when response lacks a data URL', async () => {
     localThumbnail.mockResolvedValueOnce({ dataUrl: 'not-a-data-url' });
     expect(await getLocalThumbnail('C:\\photos\\b.jpg')).toBeNull();
+  });
+
+  it('getLocalImageDataUrl returns full-fidelity data URL and caches it', async () => {
+    localImageDataUrl.mockResolvedValueOnce({ dataUrl: 'data:image/jpeg;base64,full' });
+
+    const first = await getLocalImageDataUrl('C:\\cache\\preview.jpg');
+    const second = await getLocalImageDataUrl('C:\\cache\\preview.jpg');
+
+    expect(first).toBe('data:image/jpeg;base64,full');
+    expect(second).toBe('data:image/jpeg;base64,full');
+    expect(localImageDataUrl).toHaveBeenCalledTimes(1);
+    expect(localImageDataUrl).toHaveBeenCalledWith({ path: 'C:\\cache\\preview.jpg' });
+  });
+
+  it('getLocalImageDataUrl returns null on IPC failure', async () => {
+    localImageDataUrl.mockRejectedValueOnce(new Error('not allowed'));
+    expect(await getLocalImageDataUrl('C:\\cache\\missing.jpg')).toBeNull();
   });
 });

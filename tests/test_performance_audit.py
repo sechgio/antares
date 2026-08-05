@@ -389,16 +389,18 @@ def test_importar_excel_runs_analyze(tmp_path, monkeypatch) -> None:
     assert "ANALYZE imagenes" in source
 
 
-def test_ubicaciones_preview_uses_file_uri() -> None:
-    """Ubicaciones composed preview must not ship base64 over IPC."""
+def test_ubicaciones_preview_uses_csp_safe_data_uri() -> None:
+    """Ubicaciones preview image must be a data: URI (Electron CSP blocks file:)."""
     import inspect
 
     from backend.handlers import ubicaciones as ubi
 
     source = inspect.getsource(ubi._encode_preview_data)
-    assert "as_uri()" in source
-    assert "b64encode" not in source
-    assert "data:image" not in source
+    assert "b64encode" in source
+    assert "data:image/jpeg;base64," in source
+    assert "image_path" in source
+    # Disk cache path is kept for invalidation; do not expose file: as img src.
+    assert "as_uri()" not in source
 
 
 def test_fichas_get_all_uses_shallow_copy(tmp_path) -> None:

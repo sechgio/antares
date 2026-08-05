@@ -27,6 +27,11 @@ interface TemplatePickerProps {
   onChange: (value: string) => void;
   placeholder: string;
   'aria-label'?: string;
+  disabled?: boolean;
+  /** Cap list height (px) and scroll when options are long. */
+  maxMenuHeight?: number;
+  /** Extra classes on the trigger (e.g. mapped accent border). */
+  triggerClassName?: string;
 }
 
 const MENU_GAP = 4;
@@ -42,6 +47,9 @@ export default function TemplatePicker({
   onChange,
   placeholder,
   'aria-label': ariaLabel = 'Elegir plantilla',
+  disabled = false,
+  maxMenuHeight,
+  triggerClassName,
 }: TemplatePickerProps) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<MenuPosition | null>(null);
@@ -53,6 +61,10 @@ export default function TemplatePicker({
   const displayLabel = selected?.label ?? placeholder;
 
   const close = useCallback(() => setOpen(false), []);
+
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
 
   const updatePosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -86,7 +98,7 @@ export default function TemplatePicker({
       return;
     }
     updatePosition();
-  }, [open, options.length, updatePosition]);
+  }, [open, options.length, maxMenuHeight, updatePosition]);
 
   useEffect(() => {
     if (!open) return;
@@ -165,8 +177,13 @@ export default function TemplatePicker({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        onClick={() => setOpen((v) => !v)}
-        className="pp-template-picker-trigger flex h-7 w-full items-center gap-1.5 rounded-md border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-2 text-left text-[10px] text-[var(--text-primary)] outline-none transition-[border-color,transform] duration-100 ease-out focus-visible:border-[var(--accent-primary)] active:scale-[0.98]"
+        aria-disabled={disabled || undefined}
+        disabled={disabled}
+        onClick={() => {
+          if (disabled) return;
+          setOpen((v) => !v);
+        }}
+        className={`pp-template-picker-trigger flex h-7 w-full items-center gap-1.5 rounded-md border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-2 text-left text-[10px] text-[var(--text-primary)] outline-none transition-[border-color,transform] duration-100 ease-out focus-visible:border-[var(--accent-primary)] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50${triggerClassName ? ` ${triggerClassName}` : ''}`}
       >
         <span className="min-w-0 flex-1 truncate">{displayLabel}</span>
         <ChevronDown
@@ -187,7 +204,14 @@ export default function TemplatePicker({
             className="pp-template-picker-list fixed z-[200] flex flex-col gap-px rounded-[11px] p-1"
             style={
               position
-                ? { top: position.top, left: position.left, width: position.width }
+                ? {
+                    top: position.top,
+                    left: position.left,
+                    width: position.width,
+                    ...(maxMenuHeight != null
+                      ? { maxHeight: maxMenuHeight, overflowY: 'auto' as const }
+                      : {}),
+                  }
                 : { top: -9999, left: -9999, visibility: 'hidden' }
             }
             onKeyDown={onListKeyDown}

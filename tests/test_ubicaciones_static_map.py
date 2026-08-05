@@ -1,6 +1,8 @@
 """Tests para el provider de mapas estáticos (reemplazo de Playwright)."""
 
+import math
 import os
+import urllib.parse
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
@@ -68,6 +70,25 @@ def test_lonlat_to_webmercator_pixel_origin() -> None:
     assert y == pytest.approx(128.0, abs=1e-3)
 
 
+@pytest.mark.parametrize(
+    ("lat", "lon"),
+    [
+        (-12.0464, -77.0428),  # Plaza de Armas de Lima
+        (40.6892, -74.0445),   # Estatua de la Libertad
+    ],
+)
+def test_webmercator_center_round_trips_to_requested_coordinates(lat: float, lon: float) -> None:
+    zoom = 18
+    center_x, center_y = ub._lonlat_to_webmercator_pixel(lon, lat, zoom)
+    world_size = (2 ** zoom) * ub._OSM_TILE_SIZE
+
+    recovered_lon = center_x / world_size * 360.0 - 180.0
+    recovered_lat = math.degrees(math.atan(math.sinh(math.pi * (1.0 - 2.0 * center_y / world_size))))
+
+    assert recovered_lat == pytest.approx(lat, abs=1e-5)
+    assert recovered_lon == pytest.approx(lon, abs=1e-5)
+
+
 def test_fetch_static_map_osm_returns_image(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANTARES_MAP_PROVIDER", "osm")
     tile = _png_bytes((ub._OSM_TILE_SIZE, ub._OSM_TILE_SIZE), (60, 120, 160))
@@ -77,6 +98,19 @@ def test_fetch_static_map_osm_returns_image(monkeypatch: pytest.MonkeyPatch) -> 
     img = Image.open(BytesIO(data))
     assert img.size == ub._cap_fetch_size(800, 600)
     # A real (colored) map passes the tiles heuristic.
+    assert ub._screenshot_has_map_tiles(data)
+
+
+def test_osm_live_smoke_plaza_de_armas_lima(tmp_path: Path) -> None:
+    if os.environ.get("ANTARES_RUN_NETWORK_TESTS") != "1":
+        pytest.skip("set ANTARES_RUN_NETWORK_TESTS=1 to run live OSM smoke test")
+
+    data = ub.fetch_static_map(-12.0464, -77.0428, 600, 400, zoom=18, provider="osm")
+    output = tmp_path / "plaza-de-armas-lima.png"
+    output.write_bytes(data)
+
+    with Image.open(output) as image:
+        assert image.size == (600, 400)
     assert ub._screenshot_has_map_tiles(data)
 
 
@@ -118,8 +152,11 @@ def test_fetch_static_map_google_with_key(monkeypatch: pytest.MonkeyPatch) -> No
 
     monkeypatch.setattr(ub, "_http_get", fake_get)
     data = ub.fetch_static_map(-12.0, -77.0, 800, 600, zoom=18, provider="google", api_key="TESTKEY")
-    assert "maps.googleapis.com" in called["url"]
-    assert "key=TESTKEY" in called["url"]
+    parsed = urllib.parse.urlparse(called["url"])
+    query = urllib.parse.parse_qs(parsed.query)
+    assert parsed.netloc == "maps.googleapis.com"
+    assert query["center"] == ["-12.0,-77.0"]
+    assert query["key"] == ["TESTKEY"]
     assert ub._screenshot_has_map_tiles(data)
 
 
@@ -230,6 +267,12 @@ def test_parse_combined_coord_value_parses_numeric_pair() -> None:
     lat, lon = ub._parse_combined_coord_value("-12.0464, -77.0428")
     assert lat == pytest.approx(-12.0464)
     assert lon == pytest.approx(-77.0428)
+
+
+def test_parse_combined_coord_value_uses_latitude_longitude_order() -> None:
+    lat, lon = ub._parse_combined_coord_value("-77.0428, -12.0464")
+    assert lat == pytest.approx(-77.0428)
+    assert lon == pytest.approx(-12.0464)
 
 
 def test_parse_combined_coord_value_parses_google_maps_url() -> None:
