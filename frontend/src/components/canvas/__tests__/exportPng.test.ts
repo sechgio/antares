@@ -1,5 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { stripSelectionChrome } from '../ops/exportPng';
+import { needsImageCacheBust, stripSelectionChrome } from '../ops/exportPng';
+
+describe('needsImageCacheBust', () => {
+  it('is false for blob: and data: images (and empty roots)', () => {
+    const root = document.createElement('div');
+    expect(needsImageCacheBust(root)).toBe(false);
+
+    const blobImg = document.createElement('img');
+    blobImg.setAttribute('src', 'blob:http://localhost/abc');
+    root.appendChild(blobImg);
+    const dataImg = document.createElement('img');
+    dataImg.setAttribute('src', 'data:image/png;base64,AAA');
+    root.appendChild(dataImg);
+    expect(needsImageCacheBust(root)).toBe(false);
+  });
+
+  it('is true when any image is a remote http(s) URL', () => {
+    const root = document.createElement('div');
+    const img = document.createElement('img');
+    img.setAttribute('src', 'https://cdn.example.com/photo.png');
+    root.appendChild(img);
+    expect(needsImageCacheBust(root)).toBe(true);
+  });
+});
 
 describe('stripSelectionChrome', () => {
   it('strips selection ring, transform, handles; keeps real shadows', () => {

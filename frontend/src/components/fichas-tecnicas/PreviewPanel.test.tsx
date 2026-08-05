@@ -53,4 +53,18 @@ describe('PreviewPanel (layout sech-gio)', () => {
     // fecha YYYY-MM-DD → DD-MM-YYYY
     expect(screen.getByText('15-03-2026')).toBeInTheDocument();
   });
+
+  it('renders the left logo in preview when provided', () => {
+    const ficha = { ...createEmptyFicha(), id: 'FT-00002', cliente: 'Con Logo' };
+
+    render(<PreviewPanel ficha={ficha} logoLeft="data:image/png;base64,FICHALOGO" />);
+
+    expect(screen.getByAltText('Logo')).toHaveAttribute('src', 'data:image/png;base64,FICHALOGO');
+  });
+
+  it('omits the logo image when logoLeft is null', () => {
+    render(<PreviewPanel ficha={createEmptyFicha()} logoLeft={null} />);
+
+    expect(screen.queryByAltText('Logo')).not.toBeInTheDocument();
+  });
 });

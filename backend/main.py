@@ -280,13 +280,15 @@ def main() -> None:
             logger.exception("Failed to emit db_init_failed notification")
         sys.exit(1)
 
-    # Warm handlers before the operational handshake so every request accepted
-    # after "ready" can be read and dispatched immediately. Keep core/deferred
-    # phases separate to isolate feature import failures and preserve the
-    # registry's targeted lazy-loading behavior outside startup.
-    # Per-module try/except: a failing module delays readiness but never aborts.
+    # Warm core handlers before the operational handshake so preview/canvas/
+    # catalog work as soon as Electron sees "ready". Deferred feature modules
+    # (sellador, ubicaciones, fichas, …) stay lazy by default to keep baseline
+    # RSS low; set ANTARES_WARM_DEFERRED=1 to eager-warm them before ready when
+    # first-use latency matters more than memory. Per-module try/except: a
+    # failing module delays readiness but never aborts.
     HANDLERS.warm_core()
-    HANDLERS.warm_deferred()
+    if os.environ.get("ANTARES_WARM_DEFERRED", "").strip().lower() in {"1", "true", "yes"}:
+        HANDLERS.warm_deferred()
 
     # Plugins are opt-in: set ANTARES_ENABLE_PLUGINS=1 to load user_data/plugins/*.py
     # at startup. Default off so installs without plugins pay no import/exec cost.

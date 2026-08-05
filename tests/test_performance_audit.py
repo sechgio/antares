@@ -40,7 +40,7 @@ def test_sqlite_uses_wal_and_normal_sync() -> None:
 
 
 def test_sqlite_cache_size_is_set() -> None:
-    """Repository should set a cache size for performance."""
+    """Repository should set a bounded cache size (RSS-friendly defaults)."""
     from backend.core.repository import close_connection, get_connection
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -48,11 +48,41 @@ def test_sqlite_cache_size_is_set() -> None:
         try:
             conn = get_connection(db_path)
             cache_size = conn.execute("PRAGMA cache_size").fetchone()[0]
-            # cache_size=-16000 means 16MB; negative = kibibytes
-            assert cache_size <= -16000, f"Expected cache_size <= -16000, got {cache_size}"
+            # Negative = kibibytes. Default is -4000 (4 MiB) — enough for catalog
+            # lookups without a large always-resident page cache.
+            assert cache_size < 0, f"Expected negative cache_size (KiB mode), got {cache_size}"
+            assert abs(cache_size) >= 4000, f"Expected |cache_size| >= 4000 KiB, got {cache_size}"
+            assert abs(cache_size) <= 16000, f"Expected |cache_size| <= 16000 KiB, got {cache_size}"
             temp_store = conn.execute("PRAGMA temp_store").fetchone()[0]
-            # MEMORY = 2
-            assert temp_store == 2, f"Expected temp_store=MEMORY (2), got {temp_store}"
+            # Default FILE=1 (lower RSS). MEMORY=2 remains available via env.
+            assert temp_store in (1, 2), f"Expected temp_store FILE/MEMORY (1/2), got {temp_store}"
+            mmap_size = conn.execute("PRAGMA mmap_size").fetchone()[0]
+            assert mmap_size <= 16 * 1024 * 1024, f"Expected mmap_size <= 16MiB, got {mmap_size}"
+        finally:
+            close_connection()
+
+
+def test_sqlite_temp_store_defaults_to_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default temp_store=FILE; ANTARES_SQLITE_TEMP_STORE=MEMORY opts into RAM temps."""
+    from backend.core.repository import close_connection, get_connection
+
+    monkeypatch.delenv("ANTARES_SQLITE_TEMP_STORE", raising=False)
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "file.db"
+        try:
+            close_connection()
+            conn = get_connection(db_path)
+            assert conn.execute("PRAGMA temp_store").fetchone()[0] == 1  # FILE
+        finally:
+            close_connection()
+
+    monkeypatch.setenv("ANTARES_SQLITE_TEMP_STORE", "MEMORY")
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "mem.db"
+        try:
+            close_connection()
+            conn = get_connection(db_path)
+            assert conn.execute("PRAGMA temp_store").fetchone()[0] == 2  # MEMORY
         finally:
             close_connection()
 

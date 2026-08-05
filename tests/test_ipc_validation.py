@@ -10,6 +10,35 @@ from backend.core.exceptions import InvalidRequestError
 from backend.ipc_protocol import IPCMessage
 
 
+class _BinaryStdout:
+    """Stdout stand-in with a binary buffer (production Electron/pipe path)."""
+
+    def __init__(self) -> None:
+        self.buffer = io.BytesIO()
+
+    def write(self, _data: str) -> int:  # pragma: no cover - must not be used
+        raise AssertionError("text write path must not be used when buffer exists")
+
+    def flush(self) -> None:
+        return None
+
+
+class _TextOnlyStdout:
+    """Stdout without .buffer — forces UTF-8 text fallback in send_*."""
+
+    def __init__(self) -> None:
+        self._buf = io.StringIO()
+
+    def write(self, data: str) -> int:
+        return self._buf.write(data)
+
+    def flush(self) -> None:
+        self._buf.flush()
+
+    def getvalue(self) -> str:
+        return self._buf.getvalue()
+
+
 def test_invalid_method() -> None:
     """Test that invalid methods are rejected."""
     with pytest.raises(InvalidRequestError):
@@ -329,6 +358,21 @@ def test_send_response_encodes_once_and_writes_bytes(monkeypatch) -> None:
     assert payload["result"]["label"] == "café"
 
 
+def test_send_response_writes_utf8_json_line_via_binary_buffer(monkeypatch) -> None:
+    """Handshake-safe path: one UTF-8 JSON line on stdout.buffer."""
+    stdout = _BinaryStdout()
+    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
+
+    ipc_protocol.send_response({"ok": True, "label": "café"}, "r1")
+
+    raw = stdout.buffer.getvalue()
+    assert raw.endswith(b"\n")
+    msg = json.loads(raw.decode("utf-8"))
+    assert msg["jsonrpc"] == "2.0"
+    assert msg["id"] == "r1"
+    assert msg["result"]["label"] == "café"
+
+
 def test_send_response_rejects_oversized_payload_with_utf8_byte_size(monkeypatch) -> None:
     monkeypatch.setattr(ipc_protocol, "_MAX_PAYLOAD_SIZE", 64)
     stdout = _CountingByteStdout()
@@ -359,3 +403,42 @@ def test_send_notification_drops_oversized_without_writing(monkeypatch) -> None:
 
     assert stdout.buffer_write_count == 0
     assert stdout.buffer.getvalue() == b""
+
+
+def test_send_notification_writes_utf8_json_line_via_binary_buffer(monkeypatch) -> None:
+    stdout = _BinaryStdout()
+    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
+
+    ipc_protocol.send_notification("ready", {"status": "ok"})
+
+    raw = stdout.buffer.getvalue()
+    assert raw.endswith(b"\n")
+    msg = json.loads(raw.decode("utf-8"))
+    assert msg["method"] == "ready"
+    assert msg["params"]["status"] == "ok"
+    assert "id" not in msg
+
+
+def test_send_response_text_fallback_without_buffer(monkeypatch) -> None:
+    """When stdout has no .buffer, still emit a parseable JSON line."""
+    stdout = _TextOnlyStdout()
+    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
+
+    ipc_protocol.send_response({"n": 1}, "t1")
+
+    out = stdout.getvalue()
+    assert out.endswith("\n")
+    msg = json.loads(out)
+    assert msg["id"] == "t1"
+    assert msg["result"] == {"n": 1}
+
+
+def test_send_notification_text_fallback_without_buffer(monkeypatch) -> None:
+    stdout = _TextOnlyStdout()
+    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
+
+    ipc_protocol.send_notification("backend.shutdown", {"reason": "signal"})
+
+    msg = json.loads(stdout.getvalue())
+    assert msg["method"] == "backend.shutdown"
+    assert msg["params"]["reason"] == "signal"

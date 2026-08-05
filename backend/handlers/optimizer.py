@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import base64
 import binascii
+import contextlib
 import os
+import tempfile
 import zipfile
 from io import BytesIO
 from pathlib import Path
@@ -74,8 +76,12 @@ def _dedupe_archive_name(filename: str, seen: dict[str, int]) -> str:
 
 
 def _write_b64_zip_entry(zip_file: zipfile.ZipFile, archive_name: str, content_b64: str) -> None:
+    # Stream decode into the zip entry to avoid holding decoded bytes + zip entry.
     with zip_file.open(archive_name, "w") as target:
-        base64.decode(BytesIO(content_b64.encode("ascii")), target)
+        if isinstance(content_b64, (bytes, bytearray)):
+            base64.decode(BytesIO(content_b64), target)
+        else:
+            base64.decode(BytesIO(content_b64.encode("ascii")), target)
 
 
 def _write_optimizer_zip(files: list[dict[str, Any]], zip_name: str, target: BytesIO | Path) -> str:
@@ -91,6 +97,9 @@ def _write_optimizer_zip(files: list[dict[str, Any]], zip_name: str, target: Byt
             entry_filename = _safe_name(str(filename), "file")
             entry_filename = _dedupe_archive_name(entry_filename, seen_names)
             _write_b64_zip_entry(zip_file, f"{safe_folder_name}/{entry_filename}", str(content_b64))
+            # Drop payload reference ASAP so the list + zip do not peak together.
+            if isinstance(file_info, dict):
+                file_info.pop("content_b64", None)
     return safe_zip_name
 
 
@@ -110,10 +119,23 @@ def image_optimizer_zip(params: dict[str, Any]) -> dict[str, str]:
         _write_optimizer_zip(files, str(zip_name), destination)
         return {"saved_path": str(destination), "filename": destination.name}
 
-    zip_buffer = BytesIO()
-    safe_zip_name = _write_optimizer_zip(files, str(zip_name), zip_buffer)
-    zip_buffer.seek(0)
-    return {"zip_base64": base64.b64encode(zip_buffer.read()).decode("ascii"), "filename": safe_zip_name}
+    # Write zip to a temp file so we never retain zip bytes + zip_base64 + file
+    # payloads at the same time. Response shape stays {"zip_base64", "filename"}.
+    fd, tmp_name = tempfile.mkstemp(suffix=".zip")
+    os.close(fd)
+    tmp_path = Path(tmp_name)
+    try:
+        safe_zip_name = _write_optimizer_zip(files, str(zip_name), tmp_path)
+        files.clear()
+        params.pop("files", None)
+        # Encode from disk without keeping a second full zip buffer alongside params.
+        with tmp_path.open("rb") as zip_fh, BytesIO() as encoded_buf:
+            base64.encode(zip_fh, encoded_buf)
+            zip_b64 = encoded_buf.getvalue().decode("ascii").replace("\n", "")
+        return {"zip_base64": zip_b64, "filename": safe_zip_name}
+    finally:
+        with contextlib.suppress(OSError):
+            tmp_path.unlink(missing_ok=True)
 
 
 @with_locale

@@ -2,7 +2,8 @@
 
 Heavy feature modules (conversion/Pillow, sellador/PyMuPDF, ubicaciones, PDF
 renderers, etc.) are imported lazily on targeted registry lookup. Backend startup
-warms them in core/deferred phases before emitting operational ``ready``.
+warms core modules before operational ``ready``; deferred modules stay lazy
+unless ``ANTARES_WARM_DEFERRED=1`` eager-warms them before the handshake.
 
 Critical: resolving one method must import only that method's module. An
 eager load of every handler group on the IPC reader thread caused
@@ -59,7 +60,7 @@ _CORE_HANDLER_MODULES: tuple[str, ...] = (
     "backend.handlers.conversion",
 )
 
-# Feature modules warmed after core, before the operational ready handshake.
+# Feature modules warmed after core when ANTARES_WARM_DEFERRED=1; otherwise lazy.
 _DEFERRED_HANDLER_MODULES: tuple[str, ...] = tuple(
     m for m in _HANDLER_MODULES if m not in _CORE_HANDLER_MODULES
 )
@@ -157,7 +158,7 @@ class HandlerRegistry:
         self.warm(_CORE_HANDLER_MODULES)
 
     def warm_deferred(self) -> None:
-        """Load remaining feature modules after core and before operational ready."""
+        """Load remaining feature modules (opt-in via ANTARES_WARM_DEFERRED)."""
         self.warm(_DEFERRED_HANDLER_MODULES)
 
     def get(self, key: str, default: Any = None) -> Any:

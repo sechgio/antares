@@ -100,3 +100,36 @@ def test_render_report_html_uses_custom_medida_labels() -> None:
     assert '<td class="row-label">ANCHO</td>' in html
     assert '<td class="center">12</td>' in html
     assert '<td class="center">8</td>' in html
+
+
+def test_render_report_html_embeds_logo_data_uris() -> None:
+    report = create_empty_report(11)
+    html = render_report_html(
+        report,
+        logo_left="data:image/png;base64,LEFTLOGO",
+        logo_right="data:image/jpeg;base64,RIGHTLOGO",
+    )
+
+    assert 'src="data:image/png;base64,LEFTLOGO"' in html
+    assert 'src="data:image/jpeg;base64,RIGHTLOGO"' in html
+    assert 'class="logo-img"' in html
+
+
+def test_render_report_html_omits_logo_img_when_logos_absent() -> None:
+    report = create_empty_report(12)
+    html = render_report_html(report)
+
+    assert 'class="logo-img"' not in html
+    assert "data:image/" not in html
+
+
+def test_render_consolidated_html_embeds_logos_on_each_page() -> None:
+    reports = [create_empty_report(1), create_empty_report(2)]
+    html = render_consolidated_html(
+        reports,
+        logo_left="data:image/png;base64,L",
+        logo_right="data:image/png;base64,R",
+    )
+
+    assert html.count('src="data:image/png;base64,L"') == 2
+    assert html.count('src="data:image/png;base64,R"') == 2

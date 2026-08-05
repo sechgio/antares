@@ -115,8 +115,8 @@ def send_response(
     write_ok = False
     t0 = time.perf_counter()
     try:
+        # Encode once: size check and write share the same UTF-8 buffer.
         payload_bytes = json.dumps(payload, ensure_ascii=False, default=_json_default).encode("utf-8")
-        # Validate payload size before sending (UTF-8 bytes, not characters).
         if len(payload_bytes) > _MAX_PAYLOAD_SIZE:
             logger.error(
                 "Response payload too large: %d bytes (max: %d)",
@@ -167,7 +167,6 @@ def send_notification(method: str, params: dict[str, Any]) -> None:
     }
     try:
         payload_bytes = json.dumps(payload, ensure_ascii=False, default=_json_default).encode("utf-8")
-        # Validate payload size before sending
         if len(payload_bytes) > _MAX_PAYLOAD_SIZE:
             logger.error(
                 "Notification payload too large: %d bytes (max: %d), dropping",

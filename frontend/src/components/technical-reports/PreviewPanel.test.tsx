@@ -142,4 +142,24 @@ describe('PreviewPanel', () => {
     expect(medidasTable?.textContent).toContain('12');
     expect(medidasTable?.textContent).toContain('8');
   });
+
+  it('renders logo images in the preview header when provided', () => {
+    render(
+      <PreviewPanel
+        report={report}
+        logoLeft="data:image/png;base64,LEFT"
+        logoRight="data:image/png;base64,RIGHT"
+      />,
+    );
+
+    expect(screen.getByAltText('Logo izquierdo')).toHaveAttribute('src', 'data:image/png;base64,LEFT');
+    expect(screen.getByAltText('Logo derecho')).toHaveAttribute('src', 'data:image/png;base64,RIGHT');
+  });
+
+  it('omits logo images when logos are null', () => {
+    render(<PreviewPanel report={report} logoLeft={null} logoRight={null} />);
+
+    expect(screen.queryByAltText('Logo izquierdo')).not.toBeInTheDocument();
+    expect(screen.queryByAltText('Logo derecho')).not.toBeInTheDocument();
+  });
 });

@@ -16,7 +16,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - **PDF HTML / LRU**: `write_pdf_sanitized` cachea hasta 2 PDFs por `sha256` del HTML sanitizado (máx. 8 MiB/entrada; sanitización y deny-by-default intactos). Contra el baseline fresco del líder (p50 99,2 / p95 122,1 ms, n=30), `panel_aviso_corte_render_pdf` quedó en p50 0,93 / p95 1,50 ms (-98,8% p95) con payload idéntico repetido; confirmación en 2 lotes dentro de ±15%.
 
 ### Fixed
-- **Backend / IPC**: `ready` ahora se emite después de calentar handlers core/diferidos, cargar plugins opcionales y crear el scheduler, justo antes del lector stdin; elimina la ventana en que Electron consideraba operativo un backend que aún no aceptaba requests.
+- **Backend / IPC**: `ready` se emite una sola vez justo antes del lector stdin (tras `warm_core`, plugins opcionales y scheduler). `warm_deferred` sigue opt-in con `ANTARES_WARM_DEFERRED=1` para no inflar el RSS base; elimina la ventana en que Electron veía `ready` antes de que el bucle IPC estuviera listo.
 - **Backend / memoria**: `send_response`/`send_notification` codifican UTF-8 una sola vez y escriben por `stdout.buffer`; jobs completados retienen solo el allowlist de `process_status` (`file_count`/`destino`/`formato`).
 
 ## [0.11.5] — 2026-08-04
