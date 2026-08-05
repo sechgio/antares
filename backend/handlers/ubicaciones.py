@@ -1,3 +1,4 @@
+import base64
 import contextlib
 import errno
 import hashlib
@@ -65,7 +66,8 @@ _REF_LAYOUT: dict[str, dict[str, int | float]] = {
         "border": 4,
     },
 }
-_PIN_TIP_RATIO = 0.884  # punta del pin.png medida en assets/ubicaciones/pin.png
+_PIN_TIP_X_RATIO = 0.4846
+_PIN_TIP_RATIO = 0.7432  # punta coloreada; el PNG conserva una sombra debajo
 _MAP_OVERLAY_ALPHA = 120
 _BG_RGB = (246, 246, 246)
 
@@ -731,7 +733,12 @@ def _encode_preview_data(
     total_filas: int,
     formato: str,
 ) -> dict[str, Any]:
-    """Encode composed preview to a disk JPEG; return file URI (not base64)."""
+    """Encode composed preview to JPEG.
+
+    ``image`` is a CSP-safe ``data:`` URI for the renderer (Electron blocks
+    ``file:`` in img-src). ``image_path`` keeps the on-disk cache entry used for
+    composed-preview invalidation and optional Electron re-reads.
+    """
     buf = BytesIO()
     preview_img.save(buf, format="JPEG", quality=88, optimize=True, subsampling=0)
     raw = buf.getvalue()
@@ -748,7 +755,7 @@ def _encode_preview_data(
 
     resolved = out_path.resolve()
     return {
-        "image": resolved.as_uri(),
+        "image": f"data:image/jpeg;base64,{base64.b64encode(raw).decode('ascii')}",
         "image_path": str(resolved),
         "cod_componente": str(datos["cod_componente"]),
         "direccion": str(datos["direccion"]),
@@ -946,8 +953,8 @@ def _compose_ubicacion_image(
                 pin_resized = _colorize_pin(pin_resized, _hex_to_rgb(pin_color_hex))
             pin_offset_x = round(cs_pin.get("offsetX", 0) * scale)
             pin_offset_y = round(cs_pin.get("offsetY", 0) * scale)
-            pin_x = (out_w - new_pin_w) // 2 + pin_offset_x
-            pin_y = (map_height // 2) - int(new_pin_h * _PIN_TIP_RATIO) + pin_offset_y
+            pin_x = round(out_w / 2 - new_pin_w * _PIN_TIP_X_RATIO) + pin_offset_x
+            pin_y = round(map_height / 2 - new_pin_h * _PIN_TIP_RATIO) + pin_offset_y
             final_img.paste(pin_resized, (pin_x, pin_y), mask=pin_resized)
 
     return final_img

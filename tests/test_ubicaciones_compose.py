@@ -6,6 +6,7 @@ from typing import cast
 import pytest
 from PIL import Image
 
+from backend.handlers import ubicaciones as ub
 from backend.handlers.ubicaciones import (
     _BG_RGB,
     _PIN_TIP_RATIO,
@@ -158,6 +159,60 @@ def test_pin_is_within_map_area(formato: str) -> None:
     assert img.getpixel((center_x, pin_y + pin_w // 2)) != _BG_RGB
 
 
+def test_pin_tip_constants_match_colored_tip_in_asset() -> None:
+    pin_path = resource_path("assets/ubicaciones/pin.png")
+    with Image.open(pin_path) as opened:
+        pin = opened.convert("RGBA")
+
+    pixels = pin.load()
+    assert pixels is not None
+    tip_y = next(
+        y
+        for y in range(pin.height - 1, -1, -1)
+        if any(pixels[x, y][3] >= 128 and max(pixels[x, y][:3]) >= 40 for x in range(pin.width))
+    )
+    tip_xs = [
+        x
+        for x in range(pin.width)
+        if pixels[x, tip_y][3] >= 128 and max(pixels[x, tip_y][:3]) >= 40
+    ]
+    tip_x = (min(tip_xs) + max(tip_xs)) / 2
+
+    assert tip_y / pin.height == pytest.approx(ub._PIN_TIP_RATIO, abs=1 / pin.height)
+    assert tip_x / pin.width == pytest.approx(ub._PIN_TIP_X_RATIO, abs=1 / pin.width)
+
+
+@pytest.mark.parametrize("formato", ["vertical", "horizontal"])
+def test_composed_pin_colored_tip_is_at_map_center(formato: str) -> None:
+    cap_w, cap_h = _map_capture_size(formato, preview=True)
+    hidden_texts = {
+        key: {"visible": False}
+        for key in ("cod_componente", "direccion", "localidad", "distrito")
+    }
+    img = _compose_ubicacion_image(
+        SAMPLE_DATOS,
+        formato,
+        _fake_map_png(cap_w, cap_h, (20, 20, 20)),
+        preview=True,
+        custom_styles={"texts": hidden_texts, "map": {"overlayAlpha": 0}},
+    )
+    out_w, out_h, footer_h = _dimensions_for(formato, preview=True)
+    map_center = (out_w / 2, (out_h - footer_h) / 2)
+
+    colored_pin_pixels = [
+        (x, y)
+        for y in range(out_h - footer_h)
+        for x in range(out_w)
+        if (lambda pixel: pixel[0] < 50 and pixel[1] > 80 and pixel[2] > 100)(img.getpixel((x, y)))
+    ]
+    tip_y = max(y for _, y in colored_pin_pixels)
+    tip_xs = [x for x, y in colored_pin_pixels if y == tip_y]
+    tip_x = (min(tip_xs) + max(tip_xs)) / 2
+
+    assert tip_x == pytest.approx(map_center[0], abs=2)
+    assert tip_y == pytest.approx(map_center[1], abs=2)
+
+
 def test_ref_layout_horizontal_matches_reference_jpg() -> None:
     spec = _REF_LAYOUT["horizontal"]
     assert spec["out_w"] == 3508
@@ -220,6 +275,19 @@ def test_map_cache_key_differs_by_resolution() -> None:
     preview_key = _map_cache_key(-12.0, -77.0, "vertical", preview=True)
     export_key = _map_cache_key(-12.0, -77.0, "vertical", preview=False)
     assert preview_key != export_key
+
+
+@pytest.mark.parametrize("formato", ["vertical", "horizontal"])
+def test_export_fetch_has_wider_geo_footprint_than_preview(formato: str) -> None:
+    preview_capture = _map_capture_size(formato, preview=True)
+    export_capture = _map_capture_size(formato, preview=False)
+    preview_fetch = ub._cap_fetch_size(*preview_capture)
+    export_fetch = ub._cap_fetch_size(*export_capture)
+
+    assert preview_fetch == preview_capture
+    assert max(export_fetch) == ub._MAP_FETCH_MAX_DIM
+    assert export_fetch[0] > preview_fetch[0]
+    assert export_fetch[1] > preview_fetch[1]
 
 
 def test_output_pdf_filename_sanitizes_windows_invalid_chars() -> None:
