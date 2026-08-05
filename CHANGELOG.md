@@ -5,6 +5,20 @@ Todas las versiones notables de Antares se documentan aquí.
 Formato basado en [Keep a Changelog](https://keepachangelog.com/),
 y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Backend / telemetría**: con `ANTARES_IPC_TELEMETRY=1`, cada request IPC emite una línea `ipc_phase` con `msg_id`, lane, latencias por fase (`parse`/`scheduler_wait`/`handler`/`serialize_write`) y snapshots/deltas RSS; fallos de telemetría no afectan el pipe.
+
+### Changed
+- **Formatos / preview**: `max_width` ahora limita el raster sin alterar la respuesta PNG ni los previews de Sellador. En 30 muestras warm comparables a 1200 px, p95 bajó de 62,5 a 37,7 ms (-39,7%) y el delta RSS pico de 13,6 a 6,1 MiB (-55,2%).
+- **Panel aviso / WeasyPrint**: `write_pdf_sanitized` reutiliza un `FontConfiguration` por hilo (sin singleton global ni lock). En el rebenchmark IPC completo (93 métodos; “Primera” excluida de percentiles; n=30 heavy), `panel_aviso_corte_render_pdf` bajó de p50 168,8 / p95 297,3 ms a p50 112,7 / p95 168,7 ms (-43,3% p95). Microbench A/B de `write_pdf_sanitized`: p95 75,4 → 52,3 ms (-30,6%).
+- **PDF HTML / LRU**: `write_pdf_sanitized` cachea hasta 2 PDFs por `sha256` del HTML sanitizado (máx. 8 MiB/entrada; sanitización y deny-by-default intactos). Contra el baseline fresco del líder (p50 99,2 / p95 122,1 ms, n=30), `panel_aviso_corte_render_pdf` quedó en p50 0,93 / p95 1,50 ms (-98,8% p95) con payload idéntico repetido; confirmación en 2 lotes dentro de ±15%.
+
+### Fixed
+- **Backend / IPC**: `ready` se emite una sola vez justo antes del lector stdin (tras `warm_core`, plugins opcionales y scheduler). `warm_deferred` sigue opt-in con `ANTARES_WARM_DEFERRED=1` para no inflar el RSS base; elimina la ventana en que Electron veía `ready` antes de que el bucle IPC estuviera listo.
+- **Backend / memoria**: `send_response`/`send_notification` codifican UTF-8 una sola vez y escriben por `stdout.buffer`; jobs completados retienen solo el allowlist de `process_status` (`file_count`/`destino`/`formato`).
+
 ## [0.11.5] — 2026-08-04
 
 ### Added

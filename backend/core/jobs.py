@@ -267,21 +267,27 @@ class JobManager:
 
     @staticmethod
     def _slim_completed_job(job: Job) -> None:
-        """Drop heavyweight params retained after a job finishes.
+        """Retain only the params that ``process_status`` exposes.
 
-        Status IPC already omits full ``files`` lists; keeping thousands of
-        path strings on completed Job objects only burns RAM until cleanup.
+        Status IPC already omits full ``files`` lists and other bulk fields;
+        keeping mappings/paths on completed Job objects only burns RAM until
+        cleanup.
         """
         params = job.params
         if not isinstance(params, dict):
             return
         files = params.get("files")
-        if not isinstance(files, list) or not files:
-            return
-        slim = dict(params)
-        slim["file_count"] = len(files)
-        slim["files"] = []
-        job.params = slim
+        if isinstance(files, list) and files:
+            file_count = len(files)
+        else:
+            stored = params.get("file_count")
+            file_count = stored if isinstance(stored, int) else 0
+        job.params = {
+            "file_count": file_count,
+            "destino": params.get("destino"),
+            "formato": params.get("formato"),
+            "files": [],
+        }
 
     def cleanup_completed(self, max_remaining: int = MAX_COMPLETED_JOBS) -> int:
         """Remove old completed/failed jobs to free memory.

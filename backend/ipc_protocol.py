@@ -12,10 +12,12 @@ import os
 import re
 import sys
 import threading
+import time
 import traceback
 from pathlib import Path
 from typing import Any
 
+from backend.core import ipc_phase_telemetry
 from backend.core.exceptions import AntaresBaseException, InvalidRequestError, ValidationError
 from backend.utils.validators import path_param_violations
 
@@ -70,6 +72,19 @@ class IPCMessage:
         return f"IPCMessage(id={self.id}, method={self.method})"
 
 
+def _emit_stdout_line(payload_bytes: bytes) -> None:
+    """Write one NDJSON line using a single UTF-8 byte buffer when possible."""
+    with _stdout_lock:
+        buffer = getattr(sys.stdout, "buffer", None)
+        if buffer is not None:
+            buffer.write(payload_bytes + b"\n")
+            buffer.flush()
+            return
+        # Text-only test doubles (e.g. io.StringIO) have no binary buffer.
+        sys.stdout.write(payload_bytes.decode("utf-8") + "\n")
+        sys.stdout.flush()
+
+
 def send_response(
     result: Any,
     msg_id: str | int,
@@ -96,33 +111,51 @@ def send_response(
             }
     else:
         payload["result"] = result
+
+    write_ok = False
+    t0 = time.perf_counter()
     try:
         # Encode once: size check and write share the same UTF-8 buffer.
-        encoded = json.dumps(payload, ensure_ascii=False, default=_json_default).encode("utf-8")
-        if len(encoded) > _MAX_PAYLOAD_SIZE:
+        payload_bytes = json.dumps(payload, ensure_ascii=False, default=_json_default).encode("utf-8")
+        if len(payload_bytes) > _MAX_PAYLOAD_SIZE:
             logger.error(
                 "Response payload too large: %d bytes (max: %d)",
-                len(encoded),
+                len(payload_bytes),
                 _MAX_PAYLOAD_SIZE,
             )
+            # Send error response instead of oversized payload
             error_payload = {
                 "jsonrpc": "2.0",
                 "id": msg_id,
-                "error": {"code": -32001, "message": f"Response too large ({len(encoded)} bytes)"},
+                "error": {
+                    "code": -32001,
+                    "message": f"Response too large ({len(payload_bytes)} bytes)",
+                },
             }
-            encoded = json.dumps(error_payload, ensure_ascii=False).encode("utf-8")
-        with _stdout_lock:
-            out = getattr(sys.stdout, "buffer", None)
-            if out is not None:
-                out.write(encoded + b"\n")
-                out.flush()
-            else:
-                sys.stdout.write(encoded.decode("utf-8") + "\n")
-                sys.stdout.flush()
+            payload_bytes = json.dumps(error_payload, ensure_ascii=False).encode("utf-8")
+        _emit_stdout_line(payload_bytes)
+        write_ok = True
     except Exception as exc:
         # If stdout is broken (e.g., Electron closed the pipe), log to stderr
         # but DO NOT crash the backend process.
         logger.error("Failed to write response to stdout: %s", exc)
+    finally:
+        if ipc_phase_telemetry.enabled():
+            try:
+                serialize_ms = (time.perf_counter() - t0) * 1000.0
+                ipc_phase_telemetry.mark(msg_id, "serialize_write_end")
+                fields: dict[str, Any] = {
+                    "serialize_write_ms": serialize_ms,
+                    "write_ok": write_ok,
+                }
+                if error is not None:
+                    fields["ok"] = False
+                elif write_ok:
+                    fields.setdefault("ok", True)
+                ipc_phase_telemetry.set_fields(msg_id, **fields)
+                ipc_phase_telemetry.emit_and_clear(msg_id)
+            except Exception:
+                logger.debug("ipc_phase telemetry failed in send_response", exc_info=True)
 
 
 def send_notification(method: str, params: dict[str, Any]) -> None:
@@ -133,22 +166,15 @@ def send_notification(method: str, params: dict[str, Any]) -> None:
         "params": params,
     }
     try:
-        encoded = json.dumps(payload, ensure_ascii=False, default=_json_default).encode("utf-8")
-        if len(encoded) > _MAX_PAYLOAD_SIZE:
+        payload_bytes = json.dumps(payload, ensure_ascii=False, default=_json_default).encode("utf-8")
+        if len(payload_bytes) > _MAX_PAYLOAD_SIZE:
             logger.error(
                 "Notification payload too large: %d bytes (max: %d), dropping",
-                len(encoded),
+                len(payload_bytes),
                 _MAX_PAYLOAD_SIZE,
             )
             return  # Drop oversized notifications to prevent pipe blocking
-        with _stdout_lock:
-            out = getattr(sys.stdout, "buffer", None)
-            if out is not None:
-                out.write(encoded + b"\n")
-                out.flush()
-            else:
-                sys.stdout.write(encoded.decode("utf-8") + "\n")
-                sys.stdout.flush()
+        _emit_stdout_line(payload_bytes)
     except Exception as exc:
         # If stdout is broken, log to stderr but DO NOT crash the backend.
         logger.error("Failed to write notification to stdout: %s", exc)
@@ -257,6 +283,8 @@ def read_message() -> IPCMessage | None:
         line, line_bytes, oversized = _read_limited_line(stdin, binary=binary)
         if line is None:
             return None
+        # Parse window starts only after the line is fully read (excludes stdin idle).
+        parse_start = ipc_phase_telemetry.begin_parse()
         if isinstance(line, bytes):
             line = line.decode("utf-8")
         if oversized:
@@ -267,6 +295,7 @@ def read_message() -> IPCMessage | None:
             )
             msg_id = _try_extract_request_id(line)
             if msg_id is not None:
+                ipc_phase_telemetry.finish_parse(msg_id, parse_start)
                 send_response(
                     None,
                     msg_id,
@@ -278,9 +307,12 @@ def read_message() -> IPCMessage | None:
         data = json.loads(line)
         msg_id = data.get("id") if isinstance(data, dict) else None
         try:
-            return IPCMessage(data)
+            msg = IPCMessage(data)
+            ipc_phase_telemetry.finish_parse(msg.id, parse_start, method=msg.method)
+            return msg
         except (ValueError, AntaresBaseException) as exc:
             if msg_id is not None:
+                ipc_phase_telemetry.finish_parse(msg_id, parse_start)
                 send_response(None, msg_id, error=exc)
             else:
                 logger.error("Invalid IPC message with no id: %s", exc)

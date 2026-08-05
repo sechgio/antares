@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 MAX_UPLOAD_PDF_BYTES = 50 * 1024 * 1024
 MAX_UNCOMPRESSED_RATIO = 100
 MAX_UPLOAD_PDF_PAGES = 1000
+_FORMATOS_PREVIEW_MIN_DPI = 72
 
 _PROJECT_DIR = Path(__file__).resolve().parent.parent.parent
 _BUILTIN_DIR = _PROJECT_DIR / "formatos"
@@ -381,7 +382,13 @@ def render_template_page(fmt_id: str, page_num: int, max_width: int = 1200) -> d
         raise ValueError(msg)
     template_bytes = _load_template_bytes(entry)
     from backend.core.sellador_preview import render_pdf_bytes_page_preview
-    return render_pdf_bytes_page_preview(template_bytes, page_num, max_width=max_width)
+    return render_pdf_bytes_page_preview(
+        template_bytes,
+        page_num,
+        max_width=max_width,
+        minimum_dpi=_FORMATOS_PREVIEW_MIN_DPI,
+        enforce_max_width=True,
+    )
 
 
 def generate_pdf(fmt_id: str, desde: int, hasta: int) -> tuple[bytes, str]:

@@ -261,3 +261,138 @@ def test_maybe_log_ipc_timing_verbose_logs_fast_handlers(monkeypatch) -> None:
     backend_main._maybe_log_ipc_timing("version", 2.0, ok=True)
     assert len(logged) == 1
     assert "version" in logged[0][1]
+
+
+def test_main_emits_ready_immediately_before_reading_stdin(monkeypatch) -> None:
+    """The ready handshake must mean the backend can accept IPC immediately."""
+    events: list[str] = []
+
+    class FakeScheduler:
+        def shutdown(self, *, wait: bool) -> None:
+            assert wait is True
+            events.append("scheduler_shutdown")
+
+    monkeypatch.setenv("ANTARES_ENABLE_PLUGINS", "1")
+    monkeypatch.delenv("ANTARES_WARM_DEFERRED", raising=False)
+    monkeypatch.setattr(backend_main, "_shutdown_requested", False)
+    monkeypatch.setattr(backend_main, "init_db", lambda: events.append("init_db"))
+    monkeypatch.setattr(backend_main.HANDLERS, "warm_core", lambda: events.append("warm_core"))
+    monkeypatch.setattr(backend_main.HANDLERS, "warm_deferred", lambda: events.append("warm_deferred"))
+    monkeypatch.setattr(backend_main, "load_plugins_from_dir", lambda: events.append("plugins"))
+    monkeypatch.setattr(
+        backend_main,
+        "get_scheduler",
+        lambda: events.append("get_scheduler") or FakeScheduler(),
+    )
+    monkeypatch.setattr(
+        backend_main,
+        "send_notification",
+        lambda method, _params: events.append(method),
+    )
+    monkeypatch.setattr(
+        backend_main,
+        "read_message",
+        lambda: events.append("read_message") or None,
+    )
+    monkeypatch.setattr(
+        backend_main,
+        "close_connection",
+        lambda: events.append("close_connection"),
+    )
+
+    backend_main.main()
+
+    assert events == [
+        "init_db",
+        "warm_core",
+        "plugins",
+        "get_scheduler",
+        "ready",
+        "read_message",
+        "scheduler_shutdown",
+        "close_connection",
+    ]
+    assert "warm_deferred" not in events
+
+
+def test_main_emits_ready_after_opt_in_warm_deferred(monkeypatch) -> None:
+    events: list[str] = []
+
+    class FakeScheduler:
+        def shutdown(self, *, wait: bool) -> None:
+            assert wait is True
+            events.append("scheduler_shutdown")
+
+    monkeypatch.delenv("ANTARES_ENABLE_PLUGINS", raising=False)
+    monkeypatch.setenv("ANTARES_WARM_DEFERRED", "1")
+    monkeypatch.setattr(backend_main, "_shutdown_requested", False)
+    monkeypatch.setattr(backend_main, "init_db", lambda: events.append("init_db"))
+    monkeypatch.setattr(backend_main.HANDLERS, "warm_core", lambda: events.append("warm_core"))
+    monkeypatch.setattr(backend_main.HANDLERS, "warm_deferred", lambda: events.append("warm_deferred"))
+    monkeypatch.setattr(
+        backend_main,
+        "get_scheduler",
+        lambda: events.append("get_scheduler") or FakeScheduler(),
+    )
+    monkeypatch.setattr(
+        backend_main,
+        "send_notification",
+        lambda method, _params: events.append(method),
+    )
+    monkeypatch.setattr(
+        backend_main,
+        "read_message",
+        lambda: events.append("read_message") or None,
+    )
+    monkeypatch.setattr(
+        backend_main,
+        "close_connection",
+        lambda: events.append("close_connection"),
+    )
+
+    backend_main.main()
+
+    assert events == [
+        "init_db",
+        "warm_core",
+        "warm_deferred",
+        "get_scheduler",
+        "ready",
+        "read_message",
+        "scheduler_shutdown",
+        "close_connection",
+    ]
+
+
+def test_main_does_not_emit_ready_if_shutdown_arrives_during_startup(monkeypatch) -> None:
+    """A process already stopping must never advertise operational readiness."""
+    notifications: list[str] = []
+
+    class FakeScheduler:
+        def __init__(self) -> None:
+            backend_main._shutdown_requested = True
+
+        def shutdown(self, *, wait: bool) -> None:
+            assert wait is True
+
+    def fail_if_read() -> None:
+        raise AssertionError("stdin must not be read after startup shutdown")
+
+    monkeypatch.delenv("ANTARES_ENABLE_PLUGINS", raising=False)
+    monkeypatch.delenv("ANTARES_WARM_DEFERRED", raising=False)
+    monkeypatch.setattr(backend_main, "_shutdown_requested", False)
+    monkeypatch.setattr(backend_main, "init_db", lambda: None)
+    monkeypatch.setattr(backend_main.HANDLERS, "warm_core", lambda: None)
+    monkeypatch.setattr(backend_main.HANDLERS, "warm_deferred", lambda: None)
+    monkeypatch.setattr(backend_main, "get_scheduler", FakeScheduler)
+    monkeypatch.setattr(
+        backend_main,
+        "send_notification",
+        lambda method, _params: notifications.append(method),
+    )
+    monkeypatch.setattr(backend_main, "read_message", fail_if_read)
+    monkeypatch.setattr(backend_main, "close_connection", lambda: None)
+
+    backend_main.main()
+
+    assert notifications == ["backend.shutdown"]
