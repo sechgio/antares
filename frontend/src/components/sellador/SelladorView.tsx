@@ -269,7 +269,8 @@ export default function SelladorView() {
       const previewUrl = URL.createObjectURL(file);
       setStampFile(file);
       setStampPath(localPath);
-      // Keep base64 even when path exists — backend falls back if path fails.
+      // Keep b64 in memory for retry if stamp_path becomes unreadable at apply time.
+      // Do not send both over IPC when path works (see handleApply).
       setStampBase64(await fileToBase64(file));
       setStampPreviewUrl(previewUrl);
       if (pageSize) {
@@ -378,10 +379,8 @@ export default function SelladorView() {
       if (!outputPath) return;
 
       const stampPlacements = toBackendStampPlacements(resolvedPlacements);
-      const res = await api.selladorApply({
+      const applyBase = {
         ...(pdfPath ? { pdf_path: pdfPath } : { pdf_b64: pdfBase64! }),
-        ...(stampPath ? { stamp_path: stampPath } : {}),
-        ...(stampBase64 ? { stamp_b64: stampBase64 } : {}),
         stamp_count: resolvedPlacements.length,
         x: primaryRect.x,
         y: primaryRect.y,
@@ -391,7 +390,19 @@ export default function SelladorView() {
         seed,
         filename: defaultName,
         output_path: outputPath,
-      });
+      };
+      // Prefer disk path (cheap IPC). Retry with in-memory b64 only if path fails.
+      let res;
+      if (stampPath) {
+        try {
+          res = await api.selladorApply({ ...applyBase, stamp_path: stampPath });
+        } catch (err) {
+          if (!stampBase64) throw err;
+          res = await api.selladorApply({ ...applyBase, stamp_b64: stampBase64 });
+        }
+      } else {
+        res = await api.selladorApply({ ...applyBase, stamp_b64: stampBase64! });
+      }
 
       addToast({
         message: res.saved_path ? `PDF guardado: ${res.filename}` : 'PDF sellado correctamente.',

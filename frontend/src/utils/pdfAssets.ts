@@ -46,10 +46,14 @@ export async function fileToPdfImageSource(
   localImagePaths: Record<string, string>,
 ): Promise<string> {
   const localPath = getElectronFilePath(file);
-  if (localPath && (await registerLocalPath(localPath))) {
-    const token = buildLocalImageToken(key);
-    localImagePaths[token] = localPath;
-    return token;
+  if (localPath) {
+    if (await registerLocalPath(localPath)) {
+      const token = buildLocalImageToken(key);
+      localImagePaths[token] = localPath;
+      return token;
+    }
+    // Allowlist rejected the path — compress instead of shipping full-res over IPC.
+    return imageToPdfDataUrl(file, 'high');
   }
   return fileToDataUrl(file);
 }
@@ -116,9 +120,13 @@ export async function imageToPdfSource(
 ): Promise<PdfImageSource> {
   if (quality === 'max' || quality === 'high') {
     const localPath = getElectronFilePath(file);
-    if (localPath && (await registerLocalPath(localPath))) {
-      const token = buildLocalImageToken(key);
-      return { src: token, localPath, token };
+    if (localPath) {
+      if (await registerLocalPath(localPath)) {
+        const token = buildLocalImageToken(key);
+        return { src: token, localPath, token };
+      }
+      // Register failed — never fall back to full-res max over IPC.
+      return { src: await imageToPdfDataUrl(file, quality === 'max' ? 'high' : quality) };
     }
   }
 
