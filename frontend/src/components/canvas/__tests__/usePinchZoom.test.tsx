@@ -113,20 +113,23 @@ describe('usePinchZoom', () => {
     expect(onStart).toHaveBeenCalledTimes(1);
     expect(activeRef.current).toBe(true);
 
-    // Spread fingers (distance 100 → 200 = 2×) within one frame.
+    // Spread and shift fingers (distance 100 → 200 = 2×) within one frame.
     act(() => {
-      touch('pointermove', 1, 100, 150, el);
-      touch('pointermove', 2, 300, 150, el);
+      touch('pointermove', 1, 120, 160, el);
+      touch('pointermove', 2, 320, 160, el);
     });
     expect(onZoom).not.toHaveBeenCalled();
     act(() => tick());
     expect(onZoom).toHaveBeenCalledTimes(1);
     expect(onZoom.mock.calls[0]![0]).toBeCloseTo(2, 5);
-    expect(onPan).toHaveBeenCalledTimes(1);
+    expect(onPan).toHaveBeenCalledWith({ x: 20, y: 10 });
 
     act(() => {
-      touch('pointerup', 1, 100, 150, el);
-      touch('pointerup', 2, 300, 150, el);
+      touch('pointerup', 1, 120, 160, el);
+    });
+    expect(activeRef.current).toBe(true);
+    act(() => {
+      touch('pointerup', 2, 320, 160, el);
     });
     expect(activeRef.current).toBe(false);
   });

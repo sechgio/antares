@@ -4,6 +4,7 @@ import { useSmoothViewport } from '../hooks/useSmoothViewport';
 import {
   inertiaStep,
   lerpViewport,
+  MIN_ZOOM,
   PAN_FRICTION,
   PAN_MIN_VELOCITY,
 } from '../ops/viewportNav';
@@ -71,9 +72,9 @@ describe('useSmoothViewport', () => {
     });
     expect(frames.size).toBe(1);
     act(() => {
-      result.current.setZoom(0.5);
+      result.current.setZoom(0);
     });
-    expect(result.current.zoom).toBe(0.5);
+    expect(result.current.zoom).toBe(MIN_ZOOM);
     expect(frames.size).toBe(0);
   });
 

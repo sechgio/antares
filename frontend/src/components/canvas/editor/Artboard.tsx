@@ -478,7 +478,9 @@ function Artboard({
   usePinchZoom(viewportRef, navRef, {
     activeRef: pinchGestureRef,
     onStart: () => {
-      // Cancel in-flight single-pointer gesture visuals when the second finger lands.
+      // Abort the single-pointer session before clearing its visuals. Otherwise
+      // the final pinch pointerup can still commit the stale drag or inertia.
+      abortActivePointerGestureSession();
       setMarquee(null);
       setDraft(null);
       setGuidesIfChanged([]);
@@ -769,9 +771,14 @@ function Artboard({
       ids: string[],
       startClientX: number,
       startClientY: number,
-      options?: { onClickWithoutDrag?: () => void; duplicate?: boolean },
+      options?: {
+        onClickWithoutDrag?: () => void;
+        duplicate?: boolean;
+        originSelectedIds?: string[];
+      },
     ) => {
       const originLayers = layersRef.current;
+      const originSelectedIds = options?.originSelectedIds ?? [...selectedIdsRef.current];
       let snapshot = cloneLayers(
         originLayers,
         new Set(expandWithDescendants(originLayers, ids)),
@@ -934,6 +941,9 @@ function Artboard({
           raf.cancel();
           // Restore pre-gesture layers (original ids — not Alt-duplicate moveIds).
           abortGesturePreview({ layers: originLayers, ids });
+          if (options?.duplicate && didDuplicate) {
+            onSelectIdsRef.current(originSelectedIds);
+          }
         },
       });
     },
@@ -991,6 +1001,7 @@ function Artboard({
       beginSelectionMove(moveIds, e.clientX, e.clientY, {
         onClickWithoutDrag,
         duplicate: e.altKey,
+        originSelectedIds: ids,
       });
     },
     [beginSelectionMove],
