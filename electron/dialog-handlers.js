@@ -4,7 +4,7 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 
 const { sanitizeHtmlForPdf } = require('../shared/html-sanitizer');
-const { createLocalThumbnail } = require('./local-thumbnail');
+const { createLocalThumbnail, createLocalImageDataUrl } = require('./local-thumbnail');
 const {
   isPathInside,
   registerAllowedReadPath,
@@ -14,7 +14,13 @@ const {
 } = require('./path-allowlist');
 
 const DIALOG_METHODS = new Set(['dialog_files', 'dialog_dest', 'dialog_save', 'dialog_folder']);
-const NATIVE_METHODS = new Set([...DIALOG_METHODS, 'html_to_pdf', 'local_thumbnail', 'register_local_path']);
+const NATIVE_METHODS = new Set([
+  ...DIALOG_METHODS,
+  'html_to_pdf',
+  'local_thumbnail',
+  'local_image_data_url',
+  'register_local_path',
+]);
 
 /** @type {Set<string>} Directory roots allowed for PDF writes (from dialogs). */
 const _allowedWriteRoots = new Set();
@@ -369,14 +375,20 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
   }
 
   if (method === 'local_thumbnail') {
-    // Path A: display-size thumbs via nativeImage. On any failure the renderer
-    // falls back to file:// full path — never blank cards.
+    // Path A: display-size thumbs via nativeImage. On failure the renderer
+    // shows a placeholder (file:// is blocked by CSP img-src).
     const { nativeImage } = electronModules;
     const result = await createLocalThumbnail(
       params && params.path,
       params && params.maxEdge,
       nativeImage,
     );
+    return { handled: true, result };
+  }
+
+  if (method === 'local_image_data_url') {
+    // Full-fidelity local image → data URL for CSP-safe <img> (no file://).
+    const result = await createLocalImageDataUrl(params && params.path);
     return { handled: true, result };
   }
 

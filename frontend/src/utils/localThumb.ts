@@ -1,7 +1,10 @@
 /**
  * LRU-cached, concurrency-limited local thumbnails for conversion grid.
  * Uses Electron nativeImage via api.localThumbnail (Path A). On any failure
- * returns null so callers fall back to file:// full path.
+ * returns null so callers can show a placeholder (file:// is CSP-blocked).
+ *
+ * Also exposes getLocalImageDataUrl for full-fidelity CSP-safe previews
+ * (e.g. Ubicaciones composed maps written to disk by the backend).
  */
 
 import { api } from '../api';
@@ -11,8 +14,9 @@ const MAX_CACHE = 200;
 const MIN_CONCURRENCY = 4;
 const MAX_CONCURRENCY = 8;
 const DEFAULT_MAX_EDGE = 256;
+const FULL_IMAGE_CACHE_PREFIX = 'full\0';
 
-/** key = path + maxEdge → data URL */
+/** key = path + maxEdge → data URL (thumbs); full\0path → full image */
 const cache = new Map<string, string>();
 
 /** Coalesce concurrent requests for the same key into one IPC call. */
@@ -99,6 +103,41 @@ export async function getLocalThumbnail(
       // Allowlist must be registered before local_thumbnail asserts the path.
       await registerLocalPath(filePath);
       const result = await runLimited(() => api.localThumbnail({ path: filePath, maxEdge: edge }));
+      if (result && typeof result.dataUrl === 'string' && result.dataUrl.startsWith('data:')) {
+        cacheSet(key, result.dataUrl);
+        return result.dataUrl;
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      inFlight.delete(key);
+    }
+  })();
+
+  inFlight.set(key, promise);
+  return promise;
+}
+
+/**
+ * Resolve a full-fidelity data URL for an allowlisted local image path.
+ * Used when the backend returns a disk JPEG/file URI that cannot be used as
+ * <img src> under Electron CSP (img-src has no file:).
+ */
+export async function getLocalImageDataUrl(filePath: string): Promise<string | null> {
+  if (typeof filePath !== 'string' || !filePath.trim()) return null;
+
+  const key = `${FULL_IMAGE_CACHE_PREFIX}${filePath}`;
+  const hit = cacheGet(key);
+  if (hit) return hit;
+
+  const existing = inFlight.get(key);
+  if (existing) return existing;
+
+  const promise = (async (): Promise<string | null> => {
+    try {
+      await registerLocalPath(filePath);
+      const result = await runLimited(() => api.localImageDataUrl({ path: filePath }));
       if (result && typeof result.dataUrl === 'string' && result.dataUrl.startsWith('data:')) {
         cacheSet(key, result.dataUrl);
         return result.dataUrl;

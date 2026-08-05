@@ -370,6 +370,29 @@ async function run() {
       unregisteredHandled = /not allowed|not a file/i.test(err.message);
     }
     assert(unregisteredHandled, 'local_thumbnail should reject unregistered paths');
+
+    // Full-fidelity local → data URL (Ubicaciones / CSP-safe img src)
+    const fullJpeg = Buffer.from([0xff, 0xd8, 0xff, 0xd9, 0x00, 0x01, 0x02]);
+    await fs.promises.writeFile(imgPath, fullJpeg);
+    const full = await handleDialogCall(
+      'local_image_data_url',
+      { path: imgPath },
+      dialog,
+      win,
+    );
+    assert(full.handled === true, 'local_image_data_url should be handled by Electron');
+    assert(
+      full.result.dataUrl === `data:image/jpeg;base64,${fullJpeg.toString('base64')}`,
+      'local_image_data_url should return unmodified JPEG bytes as data URL',
+    );
+
+    let badFullPath = false;
+    try {
+      await handleDialogCall('local_image_data_url', { path: '../etc/passwd' }, dialog, win);
+    } catch (err) {
+      badFullPath = /absolute|invalid path/i.test(err.message);
+    }
+    assert(badFullPath, 'local_image_data_url should reject relative paths');
   } finally {
     await fs.promises.rm(thumbTempDir, { recursive: true, force: true });
   }

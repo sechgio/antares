@@ -18,6 +18,16 @@ const MIN_MAX_EDGE = 32;
 const MAX_MAX_EDGE = 1024;
 const JPEG_QUALITY = 60;
 const DISK_CACHE_MAX_FILES = 400;
+/** Cap for full-fidelity local → data URL reads (Ubicaciones preview, etc.). */
+const MAX_LOCAL_IMAGE_BYTES = 12 * 1024 * 1024;
+
+const EXT_MIME = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+};
 
 let _cacheDir = null;
 let _trimScheduled = false;
@@ -231,12 +241,48 @@ async function createLocalThumbnail(filePath, maxEdge, nativeImage) {
   throw new Error('unable to encode thumbnail');
 }
 
+/**
+ * Read an allowlisted local image as a data URL without resize/recompress.
+ * Used for composed previews (e.g. Ubicaciones) where file:// is blocked by CSP.
+ * @param {unknown} filePath absolute local path
+ * @returns {Promise<{ dataUrl: string }>}
+ */
+async function createLocalImageDataUrl(filePath) {
+  const resolved = assertSafeLocalPath(filePath);
+  const ext = path.extname(resolved).toLowerCase();
+  const mime = EXT_MIME[ext];
+  if (!mime) {
+    throw new Error('unsupported image type');
+  }
+
+  let st;
+  try {
+    st = await fsp.stat(resolved);
+  } catch {
+    throw new Error('unable to load image');
+  }
+  if (!st.isFile()) {
+    throw new Error('not a file');
+  }
+  if (st.size <= 0 || st.size > MAX_LOCAL_IMAGE_BYTES) {
+    throw new Error('image too large');
+  }
+
+  const buf = await fsp.readFile(resolved);
+  if (!buf || !buf.length) {
+    throw new Error('unable to load image');
+  }
+  return { dataUrl: `data:${mime};base64,${buf.toString('base64')}` };
+}
+
 module.exports = {
   assertSafeLocalPath,
   createLocalThumbnail,
+  createLocalImageDataUrl,
   setThumbnailCacheDir,
   getThumbnailCacheDir,
   // Test helpers (not part of public IPC contract)
   _trimDiskCache,
   DISK_CACHE_MAX_FILES,
+  MAX_LOCAL_IMAGE_BYTES,
 };

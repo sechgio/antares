@@ -44,6 +44,7 @@ const NATIVE_METHODS = [
   'dialog_folder',
   'html_to_pdf',
   'local_thumbnail',
+  'local_image_data_url',
   'register_local_path',
 ];
 

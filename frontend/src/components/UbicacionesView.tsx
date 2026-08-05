@@ -20,12 +20,14 @@ import Button from './ui/Button';
 import { api } from '../api';
 import { useToast } from '../hooks/useToast';
 import { registerLocalPath } from '../utils/registerLocalPath';
+import { getLocalImageDataUrl } from '../utils/localThumb';
 import { parseCombinedCoords, isValidCoord } from '../utils/coords';
 
 type Result = { success: boolean; data?: any; error?: string } | null;
 
 type PreviewData = {
   image: string;
+  image_path?: string;
   cod_componente: string;
   direccion: string;
   localidad: string;
@@ -34,6 +36,33 @@ type PreviewData = {
   row_index: number;
   formato?: string;
 } | null;
+
+function isCspSafeImageSrc(src: string | undefined | null): boolean {
+  if (!src || typeof src !== 'string') return false;
+  return src.startsWith('data:') || src.startsWith('blob:');
+}
+
+/**
+ * Backend returns file:// + image_path for IPC size; Electron CSP blocks file:
+ * in img-src, so resolve a data: URL from the allowlisted disk path.
+ */
+async function resolvePreviewImageSrc(data: {
+  image?: string;
+  image_path?: string;
+}): Promise<string | null> {
+  if (isCspSafeImageSrc(data.image)) return data.image ?? null;
+
+  const localPath =
+    (typeof data.image_path === 'string' && data.image_path.trim())
+      ? data.image_path
+      : (typeof data.image === 'string' && data.image.startsWith('file:')
+        ? decodeURIComponent(data.image.replace(/^file:\/\//i, '').replace(/^\/([A-Za-z]:)/, '$1'))
+        : '');
+
+  if (!localPath) return null;
+  await registerLocalPath(localPath);
+  return getLocalImageDataUrl(localPath);
+}
 
 type OutputMode = 'individual' | 'consolidado';
 
@@ -495,11 +524,21 @@ export const UbicacionesView: React.FC = () => {
           // not match the current selection, skip it (stale format toggle).
           const respFormato = r.data?.formato;
           if (respFormato && respFormato !== currentFormato) return;
-          if (r.data?.image_path) {
-            await registerLocalPath(r.data.image_path);
+          if (!r.data) {
+            setPreview(null);
+            hasPreviewRef.current = false;
+            return;
           }
-          setPreview(r.data ?? null);
-          hasPreviewRef.current = !!r.data;
+          const safeSrc = await resolvePreviewImageSrc(r.data);
+          if (myId !== fetchIdRef.current) return;
+          if (!safeSrc) {
+            setPreview(null);
+            hasPreviewRef.current = false;
+            setPreviewError('No se pudo cargar la imagen de vista previa');
+            return;
+          }
+          setPreview({ ...r.data, image: safeSrc });
+          hasPreviewRef.current = true;
           if (r.data?.total_filas) {
             setTotalFilas(r.data.total_filas);
           }

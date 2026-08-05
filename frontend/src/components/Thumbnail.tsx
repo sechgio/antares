@@ -7,29 +7,22 @@ interface ThumbnailProps {
   variant?: 'compact' | 'card';
 }
 
-function toFileUrl(filePath: string): string {
-  return filePath.startsWith('file://') ? filePath : `file://${filePath}`;
-}
-
 export default function Thumbnail({ path, size = 48, variant = 'compact' }: ThumbnailProps) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const [inView, setInView] = useState(false);
-  /** Final img src: data URL thumb when available, else file:// full path. */
+  /** Final img src: data URL thumb only (file:// is blocked by CSP img-src). */
   const [displaySrc, setDisplaySrc] = useState<string | null>(null);
   const isCard = variant === 'card';
   const containerRef = useRef<HTMLDivElement>(null);
 
   const filename = useMemo(() => path.split(/[\\/]/).pop() || path, [path]);
   const ext = useMemo(() => filename.split('.').pop()?.toUpperCase() ?? '', [filename]);
-  const fileFallback = useMemo(() => toFileUrl(path), [path]);
 
   const handleLoad = useCallback(() => setLoaded(true), []);
   const handleError = useCallback(() => { setError(true); setLoaded(true); }, []);
 
-  // Lazy-load: only request thumbs / set img src when near the viewport.
-  // This prevents the renderer from opening hundreds of file:// handles
-  // simultaneously when a large batch of images is loaded.
+  // Lazy-load: only request thumbs when near the viewport.
   useEffect(() => {
     if (!containerRef.current || inView) return;
     const observer = new IntersectionObserver(
@@ -45,7 +38,7 @@ export default function Thumbnail({ path, size = 48, variant = 'compact' }: Thum
     return () => observer.disconnect();
   }, [inView]);
 
-  // When in view: try display-size thumb; on any failure fall back to file://.
+  // When in view: try display-size thumb; on failure show placeholder (no file://).
   useEffect(() => {
     if (!inView) return;
     let cancelled = false;
@@ -57,14 +50,18 @@ export default function Thumbnail({ path, size = 48, variant = 'compact' }: Thum
 
     getLocalThumbnail(localPath, 256).then((thumb) => {
       if (cancelled) return;
-      // Always set a usable src — thumb data URL or today's file:// behavior.
-      setDisplaySrc(thumb || fileFallback);
+      if (thumb) {
+        setDisplaySrc(thumb);
+      } else {
+        setError(true);
+        setLoaded(true);
+      }
     });
 
     return () => {
       cancelled = true;
     };
-  }, [inView, path, fileFallback]);
+  }, [inView, path]);
 
   return (
     <div

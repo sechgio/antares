@@ -506,7 +506,12 @@ async function _callBackend(method, params) {
  * invokes the single handler that could match, instead of probing all three.
  * The handlers still do their own Set-based authoritative check.
  */
-const _DIALOG_NATIVE_METHODS = new Set(['html_to_pdf', 'local_thumbnail', 'register_local_path']);
+const _DIALOG_NATIVE_METHODS = new Set([
+  'html_to_pdf',
+  'local_thumbnail',
+  'local_image_data_url',
+  'register_local_path',
+]);
 function _dispatchNative(method) {
   if (method.startsWith('dialog_') || _DIALOG_NATIVE_METHODS.has(method)) return 'dialog';
   if (method.startsWith('autoimg_')) return 'autoimg';
