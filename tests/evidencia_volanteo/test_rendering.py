@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from pathlib import Path
 
 import pytest
 from docx import Document
@@ -303,6 +304,54 @@ def test_render_pdf_html_from_preview_markup() -> None:
     pdf_bytes, filename = render_pdf_html(html)
     assert filename.endswith('.pdf')
     assert pdf_bytes.startswith(b'%PDF')
+
+
+def test_build_image_uris_embeds_disk_paths_as_data_uri(tmp_path: Path) -> None:
+    import base64
+    from pathlib import Path
+
+    png = base64.b64decode(_tiny_png(), validate=True)
+    image_path = Path(tmp_path) / "foto.png"
+    image_path.write_bytes(png)
+
+    uris = _build_image_uris({}, {"foto.png": str(image_path)})
+    assert "foto.png" in uris
+    assert uris["foto.png"].startswith("data:image/png;base64,")
+    assert "file:" not in uris["foto.png"]
+
+
+def test_render_pdf_disk_backed_images_embed(tmp_path: Path) -> None:
+    import base64
+    from pathlib import Path
+
+    png = base64.b64decode(_tiny_png(), validate=True)
+    image_path = Path(tmp_path) / "img1.png"
+    image_path.write_bytes(png)
+    doc = EvidenciaDocument(
+        title="TEST",
+        cuadrante="C1",
+        pages=(EvidenciaPage(images=(ImageRef(filename="img1.jpg", position=1),)),),
+    )
+    pdf_bytes, _ = render_pdf(
+        doc,
+        logos={},
+        images={},
+        image_paths={"img1.jpg": str(image_path)},
+    )
+    reader = PdfReader(BytesIO(pdf_bytes))
+    assert any(page.images for page in reader.pages), "disk-backed image missing from PDF"
+
+
+def test_build_image_uris_preserves_gif_mime(tmp_path: Path) -> None:
+    from PIL import Image
+
+    image_path = tmp_path / "foto.gif"
+    image = Image.new("P", (1, 1))
+    image.save(image_path, format="GIF")
+
+    uris = _build_image_uris({}, {"foto.gif": str(image_path)})
+
+    assert uris["foto.gif"].startswith("data:image/gif;base64,")
 
 
 def test_docx_long_cuadrante_stays_editable_text() -> None:

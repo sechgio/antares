@@ -204,6 +204,9 @@ def test_render_pdf_accepts_disk_backed_images(tmp_path: Path) -> None:
 
     assert pdf_bytes.startswith(b"%PDF")
     assert filename.endswith(".pdf")
+    # Regression: path-backed images must embed (WeasyPrint rejects file://).
+    reader = PdfReader(BytesIO(pdf_bytes))
+    assert any(page.images for page in reader.pages), "disk-backed image missing from PDF"
 
 
 def test_render_docx_success() -> None:

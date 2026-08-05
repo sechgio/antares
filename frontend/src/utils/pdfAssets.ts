@@ -1,3 +1,5 @@
+import { registerLocalPath } from './registerLocalPath';
+
 export type PdfQuality = 'max' | 'high' | 'low';
 
 export interface PdfImageSource {
@@ -44,7 +46,7 @@ export async function fileToPdfImageSource(
   localImagePaths: Record<string, string>,
 ): Promise<string> {
   const localPath = getElectronFilePath(file);
-  if (localPath) {
+  if (localPath && (await registerLocalPath(localPath))) {
     const token = buildLocalImageToken(key);
     localImagePaths[token] = localPath;
     return token;
@@ -114,7 +116,7 @@ export async function imageToPdfSource(
 ): Promise<PdfImageSource> {
   if (quality === 'max' || quality === 'high') {
     const localPath = getElectronFilePath(file);
-    if (localPath) {
+    if (localPath && (await registerLocalPath(localPath))) {
       const token = buildLocalImageToken(key);
       return { src: token, localPath, token };
     }

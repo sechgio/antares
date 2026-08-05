@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from backend.utils.image_data import data_uri_from_bytes
 from backend.utils.pdf_html import write_pdf_sanitized
 
 from .errors import RenderingError
@@ -93,18 +94,6 @@ def _data_uri_from_b64(b64_string: str, default_mime: str = "image/png") -> str:
     except Exception:
         pass
     return f"data:{mime};base64,{b64_string}"
-
-
-def _data_uri_from_bytes(content: bytes, default_mime: str = "image/png") -> str:
-    b64 = base64.b64encode(content).decode("ascii")
-    mime = default_mime
-    if content.startswith(b"\xff\xd8"):
-        mime = "image/jpeg"
-    elif content.startswith(b"\x89PNG"):
-        mime = "image/png"
-    elif content.startswith(b"RIFF") and content[8:12] == b"WEBP":
-        mime = "image/webp"
-    return f"data:{mime};base64,{b64}"
 
 
 def _valid_image_bytes(content: bytes) -> bool:
@@ -226,13 +215,16 @@ def render_pdf(
     # corrupta abortaría el PDF consolidado. Las inválidas se descartan y el
     # template renderiza "Sin imagen" en su casilla (paridad con render_docx,
     # que aísla con contextlib.suppress al decodificar).
+    # WeasyPrint only fetches data: URIs (sanitizer + deny_external_url_fetcher
+    # strip file://). Embed disk images as data URIs — never path.as_uri().
     image_uris: dict[str, str] = {}
     for filename, raw_path in (image_paths or {}).items():
         path = Path(raw_path)
         if path.is_file():
             with contextlib.suppress(Exception):
-                if _valid_image_bytes(path.read_bytes()):
-                    image_uris[filename] = path.resolve().as_uri()
+                content = path.read_bytes()
+                if _valid_image_bytes(content):
+                    image_uris[filename] = data_uri_from_bytes(content)
     for filename, b64 in images.items():
         if filename in image_uris:
             continue
