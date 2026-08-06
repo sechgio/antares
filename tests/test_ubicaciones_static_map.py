@@ -160,6 +160,26 @@ def test_fetch_static_map_google_with_key(monkeypatch: pytest.MonkeyPatch) -> No
     assert ub._screenshot_has_map_tiles(data)
 
 
+def test_google_static_map_size_preserves_aspect_ratio() -> None:
+    assert ub._google_static_map_size(800, 600) == (640, 480)
+    assert ub._google_static_map_size(600, 800) == (480, 640)
+    assert ub._google_static_map_size(600, 400) == (600, 400)
+
+
+def test_fetch_static_map_google_requests_proportional_viewport(monkeypatch: pytest.MonkeyPatch) -> None:
+    called: dict[str, str] = {}
+
+    def fake_get(url, headers, timeout=ub._HTTP_TIMEOUT):
+        called["url"] = url
+        return _png_bytes((640, 640), (90, 140, 190))
+
+    monkeypatch.setattr(ub, "_http_get", fake_get)
+    ub.fetch_static_map(-12.0, -77.0, 749, 1024, zoom=18, provider="google", api_key="TESTKEY")
+
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(called["url"]).query)
+    assert query["size"] == ["468x640"]
+
+
 def test_handle_generar_ubicaciones_skips_non_numeric_coords(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Una fila con lat/lon no numérico debe skiparse, no crashar el batch.

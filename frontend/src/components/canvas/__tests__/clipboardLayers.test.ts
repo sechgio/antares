@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseClipboardLayers } from '../ops/clipboardLayers';
+import { parseClipboardLayers, createClipboardCopyCoordinator } from '../ops/clipboardLayers';
 import { createLayer } from '../constants';
 
 describe('parseClipboardLayers', () => {
@@ -32,5 +32,53 @@ describe('parseClipboardLayers', () => {
     const b = createLayer('star', { id: 'b', name: 'B' });
     const parsed = parseClipboardLayers(JSON.stringify([a, b]));
     expect(parsed?.map((l) => l.type)).toEqual(['polygon', 'star']);
+  });
+});
+
+describe('createClipboardCopyCoordinator', () => {
+  it('keeps the newest async copy when results resolve out of order', async () => {
+    const immediate: string[] = [];
+    const resolved: string[] = [];
+    const released: string[] = [];
+    const pending: Array<(result: { layers: any[]; createdUrls: string[] }) => void> = [];
+    const coordinator = createClipboardCopyCoordinator(
+      (layers) => immediate.push(String(layers[0]?.id)),
+      (layers) => resolved.push(String(layers[0]?.id)),
+      (url) => released.push(url),
+    );
+    const layerA = { id: 'a' } as any;
+    const layerB = { id: 'b' } as any;
+
+    coordinator.copy([layerA], () => new Promise((resolve) => pending.push(resolve)));
+    coordinator.copy([layerB], () => new Promise((resolve) => pending.push(resolve)));
+    await Promise.resolve();
+    await Promise.resolve();
+    pending[1]!({ layers: [{ id: 'b' }], createdUrls: ['blob:b'] });
+    await Promise.resolve();
+    pending[0]!({ layers: [{ id: 'a' }], createdUrls: ['blob:a'] });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(immediate).toEqual(['a', 'b']);
+    expect(resolved).toEqual(['b']);
+    expect(released).toEqual(['blob:a']);
+  });
+
+  it('releases active URLs when invalidated', async () => {
+    const released: string[] = [];
+    let resolveCopy!: (result: { layers: any[]; createdUrls: string[] }) => void;
+    const coordinator = createClipboardCopyCoordinator(
+      () => {},
+      () => {},
+      (url) => released.push(url),
+    );
+
+    const copyDone = coordinator.copy([], () => new Promise((resolve) => { resolveCopy = resolve; }));
+    await Promise.resolve();
+    resolveCopy({ layers: [], createdUrls: ['blob:active'] });
+    await copyDone;
+    coordinator.invalidate();
+
+    expect(released).toEqual(['blob:active']);
   });
 });
