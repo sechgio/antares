@@ -1,7 +1,23 @@
 """Tests for the plugin system."""
 
+from __future__ import annotations
+
+import hashlib
+import json
+
 from backend.core import format_registry
 from backend.core.plugins import load_plugins_from_dir
+
+
+def _write_allowlisted_plugin(plugins_dir, filename: str, source: str) -> None:
+    """Write a plugin and record its SHA-256 in allowlist.json."""
+    (plugins_dir / filename).write_text(source, encoding="utf-8")
+    allow_path = plugins_dir / "allowlist.json"
+    allow: dict[str, str] = {}
+    if allow_path.exists():
+        allow = json.loads(allow_path.read_text(encoding="utf-8"))
+    allow[filename] = hashlib.sha256(source.encode("utf-8")).hexdigest()
+    allow_path.write_text(json.dumps(allow), encoding="utf-8")
 
 
 class TestPluginLoader:
@@ -12,7 +28,9 @@ class TestPluginLoader:
 
         plugins_dir = tmp_path / "plugins"
         plugins_dir.mkdir()
-        (plugins_dir / "plugin_test.py").write_text(
+        _write_allowlisted_plugin(
+            plugins_dir,
+            "plugin_test.py",
             'def register(registry):\n    registry.add_format("HEICTST", ".heic", ("RGB", "RGBA"))\n',
         )
         load_plugins_from_dir(plugins_dir)

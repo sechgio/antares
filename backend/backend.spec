@@ -68,6 +68,7 @@ _hidden = [
     'backend.handlers.panel_aviso_corte',
     'backend.handlers.ubicaciones',
     'backend.handlers.evidencia_volanteo',
+    'backend.handlers.spreadsheet',
     'backend.version',
 ]
 # Collect every backend.handlers submodule as a safety net for future features.

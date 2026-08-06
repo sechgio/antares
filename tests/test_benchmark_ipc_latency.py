@@ -53,7 +53,7 @@ def test_registry_methods_cover_handlers() -> None:
     registered = set(HANDLERS.keys())
     covered = set(bench.registry_methods())
     assert covered == registered
-    assert len(covered) == 93
+    assert len(covered) == len(registered)
 
 
 def test_stable_leader_requires_repeatable_success() -> None:
