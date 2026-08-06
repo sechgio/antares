@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { visualizer } from 'rollup-plugin-visualizer'
 import path from 'node:path'
+import { STATIC_CSS_TESTS } from './vitest.static.config'
 
 const sharedHtmlSanitizerPath = path.resolve(__dirname, '../shared/html-sanitizer.js')
 
@@ -138,5 +139,16 @@ export default defineConfig(({ mode }) => ({
     // not appear within 5s. Running files sequentially removes the race at its
     // root instead of bumping every timeout one by one.
     fileParallelism: false,
+    // Static CSS/theme guards run under vitest.static.config.ts (node env).
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      ...STATIC_CSS_TESTS,
+    ],
+    coverage: {
+      provider: 'v8',
+      reportsDirectory: './coverage',
+      reporter: ['json', 'text'],
+    },
   },
 }))
