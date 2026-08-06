@@ -13,7 +13,7 @@ const sharedHtmlSanitizerPlugin = {
 
     return code.replace(
       /module\.exports = \{[^}]+\};/,
-      'export { sanitizeHtmlForPdf, CSP_META, isSafeDataUrl };',
+      'export { sanitizeHtmlForPdf, sanitizeHtmlForPreview, CSP_META, PREVIEW_CSP_META, isSafeDataUrl, isAllowedGoogleFontUrl };',
     )
   },
 }
