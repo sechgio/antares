@@ -5,6 +5,8 @@ import {
   DEFAULT_MEDIDA_LABEL_DIAMETRO,
   DEFAULT_MEDIDA_LABEL_DIAMETRO_INTERNO,
   DEFAULT_SGIO_LABEL,
+  DEFAULT_TITULO_LINEA1,
+  DEFAULT_TITULO_LINEA2,
   type CanastillasData,
   type CheckState,
   type InspeccionDescripcion,
@@ -109,6 +111,19 @@ export default function FormPanel({ report, hasChanges, busy, logoLeft, logoRigh
             <Field label="Mes" value={report.metadata.mes} onChange={(value) => patchMetadata('mes', value.toUpperCase())} />
             <Field label="Año" type="number" value={report.metadata.anio} onChange={(value) => patchMetadata('anio', Number(value) || new Date().getFullYear())} />
           </div>
+        </Section>
+
+        <Section title="Título" defaultOpen>
+          <Field
+            label="Línea 1"
+            value={report.header.titulo_linea1 || DEFAULT_TITULO_LINEA1}
+            onChange={(value) => patchHeader('titulo_linea1', value.trim() || DEFAULT_TITULO_LINEA1)}
+          />
+          <Field
+            label="Línea 2"
+            value={report.header.titulo_linea2 || DEFAULT_TITULO_LINEA2}
+            onChange={(value) => patchHeader('titulo_linea2', value.trim() || DEFAULT_TITULO_LINEA2)}
+          />
         </Section>
 
         <Section title="Cabecera" defaultOpen>

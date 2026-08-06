@@ -11,12 +11,16 @@ export interface ReportMetadata {
 }
 
 export const DEFAULT_SGIO_LABEL = 'SGIO';
+export const DEFAULT_TITULO_LINEA1 = 'Limpieza y Desinfección de Reservorios y Cisternas';
+export const DEFAULT_TITULO_LINEA2 = 'Centro de Servicio Villa El Salvador';
 
 export interface ReportHeader {
   cs: string;
   contratista: string;
   sgio: string;
   sgio_label: string;
+  titulo_linea1: string;
+  titulo_linea2: string;
   codigo_infraestructura: string;
   ubicacion: string;
   suministro: string;
