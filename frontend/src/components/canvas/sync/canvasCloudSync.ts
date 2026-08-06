@@ -138,7 +138,10 @@ export async function pushCanvasDocument(
   ) {
     try {
       await withTimeout(
-        (supabase.rpc as unknown as (n:string,p:unknown)=> { then:(a:unknown,b:unknown)=>unknown })(('canvas_append_document_version'), { p_document_id: doc.id, p_document: doc }),
+        (supabase.rpc as unknown as (n: string, p: unknown) => PromiseLike<unknown>)(
+          'canvas_append_document_version',
+          { p_document_id: doc.id, p_document: doc },
+        ),
         CLOUD_SYNC_TIMEOUT_MS,
         'canvas-push-skip-preserve',
       );

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { api, type PreviewBody } from '../../api';
+import { api, type PreviewBody, type SequenceMode } from '../../api';
 import { useFileSelection } from '../../hooks/useFileSelection';
 import { useProcessRunner } from '../../hooks/useProcessRunner';
 import { useToast } from '../../hooks/useToast';
@@ -35,7 +35,10 @@ export default function ConversionView() {
   const [patron, setPatron] = useState(DEFAULT_PATTERN);
   const [wordSeparator, setWordSeparator] = useState('_');
   const [secuencia, setSecuencia] = useState(1);
-  const [useFilenameSeq, setUseFilenameSeq] = useState(true);
+  // Default matches current UI ("Por fila de BD" → record). ``filename`` is
+  // preserved when restoring history so re-run matches the original job.
+  const [sequenceMode, setSequenceMode] = useState<SequenceMode>('record');
+  const useFilenameSeq = sequenceMode !== 'global';
   const [namingMode, setNamingMode] = useState<string>('code_name');
   const [formats, setFormats] = useState<string[]>(DEFAULT_FORMATS);
   const [fields, setFields] = useState<string[]>(DEFAULT_FIELDS);
@@ -95,7 +98,7 @@ export default function ConversionView() {
     setUsarRename(config.usarRename);
     setPatron(config.patron);
     setSecuencia(config.secuencia);
-    setUseFilenameSeq(config.useFilenameSeq);
+    setSequenceMode(config.useFilenameSeq ? 'record' : 'global');
     setNamingMode(config.namingMode);
   }, []);
 
@@ -136,12 +139,15 @@ export default function ConversionView() {
       if (typeof options.word_separator === 'string') {
         setWordSeparator(options.word_separator);
       }
-      if (typeof options.use_filename_seq === 'boolean') {
-        setUseFilenameSeq(options.use_filename_seq);
-      } else if (options.sequence_mode === 'global') {
-        setUseFilenameSeq(false);
-      } else if (options.sequence_mode === 'record' || options.sequence_mode === 'filename') {
-        setUseFilenameSeq(true);
+      if (
+        options.sequence_mode === 'record'
+        || options.sequence_mode === 'global'
+        || options.sequence_mode === 'filename'
+      ) {
+        setSequenceMode(options.sequence_mode);
+      } else if (typeof options.use_filename_seq === 'boolean') {
+        // Legacy runs without sequence_mode: UI maps the boolean to record|global.
+        setSequenceMode(options.use_filename_seq ? 'record' : 'global');
       }
 
       const applyResize = () => {
@@ -395,8 +401,6 @@ export default function ConversionView() {
       addToast({ message: `Error importando Excel: ${msg}`, type: 'error' });
     }
   };
-
-  const sequenceMode = useFilenameSeq ? 'record' : 'global';
 
   // Preview debounce (600ms) + token ignore + single-flight queue so rapid
   // changes never stack concurrent api.preview calls on the Python process.
@@ -890,7 +894,7 @@ export default function ConversionView() {
               secuencia={secuencia}
               onSecuenciaChange={setSecuencia}
               useFilenameSeq={useFilenameSeq}
-              onToggleFilenameSeq={setUseFilenameSeq}
+              onToggleFilenameSeq={(checked) => setSequenceMode(checked ? 'record' : 'global')}
               namingPresets={namingPresets}
               fields={fields}
               dbColumns={dbColumns}

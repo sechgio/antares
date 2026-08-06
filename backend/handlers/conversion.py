@@ -145,7 +145,7 @@ def _preview_with_db(
                 )
                 resultados.append((f, nombre_nuevo, True))
             else:
-                resultados.append((f, p.name, False))
+                resultados.append((f, RenamerEngine._preserve_original_name(p), False))
     return resultados
 
 
@@ -406,6 +406,17 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
             file_seqs=file_seqs,
             sequence_groups=sequence_groups,
         )
+
+    # Catalog / plain rename: mirror process out-path dedupe so preview shows
+    # ``-2``, ``-3`` suffixes. Mapping keeps raw names + collisions (process aborts).
+    if not file_mapping and res:
+        reserved_preview: set[str] = set()
+        fake_tasks = [(orig, Path(nuev), False) for orig, nuev, _en_bd in res]
+        deduped = _dedupe_chunk_out_paths(fake_tasks, reserved_preview)
+        res = [
+            (orig, Path(out_path).name, en_bd)
+            for (orig, _old, en_bd), (_o, out_path, _v) in zip(res, deduped, strict=True)
+        ]
 
     payload: dict[str, Any] = {
         "preview": [{"origen": Path(orig).name, "nuevo": nuev, "en_bd": en_bd} for orig, nuev, en_bd in res],
@@ -1212,7 +1223,7 @@ def _prepare_chunk_tasks(
                 if mapping_index.lookup(p.name) is not None:
                     nuevo_nombre = engine.aplicar(p, file_mapping=mapping_index)
                 else:
-                    nuevo_nombre = p.name
+                    nuevo_nombre = RenamerEngine._preserve_original_name(p)
             elif key_column:
                 codigo, seq = parse_filename_parts(p.name)
                 stem = p.stem
@@ -1220,18 +1231,30 @@ def _prepare_chunk_tasks(
                 datos = db_cache.get(stem) or db_cache.get(codigo)
                 if datos and stem in db_cache:
                     codigo, seq = stem, "1"
-                nuevo_nombre = _apply_catalog_rename(engine, p, datos, codigo, seq, key_column) if datos else p.name
+                nuevo_nombre = (
+                    _apply_catalog_rename(engine, p, datos, codigo, seq, key_column)
+                    if datos
+                    else RenamerEngine._preserve_original_name(p)
+                )
             elif use_column_rename:
                 codigo, seq = parse_filename_parts(p.name)
                 datos = db_cache.get(str(global_offset + idx))
-                nuevo_nombre = _apply_catalog_rename(engine, p, datos, codigo, seq, "") if datos else p.name
+                nuevo_nombre = (
+                    _apply_catalog_rename(engine, p, datos, codigo, seq, "")
+                    if datos
+                    else RenamerEngine._preserve_original_name(p)
+                )
             else:
                 codigo, seq = parse_filename_parts(p.name)
                 stem = p.stem
                 datos = db_cache.get(stem) or db_cache.get(codigo)
                 if datos and stem in db_cache:
                     codigo, seq = stem, "1"
-                nuevo_nombre = _apply_catalog_rename(engine, p, datos, codigo, seq, "") if datos else p.name
+                nuevo_nombre = (
+                    _apply_catalog_rename(engine, p, datos, codigo, seq, "")
+                    if datos
+                    else RenamerEngine._preserve_original_name(p)
+                )
             if is_video_file or not conversion_enabled:
                 out_path = Path(destino) / nuevo_nombre
             else:

@@ -133,3 +133,51 @@ def test_dedupe_spans_chunks_via_shared_reserved_set() -> None:
     )
     assert chunk1[0][1] == Path("out/same.png")
     assert chunk2[0][1] == Path("out/same-2.png")
+
+
+def test_preview_catalog_applies_out_path_dedupe_suffixes(monkeypatch, tmp_path) -> None:
+    """Catalog preview must show -2/-3 like process, not colliding bare names."""
+    from backend.handlers import conversion
+
+    files = [str(tmp_path / "a.jpg"), str(tmp_path / "b.jpg")]
+    for f in files:
+        Path(f).write_text("x")
+
+    monkeypatch.setattr(
+        "backend.core.database.buscar_lote_por_codigos",
+        lambda _codes: {
+            "a": {"codigo": "a", "nombre": "mismo"},
+            "b": {"codigo": "b", "nombre": "mismo"},
+        },
+    )
+    monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo", "nombre"])
+
+    result = conversion.preview({
+        "files": files,
+        "patron": "{nombre}{ext}",
+        "secuencia": 1,
+        "sequence_mode": "global",
+        "use_filename_seq": False,
+    })
+    nuevos = [item["nuevo"] for item in result["preview"]]
+    assert nuevos == ["mismo.jpg", "mismo-2.jpg"]
+    assert "collisions" not in result
+
+
+def test_preview_mapping_still_reports_collisions_without_suffix(tmp_path) -> None:
+    """Mapping preview must NOT auto-suffix; process aborts on collisions."""
+    from backend.handlers import conversion
+
+    files = [str(tmp_path / "A.jpg"), str(tmp_path / "B.jpg")]
+    for f in files:
+        Path(f).write_text("x")
+
+    result = conversion.preview({
+        "files": files,
+        "patron": "",
+        "mapping": {"A.jpg": "mismo", "B.jpg": "mismo"},
+    })
+    nuevos = {item["origen"]: item["nuevo"] for item in result["preview"]}
+    assert nuevos["A.jpg"] == "mismo.jpg"
+    assert nuevos["B.jpg"] == "mismo.jpg"
+    assert result["collisions"]

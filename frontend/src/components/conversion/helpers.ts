@@ -24,23 +24,94 @@ const sanitizeOutputStem = (value: string) =>
     .replace(/^\.+/, '')
     .replace(/^[_\. ]+|[_\. ]+$/g, '');
 
-export const lookupMappingValue = (mapping: Record<string, string>, fileName: string): string | undefined => {
-  const name = fileNameFromPath(fileName);
-  const stem = name.includes('.') ? name.slice(0, name.lastIndexOf('.')) : name;
-  if (mapping[name] !== undefined) return mapping[name];
-  if (mapping[stem] !== undefined) return mapping[stem];
+/** Stem of a bare name/key — mirrors ``Path(...).stem`` (last suffix only). */
+const nameStem = (name: string) =>
+  name.includes('.') ? name.slice(0, name.lastIndexOf('.')) : name;
 
-  const lowerEntries = Object.entries(mapping).map(([key, value]) => [key.toLowerCase(), value] as const);
-  const lowerName = name.toLowerCase();
-  const lowerStem = stem.toLowerCase();
-  for (const [key, value] of lowerEntries) {
-    if (key === lowerName || key === lowerStem) return value;
+type MappingLookupIndex = {
+  exact: Map<string, string>;
+  lower: Map<string, string>;
+  conflictedStems: Set<string>;
+  conflictedStemsLower: Set<string>;
+};
+
+/**
+ * Precompute tolerant lookup matching backend ``MappingIndex``:
+ * exact / case-insensitive name, then stem fallback — disabled when multiple
+ * keys share a stem with disagreeing RENOMBRE values.
+ */
+export const buildMappingLookupIndex = (mapping: Record<string, string>): MappingLookupIndex => {
+  const exact = new Map<string, string>();
+  const lower = new Map<string, string>();
+  const conflictedStems = new Set<string>();
+  const conflictedStemsLower = new Set<string>();
+  const stemToValues = new Map<string, Set<string>>();
+  const stemLowerToValues = new Map<string, Set<string>>();
+
+  for (const [key, value] of Object.entries(mapping)) {
+    if (!key) continue;
+    exact.set(key, value);
+    lower.set(key.toLowerCase(), value);
+    const stem = nameStem(key);
+    if (!stem) continue;
+    let values = stemToValues.get(stem);
+    if (!values) {
+      values = new Set();
+      stemToValues.set(stem, values);
+    }
+    values.add(value);
+    const stemL = stem.toLowerCase();
+    let lowerValues = stemLowerToValues.get(stemL);
+    if (!lowerValues) {
+      lowerValues = new Set();
+      stemLowerToValues.set(stemL, lowerValues);
+    }
+    lowerValues.add(value);
   }
+
+  for (const [stem, values] of stemToValues) {
+    if (values.size !== 1) {
+      conflictedStems.add(stem);
+      conflictedStemsLower.add(stem.toLowerCase());
+      continue;
+    }
+    const value = values.values().next().value as string;
+    if (!exact.has(stem)) exact.set(stem, value);
+  }
+
+  for (const [stemL, values] of stemLowerToValues) {
+    if (values.size !== 1) {
+      conflictedStemsLower.add(stemL);
+      continue;
+    }
+    const value = values.values().next().value as string;
+    if (!lower.has(stemL)) lower.set(stemL, value);
+  }
+
+  return { exact, lower, conflictedStems, conflictedStemsLower };
+};
+
+const lookupWithIndex = (index: MappingLookupIndex, fileName: string): string | undefined => {
+  const name = fileNameFromPath(fileName);
+  const stem = nameStem(name);
+  if (index.exact.has(name)) return index.exact.get(name);
+  const lowerName = name.toLowerCase();
+  if (index.lower.has(lowerName)) return index.lower.get(lowerName);
+  if (index.conflictedStems.has(stem) || index.conflictedStemsLower.has(stem.toLowerCase())) {
+    return undefined;
+  }
+  if (index.exact.has(stem)) return index.exact.get(stem);
+  const lowerStem = stem.toLowerCase();
+  if (index.lower.has(lowerStem)) return index.lower.get(lowerStem);
   return undefined;
 };
 
+export const lookupMappingValue = (mapping: Record<string, string>, fileName: string): string | undefined =>
+  lookupWithIndex(buildMappingLookupIndex(mapping), fileName);
+
 export const resolveMappedOutputName = (mapping: Record<string, string>, fileName: string): string | null => {
-  const raw = lookupMappingValue(mapping, fileName);
+  const index = buildMappingLookupIndex(mapping);
+  const raw = lookupWithIndex(index, fileName);
   if (!raw) return null;
   const name = fileNameFromPath(fileName);
   const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')).toLowerCase() : '';
@@ -62,11 +133,16 @@ export const findMappingCollisions = (
   mapping: Record<string, string>,
   files: string[],
 ): MappingCollision[] => {
+  const index = buildMappingLookupIndex(mapping);
   const grouped = new Map<string, { output: string; sources: string[] }>();
   for (const filePath of files) {
     const name = fileNameFromPath(filePath);
-    const output = resolveMappedOutputName(mapping, name);
+    const raw = lookupWithIndex(index, name);
+    if (!raw) continue;
+    const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')).toLowerCase() : '';
+    let output = sanitizeOutputStem(raw);
     if (!output) continue;
+    if (ext && !output.toLowerCase().endsWith(ext)) output += ext;
     const key = output.toLowerCase();
     const existing = grouped.get(key);
     if (existing) {
@@ -82,8 +158,9 @@ export const computeMappingStats = (
   mapping: Record<string, string>,
   files: string[],
 ): MappingResult => {
+  const index = buildMappingLookupIndex(mapping);
   const fileNames = files.map(fileNameFromPath);
-  const matchedNames = fileNames.filter((name) => lookupMappingValue(mapping, name) !== undefined);
+  const matchedNames = fileNames.filter((name) => lookupWithIndex(index, name) !== undefined);
   const orphanEntries = Object.keys(mapping).filter(
     (idKey) => !fileNames.some((name) => mappingIdMatchesFile(idKey, name)),
   );
