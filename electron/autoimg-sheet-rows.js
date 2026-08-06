@@ -20,15 +20,24 @@ function listMissingAutoImgTabs(existingTabNames) {
   return Object.keys(AUTOIMG_SHEET_TABS).filter((tab) => !existing.has(tab));
 }
 
-function resolveNotasForSync({ isNewRow, existingNotas, sgio }) {
-  if (!isNewRow) return existingNotas || '';
-  return !String(sgio || '').trim() ? 'NUEVO (sin SGIO)' : '';
+/**
+ * NOTAS en sync: el padrón no se amplía desde el escaneo, así que siempre
+ * se conservan las notas existentes de la fila.
+ */
+function resolveNotasForSync({ existingNotas }) {
+  return existingNotas || '';
+}
+
+function _bdImgHasHeader(rows) {
+  return rows.length > 0 && String(rows[0]?.[0] || '').trim().toUpperCase() === 'NIS';
+}
+
+function _bdImgStartIndex(rows) {
+  return _bdImgHasHeader(rows) ? 1 : 0;
 }
 
 function _bdImgDataRows(rows) {
-  return rows.length > 1 && String(rows[0]?.[0] || '').toUpperCase() === 'NIS'
-    ? rows.slice(1)
-    : rows;
+  return _bdImgHasHeader(rows) ? rows.slice(1) : rows;
 }
 
 function countSinSgioRows(rows) {
@@ -55,24 +64,54 @@ function countBdImgEstadoMetrics(rows) {
   };
 }
 
-function countScanSinSgio(nisList, existingNisSet) {
+/**
+ * NIS del escaneo ausentes en el padrón BD_IMG (fuera del padrón).
+ * No confundir con countSinSgioRows (filas del padrón sin SGIO en col B).
+ */
+function countScanFueraPadron(nisList, existingNisSet) {
   return nisList.filter((nis) => !existingNisSet.has(nis)).length;
 }
 
+/** @deprecated Use countScanFueraPadron — nombre histórico ambiguo. */
+function countScanSinSgio(nisList, existingNisSet) {
+  return countScanFueraPadron(nisList, existingNisSet);
+}
+
 function findNisRowIndex(values, nis) {
-  for (let i = 1; i < values.length; i++) {
+  const start = _bdImgStartIndex(values);
+  for (let i = start; i < values.length; i++) {
     if (String(values[i][0] || '').trim() === nis) return i;
   }
   return -1;
 }
 
+/** Map NIS → último índice de fila (compat). Preferir buildNisRowIndexesMap. */
 function buildNisRowIndexMap(values) {
   const map = new Map();
-  for (let i = 1; i < values.length; i++) {
+  const start = _bdImgStartIndex(values);
+  for (let i = start; i < values.length; i++) {
     const nis = String(values[i][0] || '').trim();
     if (nis) map.set(nis, i);
   }
   return map;
+}
+
+/** Map NIS → todos los índices de fila (soporta duplicados en el padrón). */
+function buildNisRowIndexesMap(values) {
+  const map = new Map();
+  const start = _bdImgStartIndex(values);
+  for (let i = start; i < values.length; i++) {
+    const nis = String(values[i][0] || '').trim();
+    if (!nis) continue;
+    const list = map.get(nis);
+    if (list) list.push(i);
+    else map.set(nis, [i]);
+  }
+  return map;
+}
+
+function _rowSignature(row) {
+  return JSON.stringify(row || []);
 }
 
 /**
@@ -80,11 +119,11 @@ function buildNisRowIndexMap(values) {
  * BD_IMG es la fuente de verdad: solo se actualizan filas cuyo NIS ya está
  * en la hoja. NIS detectados en carpetas pero ausentes del padrón se ignoran
  * (no se insertan filas nuevas). Filas del padrón sin imágenes en el escaneo
- * quedan con CANTIDAD 0 y ESTADO FALTANTE.
+ * quedan con CANTIDAD 0 y ESTADO FALTANTE. NIS duplicados: se actualizan todas.
  */
 function applyScanResultsToRows(rows, nisResults, verification) {
   const nextRows = rows.length ? [...rows] : [BD_IMG_HEADER];
-  const nisIndex = buildNisRowIndexMap(nextRows);
+  const nisIndexes = buildNisRowIndexesMap(nextRows);
   const scanByNis = new Map();
   for (const result of nisResults) {
     const nis = String(result?.nis || '').trim();
@@ -94,50 +133,62 @@ function applyScanResultsToRows(rows, nisResults, verification) {
   let updated = 0;
   let matched = 0;
   let notFound = 0;
+  let duplicateNis = 0;
 
-  for (const [nis, idx] of nisIndex) {
+  for (const [nis, idxs] of nisIndexes) {
     const result = scanByNis.get(nis) || { nis, count: 0, folders: [] };
-    nextRows[idx] = buildScanResultRow({
-      scanResult: result,
-      rows: nextRows,
-      verification,
-      rowIndex: idx,
-    });
-    updated += 1;
+    if (idxs.length > 1) duplicateNis += 1;
+    for (const idx of idxs) {
+      const before = _rowSignature(nextRows[idx]);
+      nextRows[idx] = buildScanResultRow({
+        scanResult: result,
+        rows: nextRows,
+        verification,
+        rowIndex: idx,
+      });
+      if (before !== _rowSignature(nextRows[idx])) updated += 1;
+    }
     if (scanByNis.has(nis)) matched += 1;
     else notFound += 1;
   }
 
   let unmatchedScan = 0;
   for (const nis of scanByNis.keys()) {
-    if (!nisIndex.has(nis)) unmatchedScan += 1;
+    if (!nisIndexes.has(nis)) unmatchedScan += 1;
   }
 
   // newRows siempre 0: el padrón no se amplía desde el escaneo
-  return { rows: nextRows, updated, newRows: 0, matched, notFound, unmatchedScan };
+  return {
+    rows: nextRows,
+    updated,
+    newRows: 0,
+    matched,
+    notFound,
+    unmatchedScan,
+    duplicateNis,
+  };
 }
 
 function buildScanResultRow({ scanResult, rows, verification, rowIndex }) {
   const idx = rowIndex ?? findNisRowIndex(rows, scanResult.nis);
   const [img1, img2, img3] = computeImgFlags(scanResult.count);
-  const sgio = idx > 0 ? (rows[idx][1] || '') : '';
+  const existing = idx >= 0 ? rows[idx] : null;
+  const sgio = existing ? (existing[1] || '') : '';
   return [
     scanResult.nis,
     sgio,
-    idx > 0 ? (rows[idx][2] || '') : '',
-    idx > 0 ? (rows[idx][3] || '') : '',
-    idx > 0 ? (rows[idx][4] || '') : '',
+    existing ? (existing[2] || '') : '',
+    existing ? (existing[3] || '') : '',
+    existing ? (existing[4] || '') : '',
     img1,
     img2,
     img3,
     String(scanResult.count),
     computeEstado(scanResult.count),
-    scanResult.folders.join('; '),
+    (scanResult.folders || []).join('; '),
     verification,
     resolveNotasForSync({
-      isNewRow: idx <= 0,
-      existingNotas: idx > 0 ? (rows[idx][12] || '') : '',
-      sgio,
+      existingNotas: existing ? (existing[12] || '') : '',
     }),
   ];
 }
@@ -220,9 +271,11 @@ module.exports = {
   resolveNotasForSync,
   countSinSgioRows,
   countBdImgEstadoMetrics,
+  countScanFueraPadron,
   countScanSinSgio,
   findNisRowIndex,
   buildNisRowIndexMap,
+  buildNisRowIndexesMap,
   applyScanResultsToRows,
   buildScanResultRow,
   parseArrastreRows,

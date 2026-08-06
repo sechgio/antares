@@ -33,8 +33,10 @@ async function main() {
       resolveNotasForSync,
       countSinSgioRows,
       countBdImgEstadoMetrics,
+      countScanFueraPadron,
       countScanSinSgio,
       buildNisRowIndexMap,
+      buildNisRowIndexesMap,
       applyScanResultsToRows,
       buildScanResultRow,
       parseArrastreRows,
@@ -53,15 +55,11 @@ async function main() {
     assert(clearCount === 1, 'cleanupAutoSync es idempotente');
 
   assert(
-    resolveNotasForSync({ isNewRow: true, existingNotas: '', sgio: '' }) === 'NUEVO (sin SGIO)',
-    'fila nueva sin SGIO debe marcarse NUEVO (sin SGIO)',
+    resolveNotasForSync({ existingNotas: '', sgio: '' }) === '',
+    'sync conserva NOTAS vacías (no inserta filas nuevas)',
   );
   assert(
-    resolveNotasForSync({ isNewRow: true, existingNotas: '', sgio: '69656525' }) === '',
-    'fila nueva con SGIO no debe forzar NOTAS',
-  );
-  assert(
-    resolveNotasForSync({ isNewRow: false, existingNotas: 'Duplicado', sgio: '' }) === 'Duplicado',
+    resolveNotasForSync({ existingNotas: 'Duplicado', sgio: '' }) === 'Duplicado',
     'fila existente debe conservar NOTAS',
   );
 
@@ -75,8 +73,12 @@ async function main() {
 
   const existing = new Set(['4210801', '4210999']);
   assert(
-    countScanSinSgio(['4210801', '4210802', '4210803'], existing) === 2,
-    'countScanSinSgio cuenta NIS del scan ausentes en BD_IMG',
+    countScanFueraPadron(['4210801', '4210802', '4210803'], existing) === 2,
+    'countScanFueraPadron cuenta NIS del scan ausentes en BD_IMG',
+  );
+  assert(
+    countScanSinSgio(['4210801', '4210802'], existing) === 1,
+    'countScanSinSgio alias de fuera_padron',
   );
 
   const folderRows = [
@@ -111,14 +113,15 @@ async function main() {
 
   const rows = [
     ['NIS', 'SGIO', 'DESTINO', 'NOMBRE', 'DIR', 'IMG_1', 'IMG_2', 'IMG_3', 'CANT', 'ESTADO', 'ORIGEN', 'VERIF', 'NOTAS'],
-    ['4210999', '11111111', 'DVD', 'X', '', '', '', '', '', '', '', '', ''],
+    ['4210999', '11111111', 'DVD', 'X', '', '', '', '', '', '', '', '', 'Nota previa'],
   ];
   const built = buildScanResultRow({
-    scanResult: { nis: '4210802', count: 2, folders: ['JUAN'] },
+    scanResult: { nis: '4210999', count: 2, folders: ['JUAN'] },
     rows,
     verification: '2026-07-03',
+    rowIndex: 1,
   });
-  assert(built[0] === '4210802' && built[12] === 'NUEVO (sin SGIO)', 'buildScanResultRow marca NIS nuevo sin SGIO');
+  assert(built[0] === '4210999' && built[12] === 'Nota previa', 'buildScanResultRow conserva NOTAS existentes');
 
   const nisMap = buildNisRowIndexMap(rows);
   assert(nisMap.get('4210999') === 1, 'buildNisRowIndexMap indexa filas por NIS');
@@ -135,10 +138,35 @@ async function main() {
     { nis: '4210999', count: 1, folders: ['JUAN'] }, // en padrón → actualiza
   ], '2026-07-03');
   assert(applied.newRows === 0, 'applyScanResultsToRows no inserta NIS fuera del padrón');
-  assert(applied.updated === 1 && applied.matched === 1, 'applyScanResultsToRows solo actualiza NIS del padrón');
+  assert(applied.updated === 1 && applied.matched === 1, 'applyScanResultsToRows solo actualiza filas cambiadas del padrón');
   assert(applied.unmatchedScan === 1, 'applyScanResultsToRows cuenta NIS de carpeta fuera del padrón');
   assert(applied.rows.length === 2, 'applyScanResultsToRows conserva solo header + filas del padrón');
   assert(applied.rows[1][0] === '4210999' && applied.rows[1][8] === '1', 'applyScanResultsToRows actualiza CANTIDAD del padrón');
+  assert(applied.rows[1][12] === 'Nota previa', 'applyScanResultsToRows conserva NOTAS');
+
+  const dupRows = [
+    ['NIS', 'SGIO', 'DESTINO', 'NOMBRE', 'DIR', 'IMG_1', 'IMG_2', 'IMG_3', 'CANT', 'ESTADO', 'ORIGEN', 'VERIF', 'NOTAS'],
+    ['4210999', '11111111', 'DVD', 'A', '', '', '', '', '0', '', '', '', ''],
+    ['4210999', '22222222', 'DVD', 'B', '', '', '', '', '0', '', '', '', ''],
+  ];
+  const dupIdx = buildNisRowIndexesMap(dupRows);
+  assert(dupIdx.get('4210999').length === 2, 'buildNisRowIndexesMap lista duplicados');
+  const dupApplied = applyScanResultsToRows(dupRows, [
+    { nis: '4210999', count: 3, folders: ['JUAN'] },
+  ], '2026-07-03');
+  assert(dupApplied.duplicateNis === 1, 'detecta NIS duplicados en padrón');
+  assert(dupApplied.rows[1][8] === '3' && dupApplied.rows[2][8] === '3', 'actualiza todas las filas duplicadas');
+  assert(dupApplied.rows[1][1] === '11111111' && dupApplied.rows[2][1] === '22222222', 'conserva SGIO por fila duplicada');
+
+  const noHeader = [
+    ['4210888', '33333333', 'DVD', 'Z', '', '', '', '', '0', '', '', '', ''],
+  ];
+  const noHeaderMap = buildNisRowIndexMap(noHeader);
+  assert(noHeaderMap.get('4210888') === 0, 'sin header indexa desde fila 0');
+  const noHeaderApplied = applyScanResultsToRows(noHeader, [
+    { nis: '4210888', count: 2, folders: ['JUAN'] },
+  ], 't');
+  assert(noHeaderApplied.rows[0][8] === '2', 'sin header actualiza la primera fila de datos');
 
   const drive = require('../electron/google-drive-service');
   const m1 = drive.buildNisMap(

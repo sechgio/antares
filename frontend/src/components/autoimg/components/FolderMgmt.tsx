@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, FolderOpen, Loader2, Plus, Trash2 } from 'lucide-react';
 import { api } from '../../../api';
 import type { AutoImgFolder, DriveVerifyResult } from '../types';
@@ -175,6 +175,9 @@ export default function FolderMgmt({ folders: externalFolders, onFoldersChange }
   const [verifying, setVerifying] = useState(false);
   const [verified, setVerified] = useState<DriveVerifyResult | null>(null);
   const [error, setError] = useState('');
+  const verifyRequestRef = useRef(0);
+  const folderIdInputRef = useRef(folderId);
+  folderIdInputRef.current = folderId;
 
   const load = useCallback(async (force = false) => {
     setLoading(true);
@@ -207,14 +210,22 @@ export default function FolderMgmt({ folders: externalFolders, onFoldersChange }
 
   const handleVerify = async () => {
     if (!resolvedFolderId) return;
+    const folderIdAtStart = resolvedFolderId;
+    const requestId = ++verifyRequestRef.current;
     setVerifying(true);
     setError('');
     setVerified(null);
     try {
-      const res = await api.autoimgDriveVerifyFolder(resolvedFolderId);
+      const res = await api.autoimgDriveVerifyFolder(folderIdAtStart);
+      const folderIdNow =
+        parseDriveFolderId(folderIdInputRef.current) || folderIdInputRef.current.trim();
+      if (requestId !== verifyRequestRef.current || folderIdAtStart !== folderIdNow) return;
       setVerified(res);
       if (!name.trim()) setName(res.name);
     } catch (e) {
+      const folderIdNow =
+        parseDriveFolderId(folderIdInputRef.current) || folderIdInputRef.current.trim();
+      if (requestId !== verifyRequestRef.current || folderIdAtStart !== folderIdNow) return;
       setError(e instanceof Error ? e.message : 'No se pudo verificar la carpeta');
     } finally {
       setVerifying(false);

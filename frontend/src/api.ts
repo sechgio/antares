@@ -745,8 +745,37 @@ export const api = {
   autoimgFoldersAdd: (body: { name: string; folder_id: string; activo: boolean }) => _invoke<{ success: boolean }>('autoimg_folders_add', body),
   autoimgFoldersRemove: (body: { folder_id: string }) => _invoke<{ success: boolean }>('autoimg_folders_remove', body),
   autoimgFoldersToggle: (body: { folder_id: string; activo: boolean }) => _invoke<{ success: boolean }>('autoimg_folders_toggle', body),
-  autoimgScanAndSync: () => _invoke<{ success: boolean; updated: number; new_rows: number; logs: string[]; folder_errors: number; scan: { summary: { total: number; completos: number; faltantes: number; sobrantes: number; sin_sgio: number }; folders_failed: number } }>('autoimg_scan_and_sync'),
-  autoimgSyncToSheet: () => _invoke<{ success: boolean; updated: number; new_rows: number; logs: string[] }>('autoimg_sync_to_sheet'),
+  autoimgScanAndSync: () => _invoke<{
+    success: boolean;
+    updated: number;
+    matched?: number;
+    unmatched_scan?: number;
+    new_rows: number;
+    duplicate_nis?: number;
+    logs: string[];
+    folder_errors: number;
+    scan: {
+      summary: {
+        total: number;
+        completos: number;
+        faltantes: number;
+        sobrantes: number;
+        fuera_padron: number;
+        /** @deprecated alias de fuera_padron */
+        sin_sgio?: number;
+      };
+      folders_failed: number;
+    };
+  }>('autoimg_scan_and_sync'),
+  autoimgSyncToSheet: () => _invoke<{
+    success: boolean;
+    updated: number;
+    matched?: number;
+    unmatched_scan?: number;
+    new_rows: number;
+    duplicate_nis?: number;
+    logs: string[];
+  }>('autoimg_sync_to_sheet'),
   autoimgSyncFromSheet: () => _invoke<{ success: boolean; rows: string[][]; arrastre?: Array<{ nis: string; sgio: string; motivo: string; fecha: string; observacion: string }> }>('autoimg_sync_from_sheet'),
   autoimgRenameExport: (body: { dest_folder_id: string; only_completos?: boolean }) =>
     _invoke<{
@@ -809,6 +838,10 @@ export const api = {
     bdRows: string[][];
     logRows: string[][];
     arrastre: Array<{ nis: string; sgio: string; motivo: string; fecha: string; observacion: string }>;
+    error?: string;
+    error_code?: string;
+    stale?: boolean;
+    cached?: boolean;
   }>('autoimg_bootstrap', { refresh }),
   autoimgAutoSyncToggle: (enabled: boolean) => _invoke<{ enabled: boolean }>('autoimg_auto_sync_toggle', { enabled }),
   autoimgCancelOperation: () => _invoke<{ success: boolean; operation?: string; reason?: string }>('autoimg_cancel_operation'),

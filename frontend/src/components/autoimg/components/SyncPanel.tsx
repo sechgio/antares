@@ -42,11 +42,13 @@ export default function SyncPanel({
       if (method !== 'autoimg.sync.complete' || !params || typeof params !== 'object') return;
       const p = params as Record<string, unknown>;
       const updated = Number(p.updated) || 0;
-      const newRows = Number(p.new) || 0;
+      const unmatched = Number(p.unmatched_scan) || 0;
       const folderErrors = Number(p.errors) || 0;
       const durationMs = Number(p.duration_ms) || 0;
       const durationSec = durationMs > 0 ? (durationMs / 1000).toFixed(1) : '—';
-      const base = `${updated} actualizados · ${newRows} nuevos`;
+      const base = unmatched > 0
+        ? `${updated} filas cambiadas · ${unmatched} fuera del padrón`
+        : `${updated} filas cambiadas`;
       const withErr = folderErrors > 0 ? `${base} · ${folderErrors} carpeta(s) con error` : base;
       setNotifyResult(`${withErr} · ${durationSec}s`);
     });

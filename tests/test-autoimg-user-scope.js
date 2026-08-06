@@ -108,6 +108,23 @@ const revokeBody = sheetsSrc.slice(
 );
 assert(revokeBody.includes('clearActiveUser'), 'revoke limpia usuario activo');
 assert(!revokeBody.includes('clearSheetConfig()'), 'revoke no borra sheet del usuario');
+assert(sheetsSrc.includes('onActiveUserChange'), 'sheets registra listener de cambio de usuario');
+assert(sheetsSrc.includes('_sheetId = null'), 'cambio de usuario limpia _sheetId');
+
+const engineSrc = fs.readFileSync(path.join(__dirname, '..', 'electron', 'autoimg-sync-engine.js'), 'utf8');
+assert(engineSrc.includes('clearSessionCaches'), 'engine expone clearSessionCaches');
+assert(engineSrc.includes('onActiveUserChange'), 'engine limpia caché al cambiar usuario');
+assert(engineSrc.includes('fuera_padron'), 'scan summary usa fuera_padron');
+
+const { onActiveUserChange, setActiveUser: setUser, clearActiveUser: clearUser } = require('../electron/autoimg-user-scope');
+let notified = 0;
+const unsub = onActiveUserChange(() => { notified += 1; });
+clearUser();
+setUser('notify-a@example.com');
+setUser('notify-b@example.com');
+setUser('notify-b@example.com'); // same user — no notify
+assert(notified >= 2, 'onActiveUserChange dispara al cambiar/cerrar usuario');
+unsub();
 
 const gitignore = fs.readFileSync(path.join(__dirname, '..', '.gitignore'), 'utf8');
 assert(
