@@ -12,10 +12,33 @@ vi.mock('../../../api', () => ({
   api: {
     canvasList: (...args: unknown[]) => canvasList(...args),
     canvasGet: (...args: unknown[]) => canvasGet(...args),
+    spreadsheetParse: vi.fn(),
     dialogSave: vi.fn(),
     htmlToPdf: vi.fn(),
   },
 }));
+
+vi.mock('../runtime/excel', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../runtime/excel')>();
+  return {
+    ...actual,
+    parseSpreadsheetFile: async (file: File) => {
+      const text = await file.text();
+      const lines = text.replace(/\r\n/g, '\n').trim().split('\n').filter(Boolean);
+      if (lines.length === 0) return { headers: [], rows: [] };
+      const headers = lines[0].split(',');
+      const rows = lines.slice(1).map((line) => {
+        const vals = line.split(',');
+        const obj: Record<string, string> = {};
+        headers.forEach((h, i) => {
+          obj[h] = vals[i] ?? '';
+        });
+        return obj;
+      });
+      return { headers, rows };
+    },
+  };
+});
 
 function docWithLayers(name: string, id?: string) {
   const doc = createEmptyDocument(name);
