@@ -20,6 +20,7 @@ const {
   clearActiveUser,
   getActiveUserPublic,
   maskEmail,
+  onActiveUserChange,
 } = require('./autoimg-user-scope');
 
 const OAUTH_CONFIG_FILE = 'autoimg-oauth-config.json';
@@ -72,6 +73,12 @@ function _validateClientId(clientId) {
 
 let _sheetId = null;
 let _sheetMeta = null;
+
+/** Al cambiar de usuario Google, el Sheet en memoria debe re-resolverse desde el almacén scoped. */
+onActiveUserChange(() => {
+  _sheetId = null;
+  _sheetMeta = null;
+});
 
 function _loadOAuthConfigFromDisk() {
   migratePlaintextJson(OAUTH_CONFIG_FILE, OAUTH_CONFIG_NS, (raw) => (

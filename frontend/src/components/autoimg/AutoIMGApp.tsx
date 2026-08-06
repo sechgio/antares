@@ -73,7 +73,11 @@ export default function AutoIMGApp() {
       setFolders(data.folders);
       setArrastre(data.arrastre);
       setGoogleConnected(data.connected);
-      setBootstrapError('');
+      if (data.error) {
+        setBootstrapError(data.error);
+      } else {
+        setBootstrapError('');
+      }
     } catch (e) {
       if (requestId !== bootstrapRequestRef.current) return;
       setStatus(null);

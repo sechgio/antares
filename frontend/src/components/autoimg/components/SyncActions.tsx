@@ -14,10 +14,18 @@ export default function SyncActions({ onSynced, onStatus }: SyncActionsProps) {
   const [syncing, setSyncing] = useState<SyncAction>(null);
 
   useEffect(() => {
-    return onNotify((method) => {
+    return onNotify((method, params) => {
       if (method === 'autoimg.operation.cancelled') {
         setSyncing(null);
-        onStatus?.({ error: 'Operación cancelada' });
+        const partial = params && typeof params === 'object'
+          ? (params as { partial?: { copied?: number; ranges_written?: number } }).partial
+          : null;
+        const extra = partial?.copied != null
+          ? ` (${partial.copied} copia(s) ya hechas)`
+          : partial?.ranges_written != null
+            ? ` (${partial.ranges_written} rango(s) escritos)`
+            : '';
+        onStatus?.({ error: `Operación cancelada${extra}` });
       }
     });
   }, [onStatus]);
@@ -29,7 +37,10 @@ export default function SyncActions({ onSynced, onStatus }: SyncActionsProps) {
       const res = await api.autoimgScanAndSync();
       const detail = res.logs?.length
         ? res.logs[res.logs.length - 1]
-        : `${res.updated} actualizados · ${res.new_rows} nuevos`;
+        : [
+            `${res.updated} filas cambiadas`,
+            res.unmatched_scan ? `${res.unmatched_scan} fuera del padrón` : null,
+          ].filter(Boolean).join(' · ');
       onStatus?.({ result: detail });
       onSynced?.();
     } catch (e) {
@@ -46,7 +57,10 @@ export default function SyncActions({ onSynced, onStatus }: SyncActionsProps) {
       const res = await api.autoimgSyncToSheet();
       const detail = res.logs?.length
         ? res.logs[res.logs.length - 1]
-        : `${res.updated} actualizados · ${res.new_rows} nuevos`;
+        : [
+            `${res.updated} filas cambiadas`,
+            res.unmatched_scan ? `${res.unmatched_scan} fuera del padrón` : null,
+          ].filter(Boolean).join(' · ');
       onStatus?.({ result: detail });
       onSynced?.();
     } catch (e) {

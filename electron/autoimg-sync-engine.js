@@ -10,11 +10,12 @@ const {
   saveRenameDest,
   loadRenameDest,
 } = require('./autoimg-local-prefs');
+const { onActiveUserChange } = require('./autoimg-user-scope');
 const {
   BD_IMG_HEADER,
   countSinSgioRows,
   countBdImgEstadoMetrics,
-  countScanSinSgio,
+  countScanFueraPadron,
   applyScanResultsToRows,
   parseArrastreRows,
   parseFoldersFromValues,
@@ -47,6 +48,20 @@ let _cacheLoadedAt = 0;
 let _cacheSheetRevision = null;
 /** Raise on repeated 429s during rename copies; decay after clean batches. */
 let _renameConcurrencyBias = 0;
+
+function clearSessionCaches() {
+  _lastScanResults = null;
+  _cachedBdImg = [];
+  _cachedLogs = [];
+  _cachedBdArrastre = [];
+  _cachedFolders = [];
+  _cacheLoadedAt = 0;
+  _cacheSheetRevision = null;
+}
+
+onActiveUserChange(() => {
+  clearSessionCaches();
+});
 
 function emit(method, params) {
   const win = getMainWindow();
@@ -137,8 +152,8 @@ function _parseAutoSyncConfig(value) {
   return v === 'true' || v === '1' || v === 'si' || v === 'yes';
 }
 
-function _throwIfCancelled() {
-  if (_cancelRequested) throw new OperationCancelledError();
+function _throwIfCancelled(partial = null) {
+  if (_cancelRequested) throw new OperationCancelledError('Operación cancelada', partial);
 }
 
 async function _runLocked(operation, fn) {
@@ -151,8 +166,16 @@ async function _runLocked(operation, fn) {
     return await fn();
   } catch (err) {
     if (err instanceof OperationCancelledError || _cancelRequested) {
-      emit('autoimg.operation.cancelled', { operation });
-      throw new Error('Operación cancelada por el usuario');
+      const partial = err instanceof OperationCancelledError ? err.partial : null;
+      emit('autoimg.operation.cancelled', { operation, partial: partial || null });
+      const detail = partial
+        ? `Operación cancelada por el usuario (progreso parcial: ${JSON.stringify(partial)})`
+        : 'Operación cancelada por el usuario';
+      const cancelErr = new Error(detail);
+      cancelErr.code = 'OPERATION_CANCELLED';
+      cancelErr.partial = partial || null;
+      cancelErr.cancelled = true;
+      throw cancelErr;
     }
     throw err;
   } finally {
@@ -478,11 +501,19 @@ async function _scanAllCore() {
   const completos = nisResults.filter((r) => r.count === 3).length;
   const faltantes = nisResults.filter((r) => r.count < 3).length;
   const sobrantes = nisResults.filter((r) => r.count > 3).length;
-  const sin_sgio = countScanSinSgio(nisResults.map((r) => r.nis), existingNis);
+  const fuera_padron = countScanFueraPadron(nisResults.map((r) => r.nis), existingNis);
 
   return {
     results: _lastScanResults,
-    summary: { total: nisResults.length, completos, faltantes, sobrantes, sin_sgio },
+    summary: {
+      total: nisResults.length,
+      completos,
+      faltantes,
+      sobrantes,
+      fuera_padron,
+      /** @deprecated alias de fuera_padron — no confundir con RESUMEN SIN SGIO */
+      sin_sgio: fuera_padron,
+    },
     folders_failed: foldersFailed,
   };
 }
@@ -495,11 +526,14 @@ async function scanAndSync() {
   return _runLocked('scan_sync', async () => {
     const scanResult = await _scanAllCore();
     const syncResult = await _syncToSheetCore();
-    // Do not IPC-clone full nis_results (UI only uses logs/updated/new_rows).
+    // Do not IPC-clone full nis_results (UI only uses logs/updated metrics).
     return {
       success: syncResult.success,
       updated: syncResult.updated,
+      matched: syncResult.matched,
+      unmatched_scan: syncResult.unmatched_scan,
       new_rows: syncResult.new_rows,
+      duplicate_nis: syncResult.duplicate_nis,
       logs: syncResult.logs,
       scan: {
         summary: scanResult.summary,
@@ -607,7 +641,7 @@ async function _syncToSheetCore() {
 
   const { values: bdValues } = await sheets.readRange('BD_IMG!A:M');
   const verification = _now();
-  const { rows, updated, newRows, matched, notFound, unmatchedScan } = applyScanResultsToRows(
+  const { rows, updated, newRows, matched, notFound, unmatchedScan, duplicateNis } = applyScanResultsToRows(
     bdValues.length ? bdValues : [BD_IMG_HEADER],
     _lastScanResults.nis_results,
     verification,
@@ -621,10 +655,17 @@ async function _syncToSheetCore() {
     updates.push({ range: `BD_IMG!A${startRow}:M${endRow}`, values: chunk });
   }
 
+  let rangesWritten = 0;
   for (let i = 0; i < updates.length; i += RANGES_PER_API_BATCH) {
-    _throwIfCancelled();
+    _throwIfCancelled({
+      phase: 'bd_img_write',
+      ranges_written: rangesWritten,
+      ranges_total: updates.length,
+      rows_total: rows.length,
+    });
     const batch = updates.slice(i, i + RANGES_PER_API_BATCH);
     await sheets.batchWriteRanges(batch);
+    rangesWritten += batch.length;
   }
 
   const folderRows = await sheets.readRange('FOLDERS!A:E');
@@ -633,7 +674,15 @@ async function _syncToSheetCore() {
   for (const summary of _lastScanResults.folder_summary) {
     _applyFolderSummaryToSheetRows(fValues, summary, folderTimestamp);
   }
-  if (fValues.length) await sheets.writeRange('FOLDERS!A:E', fValues);
+  if (fValues.length) {
+    _throwIfCancelled({
+      phase: 'folders_write',
+      ranges_written: rangesWritten,
+      ranges_total: updates.length,
+      bd_img_complete: true,
+    });
+    await sheets.writeRange('FOLDERS!A:E', fValues);
+  }
 
   const auth = await sheets.getAuthStatus();
   const durationSec = ((Date.now() - start) / 1000).toFixed(1);
@@ -641,9 +690,11 @@ async function _syncToSheetCore() {
   const detail = [
     `${_lastScanResults.folder_summary.length} carpetas`,
     `${_lastScanResults.nis_results.length} NIS en carpetas`,
-    `${matched ?? updated} del padrón actualizados`,
+    `${matched ?? updated} del padrón con match`,
+    `${updated} filas cambiadas`,
     `${notFound || 0} del padrón sin imágenes`,
     `${unmatchedScan || 0} fuera del padrón (ignorados)`,
+    ...(duplicateNis ? [`${duplicateNis} NIS duplicados en padrón`] : []),
   ].join(' · ');
   await sheets.appendRow('LOGS!A:E', [_now(), 'SCAN_ALL_FOLDERS', detail, auth.email || '', durationSec]);
 
@@ -672,11 +723,26 @@ async function _syncToSheetCore() {
   });
 
   const folderErrors = (_lastScanResults.folder_summary || []).filter((s) => s.error).length;
-  emit('autoimg.sync.complete', { updated, new: newRows, errors: folderErrors, duration_ms: Date.now() - start });
+  emit('autoimg.sync.complete', {
+    updated,
+    matched,
+    unmatched_scan: unmatchedScan || 0,
+    new: newRows,
+    errors: folderErrors,
+    duration_ms: Date.now() - start,
+  });
 
   _cachedBdImg = rows;
   _invalidateCache();
-  return { success: true, updated, new_rows: newRows, logs: [detail] };
+  return {
+    success: true,
+    updated,
+    matched,
+    unmatched_scan: unmatchedScan || 0,
+    new_rows: newRows,
+    duplicate_nis: duplicateNis || 0,
+    logs: [detail],
+  };
 }
 
 async function syncToSheet() {
@@ -785,8 +851,15 @@ async function bootstrap({ refresh = true } = {}) {
       arrastre: _cachedBdArrastre,
       cached: false,
     };
-  } catch {
-    return base;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    emit('autoimg.error', { code: 'BOOTSTRAP', detail: message });
+    return {
+      ...base,
+      error: message,
+      error_code: 'BOOTSTRAP_FAILED',
+      stale: true,
+    };
   }
 }
 
@@ -855,49 +928,77 @@ async function _renameExportCore({ dest_folder_id, only_completos = true } = {})
   let done = 0;
   const copyConcurrency = resolveRenameCopyConcurrency(jobs.length);
   let hitRateLimit = false;
+  let cancelledMidCopy = false;
 
-  await mapWithConcurrency(
-    jobs,
-    copyConcurrency,
-    async (job) => {
-      _throwIfCancelled();
-      const targetFolderId = destinoFolderIds.get(job.destino);
-      try {
-        if (!targetFolderId) {
-          throw new Error(`Sin carpeta para DESTINO "${job.destino}"`);
+  try {
+    await mapWithConcurrency(
+      jobs,
+      copyConcurrency,
+      async (job) => {
+        _throwIfCancelled({
+          phase: 'rename_copy',
+          copied: copied.length,
+          failed: failed.length,
+          planned: jobs.length,
+        });
+        const targetFolderId = destinoFolderIds.get(job.destino);
+        try {
+          if (!targetFolderId) {
+            throw new Error(`Sin carpeta para DESTINO "${job.destino}"`);
+          }
+          const res = await drive.copyFileToFolder(job.fileId, targetFolderId, job.toName);
+          copied.push({
+            nis: job.nis,
+            sgio: job.sgio,
+            destino: job.destino,
+            slot: job.slot,
+            from: job.fromName,
+            to: job.toName,
+            folder: job.destino,
+            file_id: res.id || '',
+          });
+        } catch (err) {
+          if (err instanceof OperationCancelledError) throw err;
+          if (_isRateLimitError(err)) hitRateLimit = true;
+          failed.push({
+            nis: job.nis,
+            sgio: job.sgio,
+            destino: job.destino,
+            from: job.fromName,
+            to: job.toName,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        } finally {
+          done += 1;
+          emit('autoimg.rename.progress', {
+            current: done,
+            total: jobs.length,
+            last: `${job.destino}/${job.toName}`,
+          });
         }
-        const res = await drive.copyFileToFolder(job.fileId, targetFolderId, job.toName);
-        copied.push({
-          nis: job.nis,
-          sgio: job.sgio,
-          destino: job.destino,
-          slot: job.slot,
-          from: job.fromName,
-          to: job.toName,
-          folder: job.destino,
-          file_id: res.id || '',
-        });
-      } catch (err) {
-        if (_isRateLimitError(err)) hitRateLimit = true;
-        failed.push({
-          nis: job.nis,
-          sgio: job.sgio,
-          destino: job.destino,
-          from: job.fromName,
-          to: job.toName,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      } finally {
-        done += 1;
-        emit('autoimg.rename.progress', {
-          current: done,
-          total: jobs.length,
-          last: `${job.destino}/${job.toName}`,
-        });
-      }
-    },
-    { shouldCancel: () => _cancelRequested },
-  );
+      },
+      { shouldCancel: () => _cancelRequested },
+    );
+  } catch (err) {
+    if (err instanceof OperationCancelledError || _cancelRequested) {
+      cancelledMidCopy = true;
+      const partial = {
+        phase: 'rename_copy',
+        copied: copied.length,
+        failed: failed.length,
+        planned: jobs.length,
+        skipped: skipped.length,
+        dest_folder_id: rootFolderId,
+      };
+      emit('autoimg.rename.partial', partial);
+      const cancelErr = new OperationCancelledError(
+        `Renombre cancelado: ${copied.length}/${jobs.length} copias ya hechas en Drive`,
+        partial,
+      );
+      throw cancelErr;
+    }
+    throw err;
+  }
 
   if (hitRateLimit) _noteRenameRateLimit();
   else if (failed.length === 0 && jobs.length > 0) _noteRenameBatchClean();
@@ -911,7 +1012,8 @@ async function _renameExportCore({ dest_folder_id, only_completos = true } = {})
     `Renombre SGIO → ${rootMeta.name}/{DESTINO}: ${copied.length} copiadas` +
     (foldersCreated.length ? `, ${foldersCreated.length} carpeta(s) nuevas` : '') +
     (failed.length ? `, ${failed.length} error(es)` : '') +
-    (skipped.length ? `, ${skipped.length} omitida(s)` : '');
+    (skipped.length ? `, ${skipped.length} omitida(s)` : '') +
+    (cancelledMidCopy ? ', cancelado' : '');
 
   try {
     await sheets.appendRow('LOGS!A:E', [_now(), 'RENAME_SGIO', detail, '', '']);
@@ -995,4 +1097,5 @@ module.exports = {
   buildFolderErrorSummary,
   formatFolderErrorScan,
   resolveRenameCopyConcurrency,
+  clearSessionCaches,
 };

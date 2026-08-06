@@ -14,6 +14,33 @@ const ACTIVE_NS = 'active_user';
 
 let _activeUserKey = null;
 let _activeEmail = null;
+/** @type {Array<(info: { previousKey: string|null, nextKey: string|null }) => void>} */
+const _activeUserChangeListeners = [];
+
+/**
+ * Registra un callback al cambiar/cerrar el usuario activo (p.ej. limpiar caches en RAM).
+ * @param {(info: { previousKey: string|null, nextKey: string|null }) => void} fn
+ * @returns {() => void} unsubscribe
+ */
+function onActiveUserChange(fn) {
+  if (typeof fn !== 'function') return () => {};
+  _activeUserChangeListeners.push(fn);
+  return () => {
+    const i = _activeUserChangeListeners.indexOf(fn);
+    if (i >= 0) _activeUserChangeListeners.splice(i, 1);
+  };
+}
+
+function _notifyActiveUserChange(previousKey, nextKey) {
+  if (previousKey === nextKey) return;
+  for (const fn of _activeUserChangeListeners.slice()) {
+    try {
+      fn({ previousKey, nextKey });
+    } catch {
+      /* listener failures must not break auth */
+    }
+  }
+}
 
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
@@ -73,6 +100,7 @@ function setActiveUser(email) {
   });
 
   if (prev !== key) {
+    _notifyActiveUserChange(prev, key);
     migrateLegacyIntoActiveUser();
   }
   return key;
@@ -80,9 +108,11 @@ function setActiveUser(email) {
 
 /** Cierra sesión activa sin borrar el almacén por-usuario. */
 function clearActiveUser() {
+  const prev = _activeUserKey;
   _activeUserKey = null;
   _activeEmail = null;
   clearSecureJson(ACTIVE_FILE);
+  _notifyActiveUserChange(prev, null);
 }
 
 function scopedFilename(baseName) {
@@ -145,6 +175,7 @@ module.exports = {
   getActiveEmail,
   setActiveUser,
   clearActiveUser,
+  onActiveUserChange,
   scopedFilename,
   scopedNamespace,
   migrateLegacyIntoActiveUser,

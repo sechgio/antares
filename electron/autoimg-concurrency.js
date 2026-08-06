@@ -1,7 +1,8 @@
 class OperationCancelledError extends Error {
-  constructor(message = 'Operación cancelada') {
+  constructor(message = 'Operación cancelada', partial = null) {
     super(message);
     this.name = 'OperationCancelledError';
+    this.partial = partial;
   }
 }
 
