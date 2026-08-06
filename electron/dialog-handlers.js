@@ -34,6 +34,8 @@ const NATIVE_METHODS = new Set([
   'file_staged_abort',
 ]);
 
+const REGISTER_LOCAL_PATH_DEPRECATED_MSG = 'register_local_path is deprecated; use file tokens via dialog or staged upload';
+
 /** @type {Set<string>} Directory roots allowed for PDF writes (from dialogs). */
 const _allowedWriteRoots = new Set();
 
@@ -128,24 +130,13 @@ function _sanitizePdfOutputPath(outputPath, fallbackFilename) {
   return path.join(dir, safeName);
 }
 
-function _handleRegisterLocalPath(params = {}) {
-  const raw = params.path;
-  if (typeof raw !== 'string' || !raw.trim()) {
-    throw new Error('path required');
-  }
-  if (raw.includes('\0')) {
-    throw new Error('invalid path');
-  }
-  if (!path.isAbsolute(raw)) {
-    throw new Error('path must be absolute');
-  }
-  const resolved = path.resolve(raw);
-  const stat = assertPathNotSymlink(resolved);
-  if (!stat.isFile()) {
-    throw new Error('not a file');
-  }
-  registerAllowedReadPath(resolved);
-  return { registered: true, path: resolved };
+function _handleRegisterLocalPath() {
+  throw new Error(REGISTER_LOCAL_PATH_DEPRECATED_MSG);
+}
+
+function _resolveTokenPath(token, webContentsId) {
+  const cap = resolveCapability(token, 'read', webContentsId ?? null);
+  return cap.path;
 }
 
 function _resolveTokenPath(token, webContentsId) {
@@ -404,7 +395,33 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
   }
 
   if (method === 'register_local_path') {
-    return { handled: true, result: _handleRegisterLocalPath(params) };
+    return { handled: true, result: _handleRegisterLocalPath() };
+  }
+
+  if (method === 'file_token_resolve') {
+    const token = params && params.token;
+    const filePath = _resolveTokenPath(token, _webContentsIdFromWindow(window));
+    return { handled: true, result: { path: filePath } };
+  }
+
+  if (method === 'file_staged_create') {
+    const session = createStagedSession({ name: params.name, size: params.size, webContentsId: _webContentsIdFromWindow(window) });
+    return { handled: true, result: { token: session.token, tmpPath: session.tmpPath } };
+  }
+
+  if (method === 'file_staged_append') {
+    const res = await appendStagedChunk(params.token, params.chunk_b64, _webContentsIdFromWindow(window));
+    return { handled: true, result: res };
+  }
+
+  if (method === 'file_staged_complete') {
+    const cap = await completeStagedSession(params.token, _webContentsIdFromWindow(window));
+    return { handled: true, result: { file_token: cap.token, name: cap.name, size: cap.size } };
+  }
+
+  if (method === 'file_staged_abort') {
+    await abortStagedSession(params.token);
+    return { handled: true, result: { aborted: true } };
   }
 
   if (method === 'file_token_resolve') {
@@ -439,6 +456,8 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
     let resolvedPath = params && params.path;
     if (params && params.file_token) {
       resolvedPath = _resolveTokenPath(params.file_token, _webContentsIdFromWindow(window));
+      // Capability tokens bypass dialog allowlist registration; grant read for this path.
+      registerAllowedReadPath(resolvedPath);
     }
     const result = await createLocalThumbnail(
       resolvedPath,
@@ -452,6 +471,7 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
     let resolvedPath = params && params.path;
     if (params && params.file_token) {
       resolvedPath = _resolveTokenPath(params.file_token, _webContentsIdFromWindow(window));
+      registerAllowedReadPath(resolvedPath);
     }
     const result = await createLocalImageDataUrl(resolvedPath);
     return { handled: true, result };

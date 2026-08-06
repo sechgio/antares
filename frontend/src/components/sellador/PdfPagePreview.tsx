@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
 import { api } from '../../api';
-import { createLruMap } from './lruMap';
+import {
+  createLruMap,
+  estimateStringBytes,
+  SELLADOR_PREVIEW_CACHE_MAX_BYTES,
+} from './lruMap';
 import type { PdfPageSize } from './utils';
 import { loadPdfDocument, renderPdfPageToDataUrl } from './pdfjs';
 import { selladorPreviewDpr, selladorPreviewPixelWidth } from './previewDpi';
@@ -19,8 +23,10 @@ interface PdfPagePreviewProps {
 const DEFAULT_WIDTH = 900;
 const WIDTH_BUCKET = 80;
 const RENDER_CACHE_VERSION = 'disp-v1';
-const RENDER_CACHE_MAX = 32;
-const renderCache = createLruMap<string, string>(RENDER_CACHE_MAX);
+const renderCache = createLruMap<string, string>({
+  maxBytes: SELLADOR_PREVIEW_CACHE_MAX_BYTES,
+  sizeOf: estimateStringBytes,
+});
 
 function bucketRenderWidth(width: number): number {
   const clamped = Math.max(width, 320);
@@ -107,16 +113,24 @@ export default function PdfPagePreview({
       }
 
       const pdf = await loadPdfDocument(pdfBase64!);
-      const rendered = await renderPdfPageToDataUrl(pdf, pageNum, renderWidth, selladorPreviewDpr());
-      if (cancelled) return;
-      renderCache.set(cacheKey, rendered.url);
-      setPageImageUrl(rendered.url);
-      hasDisplayedImageRef.current = true;
-      if (!pageSizeReportedRef.current) {
-        onPageSizeRef.current?.(rendered.pageSize);
-        pageSizeReportedRef.current = true;
+      try {
+        const rendered = await renderPdfPageToDataUrl(pdf, pageNum, renderWidth, selladorPreviewDpr());
+        if (cancelled) return;
+        renderCache.set(cacheKey, rendered.url);
+        setPageImageUrl(rendered.url);
+        hasDisplayedImageRef.current = true;
+        if (!pageSizeReportedRef.current) {
+          onPageSizeRef.current?.(rendered.pageSize);
+          pageSizeReportedRef.current = true;
+        }
+        setLoading(false);
+      } finally {
+        try {
+          await pdf.destroy();
+        } catch {
+          /* ignore destroy errors */
+        }
       }
-      setLoading(false);
     }
 
     renderPage().catch((err) => {

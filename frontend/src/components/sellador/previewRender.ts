@@ -1,6 +1,10 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { api } from '../../api';
-import { createLruMap } from './lruMap';
+import {
+  createLruMap,
+  estimateStringBytes,
+  SELLADOR_PREVIEW_CACHE_MAX_BYTES,
+} from './lruMap';
 import { loadPdfDocument } from './pdfjs';
 import {
   MAX_PREVIEW_PIXEL_WIDTH,
@@ -12,8 +16,10 @@ import type { PdfPageSize, StampRect } from './utils';
 
 const WIDTH_BUCKET = 80;
 const OTHER_PAGES_CACHE_VERSION = 'disp-v1';
-const OTHER_PAGES_CACHE_MAX = 32;
-const otherPagesRenderCache = createLruMap<string, string>(OTHER_PAGES_CACHE_MAX);
+const otherPagesRenderCache = createLruMap<string, string>({
+  maxBytes: SELLADOR_PREVIEW_CACHE_MAX_BYTES,
+  sizeOf: estimateStringBytes,
+});
 
 function bucketContainerWidth(width: number): number {
   const clamped = Math.max(width, 320);
@@ -177,40 +183,50 @@ export async function renderOtherPagesPreview(
     onProgress([...previews]);
   };
 
-  for (let pageNum = 2; pageNum <= pageCount; pageNum += 1) {
-    if (isCancelled()) break;
-    const stampsOnPage = assignmentCounts.get(pageNum) ?? 0;
-    const stampRects = placementsByPage.get(pageNum) ?? [];
-    const cacheKey = otherPagesCacheKey(
-      pdfPath,
-      pdfBase64,
-      pageNum,
-      bucketedWidth,
-      stampRects,
-    );
-    let url = otherPagesRenderCache.get(cacheKey);
-    if (!url) {
-      url = pdfPath
-        ? await renderPageWithStampFromPath(
-          pdfPath,
-          pageNum,
-          bucketedWidth,
-          stampUrl,
-          stampRects,
-          pageSize,
-        )
-        : await renderPageWithStampFromPdf(
-          pdf!,
-          pageNum,
-          bucketedWidth,
-          stampUrl,
-          stampRects,
-        );
-      otherPagesRenderCache.set(cacheKey, url);
+  try {
+    for (let pageNum = 2; pageNum <= pageCount; pageNum += 1) {
+      if (isCancelled()) break;
+      const stampsOnPage = assignmentCounts.get(pageNum) ?? 0;
+      const stampRects = placementsByPage.get(pageNum) ?? [];
+      const cacheKey = otherPagesCacheKey(
+        pdfPath,
+        pdfBase64,
+        pageNum,
+        bucketedWidth,
+        stampRects,
+      );
+      let url = otherPagesRenderCache.get(cacheKey);
+      if (!url) {
+        url = pdfPath
+          ? await renderPageWithStampFromPath(
+            pdfPath,
+            pageNum,
+            bucketedWidth,
+            stampUrl,
+            stampRects,
+            pageSize,
+          )
+          : await renderPageWithStampFromPdf(
+            pdf!,
+            pageNum,
+            bucketedWidth,
+            stampUrl,
+            stampRects,
+          );
+        otherPagesRenderCache.set(cacheKey, url);
+      }
+      previews.push({ pageNum, url, stampCount: stampsOnPage });
+      reportProgress();
     }
-    previews.push({ pageNum, url, stampCount: stampsOnPage });
-    reportProgress();
-  }
 
-  reportProgress(true);
+    reportProgress(true);
+  } finally {
+    if (pdf) {
+      try {
+        await pdf.destroy();
+      } catch {
+        /* ignore destroy errors */
+      }
+    }
+  }
 }

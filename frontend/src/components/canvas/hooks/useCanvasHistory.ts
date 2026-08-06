@@ -10,6 +10,43 @@ import {
 
 /** Cap undo depth to limit RAM when documents embed large data-URL images. */
 export const MAX_HISTORY = 30;
+/** Aggregate byte budget for past + future stacks (UTF-16 string estimate). */
+export const MAX_HISTORY_BYTES = 64 * 1024 * 1024;
+
+export function estimateHistoryBytes(steps: HistoryStep[]): number {
+  try {
+    return JSON.stringify(steps).length * 2;
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
+/**
+ * Enforce both step-count and aggregate byte budgets.
+ * Drops oldest past entries first, then oldest future entries.
+ */
+export function trimHistoryByBudget(
+  past: HistoryStep[],
+  future: HistoryStep[],
+  maxSteps: number = MAX_HISTORY,
+  maxBytes: number = MAX_HISTORY_BYTES,
+): { past: HistoryStep[]; future: HistoryStep[] } {
+  let nextPast = past.slice(-maxSteps);
+  let nextFuture = future.slice(-maxSteps);
+
+  while (
+    estimateHistoryBytes(nextPast) + estimateHistoryBytes(nextFuture) > maxBytes
+    && (nextPast.length > 0 || nextFuture.length > 0)
+  ) {
+    if (nextPast.length > 0) {
+      nextPast = nextPast.slice(1);
+    } else {
+      nextFuture = nextFuture.slice(1);
+    }
+  }
+
+  return { past: nextPast, future: nextFuture };
+}
 
 export function useCanvasHistory(initial: CanvasDocument) {
   const [document, setDocumentState] = useState<CanvasDocument>(initial);
@@ -35,13 +72,16 @@ export function useCanvasHistory(initial: CanvasDocument) {
       undoDiff: computeDocumentDiff(next, prev),
       redoDiff: computeDocumentDiff(prev, next),
     };
-    const nextPast = [...pastRef.current.slice(-(MAX_HISTORY - 1)), step];
-    pastRef.current = nextPast;
-    futureRef.current = [];
+    const trimmed = trimHistoryByBudget(
+      [...pastRef.current, step],
+      [],
+    );
+    pastRef.current = trimmed.past;
+    futureRef.current = trimmed.future;
     documentRef.current = next;
     hasUnsavedEditsRef.current = true;
-    setPast(nextPast);
-    setFuture([]);
+    setPast(trimmed.past);
+    setFuture(trimmed.future);
     setDocumentState(next);
   }, []);
 
@@ -69,12 +109,15 @@ export function useCanvasHistory(initial: CanvasDocument) {
       undoDiff: computeDocumentDiff(current, baseline),
       redoDiff: computeDocumentDiff(baseline, current),
     };
-    const nextPast = [...pastRef.current.slice(-(MAX_HISTORY - 1)), step];
-    pastRef.current = nextPast;
-    futureRef.current = [];
+    const trimmed = trimHistoryByBudget(
+      [...pastRef.current, step],
+      [],
+    );
+    pastRef.current = trimmed.past;
+    futureRef.current = trimmed.future;
     hasUnsavedEditsRef.current = true;
-    setPast(nextPast);
-    setFuture([]);
+    setPast(trimmed.past);
+    setFuture(trimmed.future);
   }, []);
 
   const undo = useCallback(() => {
@@ -90,15 +133,14 @@ export function useCanvasHistory(initial: CanvasDocument) {
       redoDiff: computeDocumentDiff(prev, current),
     };
 
-    const nextPast = p.slice(0, -1);
-    const nextFuture = [...futureRef.current, futureStep];
-    pastRef.current = nextPast;
-    futureRef.current = nextFuture;
+    const trimmed = trimHistoryByBudget(p.slice(0, -1), [...futureRef.current, futureStep]);
+    pastRef.current = trimmed.past;
+    futureRef.current = trimmed.future;
     documentRef.current = prev;
     // Undo leaves memory ≠ last save; cloud sync must treat the open doc as dirty.
     hasUnsavedEditsRef.current = true;
-    setPast(nextPast);
-    setFuture(nextFuture);
+    setPast(trimmed.past);
+    setFuture(trimmed.future);
     setDocumentState(prev);
   }, []);
 
@@ -115,25 +157,23 @@ export function useCanvasHistory(initial: CanvasDocument) {
       redoDiff: computeDocumentDiff(current, next),
     };
 
-    const nextFuture = f.slice(0, -1);
-    const nextPast = [...pastRef.current, pastStep];
-    futureRef.current = nextFuture;
-    pastRef.current = nextPast;
+    const trimmed = trimHistoryByBudget([...pastRef.current, pastStep], f.slice(0, -1));
+    futureRef.current = trimmed.future;
+    pastRef.current = trimmed.past;
     documentRef.current = next;
     // Same as undo: redo mutates the open document relative to the last save.
     hasUnsavedEditsRef.current = true;
-    setFuture(nextFuture);
-    setPast(nextPast);
+    setFuture(trimmed.future);
+    setPast(trimmed.past);
     setDocumentState(next);
   }, []);
 
   const restoreHistory = useCallback((nextPast: HistoryStep[], nextFuture: HistoryStep[]) => {
-    const safePast = (nextPast || []).slice(-MAX_HISTORY);
-    const safeFuture = (nextFuture || []).slice(-MAX_HISTORY);
-    pastRef.current = safePast;
-    futureRef.current = safeFuture;
-    setPast(safePast);
-    setFuture(safeFuture);
+    const trimmed = trimHistoryByBudget(nextPast || [], nextFuture || []);
+    pastRef.current = trimmed.past;
+    futureRef.current = trimmed.future;
+    setPast(trimmed.past);
+    setFuture(trimmed.future);
   }, []);
 
   /** Clear dirty after a successful save without wiping undo/redo stacks. */
