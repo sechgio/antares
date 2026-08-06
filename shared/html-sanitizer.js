@@ -152,10 +152,7 @@ function sanitizeHtmlForPreview(html) {
       const lowered = String(urlValue).trim().toLowerCase();
       const q = quote || '"';
       if (lowered.startsWith('data:')) {
-        const safePrefixes = ['data:image/png', 'data:image/jpeg', 'data:image/jpg', 'data:image/gif', 'data:image/bmp', 'data:image/webp'];
-        const isSafe = safePrefixes.some((p) => lowered.startsWith(p));
-        if (isSafe) return match;
-        return `${attr}=${q}${q}`;
+        return isSafeDataUrl(urlValue) ? match : `${attr}=${q}${q}`;
       }
       if (lowered.startsWith('blob:')) return match;
       return `${attr}=${q}${q}`;
@@ -165,10 +162,7 @@ function sanitizeHtmlForPreview(html) {
       const lowered = String(urlValue).trim().toLowerCase();
       if (lowered.startsWith('blob:')) return match;
       if (lowered.startsWith('data:')) {
-        const safePrefixes = ['data:image/png', 'data:image/jpeg', 'data:image/jpg', 'data:image/gif', 'data:image/bmp', 'data:image/webp'];
-        const isSafe = safePrefixes.some((p) => lowered.startsWith(p));
-        if (isSafe) return match;
-        return "url('')";
+        return isSafeDataUrl(urlValue) ? match : "url('')";
       }
       return "url('')";
     })
@@ -182,10 +176,7 @@ function sanitizeHtmlForPreview(html) {
       if (!urlMatch) return "url('')";
       const v = String(urlMatch[2]).trim().toLowerCase();
       if (v.startsWith('blob:')) return m;
-      if (v.startsWith('data:')) {
-        const safePrefixes = ['data:image/png', 'data:image/jpeg', 'data:image/jpg', 'data:image/gif', 'data:image/bmp', 'data:image/webp'];
-        if (safePrefixes.some((p) => v.startsWith(p))) return m;
-      }
+      if (v.startsWith('data:') && isSafeDataUrl(urlMatch[2])) return m;
       return "url('')";
     });
     inner = inner.replace(/@import[^;]+;/gi, '');

@@ -41,6 +41,8 @@ VALVULA_DIAMETERS = ["2", "3", "4", "6", "8", "10", "12"]
 CANASTILLA_DIAMETERS = ["2", "3", "4", "6", "8", "10", "14"]
 DEFAULT_MEDIDA_LABEL_DIAMETRO = "DIAMETRO"
 DEFAULT_MEDIDA_LABEL_DIAMETRO_INTERNO = "DIAMETRO INTERNO"
+DEFAULT_TITULO_LINEA1 = "Limpieza y Desinfección de Reservorios y Cisternas"
+DEFAULT_TITULO_LINEA2 = "Centro de Servicio Villa El Salvador"
 
 
 def report_id_from_number(value: int) -> str:
@@ -89,6 +91,8 @@ def default_header() -> dict[str, Any]:
         "contratista": "",
         "sgio": "",
         "sgio_label": "SGIO",
+        "titulo_linea1": DEFAULT_TITULO_LINEA1,
+        "titulo_linea2": DEFAULT_TITULO_LINEA2,
         "codigo_infraestructura": "",
         "ubicacion": "",
         "suministro": "",
@@ -209,10 +213,24 @@ class TechnicalReport:
         if header["tipo"] not in REPORT_TYPES:
             header["tipo"] = "ELEVADO"
         header["volumen"] = _safe_int(header.get("volumen"), 0)
-        for key in ["cs", "contratista", "sgio", "sgio_label", "codigo_infraestructura", "ubicacion", "suministro"]:
+        for key in [
+            "cs",
+            "contratista",
+            "sgio",
+            "sgio_label",
+            "titulo_linea1",
+            "titulo_linea2",
+            "codigo_infraestructura",
+            "ubicacion",
+            "suministro",
+        ]:
             header[key] = _safe_str(header.get(key), "")
         if not header["sgio_label"]:
             header["sgio_label"] = "SGIO"
+        if not header["titulo_linea1"]:
+            header["titulo_linea1"] = DEFAULT_TITULO_LINEA1
+        if not header["titulo_linea2"]:
+            header["titulo_linea2"] = DEFAULT_TITULO_LINEA2
         report["header"] = header
 
         report["inspeccion"] = _normalize_inspeccion(source.get("inspeccion"))

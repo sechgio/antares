@@ -382,38 +382,32 @@ export default function PreviewPanelView() {
   };
 
   const parseFile = async (file: File) => {
-    const XLSX = await import('xlsx');
-    const reader = new FileReader();
-    reader.onload = evt => {
-      const bstr = evt.target?.result as string;
-      const wb = XLSX.read(bstr, { type: 'binary', cellDates: false, cellNF: true });
-      const wsname = wb.SheetNames[0];
-      const ws = wb.Sheets[wsname];
-      const jsonData = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, dateNF: 'dd/mm/yy' }) as unknown[][];
-
+    try {
+      const win = window as unknown as { electronAPI?: { fileStagedCreate:(n:string,s:number)=>Promise<{token:string}>, fileStagedAppend:(t:string,c:string)=>Promise<unknown>, fileStagedComplete:(t:string)=>Promise<{file_token:string}> } };
+      let fileToken: string|null = null;
+      if (win.electronAPI?.fileStagedCreate) {
+        const staged = await win.electronAPI.fileStagedCreate(file.name, file.size);
+        const CHUNK = 6*1024*1024; const buf = await file.arrayBuffer(); const bytes=new Uint8Array(buf);
+        for(let off=0; off<bytes.length; off+=CHUNK){ const chunk=bytes.slice(off, off+CHUNK); let binary=""; for(let i=0;i<chunk.length;i++) binary+=String.fromCharCode(chunk[i]); const b64=btoa(binary); await win.electronAPI.fileStagedAppend(staged.token,b64); }
+        const done = await win.electronAPI.fileStagedComplete(staged.token); fileToken=done.file_token;
+      }
+      const res = await (api as unknown as { spreadsheetParse:(p:unknown)=>Promise<{sheets:{name:string,rows:unknown[][]}[]}> }).spreadsheetParse({ file_token: fileToken } as unknown as Record<string,unknown>);
+      const sh = res.sheets[0]; if (!sh || !sh.rows.length) { addToast({ message: 'El archivo está vacío', type: 'error' }); return; }
+      const jsonData = sh.rows as unknown[][];
       if (jsonData.length > 0) {
         const _headers = jsonData[0] as string[];
         const _data = jsonData.slice(1).map(row => {
           const obj: Record<string, unknown> = {};
           _headers.forEach((h, i) => {
-            let cellValue = row[i];
-            if (isDateColumn(h) && typeof cellValue === 'number' && cellValue > 1000 && cellValue < 100000) {
-              cellValue = excelSerialToDate(cellValue);
-            }
+            let cellValue = (row as unknown[])[i];
+            if (isDateColumn(h) && typeof cellValue === 'number' && cellValue > 1000 && cellValue < 100000) cellValue = excelSerialToDate(cellValue as number);
             obj[h] = cellValue;
           });
           return obj;
         });
-        setHeaders(_headers);
-        setData(_data);
-        autoMapFields(_headers);
-        setShowDataPreview(true);
+        setHeaders(_headers); setData(_data); autoMapFields(_headers); setShowDataPreview(true);
       }
-    };
-    reader.onerror = () => {
-      addToast({ message: 'No se pudo leer el archivo Excel/CSV', type: 'error' });
-    };
-    reader.readAsBinaryString(file);
+    } catch { addToast({ message: 'No se pudo leer el archivo Excel/CSV', type: 'error' }); }
   };
 
   const autoMapFields = (_headers: string[]) => {

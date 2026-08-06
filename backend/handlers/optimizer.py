@@ -112,10 +112,16 @@ def image_optimizer_zip(params: dict[str, Any]) -> dict[str, str]:
         raise ValueError(msg)
     output_path = str(params.get("output_path") or "").strip()
     if output_path:
-        destination = Path(output_path).expanduser().resolve()
-        if destination.suffix.lower() != ".zip":
-            destination = destination.with_suffix(".zip")
+        resolved = str(params.get("_resolved_output_path") or output_path).strip()
+        from backend.utils.validators import sanitizar_nombre as _snZ
+        safe = _snZ(Path(resolved).name) or Path(resolved).name
+        if not safe.lower().endswith(".zip"): safe += ".zip"
+        destination = Path(resolved).parent / safe
+        if destination.is_symlink() or destination.parent.is_symlink():
+            raise ValueError("symlink no permitido en ruta de salida")
         destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.exists():
+            raise FileExistsError(f"El archivo ya existe: {destination}")
         _write_optimizer_zip(files, str(zip_name), destination)
         return {"saved_path": str(destination), "filename": destination.name}
 
@@ -156,7 +162,13 @@ def image_optimizer_save_files(params: dict[str, Any]) -> dict[str, Any]:
         msg = "output_folder is required"
         raise ValueError(msg)
 
-    destination = Path(output_folder).expanduser().resolve()
+    resolved_folder = str(params.get("_resolved_output_path") or output_folder).strip() or output_folder
+    # output_folder may be a directory — validate symlink and confinement
+    from pathlib import Path as _P
+    rf = _P(resolved_folder).expanduser().resolve()
+    if rf.is_symlink():
+        raise ValueError("symlink no permitido en carpeta de salida")
+    destination = rf
     destination.mkdir(parents=True, exist_ok=True)
 
     seen: dict[str, int] = {}

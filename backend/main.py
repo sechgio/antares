@@ -118,6 +118,8 @@ HEAVY_METHODS = {
     "panel_aviso_corte_parse_excel",
     "panel_aviso_corte_compute_match",
     "panel_aviso_corte_render_pdf",
+    "spreadsheet_parse",
+    "spreadsheet_export_volantes_template",
     "generar_ubicaciones",
     "preview_ubicacion",
     "evidencia_volanteo_render",

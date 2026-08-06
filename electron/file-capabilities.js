@@ -90,7 +90,7 @@ function sweepExpired() {
   }
   for (const [k, v] of _stagedSessions) {
     if (v.expiresAt <= now) {
-      _capabilities.delete(v.token);
+      if (v.readToken) _capabilities.delete(v.readToken);
       if (v.tmpPath) fsp.rm(v.tmpPath, { force: true }).catch(() => {});
       _stagedSessions.delete(k);
     }
@@ -153,23 +153,17 @@ async function completeStagedSession(token, webContentsId) {
   try { stat = await fsp.stat(session.tmpPath); } catch { throw new Error('staged file missing'); }
   if (!stat.isFile()) throw new Error('not a file');
   if (stat.size > MAX_STAGED_FILE_BYTES) throw new Error('staged file too large');
-  assertPathNotSymlink(session.tmpPath);
-  const capToken = _newToken('antares-read');
-  const cap = {
-    token: capToken,
+  const cap = createFileCapability({
+    filePath: session.tmpPath,
     mode: 'read',
-    path: session.tmpPath,
+    webContentsId: session.webContentsId,
     name: session.name,
     size: stat.size,
-    webContentsId: session.webContentsId,
-    createdAt: _now(),
-    expiresAt: _now() + TOKEN_TTL_MS,
-    staged: true,
-    stagedSessionToken: token,
-  };
-  _capabilities.set(capToken, cap);
+  });
+  cap.staged = true;
+  cap.stagedSessionToken = token;
   session.completed = true;
-  session.readToken = capToken;
+  session.readToken = cap.token;
   return cap;
 }
 
@@ -225,9 +219,4 @@ module.exports = {
   abortStagedSession,
   cleanupAllStaged,
   _assertNoRawAbsolutePaths,
-  TOKEN_TTL_MS,
-  MAX_CHUNK_BYTES,
-  MAX_STAGED_FILE_BYTES,
-  _capabilities,
-  _stagedSessions,
 };

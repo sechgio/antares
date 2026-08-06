@@ -150,10 +150,16 @@ def sellador_apply(params: dict[str, Any]) -> dict[str, Any]:
     }
 
     if output_path:
-        destination = Path(output_path).expanduser().resolve()
-        if destination.suffix.lower() != ".pdf":
-            destination = destination.with_suffix(".pdf")
+        resolved = str(params.get("_resolved_output_path") or output_path).strip()
+        from backend.utils.validators import sanitizar_nombre as _snS
+        safe = _snS(Path(resolved).name) or Path(resolved).name
+        if not safe.lower().endswith(".pdf"): safe += ".pdf"
+        destination = Path(resolved).parent / safe
+        if destination.is_symlink() or destination.parent.is_symlink():
+            raise ValueError("symlink no permitido en ruta de salida")
         destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.exists():
+            raise FileExistsError(f"El archivo ya existe: {destination}")
         tmp_path = destination.with_suffix(destination.suffix + ".tmp")
         try:
             tmp_path.write_bytes(result_bytes)

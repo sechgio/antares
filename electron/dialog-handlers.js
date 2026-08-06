@@ -13,7 +13,6 @@ const {
   isAllowedReadPath,
 } = require('./path-allowlist');
 const {
-  createFileCapability,
   resolveCapability,
   createStagedSession,
   appendStagedChunk,
@@ -78,29 +77,27 @@ function _isUnderAllowedPdfWriteDir(dir) {
   return false;
 }
 
-function _localImageEntries(rawPaths, tokenResolver) {
+function _localImageEntries(rawPaths) {
   if (!rawPaths || typeof rawPaths !== 'object' || Array.isArray(rawPaths)) return [];
   const allowedExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif', '.tif', '.tiff', '.ico']);
 
   return Object.entries(rawPaths).flatMap(([token, rawPath]) => {
     if (typeof token !== 'string' || !/^antares-local-image:[a-zA-Z0-9_-]{1,120}$/.test(token)) return [];
+
     let resolvedPath = rawPath;
-    if (typeof rawPath === 'string' && rawPath.startsWith('antares-')) {
+    const isCapabilityToken = typeof rawPath === 'string' && rawPath.startsWith('antares-');
+    if (isCapabilityToken) {
       try {
-        const cap = tokenResolver ? tokenResolver(rawPath) : resolveCapability(rawPath, 'read', null);
-        resolvedPath = cap.path;
-      } catch { return []; }
+        resolvedPath = resolveCapability(rawPath, 'read', null).path;
+      } catch {
+        return [];
+      }
+    } else if (typeof rawPath !== 'string' || !path.isAbsolute(rawPath) || !isAllowedReadPath(rawPath)) {
+      return [];
     }
+
     if (typeof resolvedPath !== 'string' || !path.isAbsolute(resolvedPath)) return [];
     if (!allowedExtensions.has(path.extname(resolvedPath).toLowerCase())) return [];
-    // Accept either legacy allowlist or token-backed capability
-    if (!isAllowedReadPath(resolvedPath)) {
-      try { resolveCapability(String(rawPath), 'read', null); } catch {
-        if (typeof rawPath === 'string' && rawPath.startsWith('antares-')) {
-          // token already resolved above
-        } else return [];
-      }
-    }
     return [{ token, fileUrl: pathToFileURL(resolvedPath).toString() }];
   });
 }
@@ -135,6 +132,11 @@ function _sanitizePdfOutputPath(outputPath, fallbackFilename) {
 
 function _handleRegisterLocalPath() {
   throw new Error(REGISTER_LOCAL_PATH_DEPRECATED_MSG);
+}
+
+function _resolveTokenPath(token, webContentsId) {
+  const cap = resolveCapability(token, 'read', webContentsId ?? null);
+  return cap.path;
 }
 
 function _resolveTokenPath(token, webContentsId) {
@@ -422,11 +424,39 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
     return { handled: true, result: { aborted: true } };
   }
 
+  if (method === 'file_token_resolve') {
+    const token = params && params.token;
+    const filePath = _resolveTokenPath(token, _webContentsIdFromWindow(window));
+    return { handled: true, result: { path: filePath } };
+  }
+
+  if (method === 'file_staged_create') {
+    const session = createStagedSession({ name: params.name, size: params.size, webContentsId: _webContentsIdFromWindow(window) });
+    // Do not return tmpPath to the renderer — capability token is sufficient.
+    return { handled: true, result: { token: session.token } };
+  }
+
+  if (method === 'file_staged_append') {
+    const res = await appendStagedChunk(params.token, params.chunk_b64, _webContentsIdFromWindow(window));
+    return { handled: true, result: res };
+  }
+
+  if (method === 'file_staged_complete') {
+    const cap = await completeStagedSession(params.token, _webContentsIdFromWindow(window));
+    return { handled: true, result: { file_token: cap.token, name: cap.name, size: cap.size } };
+  }
+
+  if (method === 'file_staged_abort') {
+    await abortStagedSession(params.token);
+    return { handled: true, result: { aborted: true } };
+  }
+
   if (method === 'local_thumbnail') {
     const { nativeImage } = electronModules;
     let resolvedPath = params && params.path;
     if (params && params.file_token) {
       resolvedPath = _resolveTokenPath(params.file_token, _webContentsIdFromWindow(window));
+      // Capability tokens bypass dialog allowlist registration; grant read for this path.
       registerAllowedReadPath(resolvedPath);
     }
     const result = await createLocalThumbnail(
