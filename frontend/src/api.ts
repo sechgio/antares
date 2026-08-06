@@ -570,6 +570,11 @@ export const api = {
   canvasSaveHistory: (id: string, past: import('./components/canvas/utils/canvasDiff').HistoryStep[], future: import('./components/canvas/utils/canvasDiff').HistoryStep[]) =>
     _invoke<{ success: boolean }>('canvas_save_history', { id, past, future }),
 
+  spreadsheetParse: (body: { file_token?: string | null; path?: string; format_hint?: string }) =>
+    _invoke<{ workbookName: string; sheets: Array<{ name: string; rows: unknown[][] }>; warnings: string[] }>('spreadsheet_parse', body as unknown as Record<string, unknown>),
+  spreadsheetExportVolantesTemplate: (body?: { output_path?: string }) =>
+    _invoke<{ content_b64: string; filename: string; path?: string }>('spreadsheet_export_volantes_template', (body || {}) as unknown as Record<string, unknown>),
+
   // ─── Render HTML to PDF via Electron ─────────────────────────────────────
   // Sanitization happens once, in Electron's renderHtmlToPdf (defense in depth
   // at the trust boundary), so the renderer just forwards the raw HTML.
@@ -679,7 +684,7 @@ export const api = {
     show_cuadrante_label?: boolean;
     pages: Array<{ cuadrante?: string; images: Array<{ filename: string; position: number }> }>;
     logos: { left_b64?: string; right_b64?: string };
-    images: Record<string, string>;
+    images?: Record<string, string>;
     image_paths?: Record<string, string>;
     html?: string;
     format?: string;

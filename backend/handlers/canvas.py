@@ -94,11 +94,20 @@ def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
     pdf_bytes = renderer.render(local_image_paths=local_image_paths)
 
     if output_path:
-        out = Path(output_path)
+        resolved = str(params.get("_resolved_output_path") or output_path).strip()
+        from backend.utils.validators import sanitizar_nombre as _snC
+        safe = _snC(Path(resolved).name) or Path(resolved).name
+        if not safe.lower().endswith(".pdf"): safe += ".pdf"
+        out = Path(resolved).parent / safe
+        if out.is_symlink() or out.parent.is_symlink():
+            raise ValueError("symlink no permitido en ruta de salida")
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_bytes(pdf_bytes)
-        # Mirror formatos/sellador: skip Base64 when writing to disk so large
-        # CMYK PDFs do not bounce through the 64 MB JSON-RPC IPC ceiling.
+        if out.exists():
+            raise FileExistsError(f"El archivo ya existe: {out}")
+        tmp = out.with_suffix(out.suffix + ".tmp")
+        tmp.write_bytes(pdf_bytes)
+        import os as _osC
+        _osC.replace(tmp, out)
         return {
             "filename": out.name,
             "saved_path": str(out),

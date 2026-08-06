@@ -27,6 +27,8 @@ const {
 const ROWS_PER_RANGE = 50;
 const RANGES_PER_API_BATCH = 50;
 const CACHE_TTL_MS = 60_000;
+/** Aggregate in-memory budget for BD_IMG + LOGS + BD_ARRASTRE + folders. */
+const SHEET_CACHE_BUDGET_BYTES = 32 * 1024 * 1024;
 const AUTO_SYNC_CONFIG_KEY = 'AUTO_SYNC';
 const RENAME_DEST_CONFIG_KEY = 'RENAME_DEST_FOLDER_ID';
 const AUTO_SYNC_INTERVAL_MS = 5 * 60_000;
@@ -48,15 +50,12 @@ let _cacheLoadedAt = 0;
 let _cacheSheetRevision = null;
 /** Raise on repeated 429s during rename copies; decay after clean batches. */
 let _renameConcurrencyBias = 0;
+/** Test-only override for sheet cache budget (null = use default). */
+let _sheetCacheBudgetOverride = null;
 
 function clearSessionCaches() {
   _lastScanResults = null;
-  _cachedBdImg = [];
-  _cachedLogs = [];
-  _cachedBdArrastre = [];
-  _cachedFolders = [];
-  _cacheLoadedAt = 0;
-  _cacheSheetRevision = null;
+  _clearSheetCaches();
 }
 
 onActiveUserChange(() => {
@@ -72,6 +71,18 @@ function _now() {
   return new Date().toLocaleString('es-PE', { hour12: false });
 }
 
+function estimateSheetPayloadBytes(payload) {
+  try {
+    return Buffer.byteLength(JSON.stringify(payload), 'utf8');
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
+function _sheetCacheBudgetBytes() {
+  return _sheetCacheBudgetOverride == null ? SHEET_CACHE_BUDGET_BYTES : _sheetCacheBudgetOverride;
+}
+
 function _isCacheFresh() {
   return _cacheLoadedAt > 0 && Date.now() - _cacheLoadedAt < CACHE_TTL_MS;
 }
@@ -83,6 +94,38 @@ function _touchCache() {
 function _invalidateCache() {
   _cacheLoadedAt = 0;
   _cacheSheetRevision = null;
+}
+
+function _clearSheetCaches() {
+  _cachedBdImg = [];
+  _cachedLogs = [];
+  _cachedBdArrastre = [];
+  _cachedFolders = [];
+  _invalidateCache();
+}
+
+/**
+ * Commit sheet cache pieces under the aggregate byte budget.
+ * Over budget: clear previous caches (no stale/truncated data) and return false.
+ * Caller must still return the full response to the IPC client.
+ */
+function _tryCommitSheetCache(partial = {}) {
+  const next = {
+    bdImg: Object.prototype.hasOwnProperty.call(partial, 'bdImg') ? partial.bdImg : _cachedBdImg,
+    logs: Object.prototype.hasOwnProperty.call(partial, 'logs') ? partial.logs : _cachedLogs,
+    arrastre: Object.prototype.hasOwnProperty.call(partial, 'arrastre') ? partial.arrastre : _cachedBdArrastre,
+    folders: Object.prototype.hasOwnProperty.call(partial, 'folders') ? partial.folders : _cachedFolders,
+  };
+  const bytes = estimateSheetPayloadBytes(next);
+  if (bytes > _sheetCacheBudgetBytes()) {
+    _clearSheetCaches();
+    return false;
+  }
+  _cachedBdImg = next.bdImg;
+  _cachedLogs = next.logs;
+  _cachedBdArrastre = next.arrastre;
+  _cachedFolders = next.folders;
+  return true;
 }
 
 /**
@@ -376,16 +419,20 @@ async function listFolders({ force = false } = {}) {
     await _ensureSheetId();
     const rev = await _readSheetRevision();
     const { values } = await sheets.readRange('FOLDERS!A:E');
-    _cachedFolders = parseFoldersFromValues(values);
-    _persistFoldersLocal(_cachedFolders);
-    _touchCache();
-    await _rememberSheetRevision(rev);
-    return { folders: _cachedFolders, cached: false };
+    const folders = parseFoldersFromValues(values);
+    _persistFoldersLocal(folders);
+    const retained = _tryCommitSheetCache({ folders });
+    if (retained) {
+      _touchCache();
+      await _rememberSheetRevision(rev);
+      return { folders: _cachedFolders, cached: false };
+    }
+    return { folders, cached: false, cache_skipped: true };
   } catch (err) {
     // Offline / unauthenticated: serve last known local mirror so IDs are not "lost"
     const local = loadLocalFolders();
     if (local.length) {
-      _cachedFolders = local;
+      _tryCommitSheetCache({ folders: local });
       return { folders: local, cached: true, offline: true };
     }
     throw err;
@@ -414,8 +461,9 @@ async function addFolder({ name, folder_id, activo }) {
     rows.push([folderName, safeFolderId, activo ? '✅' : '❌', '', 0]);
   }
   await sheets.writeRange('FOLDERS!A:E', rows);
-  _cachedFolders = parseFoldersFromValues(rows);
-  _persistFoldersLocal(_cachedFolders);
+  const folders = parseFoldersFromValues(rows);
+  _persistFoldersLocal(folders);
+  _tryCommitSheetCache({ folders });
   _invalidateCache();
   return { success: true, folder_id: safeFolderId, drive_name: verified.name };
 }
@@ -428,8 +476,9 @@ async function removeFolder({ folder_id }) {
     if (values[i][1] !== folder_id) filtered.push(values[i]);
   }
   await sheets.writeRange('FOLDERS!A:E', filtered);
-  _cachedFolders = parseFoldersFromValues(filtered);
-  _persistFoldersLocal(_cachedFolders);
+  const folders = parseFoldersFromValues(filtered);
+  _persistFoldersLocal(folders);
+  _tryCommitSheetCache({ folders });
   _invalidateCache();
   return { success: true };
 }
@@ -444,8 +493,9 @@ async function toggleFolder({ folder_id, activo }) {
     }
   }
   await sheets.writeRange('FOLDERS!A:E', values);
-  _cachedFolders = parseFoldersFromValues(values);
-  _persistFoldersLocal(_cachedFolders);
+  const folders = parseFoldersFromValues(values);
+  _persistFoldersLocal(folders);
+  _tryCommitSheetCache({ folders });
   _invalidateCache();
   return { success: true };
 }
@@ -545,20 +595,38 @@ async function scanAndSync() {
 }
 
 async function _applySheetBatch(batch) {
+  const partial = {};
   if (Object.prototype.hasOwnProperty.call(batch, 'BD_IMG!A:M')) {
-    _cachedBdImg = batch['BD_IMG!A:M'] || [];
+    partial.bdImg = batch['BD_IMG!A:M'] || [];
   }
   if (Object.prototype.hasOwnProperty.call(batch, 'LOGS!A:E')) {
-    _cachedLogs = batch['LOGS!A:E'] || [];
+    partial.logs = batch['LOGS!A:E'] || [];
   }
   if (Object.prototype.hasOwnProperty.call(batch, 'BD_ARRASTRE!A:E')) {
-    _cachedBdArrastre = parseArrastreRows(batch['BD_ARRASTRE!A:E'] || []);
+    partial.arrastre = parseArrastreRows(batch['BD_ARRASTRE!A:E'] || []);
   }
   if (Object.prototype.hasOwnProperty.call(batch, 'FOLDERS!A:E')) {
-    _cachedFolders = parseFoldersFromValues(batch['FOLDERS!A:E'] || []);
-    if (_cachedFolders.length) _persistFoldersLocal(_cachedFolders);
+    partial.folders = parseFoldersFromValues(batch['FOLDERS!A:E'] || []);
   }
-  _touchCache();
+
+  const snapshot = {
+    bdImg: Object.prototype.hasOwnProperty.call(partial, 'bdImg') ? partial.bdImg : _cachedBdImg,
+    logs: Object.prototype.hasOwnProperty.call(partial, 'logs') ? partial.logs : _cachedLogs,
+    arrastre: Object.prototype.hasOwnProperty.call(partial, 'arrastre') ? partial.arrastre : _cachedBdArrastre,
+    folders: Object.prototype.hasOwnProperty.call(partial, 'folders') ? partial.folders : _cachedFolders,
+  };
+
+  const retained = _tryCommitSheetCache(partial);
+  if (retained) {
+    if (Object.prototype.hasOwnProperty.call(partial, 'folders') && _cachedFolders.length) {
+      _persistFoldersLocal(_cachedFolders);
+    }
+    _touchCache();
+  } else if (Object.prototype.hasOwnProperty.call(partial, 'folders') && snapshot.folders.length) {
+    // Persist folders to disk even when RAM cache is skipped.
+    _persistFoldersLocal(snapshot.folders);
+  }
+  return { retained, ...snapshot };
 }
 
 async function _fetchSheetBatch(ranges) {
@@ -586,14 +654,20 @@ async function syncFromSheet() {
       };
     }
     const batch = await _fetchSheetBatch(['BD_IMG!A:M', 'LOGS!A:E', 'BD_ARRASTRE!A:E']);
-    await _applySheetBatch({
+    const applied = await _applySheetBatch({
       'BD_IMG!A:M': batch['BD_IMG!A:M'],
       'LOGS!A:E': batch['LOGS!A:E'],
       'BD_ARRASTRE!A:E': batch['BD_ARRASTRE!A:E'],
     });
-    await _rememberSheetRevision(rev);
-    emit('autoimg.sync.from_complete', { rows: _cachedBdImg.length });
-    return { success: true, rows: _cachedBdImg, arrastre: _cachedBdArrastre, cached: false };
+    if (applied.retained) await _rememberSheetRevision(rev);
+    emit('autoimg.sync.from_complete', { rows: applied.bdImg.length });
+    return {
+      success: true,
+      rows: applied.bdImg,
+      arrastre: applied.arrastre,
+      cached: false,
+      ...(applied.retained ? {} : { cache_skipped: true }),
+    };
   });
 }
 
@@ -608,10 +682,14 @@ async function listLogs({ force = false } = {}) {
   await _ensureSheetId();
   const rev = await _readSheetRevision();
   const { values } = await sheets.readRange('LOGS!A:E');
-  _cachedLogs = values || [];
-  _touchCache();
-  await _rememberSheetRevision(rev);
-  return { values: _cachedLogs, cached: false };
+  const nextLogs = values || [];
+  const retained = _tryCommitSheetCache({ logs: nextLogs });
+  if (retained) {
+    _touchCache();
+    await _rememberSheetRevision(rev);
+    return { values: _cachedLogs, cached: false };
+  }
+  return { values: nextLogs, cached: false, cache_skipped: true };
 }
 
 async function listArrastre({ force = false } = {}) {
@@ -625,10 +703,14 @@ async function listArrastre({ force = false } = {}) {
   await _ensureSheetId();
   const rev = await _readSheetRevision();
   const { values } = await sheets.readRange('BD_ARRASTRE!A:E');
-  _cachedBdArrastre = parseArrastreRows(values || []);
-  _touchCache();
-  await _rememberSheetRevision(rev);
-  return { entries: _cachedBdArrastre, cached: false };
+  const nextArrastre = parseArrastreRows(values || []);
+  const retained = _tryCommitSheetCache({ arrastre: nextArrastre });
+  if (retained) {
+    _touchCache();
+    await _rememberSheetRevision(rev);
+    return { entries: _cachedBdArrastre, cached: false };
+  }
+  return { entries: nextArrastre, cached: false, cache_skipped: true };
 }
 
 async function _syncToSheetCore() {
@@ -732,7 +814,7 @@ async function _syncToSheetCore() {
     duration_ms: Date.now() - start,
   });
 
-  _cachedBdImg = rows;
+  _tryCommitSheetCache({ bdImg: rows });
   _invalidateCache();
   return {
     success: true,
@@ -758,9 +840,10 @@ async function getStatus() {
     await _ensureSheetId();
     const batch = await _fetchSheetBatch(['CONFIG!A:B', 'RESUMEN!A:C', 'FOLDERS!A:E']);
     fields = _statusFieldsFromBatch(batch, sheets.getStoredSheetConfig());
-    _cachedFolders = fields.folders || [];
+    const folders = fields.folders || [];
+    _tryCommitSheetCache({ folders });
     _restoreAutoSyncFromConfig(batch['CONFIG!A:B'] || []);
-    _touchCache();
+    if (_cachedFolders.length) _touchCache();
   } catch { /* sheet not configured yet */ }
 
   return {
@@ -828,8 +911,8 @@ async function bootstrap({ refresh = true } = {}) {
       'LOGS!A:E',
       'BD_ARRASTRE!A:E',
     ]);
-    await _applySheetBatch(batch);
-    await _rememberSheetRevision(rev);
+    const applied = await _applySheetBatch(batch);
+    if (applied.retained) await _rememberSheetRevision(rev);
     const fields = _statusFieldsFromBatch(batch, sheets.getStoredSheetConfig());
     _restoreAutoSyncFromConfig(batch['CONFIG!A:B'] || []);
     return {
@@ -845,11 +928,12 @@ async function bootstrap({ refresh = true } = {}) {
       sobrantes: fields.sobrantes,
       sinSgio: fields.sinSgio,
       carpetasActivas: fields.carpetasActivas,
-      folders: _cachedFolders,
-      bdRows: _cachedBdImg,
-      logRows: _cachedLogs,
-      arrastre: _cachedBdArrastre,
+      folders: applied.folders,
+      bdRows: applied.bdImg,
+      logRows: applied.logs,
+      arrastre: applied.arrastre,
       cached: false,
+      ...(applied.retained ? {} : { cache_skipped: true }),
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -1098,4 +1182,29 @@ module.exports = {
   formatFolderErrorScan,
   resolveRenameCopyConcurrency,
   clearSessionCaches,
+  SHEET_CACHE_BUDGET_BYTES,
+  estimateSheetPayloadBytes,
+  __setSheetCacheBudgetForTests(bytes) {
+    _sheetCacheBudgetOverride = bytes == null ? null : Number(bytes);
+  },
+  __inspectSheetCacheForTests() {
+    return {
+      bdImgLen: _cachedBdImg.length,
+      logsLen: _cachedLogs.length,
+      arrastreLen: _cachedBdArrastre.length,
+      foldersLen: _cachedFolders.length,
+      loadedAt: _cacheLoadedAt,
+      revision: _cacheSheetRevision,
+      approxBytes: estimateSheetPayloadBytes({
+        bdImg: _cachedBdImg,
+        logs: _cachedLogs,
+        arrastre: _cachedBdArrastre,
+        folders: _cachedFolders,
+      }),
+    };
+  },
+  __resetSheetCacheForTests() {
+    _clearSheetCaches();
+    _sheetCacheBudgetOverride = null;
+  },
 };

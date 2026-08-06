@@ -542,11 +542,21 @@ def _fetch_xyz_tiles_map(lat: float, lon: float, width: int, height: int, zoom: 
     return canvas.crop((offset_x, offset_y, offset_x + width, offset_y + height))
 
 
+def _google_static_map_size(width: int, height: int) -> tuple[int, int]:
+    """Fit a Google Static Maps viewport within 640x640 without distortion."""
+    width = max(1, int(width))
+    height = max(1, int(height))
+    longest = max(width, height)
+    if longest <= 640:
+        return width, height
+    scale = 640 / longest
+    return max(1, round(width * scale)), max(1, round(height * scale))
+
+
 def _fetch_google_static_map(lat: float, lon: float, width: int, height: int, zoom: int, key: str) -> Image.Image:
     """Fetch a Google Static Maps image centered on (lat, lon). Uses scale=2 for detail."""
-    # Google caps a single tile at 640x640; scale=2 yields up to 1280x1280 pixels.
-    req_w = min(width, 640)
-    req_h = min(height, 640)
+    # Google caps the size parameter at 640x640; preserve the viewport aspect.
+    req_w, req_h = _google_static_map_size(width, height)
     params = (
         f"?center={lat},{lon}&zoom={zoom}&size={req_w}x{req_h}&scale=2"
         f"&maptype=roadmap&format=png&key={urllib.parse.quote(key)}"

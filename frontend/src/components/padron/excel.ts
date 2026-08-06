@@ -139,35 +139,30 @@ export async function parseWorkbook(
   file: File,
   outputFormat: OutputFormat = 'service-interruption',
 ): Promise<ParseResult> {
-  const XLSX = await import('xlsx');
-  const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: 'array' });
-
+  const { api } = await import('../../api');
+  const win = window as unknown as { electronAPI?: { fileStagedCreate:(n:string,s:number)=>Promise<{token:string}>, fileStagedAppend:(t:string,c:string)=>Promise<unknown>, fileStagedComplete:(t:string)=>Promise<{file_token:string}> } };
+  let fileToken: string | null = null;
+  if (win.electronAPI?.fileStagedCreate) {
+    const staged = await win.electronAPI.fileStagedCreate(file.name, file.size);
+    const CHUNK = 6*1024*1024; const buf = await file.arrayBuffer(); const bytes = new Uint8Array(buf);
+    for (let off=0; off<bytes.length; off+=CHUNK) { const chunk = bytes.slice(off, off+CHUNK); let binary=""; for(let i=0;i<chunk.length;i++) binary+=String.fromCharCode(chunk[i]); const b64=btoa(binary); await win.electronAPI.fileStagedAppend(staged.token, b64); }
+    const done = await win.electronAPI.fileStagedComplete(staged.token); fileToken = done.file_token;
+  }
+  const res = await (api as unknown as { spreadsheetParse:(p:unknown)=>Promise<{workbookName:string,sheets:{name:string,rows:unknown[][]}[],warnings:string[]}> }).spreadsheetParse({ file_token: fileToken } as unknown as Record<string,unknown>);
   const sheetMap: Record<string, Record<string, unknown>[]> = {};
-  workbook.SheetNames.forEach((name: string) => {
-    sheetMap[name] = XLSX.utils.sheet_to_json(workbook.Sheets[name], {
-      defval: '',
-      raw: false,
-    });
-  });
-
+  for (const sh of res.sheets) {
+    const rows = sh.rows; if (!rows.length) { sheetMap[sh.name]=[]; continue; }
+    const header = (rows[0] as unknown[]).map(v=> String(v ?? ""));
+    const mapped: Record<string,unknown>[] = [];
+    for (let i=1;i<rows.length;i++) { const arr = rows[i] as unknown[]; const obj: Record<string,unknown>={}; header.forEach((h,idx)=>{ obj[h]= arr[idx] ?? '' }); mapped.push(obj); }
+    sheetMap[sh.name]=mapped;
+  }
   const records = detectRecords(sheetMap, outputFormat);
   const importedItems = detectItems(sheetMap);
   const importedWaterCutItems = detectWaterCutItems(sheetMap);
-
   return {
-    workbookName: file.name,
-    records: records.length
-      ? records
-      : [{
-          id: 'manual-0',
-          label: 'Manual',
-          sheetName: 'Manual',
-          rowIndex: 0,
-          data: outputFormat === 'water-cut-notice'
-            ? createDefaultWaterCutData()
-            : createDefaultHeaderData(),
-        }],
+    workbookName: res.workbookName || file.name,
+    records: records.length ? records : [{ id:'manual-0', label:'Manual', sheetName:'Manual', rowIndex:0, data: outputFormat==='water-cut-notice'? createDefaultWaterCutData(): createDefaultHeaderData() }],
     importedItems,
     importedWaterCutItems,
   };

@@ -13,6 +13,8 @@ const report: TechnicalReport = {
     contratista: 'ACCIONA',
     sgio: '454654001',
     sgio_label: 'SGIO',
+    titulo_linea1: 'Limpieza y Desinfección de Reservorios y Cisternas',
+    titulo_linea2: 'Centro de Servicio Villa El Salvador',
     codigo_infraestructura: 'RES-01',
     ubicacion: 'LIMA',
     suministro: '123',
@@ -92,6 +94,23 @@ describe('PreviewPanel', () => {
 
     expect(screen.getByText('454654001')).toBeInTheDocument();
     expect(screen.getByText('ACCIONA')).toBeInTheDocument();
+  });
+
+  it('renders editable title lines in the preview header', () => {
+    const reportWithTitle: TechnicalReport = {
+      ...report,
+      header: {
+        ...report.header,
+        titulo_linea1: 'Titulo personalizado linea uno',
+        titulo_linea2: 'Titulo personalizado linea dos',
+      },
+    };
+
+    render(<PreviewPanel report={reportWithTitle} logoLeft={null} logoRight={null} />);
+
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(
+      'Titulo personalizado linea unoTitulo personalizado linea dos',
+    );
   });
 
   it('sums valve and basket quantities vertically by diameter in the total row', () => {

@@ -26,6 +26,7 @@ const BACKEND_METHODS = [
   'fichas_tecnicas_render_consolidated_html',
   'panel_aviso_corte_parse_excel', 'panel_aviso_corte_compute_match',
   'panel_aviso_corte_render_pdf', 'panel_aviso_corte_template',
+  'spreadsheet_parse', 'spreadsheet_export_volantes_template',
   'image_optimizer_zip',
   'image_optimizer_save_files',
   'sellador_apply', 'sellador_inspect_pdf', 'sellador_render_page',
@@ -46,6 +47,11 @@ const NATIVE_METHODS = [
   'local_thumbnail',
   'local_image_data_url',
   'register_local_path',
+  'file_token_resolve',
+  'file_staged_create',
+  'file_staged_append',
+  'file_staged_complete',
+  'file_staged_abort',
 ];
 
 const { AUTOIMG_METHODS } = require('./autoimg-ipc-methods');

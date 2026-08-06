@@ -35,6 +35,7 @@ import {
   collectImageRefsFromHistory,
   collectImageRefsFromLayers,
   registerImageBlob,
+  releaseImageBlob,
   sweepOrphanBlobs,
   trackImageRef,
 } from './utils/imageBlobStore';
@@ -104,7 +105,11 @@ import {
 } from './ops/panelChrome';
 import { canFocusFieldBinding, canInlineEditLayer, isEditableKeyboardTarget, isTypeToEditKey } from './ops/inlineEdit';
 import { matchHistoryShortcut } from './ops/historyShortcuts';
-import { parseClipboardLayers, writeClipboardLayersText } from './ops/clipboardLayers';
+import {
+  createClipboardCopyCoordinator,
+  parseClipboardLayers,
+  writeClipboardLayersText,
+} from './ops/clipboardLayers';
 import { nextZoomPreset } from './ops/viewportNav';
 import { cloneDocument } from './ops/document';
 import {
@@ -468,8 +473,23 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   // Flush on unmount so a dirty open tab does not lose the last debounce window.
   useEffect(() => () => flushAutosaveRef.current(), []);
 
+  const clipboardCoordinatorRef = useRef<ReturnType<typeof createClipboardCopyCoordinator> | null>(null);
+  if (!clipboardCoordinatorRef.current) {
+    clipboardCoordinatorRef.current = createClipboardCopyCoordinator(
+      (layers) => setClipboard(layers),
+      (layers) => {
+        setClipboard(layers);
+        writeClipboardLayersText(layers);
+      },
+      releaseImageBlob,
+    );
+  }
+
   // Revoke in-memory ObjectURLs when leaving the canvas view.
-  useEffect(() => () => clearBlobStore(), []);
+  useEffect(() => () => {
+    clipboardCoordinatorRef.current?.invalidate();
+    clearBlobStore();
+  }, []);
 
   // Keep-alive rarely unmounts CanvasView — sweep orphans when live refs shrink
   // (layer delete, image replace, doc switch / history clear, clipboard clear).
@@ -671,10 +691,8 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
 
   const copyLayersToClipboard = useCallback((layers: CanvasLayer[]) => {
     const copies = layers.map((l) => ({ ...l, cssVars: { ...l.cssVars } }));
-    setClipboard(copies);
-    // Prefer blob: refs in the OS clipboard payload so we do not stringify
-    // megabyte data: URLs. In-memory paste uses `clipboard` state immediately.
-    void (async () => {
+    clipboardCoordinatorRef.current?.copy(copies, async () => {
+      const createdUrls: string[] = [];
       const rewritten = await Promise.all(
         copies.map(async (l) => {
           if (
@@ -686,6 +704,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
               const res = await fetch(l.value);
               const blob = await res.blob();
               const reg = await registerImageBlob(blob);
+              createdUrls.push(reg.url);
               return { ...l, value: reg.url };
             } catch {
               return l;
@@ -694,9 +713,8 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
           return l;
         }),
       );
-      setClipboard(rewritten);
-      writeClipboardLayersText(rewritten);
-    })();
+      return { layers: rewritten, createdUrls };
+    });
   }, []);
 
   const onKeyDownRef = useRef<(e: KeyboardEvent) => void>(() => {});

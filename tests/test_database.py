@@ -365,6 +365,23 @@ class TestBuscarLotePorCodigos:
 
 
 class TestImportarExcel:
+    def test_importacion_no_desplaza_valores_con_columna_id_reservada(self, db_path, monkeypatch, tmp_path) -> None:
+        config_path = tmp_path / "fields_config.json"
+        monkeypatch.setattr(
+            "backend.core.config_fields._config_file",
+            lambda: config_path,
+        )
+        pandas = pytest.importorskip("pandas")
+        excel_path = tmp_path / "with_id.xlsx"
+        pandas.DataFrame([
+            {"id": "external-1", "codigo": "C-1", "nombre": "Nombre 1"},
+        ]).to_excel(excel_path, index=False)
+
+        imported = db.importar_excel(str(excel_path))
+
+        assert imported == {"inserted": 1, "skipped": 0}
+        assert db.obtener_todos() == [{"codigo": "C-1", "nombre": "Nombre 1"}]
+
     def test_importa_columnas_nuevas_del_excel_al_esquema(self, db_path, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"
         monkeypatch.setattr(

@@ -87,6 +87,18 @@ def test_render_report_html_sums_valvulas_and_canastillas_by_diameter() -> None:
     assert canastillas_total_row is not None
 
 
+def test_render_report_html_uses_custom_title_lines() -> None:
+    report = create_empty_report(8)
+    report["header"]["titulo_linea1"] = "Titulo personalizado linea uno"
+    report["header"]["titulo_linea2"] = "Titulo personalizado linea dos"
+
+    html = render_report_html(report)
+
+    assert "Titulo personalizado linea uno" in html
+    assert "Titulo personalizado linea dos" in html
+    assert "font-weight: bold" in html
+
+
 def test_render_report_html_uses_custom_medida_labels() -> None:
     report = create_empty_report(9)
     report["medidas"]["etiqueta_diametro"] = "LARGO"
