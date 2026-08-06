@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
+import pytest
+
 from backend.core.evidencia_volanteo.rendering import render_pdf_html
 from backend.utils.html_sanitizer import sanitize_html_for_pdf
+from tests.weasyprint_env import weasyprint_native_available
+
+requires_weasyprint = pytest.mark.skipif(
+    not weasyprint_native_available(),
+    reason="WeasyPrint native libraries (GTK/Pango) unavailable on this host",
+)
 
 _TINY_PNG_B64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
@@ -46,6 +54,7 @@ def test_sanitize_neutralises_javascript_in_css() -> None:
     assert "url('')" in out
 
 
+@requires_weasyprint
 def test_render_pdf_html_benign_data_uri_produces_pdf() -> None:
     data_uri = f"data:image/png;base64,{_TINY_PNG_B64}"
     html = f"""<!DOCTYPE html><html><head><meta charset='utf-8'><style>
@@ -61,6 +70,7 @@ def test_render_pdf_html_benign_data_uri_produces_pdf() -> None:
     assert len(pdf_bytes) > 500
 
 
+@requires_weasyprint
 def test_render_pdf_html_strips_malicious_and_still_produces_pdf() -> None:
     data_uri = f"data:image/png;base64,{_TINY_PNG_B64}"
     html = f"""<!DOCTYPE html><html><head><meta charset='utf-8'></head>

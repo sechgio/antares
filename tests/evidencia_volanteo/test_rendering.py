@@ -33,6 +33,12 @@ from backend.core.evidencia_volanteo.rendering import (
     _serialize_pages,
     layout_context,
 )
+from tests.weasyprint_env import weasyprint_native_available
+
+requires_weasyprint = pytest.mark.skipif(
+    not weasyprint_native_available(),
+    reason="WeasyPrint native libraries (GTK/Pango) unavailable on this host",
+)
 
 
 def _tiny_png() -> str:
@@ -92,6 +98,7 @@ def test_render_docx_empty_pages_raises() -> None:
         render_docx(doc, {}, {})
 
 
+@requires_weasyprint
 def test_render_pdf_success() -> None:
     doc = _make_document()
     images = {"img1.jpg": _tiny_png(), "img2.jpg": _tiny_png()}
@@ -109,6 +116,7 @@ def test_render_docx_success() -> None:
     assert len(docx_bytes) > 1000
 
 
+@requires_weasyprint
 def test_render_pdf_with_logos() -> None:
     doc = _make_document()
     logos = {"left": _tiny_png(), "right": _tiny_png()}
@@ -116,6 +124,7 @@ def test_render_pdf_with_logos() -> None:
     assert len(pdf_bytes) > 500
 
 
+@requires_weasyprint
 def test_render_pdf_per_page_cuadrante() -> None:
     doc = EvidenciaDocument(
         title="TEST",
@@ -298,6 +307,7 @@ def test_pdf_html_custom_and_hidden_cuadrante_label() -> None:
     assert "ZONA NORTE" in html_hidden
 
 
+@requires_weasyprint
 def test_render_pdf_html_from_preview_markup() -> None:
     html = """<!DOCTYPE html><html><head><meta charset='utf-8'></head>
     <body><div style='width:210mm;height:297mm'>Preview</div></body></html>"""
@@ -320,6 +330,7 @@ def test_build_image_uris_embeds_disk_paths_as_data_uri(tmp_path: Path) -> None:
     assert "file:" not in uris["foto.png"]
 
 
+@requires_weasyprint
 def test_render_pdf_disk_backed_images_embed(tmp_path: Path) -> None:
     import base64
     from pathlib import Path
@@ -370,6 +381,7 @@ def test_docx_long_cuadrante_stays_editable_text() -> None:
     assert len(document.tables) == 3
 
 
+@requires_weasyprint
 def test_render_pdf_html_six_images_one_a4_page() -> None:
     tiny = _tiny_png()
     data_uri = f"data:image/png;base64,{tiny}"
@@ -452,6 +464,7 @@ def test_docx_photos_table_has_gap_columns() -> None:
     assert len(shapes) >= 2
 
 
+@requires_weasyprint
 def test_render_pdf_six_images_per_page() -> None:
     images = {}
     refs = []

@@ -511,12 +511,100 @@ const _DIALOG_NATIVE_METHODS = new Set([
   'local_thumbnail',
   'local_image_data_url',
   'register_local_path',
+  'file_token_resolve',
+  'file_staged_create',
+  'file_staged_append',
+  'file_staged_complete',
+  'file_staged_abort',
 ]);
 function _dispatchNative(method) {
   if (method.startsWith('dialog_') || _DIALOG_NATIVE_METHODS.has(method)) return 'dialog';
   if (method.startsWith('autoimg_')) return 'autoimg';
   if (method.startsWith('ubicaciones_keys_')) return 'ubicaciones';
   return null;
+}
+
+function _maybeResolveFileTokens(params, win) {
+  if (!params || typeof params !== 'object' || Array.isArray(params)) return params;
+  const { resolveCapability, _assertNoRawAbsolutePaths } = require('./file-capabilities');
+  _assertNoRawAbsolutePaths(params);
+  const webContentsId = win && win.webContents ? win.webContents.id : null;
+  const tokenKeys = ['file_token', 'fileToken', 'excel_file_token', 'spreadsheet_token'];
+  let next = params;
+  let mutated = false;
+  for (const k of tokenKeys) {
+    if (typeof params[k] === 'string' && params[k].startsWith('antares-')) {
+      try {
+        const cap = resolveCapability(params[k], 'read', webContentsId);
+        if (!mutated) { next = { ...params }; mutated = true; }
+        next[k] = cap.path;
+        if (k === 'file_token') next._resolved_file_token_path = cap.path;
+      } catch (e) {
+        throw new Error(`invalid file token for ${k}: ${e.message}`);
+      }
+    }
+  }
+  if (Array.isArray(params.file_tokens)) {
+    const resolved = [];
+    for (const t of params.file_tokens) {
+      if (typeof t === 'string' && t.startsWith('antares-')) {
+        const cap = resolveCapability(t, 'read', webContentsId);
+        resolved.push(cap.path);
+      } else resolved.push(t);
+    }
+    if (!mutated) { next = { ...params }; mutated = true; }
+    next.file_tokens = resolved;
+  }
+  return next;
+}
+
+function _validateAndResolveWriteParams(params, win) {
+  if (!params || typeof params !== 'object') return params;
+  const needsWrite = 'output_path' in params || 'outputPath' in params || 'output_folder' in params || 'outputFolder' in params || (params.path && typeof params.path === 'string' && params.path.includes('/'));
+  if (!needsWrite) return params;
+  const outRaw = params.output_path || params.outputPath || params.output_folder || params.outputFolder || params.path;
+  if (typeof outRaw === 'string' && outRaw.startsWith('antares-write-')) {
+    const { resolveCapability } = require('./file-capabilities');
+    const webContentsId = win && win.webContents ? win.webContents.id : null;
+    try {
+      const cap = resolveCapability(outRaw, 'write', webContentsId);
+      return { ...params, _resolved_output_path: cap.path, _write_token: outRaw };
+    } catch (e) {
+      throw new Error(`invalid write token: ${e.message}`);
+    }
+  }
+  if (typeof outRaw === 'string' && outRaw.trim()) {
+    const path = require('path');
+    const fs = require('fs');
+    const { isPathInside, isAllowedReadPath } = require('./path-allowlist');
+    try {
+      const resolved = path.resolve(outRaw);
+      const dir = fs.existsSync(resolved)
+        ? (fs.lstatSync(resolved).isDirectory() ? resolved : path.dirname(resolved))
+        : path.dirname(resolved);
+      let allowed = false;
+      try {
+        const { app } = require('electron');
+        for (const name of ['documents', 'downloads']) {
+          try {
+            const stdRoot = app.getPath(name);
+            if (stdRoot && isPathInside(stdRoot, dir)) { allowed = true; break; }
+          } catch { /* ignore */ }
+        }
+      } catch { /* Electron unavailable in unit tests */ }
+      if (!allowed) {
+        if (!isAllowedReadPath(resolved) && !isAllowedReadPath(dir)) {
+          throw new Error('La ruta de salida no está permitida. Usa el diálogo de guardado.');
+        }
+      }
+      const real = fs.realpathSync(dir);
+      if (real !== dir) throw new Error('symlink no permitido en ruta de salida');
+    } catch (e) {
+      if (e.message.includes('no está permitida') || e.message.includes('symlink')) throw e;
+      throw new Error(`ruta de salida no permitida: ${e.message}`);
+    }
+  }
+  return params;
 }
 
 /**
@@ -562,14 +650,15 @@ function registerIpcHandlers() {
       if (result.handled) return result.result;
     }
 
+    let backendParams = _maybeResolveFileTokens(params, win);
+    backendParams = _validateAndResolveWriteParams(backendParams, win);
     // Inject map provider secrets from OS-backed store so the renderer never
     // needs to hold plaintext API keys for preview/generate.
-    let backendParams = params;
     if (method === 'preview_ubicacion' || method === 'generar_ubicaciones') {
-      const provider = params && typeof params === 'object' ? params.provider : '';
-      const fallback = params?.api_key;
+      const provider = backendParams && typeof backendParams === 'object' ? backendParams.provider : '';
+      const fallback = backendParams?.api_key;
       const injected = _resolveCachedApiKey(provider, fallback);
-      backendParams = { ...params, api_key: injected };
+      backendParams = { ...backendParams, api_key: injected };
     }
 
     try {

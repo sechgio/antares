@@ -1,8 +1,16 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { createLayer } from '../constants';
-import { useCanvasHistory, MAX_HISTORY } from '../hooks/useCanvasHistory';
+import {
+  useCanvasHistory,
+  MAX_HISTORY,
+  MAX_HISTORY_BYTES,
+  estimateHistoryBytes,
+  trimHistoryByBudget,
+} from '../hooks/useCanvasHistory';
 import { createEmptyDocument, parseMm, type CanvasDocument } from '../types';
+import type { HistoryStepDiff } from '../utils/canvasDiff';
+import { computeDocumentDiff } from '../utils/canvasDiff';
 
 function cloneDoc(doc: CanvasDocument): CanvasDocument {
   return {
@@ -327,5 +335,107 @@ describe('useCanvasHistory gesture coalesce', () => {
       result.current.commitFromBaseline(baseline);
     });
     expect(result.current.hasUnsavedEditsRef.current).toBe(true);
+  });
+
+  it('exports a 64 MiB aggregate history budget', () => {
+    expect(MAX_HISTORY_BYTES).toBe(64 * 1024 * 1024);
+  });
+
+  it('trimHistoryByBudget drops oldest past steps when bytes exceed budget', () => {
+    const heavy = 'Y'.repeat(50_000);
+    const steps: HistoryStepDiff[] = Array.from({ length: 10 }, (_, i) => {
+      const a = createEmptyDocument(`a-${i}`);
+      const b = createEmptyDocument(`b-${i}`);
+      // Stuff large payload into a field so JSON size grows.
+      a.layers.push({
+        ...createLayer('text'),
+        value: heavy,
+      });
+      b.layers.push({
+        ...createLayer('text'),
+        value: `${heavy}-${i}`,
+      });
+      return {
+        type: 'diff' as const,
+        undoDiff: computeDocumentDiff(b, a),
+        redoDiff: computeDocumentDiff(a, b),
+      };
+    });
+
+    const tinyBudget = estimateHistoryBytes(steps.slice(0, 2));
+    const trimmed = trimHistoryByBudget(steps, [], MAX_HISTORY, tinyBudget);
+    expect(trimmed.past.length).toBeLessThan(steps.length);
+    expect(trimmed.past.length).toBeGreaterThan(0);
+    expect(estimateHistoryBytes(trimmed.past)).toBeLessThanOrEqual(tinyBudget);
+    // Newest steps retained (oldest dropped first).
+    expect(trimmed.past[trimmed.past.length - 1]).toBe(steps[steps.length - 1]);
+  });
+
+  it('enforces byte budget while keeping undo/redo and structural diffs', () => {
+    const base = createEmptyDocument('Budget');
+    const fat = 'data:image/png;base64,' + 'Z'.repeat(80_000);
+    const image = createLayer('image');
+    image.value = fat;
+    image.cssVars['--translate-x'] = '0mm';
+    base.layers.push(image);
+
+    const { result } = renderHook(() => useCanvasHistory(base));
+
+    for (let i = 1; i <= 8; i += 1) {
+      act(() => {
+        result.current.setDocument({
+          ...result.current.document,
+          layers: result.current.document.layers.map((l) =>
+            l.type === 'image'
+              ? {
+                  ...l,
+                  // Change value each step so diffs carry large payloads.
+                  value: fat + String(i),
+                  cssVars: { ...l.cssVars, '--translate-x': `${i}mm` },
+                }
+              : l,
+          ),
+        });
+      });
+    }
+
+    const bytes = estimateHistoryBytes(result.current.past)
+      + estimateHistoryBytes(result.current.future);
+    expect(bytes).toBeLessThanOrEqual(MAX_HISTORY_BYTES);
+    expect(result.current.past.length).toBeLessThanOrEqual(MAX_HISTORY);
+    expect(result.current.past.length).toBeGreaterThan(0);
+
+    const beforeUndoX = parseMm(
+      result.current.document.layers.find((l) => l.type === 'image')!.cssVars['--translate-x'],
+    );
+    act(() => {
+      result.current.undo();
+    });
+    expect(result.current.canRedo).toBe(true);
+    expect(
+      parseMm(result.current.document.layers.find((l) => l.type === 'image')!.cssVars['--translate-x']),
+    ).toBe(beforeUndoX - 1);
+
+    act(() => {
+      result.current.redo();
+    });
+    expect(
+      parseMm(result.current.document.layers.find((l) => l.type === 'image')!.cssVars['--translate-x']),
+    ).toBe(beforeUndoX);
+
+    // New edit after undo clears redo and still respects budgets.
+    act(() => {
+      result.current.undo();
+      result.current.setDocument({
+        ...result.current.document,
+        layers: result.current.document.layers.map((l) =>
+          l.type === 'image'
+            ? { ...l, cssVars: { ...l.cssVars, '--translate-x': '99mm' } }
+            : l,
+        ),
+      });
+    });
+    expect(result.current.canRedo).toBe(false);
+    expect(result.current.past.length).toBeLessThanOrEqual(MAX_HISTORY);
   });
 });

@@ -57,7 +57,10 @@ function _shutdownOnce() {
   }
 }
 
-app.on('before-quit', _shutdownOnce);
+app.on('before-quit', async () => {
+  try { const { cleanupAllStaged } = require('./file-capabilities'); await cleanupAllStaged(); } catch {}
+  _shutdownOnce();
+});
 app.on('will-quit', _shutdownOnce);
 process.on('exit', _shutdownOnce);
 process.on('SIGINT', () => { _shutdownOnce(); process.exit(0); });

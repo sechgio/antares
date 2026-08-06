@@ -17,25 +17,60 @@ async function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
-async function buildImagePayload(images: LocalImage[]): Promise<{
+/**
+ * Build export image maps.
+ * - Paths preferred when available (DOCX / non-html PDF fallback).
+ * - Base64 only for images without a valid local path, or when data URIs are
+ *   required for WeasyPrint HTML (data: only; file:// is denied).
+ */
+export async function buildImagePayload(
+  images: LocalImage[],
+  options: { needDataUris?: boolean } = {},
+): Promise<{
   imagePaths: Record<string, string>;
   imagesBase64: Record<string, string>;
   imageDataUris: Record<string, string>;
 }> {
+  const needDataUris = options.needDataUris ?? false;
   const imagePaths: Record<string, string> = {};
   const imagesBase64: Record<string, string> = {};
   const imageDataUris: Record<string, string> = {};
+
   for (const [index, image] of images.entries()) {
     const filename = image.file.name;
-    const base64 = await readFileAsBase64(image.file);
     const exportKey = imageExportKey(index, filename);
-    imagesBase64[exportKey] = base64;
-    imageDataUris[exportKey] = `data:${image.file.type || 'image/jpeg'};base64,${base64}`;
-    if (image.localPath) {
-      imagePaths[exportKey] = image.localPath;
+    const localPath = image.localPath?.trim();
+    const hasPath = Boolean(localPath);
+
+    if (hasPath && localPath) {
+      imagePaths[exportKey] = localPath;
+    }
+
+    // WeasyPrint HTML needs data: URIs. DOCX can use paths alone.
+    if (needDataUris || !hasPath) {
+      const base64 = await readFileAsBase64(image.file);
+      if (!hasPath) {
+        imagesBase64[exportKey] = base64;
+      }
+      if (needDataUris) {
+        imageDataUris[exportKey] = `data:${image.file.type || 'image/jpeg'};base64,${base64}`;
+      }
     }
   }
+
   return { imagePaths, imagesBase64, imageDataUris };
+}
+
+export async function readLogoOnce(logo: LogoAsset | null): Promise<{
+  b64?: string;
+  dataUri: string | null;
+}> {
+  if (!logo) return { dataUri: null };
+  const b64 = await readFileAsBase64(logo.file);
+  return {
+    b64,
+    dataUri: `data:${logo.file.type || 'image/png'};base64,${b64}`,
+  };
 }
 
 function defaultFilename(format: 'pdf' | 'docx'): string {
@@ -54,17 +89,16 @@ export async function exportEvidenciaDocument(
   cuadranteLabel: string = DEFAULT_CUADRANTE_LABEL,
   showCuadranteLabel: boolean = true,
 ): Promise<{ filename: string }> {
-  const logos: { left_b64?: string; right_b64?: string } = {};
-  if (logoLeft) logos.left_b64 = await readFileAsBase64(logoLeft.file);
-  if (logoRight) logos.right_b64 = await readFileAsBase64(logoRight.file);
+  const needHtml = format === 'pdf';
 
-  const { imagePaths, imagesBase64, imageDataUris } = await buildImagePayload(images);
-  const logoLeftUri = logoLeft
-    ? `data:${logoLeft.file.type || 'image/png'};base64,${await readFileAsBase64(logoLeft.file)}`
-    : null;
-  const logoRightUri = logoRight
-    ? `data:${logoRight.file.type || 'image/png'};base64,${await readFileAsBase64(logoRight.file)}`
-    : null;
+  const [leftLogo, rightLogo] = await Promise.all([
+    readLogoOnce(logoLeft),
+    readLogoOnce(logoRight),
+  ]);
+
+  const { imagePaths, imagesBase64, imageDataUris } = await buildImagePayload(images, {
+    needDataUris: needHtml,
+  });
 
   const pages = [];
   for (let i = 0; i < images.length; i += IMAGES_PER_PAGE) {
@@ -85,6 +119,28 @@ export async function exportEvidenciaDocument(
 
   const ext = format === 'docx' ? 'docx' : 'pdf';
   const defaultName = defaultFilename(format);
+
+  const html = needHtml
+    ? buildExportHtml(
+      title,
+      cuadranteRanges,
+      images,
+      imageDataUris,
+      leftLogo.dataUri,
+      rightLogo.dataUri,
+      cuadranteLabel,
+      showCuadranteLabel,
+    )
+    : undefined;
+
+  // PDF with html: images already live inside HTML data: URIs — skip duplicate
+  // images/Base64/paths on the IPC payload. DOCX (and PDF without html) keep maps.
+  const logos: { left_b64?: string; right_b64?: string } = {};
+  if (!html) {
+    if (leftLogo.b64) logos.left_b64 = leftLogo.b64;
+    if (rightLogo.b64) logos.right_b64 = rightLogo.b64;
+  }
+
   const payload = {
     title,
     cuadrante: '',
@@ -92,24 +148,13 @@ export async function exportEvidenciaDocument(
     show_cuadrante_label: showCuadranteLabel,
     pages,
     logos,
-    images: imagesBase64,
-    image_paths: imagePaths,
     format,
-    // PDF: HTML de SheetPreview. Word: DOCX nativo editable (sin html).
-    ...(format === 'pdf'
-      ? {
-          html: buildExportHtml(
-            title,
-            cuadranteRanges,
-            images,
-            imageDataUris,
-            logoLeftUri,
-            logoRightUri,
-            cuadranteLabel,
-            showCuadranteLabel,
-          ),
-        }
-      : {}),
+    ...(html
+      ? { html }
+      : {
+          images: imagesBase64,
+          image_paths: imagePaths,
+        }),
   };
 
   if (window.electronAPI?.invoke) {

@@ -13,6 +13,8 @@ const report: TechnicalReport = {
     contratista: 'ACCIONA',
     sgio: '454654001',
     sgio_label: 'SGIO',
+    titulo_linea1: 'Limpieza y Desinfección de Reservorios y Cisternas',
+    titulo_linea2: 'Centro de Servicio Villa El Salvador',
     codigo_infraestructura: 'RES-01',
     ubicacion: 'LIMA',
     suministro: '123',
@@ -97,5 +99,25 @@ describe('FormPanel', () => {
     );
 
     expect(screen.getByRole('button', { name: /eliminar informe/i })).toHaveClass('tr-form-action--danger');
+  });
+
+  it('exposes editable title lines in the right sidebar', () => {
+    render(
+      <FormPanel
+        report={report}
+        hasChanges={false}
+        busy={false}
+        logoLeft={null}
+        logoRight={null}
+        onChange={vi.fn()}
+        onSave={vi.fn()}
+        onDelete={vi.fn()}
+        onLogoChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: /título/i })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Limpieza y Desinfección de Reservorios y Cisternas')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Centro de Servicio Villa El Salvador')).toBeInTheDocument();
   });
 });

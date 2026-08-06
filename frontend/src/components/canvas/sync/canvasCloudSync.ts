@@ -138,17 +138,23 @@ export async function pushCanvasDocument(
   ) {
     try {
       await withTimeout(
-        supabase.from('canvas_document_versions').insert({
-          document_id: doc.id,
-          document: doc,
-          created_by: uid,
-          created_at: updatedAt,
-        }),
+        (supabase.rpc as unknown as (n:string,p:unknown)=> { then:(a:unknown,b:unknown)=>unknown })(('canvas_append_document_version'), { p_document_id: doc.id, p_document: doc }),
         CLOUD_SYNC_TIMEOUT_MS,
         'canvas-push-skip-preserve',
       );
     } catch {
-      // Ignore preserve errors so main skip flow completes cleanly
+      try {
+        await withTimeout(
+          supabase.from('canvas_document_versions').insert({
+            document_id: doc.id,
+            document: doc,
+            created_by: uid,
+            created_at: updatedAt,
+          }),
+          CLOUD_SYNC_TIMEOUT_MS,
+          'canvas-push-skip-preserve-fallback',
+        );
+      } catch { /* ignore */ }
     }
     return false;
   }

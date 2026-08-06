@@ -12,6 +12,13 @@ const {
   assertPathNotSymlink,
   isAllowedReadPath,
 } = require('./path-allowlist');
+const {
+  resolveCapability,
+  createStagedSession,
+  appendStagedChunk,
+  completeStagedSession,
+  abortStagedSession,
+} = require('./file-capabilities');
 
 const DIALOG_METHODS = new Set(['dialog_files', 'dialog_dest', 'dialog_save', 'dialog_folder']);
 const NATIVE_METHODS = new Set([
@@ -20,7 +27,14 @@ const NATIVE_METHODS = new Set([
   'local_thumbnail',
   'local_image_data_url',
   'register_local_path',
+  'file_token_resolve',
+  'file_staged_create',
+  'file_staged_append',
+  'file_staged_complete',
+  'file_staged_abort',
 ]);
+
+const REGISTER_LOCAL_PATH_DEPRECATED_MSG = 'register_local_path is deprecated; use file tokens via dialog or staged upload';
 
 /** @type {Set<string>} Directory roots allowed for PDF writes (from dialogs). */
 const _allowedWriteRoots = new Set();
@@ -69,10 +83,22 @@ function _localImageEntries(rawPaths) {
 
   return Object.entries(rawPaths).flatMap(([token, rawPath]) => {
     if (typeof token !== 'string' || !/^antares-local-image:[a-zA-Z0-9_-]{1,120}$/.test(token)) return [];
-    if (typeof rawPath !== 'string' || !path.isAbsolute(rawPath)) return [];
-    if (!allowedExtensions.has(path.extname(rawPath).toLowerCase())) return [];
-    if (!isAllowedReadPath(rawPath)) return [];
-    return [{ token, fileUrl: pathToFileURL(rawPath).toString() }];
+
+    let resolvedPath = rawPath;
+    const isCapabilityToken = typeof rawPath === 'string' && rawPath.startsWith('antares-');
+    if (isCapabilityToken) {
+      try {
+        resolvedPath = resolveCapability(rawPath, 'read', null).path;
+      } catch {
+        return [];
+      }
+    } else if (typeof rawPath !== 'string' || !path.isAbsolute(rawPath) || !isAllowedReadPath(rawPath)) {
+      return [];
+    }
+
+    if (typeof resolvedPath !== 'string' || !path.isAbsolute(resolvedPath)) return [];
+    if (!allowedExtensions.has(path.extname(resolvedPath).toLowerCase())) return [];
+    return [{ token, fileUrl: pathToFileURL(resolvedPath).toString() }];
   });
 }
 
@@ -104,24 +130,18 @@ function _sanitizePdfOutputPath(outputPath, fallbackFilename) {
   return path.join(dir, safeName);
 }
 
-function _handleRegisterLocalPath(params = {}) {
-  const raw = params.path;
-  if (typeof raw !== 'string' || !raw.trim()) {
-    throw new Error('path required');
-  }
-  if (raw.includes('\0')) {
-    throw new Error('invalid path');
-  }
-  if (!path.isAbsolute(raw)) {
-    throw new Error('path must be absolute');
-  }
-  const resolved = path.resolve(raw);
-  const stat = assertPathNotSymlink(resolved);
-  if (!stat.isFile()) {
-    throw new Error('not a file');
-  }
-  registerAllowedReadPath(resolved);
-  return { registered: true, path: resolved };
+function _handleRegisterLocalPath() {
+  throw new Error(REGISTER_LOCAL_PATH_DEPRECATED_MSG);
+}
+
+function _resolveTokenPath(token, webContentsId) {
+  const cap = resolveCapability(token, 'read', webContentsId ?? null);
+  return cap.path;
+}
+
+function _resolveTokenPath(token, webContentsId) {
+  const cap = resolveCapability(token, 'read', webContentsId ?? null);
+  return cap.path;
 }
 
 function resultFromOpenDialog(response) {
@@ -365,21 +385,82 @@ async function renderHtmlToPdf(params = {}, electronModules = {}) {
   }
 }
 
+function _webContentsIdFromWindow(win) {
+  try { return win && win.webContents ? win.webContents.id : null; } catch { return null; }
+}
+
 async function handleDialogCall(method, params = {}, dialog, window, electronModules = {}) {
   if (!NATIVE_METHODS.has(method)) {
     return { handled: false };
   }
 
   if (method === 'register_local_path') {
-    return { handled: true, result: _handleRegisterLocalPath(params) };
+    return { handled: true, result: _handleRegisterLocalPath() };
+  }
+
+  if (method === 'file_token_resolve') {
+    const token = params && params.token;
+    const filePath = _resolveTokenPath(token, _webContentsIdFromWindow(window));
+    return { handled: true, result: { path: filePath } };
+  }
+
+  if (method === 'file_staged_create') {
+    const session = createStagedSession({ name: params.name, size: params.size, webContentsId: _webContentsIdFromWindow(window) });
+    return { handled: true, result: { token: session.token, tmpPath: session.tmpPath } };
+  }
+
+  if (method === 'file_staged_append') {
+    const res = await appendStagedChunk(params.token, params.chunk_b64, _webContentsIdFromWindow(window));
+    return { handled: true, result: res };
+  }
+
+  if (method === 'file_staged_complete') {
+    const cap = await completeStagedSession(params.token, _webContentsIdFromWindow(window));
+    return { handled: true, result: { file_token: cap.token, name: cap.name, size: cap.size } };
+  }
+
+  if (method === 'file_staged_abort') {
+    await abortStagedSession(params.token);
+    return { handled: true, result: { aborted: true } };
+  }
+
+  if (method === 'file_token_resolve') {
+    const token = params && params.token;
+    const filePath = _resolveTokenPath(token, _webContentsIdFromWindow(window));
+    return { handled: true, result: { path: filePath } };
+  }
+
+  if (method === 'file_staged_create') {
+    const session = createStagedSession({ name: params.name, size: params.size, webContentsId: _webContentsIdFromWindow(window) });
+    // Do not return tmpPath to the renderer — capability token is sufficient.
+    return { handled: true, result: { token: session.token } };
+  }
+
+  if (method === 'file_staged_append') {
+    const res = await appendStagedChunk(params.token, params.chunk_b64, _webContentsIdFromWindow(window));
+    return { handled: true, result: res };
+  }
+
+  if (method === 'file_staged_complete') {
+    const cap = await completeStagedSession(params.token, _webContentsIdFromWindow(window));
+    return { handled: true, result: { file_token: cap.token, name: cap.name, size: cap.size } };
+  }
+
+  if (method === 'file_staged_abort') {
+    await abortStagedSession(params.token);
+    return { handled: true, result: { aborted: true } };
   }
 
   if (method === 'local_thumbnail') {
-    // Path A: display-size thumbs via nativeImage. On failure the renderer
-    // shows a placeholder (file:// is blocked by CSP img-src).
     const { nativeImage } = electronModules;
+    let resolvedPath = params && params.path;
+    if (params && params.file_token) {
+      resolvedPath = _resolveTokenPath(params.file_token, _webContentsIdFromWindow(window));
+      // Capability tokens bypass dialog allowlist registration; grant read for this path.
+      registerAllowedReadPath(resolvedPath);
+    }
     const result = await createLocalThumbnail(
-      params && params.path,
+      resolvedPath,
       params && params.maxEdge,
       nativeImage,
     );
@@ -387,8 +468,12 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
   }
 
   if (method === 'local_image_data_url') {
-    // Full-fidelity local image → data URL for CSP-safe <img> (no file://).
-    const result = await createLocalImageDataUrl(params && params.path);
+    let resolvedPath = params && params.path;
+    if (params && params.file_token) {
+      resolvedPath = _resolveTokenPath(params.file_token, _webContentsIdFromWindow(window));
+      registerAllowedReadPath(resolvedPath);
+    }
+    const result = await createLocalImageDataUrl(resolvedPath);
     return { handled: true, result };
   }
 

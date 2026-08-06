@@ -17,6 +17,9 @@ const GOOGLE_FONT_HOST_RE = /^https:\/\/fonts\.(googleapis|gstatic)\.com\//i;
 const CSP_META =
   "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; img-src data: file:; font-src data: https://fonts.gstatic.com;\">";
 
+const PREVIEW_CSP_META =
+  "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data: blob:; media-src data: blob:; connect-src 'none'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'\">";
+
 // data: URIs we consider safe to keep in CSS url() / img src. SVG is
 // intentionally excluded — `data:image/svg+xml` can carry `<script>` and
 // event handlers, and Chromium will execute them in some contexts.
@@ -122,4 +125,66 @@ function sanitizeHtmlForPdf(html) {
   return /<head/i.test(injectedHtml) ? injectedHtml : CSP_META + injectedHtml;
 }
 
-module.exports = { sanitizeHtmlForPdf, CSP_META, isSafeDataUrl, isAllowedGoogleFontUrl };
+function sanitizeHtmlForPreview(html) {
+  const raw = String(html);
+  let stripped = raw
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<script[^>]*>/gi, '')
+    .replace(/<\/script>/gi, '')
+    .replace(/<iframe[^>]*>[\s\S]*?<\/iframe>/gi, '')
+    .replace(/<iframe[^>]*>/gi, '')
+    .replace(/<\/iframe>/gi, '')
+    .replace(/<object[^>]*>[\s\S]*?<\/object>/gi, '')
+    .replace(/<object[^>]*>/gi, '')
+    .replace(/<\/object>/gi, '')
+    .replace(/<embed[^>]*>/gi, '')
+    .replace(/<\/embed>/gi, '')
+    .replace(/<link[^>]*>/gi, '')
+    .replace(/<base[^>]*>/gi, '')
+    .replace(/<\/base>/gi, '')
+    .replace(/<meta[^>]*http-equiv[^>]*>/gi, '')
+    .replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '')
+    .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '')
+    .replace(/\son[a-z]+\s*=\s*`[^`]*`/gi, '')
+    .replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '')
+    .replace(/\son[a-z]+\b(?=\s|>|\/)/gi, '')
+    .replace(/(href|src|xlink:href)\s*=\s*(['"]?)\s*([^"'>\s]+)\2/gi, (match, attr, quote, urlValue) => {
+      const lowered = String(urlValue).trim().toLowerCase();
+      const q = quote || '"';
+      if (lowered.startsWith('data:')) {
+        return isSafeDataUrl(urlValue) ? match : `${attr}=${q}${q}`;
+      }
+      if (lowered.startsWith('blob:')) return match;
+      return `${attr}=${q}${q}`;
+    })
+    .replace(/url\(\s*(['"]?)\s*(?:javascript|vbscript):[^'")\s]*\1\s*\)/gi, "url('')")
+    .replace(/url\(\s*(['"]?)([^'")]+?)\1\s*\)/gi, (match, _quote, urlValue) => {
+      const lowered = String(urlValue).trim().toLowerCase();
+      if (lowered.startsWith('blob:')) return match;
+      if (lowered.startsWith('data:')) {
+        return isSafeDataUrl(urlValue) ? match : "url('')";
+      }
+      return "url('')";
+    })
+    .replace(/@import\s+[^;]+;/gi, '')
+    .replace(/expression\s*\(/gi, '');
+
+  stripped = stripped.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, (block) => {
+    let inner = block.replace(/^<style[^>]*>/i, '').replace(/<\/style>$/i, '');
+    inner = inner.replace(/url\([^)]+\)/gi, (m) => {
+      const urlMatch = m.match(/url\(\s*(['"]?)([^'")]+)\1\s*\)/i);
+      if (!urlMatch) return "url('')";
+      const v = String(urlMatch[2]).trim().toLowerCase();
+      if (v.startsWith('blob:')) return m;
+      if (v.startsWith('data:') && isSafeDataUrl(urlMatch[2])) return m;
+      return "url('')";
+    });
+    inner = inner.replace(/@import[^;]+;/gi, '');
+    return `<style>${inner}</style>`;
+  });
+
+  const injectedHtml = stripped.replace(/<head([^>]*)>/i, `<head$1>${PREVIEW_CSP_META}`);
+  return /<head/i.test(injectedHtml) ? injectedHtml : PREVIEW_CSP_META + injectedHtml;
+}
+
+module.exports = { sanitizeHtmlForPdf, sanitizeHtmlForPreview, CSP_META, PREVIEW_CSP_META, isSafeDataUrl, isAllowedGoogleFontUrl };

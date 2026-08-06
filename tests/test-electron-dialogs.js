@@ -175,17 +175,31 @@ async function run() {
   const fsForImage = require('fs');
   const osForImage = require('os');
   const pathForImage = require('path');
+  const { createFileCapability } = require('../electron/file-capabilities');
   const imageTempDir = await fsForImage.promises.mkdtemp(pathForImage.join(osForImage.tmpdir(), 'antares-pdf-img-'));
   const realImagePath = pathForImage.join(imageTempDir, 'foto.jpg');
   await fsForImage.promises.writeFile(realImagePath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
-  await handleDialogCall('register_local_path', { path: realImagePath }, dialog, win);
+
+  let registerDeprecated = false;
+  try {
+    await handleDialogCall('register_local_path', { path: realImagePath }, dialog, win);
+  } catch (err) {
+    registerDeprecated = /deprecated|file tokens/i.test(err.message);
+  }
+  assert(registerDeprecated, 'register_local_path should be rejected as deprecated');
+
+  const imageCap = createFileCapability({
+    filePath: realImagePath,
+    mode: 'read',
+    webContentsId: null,
+  });
 
   const pdfWithLocalImage = await handleDialogCall(
     'html_to_pdf',
     {
       html: '<!doctype html><html><body><img src="antares-local-image:row-1-img-0"><img src="file:///etc/passwd"></body></html>',
       filename: 'local.pdf',
-      localImagePaths: { 'antares-local-image:row-1-img-0': realImagePath },
+      localImagePaths: { 'antares-local-image:row-1-img-0': imageCap.token },
     },
     dialog,
     win,
@@ -314,7 +328,12 @@ async function run() {
     const imgPath = path.join(thumbTempDir, 'tiny.jpg');
     await fs.promises.writeFile(imgPath, Buffer.from([0xff, 0xd8, 0xff, 0xd9])); // minimal JPEG marker pair
 
-    await handleDialogCall('register_local_path', { path: imgPath }, dialog, win);
+    const { createFileCapability } = require('../electron/file-capabilities');
+    const thumbCap = createFileCapability({
+      filePath: imgPath,
+      mode: 'read',
+      webContentsId: null,
+    });
 
     const fakeNativeImage = {
       createThumbnailFromPath: async () => {
@@ -340,7 +359,7 @@ async function run() {
 
     const thumb = await handleDialogCall(
       'local_thumbnail',
-      { path: imgPath, maxEdge: 256 },
+      { file_token: thumbCap.token, maxEdge: 256 },
       dialog,
       win,
       { nativeImage: fakeNativeImage },
@@ -357,7 +376,7 @@ async function run() {
         nativeImage: fakeNativeImage,
       });
     } catch (err) {
-      badPathHandled = /absolute|invalid path/i.test(err.message);
+      badPathHandled = /absolute|invalid path|raw absolute|file token/i.test(err.message);
     }
     assert(badPathHandled, 'local_thumbnail should reject relative path params');
 
@@ -367,16 +386,21 @@ async function run() {
         nativeImage: fakeNativeImage,
       });
     } catch (err) {
-      unregisteredHandled = /not allowed|not a file/i.test(err.message);
+      unregisteredHandled = /not allowed|not a file|capability|file token|raw absolute/i.test(err.message);
     }
     assert(unregisteredHandled, 'local_thumbnail should reject unregistered paths');
 
     // Full-fidelity local → data URL (Ubicaciones / CSP-safe img src)
     const fullJpeg = Buffer.from([0xff, 0xd8, 0xff, 0xd9, 0x00, 0x01, 0x02]);
     await fs.promises.writeFile(imgPath, fullJpeg);
+    const fullCap = createFileCapability({
+      filePath: imgPath,
+      mode: 'read',
+      webContentsId: null,
+    });
     const full = await handleDialogCall(
       'local_image_data_url',
-      { path: imgPath },
+      { file_token: fullCap.token },
       dialog,
       win,
     );
@@ -390,7 +414,7 @@ async function run() {
     try {
       await handleDialogCall('local_image_data_url', { path: '../etc/passwd' }, dialog, win);
     } catch (err) {
-      badFullPath = /absolute|invalid path/i.test(err.message);
+      badFullPath = /absolute|invalid path|raw absolute|file token/i.test(err.message);
     }
     assert(badFullPath, 'local_image_data_url should reject relative paths');
   } finally {
