@@ -46,6 +46,8 @@ dist-electron/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/coverage/
+frontend/*.tsbuildinfo
 
 # OS
 .DS_Store

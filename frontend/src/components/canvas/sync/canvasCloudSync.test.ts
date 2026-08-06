@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import type { CanvasDocument } from '../types';
 import {
   isNewer,
@@ -7,6 +7,7 @@ import {
   queueCanvasCloudPush,
   shouldPushCanvasRow,
   syncCanvasDocuments,
+  withTimeout,
 } from './canvasCloudSync';
 
 // ---------------------------------------------------------------------------
@@ -122,12 +123,34 @@ function resetMocks(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Existing isNewer tests (unchanged)
+// withTimeout / isNewer / shouldPushCanvasRow (canonical unit cases)
 // ---------------------------------------------------------------------------
+
+describe('withTimeout', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('resolves when the promise wins', async () => {
+    await expect(withTimeout(Promise.resolve(42), 1000, 'test')).resolves.toBe(42);
+  });
+
+  it('rejects when the timer wins', async () => {
+    vi.useFakeTimers();
+    const pending = withTimeout(new Promise<number>(() => {}), 50, 'test-hang');
+    const assertion = expect(pending).rejects.toThrow(/test-hang timed out after 50ms/);
+    await vi.advanceTimersByTimeAsync(50);
+    await assertion;
+  });
+});
 
 describe('canvasCloudSync isNewer', () => {
   it('treats missing local as older', () => {
     expect(isNewer('2026-07-22T12:00:00.000Z', undefined)).toBe(true);
+  });
+
+  it('returns false when remote/local a is undefined', () => {
+    expect(isNewer(undefined, '2026-07-22T12:00:00.000Z')).toBe(false);
   });
 
   it('compares ISO timestamps', () => {
@@ -162,6 +185,10 @@ describe('shouldPushCanvasRow', () => {
     expect(
       shouldPushCanvasRow('2026-07-22T13:00:00Z', '2026-07-22T12:00:00Z', null),
     ).toBe(true);
+  });
+
+  it('blocks push when local timestamp is undefined', () => {
+    expect(shouldPushCanvasRow(undefined, '2026-07-22T12:00:00Z', null)).toBe(false);
   });
 });
 

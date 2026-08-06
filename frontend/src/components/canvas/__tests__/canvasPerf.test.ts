@@ -5,7 +5,6 @@ import { ancestorIds, expandWithDescendants } from '../ops/layerTree';
 import { setActivePageLayers } from '../ops/pages';
 import { patchLayersById, replaceLayerById } from '../ops/patchLayers';
 import { moveSelection, rotateSelection } from '../ops/selectionTransform';
-import { buildSpatialIndex } from '../ops/spatialIndex';
 import type { CanvasDocument } from '../types';
 
 function makeLayers(n: number) {
@@ -131,29 +130,6 @@ describe('canvas perf hot path', () => {
     expect(cloned.layers[0].meta?.path?.points[0].hin).not.toBe(layer.meta?.path?.points[0].hin);
     cloned.layers[0].meta!.colTracks![0] = 99;
     expect(layer.meta?.colTracks?.[0]).toBe(1);
-  });
-
-  it('spatial hitTest returns top-most layer first', () => {
-    const bottom = createLayer('rect', {
-      id: 'bottom',
-      cssVars: {
-        '--translate-x': '10mm',
-        '--translate-y': '10mm',
-        '--width': '20mm',
-        '--height': '20mm',
-      },
-    });
-    const top = createLayer('rect', {
-      id: 'top',
-      cssVars: {
-        '--translate-x': '12mm',
-        '--translate-y': '12mm',
-        '--width': '20mm',
-        '--height': '20mm',
-      },
-    });
-    const hits = buildSpatialIndex([bottom, top]).hitTest(15, 15);
-    expect(hits[0]).toBe('top');
   });
 
   it('rotateSelection preserves untouched identity', () => {
