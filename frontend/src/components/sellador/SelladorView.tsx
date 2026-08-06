@@ -269,9 +269,8 @@ export default function SelladorView() {
       const previewUrl = URL.createObjectURL(file);
       setStampFile(file);
       setStampPath(localPath);
-      // Keep b64 in memory for retry if stamp_path becomes unreadable at apply time.
-      // Do not send both over IPC when path works (see handleApply).
-      setStampBase64(await fileToBase64(file));
+      // Prefer disk path; keep Base64 only when no local path (browser / pathless drop).
+      setStampBase64(localPath ? null : await fileToBase64(file));
       setStampPreviewUrl(previewUrl);
       if (pageSize) {
         await initializePositions(pageSize, previewUrl);
@@ -391,14 +390,20 @@ export default function SelladorView() {
         filename: defaultName,
         output_path: outputPath,
       };
-      // Prefer disk path (cheap IPC). Retry with in-memory b64 only if path fails.
+      // Prefer disk path (cheap IPC). Retry with Base64 only if path fails.
       let res;
       if (stampPath) {
         try {
           res = await api.selladorApply({ ...applyBase, stamp_path: stampPath });
         } catch (err) {
-          if (!stampBase64) throw err;
-          res = await api.selladorApply({ ...applyBase, stamp_b64: stampBase64 });
+          const stampFileForFallback = stampFile;
+          let b64 = stampBase64;
+          if (!b64 && stampFileForFallback) {
+            b64 = await fileToBase64(stampFileForFallback);
+            setStampBase64(b64);
+          }
+          if (!b64) throw err;
+          res = await api.selladorApply({ ...applyBase, stamp_b64: b64 });
         }
       } else {
         res = await api.selladorApply({ ...applyBase, stamp_b64: stampBase64! });
