@@ -44,7 +44,8 @@ def evidencia_volanteo_render(params: dict[str, Any]) -> dict[str, Any]:
             resolved = params.get("_resolved_output_path") or output_path
             from backend.utils.validators import sanitizar_nombre
             safe = sanitizar_nombre(Path(resolved).name) or Path(resolved).name
-            if not safe.lower().endswith(".docx"): safe += ".docx"
+            if not safe.lower().endswith(".docx"):
+                safe += ".docx"
             out = Path(resolved).parent / safe
             if out.is_symlink() or out.parent.is_symlink():
                 raise ValueError("symlink no permitido en ruta de salida")
@@ -55,7 +56,6 @@ def evidencia_volanteo_render(params: dict[str, Any]) -> dict[str, Any]:
                 raise FileExistsError(f"El archivo ya existe: {out}")
             # realpath confinement: ensure final path is inside resolved parent
             real_parent = Path(str(out.parent.resolve()))
-            real_out = Path(str(out.resolve())) if out.exists() else real_parent / out.name
             if real_parent != Path(str(Path(resolved).parent.resolve())) and out.parent.resolve() != Path(resolved).parent.resolve():
                 raise ValueError("ruta de salida fuera de la raíz autorizada")
             tmp = out.with_suffix(out.suffix + ".tmp")
@@ -87,7 +87,8 @@ def evidencia_volanteo_render(params: dict[str, Any]) -> dict[str, Any]:
         resolved = params.get("_resolved_output_path") or output_path
         from backend.utils.validators import sanitizar_nombre as _sn
         safe = _sn(Path(resolved).name) or Path(resolved).name
-        if not safe.lower().endswith(".pdf"): safe += ".pdf"
+        if not safe.lower().endswith(".pdf"):
+            safe += ".pdf"
         out = Path(resolved).parent / safe
         if out.is_symlink() or out.parent.is_symlink():
             raise ValueError("symlink no permitido en ruta de salida")

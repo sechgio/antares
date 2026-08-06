@@ -189,14 +189,15 @@ def spreadsheet_export_volantes_template(params: dict[str, Any]) -> dict[str, An
 
     columns = ["item", "sgio", "distrito", "fecha", "hora_inicio", "hora_fin", "reservorio", "sector", "zonas_afectadas"]
     data = [[1, "454654001", "ATE VITARTE", "2026-02-26", "08:00", "20:00", "CR-121 HUASCAR", "SECTOR 411", "AH UPIS Huascar, AH Belen, AH Vista Alegre, AH San Lorenzo"]]
-    df = __import__("pandas").DataFrame(data, columns=columns)
+    df = pd.DataFrame(data, columns=columns)
 
     if resolved:
         from pathlib import Path as _P
 
         from backend.utils.validators import sanitizar_nombre as _sn
         safe = _sn(_P(resolved).name) or _P(resolved).name
-        if not safe.lower().endswith(".xlsx"): safe += ".xlsx"
+        if not safe.lower().endswith(".xlsx"):
+            safe += ".xlsx"
         dest = _P(resolved).parent / safe
         if dest.is_symlink() or dest.parent.is_symlink():
             raise ValueError("symlink no permitido en ruta de salida")

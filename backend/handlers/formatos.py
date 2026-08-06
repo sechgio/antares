@@ -28,7 +28,8 @@ def formatos_generate(params: dict[str, Any]) -> dict[str, str]:
         resolved = str(params.get("_resolved_output_path") or output_path).strip()
         from backend.utils.validators import sanitizar_nombre as _snF
         safe = _snF(Path(resolved).name) or Path(resolved).name
-        if not safe.lower().endswith(".pdf"): safe += ".pdf"
+        if not safe.lower().endswith(".pdf"):
+            safe += ".pdf"
         destination = Path(resolved).parent / safe
         if destination.is_symlink() or destination.parent.is_symlink():
             raise ValueError("symlink no permitido en ruta de salida")
