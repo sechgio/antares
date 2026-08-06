@@ -97,7 +97,8 @@ def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
         resolved = str(params.get("_resolved_output_path") or output_path).strip()
         from backend.utils.validators import sanitizar_nombre as _snC
         safe = _snC(Path(resolved).name) or Path(resolved).name
-        if not safe.lower().endswith(".pdf"): safe += ".pdf"
+        if not safe.lower().endswith(".pdf"):
+            safe += ".pdf"
         out = Path(resolved).parent / safe
         if out.is_symlink() or out.parent.is_symlink():
             raise ValueError("symlink no permitido en ruta de salida")

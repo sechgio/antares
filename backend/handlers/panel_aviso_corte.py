@@ -106,7 +106,8 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
             resolved = params.get("_resolved_output_path") or output_path
             from backend.utils.validators import sanitizar_nombre as _sn2
             safe = _sn2(Path(resolved).name) or Path(resolved).name
-            if not safe.lower().endswith(".docx"): safe += ".docx"
+            if not safe.lower().endswith(".docx"):
+                safe += ".docx"
             out = Path(resolved).parent / safe
             if out.is_symlink() or out.parent.is_symlink():
                 raise ValueError("symlink no permitido en ruta de salida")
@@ -148,7 +149,8 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
         resolved = params.get("_resolved_output_path") or output_path
         from backend.utils.validators import sanitizar_nombre as _sn3
         safe = _sn3(Path(resolved).name) or Path(resolved).name
-        if not safe.lower().endswith(".pdf"): safe += ".pdf"
+        if not safe.lower().endswith(".pdf"):
+            safe += ".pdf"
         out = Path(resolved).parent / safe
         if out.is_symlink() or out.parent.is_symlink():
             raise ValueError("symlink no permitido en ruta de salida")
@@ -188,14 +190,14 @@ def panel_aviso_corte_template(params: dict[str, Any]) -> dict[str, Any]:
         resolved_path = f"{resolved_path}.xlsx"
     from backend.utils.validators import sanitizar_nombre as _sn4
     safe = _sn4(Path(resolved_path).name) or Path(resolved_path).name
-    if not safe.lower().endswith(".xlsx"): safe += ".xlsx"
+    if not safe.lower().endswith(".xlsx"):
+        safe += ".xlsx"
     destination = Path(resolved_path).parent / safe
     if Path(resolved_path) != destination and not params.get("_write_token"):
         # Enforce sanitized name when not via write token
         pass
     if destination.is_symlink() or destination.parent.is_symlink():
         raise ValueError("symlink no permitido en ruta de salida")
-    path = str(destination)
     overwrite = params.get("overwrite") is True
     if destination.exists() and not overwrite:
         msg = f"El archivo de destino ya existe: {destination}"

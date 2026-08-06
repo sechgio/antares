@@ -115,7 +115,8 @@ def image_optimizer_zip(params: dict[str, Any]) -> dict[str, str]:
         resolved = str(params.get("_resolved_output_path") or output_path).strip()
         from backend.utils.validators import sanitizar_nombre as _snZ
         safe = _snZ(Path(resolved).name) or Path(resolved).name
-        if not safe.lower().endswith(".zip"): safe += ".zip"
+        if not safe.lower().endswith(".zip"):
+            safe += ".zip"
         destination = Path(resolved).parent / safe
         if destination.is_symlink() or destination.parent.is_symlink():
             raise ValueError("symlink no permitido en ruta de salida")
