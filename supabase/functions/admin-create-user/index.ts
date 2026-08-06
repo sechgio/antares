@@ -1,29 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
-
-function corsHeaders(req: Request): Record<string, string> {
-  const origin = req.headers.get("Origin");
-  const envUrl = Deno.env.get("SUPABASE_URL");
-  const allowedOrigins = [
-    "http://localhost:5173",
-    ...(envUrl ? [envUrl] : []),
-  ];
-  const allow =
-    !origin ||
-    origin === "null" ||
-    allowedOrigins.includes(origin) ||
-    origin.includes("localhost:5173");
-
-  const headers: Record<string, string> = {
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  };
-  if (allow && origin) {
-    headers["Access-Control-Allow-Origin"] = origin;
-  } else if (allow) {
-    headers["Access-Control-Allow-Origin"] = "*";
-  }
-  return headers;
-}
+import { corsHeaders } from "../_shared/cors.ts";
 
 interface CreateUserBody {
   email?: string;
