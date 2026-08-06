@@ -221,6 +221,30 @@ class TestConvertirImagen:
         assert salida.exists()
         assert salida.parent not in mkdir_calls
 
+    def test_animated_gif_converts_only_first_frame(self, tmp_path) -> None:
+        """Animated GIF/WEBP sources: only the first frame is converted."""
+        f0 = Image.new("RGB", (8, 8), (255, 0, 0))
+        f1 = Image.new("RGB", (8, 8), (0, 255, 0))
+        f2 = Image.new("RGB", (8, 8), (0, 0, 255))
+        gif_path = tmp_path / "anim.gif"
+        f0.save(
+            gif_path,
+            save_all=True,
+            append_images=[f1, f2],
+            duration=50,
+            loop=0,
+            format="GIF",
+        )
+        with Image.open(gif_path) as src:
+            assert getattr(src, "n_frames", 1) >= 2
+
+        out = tmp_path / "out.png"
+        convertir_imagen(gif_path, out, "PNG")
+        with Image.open(out) as img:
+            assert getattr(img, "n_frames", 1) == 1
+            px = img.convert("RGB").getpixel((0, 0))
+            assert px[0] > 200 and px[1] < 80 and px[2] < 80
+
 
 class TestCopiarArchivo:
     def test_ensure_dir_false_skips_mkdir(self, imagen_rgb, tmp_path, monkeypatch) -> None:

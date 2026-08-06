@@ -260,6 +260,28 @@ def test_prepare_chunk_renames_windows_parenthesized_sequence(monkeypatch, tmp_p
     assert tasks[0][1].name == "69841274_3.jpg"
 
 
+def test_prepare_chunk_unmapped_sanitizes_invalid_chars(monkeypatch, tmp_path) -> None:
+    """Unmapped / no-BD paths must sanitize like preview_lote (parity)."""
+    # Use a Path that cannot be created on Windows (<>); prepare only needs the name.
+    source_file = tmp_path / "bad<>name.jpg"
+
+    monkeypatch.setattr(conversion, "es_video", lambda _path: False)
+    from backend.core.mapping_index import MappingIndex
+
+    engine = conversion.RenamerEngine("{renombre}{ext}", 1)
+    tasks = conversion._prepare_chunk_tasks(
+        [str(source_file)],
+        destino=str(tmp_path / "out"),
+        engine=engine,
+        conversion_enabled=False,
+        ext_dest=None,
+        lookup_fn=lambda _codes: {},
+        mapping_index=MappingIndex({"other.jpg": "ok"}),
+    )
+
+    assert tasks[0][1].name == "bad__name.jpg"
+
+
 def test_run_conversion_job_with_mapping_rename_only(monkeypatch, tmp_path) -> None:
     src = tmp_path / "in"
     dst = tmp_path / "out"

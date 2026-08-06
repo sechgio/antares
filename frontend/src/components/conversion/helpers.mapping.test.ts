@@ -32,6 +32,28 @@ describe('mapping helpers', () => {
     expect(lookupMappingValue({ 'img_0001.jpg': 'fachada' }, 'IMG_0001.jpg')).toBe('fachada');
   });
 
+  it('does not last-write-wins on stem conflicts (parity with MappingIndex)', () => {
+    const mapping = { '123.jpg': 'a', '123': 'b' };
+    expect(lookupMappingValue(mapping, '123.jpg')).toBe('a');
+    expect(lookupMappingValue(mapping, '123')).toBe('b');
+    // Ambiguous stem — no stem fallback for a different extension.
+    expect(lookupMappingValue(mapping, '123.png')).toBeUndefined();
+
+    const stats = computeMappingStats(mapping, [
+      'C:\\fotos\\123.jpg',
+      'C:\\fotos\\123.png',
+    ]);
+    expect(stats.matchedFiles).toBe(1);
+    expect(stats.unmatchedFiles).toEqual(['123.png']);
+  });
+
+  it('treats case-only stem disagreement as a conflict', () => {
+    const mapping = { 'A.jpg': 'uno', 'a.png': 'dos' };
+    expect(lookupMappingValue(mapping, 'A.jpg')).toBe('uno');
+    expect(lookupMappingValue(mapping, 'a.png')).toBe('dos');
+    expect(lookupMappingValue(mapping, 'a.gif')).toBeUndefined();
+  });
+
   it('falls back to catalog import only for mapping schema mismatches', () => {
     // Current backend messages (post flexible-mapping-columns refactor).
     expect(isMappingSchemaMismatch(new Error('El Excel de mapeo necesita al menos 2 columnas'))).toBe(true);
