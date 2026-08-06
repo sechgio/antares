@@ -47,6 +47,7 @@ _HANDLER_MODULES: tuple[str, ...] = (
     "backend.handlers.panel_aviso_corte",
     "backend.handlers.ubicaciones",
     "backend.handlers.evidencia_volanteo",
+    "backend.handlers.spreadsheet",
 )
 
 # Default tab (preview) + catalog/canvas: must be ready before the handshake.
@@ -91,6 +92,7 @@ _PREFIX_MODULE: tuple[tuple[str, str], ...] = (
     ("panel_aviso_corte_", "backend.handlers.panel_aviso_corte"),
     ("evidencia_volanteo_", "backend.handlers.evidencia_volanteo"),
     ("image_optimizer_", "backend.handlers.optimizer"),
+    ("spreadsheet_", "backend.handlers.spreadsheet"),
     ("rename_patterns_", "backend.handlers.database"),
     ("templates_", "backend.handlers.templates"),
     ("formatos_", "backend.handlers.formatos"),

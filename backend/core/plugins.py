@@ -6,6 +6,9 @@ Plugins are loaded only from ``user_data_path("plugins")`` and must expose a
 ``register()`` entry point.  Source is validated with an AST whitelist before
 ``exec_module`` runs, but plugins still execute in the same Python process as
 the backend.  Treat third-party plugins as *use at your own risk*.
+Opt-in via ``ANTARES_ENABLE_PLUGINS=1``. Approved plugins must be allowlisted
+by SHA-256 hash in ``user_data_path("plugins/allowlist.json")``; others are
+rejected. The AST allowlist is not a sandbox.
 """
 
 from __future__ import annotations
@@ -88,17 +91,44 @@ def _is_safe_plugin(source: str) -> bool:
     return has_register
 
 
+def _load_allowlist(plugins_dir: Path) -> dict[str, str] | None:
+    p = plugins_dir / "allowlist.json"
+    if not p.exists():
+        return None
+    try:
+        import json as _json
+        data = _json.loads(p.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return {str(k): str(v) for k, v in data.items()}
+    except Exception:
+        logger.warning("allowlist.json inválido en %s", plugins_dir)
+    return None
+
+
 def load_plugins_from_dir(plugins_dir: Path | None = None) -> None:
     """Load all .py plugins from the plugins directory."""
     if plugins_dir is None:
         plugins_dir = user_data_path("plugins")
     plugins_dir.mkdir(parents=True, exist_ok=True)
 
+    allowlist = _load_allowlist(plugins_dir)
+
     for file_path in plugins_dir.glob("*.py"):
         if file_path.name.startswith("_"):
             continue
         try:
             source = file_path.read_text(encoding="utf-8")
+            if allowlist is not None:
+                import hashlib as _hl
+                h = _hl.sha256(source.encode("utf-8")).hexdigest()
+                expected = allowlist.get(file_path.name)
+                if expected is None or h != expected:
+                    logger.warning("Plugin %s rechazado: no está en allowlist o hash no coincide", file_path.name)
+                    continue
+            elif file_path.name != "example.py":
+                # Without an allowlist, only the example is allowed as a placeholder; others need explicit allowlist
+                logger.warning("Plugin %s rechazado: sin allowlist.json no se cargan plugins (excepto example.py)", file_path.name)
+                continue
             if not _is_safe_plugin(source):
                 logger.warning("Plugin %s bloqueado por uso de APIs no permitidas", file_path.name)
                 continue

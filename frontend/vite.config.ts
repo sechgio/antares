@@ -13,7 +13,7 @@ const sharedHtmlSanitizerPlugin = {
 
     return code.replace(
       /module\.exports = \{[^}]+\};/,
-      'export { sanitizeHtmlForPdf, CSP_META, isSafeDataUrl };',
+      'export { sanitizeHtmlForPdf, sanitizeHtmlForPreview, CSP_META, PREVIEW_CSP_META, isSafeDataUrl, isAllowedGoogleFontUrl };',
     )
   },
 }
@@ -81,7 +81,7 @@ export default defineConfig(({ mode }) => ({
           }
           if (n.includes('/node_modules/html-to-image/')) return 'vendor-html-to-image'
           if (n.includes('/node_modules/pdfjs-dist/')) return 'vendor-pdfjs'
-          if (n.includes('/node_modules/xlsx/')) return 'vendor-data'
+          // xlsx removed: spreadsheet parsing now lives in backend (spreadsheet_parse)
           if (n.includes('/node_modules/i18next/') || n.includes('/node_modules/react-i18next/')) {
             return 'vendor-i18n'
           }

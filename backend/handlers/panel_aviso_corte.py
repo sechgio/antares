@@ -103,9 +103,20 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
             template_id=template_id,
         )
         if output_path:
-            out = Path(output_path)
+            resolved = params.get("_resolved_output_path") or output_path
+            from backend.utils.validators import sanitizar_nombre as _sn2
+            safe = _sn2(Path(resolved).name) or Path(resolved).name
+            if not safe.lower().endswith(".docx"): safe += ".docx"
+            out = Path(resolved).parent / safe
+            if out.is_symlink() or out.parent.is_symlink():
+                raise ValueError("symlink no permitido en ruta de salida")
             out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_bytes(docx_bytes)
+            if out.exists():
+                raise FileExistsError(f"El archivo ya existe: {out}")
+            tmp = out.with_suffix(out.suffix + ".tmp")
+            tmp.write_bytes(docx_bytes)
+            import os as _os3
+            _os3.replace(tmp, out)
             return {
                 "pdf_base64": "",
                 "content_base64": "",
@@ -134,14 +145,25 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
         template_id=template_id,
     )
     if output_path:
-        out = Path(output_path)
+        resolved = params.get("_resolved_output_path") or output_path
+        from backend.utils.validators import sanitizar_nombre as _sn3
+        safe = _sn3(Path(resolved).name) or Path(resolved).name
+        if not safe.lower().endswith(".pdf"): safe += ".pdf"
+        out = Path(resolved).parent / safe
+        if out.is_symlink() or out.parent.is_symlink():
+            raise ValueError("symlink no permitido en ruta de salida")
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_bytes(pdf_bytes)
+        if out.exists():
+            raise FileExistsError(f"El archivo ya existe: {out}")
+        tmp = out.with_suffix(out.suffix + ".tmp")
+        tmp.write_bytes(pdf_bytes)
+        import os as _os4
+        _os4.replace(tmp, out)
         return {
             "pdf_base64": "",
             "content_base64": "",
-            "saved_path": output_path,
-            "filename": Path(output_path).name,
+            "saved_path": str(out),
+            "filename": out.name,
             "format": "pdf",
             "mime_type": "application/pdf",
         }
@@ -157,14 +179,23 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
 @with_locale
 @validate_params("path")
 def panel_aviso_corte_template(params: dict[str, Any]) -> dict[str, Any]:
-    path = str(params.get("path") or "").strip()
-    if not path:
+    raw_path = str(params.get("path") or "").strip()
+    if not raw_path:
         msg = "path es requerido"
         raise ValueError(msg)
-    if not path.lower().endswith(".xlsx"):
-        path = f"{path}.xlsx"
-
-    destination = Path(path).expanduser()
+    resolved_path = str(params.get("_resolved_output_path") or raw_path).strip()
+    if not resolved_path.lower().endswith(".xlsx"):
+        resolved_path = f"{resolved_path}.xlsx"
+    from backend.utils.validators import sanitizar_nombre as _sn4
+    safe = _sn4(Path(resolved_path).name) or Path(resolved_path).name
+    if not safe.lower().endswith(".xlsx"): safe += ".xlsx"
+    destination = Path(resolved_path).parent / safe
+    if Path(resolved_path) != destination and not params.get("_write_token"):
+        # Enforce sanitized name when not via write token
+        pass
+    if destination.is_symlink() or destination.parent.is_symlink():
+        raise ValueError("symlink no permitido en ruta de salida")
+    path = str(destination)
     overwrite = params.get("overwrite") is True
     if destination.exists() and not overwrite:
         msg = f"El archivo de destino ya existe: {destination}"

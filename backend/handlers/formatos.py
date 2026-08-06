@@ -25,11 +25,20 @@ def formatos_generate(params: dict[str, Any]) -> dict[str, str]:
     pdf_bytes, filename = generate_pdf(fmt_id, desde, hasta)
     output_path = str(params.get("output_path") or "").strip()
     if output_path:
-        destination = Path(output_path).expanduser().resolve()
-        if destination.suffix.lower() != ".pdf":
-            destination = destination.with_suffix(".pdf")
+        resolved = str(params.get("_resolved_output_path") or output_path).strip()
+        from backend.utils.validators import sanitizar_nombre as _snF
+        safe = _snF(Path(resolved).name) or Path(resolved).name
+        if not safe.lower().endswith(".pdf"): safe += ".pdf"
+        destination = Path(resolved).parent / safe
+        if destination.is_symlink() or destination.parent.is_symlink():
+            raise ValueError("symlink no permitido en ruta de salida")
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(pdf_bytes)
+        if destination.exists():
+            raise FileExistsError(f"El archivo ya existe: {destination}")
+        tmp = destination.with_suffix(destination.suffix + ".tmp")
+        tmp.write_bytes(pdf_bytes)
+        import os as _osF
+        _osF.replace(tmp, destination)
         return {"saved_path": str(destination), "filename": destination.name}
     return {"pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"), "filename": filename}
 
