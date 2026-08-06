@@ -33,3 +33,45 @@ export function writeClipboardLayersText(layers: CanvasLayer[]): void {
     /* permission / unavailable */
   }
 }
+
+export interface ClipboardCopyResult {
+  layers: CanvasLayer[];
+  createdUrls: string[];
+}
+
+export function createClipboardCopyCoordinator(
+  onImmediate: (layers: CanvasLayer[]) => void,
+  onResolved: (layers: CanvasLayer[]) => void,
+  releaseUrl: (url: string) => void,
+) {
+  let generation = 0;
+  const activeUrls = new Set<string>();
+
+  const releaseActive = () => {
+    for (const url of activeUrls) releaseUrl(url);
+    activeUrls.clear();
+  };
+
+  return {
+    copy(layers: CanvasLayer[], resolve: () => Promise<ClipboardCopyResult>): Promise<void> {
+      const currentGeneration = ++generation;
+      releaseActive();
+      onImmediate(layers);
+      return Promise.resolve()
+        .then(resolve)
+        .then(({ layers: resolvedLayers, createdUrls }) => {
+          if (currentGeneration !== generation) {
+            for (const url of createdUrls) releaseUrl(url);
+            return;
+          }
+          for (const url of createdUrls) activeUrls.add(url);
+          onResolved(resolvedLayers);
+        })
+        .catch(() => {});
+    },
+    invalidate(): void {
+      generation += 1;
+      releaseActive();
+    },
+  };
+}

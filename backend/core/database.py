@@ -366,7 +366,7 @@ def importar_excel(excel_path: str) -> dict[str, int]:
             skipped = 0
             required_set = set(required)
             for row in df.itertuples(index=False):
-                row_dict = dict(zip(field_names, row, strict=False))
+                row_dict = dict(zip(df.columns, row, strict=False))
                 values: list[Any] = []
                 valid = True
                 for fn in field_names:
