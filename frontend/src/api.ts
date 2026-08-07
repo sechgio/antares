@@ -31,6 +31,13 @@ declare global {
       onAutoUpdateStatus: (callback: (data: { status: string; version: string | null; progress: number; message?: string }) => void) => () => void;
       getPathForFile: (file: File) => string;
       registerLocalPath: (filePath: string) => Promise<unknown>;
+      fileStagedCreate?: (name: string, size: number) => Promise<{ token: string }>;
+      fileStagedAppend?: (token: string, chunk: ArrayBuffer | Uint8Array | string) => Promise<unknown>;
+      fileStagedComplete?: (token: string) => Promise<{ file_token: string }>;
+      fileStagedAbort?: (token: string) => Promise<unknown>;
+      cleanupFileToken?: (token: string) => Promise<{ cleaned: boolean }>;
+      canvasAssetPut?: (chunk: ArrayBuffer | Uint8Array) => Promise<{ asset_id: string; ref: string; bytes: number }>;
+      canvasAssetGet?: (ref: string) => Promise<{ ref: string; chunk: ArrayBuffer; bytes: number }>;
     };
   }
 }
@@ -351,6 +358,8 @@ export interface HtmlToPdfBody {
   filename: string;
   localImagePaths?: Record<string, string>;
   outputPath?: string;
+  /** Opt-in: inline PDF as base64 (prefer outputPath / saved_path for large exports). */
+  return_base64?: boolean;
 }
 
 export interface CanvasExportCmykPdfBody {
@@ -570,8 +579,53 @@ export const api = {
   canvasSaveHistory: (id: string, past: import('./components/canvas/utils/canvasDiff').HistoryStep[], future: import('./components/canvas/utils/canvasDiff').HistoryStep[]) =>
     _invoke<{ success: boolean }>('canvas_save_history', { id, past, future }),
 
-  spreadsheetParse: (body: { file_token?: string | null; path?: string; format_hint?: string }) =>
-    _invoke<{ workbookName: string; sheets: Array<{ name: string; rows: unknown[][] }>; warnings: string[] }>('spreadsheet_parse', body as unknown as Record<string, unknown>),
+  spreadsheetParse: async (
+    body: { file_token?: string | null; path?: string; format_hint?: string },
+    opts?: { hydrate?: boolean },
+  ) => {
+    const res = await _invoke<{
+      workbookName: string;
+      sheets: Array<{ name: string; rows: unknown[][] }>;
+      warnings: string[];
+      result_file_token?: string;
+      sheet_meta?: Array<{ name: string; rowCount: number }>;
+    }>('spreadsheet_parse', body as unknown as Record<string, unknown>);
+    if (!res.result_file_token) return res;
+    if (opts?.hydrate === false) {
+      return res;
+    }
+    const spilled = await _invoke<{
+      workbookName: string;
+      sheets: Array<{ name: string; rows: unknown[][] }>;
+      warnings: string[];
+    }>('file_token_read_json', { token: res.result_file_token });
+    return {
+      workbookName: spilled.workbookName || res.workbookName,
+      sheets: spilled.sheets || [],
+      warnings: [...(res.warnings || []), ...(spilled.warnings || [])],
+      result_file_token: res.result_file_token,
+      sheet_meta: res.sheet_meta,
+    };
+  },
+  spreadsheetGetRows: (body: {
+    result_file_token?: string;
+    cache_token?: string;
+    sheet?: string;
+    sheet_index?: number;
+    offset?: number;
+    limit?: number;
+  }) =>
+    _invoke<{
+      name: string;
+      rows: unknown[][];
+      offset: number;
+      limit: number;
+      total: number;
+      has_more: boolean;
+    }>('spreadsheet_get_rows', body as unknown as Record<string, unknown>),
+  /** Drop a spill/result file token early (Preview hydrate:false path). */
+  fileTokenCleanup: (token: string) =>
+    _invoke<{ cleaned: boolean }>('file_token_cleanup', { token }),
   spreadsheetExportVolantesTemplate: (body?: { output_path?: string }) =>
     _invoke<{ content_b64: string; filename: string; path?: string }>('spreadsheet_export_volantes_template', (body || {}) as unknown as Record<string, unknown>),
 

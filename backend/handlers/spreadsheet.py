@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import csv
 import io
+import json
 import os
 import zipfile
+from datetime import date, datetime, time
 from pathlib import Path
 from typing import Any
 
@@ -15,10 +18,100 @@ MAX_SPREADSHEET_BYTES = 100 * 1024 * 1024
 MAX_SHEETS = 50
 MAX_CELLS = 2_000_000
 MAX_ZIP_RATIO = 100
+# Keep small workbooks inline on IPC; larger grids spill to a temp JSON file.
+INLINE_RESULT_MAX_BYTES = 512 * 1024
+DEFAULT_GET_ROWS_LIMIT = 500
+MAX_GET_ROWS_LIMIT = 5_000
+_SUPPORTED_FORMATS = frozenset({"xlsx", "xls", "csv"})
+
+
+def _spill_dir() -> Path:
+    import tempfile
+
+    out = Path(tempfile.gettempdir()) / "antares-spreadsheet-results"
+    out.mkdir(parents=True, exist_ok=True)
+    return out
+
+
+def _write_sheet_cache(name: str, sheets: list[dict[str, Any]], warnings: list[str]) -> Path:
+    import uuid
+
+    payload = {"workbookName": name, "sheets": sheets, "warnings": warnings}
+    out_path = _spill_dir() / f"{uuid.uuid4().hex}.json"
+    out_path.write_text(json.dumps(payload, ensure_ascii=False, default=str), encoding="utf-8")
+    return out_path
+
+
+def _load_sheet_cache(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        msg = "cache de spreadsheet no encontrado"
+        raise FileNotFoundError(msg)
+    if path.is_symlink():
+        raise ValueError("symlink no permitido")
+    raw = path.read_text(encoding="utf-8")
+    if len(raw.encode("utf-8")) > MAX_SPREADSHEET_BYTES:
+        msg = "cache de spreadsheet demasiado grande"
+        raise ValueError(msg)
+    data = json.loads(raw)
+    if not isinstance(data, dict) or not isinstance(data.get("sheets"), list):
+        msg = "cache de spreadsheet corrupto"
+        raise ValueError(msg)
+    return data
+
+
+def _resolve_cache_path(params: dict[str, Any]) -> Path:
+    raw = (
+        params.get("_resolved_file_token_path")
+        or params.get("cache_token")
+        or params.get("result_path")
+        or params.get("path")
+    )
+    if not raw:
+        msg = "cache_token o result_path requerido"
+        raise ValueError(msg)
+    p = Path(str(raw)).expanduser()
+    # Only allow reads from our spill directory (or capability-resolved paths).
+    spill = _spill_dir().resolve()
+    try:
+        resolved = p.resolve()
+    except OSError as exc:
+        raise FileNotFoundError(str(exc)) from exc
+    if params.get("_resolved_file_token_path"):
+        return resolved
+    if spill not in resolved.parents and resolved.parent != spill:
+        msg = "ruta de cache fuera del directorio permitido"
+        raise ValueError(msg)
+    return resolved
+
+
+def _serialize_cell(value: Any) -> Any:
+    """Make cell values JSON-safe for IPC (openpyxl may return datetime/date)."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.time() == time(0, 0):
+            return value.date().isoformat()
+        return value.isoformat(sep=" ", timespec="seconds")
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, time):
+        return value.isoformat(timespec="seconds")
+    return value
+
+
+def _trim_row(values: list[Any]) -> list[Any] | None:
+    while values and values[-1] is None:
+        values.pop()
+    return values or None
 
 
 def _validate_zip_bomb(path: Path) -> None:
-    if path.suffix.lower() != ".xlsx":
+    try:
+        with path.open("rb") as fh:
+            header = fh.read(4)
+        if header != b"PK\x03\x04":
+            return
+    except OSError:
         return
     try:
         with zipfile.ZipFile(path) as zf:
@@ -50,51 +143,95 @@ def _resolve_input_path(params: dict[str, Any]) -> Path:
         raise ValueError(msg)
     p = Path(str(raw)).expanduser()
     if not p.exists():
-        msg = f"No se encontró el archivo: {p}"
+        raw_name = params.get("_resolved_file_token_name")
+        hint = f" ({raw_name})" if raw_name else ""
+        msg = f"No se encontró el archivo{hint}: {p}"
         raise FileNotFoundError(msg)
     if p.stat().st_size > MAX_SPREADSHEET_BYTES:
         msg = f"Archivo excede {MAX_SPREADSHEET_BYTES // (1024*1024)} MiB"
         raise ValueError(msg)
     if p.is_symlink():
         raise ValueError("symlink no permitido")
+    if p.stat().st_size == 0:
+        msg = "El archivo está vacío"
+        raise ValueError(msg)
     return p
+
+
+def _detect_format_from_content(path: Path) -> str | None:
+    try:
+        with path.open("rb") as f:
+            header = f.read(8)
+        if header[:4] == b"PK\x03\x04":
+            return "xlsx"
+        if header[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
+            return "xls"
+        header_text = header.decode("utf-8", errors="ignore").strip()
+        if "," in header_text or ";" in header_text:
+            return "csv"
+    except OSError:
+        return None
+    return None
+
+
+def _resolve_format(params: dict[str, Any], path: Path) -> tuple[str, str]:
+    """Return (fmt, token_name). Prefer format_hint, then original name, then sniff."""
+    hint = str(params.get("format_hint") or "").lower().lstrip(".")
+    token_name = str(params.get("_resolved_file_token_name") or "").strip()
+    token_ext = Path(token_name).suffix.lower().lstrip(".") if token_name else ""
+    path_ext = path.suffix.lower().lstrip(".")
+    # Ignore staging leftovers like ".tmp"
+    if path_ext == "tmp":
+        path_ext = ""
+
+    for candidate in (hint, token_ext, path_ext):
+        if candidate in _SUPPORTED_FORMATS:
+            return candidate, token_name
+
+    detected = _detect_format_from_content(path)
+    if detected:
+        return detected, token_name
+
+    shown = hint or token_ext or path.suffix or "desconocido"
+    msg = f"Formato no soportado: {shown}"
+    raise ValueError(msg)
 
 
 def _parse_xlsx(path: Path) -> tuple[str, list[dict[str, Any]], list[str]]:
     import openpyxl  # type: ignore
 
     _validate_zip_bomb(path)
-    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    # Always load via BytesIO so openpyxl never rejects a non-.xlsx staging suffix
+    # and we never risk reading a neighboring *.xlsx created by with_suffix().
+    wb = openpyxl.load_workbook(io.BytesIO(path.read_bytes()), read_only=True, data_only=True)
     warnings: list[str] = []
     sheets: list[dict[str, Any]] = []
     total_cells = 0
     sheet_count = 0
-    for ws in wb.worksheets:
-        sheet_count += 1
-        if sheet_count > MAX_SHEETS:
-            warnings.append(f"Se truncó a {MAX_SHEETS} hojas")
-            break
-        rows: list[list[Any]] = []
-        for row in ws.iter_rows(values_only=True):
-            if row is None:
-                continue
-            vals = [v if v is not None else None for v in row]
-            # Trim trailing None
-            while vals and vals[-1] is None:
-                vals.pop()
-            if not vals:
-                continue
-            total_cells += len(vals)
-            if total_cells > MAX_CELLS:
-                warnings.append("Se alcanzó el límite de celdas (2M)")
+    try:
+        for ws in wb.worksheets:
+            sheet_count += 1
+            if sheet_count > MAX_SHEETS:
+                warnings.append(f"Se truncó a {MAX_SHEETS} hojas")
                 break
-            rows.append(vals)
+            rows: list[list[Any]] = []
+            for row in ws.iter_rows(values_only=True):
+                if row is None:
+                    continue
+                vals = _trim_row([_serialize_cell(v) for v in row])
+                if vals is None:
+                    continue
+                total_cells += len(vals)
+                if total_cells > MAX_CELLS:
+                    warnings.append("Se alcanzó el límite de celdas (2M)")
+                    break
+                rows.append(vals)
+            sheets.append({"name": ws.title, "rows": rows})
             if total_cells > MAX_CELLS:
                 break
-        sheets.append({"name": ws.title, "rows": rows})
-        if total_cells > MAX_CELLS:
-            break
-    wb.close()
+    finally:
+        with contextlib.suppress(Exception):
+            wb.close()
     return (path.name, sheets, warnings)
 
 
@@ -111,10 +248,10 @@ def _parse_xls(path: Path) -> tuple[str, list[dict[str, Any]], list[str]]:
         sh = book.sheet_by_index(idx)
         rows: list[list[Any]] = []
         for r in range(sh.nrows):
-            vals = [sh.cell_value(r, c) if sh.cell_value(r, c) != "" else None for c in range(sh.ncols)]
-            while vals and vals[-1] is None:
-                vals.pop()
-            if not vals:
+            vals = _trim_row(
+                [_serialize_cell(sh.cell_value(r, c)) if sh.cell_value(r, c) != "" else None for c in range(sh.ncols)],
+            )
+            if vals is None:
                 continue
             total_cells += len(vals)
             if total_cells > MAX_CELLS:
@@ -134,16 +271,13 @@ def _parse_csv(path: Path) -> tuple[str, list[dict[str, Any]], list[str]]:
     with path.open("r", encoding="utf-8-sig", newline="") as f:
         reader = csv.reader(f)
         for row in reader:
-            vals: list[Any] = [v if v != "" else None for v in row]
-            while vals and vals[-1] is None:
-                vals.pop()
-            if not vals:
+            vals = _trim_row([v if v != "" else None for v in row])
+            if vals is None:
                 continue
             total_cells += len(vals)
             if total_cells > MAX_CELLS:
                 warnings.append("Se alcanzó el límite de celdas (2M)")
                 break
-            # Cap rows arbitrarily at 200k to avoid huge CSVs
             if len(rows) > 200_000:
                 warnings.append("CSV truncado a 200k filas")
                 break
@@ -153,28 +287,81 @@ def _parse_csv(path: Path) -> tuple[str, list[dict[str, Any]], list[str]]:
 
 @with_locale
 def spreadsheet_parse(params: dict[str, Any]) -> dict[str, Any]:
-    hint = str(params.get("format_hint") or "").lower()
     p = _resolve_input_path(params)
-    ext = p.suffix.lower()
-    fmt = hint or ext.lstrip(".")
-    if fmt in ("xlsx",):
+    fmt, token_name = _resolve_format(params, p)
+    if fmt == "xlsx":
         name, sheets, warnings = _parse_xlsx(p)
-    elif fmt in ("xls",):
+    elif fmt == "xls":
         name, sheets, warnings = _parse_xls(p)
-    elif fmt in ("csv",):
-        name, sheets, warnings = _parse_csv(p)
     else:
-        # Try by extension
-        if ext == ".xlsx":
-            name, sheets, warnings = _parse_xlsx(p)
-        elif ext == ".xls":
-            name, sheets, warnings = _parse_xls(p)
-        elif ext == ".csv":
-            name, sheets, warnings = _parse_csv(p)
-        else:
-            msg = f"Formato no soportado: {ext or fmt}"
-            raise ValueError(msg)
-    return {"workbookName": name, "sheets": sheets, "warnings": warnings}
+        name, sheets, warnings = _parse_csv(p)
+    if token_name:
+        name = token_name
+    payload: dict[str, Any] = {"workbookName": name, "sheets": sheets, "warnings": warnings}
+    encoded = json.dumps(payload, ensure_ascii=False, default=str)
+    if len(encoded.encode("utf-8")) <= INLINE_RESULT_MAX_BYTES:
+        return payload
+
+    out_path = _write_sheet_cache(name, sheets, warnings)
+    return {
+        "workbookName": name,
+        "sheets": [],
+        "warnings": warnings,
+        "result_path": str(out_path),
+        "sheet_meta": [{"name": s["name"], "rowCount": len(s["rows"])} for s in sheets],
+    }
+
+
+@with_locale
+def spreadsheet_get_rows(params: dict[str, Any]) -> dict[str, Any]:
+    """Return a page of rows from a spilled spreadsheet_parse cache."""
+    cache_path = _resolve_cache_path(params)
+    data = _load_sheet_cache(cache_path)
+    sheets: list[dict[str, Any]] = data["sheets"]
+    if not sheets:
+        return {"name": "", "rows": [], "offset": 0, "limit": 0, "total": 0, "has_more": False}
+
+    sheet_name = params.get("sheet") or params.get("sheet_name")
+    sheet_index = params.get("sheet_index")
+    chosen: dict[str, Any] | None = None
+    if isinstance(sheet_name, str) and sheet_name:
+        chosen = next((s for s in sheets if s.get("name") == sheet_name), None)
+    elif sheet_index is not None:
+        try:
+            idx = int(sheet_index)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("sheet_index inválido") from exc
+        if 0 <= idx < len(sheets):
+            chosen = sheets[idx]
+    else:
+        chosen = sheets[0]
+
+    if chosen is None:
+        msg = "hoja no encontrada en el cache"
+        raise ValueError(msg)
+
+    raw_rows = chosen.get("rows")
+    rows: list[Any] = raw_rows if isinstance(raw_rows, list) else []
+    try:
+        offset = max(0, int(params.get("offset") or 0))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("offset inválido") from exc
+    try:
+        limit = int(params.get("limit") or DEFAULT_GET_ROWS_LIMIT)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("limit inválido") from exc
+    limit = max(1, min(limit, MAX_GET_ROWS_LIMIT))
+
+    page = rows[offset : offset + limit]
+    total = len(rows)
+    return {
+        "name": str(chosen.get("name") or ""),
+        "rows": page,
+        "offset": offset,
+        "limit": limit,
+        "total": total,
+        "has_more": offset + len(page) < total,
+    }
 
 
 @with_locale
@@ -216,5 +403,6 @@ def spreadsheet_export_volantes_template(params: dict[str, Any]) -> dict[str, An
 
 HANDLERS = {
     "spreadsheet_parse": spreadsheet_parse,
+    "spreadsheet_get_rows": spreadsheet_get_rows,
     "spreadsheet_export_volantes_template": spreadsheet_export_volantes_template,
 }

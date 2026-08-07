@@ -30,13 +30,20 @@ assert(devWin.args[0].includes('main.py'), 'Dev mode should point to main.py');
 // Test 2: Dev mode prefers local venv on win32
 console.log('\nTest 2: Dev mode prefers local venv on win32');
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-backend-command-'));
-const fakeElectronDir = path.join(tmpRoot, 'electron');
-const fakeVenvPython = path.join(tmpRoot, 'venv312', 'Scripts', 'python.exe');
-fs.mkdirSync(fakeElectronDir, { recursive: true });
-fs.mkdirSync(path.dirname(fakeVenvPython), { recursive: true });
-fs.writeFileSync(fakeVenvPython, '');
-const devWinWithVenv = getBackendCommand(true, 'win32', fakeElectronDir);
-assert(devWinWithVenv.cmd === fakeVenvPython, 'Dev mode should prefer the local venv when it exists');
+try {
+  const fakeElectronDir = path.join(tmpRoot, 'electron');
+  const fakeVenvPython = path.join(tmpRoot, 'venv312', 'Scripts', 'python.exe');
+  fs.mkdirSync(fakeElectronDir, { recursive: true });
+  fs.mkdirSync(path.dirname(fakeVenvPython), { recursive: true });
+  fs.writeFileSync(fakeVenvPython, '');
+  const devWinWithVenv = getBackendCommand(true, 'win32', fakeElectronDir);
+  assert(devWinWithVenv.cmd === fakeVenvPython, 'Dev mode should prefer the local venv when it exists');
+} finally {
+  // Evita residuos de %TEMP%\antares-backend-command-* cuando el test falla o se interrumpe.
+  try {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  } catch { /* no enmascarar un error previo */ }
+}
 
 // Test 3: Dev mode on linux
 console.log('\nTest 3: Dev mode on linux');

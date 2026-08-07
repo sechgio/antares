@@ -1,6 +1,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const { pathToFileURL } = require('url');
 
 const { sanitizeHtmlForPdf } = require('../shared/html-sanitizer');
@@ -14,11 +15,15 @@ const {
 } = require('./path-allowlist');
 const {
   resolveCapability,
+  revokeCapability,
+  createFileCapability,
   createStagedSession,
   appendStagedChunk,
   completeStagedSession,
   abortStagedSession,
 } = require('./file-capabilities');
+const { putCanvasAsset, getCanvasAsset, parseAssetRef, gcOrphanCanvasAssets } = require('./canvas-assets');
+const { cleanupSpreadsheetSpillFile, sweepIpcTempDirs } = require('./ipc-temp-cleanup');
 
 const DIALOG_METHODS = new Set(['dialog_files', 'dialog_dest', 'dialog_save', 'dialog_folder']);
 const NATIVE_METHODS = new Set([
@@ -28,10 +33,15 @@ const NATIVE_METHODS = new Set([
   'local_image_data_url',
   'register_local_path',
   'file_token_resolve',
+  'file_token_read_json',
+  'file_token_cleanup',
   'file_staged_create',
   'file_staged_append',
   'file_staged_complete',
   'file_staged_abort',
+  'canvas_asset_put',
+  'canvas_asset_get',
+  'canvas_asset_gc',
 ]);
 
 const REGISTER_LOCAL_PATH_DEPRECATED_MSG = 'register_local_path is deprecated; use file tokens via dialog or staged upload';
@@ -132,11 +142,6 @@ function _sanitizePdfOutputPath(outputPath, fallbackFilename) {
 
 function _handleRegisterLocalPath() {
   throw new Error(REGISTER_LOCAL_PATH_DEPRECATED_MSG);
-}
-
-function _resolveTokenPath(token, webContentsId) {
-  const cap = resolveCapability(token, 'read', webContentsId ?? null);
-  return cap.path;
 }
 
 function _resolveTokenPath(token, webContentsId) {
@@ -284,10 +289,9 @@ async function renderHtmlToPdf(params = {}, electronModules = {}) {
     pdfWindow.webContents.session.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, filter);
   }
 
-  // Hard timeout: printToPDF can hang indefinitely on a malformed HTML or
-  // a script that never settles. html_to_pdf is in LONG_RUNNING_METHODS but
-  // the renderer still needs a bounded wait so the IPC doesn't sit forever.
-  const PDF_TIMEOUT_MS = 60_000;
+  // Align with LONG_REQUEST_TIMEOUT_MS (15 min). A 60s hard cut aborted large
+  // consolidations while the FE/IPC budget still had minutes left.
+  const PDF_TIMEOUT_MS = 900_000;
   let timeoutHandle = null;
   const timeoutPromise = new Promise((_resolve, reject) => {
     timeoutHandle = setTimeout(() => {
@@ -335,26 +339,37 @@ async function renderHtmlToPdf(params = {}, electronModules = {}) {
       timeoutPromise,
     ]);
     const filename = _sanitizeFilename(params.filename) || 'reporte.pdf';
-    const outputPath = _sanitizePdfOutputPath(params.outputPath, filename);
+    let outputPath = _sanitizePdfOutputPath(params.outputPath, filename);
 
-    if (outputPath) {
-      await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
-      await fs.promises.writeFile(outputPath, pdfBuffer);
-      return {
-        saved_path: outputPath,
-        filename: path.basename(outputPath),
-      };
+    if (!outputPath) {
+      const autoDir = path.join(os.tmpdir(), 'antares-pdf-out');
+      await fs.promises.mkdir(autoDir, { recursive: true });
+      outputPath = path.join(autoDir, `${crypto.randomUUID()}_${filename}`);
     }
 
-    const MAX_IPC_PDF_BYTES = 256 * 1024 * 1024;
-    if (Buffer.byteLength(pdfBuffer) > MAX_IPC_PDF_BYTES) {
-      throw new Error('El PDF generado es demasiado grande para devolverlo por IPC. Guarda el PDF directamente en disco.');
-    }
+    await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
+    await fs.promises.writeFile(outputPath, pdfBuffer);
 
-    return {
-      pdf_base64: Buffer.from(pdfBuffer).toString('base64'),
+    const cap = createFileCapability({
+      filePath: outputPath,
+      mode: 'read',
+      webContentsId: null,
+      name: path.basename(outputPath),
+      size: pdfBuffer.length,
+    });
+
+    const result = {
+      saved_path: outputPath,
       filename,
+      file_token: cap.token,
     };
+
+    const wantBase64 = params.return_base64 === true;
+    if (wantBase64) {
+      result.pdf_base64 = Buffer.from(pdfBuffer).toString('base64');
+    }
+
+    return result;
   } finally {
     if (timeoutHandle) clearTimeout(timeoutHandle);
     clearInterceptors();
@@ -404,6 +419,43 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
     return { handled: true, result: { path: filePath } };
   }
 
+  if (method === 'file_token_read_json') {
+    const token = params && params.token;
+    const filePath = _resolveTokenPath(token, _webContentsIdFromWindow(window));
+    const raw = await fs.promises.readFile(filePath, 'utf8');
+    const MAX_JSON_READ = 64 * 1024 * 1024;
+    if (Buffer.byteLength(raw, 'utf8') > MAX_JSON_READ) {
+      throw new Error('El resultado JSON es demasiado grande para cargarlo en memoria');
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } finally {
+      // Spill files are one-shot; delete after read so %TEMP% does not grow unbounded.
+      await cleanupSpreadsheetSpillFile(filePath);
+      revokeCapability(token);
+    }
+    // Opportunistic sweep of stale PDF/spill temps (best-effort).
+    void sweepIpcTempDirs();
+    return { handled: true, result: parsed };
+  }
+
+  if (method === 'file_token_cleanup') {
+    const token = params && params.token;
+    if (!token || typeof token !== 'string') {
+      return { handled: true, result: { cleaned: false } };
+    }
+    let filePath;
+    try {
+      filePath = _resolveTokenPath(token, _webContentsIdFromWindow(window));
+    } catch {
+      return { handled: true, result: { cleaned: false } };
+    }
+    await cleanupSpreadsheetSpillFile(filePath);
+    revokeCapability(token);
+    return { handled: true, result: { cleaned: true } };
+  }
+
   if (method === 'file_staged_create') {
     const session = createStagedSession({ name: params.name, size: params.size, webContentsId: _webContentsIdFromWindow(window) });
     // Do not return tmpPath to the renderer — capability token is sufficient.
@@ -411,7 +463,9 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
   }
 
   if (method === 'file_staged_append') {
-    const res = await appendStagedChunk(params.token, params.chunk_b64, _webContentsIdFromWindow(window));
+    // Prefer binary `chunk` (ArrayBuffer/Uint8Array); keep `chunk_b64` for older callers.
+    const chunk = params.chunk !== undefined ? params.chunk : params.chunk_b64;
+    const res = await appendStagedChunk(params.token, chunk, _webContentsIdFromWindow(window));
     return { handled: true, result: res };
   }
 
@@ -423,6 +477,37 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
   if (method === 'file_staged_abort') {
     await abortStagedSession(params.token);
     return { handled: true, result: { aborted: true } };
+  }
+
+  if (method === 'canvas_asset_put') {
+    const chunk = params.chunk !== undefined ? params.chunk : params.chunk_b64;
+    const buf = typeof chunk === 'string'
+      ? Buffer.from(chunk, 'base64')
+      : chunk;
+    const res = await putCanvasAsset(buf);
+    return { handled: true, result: res };
+  }
+
+  if (method === 'canvas_asset_get') {
+    const ref = params.ref || params.asset_id;
+    if (!ref || (!parseAssetRef(ref) && typeof ref !== 'string')) {
+      throw new Error('canvas asset ref required');
+    }
+    const buf = await getCanvasAsset(ref);
+    // Return binary to renderer (structured clone) — no base64.
+    return {
+      handled: true,
+      result: {
+        ref: typeof ref === 'string' && ref.startsWith('canvas-asset:') ? ref : `canvas-asset:${ref}`,
+        chunk: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength),
+        bytes: buf.length,
+      },
+    };
+  }
+
+  if (method === 'canvas_asset_gc') {
+    const res = await gcOrphanCanvasAssets();
+    return { handled: true, result: res };
   }
 
   if (method === 'local_thumbnail') {

@@ -1,0 +1,112 @@
+// stdout NDJSON framing must use Buffer (not string concat) to avoid UTF-16
+// doubling and GC pressure on large IPC responses.
+const assert = require('assert');
+const path = require('path');
+
+function loadRouter() {
+  const electronPath = require.resolve('electron');
+  require.cache[electronPath] = {
+    id: electronPath,
+    filename: electronPath,
+    loaded: true,
+    exports: {
+      ipcMain: { handle: () => {}, removeHandler: () => {} },
+      dialog: {},
+      app: { isPackaged: true },
+    },
+  };
+
+  const spawnerPath = require.resolve('../electron/backend-spawner');
+  require.cache[spawnerPath] = {
+    id: spawnerPath,
+    filename: spawnerPath,
+    loaded: true,
+    exports: {
+      getProcess: () => null,
+      isReady: () => false,
+      waitForReady: async () => false,
+      getState: () => 'starting',
+      getLastError: () => null,
+      getStderrTail: () => '',
+      manualRestart: async () => false,
+      incrementPendingRequests: () => {},
+      decrementPendingRequests: () => {},
+      noteJobActivity: () => {},
+      clearJobActivity: () => {},
+      STATE: { READY: 'ready', FATAL: 'fatal', STARTING: 'starting', EXITED: 'exited' },
+    },
+  };
+
+  const wmPath = require.resolve('../electron/window-manager');
+  require.cache[wmPath] = {
+    id: wmPath,
+    filename: wmPath,
+    loaded: true,
+    exports: {
+      getMainWindow: () => null,
+      buildAppMenu: () => ({ popup: () => {} }),
+      getIsDev: () => true,
+    },
+  };
+
+  const routerPath = require.resolve('../electron/ipc-router');
+  delete require.cache[routerPath];
+  return require(routerPath);
+}
+
+function run() {
+  console.log('Testing ipc-router stdout Buffer framing...\n');
+
+  const { _consumeStdoutLines } = loadRouter();
+  assert.strictEqual(typeof _consumeStdoutLines, 'function', '_consumeStdoutLines exported');
+
+  // Empty pending + partial chunk → no lines, pending is Buffer
+  {
+    const r = _consumeStdoutLines(Buffer.alloc(0), Buffer.from('{"a":1'));
+    assert.ok(Buffer.isBuffer(r.pending), 'pending remains Buffer');
+    assert.strictEqual(r.lines.length, 0, 'no complete line yet');
+    assert.strictEqual(r.pending.toString('utf8'), '{"a":1');
+  }
+
+  // Split across two chunks
+  {
+    let state = Buffer.alloc(0);
+    let r = _consumeStdoutLines(state, Buffer.from('{"id":1,"result":{"ok":tru'));
+    state = r.pending;
+    r = _consumeStdoutLines(state, Buffer.from('e}}\n{"id":2,"result":2}\n'));
+    assert.strictEqual(r.lines.length, 2, 'two complete lines after second chunk');
+    assert.strictEqual(r.lines[0].toString('utf8'), '{"id":1,"result":{"ok":true}}');
+    assert.strictEqual(r.lines[1].toString('utf8'), '{"id":2,"result":2}');
+    assert.strictEqual(r.pending.length, 0, 'no leftover');
+  }
+
+  // Accept string chunk (legacy EventEmitter string mode) without string-concat pending
+  {
+    const r = _consumeStdoutLines(Buffer.alloc(0), 'hello\n');
+    assert.ok(Buffer.isBuffer(r.pending), 'pending is Buffer even for string chunk');
+    assert.strictEqual(r.lines.length, 1);
+    assert.strictEqual(r.lines[0].toString('utf8'), 'hello');
+  }
+
+  // Large-ish line: line buffer byteLength equals UTF-8 size (telemetry-friendly)
+  {
+    const payload = JSON.stringify({ jsonrpc: '2.0', id: 'x', result: { data: 'á'.repeat(1000) } });
+    const chunk = Buffer.from(`${payload}\n`, 'utf8');
+    const r = _consumeStdoutLines(Buffer.alloc(0), chunk);
+    assert.strictEqual(r.lines.length, 1);
+    assert.strictEqual(r.lines[0].byteLength, Buffer.byteLength(payload, 'utf8'));
+  }
+
+  // Skip empty lines (double newline)
+  {
+    const r = _consumeStdoutLines(Buffer.alloc(0), Buffer.from('a\n\nb\n'));
+    assert.strictEqual(r.lines.length, 2);
+    assert.strictEqual(r.lines[0].toString('utf8'), 'a');
+    assert.strictEqual(r.lines[1].toString('utf8'), 'b');
+  }
+
+  console.log('  ✓ Buffer framing + split lines + byteLength');
+  console.log('\nAll ipc-router stdout buffer tests passed.');
+}
+
+run();

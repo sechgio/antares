@@ -207,7 +207,11 @@ export default function TechnicalReportsApp() {
         logo_left: logoLeft,
         logo_right: logoRight,
       });
-      const pdf = await technicalReportsApi.htmlToPdf({ html: rendered.html, filename: rendered.filename });
+      const pdf = await technicalReportsApi.htmlToPdf({
+        html: rendered.html,
+        filename: rendered.filename,
+        return_base64: true,
+      });
       if (!pdf.pdf_base64) throw new Error('No se recibio el contenido del PDF generado.');
       downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
       await saveFeatureHistory('informe_tecnico', pdf.filename, { type: 'individual', reportId: reportForRender.id });
@@ -224,7 +228,11 @@ export default function TechnicalReportsApp() {
     setBusy(true);
     try {
       const rendered = await technicalReportsApi.renderConsolidatedHtml({ logo_left: logoLeft, logo_right: logoRight });
-      const pdf = await technicalReportsApi.htmlToPdf({ html: rendered.html, filename: rendered.filename });
+      const pdf = await technicalReportsApi.htmlToPdf({
+        html: rendered.html,
+        filename: rendered.filename,
+        return_base64: true,
+      });
       if (!pdf.pdf_base64) throw new Error('No se recibio el contenido del PDF generado.');
       downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
       await saveFeatureHistory('informe_tecnico', pdf.filename, { type: 'consolidado', count: rendered.count }, rendered.count);

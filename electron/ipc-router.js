@@ -14,8 +14,6 @@
 const { ipcMain, dialog } = require('electron');
 const crypto = require('crypto');
 const { handleDialogCall } = require('./dialog-handlers');
-const { handleAutoimgCall } = require('./autoimg-handlers');
-const { handleUbicacionesCall } = require('./ubicaciones-handlers');
 const {
   getProcess,
   isReady,
@@ -75,7 +73,7 @@ function _getLongRunningMethods() {
 // Budgets
 const REQUEST_TIMEOUT_MS = 30_000;         // per-request response timeout — most ops finish in <5s
 const LONG_REQUEST_TIMEOUT_MS = 900_000;   // 15 min for heavy operations (large PDF/ZIP batches)
-const STARTUP_WAIT_MS = 60_000;            // align with backend-spawner handshake (onefile + AV)
+const STARTUP_WAIT_MS = 60_000;            // align with backend-spawner handshake (onedir + AV)
 const MID_FLIGHT_RETRIES = 2;              // retries for transient mid-flight errors (idempotent only)
 const BACKEND_RESTART_MIN_INTERVAL_MS = 5_000;
 // Cheap IPC telemetry: always warn on slow/large calls; full log when ANTARES_IPC_TELEMETRY=1.
@@ -151,6 +149,38 @@ function _isAllowedIpcSender(event) {
 }
 
 /**
+ * Frame NDJSON lines from stdout without string-concat buffering.
+ * Keeps pending bytes as Buffer (UTF-8) so large responses do not inflate to
+ * UTF-16 JS strings until each complete line is parsed.
+ *
+ * @param {Buffer} pending
+ * @param {Buffer|string|Uint8Array} chunk
+ * @returns {{ pending: Buffer, lines: Buffer[] }}
+ */
+function _consumeStdoutLines(pending, chunk) {
+  const piece = Buffer.isBuffer(chunk)
+    ? chunk
+    : Buffer.from(chunk);
+  const buf = !pending || pending.length === 0
+    ? piece
+    : Buffer.concat([pending, piece]);
+  const lines = [];
+  let start = 0;
+  for (;;) {
+    const idx = buf.indexOf(0x0a, start);
+    if (idx === -1) break;
+    if (idx > start) {
+      lines.push(buf.subarray(start, idx));
+    }
+    start = idx + 1;
+  }
+  return {
+    pending: start === 0 ? buf : buf.subarray(start),
+    lines,
+  };
+}
+
+/**
  * Attach stdout/close listeners to the current backend process if we haven't
  * already. Re-runs whenever the backend is restarted.
  */
@@ -160,13 +190,13 @@ function _ensureListeners() {
   if (_attachedProcess === proc) return true;
 
   _attachedProcess = proc;
-  let buffer = '';
+  let pending = Buffer.alloc(0);
 
   proc.stdout.on('data', (data) => {
-    buffer += data.toString();
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-    for (const line of lines) {
+    const framed = _consumeStdoutLines(pending, data);
+    pending = framed.pending;
+    for (const lineBuf of framed.lines) {
+      const line = lineBuf.toString('utf8');
       if (!line.trim()) continue;
       try {
         const msg = JSON.parse(line);
@@ -198,7 +228,8 @@ function _ensureListeners() {
           _pendingRequests.delete(String(msg.id));
           entry.releasePending();
           if (typeof entry.responseBytes !== 'number' || entry.responseBytes === 0) {
-            entry.responseBytes = _estimateJsonBytes(msg);
+            // Prefer framed UTF-8 byte length over re-JSON.stringify(msg).
+            entry.responseBytes = lineBuf.byteLength;
           }
           if (msg.error) {
             const errMsg = typeof msg.error === 'object' ? (msg.error.message || JSON.stringify(msg.error)) : String(msg.error);
@@ -500,6 +531,22 @@ async function _callBackend(method, params) {
   throw lastErr || _buildUnavailableError();
 }
 
+function _maybeTokenizeResultPaths(method, result, win) {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return result;
+  if (method !== 'spreadsheet_parse' || typeof result.result_path !== 'string') return result;
+  const { createFileCapability } = require('./file-capabilities');
+  const webContentsId = win && win.webContents ? win.webContents.id : null;
+  const cap = createFileCapability({
+    filePath: result.result_path,
+    mode: 'read',
+    webContentsId,
+    name: 'spreadsheet-result.json',
+  });
+  const next = { ...result, result_file_token: cap.token };
+  delete next.result_path;
+  return next;
+}
+
 /**
  * Prefix-based dispatch for native (non-backend) IPC handlers.
  * Returns 'dialog' | 'autoimg' | 'ubicaciones' | null so the router only
@@ -516,6 +563,11 @@ const _DIALOG_NATIVE_METHODS = new Set([
   'file_staged_append',
   'file_staged_complete',
   'file_staged_abort',
+  'file_token_read_json',
+  'file_token_cleanup',
+  'canvas_asset_put',
+  'canvas_asset_get',
+  'canvas_asset_gc',
 ]);
 function _dispatchNative(method) {
   if (method.startsWith('dialog_') || _DIALOG_NATIVE_METHODS.has(method)) return 'dialog';
@@ -529,7 +581,7 @@ function _maybeResolveFileTokens(params, win) {
   const { resolveCapability, _assertNoRawAbsolutePaths } = require('./file-capabilities');
   _assertNoRawAbsolutePaths(params);
   const webContentsId = win && win.webContents ? win.webContents.id : null;
-  const tokenKeys = ['file_token', 'fileToken', 'excel_file_token', 'spreadsheet_token'];
+  const tokenKeys = ['file_token', 'fileToken', 'excel_file_token', 'spreadsheet_token', 'result_file_token', 'cache_token'];
   let next = params;
   let mutated = false;
   for (const k of tokenKeys) {
@@ -538,7 +590,10 @@ function _maybeResolveFileTokens(params, win) {
         const cap = resolveCapability(params[k], 'read', webContentsId);
         if (!mutated) { next = { ...params }; mutated = true; }
         next[k] = cap.path;
-        if (k === 'file_token') next._resolved_file_token_path = cap.path;
+        if (k === 'file_token' || k === 'result_file_token' || k === 'cache_token') {
+          next._resolved_file_token_path = cap.path;
+          if (cap.name) next._resolved_file_token_name = cap.name;
+        }
       } catch (e) {
         throw new Error(`invalid file token for ${k}: ${e.message}`);
       }
@@ -645,8 +700,15 @@ function registerIpcHandlers() {
       const result = nativeHandler === 'dialog'
         ? await handleDialogCall(method, params, dialog, win, { BrowserWindow, session, nativeImage })
         : nativeHandler === 'autoimg'
-          ? await handleAutoimgCall(method, params)
-          : await handleUbicacionesCall(method, params);
+          ? await (async () => {
+            // Lazy: autoimg sync-engine + Google clients are heavy; only load on first use.
+            const { handleAutoimgCall } = require('./autoimg-handlers');
+            return handleAutoimgCall(method, params);
+          })()
+          : await (async () => {
+            const { handleUbicacionesCall } = require('./ubicaciones-handlers');
+            return handleUbicacionesCall(method, params);
+          })();
       if (result.handled) return result.result;
     }
 
@@ -662,7 +724,8 @@ function registerIpcHandlers() {
     }
 
     try {
-      return await _callBackend(method, backendParams);
+      const result = await _callBackend(method, backendParams);
+      return _maybeTokenizeResultPaths(method, result, win);
     } catch (err) {
       // Electron ipcMain.handle only clones Error.message to the renderer.
       // Throwing a plain object becomes "Error invoking remote method …: [object Object]"
@@ -757,6 +820,7 @@ function registerIpcHandlers() {
 module.exports = {
   registerIpcHandlers,
   _ensureListeners,
+  _consumeStdoutLines,
   _isAllowedIpcSender,
   _sendRequest,
   _callBackend,
@@ -765,6 +829,7 @@ module.exports = {
   _writeStdinWithBackpressure,
   _logIpcTelemetry,
   _estimateJsonBytes,
+  _maybeTokenizeResultPaths,
   getIpcBackpressureWaits,
   resetIpcBackpressureWaits,
   ANTARES_IPC_ERROR_PREFIX,

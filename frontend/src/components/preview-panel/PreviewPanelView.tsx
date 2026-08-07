@@ -200,6 +200,27 @@ export default function PreviewPanelView() {
   const [data, setData] = useState<Record<string, unknown>[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [images, setImages] = useState<File[]>([]);
+  const [sheets, setSheets] = useState<Array<{ name: string; rows: unknown[][]; rowCount?: number }>>([]);
+  const [selectedSheetName, setSelectedSheetName] = useState('');
+  /** Spill cache token from spreadsheet_parse — rows loaded per sheet on demand. */
+  const [spillToken, setSpillToken] = useState<string | null>(null);
+  const spillTokenRef = useRef<string | null>(null);
+  spillTokenRef.current = spillToken;
+  const sheetLoadGenRef = useRef(0);
+
+  const releaseSpillToken = useCallback(async (token: string | null) => {
+    if (!token) return;
+    try {
+      await api.fileTokenCleanup(token);
+    } catch (err) {
+      // Best-effort: 24h sweep still covers leftovers.
+      console.warn('[preview] spill cleanup failed:', err instanceof Error ? err.message : err);
+    }
+  }, []);
+
+  useEffect(() => () => {
+    void releaseSpillToken(spillTokenRef.current);
+  }, [releaseSpillToken]);
 
   // ─── Config State ───
   const [mappings, setMappings] = useState<Record<string, string>>({});
@@ -381,36 +402,7 @@ export default function PreviewPanelView() {
     await parseFile(file);
   };
 
-  const parseFile = async (file: File) => {
-    try {
-      const win = window as unknown as { electronAPI?: { fileStagedCreate:(n:string,s:number)=>Promise<{token:string}>, fileStagedAppend:(t:string,c:string)=>Promise<unknown>, fileStagedComplete:(t:string)=>Promise<{file_token:string}> } };
-      let fileToken: string|null = null;
-      if (win.electronAPI?.fileStagedCreate) {
-        const staged = await win.electronAPI.fileStagedCreate(file.name, file.size);
-        const CHUNK = 6*1024*1024; const buf = await file.arrayBuffer(); const bytes=new Uint8Array(buf);
-        for(let off=0; off<bytes.length; off+=CHUNK){ const chunk=bytes.slice(off, off+CHUNK); let binary=""; for(let i=0;i<chunk.length;i++) binary+=String.fromCharCode(chunk[i]); const b64=btoa(binary); await win.electronAPI.fileStagedAppend(staged.token,b64); }
-        const done = await win.electronAPI.fileStagedComplete(staged.token); fileToken=done.file_token;
-      }
-      const res = await (api as unknown as { spreadsheetParse:(p:unknown)=>Promise<{sheets:{name:string,rows:unknown[][]}[]}> }).spreadsheetParse({ file_token: fileToken } as unknown as Record<string,unknown>);
-      const sh = res.sheets[0]; if (!sh || !sh.rows.length) { addToast({ message: 'El archivo está vacío', type: 'error' }); return; }
-      const jsonData = sh.rows as unknown[][];
-      if (jsonData.length > 0) {
-        const _headers = jsonData[0] as string[];
-        const _data = jsonData.slice(1).map(row => {
-          const obj: Record<string, unknown> = {};
-          _headers.forEach((h, i) => {
-            let cellValue = (row as unknown[])[i];
-            if (isDateColumn(h) && typeof cellValue === 'number' && cellValue > 1000 && cellValue < 100000) cellValue = excelSerialToDate(cellValue as number);
-            obj[h] = cellValue;
-          });
-          return obj;
-        });
-        setHeaders(_headers); setData(_data); autoMapFields(_headers); setShowDataPreview(true);
-      }
-    } catch { addToast({ message: 'No se pudo leer el archivo Excel/CSV', type: 'error' }); }
-  };
-
-  const autoMapFields = (_headers: string[]) => {
+  const autoMapFields = useCallback((_headers: string[]) => {
     const newMap: Record<string, string> = {};
     REPORT_FIELDS.forEach(field => {
       const match = _headers.find(h =>
@@ -420,6 +412,166 @@ export default function PreviewPanelView() {
       if (match) newMap[field.id] = match;
     });
     setMappings(newMap);
+    setIdColumn(prev => {
+      if (prev && _headers.includes(prev)) return prev;
+      return _headers[0] || '';
+    });
+  }, []);
+
+  const loadSheetData = useCallback((sheet: { name: string; rows: unknown[][] }) => {
+    const jsonData = sheet.rows;
+    if (!jsonData.length) {
+      addToast({ message: 'El archivo está vacío o no tiene filas con datos', type: 'error' });
+      return false;
+    }
+    const _headers = (jsonData[0] ?? []).map(v => String(v ?? '').trim());
+    if (_headers.every(h => !h)) {
+      addToast({ message: 'El archivo no tiene cabeceras válidas', type: 'error' });
+      return false;
+    }
+    const _data = jsonData.slice(1).map(row => {
+      const obj: Record<string, unknown> = {};
+      _headers.forEach((h, i) => {
+        if (!h) return;
+        let cellValue = row[i];
+        if (isDateColumn(h) && typeof cellValue === 'number' && cellValue > 1000 && cellValue < 100000) {
+          cellValue = excelSerialToDate(cellValue);
+        }
+        obj[h] = cellValue;
+      });
+      return obj;
+    });
+    if (_data.length === 0) { addToast({ message: 'El archivo no contiene filas de datos', type: 'error' }); return false; }
+    setHeaders(_headers);
+    setData(_data);
+    autoMapFields(_headers);
+    setSelectedIndex('');
+    setShowDataPreview(true);
+    return true;
+  }, [addToast, autoMapFields]);
+
+  const fetchSheetRows = useCallback(async (token: string, sheetName: string): Promise<unknown[][]> => {
+    const rows: unknown[][] = [];
+    let offset = 0;
+    for (;;) {
+      const page = await api.spreadsheetGetRows({
+        result_file_token: token,
+        sheet: sheetName,
+        offset,
+        limit: 2000,
+      });
+      rows.push(...page.rows);
+      if (!page.has_more) break;
+      offset += page.rows.length;
+      await new Promise<void>((r) => setTimeout(r, 0));
+    }
+    return rows;
+  }, []);
+
+  const handleSheetChange = useCallback(async (nextName: string) => {
+    setSelectedSheetName(nextName);
+    const gen = ++sheetLoadGenRef.current;
+    let sh = sheets.find(s => s.name === nextName);
+    if (sh && sh.rows.length === 0 && spillToken) {
+      try {
+        const rows = await fetchSheetRows(spillToken, nextName);
+        if (gen !== sheetLoadGenRef.current) return;
+        sh = { ...sh, rows, rowCount: rows.length };
+        setSheets(prev => prev.map(s => (s.name === nextName ? sh! : s)));
+      } catch (err: unknown) {
+        if (gen !== sheetLoadGenRef.current) return;
+        const msg = err instanceof Error ? err.message : String(err);
+        addToast({ message: msg || 'No se pudo cargar la hoja', type: 'error' });
+        return;
+      }
+    }
+    if (sh) loadSheetData(sh);
+  }, [sheets, spillToken, fetchSheetRows, loadSheetData, addToast]);
+
+  const applyParsedSheets = useCallback((allSheets: { name: string; rows: unknown[][]; rowCount?: number }[], warnings?: string[]) => {
+    if (!allSheets.length) {
+      addToast({ message: 'El archivo está vacío o no tiene hojas', type: 'error' });
+      return;
+    }
+    warnings?.forEach(w => addToast({ message: w, type: 'warning' }));
+    // Prefer a sheet with header + at least one data row (skip cover sheets with only a title)
+    const rowLen = (s: { rows: unknown[][]; rowCount?: number }) =>
+      s.rows.length > 0 ? s.rows.length : (s.rowCount ?? 0);
+    const withData = allSheets.filter(s => rowLen(s) > 1);
+    const fallback = allSheets.filter(s => rowLen(s) > 0);
+    const pick = withData[0] ?? fallback[0];
+    if (!pick) {
+      addToast({ message: 'El archivo está vacío o no tiene filas con datos', type: 'error' });
+      setSheets(allSheets);
+      return;
+    }
+    setSheets(allSheets);
+    setSelectedSheetName(pick.name);
+    if (pick.rows.length > 0) {
+      loadSheetData(pick);
+    }
+  }, [addToast, loadSheetData]);
+
+  /** Parse Excel/CSV via backend staging only (no SheetJS on the renderer). */
+  const parseFile = async (file: File) => {
+    const win = window as unknown as {
+      electronAPI?: {
+        fileStagedCreate: (n: string, s: number) => Promise<{ token: string }>;
+        fileStagedAppend: (t: string, c: ArrayBuffer | Uint8Array | string) => Promise<unknown>;
+        fileStagedComplete: (t: string) => Promise<{ file_token: string }>;
+      };
+    };
+
+    if (!win.electronAPI?.fileStagedCreate) {
+      addToast({ message: 'Importar Excel requiere la app de escritorio Antares', type: 'error' });
+      return;
+    }
+
+    try {
+      const { stageFileForIpc } = await import('../../utils/stageFile');
+      const fileToken = await stageFileForIpc(file);
+      if (!fileToken) throw new Error('No se pudo preparar el archivo para lectura');
+      const ext = file.name.toLowerCase().split('.').pop() || '';
+      const formatHint = ['xlsx', 'xls', 'csv'].includes(ext) ? ext : undefined;
+      // Avoid hydrating multi-MB spill JSON in one shot — page via get_rows.
+      const prevSpill = spillTokenRef.current;
+      const res = await api.spreadsheetParse(
+        { file_token: fileToken, format_hint: formatHint },
+        { hydrate: false },
+      );
+      if (prevSpill && prevSpill !== res.result_file_token) {
+        void releaseSpillToken(prevSpill);
+      }
+
+      if (res.result_file_token && res.sheet_meta?.length) {
+        const token = res.result_file_token;
+        setSpillToken(token);
+        const stubs = res.sheet_meta.map((m) => ({
+          name: m.name,
+          rows: [] as unknown[][],
+          rowCount: m.rowCount,
+        }));
+        const withData = stubs.filter((s) => (s.rowCount ?? 0) > 1);
+        const fallback = stubs.filter((s) => (s.rowCount ?? 0) > 0);
+        const pick = withData[0] ?? fallback[0];
+        if (!pick) {
+          applyParsedSheets(stubs, res.warnings);
+          return;
+        }
+        const rows = await fetchSheetRows(token, pick.name);
+        const loaded = stubs.map((s) =>
+          s.name === pick.name ? { ...s, rows, rowCount: rows.length } : s,
+        );
+        applyParsedSheets(loaded, res.warnings);
+        return;
+      }
+
+      setSpillToken(null);
+      applyParsedSheets(res.sheets, res.warnings);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      addToast({ message: msg || 'No se pudo leer el archivo Excel/CSV', type: 'error' });
+    }
   };
 
   // ─── Image upload ───
@@ -748,6 +900,21 @@ export default function PreviewPanelView() {
                 </div>
                 <input type="file" hidden accept=".csv,.xlsx,.xls" onChange={handleFileUpload} />
               </label>
+              {sheets.length > 1 && (
+                <div>
+                  <label className="block text-[var(--text-muted)] text-[9px] mb-0.5 font-semibold uppercase">Hoja</label>
+                  <TemplatePicker
+                    aria-label="Hoja"
+                    placeholder="-- Seleccionar Hoja --"
+                    value={selectedSheetName}
+                    options={sheets.map(s => {
+                      const n = s.rows.length > 0 ? s.rows.length : (s.rowCount ?? 0);
+                      return { value: s.name, label: `${s.name} (${Math.max(0, n - 1)} filas)` };
+                    })}
+                    onChange={(v) => { void handleSheetChange(v); }}
+                  />
+                </div>
+              )}
               {data.length > 0 && (
                 <button onClick={() => setShowDataPreview(true)} className="w-full flex items-center justify-center gap-1.5 border border-[var(--border-medium)] hover:border-[var(--text-secondary)] rounded-md py-1 text-center hover:bg-[var(--bg-elevated)] transition-all text-[10px] text-[var(--text-secondary)]">
                   <Table2 size={12} /> Ver Datos

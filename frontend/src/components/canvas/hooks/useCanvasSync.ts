@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../../api';
-import type { SyncConflict, SyncResult } from '../sync/canvasCloudSync';
+import type { SyncConflict, SyncResult } from '../sync/syncCompare';
 import { normalizeDocument, type CanvasDocument } from '../types';
 import { hydrateDocumentImages } from '../utils/imageBlobStore';
 import type { useCanvasHistory } from './useCanvasHistory';

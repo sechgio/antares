@@ -10,10 +10,11 @@ import CommandPalette from './components/ui/CommandPalette';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import { DEFAULT_TAB, FULL_BLEED_TABS, TAB_DEFINITIONS, CONFIG_SECTION_DEFINITIONS, type TabId, type ConfigSectionId } from './navigation';
 import { AuthProvider, useAuth } from './auth/AuthContext';
-import LoginScreen from './auth/LoginScreen';
 import EspaciosAuthSkeleton from './components/espacios/components/EspaciosAuthSkeleton';
 import { subscribeHistoryReexecute } from './components/history/historyEvents';
 
+// Lazy: LoginScreen pulls framer-motion (~100KB+ gzip). Only needed for Espacios auth.
+const LoginScreen = React.lazy(() => import('./auth/LoginScreen'));
 const SettingsModal = React.lazy(() => import('./components/settings/SettingsModal'));
 const PetMascot = React.lazy(() => import('./components/layout/PetMascot'));
 
@@ -34,6 +35,9 @@ const AutoIMGView = React.lazy(() => import('./components/autoimg'));
 const FichasTecnicasView = React.lazy(() => import('./components/fichas-tecnicas'));
 const EspaciosView = React.lazy(() => import('./components/espacios'));
 const CanvasView = React.lazy(() => import('./components/canvas'));
+
+/** Keep Canvas mounted briefly after leaving the tab; then unmount to free blob/history RAM. */
+const CANVAS_KEEPALIVE_MS = 5 * 60 * 1000;
 
 function prefetchSettingsModal() {
   void import('./components/settings/SettingsModal');
@@ -132,7 +136,7 @@ function DisabledUserNotice({ onSignOut }: { onSignOut: () => Promise<void> }) {
 function AppContent() {
   const { user, loading: authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<TabId>(DEFAULT_TAB);
-  /** Once visited, Canvas stays mounted (hidden) so docs/picker/history survive tab switches. */
+  /** Once visited, Canvas stays mounted (hidden) briefly so docs/picker/history survive tab switches. */
   const [canvasMounted, setCanvasMounted] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -155,6 +159,12 @@ function AppContent() {
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const openAppearanceSettings = useCallback(() => openSettings('appearance'), [openSettings]);
   const closeCommandPalette = useCallback(() => setCommandOpen(false), []);
+
+  useEffect(() => {
+    if (!canvasMounted || activeTab === 'canvas') return;
+    const t = window.setTimeout(() => setCanvasMounted(false), CANVAS_KEEPALIVE_MS);
+    return () => window.clearTimeout(t);
+  }, [activeTab, canvasMounted]);
 
   // Prefetch settings chunk after first paint so open feels instant.
   // Skip in Vitest to avoid EnvironmentTeardownError from pending dynamic imports.
@@ -256,7 +266,9 @@ function AppContent() {
               authLoading ? (
                 <EspaciosAuthSkeleton />
               ) : (
-                <LoginScreen />
+                <Suspense fallback={<EspaciosAuthSkeleton />}>
+                  <LoginScreen />
+                </Suspense>
               )
             ) : (
               <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">Cargando...</div>}>

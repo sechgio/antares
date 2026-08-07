@@ -2,19 +2,27 @@
 
 from __future__ import annotations
 
+import base64
+import io
 import logging
 import math
 import os
+import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any, cast
 
 import fitz  # PyMuPDF
 from PIL import Image, ImageOps
 
 from backend.core.cmyk_pdf.color import convert_pil_to_cmyk_bytes, css_color_to_cmyk
+from backend.utils.paths import user_data_path
 
 logger = logging.getLogger(__name__)
 
 MM_TO_PT = 72.0 / 25.4  # ~2.834645669 pt per mm
+_CANVAS_ASSET_RE = re.compile(r"^canvas-asset:([a-fA-F0-9]{32,128})$")
+_DATA_URL_RE = re.compile(r"^data:([^;,]+)?(;base64)?,(.*)$", re.DOTALL)
 
 _FONT_MAP: dict[str, str] = {
     "sans-serif": "helv",
@@ -108,6 +116,51 @@ def _prepare_image_for_rect(
 
     processed = pil_img.resize((w_px, h_px), resample)
     return convert_pil_to_cmyk_bytes(processed, dpi=dpi), rect
+
+
+def _canvas_asset_path(asset_id: str) -> str:
+    return str(user_data_path("canvas/assets") / asset_id)
+
+
+def _resolve_image_path(src: str, local_image_paths: dict[str, str]) -> str:
+    """Map token / canvas-asset ref / path to a filesystem path when possible."""
+    mapped = local_image_paths.get(src) or src
+    match = _CANVAS_ASSET_RE.match(mapped)
+    if match:
+        return _canvas_asset_path(match.group(1))
+    return mapped
+
+
+@contextmanager
+def _open_export_image(src: str, local_image_paths: dict[str, str]) -> Iterator[Image.Image | None]:
+    """Open an image from path, canvas-asset ref, or data: URL. Yields None if missing."""
+    mapped = local_image_paths.get(src) or src
+    if not mapped:
+        yield None
+        return
+
+    data_match = _DATA_URL_RE.match(mapped)
+    if data_match:
+        payload = data_match.group(3) or ""
+        try:
+            raw = base64.b64decode(payload) if data_match.group(2) else payload.encode("utf-8")
+            with Image.open(io.BytesIO(raw)) as pil_img:
+                yield pil_img
+        except Exception:
+            logger.debug("CMYK: failed to decode data: image", exc_info=True)
+            yield None
+        return
+
+    path = _resolve_image_path(src, local_image_paths)
+    if not path or not os.path.exists(path):
+        yield None
+        return
+    try:
+        with Image.open(path) as pil_img:
+            yield pil_img
+    except Exception:
+        logger.debug("CMYK: failed to open image %s", path, exc_info=True)
+        yield None
 
 
 def _draw_shape_rect(
@@ -462,26 +515,30 @@ class CanvasCmykRenderer:
             if resolved_src:
                 resolved_src = _resolve_template_value(resolved_src, ctx)
 
-            img_path = local_image_paths.get(resolved_src) or resolved_src
             object_fit = css_vars.get("--object-fit")
-            if resolved_src and os.path.exists(img_path):
-                try:
-                    with Image.open(img_path) as pil_img:
-                        cmyk_bytes, insert_rect = _prepare_image_for_rect(
-                            pil_img,
-                            rect,
-                            object_fit,
-                            self.dpi,
-                        )
-                        page.insert_image(
-                            insert_rect,
-                            stream=cmyk_bytes,
-                            rotate=round(rotate_deg),
-                        )
-                except Exception:
-                    # Render placeholder if image fails to load
-                    shape.draw_rect(rect)
-                    shape.finish(color=(0, 0, 0, 0.5))
+            if resolved_src:
+                with _open_export_image(resolved_src, local_image_paths) as pil_img:
+                    if pil_img is not None:
+                        try:
+                            cmyk_bytes, insert_rect = _prepare_image_for_rect(
+                                pil_img,
+                                rect,
+                                object_fit,
+                                self.dpi,
+                            )
+                            page.insert_image(
+                                insert_rect,
+                                stream=cmyk_bytes,
+                                rotate=round(rotate_deg),
+                            )
+                        except Exception:
+                            # Render placeholder if image fails to load
+                            shape.draw_rect(rect)
+                            shape.finish(color=(0, 0, 0, 0.5))
+                    else:
+                        # Empty / missing src → grey placeholder (no crash).
+                        shape.draw_rect(rect)
+                        shape.finish(color=(0, 0, 0, 0.5))
             else:
                 # Empty / missing src → grey placeholder (no crash).
                 shape.draw_rect(rect)

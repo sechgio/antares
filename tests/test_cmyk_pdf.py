@@ -645,3 +645,80 @@ def test_cmyk_renderer_text_align_and_font():
         assert "CENTERFONT" in pdf_doc[0].get_text()
     finally:
         pdf_doc.close()
+
+
+def test_cmyk_renderer_opens_data_url_without_disk_path():
+    """M2: data: images must embed without writing a temp file (fallback path)."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    buf = BytesIO()
+    Image.new("RGB", (8, 8), color=(255, 0, 0)).save(buf, format="PNG")
+    data_url = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+    doc = create_empty_document(name="Data URL image")
+    doc["layers"] = [
+        {
+            "id": "layer-img",
+            "type": "image",
+            "name": "Inline",
+            "value": data_url,
+            "pageIndex": 0,
+            "cssVars": {
+                "--width": "40mm",
+                "--height": "40mm",
+                "--translate-x": "10mm",
+                "--translate-y": "10mm",
+            },
+        }
+    ]
+
+    pdf_bytes = CanvasCmykRenderer(document=doc).render()
+    assert pdf_bytes[:4] == b"%PDF"
+    pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        assert pdf_doc[0].get_images()
+    finally:
+        pdf_doc.close()
+
+
+def test_cmyk_renderer_resolves_canvas_asset_ref(tmp_path, monkeypatch):
+    """M2: canvas-asset:<sha> resolves under user_data_path('canvas/assets')."""
+    from PIL import Image
+
+    from backend.core.cmyk_pdf import renderer as renderer_mod
+
+    assets = tmp_path / "canvas" / "assets"
+    assets.mkdir(parents=True)
+    asset_id = "a" * 64
+    Image.new("RGB", (6, 6), color=(0, 255, 0)).save(assets / asset_id, format="PNG")
+
+    def _fake_user_data(rel: str):
+        return tmp_path / rel
+
+    monkeypatch.setattr(renderer_mod, "user_data_path", _fake_user_data)
+
+    doc = create_empty_document(name="Asset ref")
+    doc["layers"] = [
+        {
+            "id": "layer-img",
+            "type": "image",
+            "name": "Asset",
+            "value": f"canvas-asset:{asset_id}",
+            "pageIndex": 0,
+            "cssVars": {
+                "--width": "40mm",
+                "--height": "40mm",
+                "--translate-x": "10mm",
+                "--translate-y": "10mm",
+            },
+        }
+    ]
+
+    pdf_bytes = CanvasCmykRenderer(document=doc).render()
+    pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        assert pdf_doc[0].get_images()
+    finally:
+        pdf_doc.close()

@@ -44,6 +44,8 @@ vi.mock('../sync/cloudQueue', () => ({
 vi.mock('../utils/imageBlobStore', () => ({
   serializeDocumentImages: vi.fn(async (doc: CanvasDocument) => doc),
   hydrateDocumentImages: vi.fn(async (doc: CanvasDocument) => doc),
+  serializeHistorySteps: vi.fn(async (steps: unknown[]) => steps),
+  hydrateHistorySteps: vi.fn(async (steps: unknown[]) => steps),
   applySavedDocumentKeepingImages: vi.fn((_editor: CanvasDocument, saved: CanvasDocument) => saved),
   clearBlobStore: vi.fn(),
   releaseImageBlob: vi.fn(),
@@ -238,6 +240,7 @@ describe('CanvasView lifecycle', () => {
 
     await act(async () => {
       vi.advanceTimersByTime(250);
+      await Promise.resolve();
     });
     expect(api.canvasSaveHistory).toHaveBeenCalled();
     const firstCall = vi.mocked(api.canvasSaveHistory).mock.calls.at(-1)!;
@@ -246,6 +249,7 @@ describe('CanvasView lifecycle', () => {
     const callsAfterFirst = vi.mocked(api.canvasSaveHistory).mock.calls.length;
     await act(async () => {
       vi.advanceTimersByTime(500);
+      await Promise.resolve();
     });
     expect(vi.mocked(api.canvasSaveHistory).mock.calls.length).toBe(callsAfterFirst);
   });

@@ -5,20 +5,40 @@ import { TAB_DEFINITIONS } from '../navigation';
 
 const { mockSupabase } = vi.hoisted(() => {
   const empty = { data: [] as unknown[], error: null };
-  const queryResult = vi.fn().mockResolvedValue(empty);
-  const chain = {
-    select: vi.fn().mockReturnThis(),
-    insert: vi.fn().mockReturnThis(),
-    update: vi.fn().mockReturnThis(),
-    delete: vi.fn().mockReturnThis(),
-    eq: vi.fn().mockReturnThis(),
-    order: vi.fn().mockImplementation(() => queryResult()),
-    single: vi.fn().mockResolvedValue({ data: null, error: null }),
+
+  function createThenableChain(): Record<string, unknown> {
+    const chain: Record<string, unknown> = {};
+    const api = {
+      select: vi.fn(() => chain),
+      insert: vi.fn(() => chain),
+      update: vi.fn(() => chain),
+      delete: vi.fn(() => chain),
+      eq: vi.fn(() => chain),
+      in: vi.fn(() => chain),
+      is: vi.fn(() => chain),
+      neq: vi.fn(() => chain),
+      gte: vi.fn(() => chain),
+      lte: vi.fn(() => chain),
+      limit: vi.fn(() => chain),
+      order: vi.fn(() => chain),
+      single: vi.fn(async () => ({ data: null, error: null })),
+      then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
+        Promise.resolve(empty).then(resolve, reject),
+    };
+    Object.assign(chain, api);
+    return chain;
+  }
+
+  const channel = {
+    on: vi.fn().mockReturnThis(),
+    subscribe: vi.fn((cb?: (status: string) => void) => {
+      if (typeof cb === 'function') cb('SUBSCRIBED');
+      return { unsubscribe: vi.fn() };
+    }),
   };
-  const channel = { on: vi.fn().mockReturnThis(), subscribe: vi.fn().mockReturnValue({}) };
   return {
     mockSupabase: {
-      from: vi.fn(() => chain),
+      from: vi.fn(() => createThenableChain()),
       rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
       channel: vi.fn(() => channel),
       removeChannel: vi.fn(),
@@ -65,11 +85,17 @@ describe('App', () => {
   it('can open Espacios tab', async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole('button', { name: 'Espacios' }, { timeout: 5000 }));
-    // Lazy chunk + supabase bootstrap can take a moment under full-suite load.
+    // Wait past sync.loading ("Cargando espacios...") then welcome CTA.
+    await waitFor(
+      () => {
+        expect(screen.queryByText(/Cargando espacios/i)).not.toBeInTheDocument();
+      },
+      { timeout: 15000 },
+    );
     expect(
-      await screen.findByRole('button', { name: /Crear primer espacio/i }, { timeout: 10000 }),
+      await screen.findByRole('button', { name: /Crear primer espacio/i }, { timeout: 15000 }),
     ).toBeInTheDocument();
-  }, 20000);
+  }, 30000);
 
   it('keeps conversion empty-state actions visible before files are selected', async () => {
     render(<App />);
@@ -78,7 +104,7 @@ describe('App', () => {
       expect(screen.getByText(/Arrastra imágenes o videos aquí/i)).toBeInTheDocument();
     }, { timeout: 8000 });
     expect(await screen.findByRole('button', { name: /Seleccionar archivos/i }, { timeout: 8000 })).toBeInTheDocument();
-  });
+  }, 20000);
 
   it('has sidebar with navigation buttons', () => {
     render(<App />);
@@ -102,16 +128,16 @@ describe('App', () => {
 
   it('renders the image optimizer without its title in a full-height workspace', async () => {
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: /Optimizador/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Optimizador/i }, { timeout: 5000 }));
 
-    const preset = await screen.findByRole('button', { name: /Optimizar web/i }, { timeout: 5000 });
+    const preset = await screen.findByRole('button', { name: /Optimizar web/i }, { timeout: 15000 });
     const routeViewport = preset.closest('main')?.firstElementChild;
 
     expect(screen.queryByRole('heading', { name: /Image Optimizer/i })).not.toBeInTheDocument();
     expect(routeViewport).toBeInstanceOf(HTMLElement);
     expect(routeViewport).not.toHaveClass('px-6');
     expect(routeViewport).not.toHaveClass('py-6');
-  });
+  }, 20000);
 
   it('does not render the removed shared header for any tool', async () => {
     render(<App />);

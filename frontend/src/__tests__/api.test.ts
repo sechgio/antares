@@ -207,4 +207,35 @@ describe('API Client', () => {
     expect(mockInvoke).toHaveBeenCalledWith('process_start', body);
     expect(result.started).toBe(true);
   });
+
+  it('should hydrate spreadsheet_parse spill via file_token_read_json', async () => {
+    mockInvoke.mockImplementation(async (method: string) => {
+      if (method === 'spreadsheet_parse') {
+        return {
+          workbookName: 'big.xlsx',
+          sheets: [],
+          warnings: ['spilled'],
+          result_file_token: 'antares-read_spill1',
+        };
+      }
+      if (method === 'file_token_read_json') {
+        return {
+          workbookName: 'big.xlsx',
+          sheets: [{ name: 'Hoja1', rows: [['A'], ['1']] }],
+          warnings: [],
+        };
+      }
+      throw new Error(`unexpected method ${method}`);
+    });
+
+    const result = await api.spreadsheetParse({ file_token: 'antares-read_file1', format_hint: 'xlsx' });
+
+    expect(mockInvoke).toHaveBeenCalledWith(
+      'spreadsheet_parse',
+      expect.objectContaining({ file_token: 'antares-read_file1', format_hint: 'xlsx' }),
+    );
+    expect(mockInvoke).toHaveBeenCalledWith('file_token_read_json', { token: 'antares-read_spill1' });
+    expect(result.sheets[0]?.rows).toEqual([['A'], ['1']]);
+    expect(result.warnings).toContain('spilled');
+  });
 });

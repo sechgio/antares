@@ -13,6 +13,9 @@ import {
   ResizeDimensions,
 } from './types';
 import { PRESET_BY_ID, cloneSettings } from './presets';
+import { arrayBufferToBase64 } from '../../utils/bytesToBase64';
+
+export { arrayBufferToBase64 };
 
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -29,19 +32,6 @@ export function downloadBlob(blob: Blob, filename: string): void {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
-}
-
-export function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  // Chunked conversion to avoid call-stack overflow on large buffers
-  // (spreading tens of thousands of bytes into String.fromCharCode crashes).
-  const bytes = new Uint8Array(buffer);
-  const CHUNK = 0x8000;
-  let binary = '';
-  for (let offset = 0; offset < bytes.length; offset += CHUNK) {
-    const slice = bytes.subarray(offset, offset + CHUNK);
-    binary += String.fromCharCode.apply(null, slice as unknown as number[]);
-  }
-  return btoa(binary);
 }
 
 export function generateId(): string {

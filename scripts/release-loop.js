@@ -234,8 +234,8 @@ function runBuild() {
   if (backendBuild === null) {
     throw new Error('Build del backend falló (timeout o error).');
   }
-  if (!fs.existsSync(path.join(ROOT, 'dist', 'AntaresBackend.exe'))) {
-    throw new Error('Build del backend no produjo AntaresBackend.exe en dist/');
+  if (!fs.existsSync(path.join(ROOT, 'dist', 'backend', 'AntaresBackend.exe'))) {
+    throw new Error('Build del backend no produjo dist/backend/AntaresBackend.exe');
   }
 
   const frontendBuild = trySh('npm run build:frontend 2>&1', { silent: true, timeout: 120000 });

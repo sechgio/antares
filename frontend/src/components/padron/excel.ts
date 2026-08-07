@@ -140,15 +140,11 @@ export async function parseWorkbook(
   outputFormat: OutputFormat = 'service-interruption',
 ): Promise<ParseResult> {
   const { api } = await import('../../api');
-  const win = window as unknown as { electronAPI?: { fileStagedCreate:(n:string,s:number)=>Promise<{token:string}>, fileStagedAppend:(t:string,c:string)=>Promise<unknown>, fileStagedComplete:(t:string)=>Promise<{file_token:string}> } };
-  let fileToken: string | null = null;
-  if (win.electronAPI?.fileStagedCreate) {
-    const staged = await win.electronAPI.fileStagedCreate(file.name, file.size);
-    const CHUNK = 6*1024*1024; const buf = await file.arrayBuffer(); const bytes = new Uint8Array(buf);
-    for (let off=0; off<bytes.length; off+=CHUNK) { const chunk = bytes.slice(off, off+CHUNK); let binary=""; for(let i=0;i<chunk.length;i++) binary+=String.fromCharCode(chunk[i]); const b64=btoa(binary); await win.electronAPI.fileStagedAppend(staged.token, b64); }
-    const done = await win.electronAPI.fileStagedComplete(staged.token); fileToken = done.file_token;
-  }
-  const res = await (api as unknown as { spreadsheetParse:(p:unknown)=>Promise<{workbookName:string,sheets:{name:string,rows:unknown[][]}[],warnings:string[]}> }).spreadsheetParse({ file_token: fileToken } as unknown as Record<string,unknown>);
+  const { stageFileForIpc } = await import('../../utils/stageFile');
+  const ext = file.name.toLowerCase().split('.').pop() || '';
+  const formatHint = ['xlsx','xls','csv'].includes(ext) ? ext : undefined;
+  const fileToken = await stageFileForIpc(file);
+  const res = await api.spreadsheetParse({ file_token: fileToken, format_hint: formatHint });
   const sheetMap: Record<string, Record<string, unknown>[]> = {};
   for (const sh of res.sheets) {
     const rows = sh.rows; if (!rows.length) { sheetMap[sh.name]=[]; continue; }

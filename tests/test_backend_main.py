@@ -12,7 +12,7 @@ from backend import main as backend_main
 
 def _run_main_until_eof(monkeypatch, *, warm_env: str | None) -> dict[str, int]:
     """Drive main() through ready handshake then EOF on stdin; count warm calls."""
-    counts = {"warm_core": 0, "warm_deferred": 0, "ready": 0}
+    counts = {"warm_core": 0, "warm_deferred": 0, "warm_post_ready": 0, "ready": 0}
 
     if warm_env is None:
         monkeypatch.delenv("ANTARES_WARM_DEFERRED", raising=False)
@@ -28,10 +28,23 @@ def _run_main_until_eof(monkeypatch, *, warm_env: str | None) -> dict[str, int]:
         def warm_deferred(self) -> None:
             counts["warm_deferred"] += 1
 
+        def warm_post_ready(self) -> None:
+            counts["warm_post_ready"] += 1
+
         def get(self, _method: str):
             return None
 
     monkeypatch.setattr(backend_main, "HANDLERS", FakeHandlers())
+
+    class ImmediateThread:
+        def __init__(self, *args, target=None, **kwargs):
+            self._target = target
+
+        def start(self) -> None:
+            if self._target:
+                self._target()
+
+    monkeypatch.setattr(backend_main.threading, "Thread", ImmediateThread)
 
     def fake_notify(method: str, params: dict) -> None:
         if method == "ready":
@@ -54,6 +67,7 @@ def test_main_skips_warm_deferred_by_default(monkeypatch) -> None:
     assert counts["warm_core"] == 1
     assert counts["ready"] == 1
     assert counts["warm_deferred"] == 0
+    assert counts["warm_post_ready"] == 1
 
 
 def test_main_warms_deferred_when_env_enabled(monkeypatch) -> None:
@@ -61,6 +75,7 @@ def test_main_warms_deferred_when_env_enabled(monkeypatch) -> None:
     assert counts["warm_core"] == 1
     assert counts["ready"] == 1
     assert counts["warm_deferred"] == 1
+    assert counts["warm_post_ready"] == 1
 
 
 def test_main_warms_deferred_for_true_yes_env(monkeypatch) -> None:
@@ -272,12 +287,22 @@ def test_main_emits_ready_immediately_before_reading_stdin(monkeypatch) -> None:
             assert wait is True
             events.append("scheduler_shutdown")
 
+    class ImmediateThread:
+        def __init__(self, *args, target=None, **kwargs):
+            self._target = target
+
+        def start(self) -> None:
+            if self._target:
+                self._target()
+
     monkeypatch.setenv("ANTARES_ENABLE_PLUGINS", "1")
     monkeypatch.delenv("ANTARES_WARM_DEFERRED", raising=False)
     monkeypatch.setattr(backend_main, "_shutdown_requested", False)
     monkeypatch.setattr(backend_main, "init_db", lambda: events.append("init_db"))
     monkeypatch.setattr(backend_main.HANDLERS, "warm_core", lambda: events.append("warm_core"))
     monkeypatch.setattr(backend_main.HANDLERS, "warm_deferred", lambda: events.append("warm_deferred"))
+    monkeypatch.setattr(backend_main.HANDLERS, "warm_post_ready", lambda: events.append("warm_post_ready"))
+    monkeypatch.setattr(backend_main.threading, "Thread", ImmediateThread)
     monkeypatch.setattr(backend_main, "load_plugins_from_dir", lambda: events.append("plugins"))
     monkeypatch.setattr(
         backend_main,
@@ -308,6 +333,7 @@ def test_main_emits_ready_immediately_before_reading_stdin(monkeypatch) -> None:
         "plugins",
         "get_scheduler",
         "ready",
+        "warm_post_ready",
         "read_message",
         "scheduler_shutdown",
         "close_connection",
@@ -323,12 +349,22 @@ def test_main_emits_ready_after_opt_in_warm_deferred(monkeypatch) -> None:
             assert wait is True
             events.append("scheduler_shutdown")
 
+    class ImmediateThread:
+        def __init__(self, *args, target=None, **kwargs):
+            self._target = target
+
+        def start(self) -> None:
+            if self._target:
+                self._target()
+
     monkeypatch.delenv("ANTARES_ENABLE_PLUGINS", raising=False)
     monkeypatch.setenv("ANTARES_WARM_DEFERRED", "1")
     monkeypatch.setattr(backend_main, "_shutdown_requested", False)
     monkeypatch.setattr(backend_main, "init_db", lambda: events.append("init_db"))
     monkeypatch.setattr(backend_main.HANDLERS, "warm_core", lambda: events.append("warm_core"))
     monkeypatch.setattr(backend_main.HANDLERS, "warm_deferred", lambda: events.append("warm_deferred"))
+    monkeypatch.setattr(backend_main.HANDLERS, "warm_post_ready", lambda: events.append("warm_post_ready"))
+    monkeypatch.setattr(backend_main.threading, "Thread", ImmediateThread)
     monkeypatch.setattr(
         backend_main,
         "get_scheduler",
@@ -358,6 +394,7 @@ def test_main_emits_ready_after_opt_in_warm_deferred(monkeypatch) -> None:
         "warm_deferred",
         "get_scheduler",
         "ready",
+        "warm_post_ready",
         "read_message",
         "scheduler_shutdown",
         "close_connection",
@@ -378,12 +415,16 @@ def test_main_does_not_emit_ready_if_shutdown_arrives_during_startup(monkeypatch
     def fail_if_read() -> None:
         raise AssertionError("stdin must not be read after startup shutdown")
 
+    def fail_if_post_ready() -> None:
+        raise AssertionError("post-ready warm must not run when ready is skipped")
+
     monkeypatch.delenv("ANTARES_ENABLE_PLUGINS", raising=False)
     monkeypatch.delenv("ANTARES_WARM_DEFERRED", raising=False)
     monkeypatch.setattr(backend_main, "_shutdown_requested", False)
     monkeypatch.setattr(backend_main, "init_db", lambda: None)
     monkeypatch.setattr(backend_main.HANDLERS, "warm_core", lambda: None)
     monkeypatch.setattr(backend_main.HANDLERS, "warm_deferred", lambda: None)
+    monkeypatch.setattr(backend_main.HANDLERS, "warm_post_ready", fail_if_post_ready)
     monkeypatch.setattr(backend_main, "get_scheduler", FakeScheduler)
     monkeypatch.setattr(
         backend_main,

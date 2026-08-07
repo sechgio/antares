@@ -78,13 +78,23 @@ _hidden += collect_submodules('backend.core')
 # Collect ALL submodules from heavy third-party deps so PyInstaller does not
 # miss dynamically-loaded ones (pandas._config.localization caused a startup
 # crash in v0.10.10/v0.10.11 — see CHANGELOG).
+# Skip *.tests / *.testing — collect_submodules walks them and burns minutes
+# analyzing pandas.tests.* that never ship at runtime.
+def _runtime_submodules(pkg: str) -> list[str]:
+    return [
+        m
+        for m in collect_submodules(pkg)
+        if '.tests' not in m and '.testing' not in m and not m.endswith('.conftest')
+    ]
+
+
 for _pkg in ('pandas', 'openpyxl', 'weasyprint', 'PIL', 'lxml', 'pypdf',
              'jinja2', 'jsonschema', 'docx', 'fitz', 'pymupdf'):
-    _hidden += collect_submodules(_pkg)
+    _hidden += _runtime_submodules(_pkg)
 
 # psutil has optional platform-specific binary extensions; collect them too.
 try:
-    _hidden += collect_submodules('psutil')
+    _hidden += _runtime_submodules('psutil')
 except Exception:
     _hidden.append('psutil')
 
@@ -148,6 +158,8 @@ excludes=[
         'numpy.testing',
         'numpy.distutils',
         'numpy.f2py',
+        'pandas.tests',
+        'pandas.testing',
         # Unused large modules
         'matplotlib',
         'notebook',
@@ -163,9 +175,8 @@ excludes=[
         'tests',
         'playwright',
         # ML / vision stacks often present in the builder's site-packages.
-        # If PyInstaller pulls them in, the onefile extract exceeds the IPC
-        # handshake budget and the packaged app looks "totally broken"
-        # (templates_list never returns, every tool times out). Antares does
+        # If PyInstaller pulls them in, the onedir tree exceeds size budgets and
+        # cold-start AV scans drag past the IPC handshake window. Antares does
         # not import these — exclude unconditionally.
         'torch',
         'torchvision',
@@ -186,16 +197,19 @@ excludes=[
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
+    # Loose .pyc next to the onedir tree — faster cold start than extracting a
+    # onefile archive into %TEMP% on every launch (AV + handshake cliffs).
     noarchive=True,
 )
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+# Onedir (COLLECT): AntaresBackend.exe + deps live on disk under resources/backend.
+# Avoids PyInstaller onefile re-extract + Windows AV on every cold start.
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='AntaresBackend',
     debug=False,
     bootloader_ignore_signals=False,
@@ -209,10 +223,16 @@ exe = EXE(
         'libssl-1_1.dll',
         'libcrypto-1_1.dll',
     ],
-    runtime_tmpdir=None,
     console=True,
     disable_windowed_traceback=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+)
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    name='AntaresBackend',
 )

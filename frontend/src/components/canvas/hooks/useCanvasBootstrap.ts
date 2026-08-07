@@ -6,7 +6,7 @@ import {
   type CanvasDocument,
   type CanvasDocumentSummary,
 } from '../types';
-import { hydrateDocumentImages } from '../utils/imageBlobStore';
+import { hydrateDocumentImages, hydrateHistorySteps } from '../utils/imageBlobStore';
 import type { useCanvasHistory } from './useCanvasHistory';
 
 /** Dev-only startup timing helper; no-ops in production. */
@@ -64,7 +64,11 @@ export function useCanvasBootstrap({
                 try {
                   const hist = await api.canvasGetHistory(doc.id);
                   if (!cancelled && (hist.past?.length || hist.future?.length)) {
-                    restoreHistory(hist.past, hist.future);
+                    const [past, future] = await Promise.all([
+                      hydrateHistorySteps(hist.past),
+                      hydrateHistorySteps(hist.future),
+                    ]);
+                    restoreHistory(past, future);
                   }
                   perfMark('history');
                 } catch {

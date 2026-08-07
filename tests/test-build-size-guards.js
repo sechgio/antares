@@ -70,6 +70,10 @@ for (const staleName of ['AntaresBackend.exe', 'HidroConvertBackend.exe']) {
 assert(backendBuild.includes('rmSync'), 'backend build should clean stale PyInstaller output before rebuilding');
 assert(backendBuild.includes('venv312'), 'backend build should prefer the local venv312 Python over PATH');
 assert(backendBuild.includes('resolvePythonCommand'), 'backend build should resolve Python before invoking PyInstaller');
+assert(backendBuild.includes('onedir') || backendBuild.includes('copyDirFlat'), 'backend build should produce an onedir layout (not onefile)');
+assert(backendBuild.includes("path.join(distDir, 'backend')") || backendBuild.includes('distBackendDir'), 'backend build should stage under dist/backend');
+assert(builderConfig.includes('from: dist/backend'), 'electron-builder should pack onedir from dist/backend');
+assert(spec.includes('COLLECT(') || spec.includes('exclude_binaries=True'), 'PyInstaller spec should use onedir COLLECT');
 
 const packageJson = JSON.parse(readProjectFile('package.json'));
 assert(packageJson.scripts['clean:dist-electron'] === 'node scripts/clean-dist-electron.js', 'package scripts should expose a safe Electron output cleanup command');

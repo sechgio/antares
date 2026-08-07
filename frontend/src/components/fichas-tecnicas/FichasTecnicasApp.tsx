@@ -248,7 +248,11 @@ export default function FichasTecnicasApp() {
           template: true,
           logo_left: logoLeft,
         });
-        const pdf = await fichasTecnicasApi.htmlToPdf({ html: rendered.html, filename: rendered.filename });
+        const pdf = await fichasTecnicasApi.htmlToPdf({
+          html: rendered.html,
+          filename: rendered.filename,
+          return_base64: true,
+        });
         if (!pdf.pdf_base64) throw new Error('No se recibió el contenido del PDF generado.');
         downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
         await saveFeatureHistory('ficha_tecnica', pdf.filename, { type: 'plantilla' });
@@ -268,7 +272,11 @@ export default function FichasTecnicasApp() {
         ficha: fichaForRender,
         logo_left: logoLeft,
       });
-      const pdf = await fichasTecnicasApi.htmlToPdf({ html: rendered.html, filename: rendered.filename });
+      const pdf = await fichasTecnicasApi.htmlToPdf({
+        html: rendered.html,
+        filename: rendered.filename,
+        return_base64: true,
+      });
       if (!pdf.pdf_base64) throw new Error('No se recibió el contenido del PDF generado.');
       downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
       await saveFeatureHistory('ficha_tecnica', pdf.filename, {
@@ -293,7 +301,11 @@ export default function FichasTecnicasApp() {
     if (!confirmed) return;
     await withBusy(async () => {
       const rendered = await fichasTecnicasApi.renderConsolidatedHtml({ logo_left: logoLeft });
-      const pdf = await fichasTecnicasApi.htmlToPdf({ html: rendered.html, filename: rendered.filename });
+      const pdf = await fichasTecnicasApi.htmlToPdf({
+        html: rendered.html,
+        filename: rendered.filename,
+        return_base64: true,
+      });
       if (!pdf.pdf_base64) throw new Error('No se recibió el contenido del PDF generado.');
       downloadBase64Pdf(pdf.pdf_base64, pdf.filename);
       await saveFeatureHistory(

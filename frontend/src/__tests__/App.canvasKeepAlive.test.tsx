@@ -69,4 +69,25 @@ describe('App Canvas keep-alive', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Canvas' }));
     expect(screen.getByTestId('canvas-keep-alive')).toBeInTheDocument();
   }, 30000);
+
+  it('unmounts Canvas after keep-alive idle timeout', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(<App />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Canvas' }, { timeout: 5000 }));
+      expect(await screen.findByTestId('canvas-keep-alive', {}, { timeout: 15000 })).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Conversión' }));
+      await waitFor(() => {
+        expect(screen.getByTestId('canvas-keep-alive')).toBeInTheDocument();
+      });
+
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 100);
+      await waitFor(() => {
+        expect(screen.queryByTestId('canvas-keep-alive')).not.toBeInTheDocument();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 30000);
 });

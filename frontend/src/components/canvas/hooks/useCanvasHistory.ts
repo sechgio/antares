@@ -13,12 +13,22 @@ export const MAX_HISTORY = 30;
 /** Aggregate byte budget for past + future stacks (UTF-16 string estimate). */
 export const MAX_HISTORY_BYTES = 64 * 1024 * 1024;
 
-export function estimateHistoryBytes(steps: HistoryStep[]): number {
+export function estimateStepBytes(step: HistoryStep): number {
   try {
-    return JSON.stringify(steps).length * 2;
+    return JSON.stringify(step).length * 2;
   } catch {
     return Number.POSITIVE_INFINITY;
   }
+}
+
+export function estimateHistoryBytes(steps: HistoryStep[]): number {
+  let total = 0;
+  for (const step of steps) {
+    const n = estimateStepBytes(step);
+    if (!Number.isFinite(n)) return Number.POSITIVE_INFINITY;
+    total += n;
+  }
+  return total;
 }
 
 /**
@@ -34,13 +44,15 @@ export function trimHistoryByBudget(
   let nextPast = past.slice(-maxSteps);
   let nextFuture = future.slice(-maxSteps);
 
-  while (
-    estimateHistoryBytes(nextPast) + estimateHistoryBytes(nextFuture) > maxBytes
-    && (nextPast.length > 0 || nextFuture.length > 0)
-  ) {
+  // Incremental budget: weigh each step once, then subtract as we drop —
+  // avoids re-JSON.stringify of whole stacks on every while iteration.
+  let bytes = estimateHistoryBytes(nextPast) + estimateHistoryBytes(nextFuture);
+  while (bytes > maxBytes && (nextPast.length > 0 || nextFuture.length > 0)) {
     if (nextPast.length > 0) {
+      bytes -= estimateStepBytes(nextPast[0]!);
       nextPast = nextPast.slice(1);
     } else {
+      bytes -= estimateStepBytes(nextFuture[0]!);
       nextFuture = nextFuture.slice(1);
     }
   }

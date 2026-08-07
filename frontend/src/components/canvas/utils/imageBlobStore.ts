@@ -95,24 +95,41 @@ function generateBlobId(): string {
 
 /**
  * Registers an image Blob or File into the in-memory Blob Store.
- * Creates an ObjectURL. Thumbnails/dimensions are intentionally NOT computed
- * here: decoding + re-encoding every image on the main thread was the dominant
- * startup bottleneck, and renderers fall back to the full ObjectURL.
+ * Creates an ObjectURL. Large File uploads are downscaled in a Web Worker
+ * (OffscreenCanvas) so decode/re-encode stays off the UI thread.
  */
 export async function registerImageBlob(
   fileOrBlob: Blob | File,
-  existingDataUrl?: string
+  existingDataUrl?: string,
+  opts?: { maxDimension?: number },
 ): Promise<RegisteredBlob> {
+  let blob: Blob = fileOrBlob;
+  let width = 0;
+  let height = 0;
+
+  // Downscale large stills off the UI thread when Worker/OffscreenCanvas exist.
+  if (fileOrBlob instanceof File && fileOrBlob.type.startsWith('image/')) {
+    try {
+      const { processImageFileForCanvas } = await import('../workers/imageProcessorClient');
+      const processed = await processImageFileForCanvas(fileOrBlob, opts?.maxDimension ?? 2048);
+      blob = processed.blob;
+      width = processed.width;
+      height = processed.height;
+    } catch {
+      blob = fileOrBlob;
+    }
+  }
+
   const blobId = generateBlobId();
-  const url = URL.createObjectURL(fileOrBlob);
+  const url = URL.createObjectURL(blob);
 
   const registered: RegisteredBlob = {
     blobId,
-    blob: fileOrBlob,
+    blob,
     url,
     thumbnailUrl: url,
-    width: 0,
-    height: 0,
+    width,
+    height,
     dataUrl: existingDataUrl,
   };
 
@@ -166,14 +183,21 @@ export async function blobToDataUrl(blob: Blob): Promise<string> {
 
 /**
  * Prepares a document for saving to disk / IPC by converting in-memory ObjectURLs/blobIds
- * back into persistent DataURLs or path strings.
+ * into canvas-asset refs (preferred) or DataURLs (fallback / cloud).
  */
-export async function serializeDocumentImages(doc: CanvasDocument): Promise<CanvasDocument> {
+export async function serializeDocumentImages(
+  doc: CanvasDocument,
+  options?: { preferAssetRefs?: boolean },
+): Promise<CanvasDocument> {
+  const preferAssetRefs = options?.preferAssetRefs !== false;
+  const putAsset = window.electronAPI?.canvasAssetPut;
+
   const updatedLayers: CanvasLayer[] = await Promise.all(
     doc.layers.map(async (layer) => {
       if (layer.type === 'image' || layer.type === 'logo') {
         const val = layer.value;
         if (!val) return layer;
+        if (val.startsWith('canvas-asset:')) return layer;
 
         let reg = blobMap.get(val);
         if (!reg && val.startsWith('blob:')) {
@@ -182,9 +206,16 @@ export async function serializeDocumentImages(doc: CanvasDocument): Promise<Canv
         }
 
         if (reg) {
-          // Compute a persistent data URL for the saved document, but do not
-          // keep it on the RegisteredBlob — that would retain ~2× the bytes
-          // (Blob + base64) for the whole session while keep-alive holds the store.
+          if (preferAssetRefs && putAsset) {
+            try {
+              const buf = await reg.blob.arrayBuffer();
+              const stored = await putAsset(buf) as { ref: string };
+              if (reg.dataUrl) delete reg.dataUrl;
+              return { ...layer, value: stored.ref };
+            } catch {
+              // Fall through to DataURL persistence.
+            }
+          }
           const dataUrl = reg.dataUrl ?? (await blobToDataUrl(reg.blob));
           if (reg.dataUrl) delete reg.dataUrl;
           return { ...layer, value: dataUrl };
@@ -225,16 +256,294 @@ export function applySavedDocumentKeepingImages(
 }
 
 /**
- * Hydrates a document loaded from disk / IPC for rendering.
+ * Expand `canvas-asset:` refs to data: URLs for cloud sync / backends that
+ * cannot read the local asset store.
  *
- * Startup fast-path: images are kept as their persistent `dataUrl` and
- * rendered directly (LayerNode and the sidebar already fall back to the raw
- * value), so opening a document no longer decodes + re-encodes a thumbnail
- * for every image on the main thread. In-session image drops go through
- * `registerImageBlob` above, which yields lightweight blob: ObjectURLs.
+ * @param strict When true, throw if any canvas-asset: ref remains unresolved.
+ */
+export async function embedCanvasAssetsAsDataUrls(
+  doc: CanvasDocument,
+  options?: { strict?: boolean },
+): Promise<CanvasDocument> {
+  const strict = options?.strict === true;
+  const getAsset = window.electronAPI?.canvasAssetGet;
+  if (!getAsset) {
+    if (strict && countCanvasAssetRefs(doc) > 0) {
+      throw new Error('No se pueden resolver canvas-asset: sin Electron (canvasAssetGet)');
+    }
+    return doc;
+  }
+
+  let changed = false;
+  const layers: CanvasLayer[] = [];
+  for (const layer of doc.layers) {
+    if ((layer.type !== 'image' && layer.type !== 'logo') || !layer.value?.startsWith('canvas-asset:')) {
+      layers.push(layer);
+      continue;
+    }
+    try {
+      const res = await getAsset(layer.value) as { chunk: ArrayBuffer };
+      const blob = new Blob([res.chunk]);
+      const dataUrl = await blobToDataUrl(blob);
+      changed = true;
+      layers.push({ ...layer, value: dataUrl });
+    } catch (err) {
+      if (strict) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`No se pudo resolver ${layer.value}: ${msg}`);
+      }
+      layers.push(layer);
+    }
+  }
+  const next = changed ? { ...doc, layers } : doc;
+  if (strict && countCanvasAssetRefs(next) > 0) {
+    throw new Error('Quedan referencias canvas-asset: sin resolver');
+  }
+  return next;
+}
+
+/** Count unresolved canvas-asset: refs on image/logo layers. */
+export function countCanvasAssetRefs(doc: CanvasDocument): number {
+  let n = 0;
+  for (const layer of doc.layers) {
+    if ((layer.type === 'image' || layer.type === 'logo') && layer.value?.startsWith('canvas-asset:')) {
+      n += 1;
+    }
+  }
+  return n;
+}
+
+/**
+ * Convert in-memory blob:/blobId layer values to data: URLs so a hidden
+ * print BrowserWindow (no shared blob store) can still render images.
+ */
+export async function embedManagedBlobsAsDataUrls(doc: CanvasDocument): Promise<CanvasDocument> {
+  let changed = false;
+  const layers: CanvasLayer[] = [];
+  for (const layer of doc.layers) {
+    if (layer.type !== 'image' && layer.type !== 'logo') {
+      layers.push(layer);
+      continue;
+    }
+    const val = layer.value;
+    if (!val || val.startsWith('data:') || val.startsWith('canvas-asset:') || val.startsWith('http') || val.startsWith('file:')) {
+      layers.push(layer);
+      continue;
+    }
+    let reg = blobMap.get(val);
+    if (!reg && val.startsWith('blob:')) {
+      const blobId = urlToBlobIdMap.get(val);
+      if (blobId) reg = blobMap.get(blobId);
+    }
+    if (!reg) {
+      layers.push(layer);
+      continue;
+    }
+    const dataUrl = await blobToDataUrl(reg.blob);
+    changed = true;
+    layers.push({ ...layer, value: dataUrl });
+  }
+  return changed ? { ...doc, layers } : doc;
+}
+
+/**
+ * Prepare image/logo layers for PDF export (RGB or CMYK).
+ * - rgb (default): expand assets + blobs to data: URLs for HTML print.
+ * - cmyk: persist blobs/data: as canvas-asset: refs so the IPC payload stays small;
+ *   Python resolves refs from %LOCALAPPDATA%/Antares/canvas/assets.
+ */
+export async function prepareDocumentImagesForExport(
+  doc: CanvasDocument,
+  options?: { mode?: 'rgb' | 'cmyk' },
+): Promise<CanvasDocument> {
+  if (options?.mode === 'cmyk') {
+    return prepareDocumentImagesForCmykExport(doc);
+  }
+  const withAssets = await embedCanvasAssetsAsDataUrls(doc, { strict: true });
+  return embedManagedBlobsAsDataUrls(withAssets);
+}
+
+/**
+ * CMYK path: prefer disk refs over inlining base64 into the JSON-RPC payload.
+ */
+export async function prepareDocumentImagesForCmykExport(doc: CanvasDocument): Promise<CanvasDocument> {
+  let next = await serializeDocumentImages(doc, { preferAssetRefs: true });
+  next = await persistDataUrlsAsCanvasAssets(next);
+  // Unsaved blob: must not reach Python — fail loudly if any remain.
+  for (const layer of next.layers) {
+    if ((layer.type !== 'image' && layer.type !== 'logo') || !layer.value) continue;
+    if (layer.value.startsWith('blob:') || blobMap.has(layer.value)) {
+      throw new Error(`CMYK export: imagen sin persistir (${layer.id})`);
+    }
+  }
+  return next;
+}
+
+/** Convert leftover data: layer values into canvas-asset: refs when Electron can store them. */
+async function persistDataUrlsAsCanvasAssets(doc: CanvasDocument): Promise<CanvasDocument> {
+  const putAsset = window.electronAPI?.canvasAssetPut;
+  if (!putAsset) return doc;
+
+  let changed = false;
+  const layers: CanvasLayer[] = [];
+  for (const layer of doc.layers) {
+    if ((layer.type !== 'image' && layer.type !== 'logo') || !layer.value?.startsWith('data:')) {
+      layers.push(layer);
+      continue;
+    }
+    try {
+      const res = await fetch(layer.value);
+      const buf = await res.arrayBuffer();
+      const stored = await putAsset(buf) as { ref: string };
+      changed = true;
+      layers.push({ ...layer, value: stored.ref });
+    } catch {
+      layers.push(layer);
+    }
+  }
+  return changed ? { ...doc, layers } : doc;
+}
+
+
+/**
+ * Hydrates a document loaded from disk / IPC for rendering.
+ * Resolves `canvas-asset:` refs into blob: ObjectURLs; legacy data: URLs stay as-is.
  */
 export async function hydrateDocumentImages(doc: CanvasDocument): Promise<CanvasDocument> {
-  return doc;
+  const getAsset = window.electronAPI?.canvasAssetGet;
+  if (!getAsset) return doc;
+
+  let changed = false;
+  const layers: CanvasLayer[] = [];
+  for (const layer of doc.layers) {
+    if ((layer.type !== 'image' && layer.type !== 'logo') || !layer.value?.startsWith('canvas-asset:')) {
+      layers.push(layer);
+      continue;
+    }
+    try {
+      const res = await getAsset(layer.value) as { chunk: ArrayBuffer };
+      const blob = new Blob([res.chunk]);
+      const reg = await registerImageBlob(blob);
+      changed = true;
+      layers.push({ ...layer, value: reg.url });
+    } catch {
+      layers.push(layer);
+    }
+  }
+  return changed ? { ...doc, layers } : doc;
+}
+
+async function persistLayerImageValue(val: string): Promise<string> {
+  if (
+    val.startsWith('canvas-asset:')
+    || val.startsWith('data:')
+    || val.startsWith('http://')
+    || val.startsWith('https://')
+    || val.startsWith('file:')
+  ) {
+    return val;
+  }
+  let reg = blobMap.get(val);
+  if (!reg && val.startsWith('blob:')) {
+    const blobId = urlToBlobIdMap.get(val);
+    if (blobId) reg = blobMap.get(blobId);
+  }
+  if (!reg) return val;
+
+  const putAsset = window.electronAPI?.canvasAssetPut;
+  if (putAsset) {
+    try {
+      const buf = await reg.blob.arrayBuffer();
+      const stored = await putAsset(buf) as { ref: string };
+      if (reg.dataUrl) delete reg.dataUrl;
+      return stored.ref;
+    } catch {
+      // fall through to data URL
+    }
+  }
+  const dataUrl = reg.dataUrl ?? (await blobToDataUrl(reg.blob));
+  if (reg.dataUrl) delete reg.dataUrl;
+  return dataUrl;
+}
+
+async function hydrateLayerImageValue(val: string): Promise<string> {
+  if (!val.startsWith('canvas-asset:')) return val;
+  const getAsset = window.electronAPI?.canvasAssetGet;
+  if (!getAsset) return val;
+  try {
+    const res = await getAsset(val) as { chunk: ArrayBuffer };
+    const blob = new Blob([res.chunk]);
+    const reg = await registerImageBlob(blob);
+    return reg.url;
+  } catch {
+    return val;
+  }
+}
+
+async function mapDiffImageValues(
+  diff: CanvasDiff,
+  mapValue: (value: string) => Promise<string>,
+): Promise<CanvasDiff> {
+  let changed = false;
+  let addedLayers = diff.addedLayers;
+  if (addedLayers?.length) {
+    addedLayers = await Promise.all(
+      addedLayers.map(async (layer) => {
+        if ((layer.type !== 'image' && layer.type !== 'logo') || !layer.value) return layer;
+        const next = await mapValue(layer.value);
+        if (next === layer.value) return layer;
+        changed = true;
+        return { ...layer, value: next };
+      }),
+    );
+  }
+  let modifiedLayers = diff.modifiedLayers;
+  if (modifiedLayers?.length) {
+    modifiedLayers = await Promise.all(
+      modifiedLayers.map(async (patch) => {
+        if (typeof patch.changes.value !== 'string') return patch;
+        const next = await mapValue(patch.changes.value);
+        if (next === patch.changes.value) return patch;
+        changed = true;
+        return { ...patch, changes: { ...patch.changes, value: next } };
+      }),
+    );
+  }
+  return changed ? { ...diff, addedLayers, modifiedLayers } : diff;
+}
+
+/** Persist image values in undo/redo stacks (blob: → canvas-asset: / data:). */
+export async function serializeHistorySteps(steps: HistoryStep[]): Promise<HistoryStep[]> {
+  return Promise.all(
+    steps.map(async (step) => {
+      if (isHistoryStepDiff(step)) {
+        const [undoDiff, redoDiff] = await Promise.all([
+          mapDiffImageValues(step.undoDiff, persistLayerImageValue),
+          mapDiffImageValues(step.redoDiff, persistLayerImageValue),
+        ]);
+        if (undoDiff === step.undoDiff && redoDiff === step.redoDiff) return step;
+        return { ...step, undoDiff, redoDiff };
+      }
+      return serializeDocumentImages(step);
+    }),
+  );
+}
+
+/** Restore image values in undo/redo stacks (canvas-asset: → blob:). */
+export async function hydrateHistorySteps(steps: HistoryStep[]): Promise<HistoryStep[]> {
+  return Promise.all(
+    steps.map(async (step) => {
+      if (isHistoryStepDiff(step)) {
+        const [undoDiff, redoDiff] = await Promise.all([
+          mapDiffImageValues(step.undoDiff, hydrateLayerImageValue),
+          mapDiffImageValues(step.redoDiff, hydrateLayerImageValue),
+        ]);
+        if (undoDiff === step.undoDiff && redoDiff === step.redoDiff) return step;
+        return { ...step, undoDiff, redoDiff };
+      }
+      return hydrateDocumentImages(step);
+    }),
+  );
 }
 
 /**

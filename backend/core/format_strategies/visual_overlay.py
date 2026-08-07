@@ -151,11 +151,14 @@ class VisualOverlayStrategy:
         for number in range(desde, hasta + 1):
             reader = PdfReader(io.BytesIO(template_bytes))
             target_page_idx = min(mapping.get("page", 0), len(reader.pages) - 1)
-            page = reader.pages[target_page_idx]
+            # Añadir la página al writer ANTES de mergear: merge_page sobre una
+            # página sin writer asignado invoca PageObject.replace_contents(),
+            # deprecado por pypdf (se eliminará en 7.0.0).
+            writer.add_page(reader.pages[target_page_idx])
+            page = writer.pages[-1]
             if mapping.get("blank_mcids"):
                 _blank_number_in_xobject(page, mapping["blank_mcids"])
             _apply_visual_overlay(page, number, mapping)
-            writer.add_page(page)
         buffer = io.BytesIO()
         writer.write(buffer)
         return buffer.getvalue()
@@ -167,9 +170,11 @@ class SimpleOverlayStrategy:
         for number in range(desde, hasta + 1):
             reader = PdfReader(io.BytesIO(template_bytes))
             target_page_idx = min(_DEFAULT_OVERLAY_MAPPING.get("page", 0), len(reader.pages) - 1)
-            page = reader.pages[target_page_idx]
+            # Mismo patrón que VisualOverlayStrategy: attach antes de mergear
+            # para no usar PageObject.replace_contents() (deprecado en pypdf).
+            writer.add_page(reader.pages[target_page_idx])
+            page = writer.pages[-1]
             _apply_visual_overlay(page, number, _DEFAULT_OVERLAY_MAPPING)
-            writer.add_page(page)
         buffer = io.BytesIO()
         writer.write(buffer)
         return buffer.getvalue()

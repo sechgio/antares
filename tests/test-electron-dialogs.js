@@ -155,6 +155,7 @@ async function run() {
     {
       html: '<!doctype html><html><head><style>.x{background:url(file:///etc/passwd)}</style></head><body><script>alert(1)</script>PDF</body></html>',
       filename: 'reporte.pdf',
+      return_base64: true,
     },
     dialog,
     win,
@@ -163,7 +164,9 @@ async function run() {
   const pdfWindow = FakeBrowserWindow.instances[0];
   assert(pdf.handled === true, 'html_to_pdf should be handled by Electron');
   assert(pdf.result.filename === 'reporte.pdf', 'html_to_pdf should return requested filename');
-  assert(pdf.result.pdf_base64 === Buffer.from('%PDF-test').toString('base64'), 'html_to_pdf should return PDF bytes as base64');
+  assert(pdf.result.pdf_base64 === Buffer.from('%PDF-test').toString('base64'), 'html_to_pdf should return PDF bytes as base64 when return_base64 is set');
+  assert(typeof pdf.result.saved_path === 'string' && pdf.result.saved_path.length > 0, 'html_to_pdf should always persist PDF to disk');
+  assert(typeof pdf.result.file_token === 'string' && pdf.result.file_token.startsWith('antares-read'), 'html_to_pdf should return a read file_token');
   assert(pdfWindow.options.show === false, 'html_to_pdf should render in a hidden window');
   assert(pdfWindow.loadedFile.endsWith('render.html'), 'html_to_pdf should render from a temporary HTML file');
   assert(pdfWindow.printOptions.printBackground === true, 'html_to_pdf should print backgrounds');
@@ -171,6 +174,25 @@ async function run() {
   assert(pdfWindow.closed === true, 'html_to_pdf should close the hidden window');
   assert(!pdfWindow.loadedHtml.includes('<script'), 'html_to_pdf should strip script tags');
   assert(!pdfWindow.loadedHtml.includes('file:///etc/passwd'), 'html_to_pdf should block local file URLs');
+
+  // Without return_base64 (and without user outputPath): disk + token only — no base64.
+  {
+    FakeBrowserWindow.instances.length = 0;
+    const pdfDiskOnly = await handleDialogCall(
+      'html_to_pdf',
+      {
+        html: '<!doctype html><html><body>PDF</body></html>',
+        filename: 'auto.pdf',
+      },
+      dialog,
+      win,
+      { BrowserWindow: FakeBrowserWindow },
+    );
+    assert(pdfDiskOnly.handled === true, 'html_to_pdf auto-disk should be handled');
+    assert(typeof pdfDiskOnly.result.saved_path === 'string', 'html_to_pdf auto-disk should return saved_path');
+    assert(typeof pdfDiskOnly.result.file_token === 'string', 'html_to_pdf auto-disk should return file_token');
+    assert(pdfDiskOnly.result.pdf_base64 === undefined, 'html_to_pdf without return_base64 must omit pdf_base64');
+  }
 
   const fsForImage = require('fs');
   const osForImage = require('os');
