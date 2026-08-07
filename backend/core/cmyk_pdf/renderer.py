@@ -8,8 +8,9 @@ import logging
 import math
 import os
 import re
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any, Iterator, cast
+from typing import Any, cast
 
 import fitz  # PyMuPDF
 from PIL import Image, ImageOps

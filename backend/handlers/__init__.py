@@ -172,8 +172,8 @@ class HandlerRegistry:
     def warm_post_ready(self) -> None:
         """Load canvas + conversion after ready so first convert/canvas use is warm."""
         self.warm(_POST_READY_HANDLER_MODULES)
-        # Move the WeasyPrint cold cliff (~1–15 s first render) off the user's
-        # first PDF. Failures are non-fatal — PDF paths still lazy-import.
+        # Move the WeasyPrint cold cliff (~1-15 s first render) off the user's
+        # first PDF. Failures are non-fatal - PDF paths still lazy-import.
         try:
             from backend.utils.pdf_html import write_pdf_sanitized
 
