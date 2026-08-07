@@ -31,8 +31,8 @@ function assertActionsPinned(workflow, label) {
 function run() {
   console.log('Testing CI/CD workflow safety and reproducibility...\n');
 
-  const ci = fs.readFileSync(CI_PATH, 'utf8');
-  const release = fs.readFileSync(RELEASE_PATH, 'utf8');
+  const ci = fs.readFileSync(CI_PATH, 'utf8').replace(/\r\n/g, '\n');
+  const release = fs.readFileSync(RELEASE_PATH, 'utf8').replace(/\r\n/g, '\n');
   const packageJson = JSON.parse(fs.readFileSync(PACKAGE_PATH, 'utf8'));
 
   assert(/permissions:\r?\n\s+contents:\s+read/.test(ci), 'CI has explicit read-only permissions');
@@ -61,7 +61,8 @@ function run() {
   assert(release.includes('Antares-Portable-*.exe'), 'Release allowlists the portable executable');
   assert(release.includes('latest.yml'), 'Release includes updater metadata');
   assert(release.includes('SHA256SUMS.txt'), 'Release includes generated checksums');
-  assert(!release.includes('path: dist-electron\n'), 'Release does not upload the unpacked build directory');
+  const uploadBlock = release.slice(release.indexOf('uses: actions/upload-artifact'), release.indexOf('uses: actions/download-artifact'));
+  assert(!uploadBlock.includes('path: dist-electron'), 'Release does not upload the unpacked build directory');
   assert(!release.includes('dist-electron/* \\\n'), 'Release does not pass directories to gh release upload');
   assert(!release.includes('--clobber'), 'Release never deletes published assets during retry');
   assert(release.includes('--draft'), 'Release is created as a draft before asset verification');
