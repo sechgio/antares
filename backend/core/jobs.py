@@ -216,9 +216,32 @@ class JobManager:
                 job.state.cancel_requested = False
 
             def _wrapped_target(j: Job = job, t: Callable[..., Any] = target) -> None:
-                """Ensure running=False is always set when the target finishes."""
+                """Ensure running=False is always set when the target finishes.
+
+                A target that raises is recorded on the job (result + log +
+                err_count) so a crashed job is visible through process_status
+                instead of dying silently on the thread (only a stderr
+                traceback). Conversion jobs catch their own exceptions inside
+                the target; this is the safety net for every other job type.
+                """
                 try:
                     t(j)
+                except Exception as exc:
+                    logger.exception("Job %s crashed: %s", j.id, exc)
+                    with j.state._lock:
+                        j.state.err_count = max(j.state.err_count, 1)
+                        j.state.logs.insert(0, {
+                            "message": f"Error interno: {type(exc).__name__}: {exc}",
+                            "tag": "error",
+                        })
+                        if len(j.state.logs) > 100:
+                            del j.state.logs[100:]
+                        j.result = {
+                            "ok_count": j.state.ok_count,
+                            "err_count": j.state.err_count,
+                            "cancelled": False,
+                            "error": f"{type(exc).__name__}: {exc}",
+                        }
                 finally:
                     with j.state._lock:
                         j.state.running = False

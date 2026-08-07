@@ -9,7 +9,7 @@ from typing import Any
 
 from backend.core.database import get_db_path
 from backend.core.migrations import Migration, MigrationManager
-from backend.core.repository import _db_lock, get_connection, get_read_connection
+from backend.core.repository import _db_lock, _db_read_lock, get_connection, get_read_connection
 from backend.core.run_types import ALL_RUN_TYPES  # noqa: F401
 
 # ─── Constants ─────────────────────────────────────────────────────────────
@@ -215,7 +215,7 @@ def list_runs(
         f"ORDER BY timestamp DESC LIMIT ? OFFSET ?"
     )
     params.extend([limit, offset])
-    with _db_lock:
+    with _db_read_lock:
         conn = get_read_connection(db)
         rows = conn.execute(sql, params).fetchall()
     return [dict(r) for r in rows]
@@ -228,7 +228,7 @@ def list_runs_by_ids(ids: list[int]) -> list[dict[str, Any]]:
     _ensure_table()
     db = get_db_path()
     placeholders = ", ".join(["?"] * len(ids))
-    with _db_lock:
+    with _db_read_lock:
         conn = get_read_connection(db)
         rows = conn.execute(
             f"SELECT {_HISTORIAL_SELECT} FROM historial WHERE id IN ({placeholders}) "
@@ -244,7 +244,7 @@ def get_run(run_id: int) -> dict[str, Any] | None:
     """Get a single run by ID."""
     _ensure_table()
     db = get_db_path()
-    with _db_lock:
+    with _db_read_lock:
         conn = get_read_connection(db)
         row = conn.execute(
             f"SELECT {_HISTORIAL_SELECT} FROM historial WHERE id = ?",

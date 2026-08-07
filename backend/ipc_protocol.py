@@ -191,6 +191,10 @@ def _json_default(obj: Any) -> Any:
 _SKIP = object()
 
 _REQUEST_ID_RE = re.compile(r'"id"\s*:\s*(?:"([^"\\]*(?:\\.[^"\\]*)*)"|(-?\d+))')
+# Variante bytes para el path oversized: el prefijo truncado puede cortar un
+# carácter UTF-8 multibyte, así que el id se extrae de los bytes crudos en vez
+# de depender de un decode que puede fallar.
+_REQUEST_ID_RE_BYTES = re.compile(rb'"id"\s*:\s*(?:"([^"\\]*(?:\\.[^"\\]*)*)"|(-?\d+))')
 _READ_CHUNK_SIZE = 64 * 1024
 _REQUEST_ID_PREFIX_SIZE = 4096
 
@@ -202,6 +206,16 @@ def _try_extract_request_id(line: str) -> str | int | None:
         return None
     if match.group(1) is not None:
         return bytes(match.group(1), "utf-8").decode("unicode_escape")
+    return int(match.group(2))
+
+
+def _try_extract_request_id_bytes(prefix: bytes) -> str | int | None:
+    """Best-effort id extraction from a truncated raw-bytes prefix."""
+    match = _REQUEST_ID_RE_BYTES.search(prefix)
+    if not match:
+        return None
+    if match.group(1) is not None:
+        return match.group(1).decode("unicode_escape")
     return int(match.group(2))
 
 
@@ -285,15 +299,21 @@ def read_message() -> IPCMessage | None:
             return None
         # Parse window starts only after the line is fully read (excludes stdin idle).
         parse_start = ipc_phase_telemetry.begin_parse()
-        if isinstance(line, bytes):
-            line = line.decode("utf-8")
         if oversized:
+            # El prefijo truncado puede cortar un carácter UTF-8 multibyte: el
+            # id se extrae de los bytes crudos (viaja al inicio del JSON) para
+            # que la respuesta -32600 sí se envíe. Antes, el decode estricto
+            # lanzaba UnicodeDecodeError, caía en el except genérico y el
+            # caller esperaba hasta su timeout sin respuesta alguna.
+            if isinstance(line, bytes):
+                msg_id = _try_extract_request_id_bytes(line)
+            else:
+                msg_id = _try_extract_request_id(line)
             logger.error(
                 "Inbound IPC payload too large: %d bytes (max: %d)",
                 line_bytes,
                 _MAX_PAYLOAD_SIZE,
             )
-            msg_id = _try_extract_request_id(line)
             if msg_id is not None:
                 ipc_phase_telemetry.finish_parse(msg_id, parse_start)
                 send_response(
@@ -304,6 +324,8 @@ def read_message() -> IPCMessage | None:
                     error_category="INVALID_REQUEST",
                 )
             return _SKIP  # type: ignore[return-value]
+        if isinstance(line, bytes):
+            line = line.decode("utf-8")
         data = json.loads(line)
         msg_id = data.get("id") if isinstance(data, dict) else None
         try:

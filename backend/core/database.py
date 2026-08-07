@@ -11,7 +11,7 @@ from typing import Any, cast
 
 from backend.core.config_fields import get_field_names, load_fields, save_fields
 from backend.core.exceptions import DatabaseError
-from backend.core.repository import _db_lock, get_connection, get_read_connection
+from backend.core.repository import _db_lock, _db_read_lock, get_connection, get_read_connection
 from backend.utils.paths import user_data_path
 
 logger = logging.getLogger(__name__)
@@ -319,8 +319,8 @@ def validate_fields_migration(fields: list[dict[str, Any]]) -> None:
     El veredicto replica exactamente la rama de aborto de ``init_db`` usando
     ``_schema_diff``, así la validación y la migración real no pueden divergir.
     """
-    conn = _get_connection()
-    with _db_lock:
+    with _db_read_lock:
+        conn = _get_read_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='imagenes'")
         if cursor.fetchone() is None:
@@ -479,11 +479,11 @@ def exportar_excel(excel_path: str) -> int:
         msg = "pandas no está instalado."
         raise ImportError(msg) from exc
 
-    with _db_lock:
-        conn = _get_connection()
+    with _db_read_lock:
+        conn = _get_read_connection()
         field_names = [_validate_identifier(fn) for fn in get_field_names()]
         cols = ", ".join(_qi(fn) for fn in field_names)
-        df = pd.read_sql_query(f"SELECT {cols} FROM imagenes", conn)
+        df = pd.read_sql_query(f"SELECT {cols} FROM imagenes ORDER BY id", conn)
 
     df.to_excel(excel_path, index=False, engine="openpyxl")
     return len(df)
@@ -534,7 +534,7 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
     """
     if not codigos:
         return {}
-    with _db_lock:
+    with _db_read_lock:
         conn = _get_read_connection()
         cursor = conn.cursor()
         field_names = [_validate_identifier(fn) for fn in get_field_names()]
@@ -630,7 +630,7 @@ def buscar_por_columna(codigos: list[str], column: str) -> dict[str, dict[str, A
     if not codigos or not column:
         return {}
     safe_column = _validate_identifier(column)
-    with _db_lock:
+    with _db_read_lock:
         conn = _get_read_connection()
         cursor = conn.cursor()
         field_names_list = [_validate_identifier(fn) for fn in get_field_names()]
@@ -675,16 +675,22 @@ def buscar_por_columna(codigos: list[str], column: str) -> dict[str, dict[str, A
 def obtener_todos(limit: int | None = None, offset: int = 0) -> list[dict[str, Any]]:
     """Retorna registros como lista de diccionarios con paginación opcional.
 
+    Ordenado explícitamente por ``id`` (rowid): el mapeo posicional del modo
+    ``use_column_rename`` (archivo i ↔ registro i, en preview y en cada chunk
+    del job) depende de un orden determinista — sin ORDER BY, SQLite podía
+    devolver un orden distinto según el plan de consulta y desalinear el
+    renombrado respecto al registro correcto.
+
     Args:
         limit: Número máximo de registros a retornar. None = todos.
         offset: Número de registros a saltar desde el inicio.
     """
-    with _db_lock:
+    with _db_read_lock:
         conn = _get_read_connection()
         cursor = conn.cursor()
         field_names = [_validate_identifier(fn) for fn in get_field_names()]
         cols = ", ".join(_qi(fn) for fn in field_names)
-        sql = f"SELECT {cols} FROM imagenes"
+        sql = f"SELECT {cols} FROM imagenes ORDER BY id"
         params: list[Any] = []
         if limit is not None:
             sql += " LIMIT ? OFFSET ?"
