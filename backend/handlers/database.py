@@ -1,6 +1,7 @@
 """Database and field/pattern configuration handlers."""
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from backend.core.config_fields import get_field_names, load_fields, save_fields
@@ -83,17 +84,43 @@ def db_fields(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
 @with_locale
 def db_fields_update(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     fields = params.get("fields") or []
-    result = save_fields(fields)
-    from backend.core.database import init_db
-    init_db()
+    from backend.core.config_fields import load_fields, sanitize_field_defs, save_fields
+    from backend.core.database import init_db, validate_fields_migration
+
+    result = sanitize_field_defs(fields)
+    # Dry-run contra el catálogo vivo ANTES de tocar disco: una migración que
+    # abortaría (esquema nuevo sin columna compartida + filas existentes) debe
+    # fallar sin persistir la config nueva. Antes se guardaba la config y luego
+    # fallaba init_db, dejando disco ≠ esquema de tabla y rompiendo el arranque
+    # del backend en el siguiente inicio (init_db falla → sys.exit(1)).
+    validate_fields_migration(result)
+    old_fields = load_fields()
+    save_fields(result)
+    try:
+        init_db()
+    except Exception:
+        # Red de seguridad residual (p. ej. error I/O real de sqlite a mitad de
+        # la migración): restaura la config previa para que disco y tabla nunca
+        # queden divergentes.
+        with contextlib.suppress(Exception):
+            save_fields(old_fields)
+        raise
     return {"fields": result}
 
 @with_locale
 def db_fields_reset(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
-    from backend.core.config_fields import reset_to_defaults
+    from backend.core.config_fields import DEFAULT_FIELDS, load_fields, reset_to_defaults, save_fields
+    from backend.core.database import init_db, validate_fields_migration
+
+    validate_fields_migration(DEFAULT_FIELDS)
+    old_fields = load_fields()
     result = reset_to_defaults()
-    from backend.core.database import init_db
-    init_db()
+    try:
+        init_db()
+    except Exception:
+        with contextlib.suppress(Exception):
+            save_fields(old_fields)
+        raise
     return {"fields": result}
 
 @with_locale

@@ -111,6 +111,41 @@ def _table_matches_config(cursor: sqlite3.Cursor, fields: list[dict[str, Any]]) 
     return existing == expected
 
 
+# Mensaje compartido por la migración real (init_db) y el dry-run
+# (validate_fields_migration): el esquema nuevo no comparte ninguna columna con
+# un catálogo poblado, así que la migración no podría preservar datos.
+_MIGRATION_NO_OVERLAP_MSG = (
+    "Migración abortada: el nuevo esquema no conserva "
+    "ninguna columna del catálogo existente y dejaría "
+    "la tabla vacía. Conserva al menos una columna "
+    "compartida o importa un Excel nuevo."
+)
+
+
+def _schema_diff(
+    fields: list[dict[str, Any]],
+    existing_cols: dict[str, str],
+) -> tuple[dict[str, str], list[str], list[str]]:
+    """Diff entre un set de fields propuesto y las columnas vivas de la tabla.
+
+    Returns ``(new_cols, removed_cols, changed_cols)`` — misma semántica que el
+    diff inline que usaba ``init_db``. Compartida para que la validación dry-run
+    y la migración real no puedan divergir.
+    """
+    expected_cols = {f["name"]: f["type"] for f in fields}
+    expected_cols["id"] = "INTEGER"
+    new_cols = {
+        name: ftype for name, ftype in expected_cols.items()
+        if name not in existing_cols
+    }
+    removed_cols = [name for name in existing_cols if name not in expected_cols]
+    changed_cols = [
+        name for name in expected_cols
+        if name in existing_cols and existing_cols[name] != expected_cols[name]
+    ]
+    return new_cols, removed_cols, changed_cols
+
+
 def _create_indexes(cursor: sqlite3.Cursor, fields: list[dict[str, Any]]) -> None:
     """Create indexes on all queryable fields to avoid full-table scans.
 
@@ -160,12 +195,7 @@ def init_db(*, allow_catalog_wipe: bool = False) -> None:
             elif not _table_matches_config(cursor, fields):
                 cursor.execute("PRAGMA table_info(imagenes)")
                 existing_cols = {row[1]: row[2].upper() for row in cursor.fetchall()}
-                expected_cols = {f["name"]: f["type"] for f in fields}
-                expected_cols["id"] = "INTEGER"
-
-                new_cols = {name: ftype for name, ftype in expected_cols.items() if name not in existing_cols}
-                removed_cols = [name for name in existing_cols if name not in expected_cols]
-                changed_cols = [name for name in expected_cols if name in existing_cols and existing_cols[name] != expected_cols[name]]
+                new_cols, removed_cols, changed_cols = _schema_diff(fields, existing_cols)
 
                 if removed_cols or changed_cols:
                     try:
@@ -183,7 +213,10 @@ def init_db(*, allow_catalog_wipe: bool = False) -> None:
                     # nis/sgio → codigo/nombre/...) las filas viejas no llevan
                     # dato útil al nuevo esquema y reinsertarlas generaría rows
                     # de puros defaults/placeholder, además de chocar con UNIQUE.
-                    preserved_cols = [c for c in old_cols if c in expected_cols and c != "id"]
+                    preserved_cols = [
+                        c for c in old_cols
+                        if c in {f["name"] for f in fields} and c != "id"
+                    ]
                     if old_rows and preserved_cols:
                         data_fields = _data_fields(fields)
                         new_col_names = [_validate_identifier(f["name"]) for f in data_fields]
@@ -237,12 +270,7 @@ def init_db(*, allow_catalog_wipe: bool = False) -> None:
                             # silently empty the catalog (e.g. full column rename via UI).
                             cursor.execute("DROP TABLE imagenes")
                             cursor.execute("ALTER TABLE imagenes_old RENAME TO imagenes")
-                            raise DatabaseError(
-                                "Migración abortada: el nuevo esquema no conserva "
-                                "ninguna columna del catálogo existente y dejaría "
-                                "la tabla vacía. Conserva al menos una columna "
-                                "compartida o importa un Excel nuevo."
-                            )
+                            raise DatabaseError(_MIGRATION_NO_OVERLAP_MSG)
                         if old_rows:
                             logger.info(
                                 "Migración sin solapamiento de columnas (%s → %s): "
@@ -275,6 +303,44 @@ def init_db(*, allow_catalog_wipe: bool = False) -> None:
                     rollback_exc,
                 )
             raise DatabaseError(f"Inicialización/migración de base de datos fallida: {exc}") from exc
+
+
+def validate_fields_migration(fields: list[dict[str, Any]]) -> None:
+    """Dry-run: raise DatabaseError si aplicar estos fields al catálogo vivo abortaría.
+
+    La migración aborta cuando el nuevo esquema elimina/cambia columnas, el
+    catálogo tiene filas y NO hay ninguna columna compartida que preserve datos.
+    Este chequeo NO escribe nada (ni disco ni BD): los handlers lo ejecutan
+    ANTES de persistir la config nueva, para que un cambio de campos inválido
+    no deje el archivo de config adelantado respecto al esquema real de la tabla
+    (esa divergencia rompía el arranque del backend en el siguiente inicio:
+    init_db falla → sys.exit(1)).
+
+    El veredicto replica exactamente la rama de aborto de ``init_db`` usando
+    ``_schema_diff``, así la validación y la migración real no pueden divergir.
+    """
+    conn = _get_connection()
+    with _db_lock:
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='imagenes'")
+        if cursor.fetchone() is None:
+            return  # instalación fresca: el path CREATE nunca aborta
+        cursor.execute("PRAGMA table_info(imagenes)")
+        existing_cols = {row[1]: row[2].upper() for row in cursor.fetchall()}
+        _new_cols, removed_cols, changed_cols = _schema_diff(fields, existing_cols)
+        if not removed_cols and not changed_cols:
+            return  # aditivo o idéntico: nunca aborta
+        preserved = [
+            c for c in existing_cols
+            if c in {f["name"] for f in fields} and c != "id"
+        ]
+        if preserved:
+            return  # hay solape de columnas: la migración preserva datos
+        cursor.execute("SELECT COUNT(*) FROM imagenes")
+        row = cursor.fetchone()
+        if not (row and row[0]):
+            return  # tabla vacía: nada que perder
+        raise DatabaseError(_MIGRATION_NO_OVERLAP_MSG)
 
 
 def importar_excel(excel_path: str) -> dict[str, int]:
