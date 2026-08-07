@@ -1,7 +1,20 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../hooks/useToast';
 import PreviewPanelView from './PreviewPanelView';
+
+vi.mock('../../api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../api')>();
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      spreadsheetParse: vi.fn().mockResolvedValue({
+        sheets: [{ name: 'Hoja1', rows: [['SGIO', 'OTRA'], ['1', '2']] }],
+      }),
+    },
+  };
+});
 
 const CUSTOM_COLS_KEY = 'antares_preview_custom_columns';
 

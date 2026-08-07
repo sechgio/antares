@@ -34,9 +34,15 @@ function run() {
 
   const rootPkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
   const frontendPkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'frontend', 'package.json'), 'utf8'));
+  const rootLock = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8'));
+  const frontendLock = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'frontend', 'package-lock.json'), 'utf8'));
   const versions = {
     'package.json': rootPkg.version,
+    'package-lock.json': rootLock.version,
+    'package-lock.json packages[""]': rootLock.packages[''].version,
     'frontend/package.json': frontendPkg.version,
+    'frontend/package-lock.json': frontendLock.version,
+    'frontend/package-lock.json packages[""]': frontendLock.packages[''].version,
     'pyproject.toml': readPyprojectVersion(),
     'backend/version.py': readBackendVersion(),
   };

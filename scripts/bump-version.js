@@ -30,6 +30,17 @@ function updateFile(filePath, replacements) {
   }
 }
 
+function updateLockfileVersion(filePath, newVersion) {
+  if (!fs.existsSync(filePath)) return;
+  const lock = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  lock.version = newVersion;
+  if (lock.packages && lock.packages['']) {
+    lock.packages[''].version = newVersion;
+  }
+  fs.writeFileSync(filePath, JSON.stringify(lock, null, 2) + '\n', 'utf8');
+  console.log(`✓ Updated ${filePath}`);
+}
+
 const args = process.argv.slice(2);
 const type = args.find(a => ['patch', 'minor', 'major'].includes(a)) || 'patch';
 const shouldPr = args.includes('--pr');
@@ -57,6 +68,9 @@ if (fs.existsSync(frontendPkgPath)) {
   fs.writeFileSync(frontendPkgPath, JSON.stringify(frontendPkg, null, 2) + '\n', 'utf8');
   console.log('✓ Updated frontend/package.json');
 }
+
+updateLockfileVersion('package-lock.json', newVersion);
+updateLockfileVersion('frontend/package-lock.json', newVersion);
 
 updateFile('backend/version.py', [
   { regex: /__version__\s*=\s*"[^"]+"/, template: `__version__ = "${newVersion}"` },
