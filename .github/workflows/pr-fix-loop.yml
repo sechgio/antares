@@ -1,55 +1,49 @@
-name: PR Fix Loop
+name: PR Diagnostics
 
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened]
   workflow_dispatch:
     inputs:
       pr_number:
-        description: "PR number to fix (defaults to the PR that triggered this)"
-        required: false
+        description: "Pull request number to diagnose"
+        required: true
+        type: string
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+  pull-requests: read
   checks: read
 
 jobs:
-  fix-loop:
-    # Anti-loop: no correr en forks ni en commits auto-fix [skip-ci-fix]
-    if: |
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      !contains(github.event.head_commit.message, '[skip-ci-fix]')
+  diagnose:
+    name: Inspect failed PR checks
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Checkout repository (PR head)
-        uses: actions/checkout@v7
+      - name: Checkout trusted workflow code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0
-
-      - name: Setup Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: '3.10'
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
-          cache: npm
+          node-version: '22'
 
-      - name: Install dependencies
-        run: |
-          pip install -e ".[dev]"
-          npm install
-          cd frontend && npm install && cd ..
-
-      - name: Run PR Fix Loop
-        run: |
-          PR_NUM="${{ github.event.pull_request.number || github.event.inputs.pr_number }}"
-          node scripts/pr-fix-loop.js --ship --merge --pr "$PR_NUM"
+      - name: Validate PR number
+        shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Invalid PR number: $PR_NUMBER"
+            exit 1
+          fi
+
+      - name: Diagnose failed checks without side effects
+        shell: bash
+        run: |
+          node scripts/pr-fix-loop.js --pr "$PR_NUMBER"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}

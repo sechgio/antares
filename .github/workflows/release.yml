@@ -10,6 +10,11 @@ on:
         description: 'Existing semver release tag to build (for example v1.2.3)'
         required: true
         type: string
+      publish:
+        description: 'Publish the validated artifacts to GitHub Releases'
+        required: true
+        default: false
+        type: boolean
 
 permissions: {}
 
@@ -45,7 +50,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
+          node-version: '22'
           cache: npm
           cache-dependency-path: |
             package-lock.json
@@ -81,21 +86,6 @@ jobs:
       - name: Run CI checks
         run: npm run ci
 
-      # Keep this report visible without blocking existing releases until the
-      # currently reported dependency advisories are remediated.
-      - name: Report Node dependency audit
-        continue-on-error: true
-        shell: bash
-        run: |
-          set +e
-          npm audit --omit=dev --audit-level=high
-          root_status=$?
-          (cd frontend && npm audit --omit=dev --audit-level=high)
-          frontend_status=$?
-          if [[ $root_status -ne 0 || $frontend_status -ne 0 ]]; then
-            echo "Node dependency audit reported vulnerabilities; see the output above."
-          fi
-
   build:
     name: Build release artifacts
     permissions:
@@ -113,7 +103,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
+          node-version: '22'
           cache: npm
           cache-dependency-path: |
             package-lock.json
@@ -150,14 +140,25 @@ jobs:
       - name: Install dependencies
         run: |
           npm ci
-          cd frontend
-          npm ci
-          cd ..
-          python -m pip install pyinstaller
-          python -m pip install -e .
+          npm ci --prefix frontend
+          python -m pip install -e ".[build]"
 
       - name: Build Backend
         run: npm run build:backend
+
+      - name: Validate required build configuration
+        shell: pwsh
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          $required = @('VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY')
+          foreach ($name in $required) {
+            $value = [Environment]::GetEnvironmentVariable($name)
+            if ([string]::IsNullOrWhiteSpace($value)) {
+              throw "Required build configuration is missing: $name"
+            }
+          }
 
       - name: Build Frontend
         env:
@@ -169,11 +170,20 @@ jobs:
         run: npx --no-install electron-builder --win --publish never
 
       - name: Generate release checksums
-        shell: powershell
+        shell: pwsh
         run: |
-          $files = Get-ChildItem -LiteralPath 'dist-electron' -File
-          if (-not $files) {
-            throw 'No Electron artifacts were produced.'
+          $requiredPatterns = @(
+            'Antares-Setup-*.exe',
+            'Antares-Setup-*.exe.blockmap',
+            'Antares-Portable-*.exe',
+            'latest.yml'
+          )
+          $files = foreach ($pattern in $requiredPatterns) {
+            $matches = @(Get-ChildItem -Path "dist-electron/$pattern" -File)
+            if ($matches.Count -ne 1) {
+              throw "Expected exactly one release asset matching $pattern, found $($matches.Count)."
+            }
+            $matches[0]
           }
           $checksums = foreach ($file in $files) {
             $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -185,13 +195,19 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-assets-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-          path: dist-electron
+          path: |
+            dist-electron/Antares-Setup-*.exe
+            dist-electron/Antares-Setup-*.exe.blockmap
+            dist-electron/Antares-Portable-*.exe
+            dist-electron/latest.yml
+            dist-electron/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 7
 
   publish:
     name: Publish GitHub Release
     needs: [build]
+    if: github.event_name == 'push' || inputs.publish
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
@@ -205,7 +221,7 @@ jobs:
           name: release-assets-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           path: dist-electron
 
-      - name: Create release if needed and upload assets
+      - name: Publish validated assets atomically
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -213,12 +229,46 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          if ! gh release view "$RELEASE_TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" \
-              --repo "$REPOSITORY" \
-              --verify-tag \
-              --generate-notes
+          if gh release view "$RELEASE_TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; refusing to replace published assets."
+            exit 1
           fi
-          gh release upload "$RELEASE_TAG" dist-electron/* \
+
+          published=false
+          cleanup_draft() {
+            if [[ "$published" != "true" ]]; then
+              gh release delete "$RELEASE_TAG" --repo "$REPOSITORY" --yes >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup_draft EXIT
+
+          gh release create "$RELEASE_TAG" \
             --repo "$REPOSITORY" \
-            --clobber
+            --verify-tag \
+            --generate-notes \
+            --draft
+
+          assets=(
+            dist-electron/Antares-Setup-*.exe
+            dist-electron/Antares-Setup-*.exe.blockmap
+            dist-electron/Antares-Portable-*.exe
+            dist-electron/latest.yml
+            dist-electron/SHA256SUMS.txt
+          )
+          for asset in "${assets[@]}"; do
+            if [[ ! -f "$asset" ]]; then
+              echo "Missing release asset: $asset"
+              exit 1
+            fi
+          done
+
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --repo "$REPOSITORY"
+
+          uploaded_count="$(gh release view "$RELEASE_TAG" --repo "$REPOSITORY" --json assets --jq '.assets | length')"
+          if [[ "$uploaded_count" -ne 5 ]]; then
+            echo "Expected 5 uploaded assets, found $uploaded_count"
+            exit 1
+          fi
+
+          gh release edit "$RELEASE_TAG" --repo "$REPOSITORY" --draft=false
+          published=true

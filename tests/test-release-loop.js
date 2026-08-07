@@ -37,6 +37,21 @@ function run() {
       !qualityGate.includes("trySh('npm run typecheck:frontend"),
     'quality gate does not swallow mandatory command failures'
   );
+  assert(
+    qualityGate.includes("sh('npm run audit:python 2>&1'"),
+    'Python dependency audit propagates command failures'
+  );
+  assert(
+    !qualityGate.includes("trySh('npm run audit:python"),
+    'Python dependency audit cannot fail open'
+  );
+
+  assert(
+    content.includes('HEAD...origin/main') || content.includes('HEAD === origin/main'),
+    'release requires local HEAD to equal origin/main'
+  );
+  assert(content.includes('git tag -a'), 'release creates an annotated tag');
+  assert(!content.includes('gh release create'), 'local release loop leaves publication to GitHub Actions');
 
   try {
     execSync('node --check scripts/release-loop.js', { cwd: ROOT, stdio: 'pipe' });

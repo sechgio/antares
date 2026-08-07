@@ -4,11 +4,11 @@
  * Antares Release Pipeline Loop
  * ==============================
  *
- * Flujo de 8 pasos para releases automatizados y seguros.
+ * Flujo de 7 pasos para validar y disparar releases automatizados.
  *
  * Flags:
  *   (ninguno)  = dry-run — valida todo, sin side effects
- *   --ship     = ejecuta side effects reales (tag, push, release)
+ *   --ship     = crea y empuja el tag; GitHub Actions publica la release
  *   --build    = también corre build local (backend + frontend)
  *
  * Exit codes:
@@ -105,12 +105,14 @@ function validateEnvironment() {
     throw new Error('El working tree no está limpio. Commit o stash tus cambios primero.');
   }
 
-  // up-to-date with origin/main
+  // HEAD must be exactly the reviewed commit currently at origin/main.
   sh('git fetch origin main 2>&1', { silent: true });
-  const behind = sh('git rev-list --count HEAD..origin/main', { silent: true });
-  if (Number(behind) > 0) {
+  const [ahead, behind] = sh('git rev-list --left-right --count HEAD...origin/main', { silent: true })
+    .split(/\s+/)
+    .map(Number);
+  if (ahead !== 0 || behind !== 0) {
     throw new Error(
-      `Tu main está ${behind} commit(s) detrás de origin/main. Haz git pull primero.`
+      `HEAD debe coincidir exactamente con origin/main (ahead=${ahead}, behind=${behind}).`
     );
   }
 }
@@ -222,11 +224,9 @@ function runQualityGate() {
     throw new Error(`Tests fallaron.\n${testResult.slice(-500)}`);
   }
 
-  // Audit
-  const auditResult = trySh('npm run audit:python 2>&1', { silent: true });
-  if (auditResult && auditResult.includes('VULNERABILITY')) {
-    console.warn(`    ⚠️  pip-audit reportó vulnerabilidades:\n${auditResult.slice(0, 300)}`);
-  }
+  // Dependency audits are mandatory and fail closed.
+  sh('npm run audit:python 2>&1', { silent: true });
+  sh('npm run audit:node 2>&1', { silent: true });
 }
 
 function runBuild() {
@@ -248,41 +248,13 @@ function runBuild() {
 }
 
 function createGitTag(version) {
-  sh(`git tag v${version}`, { silent: true });
-  console.log(`    Tag v${version} creado.`);
+  sh(`git tag -a v${version} -m "Release v${version}"`, { silent: true });
+  console.log(`    Tag anotado v${version} creado.`);
 }
 
 function pushTag(version) {
   sh(`git push origin v${version}`, { silent: true });
   console.log(`    Tag v${version} pusheado a origin.`);
-}
-
-function createGitHubRelease(version) {
-  // Extract changelog entry for this version
-  const changelog = fs.readFileSync(path.join(ROOT, 'CHANGELOG.md'), 'utf8');
-  const headerRegex = new RegExp(`## \\[${version.replace(/\./g, '\\.')}\\]\\s*—\\s*\\d{4}-\\d{2}-\\d{2}`);
-  const match = changelog.match(headerRegex);
-  const startIndex = match.index + match[0].length;
-  const remaining = changelog.slice(startIndex);
-  const nextHeader = remaining.match(/\n##\s+\[/);
-  const entryContent = nextHeader
-    ? remaining.slice(0, nextHeader.index)
-    : remaining;
-
-  const notesFile = path.join(ROOT, `release-notes-v${version}.md`);
-  fs.writeFileSync(notesFile, entryContent.trim(), 'utf8');
-
-  try {
-    sh(
-      `gh release create "v${version}" --repo "${REPO_OWNER}/${REPO_NAME}" ` +
-      `--title "v${version}" --notes-file "${notesFile}"`,
-      { silent: true }
-    );
-    console.log(`    GitHub Release v${version} creado.`);
-  } finally {
-    // Cleanup temp notes file
-    try { fs.unlinkSync(notesFile); } catch {}
-  }
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -343,18 +315,11 @@ function runReleaseLoop(isShip, doBuild) {
     skip('⑦ Push tag a origin', 'dry-run, usa --ship para ejecutar');
   }
 
-  // ── Step 8: Create GitHub Release ──
-  if (isShip) {
-    step('⑧ Crear GitHub Release', () => createGitHubRelease(version));
-  } else {
-    skip('⑧ Crear GitHub Release', 'dry-run, usa --ship para ejecutar');
-  }
-
   // ── Summary ──
   console.log(`\n════════════════════════════════════════════`);
   if (isShip) {
-    console.log(`  ✅ Release v${version} completado.`);
-    console.log(`  GitHub Actions construirá el installer.`);
+    console.log(`  ✅ Tag v${version} enviado.`);
+    console.log(`  GitHub Actions validará, construirá y publicará la release.`);
     console.log(`  ⏳ Revisa: https://github.com/${REPO_OWNER}/${REPO_NAME}/actions`);
   } else {
     console.log(`  ✅ Dry-run: todas las validaciones pasaron.`);

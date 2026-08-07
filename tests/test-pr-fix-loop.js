@@ -1,4 +1,4 @@
-// Smoke test: pr-fix-loop.js existe, parsea, y el workflow de GH Actions tiene las guardas anti-loop.
+// Smoke test: el fixer local conserva sus guardas y el workflow remoto solo diagnostica manualmente.
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
@@ -40,10 +40,21 @@ function run() {
 
   assert(fs.existsSync(workflowPath), '.github/workflows/pr-fix-loop.yml exists');
   const wf = fs.readFileSync(workflowPath, 'utf8');
-  assert(wf.includes('contents: write'), 'workflow has contents:write permission for push');
-  assert(wf.includes('pull-requests: write'), 'workflow has pull-requests:write permission for comments/merge');
-  assert(wf.includes('full_name == github.repository'), 'workflow has anti-fork guard');
-  assert(wf.includes('[skip-ci-fix]'), 'workflow skips auto-fix commits to prevent infinite loop');
+  assert(wf.includes('workflow_dispatch:'), 'workflow is available for explicit manual diagnostics');
+  assert(!wf.includes('pull_request:'), 'workflow does not execute automatically on untrusted PR code');
+  assert(wf.includes('required: true'), 'workflow requires an explicit PR number');
+  assert(wf.includes('contents: read'), 'workflow has read-only repository permission');
+  assert(wf.includes('pull-requests: read'), 'workflow has read-only pull request permission');
+  assert(!wf.includes('contents: write'), 'workflow cannot push commits');
+  assert(!wf.includes('pull-requests: write'), 'workflow cannot comment or merge');
+  assert(wf.includes('persist-credentials: false'), 'workflow checkout does not persist Git credentials');
+  assert(!wf.includes('npm install'), 'workflow does not execute dependency lifecycle scripts');
+  assert(!wf.includes('--ship'), 'workflow never enables fixer side effects');
+  assert(!wf.includes('--merge'), 'workflow never auto-merges');
+  assert(
+    [...wf.matchAll(/uses:\s+actions\/[^@\s]+@([^\s#]+)/g)].every((match) => /^[0-9a-f]{40}$/.test(match[1])),
+    'workflow pins GitHub actions to full commit SHAs'
+  );
 
   try {
     execSync('node --check scripts/pr-fix-loop.js', { cwd: ROOT, stdio: 'pipe' });
