@@ -198,13 +198,28 @@ def init_db(*, allow_catalog_wipe: bool = False) -> None:
                 new_cols, removed_cols, changed_cols = _schema_diff(fields, existing_cols)
 
                 if removed_cols or changed_cols:
+                    read_cursor: sqlite3.Cursor | None = None
                     try:
-                        cursor.execute("SELECT * FROM imagenes")
-                        old_rows = cursor.fetchall()
-                        old_cols = [d[0] for d in cursor.description]
+                        # Contar primero (barato) para decidir la rama sin
+                        # materializar filas que se van a descartar.
+                        cursor.execute("SELECT COUNT(*) FROM imagenes")
+                        total_old = int(cursor.fetchone()[0])
+                        has_rows = total_old > 0
+                        old_cols: list[str] = []
+                        if has_rows:
+                            # Segundo cursor sobre la MISMA conexión: mantiene
+                            # un snapshot de la tabla vieja a través del RENAME
+                            # (ALTER TABLE RENAME no libera el btree) y permite
+                            # insertar por chunks sin retener todas las filas
+                            # en memoria (fetchall materializaba el catálogo
+                            # completo).
+                            read_cursor = conn.cursor()
+                            read_cursor.execute("SELECT * FROM imagenes")
+                            old_cols = [d[0] for d in read_cursor.description]
                     except sqlite3.Error as exc:
                         logger.warning("No se pudieron leer datos antiguos durante migración: %s", exc)
-                        old_rows = []
+                        total_old = 0
+                        has_rows = False
                         old_cols = []
                     cursor.execute("ALTER TABLE imagenes RENAME TO imagenes_old")
                     cursor.execute(_build_schema(fields))
@@ -217,7 +232,7 @@ def init_db(*, allow_catalog_wipe: bool = False) -> None:
                         c for c in old_cols
                         if c in {f["name"] for f in fields} and c != "id"
                     ]
-                    if old_rows and preserved_cols:
+                    if has_rows and preserved_cols and read_cursor is not None:
                         data_fields = _data_fields(fields)
                         new_col_names = [_validate_identifier(f["name"]) for f in data_fields]
                         placeholders = ", ".join(["?"] * len(new_col_names))
@@ -227,7 +242,7 @@ def init_db(*, allow_catalog_wipe: bool = False) -> None:
                             insert_sql = f"INSERT INTO imagenes ({col_names}) VALUES ({placeholders})"
                             chunk: list[list[Any]] = []
                             chunk_size = 500
-                            for i, row in enumerate(old_rows):
+                            for i, row in enumerate(read_cursor):
                                 row_dict = dict(zip(old_cols, row, strict=False))
                                 values: list[Any] = []
                                 for f in data_fields:
@@ -242,7 +257,7 @@ def init_db(*, allow_catalog_wipe: bool = False) -> None:
                                         # (p. ej. codigo="" en todas). Uniquificar por
                                         # índice sólo en ese caso; el resto conserva el
                                         # default constante original.
-                                        if f.get("unique") and len(old_rows) > 1:
+                                        if f.get("unique") and total_old > 1:
                                             if isinstance(default, str):
                                                 default = f"{default}{i}" if default else str(i)
                                             elif isinstance(default, (int, float)):
@@ -258,20 +273,30 @@ def init_db(*, allow_catalog_wipe: bool = False) -> None:
                                     chunk.clear()
                             if chunk:
                                 cursor.executemany(insert_sql, chunk)
+                            read_cursor.close()  # consumido; libera el lock del SELECT
+                            read_cursor = None
                             cursor.execute("DROP TABLE imagenes_old")
                         except sqlite3.Error as exc:
+                            if read_cursor is not None:
+                                read_cursor.close()  # el SELECT activo bloquearía el DROP
+                                read_cursor = None
                             logger.error("Fallo migración de datos, se mantiene tabla antigua: %s", exc)
                             cursor.execute("DROP TABLE imagenes")
                             cursor.execute("ALTER TABLE imagenes_old RENAME TO imagenes")
                             raise DatabaseError(f"Migración fallida, esquema anterior preservado: {exc}") from exc
                     else:
-                        if old_rows and not allow_catalog_wipe:
+                        if read_cursor is not None:
+                            # Rama abort/wipe: el SELECT quedó abierto sin consumir
+                            # y mantiene un lock que bloquearía el DROP/ALTER.
+                            read_cursor.close()
+                            read_cursor = None
+                        if has_rows and not allow_catalog_wipe:
                             # Abort: dropping old data with zero column overlap would
                             # silently empty the catalog (e.g. full column rename via UI).
                             cursor.execute("DROP TABLE imagenes")
                             cursor.execute("ALTER TABLE imagenes_old RENAME TO imagenes")
                             raise DatabaseError(_MIGRATION_NO_OVERLAP_MSG)
-                        if old_rows:
+                        if has_rows:
                             logger.info(
                                 "Migración sin solapamiento de columnas (%s → %s): "
                                 "catálogo vaciado, no se preservaron filas viejas.",
@@ -369,27 +394,34 @@ def importar_excel(excel_path: str) -> dict[str, int]:
         msg = f"No se encontró el archivo: {excel_path}"
         raise FileNotFoundError(msg)
 
-    with _db_lock:
-        # read_only lowers peak RAM; keep formulas as stored text (no data_only).
-        df = pd.read_excel(
-            excel_path,
-            dtype=str,
-            engine="openpyxl",
-            engine_kwargs={"read_only": True},
-        )
-        df.columns = _normalize_excel_columns(list(df.columns))
+    # Lectura y normalización FUERA del lock: pandas puede tardar segundos en
+    # Excels grandes y no debe bloquear las demás operaciones de BD (antes todo
+    # el import corría bajo _db_lock, congelando previews y lecturas).
+    # read_only lowers peak RAM; keep formulas as stored text (no data_only).
+    df = pd.read_excel(
+        excel_path,
+        dtype=str,
+        engine="openpyxl",
+        engine_kwargs={"read_only": True},
+    )
+    df.columns = _normalize_excel_columns(list(df.columns))
 
-        existing_fields = {f["name"]: f for f in load_fields()}
-        fields = [
-            {
-                **existing_fields.get(column, {}),
-                "name": column,
-                "type": existing_fields.get(column, {}).get("type", "TEXT"),
-                "required": bool(existing_fields.get(column, {}).get("required", False)),
-                "unique": bool(existing_fields.get(column, {}).get("unique", False)),
-            }
-            for column in df.columns
-        ]
+    existing_fields = {f["name"]: f for f in load_fields()}
+    fields = [
+        {
+            **existing_fields.get(column, {}),
+            "name": column,
+            "type": existing_fields.get(column, {}).get("type", "TEXT"),
+            "required": bool(existing_fields.get(column, {}).get("required", False)),
+            "unique": bool(existing_fields.get(column, {}).get("unique", False)),
+        }
+        for column in df.columns
+    ]
+    if not fields:
+        msg = f"El Excel no contiene columnas válidas para importar: {list(df.columns)}"
+        raise ValueError(msg)
+
+    with _db_lock:
         fields = save_fields(fields)
         if not fields:
             msg = f"El Excel no contiene columnas válidas para importar: {list(df.columns)}"
@@ -711,12 +743,13 @@ def limpiar_base_datos() -> int:
         cursor.execute("SELECT COUNT(*) FROM imagenes")
         row = cursor.fetchone()
         count = int(row[0]) if row else 0
+        # La conexión usa isolation_level=None (autocommit): el DELETE ya quedó
+        # commiteado; un commit() explícito aquí era un no-op.
         cursor.execute("DELETE FROM imagenes")
-        conn.commit()
     # No VACUUM aquí: reescribe TODO el archivo (incluidas historial/ubicaciones)
-    # mientras se mantiene _db_lock, bloqueando cualquier otra operación de BD por
-    # segundos. SQLite reutiliza las páginas liberadas en el siguiente import, así
-    # que el archivo no crece sin límite entre ciclos de vaciar/reimportar.
+    # y puede tardar segundos con catálogos grandes. SQLite reutiliza las páginas
+    # liberadas en el siguiente import, así que el archivo no crece sin límite
+    # entre ciclos de vaciar/reimportar.
     return count
 
 
@@ -734,10 +767,16 @@ def _normalize_header_alias(header: str) -> str:
 
 
 def _detect_column(columns: list[str], aliases: tuple[str, ...]) -> str | None:
-    """Devuelve la columna que mejor coincida con los alias, respetando el orden de prioridad."""
+    """Devuelve la columna que mejor coincida con los alias, respetando el orden de prioridad.
+
+    Los alias se normalizan con la misma función que los encabezados: alias con
+    guiones bajos ("new_name", "nuevo_nombre") ahora matchean encabezados con
+    espacios ("new name", "nuevo nombre") y viceversa.
+    """
     for alias in aliases:
+        normalized_alias = _normalize_header_alias(alias)
         for col in columns:
-            if _normalize_header_alias(col) == alias:
+            if _normalize_header_alias(col) == normalized_alias:
                 return col
     return None
 

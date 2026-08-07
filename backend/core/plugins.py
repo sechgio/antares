@@ -132,12 +132,13 @@ def load_plugins_from_dir(plugins_dir: Path | None = None) -> None:
             if not _is_safe_plugin(source):
                 logger.warning("Plugin %s bloqueado por uso de APIs no permitidas", file_path.name)
                 continue
-            spec = importlib.util.spec_from_file_location(file_path.stem, file_path)
+            # Módulo con nombre único para evitar colisiones (el stem del
+            # archivo podría chocar con un módulo real del backend).
+            module_name = f"_plugin_{file_path.stem}"
+            spec = importlib.util.spec_from_file_location(module_name, file_path)
             if spec is None or spec.loader is None:
                 continue
             module = importlib.util.module_from_spec(spec)
-            # Use a unique module name to avoid collisions
-            module_name = f"_plugin_{file_path.stem}"
             try:
                 spec.loader.exec_module(module)
             except Exception:

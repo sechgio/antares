@@ -576,3 +576,72 @@ class TestLowerExpressionIndexes:
             pytest.skip(f"planner chose scan (flaky on small DBs): {plan_rows}")
         assert "INDEX" in plan_text
         assert "LOWER" in plan_text or "IDX_IMAGENES_LOWER_CODIGO" in plan_text
+
+
+class TestMigrationStreaming:
+    """N6: la migración de esquema con datos preserva todo el catálogo
+    (streaming por chunks, sin fetchall del catálogo completo)."""
+
+    def _seed(self, db_path: object, n: int) -> None:
+        import sqlite3
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.executemany(
+                "INSERT INTO imagenes (codigo, nombre) VALUES (?, ?)",
+                [(f"CODE-{i:04d}", f"Name {i}") for i in range(n)],
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def test_migracion_preserva_miles_de_filas(self, db_path, monkeypatch, tmp_path) -> None:
+        """1500 filas (3 chunks de 500) sobreviven a un cambio de esquema
+        con columna compartida, en el mismo orden y con los mismos valores."""
+        config_path = tmp_path / "fields_config.json"
+        monkeypatch.setattr(
+            "backend.core.config_fields._config_file",
+            lambda: config_path,
+        )
+        save_fields([
+            {"name": "codigo", "type": "TEXT", "required": True},
+            {"name": "nombre", "type": "TEXT"},
+        ])
+        db.init_db()
+        self._seed(db_path, 1500)
+
+        # Cambio de esquema: agrega columna (mantiene codigo/nombre).
+        save_fields([
+            {"name": "codigo", "type": "TEXT", "required": True},
+            {"name": "nombre", "type": "TEXT"},
+            {"name": "marca", "type": "TEXT"},
+        ])
+        db.init_db()
+
+        rows = db.obtener_todos()
+        assert len(rows) == 1500
+        assert rows[0]["codigo"] == "CODE-0000"
+        assert rows[1499]["codigo"] == "CODE-1499"
+        assert all(r["nombre"] == f"Name {i}" for i, r in enumerate(rows))
+
+    def test_migracion_wipe_con_muchas_filas(self, db_path, monkeypatch, tmp_path) -> None:
+        """El wipe sin solape (allow_catalog_wipe) con catálogo grande no
+        materializa filas y deja el catálogo vacío, sin error."""
+        config_path = tmp_path / "fields_config.json"
+        monkeypatch.setattr(
+            "backend.core.config_fields._config_file",
+            lambda: config_path,
+        )
+        save_fields([
+            {"name": "codigo", "type": "TEXT", "required": True},
+            {"name": "nombre", "type": "TEXT"},
+        ])
+        db.init_db()
+        self._seed(db_path, 1200)
+
+        save_fields([
+            {"name": "archivo", "type": "TEXT", "required": True},
+            {"name": "cliente", "type": "TEXT"},
+        ])
+        db.init_db(allow_catalog_wipe=True)
+
+        assert db.obtener_todos() == []

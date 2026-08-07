@@ -27,12 +27,11 @@ logger = logging.getLogger(__name__)
 # to keep the old frontend single-job API (process_start / process_status /
 # process_cancel without job_id) working without changes.
 #
-# The modern multi-job system (JobManager + jobs_* IPC methods) is fully
-# implemented and exposed, but the frontend (api.ts) has not yet migrated.
-#
-# DO NOT add new features that only work on the modern path while leaving
-# the legacy path broken. When the frontend is updated, this layer (and
-# the dual notification logic in conversion.py) can be removed.
+# The modern multi-job system (JobManager) is fully implemented, but it is
+# exposed through the SAME process_* handlers via an explicit ``job_id``
+# param — there are no dedicated ``jobs_*`` IPC methods yet. When the
+# frontend migrates, the handlers (and the dual notification logic in
+# conversion.py) can be simplified.
 # =============================================================================
 
 DEFAULT_JOB_ID = "default"
