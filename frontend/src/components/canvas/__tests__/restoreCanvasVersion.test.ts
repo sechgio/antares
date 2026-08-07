@@ -32,6 +32,8 @@ vi.mock('../utils/imageBlobStore', () => ({
   serializeDocumentImages: (...args: unknown[]) =>
     serializeDocumentImages(...(args as [CanvasDocument])),
   hydrateDocumentImages: vi.fn(async (doc: CanvasDocument) => doc),
+  embedCanvasAssetsAsDataUrls: vi.fn(async (doc: CanvasDocument) => doc),
+  countCanvasAssetRefs: vi.fn(() => 0),
   clearBlobStore: vi.fn(),
   releaseImageBlob: vi.fn(),
   getBlobUrl: vi.fn((v: string) => v),
