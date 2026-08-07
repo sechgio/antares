@@ -340,7 +340,8 @@ def spreadsheet_get_rows(params: dict[str, Any]) -> dict[str, Any]:
         msg = "hoja no encontrada en el cache"
         raise ValueError(msg)
 
-    rows = chosen.get("rows") if isinstance(chosen.get("rows"), list) else []
+    raw_rows = chosen.get("rows")
+    rows: list[Any] = raw_rows if isinstance(raw_rows, list) else []
     try:
         offset = max(0, int(params.get("offset") or 0))
     except (TypeError, ValueError) as exc:
