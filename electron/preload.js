@@ -102,10 +102,19 @@ try {
     },
     registerLocalPath: (filePath) => ipcRenderer.invoke('ipc-call', 'register_local_path', { path: filePath }),
     fileStagedCreate: (name, size) => ipcRenderer.invoke('ipc-call', 'file_staged_create', { name, size }),
-    fileStagedAppend: (token, chunk_b64) => ipcRenderer.invoke('ipc-call', 'file_staged_append', { token, chunk_b64 }),
+    // Prefer ArrayBuffer/Uint8Array (no base64). Strings still sent as chunk_b64 for legacy.
+    fileStagedAppend: (token, chunk) => {
+      if (typeof chunk === 'string') {
+        return ipcRenderer.invoke('ipc-call', 'file_staged_append', { token, chunk_b64: chunk });
+      }
+      return ipcRenderer.invoke('ipc-call', 'file_staged_append', { token, chunk });
+    },
     fileStagedComplete: (token) => ipcRenderer.invoke('ipc-call', 'file_staged_complete', { token }),
     fileStagedAbort: (token) => ipcRenderer.invoke('ipc-call', 'file_staged_abort', { token }),
     resolveFileToken: (token) => ipcRenderer.invoke('ipc-call', 'file_token_resolve', { token }),
+    cleanupFileToken: (token) => ipcRenderer.invoke('ipc-call', 'file_token_cleanup', { token }),
+    canvasAssetPut: (chunk) => ipcRenderer.invoke('ipc-call', 'canvas_asset_put', { chunk }),
+    canvasAssetGet: (ref) => ipcRenderer.invoke('ipc-call', 'canvas_asset_get', { ref }),
   });
   if (isDev) {
     console.debug('[preload] electronAPI exposed successfully');

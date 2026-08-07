@@ -5,7 +5,7 @@ import './canvas.css';
 import { createLayer } from './constants';
 import { loadCanvasPresets } from './presets/loadPresets';
 import { queueCanvasCloudDelete, queueCanvasCloudPush } from './sync/cloudQueue';
-import { isNewer, type SyncConflict } from './sync/canvasCloudSync';
+import { isNewer, type SyncConflict } from './sync/syncCompare';
 import type { SyncConflictChoice } from './hooks/useCanvasSync';
 import SyncConflictBar from './editor/SyncConflictBar';
 import SyncStatusBadge from './editor/SyncStatusBadge';
@@ -30,6 +30,8 @@ import { CANVAS_SHORTCUTS } from './shortcuts';
 import {
   hydrateDocumentImages,
   serializeDocumentImages,
+  serializeHistorySteps,
+  hydrateHistorySteps,
   applySavedDocumentKeepingImages,
   clearBlobStore,
   collectImageRefsFromHistory,
@@ -370,6 +372,39 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
 
   const lastSavedHistorySigRef = useRef<string>('');
 
+  const persistHistoryStacks = useCallback(
+    async (
+      docId: string,
+      past: typeof history.past,
+      future: typeof history.future,
+    ) => {
+      const [serializedPast, serializedFuture] = await Promise.all([
+        serializeHistorySteps(past),
+        serializeHistorySteps(future),
+      ]);
+      await api.canvasSaveHistory(docId, serializedPast, serializedFuture);
+    },
+    [],
+  );
+
+  const warnHistoryPersistFailed = useCallback((err: unknown) => {
+    console.warn(
+      '[canvas] No se pudo persistir historial:',
+      err instanceof Error ? err.message : err,
+    );
+  }, []);
+
+  const restorePersistedHistory = useCallback(
+    async (past: typeof history.past, future: typeof history.future) => {
+      const [hydratedPast, hydratedFuture] = await Promise.all([
+        hydrateHistorySteps(past),
+        hydrateHistorySteps(future),
+      ]);
+      history.restoreHistory(hydratedPast, hydratedFuture);
+    },
+    [history],
+  );
+
   // Debounced history persistence on disk (~500ms after stack mutations)
   useEffect(() => {
     const docId = history.document.id;
@@ -378,10 +413,10 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     if (lastSavedHistorySigRef.current === sig) return;
     const timer = setTimeout(() => {
       lastSavedHistorySigRef.current = sig;
-      api.canvasSaveHistory(docId, history.past, history.future).catch(() => {});
+      persistHistoryStacks(docId, history.past, history.future).catch(warnHistoryPersistFailed);
     }, 500);
     return () => clearTimeout(timer);
-  }, [history.document.id, history.past, history.future]);
+  }, [history.document.id, history.past, history.future, persistHistoryStacks, warnHistoryPersistFailed]);
 
   const onSave = useCallback(async (opts?: { silent?: boolean }) => {
     try {
@@ -389,7 +424,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       const currentFuture = history.future;
       const serialized = await serializeDocumentImages(history.document);
       const res = await api.canvasSave(serialized);
-      await api.canvasSaveHistory(history.document.id, currentPast, currentFuture).catch(() => {});
+      await persistHistoryStacks(history.document.id, currentPast, currentFuture).catch(warnHistoryPersistFailed);
       const saved = normalizeDocument(res.document as CanvasDocument);
       // Keep blob:/blobId in the editor; `saved` (data URLs) goes to cloud only.
       const forEditor = applySavedDocumentKeepingImages(history.document, saved);
@@ -407,7 +442,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     } catch (err) {
       if (!opts?.silent) flashStatus(err instanceof Error ? err.message : 'Error al guardar');
     }
-  }, [history, refreshList, flashStatus]);
+  }, [history, refreshList, flashStatus, persistHistoryStacks, warnHistoryPersistFailed]);
 
   const setPageLayers = (layers: CanvasLayer[]) => {
     history.setDocument(syncImagesPerPage(setActivePageLayers(history.document, pageIndex, layers)));
@@ -1211,7 +1246,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     await withDocSwitchLock(async () => {
       try {
         const savedRes = await api.canvasSave(await serializeDocumentImages(history.document));
-        await api.canvasSaveHistory(history.document.id, history.past, history.future).catch(() => {});
+        await persistHistoryStacks(history.document.id, history.past, history.future).catch(warnHistoryPersistFailed);
         queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
         const res = await api.canvasDuplicate(history.document.id);
         const dup = normalizeDocument(res.document as CanvasDocument);
@@ -1241,7 +1276,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
           try {
             const hist = await api.canvasGetHistory(doc.id);
             if (hist.past?.length || hist.future?.length) {
-              history.restoreHistory(hist.past, hist.future);
+              await restorePersistedHistory(hist.past, hist.future);
             }
           } catch {
             // history restore is best-effort
@@ -1269,7 +1304,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     await withDocSwitchLock(async () => {
       try {
         const savedRes = await api.canvasSave(await serializeDocumentImages(history.document));
-        await api.canvasSaveHistory(history.document.id, history.past, history.future).catch(() => {});
+        await persistHistoryStacks(history.document.id, history.past, history.future).catch(warnHistoryPersistFailed);
         queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
         const res = await api.canvasGet(id);
         const doc = normalizeDocument(res.document as CanvasDocument);
@@ -1277,7 +1312,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         try {
           const hist = await api.canvasGetHistory(doc.id);
           if (hist.past?.length || hist.future?.length) {
-            history.restoreHistory(hist.past, hist.future);
+            await restorePersistedHistory(hist.past, hist.future);
           }
         } catch {
           // history restore is best-effort
@@ -1296,7 +1331,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     await withDocSwitchLock(async () => {
       try {
         const savedRes = await api.canvasSave(await serializeDocumentImages(history.document));
-        await api.canvasSaveHistory(history.document.id, history.past, history.future).catch(() => {});
+        await persistHistoryStacks(history.document.id, history.past, history.future).catch(warnHistoryPersistFailed);
         queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
         const res = await api.canvasCreate('Sin título');
         const doc = normalizeDocument(res.document as CanvasDocument);

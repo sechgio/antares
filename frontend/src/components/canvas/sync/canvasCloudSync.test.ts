@@ -987,6 +987,41 @@ describe('pushCanvasDocument', () => {
     expect(row.created_by).toBe('user-1');
   });
 
+  it('aborts before upsert when canvas-asset refs cannot be resolved', async () => {
+    const prevApi = window.electronAPI;
+    window.electronAPI = {
+      ...(prevApi || {}),
+      invoke: prevApi?.invoke ?? (async () => ({})),
+      canvasAssetGet: vi.fn(async () => {
+        throw new Error('not found');
+      }),
+    } as Window['electronAPI'];
+
+    const doc = makeDoc({
+      id: 'doc-1',
+      updatedAt: '2026-07-22T13:00:00Z',
+      layers: [
+        {
+          id: 'img1',
+          type: 'image',
+          name: 'Foto',
+          value: 'canvas-asset:missing',
+          cssVars: {
+            '--width': '10mm',
+            '--height': '10mm',
+            '--translate-x': '0mm',
+            '--translate-y': '0mm',
+          },
+        },
+      ],
+    });
+
+    await expect(pushCanvasDocument(doc)).rejects.toThrow(/No se pudo resolver|canvas-asset/i);
+    expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
+
+    window.electronAPI = prevApi;
+  });
+
   it('preserves local version on skip when remote is newer', async () => {
     const doc = makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T10:00:00Z' });
     // Response 1: select existing — remote is newer

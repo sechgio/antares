@@ -95,6 +95,12 @@ function sweepExpired() {
       _stagedSessions.delete(k);
     }
   }
+  try {
+    const { sweepIpcTempDirs } = require('./ipc-temp-cleanup');
+    void sweepIpcTempDirs(now);
+  } catch {
+    /* optional during early load */
+  }
 }
 
 async function _ensureStagedRoot() {
@@ -109,7 +115,7 @@ function createStagedSession({ name, size, webContentsId }) {
   if (typeof size === 'number' && size > MAX_STAGED_FILE_BYTES) throw new Error('staged file too large');
   const token = _newToken('antares-staged');
   const root = _getStagedRoot();
-  const tmpPath = path.join(root, `${token}_${safeName}.tmp`);
+  const tmpPath = path.join(root, `${token}_${safeName}`);
   const session = {
     token,
     name: safeName,
@@ -126,13 +132,26 @@ function createStagedSession({ name, size, webContentsId }) {
   return session;
 }
 
-async function appendStagedChunk(token, chunkBase64, webContentsId) {
+function _chunkToBuffer(chunk) {
+  if (Buffer.isBuffer(chunk)) return chunk;
+  if (chunk instanceof ArrayBuffer) return Buffer.from(chunk);
+  if (ArrayBuffer.isView(chunk)) {
+    return Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+  }
+  if (typeof chunk === 'string') {
+    // Legacy renderer path: base64 text.
+    return Buffer.from(chunk, 'base64');
+  }
+  throw new Error('invalid chunk');
+}
+
+async function appendStagedChunk(token, chunk, webContentsId) {
   const session = _stagedSessions.get(token);
   if (!session) throw new Error('staged session not found');
   if (_isExpired(session)) { _stagedSessions.delete(token); throw new Error('staged session expired'); }
   if (session.webContentsId !== null && webContentsId !== null && session.webContentsId !== webContentsId) throw new Error('staged session window mismatch');
   if (session.completed) throw new Error('staged session already completed');
-  const buf = Buffer.from(chunkBase64, 'base64');
+  const buf = _chunkToBuffer(chunk);
   if (buf.length === 0) throw new Error('empty chunk');
   if (buf.length > MAX_CHUNK_BYTES) throw new Error('chunk too large');
   if (session.bytesWritten + buf.length > MAX_STAGED_FILE_BYTES) throw new Error('staged file exceeds 1 GiB');
@@ -194,13 +213,15 @@ async function cleanupAllStaged() {
 function _assertNoRawAbsolutePaths(params) {
   if (!params || typeof params !== 'object' || Array.isArray(params)) return;
   const suspiciousKeys = new Set(['path','file_path','filepath','output_path','outputPath','output_folder','outputFolder','excelPath','pdf_path','stamp_path']);
+  const writeKeys = new Set(['output_path','outputpath','output_folder','outputfolder']);
   for (const [k, v] of Object.entries(params)) {
     if (typeof v !== 'string') continue;
     const lk = k.toLowerCase();
     const isPathKey = suspiciousKeys.has(k) || suspiciousKeys.has(lk) || lk.includes('path') || lk.includes('folder');
     if (!isPathKey) continue;
     if (v.includes('\0')) throw new Error(`invalid path param: ${k}`);
-    if (path.isAbsolute(v)) throw new Error(`raw absolute paths not allowed for ${k}; use file token`);
+    const isWriteKey = writeKeys.has(lk);
+    if (!isWriteKey && path.isAbsolute(v)) throw new Error(`raw absolute paths not allowed for ${k}; use file token`);
     if (v.includes('..') && (v.includes('/') || v.includes('\\'))) {
       const norm = path.normalize(v);
       if (norm.includes('..')) throw new Error(`path traversal not allowed: ${k}`);
@@ -215,6 +236,7 @@ module.exports = {
   sweepExpired,
   createStagedSession,
   appendStagedChunk,
+  _chunkToBuffer,
   completeStagedSession,
   abortStagedSession,
   cleanupAllStaged,

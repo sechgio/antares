@@ -1,7 +1,13 @@
 import { memo, useEffect, useState } from 'react';
 import { History, RotateCcw, RefreshCw, AlertCircle, Clock, User } from 'lucide-react';
-import { listCanvasVersions, restoreCanvasVersion, type CanvasVersionEntry } from '../sync/canvasCloudSync';
 import type { CanvasDocument } from '../types';
+
+type CanvasVersionEntry = {
+  id: string;
+  created_at: string;
+  created_by: string | null;
+  label?: string | null;
+};
 
 interface CanvasVersionsPanelProps {
   documentId: string;
@@ -22,6 +28,7 @@ export default memo(function CanvasVersionsPanel({
     setLoading(true);
     setError(null);
     try {
+      const { listCanvasVersions } = await import('../sync/canvasCloudSync');
       const data = await listCanvasVersions(documentId);
       setVersions(data);
     } catch (err) {
@@ -40,6 +47,7 @@ export default memo(function CanvasVersionsPanel({
   const handleRestore = async (versionId: string) => {
     setRestoringId(versionId);
     try {
+      const { restoreCanvasVersion } = await import('../sync/canvasCloudSync');
       const restored = await restoreCanvasVersion(documentId, versionId);
       if (restored) {
         setConfirmId(null);

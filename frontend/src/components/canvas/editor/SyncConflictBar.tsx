@@ -2,7 +2,7 @@ import { CloudDownload, HardDrive, Trash2 } from 'lucide-react';
 
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 
-import type { SyncConflict } from '../sync/canvasCloudSync';
+import type { SyncConflict } from '../sync/syncCompare';
 
 import type { SyncConflictChoice } from '../hooks/useCanvasSync';
 

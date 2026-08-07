@@ -2,6 +2,12 @@ const { app, BrowserWindow, Menu } = require('electron');
 const { createWindow } = require('./window-manager');
 const { startPythonBackend, killPython } = require('./backend-spawner');
 const { registerIpcHandlers } = require('./ipc-router');
+const { appendLogLine, cleanStaleTempDirs, initAppLogs, installConsoleLogTee } = require('./app-log');
+
+// Persistencia de logs del proceso principal en <dataDir>/logs (antes: solo consola).
+// El tee se instala antes de cualquier handler para que warnings/errores y la
+// telemetría IPC (ipc-router) queden grabados desde el primer momento.
+installConsoleLogTee();
 
 // Prevent unhandled rejections from crashing the process
 // (e.g. auto-updater 404, dialog errors, etc.)
@@ -15,11 +21,35 @@ const isDev = !app.isPackaged;
 registerIpcHandlers();
 
 app.whenReady().then(async () => {
+  try {
+    const logsDir = initAppLogs();
+    const removedTemp = cleanStaleTempDirs();
+    appendLogLine('INFO', `[main] app started (logs_dir=${logsDir}, stale_temp_dirs_removed=${removedTemp})`);
+  } catch (err) {
+    console.warn('[main] log/temp init failed:', err && err.message);
+  }
   Menu.setApplicationMenu(null);
   createWindow(isDev);
   startPythonBackend(isDev).catch((err) => {
     console.error('[main] startPythonBackend threw:', err);
   });
+  // Deferred orphan canvas-asset GC (after docs settle; grace protects unsaved).
+  setTimeout(() => {
+    try {
+      const { gcOrphanCanvasAssets } = require('./canvas-assets');
+      gcOrphanCanvasAssets()
+        .then((r) => {
+          if (r.removed > 0) {
+            appendLogLine('INFO', `[main] canvas asset GC removed=${r.removed} kept_refs=${r.kept}`);
+          }
+        })
+        .catch((err) => {
+          console.warn('[main] canvas asset GC failed:', err && err.message);
+        });
+    } catch (err) {
+      console.warn('[main] canvas asset GC unavailable:', err && err.message);
+    }
+  }, 45_000);
   // Kick off auto-update check (no-op in dev / unpackaged builds).
   try {
     const { setupAutoUpdater } = require('./auto-updater');
@@ -38,6 +68,7 @@ let _shutdownStarted = false;
 function _shutdownOnce() {
   if (_shutdownStarted) return;
   _shutdownStarted = true;
+  appendLogLine('INFO', '[main] app quit');
   try {
     const { cleanupAutoSync } = require('./autoimg-sync-engine');
     cleanupAutoSync();

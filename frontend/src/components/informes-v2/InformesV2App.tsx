@@ -282,6 +282,7 @@ export default function InformesV2App() {
         html: rendered.html,
         filename: rendered.filename,
         outputPath,
+        return_base64: !outputPath,
         localImagePaths: Object.keys(localImagePaths).length > 0 ? localImagePaths : undefined,
       });
       const savedPath = 'saved_path' in pdf ? pdf.saved_path : undefined;
@@ -368,6 +369,7 @@ export default function InformesV2App() {
         html: rendered.html,
         filename: rendered.filename,
         outputPath,
+        return_base64: !outputPath,
         localImagePaths: Object.keys(localImagePaths).length > 0 ? localImagePaths : undefined,
       });
       const savedPath = 'saved_path' in pdf ? pdf.saved_path : undefined;

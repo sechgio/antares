@@ -11,6 +11,13 @@ vi.mock('../../../api', () => ({
   },
 }));
 
+const prepareDocumentImagesForExport = vi.fn(async (doc: unknown) => doc);
+
+vi.mock('../utils/imageBlobStore', () => ({
+  prepareDocumentImagesForExport: (...args: unknown[]) =>
+    prepareDocumentImagesForExport(...args),
+}));
+
 function emptyCtx(images: string[] = []): FillContext {
   return { data: {}, images, logoLeft: null, logoRight: null };
 }
@@ -18,7 +25,45 @@ function emptyCtx(images: string[] = []): FillContext {
 describe('exportCanvasPdf with CMYK color mode', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    prepareDocumentImagesForExport.mockImplementation(async (doc: unknown) => doc);
   });
+
+  it('prepares document images before RGB htmlToPdf', async () => {
+    const doc = createEmptyDocument('Test RGB');
+    (api.htmlToPdf as ReturnType<typeof vi.fn>).mockResolvedValue({
+      filename: 'doc.pdf',
+      saved_path: '/path/doc.pdf',
+    });
+
+    await exportCanvasPdf({
+      document: doc,
+      contexts: [emptyCtx()],
+      filename: 'doc.pdf',
+      colorMode: 'rgb',
+    });
+
+    expect(prepareDocumentImagesForExport).toHaveBeenCalledWith(doc, { mode: 'rgb' });
+    expect(api.htmlToPdf).toHaveBeenCalled();
+  });
+
+  it('prepares document images before CMYK export', async () => {
+    const doc = createEmptyDocument('Test CMYK');
+    (api.canvasExportCmykPdf as ReturnType<typeof vi.fn>).mockResolvedValue({
+      filename: 'cmyk.pdf',
+      saved_path: '/path/cmyk.pdf',
+    });
+
+    await exportCanvasPdf({
+      document: doc,
+      contexts: [emptyCtx()],
+      filename: 'cmyk.pdf',
+      colorMode: 'cmyk',
+    });
+
+    expect(prepareDocumentImagesForExport).toHaveBeenCalledWith(doc, { mode: 'cmyk' });
+    expect(api.canvasExportCmykPdf).toHaveBeenCalled();
+  });
+
   it('calls api.htmlToPdf when colorMode is "rgb" or omitted', async () => {
     const doc = createEmptyDocument('Test RGB');
     (api.htmlToPdf as ReturnType<typeof vi.fn>).mockResolvedValue({

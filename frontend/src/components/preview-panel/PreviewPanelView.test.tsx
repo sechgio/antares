@@ -10,11 +10,19 @@ vi.mock('../../api', async (importOriginal) => {
     api: {
       ...actual.api,
       spreadsheetParse: vi.fn().mockResolvedValue({
-        sheets: [{ name: 'Hoja1', rows: [['SGIO', 'OTRA'], ['1', '2']] }],
+        workbookName: 'datos.csv',
+        sheets: [{ name: 'Sheet1', rows: [['SGIO', 'OTRA'], ['1', '2']] }],
+        warnings: [],
       }),
+      spreadsheetGetRows: vi.fn(),
+      fileTokenCleanup: vi.fn().mockResolvedValue({ cleaned: true }),
     },
   };
 });
+
+vi.mock('../../utils/stageFile', () => ({
+  stageFileForIpc: vi.fn().mockResolvedValue('ft_test'),
+}));
 
 const CUSTOM_COLS_KEY = 'antares_preview_custom_columns';
 
@@ -43,6 +51,14 @@ describe('PreviewPanelView column mapping', () => {
       { id: 'custom_1', name: 'PERSONALIZADA 1', mappedTo: 'NOMBRE' },
       { id: 'custom_2', name: 'PERSONALIZADA 2', mappedTo: 'FECHA' },
     ]));
+    const win = window as unknown as { electronAPI?: Record<string, unknown> };
+    win.electronAPI = {
+      ...(win.electronAPI || {}),
+      fileStagedCreate: vi.fn(),
+      fileStagedAppend: vi.fn(),
+      fileStagedComplete: vi.fn(),
+      onNotify: vi.fn(() => () => undefined),
+    };
   });
 
   it('keeps the mapping list scroll position after deleting a custom column', () => {
@@ -57,7 +73,7 @@ describe('PreviewPanelView column mapping', () => {
     expect(getMappingScrollContainer().scrollTop).toBe(96);
   });
 
-  it('adds a custom column with Enter when the mapping select has focus', async () => {
+  it('imports CSV via backend spreadsheetParse and adds custom column', async () => {
     const { container } = renderView();
     const fileInput = container.querySelector('input[accept=".csv,.xlsx,.xls"]') as HTMLInputElement | null;
 

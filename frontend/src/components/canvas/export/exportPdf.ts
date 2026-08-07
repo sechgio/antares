@@ -71,8 +71,12 @@ function expandCmykDocument(
 export async function exportCanvasPdf(
   options: ExportCanvasPdfOptions,
 ): Promise<{ saved_path?: string; filename: string; pdf_base64?: string }> {
+  const { prepareDocumentImagesForExport } = await import('../utils/imageBlobStore');
+  const mode = options.colorMode === 'cmyk' ? 'cmyk' : 'rgb';
+  const document = await prepareDocumentImagesForExport(options.document, { mode });
+
   if (options.colorMode === 'cmyk') {
-    const expanded = expandCmykDocument(options.document, options.contexts);
+    const expanded = expandCmykDocument(document, options.contexts);
     return api.canvasExportCmykPdf({
       document: expanded.document,
       contexts: expanded.contexts,
@@ -90,7 +94,7 @@ export async function exportCanvasPdf(
   const htmlParts: string[] = [];
   for (let i = 0; i < options.contexts.length; i += 1) {
     // Yields between pages inside each context, and between contexts.
-    htmlParts.push(await renderMultiPageHtmlAsync(options.document, options.contexts[i]));
+    htmlParts.push(await renderMultiPageHtmlAsync(document, options.contexts[i]));
     if (i > 0 && i % YIELD_EVERY_CONTEXT === 0) {
       await yieldToMain();
     }

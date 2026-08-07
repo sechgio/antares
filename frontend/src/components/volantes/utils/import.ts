@@ -75,21 +75,11 @@ const mapRowToRecord = (
 
 export const importSpreadsheet = async (file: File): Promise<ImportResult> => {
   const { api } = await import("../../../api");
-  const staged = await (window as unknown as { electronAPI?: { fileStagedCreate: (n:string,s:number)=>Promise<{token:string}>, fileStagedAppend:(t:string,c:string)=>Promise<unknown>, fileStagedComplete:(t:string)=>Promise<{file_token:string}> } }).electronAPI?.fileStagedCreate?.(file.name, file.size);
-  let fileToken: string | null = null;
-  if (staged) {
-    const CHUNK = 6 * 1024 * 1024;
-    const buf = await file.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-    for (let off = 0; off < bytes.length; off += CHUNK) {
-      const chunk = bytes.slice(off, off + CHUNK);
-      let binary = ""; for (let i=0;i<chunk.length;i++) binary += String.fromCharCode(chunk[i]); const b64 = btoa(binary);
-      await (window as unknown as { electronAPI?: { fileStagedAppend:(t:string,c:string)=>Promise<unknown>} }).electronAPI!.fileStagedAppend(staged.token, b64);
-    }
-    const done = await (window as unknown as { electronAPI?: { fileStagedComplete:(t:string)=>Promise<{file_token:string}> } }).electronAPI!.fileStagedComplete(staged.token);
-    fileToken = done.file_token;
-  }
-  const res = await (api as unknown as { spreadsheetParse:(p:unknown)=>Promise<{sheets:{name:string,rows:unknown[][]}[], warnings:string[]}> }).spreadsheetParse({ file_token: fileToken } as unknown as Record<string,unknown>);
+  const { stageFileForIpc } = await import("../../../utils/stageFile");
+  const ext = file.name.toLowerCase().split('.').pop() || '';
+  const formatHint = ['xlsx','xls','csv'].includes(ext) ? ext : undefined;
+  const fileToken = await stageFileForIpc(file);
+  const res = await api.spreadsheetParse({ file_token: fileToken, format_hint: formatHint });
   const sheet = res.sheets[0];
   if (!sheet || !sheet.rows.length) throw new Error("El archivo no contiene hojas.");
   const headerRow = (sheet.rows[0] as unknown[]).map((v)=> String(v ?? "").trim());
