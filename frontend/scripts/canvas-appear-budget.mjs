@@ -30,8 +30,10 @@ const FORBIDDEN_STATIC = [
   'vendor-supabase',
 ];
 
-/** Incremental JS Canvas may add on top of the already-booted shell. */
-const INCREMENTAL_BUDGET_KB = 400;
+/** Incremental JS Canvas may add on top of the already-booted shell.
+ * Includes vendor-framer (~124KB): motion lives outside vendor-react so the
+ * shell stays lean; Canvas (and Login) pay for it on first open. */
+const INCREMENTAL_BUDGET_KB = 500;
 
 function fail(msg) {
   console.error(`RED: ${msg}`);

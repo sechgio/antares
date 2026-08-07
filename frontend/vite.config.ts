@@ -67,11 +67,13 @@ export default defineConfig(({ mode }) => ({
         manualChunks(id) {
           if (id.includes('\0vite/preload-helper')) return 'vite-preload'
           const n = id.replace(/\\/g, '/')
+          // framer-motion is lazy (LoginScreen / feature tabs) — keep out of vendor-react
+          // so the shell entry does not preload ~100KB+ of motion code.
+          if (n.includes('/node_modules/framer-motion/')) return 'vendor-framer'
+          if (n.includes('/node_modules/lucide-react/')) return 'vendor-icons'
           if (
             n.includes('/node_modules/react-dom/') ||
-            n.includes('/node_modules/scheduler/') ||
-            n.includes('/node_modules/framer-motion/') ||
-            n.includes('/node_modules/lucide-react/')
+            n.includes('/node_modules/scheduler/')
           ) {
             return 'vendor-react'
           }
@@ -87,7 +89,12 @@ export default defineConfig(({ mode }) => ({
             return 'vendor-i18n'
           }
           if (n.includes('/node_modules/@fullcalendar/')) return 'vendor-fullcalendar'
-          if (n.includes('/node_modules/@supabase/')) return 'vendor-supabase'
+          if (n.includes('/node_modules/@supabase/') || n.includes('/src/lib/supabase')) {
+            // Keep createClient + our thin wrapper in the same async chunk so
+            // AuthContext's dynamic import() does not statically link vendor-supabase
+            // into the app shell (Rollup otherwise inlines the tiny wrapper).
+            return 'vendor-supabase'
+          }
           if (n.includes('/node_modules/@dnd-kit/')) return 'vendor-dnd'
           return undefined
         },
@@ -109,21 +116,29 @@ export default defineConfig(({ mode }) => ({
     reportCompressedSize: false,
     cssCodeSplit: true,
     assetsInlineLimit: 4096,
+    // Do not modulepreload lazy-route vendors (supabase/framer) just because the
+    // entry's __vitePreload map lists them for Login/Settings. Shell stays lean.
+    modulePreload: {
+      resolveDependencies(_filename, deps) {
+        return deps.filter(
+          (dep) => !dep.includes('vendor-supabase') && !dep.includes('vendor-framer'),
+        )
+      },
+    },
   },
   esbuild: {
     drop: mode === 'production' ? ['console', 'debugger'] : [],
     legalComments: 'none',
   },
   optimizeDeps: {
+    // Only deps needed on the shell critical path. jspdf / html-to-image /
+    // framer-motion load via dynamic import — prebundling them slows Vite cold start.
     include: [
       'react',
       'react-dom',
-      'framer-motion',
       'lucide-react',
       'i18next',
       'react-i18next',
-      'jspdf',
-      'html-to-image',
     ],
     exclude: ['pdfjs-dist'],
   },

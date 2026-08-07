@@ -14,6 +14,8 @@ import sys
 import threading
 import time
 import traceback
+from datetime import date, datetime
+from datetime import time as dt_time
 from pathlib import Path
 from typing import Any
 
@@ -183,6 +185,15 @@ def send_notification(method: str, params: dict[str, Any]) -> None:
 def _json_default(obj: Any) -> Any:
     if isinstance(obj, Path):
         return str(obj)
+    # Defense-in-depth for handlers that forget to normalize openpyxl dates
+    if isinstance(obj, datetime):
+        if obj.time() == dt_time(0, 0):
+            return obj.date().isoformat()
+        return obj.isoformat(sep=" ", timespec="seconds")
+    if isinstance(obj, date):
+        return obj.isoformat()
+    if isinstance(obj, dt_time):
+        return obj.isoformat(timespec="seconds")
     msg = f"Object of type {type(obj).__name__} is not JSON serializable"
     raise TypeError(msg)
 

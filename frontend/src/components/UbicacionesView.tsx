@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import Button from './ui/Button';
+import ThemedSelect from './ui/ThemedSelect';
 import { api } from '../api';
 import { useToast } from '../hooks/useToast';
 import { registerLocalPath } from '../utils/registerLocalPath';
@@ -1387,15 +1388,12 @@ export const UbicacionesView: React.FC = () => {
                         {/* Map Provider */}
                         <div className="space-y-0.5">
                           <label className="text-[9px] text-[var(--text-muted)]">Proveedor</label>
-                          <select
+                          <ThemedSelect
                             value={provider}
-                            onChange={e => updateProvider(e.target.value)}
-                            className="w-full bg-[var(--bg-input)] border border-[var(--border-subtle)] rounded px-2 py-1 text-[10px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)]"
-                          >
-                            {MAP_PROVIDERS.map((p) => (
-                              <option key={p.id} value={p.id}>{p.label}</option>
-                            ))}
-                          </select>
+                            onChange={updateProvider}
+                            aria-label="Proveedor de mapa"
+                            options={MAP_PROVIDERS.map((p) => ({ value: p.id, label: p.label }))}
+                          />
                         </div>
 
                         {MAP_PROVIDER_BY_ID[provider]?.needsKey && (

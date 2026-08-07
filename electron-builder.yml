@@ -73,9 +73,10 @@ extraResources:
   - from: formatos
     to: formatos
     filter: ["**/*"]
-  - from: dist
+  # Onedir tree produced by scripts/build-backend.js (exe + deps flat).
+  - from: dist/backend
     to: backend
-    filter: ["AntaresBackend*"]
+    filter: ["**/*"]
 win:
   target:
     - target: nsis

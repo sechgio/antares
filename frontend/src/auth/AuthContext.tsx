@@ -1,8 +1,11 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
-import { supabase, type AppUser } from '../lib/supabase';
+import type { AppUser } from './types';
 
 export const DISABLED_ACCOUNT_MESSAGE =
   'Tu cuenta ha sido desactivada. Contacta al administrador.';
+
+/** Inline import type — avoids a static runtime edge to @supabase/supabase-js. */
+type AuthClient = import('@supabase/supabase-js').SupabaseClient | null;
 
 interface AuthContextValue {
   user: AppUser | null;
@@ -16,9 +19,17 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-async function _fetchProfile(userId: string): Promise<Partial<AppUser> | null> {
-  if (!supabase) return null;
-  const { data, error } = await supabase
+/** Dynamic import keeps @supabase/supabase-js out of the app-shell entry preload. */
+function loadSupabaseModule() {
+  return import('../lib/supabase');
+}
+
+async function _fetchProfile(
+  client: AuthClient,
+  userId: string,
+): Promise<Partial<AppUser> | null> {
+  if (!client) return null;
+  const { data, error } = await client
     .from('user_profiles')
     .select('display_name, is_admin, is_disabled')
     .eq('user_id', userId)
@@ -31,7 +42,10 @@ async function _fetchProfile(userId: string): Promise<Partial<AppUser> | null> {
   };
 }
 
-function _mapUser(supabaseUser: { id: string; email?: string; created_at?: string }, profile: Partial<AppUser> | null): AppUser {
+function _mapUser(
+  supabaseUser: { id: string; email?: string; created_at?: string },
+  profile: Partial<AppUser> | null,
+): AppUser {
   return {
     id: supabaseUser.id,
     email: supabaseUser.email ?? '',
@@ -48,6 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
   const loadingRef = useRef(loading);
+  const clientRef = useRef<AuthClient>(null);
   // authGenRef serialises refreshUser and onAuthStateChange: each in-flight
   // auth check increments the generation and only the latest one is allowed
   // to flip `loading=false`. Without this, when Supabase is slow the safety
@@ -64,8 +79,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const revokeDisabledSession = useCallback(async () => {
-    if (!supabase) return;
-    await supabase.auth.signOut();
+    const client = clientRef.current;
+    if (!client) return;
+    await client.auth.signOut();
     if (mountedRef.current) {
       setUser(null);
       setError(DISABLED_ACCOUNT_MESSAGE);
@@ -77,7 +93,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     supabaseUser: { id: string; email?: string; created_at?: string },
     gen: number,
   ): Promise<boolean> => {
-    const profile = await _fetchProfile(supabaseUser.id);
+    const profile = await _fetchProfile(clientRef.current, supabaseUser.id);
     if (gen !== authGenRef.current || !mountedRef.current) return false;
     if (profile?.isDisabled) {
       await revokeDisabledSession();
@@ -89,10 +105,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [revokeDisabledSession]);
 
   const refreshUser = useCallback(async () => {
-    if (!supabase) { setLoading(false); return; }
+    const client = clientRef.current;
+    if (!client) { setLoading(false); return; }
     const gen = ++authGenRef.current;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session } } = await client.auth.getSession();
       if (gen !== authGenRef.current) return; // a newer check wins
       if (!session) {
         if (mountedRef.current) { setUser(null); setLoading(false); }
@@ -109,7 +126,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [applyAuthenticatedUser]);
 
   useEffect(() => {
-    refreshUser();
+    let cancelled = false;
+    let subscription: { unsubscribe: () => void } | null = null;
     // Safety timeout: if Supabase is slow, show login UI after 5s — but do NOT
     // bump authGenRef. Invalidating the generation discarded a late valid
     // getSession() result and left users stuck on the login screen.
@@ -119,36 +137,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
       }
     }, 5000);
-    if (!supabase) { clearTimeout(timeout); return; }
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!mountedRef.current) return;
-      if (!session) {
-        const gen = ++authGenRef.current;
-        setUser(null);
-        if (gen === authGenRef.current) setLoading(false);
+
+    void (async () => {
+      const { supabase } = await loadSupabaseModule();
+      if (cancelled || !mountedRef.current) return;
+      clientRef.current = supabase;
+      if (!supabase) {
+        clearTimeout(timeout);
+        setLoading(false);
         return;
       }
-      // Treat onAuthStateChange as the latest authority: bump the generation
-      // so any in-flight refreshUser gives up before touching state, then
-      // flip loading back to true while we fetch the profile (otherwise the
-      // user appears without a loading gate and the app flickers).
-      const gen = ++authGenRef.current;
-      setLoading(true);
-      applyAuthenticatedUser(session.user, gen).catch((err) => {
-        console.warn('[auth] onAuthStateChange profile fetch failed:', err);
-        if (mountedRef.current && gen === authGenRef.current) {
+      await refreshUser();
+      if (cancelled || !mountedRef.current) return;
+      const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (!mountedRef.current) return;
+        if (!session) {
+          const gen = ++authGenRef.current;
           setUser(null);
-          setLoading(false);
+          if (gen === authGenRef.current) setLoading(false);
+          return;
         }
+        // Treat onAuthStateChange as the latest authority: bump the generation
+        // so any in-flight refreshUser gives up before touching state, then
+        // flip loading back to true while we fetch the profile (otherwise the
+        // user appears without a loading gate and the app flickers).
+        const gen = ++authGenRef.current;
+        setLoading(true);
+        applyAuthenticatedUser(session.user, gen).catch((err) => {
+          console.warn('[auth] onAuthStateChange profile fetch failed:', err);
+          if (mountedRef.current && gen === authGenRef.current) {
+            setUser(null);
+            setLoading(false);
+          }
+        });
       });
-    });
-    return () => { clearTimeout(timeout); subscription.unsubscribe(); };
+      subscription = data.subscription;
+    })();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+      subscription?.unsubscribe();
+    };
   }, [refreshUser, applyAuthenticatedUser]);
 
   // Immediate logout when an admin flips is_disabled on this user's profile.
   useEffect(() => {
-    if (!supabase || !user?.id) return;
-    const client = supabase;
+    const client = clientRef.current;
+    if (!client || !user?.id) return;
     const userId = user.id;
     const channel = client
       .channel(`user-profile:${userId}`)
@@ -174,6 +210,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user?.id, revokeDisabledSession]);
 
   const signIn = useCallback(async (email: string, password: string) => {
+    const { supabase } = await loadSupabaseModule();
+    clientRef.current = supabase;
     if (!supabase) return { error: 'Supabase no configurado' };
     const { data, error: sbError } = await supabase.auth.signInWithPassword({ email, password });
     if (sbError) {
@@ -182,7 +220,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const userId = data.user?.id;
     if (userId) {
-      const profile = await _fetchProfile(userId);
+      const profile = await _fetchProfile(supabase, userId);
       if (profile?.isDisabled) {
         await revokeDisabledSession();
         return { error: DISABLED_ACCOUNT_MESSAGE };
@@ -199,8 +237,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    if (!supabase) return;
-    await supabase.auth.signOut();
+    const client = clientRef.current;
+    if (!client) return;
+    await client.auth.signOut();
     if (mountedRef.current) {
       setUser(null);
       setError(null);

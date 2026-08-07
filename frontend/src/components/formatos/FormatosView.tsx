@@ -368,14 +368,8 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
         setUploading(true);
         setError(null);
         try {
-            const arrayBuffer = await file.arrayBuffer();
-            const bytes = new Uint8Array(arrayBuffer);
-            // Chunked base64 encode to avoid stack overflow on large PDFs
-            let binary = '';
-            for (let i = 0; i < bytes.length; i += 65536) {
-                binary += String.fromCharCode(...bytes.subarray(i, i + 65536));
-            }
-            const content_b64 = btoa(binary);
+            const { arrayBufferToBase64 } = await import('../../utils/bytesToBase64');
+            const content_b64 = arrayBufferToBase64(await file.arrayBuffer());
             const res = await api.formatosUpload({
                 nombre: nombre.trim(),
                 filename: file.name,

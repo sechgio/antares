@@ -27,7 +27,7 @@ const STATE = Object.freeze({
   FATAL: 'fatal',
 });
 
-const HANDSHAKE_TIMEOUT_MS = 60_000;    // onefile extract + AV scan can exceed 30s on cold start
+const HANDSHAKE_TIMEOUT_MS = 60_000;    // AV scan of onedir deps can still be slow on cold start
 const AUTO_RESTART_LIMIT = 8;            // max consecutive auto-restarts before FATAL
 const MAX_RESTART_BACKOFF_SEC = 30;      // cap backoff at 30s
 const RESTART_RESET_MS = 60_000;         // time of stability before counter resets

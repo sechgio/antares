@@ -37,6 +37,7 @@ import locale
 import logging
 import os
 import signal
+import threading
 import time
 import traceback
 import warnings
@@ -119,6 +120,7 @@ HEAVY_METHODS = {
     "panel_aviso_corte_compute_match",
     "panel_aviso_corte_render_pdf",
     "spreadsheet_parse",
+    "spreadsheet_get_rows",
     "spreadsheet_export_volantes_template",
     "generar_ubicaciones",
     "preview_ubicacion",
@@ -290,12 +292,10 @@ def main() -> None:
             logger.exception("Failed to emit db_init_failed notification")
         sys.exit(1)
 
-    # Warm core handlers before the operational handshake so preview/canvas/
-    # catalog work as soon as Electron sees "ready". Deferred feature modules
-    # (sellador, ubicaciones, fichas, …) stay lazy by default to keep baseline
-    # RSS low; set ANTARES_WARM_DEFERRED=1 to eager-warm them before ready when
-    # first-use latency matters more than memory. Per-module try/except: a
-    # failing module delays readiness but never aborts.
+    # Warm only catalog/shell handlers before the handshake. conversion (Pillow)
+    # and canvas warm in a background thread after ready so Electron is not
+    # blocked on heavy imports. Deferred feature modules (sellador, ubicaciones,
+    # fichas, …) stay lazy unless ANTARES_WARM_DEFERRED=1.
     HANDLERS.warm_core()
     if os.environ.get("ANTARES_WARM_DEFERRED", "").strip().lower() in {"1", "true", "yes"}:
         HANDLERS.warm_deferred()
@@ -311,6 +311,8 @@ def main() -> None:
     # Note: ubicaciones map previews now use a lightweight static-map HTTP fetch
     # (OSM tiles / Google Static Maps) instead of a persistent Playwright browser,
     # so there is no browser to pre-warm at startup.
+    # spreadsheet_parse is long-running (15 min); avoid background import prewarm —
+    # it historically contended the import lock and froze early IPC calls.
 
     scheduler = get_scheduler()
 
@@ -324,6 +326,12 @@ def main() -> None:
     if not _shutdown_requested:
         logger.info(t("info.backend_ready"))
         send_notification("ready", {"status": "ok"})
+        # Soft-warm convert/canvas off the handshake path (daemon: never blocks quit).
+        threading.Thread(
+            target=HANDLERS.warm_post_ready,
+            name="post-ready-warm",
+            daemon=True,
+        ).start()
 
     try:
         while True:

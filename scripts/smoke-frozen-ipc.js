@@ -8,7 +8,7 @@ const path = require('path');
 const fs = require('fs');
 
 const ROOT = path.resolve(__dirname, '..');
-const exe = path.join(ROOT, 'dist', 'AntaresBackend.exe');
+const exe = path.join(ROOT, 'dist', 'backend', 'AntaresBackend.exe');
 const ipcMethods = fs.readFileSync(path.join(ROOT, 'electron', 'ipc-methods.js'), 'utf8');
 const start = ipcMethods.indexOf('const BACKEND_METHODS');
 const end = ipcMethods.indexOf('];', start);

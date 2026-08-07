@@ -41,10 +41,13 @@ def _thread_font_config() -> Any:
 
 def deny_external_url_fetcher(url: str, **kwargs: Any) -> Any:
     """Allow only data: URIs; deny all other fetches (defense in depth)."""
-    from weasyprint.urls import URLFetcherResponse, default_url_fetcher  # type: ignore[import-untyped]
+    from weasyprint.urls import URLFetcher, URLFetcherResponse  # type: ignore[import-untyped]
 
     if str(url).strip().lower().startswith("data:"):
-        return default_url_fetcher(url, **kwargs)
+        # URLFetcher (API nueva; default_url_fetcher fue deprecado) mantiene
+        # estado por request (_request) y no es thread-safe para compartir
+        # entre renders concurrentes del backend, por eso se instancia aquí.
+        return URLFetcher().fetch(url, **kwargs)
     return URLFetcherResponse(url, body=b"")
 
 

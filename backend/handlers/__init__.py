@@ -2,8 +2,9 @@
 
 Heavy feature modules (conversion/Pillow, sellador/PyMuPDF, ubicaciones, PDF
 renderers, etc.) are imported lazily on targeted registry lookup. Backend startup
-warms core modules before operational ``ready``; deferred modules stay lazy
-unless ``ANTARES_WARM_DEFERRED=1`` eager-warms them before the handshake.
+warms a minimal core before operational ``ready``; conversion/canvas warm in a
+background thread after ready; remaining deferred modules stay lazy unless
+``ANTARES_WARM_DEFERRED=1`` eager-warms them before the handshake.
 
 Critical: resolving one method must import only that method's module. An
 eager load of every handler group on the IPC reader thread caused
@@ -50,20 +51,29 @@ _HANDLER_MODULES: tuple[str, ...] = (
     "backend.handlers.spreadsheet",
 )
 
-# Default tab (preview) + catalog/canvas: must be ready before the handshake.
+# Modules required before the ready handshake. Keep this list minimal: default
+# tab (previewPanel) only needs templates/catalog + light shell handlers.
+# conversion (Pillow) and canvas are warmed in a daemon thread after ready so
+# they do not block the Electron handshake.
 _CORE_HANDLER_MODULES: tuple[str, ...] = (
     "backend.handlers.info",
     "backend.handlers.theme",
     "backend.handlers.history",
     "backend.handlers.database",
     "backend.handlers.templates",
+)
+
+# Common next-use modules: warm in background after ready (not on handshake).
+_POST_READY_HANDLER_MODULES: tuple[str, ...] = (
     "backend.handlers.canvas",
     "backend.handlers.conversion",
 )
 
 # Feature modules warmed after core when ANTARES_WARM_DEFERRED=1; otherwise lazy.
 _DEFERRED_HANDLER_MODULES: tuple[str, ...] = tuple(
-    m for m in _HANDLER_MODULES if m not in _CORE_HANDLER_MODULES
+    m
+    for m in _HANDLER_MODULES
+    if m not in _CORE_HANDLER_MODULES and m not in _POST_READY_HANDLER_MODULES
 )
 
 # Exact method → module for names that do not follow a feature prefix.
@@ -156,8 +166,21 @@ class HandlerRegistry:
         logger.info("Handler registry warmed (%d methods)", len(self._map))
 
     def warm_core(self) -> None:
-        """Load modules needed before the ready handshake (preview + canvas + catalog)."""
+        """Load modules needed before the ready handshake (catalog + light shell)."""
         self.warm(_CORE_HANDLER_MODULES)
+
+    def warm_post_ready(self) -> None:
+        """Load canvas + conversion after ready so first convert/canvas use is warm."""
+        self.warm(_POST_READY_HANDLER_MODULES)
+        # Move the WeasyPrint cold cliff (~1–15 s first render) off the user's
+        # first PDF. Failures are non-fatal — PDF paths still lazy-import.
+        try:
+            from backend.utils.pdf_html import write_pdf_sanitized
+
+            write_pdf_sanitized("<!DOCTYPE html><html><body>warm</body></html>")
+            logger.info("WeasyPrint post-ready warm complete")
+        except Exception:
+            logger.exception("WeasyPrint post-ready warm failed")
 
     def warm_deferred(self) -> None:
         """Load remaining feature modules (opt-in via ANTARES_WARM_DEFERRED)."""

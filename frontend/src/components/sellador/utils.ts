@@ -106,14 +106,8 @@ export function countAssignments(pageAssignments: number[]): Map<number, number>
 }
 
 export async function fileToBase64(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
+  const { arrayBufferToBase64 } = await import('../../utils/bytesToBase64');
+  return arrayBufferToBase64(await file.arrayBuffer());
 }
 
 export function randomSeed(): number {

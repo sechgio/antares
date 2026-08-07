@@ -110,6 +110,7 @@ def test_warm_core_skips_deferred_modules(monkeypatch: pytest.MonkeyPatch) -> No
     from backend.handlers import (
         _CORE_HANDLER_MODULES,
         _DEFERRED_HANDLER_MODULES,
+        _POST_READY_HANDLER_MODULES,
         HandlerRegistry,
     )
 
@@ -132,6 +133,57 @@ def test_warm_core_skips_deferred_modules(monkeypatch: pytest.MonkeyPatch) -> No
     reg.warm_core()
     deferred_hits = [m for m in imported if m in _DEFERRED_HANDLER_MODULES]
     assert deferred_hits == [], f"warm_core must not import deferred: {deferred_hits}"
+    post_hits = [m for m in imported if m in _POST_READY_HANDLER_MODULES]
+    assert post_hits == [], f"warm_core must not import post-ready: {post_hits}"
+
+
+def test_warm_core_excludes_pillow_conversion() -> None:
+    """Handshake must not wait on conversion/Pillow — that is post-ready warm."""
+    from backend.handlers import _CORE_HANDLER_MODULES, _POST_READY_HANDLER_MODULES
+
+    assert "backend.handlers.conversion" not in _CORE_HANDLER_MODULES
+    assert "backend.handlers.conversion" in _POST_READY_HANDLER_MODULES
+    assert "backend.handlers.canvas" in _POST_READY_HANDLER_MODULES
+
+
+def test_post_ready_methods_resolve_without_prior_warm_core_of_those_modules(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """First convert/canvas IPC must lazy-load even if warm_post_ready has not run."""
+    from backend.handlers import (
+        _CORE_HANDLER_MODULES,
+        _POST_READY_HANDLER_MODULES,
+        HandlerRegistry,
+    )
+
+    # Ensure a clean registry; do not pre-import post-ready modules.
+    imported: list[str] = []
+    orig_import = importlib.import_module
+
+    def tracking_import(name: str, package: str | None = None):  # type: ignore[no-untyped-def]
+        if name.startswith("backend.handlers."):
+            imported.append(name)
+        return orig_import(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", tracking_import)
+
+    reg = HandlerRegistry()
+    # Warm only core (as main does before ready).
+    for name in _CORE_HANDLER_MODULES:
+        orig_import(name)
+    imported.clear()
+    reg.warm_core()
+    assert all(m not in imported for m in _POST_READY_HANDLER_MODULES)
+
+    imported.clear()
+    preview = reg.get("preview")
+    assert preview is not None
+    assert "backend.handlers.conversion" in imported
+
+    imported.clear()
+    canvas_list = reg.get("canvas_list")
+    assert canvas_list is not None
+    assert "backend.handlers.canvas" in imported
 
 
 def test_warm_core_faster_than_full_warm_when_deferred_are_slow(
