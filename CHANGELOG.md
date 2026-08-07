@@ -5,6 +5,28 @@ Todas las versiones notables de Antares se documentan aquí.
 Formato basado en [Keep a Changelog](https://keepachangelog.com/),
 y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
+## [0.11.7] — 2026-08-06
+
+### Added
+- **Technical reports**: el título de las Fichas Técnicas ahora es editable, con default "Villa El Salvador".
+- **Preview**: panel de preview unificado reutilizando `TemplatePicker` del tema; previews de mapa servidos vía data URLs compatibles con CSP.
+
+### Changed
+- **Conversion**: alineación entre preview y procesamiento real para paridad FE↔BE.
+- **AutoIMG**: endurecimiento del aislamiento de sesión y alineación de métricas de sync con el padrón.
+- **CI**: pipelines endurecidos y fijados a instalaciones reproducibles; se permite disparo manual (`workflow_dispatch`); resolución de lint (ruff E701/F841/F401), registro de spreadsheet en PyInstaller, y alineación de peers React 18 con Node 22.
+- **Rendimiento**: reducción de memoria retenida en Sellador, AutoIMG, Evidencia y Canvas.
+
+### Fixed
+- **CI**: fixes de flakes en tests (mock de `spreadsheetParse` en GeneratePanel y PreviewPanel; aislamiento de guards CSS; dedupe de cobertura de sync de canvas).
+- **Ubicaciones**: previews alineados con coordenadas del mapa.
+
+### Security
+- Remediación de seguridad en preview, capacidades de archivo, confinamiento del backend, xlsx, Supabase, actualizaciones y plugins; resolución de vulnerabilidades npm en root y frontend.
+
+### Removed
+- Configuración de Dependabot.
+
 ## [0.11.6] — 2026-08-05
 
 ### Added

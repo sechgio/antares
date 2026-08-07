@@ -1,6 +1,6 @@
 {
   "name": "antares-app",
-  "version": "0.11.6",
+  "version": "0.11.7",
   "description": "Antares",
   "author": "Antares <dev@antares.app>",
   "private": true,
@@ -24,7 +24,8 @@
     "dist": "npm run build:win",
     "dist:dir": "npm run build:backend && npm run build:frontend && npm run clean:dist-electron && electron-builder --win --dir",
     "test": "node tests/test-version-sync.js && node tests/test-ci-workflows.js && node tests/test-push-loop.js && node tests/test-pr-fix-loop.js && node tests/test-release-loop.js && cd backend && python -m pytest ../tests -v && node ../tests/test-electron-path.js && node ../tests/test-local-thumbnail-disk.js && node ../tests/test-electron-ipc-allowlist.js && node ../tests/test-ubicaciones-secure-keys.js && node ../tests/test-ubicaciones-api-key-cache.js && node ../tests/test-autoimg-security.js && node ../tests/test-autoimg-oauth-flow.js && node ../tests/test-autoimg-nis.js && node ../tests/test-autoimg-drive-list.js && node ../tests/test-autoimg-folder-preview.js && node ../tests/test-autoimg-rename.js && node ../tests/test-autoimg-local-prefs.js && node ../tests/test-autoimg-user-scope.js && node ../tests/test-autoimg-sync-engine.js && node ../tests/test-autoimg-cache-invalidation.js && node ../tests/test-autoimg-sheet-revision.js && node ../tests/test-autoimg-sheet-cache-budget.js && node ../tests/test-autoimg-scan-integration.js && node ../tests/test-autoimg-sheet-ranges.js && node ../tests/test-autoimg-sheet-tabs.js && node ../tests/test-html-sanitizer.js && node ../tests/test-window-manager-csp.js && node ../tests/test-backend-spawner.js && node ../tests/test-backend-spawner-child-env.js && node ../tests/test-backend-spawner-handshake.js && node ../tests/test-backend-spawner-recovery.js && node ../tests/test-backend-spawner-midflight-exit.js && node ../tests/test-backend-spawner-health.js && node ../tests/test-backend-spawner-shutdown.js && node ../tests/test-backend-spawner-manual-restart.js && node ../tests/test-backend-spawner-post-handshake-preempt.js && node ../tests/test-backend-spawner-autorestart-race.js && node ../tests/test-backend-spawner-restart-budget.js && node ../tests/test-backend-spawner-ready-gate.js && node ../tests/test-health-probe-skip-during-requests.js && node ../tests/test-ipc-router-process-close.js && node ../tests/test-ipc-router-telemetry.js && node ../tests/test-electron-dialogs.js && node ../tests/test-path-allowlist.js && node ../tests/test-electron-preload.js && node ../tests/test-build-size-guards.js && cd ../frontend && npm run test:all",
-    "test:frontend": "cd frontend && npm run test:all",    "test:stress": "cd backend && python -m pytest ../tests/test_stress_conversion.py -v -m slow",
+    "test:frontend": "cd frontend && npm run test:all",
+    "test:stress": "cd backend && python -m pytest ../tests/test_stress_conversion.py -v -m slow",
     "lint:python": "ruff check backend tests scripts",
     "lint:fix": "ruff check backend tests scripts --fix",
     "typecheck:backend": "python -m mypy backend",
