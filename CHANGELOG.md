@@ -5,6 +5,24 @@ Todas las versiones notables de Antares se documentan aquí.
 Formato basado en [Keep a Changelog](https://keepachangelog.com/),
 y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
+## [0.11.8] — 2026-08-07
+
+### Added
+- **IPC / Canvas assets**: almacén en disco con refs `canvas-asset:` (sha256), GC de huérfanos con grace period, y staging binario de archivos (`stageFileForIpc`) sin base64.
+- **Spreadsheet**: spill a JSON temporal cuando el parse supera 512 KiB, con `result_file_token`, hydrate opt-in y `spreadsheet_get_rows` paginado (Preview carga hoja a hoja).
+- **Logging**: telemetría persistente del proceso Electron en `%LOCALAPPDATA%/Antares/logs`.
+
+### Changed
+- **Cold start**: backend PyInstaller en modo **onedir** (COLLECT); warm de canvas/conversion y WeasyPrint post-`ready`; Auth/i18n diferidos; budgets de shell/canvas en el build Vite.
+- **PDF**: `html_to_pdf` siempre escribe a disco + `file_token`; `pdf_base64` solo con `return_base64: true`.
+- **IPC stdout**: framing NDJSON sobre `Buffer` (sin concatenar strings UTF-16).
+- **Canvas CMYK**: export manda refs `canvas-asset:` / paths; el renderer Python resuelve assets y `data:` sin inflar el payload JSON.
+- **Preview**: cleanup explícito de spill al cambiar archivo o desmontar (`file_token_cleanup`).
+
+### Fixed
+- **Canvas**: RGB/CMYK preparan imágenes antes de export; cloud push falla si quedan `canvas-asset:` sin resolver; historial persiste con warn visible (sin tragar errores).
+- **Tipado / lint**: mypy en `spreadsheet_get_rows`; ruff UP035/RUF003; mock de `embedCanvasAssets` en restore de versiones.
+
 ## [0.11.7] — 2026-08-06
 
 ### Added
