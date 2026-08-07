@@ -305,10 +305,11 @@ def read_message() -> IPCMessage | None:
             # que la respuesta -32600 sí se envíe. Antes, el decode estricto
             # lanzaba UnicodeDecodeError, caía en el except genérico y el
             # caller esperaba hasta su timeout sin respuesta alguna.
-            if isinstance(line, bytes):
-                msg_id = _try_extract_request_id_bytes(line)
-            else:
-                msg_id = _try_extract_request_id(line)
+            msg_id = (
+                _try_extract_request_id_bytes(line)
+                if isinstance(line, bytes)
+                else _try_extract_request_id(line)
+            )
             logger.error(
                 "Inbound IPC payload too large: %d bytes (max: %d)",
                 line_bytes,

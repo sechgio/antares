@@ -4,7 +4,7 @@ from __future__ import annotations
 import contextlib
 from typing import Any
 
-from backend.core.config_fields import get_field_names, load_fields, save_fields
+from backend.core.config_fields import get_field_names, load_fields
 from backend.core.config_patterns import load_patterns, save_patterns
 from backend.core.config_patterns import reset_to_defaults as reset_patterns_defaults
 from backend.core.database import (

@@ -13,7 +13,7 @@ class TestJobCrashReporting:
     def test_job_que_crash_queda_reportado(self) -> None:
         mgr = JobManager(max_concurrent=4)
 
-        def boom(job) -> None:  # noqa: ARG001
+        def boom(job) -> None:
             raise RuntimeError("boom")
 
         result = mgr.create_job("crash", {"files": []}, boom, job_id="crash-job")

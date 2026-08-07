@@ -12,7 +12,7 @@ import threading
 
 from backend.core import database as db
 from backend.core.config_fields import save_fields
-from backend.core.repository import _db_lock, close_connection, get_connection
+from backend.core.repository import _db_lock, close_connection
 
 
 def _setup(db_path, config_path) -> None:
@@ -65,7 +65,7 @@ class TestReadPool:
                     result = db.buscar_lote_por_codigos(["A1"])
                     if "A1" not in result:
                         errors.append(RuntimeError("lectura no encontró A1"))
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 errors.append(exc)
             finally:
                 reads_done.set()

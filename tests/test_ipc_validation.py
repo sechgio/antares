@@ -209,7 +209,7 @@ def test_oversized_binary_prefix_cut_mid_multibyte_still_answers(monkeypatch) ->
     # Pad para que el prefijo (max_size+1 bytes) termine exactamente con el
     # primer byte de "€" (0xE2) — un carácter multibyte cortado a la mitad.
     pad = b"a" * (max_size - len(base))
-    oversized = base + pad + "€".encode("utf-8") + b'x"}}\n'
+    oversized = base + pad + "€".encode() + b'x"}}\n'
     valid = b'{"jsonrpc":"2.0","id":"after-mb","method":"version","params":{}}\n'
     stdin = _BoundedBinaryStdin(oversized + valid)
     stdout = io.StringIO()
