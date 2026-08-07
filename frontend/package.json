@@ -8,7 +8,10 @@
     "build": "tsc && node --max-old-space-size=4096 node_modules/vite/bin/vite.js build && node scripts/canvas-appear-budget.mjs",
     "check:canvas-budget": "node scripts/canvas-appear-budget.mjs",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:static": "vitest run --config vitest.static.config.ts",
+    "test:all": "vitest run && npm run test:static",
+    "test:coverage": "vitest run --coverage"
   },
   "engines": {
     "node": ">=22.12.0"
@@ -44,6 +47,7 @@
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.2.1",
+    "@vitest/coverage-v8": "^4.1.5",
     "autoprefixer": "^10.4.16",
     "jsdom": "^29.0.2",
     "postcss": "^8.5.3",
