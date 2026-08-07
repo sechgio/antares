@@ -69,6 +69,20 @@ class TestParseIdRenameMapping:
         result = db.parse_id_rename_mapping(str(excel))
         assert result == {"A.jpg": "nuevo"}
 
+    def test_rename_header_alias_con_guion_bajo(self, tmp_path) -> None:
+        """N2: un encabezado 'new_name'/'nuevo_nombre' debe auto-detectarse
+        aunque el alias lleve guion bajo y el encabezado se normalice con
+        espacios (antes el alias crudo nunca coincidía)."""
+        excel = tmp_path / "map.xlsx"
+        _write_mapping_excel(excel, [("A.jpg", "nuevo")], headers=("ID", "new_name"))
+        result = db.parse_id_rename_mapping(str(excel))
+        assert result == {"A.jpg": "nuevo"}
+
+        excel2 = tmp_path / "map2.xlsx"
+        _write_mapping_excel(excel2, [("B.jpg", "nuevo")], headers=("ID", "nuevo_nombre"))
+        result2 = db.parse_id_rename_mapping(str(excel2))
+        assert result2 == {"B.jpg": "nuevo"}
+
     def test_explicit_columns_used(self, tmp_path) -> None:
         excel = tmp_path / "map.xlsx"
         _write_mapping_excel(

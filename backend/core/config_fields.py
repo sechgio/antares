@@ -68,6 +68,30 @@ def _validar_tipo_campo(tipo: str) -> bool:
     return tipo.upper() in {"TEXT", "INTEGER", "REAL", "BLOB", "NUMERIC"}
 
 
+def sanitize_field_defs(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Valida y normaliza definiciones de campo.
+
+    Convierte nombres a minúsculas y tipos a mayúsculas; dropea definiciones
+    inválidas (nombre inseguro para SQL o tipo no soportado). Compartida por
+    ``save_fields`` y el dry-run de migración del handler de BD para que ambos
+    operen sobre exactamente la misma forma saneada.
+    """
+    validated: list[dict[str, Any]] = []
+    for f in fields:
+        if isinstance(f, dict) and "name" in f and "type" in f:
+            nombre = str(f["name"]).strip().lower()
+            tipo = str(f["type"]).strip().upper()
+            if not _validar_nombre_campo(nombre) or not _validar_tipo_campo(tipo):
+                continue
+            validated.append({
+                "name": nombre,
+                "type": tipo,
+                "required": bool(f.get("required", False)),
+                "unique": bool(f.get("unique", False)),
+            })
+    return validated
+
+
 _cached_fields: tuple[Path, list[dict[str, Any]]] | None = None
 # Derived field-name list, cached separately so the per-file rename hot path
 # (RenamerEngine.aplicar -> get_field_names) does not pay load_fields()'s
@@ -138,19 +162,7 @@ def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
 def save_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Guarda la configuración de campos en disco."""
     path = _config_file()
-    validated: list[dict[str, Any]] = []
-    for f in fields:
-        if isinstance(f, dict) and "name" in f and "type" in f:
-            nombre = str(f["name"]).strip().lower()
-            tipo = str(f["type"]).strip().upper()
-            if not _validar_nombre_campo(nombre) or not _validar_tipo_campo(tipo):
-                continue
-            validated.append({
-                "name": nombre,
-                "type": tipo,
-                "required": bool(f.get("required", False)),
-                "unique": bool(f.get("unique", False)),
-            })
+    validated = sanitize_field_defs(fields)
     _atomic_write_json(path, {"fields": validated})
     _invalidate_fields_cache()
     return validated

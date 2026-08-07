@@ -23,6 +23,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from backend.utils.paths import resource_path, user_data_path
 from backend.utils.validators import sanitizar_nombre
+from backend.version import __version__ as _antares_version
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +173,7 @@ _XYZ_PROVIDERS = {
     "thunderforest": "https://tile.thunderforest.com/atlas/{z}/{x}/{y}.png?apikey={key}"
 }
 _GOOGLE_STATIC_URL = "https://maps.googleapis.com/maps/api/staticmap"
-_HTTP_USER_AGENT = "Antares/0.10 (ubicaciones static map; +https://github.com/sechgio/antares)"
+_HTTP_USER_AGENT = f"Antares/{_antares_version} (ubicaciones static map; +https://github.com/sechgio/antares)"
 _HTTP_TIMEOUT = 12
 
 
@@ -819,8 +820,9 @@ def _prefetch_alternate_formato(
         alt = "horizontal" if formato == "vertical" else "vertical"
         styles_hash = json.dumps(custom_styles, sort_keys=True) if custom_styles else ""
         cache_key = _composed_preview_key(excel_ctx, row_index, alt, styles_hash, map_opts)
-        if cache_key in _preview_composed_cache:
-            return
+        with _cache_lock:
+            if cache_key in _preview_composed_cache:
+                return
         map_bytes = _map_screenshot_cache.get(_map_cache_key(lat, lon, alt, preview=True, map_opts=map_opts))
         if map_bytes is None:
             return
@@ -830,6 +832,31 @@ def _prefetch_alternate_formato(
         )
     except Exception:
         logger.debug("Prefetch orientación alterna falló", exc_info=True)
+
+
+# Acota el prefetch de orientación alterna: a lo sumo _MAX_PREFETCH_THREADS
+# prefetches concurrentes, y los hilos son daemon para no retrasar el shutdown
+# del backend (un fetch de tiles puede tardar hasta _HTTP_TIMEOUT).
+_MAX_PREFETCH_THREADS = 2
+_prefetch_slots = threading.BoundedSemaphore(_MAX_PREFETCH_THREADS)
+
+
+def _spawn_prefetch(*args: Any, **kwargs: Any) -> None:
+    """Lanza el prefetch si hay cupo; si no, se descarta (optimización best-effort)."""
+    if not _prefetch_slots.acquire(blocking=False):
+        return
+
+    def _run() -> None:
+        try:
+            _prefetch_alternate_formato(*args, **kwargs)
+        finally:
+            _prefetch_slots.release()
+
+    threading.Thread(
+        target=_run,
+        daemon=True,
+        name="ubic-prefetch",
+    ).start()
 
 # pin.png is a static asset; cache the decoded RGBA image to avoid re-reading
 # and re-decoding on every Excel row during batch export.
@@ -1188,13 +1215,10 @@ def handle_preview_ubicacion(payload: dict) -> dict:
             custom_styles=custom_styles, map_opts=map_opts,
         )
 
-        threading.Thread(
-            target=_prefetch_alternate_formato,
-            args=(excel_ctx, row_index, formato, datos, lat, lon, total_filas),
-            kwargs={"custom_styles": custom_styles, "map_opts": map_opts},
-            daemon=True,
-        ).start()
-
+        _spawn_prefetch(
+            excel_ctx, row_index, formato, datos, lat, lon, total_filas,
+            custom_styles=custom_styles, map_opts=map_opts,
+        )
         return {"success": True, "data": data}
     except Exception as e:
         logger.exception("Error generando preview de ubicacion")

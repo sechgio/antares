@@ -505,7 +505,9 @@ def process_status(params: dict[str, Any]) -> dict[str, Any]:
 
     Accepts optional job_id. Falls back to "default" for backward compat.
     Omits the full start-time ``files`` list so large batches do not block the
-    IPC reader thread (SYNC_METHODS). Use ``jobs_get`` for full detail.
+    IPC reader thread (SYNC_METHODS). Logs and the final result dict are
+    always included; the original ``files`` list is dropped once the job
+    completes (JobManager._slim_completed_job).
     """
     job_id = resolve_job_id(params)
     mgr = get_job_manager()

@@ -27,12 +27,11 @@ logger = logging.getLogger(__name__)
 # to keep the old frontend single-job API (process_start / process_status /
 # process_cancel without job_id) working without changes.
 #
-# The modern multi-job system (JobManager + jobs_* IPC methods) is fully
-# implemented and exposed, but the frontend (api.ts) has not yet migrated.
-#
-# DO NOT add new features that only work on the modern path while leaving
-# the legacy path broken. When the frontend is updated, this layer (and
-# the dual notification logic in conversion.py) can be removed.
+# The modern multi-job system (JobManager) is fully implemented, but it is
+# exposed through the SAME process_* handlers via an explicit ``job_id``
+# param — there are no dedicated ``jobs_*`` IPC methods yet. When the
+# frontend migrates, the handlers (and the dual notification logic in
+# conversion.py) can be simplified.
 # =============================================================================
 
 DEFAULT_JOB_ID = "default"
@@ -216,9 +215,32 @@ class JobManager:
                 job.state.cancel_requested = False
 
             def _wrapped_target(j: Job = job, t: Callable[..., Any] = target) -> None:
-                """Ensure running=False is always set when the target finishes."""
+                """Ensure running=False is always set when the target finishes.
+
+                A target that raises is recorded on the job (result + log +
+                err_count) so a crashed job is visible through process_status
+                instead of dying silently on the thread (only a stderr
+                traceback). Conversion jobs catch their own exceptions inside
+                the target; this is the safety net for every other job type.
+                """
                 try:
                     t(j)
+                except Exception as exc:
+                    logger.exception("Job %s crashed: %s", j.id, exc)
+                    with j.state._lock:
+                        j.state.err_count = max(j.state.err_count, 1)
+                        j.state.logs.insert(0, {
+                            "message": f"Error interno: {type(exc).__name__}: {exc}",
+                            "tag": "error",
+                        })
+                        if len(j.state.logs) > 100:
+                            del j.state.logs[100:]
+                        j.result = {
+                            "ok_count": j.state.ok_count,
+                            "err_count": j.state.err_count,
+                            "cancelled": False,
+                            "error": f"{type(exc).__name__}: {exc}",
+                        }
                 finally:
                     with j.state._lock:
                         j.state.running = False

@@ -406,32 +406,6 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
 
   if (method === 'file_staged_create') {
     const session = createStagedSession({ name: params.name, size: params.size, webContentsId: _webContentsIdFromWindow(window) });
-    return { handled: true, result: { token: session.token, tmpPath: session.tmpPath } };
-  }
-
-  if (method === 'file_staged_append') {
-    const res = await appendStagedChunk(params.token, params.chunk_b64, _webContentsIdFromWindow(window));
-    return { handled: true, result: res };
-  }
-
-  if (method === 'file_staged_complete') {
-    const cap = await completeStagedSession(params.token, _webContentsIdFromWindow(window));
-    return { handled: true, result: { file_token: cap.token, name: cap.name, size: cap.size } };
-  }
-
-  if (method === 'file_staged_abort') {
-    await abortStagedSession(params.token);
-    return { handled: true, result: { aborted: true } };
-  }
-
-  if (method === 'file_token_resolve') {
-    const token = params && params.token;
-    const filePath = _resolveTokenPath(token, _webContentsIdFromWindow(window));
-    return { handled: true, result: { path: filePath } };
-  }
-
-  if (method === 'file_staged_create') {
-    const session = createStagedSession({ name: params.name, size: params.size, webContentsId: _webContentsIdFromWindow(window) });
     // Do not return tmpPath to the renderer — capability token is sufficient.
     return { handled: true, result: { token: session.token } };
   }

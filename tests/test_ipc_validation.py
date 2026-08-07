@@ -197,6 +197,37 @@ def test_oversized_binary_line_is_bounded_and_preserves_next_message(monkeypatch
     assert all(0 < size <= 1025 for size in stdin.readline_sizes)
 
 
+def test_oversized_binary_prefix_cut_mid_multibyte_still_answers(monkeypatch) -> None:
+    """Regresión M4: si el prefijo truncado corta un carácter UTF-8 multibyte,
+    la respuesta -32600 debe enviarse igual (el id se extrae de los bytes
+    crudos). Antes, el decode estricto lanzaba UnicodeDecodeError y el caller
+    esperaba hasta su timeout sin respuesta alguna."""
+    max_size = 1024
+    monkeypatch.setattr(ipc_protocol, "_MAX_PAYLOAD_SIZE", max_size)
+
+    base = b'{"jsonrpc":"2.0","id":"multibyte-cut","method":"version","params":{"data":"'
+    # Pad para que el prefijo (max_size+1 bytes) termine exactamente con el
+    # primer byte de "€" (0xE2) — un carácter multibyte cortado a la mitad.
+    pad = b"a" * (max_size - len(base))
+    oversized = base + pad + "€".encode() + b'x"}}\n'
+    valid = b'{"jsonrpc":"2.0","id":"after-mb","method":"version","params":{}}\n'
+    stdin = _BoundedBinaryStdin(oversized + valid)
+    stdout = io.StringIO()
+    monkeypatch.setattr(ipc_protocol.sys, "stdin", stdin)
+    monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
+
+    first = ipc_protocol.read_message()
+    second = ipc_protocol.read_message()
+
+    assert first is ipc_protocol._SKIP
+    response = stdout.getvalue()
+    assert '"id": "multibyte-cut"' in response
+    assert '"code": -32600' in response
+    assert isinstance(second, IPCMessage)
+    assert second.id == "after-mb"
+    assert second.method == "version"
+
+
 def test_payload_exactly_at_limit_is_accepted(monkeypatch) -> None:
     request = '{"jsonrpc":"2.0","id":"exact","method":"version","params":{}}\n'
     monkeypatch.setattr(ipc_protocol, "_MAX_PAYLOAD_SIZE", len(request.encode("utf-8")))

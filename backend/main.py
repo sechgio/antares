@@ -178,10 +178,18 @@ _validate_encoding()
 
 
 def _user_error_message(exc: Exception) -> str | AntaresBaseException:
-    """User-safe message: typed exceptions pass through; unexpected ones become generic."""
+    """User-safe message: typed exceptions pass through; unexpected ones become generic.
+
+    FileNotFoundError messages embed absolute filesystem paths (the full path
+    the backend tried to open); the renderer only needs to know the file was
+    missing, while the full path stays in the backend log (logger.exception
+    in _dispatch).
+    """
     if isinstance(exc, AntaresBaseException):
         return exc
-    if isinstance(exc, (ValueError, FileNotFoundError, ImportError)):
+    if isinstance(exc, FileNotFoundError):
+        return "Archivo no encontrado"
+    if isinstance(exc, (ValueError, ImportError)):
         return str(exc)
     return "Error interno del servidor"
 
