@@ -1,6 +1,5 @@
 import { memo, useEffect, useMemo, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import type { CanvasLayer } from '../types';
-import { parseMm } from '../types';
 import { mmToScreenPx } from '../ops/drawHelpers';
 import { applyInstanceOverrides } from '../ops/components';
 import { resolveBooleanRender } from '../ops/booleanOps';
@@ -18,6 +17,7 @@ import {
   keepSpreadOnlyShadows,
 } from '../ops/layerPaint';
 import { imageContentInlineStyle } from '../ops/layerStyle';
+import { layerGeometry } from '../ops/layerGeometry';
 import { ensureLinePath } from '../ops/pathGeometry';
 import { buildLineSvgContent } from '../ops/lineSvg';
 import { parseTableData } from '../ops/tableData';
@@ -178,15 +178,15 @@ function LayerNode({
     return resolveBooleanRender(layer, documentLayers);
   }, [layer, documentLayers]);
 
+  // Geometry contract: translate × paint transform × origin × line height,
+  // shared with imperativeLayerDom (drag) and renderHtml (export).
+  // lineLayer is ensured for lines, so the contract reads the same
+  // width/height the paint path actually renders.
+  const geometry = useMemo(() => layerGeometry(lineLayer, scale), [lineLayer, scale]);
+
   if (layer.type === 'frame' || layer.visible === false) return null;
 
-  const x = parseMm(layer.cssVars['--translate-x']);
-  const y = parseMm(layer.cssVars['--translate-y']);
-  const w = parseMm(layer.cssVars['--width'], 10);
   const isLine = layer.type === 'line';
-  const h = isLine
-    ? parseMm(lineLayer.cssVars['--height'], parseMm(layer.cssVars['--height'], 2))
-    : parseMm(layer.cssVars['--height'], 10);
 
   if (offscreen && !selected && !editing && !pathEditing) {
     return (
@@ -198,9 +198,9 @@ function LayerNode({
           position: 'absolute',
           left: 0,
           top: 0,
-          transform: `translate(${mmToScreenPx(x, scale)}px, ${mmToScreenPx(y, scale)}px)`,
-          width: mmToScreenPx(w, scale),
-          height: mmToScreenPx(h, scale),
+          transform: geometry.transform,
+          width: geometry.widthPx,
+          height: geometry.heightPx,
           display: 'none',
           pointerEvents: 'none',
         }}
@@ -265,9 +265,9 @@ function LayerNode({
   }
 
   // Position via translate; keep rotate/flip from paint (do not clobber).
-  const { transform: paintTransform, ...paintRest } = paint;
-  const translate = `translate(${mmToScreenPx(x, scale)}px, ${mmToScreenPx(y, scale)}px)`;
-  const combinedTransform = paintTransform ? `${translate} ${paintTransform}` : translate;
+  // `transform` is excluded from paintRest; the geometry contract re-adds it
+  // (translate + paint transform) so paint never carries a bare transform.
+  const { transform: _paintTransform, ...paintRest } = paint;
 
   const style: CSSProperties = {
     ...paintRest,
@@ -278,11 +278,11 @@ function LayerNode({
     left: 0,
     top: 0,
     // Compositor-driven positioning: drag moves update transform only (no layout).
-    transform: combinedTransform,
-    transformOrigin: paintTransform ? 'center center' : undefined,
+    transform: geometry.transform,
+    transformOrigin: geometry.transformOrigin,
     willChange: moving ? 'transform' : undefined,
-    width: mmToScreenPx(w, scale),
-    height: mmToScreenPx(h, scale),
+    width: geometry.widthPx,
+    height: geometry.heightPx,
     boxSizing: 'border-box',
     overflow: isLine ? 'visible' : 'hidden',
     cursor: editing
