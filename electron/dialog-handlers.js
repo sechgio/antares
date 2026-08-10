@@ -25,24 +25,10 @@ const {
 const { putCanvasAsset, getCanvasAsset, parseAssetRef, gcOrphanCanvasAssets } = require('./canvas-assets');
 const { cleanupSpreadsheetSpillFile, sweepIpcTempDirs } = require('./ipc-temp-cleanup');
 
-const DIALOG_METHODS = new Set(['dialog_files', 'dialog_dest', 'dialog_save', 'dialog_folder']);
-const NATIVE_METHODS = new Set([
-  ...DIALOG_METHODS,
-  'html_to_pdf',
-  'local_thumbnail',
-  'local_image_data_url',
-  'register_local_path',
-  'file_token_resolve',
-  'file_token_read_json',
-  'file_token_cleanup',
-  'file_staged_create',
-  'file_staged_append',
-  'file_staged_complete',
-  'file_staged_abort',
-  'canvas_asset_put',
-  'canvas_asset_get',
-  'canvas_asset_gc',
-]);
+// Single source of truth: electron/ipc-methods.js exports the native-method
+// allowlist. This authoritative guard derives from it — adding a native
+// method is one edit in ipc-methods.js, never an inline copy here.
+const NATIVE_METHODS = new Set(require('./ipc-methods').NATIVE_METHODS);
 
 const REGISTER_LOCAL_PATH_DEPRECATED_MSG = 'register_local_path is deprecated; use file tokens via dialog or staged upload';
 
@@ -598,5 +584,6 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
 
 module.exports = {
   handleDialogCall,
+  NATIVE_METHODS,
   _clearAllowedWriteRoots: () => _allowedWriteRoots.clear(),
 };

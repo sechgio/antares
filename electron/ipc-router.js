@@ -552,23 +552,14 @@ function _maybeTokenizeResultPaths(method, result, win) {
  * Returns 'dialog' | 'autoimg' | 'ubicaciones' | null so the router only
  * invokes the single handler that could match, instead of probing all three.
  * The handlers still do their own Set-based authoritative check.
+ *
+ * Derived from the single native-method allowlist in ipc-methods.js. The
+ * dialog_* group is matched by prefix below, so the derived set excludes it
+ * — mirroring the historical inline list exactly.
  */
-const _DIALOG_NATIVE_METHODS = new Set([
-  'html_to_pdf',
-  'local_thumbnail',
-  'local_image_data_url',
-  'register_local_path',
-  'file_token_resolve',
-  'file_staged_create',
-  'file_staged_append',
-  'file_staged_complete',
-  'file_staged_abort',
-  'file_token_read_json',
-  'file_token_cleanup',
-  'canvas_asset_put',
-  'canvas_asset_get',
-  'canvas_asset_gc',
-]);
+const _DIALOG_NATIVE_METHODS = new Set(
+  require('./ipc-methods').NATIVE_METHODS.filter((m) => !m.startsWith('dialog_'))
+);
 function _dispatchNative(method) {
   if (method.startsWith('dialog_') || _DIALOG_NATIVE_METHODS.has(method)) return 'dialog';
   if (method.startsWith('autoimg_')) return 'autoimg';
@@ -825,6 +816,7 @@ module.exports = {
   _sendRequest,
   _callBackend,
   _isIdempotentMethod,
+  _DIALOG_NATIVE_METHODS,
   _toRendererIpcError,
   _writeStdinWithBackpressure,
   _logIpcTelemetry,
