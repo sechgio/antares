@@ -1,5 +1,5 @@
 /**
- * Preferencias locales por usuario: Sheet/carpetas no se borran al limpiar tokens.
+ * Preferencias locales por usuario: Sheet/carpetas no se borran al limpiar store.
  */
 
 const fs = require('fs');
@@ -13,37 +13,35 @@ function assert(condition, message) {
 }
 
 const scope = require('../electron/autoimg-user-scope');
-const prefs = require('../electron/autoimg-local-prefs');
-const sheetsStore = require('../electron/autoimg-sheet-storage');
-const tokens = require('../electron/autoimg-token-storage');
+const store = require('../electron/autoimg-user-store');
 
 scope.clearActiveUser();
 scope.setActiveUser('prefs-test@example.com');
 
-prefs.saveLocalFolders([
+store.saveLocalFolders([
   { name: 'A', folder_id: 'folderAAA111', activo: true, ultimo_scan: '', cant_archivos: 3 },
   { name: 'B', folder_id: 'folderBBB222', activo: false, ultimo_scan: '', cant_archivos: 0 },
 ]);
-prefs.saveRenameDest('rootFOLDER999', 'Raiz export');
+store.saveRenameDest('rootFOLDER999', 'Raiz export');
 
-const loaded = prefs.loadLocalFolders();
+const loaded = store.loadLocalFolders();
 assert(loaded.length === 2, 'guarda 2 carpetas');
 assert(loaded[0].folder_id === 'folderAAA111', 'folder id A');
 
-sheetsStore.saveSheetConfig('199VwTc4WCVuFfNN93UTI8wVxDvoMT4KzqNm6s_AsXPk', 'BD test');
-assert(sheetsStore.loadSheetConfig().sheet_id.startsWith('199VwTc4'), 'sheet id persistido');
+store.saveSheetConfig('199VwTc4WCVuFfNN93UTI8wVxDvoMT4KzqNm6s_AsXPk', 'BD test');
+assert(store.loadSheetConfig().sheet_id.startsWith('199VwTc4'), 'sheet id persistido');
 
-tokens.saveTokens({ access_token: 'x', refresh_token: 'y', expiry_date: Date.now() });
-tokens.clearTokens();
-assert(!tokens.loadTokens(), 'tokens limpios');
-assert(sheetsStore.loadSheetConfig().sheet_id.startsWith('199VwTc4'), 'sheet sobrevive clearTokens');
-assert(prefs.loadLocalFolders().length === 2, 'carpetas sobreviven clearTokens');
-assert(prefs.loadRenameDest().folder_id === 'rootFOLDER999', 'rename dest sobrevive clearTokens');
+store.saveTokens({ access_token: 'x', refresh_token: 'y', expiry_date: Date.now() });
+store.clearTokens();
+assert(!store.loadTokens(), 'tokens limpios');
+assert(store.loadSheetConfig().sheet_id.startsWith('199VwTc4'), 'sheet sobrevive clearTokens');
+assert(store.loadLocalFolders().length === 2, 'carpetas sobreviven clearTokens');
+assert(store.loadRenameDest().folder_id === 'rootFOLDER999', 'rename dest sobrevive clearTokens');
 
 // Sin usuario activo no se exponen datos de perfil
 scope.clearActiveUser();
-assert(!sheetsStore.loadSheetConfig().sheet_id, 'sin usuario no expone sheet');
-assert(prefs.loadLocalFolders().length === 0, 'sin usuario no expone carpetas');
+assert(!store.loadSheetConfig().sheet_id, 'sin usuario no expone sheet');
+assert(store.loadLocalFolders().length === 0, 'sin usuario no expone carpetas');
 
 // revokeAuth no limpia sheet del usuario
 const sheetsSvcPath = path.join(__dirname, '..', 'electron', 'google-sheets-service.js');
