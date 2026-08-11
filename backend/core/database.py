@@ -410,6 +410,9 @@ def importar_excel(excel_path: str) -> dict[str, int]:
     wb = load_workbook(excel_path, read_only=True, data_only=False)
     try:
         ws = wb.active
+        if ws is None:
+            msg = f"El Excel no contiene hojas activas: {excel_path}"
+            raise ValueError(msg)
         rows_iter = ws.iter_rows(values_only=True)
         header = next(rows_iter, None)
         columns = _normalize_excel_columns(list(header) if header is not None else [])

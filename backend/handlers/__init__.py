@@ -232,7 +232,7 @@ class HandlerRegistry:
         # WeasyPrint: import under the guard (the cold cliff), render outside.
         # The render must not hold the guard: it takes seconds and would
         # stall every cold-import request waiting on WARM_CRITICAL_DONE.
-        write_pdf_sanitized = None
+        write_pdf_sanitized: Callable[[str], bytes] | None = None
         try:
             with serialized_import():
                 from backend.utils.pdf_html import write_pdf_sanitized
