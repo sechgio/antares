@@ -59,6 +59,15 @@ export function useCanvasBootstrap({
     let cancelled = false;
     (async () => {
       setLoading(true);
+      // Reemplazo del documento bajo una generación monotónica: un reemplazo
+      // posterior (open/new concurrente) invalida la restauración de historial
+      // de este, que recién marca historyReady cuando su generación sigue viva.
+      const replaceGuarded = async (doc: CanvasDocument): Promise<number> => {
+        const restoreGeneration = ++restoreGenerationRef.current;
+        historyReadyRef.current = false;
+        replaceDocument(await hydrateDocumentImages(doc));
+        return restoreGeneration;
+      };
       try {
         const list = await api.canvasList();
         if (cancelled) return;
@@ -69,9 +78,7 @@ export function useCanvasBootstrap({
           if (!cancelled) {
             perfMark('get');
             const doc = normalizeDocument(got.document as CanvasDocument);
-            const restoreGeneration = ++restoreGenerationRef.current;
-            historyReadyRef.current = false;
-            replaceDocument(await hydrateDocumentImages(doc));
+            const restoreGeneration = await replaceGuarded(doc);
             const replacementId = currentDocumentRef.current.id;
             const replacementRevision = currentRevisionRef.current;
             perfMark('replace');
@@ -113,9 +120,7 @@ export function useCanvasBootstrap({
           if (!cancelled) {
             perfMark('get');
             const doc = normalizeDocument(created.document as CanvasDocument);
-            const restoreGeneration = ++restoreGenerationRef.current;
-            historyReadyRef.current = false;
-            replaceDocument(await hydrateDocumentImages(doc));
+            const restoreGeneration = await replaceGuarded(doc);
             if (restoreGenerationRef.current === restoreGeneration) {
               historyReadyRef.current = true;
             }
@@ -132,9 +137,7 @@ export function useCanvasBootstrap({
             const created = await api.canvasCreate('Sin título');
             if (!cancelled) {
               const doc = normalizeDocument(created.document as CanvasDocument);
-              const restoreGeneration = ++restoreGenerationRef.current;
-              historyReadyRef.current = false;
-              replaceDocument(await hydrateDocumentImages(doc));
+              const restoreGeneration = await replaceGuarded(doc);
               if (restoreGenerationRef.current === restoreGeneration) {
                 historyReadyRef.current = true;
               }

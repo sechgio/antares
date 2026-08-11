@@ -112,8 +112,19 @@ export function useDocumentLifecycle({
     [],
   );
 
-  /** Save the current doc (disk + history + cloud push). Shared by every switch op. */
-  const saveCurrentDocument = useCallback(async (): Promise<boolean> => {
+  /**
+   * Save the current doc (disk + history + cloud push). Shared by onSave and
+   * every switch op: returns the pre-save snapshot pieces the caller needs
+   * (saved doc for the editor, captured stacks to restore, current flag).
+   */
+  const saveCurrentDocument = useCallback(async (): Promise<{
+    current: boolean;
+    saved: CanvasDocument;
+    histPersistOk: boolean;
+    document: CanvasDocument;
+    past: typeof history.past;
+    future: typeof history.future;
+  }> => {
     const document = history.documentRef.current;
     const past = history.past;
     const future = history.future;
@@ -128,10 +139,11 @@ export function useDocumentLifecycle({
           return false;
         }),
     ]);
-    queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
+    const saved = normalizeDocument(savedRes.document as CanvasDocument);
+    queueCanvasCloudPush(saved);
     const current = isCurrentSnapshot(snapshot);
     if (current && histPersistOk) markHistoryPersisted(document.id);
-    return current;
+    return { current, saved, histPersistOk, document, past, future };
   }, [captureCurrentSnapshot, history.documentRef, history.future, history.past, isCurrentSnapshot, markHistoryPersisted, persistHistoryStacks, warnHistoryPersistFailed]);
 
   /** Open a document and restore its persisted history (best-effort). */
@@ -195,23 +207,8 @@ export function useDocumentLifecycle({
   const onSave = useCallback(
     async (opts?: { silent?: boolean }): Promise<boolean> => {
       try {
-        const document = history.documentRef.current;
-        const past = history.past;
-        const future = history.future;
-        const snapshot = captureCurrentSnapshot();
-        const serialized = await serializeDocumentImages(document);
-        const [res, histPersistOk] = await Promise.all([
-          api.canvasSave(serialized),
-          persistHistoryStacks(document.id, past, future)
-            .then(() => true)
-            .catch((err) => {
-              warnHistoryPersistFailed(err);
-              return false;
-            }),
-        ]);
-        const saved = normalizeDocument(res.document as CanvasDocument);
-        queueCanvasCloudPush(saved);
-        if (!isCurrentSnapshot(snapshot)) return false;
+        const { current, saved, histPersistOk, document, past, future } = await saveCurrentDocument();
+        if (!current) return false;
 
         // Keep blob:/blobId in the editor; `saved` (data URLs) goes to cloud only.
         const forEditor = applySavedDocumentKeepingImages(document, saved);
@@ -232,7 +229,7 @@ export function useDocumentLifecycle({
         return false;
       }
     },
-    [captureCurrentSnapshot, flashStatus, history.documentRef, history.future, history.past, isCurrentSnapshot, markHistoryPersisted, persistHistoryStacks, refreshList, warnHistoryPersistFailed],
+    [applySavedDocumentKeepingImages, dismissedRemoteAtRef, flashStatus, history, isNewer, markHistoryPersisted, refreshList, saveCurrentDocument],
   );
 
   const onOpenDoc = useCallback(
@@ -240,7 +237,7 @@ export function useDocumentLifecycle({
       if (!id || id === history.document.id) return;
       await withDocSwitchLock(async () => {
         try {
-          if (!(await saveCurrentDocument())) {
+          if (!(await saveCurrentDocument()).current) {
             setStatus('Se hicieron cambios mientras se guardaba. Repite la acción para cambiar de documento.');
             return;
           }
@@ -276,7 +273,7 @@ export function useDocumentLifecycle({
     async () => {
       await withDocSwitchLock(async () => {
         try {
-          if (!(await saveCurrentDocument())) {
+          if (!(await saveCurrentDocument()).current) {
             setStatus('Se hicieron cambios mientras se guardaba. Repite la acción para crear un documento.');
             return;
           }
@@ -317,7 +314,7 @@ export function useDocumentLifecycle({
     async () => {
       await withDocSwitchLock(async () => {
         try {
-          if (!(await saveCurrentDocument())) {
+          if (!(await saveCurrentDocument()).current) {
             setStatus('Se hicieron cambios mientras se guardaba. Repite la acción para duplicar el documento.');
             return;
           }

@@ -25,13 +25,23 @@ export async function parseSpreadsheetFile(file: File): Promise<{ headers: strin
 }
 
 
+/**
+ * Nombres de archivo que pueden referirse a un registro: el base sin extensión
+ * y, si termina en `-N`/`_N`, su forma sin ese sufijo numerado. Es la misma
+ * regla que `matchesRecordId` y `buildImagesByRecordId` comparten para que el
+ * match por escaneo y el match por índice nunca divergan.
+ */
+export function imageNameCandidates(filename: string): string[] {
+  const base = filename.replace(/\.[^.]+$/, '');
+  const numbered = base.match(/^(.*)[-_]\d+$/);
+  return numbered ? [base, numbered[1]] : [base];
+}
+
 /** Match image filenames like `{recordId}-1.jpg` or `{recordId}_2.png`. */
 export function matchesRecordId(filename: string, recordId: string): boolean {
-  const base = filename.replace(/\.[^.]+$/, '');
-  const id = String(recordId).trim();
+  const id = normalizeRecordId(recordId);
   if (!id) return false;
-  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`^${escaped}(?:[-_]\\d+)?$`, 'i').test(base);
+  return imageNameCandidates(filename).some((candidate) => normalizeRecordId(candidate) === id);
 }
 
 export function naturalSortByName(a: string, b: string): number {
@@ -55,10 +65,7 @@ export function buildImagesByRecordId(
   if (!idColumn || recordIds.size === 0) return index;
 
   for (const image of images) {
-    const base = image.name.replace(/\.[^.]+$/, '');
-    const keys = new Set([normalizeRecordId(base)]);
-    const numbered = base.match(/^(.*)[-_]\d+$/);
-    if (numbered) keys.add(normalizeRecordId(numbered[1]));
+    const keys = new Set(imageNameCandidates(image.name).map(normalizeRecordId));
 
     for (const key of keys) {
       if (!recordIds.has(key)) continue;
