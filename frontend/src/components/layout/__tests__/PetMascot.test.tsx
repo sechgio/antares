@@ -73,14 +73,14 @@ describe('PetMascot', () => {
     render(<PetMascot />);
 
     const mascot = await screen.findByTestId('pet-mascot-container');
-    const initialTop = Number.parseFloat(mascot.style.top);
+    const initialTransform = mascot.style.transform;
 
     fireEvent.pointerDown(mascot, { clientX: 120, clientY: 120, button: 0, pointerId: 1 });
     fireEvent.pointerMove(window, { clientX: 220, clientY: 180, pointerId: 1 });
     fireEvent.pointerUp(window, { clientX: 220, clientY: 180, pointerId: 1 });
 
     await waitFor(() => {
-      expect(Number.parseFloat(mascot.style.top)).not.toBe(initialTop);
+      expect(mascot.style.transform).not.toBe(initialTransform);
     });
 
     expect(localStorage.getItem('petdex_pos_x')).toBeTruthy();
