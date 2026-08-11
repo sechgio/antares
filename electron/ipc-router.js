@@ -153,11 +153,17 @@ function _isAllowedIpcSender(event) {
  * Keeps pending bytes as Buffer (UTF-8) so large responses do not inflate to
  * UTF-16 JS strings until each complete line is parsed.
  *
+ * `maxPendingBytes` caps a fragmented line (backend allows up to 64 MiB
+ * payloads; a pathological oversized/never-terminated line must not keep
+ * growing via Buffer.concat). When exceeded, the partial line is dropped and
+ * `dropped` is set so the caller can log it.
+ *
  * @param {Buffer} pending
  * @param {Buffer|string|Uint8Array} chunk
- * @returns {{ pending: Buffer, lines: Buffer[] }}
+ * @param {number} [maxPendingBytes]
+ * @returns {{ pending: Buffer, lines: Buffer[], dropped: boolean }}
  */
-function _consumeStdoutLines(pending, chunk) {
+function _consumeStdoutLines(pending, chunk, maxPendingBytes = Infinity) {
   const piece = Buffer.isBuffer(chunk)
     ? chunk
     : Buffer.from(chunk);
@@ -174,9 +180,16 @@ function _consumeStdoutLines(pending, chunk) {
     }
     start = idx + 1;
   }
+  let resultPending = start === 0 ? buf : buf.subarray(start);
+  let dropped = false;
+  if (resultPending.length > maxPendingBytes) {
+    dropped = true;
+    resultPending = Buffer.alloc(0);
+  }
   return {
-    pending: start === 0 ? buf : buf.subarray(start),
+    pending: resultPending,
     lines,
+    dropped,
   };
 }
 
@@ -192,9 +205,17 @@ function _ensureListeners() {
   _attachedProcess = proc;
   let pending = Buffer.alloc(0);
 
+  // Backend caps payloads at 64 MiB; leave headroom for JSON framing so a
+  // legitimate max-size line still parses, but a pathological never-ending
+  // line cannot grow the pending Buffer without bound.
+  const MAX_STDOUT_PENDING_BYTES = 64 * 1024 * 1024 + 4 * 1024 * 1024;
+
   proc.stdout.on('data', (data) => {
-    const framed = _consumeStdoutLines(pending, data);
+    const framed = _consumeStdoutLines(pending, data, MAX_STDOUT_PENDING_BYTES);
     pending = framed.pending;
+    if (framed.dropped) {
+      console.error('[ipc-router] dropped oversized stdout line (>68 MiB partial); backend framing is corrupted');
+    }
     for (const lineBuf of framed.lines) {
       const line = lineBuf.toString('utf8');
       if (!line.trim()) continue;
@@ -572,7 +593,7 @@ function _maybeResolveFileTokens(params, win) {
   const { resolveCapability, _assertNoRawAbsolutePaths } = require('./file-capabilities');
   _assertNoRawAbsolutePaths(params);
   const webContentsId = win && win.webContents ? win.webContents.id : null;
-  const tokenKeys = ['file_token', 'fileToken', 'excel_file_token', 'spreadsheet_token', 'result_file_token', 'cache_token'];
+  const tokenKeys = ['file_token', 'fileToken', 'excel_file_token', 'excelPath', 'spreadsheet_token', 'result_file_token', 'cache_token'];
   let next = params;
   let mutated = false;
   for (const k of tokenKeys) {
@@ -606,15 +627,23 @@ function _maybeResolveFileTokens(params, win) {
 
 function _validateAndResolveWriteParams(params, win) {
   if (!params || typeof params !== 'object') return params;
-  const needsWrite = 'output_path' in params || 'outputPath' in params || 'output_folder' in params || 'outputFolder' in params || (params.path && typeof params.path === 'string' && params.path.includes('/'));
+  const needsWrite = 'output_path' in params || 'outputPath' in params || 'output_dir' in params || 'outputDir' in params || 'output_folder' in params || 'outputFolder' in params || (params.path && typeof params.path === 'string' && params.path.includes('/'));
   if (!needsWrite) return params;
-  const outRaw = params.output_path || params.outputPath || params.output_folder || params.outputFolder || params.path;
-  if (typeof outRaw === 'string' && outRaw.startsWith('antares-write-')) {
+  const outRaw = params.output_path || params.outputPath || params.output_dir || params.outputDir || params.output_folder || params.outputFolder || params.path;
+  // Token format is `antares-write_<uuid>` (file-capabilities._newToken uses an
+  // underscore separator). Match the exact prefix so a legitimate folder named
+  // e.g. `antares-write-notes` is not mistaken for a token.
+  if (typeof outRaw === 'string' && outRaw.startsWith('antares-write_')) {
     const { resolveCapability } = require('./file-capabilities');
     const webContentsId = win && win.webContents ? win.webContents.id : null;
     try {
       const cap = resolveCapability(outRaw, 'write', webContentsId);
-      return { ...params, _resolved_output_path: cap.path, _write_token: outRaw };
+      // Rewrite the raw field the backend reads (outputDir stays a real path
+      // for handlers that consume it directly).
+      const next = { ...params, _resolved_output_path: cap.path, _write_token: outRaw };
+      if ('outputDir' in params) next.outputDir = cap.path;
+      if ('output_dir' in params) next.output_dir = cap.path;
+      return next;
     } catch (e) {
       throw new Error(`invalid write token: ${e.message}`);
     }
@@ -638,6 +667,11 @@ function _validateAndResolveWriteParams(params, win) {
           } catch { /* ignore */ }
         }
       } catch { /* Electron unavailable in unit tests */ }
+      if (!allowed) {
+        // Folders chosen through native dialogs are registered write roots.
+        const { isUnderAllowedWriteRoot } = require('./dialog-handlers');
+        if (isUnderAllowedWriteRoot(dir)) allowed = true;
+      }
       if (!allowed) {
         if (!isAllowedReadPath(resolved) && !isAllowedReadPath(dir)) {
           throw new Error('La ruta de salida no está permitida. Usa el diálogo de guardado.');
@@ -812,6 +846,8 @@ module.exports = {
   registerIpcHandlers,
   _ensureListeners,
   _consumeStdoutLines,
+  _maybeResolveFileTokens,
+  _validateAndResolveWriteParams,
   _isAllowedIpcSender,
   _sendRequest,
   _callBackend,

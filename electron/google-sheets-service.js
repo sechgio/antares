@@ -281,28 +281,33 @@ async function exchangeCode(code, redirectUri) {
       'Google no devolvió un refresh token. Revoca el acceso de la app en myaccount.google.com/permissions y vuelve a conectar.',
     );
   }
-  // Save under anonymous scope first, then bind to Google email (per-user storage).
+  // Resolver la identidad de Google ANTES de persistir: guardar bajo el scope
+  // del usuario activo anterior pisaría los tokens de la cuenta conectada
+  // previamente (cuenta A al conectar cuenta B). Con el email conocido, el
+  // guardado cae directamente en el almacén de la cuenta correcta.
+  const email = await _resolveGoogleEmail(tokens.access_token);
+  if (!email) {
+    throw new Error(
+      'No se pudo identificar la cuenta de Google. Verifica tu conexión e intenta conectar de nuevo.',
+    );
+  }
+  setActiveUser(email);
   store.saveTokens(tokens);
-  await _bindSessionToGoogleUser(tokens);
+  store.clearTokensLegacyPaths();
   return tokens;
 }
 
-/** Resuelve email de Google y mueve tokens/prefs al almacén de ese usuario. */
-async function _bindSessionToGoogleUser(tokens) {
-  if (!tokens?.access_token) return null;
+/** Resuelve el email de la cuenta autorizada sin persistir nada. */
+async function _resolveGoogleEmail(accessToken) {
+  if (!accessToken) return null;
   try {
-    const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    const res = await fetchWithRetry('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!res.ok) return null;
     const info = await res.json();
-    const email = info?.email;
-    if (!email) return null;
-    setActiveUser(email);
-    // Re-write tokens under user-scoped path; wipe anonymous leftover.
-    store.saveTokens(tokens);
-    store.clearTokensLegacyPaths();
-    return email;
+    const email = info && info.email;
+    return typeof email === 'string' && email ? email : null;
   } catch {
     return null;
   }

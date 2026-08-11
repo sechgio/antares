@@ -746,6 +746,11 @@ export const api = {
   }) => _invoke<{ pdf_base64: string; content_base64?: string; saved_path?: string; filename: string; format?: string; mime_type?: string }>('evidencia_volanteo_render', body),
 
   // ─── Ubicaciones ──────────────────────────────────────────────────────
+  /**
+   * `excelPath` is either a staged read token (`antares-read-*`, obtained via
+   * `stageFileForIpc`) or null for manual-data mode. Raw absolute paths are
+   * rejected by the IPC router — do not send `getPathForFile` results here.
+   */
   previewUbicacion: (body: {
     excelPath: string | null;
     formato: string;
