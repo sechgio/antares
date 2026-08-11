@@ -71,7 +71,12 @@ export default function TemplatePicker({
     if (!trigger) return;
 
     const rect = trigger.getBoundingClientRect();
-    const menuHeight = listRef.current?.offsetHeight ?? 0;
+    // El primer paint mide el menú sin maxHeight (el cap se aplica junto con la
+    // posición en el siguiente render): una lista larga (p.ej. 74 filas) medía
+    // ~1500px y anclaba el menú arriba de la ventana (top=8) en vez de junto al
+    // trigger. Clamp aquí para que la decisión openUp use la altura real.
+    const rawHeight = listRef.current?.offsetHeight ?? 0;
+    const menuHeight = maxMenuHeight != null ? Math.min(rawHeight, maxMenuHeight) : rawHeight;
     const spaceBelow = window.innerHeight - rect.bottom - 8;
     const spaceAbove = rect.top - 8;
     const openUp = menuHeight > spaceBelow && spaceAbove > spaceBelow;
