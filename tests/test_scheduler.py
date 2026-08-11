@@ -44,6 +44,24 @@ def test_light_work_runs_while_heavy_capacity_is_full() -> None:
         scheduler.shutdown(wait=True)
 
 
+def test_light_work_does_not_wait_behind_queued_heavy_work() -> None:
+    from backend.core.scheduler import WorkScheduler
+
+    release = threading.Event()
+    scheduler = WorkScheduler(light_workers=1, heavy_workers=1, heavy_queue_limit=1)
+
+    try:
+        scheduler.submit_heavy(release.wait)
+        scheduler.submit_heavy(release.wait)
+
+        light = scheduler.submit_light(lambda: "ok")
+
+        assert light.result(timeout=1) == "ok"
+    finally:
+        release.set()
+        scheduler.shutdown(wait=True)
+
+
 def test_blocking_heavy_submit_stops_when_cancel_requested() -> None:
     from backend.core.scheduler import WorkScheduler
 
@@ -78,29 +96,22 @@ def test_cancelled_queued_heavy_future_releases_slot() -> None:
     from backend.core.scheduler import WorkScheduler
 
     release = threading.Event()
-    started = {"n": 0}
-    started_lock = threading.Lock()
+    started = threading.Event()
 
     def blocker() -> None:
-        with started_lock:
-            started["n"] += 1
+        started.set()
         release.wait(timeout=5)
 
     scheduler = WorkScheduler(light_workers=1, heavy_workers=1, heavy_queue_limit=1)
     try:
-        # Ocupa todos los threads del pool para que los heavy futures queden
-        # encolados (PENDING) en lugar de arrancar.
-        for _ in range(scheduler._max_total_workers):
-            scheduler.submit_light(blocker)
-        while started["n"] < scheduler._max_total_workers:
-            time.sleep(0.001)
+        scheduler.submit_heavy(blocker)
+        assert started.wait(timeout=1)
 
-        # Reserva toda la capacidad heavy con futures que aún no arrancaron.
-        heavies = [scheduler.submit_heavy(lambda: None) for _ in range(scheduler.heavy_capacity)]
+        # The only heavy worker is busy, so this future remains queued.
+        queued = scheduler.submit_heavy(lambda: None)
         assert scheduler.metrics()["heavy_outstanding"] == scheduler.heavy_capacity
 
-        # Cancela uno encolado: ningún thread libre => sigue PENDING => cancel() True.
-        assert heavies[0].cancel() is True
+        assert queued.cancel() is True
 
         # El slot liberado debe permitir un nuevo submit sin SchedulerBusy.
         extra = scheduler.submit_heavy(lambda: None)
@@ -136,8 +147,7 @@ def test_heavy_run_concurrency_capped_at_heavy_workers() -> None:
         with lock:
             active -= 1
 
-    # Pool = light + heavy = 6 threads — without a run-slot gate, all 6 heavy
-    # tasks reserved at capacity could execute concurrently.
+    # The heavy executor caps execution at heavy_workers.
     scheduler = WorkScheduler(
         light_workers=4,
         heavy_workers=heavy_workers,
@@ -179,6 +189,60 @@ def test_heavy_run_concurrency_capped_at_heavy_workers() -> None:
         scheduler.shutdown(wait=True)
 
 
+def test_light_queue_is_bounded() -> None:
+    from backend.core.scheduler import SchedulerBusy, WorkScheduler
+
+    started = threading.Event()
+    release = threading.Event()
+    scheduler = WorkScheduler(light_workers=1, heavy_workers=1, heavy_queue_limit=1, light_queue_limit=1)
+
+    try:
+        # 1 worker + 1 queue slot: the third submit must be rejected.
+        scheduler.submit_light(lambda: (started.set(), release.wait(5)))
+        assert started.wait(2), "first light task did not start"
+
+        scheduler.submit_light(lambda: "queued")
+
+        with pytest.raises(SchedulerBusy) as excinfo:
+            scheduler.submit_light(lambda: "overflow")
+        assert "light_queue_full" in str(excinfo.value)
+
+        metrics = scheduler.metrics()
+        assert metrics["light_capacity"] == 2
+        assert metrics["light_rejected"] == 1
+    finally:
+        release.set()
+        scheduler.shutdown(wait=True)
+
+    # After the blocked task finishes, a new submit must succeed (slot freed).
+    scheduler = WorkScheduler(light_workers=1, heavy_workers=1, heavy_queue_limit=1, light_queue_limit=1)
+    try:
+        future = scheduler.submit_light(lambda: "ok")
+        assert future.result(timeout=2) == "ok"
+    finally:
+        scheduler.shutdown(wait=True)
+
+
+def test_cancelled_queued_light_future_releases_slot() -> None:
+    from backend.core.scheduler import WorkScheduler
+
+    started = threading.Event()
+    release = threading.Event()
+    scheduler = WorkScheduler(light_workers=1, heavy_workers=1, heavy_queue_limit=1, light_queue_limit=0)
+
+    try:
+        scheduler.submit_light(lambda: (started.set(), release.wait(5)))
+        assert started.wait(2), "first light task did not start"
+
+        queued = scheduler.submit_light(lambda: "queued")
+        queued.cancel()
+
+        metrics = scheduler.metrics()
+        assert metrics["light_outstanding"] == 1, "cancelled queued light future must release its slot"
+    finally:
+        release.set()
+        scheduler.shutdown(wait=True)
+
 def test_detect_limits_allows_8_heavy_on_high_ram(monkeypatch) -> None:
     from backend.core import scheduler as sched
 
@@ -193,11 +257,12 @@ def test_detect_limits_allows_8_heavy_on_high_ram(monkeypatch) -> None:
             return _Mem()
 
     monkeypatch.setitem(__import__('sys').modules, 'psutil', _Psutil())
-    _light, heavy, queue = sched._detect_limits()
+    _light, heavy, queue, light_queue = sched._detect_limits()
     assert heavy <= 8
     assert heavy >= 2
     assert heavy == 8, f'expected heavy_workers=8 on high RAM, got {heavy}'
     assert queue >= heavy
+    assert light_queue >= 16
 
 
 def test_detect_limits_caps_at_6_below_16gb(monkeypatch) -> None:
@@ -214,5 +279,23 @@ def test_detect_limits_caps_at_6_below_16gb(monkeypatch) -> None:
             return _Mem()
 
     monkeypatch.setitem(__import__('sys').modules, 'psutil', _Psutil())
-    _light, heavy, _queue = sched._detect_limits()
+    _light, heavy, _queue, _light_queue = sched._detect_limits()
     assert heavy <= 6
+
+
+def test_submit_heavy_releases_slot_when_executor_submit_raises() -> None:
+    """Si executor.submit lanza (pool apagado / broken thread), el semáforo
+    _heavy_slots y el contador _heavy_outstanding deben liberarse para no
+    reducir heavy_capacity permanentemente en cada fallo (regresión del leak)."""
+    from backend.core.scheduler import WorkScheduler
+
+    scheduler = WorkScheduler(light_workers=1, heavy_workers=2, heavy_queue_limit=1)
+    capacity = scheduler.heavy_capacity
+    scheduler.shutdown(wait=True)
+
+    with pytest.raises(RuntimeError):
+        scheduler.submit_heavy(lambda: None)
+
+    assert scheduler.metrics()["heavy_outstanding"] == 0
+    for _ in range(capacity):
+        assert scheduler._heavy_slots.acquire(blocking=False), "semaphore permit was leaked"

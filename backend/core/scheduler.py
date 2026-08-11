@@ -13,11 +13,19 @@ logger = logging.getLogger(__name__)
 
 
 class SchedulerBusy(RuntimeError):
-    """Raised when the heavy work budget is already fully reserved."""
+    """Raised when a scheduler work budget is already fully reserved.
+
+    ``reason`` identifies the saturated lane (``heavy_queue_full`` /
+    ``light_queue_full``) so callers can report the right queue.
+    """
+
+    def __init__(self, message: str = "heavy_queue_full", *, reason: str | None = None) -> None:
+        super().__init__(message)
+        self.reason = reason or message
 
 
-def _detect_limits() -> tuple[int, int, int]:
-    """Return conservative `(light_workers, heavy_workers, heavy_queue_limit)`.
+def _detect_limits() -> tuple[int, int, int, int]:
+    """Return conservative `(light_workers, heavy_workers, heavy_queue_limit, light_queue_limit)`.
 
     Note: This is intentionally separate from JobManager._detect_max_concurrent().
     Scheduler controls thread-pool + heavy semaphore slots for individual
@@ -43,7 +51,12 @@ def _detect_limits() -> tuple[int, int, int]:
     ram_limited_heavy = max(1, int(available_gb // ram_divisor))
     heavy_workers = max(2, min(max(1, cpu_count // 2), ram_limited_heavy, heavy_cap))
     heavy_queue_limit = max(heavy_workers, heavy_workers * 2)
-    return light_workers, heavy_workers, heavy_queue_limit
+    # Light work is latency-sensitive (previews, metadata reads) and each
+    # queued closure retains its params, so bound the queue too. Generous
+    # enough for normal IPC concurrency; a flooded renderer gets rejected
+    # instead of growing memory without limit.
+    light_queue_limit = max(light_workers * 4, 16)
+    return light_workers, heavy_workers, heavy_queue_limit, light_queue_limit
 
 
 class WorkScheduler:
@@ -55,27 +68,30 @@ class WorkScheduler:
         light_workers: int,
         heavy_workers: int,
         heavy_queue_limit: int,
+        light_queue_limit: int | None = None,
     ) -> None:
         self.light_workers = max(1, light_workers)
         self.heavy_workers = max(1, heavy_workers)
         self.heavy_queue_limit = max(0, heavy_queue_limit)
+        if light_queue_limit is None:
+            light_queue_limit = max(self.light_workers * 4, 16)
+        self.light_queue_limit = max(1, light_queue_limit)
 
-        # Unified pool size: enough for all light tasks + heavy concurrency limit.
-        # We don't want heavy tasks to be able to occupy more than self.heavy_workers
-        # threads at once, but we want a shared pool for efficiency.
-        self._max_total_workers = self.light_workers + self.heavy_workers
-        self._executor = ThreadPoolExecutor(
-            max_workers=self._max_total_workers,
-            thread_name_prefix="handler-pool",
+        # Keep latency-sensitive work isolated from heavy tasks waiting to run.
+        self._light_executor = ThreadPoolExecutor(
+            max_workers=self.light_workers,
+            thread_name_prefix="light-handler-pool",
+        )
+        self._heavy_executor = ThreadPoolExecutor(
+            max_workers=self.heavy_workers,
+            thread_name_prefix="heavy-handler-pool",
         )
 
         # Outstanding budget (running + queued reservations) for backpressure.
         self.heavy_capacity = self.heavy_workers + self.heavy_queue_limit
         self._heavy_slots = threading.BoundedSemaphore(self.heavy_capacity)
-        # Separate run budget: at most heavy_workers heavy fns execute at once,
-        # even when the unified pool has light_workers + heavy_workers threads
-        # and many tasks are already reserved via _heavy_slots.
-        self._heavy_run_slots = threading.BoundedSemaphore(self.heavy_workers)
+        self.light_capacity = self.light_workers + self.light_queue_limit
+        self._light_slots = threading.BoundedSemaphore(self.light_capacity)
         self._lock = threading.RLock()
         self._heavy_outstanding = 0
         self._heavy_active = 0
@@ -84,19 +100,67 @@ class WorkScheduler:
         self._heavy_cancelled = 0
         self._heavy_submitted = 0
         self._heavy_completed = 0
+        self._light_outstanding = 0
+        self._light_rejected = 0
+        self._light_cancelled = 0
+        self._light_submitted = 0
+        self._light_completed = 0
 
     @classmethod
     def autodetected(cls) -> WorkScheduler:
-        light_workers, heavy_workers, heavy_queue_limit = _detect_limits()
+        light_workers, heavy_workers, heavy_queue_limit, light_queue_limit = _detect_limits()
         return cls(
             light_workers=light_workers,
             heavy_workers=heavy_workers,
             heavy_queue_limit=heavy_queue_limit,
+            light_queue_limit=light_queue_limit,
         )
 
     def submit_light(self, fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Future:
-        """Submit latency-sensitive work that should not wait behind heavy jobs."""
-        return self._executor.submit(fn, *args, **kwargs)
+        """Submit latency-sensitive work that should not wait behind heavy jobs.
+
+        Bounded by ``light_capacity`` (workers + queue): when the budget is
+        fully reserved, raises ``SchedulerBusy`` instead of queueing without
+        limit (each queued closure retains its params in memory).
+        """
+        if not self._light_slots.acquire(blocking=False):
+            with self._lock:
+                self._light_rejected += 1
+            raise SchedulerBusy("light_queue_full")
+
+        with self._lock:
+            self._light_outstanding += 1
+            self._light_submitted += 1
+
+        def _wrapped() -> Any:
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                with self._lock:
+                    self._light_outstanding -= 1
+                    self._light_completed += 1
+                self._light_slots.release()
+
+        try:
+            future = self._light_executor.submit(_wrapped)
+        except Exception:
+            with self._lock:
+                self._light_outstanding -= 1
+            self._light_slots.release()
+            raise
+
+        def _release_if_cancelled(fut: Future) -> None:
+            # A future cancelled before _wrapped ran never executes the finally
+            # above, so release the reserved slot here (same invariant as the
+            # heavy lane's cancellation handler).
+            if fut.cancelled():
+                with self._lock:
+                    self._light_outstanding -= 1
+                    self._light_cancelled += 1
+                self._light_slots.release()
+
+        future.add_done_callback(_release_if_cancelled)
+        return future
 
     def submit_heavy(
         self,
@@ -122,9 +186,6 @@ class WorkScheduler:
             self._heavy_submitted += 1
 
         def _wrapped() -> Any:
-            # Acquire run slot only when actually executing — cancelled-before-run
-            # tasks never reach here, so they cannot leak run slots.
-            self._heavy_run_slots.acquire()
             with self._lock:
                 self._heavy_active += 1
             try:
@@ -134,19 +195,24 @@ class WorkScheduler:
                     self._heavy_active -= 1
                     self._heavy_outstanding -= 1
                     self._heavy_completed += 1
-                self._heavy_run_slots.release()
                 self._heavy_slots.release()
 
-        future = self._executor.submit(_wrapped)
+        try:
+            future = self._heavy_executor.submit(_wrapped)
+        except Exception:
+            with self._lock:
+                self._heavy_outstanding -= 1
+            self._heavy_slots.release()
+            raise
 
         def _release_if_cancelled(fut: Future) -> None:
             # If the future was cancelled before _wrapped started running, the
             # finally above never executed, so the reserved outstanding slot and
             # the outstanding counter would leak for the rest of the session
             # (every batch cancellation permanently shrank heavy_capacity).
-            # Run slots are only acquired inside _wrapped, so cancel-before-run
-            # never held one. fut.cancelled() is True only when the future never
-            # ran, so this never double-releases against the finally path.
+            # Queued futures never increment heavy_active. fut.cancelled() is True
+            # only when the future never ran, so this never double-releases against
+            # the finally path.
             if fut.cancelled():
                 with self._lock:
                     self._heavy_outstanding -= 1
@@ -183,6 +249,14 @@ class WorkScheduler:
             queued = max(0, self._heavy_outstanding - self._heavy_active)
             m = {
                 "light_workers": self.light_workers,
+                "light_queue_limit": self.light_queue_limit,
+                "light_capacity": self.light_capacity,
+                "light_outstanding": self._light_outstanding,
+                "light_queued": max(0, self._light_outstanding - self.light_workers),
+                "light_rejected": self._light_rejected,
+                "light_cancelled": self._light_cancelled,
+                "light_submitted": self._light_submitted,
+                "light_completed": self._light_completed,
                 "heavy_workers": self.heavy_workers,
                 "heavy_queue_limit": self.heavy_queue_limit,
                 "heavy_capacity": self.heavy_capacity,
@@ -207,8 +281,9 @@ class WorkScheduler:
             return m
 
     def shutdown(self, *, wait: bool = True) -> None:
-        """Shut down the unified executor."""
-        self._executor.shutdown(wait=wait, cancel_futures=True)
+        """Shut down the light and heavy executors."""
+        self._light_executor.shutdown(wait=wait, cancel_futures=True)
+        self._heavy_executor.shutdown(wait=wait, cancel_futures=True)
 
 
 _scheduler: WorkScheduler | None = None
