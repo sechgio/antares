@@ -31,8 +31,8 @@ export interface GenerateSidebarProps {
   completedCount: number;
   logoLeft: string | null;
   logoRight: string | null;
-  onLogoLeft: (url: string | null) => void;
-  onLogoRight: (url: string | null) => void;
+  onLogoLeft: (url: string | null, file?: File | null) => void;
+  onLogoRight: (url: string | null, file?: File | null) => void;
   templateValid: boolean;
   templateOptions: CanvasDocumentSummary[];
   selectedTemplateId: string;
@@ -144,8 +144,10 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
                       const f = e.target.files?.[0];
                       // ObjectURL for sidebar/preview; parent revokes on replace/unmount.
                       const url = f ? URL.createObjectURL(f) : null;
-                      if (side === 'left') onLogoLeft(url);
-                      else onLogoRight(url);
+                      // Pass the File too: RGB PDF export can reference it via an
+                      // antares-local-image: token instead of base64 per page.
+                      if (side === 'left') onLogoLeft(url, f);
+                      else onLogoRight(url, f);
                     }}
                   />
                 </div>

@@ -4,6 +4,7 @@ import {
   fileToPdfImageSource,
   getElectronFilePath,
   imageToPdfSource,
+  logoToPdfSource,
 } from './pdfAssets';
 
 describe('getElectronFilePath', () => {
@@ -97,5 +98,75 @@ describe('pdf local-image allowlist', () => {
     const source = await imageToPdfSource(file, 'max', 'row-0');
     expect(source.src).toBe('data:image/jpeg;base64,compressed');
     expect(source.token).toBeUndefined();
+  });
+});
+
+describe('logoToPdfSource', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function localLogoFile(path: string): File {
+    const file = new File(['x'], 'logo.png', { type: 'image/png' });
+    Object.defineProperty(file, 'path', { value: path });
+    return file;
+  }
+
+  it('returns null when there is no logo URL', async () => {
+    const localImagePaths: Record<string, string> = {};
+    const src = await logoToPdfSource(null, null, 'logo-left', localImagePaths, true);
+    expect(src).toBeNull();
+    expect(Object.keys(localImagePaths)).toHaveLength(0);
+  });
+
+  it('emits antares-local-image token in RGB mode when the File path is allowlisted', async () => {
+    const file = localLogoFile('C:\\logos\\izq.png');
+    vi.stubGlobal('window', {
+      electronAPI: {
+        registerLocalPath: vi.fn(async () => ({ registered: true })),
+      },
+    });
+    const localImagePaths: Record<string, string> = {};
+    const src = await logoToPdfSource('blob:logo-left', file, 'logo-left', localImagePaths, true);
+    expect(src).toBe(buildLocalImageToken('logo-left'));
+    expect(localImagePaths[src]).toBe('C:\\logos\\izq.png');
+  });
+
+  it('keeps the durable URL (no token) in CMYK mode even with a local File', async () => {
+    const file = localLogoFile('C:\\logos\\izq.png');
+    vi.stubGlobal('window', {
+      electronAPI: {
+        registerLocalPath: vi.fn(async () => ({ registered: true })),
+      },
+    });
+    const localImagePaths: Record<string, string> = {};
+    // data: URL is already durable — returned unchanged, no token registered.
+    const src = await logoToPdfSource('data:image/png;base64,AAAA', file, 'logo-left', localImagePaths, false);
+    expect(src).toBe('data:image/png;base64,AAAA');
+    expect(Object.keys(localImagePaths)).toHaveLength(0);
+  });
+
+  it('falls back to a durable URL when the File has no local path', async () => {
+    const file = new File(['x'], 'logo.png', { type: 'image/png' }); // no path
+    vi.stubGlobal('window', { electronAPI: { getPathForFile: vi.fn(() => '') } });
+    const localImagePaths: Record<string, string> = {};
+    const src = await logoToPdfSource('blob:logo-left', file, 'logo-left', localImagePaths, true);
+    expect(src).toBe('blob:logo-left'); // fetch fails in jsdom → returns url unchanged
+    expect(Object.keys(localImagePaths)).toHaveLength(0);
+  });
+
+  it('falls back to a durable URL when registerLocalPath rejects the path', async () => {
+    const file = localLogoFile('C:\\denied\\logo.png');
+    vi.stubGlobal('window', {
+      electronAPI: {
+        registerLocalPath: vi.fn(async () => {
+          throw new Error('not allowed');
+        }),
+      },
+    });
+    const localImagePaths: Record<string, string> = {};
+    const src = await logoToPdfSource('blob:logo-left', file, 'logo-left', localImagePaths, true);
+    expect(src).toBe('blob:logo-left');
+    expect(Object.keys(localImagePaths)).toHaveLength(0);
   });
 });

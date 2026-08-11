@@ -34,6 +34,45 @@ const REGISTER_LOCAL_PATH_DEPRECATED_MSG = 'register_local_path is deprecated; u
 
 /** @type {Set<string>} Directory roots allowed for PDF writes (from dialogs). */
 const _allowedWriteRoots = new Set();
+// Persisted across sessions so an output folder chosen via native dialog keeps
+// working after an app restart (raw paths are rejected unless under a root).
+const WRITE_ROOTS_FILE = 'antares-write-roots.json';
+
+function _persistedWriteRootsPath() {
+  try {
+    const { app } = require('electron');
+    const userData = app && typeof app.getPath === 'function' ? app.getPath('userData') : null;
+    return userData ? path.join(userData, WRITE_ROOTS_FILE) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Best-effort: failing to persist must never break folder selection. */
+function _persistWriteRoots() {
+  const file = _persistedWriteRootsPath();
+  if (!file) return;
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify([..._allowedWriteRoots], null, 2), 'utf8');
+  } catch {
+    /* ignore */
+  }
+}
+
+function _loadPersistedWriteRoots() {
+  const file = _persistedWriteRootsPath();
+  if (!file) return;
+  try {
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!Array.isArray(raw)) return;
+    for (const entry of raw) {
+      if (typeof entry === 'string' && entry.trim()) _allowedWriteRoots.add(path.resolve(entry));
+    }
+  } catch {
+    // No file yet, or corrupted: start with session roots only.
+  }
+}
 
 function _registerWriteRootFromPath(rawPath) {
   if (typeof rawPath !== 'string' || !rawPath.trim()) return;
@@ -45,7 +84,9 @@ function _registerWriteRootFromPath(rawPath) {
   } catch {
     root = path.dirname(resolved);
   }
+  const sizeBefore = _allowedWriteRoots.size;
   _allowedWriteRoots.add(root);
+  if (_allowedWriteRoots.size > sizeBefore) _persistWriteRoots();
 }
 
 function _registerDialogPaths(paths) {
@@ -196,7 +237,44 @@ async function _scanOneDir(dirPath, extensions, results, pending) {
   }
 }
 
-async function renderHtmlToPdf(params = {}, electronModules = {}) {
+// Pool persistente de ventanas ocultas para printToPDF. Cada slot tiene su
+// propia partición de sesión (los interceptores webRequest son POR-SESIÓN: dos
+// renders concurrentes en la misma partición pisarían sus allowlists) y su
+// propia cola — hasta PDF_RENDER_SLOTS renders en paralelo sin pagar el
+// spin-up de new BrowserWindow (~0.5-1.5 s) en cada render.
+const PDF_RENDER_SLOTS = 2;
+const pdfRenderSlots = Array.from({ length: PDF_RENDER_SLOTS }, (_, i) => ({
+  queue: Promise.resolve(),
+  window: null,
+  session: null,
+  partition: `pdf-render-${i}`,
+}));
+let pdfSlotCursor = 0;
+
+function _nextPdfSlot() {
+  const slot = pdfRenderSlots[pdfSlotCursor % PDF_RENDER_SLOTS];
+  pdfSlotCursor += 1;
+  return slot;
+}
+
+function renderHtmlToPdf(params = {}, electronModules = {}) {
+  const slot = _nextPdfSlot();
+  const render = () => _renderHtmlToPdf(params, electronModules, slot);
+  const result = slot.queue.then(render, render);
+  slot.queue = result.then(() => undefined, () => undefined);
+  return result;
+}
+
+function _resetPdfRenderPool() {
+  for (const slot of pdfRenderSlots) {
+    slot.queue = Promise.resolve();
+    slot.window = null;
+    slot.session = null;
+  }
+  pdfSlotCursor = 0;
+}
+
+async function _renderHtmlToPdf(params = {}, electronModules = {}, slot) {
   const html = typeof params.html === 'string' ? params.html : '';
   if (!html.trim()) {
     throw new Error('HTML requerido para generar PDF');
@@ -222,71 +300,87 @@ async function renderHtmlToPdf(params = {}, electronModules = {}) {
     throw new Error('BrowserWindow no disponible para generar PDF');
   }
 
-  // Use a single shared session partition for all PDF renders. Interceptors
-  // are set + cleared within each render (clearInterceptors in finally), so
-  // they cannot leak across calls. A shared partition lets Electron reuse its
-  // HTTP cache (e.g. Google Fonts) instead of re-downloading every render.
-  const partitionName = 'pdf-render';
-  const pdfSession = (session && typeof session.fromPartition === 'function')
-    ? session.fromPartition(partitionName)
-    : null;
-
-  const pdfWindow = new BrowserWindow({
-    show: false,
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      ...(pdfSession ? { session: pdfSession } : {}),
-    },
-  });
-
-  // Block external resource loads to prevent SSRF and local file disclosure.
-  // Cover http(s) AND file:// schemes — `*://*/*` does not match `file://`,
-  // so we register a second filter for file URLs and only allow the
-  // specific file:// URLs we whitelisted (the temp HTML + local images).
-  const clearInterceptors = () => {
-    try {
-      const targetSession = pdfSession || pdfWindow.webContents.session;
-      if (targetSession && targetSession.webRequest) {
-        targetSession.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, null);
-        targetSession.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, null);
-      }
-    } catch {
-      /* window/session already destroyed */
-    }
-  };
-
-  if (pdfWindow.webContents.session && pdfWindow.webContents.session.webRequest) {
-    const filter = (details, callback) => {
-      const url = details.url || '';
-      if (
-        url.startsWith('data:')
-        || allowedFileUrls.has(url)
-        || url.startsWith('https://fonts.googleapis.com/')
-        || url.startsWith('https://fonts.gstatic.com/')
-      ) {
-        callback({ cancel: false });
-      } else {
-        callback({ cancel: true });
-      }
-    };
-    pdfWindow.webContents.session.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, filter);
-    pdfWindow.webContents.session.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, filter);
-  }
-
   // Align with LONG_REQUEST_TIMEOUT_MS (15 min). A 60s hard cut aborted large
-  // consolidations while the FE/IPC budget still had minutes left.
+  // consolidations while the FE/IPC budget still had minutes left. The race
+  // covers the WHOLE render (load, fonts, printToPDF): a window hung before
+  // printToPDF (e.g. did-finish-load never fires) must not stall the shared
+  // queue forever. `timeoutMs` is overridable for callers/tests with a tighter
+  // budget.
   const PDF_TIMEOUT_MS = 900_000;
+  const timeoutMs =
+    Number.isFinite(params.timeoutMs) && params.timeoutMs > 0 ? params.timeoutMs : PDF_TIMEOUT_MS;
   let timeoutHandle = null;
+  let timedOut = false;
   const timeoutPromise = new Promise((_resolve, reject) => {
     timeoutHandle = setTimeout(() => {
+      timedOut = true;
       reject(new Error('Tiempo agotado generando el PDF'));
-    }, PDF_TIMEOUT_MS);
+    }, timeoutMs);
   });
 
   let tempDir = null;
-  try {
+  let clearInterceptors = () => {};
+
+  const renderBody = async () => {
+    // Each slot owns a dedicated partition so webRequest interceptors never
+    // collide across concurrent renders (they are session-scoped, not
+    // window-scoped). The window itself is PERSISTED on the slot and reused:
+    // only the first render per slot pays the BrowserWindow spin-up.
+    const partitionName = slot.partition;
+    let pdfSession = slot.session;
+    if (!pdfSession && session && typeof session.fromPartition === 'function') {
+      pdfSession = session.fromPartition(partitionName);
+      slot.session = pdfSession;
+    }
+
+    let pdfWindow = slot.window;
+    if (!pdfWindow || pdfWindow.isDestroyed()) {
+      pdfWindow = new BrowserWindow({
+        show: false,
+        webPreferences: {
+          contextIsolation: true,
+          nodeIntegration: false,
+          sandbox: true,
+          ...(pdfSession ? { session: pdfSession } : {}),
+        },
+      });
+      slot.window = pdfWindow;
+    }
+
+    // Block external resource loads to prevent SSRF and local file disclosure.
+    // Cover http(s) AND file:// schemes — `*://*/*` does not match `file://`,
+    // so we register a second filter for file URLs and only allow the
+    // specific file:// URLs we whitelisted (the temp HTML + local images).
+    clearInterceptors = () => {
+      try {
+        const targetSession = pdfSession || pdfWindow.webContents.session;
+        if (targetSession && targetSession.webRequest) {
+          targetSession.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, null);
+          targetSession.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, null);
+        }
+      } catch {
+        /* window/session already destroyed */
+      }
+    };
+
+    if (pdfWindow.webContents.session && pdfWindow.webContents.session.webRequest) {
+      const filter = (details, callback) => {
+        const url = details.url || '';
+        if (
+          url.startsWith('data:')
+          || allowedFileUrls.has(url)
+          || url.startsWith('https://fonts.googleapis.com/')
+          || url.startsWith('https://fonts.gstatic.com/')
+        ) {
+          callback({ cancel: false });
+        } else {
+          callback({ cancel: true });
+        }
+      };
+      pdfWindow.webContents.session.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, filter);
+      pdfWindow.webContents.session.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, filter);
+    }
+
     tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'antares-pdf-'));
     const htmlPath = path.join(tempDir, 'render.html');
     const htmlUrl = pathToFileURL(htmlPath).toString();
@@ -315,15 +409,12 @@ async function renderHtmlToPdf(params = {}, electronModules = {}) {
       /* fonts.ready unavailable — proceed with system fallbacks */
     }
 
-    const pdfBuffer = await Promise.race([
-      pdfWindow.webContents.printToPDF({
-        printBackground: true,
-        preferCSSPageSize: true,
-        pageSize: 'A4',
-        margins: { marginType: 'none' },
-      }),
-      timeoutPromise,
-    ]);
+    const pdfBuffer = await pdfWindow.webContents.printToPDF({
+      printBackground: true,
+      preferCSSPageSize: true,
+      pageSize: 'A4',
+      margins: { marginType: 'none' },
+    });
     const filename = _sanitizeFilename(params.filename) || 'reporte.pdf';
     let outputPath = _sanitizePdfOutputPath(params.outputPath, filename);
 
@@ -356,13 +447,30 @@ async function renderHtmlToPdf(params = {}, electronModules = {}) {
     }
 
     return result;
+  };
+
+  let renderFailed = false;
+
+  try {
+    return await Promise.race([renderBody(), timeoutPromise]);
+  } catch (err) {
+    renderFailed = true;
+    throw err;
   } finally {
     if (timeoutHandle) clearTimeout(timeoutHandle);
     clearInterceptors();
-    if (!pdfWindow.isDestroyed()) {
-      pdfWindow.close();
+    // Pool: la ventana se reutiliza SOLO tras un render OK. En timeout/error
+    // se destruye (destroy() fuerza la cancelación: printToPDF se aborta con
+    // el webContents, y un renderer colgado no responde a close()) y el slot
+    // queda marcado para recrearla en el próximo uso.
+    const win = slot.window;
+    if (win && !win.isDestroyed()) {
+      if (timedOut || renderFailed) {
+        win.destroy();
+        slot.window = null;
+      }
     }
-    // The shared partition is reused across renders — do NOT clear its
+    // The per-slot partition is reused across renders — do NOT clear its
     // storage data so the HTTP cache (fonts) persists between calls.
     if (tempDir) {
       // Retry removal on Windows where EBUSY is common right after window close
@@ -582,8 +690,16 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
   return { handled: true, result };
 }
 
+// Folders approved via native dialogs survive restarts (raw output paths are
+// only accepted under a registered root).
+_loadPersistedWriteRoots();
+
 module.exports = {
   handleDialogCall,
   NATIVE_METHODS,
+  /** Write roots registered by native dialogs (dialog_folder/dialog_dest/dialog_save). */
+  isUnderAllowedWriteRoot: (dir) => _isUnderAllowedPdfWriteDir(dir),
   _clearAllowedWriteRoots: () => _allowedWriteRoots.clear(),
+  /** Test hook: reset the persistent PDF render pool (windows/sessions/queues). */
+  _resetPdfRenderPool,
 };

@@ -1,5 +1,5 @@
 // Tests for Electron dialog IPC handling without requiring Electron at import time.
-const { handleDialogCall, _clearAllowedWriteRoots } = require('../electron/dialog-handlers.js');
+const { handleDialogCall, _clearAllowedWriteRoots, _resetPdfRenderPool } = require('../electron/dialog-handlers.js');
 const { clearAllowedReadPaths } = require('../electron/path-allowlist.js');
 
 let passed = 0;
@@ -148,6 +148,10 @@ async function run() {
     close() {
       this.closed = true;
     }
+
+    destroy() {
+      this.closed = true;
+    }
   }
 
   const pdf = await handleDialogCall(
@@ -171,12 +175,13 @@ async function run() {
   assert(pdfWindow.loadedFile.endsWith('render.html'), 'html_to_pdf should render from a temporary HTML file');
   assert(pdfWindow.printOptions.printBackground === true, 'html_to_pdf should print backgrounds');
   assert(pdfWindow.printOptions.preferCSSPageSize === true, 'html_to_pdf should respect CSS page size');
-  assert(pdfWindow.closed === true, 'html_to_pdf should close the hidden window');
+  assert(pdfWindow.closed === false, 'html_to_pdf keeps the pooled hidden window alive for reuse (no spin-up on next render)');
   assert(!pdfWindow.loadedHtml.includes('<script'), 'html_to_pdf should strip script tags');
   assert(!pdfWindow.loadedHtml.includes('file:///etc/passwd'), 'html_to_pdf should block local file URLs');
 
   // Without return_base64 (and without user outputPath): disk + token only — no base64.
   {
+    _resetPdfRenderPool();
     FakeBrowserWindow.instances.length = 0;
     const pdfDiskOnly = await handleDialogCall(
       'html_to_pdf',
@@ -192,6 +197,7 @@ async function run() {
     assert(typeof pdfDiskOnly.result.saved_path === 'string', 'html_to_pdf auto-disk should return saved_path');
     assert(typeof pdfDiskOnly.result.file_token === 'string', 'html_to_pdf auto-disk should return file_token');
     assert(pdfDiskOnly.result.pdf_base64 === undefined, 'html_to_pdf without return_base64 must omit pdf_base64');
+    assert(FakeBrowserWindow.instances.length === 1, 'html_to_pdf with a reset pool creates exactly one window');
   }
 
   const fsForImage = require('fs');
@@ -216,6 +222,8 @@ async function run() {
     webContentsId: null,
   });
 
+  _resetPdfRenderPool();
+  FakeBrowserWindow.instances.length = 0;
   const pdfWithLocalImage = await handleDialogCall(
     'html_to_pdf',
     {
@@ -227,7 +235,7 @@ async function run() {
     win,
     { BrowserWindow: FakeBrowserWindow },
   );
-  const localImageWindow = FakeBrowserWindow.instances[1];
+  const localImageWindow = FakeBrowserWindow.instances[0];
   const { pathToFileURL } = require('url');
   const expectedFileUrl = pathToFileURL(realImagePath).toString();
   assert(pdfWithLocalImage.handled === true, 'html_to_pdf should accept disk-backed image references');
@@ -252,6 +260,173 @@ async function run() {
   try {
     await fsForImage.promises.rm(imageTempDir, { recursive: true, force: true });
   } catch { /* ignore */ }
+
+  class DeferredBrowserWindow {
+    static instances = [];
+
+    constructor(options) {
+      this.options = options;
+      this.closed = false;
+      this.listeners = {};
+      this.webContents = {
+        session: {
+          webRequest: { onBeforeRequest: () => {} },
+        },
+        once: (event, callback) => { this.listeners[event] = callback; },
+        printToPDF: () => new Promise((resolve) => { this.resolvePrint = resolve; }),
+      };
+      DeferredBrowserWindow.instances.push(this);
+    }
+
+    async loadFile() {
+      this.listeners['did-finish-load']();
+    }
+
+    isDestroyed() {
+      return this.closed;
+    }
+
+    close() {
+      this.closed = true;
+    }
+
+    destroy() {
+      this.closed = true;
+    }
+  }
+
+  _resetPdfRenderPool();
+  const firstQueuedPdf = handleDialogCall(
+    'html_to_pdf',
+    { html: '<!doctype html><html><body>first</body></html>', filename: 'first.pdf' },
+    dialog,
+    win,
+    { BrowserWindow: DeferredBrowserWindow },
+  );
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert(DeferredBrowserWindow.instances.length === 1, 'first queued PDF render should create one window (slot 0)');
+  assert(typeof DeferredBrowserWindow.instances[0].resolvePrint === 'function', 'first queued PDF render should reach printToPDF');
+
+  // Pool: el segundo render va al slot 1 y corre EN PARALELO (no espera).
+  const secondQueuedPdf = handleDialogCall(
+    'html_to_pdf',
+    { html: '<!doctype html><html><body>second</body></html>', filename: 'second.pdf' },
+    dialog,
+    win,
+    { BrowserWindow: DeferredBrowserWindow },
+  );
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert(DeferredBrowserWindow.instances.length === 2, 'second PDF render should run concurrently in its own pool slot');
+  assert(typeof DeferredBrowserWindow.instances[1].resolvePrint === 'function', 'second queued PDF render should reach printToPDF in parallel');
+
+  DeferredBrowserWindow.instances[0].resolvePrint(Buffer.from('%PDF-first'));
+  DeferredBrowserWindow.instances[1].resolvePrint(Buffer.from('%PDF-second'));
+  await firstQueuedPdf;
+  await secondQueuedPdf;
+
+  // Tercer render: vuelve al slot 0 y REUTILIZA la ventana persistente
+  // (no crea una tercera: el spin-up se paga una sola vez por slot).
+  const thirdQueuedPdf = handleDialogCall(
+    'html_to_pdf',
+    { html: '<!doctype html><html><body>third</body></html>', filename: 'third.pdf' },
+    dialog,
+    win,
+    { BrowserWindow: DeferredBrowserWindow },
+  );
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert(DeferredBrowserWindow.instances.length === 2, 'third PDF render should reuse the pooled window (no new BrowserWindow)');
+  assert(typeof DeferredBrowserWindow.instances[0].resolvePrint === 'function', 'third queued PDF render should reach printToPDF on the reused window');
+  DeferredBrowserWindow.instances[0].resolvePrint(Buffer.from('%PDF-third'));
+  await thirdQueuedPdf;
+
+  // Timeout de render: una ventana colgada en load (did-finish-load nunca
+  // llega) debe abortar y NO bloquear la cola compartida de PDFs.
+  {
+    class HungBrowserWindow {
+      static instances = [];
+
+      constructor(options) {
+        this.options = options;
+        this.closed = false;
+        this.destroyed = false;
+        this.listeners = {};
+        this.webContents = {
+          session: { webRequest: { onBeforeRequest: () => {} } },
+          once: (event, callback) => { this.listeners[event] = callback; },
+          printToPDF: async () => Buffer.from('%PDF-never'),
+        };
+        HungBrowserWindow.instances.push(this);
+      }
+
+      async loadFile() {
+        // Nunca dispara did-finish-load ni did-fail-load: el render se cuelga
+        // ANTES de printToPDF (el hueco que el timeout por fase no cubría).
+      }
+
+      isDestroyed() {
+        return this.destroyed;
+      }
+
+      close() {
+        this.destroyed = true;
+      }
+
+      destroy() {
+        this.destroyed = true;
+      }
+    }
+
+    let hungRejected = false;
+    _resetPdfRenderPool();
+    FakeBrowserWindow.instances.length = 0;
+    try {
+      await handleDialogCall(
+        'html_to_pdf',
+        { html: '<!doctype html><html><body>colgado</body></html>', filename: 'hung.pdf', timeoutMs: 80 },
+        dialog,
+        win,
+        { BrowserWindow: HungBrowserWindow },
+      );
+    } catch (e) {
+      hungRejected = /Tiempo agotado/.test(e.message);
+    }
+    assert(hungRejected, 'render colgado en load debe abortar por timeout');
+    assert(
+      HungBrowserWindow.instances[0] && HungBrowserWindow.instances[0].destroyed === true,
+      'la ventana colgada debe destruirse al agotar el tiempo (destroy, no close)',
+    );
+
+    // La cola avanza: un render posterior (ventana sana) completa.
+    const afterHung = await handleDialogCall(
+      'html_to_pdf',
+      { html: '<!doctype html><html><body>after</body></html>', filename: 'after.pdf' },
+      dialog,
+      win,
+      { BrowserWindow: FakeBrowserWindow },
+    );
+    assert(
+      afterHung.handled === true && typeof afterHung.result.saved_path === 'string',
+      'el render posterior a un timeout debe completar',
+    );
+
+    // El slot destruido se RECREA en el siguiente uso (no queda muerto):
+    // el slot 0 apuntaba a la ventana colgada destruida → se crea una nueva.
+    const recreated = await handleDialogCall(
+      'html_to_pdf',
+      { html: '<!doctype html><html><body>recreate</body></html>', filename: 'recreate.pdf' },
+      dialog,
+      win,
+      { BrowserWindow: FakeBrowserWindow },
+    );
+    assert(
+      recreated.handled === true && typeof recreated.result.saved_path === 'string',
+      'el slot destruido debe recrear su ventana en el siguiente render',
+    );
+    assert(
+      FakeBrowserWindow.instances.length === 2,
+      'el slot destruido debe crear una ventana nueva (recreación tras destroy)',
+    );
+  }
 
   const fs = require('fs');
   const os = require('os');
