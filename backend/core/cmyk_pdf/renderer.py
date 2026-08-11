@@ -8,6 +8,7 @@ import logging
 import math
 import os
 import re
+from collections import OrderedDict
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any, cast
@@ -88,34 +89,22 @@ def _text_align(css_vars: dict[str, Any]) -> int:
     return cast(int, _TEXT_ALIGN.get(align, fitz.TEXT_ALIGN_LEFT))
 
 
-def _prepare_image_for_rect(
+def _prepare_image_bytes(
     pil_img: Image.Image,
-    rect: fitz.Rect,
-    object_fit: Any,
+    fit: str,
+    w_px: int,
+    h_px: int,
     dpi: int,
-) -> tuple[bytes, fitz.Rect]:
-    """Resize/crop image for object-fit before CMYK embed."""
-    fit = str(object_fit or "fill").strip().lower()
-    w_pt, h_pt = rect.width, rect.height
-    w_px = max(1, int(w_pt * dpi / 72))
-    h_px = max(1, int(h_pt * dpi / 72))
+) -> tuple[bytes, int, int]:
+    """Fit + convert a CMYK JPEG bytes. Devuelve (bytes, cw, ch) del procesado."""
     resample = Image.Resampling.LANCZOS
-
     if fit == "cover":
         processed = ImageOps.fit(pil_img, (w_px, h_px), method=resample)
-        return convert_pil_to_cmyk_bytes(processed, dpi=dpi), rect
-    if fit == "contain":
+    elif fit == "contain":
         processed = ImageOps.contain(pil_img, (w_px, h_px), method=resample)
-        cw, ch = processed.size
-        sub_w_pt = cw * 72.0 / dpi
-        sub_h_pt = ch * 72.0 / dpi
-        sub_x0 = rect.x0 + (w_pt - sub_w_pt) / 2
-        sub_y0 = rect.y0 + (h_pt - sub_h_pt) / 2
-        sub_rect = fitz.Rect(sub_x0, sub_y0, sub_x0 + sub_w_pt, sub_y0 + sub_h_pt)
-        return convert_pil_to_cmyk_bytes(processed, dpi=dpi), sub_rect
-
-    processed = pil_img.resize((w_px, h_px), resample)
-    return convert_pil_to_cmyk_bytes(processed, dpi=dpi), rect
+    else:
+        processed = pil_img.resize((w_px, h_px), resample)
+    return convert_pil_to_cmyk_bytes(processed, dpi=dpi), processed.width, processed.height
 
 
 def _canvas_asset_path(asset_id: str) -> str:
@@ -260,6 +249,49 @@ def _resolve_image_src(layer: dict[str, Any], ctx: dict[str, Any]) -> str:
 class CanvasCmykRenderer:
     """Generates print-ready CMYK PDFs from Canvas documents using PyMuPDF."""
 
+    def _prepare_image_for_rect_cached(
+        self,
+        src: str,
+        local_image_paths: dict[str, str],
+        rect: fitz.Rect,
+        object_fit: Any,
+    ) -> tuple[bytes, fitz.Rect] | None:
+        """Resize/crop image for object-fit before CMYK embed, with LRU cache.
+
+        Key: (resolved src, fit, target px, dpi). A logo repeated across N
+        pages is decoded + converted ONCE instead of N times (open + LANCZOS +
+        CMYK + JPEG were the dominant CMYK cost). Returns None when the image
+        cannot be opened.
+        """
+        fit = str(object_fit or "fill").strip().lower()
+        w_pt, h_pt = rect.width, rect.height
+        w_px = max(1, int(w_pt * self.dpi / 72))
+        h_px = max(1, int(h_pt * self.dpi / 72))
+        src_key = _resolve_image_path(src, local_image_paths) or src
+        key = (src_key, fit, w_px, h_px, self.dpi)
+
+        cached = self._image_cache.get(key)
+        if cached is None:
+            with _open_export_image(src, local_image_paths) as pil_img:
+                if pil_img is None:
+                    return None
+                cached = _prepare_image_bytes(pil_img, fit, w_px, h_px, self.dpi)
+            self._image_cache[key] = cached
+            self._image_cache.move_to_end(key)
+            while len(self._image_cache) > self._image_cache_max:
+                self._image_cache.popitem(last=False)
+
+        cmyk_bytes, cw, ch = cached
+        if fit == "contain":
+            sub_w_pt = cw * 72.0 / self.dpi
+            sub_h_pt = ch * 72.0 / self.dpi
+            sub_x0 = rect.x0 + (w_pt - sub_w_pt) / 2
+            sub_y0 = rect.y0 + (h_pt - sub_h_pt) / 2
+            insert_rect = fitz.Rect(sub_x0, sub_y0, sub_x0 + sub_w_pt, sub_y0 + sub_h_pt)
+        else:
+            insert_rect = rect
+        return cmyk_bytes, insert_rect
+
     def __init__(
         self,
         document: dict[str, Any],
@@ -279,6 +311,11 @@ class CanvasCmykRenderer:
         # When True and len(contexts)==len(pages), pair context[i] with page i.
         # Otherwise keep legacy cartesian product (N contexts x M pages).
         self.pair_context_pages = pair_context_pages
+        # CMYK bytes cache per (resolved src, fit, target px, dpi): a logo
+        # repeated across N pages converts ONCE instead of N times (the
+        # dominant CMYK cost was open + LANCZOS + CMYK + JPEG per page).
+        self._image_cache: OrderedDict[tuple[Any, ...], tuple[bytes, int, int]] = OrderedDict()
+        self._image_cache_max = 128
 
         page_meta = document.get("page", {})
         self.page_w_mm = float(page_meta.get("widthMm", 210))
@@ -517,28 +554,26 @@ class CanvasCmykRenderer:
 
             object_fit = css_vars.get("--object-fit")
             if resolved_src:
-                with _open_export_image(resolved_src, local_image_paths) as pil_img:
-                    if pil_img is not None:
-                        try:
-                            cmyk_bytes, insert_rect = _prepare_image_for_rect(
-                                pil_img,
-                                rect,
-                                object_fit,
-                                self.dpi,
-                            )
-                            page.insert_image(
-                                insert_rect,
-                                stream=cmyk_bytes,
-                                rotate=round(rotate_deg),
-                            )
-                        except Exception:
-                            # Render placeholder if image fails to load
-                            shape.draw_rect(rect)
-                            shape.finish(color=(0, 0, 0, 0.5))
-                    else:
-                        # Empty / missing src → grey placeholder (no crash).
-                        shape.draw_rect(rect)
-                        shape.finish(color=(0, 0, 0, 0.5))
+                try:
+                    prepared = self._prepare_image_for_rect_cached(
+                        resolved_src,
+                        local_image_paths,
+                        rect,
+                        object_fit,
+                    )
+                except Exception:
+                    prepared = None
+                if prepared is not None:
+                    cmyk_bytes, insert_rect = prepared
+                    page.insert_image(
+                        insert_rect,
+                        stream=cmyk_bytes,
+                        rotate=round(rotate_deg),
+                    )
+                else:
+                    # Empty / missing src → grey placeholder (no crash).
+                    shape.draw_rect(rect)
+                    shape.finish(color=(0, 0, 0, 0.5))
             else:
                 # Empty / missing src → grey placeholder (no crash).
                 shape.draw_rect(rect)

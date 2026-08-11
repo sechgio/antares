@@ -465,6 +465,10 @@ def test_cold_imports_are_serialized_against_cextension_deadlock() -> None:
 
     import_source = inspect.getsource(db.importar_excel)
     assert "serialized_import" in import_source
+    # db_import streams with openpyxl (read_only + iter_rows): no pandas/numpy
+    # in the worker anymore (pandas read_excel materialized 100-300 MB).
+    assert "load_workbook" in import_source
+    assert "import pandas" not in import_source
     analyze_source = inspect.getsource(db.parse_id_rename_mapping_full)
     assert "serialized_import" in analyze_source
 
