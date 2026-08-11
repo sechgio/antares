@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import base64
+import io
 import json
+import tempfile
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
 import openpyxl
+import pytest
 
 from backend.handlers.spreadsheet import spreadsheet_parse
 
@@ -165,3 +169,139 @@ def test_get_rows_pages_spilled_cache(tmp_path: Path, monkeypatch) -> None:
     )
     assert len(page2["rows"]) == 10
     assert page2["rows"][0][0] == "9"
+
+
+def test_b64_inline_uses_unique_temp_file() -> None:
+    """b64 inline parse must use a unique temp file per call — a fixed name
+    races between concurrent threads in the same process (scheduler pool)."""
+    from backend.handlers.spreadsheet import _resolve_input_path
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.append(["A", "B"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    wb.close()
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+
+    p1, is_temp1 = _resolve_input_path({"xlsx_b64": b64})
+    p2, is_temp2 = _resolve_input_path({"xlsx_b64": b64})
+
+    try:
+        assert is_temp1 and is_temp2, "b64 inline payloads must be flagged as temp"
+        assert p1 != p2, "concurrent b64 parses must not share a fixed temp filename"
+        assert p1.exists()
+        assert p2.exists()
+    finally:
+        p1.unlink(missing_ok=True)
+        p2.unlink(missing_ok=True)
+
+
+def test_user_file_with_temp_prefix_not_deleted() -> None:
+    """A real user file whose name starts with the temp prefix must NOT be
+    unlinked by spreadsheet_parse — only files created for b64 payloads are
+    (provenance, not name sniffing)."""
+    from backend.handlers.spreadsheet import _INLINE_TEMP_PREFIX, spreadsheet_parse
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.append(["A", "B"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    wb.close()
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+
+    tmp_dir = tempfile.mkdtemp()
+    try:
+        user_file = Path(tmp_dir) / f"{_INLINE_TEMP_PREFIX}ventas.xlsx"
+        user_file.write_bytes(base64.b64decode(b64))
+
+        result = spreadsheet_parse({"path": str(user_file), "format_hint": "xlsx"})
+
+        assert result["sheets"][0]["rows"][0] == ["A", "B"]
+        assert user_file.exists(), "user file with temp-like name must survive parse"
+    finally:
+        import shutil
+
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def test_b64_inline_temp_file_removed_after_parse() -> None:
+    """The unique temp file created for b64 inline parses must be deleted
+    after parsing — unique names mean they would otherwise accumulate in
+    %TEMP% for the app's lifetime."""
+    from backend.handlers.spreadsheet import _INLINE_TEMP_PREFIX, spreadsheet_parse
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.append(["A", "B"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    wb.close()
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+
+    before = set(Path(tempfile.gettempdir()).glob(f"{_INLINE_TEMP_PREFIX}*"))
+    result = spreadsheet_parse({"xlsx_b64": b64})
+    after = set(Path(tempfile.gettempdir()).glob(f"{_INLINE_TEMP_PREFIX}*"))
+
+    assert result["sheets"][0]["rows"][0] == ["A", "B"]
+    assert after == before, f"b64 inline temp files leaked: {after - before}"
+
+
+def test_b64_inline_parse_succeeds_even_if_temp_unlink_locked(monkeypatch) -> None:
+    """A Windows lock on the temp file (PermissionError from unlink) must not
+    fail an already-successful parse — cleanup is best-effort."""
+    from backend.handlers import spreadsheet as ss
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.append(["A", "B"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    wb.close()
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+
+    def locked_unlink(_self, *_a, **_kw) -> None:
+        raise PermissionError(13, "Permission denied", "antares_inline_x")
+
+    monkeypatch.setattr(Path, "unlink", locked_unlink)
+
+    result = ss.spreadsheet_parse({"xlsx_b64": b64})
+
+    assert result["sheets"][0]["rows"][0] == ["A", "B"]
+
+
+def test_b64_inline_write_failure_removes_temp_file(monkeypatch) -> None:
+    """Si os.write falla (p.ej. disco lleno), el mkstemp no debe quedar
+    huérfano — el cleanup ocurre dentro de _resolve_input_path."""
+    from backend.handlers import spreadsheet as ss
+
+    b64 = base64.b64encode(b"x" * 64).decode("ascii")
+
+    def failing_write(_fd: int, _data: bytes) -> int:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(ss.os, "write", failing_write)
+
+    before = set(Path(tempfile.gettempdir()).glob(f"{ss._INLINE_TEMP_PREFIX}*"))
+    with pytest.raises(OSError, match="No space"):
+        ss._resolve_input_path({"xlsx_b64": b64})
+    after = set(Path(tempfile.gettempdir()).glob(f"{ss._INLINE_TEMP_PREFIX}*"))
+
+    assert after == before, f"temp file leaked after write failure: {after - before}"
+
+
+def test_b64_inline_rejects_oversized_payload(monkeypatch) -> None:
+    """A b64 payload whose decoded size exceeds MAX_SPREADSHEET_BYTES must be
+    rejected before decode to prevent OOM (same guard as the file-path branch)."""
+    from backend.handlers import spreadsheet as ss
+
+    monkeypatch.setattr(ss, "MAX_SPREADSHEET_BYTES", 100)
+    oversized_b64 = base64.b64encode(b"x" * 200).decode("ascii")
+
+    with pytest.raises(ValueError, match="excede"):
+        ss._resolve_input_path({"xlsx_b64": oversized_b64})
