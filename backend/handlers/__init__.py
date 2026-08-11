@@ -192,9 +192,8 @@ class HandlerRegistry:
         """
         try:
             with serialized_import():
-                # pandas first: it pulls numpy, which openpyxl then reuses.
-                import pandas  # noqa: F401
                 import openpyxl  # noqa: F401
+                import pandas  # noqa: F401
 
             logger.info("pandas/openpyxl pre-ready warm complete")
         except Exception:
