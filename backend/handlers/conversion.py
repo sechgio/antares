@@ -24,6 +24,7 @@ from backend.core.jobs import (
     is_legacy_default_job,
     resolve_job_id,
 )
+from backend.core.naming import RenamePlan, resolve_rename_plan
 from backend.core.renamer import RenamerEngine, SequenceMode
 from backend.core.scheduler import get_scheduler
 from backend.handlers.common import log_message, validate_params, with_locale
@@ -69,84 +70,6 @@ def _resolve_sequence_mode(params: dict[str, Any]) -> SequenceMode:
     if isinstance(requested, str) and requested in _SEQUENCE_MODES:
         return cast(SequenceMode, requested)
     return "filename" if params.get("use_filename_seq", True) else "global"
-
-
-def _record_group_key(datos: dict[str, Any] | None, key_column: str, fallback: str) -> str:
-    """Calcula la clave estable de fila usada por el modo ``record``."""
-    raw_value = datos.get(key_column) if key_column and datos else None
-    value = str(raw_value or fallback).strip()
-    return value.casefold()
-
-
-def _apply_catalog_rename(
-    engine: RenamerEngine,
-    path: str | Path,
-    datos: dict[str, Any] | None,
-    codigo: str,
-    parsed_sequence: str,
-    key_column: str,
-) -> str:
-    """Aplica el renombrado con catálogo pasando el grupo de fila al motor."""
-    return engine.aplicar(
-        path,
-        datos_bd=datos,
-        codigo_manual=codigo,
-        file_seq=parsed_sequence,
-        sequence_group=_record_group_key(datos, key_column, codigo),
-    )
-
-
-def _resolve_catalog_datos(
-    f: str,
-    *,
-    db_cache: dict[str, dict[str, Any]] | None,
-    db_records: list[dict[str, Any]] | None,
-    index: int,
-    code: str,
-) -> dict[str, Any] | None:
-    """Resuelve los datos de catálogo para un archivo.
-
-    ``db_cache`` (búsqueda por código/stem) y ``db_records`` (índice posicional)
-    son mutuamente exclusivos: pasar uno solo.
-    """
-    if db_records is not None:
-        return db_records[index] if index < len(db_records) else None
-    if db_cache is not None:
-        return db_cache.get(code) or db_cache.get(Path(f).stem)
-    return None
-
-
-def _preview_with_db(
-    engine: RenamerEngine,
-    files: list[str],
-    codigos_manuales: dict[str, str],
-    file_seqs: dict[str, str],
-    *,
-    db_cache: dict[str, dict[str, Any]] | None,
-    db_records: list[dict[str, Any]] | None,
-    key_column: str,
-) -> list[tuple[str, str, bool]]:
-    """Aplica el renombre con catálogo a ``files`` dentro de un snapshot del engine."""
-    resultados: list[tuple[str, str, bool]] = []
-    with _engine_snapshot(engine):
-        for index, f in enumerate(files):
-            p = Path(f)
-            code = codigos_manuales[p.name]
-            datos = _resolve_catalog_datos(
-                f,
-                db_cache=db_cache,
-                db_records=db_records,
-                index=index,
-                code=code,
-            )
-            if datos:
-                nombre_nuevo = _apply_catalog_rename(
-                    engine, f, datos, code, file_seqs[p.name], key_column
-                )
-                resultados.append((f, nombre_nuevo, True))
-            else:
-                resultados.append((f, RenamerEngine._preserve_original_name(p), False))
-    return resultados
 
 
 def _probe_key_columns(
@@ -276,8 +199,6 @@ MAX_PREVIEW_FILES = 200
 @with_locale
 @validate_params("files")
 def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
-    from backend.core.database import buscar_lote_por_codigos, buscar_por_columna, obtener_todos
-
     files = params.get("files", [])
     total_files = len(files) if isinstance(files, list) else 0
     truncated = False
@@ -311,14 +232,10 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     )
     file_seqs = {}
     codigos_manuales = {}
-    codigos_list = []
-    stems = []
     for f in files:
         p = Path(f)
         code, seq = parse_filename_parts(p.name)
         codigos_manuales[p.name] = code
-        codigos_list.append(code)
-        stems.append(p.stem)
         file_seqs[p.name] = seq
 
     collisions: list[dict[str, Any]] = []
@@ -348,63 +265,25 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
                 "warn",
             )
         key_column = resolved_key
-        # Buscamos por código parseado y por stem completo para máxima compatibilidad
-        db_cache = buscar_por_columna(list(set(codigos_list + stems)), key_column)
-        # Prefer full-stem catalog hits over parsed code_seq splits.
-        for f in files:
-            name = Path(f).name
-            stem = Path(f).stem
-            if stem in db_cache:
-                codigos_manuales[name] = stem
-                file_seqs[name] = "1"
-        res = _preview_with_db(
-            engine,
-            files,
-            codigos_manuales,
-            file_seqs,
-            db_cache=db_cache,
-            db_records=None,
-            key_column=key_column,
-        )
+        with _engine_snapshot(engine):
+            plan = resolve_rename_plan(files, engine, key_column=key_column)
+        res = plan.items
     elif use_column_rename:
-        db_records = obtener_todos(limit=len(files))
-        res = _preview_with_db(
-            engine,
-            files,
-            codigos_manuales,
-            file_seqs,
-            db_cache=None,
-            db_records=db_records,
-            key_column="",
-        )
+        with _engine_snapshot(engine):
+            plan = resolve_rename_plan(files, engine, use_column_rename=True)
+        res = plan.items
     else:
         # Empty key_column: match process path (buscar_lote_por_codigos across
         # all fields). Do NOT auto-detect a single column here — that made
         # preview disagree with on-disk rename results.
-        db_cache = buscar_lote_por_codigos(list(set(codigos_list + stems)))
-        for f in files:
-            name = Path(f).name
-            stem = Path(f).stem
-            if stem in db_cache:
-                codigos_manuales[name] = stem
-                file_seqs[name] = "1"
-
-        def lookup(codigo: str) -> dict[str, Any] | None:
-            return db_cache.get(codigo)
-
-        sequence_groups = {}
-        for f in files:
-            name = Path(f).name
-            code = codigos_manuales[name]
-            datos = db_cache.get(code)
-            if datos:
-                sequence_groups[name] = _record_group_key(datos, "", code)
+        with _engine_snapshot(engine):
+            plan = resolve_rename_plan(files, engine)
         res = engine.preview_lote(
             files,
-            lookup_fn=lookup,
-            codigos_manuales=codigos_manuales,
-            file_seqs=file_seqs,
-            sequence_groups=sequence_groups,
+            lookup_fn=plan.lookup,
+            codigos_manuales=plan.codigos_manuales,
+            file_seqs=plan.file_seqs,
+            sequence_groups=plan.sequence_groups,
         )
 
     # Catalog / plain rename: mirror process out-path dedupe so preview shows
@@ -1196,25 +1075,16 @@ def _prepare_chunk_tasks(
     mapping_index: Any | None = None,
 ) -> list[tuple[str, Path, bool]]:
     """Prepare one chunk of file work and batch only that chunk's DB lookup."""
-    db_cache: dict[str, dict] = {}
-    if engine and mapping_index:
-        pass
-    elif engine:
-        if key_column:
-            from backend.core.database import buscar_por_columna
-            codigos = [parse_filename_parts(Path(f).name)[0] for f in chunk_files]
-            stems = [Path(f).stem for f in chunk_files]
-            # Buscamos por código parseado y por stem completo
-            db_cache = buscar_por_columna(list(set(codigos + stems)), key_column)
-        elif use_column_rename:
-            from backend.core.database import obtener_todos
-            all_records = obtener_todos(limit=len(chunk_files), offset=global_offset)
-            for i, rec in enumerate(all_records):
-                db_cache[str(global_offset + i)] = rec
-        else:
-            stems = [Path(f).stem for f in chunk_files]
-            codigos = [parse_filename_parts(Path(f).name)[0] for f in chunk_files]
-            db_cache = lookup_fn(list(set(codigos + stems)))
+    plan: RenamePlan | None = None
+    if engine and not mapping_index:
+        plan = resolve_rename_plan(
+            chunk_files,
+            engine,
+            key_column=key_column,
+            use_column_rename=use_column_rename,
+            global_offset=global_offset,
+            lookup_batch=None if (key_column or use_column_rename) else lookup_fn,
+        )
 
     tasks: list[tuple[str, Path, bool]] = []
     for idx, fpath in enumerate(chunk_files):
@@ -1226,37 +1096,9 @@ def _prepare_chunk_tasks(
                     nuevo_nombre = engine.aplicar(p, file_mapping=mapping_index)
                 else:
                     nuevo_nombre = RenamerEngine._preserve_original_name(p)
-            elif key_column:
-                codigo, seq = parse_filename_parts(p.name)
-                stem = p.stem
-                # Prefer full stem so catalog keys like photo_2024 win over split.
-                datos = db_cache.get(stem) or db_cache.get(codigo)
-                if datos and stem in db_cache:
-                    codigo, seq = stem, "1"
-                nuevo_nombre = (
-                    _apply_catalog_rename(engine, p, datos, codigo, seq, key_column)
-                    if datos
-                    else RenamerEngine._preserve_original_name(p)
-                )
-            elif use_column_rename:
-                codigo, seq = parse_filename_parts(p.name)
-                datos = db_cache.get(str(global_offset + idx))
-                nuevo_nombre = (
-                    _apply_catalog_rename(engine, p, datos, codigo, seq, "")
-                    if datos
-                    else RenamerEngine._preserve_original_name(p)
-                )
             else:
-                codigo, seq = parse_filename_parts(p.name)
-                stem = p.stem
-                datos = db_cache.get(stem) or db_cache.get(codigo)
-                if datos and stem in db_cache:
-                    codigo, seq = stem, "1"
-                nuevo_nombre = (
-                    _apply_catalog_rename(engine, p, datos, codigo, seq, "")
-                    if datos
-                    else RenamerEngine._preserve_original_name(p)
-                )
+                assert plan is not None
+                nuevo_nombre = plan.items[idx][1]
             if is_video_file or not conversion_enabled:
                 out_path = Path(destino) / nuevo_nombre
             else:

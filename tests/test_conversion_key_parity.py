@@ -73,11 +73,6 @@ def test_preview_explicit_key_column_still_uses_column(monkeypatch) -> None:
         lambda files, cols: ({}, {"codigo": 0, "nis": 0}),
     )
     monkeypatch.setattr(conversion, "_resolve_key_column", lambda key, *a, **k: key or "codigo")
-    monkeypatch.setattr(
-        conversion,
-        "_preview_with_db",
-        lambda *a, **k: [("C:/a/1.jpg", "out.jpg", True)],
-    )
 
     conversion.preview(
         {
