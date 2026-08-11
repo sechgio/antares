@@ -5,6 +5,25 @@ Todas las versiones notables de Antares se documentan aquí.
 Formato basado en [Keep a Changelog](https://keepachangelog.com/),
 y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
+## [0.11.9] — 2026-08-11
+
+### Added
+- **Backend / arranque**: handlers de módulos deferred (ubicaciones, sellador, …) se resuelven **en el worker**, nunca en el reader de IPC — `get_loaded`/`is_known` separan "ya cargado" de "importable", y un import de ~120-450 ms ya no congela health probes.
+- **Scheduler**: cola light acotada (mín. 16, 4× workers) con `SchedulerBusy("light_queue_full")` y `.reason` expuesto; `_light_queue_default` compartido entre detección y constructor.
+- **Ubicaciones**: límites de zoom de previews, cierre de imágenes y cap de páginas consolidadas.
+
+### Changed
+- **Cold start**: db_import con openpyxl streaming (`read_only` + `iter_rows`) — sin materializar DataFrames completos (13,6 s → 218 ms en frío); import local de pandas en ubicaciones con detección `_is_na` sin dependencia top-level.
+- **Export PDF**: pool de BrowserWindows persistentes + tokens de logo locales; caché CMYK de imágenes.
+- **Conversión**: fast-path de copia byte-idéntica JPEG→JPEG (6,5-15,5× más rápido).
+- **Electron IPC**: buffer cap de stdout en el backend + validación de escritura en ipc-router; allowlist única de métodos nativos en `ipc-methods.js`; temp files seguros para payloads inline b64.
+- **Canvas**: geometry contract único para drag/rest/export; lifecycle de documento compartido (`saveCurrentDocument` + `replaceGuarded`); `imageNameCandidates` unifica la regla base/numérico.
+- **Templates**: grid adaptativo en report.html por conteo de imágenes; template de aniegos con título "PANEL FOTOGRÁFICO", label SGIO y estilo actualizado.
+
+### Fixed
+- **Preview**: TemplatePicker ancla el menú junto al trigger con listas largas (medía el menú sin `maxHeight` y quedaba en top=8px).
+- **Tipado / lint**: mypy en `wb.active` (puede ser None) y en el warm de `write_pdf_sanitized`; spec compartido del sanitizer HTML (Node + Python).
+
 ## [0.11.8] — 2026-08-07
 
 ### Added
