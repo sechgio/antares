@@ -134,6 +134,53 @@ def _build_save_kwargs(
     return kwargs
 
 
+def _can_fast_copy(
+    source_img: Image.Image,
+    formato: str,
+    calidad: int,
+    resize: tuple[int, int] | list[int] | None,
+    keep_exif: bool,
+    optimize: bool,
+) -> bool:
+    """True si convertir_imagen puede ser un copy2 byte-idéntico.
+
+    Conservador por contrato: si el resultado observable pudiera diferir del
+    re-encode actual, se re-encodea. Condiciones:
+    - Mismo formato REAL (Pillow) origen == destino (JPG→JPEG normaliza).
+    - Calidad >= 95: el usuario pide máxima fidelidad; copiar es el mejor
+      resultado posible (re-encode de un JPEG ya comprimido solo añade pérdida).
+    - Sin resize ni optimize (ambos piden trabajo real).
+    - Orientación upright (sin bake de píxeles).
+    - keep_exif=False solo si el origen NO tiene EXIF: el re-encode actual lo
+      quita; copiar lo conservaría (cambio de contrato).
+    - Un solo frame (GIF/WEBP/ICO animados: contrato = solo primer frame).
+    - Modo ya compatible con el destino (sin _ensure_mode).
+    - No PDF (Image.open lo trata como primera página; copiar conservaría el
+      documento completo — semántica distinta).
+    """
+    if resize is not None or optimize:
+        return False
+    if calidad < 95:
+        return False
+    src_fmt = (source_img.format or "").upper()
+    dst_fmt = PIL_FORMAT_MAP.get(formato, formato).upper()
+    if src_fmt != dst_fmt or src_fmt == "PDF":
+        return False
+    if getattr(source_img, "n_frames", 1) != 1:
+        return False
+    info = _registry[formato]
+    if source_img.mode not in info["modes"]:
+        return False
+    try:
+        exif = source_img.getexif()
+    except Exception:
+        exif = None
+    orientation = exif.get(_EXIF_ORIENTATION, 1) if exif is not None else 1
+    if orientation in _TRANSPOSE_ORIENTATIONS:
+        return False
+    return not (not keep_exif and exif)
+
+
 def convertir_imagen(
     ruta_origen: str | Path,
     ruta_destino: str | Path,
@@ -185,6 +232,12 @@ def convertir_imagen(
         if source_img.width == 0 or source_img.height == 0:
             msg = f"Imagen con dimensiones inválidas ({source_img.width}x{source_img.height}): {ruta_origen}"
             raise ValueError(msg)
+
+        # Fast-path: mismo formato, calidad alta y sin transformaciones que
+        # exijan re-encode → copia byte-idéntica (evita decode+encode, el
+        # costo dominante del pipeline de conversión: ~0.5-0.9 s → ~5-15 ms).
+        if _can_fast_copy(source_img, formato, calidad, resize, keep_exif, optimize):
+            return copiar_archivo(ruta_origen, ruta_destino, ensure_dir=ensure_dir)
 
         # Bake EXIF Orientation into pixels so phone photos are upright even
         # when keep_exif is False (default) or the destination strips tags.
