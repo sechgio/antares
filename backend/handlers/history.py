@@ -7,6 +7,7 @@ import io
 import json
 from typing import Any
 
+from backend.core.import_guard import serialized_import
 from backend.handlers.common import parse_positive_int, with_locale
 
 _CSV_COLUMNS = [
@@ -26,6 +27,20 @@ _CSV_COLUMNS = [
 ]
 
 
+def _core_history() -> Any:
+    """Import ``backend.core.history`` under the serialized-import guard.
+
+    Its module-level import chain (run_types -> jsonschema -> referencing ->
+    rpds C extension) must never race another cold C-extension import (numpy
+    via pandas in db_import): Python import lock x Windows loader lock can
+    deadlock the process.
+    """
+    with serialized_import():
+        from backend.core import history
+
+    return history
+
+
 def _safe_int(value: Any) -> int | None:
     """Coacciona defensiva: ids no numéricos devuelven None en vez de lanzar."""
     try:
@@ -36,11 +51,11 @@ def _safe_int(value: Any) -> int | None:
 
 @with_locale
 def history_list(params: dict[str, Any]) -> dict[str, Any]:
-    from backend.core.history import list_runs
+    core = _core_history()
     limit = parse_positive_int(params.get("limit", 50), "limit", maximum=500)
     offset = _parse_history_offset(params.get("offset", 0))
     return {
-        "runs": list_runs(
+        "runs": core.list_runs(
             run_type=params.get("run_type"),
             limit=limit,
             offset=offset,
@@ -64,9 +79,9 @@ def _parse_history_offset(value: Any) -> int:
 
 @with_locale
 def history_get(params: dict[str, Any]) -> dict[str, Any]:
-    from backend.core.history import get_run
+    core = _core_history()
     run_id = parse_positive_int(params.get("id"), "id")
-    run = get_run(run_id)
+    run = core.get_run(run_id)
     if run is None:
         msg = f"Run not found: {run_id}"
         raise ValueError(msg)
@@ -77,26 +92,26 @@ def history_get(params: dict[str, Any]) -> dict[str, Any]:
 
 @with_locale
 def history_delete(params: dict[str, Any]) -> dict[str, bool]:
-    from backend.core.history import delete_run
-    return {"deleted": delete_run(params.get("id", 0))}
+    core = _core_history()
+    return {"deleted": core.delete_run(params.get("id", 0))}
 
 
 @with_locale
 def history_delete_many(params: dict[str, Any]) -> dict[str, int]:
-    from backend.core.history import delete_run
+    core = _core_history()
     ids = params.get("ids") or []
     deleted = 0
     for run_id in ids:
         rid = _safe_int(run_id)
-        if rid is not None and delete_run(rid):
+        if rid is not None and core.delete_run(rid):
             deleted += 1
     return {"deleted": deleted, "requested": len(ids)}
 
 
 @with_locale
 def history_save(params: dict[str, Any]) -> dict[str, Any]:
-    from backend.core.history import save_run
-    run_id = save_run(
+    core = _core_history()
+    run_id = core.save_run(
         files=params.get("files", []), options=params.get("options", {}),
         patron=params.get("patron", ""), formato=params.get("formato", ""),
         calidad=params.get("calidad", 0), resize=params.get("resize"),
@@ -118,14 +133,14 @@ def history_export(params: dict[str, Any]) -> dict[str, Any]:
          filter set (same semantics as ``history_list``). A large ``limit`` is
          applied to keep memory bounded.
     """
-    from backend.core.history import list_runs, list_runs_by_ids
+    core = _core_history()
 
     ids = params.get("ids") or []
     if ids:
         valid_ids = [rid for rid in (_safe_int(x) for x in ids) if rid is not None]
-        runs = list_runs_by_ids(valid_ids) if valid_ids else []
+        runs = core.list_runs_by_ids(valid_ids) if valid_ids else []
     else:
-        runs = list_runs(
+        runs = core.list_runs(
             run_type=params.get("run_type"),
             limit=params.get("limit", 10_000),
             offset=0,

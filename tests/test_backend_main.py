@@ -12,7 +12,13 @@ from backend import main as backend_main
 
 def _run_main_until_eof(monkeypatch, *, warm_env: str | None) -> dict[str, int]:
     """Drive main() through ready handshake then EOF on stdin; count warm calls."""
-    counts = {"warm_core": 0, "warm_deferred": 0, "warm_post_ready": 0, "ready": 0}
+    counts = {
+        "warm_core": 0,
+        "warm_pandas_sync": 0,
+        "warm_deferred": 0,
+        "warm_post_ready": 0,
+        "ready": 0,
+    }
 
     if warm_env is None:
         monkeypatch.delenv("ANTARES_WARM_DEFERRED", raising=False)
@@ -25,6 +31,9 @@ def _run_main_until_eof(monkeypatch, *, warm_env: str | None) -> dict[str, int]:
         def warm_core(self) -> None:
             counts["warm_core"] += 1
 
+        def warm_pandas_sync(self) -> None:
+            counts["warm_pandas_sync"] += 1
+
         def warm_deferred(self) -> None:
             counts["warm_deferred"] += 1
 
@@ -33,6 +42,12 @@ def _run_main_until_eof(monkeypatch, *, warm_env: str | None) -> dict[str, int]:
 
         def get(self, _method: str):
             return None
+
+        def get_loaded(self, _method: str, default=None):
+            return default
+
+        def is_known(self, _method: str) -> bool:
+            return False
 
     monkeypatch.setattr(backend_main, "HANDLERS", FakeHandlers())
 
@@ -65,6 +80,7 @@ def _run_main_until_eof(monkeypatch, *, warm_env: str | None) -> dict[str, int]:
 def test_main_skips_warm_deferred_by_default(monkeypatch) -> None:
     counts = _run_main_until_eof(monkeypatch, warm_env=None)
     assert counts["warm_core"] == 1
+    assert counts["warm_pandas_sync"] == 1
     assert counts["ready"] == 1
     assert counts["warm_deferred"] == 0
     assert counts["warm_post_ready"] == 1
@@ -73,6 +89,7 @@ def test_main_skips_warm_deferred_by_default(monkeypatch) -> None:
 def test_main_warms_deferred_when_env_enabled(monkeypatch) -> None:
     counts = _run_main_until_eof(monkeypatch, warm_env="1")
     assert counts["warm_core"] == 1
+    assert counts["warm_pandas_sync"] == 1
     assert counts["ready"] == 1
     assert counts["warm_deferred"] == 1
     assert counts["warm_post_ready"] == 1
@@ -300,6 +317,7 @@ def test_main_emits_ready_immediately_before_reading_stdin(monkeypatch) -> None:
     monkeypatch.setattr(backend_main, "_shutdown_requested", False)
     monkeypatch.setattr(backend_main, "init_db", lambda: events.append("init_db"))
     monkeypatch.setattr(backend_main.HANDLERS, "warm_core", lambda: events.append("warm_core"))
+    monkeypatch.setattr(backend_main.HANDLERS, "warm_pandas_sync", lambda: events.append("warm_pandas_sync"))
     monkeypatch.setattr(backend_main.HANDLERS, "warm_deferred", lambda: events.append("warm_deferred"))
     monkeypatch.setattr(backend_main.HANDLERS, "warm_post_ready", lambda: events.append("warm_post_ready"))
     monkeypatch.setattr(backend_main.threading, "Thread", ImmediateThread)
@@ -330,6 +348,7 @@ def test_main_emits_ready_immediately_before_reading_stdin(monkeypatch) -> None:
     assert events == [
         "init_db",
         "warm_core",
+        "warm_pandas_sync",
         "plugins",
         "get_scheduler",
         "ready",
@@ -362,6 +381,7 @@ def test_main_emits_ready_after_opt_in_warm_deferred(monkeypatch) -> None:
     monkeypatch.setattr(backend_main, "_shutdown_requested", False)
     monkeypatch.setattr(backend_main, "init_db", lambda: events.append("init_db"))
     monkeypatch.setattr(backend_main.HANDLERS, "warm_core", lambda: events.append("warm_core"))
+    monkeypatch.setattr(backend_main.HANDLERS, "warm_pandas_sync", lambda: events.append("warm_pandas_sync"))
     monkeypatch.setattr(backend_main.HANDLERS, "warm_deferred", lambda: events.append("warm_deferred"))
     monkeypatch.setattr(backend_main.HANDLERS, "warm_post_ready", lambda: events.append("warm_post_ready"))
     monkeypatch.setattr(backend_main.threading, "Thread", ImmediateThread)
@@ -391,6 +411,7 @@ def test_main_emits_ready_after_opt_in_warm_deferred(monkeypatch) -> None:
     assert events == [
         "init_db",
         "warm_core",
+        "warm_pandas_sync",
         "warm_deferred",
         "get_scheduler",
         "ready",
@@ -423,6 +444,7 @@ def test_main_does_not_emit_ready_if_shutdown_arrives_during_startup(monkeypatch
     monkeypatch.setattr(backend_main, "_shutdown_requested", False)
     monkeypatch.setattr(backend_main, "init_db", lambda: None)
     monkeypatch.setattr(backend_main.HANDLERS, "warm_core", lambda: None)
+    monkeypatch.setattr(backend_main.HANDLERS, "warm_pandas_sync", lambda: None)
     monkeypatch.setattr(backend_main.HANDLERS, "warm_deferred", lambda: None)
     monkeypatch.setattr(backend_main.HANDLERS, "warm_post_ready", fail_if_post_ready)
     monkeypatch.setattr(backend_main, "get_scheduler", FakeScheduler)
@@ -437,3 +459,142 @@ def test_main_does_not_emit_ready_if_shutdown_arrives_during_startup(monkeypatch
     backend_main.main()
 
     assert notifications == ["backend.shutdown"]
+
+
+def test_submit_handler_sends_response_when_scheduler_submit_raises(monkeypatch) -> None:
+    """Si submit_heavy/submit_light lanza una excepción que no es SchedulerBusy
+    (p.ej. RuntimeError tras shutdown, o BrokenThreadPool), el caller debe
+    recibir una respuesta JSON-RPC de error en vez de bloquear hasta timeout."""
+
+    class BrokenScheduler:
+        def submit_heavy(self, fn, *args, **kwargs):  # type: ignore[no-untyped-def]
+            raise RuntimeError("cannot schedule new futures after shutdown")
+
+        def submit_light(self, fn, *args, **kwargs):  # type: ignore[no-untyped-def]
+            raise RuntimeError("cannot schedule new futures after shutdown")
+
+        def metrics(self) -> dict:
+            return {}
+
+    responses: list[tuple] = []
+    monkeypatch.setattr(backend_main, "get_scheduler", lambda: BrokenScheduler())
+    monkeypatch.setattr(
+        backend_main,
+        "send_response",
+        lambda result, msg_id, *, error=None, **kw: responses.append((msg_id, error)),
+    )
+
+    result = backend_main._submit_handler(lambda _p: {}, {}, "42", "db_import")
+
+    assert result is None
+    assert len(responses) == 1, "caller must receive a JSON-RPC error response"
+    msg_id, _error = responses[0]
+    assert msg_id == "42"
+
+
+def test_main_resolves_deferred_method_in_worker_not_reader(monkeypatch) -> None:
+    """Un método de módulo deferred (no cargado) se resuelve DENTRO del worker:
+    el reader no debe importar el módulo (ubicaciones/sellador ~120-450 ms)."""
+
+    loaded: dict[str, object] = {}
+    reads: list[str] = []
+
+    class DeferredHandlers:
+        def warm_core(self) -> None:
+            pass
+
+        def warm_pandas_sync(self) -> None:
+            pass
+
+        def warm_deferred(self) -> None:
+            pass
+
+        def warm_post_ready(self) -> None:
+            pass
+
+        def get(self, method: str, default=None):
+            reads.append(method)  # import ocurre en el worker
+            return loaded.get(method, default)
+
+        def get_loaded(self, method: str, default=None):
+            return loaded.get(method, default)
+
+        def is_known(self, method: str) -> bool:
+            return method == "generar_ubicaciones"
+
+    calls: list[tuple] = []
+
+    class FakeScheduler:
+        def submit_light(self, fn, *args, **kwargs):
+            calls.append(("light", args))
+            return None
+
+        def submit_heavy(self, fn, *args, **kwargs):
+            calls.append(("heavy", args))
+            return None
+
+        def metrics(self) -> dict:
+            return {}
+
+        def shutdown(self, wait=True):
+            pass
+
+    monkeypatch.setattr(backend_main, "HANDLERS", DeferredHandlers())
+    monkeypatch.setattr(backend_main, "get_scheduler", lambda: FakeScheduler())
+    monkeypatch.setattr(backend_main, "WARM_CRITICAL_DONE", type("Ev", (), {"wait": lambda self, timeout=None: True})())
+    monkeypatch.setattr(backend_main, "read_message", iter([type("M", (), {"method": "generar_ubicaciones", "params": {}, "id": "d1"})(), None]).__next__)
+    monkeypatch.setattr(backend_main, "send_response", lambda *a, **k: None)
+    monkeypatch.setattr(backend_main, "close_connection", lambda: None)
+
+    backend_main.main()
+
+    assert calls, "método deferred debe enviarse al scheduler (worker)"
+    assert calls[0][0] == "heavy" or calls[0][0] == "light", "deferred va a una lane"
+    # El handler NO se resuelve en el reader: get() (que importa) se llama
+    # dentro del worker, no antes del submit.
+    assert reads == [], "el reader no debe importar módulos deferred"
+
+
+def test_main_unknown_method_rejected_without_import(monkeypatch) -> None:
+    """Método desconocido: error MethodNotFound sin intentar importar nada."""
+
+    class StrictHandlers:
+        def warm_core(self) -> None:
+            pass
+
+        def warm_pandas_sync(self) -> None:
+            pass
+
+        def warm_deferred(self) -> None:
+            pass
+
+        def warm_post_ready(self) -> None:
+            pass
+
+        def get(self, method: str, default=None):
+            raise AssertionError("get() no debe llamarse para métodos desconocidos")
+
+        def get_loaded(self, method: str, default=None):
+            return default
+
+        def is_known(self, method: str) -> bool:
+            return False
+
+    responses: list[tuple] = []
+    monkeypatch.setattr(backend_main, "HANDLERS", StrictHandlers())
+    monkeypatch.setattr(
+        backend_main,
+        "read_message",
+        iter([type("M", (), {"method": "no_existe", "params": {}, "id": "u1"})(), None]).__next__,
+    )
+    monkeypatch.setattr(
+        backend_main,
+        "send_response",
+        lambda result, msg_id, *, error=None, **kw: responses.append((msg_id, error)),
+    )
+    monkeypatch.setattr(backend_main, "close_connection", lambda: None)
+
+    backend_main.main()
+
+    assert len(responses) == 1
+    assert "Método desconocido" in str(responses[0][1])

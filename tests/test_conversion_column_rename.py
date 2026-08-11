@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.core.jobs import Job
+from backend.core.naming import record_group_key
 from backend.core.renamer import RenamerEngine
 from backend.handlers import conversion
 from backend.utils.validators import parse_filename_parts
@@ -78,7 +79,7 @@ def _preview_via_broken_lookup(
         file_seqs[name] = seq
         datos = db_rows[index] if index < len(db_rows) else None
         if datos and name in codigos_manuales:
-            sequence_groups[name] = conversion._record_group_key(datos, "", codigos_manuales[name])
+            sequence_groups[name] = record_group_key(datos, "", codigos_manuales[name])
 
     engine = RenamerEngine(
         "{sgio}_{seq}{ext}",

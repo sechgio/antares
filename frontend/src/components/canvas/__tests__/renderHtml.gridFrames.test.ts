@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createLayer } from '../constants';
 import { applyGridToImageSlots } from '../ops/gridLayout';
-import { renderMultiPageHtml } from '../ops/pages';
+import { renderMultiPageHtml } from '../runtime/planning';
 import { createEmptyDocument, mm, newId, type CanvasLayer } from '../types';
 
 /** Preset-style grid: real stroke on the grid box + real stroke on slots (like addPhotoGrid). */

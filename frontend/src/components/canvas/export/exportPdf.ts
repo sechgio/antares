@@ -1,7 +1,7 @@
 import { api } from '../../../api';
 import type { CanvasDocument, CanvasLayer } from '../types';
 import { newId } from '../types';
-import { planMultiPageRender, renderMultiPageHtmlAsync } from '../ops/pages';
+import { planMultiPageRender, renderMultiPageHtmlAsync } from '../runtime/planning';
 import { mergeCanvasHtmlDocuments, type FillContext } from '../runtime/renderHtml';
 
 /** Yield to the event loop so large bulk exports do not freeze the UI. */

@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "description": "Contrato compartido del sanitizador HTML para exportación PDF. Cada adaptador (pdf / preview / cmyk) debe cumplir TODOS los casos: absent/present globales aplican a los tres; la clave adapters.<id> añade expectativas específicas del adaptador. El drift entre los twins (shared/html-sanitizer.js y backend/utils/html_sanitizer.py) se convierte en build rojo: el mismo corpus lo ejecutan tests/test-html-sanitizer-spec.js (JS) y tests/test_html_sanitizer_spec.py (Python).",
+  "adapters": {
+    "pdf": "sanitizeHtmlForPdf — Chromium printToPDF (Electron dialog-handlers + preview-panel pdfExport). Allowlist: data:image/* + Google Fonts (WYSIWYG del canvas RGB).",
+    "preview": "sanitizeHtmlForPreview — iframe de vista previa (frontend). Allowlist: data:image/* + blob:. Borra base/meta/link.",
+    "cmyk": "sanitize_html_for_pdf — WeasyPrint (canvas CMYK, evidencia volanteo, panel aviso corte). Sin red: deny_external_url_fetcher es el guardia real; la CSP es decorativa.",
+    "policy_note": "El contrato NO exige salidas byte-idénticas: la diferencia Google Fonts (pdf sí / cmyk no) es intencional y está modelada aquí como política por adaptador."
+  },
+  "cases": [
+    {
+      "id": "script-simple-strip",
+      "note": "Script simple debe eliminarse completo.",
+      "html": "<head></head><script>alert(1)</script>",
+      "absent": ["<script", "</script>"]
+    },
+    {
+      "id": "iframe-file-strip",
+      "note": "iframe con file:// debe eliminarse completo (lectura local arbitraria).",
+      "html": "<head></head><iframe src=\"file:///etc/passwd\"></iframe>",
+      "absent": ["<iframe", "file:///etc/passwd"]
+    },
+    {
+      "id": "object-embed-strip",
+      "note": "object (par) y embed (tag suelto) deben eliminarse.",
+      "html": "<head></head><object data=\"https://evil.example/x\"></object><embed src=\"file:///etc/passwd\">",
+      "absent": ["<object", "<embed", "evil.example", "file:///etc/passwd"]
+    },
+    {
+      "id": "css-javascript-url",
+      "note": "S-CRÍTICO-1: url(javascript:) dentro de CSS debe neutralizarse a url('').",
+      "html": "<head></head><style>.x{background:url(javascript:alert(1))}</style>",
+      "absent": ["javascript:"],
+      "present": ["url('')"]
+    },
+    {
+      "id": "backtick-event-handler",
+      "note": "S-CRÍTICO-2: event handler con comillas backtick debe eliminarse.",
+      "html": "<head></head><img src=x onerror=`alert(1)`>",
+      "absent": ["onerror"]
+    },
+    {
+      "id": "boolean-event-handler",
+      "note": "S-CRÍTICO-2: atributo booleano <svg onload> (sin =valor) debe eliminarse.",
+      "html": "<head></head><svg onload>",
+      "absent": ["onload"]
+    },
+    {
+      "id": "nested-script-trick",
+      "note": "S-ALTO-1: <script><script>x</script> deja un <script> huérfano; el segundo pass debe limpiarlo.",
+      "html": "<head></head><script><script>alert(1)</script>",
+      "absent": ["<script"]
+    },
+    {
+      "id": "svg-data-uri-collapse",
+      "note": "S-MEDIO-1: data:image/svg+xml puede cargar <script>; debe colapsarse en CSS.",
+      "html": "<head></head><style>.x{background:url(data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=)}</style>",
+      "absent": ["data:image/svg"]
+    },
+    {
+      "id": "svg-data-uri-img-src",
+      "note": "data:image/svg+xml también debe colapsarse en atributo src.",
+      "html": "<head></head><img src=\"data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=\"/>",
+      "absent": ["data:image/svg"]
+    },
+    {
+      "id": "png-data-uri-kept-css",
+      "note": "S-MEDIO-1: data:image/png en CSS debe conservarse.",
+      "html": "<head></head><style>.x{background:url(data:image/png;base64,iVBOR=)}</style>",
+      "present": ["data:image/png;base64,iVBOR="]
+    },
+    {
+      "id": "png-data-uri-kept-src",
+      "note": "data:image/png en src debe conservarse.",
+      "html": "<head></head><img src=\"data:image/png;base64,AAAA\"/>",
+      "present": ["data:image/png;base64,AAAA"]
+    },
+    {
+      "id": "html-data-uri-collapse",
+      "note": "data:text/html (HTML ejecutable) debe colapsarse en src.",
+      "html": "<head></head><img src=\"data:text/html,<script>alert(1)</script>\"/>",
+      "absent": ["data:text/html"]
+    },
+    {
+      "id": "xlink-href-javascript",
+      "note": "javascript: en xlink:href (SVG) debe neutralizarse.",
+      "html": "<head></head><svg><a xlink:href=\"javascript:alert(1)\">x</a></svg>",
+      "absent": ["javascript:"]
+    },
+    {
+      "id": "external-href-collapse",
+      "note": "href https externo (no allowlist) debe neutralizarse.",
+      "html": "<head></head><a href=\"https://evil.example/x\">x</a>",
+      "absent": ["evil.example"]
+    },
+    {
+      "id": "external-css-url-collapse",
+      "note": "url(https://...) en CSS debe colapsarse.",
+      "html": "<head></head><style>.x{background:url(https://example.com/a.png)}</style>",
+      "absent": ["example.com/a.png"]
+    },
+    {
+      "id": "csp-injected",
+      "note": "Todos los adaptadores inyectan una meta CSP (Chromium la ejecuta; en WeasyPrint es decorativa pero inofensiva).",
+      "html": "<head></head><p>contenido</p>",
+      "present": ["Content-Security-Policy"]
+    },
+    {
+      "id": "google-fonts-link",
+      "note": "Política: el link de Google Fonts se conserva SOLO en el adaptador pdf (WYSIWYG canvas RGB). cmyk lo colapsa (el fetcher de WeasyPrint deniega toda red) y preview borra todos los link.",
+      "html": "<head><link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Inter&display=swap\"></head>",
+      "adapters": {
+        "pdf": { "present": ["fonts.googleapis.com/css2?family=Inter"], "absent": [] },
+        "preview": { "absent": ["fonts.googleapis.com"] },
+        "cmyk": { "absent": ["fonts.googleapis.com"] }
+      }
+    },
+    {
+      "id": "non-google-link-strip",
+      "note": "Un <link> a host no allowlist debe eliminarse en todos los adaptadores.",
+      "html": "<head><link rel=\"stylesheet\" href=\"https://evil.example/x.css\"></head>",
+      "absent": ["evil.example"]
+    },
+    {
+      "id": "blob-src-kept",
+      "note": "blob: en src/href se conserva en los tres adaptadores (no está en ninguna lista de bloqueo; en pdf/cmyk el renderer no podrá cargarlo igualmente: CSP img-src data: file: o fetcher deny).",
+      "html": "<head></head><img src=\"blob:https://app.example/abc\"/>",
+      "present": ["blob:https://app.example/abc"]
+    },
+    {
+      "id": "blob-css-url-policy",
+      "note": "Política: blob: en url() CSS se conserva SOLO en preview (el iframe la necesita); pdf y cmyk lo colapsan.",
+      "html": "<head></head><style>.x{background:url(blob:https://app.example/abc)}</style>",
+      "adapters": {
+        "pdf": { "absent": ["blob:https://app.example/abc"] },
+        "preview": { "present": ["blob:https://app.example/abc"] },
+        "cmyk": { "absent": ["blob:https://app.example/abc"] }
+      }
+    }
+  ]
+}

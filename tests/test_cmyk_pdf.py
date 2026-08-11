@@ -617,6 +617,91 @@ def test_cmyk_renderer_image_object_fit_cover():
             os.unlink(png_path)
 
 
+def test_cmyk_renderer_caches_repeated_image_bytes(monkeypatch):
+    """Un logo repetido en N páginas se decodifica/convierte UNA vez (caché LRU)."""
+    import os
+    import tempfile
+
+    from PIL import Image
+
+    import backend.core.cmyk_pdf.renderer as renderer_mod
+
+    png_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            png_path = tmp.name
+            Image.new("RGB", (40, 20), color=(200, 30, 90)).save(png_path)
+
+        doc = create_empty_document(name="Cached logo")
+        # 3 páginas: el logo (misma imagen) aparece en cada una.
+        doc["pages"] = [{"id": f"page-{i}", "name": f"Página {i + 1}"} for i in range(3)]
+        logo_layer = {
+            "id": "layer-logo",
+            "type": "image",
+            "name": "Logo",
+            "value": png_path,
+            "cssVars": {
+                "--width": "30mm",
+                "--height": "15mm",
+                "--translate-x": "10mm",
+                "--translate-y": "10mm",
+                "--object-fit": "contain",
+            },
+        }
+        doc["layers"] = [{**logo_layer, "pageIndex": i} for i in range(3)]
+
+        convert_calls = 0
+        original_convert = renderer_mod.convert_pil_to_cmyk_bytes
+
+        def counting_convert(img, dpi=300):
+            nonlocal convert_calls
+            convert_calls += 1
+            return original_convert(img, dpi=dpi)
+
+        monkeypatch.setattr(renderer_mod, "convert_pil_to_cmyk_bytes", counting_convert)
+
+        renderer = CanvasCmykRenderer(document=doc)
+        pdf_bytes = renderer.render(local_image_paths={png_path: png_path})
+        assert convert_calls == 1, f"logo repetido debe convertir 1 vez, no {convert_calls}"
+
+        pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        try:
+            assert len(pdf_doc) == 3, "3 páginas esperadas"
+            for page in pdf_doc:
+                assert page.get_images(), "cada página debe incrustar el logo"
+        finally:
+            pdf_doc.close()
+    finally:
+        if png_path and os.path.exists(png_path):
+            os.unlink(png_path)
+
+
+def test_cmyk_renderer_image_cache_evicts_lru(monkeypatch):
+    """La caché de imágenes no crece sin límite (LRU acotado a 128 entradas)."""
+    from contextlib import contextmanager
+
+    from PIL import Image
+
+    import backend.core.cmyk_pdf.renderer as renderer_mod
+
+    renderer = CanvasCmykRenderer(document=create_empty_document(name="LRU"))
+
+    @contextmanager
+    def fake_open(_src, _local_image_paths):
+        yield Image.new("RGB", (8, 8), color=(10, 20, 30))
+
+    monkeypatch.setattr(renderer_mod, "_open_export_image", fake_open)
+
+    rect = fitz.Rect(0, 0, 30, 15)  # px fijos a 300 dpi
+    # > max entradas con srcs distintos (miss forzado en cada llamada).
+    for i in range(renderer._image_cache_max + 10):
+        prepared = renderer._prepare_image_for_rect_cached(
+            f"fake-{i}", {}, rect, "fill",
+        )
+        assert prepared is not None
+    assert len(renderer._image_cache) == renderer._image_cache_max
+
+
 def test_cmyk_renderer_text_align_and_font():
     doc = create_empty_document(name="Align font")
     doc["layers"] = [

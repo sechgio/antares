@@ -19,6 +19,27 @@ export function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+/** Persist blob:/http(s) URLs to data: for PDF export (cross-context safe). */
+export async function toPersistentUrl(url: string | null): Promise<string | null> {
+  if (!url) return null;
+  if (url.startsWith('data:')) return url;
+  if (!url.startsWith('blob:') && !url.startsWith('http://') && !url.startsWith('https://')) {
+    return url;
+  }
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return url;
+  }
+}
+
 export async function fileToBase64(file: File): Promise<string> {
   const value = await fileToDataUrl(file);
   return value.includes(',') ? value.split(',')[1] : value;
@@ -131,6 +152,34 @@ export async function imageToPdfSource(
   }
 
   return { src: await imageToPdfDataUrl(file, quality) };
+}
+
+/**
+ * Logo source for canvas RGB PDF export. When the logo came from a local File
+ * and its path is allowlisted, return an `antares-local-image:` token that
+ * Electron expands to a file:// URL — the logo is referenced ONCE instead of
+ * being base64-duplicated on every page (O(pages × logo size) → O(pages)).
+ * Any other case falls back to the durable data: URL (same contract as the
+ * previous always-base64 behavior). CMYK keeps base64: the backend renderer
+ * does not resolve local image tokens.
+ */
+export async function logoToPdfSource(
+  url: string | null,
+  file: File | null,
+  key: string,
+  localImagePaths: Record<string, string>,
+  useLocalTokens: boolean,
+): Promise<string | null> {
+  if (!url) return null;
+  if (useLocalTokens && file) {
+    const localPath = getElectronFilePath(file);
+    if (localPath && (await registerLocalPath(localPath))) {
+      const token = buildLocalImageToken(key);
+      localImagePaths[token] = localPath;
+      return token;
+    }
+  }
+  return toPersistentUrl(url);
 }
 
 export function downloadBase64Pdf(pdfBase64: string, filename: string): void {

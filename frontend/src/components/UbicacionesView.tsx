@@ -20,7 +20,7 @@ import Button from './ui/Button';
 import ThemedSelect from './ui/ThemedSelect';
 import { api } from '../api';
 import { useToast } from '../hooks/useToast';
-import { registerLocalPath } from '../utils/registerLocalPath';
+import { stageFileForIpc } from '../utils/stageFile';
 import { getLocalImageDataUrl } from '../utils/localThumb';
 import { parseCombinedCoords, isValidCoord } from '../utils/coords';
 
@@ -61,7 +61,6 @@ async function resolvePreviewImageSrc(data: {
         : '');
 
   if (!localPath) return null;
-  await registerLocalPath(localPath);
   return getLocalImageDataUrl(localPath);
 }
 
@@ -316,6 +315,9 @@ export const UbicacionesView: React.FC = () => {
 
   // Track the latest fetch request to avoid race conditions
   const fetchIdRef = useRef(0);
+  // File bytes needed to (re)stage a fresh read token for previews/generation:
+  // tokens expire after 30 min, so we re-stage from the File whenever needed.
+  const excelFileRef = useRef<File | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stylePreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -492,6 +494,15 @@ export const UbicacionesView: React.FC = () => {
         return;
       }
 
+      // Read tokens expire after 30 min; re-stage a fresh one so previews keep
+      // working after the Excel has been loaded for a long time.
+      let excelToken = path;
+      if (currentInputMode === 'excel' && excelFileRef.current) {
+        const fresh = await stageFileForIpc(excelFileRef.current);
+        if (fresh) excelToken = fresh;
+      }
+      if (currentInputMode === 'excel' && !excelToken) return;
+
       const previewManualData = currentManualData;
       const myId = ++fetchIdRef.current;
       // softLoad avoids spinner flicker when an image is already visible; on first
@@ -504,7 +515,7 @@ export const UbicacionesView: React.FC = () => {
       setPreviewError(null);
       try {
         const resp = await api.previewUbicacion({
-          excelPath: path || null,
+          excelPath: excelToken || null,
           formato: currentFormato,
           rowIndex,
           recomposeOnly: options?.recomposeOnly === true,
@@ -692,8 +703,11 @@ export const UbicacionesView: React.FC = () => {
 
   const loadExcelFile = useCallback(
     async (file: File) => {
-      const path = window.electronAPI?.getPathForFile?.(file) || '';
-      if (!path) {
+      // Stage the File into Electron temp storage: the backend reads the
+      // resolved path behind this token (raw absolute paths are rejected by
+      // the IPC router). Tokens expire, so refresh them per use.
+      const token = await stageFileForIpc(file);
+      if (!token) {
         setExcelFile(null);
         setExcelPath('');
         setPreview(null);
@@ -701,21 +715,21 @@ export const UbicacionesView: React.FC = () => {
         setPreviewError(null);
         setPreviewLoading(false);
         addToast({
-          message: 'No se pudo resolver la ruta del archivo Excel.',
+          message: 'No se pudo preparar el archivo Excel.',
           type: 'error',
         });
         return;
       }
-      await registerLocalPath(path);
+      excelFileRef.current = file;
       setExcelFile(file);
       setResult(null);
       setPreview(null);
       hasPreviewRef.current = false;
       setPreviewRowIndex(0);
       prevFormatoRef.current = formato;
-      setExcelPath(path);
+      setExcelPath(token);
       setPreviewLoading(true);
-      triggerPreviewFetch(0, { excelPathOverride: path });
+      triggerPreviewFetch(0, { excelPathOverride: token });
     },
     [triggerPreviewFetch, formato, addToast],
   );
@@ -738,6 +752,7 @@ export const UbicacionesView: React.FC = () => {
   const handleRemoveExcel = () => {
     // Cancel any in-flight preview request so stale responses don't update state
     fetchIdRef.current++;
+    excelFileRef.current = null;
     setExcelFile(null);
     setExcelPath('');
     setPreview(null);
@@ -784,12 +799,12 @@ export const UbicacionesView: React.FC = () => {
       
       let path = '';
       if (inputMode === 'excel' && excelFile) {
-        path = window.electronAPI.getPathForFile?.(excelFile) || '';
+        // Fresh token: staged read capabilities expire after 30 min.
+        path = (await stageFileForIpc(excelFile)) || '';
         if (!path) {
-          setResult({ success: false, error: 'No se pudo resolver la ruta del archivo Excel.' });
+          setResult({ success: false, error: 'No se pudo preparar el archivo Excel.' });
           return;
         }
-        await registerLocalPath(path);
       }
 
       const {

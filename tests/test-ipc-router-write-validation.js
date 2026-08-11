@@ -1,0 +1,228 @@
+/**
+ * Regresión: validación de rutas de escritura en el router IPC.
+ * `outputDir` de `generar_ubicaciones` debe pasar por la misma política que
+ * el resto de salidas: token `antares-write-*` resuelto, raíz registrada por
+ * diálogo, o Documentos/Descargas. Cualquier otra ruta se rechaza.
+ */
+const os = require('os');
+const fs = require('fs');
+const path = require('path');
+
+let passed = 0;
+let failed = 0;
+
+function assert(condition, message) {
+  if (condition) {
+    console.log(`  ✓ ${message}`);
+    passed++;
+  } else {
+    console.error(`  ✗ ${message}`);
+    failed++;
+  }
+}
+
+function loadRouter({ documentsDir, downloadsDir, userDataDir }) {
+  const electronPath = require.resolve('electron');
+  require.cache[electronPath] = {
+    id: electronPath,
+    filename: electronPath,
+    loaded: true,
+    exports: {
+      ipcMain: { handle: () => {}, removeHandler: () => {} },
+      dialog: {},
+      app: {
+        isPackaged: true,
+        getPath: (name) => {
+          if (name === 'documents') return documentsDir;
+          if (name === 'downloads') return downloadsDir;
+          if (name === 'userData') return userDataDir;
+          throw new Error(`unknown path: ${name}`);
+        },
+      },
+    },
+  };
+
+  const spawnerPath = require.resolve('../electron/backend-spawner');
+  require.cache[spawnerPath] = {
+    id: spawnerPath,
+    filename: spawnerPath,
+    loaded: true,
+    exports: {
+      getProcess: () => null,
+      isReady: () => true,
+      waitForReady: async () => true,
+      getState: () => 'ready',
+      getLastError: () => null,
+      getStderrTail: () => '',
+      manualRestart: async () => true,
+      incrementPendingRequests: () => {},
+      decrementPendingRequests: () => {},
+      noteJobActivity: () => {},
+      clearJobActivity: () => {},
+      STATE: { READY: 'ready', FATAL: 'fatal', STARTING: 'starting', EXITED: 'exited' },
+    },
+  };
+
+  const wmPath = require.resolve('../electron/window-manager');
+  require.cache[wmPath] = {
+    id: wmPath,
+    filename: wmPath,
+    loaded: true,
+    exports: {
+      getMainWindow: () => null,
+      buildAppMenu: () => ({ popup: () => {} }),
+      getIsDev: () => true,
+    },
+  };
+
+  const routerPath = require.resolve('../electron/ipc-router');
+  delete require.cache[routerPath];
+  return require(routerPath);
+}
+
+async function run() {
+  console.log('Testing IPC write-path validation (outputDir)...\n');
+
+  const tmpRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'antares-write-val-'));
+  const docsDir = path.join(tmpRoot, 'docs');
+  const dlDir = path.join(tmpRoot, 'downloads');
+  const customDir = path.join(tmpRoot, 'custom');
+  const arbitraryDir = path.join(tmpRoot, 'elsewhere');
+  for (const d of [docsDir, dlDir, customDir, arbitraryDir]) {
+    await fs.promises.mkdir(d, { recursive: true });
+  }
+
+  const router = loadRouter({ documentsDir: docsDir, downloadsDir: dlDir });
+  const { handleDialogCall, _clearAllowedWriteRoots } = require('../electron/dialog-handlers');
+  const { createFileCapability } = require('../electron/file-capabilities');
+  const { clearAllowedReadPaths } = require('../electron/path-allowlist');
+
+  try {
+    // 1) outputDir bajo Documentos → permitido sin mutar el payload.
+    const p1 = router._validateAndResolveWriteParams({ outputDir: path.join(docsDir, 'salidas') }, null);
+    assert(p1.outputDir === path.join(docsDir, 'salidas'), 'outputDir bajo Documentos se acepta');
+
+    // 2) outputDir bajo Descargas → permitido.
+    const p2 = router._validateAndResolveWriteParams({ outputDir: path.join(dlDir, 'x') }, null);
+    assert(p2.outputDir === path.join(dlDir, 'x'), 'outputDir bajo Descargas se acepta');
+
+    // 3) outputDir arbitrario sin registro → rechazado.
+    let threw = false;
+    try {
+      router._validateAndResolveWriteParams({ outputDir: path.join(arbitraryDir, 'salidas') }, null);
+    } catch (e) {
+      threw = /no está permitida/.test(e.message);
+    }
+    assert(threw, 'outputDir sin autorización se rechaza');
+
+    // 4) outputDir elegido con dialog_folder(pickOnly) → permitido (write root registrado).
+    _clearAllowedWriteRoots();
+    clearAllowedReadPaths();
+    const dialog = {
+      async showOpenDialog() {
+        return { canceled: false, filePaths: [customDir] };
+      },
+      async showSaveDialog() {
+        return { canceled: true };
+      },
+    };
+    await handleDialogCall('dialog_folder', { pickOnly: true }, dialog, { id: 1 });
+    const p4 = router._validateAndResolveWriteParams({ outputDir: path.join(customDir, 'salidas') }, null);
+    assert(p4.outputDir === path.join(customDir, 'salidas'), 'outputDir elegido por diálogo se acepta');
+
+    // 5) token antares-write-* en outputDir → se resuelve a la ruta real autorizada.
+    const cap = createFileCapability({ filePath: customDir, mode: 'write', webContentsId: null });
+    const p5 = router._validateAndResolveWriteParams({ outputDir: cap.token }, null);
+    assert(p5.outputDir === customDir, 'outputDir con token se resuelve a la ruta real');
+    assert(p5._write_token === cap.token, 'outputDir con token conserva _write_token');
+
+    // 6) los campos existentes mantienen su contrato (output_path → _resolved_output_path).
+    const outFile = path.join(customDir, 'reporte.pdf');
+    await fs.promises.writeFile(outFile, 'x');
+    const cap2 = createFileCapability({ filePath: outFile, mode: 'write', webContentsId: null });
+    const p6 = router._validateAndResolveWriteParams({ output_path: cap2.token }, null);
+    assert(p6._resolved_output_path === outFile, 'output_path con token sigue resolviéndose a _resolved_output_path');
+    assert(p6.output_path === cap2.token, 'output_path con token no muta el campo original');
+
+    // 7) payload sin campos de escritura no se toca.
+    const p7 = router._validateAndResolveWriteParams({ zoom: 18, formato: 'vertical' }, null);
+    assert(p7.zoom === 18 && p7._resolved_output_path === undefined, 'payload sin salida no se procesa');
+
+    // 7b) un path legítimo cuyo nombre empiece con 'antares-write' (sin el
+    //     separador '_' del token real) no debe confundirse con un token.
+    let notTokenError = '';
+    try {
+      router._validateAndResolveWriteParams(
+        { outputDir: path.join(arbitraryDir, 'antares-write-notes') },
+        null,
+      );
+    } catch (e) {
+      notTokenError = e.message;
+    }
+    assert(
+      /no está permitida/.test(notTokenError) && !/invalid write token/.test(notTokenError),
+      'path con prefijo antares-write sin separador no se confunde con un token',
+    );
+
+    // 8) raíz elegida por diálogo en una sesión ANTERIOR → sigue válida tras
+    //    recargar el módulo (raíces de escritura persistidas en userData).
+    const userDataDir = path.join(tmpRoot, 'userData');
+    const persistedRoot = path.join(tmpRoot, 'raiz-persistida');
+    await fs.promises.mkdir(userDataDir, { recursive: true });
+    await fs.promises.mkdir(persistedRoot, { recursive: true });
+    await fs.promises.writeFile(
+      path.join(userDataDir, 'antares-write-roots.json'),
+      JSON.stringify([persistedRoot]),
+    );
+    // Fresh dialog-handlers so the top-level persisted-roots load runs with
+    // the userData mock (the module was already cached from the first load).
+    const dialogHandlersPath = require.resolve('../electron/dialog-handlers');
+    delete require.cache[dialogHandlersPath];
+    const router2 = loadRouter({ documentsDir: docsDir, downloadsDir: dlDir, userDataDir });
+    const p8 = router2._validateAndResolveWriteParams({ outputDir: path.join(persistedRoot, 'salidas') }, null);
+    assert(
+      p8.outputDir === path.join(persistedRoot, 'salidas'),
+      'outputDir bajo raíz persistida de sesión anterior se acepta',
+    );
+    let rejectedOutsideRoot = false;
+    try {
+      router2._validateAndResolveWriteParams({ outputDir: path.join(arbitraryDir, 'otra') }, null);
+    } catch (e) {
+      rejectedOutsideRoot = /no está permitida/.test(e.message);
+    }
+    assert(rejectedOutsideRoot, 'ruta fuera de la raíz persistida sigue rechazada');
+
+    // 9) elegir carpeta por diálogo persiste la raíz para la próxima sesión.
+    const dialog2 = {
+      async showOpenDialog() {
+        return { canceled: false, filePaths: [path.join(tmpRoot, 'nueva-raiz')] };
+      },
+      async showSaveDialog() {
+        return { canceled: true };
+      },
+    };
+    await fs.promises.mkdir(path.join(tmpRoot, 'nueva-raiz'), { recursive: true });
+    delete require.cache[dialogHandlersPath];
+    const { handleDialogCall: freshHandleDialogCall } = require(dialogHandlersPath);
+    await freshHandleDialogCall('dialog_folder', { pickOnly: true }, dialog2, { id: 1 });
+    const persisted = JSON.parse(
+      await fs.promises.readFile(path.join(userDataDir, 'antares-write-roots.json'), 'utf8'),
+    );
+    assert(
+      persisted.includes(path.resolve(path.join(tmpRoot, 'nueva-raiz'))),
+      'dialog_folder persiste la raíz de escritura en userData',
+    );
+  } finally {
+    _clearAllowedWriteRoots();
+    clearAllowedReadPaths();
+    await fs.promises.rm(tmpRoot, { recursive: true, force: true });
+  }
+
+  console.log(`\n[PASS] ${passed} checks, ${failed} failures.`);
+  if (failed > 0) process.exit(1);
+}
+
+run().catch((err) => {
+  console.error('[FAIL]', err);
+  process.exit(1);
+});

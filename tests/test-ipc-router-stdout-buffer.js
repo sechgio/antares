@@ -105,7 +105,24 @@ function run() {
     assert.strictEqual(r.lines[1].toString('utf8'), 'b');
   }
 
-  console.log('  ✓ Buffer framing + split lines + byteLength');
+  // maxPendingBytes drops an oversized fragmented line and keeps framing sane
+  {
+    const small = Buffer.from('{"id":1,"result":1}\n');
+    const r1 = _consumeStdoutLines(Buffer.alloc(0), small, 16);
+    assert.strictEqual(r1.lines.length, 1, 'complete line parses before cap applies');
+    assert.strictEqual(r1.dropped, false);
+
+    const r2 = _consumeStdoutLines(Buffer.alloc(0), Buffer.from('{"bigger":'), 8);
+    assert.strictEqual(r2.lines.length, 0);
+    assert.strictEqual(r2.dropped, true, 'oversized partial line is dropped');
+    assert.strictEqual(r2.pending.length, 0, 'pending reset after drop');
+
+    const r3 = _consumeStdoutLines(Buffer.alloc(0), small, 8);
+    assert.strictEqual(r3.lines.length, 1, 'next complete line still parses after a drop');
+    assert.strictEqual(r3.dropped, false);
+  }
+
+  console.log('  ✓ Buffer framing + split lines + byteLength + maxPendingBytes cap');
   console.log('\nAll ipc-router stdout buffer tests passed.');
 }
 

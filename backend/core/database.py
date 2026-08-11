@@ -380,127 +380,140 @@ def importar_excel(excel_path: str) -> dict[str, int]:
         siempre antes de insertar.
 
     Raises:
-        ImportError: Si pandas no está instalado.
+        ImportError: Si openpyxl no está instalado.
         ValueError: Si faltan columnas requeridas.
         DatabaseError: Si ocurre un error de base de datos.
     """
     try:
-        import pandas as pd  # type: ignore
+        # Cold import under the serialized-import guard: openpyxl (and its
+        # optional numpy bridge via pandas compat) must never load
+        # concurrently with another C-extension import (e.g. rpds via
+        # history) or the process can deadlock on Windows.
+        from backend.core.import_guard import serialized_import
+
+        with serialized_import():
+            from openpyxl import load_workbook
     except ImportError as exc:
-        msg = "pandas no está instalado. Ejecuta: pip install pandas openpyxl"
+        msg = "openpyxl no está instalado. Ejecuta: pip install openpyxl"
         raise ImportError(msg) from exc
 
     if not Path(excel_path).exists():
         msg = f"No se encontró el archivo: {excel_path}"
         raise FileNotFoundError(msg)
 
-    # Lectura y normalización FUERA del lock: pandas puede tardar segundos en
-    # Excels grandes y no debe bloquear las demás operaciones de BD (antes todo
-    # el import corría bajo _db_lock, congelando previews y lecturas).
-    # read_only lowers peak RAM; keep formulas as stored text (no data_only).
-    df = pd.read_excel(
-        excel_path,
-        dtype=str,
-        engine="openpyxl",
-        engine_kwargs={"read_only": True},
-    )
-    df.columns = _normalize_excel_columns(list(df.columns))
-
-    existing_fields = {f["name"]: f for f in load_fields()}
-    fields = [
-        {
-            **existing_fields.get(column, {}),
-            "name": column,
-            "type": existing_fields.get(column, {}).get("type", "TEXT"),
-            "required": bool(existing_fields.get(column, {}).get("required", False)),
-            "unique": bool(existing_fields.get(column, {}).get("unique", False)),
-        }
-        for column in df.columns
-    ]
-    if not fields:
-        msg = f"El Excel no contiene columnas válidas para importar: {list(df.columns)}"
-        raise ValueError(msg)
-
-    with _db_lock:
-        fields = save_fields(fields)
-        if not fields:
-            msg = f"El Excel no contiene columnas válidas para importar: {list(df.columns)}"
+    # Lectura y normalización FUERA del lock: el streaming puede tardar
+    # segundos en Excels grandes y no debe bloquear las demás operaciones de
+    # BD (antes todo el import corría bajo _db_lock, congelando previews).
+    # read_only + iter_rows evita materializar el DataFrame completo
+    # (pandas read_excel: 100-300 MB pico en 50k filas) y evita el import de
+    # pandas/numpy en el worker. data_only=False keep formulas as stored text.
+    wb = load_workbook(excel_path, read_only=True, data_only=False)
+    try:
+        ws = wb.active
+        if ws is None:
+            msg = f"El Excel no contiene hojas activas: {excel_path}"
             raise ValueError(msg)
-        field_names = [f["name"] for f in fields]
+        rows_iter = ws.iter_rows(values_only=True)
+        header = next(rows_iter, None)
+        columns = _normalize_excel_columns(list(header) if header is not None else [])
 
-        # Asegurar que el esquema de BD coincida con los campos, incluyendo columnas del Excel.
-        init_db(allow_catalog_wipe=True)
-        required = [f["name"] for f in fields if f.get("required")]
+        existing_fields = {f["name"]: f for f in load_fields()}
+        fields = [
+            {
+                **existing_fields.get(column, {}),
+                "name": column,
+                "type": existing_fields.get(column, {}).get("type", "TEXT"),
+                "required": bool(existing_fields.get(column, {}).get("required", False)),
+                "unique": bool(existing_fields.get(column, {}).get("unique", False)),
+            }
+            for column in columns
+        ]
+        if not fields:
+            msg = f"El Excel no contiene columnas válidas para importar: {columns}"
+            raise ValueError(msg)
 
-        # Validate all field names as safe SQL identifiers (defense in depth)
-        field_names = [_validate_identifier(fn) for fn in field_names]
+        with _db_lock:
+            fields = save_fields(fields)
+            if not fields:
+                msg = f"El Excel no contiene columnas válidas para importar: {columns}"
+                raise ValueError(msg)
+            field_names = [f["name"] for f in fields]
 
-        missing = [r for r in required if r not in df.columns]
-        if missing:
-            msg = (
-                f"El Excel debe contener al menos las columnas requeridas: {missing}. "
-                f"Columnas encontradas: {list(df.columns)}"
-            )
-            raise ValueError(
-                msg,
-            )
+            # Asegurar que el esquema de BD coincida con los campos, incluyendo columnas del Excel.
+            init_db(allow_catalog_wipe=True)
+            required = [f["name"] for f in fields if f.get("required")]
 
-        conn = _get_connection()
-        cursor = conn.cursor()
+            # Validate all field names as safe SQL identifiers (defense in depth)
+            field_names = [_validate_identifier(fn) for fn in field_names]
 
-        try:
-            cursor.execute("BEGIN")
+            missing = [r for r in required if r not in columns]
+            if missing:
+                msg = (
+                    f"El Excel debe contener al menos las columnas requeridas: {missing}. "
+                    f"Columnas encontradas: {columns}"
+                )
+                raise ValueError(
+                    msg,
+                )
 
-            cursor.execute("DELETE FROM imagenes")
+            conn = _get_connection()
+            cursor = conn.cursor()
 
-            placeholders = ", ".join(["?"] * len(field_names))
-            col_names = ", ".join(_qi(fn) for fn in field_names)
-            sql = f"INSERT INTO imagenes ({col_names}) VALUES ({placeholders})"
-
-            # Chunked executemany: avoid retaining every row's values list at once.
-            chunk: list[list[Any]] = []
-            chunk_size = 500
-            inserted = 0
-            skipped = 0
-            required_set = set(required)
-            for row in df.itertuples(index=False):
-                row_dict = dict(zip(df.columns, row, strict=False))
-                values: list[Any] = []
-                valid = True
-                for fn in field_names:
-                    val = row_dict.get(fn)
-                    if pd.notna(val) and str(val).strip():
-                        values.append(str(val).strip())
-                    elif fn in required_set:
-                        valid = False
-                        break
-                    else:
-                        values.append(None)
-                if valid:
-                    chunk.append(values)
-                    if len(chunk) >= chunk_size:
-                        cursor.executemany(sql, chunk)
-                        inserted += len(chunk)
-                        chunk.clear()
-                else:
-                    skipped += 1
-
-            if chunk:
-                cursor.executemany(sql, chunk)
-                inserted += len(chunk)
-
-            cursor.execute("COMMIT")
-            # Full-table reload: refresh planner stats so indexes stay effective
-            # after large Excel imports (audit: periodic ANALYZE).
             try:
-                conn.execute("ANALYZE imagenes")
-            except sqlite3.Error:
-                logger.debug("ANALYZE after import failed", exc_info=True)
-            return {"inserted": inserted, "skipped": skipped}
-        except sqlite3.Error as exc:
-            cursor.execute("ROLLBACK")
-            msg = f"Error importando datos: {exc}"
-            raise DatabaseError(msg) from exc
+                cursor.execute("BEGIN")
+
+                cursor.execute("DELETE FROM imagenes")
+
+                placeholders = ", ".join(["?"] * len(field_names))
+                col_names = ", ".join(_qi(fn) for fn in field_names)
+                sql = f"INSERT INTO imagenes ({col_names}) VALUES ({placeholders})"
+
+                # Chunked executemany: avoid retaining every row's values list at once.
+                chunk: list[list[Any]] = []
+                chunk_size = 500
+                inserted = 0
+                skipped = 0
+                required_set = set(required)
+                for row in rows_iter:
+                    row_dict = dict(zip(columns, row, strict=False))
+                    values: list[Any] = []
+                    valid = True
+                    for fn in field_names:
+                        val = row_dict.get(fn)
+                        if val is not None and str(val).strip():
+                            values.append(str(val).strip())
+                        elif fn in required_set:
+                            valid = False
+                            break
+                        else:
+                            values.append(None)
+                    if valid:
+                        chunk.append(values)
+                        if len(chunk) >= chunk_size:
+                            cursor.executemany(sql, chunk)
+                            inserted += len(chunk)
+                            chunk.clear()
+                    else:
+                        skipped += 1
+
+                if chunk:
+                    cursor.executemany(sql, chunk)
+                    inserted += len(chunk)
+
+                cursor.execute("COMMIT")
+                # Full-table reload: refresh planner stats so indexes stay effective
+                # after large Excel imports (audit: periodic ANALYZE).
+                try:
+                    conn.execute("ANALYZE imagenes")
+                except sqlite3.Error:
+                    logger.debug("ANALYZE after import failed", exc_info=True)
+                return {"inserted": inserted, "skipped": skipped}
+            except sqlite3.Error as exc:
+                cursor.execute("ROLLBACK")
+                msg = f"Error importando datos: {exc}"
+                raise DatabaseError(msg) from exc
+    finally:
+        wb.close()
 
 
 def exportar_excel(excel_path: str) -> int:
@@ -829,7 +842,10 @@ def parse_id_rename_mapping_full(
         ImportError: Si pandas/openpyxl no están instalados.
     """
     try:
-        import pandas as pd  # type: ignore
+        from backend.core.import_guard import serialized_import
+
+        with serialized_import():
+            import pandas as pd  # type: ignore
     except ImportError as exc:
         msg = "pandas no está instalado. Ejecuta: pip install pandas openpyxl"
         raise ImportError(msg) from exc

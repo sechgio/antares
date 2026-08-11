@@ -4,7 +4,7 @@ import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import './canvas.css';
 import { createLayer } from './constants';
 import { loadCanvasPresets } from './presets/loadPresets';
-import { queueCanvasCloudDelete, queueCanvasCloudPush } from './sync/cloudQueue';
+import { queueCanvasCloudPush } from './sync/cloudQueue';
 import { isNewer, type SyncConflict } from './sync/syncCompare';
 import type { SyncConflictChoice } from './hooks/useCanvasSync';
 import SyncConflictBar from './editor/SyncConflictBar';
@@ -23,6 +23,7 @@ import RightPanel from './editor/RightPanel';
 import TopBar from './editor/TopBar';
 import { useCanvasHistory } from './hooks/useCanvasHistory';
 import { useCanvasBootstrap } from './hooks/useCanvasBootstrap';
+import { useDocumentLifecycle } from './hooks/useDocumentLifecycle';
 import { isOpenDocumentDirty, useCanvasSync } from './hooks/useCanvasSync';
 import { useGestureBaselines } from './hooks/useGestureBaselines';
 import { useInlineEdit } from './hooks/useInlineEdit';
@@ -30,9 +31,6 @@ import { CANVAS_SHORTCUTS } from './shortcuts';
 import {
   hydrateDocumentImages,
   serializeDocumentImages,
-  serializeHistorySteps,
-  hydrateHistorySteps,
-  applySavedDocumentKeepingImages,
   clearBlobStore,
   collectImageRefsFromHistory,
   collectImageRefsFromLayers,
@@ -159,6 +157,8 @@ const AUTOSAVE_DEBOUNCE_MS = 1200;
 
 export default function CanvasView({ active = true }: { active?: boolean }) {
   const history = useCanvasHistory(createEmptyDocument('Sin título'));
+  const historyReadyRef = useRef(false);
+  const restoreGenerationRef = useRef(0);
   // Refs mirror history state so runCloudSync can read the latest values
   // without depending on `history` (which changes on every mutation and would
   // re-subscribe the focus listener on every keystroke/drag).
@@ -255,21 +255,10 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     }
   }, []);
 
-  /** Serialize save-then-switch so concurrent open/new/duplicate/delete cannot interleave. */
   /** Pre-edit snapshot while a guide is being dragged out of the rulers (live preview). */
   const guideCreateBaselineRef = useRef<CanvasDocument | null>(null);
 
-  const docSwitchLockRef = useRef(false);
   const onDeleteDocRef = useRef<() => Promise<void>>(async () => {});
-  const withDocSwitchLock = useCallback(async (fn: () => Promise<void>) => {
-    if (docSwitchLockRef.current) return;
-    docSwitchLockRef.current = true;
-    try {
-      await fn();
-    } finally {
-      docSwitchLockRef.current = false;
-    }
-  }, []);
 
   const [syncConflict, setSyncConflict] = useState<SyncConflict | null>(null);
   const syncConflictRef = useRef<SyncConflict | null>(null);
@@ -365,84 +354,28 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   useCanvasBootstrap({
     replaceDocument: history.replaceDocument,
     restoreHistory: history.restoreHistory,
+    historyReadyRef,
+    restoreGenerationRef,
+    currentDocumentRef: history.documentRef,
+    currentRevisionRef: history.revisionRef,
     setDocs,
     setLoading,
     runCloudSync,
   });
 
-  const lastSavedHistorySigRef = useRef<string>('');
-
-  const persistHistoryStacks = useCallback(
-    async (
-      docId: string,
-      past: typeof history.past,
-      future: typeof history.future,
-    ) => {
-      const [serializedPast, serializedFuture] = await Promise.all([
-        serializeHistorySteps(past),
-        serializeHistorySteps(future),
-      ]);
-      await api.canvasSaveHistory(docId, serializedPast, serializedFuture);
-    },
-    [],
-  );
-
-  const warnHistoryPersistFailed = useCallback((err: unknown) => {
-    console.warn(
-      '[canvas] No se pudo persistir historial:',
-      err instanceof Error ? err.message : err,
-    );
-  }, []);
-
-  const restorePersistedHistory = useCallback(
-    async (past: typeof history.past, future: typeof history.future) => {
-      const [hydratedPast, hydratedFuture] = await Promise.all([
-        hydrateHistorySteps(past),
-        hydrateHistorySteps(future),
-      ]);
-      history.restoreHistory(hydratedPast, hydratedFuture);
-    },
-    [history],
-  );
-
-  // Debounced history persistence on disk (~500ms after stack mutations)
-  useEffect(() => {
-    const docId = history.document.id;
-    if (!docId) return;
-    const sig = `${docId}:${history.past.length}:${history.future.length}`;
-    if (lastSavedHistorySigRef.current === sig) return;
-    const timer = setTimeout(() => {
-      lastSavedHistorySigRef.current = sig;
-      persistHistoryStacks(docId, history.past, history.future).catch(warnHistoryPersistFailed);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [history.document.id, history.past, history.future, persistHistoryStacks, warnHistoryPersistFailed]);
-
-  const onSave = useCallback(async (opts?: { silent?: boolean }) => {
-    try {
-      const currentPast = history.past;
-      const currentFuture = history.future;
-      const serialized = await serializeDocumentImages(history.document);
-      const res = await api.canvasSave(serialized);
-      await persistHistoryStacks(history.document.id, currentPast, currentFuture).catch(warnHistoryPersistFailed);
-      const saved = normalizeDocument(res.document as CanvasDocument);
-      // Keep blob:/blobId in the editor; `saved` (data URLs) goes to cloud only.
-      const forEditor = applySavedDocumentKeepingImages(history.document, saved);
-      history.replaceDocument(forEditor);
-      history.restoreHistory(currentPast, currentFuture);
-      history.markSaved();
-      // Don't drop keep-local dismissal until local timestamp has beaten the remote we dismissed.
-      const dismissed = dismissedRemoteAtRef.current;
-      if (!dismissed || (saved.updatedAt && isNewer(saved.updatedAt, dismissed))) {
-        dismissedRemoteAtRef.current = null;
-      }
-      await refreshList();
-      if (!opts?.silent) flashStatus('Guardado');
-      queueCanvasCloudPush(saved);
-    } catch (err) {
-      if (!opts?.silent) flashStatus(err instanceof Error ? err.message : 'Error al guardar');
-    }
-  }, [history, refreshList, flashStatus, persistHistoryStacks, warnHistoryPersistFailed]);
+  const { onSave, onOpenDoc, onNew, onDuplicate, onDeleteDoc } = useDocumentLifecycle({
+    history,
+    refreshList,
+    flashStatus,
+    setStatus,
+    setSelectedIds,
+    setPageIndex,
+    setDocs,
+    resetViewportPan,
+    dismissedRemoteAtRef,
+    historyReadyRef,
+    restoreGenerationRef,
+  });
 
   const setPageLayers = (layers: CanvasLayer[]) => {
     history.setDocument(syncImagesPerPage(setActivePageLayers(history.document, pageIndex, layers)));
@@ -466,27 +399,43 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   // Capture rename baseline near other dirty signals so openDirtyRef can
   // treat an in-progress rename as dirty (updateSilent alone does not).
   const renameBaselineRef = useRef<typeof history.document | null>(null);
-  openDirtyRef.current = isOpenDocumentDirty(
-    history.hasUnsavedEditsRef.current,
-    panelBaselineRef.current != null,
-    gestureBaselineRef.current != null,
-    renameBaselineRef.current != null,
-  );
+  // Single composition of the dirty signals; onRenameCommit re-evaluates it
+  // eagerly (without waiting for a re-render) with the rename already sealed.
+  const computeOpenDirty = (renameActive: boolean) =>
+    isOpenDocumentDirty(
+      history.hasUnsavedEditsRef.current,
+      panelBaselineRef.current != null,
+      gestureBaselineRef.current != null,
+      renameActive,
+    );
+  openDirtyRef.current = computeOpenDirty(renameBaselineRef.current != null);
 
   // ─── Autosave + close protection ─────────────────────────────────────────
   // Debounced autosave: persist the open doc shortly after it becomes dirty so
   // unsaved edits are not lost on app/window close. A ref tracks in-flight
   // saves so a fast repeat never overlaps the IPC round-trip.
   const autosavePendingRef = useRef(false);
+  const autosaveRetryTimerRef = useRef<number | null>(null);
+  const flushAutosaveRef = useRef<() => void>(() => {});
   const flushAutosave = useCallback(() => {
     if (!history.hasUnsavedEditsRef.current) return;
     if (autosavePendingRef.current) return;
     autosavePendingRef.current = true;
+    // Reintenta solo si la revisión avanzó durante el save (hubo ediciones
+    // nuevas que el save en vuelo no cubrió). Un fallo sin cambios no arma
+    // un bucle de reintento: el siguiente edit (o hide/unmount) reintentará.
+    const revisionAtStart = history.revisionRef.current;
     onSave({ silent: true }).finally(() => {
       autosavePendingRef.current = false;
+      if (!history.hasUnsavedEditsRef.current) return;
+      if (history.revisionRef.current === revisionAtStart) return;
+      if (autosaveRetryTimerRef.current != null) return;
+      autosaveRetryTimerRef.current = window.setTimeout(() => {
+        autosaveRetryTimerRef.current = null;
+        flushAutosaveRef.current();
+      }, AUTOSAVE_DEBOUNCE_MS);
     });
-  }, [onSave]);
-  const flushAutosaveRef = useRef(flushAutosave);
+  }, [history.hasUnsavedEditsRef, history.revisionRef, onSave]);
   flushAutosaveRef.current = flushAutosave;
 
   useEffect(() => {
@@ -506,7 +455,13 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   }, [active]);
 
   // Flush on unmount so a dirty open tab does not lose the last debounce window.
-  useEffect(() => () => flushAutosaveRef.current(), []);
+  useEffect(
+    () => () => {
+      if (autosaveRetryTimerRef.current != null) window.clearTimeout(autosaveRetryTimerRef.current);
+      flushAutosaveRef.current();
+    },
+    [],
+  );
 
   const clipboardCoordinatorRef = useRef<ReturnType<typeof createClipboardCopyCoordinator> | null>(null);
   if (!clipboardCoordinatorRef.current) {
@@ -576,27 +531,23 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   }, [cancelPageLayersGesture, onPanelCommitLive, panelBaselineRef]);
 
   /** Undo/redo: cancel mid-gesture (revert) instead of committing then undoing. */
-  const runUndo = useCallback(() => {
-    if (gestureBaselineRef.current) {
-      cancelPageLayersGesture();
+  const runHistoryOp = useCallback(
+    (op: 'undo' | 'redo') => {
+      if (gestureBaselineRef.current) {
+        cancelPageLayersGesture();
+        setGestureAbortToken((n) => n + 1);
+        return;
+      }
+      if (panelBaselineRef.current) onPanelCommitLive();
       setGestureAbortToken((n) => n + 1);
-      return;
-    }
-    if (panelBaselineRef.current) onPanelCommitLive();
-    setGestureAbortToken((n) => n + 1);
-    history.undo();
-  }, [cancelPageLayersGesture, gestureBaselineRef, history, onPanelCommitLive, panelBaselineRef]);
+      if (op === 'undo') history.undo();
+      else history.redo();
+    },
+    [cancelPageLayersGesture, gestureBaselineRef, history, onPanelCommitLive, panelBaselineRef],
+  );
 
-  const runRedo = useCallback(() => {
-    if (gestureBaselineRef.current) {
-      cancelPageLayersGesture();
-      setGestureAbortToken((n) => n + 1);
-      return;
-    }
-    if (panelBaselineRef.current) onPanelCommitLive();
-    setGestureAbortToken((n) => n + 1);
-    history.redo();
-  }, [cancelPageLayersGesture, gestureBaselineRef, history, onPanelCommitLive, panelBaselineRef]);
+  const runUndo = useCallback(() => runHistoryOp('undo'), [runHistoryOp]);
+  const runRedo = useCallback(() => runHistoryOp('redo'), [runHistoryOp]);
 
   const leftPanelOpenRef = useRef(leftPanelOpen);
   const rightPanelOpenRef = useRef(rightPanelOpen);
@@ -1242,111 +1193,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     flashStatus(`Capa «${layer.name}» creada`, 1500);
   };
 
-  const onDuplicate = async () => {
-    await withDocSwitchLock(async () => {
-      try {
-        const savedRes = await api.canvasSave(await serializeDocumentImages(history.document));
-        await persistHistoryStacks(history.document.id, history.past, history.future).catch(warnHistoryPersistFailed);
-        queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
-        const res = await api.canvasDuplicate(history.document.id);
-        const dup = normalizeDocument(res.document as CanvasDocument);
-        history.replaceDocument(await hydrateDocumentImages(dup));
-        setSelectedIds([]);
-        setPageIndex(0);
-        await refreshList();
-        flashStatus('Duplicado');
-        queueCanvasCloudPush(dup);
-      } catch (err) {
-        setStatus(err instanceof Error ? err.message : 'Error al duplicar');
-      }
-    });
-  };
-
-  const onDeleteDoc = async () => {
-    await withDocSwitchLock(async () => {
-      try {
-        const deletedId = history.document.id;
-        await api.canvasDelete(deletedId);
-        queueCanvasCloudDelete(deletedId);
-        const list = await api.canvasList();
-        if (list.documents.length) {
-          const got = await api.canvasGet(list.documents[0].id);
-          const doc = normalizeDocument(got.document as CanvasDocument);
-          history.replaceDocument(await hydrateDocumentImages(doc));
-          try {
-            const hist = await api.canvasGetHistory(doc.id);
-            if (hist.past?.length || hist.future?.length) {
-              await restorePersistedHistory(hist.past, hist.future);
-            }
-          } catch {
-            // history restore is best-effort
-          }
-          setDocs(list.documents);
-        } else {
-          const created = await api.canvasCreate('Sin título');
-          const doc = normalizeDocument(created.document as CanvasDocument);
-          history.replaceDocument(await hydrateDocumentImages(doc));
-          setDocs([{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt }]);
-          queueCanvasCloudPush(doc);
-        }
-        setSelectedIds([]);
-        setPageIndex(0);
-        resetViewportPan();
-        flashStatus('Documento eliminado');
-      } catch (err) {
-        setStatus(err instanceof Error ? err.message : 'Error al eliminar');
-      }
-    });
-  };
-
-  const onOpenDoc = async (id: string) => {
-    if (!id || id === history.document.id) return;
-    await withDocSwitchLock(async () => {
-      try {
-        const savedRes = await api.canvasSave(await serializeDocumentImages(history.document));
-        await persistHistoryStacks(history.document.id, history.past, history.future).catch(warnHistoryPersistFailed);
-        queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
-        const res = await api.canvasGet(id);
-        const doc = normalizeDocument(res.document as CanvasDocument);
-        history.replaceDocument(await hydrateDocumentImages(doc));
-        try {
-          const hist = await api.canvasGetHistory(doc.id);
-          if (hist.past?.length || hist.future?.length) {
-            await restorePersistedHistory(hist.past, hist.future);
-          }
-        } catch {
-          // history restore is best-effort
-        }
-        setSelectedIds([]);
-        setPageIndex(0);
-        resetViewportPan();
-        await refreshList();
-      } catch (err) {
-        setStatus(err instanceof Error ? err.message : 'Error al abrir');
-      }
-    });
-  };
-
-  const onNew = async () => {
-    await withDocSwitchLock(async () => {
-      try {
-        const savedRes = await api.canvasSave(await serializeDocumentImages(history.document));
-        await persistHistoryStacks(history.document.id, history.past, history.future).catch(warnHistoryPersistFailed);
-        queueCanvasCloudPush(normalizeDocument(savedRes.document as CanvasDocument));
-        const res = await api.canvasCreate('Sin título');
-        const doc = normalizeDocument(res.document as CanvasDocument);
-        history.replaceDocument(await hydrateDocumentImages(doc));
-        setSelectedIds([]);
-        setPageIndex(0);
-        resetViewportPan();
-        await refreshList();
-        queueCanvasCloudPush(doc);
-      } catch (err) {
-        setStatus(err instanceof Error ? err.message : 'Error al crear');
-      }
-    });
-  };
-
   const onRename = (name: string) => {
     history.updateSilent({ ...history.document, name });
     setDocs((prev) => {
@@ -1368,12 +1214,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     const baseline = renameBaselineRef.current;
     renameBaselineRef.current = null;
     if (!baseline || baseline.name === history.document.name) {
-      openDirtyRef.current = isOpenDocumentDirty(
-        history.hasUnsavedEditsRef.current,
-        panelBaselineRef.current != null,
-        gestureBaselineRef.current != null,
-        false,
-      );
+      openDirtyRef.current = computeOpenDirty(false);
       return;
     }
     history.commitFromBaseline(baseline);

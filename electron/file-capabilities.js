@@ -212,8 +212,8 @@ async function cleanupAllStaged() {
 
 function _assertNoRawAbsolutePaths(params) {
   if (!params || typeof params !== 'object' || Array.isArray(params)) return;
-  const suspiciousKeys = new Set(['path','file_path','filepath','output_path','outputPath','output_folder','outputFolder','excelPath','pdf_path','stamp_path']);
-  const writeKeys = new Set(['output_path','outputpath','output_folder','outputfolder']);
+  const suspiciousKeys = new Set(['path','file_path','filepath','output_path','outputPath','output_dir','outputDir','output_folder','outputFolder','excelPath','pdf_path','stamp_path']);
+  const writeKeys = new Set(['output_path','outputpath','output_dir','outputdir','output_folder','outputfolder']);
   for (const [k, v] of Object.entries(params)) {
     if (typeof v !== 'string') continue;
     const lk = k.toLowerCase();

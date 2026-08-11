@@ -56,4 +56,47 @@ describe('TemplatePicker', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
   });
+
+  it('positions a capped menu next to the trigger, not pinned to the window top', () => {
+    const onChange = vi.fn();
+    const manyOptions = Array.from({ length: 74 }, (_, i) => ({
+      value: `id-${i}`,
+      label: `${i + 1}. id-${i}`,
+    }));
+
+    // jsdom mide 0/rect vacío: simular el primer paint real, donde el menú aún
+    // NO tiene maxHeight aplicado y mide su altura natural (~1500px).
+    const origGetRect = Element.prototype.getBoundingClientRect;
+    const offsetHeightDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
+    Element.prototype.getBoundingClientRect = function () {
+      return { top: 600, bottom: 624, left: 20, right: 220, width: 200, height: 24, x: 20, y: 600, toJSON: () => ({}) };
+    };
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get: () => 1500 });
+
+    try {
+      render(
+        <TemplatePicker
+          value=""
+          options={manyOptions}
+          onChange={onChange}
+          placeholder="-- Seleccionar Fila --"
+          aria-label="Elegir fila"
+          maxMenuHeight={280}
+        />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: /elegir fila/i }));
+      const listbox = screen.getByRole('listbox');
+      // Altura natural 1500px capada a 280px → abrir hacia arriba junto al
+      // trigger (600 - 280 - 4), NUNCA anclado arriba de la ventana (top=8).
+      expect(listbox.style.top).toBe('316px');
+      expect(listbox.style.maxHeight).toBe('280px');
+    } finally {
+      Element.prototype.getBoundingClientRect = origGetRect;
+      if (offsetHeightDesc) {
+        Object.defineProperty(HTMLElement.prototype, 'offsetHeight', offsetHeightDesc);
+      } else {
+        delete (HTMLElement.prototype as unknown as { offsetHeight?: unknown }).offsetHeight;
+      }
+    }
+  });
 });

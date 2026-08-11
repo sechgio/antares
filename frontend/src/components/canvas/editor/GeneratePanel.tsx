@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../../api';
 import type { PdfQuality } from '../../../utils/pdfAssets';
-import { imageToPdfSource } from '../../../utils/pdfAssets';
+import { imageToPdfSource, logoToPdfSource } from '../../../utils/pdfAssets';
 import type { CanvasDocument, CanvasDocumentSummary } from '../types';
 import { A4_HEIGHT_PX, A4_WIDTH_PX, normalizeDocument } from '../types';
 import { collectDemoFieldKeys } from '../runtime/demoFill';
-import { buildRowData, matchesRecordId, naturalSortByName, parseSpreadsheetFile } from '../runtime/excel';
+import { buildImagesByRecordId, buildRowData, normalizeRecordId, parseSpreadsheetFile } from '../runtime/excel';
 import { type FillContext } from '../runtime/renderHtml';
-import { planMultiPageDocuments, renderMultiPageHtml } from '../ops/pages';
+import { planMultiPageDocuments, renderMultiPageHtml } from '../runtime/planning';
 import { exportCanvasPdf } from '../export/exportPdf';
 import { selectGenerateRowIndices, type GenerateExportScope } from '../ops/generateExport';
 import GenerateSidebar from './GenerateSidebar';
@@ -40,27 +40,6 @@ function revokeBlobUrlsAfterPaint(urls: string[]): void {
   });
 }
 
-/** Persist blob:/http(s) URLs to data: for PDF export (cross-context safe). */
-async function toPersistentUrl(url: string | null): Promise<string | null> {
-  if (!url) return null;
-  if (url.startsWith('data:')) return url;
-  if (!url.startsWith('blob:') && !url.startsWith('http://') && !url.startsWith('https://')) {
-    return url;
-  }
-  try {
-    const res = await fetch(url);
-    const blob = await res.blob();
-    return await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ''));
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(blob);
-    });
-  } catch {
-    return url;
-  }
-}
-
 export default function GeneratePanel({
   document: designDocument,
 }: GeneratePanelProps) {
@@ -85,18 +64,23 @@ export default function GeneratePanel({
   const [images, setImages] = useState<File[]>([]);
   const [logoLeft, setLogoLeft] = useState<string | null>(null);
   const [logoRight, setLogoRight] = useState<string | null>(null);
+  /** Local Files behind the logo URLs — enable antares-local-image: tokens in RGB export. */
+  const [logoLeftFile, setLogoLeftFile] = useState<File | null>(null);
+  const [logoRightFile, setLogoRightFile] = useState<File | null>(null);
 
-  const setLogoLeftSafe = useCallback((url: string | null) => {
+  const setLogoLeftSafe = useCallback((url: string | null, file?: File | null) => {
     setLogoLeft((prev) => {
       if (prev && prev !== url) revokeIfBlobUrl(prev);
       return url;
     });
+    if (file !== undefined) setLogoLeftFile(file);
   }, []);
-  const setLogoRightSafe = useCallback((url: string | null) => {
+  const setLogoRightSafe = useCallback((url: string | null, file?: File | null) => {
     setLogoRight((prev) => {
       if (prev && prev !== url) revokeIfBlobUrl(prev);
       return url;
     });
+    if (file !== undefined) setLogoRightFile(file);
   }, []);
 
   const logoLeftRef = useRef(logoLeft);
@@ -163,6 +147,11 @@ export default function GeneratePanel({
     return [...byId.values()];
   }, [docs, designDocument.id, designDocument.name]);
 
+  const imagesByRecordId = useMemo(
+    () => buildImagesByRecordId(rows, idColumn, images),
+    [rows, idColumn, images],
+  );
+
   const stepStates = useMemo(
     () => [
       !!(logoLeft || logoRight),
@@ -205,9 +194,7 @@ export default function GeneratePanel({
         if (!row) continue;
         const data = buildRowData(row, mappings);
         const recordId = idColumn ? row[idColumn] : '';
-        const matched = images
-          .filter((f) => matchesRecordId(f.name, recordId))
-          .sort((a, b) => naturalSortByName(a.name, b.name));
+        const matched = imagesByRecordId.get(normalizeRecordId(recordId)) ?? [];
 
         let urls: string[];
         let logos: { logoLeft: string | null; logoRight: string | null };
@@ -222,10 +209,13 @@ export default function GeneratePanel({
           for (const s of sources) {
             if (s.token && s.localPath) localImagePaths[s.token] = s.localPath;
           }
-          // PDF path needs durable data: URLs — blob: is session-local.
+          // PDF path needs durable data: URLs — blob: is session-local. In RGB
+          // mode a local logo File becomes an antares-local-image: token
+          // (Electron expands it to file://) instead of base64 per page.
+          const useLocalTokens = colorMode === 'rgb';
           logos = {
-            logoLeft: await toPersistentUrl(logoLeft),
-            logoRight: await toPersistentUrl(logoRight),
+            logoLeft: await logoToPdfSource(logoLeft, logoLeftFile, 'logo-left', localImagePaths, useLocalTokens),
+            logoRight: await logoToPdfSource(logoRight, logoRightFile, 'logo-right', localImagePaths, useLocalTokens),
           };
         }
         const imageMeta = matched.map((f) => ({ name: f.name }));
@@ -233,7 +223,7 @@ export default function GeneratePanel({
       }
       return { contexts, localImagePaths };
     },
-    [rows, mappings, idColumn, images, logoLeft, logoRight],
+    [rows, mappings, idColumn, imagesByRecordId, logoLeft, logoRight, logoLeftFile, logoRightFile, colorMode],
   );
 
   const refreshPreview = useCallback(async () => {
@@ -302,6 +292,7 @@ export default function GeneratePanel({
         idColumn,
         requiresImages,
         images,
+        imagesByRecordId,
       });
       if (!indices.length) {
         setError(

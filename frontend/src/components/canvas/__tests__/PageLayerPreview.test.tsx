@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createLayer } from '../constants';
 import PageLayerPreview, { documentWithFill } from '../editor/PageLayerPreview';
-import { planMultiPageDocuments } from '../ops/pages';
+import { planMultiPageDocuments } from '../runtime/planning';
 import { createEmptyDocument, mm, newId } from '../types';
 import { render } from '@testing-library/react';
 import type { FillContext } from '../runtime/renderHtml';

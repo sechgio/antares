@@ -15,6 +15,9 @@ from typing import Any
 from backend.handlers.common import with_locale
 
 MAX_SPREADSHEET_BYTES = 100 * 1024 * 1024
+# Temp files for b64 inline payloads: unique per call (concurrency-safe) and
+# deleted by spreadsheet_parse after parsing — never left in %TEMP%.
+_INLINE_TEMP_PREFIX = "antares_inline_"
 MAX_SHEETS = 50
 MAX_CELLS = 2_000_000
 MAX_ZIP_RATIO = 100
@@ -128,17 +131,41 @@ def _validate_zip_bomb(path: Path) -> None:
         raise ValueError(msg) from exc
 
 
-def _resolve_input_path(params: dict[str, Any]) -> Path:
+def _resolve_input_path(params: dict[str, Any]) -> tuple[Path, bool]:
+    """Resuelve la entrada a parsear. Devuelve ``(path, is_temp)``: ``is_temp``
+    es True solo cuando el archivo fue creado aquí para un payload b64 inline
+    (el único que la llamada puede borrar tras parsear)."""
     # Resolved by Electron file-capabilities; fallback to legacy path for compat
     raw = params.get("_resolved_file_token_path") or params.get("file_token") or params.get("path") or params.get("excelPath")
     if not raw:
         # Also support b64 inline for panel-aviso-corte compat
         b64 = params.get("xlsx_b64")
         if b64:
+            estimated_size = (len(b64) * 3) // 4
+            if estimated_size > MAX_SPREADSHEET_BYTES:
+                msg = f"Archivo excede {MAX_SPREADSHEET_BYTES // (1024*1024)} MiB"
+                raise ValueError(msg)
             content = base64.b64decode(b64, validate=True)
-            p = Path(os.environ.get("TMP", "/tmp")) / f"antares_inline_{os.getpid()}.xlsx"
-            p.write_bytes(content)
-            return p
+            import tempfile
+
+            fd, tmp_name = tempfile.mkstemp(suffix=".xlsx", prefix=_INLINE_TEMP_PREFIX)
+            tmp_path = Path(tmp_name)
+            try:
+                try:
+                    os.write(fd, content)
+                finally:
+                    os.close(fd)
+            except Exception:
+                # Never leave a half-written temp file behind (e.g. disk full).
+                with contextlib.suppress(OSError):
+                    tmp_path.unlink(missing_ok=True)
+                raise
+            if tmp_path.stat().st_size == 0:
+                with contextlib.suppress(OSError):
+                    tmp_path.unlink(missing_ok=True)
+                msg = "El archivo está vacío"
+                raise ValueError(msg)
+            return tmp_path, True
         msg = "file_token o path requerido"
         raise ValueError(msg)
     p = Path(str(raw)).expanduser()
@@ -155,7 +182,7 @@ def _resolve_input_path(params: dict[str, Any]) -> Path:
     if p.stat().st_size == 0:
         msg = "El archivo está vacío"
         raise ValueError(msg)
-    return p
+    return p, False
 
 
 def _detect_format_from_content(path: Path) -> str | None:
@@ -287,14 +314,23 @@ def _parse_csv(path: Path) -> tuple[str, list[dict[str, Any]], list[str]]:
 
 @with_locale
 def spreadsheet_parse(params: dict[str, Any]) -> dict[str, Any]:
-    p = _resolve_input_path(params)
-    fmt, token_name = _resolve_format(params, p)
-    if fmt == "xlsx":
-        name, sheets, warnings = _parse_xlsx(p)
-    elif fmt == "xls":
-        name, sheets, warnings = _parse_xls(p)
-    else:
-        name, sheets, warnings = _parse_csv(p)
+    p, is_temp = _resolve_input_path(params)
+    try:
+        fmt, token_name = _resolve_format(params, p)
+        if fmt == "xlsx":
+            name, sheets, warnings = _parse_xlsx(p)
+        elif fmt == "xls":
+            name, sheets, warnings = _parse_xls(p)
+        else:
+            name, sheets, warnings = _parse_csv(p)
+    finally:
+        # b64 inline payloads live in a per-call temp file; never leave it in
+        # %TEMP%. Best-effort: a Windows lock must not fail a successful parse.
+        # Only delete files this handler created (is_temp) — a user file named
+        # like a temp must never be unlinked.
+        if is_temp:
+            with contextlib.suppress(OSError):
+                p.unlink(missing_ok=True)
     if token_name:
         name = token_name
     payload: dict[str, Any] = {"workbookName": name, "sheets": sheets, "warnings": warnings}

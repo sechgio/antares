@@ -7,6 +7,7 @@ import logging
 import math
 import os
 import re
+import tempfile
 import threading
 import time
 import urllib.error
@@ -18,7 +19,6 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, cast
 
-import pandas as pd
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from backend.utils.paths import resource_path, user_data_path
@@ -77,7 +77,7 @@ _font_cache: OrderedDict[tuple[str, int], ImageFont.FreeTypeFont | ImageFont.Ima
 _footer_cache: OrderedDict[tuple[int, int, int], Image.Image | None] = OrderedDict()
 _MAX_FONT_CACHE = 32
 _MAX_FOOTER_CACHE = 8
-_excel_cache: OrderedDict[str, tuple[float, pd.DataFrame, tuple[Any, ...]]] = OrderedDict()
+_excel_cache: OrderedDict[str, tuple[float, Any, tuple[Any, ...]]] = OrderedDict()
 _MAX_EXCEL_CACHE = 8
 # Single shared LRU for map screenshots. Validated vs working is tracked with a
 # side set so callers keep the same hit/miss semantics without retaining up to
@@ -158,7 +158,10 @@ _FOOTER_LAYOUT_VERSION = 2  # incrementar al cambiar footer_h o escalado de logo
 # Selection order: per-call payload ("provider") > env ANTARES_MAP_PROVIDER > "osm".
 # The Google key is read from payload ("google_maps_key") > env ANTARES_GOOGLE_MAPS_KEY.
 _MAP_ZOOM = 18
+_MIN_MAP_ZOOM = 0
+_MAX_MAP_ZOOM = 22
 _MAP_PROVIDER_DEFAULT = "osm"
+_MAX_CONSOLIDATED_PAGE_BYTES = 64 * 1024 * 1024
 # Cap the static-map fetch on its long side so OSM tile counts stay bounded and
 # Google's size limit is respected. The composition upsamples to full A4 with
 # LANCZOS, so the map stays sharp enough under the dimming overlay + pin.
@@ -615,7 +618,17 @@ def fetch_static_map(
         return _fallback_map_bytes(fetch_w, fetch_h)
 
 
-def _load_excel_data(excel_path: str) -> tuple[pd.DataFrame, tuple[Any, ...]]:
+def _is_na(value: Any) -> bool:
+    """True para None o NaN (numpy/pandas o float nativo). Sin importar pandas."""
+    if value is None:
+        return True
+    try:
+        return bool(math.isnan(float(value)))
+    except (TypeError, ValueError):
+        return False
+
+
+def _load_excel_data(excel_path: str) -> tuple[Any, tuple[Any, ...]]:
     """Load and parse Excel, reusing cache when the file has not changed."""
     mtime = os.path.getmtime(excel_path)
     with _cache_lock:
@@ -623,6 +636,11 @@ def _load_excel_data(excel_path: str) -> tuple[pd.DataFrame, tuple[Any, ...]]:
         if cached and cached[0] == mtime:
             _excel_cache.move_to_end(excel_path)
             return cached[1], cached[2]
+    # Local import: pandas/numpy stays out of the module top-level (deferred
+    # module — the first call must not pay ~400 ms of cold imports in the IPC
+    # reader thread; warm_pandas_sync pre-loads it before ready anyway).
+    import pandas as pd
+
     df = pd.read_excel(excel_path, engine="openpyxl")
     cols = _parse_excel_columns(df)
     with _cache_lock:
@@ -1031,7 +1049,14 @@ def generar_imagen_ubicacion(
 ) -> None:
     """Genera la imagen y la guarda como PDF."""
     final_img = render_imagen_ubicacion(datos, formato, map_opts=map_opts, custom_styles=custom_styles)
-    final_img.convert("RGB").save(output_path, "PDF", resolution=300.0)
+    try:
+        rgb = final_img.convert("RGB")
+        try:
+            rgb.save(output_path, "PDF", resolution=300.0)
+        finally:
+            rgb.close()
+    finally:
+        final_img.close()
 
 
 def _output_pdf_filename(cod_componente: str) -> str:
@@ -1056,7 +1081,7 @@ _COMBINED_COORD_URL_PATTERNS = (
 
 def _parse_combined_coord_value(val: Any) -> tuple[float | None, float | None]:
     """Extrae lat/lon de una celda combinada (par numérico o URL de mapas)."""
-    if val is None or pd.isna(val):
+    if _is_na(val):
         return None, None
     text = str(val).strip()
     if not text:
@@ -1086,11 +1111,11 @@ def _unique_pdf_filename(cod_componente: str, used_stems: dict[str, int]) -> str
 
 def _coerce_coord(value: Any) -> float | None:
     """Coerce una celda de lat/lon a ``float``, o ``None`` si falta o no es
-    numérica. ``pd.isna`` sólo rechaza NaN/None, no strings como ``"abc"``;
+    numérica. ``_is_na`` sólo rechaza None/NaN, no strings como ``"abc"``;
     sin este guard el worker llamaba ``float(datos['lat'])`` y crasheaba con
     ValueError, abortando el batch entero de ubicaciones.
     """
-    if value is None or pd.isna(value):
+    if _is_na(value):
         return None
     try:
         return float(value)
@@ -1125,10 +1150,10 @@ def _parse_excel_columns(df):
 def _extract_row_data(row, index, col_cod, col_dir, col_loc, col_dist, col_lat, col_lon):
     """Extrae los datos de una fila del DataFrame."""
     return {
-        'cod_componente': row[col_cod] if col_cod and pd.notna(row[col_cod]) else f"ID-{index+1}",
-        'direccion': row[col_dir] if col_dir and pd.notna(row[col_dir]) else "",
-        'localidad': row[col_loc] if col_loc and pd.notna(row[col_loc]) else "",
-        'distrito': row[col_dist] if col_dist and pd.notna(row[col_dist]) else "",
+        'cod_componente': row[col_cod] if col_cod and not _is_na(row[col_cod]) else f"ID-{index+1}",
+        'direccion': row[col_dir] if col_dir and not _is_na(row[col_dir]) else "",
+        'localidad': row[col_loc] if col_loc and not _is_na(row[col_loc]) else "",
+        'distrito': row[col_dist] if col_dist and not _is_na(row[col_dist]) else "",
         'lat': row[col_lat],
         'lon': row[col_lon]
     }
@@ -1141,11 +1166,7 @@ def handle_preview_ubicacion(payload: dict) -> dict:
         formato = payload.get("formato", "vertical")
         row_index = payload.get("rowIndex", 0)
         recompose_only = bool(payload.get("recomposeOnly", False))
-        map_opts = {
-            "provider": payload.get("provider"),
-            "zoom": payload.get("zoom"),
-            "api_key": payload.get("api_key")
-        }
+        map_opts = _map_opts_from_payload(payload)
         custom_styles = payload.get("customStyles") or None
 
         if not excel_path and not manual_data:
@@ -1227,6 +1248,22 @@ def handle_preview_ubicacion(payload: dict) -> dict:
 _CONSOLIDATED_PDF_NAME = "ubicaciones_consolidado.pdf"
 
 
+def _map_opts_from_payload(payload: dict) -> dict[str, Any]:
+    """Build validated per-request map options before any map work starts."""
+    zoom = payload.get("zoom")
+    if zoom is not None and (
+        isinstance(zoom, bool)
+        or not isinstance(zoom, int)
+        or not _MIN_MAP_ZOOM <= zoom <= _MAX_MAP_ZOOM
+    ):
+        raise ValueError(f"El zoom debe ser un entero entre {_MIN_MAP_ZOOM} y {_MAX_MAP_ZOOM}.")
+    return {
+        "provider": payload.get("provider"),
+        "zoom": zoom,
+        "api_key": payload.get("api_key"),
+    }
+
+
 def _consolidated_pdf_permission_error(path: str) -> PermissionError:
     return PermissionError(
         f"No se pudo guardar el PDF consolidado en '{path}'. "
@@ -1242,34 +1279,47 @@ def _is_destination_locked(err: OSError) -> bool:
     return winerror in (32, 33)  # ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION
 
 
-def _save_consolidated_pdf(images: list[Image.Image], output_dir: str) -> str:
-    """Guarda páginas como PDF multi-hoja. Escribe primero a un temporal y
-    reemplaza atómicamente para evitar PDFs parciales. Si el destino está
-    bloqueado (p. ej. abierto en Edge/Adobe), intenta un nombre alternativo."""
-    if not images:
+def _merge_consolidated_pdfs(page_paths: list[str], output_dir: str) -> str:
+    """Merge single-page temp PDFs into one multi-page PDF atomically.
+    Cleans up temp page files regardless of success or failure. The write and
+    finalize steps are the same ones production uses (incremental writer →
+    ``_save_consolidated_writer``), so the lock-fallback behavior is tested
+    through the real path."""
+    if not page_paths:
         raise ValueError("No hay imágenes para guardar en el PDF consolidado.")
+    try:
+        from pypdf import PdfWriter
 
-    first_img = images[0]
-    append_imgs = images[1:] if len(images) > 1 else []
+        writer = PdfWriter()
+        for page_path in page_paths:
+            writer.append(page_path)
+        return _save_consolidated_writer(writer, output_dir)
+    finally:
+        for page_path in page_paths:
+            with contextlib.suppress(OSError):
+                os.remove(page_path)
+
+
+def _save_consolidated_writer(writer: Any, output_dir: str) -> str:
+    """Write an already assembled PDF atomically with the usual lock fallback."""
     base_path = os.path.join(output_dir, _CONSOLIDATED_PDF_NAME)
     tmp_path = base_path + ".antares-tmp"
-
     try:
-        first_img.save(
-            tmp_path,
-            "PDF",
-            resolution=300.0,
-            save_all=True,
-            append_images=append_imgs,
-        )
+        with open(tmp_path, "wb") as f:
+            writer.write(f)
     except Exception:
-        if os.path.exists(tmp_path):
-            with contextlib.suppress(OSError):
-                os.remove(tmp_path)
+        with contextlib.suppress(OSError):
+            os.remove(tmp_path)
         raise
 
+    return _write_consolidated_pdf(tmp_path, base_path)
+
+
+def _write_consolidated_pdf(tmp_path: str, base_path: str) -> str:
+    """Mueve el PDF temporal a un nombre final; si el destino está bloqueado
+    (p. ej. abierto en Edge/Adobe), prueba alternativas numeradas."""
     candidates = [base_path] + [
-        os.path.join(output_dir, f"ubicaciones_consolidado_{n}.pdf")
+        os.path.join(os.path.dirname(base_path), f"ubicaciones_consolidado_{n}.pdf")
         for n in range(2, 51)
     ]
     last_err: OSError | None = None
@@ -1283,8 +1333,7 @@ def _save_consolidated_pdf(images: list[Image.Image], output_dir: str) -> str:
                 break
 
     with contextlib.suppress(OSError):
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
+        os.remove(tmp_path)
 
     if last_err is not None and _is_destination_locked(last_err):
         raise _consolidated_pdf_permission_error(base_path) from last_err
@@ -1300,11 +1349,7 @@ def handle_generar_ubicaciones(payload: dict) -> dict:
         output_dir = payload.get("outputDir")
         formato = payload.get("formato", "vertical")
         consolidado = payload.get("consolidado", False)
-        map_opts = {
-            "provider": payload.get("provider"),
-            "zoom": payload.get("zoom"),
-            "api_key": payload.get("api_key")
-        }
+        map_opts = _map_opts_from_payload(payload)
         custom_styles = payload.get("customStyles") or None
 
         if not output_dir or (not excel_path and not manual_data):
@@ -1323,7 +1368,7 @@ def handle_generar_ubicaciones(payload: dict) -> dict:
                 'lat': _coerce_coord(manual_data.get('lat')),
                 'lon': _coerce_coord(manual_data.get('lon')),
             }
-            if pd.notna(datos["lat"]) and pd.notna(datos["lon"]):
+            if not _is_na(datos["lat"]) and not _is_na(datos["lon"]):
                 valid_rows.append(datos)
         else:
             if not isinstance(excel_path, str) or not excel_path:
@@ -1353,17 +1398,34 @@ def handle_generar_ubicaciones(payload: dict) -> dict:
 
         generados = 0
         fallidos = 0
-        consolidated_images: list[Image.Image] = []
+        consolidated_writer: Any | None = None
+        consolidated_temp_dir: str | None = None
+        if consolidado:
+            from pypdf import PdfWriter
 
-        def _render_one(d: dict) -> tuple[bool, Image.Image | None]:
+            consolidated_writer = PdfWriter()
+
+        def _render_one(d: dict) -> tuple[bool, str | None]:
             """Renderiza (y guarda en no-consolidado) una fila. Devuelve
-            ``(ok, img)``: img sólo en modo consolidado y ok. Una fila que
-            falle se aísla (no aborta el batch vía ex.map)."""
+            ``(ok, page_path)``: page_path sólo en modo consolidado y ok.
+            Una fila que falle se aísla (no aborta el batch vía ex.map)."""
             logger.info(f"Procesando {d['cod_componente']} en {d['lat']}, {d['lon']}...")
             t0 = time.perf_counter()
             try:
                 if consolidado:
-                    return (True, render_imagen_ubicacion(d, formato, map_opts=map_opts, custom_styles=custom_styles).convert("RGB"))
+                    if consolidated_temp_dir is None:
+                        raise RuntimeError("No se pudo crear el directorio temporal del PDF consolidado.")
+                    fd, tmp_name = tempfile.mkstemp(
+                        suffix=".pdf", prefix="antares_page_", dir=consolidated_temp_dir,
+                    )
+                    os.close(fd)
+                    try:
+                        generar_imagen_ubicacion(d, tmp_name, formato, map_opts=map_opts, custom_styles=custom_styles)
+                        return (True, tmp_name)
+                    except Exception:
+                        with contextlib.suppress(OSError):
+                            os.remove(tmp_name)
+                        raise
                 out_path = os.path.join(output_dir, d["_out_filename"])
                 generar_imagen_ubicacion(d, out_path, formato, map_opts=map_opts, custom_styles=custom_styles)
                 return (True, None)
@@ -1377,25 +1439,41 @@ def handle_generar_ubicaciones(payload: dict) -> dict:
                     time.perf_counter() - t0,
                 )
 
-        if valid_rows:
-            max_workers = min(_MAX_RENDER_WORKERS, len(valid_rows))
-            # ThreadPoolExecutor local: map() preserva orden de submission → orden
-            # de páginas en el PDF consolidado. Las caches mutables ya están
-            # protegidas por _cache_lock (mismo patrón que el daemon de prefetch).
-            # _render_one atrapa sus propias excepciones y devuelve (False, None),
-            # así que una fila que falle no aborta las demás ni el consolidado.
-            with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="ubic-render") as ex:
-                for ok, img in ex.map(_render_one, valid_rows):
-                    if ok:
-                        generados += 1
-                        if consolidado and img is not None:
-                            consolidated_images.append(img)
-                    else:
-                        fallidos += 1
+        with tempfile.TemporaryDirectory(prefix="antares-ubicaciones-") as managed_temp_dir:
+            consolidated_temp_dir = managed_temp_dir if consolidado else None
+            if valid_rows:
+                max_workers = min(_MAX_RENDER_WORKERS, len(valid_rows))
+                # ThreadPoolExecutor local: map() preserva orden de submission → orden
+                # de páginas en el PDF consolidado. Las caches mutables ya están
+                # protegidas por _cache_lock (mismo patrón que el daemon de prefetch).
+                # _render_one atrapa sus propias excepciones y devuelve (False, None),
+                # así que una fila que falle no aborta las demás ni el consolidado.
+                with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="ubic-render") as ex:
+                    for ok, page_path in ex.map(_render_one, valid_rows):
+                        if not ok:
+                            fallidos += 1
+                            continue
+                        if consolidado and page_path is not None:
+                            try:
+                                if os.path.getsize(page_path) > _MAX_CONSOLIDATED_PAGE_BYTES:
+                                    raise OSError("La página temporal excede el límite de 64 MiB.")
+                                if consolidated_writer is None:
+                                    raise RuntimeError("El escritor del PDF consolidado no está disponible.")
+                                consolidated_writer.append(page_path)
+                            except Exception:
+                                logger.exception("Error agregando página al PDF consolidado; se omite")
+                                fallidos += 1
+                            else:
+                                generados += 1
+                            finally:
+                                with contextlib.suppress(OSError):
+                                    os.remove(page_path)
+                        else:
+                            generados += 1
 
         consolidated_path: str | None = None
-        if consolidado and consolidated_images:
-            consolidated_path = _save_consolidated_pdf(consolidated_images, output_dir)
+        if consolidado and generados and consolidated_writer is not None:
+            consolidated_path = _save_consolidated_writer(consolidated_writer, output_dir)
             logger.info(f"PDF consolidado generado: {consolidated_path} ({generados} paginas)")
 
         return {

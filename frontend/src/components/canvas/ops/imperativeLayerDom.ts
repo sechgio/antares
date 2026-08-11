@@ -1,16 +1,10 @@
-import { mmToScreenPx } from './drawHelpers';
 import { expandWithDescendants } from './layerTree';
-import { buildLayerTransform } from './layerStyle';
+import { layerGeometry } from './layerGeometry';
 import type { CanvasLayer } from '../types';
-import { parseMm } from '../types';
 
 /** Combined translate + rotate/flip transform matching LayerNode positioning. */
 export function layerDomTransform(layer: CanvasLayer, scale = 1): string {
-  const x = parseMm(layer.cssVars['--translate-x']);
-  const y = parseMm(layer.cssVars['--translate-y']);
-  const translate = `translate(${mmToScreenPx(x, scale)}px, ${mmToScreenPx(y, scale)}px)`;
-  const paintTx = buildLayerTransform(layer.cssVars);
-  return paintTx ? `${translate} ${paintTx}` : translate;
+  return layerGeometry(layer, scale).transform;
 }
 
 function forGestureLayerEls(
@@ -33,6 +27,7 @@ function forGestureLayerEls(
 /**
  * Write live drag positions to the DOM without a React commit.
  * Touches selection roots and descendants (same set as moveSelection).
+ * Geometry comes from the shared contract (transform + transform-origin).
  */
 export function applyLayerDomTransforms(
   root: HTMLElement,
@@ -43,7 +38,9 @@ export function applyLayerDomTransforms(
   const scale = options?.scale ?? 1;
   const willChange = options?.willChange ?? true;
   forGestureLayerEls(root, layers, ids, (el, layer) => {
-    el.style.transform = layerDomTransform(layer, scale);
+    const g = layerGeometry(layer, scale);
+    el.style.transform = g.transform;
+    if (g.transformOrigin) el.style.transformOrigin = g.transformOrigin;
     if (willChange) el.style.willChange = 'transform';
   });
 }
@@ -61,11 +58,11 @@ export function applyLayerDomGeometry(
   const scale = options?.scale ?? 1;
   const willChange = options?.willChange ?? true;
   forGestureLayerEls(root, layers, ids, (el, layer) => {
-    const w = parseMm(layer.cssVars['--width'], 10);
-    const h = parseMm(layer.cssVars['--height'], 10);
-    el.style.transform = layerDomTransform(layer, scale);
-    el.style.width = `${mmToScreenPx(w, scale)}px`;
-    el.style.height = `${mmToScreenPx(h, scale)}px`;
+    const g = layerGeometry(layer, scale);
+    el.style.transform = g.transform;
+    if (g.transformOrigin) el.style.transformOrigin = g.transformOrigin;
+    el.style.width = `${g.widthPx}px`;
+    el.style.height = `${g.heightPx}px`;
     if (willChange) el.style.willChange = 'transform';
   });
 }

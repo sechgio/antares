@@ -1,12 +1,5 @@
 const crypto = require('crypto');
-const { loadTokens, saveTokens, clearTokens } = require('./autoimg-token-storage');
-const { loadSheetConfig, saveSheetConfig } = require('./autoimg-sheet-storage');
-const {
-  readSecureJson,
-  writeSecureJson,
-  clearSecureJson,
-  migratePlaintextJson,
-} = require('./autoimg-secure-storage');
+const store = require('./autoimg-user-store');
 const { maskClientId } = require('./autoimg-security');
 const { fetchWithRetry } = require('./autoimg-google-fetch');
 const { AUTOIMG_SHEET_TABS, listMissingAutoImgTabs } = require('./autoimg-sheet-rows');
@@ -22,9 +15,6 @@ const {
   maskEmail,
   onActiveUserChange,
 } = require('./autoimg-user-scope');
-
-const OAUTH_CONFIG_FILE = 'autoimg-oauth-config.json';
-const OAUTH_CONFIG_NS = 'oauth';
 
 const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
@@ -81,15 +71,8 @@ onActiveUserChange(() => {
 });
 
 function _loadOAuthConfigFromDisk() {
-  migratePlaintextJson(OAUTH_CONFIG_FILE, OAUTH_CONFIG_NS, (raw) => (
-    typeof raw.client_secret === 'string' || typeof raw.clientSecret === 'string'
-  ));
-  const cfg = readSecureJson(OAUTH_CONFIG_FILE, OAUTH_CONFIG_NS);
-  if (!cfg) return { clientId: '', clientSecret: '' };
-  return {
-    clientId: cfg.client_id || cfg.clientId || '',
-    clientSecret: cfg.client_secret || cfg.clientSecret || '',
-  };
+  // Cifrado, migración plaintext→sealed y paths viven en el store consolidado.
+  return store.loadOAuthConfigFromDisk();
 }
 
 function getOAuthConfig() {
@@ -102,13 +85,8 @@ function getOAuthConfig() {
 }
 
 function saveOAuthConfig(clientId, clientSecret) {
-  const id = String(clientId || '').trim();
-  const secret = String(clientSecret || '').trim();
-  if (!id || id.length < 12) throw new Error('Client ID inválido');
-  _validateClientId(id);
-  if (!secret || secret.length < 8) throw new Error('Client Secret inválido');
-  writeSecureJson(OAUTH_CONFIG_FILE, OAUTH_CONFIG_NS, { client_id: id, client_secret: secret });
-  return { success: true };
+  // Validación y cifrado viven en el store consolidado.
+  return store.saveOAuthConfig(clientId, clientSecret);
 }
 
 function getOAuthConfigStatus() {
@@ -132,7 +110,7 @@ function _requireConfig() {
 }
 
 function _clearSessionTokens() {
-  clearTokens();
+  store.clearTokens();
 }
 
 async function _refreshAccessToken(tokens) {
@@ -164,12 +142,12 @@ async function _refreshAccessToken(tokens) {
     refresh_token: data.refresh_token || tokens.refresh_token,
     expiry_date: Date.now() + (data.expires_in || 3600) * 1000,
   };
-  saveTokens(updated);
+  store.saveTokens(updated);
   return updated;
 }
 
 async function getValidTokens() {
-  let tokens = loadTokens();
+  let tokens = store.loadTokens();
   if (!tokens) return null;
 
   const hasAccess = Boolean(tokens.access_token);
@@ -290,7 +268,7 @@ async function exchangeCode(code, redirectUri) {
     throw new Error(`Error OAuth: ${errBody}`);
   }
   const data = await res.json();
-  const previous = loadTokens() || {};
+  const previous = store.loadTokens() || {};
   const tokens = {
     access_token: data.access_token,
     // Re-auth sometimes omits refresh_token; keep prior only if still present in response path.
@@ -303,29 +281,33 @@ async function exchangeCode(code, redirectUri) {
       'Google no devolvió un refresh token. Revoca el acceso de la app en myaccount.google.com/permissions y vuelve a conectar.',
     );
   }
-  // Save under anonymous scope first, then bind to Google email (per-user storage).
-  saveTokens(tokens);
-  await _bindSessionToGoogleUser(tokens);
+  // Resolver la identidad de Google ANTES de persistir: guardar bajo el scope
+  // del usuario activo anterior pisaría los tokens de la cuenta conectada
+  // previamente (cuenta A al conectar cuenta B). Con el email conocido, el
+  // guardado cae directamente en el almacén de la cuenta correcta.
+  const email = await _resolveGoogleEmail(tokens.access_token);
+  if (!email) {
+    throw new Error(
+      'No se pudo identificar la cuenta de Google. Verifica tu conexión e intenta conectar de nuevo.',
+    );
+  }
+  setActiveUser(email);
+  store.saveTokens(tokens);
+  store.clearTokensLegacyPaths();
   return tokens;
 }
 
-/** Resuelve email de Google y mueve tokens/prefs al almacén de ese usuario. */
-async function _bindSessionToGoogleUser(tokens) {
-  if (!tokens?.access_token) return null;
+/** Resuelve el email de la cuenta autorizada sin persistir nada. */
+async function _resolveGoogleEmail(accessToken) {
+  if (!accessToken) return null;
   try {
-    const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    const res = await fetchWithRetry('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!res.ok) return null;
     const info = await res.json();
-    const email = info?.email;
-    if (!email) return null;
-    setActiveUser(email);
-    // Re-write tokens under user-scoped path; wipe anonymous leftover.
-    saveTokens(tokens);
-    clearSecureJson('autoimg/anonymous/tokens.json');
-    clearSecureJson('autoimg-tokens.json');
-    return email;
+    const email = info && info.email;
+    return typeof email === 'string' && email ? email : null;
   } catch {
     return null;
   }
@@ -346,7 +328,7 @@ async function getAuthStatus() {
     if (email) {
       setActiveUser(email);
       // Ensure tokens live under this user (covers process restart with only tokens loaded)
-      saveTokens({
+      store.saveTokens({
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
         expiry_date: tokens.expiry_date,
@@ -364,7 +346,7 @@ async function getAuthStatus() {
 
 async function revokeAuth() {
   cancelBrowserOAuthFlow();
-  const tokens = loadTokens();
+  const tokens = store.loadTokens();
   if (tokens?.access_token) {
     await fetch('https://oauth2.googleapis.com/revoke', {
       method: 'POST',
@@ -373,7 +355,7 @@ async function revokeAuth() {
     }).catch(() => {});
   }
   // Solo tokens del usuario activo. Sheet/carpetas quedan en autoimg/users/<hash>/.
-  clearTokens();
+  store.clearTokens();
   clearActiveUser();
   _sheetId = null;
   _sheetMeta = null;
@@ -464,7 +446,7 @@ async function openSpreadsheet(rawId) {
   _sheetId = sheetId;
   _sheetMeta = data;
   // Persist locally — survives logout / token revoke / app restart
-  saveSheetConfig(sheetId, name);
+  store.saveSheetConfig(sheetId, name);
   const { created_tabs } = await ensureAutoImgTabs();
   return {
     success: true,
@@ -476,7 +458,7 @@ async function openSpreadsheet(rawId) {
 }
 
 function getStoredSheetConfig() {
-  const stored = loadSheetConfig();
+  const stored = store.loadSheetConfig();
   return {
     sheet_id: _sheetId || stored.sheet_id || '',
     name: _sheetMeta?.properties?.title || stored.name || '',
@@ -493,7 +475,7 @@ async function restorePersistedSheet() {
     }
     return getStoredSheetConfig();
   }
-  const stored = loadSheetConfig();
+  const stored = store.loadSheetConfig();
   if (!stored.sheet_id) return getStoredSheetConfig();
   const tokens = await getValidTokens();
   if (!tokens) return getStoredSheetConfig();

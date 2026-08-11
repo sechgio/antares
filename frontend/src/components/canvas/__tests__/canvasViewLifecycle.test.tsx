@@ -5,7 +5,7 @@
  * save-on-switch, history debounce, and sync conflict without mounting Artboard.
  * LeftSidebar + TopBar + SyncConflictBar stay real for the UI paths under test.
  */
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEmptyDocument, type CanvasDocument } from '../types';
 
@@ -103,6 +103,7 @@ vi.mock('../editor/GeneratePanel', () => ({
 
 import { api } from '../../../api';
 import CanvasView from '../CanvasView';
+import { useCanvasBootstrap } from '../hooks/useCanvasBootstrap';
 import { queueCanvasCloudPush } from '../sync/cloudQueue';
 
 function makeDoc(id: string, name = id): CanvasDocument {
@@ -158,6 +159,89 @@ describe('CanvasView lifecycle', () => {
       expect(api.canvasList).toHaveBeenCalled();
     });
   }
+
+  it('skips bootstrap history when the active document changes before it resolves', async () => {
+    let resolveHistory: (value: { past: CanvasDocument[]; future: CanvasDocument[] }) => void = () => {};
+    const currentDocumentRef = { current: docA };
+    const currentRevisionRef = { current: 0 };
+    const restoreHistory = vi.fn();
+    vi.mocked(api.canvasGetHistory).mockImplementation(
+      () => new Promise((resolve) => {
+        resolveHistory = resolve;
+      }),
+    );
+
+    renderHook(() =>
+      useCanvasBootstrap({
+        replaceDocument: (document) => {
+          currentDocumentRef.current = document;
+          currentRevisionRef.current = 1;
+        },
+        restoreHistory,
+        historyReadyRef: { current: false },
+        restoreGenerationRef: { current: 0 },
+        currentDocumentRef,
+        currentRevisionRef,
+        setDocs: vi.fn(),
+        setLoading: vi.fn(),
+        runCloudSync: vi.fn(async () => {}),
+      }),
+    );
+    await waitFor(() => {
+      expect(api.canvasGetHistory).toHaveBeenCalledWith(docA.id);
+    });
+
+    currentDocumentRef.current = docB;
+    currentRevisionRef.current = 2;
+    await act(async () => {
+      resolveHistory({ past: [{ ...docA, name: 'A undo state' }], future: [] });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(restoreHistory).not.toHaveBeenCalled();
+  });
+
+  it('skips bootstrap history when the active document revision changes before it resolves', async () => {
+    let resolveHistory: (value: { past: CanvasDocument[]; future: CanvasDocument[] }) => void = () => {};
+    const currentDocumentRef = { current: docA };
+    const currentRevisionRef = { current: 0 };
+    const restoreHistory = vi.fn();
+    vi.mocked(api.canvasGetHistory).mockImplementation(
+      () => new Promise((resolve) => {
+        resolveHistory = resolve;
+      }),
+    );
+
+    renderHook(() =>
+      useCanvasBootstrap({
+        replaceDocument: (document) => {
+          currentDocumentRef.current = document;
+          currentRevisionRef.current = 1;
+        },
+        restoreHistory,
+        historyReadyRef: { current: false },
+        restoreGenerationRef: { current: 0 },
+        currentDocumentRef,
+        currentRevisionRef,
+        setDocs: vi.fn(),
+        setLoading: vi.fn(),
+        runCloudSync: vi.fn(async () => {}),
+      }),
+    );
+    await waitFor(() => {
+      expect(api.canvasGetHistory).toHaveBeenCalledWith(docA.id);
+    });
+
+    currentRevisionRef.current = 2;
+    await act(async () => {
+      resolveHistory({ past: [{ ...docA, name: 'A undo state' }], future: [] });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(restoreHistory).not.toHaveBeenCalled();
+  });
 
   it('smoke: renders without throwing', async () => {
     await renderReady();
@@ -222,6 +306,53 @@ describe('CanvasView lifecycle', () => {
     });
     expect(callOrder[0]?.startsWith('save:')).toBe(true);
     expect(callOrder.indexOf('create')).toBeGreaterThan(callOrder.findIndex((c) => c.startsWith('save:')));
+  });
+
+  it('waits for bootstrap history restoration before persisting it', async () => {
+    let resolveGet: (value: { document: CanvasDocument }) => void = () => {};
+    let resolveHistory: (value: { past: CanvasDocument[]; future: CanvasDocument[] }) => void = () => {};
+    const restoredPast = [{ ...docA, name: 'Restored undo state' }];
+    vi.mocked(api.canvasGet).mockImplementation(
+      () => new Promise((resolve) => {
+        resolveGet = resolve;
+      }),
+    );
+    vi.mocked(api.canvasGetHistory).mockImplementation(
+      () => new Promise((resolve) => {
+        resolveHistory = resolve;
+      }),
+    );
+
+    render(<CanvasView active />);
+    await waitFor(() => {
+      expect(api.canvasGet).toHaveBeenCalledWith(docA.id);
+    });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+    await act(async () => {
+      resolveGet({ document: docA });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(api.canvasGetHistory).toHaveBeenCalledWith(docA.id);
+    vi.mocked(api.canvasSaveHistory).mockClear();
+
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+      await Promise.resolve();
+    });
+    expect(api.canvasSaveHistory).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveHistory({ past: restoredPast, future: [] });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+      await Promise.resolve();
+    });
+    expect(api.canvasSaveHistory).toHaveBeenCalledWith(docA.id, restoredPast, []);
   });
 
   it('debounces canvasSaveHistory 500ms and skips when signature unchanged', async () => {
@@ -417,6 +548,109 @@ describe('CanvasView lifecycle', () => {
         await Promise.resolve();
       });
       expect(api.canvasSave).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('retries autosave after an edit occurs during an in-flight save', async () => {
+    let resolveSave: (value: { document: CanvasDocument }) => void = () => {};
+    await renderReady();
+    vi.mocked(api.canvasSave).mockImplementation(
+      () => new Promise((resolve) => {
+        resolveSave = resolve;
+      }),
+    );
+    vi.mocked(api.canvasSave).mockClear();
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByLabelText('Añadir página'));
+      await act(async () => {
+        vi.advanceTimersByTime(1200);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(api.canvasSave).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(screen.getByLabelText('Añadir página'));
+      await act(async () => {
+        resolveSave({ document: docA });
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        vi.advanceTimersByTime(1199);
+      });
+      expect(api.canvasSave).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        vi.advanceTimersByTime(1);
+        await Promise.resolve();
+      });
+      expect(api.canvasSave).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not retry autosave when a save fails without new edits', async () => {
+    await renderReady();
+    vi.mocked(api.canvasSave).mockRejectedValue(new Error('backend down'));
+    vi.mocked(api.canvasSave).mockClear();
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByLabelText('Añadir página'));
+      await act(async () => {
+        vi.advanceTimersByTime(1200);
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(api.canvasSave).toHaveBeenCalledTimes(1);
+
+      // Sin ediciones nuevas, un save fallido no debe armar reintentos.
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+        await Promise.resolve();
+      });
+      expect(api.canvasSave).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not re-persist history right after a save that already persisted it', async () => {
+    await renderReady();
+    vi.mocked(api.canvasSaveHistory).mockClear();
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByLabelText('Añadir página'));
+
+      // Debounce del historial (500ms) → primera persistencia.
+      await act(async () => {
+        vi.advanceTimersByTime(500);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(vi.mocked(api.canvasSaveHistory).mock.calls.length).toBeGreaterThanOrEqual(1);
+
+      // Autosave (1200ms) → onSave persiste las stacks y marca el sig.
+      await act(async () => {
+        vi.advanceTimersByTime(700);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(api.canvasSave).toHaveBeenCalled();
+      const callsAfterSave = vi.mocked(api.canvasSaveHistory).mock.calls.length;
+
+      // Sin ediciones nuevas, el render post-save no debe disparar otra
+      // persistencia de historial (sig ya marcado por onSave).
+      await act(async () => {
+        vi.advanceTimersByTime(2000);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(vi.mocked(api.canvasSaveHistory).mock.calls.length).toBe(callsAfterSave);
     } finally {
       vi.useRealTimers();
     }

@@ -9,7 +9,7 @@ const {
   loadLocalFolders,
   saveRenameDest,
   loadRenameDest,
-} = require('./autoimg-local-prefs');
+} = require('./autoimg-user-store');
 const { onActiveUserChange } = require('./autoimg-user-scope');
 const {
   BD_IMG_HEADER,

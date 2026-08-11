@@ -21,9 +21,11 @@ const {
   scopedFilename,
   scopedNamespace,
 } = require('../electron/autoimg-user-scope');
-const { saveTokens, loadTokens, clearTokens } = require('../electron/autoimg-token-storage');
-const { saveSheetConfig, loadSheetConfig, clearSheetConfig } = require('../electron/autoimg-sheet-storage');
-const { saveLocalFolders, loadLocalFolders, clearLocalPrefs } = require('../electron/autoimg-local-prefs');
+const {
+  saveTokens, loadTokens, clearTokens,
+  saveSheetConfig, loadSheetConfig, clearSheetConfig,
+  saveLocalFolders, loadLocalFolders, clearLocalPrefs,
+} = require('../electron/autoimg-user-store');
 const { assertNoSecretInObject } = require('../electron/autoimg-security');
 
 function resetUser(email) {

@@ -246,6 +246,220 @@ class TestConvertirImagen:
             assert px[0] > 200 and px[1] < 80 and px[2] < 80
 
 
+class TestFastCopy:
+    """Fast-path byte-idéntico: mismo formato + calidad alta + sin transformaciones."""
+
+    def _make_jpeg(self, tmp_path, name="src.jpg", quality=95, exif: bytes | None = None):
+        ruta = tmp_path / name
+        img = Image.new("RGB", (64, 48), color=(10, 200, 30))
+        kwargs = {"quality": quality}
+        if exif is not None:
+            kwargs["exif"] = exif
+        img.save(ruta, "JPEG", **kwargs)
+        return ruta
+
+    def test_copia_byte_identica_jpeg_mismo_formato(self, tmp_path, monkeypatch) -> None:
+        """JPEG→JPEG q95 sin EXIF: copy2, sin decode+encode."""
+
+
+        origen = self._make_jpeg(tmp_path)
+        salida = tmp_path / "out.jpg"
+
+        save_calls: list = []
+        real_save = Image.Image.save
+
+        def spy_save(self, *args, **kwargs):
+            save_calls.append(1)
+            return real_save(self, *args, **kwargs)
+
+        monkeypatch.setattr(Image.Image, "save", spy_save)
+        convertir_imagen(origen, salida, "JPEG", calidad=95)
+        assert not save_calls, "fast-path must skip re-encode"
+        assert salida.read_bytes() == origen.read_bytes()
+
+    def test_copia_byte_identica_con_alias_jpg(self, tmp_path, monkeypatch) -> None:
+        """JPG→JPEG es el mismo formato real: copia."""
+
+
+        origen = self._make_jpeg(tmp_path, name="src.jpg")
+        salida = tmp_path / "out.jpg"
+        save_calls: list = []
+        real_save = Image.Image.save
+
+        def spy_save(self, *args, **kwargs):
+            save_calls.append(1)
+            return real_save(self, *args, **kwargs)
+
+        monkeypatch.setattr(Image.Image, "save", spy_save)
+        convertir_imagen(origen, salida, "JPG", calidad=95)
+        assert not save_calls
+        assert salida.read_bytes() == origen.read_bytes()
+
+    def test_no_fast_path_cuando_calidad_baja(self, tmp_path, monkeypatch) -> None:
+        """q80 pide compresión real: re-encode obligatorio."""
+
+
+        origen = self._make_jpeg(tmp_path, quality=95)
+        salida = tmp_path / "out.jpg"
+        save_calls: list = []
+        real_save = Image.Image.save
+
+        def spy_save(self, *args, **kwargs):
+            save_calls.append(1)
+            return real_save(self, *args, **kwargs)
+
+        monkeypatch.setattr(Image.Image, "save", spy_save)
+        convertir_imagen(origen, salida, "JPEG", calidad=80)
+        assert save_calls, "quality < 95 must re-encode"
+        assert salida.read_bytes() != origen.read_bytes()
+
+    def test_no_fast_path_con_resize(self, tmp_path, monkeypatch) -> None:
+
+
+        origen = self._make_jpeg(tmp_path)
+        salida = tmp_path / "out.jpg"
+        save_calls: list = []
+        real_save = Image.Image.save
+
+        def spy_save(self, *args, **kwargs):
+            save_calls.append(1)
+            return real_save(self, *args, **kwargs)
+
+        monkeypatch.setattr(Image.Image, "save", spy_save)
+        convertir_imagen(origen, salida, "JPEG", calidad=95, resize=(32, 24))
+        assert save_calls, "resize must re-encode"
+        with Image.open(salida) as out:
+            assert out.size == (32, 24)
+
+    def test_no_fast_path_con_optimize(self, tmp_path, monkeypatch) -> None:
+
+
+        origen = self._make_jpeg(tmp_path)
+        salida = tmp_path / "out.jpg"
+        save_calls: list = []
+        real_save = Image.Image.save
+
+        def spy_save(self, *args, **kwargs):
+            save_calls.append(1)
+            return real_save(self, *args, **kwargs)
+
+        monkeypatch.setattr(Image.Image, "save", spy_save)
+        convertir_imagen(origen, salida, "JPEG", calidad=95, optimize=True)
+        assert save_calls, "optimize=True must re-encode"
+
+    def test_no_fast_path_con_exif_y_keep_exif_false(self, tmp_path, monkeypatch) -> None:
+        """keep_exif=False + EXIF presente: el re-encode actual lo STRIPEA."""
+
+
+        origen = tmp_path / "con_exif.jpg"
+        img = Image.new("RGB", (10, 10))
+        exif = img.getexif()
+        exif[0x010F] = "TestMake"  # EXIF real: Make tag
+        img.save(origen, "JPEG", exif=exif)
+        with Image.open(origen) as src:
+            assert src.getexif(), "fixture must carry parseable EXIF"
+        salida = tmp_path / "out.jpg"
+        save_calls: list = []
+        real_save = Image.Image.save
+
+        def spy_save(self, *args, **kwargs):
+            save_calls.append(1)
+            return real_save(self, *args, **kwargs)
+
+        monkeypatch.setattr(Image.Image, "save", spy_save)
+        convertir_imagen(origen, salida, "JPEG", calidad=95, keep_exif=False)
+        assert save_calls, "EXIF strip contract requires re-encode"
+        with Image.open(salida) as out:
+            assert "exif" not in out.info
+
+    def test_fast_path_con_exif_y_keep_exif_true(self, tmp_path, monkeypatch) -> None:
+        """keep_exif=True + EXIF presente: copiar conserva el EXIF (contrato OK)."""
+
+
+        origen = tmp_path / "con_exif.jpg"
+        img = Image.new("RGB", (10, 10))
+        exif = img.getexif()
+        exif[0x010F] = "TestMake"  # EXIF real: Make tag
+        img.save(origen, "JPEG", exif=exif)
+        with Image.open(origen) as src:
+            assert src.getexif(), "fixture must carry parseable EXIF"
+        salida = tmp_path / "out.jpg"
+        save_calls: list = []
+        real_save = Image.Image.save
+
+        def spy_save(self, *args, **kwargs):
+            save_calls.append(1)
+            return real_save(self, *args, **kwargs)
+
+        monkeypatch.setattr(Image.Image, "save", spy_save)
+        convertir_imagen(origen, salida, "JPEG", calidad=95, keep_exif=True)
+        assert not save_calls
+        with Image.open(salida) as out:
+            assert "exif" in out.info
+        assert salida.read_bytes() == origen.read_bytes()
+
+    def test_no_fast_path_con_orientacion(self, tmp_path, monkeypatch) -> None:
+        """Orientation≠1 exige bake de píxeles: re-encode."""
+
+
+        origen = tmp_path / "oriented.jpg"
+        img = Image.new("RGB", (20, 10), color=(255, 0, 0))
+        exif = img.getexif()
+        exif[0x0112] = 6
+        img.save(origen, "JPEG", exif=exif)
+        salida = tmp_path / "out.jpg"
+
+        save_calls: list = []
+        real_save = Image.Image.save
+
+        def spy_save(self, *args, **kwargs):
+            save_calls.append(1)
+            return real_save(self, *args, **kwargs)
+
+        monkeypatch.setattr(Image.Image, "save", spy_save)
+        convertir_imagen(origen, salida, "JPEG", calidad=95)
+        assert save_calls, "oriented source must re-encode (bake pixels)"
+        with Image.open(salida) as out:
+            assert out.size == (10, 20)
+
+    def test_no_fast_path_png_a_jpeg(self, tmp_path, monkeypatch) -> None:
+        """Formatos distintos: siempre re-encode."""
+
+
+        origen = tmp_path / "src.png"
+        Image.new("RGB", (10, 10), color=(1, 2, 3)).save(origen)
+        salida = tmp_path / "out.jpg"
+        save_calls: list = []
+        real_save = Image.Image.save
+
+        def spy_save(self, *args, **kwargs):
+            save_calls.append(1)
+            return real_save(self, *args, **kwargs)
+
+        monkeypatch.setattr(Image.Image, "save", spy_save)
+        convertir_imagen(origen, salida, "JPEG", calidad=95)
+        assert save_calls
+
+    def test_fast_path_png_a_png(self, tmp_path, monkeypatch) -> None:
+        """PNG→PNG lossless: copiar es el resultado correcto (y más rápido)."""
+
+
+        origen = tmp_path / "src.png"
+        Image.new("RGB", (10, 10), color=(1, 2, 3)).save(origen)
+        salida = tmp_path / "out.png"
+        save_calls: list = []
+        real_save = Image.Image.save
+
+        def spy_save(self, *args, **kwargs):
+            save_calls.append(1)
+            return real_save(self, *args, **kwargs)
+
+        monkeypatch.setattr(Image.Image, "save", spy_save)
+        convertir_imagen(origen, salida, "PNG", calidad=95)
+        assert not save_calls
+        assert salida.read_bytes() == origen.read_bytes()
+
+
 class TestCopiarArchivo:
     def test_ensure_dir_false_skips_mkdir(self, imagen_rgb, tmp_path, monkeypatch) -> None:
         out_dir = tmp_path / "copy_dest"
