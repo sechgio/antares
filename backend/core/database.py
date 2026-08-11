@@ -385,7 +385,13 @@ def importar_excel(excel_path: str) -> dict[str, int]:
         DatabaseError: Si ocurre un error de base de datos.
     """
     try:
-        import pandas as pd  # type: ignore
+        # Cold import under the serialized-import guard: numpy (C extension)
+        # must never load concurrently with another C-extension import (e.g.
+        # rpds via history) or the process can deadlock on Windows.
+        from backend.core.import_guard import serialized_import
+
+        with serialized_import():
+            import pandas as pd  # type: ignore
     except ImportError as exc:
         msg = "pandas no está instalado. Ejecuta: pip install pandas openpyxl"
         raise ImportError(msg) from exc
@@ -829,7 +835,10 @@ def parse_id_rename_mapping_full(
         ImportError: Si pandas/openpyxl no están instalados.
     """
     try:
-        import pandas as pd  # type: ignore
+        from backend.core.import_guard import serialized_import
+
+        with serialized_import():
+            import pandas as pd  # type: ignore
     except ImportError as exc:
         msg = "pandas no está instalado. Ejecuta: pip install pandas openpyxl"
         raise ImportError(msg) from exc

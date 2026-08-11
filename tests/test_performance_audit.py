@@ -419,3 +419,107 @@ def test_fichas_get_all_uses_shallow_copy(tmp_path) -> None:
     got = db.get(created["id"])
     assert got is not None
     assert got["productos"] is not db._items[created["id"]]["productos"]
+
+
+def test_warm_prewarms_history_schema_and_pandas_sync() -> None:
+    """History schema warms post-ready; pandas/openpyxl pre-import BEFORE ready.
+
+    Without these: the first history_list pays ~250 ms of lazy DDL migration
+    and the first db_import serializes behind the post-ready daemon's import
+    chain (cold db_import measured at ~122 s under Python's global import
+    lock + serialized_import guard). pandas/openpyxl must be imported on the
+    main thread before the ready handshake (warm_pandas_sync), not in the
+    post-ready daemon.
+    """
+    import inspect
+
+    from backend.handlers import HandlerRegistry
+
+    post_ready = inspect.getsource(HandlerRegistry.warm_post_ready)
+    assert "_ensure_table" in post_ready
+    # pandas/openpyxl must NOT be re-imported by the post-ready daemon:
+    # that was the 122 s cold-db_import contention (warm held the
+    # serialized_import lock while loading numpy, worker waited).
+    post_ready_imports = [
+        ln.strip() for ln in post_ready.splitlines() if ln.strip().startswith("import ")
+    ]
+    assert not any("pandas" in ln or "openpyxl" in ln for ln in post_ready_imports)
+
+    pandas_sync = inspect.getsource(HandlerRegistry.warm_pandas_sync)
+    assert "import pandas" in pandas_sync
+    assert "import openpyxl" in pandas_sync
+
+
+def test_cold_imports_are_serialized_against_cextension_deadlock() -> None:
+    """C-extension cold-imports must run under serialized_import().
+
+    On Windows, two threads cold-importing C extensions (numpy via pandas in
+    db_import, rpds via jsonschema in history) can deadlock the whole process:
+    Python import lock x Windows loader lock (observed via py-spy). Every
+    cold-import path must go through the shared guard.
+    """
+    import inspect
+
+    from backend.core import database as db
+    from backend.handlers import history as history_handlers
+
+    import_source = inspect.getsource(db.importar_excel)
+    assert "serialized_import" in import_source
+    analyze_source = inspect.getsource(db.parse_id_rename_mapping_full)
+    assert "serialized_import" in analyze_source
+
+    handler_source = inspect.getsource(history_handlers)
+    assert "def _core_history" in handler_source
+    assert "with serialized_import():" in handler_source
+
+
+def test_cold_import_requests_wait_for_warm_critical(monkeypatch) -> None:
+    """Cold-import handlers must wait for WARM_CRITICAL_DONE before running.
+
+    The post-ready warm imports C extensions (numpy, rpds, Pillow, …); a
+    request cold-importing another C extension at the same time can deadlock
+    the process on Windows (Python import lock x loader lock). Methods that
+    cold-import must wait; shell methods and pure JSON canvas ops must not.
+    """
+    import backend.main as main
+    from backend.handlers import HandlerRegistry
+
+    assert "db_import" in main._WARM_WAIT_METHODS
+    assert "preview" in main._WARM_WAIT_METHODS
+    assert "technical_reports_render_html" in main._WARM_WAIT_METHODS
+    # Payload-heavy but import-free: must not wait behind the warm.
+    assert "canvas_save" not in main._WARM_WAIT_METHODS
+    assert "canvas_get" not in main._WARM_WAIT_METHODS
+    # Sync health probes must never wait.
+    assert "version" not in main._WARM_WAIT_METHODS
+    assert "process_status" not in main._WARM_WAIT_METHODS
+
+    # The warm thread releases the wait after its guarded imports.
+    import inspect
+
+    source = inspect.getsource(HandlerRegistry.warm_post_ready)
+    assert "WARM_CRITICAL_DONE.set()" in source
+
+    # Behavior: _dispatch waits for cold-import methods, not for others.
+    waited: list[float | None] = []
+
+    class FakeEvent:
+        def wait(self, timeout: float | None = None) -> bool:
+            waited.append(timeout)
+            return True
+
+    monkeypatch.setattr(main, "WARM_CRITICAL_DONE", FakeEvent())
+    responses: list[tuple] = []
+    monkeypatch.setattr(
+        main,
+        "send_response",
+        lambda result, msg_id, **kw: responses.append((result, msg_id)),
+    )
+
+    main._dispatch(lambda _p: {"ok": True}, {}, "w1", "db_import")
+    assert len(waited) == 1, "db_import must wait for the warm"
+    main._dispatch(lambda _p: {"ok": True}, {}, "w2", "version")
+    assert len(waited) == 1, "version must not wait for the warm"
+    main._dispatch(lambda _p: {"ok": True}, {}, "w3", "canvas_save")
+    assert len(waited) == 1, "canvas_save must not wait for the warm"
+    assert len(responses) == 3

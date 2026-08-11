@@ -20,6 +20,7 @@ import threading
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
+from backend.core.import_guard import serialized_import
 from backend.handlers.common import (
     process_state,
     reset_state,
@@ -29,6 +30,10 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
+
+# Set once the post-ready warm finishes its guarded cold imports. Requests
+# that cold-import C extensions wait on it (see backend.main._dispatch).
+WARM_CRITICAL_DONE = threading.Event()
 
 # Module paths eagerly imported by warm().
 _HANDLER_MODULES: tuple[str, ...] = (
@@ -150,7 +155,11 @@ class HandlerRegistry:
             with self._lock:
                 if mod_name in self._loaded_modules:
                     return
-            mod = importlib.import_module(mod_name)
+            # Serialized with other cold imports: a C-extension load racing
+            # another one can deadlock the process on Windows (Python import
+            # lock x loader lock), e.g. Pillow here vs numpy in db_import.
+            with serialized_import():
+                mod = importlib.import_module(mod_name)
             group = mod.HANDLERS
             with self._lock:
                 self._map.update(group)
@@ -169,18 +178,76 @@ class HandlerRegistry:
         """Load modules needed before the ready handshake (catalog + light shell)."""
         self.warm(_CORE_HANDLER_MODULES)
 
-    def warm_post_ready(self) -> None:
-        """Load canvas + conversion after ready so first convert/canvas use is warm."""
-        self.warm(_POST_READY_HANDLER_MODULES)
-        # Move the WeasyPrint cold cliff (~1-15 s first render) off the user's
-        # first PDF. Failures are non-fatal - PDF paths still lazy-import.
-        try:
-            from backend.utils.pdf_html import write_pdf_sanitized
+    def warm_pandas_sync(self) -> None:
+        """Pre-import pandas/openpyxl on the MAIN thread before the ready handshake.
 
-            write_pdf_sanitized("<!DOCTYPE html><html><body>warm</body></html>")
-            logger.info("WeasyPrint post-ready warm complete")
+        A cold ``import pandas`` in the heavy worker serializes behind the
+        post-ready daemon's import chain via Python's global import lock:
+        measured at ~122 s for the first ``db_import`` (worker waited on
+        ``serialized_import`` while the warm thread loaded numpy's DLL).
+        Importing pandas/openpyxl synchronously before ``ready`` costs
+        ~2-3 s of startup but makes the first db_import hit ``sys.modules``
+        instead of the lock. Failures are non-fatal - the lazy import in
+        ``importar_excel`` still retries with its own error message.
+        """
+        try:
+            with serialized_import():
+                # pandas first: it pulls numpy, which openpyxl then reuses.
+                import pandas  # noqa: F401
+                import openpyxl  # noqa: F401
+
+            logger.info("pandas/openpyxl pre-ready warm complete")
         except Exception:
-            logger.exception("WeasyPrint post-ready warm failed")
+            logger.exception("pandas/openpyxl pre-ready warm failed")
+
+    def warm_post_ready(self) -> None:
+        """Load canvas + conversion after ready so first convert/canvas use is warm.
+
+        Every cold-import block runs under ``serialized_import()``: two threads
+        loading C extensions at once can deadlock the process on Windows
+        (Python import lock x Windows loader lock - observed with numpy in the
+        heavy worker vs rpds here). Failures are non-fatal - the lazy paths in
+        the handlers still retry.
+        """
+        # Create the historial schema first (before the canvas/conversion
+        # imports) so the first Historial open does not pay the ~250 ms
+        # one-time lazy-migration cost (DDL + indexes + commit).
+        try:
+            with serialized_import():
+                from backend.core.history import _ensure_table
+
+                _ensure_table()
+            logger.info("history schema post-ready warm complete")
+        except Exception:
+            logger.exception("history schema post-ready warm failed")
+        # pandas/openpyxl are pre-imported synchronously before the ready
+        # handshake (warm_pandas_sync): a cold ``import pandas`` in the
+        # heavy worker serialized behind this daemon's import chain for
+        # ~122 s (Python import lock x serialized_import guard) on the
+        # first db_import. Never touch them again here.
+        try:
+            with serialized_import():
+                self.warm(_POST_READY_HANDLER_MODULES)
+        except Exception:
+            logger.exception("canvas/conversion post-ready warm failed")
+        # WeasyPrint: import under the guard (the cold cliff), render outside.
+        # The render must not hold the guard: it takes seconds and would
+        # stall every cold-import request waiting on WARM_CRITICAL_DONE.
+        write_pdf_sanitized = None
+        try:
+            with serialized_import():
+                from backend.utils.pdf_html import write_pdf_sanitized
+        except Exception:
+            logger.exception("WeasyPrint import warm failed")
+        # No more guarded cold imports from this thread: release requests
+        # that cold-import C extensions (db_import, renders, preview, …).
+        WARM_CRITICAL_DONE.set()
+        if write_pdf_sanitized is not None:
+            try:
+                write_pdf_sanitized("<!DOCTYPE html><html><body>warm</body></html>")
+                logger.info("WeasyPrint post-ready warm complete")
+            except Exception:
+                logger.exception("WeasyPrint post-ready warm failed")
 
     def warm_deferred(self) -> None:
         """Load remaining feature modules (opt-in via ANTARES_WARM_DEFERRED)."""

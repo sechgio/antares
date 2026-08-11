@@ -49,7 +49,7 @@ from backend.core.exceptions import AntaresBaseException, MethodNotFoundError
 from backend.core.plugins import load_plugins_from_dir
 from backend.core.repository import close_connection
 from backend.core.scheduler import SchedulerBusy, get_scheduler
-from backend.handlers import HANDLERS
+from backend.handlers import HANDLERS, WARM_CRITICAL_DONE
 from backend.ipc_protocol import _SKIP, read_message, send_notification, send_response
 from backend.utils.i18n import t
 
@@ -132,6 +132,17 @@ HEAVY_METHODS = {
     "canvas_save_history",
     "canvas_export_cmyk_pdf",
 }
+
+# Methods whose first call cold-imports C extensions (numpy via pandas,
+# weasyprint, PyMuPDF, reportlab, …). They wait for WARM_CRITICAL_DONE before
+# running so the cold import never overlaps the post-ready warm imports
+# (Windows: Python import lock x loader lock can deadlock the process).
+# canvas_get/save/save_history are excluded: they are payload-heavy but
+# import nothing (pure JSON/file I/O) and must not wait behind the warm.
+_WARM_WAIT_METHODS = frozenset(
+    HEAVY_METHODS - {"canvas_get", "canvas_save", "canvas_save_history"} | {"preview"}
+)
+_WARM_WAIT_TIMEOUT = 15.0
 
 # Handlers that must answer on the IPC reader thread. Health probes and UI
 # status polls must never wait behind a saturated ThreadPoolExecutor.
@@ -218,6 +229,13 @@ def _maybe_log_ipc_timing(method_name: str, elapsed_ms: float, *, ok: bool) -> N
 
 def _dispatch(handler, params, msg_id, method_name) -> None:
     """Run a handler in a worker thread and send its response back."""
+    # Cold C-extension imports (numpy via pandas, weasyprint, PyMuPDF, …)
+    # must never overlap the post-ready warm imports: on Windows two threads
+    # loading C extensions at once can deadlock the process (Python import
+    # lock x Windows loader lock). Wait for the critical warm to finish; the
+    # timeout is a safety valve so a broken warm cannot wedge requests.
+    if method_name in _WARM_WAIT_METHODS:
+        WARM_CRITICAL_DONE.wait(timeout=_WARM_WAIT_TIMEOUT)
     ipc_phase_telemetry.mark(msg_id, "dispatch_start")
     ipc_phase_telemetry.set_fields(msg_id, method=method_name)
     t0 = time.perf_counter()
@@ -246,6 +264,21 @@ def _log_future_exception(future: Future) -> None:
         logger.exception("Handler raised: %s", handler_exc)
 
 
+def _reject_submit(
+    msg_id: int,
+    method_name: str,
+    lane: str,
+    error: str,
+    rejected: str | None = None,
+) -> None:
+    """Responde a una petición que no pudo programarse y registra telemetría."""
+    fields: dict[str, object] = {"ok": False, "lane": lane, "method": method_name}
+    if rejected is not None:
+        fields["rejected"] = rejected
+    ipc_phase_telemetry.set_fields(msg_id, **fields)
+    send_response(None, msg_id, error=error)
+
+
 def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
     """Submit one handler onto the appropriate scheduler lane."""
     lane = "heavy" if method_name in HEAVY_METHODS else "light"
@@ -257,16 +290,25 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
             future = scheduler.submit_heavy(_dispatch, handler, params, msg_id, method_name)
         else:
             future = scheduler.submit_light(_dispatch, handler, params, msg_id, method_name)
-    except SchedulerBusy:
-        logger.warning("Heavy scheduler saturated while accepting %s: %s", method_name, scheduler.metrics())
-        ipc_phase_telemetry.set_fields(
-            msg_id,
-            rejected="heavy_queue_full",
-            ok=False,
-            lane=lane,
-            method=method_name,
+    except SchedulerBusy as exc:
+        reason = getattr(exc, "reason", "heavy_queue_full")
+        message = (
+            "Backend ocupado: cola de trabajo ligera llena"
+            if reason == "light_queue_full"
+            else "Backend ocupado: cola de trabajo pesada llena"
         )
-        send_response(None, msg_id, error="Backend ocupado: cola de trabajo pesada llena")
+        logger.warning("Scheduler saturated while accepting %s (%s): %s", method_name, reason, scheduler.metrics())
+        _reject_submit(
+            msg_id,
+            method_name,
+            lane,
+            message,
+            rejected=reason,
+        )
+        return None
+    except Exception:
+        logger.exception("Failed to submit %s to scheduler", method_name)
+        _reject_submit(msg_id, method_name, lane, "Backend no disponible: no se pudo programar la tarea")
         return None
     if future is not None:
         future.add_done_callback(_log_future_exception)
@@ -297,6 +339,13 @@ def main() -> None:
     # blocked on heavy imports. Deferred feature modules (sellador, ubicaciones,
     # fichas, …) stay lazy unless ANTARES_WARM_DEFERRED=1.
     HANDLERS.warm_core()
+    # Pre-import pandas/openpyxl synchronously BEFORE ready: a cold ``import
+    # pandas`` in the heavy worker serialized behind the post-ready daemon's
+    # import chain for ~122 s on the first db_import (Python import lock x
+    # serialized_import guard). Paying ~2-3 s here makes the first db_import
+    # hit sys.modules instead of the lock. Failures are non-fatal - the
+    # lazy import in importar_excel still retries.
+    HANDLERS.warm_pandas_sync()
     if os.environ.get("ANTARES_WARM_DEFERRED", "").strip().lower() in {"1", "true", "yes"}:
         HANDLERS.warm_deferred()
 
