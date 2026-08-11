@@ -110,10 +110,10 @@
         .title {
             flex: 1;
             text-align: center;
-            font-size: 13pt;
+            font-size: 15pt;
             font-weight: 700;
             text-transform: uppercase;
-            color: #333;
+            color: #0056b3;
         }
 
         /* === TOP INFO BAR === */
@@ -329,7 +329,7 @@
                 </svg>
                 {% endif %}
             </div>
-            <div class="title">PANEL FOTOGRÁFICO ANIEGOS</div>
+            <div class="title">PANEL FOTOGRÁFICO</div>
             <div class="logo" style="justify-content: flex-end;">
                 {% if logo_right %}
                 <img src="{{ logo_right }}" alt="Logo">
@@ -345,7 +345,7 @@
             <div class="info-item"><span class="info-label">CENTRO DE SERVICIOS:</span> {{ report.data.get('CENTRO',
                 '-') }}</div>
             <div class="info-item"><span class="info-label">NIS:</span> {{ report.data.get('NIS', '-') }}</div>
-            <div class="info-item"><span class="info-label">Nro OT:</span> {{ report.data.get('Nro OT', '-') }}</div>
+            <div class="info-item"><span class="info-label">SGIO:</span> {{ report.data.get('Nro OT', '-') }}</div>
         </div>
 
         <!-- 1.0 LOCALIZACION -->
