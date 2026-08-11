@@ -1,6 +1,7 @@
 import type { CanvasDocument } from '../types';
 import type { FillContext } from './renderHtml';
-import { renderMultiPageHtml, templateImagesPerPage } from '../ops/pages';
+import { renderMultiPageHtml } from './planning';
+import { templateImagesPerPage } from '../ops/pages';
 
 /** Realistic sample values for common field keys (case-insensitive). */
 const SAMPLE_BY_KEY: Record<string, string> = {

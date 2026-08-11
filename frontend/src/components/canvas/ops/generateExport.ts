@@ -1,4 +1,4 @@
-import { matchesRecordId } from '../runtime/excel';
+import { matchesRecordId, normalizeRecordId } from '../runtime/excel';
 
 export type GenerateExportScope = 'single' | 'all';
 
@@ -10,8 +10,9 @@ export function selectGenerateRowIndices(options: {
   idColumn: string;
   requiresImages: boolean;
   images: File[];
+  imagesByRecordId?: ReadonlyMap<string, File[]>;
 }): number[] {
-  const { rows, rowIndex, exportScope, idColumn, requiresImages, images } = options;
+  const { rows, rowIndex, exportScope, idColumn, requiresImages, images, imagesByRecordId } = options;
   if (!rows.length) return [];
 
   const rowHasImages = (row: Record<string, string>): boolean => {
@@ -19,6 +20,7 @@ export function selectGenerateRowIndices(options: {
     if (!idColumn) return false;
     const recordId = row[idColumn] || '';
     if (!recordId) return false;
+    if (imagesByRecordId) return (imagesByRecordId.get(normalizeRecordId(recordId))?.length ?? 0) > 0;
     return images.some((f) => matchesRecordId(f.name, recordId));
   };
 

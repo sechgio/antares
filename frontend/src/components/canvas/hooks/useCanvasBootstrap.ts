@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, type MutableRefObject } from 'react';
 import { api } from '../../../api';
 import { queueCanvasCloudPush } from '../sync/cloudQueue';
 import {
@@ -24,6 +24,14 @@ interface UseCanvasBootstrapOptions {
   replaceDocument: ReturnType<typeof useCanvasHistory>['replaceDocument'];
   /** Restore history stack (past and future) for the loaded document. */
   restoreHistory?: ReturnType<typeof useCanvasHistory>['restoreHistory'];
+  /** False while the replaced document awaits its persisted undo/redo history. */
+  historyReadyRef: MutableRefObject<boolean>;
+  /** Monotonic owner token for overlapping document-history restoration. */
+  restoreGenerationRef: MutableRefObject<number>;
+  /** Current document identity, updated synchronously by the history hook. */
+  currentDocumentRef: ReturnType<typeof useCanvasHistory>['documentRef'];
+  /** Current history revision, updated synchronously by the history hook. */
+  currentRevisionRef: ReturnType<typeof useCanvasHistory>['revisionRef'];
   /** Set the docs sidebar list. */
   setDocs: React.Dispatch<React.SetStateAction<CanvasDocumentSummary[]>>;
   /** Set the loading veil visibility. */
@@ -39,6 +47,10 @@ interface UseCanvasBootstrapOptions {
 export function useCanvasBootstrap({
   replaceDocument,
   restoreHistory,
+  historyReadyRef,
+  restoreGenerationRef,
+  currentDocumentRef,
+  currentRevisionRef,
   setDocs,
   setLoading,
   runCloudSync,
@@ -57,24 +69,43 @@ export function useCanvasBootstrap({
           if (!cancelled) {
             perfMark('get');
             const doc = normalizeDocument(got.document as CanvasDocument);
+            const restoreGeneration = ++restoreGenerationRef.current;
+            historyReadyRef.current = false;
             replaceDocument(await hydrateDocumentImages(doc));
+            const replacementId = currentDocumentRef.current.id;
+            const replacementRevision = currentRevisionRef.current;
             perfMark('replace');
             if (restoreHistory) {
               void (async () => {
                 try {
                   const hist = await api.canvasGetHistory(doc.id);
-                  if (!cancelled && (hist.past?.length || hist.future?.length)) {
+                  const isCurrentReplacement =
+                    currentDocumentRef.current.id === replacementId &&
+                    currentRevisionRef.current === replacementRevision;
+                  if (!cancelled && isCurrentReplacement && (hist.past?.length || hist.future?.length)) {
                     const [past, future] = await Promise.all([
                       hydrateHistorySteps(hist.past),
                       hydrateHistorySteps(hist.future),
                     ]);
-                    restoreHistory(past, future);
+                    if (
+                      !cancelled &&
+                      currentDocumentRef.current.id === replacementId &&
+                      currentRevisionRef.current === replacementRevision
+                    ) {
+                      restoreHistory(past, future);
+                    }
                   }
                   perfMark('history');
                 } catch {
                   // history restore is best-effort
+                } finally {
+                  if (restoreGenerationRef.current === restoreGeneration) {
+                    historyReadyRef.current = true;
+                  }
                 }
               })();
+            } else if (restoreGenerationRef.current === restoreGeneration) {
+              historyReadyRef.current = true;
             }
           }
         } else {
@@ -82,7 +113,12 @@ export function useCanvasBootstrap({
           if (!cancelled) {
             perfMark('get');
             const doc = normalizeDocument(created.document as CanvasDocument);
+            const restoreGeneration = ++restoreGenerationRef.current;
+            historyReadyRef.current = false;
             replaceDocument(await hydrateDocumentImages(doc));
+            if (restoreGenerationRef.current === restoreGeneration) {
+              historyReadyRef.current = true;
+            }
             setDocs([{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt }]);
             queueCanvasCloudPush(doc);
             perfMark('replace');
@@ -96,7 +132,12 @@ export function useCanvasBootstrap({
             const created = await api.canvasCreate('Sin título');
             if (!cancelled) {
               const doc = normalizeDocument(created.document as CanvasDocument);
+              const restoreGeneration = ++restoreGenerationRef.current;
+              historyReadyRef.current = false;
               replaceDocument(await hydrateDocumentImages(doc));
+              if (restoreGenerationRef.current === restoreGeneration) {
+                historyReadyRef.current = true;
+              }
               setDocs([{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt }]);
               queueCanvasCloudPush(doc);
               perfMark('replace');

@@ -38,6 +38,42 @@ export function naturalSortByName(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 }
 
+export function normalizeRecordId(recordId: string): string {
+  return String(recordId).trim().toLocaleLowerCase();
+}
+
+/** Build the image lookup once so previews and bulk export avoid rescanning every file per row. */
+export function buildImagesByRecordId(
+  rows: Record<string, string>[],
+  idColumn: string,
+  images: File[],
+): Map<string, File[]> {
+  const recordIds = new Set(
+    rows.map((row) => normalizeRecordId(row[idColumn] || '')).filter(Boolean),
+  );
+  const index = new Map<string, File[]>();
+  if (!idColumn || recordIds.size === 0) return index;
+
+  for (const image of images) {
+    const base = image.name.replace(/\.[^.]+$/, '');
+    const keys = new Set([normalizeRecordId(base)]);
+    const numbered = base.match(/^(.*)[-_]\d+$/);
+    if (numbered) keys.add(normalizeRecordId(numbered[1]));
+
+    for (const key of keys) {
+      if (!recordIds.has(key)) continue;
+      const matched = index.get(key);
+      if (matched) matched.push(image);
+      else index.set(key, [image]);
+    }
+  }
+
+  for (const matched of index.values()) {
+    matched.sort((a, b) => naturalSortByName(a.name, b.name));
+  }
+  return index;
+}
+
 export function buildRowData(
   row: Record<string, string>,
   mappings: Record<string, string>,

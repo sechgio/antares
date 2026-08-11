@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createLayer } from '../constants';
 import { cssVarsToStyleParts } from '../ops/layerStyle';
-import { renderMultiPageHtml } from '../ops/pages';
+import { renderMultiPageHtml } from '../runtime/planning';
 import { createEmptyDocument, mm, type CanvasLayer } from '../types';
 
 function docWithTextLayer(overrides: Partial<CanvasLayer['cssVars']> = {}): {

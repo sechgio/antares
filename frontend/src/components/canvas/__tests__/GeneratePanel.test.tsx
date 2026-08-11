@@ -97,6 +97,7 @@ describe('selectGenerateRowIndices', () => {
   });
 });
 
+
 describe('GeneratePanel wizard', () => {
   beforeEach(() => {
     canvasList.mockReset();

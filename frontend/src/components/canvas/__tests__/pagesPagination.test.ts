@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planMultiPageRender } from '../ops/pages';
+import { planMultiPageRender } from '../runtime/planning';
 import { createEmptyDocument, newId, type CanvasDocument } from '../types';
 import type { FillContext } from '../runtime/renderHtml';
 
