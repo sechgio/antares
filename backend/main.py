@@ -401,7 +401,7 @@ def main() -> None:
                     _consecutive_errors = max(0, _consecutive_errors - 1)
                     continue  # Parse error, already responded
 
-                handler = HANDLERS.get(msg.method)
+                handler = HANDLERS.get_loaded(msg.method)
                 if handler is not None:
                     if msg.method in SYNC_METHODS:
                         # Answer immediately so liveness checks stay green while
@@ -410,6 +410,30 @@ def main() -> None:
                         _dispatch(handler, msg.params, msg.id, msg.method)
                     else:
                         _submit_handler(handler, msg.params, msg.id, msg.method)
+                elif HANDLERS.is_known(msg.method):
+                    # Módulo deferred (ubicaciones, sellador, fichas…): resolver
+                    # el handler DENTRO del worker. El import del módulo (~120-450
+                    # ms con C extensions) no debe congelar el thread del reader,
+                    # que atiende health probes y el resto del IPC.
+                    if msg.method in SYNC_METHODS:
+                        # Defensa: un sync en módulo deferred responde inline
+                        # (no debería ocurrir — los sync viven en core, siempre
+                        # cargados). get_loaded: nunca importar en el reader.
+                        sync_handler = HANDLERS.get_loaded(msg.method)
+                        if sync_handler is not None:
+                            ipc_phase_telemetry.set_fields(msg.id, method=msg.method, lane="sync")
+                            _dispatch(sync_handler, msg.params, msg.id, msg.method)
+                        else:
+                            ipc_phase_telemetry.set_fields(msg.id, method=msg.method, lane="-", ok=False)
+                            send_response(None, msg.id, error=MethodNotFoundError(f"Método desconocido: {msg.method}"))
+                    else:
+                        def _deferred_resolver(params, _method=msg.method):
+                            h = HANDLERS.get(_method)
+                            if h is None:
+                                raise MethodNotFoundError(f"Método desconocido: {_method}")
+                            return h(params)
+
+                        _submit_handler(_deferred_resolver, msg.params, msg.id, msg.method)
                 else:
                     ipc_phase_telemetry.set_fields(msg.id, method=msg.method, lane="-", ok=False)
                     send_response(None, msg.id, error=MethodNotFoundError(f"Método desconocido: {msg.method}"))

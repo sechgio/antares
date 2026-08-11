@@ -263,6 +263,20 @@ class HandlerRegistry:
         with self._lock:
             return self._map.get(key, default)
 
+    def get_loaded(self, key: str, default: Any = None) -> Any:
+        """Devuelve el handler SOLO si su módulo ya está cargado (sin importar).
+
+        El reader de IPC usa esto: los módulos deferred (ubicaciones, sellador,
+        …) se resuelven en el worker — un import de ~120-450 ms no debe
+        congelar el thread que atiende health probes y demás mensajes.
+        """
+        with self._lock:
+            return self._map.get(key, default)
+
+    def is_known(self, method: str) -> bool:
+        """True si el método pertenece a un módulo registrado, cargado o no."""
+        return _module_for_method(method) is not None
+
     def __contains__(self, key: object) -> bool:
         if not isinstance(key, str):
             return False

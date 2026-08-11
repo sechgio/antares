@@ -19,7 +19,6 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, cast
 
-import pandas as pd
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from backend.utils.paths import resource_path, user_data_path
@@ -78,7 +77,7 @@ _font_cache: OrderedDict[tuple[str, int], ImageFont.FreeTypeFont | ImageFont.Ima
 _footer_cache: OrderedDict[tuple[int, int, int], Image.Image | None] = OrderedDict()
 _MAX_FONT_CACHE = 32
 _MAX_FOOTER_CACHE = 8
-_excel_cache: OrderedDict[str, tuple[float, pd.DataFrame, tuple[Any, ...]]] = OrderedDict()
+_excel_cache: OrderedDict[str, tuple[float, Any, tuple[Any, ...]]] = OrderedDict()
 _MAX_EXCEL_CACHE = 8
 # Single shared LRU for map screenshots. Validated vs working is tracked with a
 # side set so callers keep the same hit/miss semantics without retaining up to
@@ -619,7 +618,17 @@ def fetch_static_map(
         return _fallback_map_bytes(fetch_w, fetch_h)
 
 
-def _load_excel_data(excel_path: str) -> tuple[pd.DataFrame, tuple[Any, ...]]:
+def _is_na(value: Any) -> bool:
+    """True para None o NaN (numpy/pandas o float nativo). Sin importar pandas."""
+    if value is None:
+        return True
+    try:
+        return bool(math.isnan(float(value)))
+    except (TypeError, ValueError):
+        return False
+
+
+def _load_excel_data(excel_path: str) -> tuple[Any, tuple[Any, ...]]:
     """Load and parse Excel, reusing cache when the file has not changed."""
     mtime = os.path.getmtime(excel_path)
     with _cache_lock:
@@ -627,6 +636,11 @@ def _load_excel_data(excel_path: str) -> tuple[pd.DataFrame, tuple[Any, ...]]:
         if cached and cached[0] == mtime:
             _excel_cache.move_to_end(excel_path)
             return cached[1], cached[2]
+    # Local import: pandas/numpy stays out of the module top-level (deferred
+    # module — the first call must not pay ~400 ms of cold imports in the IPC
+    # reader thread; warm_pandas_sync pre-loads it before ready anyway).
+    import pandas as pd
+
     df = pd.read_excel(excel_path, engine="openpyxl")
     cols = _parse_excel_columns(df)
     with _cache_lock:
@@ -1067,7 +1081,7 @@ _COMBINED_COORD_URL_PATTERNS = (
 
 def _parse_combined_coord_value(val: Any) -> tuple[float | None, float | None]:
     """Extrae lat/lon de una celda combinada (par numérico o URL de mapas)."""
-    if val is None or pd.isna(val):
+    if _is_na(val):
         return None, None
     text = str(val).strip()
     if not text:
@@ -1097,11 +1111,11 @@ def _unique_pdf_filename(cod_componente: str, used_stems: dict[str, int]) -> str
 
 def _coerce_coord(value: Any) -> float | None:
     """Coerce una celda de lat/lon a ``float``, o ``None`` si falta o no es
-    numérica. ``pd.isna`` sólo rechaza NaN/None, no strings como ``"abc"``;
+    numérica. ``_is_na`` sólo rechaza None/NaN, no strings como ``"abc"``;
     sin este guard el worker llamaba ``float(datos['lat'])`` y crasheaba con
     ValueError, abortando el batch entero de ubicaciones.
     """
-    if value is None or pd.isna(value):
+    if _is_na(value):
         return None
     try:
         return float(value)
@@ -1136,10 +1150,10 @@ def _parse_excel_columns(df):
 def _extract_row_data(row, index, col_cod, col_dir, col_loc, col_dist, col_lat, col_lon):
     """Extrae los datos de una fila del DataFrame."""
     return {
-        'cod_componente': row[col_cod] if col_cod and pd.notna(row[col_cod]) else f"ID-{index+1}",
-        'direccion': row[col_dir] if col_dir and pd.notna(row[col_dir]) else "",
-        'localidad': row[col_loc] if col_loc and pd.notna(row[col_loc]) else "",
-        'distrito': row[col_dist] if col_dist and pd.notna(row[col_dist]) else "",
+        'cod_componente': row[col_cod] if col_cod and not _is_na(row[col_cod]) else f"ID-{index+1}",
+        'direccion': row[col_dir] if col_dir and not _is_na(row[col_dir]) else "",
+        'localidad': row[col_loc] if col_loc and not _is_na(row[col_loc]) else "",
+        'distrito': row[col_dist] if col_dist and not _is_na(row[col_dist]) else "",
         'lat': row[col_lat],
         'lon': row[col_lon]
     }
@@ -1267,31 +1281,23 @@ def _is_destination_locked(err: OSError) -> bool:
 
 def _merge_consolidated_pdfs(page_paths: list[str], output_dir: str) -> str:
     """Merge single-page temp PDFs into one multi-page PDF atomically.
-    Cleans up temp page files regardless of success or failure."""
+    Cleans up temp page files regardless of success or failure. The write and
+    finalize steps are the same ones production uses (incremental writer →
+    ``_save_consolidated_writer``), so the lock-fallback behavior is tested
+    through the real path."""
     if not page_paths:
         raise ValueError("No hay imágenes para guardar en el PDF consolidado.")
-
-    base_path = os.path.join(output_dir, _CONSOLIDATED_PDF_NAME)
-    tmp_path = base_path + ".antares-tmp"
-
     try:
         from pypdf import PdfWriter
 
         writer = PdfWriter()
         for page_path in page_paths:
             writer.append(page_path)
-        with open(tmp_path, "wb") as f:
-            writer.write(f)
-    except Exception:
-        with contextlib.suppress(OSError):
-            os.remove(tmp_path)
-        raise
+        return _save_consolidated_writer(writer, output_dir)
     finally:
         for page_path in page_paths:
             with contextlib.suppress(OSError):
                 os.remove(page_path)
-
-    return _write_consolidated_pdf(tmp_path, base_path)
 
 
 def _save_consolidated_writer(writer: Any, output_dir: str) -> str:
@@ -1362,7 +1368,7 @@ def handle_generar_ubicaciones(payload: dict) -> dict:
                 'lat': _coerce_coord(manual_data.get('lat')),
                 'lon': _coerce_coord(manual_data.get('lon')),
             }
-            if pd.notna(datos["lat"]) and pd.notna(datos["lon"]):
+            if not _is_na(datos["lat"]) and not _is_na(datos["lon"]):
                 valid_rows.append(datos)
         else:
             if not isinstance(excel_path, str) or not excel_path:

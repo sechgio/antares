@@ -24,6 +24,12 @@ class SchedulerBusy(RuntimeError):
         self.reason = reason or message
 
 
+def _light_queue_default(light_workers: int) -> int:
+    """Default light queue budget: generous enough for normal IPC concurrency;
+    a flooded renderer gets rejected instead of growing memory without limit."""
+    return max(light_workers * 4, 16)
+
+
 def _detect_limits() -> tuple[int, int, int, int]:
     """Return conservative `(light_workers, heavy_workers, heavy_queue_limit, light_queue_limit)`.
 
@@ -52,10 +58,8 @@ def _detect_limits() -> tuple[int, int, int, int]:
     heavy_workers = max(2, min(max(1, cpu_count // 2), ram_limited_heavy, heavy_cap))
     heavy_queue_limit = max(heavy_workers, heavy_workers * 2)
     # Light work is latency-sensitive (previews, metadata reads) and each
-    # queued closure retains its params, so bound the queue too. Generous
-    # enough for normal IPC concurrency; a flooded renderer gets rejected
-    # instead of growing memory without limit.
-    light_queue_limit = max(light_workers * 4, 16)
+    # queued closure retains its params, so bound the queue too.
+    light_queue_limit = _light_queue_default(light_workers)
     return light_workers, heavy_workers, heavy_queue_limit, light_queue_limit
 
 
@@ -74,7 +78,7 @@ class WorkScheduler:
         self.heavy_workers = max(1, heavy_workers)
         self.heavy_queue_limit = max(0, heavy_queue_limit)
         if light_queue_limit is None:
-            light_queue_limit = max(self.light_workers * 4, 16)
+            light_queue_limit = _light_queue_default(self.light_workers)
         self.light_queue_limit = max(1, light_queue_limit)
 
         # Keep latency-sensitive work isolated from heavy tasks waiting to run.
