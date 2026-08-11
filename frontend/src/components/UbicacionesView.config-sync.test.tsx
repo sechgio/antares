@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const previewPayloads: Record<string, unknown>[] = [];
 const generatePayloads: Record<string, unknown>[] = [];
 
-const EXCEL_PATH = 'C:\\data\\ubicaciones.xlsx';
+const EXCEL_TOKEN = 'antares-read-test-token';
 const OUTPUT_DIR = 'C:\\salida\\ubicaciones';
 
 const { mockPreview, mockGenerate, mockKeysGet, mockKeysSet, mockDialogFolder } = vi.hoisted(() => ({
@@ -51,12 +51,18 @@ import { UbicacionesView, loadCustomStylesFromStorage } from './UbicacionesView'
 
 function setupElectronApi() {
   const electronApi = window.electronAPI!;
-  Object.defineProperty(electronApi, 'getPathForFile', {
-    value: (file: File) => (file.name.endsWith('.xlsx') ? EXCEL_PATH : ''),
+  // The Excel file is staged through the IPC upload API and the resulting
+  // read token travels in `excelPath` (raw absolute paths are router-rejected).
+  Object.defineProperty(electronApi, 'fileStagedCreate', {
+    value: vi.fn(async () => ({ token: 'antares-staged-test' })),
     configurable: true,
   });
-  Object.defineProperty(electronApi, 'registerLocalPath', {
-    value: vi.fn().mockResolvedValue(undefined),
+  Object.defineProperty(electronApi, 'fileStagedAppend', {
+    value: vi.fn(async () => ({ bytesWritten: 6 })),
+    configurable: true,
+  });
+  Object.defineProperty(electronApi, 'fileStagedComplete', {
+    value: vi.fn(async () => ({ file_token: EXCEL_TOKEN })),
     configurable: true,
   });
 }
@@ -165,7 +171,7 @@ describe('UbicacionesView config sync', () => {
 
     await waitFor(() => expect(mockGenerate).toHaveBeenCalled());
     const payload = generatePayloads.at(-1)!;
-    expect(payload.excelPath).toBe(EXCEL_PATH);
+    expect(payload.excelPath).toBe(EXCEL_TOKEN);
     expect(payload.outputDir).toBe(OUTPUT_DIR);
     expect(payload.formato).toBe('horizontal');
     expect(payload.consolidado).toBe(true);
@@ -193,7 +199,7 @@ describe('UbicacionesView config sync', () => {
 
     await waitFor(() => {
       const last = previewPayloads.at(-1);
-      expect(last?.excelPath).toBe(EXCEL_PATH);
+      expect(last?.excelPath).toBe(EXCEL_TOKEN);
       expect(last?.manualData).toBeUndefined();
     });
   });

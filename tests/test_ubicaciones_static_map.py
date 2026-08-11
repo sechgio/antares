@@ -2,13 +2,16 @@
 
 import math
 import os
+import tempfile
 import urllib.parse
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
+import pandas as pd
 import pytest
 from PIL import Image
+from pypdf import PdfReader
 
 from backend.handlers import ubicaciones as ub
 
@@ -368,6 +371,31 @@ def test_handle_generar_ubicaciones_unique_pdf_for_duplicate_cod(
     assert pdfs == ["SAME.pdf", "SAME_2.pdf"]
 
 
+@pytest.mark.parametrize("zoom", [-1, 23, 100_000_000, 1.5, "18", True])
+def test_handle_preview_ubicacion_rejects_invalid_zoom(zoom: object) -> None:
+    result = ub.handle_preview_ubicacion({
+        "formato": "vertical",
+        "zoom": zoom,
+        "manualData": {"lat": "-12.0", "lon": "-77.0", "cod_componente": "ZOOM"},
+    })
+
+    assert result["success"] is False
+    assert "zoom" in result["error"].lower()
+
+
+@pytest.mark.parametrize("zoom", [-1, 23, 100_000_000, 1.5, "18", True])
+def test_handle_generar_ubicaciones_rejects_invalid_zoom(tmp_path: Path, zoom: object) -> None:
+    result = ub.handle_generar_ubicaciones({
+        "outputDir": str(tmp_path / "out"),
+        "formato": "vertical",
+        "zoom": zoom,
+        "manualData": {"lat": "-12.0", "lon": "-77.0", "cod_componente": "ZOOM"},
+    })
+
+    assert result["success"] is False
+    assert "zoom" in result["error"].lower()
+
+
 def test_handle_generar_ubicaciones_applies_custom_styles_and_map_opts(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
@@ -409,11 +437,23 @@ def test_handle_generar_ubicaciones_applies_custom_styles_and_map_opts(
     assert custom_styles == styles
 
 
-def test_save_consolidated_pdf_falls_back_when_default_locked(
+def _make_single_page_pdfs(tmp_path: Path, count: int = 1) -> list[str]:
+    """Create temp single-page PDFs for merge tests."""
+    paths = []
+    for i in range(count):
+        img = Image.new("RGB", (10, 10), (1, 2, 3))
+        p = str(tmp_path / f"page_{i}.pdf")
+        img.save(p, "PDF")
+        img.close()
+        paths.append(p)
+    return paths
+
+
+def test_merge_consolidated_pdfs_falls_back_when_default_locked(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
     """Si ubicaciones_consolidado.pdf está bloqueado, guardar en nombre alternativo."""
-    images = [Image.new("RGB", (10, 10), (1, 2, 3))]
+    page_paths = _make_single_page_pdfs(tmp_path, 1)
     original_replace = os.replace
 
     def fake_replace(src: str, dst: str) -> None:
@@ -423,17 +463,17 @@ def test_save_consolidated_pdf_falls_back_when_default_locked(
 
     monkeypatch.setattr(os, "replace", fake_replace)
 
-    saved_path = ub._save_consolidated_pdf(images, str(tmp_path))
+    saved_path = ub._merge_consolidated_pdfs(page_paths, str(tmp_path))
 
     assert saved_path.endswith("ubicaciones_consolidado_2.pdf")
     assert (tmp_path / "ubicaciones_consolidado_2.pdf").is_file()
 
 
-def test_save_consolidated_pdf_falls_back_on_windows_sharing_violation(
+def test_merge_consolidated_pdfs_falls_back_on_windows_sharing_violation(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
     """WinError 32 (archivo en uso) también debe probar ubicaciones_consolidado_2.pdf."""
-    images = [Image.new("RGB", (10, 10), (1, 2, 3))]
+    page_paths = _make_single_page_pdfs(tmp_path, 1)
     original_replace = os.replace
 
     def fake_replace(src: str, dst: str) -> None:
@@ -445,22 +485,181 @@ def test_save_consolidated_pdf_falls_back_on_windows_sharing_violation(
 
     monkeypatch.setattr(os, "replace", fake_replace)
 
-    saved_path = ub._save_consolidated_pdf(images, str(tmp_path))
+    saved_path = ub._merge_consolidated_pdfs(page_paths, str(tmp_path))
 
     assert saved_path.endswith("ubicaciones_consolidado_2.pdf")
     assert (tmp_path / "ubicaciones_consolidado_2.pdf").is_file()
 
 
-def test_save_consolidated_pdf_raises_clear_error_when_all_paths_locked(
+def test_merge_consolidated_pdfs_raises_clear_error_when_all_paths_locked(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
+    page_paths = _make_single_page_pdfs(tmp_path, 1)
+
     def always_denied(_src: str, _dst: str) -> None:
         raise PermissionError(13, "Permission denied", _dst)
 
     monkeypatch.setattr(os, "replace", always_denied)
 
     with pytest.raises(PermissionError, match="Cierra el archivo"):
-        ub._save_consolidated_pdf([Image.new("RGB", (10, 10))], str(tmp_path))
+        ub._merge_consolidated_pdfs(page_paths, str(tmp_path))
+
+
+def test_merge_consolidated_pdfs_produces_multipage_pdf(tmp_path: Path) -> None:
+    """Merge single-page temp PDFs into one multi-page PDF; clean up temps."""
+    page_paths = _make_single_page_pdfs(tmp_path, 3)
+
+    result = ub._merge_consolidated_pdfs(page_paths, str(tmp_path))
+
+    assert os.path.exists(result)
+    reader = PdfReader(result)
+    assert len(reader.pages) == 3
+    for p in page_paths:
+        assert not os.path.exists(p), f"temp page file not cleaned up: {p}"
+
+
+def test_consolidated_export_uses_managed_temp_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    rendered_paths: list[Path] = []
+
+    def fake_generate(_data: dict, output_path: str, _formato: str, *, map_opts=None, custom_styles=None) -> None:
+        rendered_paths.append(Path(output_path))
+        Image.new("RGB", (10, 10), (1, 2, 3)).save(output_path, "PDF")
+
+    def fake_load_excel_data(_path: str):
+        df = pd.DataFrame({
+            "cod": ["1", "2", "3"],
+            "latitud": [1.0, 2.0, 3.0],
+            "longitud": [1.0, 2.0, 3.0],
+        })
+        return df, ("cod", None, None, None, "latitud", "longitud")
+
+    monkeypatch.setattr(ub, "generar_imagen_ubicacion", fake_generate)
+    monkeypatch.setattr(ub, "_load_excel_data", fake_load_excel_data)
+    monkeypatch.setattr(ub.tempfile, "tempdir", str(tmp_path))
+
+    result = ub.handle_generar_ubicaciones({
+        "excelPath": str(tmp_path / "fake.xlsx"),
+        "outputDir": str(tmp_path / "out"),
+        "consolidado": True,
+    })
+
+    assert result["success"] is True
+    assert len(PdfReader(result["data"]["consolidatedPath"]).pages) == 3
+    assert rendered_paths
+    assert all(path.parent.name.startswith("antares-ubicaciones-") for path in rendered_paths)
+    assert not list(tmp_path.glob("antares-ubicaciones-*"))
+
+
+def test_consolidated_mode_closes_rendered_images(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Consolidated mode must close each PIL image after saving to a temp page
+    PDF — holding all images in RAM OOMs on large batches."""
+    closed = [0]
+    held: list = []  # strong refs prevent GC → __del__ → close()
+
+    def _track(img: Image.Image) -> None:
+        held.append(img)
+        orig_close = img.close
+        orig_convert = img.convert
+
+        def tracked_close() -> None:
+            closed[0] += 1
+            orig_close()
+
+        def tracked_convert(mode: str, *a, **kw):  # type: ignore[no-untyped-def]
+            converted = orig_convert(mode, *a, **kw)
+            _track(converted)
+            return converted
+
+        img.close = tracked_close  # type: ignore[method-assign]
+        img.convert = tracked_convert  # type: ignore[method-assign]
+
+    def fake_render(datos: dict, formato: str, *, map_opts=None, custom_styles=None) -> Image.Image:
+        img = Image.new("RGB", (10, 10), (255, 0, 0))
+        _track(img)
+        return img
+
+    def fake_load_excel_data(path: str):
+        df = pd.DataFrame({
+            "cod": ["1", "2", "3"],
+            "direccion": ["A", "B", "C"],
+            "distrito": ["D1", "D2", "D3"],
+            "latitud": [1.0, 2.0, 3.0],
+            "longitud": [1.0, 2.0, 3.0],
+        })
+        return df, ("cod", "direccion", None, "distrito", "latitud", "longitud")
+
+    monkeypatch.setattr(ub, "render_imagen_ubicacion", fake_render)
+    monkeypatch.setattr(ub, "_load_excel_data", fake_load_excel_data)
+
+    result = ub.handle_generar_ubicaciones({
+        "excelPath": str(tmp_path / "fake.xlsx"),
+        "outputDir": str(tmp_path),
+        "consolidado": True,
+    })
+
+    assert result["success"] is True
+    assert closed[0] >= 3, f"expected ≥3 images closed (one per page), got {closed[0]}"
+
+
+def test_consolidated_mode_failure_removes_temp_page_and_closes_images(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Si rgb.save falla en modo consolidado, la página temporal debe
+    eliminarse y las imágenes cerrarse — sin fugas en lotes con filas fallidas."""
+
+    class Boom(Exception):
+        pass
+
+    closed = [0]
+
+    def raising_save(_self, *_a, **_kw) -> None:  # type: ignore[no-untyped-def]
+        raise Boom("save failed")
+
+    def fake_render(datos: dict, formato: str, *, map_opts=None, custom_styles=None) -> Image.Image:
+        img = Image.new("RGB", (10, 10), (255, 0, 0))
+        orig_close = img.close
+
+        def tracked_close() -> None:
+            closed[0] += 1
+            orig_close()
+
+        img.close = tracked_close  # type: ignore[method-assign]
+        return img
+
+    real_mkstemp = tempfile.mkstemp
+
+    def fake_mkstemp(**kw) -> tuple[int, str]:
+        # Capture the real mkstemp before patching: tempfile.mkstemp is patched
+        # at module level, so calling it by name here would recurse forever.
+        kw.pop("dir", None)
+        return real_mkstemp(dir=str(tmp_path), **kw)
+
+    def fake_load_excel_data(path: str):
+        df = pd.DataFrame({
+            "cod": ["1", "2", "3"],
+            "direccion": ["A", "B", "C"],
+            "distrito": ["D1", "D2", "D3"],
+            "latitud": [1.0, 2.0, 3.0],
+            "longitud": [1.0, 2.0, 3.0],
+        })
+        return df, ("cod", "direccion", None, "distrito", "latitud", "longitud")
+
+    monkeypatch.setattr(ub, "render_imagen_ubicacion", fake_render)
+    monkeypatch.setattr(ub, "_load_excel_data", fake_load_excel_data)
+    monkeypatch.setattr(ub.tempfile, "mkstemp", fake_mkstemp)
+    monkeypatch.setattr(Image.Image, "save", raising_save)
+
+    result = ub.handle_generar_ubicaciones({
+        "excelPath": str(tmp_path / "fake.xlsx"),
+        "outputDir": str(tmp_path),
+        "consolidado": True,
+    })
+
+    assert result["success"] is True
+    assert result["data"]["fallidos"] == 3
+    leftovers = list(tmp_path.glob("antares_page_*"))
+    assert leftovers == [], f"temp page leaked after save failure: {leftovers}"
+    assert closed[0] >= 3, f"expected ≥3 images closed, got {closed[0]}"
 
 
 def test_preview_composed_cache_differs_by_formato() -> None:
