@@ -161,8 +161,12 @@ function stats(deltas: number[]) {
 }
 
 function actualZoom(): number {
+  // Camera zoom is applied as an inline `transform: scale(z)` on the artboard
+  // (compositor-only camera), not `style.zoom`.
   const el = document.querySelector<HTMLElement>('[data-testid="canvas-artboard"]');
-  return el ? Number.parseFloat(el.style.zoom) || 1 : 1;
+  if (!el) return 1;
+  const match = /scale\(([^)]+)\)/.exec(el.style.transform);
+  return match ? Number.parseFloat(match[1]) || 1 : 1;
 }
 
 function layerNode(id: string): HTMLElement {
@@ -197,7 +201,11 @@ async function runDrag(frames: number): Promise<DragResult> {
     // ONE display frame per iteration: the delta is the true frame cadence,
     // including the gesture's apply + commit + style/layout/paint of that frame.
     await nextFrame();
-    if (i === 3 && node.style.transform !== before) applied = true;
+    // The first imperative transform lands a couple of frames after the drag
+    // threshold is crossed (gestureActive flips → React re-render → the
+    // layout-effect re-applies geometry). Detect the change on any frame, not
+    // a fixed early one — a fixed i===3 check races the React commit.
+    if (!applied && node.style.transform !== before) applied = true;
     const now = performance.now();
     deltas.push(now - prev);
     prev = now;
@@ -241,6 +249,9 @@ async function runPinch(frames: number): Promise<{ deltas: number[]; zoomed: boo
   }
   touch('pointerup', 1, cx - 40 - frames * 0.6, cy);
   touch('pointerup', 2, cx + 40 + frames * 0.6, cy);
+  // The final pinch flush applies zoom via setState — let React commit before
+  // reading the camera transform, or `zoomed` reports stale false.
+  await nextFrame();
   return { deltas, zoomed: actualZoom() !== zoomBefore };
 }
 

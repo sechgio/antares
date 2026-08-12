@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Antares — Perf Harness</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <!--
+      Dev-only entry for the Canvas frame-cadence harness (perfHarness.tsx).
+      Vite serves this page in `npm run dev`; it is intentionally NOT part of
+      the production build (vite.config rollupOptions.input defaults to
+      index.html). Keep it that way: the harness must not ship in the installer.
+      Guard: src/__tests__/perfHarnessPage.test.ts
+    -->
+    <script type="module" src="/src/perfHarness.tsx"></script>
+  </body>
+</html>
