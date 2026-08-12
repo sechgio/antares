@@ -6,6 +6,7 @@ import {
   MAX_HISTORY,
   MAX_HISTORY_BYTES,
   estimateHistoryBytes,
+  estimateStepBytes,
   trimHistoryByBudget,
 } from '../hooks/useCanvasHistory';
 import { createEmptyDocument, parseMm, type CanvasDocument } from '../types';
@@ -369,6 +370,57 @@ describe('useCanvasHistory gesture coalesce', () => {
     expect(estimateHistoryBytes(trimmed.past)).toBeLessThanOrEqual(tinyBudget);
     // Newest steps retained (oldest dropped first).
     expect(trimmed.past[trimmed.past.length - 1]).toBe(steps[steps.length - 1]);
+  });
+
+  it('estimateStepBytes caches per-step size (steps are immutable)', () => {
+    // JSON.stringify invokes toJSON; count it as a proxy for real serializations.
+    const serializations = { count: 0 };
+    const inner = {
+      type: 'diff' as const,
+      undoDiff: { modifiedLayers: [{ id: 'a', changes: { name: 'x' } }] },
+      redoDiff: {},
+    };
+    const step = {
+      ...inner,
+      toJSON: () => {
+        serializations.count += 1;
+        return inner;
+      },
+    } as unknown as HistoryStepDiff;
+
+    const first = estimateStepBytes(step);
+    expect(first).toBeGreaterThan(0);
+    expect(serializations.count).toBe(1);
+
+    const second = estimateStepBytes(step);
+    expect(second).toBe(first);
+    expect(serializations.count).toBe(1);
+  });
+
+  it('trimHistoryByBudget reuses cached estimates across calls', () => {
+    const serializations = { count: 0 };
+    const makeStep = (i: number): HistoryStepDiff => {
+      const inner = {
+        type: 'diff' as const,
+        undoDiff: { docPatch: { name: `undo-${i}` } },
+        redoDiff: { docPatch: { name: `redo-${i}` } },
+      };
+      return {
+        ...inner,
+        toJSON: () => {
+          serializations.count += 1;
+          return inner;
+        },
+      } as unknown as HistoryStepDiff;
+    };
+    const steps = [makeStep(0), makeStep(1), makeStep(2)];
+
+    const budget = estimateHistoryBytes(steps);
+    expect(serializations.count).toBe(3);
+
+    trimHistoryByBudget(steps, [], MAX_HISTORY, budget);
+    trimHistoryByBudget(steps, [], MAX_HISTORY, budget - 1);
+    expect(serializations.count).toBe(3);
   });
 
   it('enforces byte budget while keeping undo/redo and structural diffs', () => {

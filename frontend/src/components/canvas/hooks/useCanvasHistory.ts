@@ -13,12 +13,26 @@ export const MAX_HISTORY = 30;
 /** Aggregate byte budget for past + future stacks (UTF-16 string estimate). */
 export const MAX_HISTORY_BYTES = 64 * 1024 * 1024;
 
+/**
+ * Per-step byte estimates, keyed by step reference. Steps are immutable once
+ * pushed, so a step's JSON size never changes; caching avoids re-serializing
+ * the whole stack (up to 64 MB of data-URL payloads) on every edit just to
+ * decide whether to trim one step. WeakMap lets dropped steps be GC'd.
+ */
+const stepBytesCache = new WeakMap<object, number>();
+
 export function estimateStepBytes(step: HistoryStep): number {
+  const cacheable = typeof step === 'object' && step !== null;
+  const cached = cacheable ? stepBytesCache.get(step) : undefined;
+  if (cached !== undefined) return cached;
+  let bytes: number;
   try {
-    return JSON.stringify(step).length * 2;
+    bytes = JSON.stringify(step).length * 2;
   } catch {
     return Number.POSITIVE_INFINITY;
   }
+  if (cacheable) stepBytesCache.set(step, bytes);
+  return bytes;
 }
 
 export function estimateHistoryBytes(steps: HistoryStep[]): number {
