@@ -128,14 +128,34 @@ export default function PetdexView() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 36;
 
-  // Animation ticks for previews in settings (0-7 columns)
+  // Animation ticks for previews in settings (0-7 sprite columns)
   const [previewFrame, setPreviewFrame] = useState(0);
 
+  // Sprite preview ticker: ~150ms cadence via a rAF accumulator. Chromium
+  // pauses rAF when the window is hidden/minimized, so the panel stops
+  // re-rendering in background (setInterval kept ticking). Reduced-motion is
+  // checked once per mount (the modal is short-lived).
   useEffect(() => {
-    const timer = setInterval(() => {
-      setPreviewFrame((f) => (f + 1) % 8);
-    }, 150);
-    return () => clearInterval(timer);
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    let rafId = 0;
+    let lastTime = performance.now();
+    let frameAccum = 0;
+    const TICK_MS = 150;
+
+    const loop = (time: number) => {
+      const dt = Math.min(Math.max(time - lastTime, 0), 100);
+      lastTime = time;
+      frameAccum += dt;
+      if (frameAccum >= TICK_MS) {
+        frameAccum %= TICK_MS;
+        setPreviewFrame((f) => (f + 1) % 8);
+      }
+      rafId = requestAnimationFrame(loop);
+    };
+
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
   }, []);
 
   // Persist settings changes
