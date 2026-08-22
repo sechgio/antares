@@ -59,3 +59,36 @@
     box-shadow: 0 0 0 1px var(--border-medium);
   }
 }
+
+/* Sleek floating scrollbar for Data Preview Modal */
+.pp-data-table-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--border-active) 60%, transparent) transparent;
+}
+
+.pp-data-table-scroll::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.pp-data-table-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 0 16px 2px 16px;
+}
+
+.pp-data-table-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 35%, transparent);
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  transition: background-color 0.2s ease;
+}
+
+.pp-data-table-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-primary);
+}
+
+.pp-data-table-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+

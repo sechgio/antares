@@ -23,6 +23,7 @@ import {
   type PdfExportScope,
   type PdfQuality,
 } from './pdfExport';
+import DataPreviewModal from './DataPreviewModal';
 import './template-picker.css';
 
 interface TemplateInfo {
@@ -1135,86 +1136,17 @@ export default function PreviewPanelView() {
         />
 
         {/* Data Preview Modal */}
-        {showDataPreview && data.length > 0 && (
-          <div className="fixed inset-0 flex items-center justify-center z-50 p-2 sm:p-4" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 85%, transparent)', backdropFilter: 'blur(6px)' }}>
-            <div
-              className="bg-[var(--bg-base)] border border-[var(--border-subtle)] rounded-xl w-full max-w-[1400px] max-h-[88vh] flex flex-col"
-              style={{
-                boxShadow:
-                  '0 24px 48px color-mix(in srgb, var(--bg-base) 55%, transparent), 0 0 0 1px color-mix(in srgb, var(--border-subtle) 80%, transparent)',
-              }}
-            >
-              <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--border-subtle)]">
-                <h3 className="text-[14px] font-semibold text-[var(--text-primary)]">Vista previa de datos ({data.length} registros)</h3>
-                <WithHoverTooltip label="Cerrar vista previa" placement="bottom">
-                  <button
-                    onClick={() => setShowDataPreview(false)}
-                    className="shrink-0 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-                    aria-label="Cerrar vista previa"
-                  >
-                    <X size={18} />
-                  </button>
-                </WithHoverTooltip>
-              </div>
-              <div className="flex-1 overflow-y-auto overflow-x-hidden p-3">
-                <table className="w-full table-fixed border-collapse text-[10px] sm:text-[11px]">
-                  <colgroup>
-                    <col className="w-9" />
-                    {headers.map(h => <col key={h} />)}
-                    <col className="w-14" />
-                  </colgroup>
-                  <thead>
-                    <tr className="border-b border-[var(--border-medium)]">
-                      <th className="text-left py-1.5 px-1.5 text-[var(--text-secondary)] font-semibold">#</th>
-                      {headers.map(h => (
-                        <th
-                          key={h}
-                          className="text-left py-1.5 px-1.5 text-[var(--text-secondary)] font-semibold align-bottom whitespace-normal break-words leading-snug"
-                          title={h}
-                        >
-                          {h}
-                        </th>
-                      ))}
-                      <th className="text-left py-1.5 px-1.5 text-[var(--text-secondary)] font-semibold">Fotos</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.map((row, idx) => {
-                      const recordId = idColumn ? String(row[idColumn]) : '';
-                      const photoCount = recordId ? images.filter(img => matchesRecordId(img.name, recordId)).length : 0;
-                      return (
-                        <tr
-                          key={idx}
-                          className={`border-b border-[var(--border-subtle)] cursor-pointer hover:bg-[var(--bg-elevated)] transition-colors ${selectedIndex === String(idx) ? 'bg-[var(--accent-primary)]/10' : ''}`}
-                          onClick={() => { setSelectedIndex(String(idx)); setShowDataPreview(false); }}
-                        >
-                          <td className="py-1.5 px-1.5 text-[var(--text-primary)] font-medium align-top">{idx + 1}</td>
-                          {headers.map(h => {
-                            const value = String(row[h] ?? '');
-                            return (
-                              <td
-                                key={h}
-                                className="py-1.5 px-1.5 text-[var(--text-secondary)] align-top whitespace-normal break-words leading-snug"
-                                title={value}
-                              >
-                                {value}
-                              </td>
-                            );
-                          })}
-                          <td className="py-1.5 px-1.5 align-top">
-                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${photoCount > 0 ? 'bg-[var(--accent-green)]/20 text-[var(--accent-green)]' : 'bg-[var(--bg-elevated)] text-[var(--text-muted)]'}`}>
-                              {photoCount} 📷
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
+        <DataPreviewModal
+          open={showDataPreview && data.length > 0}
+          onClose={() => setShowDataPreview(false)}
+          data={data}
+          headers={headers}
+          images={images}
+          idColumn={idColumn}
+          selectedIndex={selectedIndex}
+          onSelectRow={(idx) => setSelectedIndex(String(idx))}
+          sheetName={selectedSheetName}
+        />
 
         {/* Custom Column Modal */}
         {showColumnModal && (
