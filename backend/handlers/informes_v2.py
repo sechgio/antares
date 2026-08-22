@@ -5,6 +5,7 @@ import base64
 from typing import Any
 
 from backend.handlers.common import with_locale
+from backend.utils.image_data import decode_b64_payload
 
 
 def _db():
@@ -102,19 +103,7 @@ def informes_v2_import_file(params: dict[str, Any]) -> dict[str, Any]:
         msg = "filename y content_b64 son requeridos"
         raise ValueError(msg)
 
-    if "," in content_b64:
-        content_b64 = content_b64.split(",", 1)[1]
-    content_b64 = content_b64.strip()
-    missing_padding = len(content_b64) % 4
-    if missing_padding:
-        content_b64 += "=" * (4 - missing_padding)
-
-    try:
-        content = base64.b64decode(content_b64, validate=True)
-    except Exception as exc:
-        msg = f"No se pudo decodificar el contenido base64: {exc}"
-        raise ValueError(msg) from exc
-
+    content = decode_b64_payload(content_b64)
     reports = import_reports_from_bytes(filename, content)
     db = _db()
     deleted_count = len(db.get_all())

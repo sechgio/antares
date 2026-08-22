@@ -54,6 +54,7 @@ export default function PetMascot() {
   const pointerSessionRef = useRef(false);
   const pointerStartRef = useRef({ x: 0, y: 0 });
   const dragOffsetRef = useRef({ x: 0, y: 0 });
+  const pendingDragPosRef = useRef<{ x: number; y: number } | null>(null);
   const posRef = useRef(pos);
   const configRef = useRef(config);
 
@@ -109,13 +110,18 @@ export default function PetMascot() {
   useEffect(() => {
     if (!config.enabled) return;
 
-    const interval = setInterval(() => {
-      if (isDraggingRef.current) return;
+    // Un solo bucle rAF: movimiento suave por delta-time (60fps), la lógica de
+    // estado y el sprite siguen avanzando al ritmo del tick anterior (130ms).
+    let rafId = 0;
+    let lastTime = performance.now();
+    let frameAccum = 0;
+    const TICK_MS = 130;
+    const walkSpeed = 4 / TICK_MS; // px/ms — misma velocidad que el tick anterior (~30.8 px/s)
 
+    const tick = () => {
       setFrameCol((f) => (f + 1) % 8);
 
       const currentState = stateRef.current;
-      const currentDir = dirRef.current;
       const petWidth = SPRITE_W * config.scale;
 
       if (config.movement === 'static') {
@@ -129,28 +135,11 @@ export default function PetMascot() {
       if (currentState === 'reacting' || currentState === 'clicked') return;
 
       if (currentState === 'walking') {
-        setPos((prev) => {
-          const speed = 4;
-          let nextX = prev.x + currentDir * speed;
-
-          if (currentDir === 1 && nextX >= window.innerWidth - petWidth) {
-            dirRef.current = -1;
-            setDirection(-1);
-            nextX = window.innerWidth - petWidth;
-          } else if (currentDir === -1 && nextX <= 0) {
-            dirRef.current = 1;
-            setDirection(1);
-            nextX = 0;
-          }
-
-          if (Math.random() < 0.02) {
-            stateRef.current = 'idle';
-            setMascotState('idle');
-            idleTicksRef.current = Math.floor(Math.random() * 20) + 15;
-          }
-
-          return { ...prev, x: nextX };
-        });
+        if (Math.random() < 0.02) {
+          stateRef.current = 'idle';
+          setMascotState('idle');
+          idleTicksRef.current = Math.floor(Math.random() * 20) + 15;
+        }
       } else if (currentState === 'idle') {
         idleTicksRef.current -= 1;
         if (idleTicksRef.current <= 0) {
@@ -165,9 +154,54 @@ export default function PetMascot() {
           setMascotState('walking');
         }
       }
-    }, 130);
+    };
 
-    return () => clearInterval(interval);
+    const loop = (time: number) => {
+      const dt = Math.min(Math.max(time - lastTime, 0), 100);
+      lastTime = time;
+
+      // Coalescing del drag: los pointermove solo guardan en el ref y aquí se
+      // aplica un único setPos por frame (latest-event-wins).
+      if (pendingDragPosRef.current) {
+        const next = pendingDragPosRef.current;
+        pendingDragPosRef.current = null;
+        posRef.current = next;
+        setPos(next);
+      }
+
+      if (!isDraggingRef.current) {
+        frameAccum += dt;
+        if (frameAccum >= TICK_MS) {
+          frameAccum %= TICK_MS;
+          tick();
+        }
+
+        if (stateRef.current === 'walking' && config.movement === 'walk') {
+          setPos((prev) => {
+            const petWidth = SPRITE_W * config.scale;
+            const currentDir = dirRef.current;
+            let nextX = prev.x + currentDir * walkSpeed * dt;
+
+            if (currentDir === 1 && nextX >= window.innerWidth - petWidth) {
+              dirRef.current = -1;
+              setDirection(-1);
+              nextX = window.innerWidth - petWidth;
+            } else if (currentDir === -1 && nextX <= 0) {
+              dirRef.current = 1;
+              setDirection(1);
+              nextX = 0;
+            }
+
+            return { ...prev, x: nextX };
+          });
+        }
+      }
+
+      rafId = requestAnimationFrame(loop);
+    };
+
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
   }, [config.enabled, config.movement, config.scale]);
 
   const getRow = () => {
@@ -204,12 +238,12 @@ export default function PetMascot() {
       }
 
       didDragRef.current = true;
-      const next = clampPosition(
+      // El bucle rAF aplica un solo setPos por frame (coalescing, latest-event-wins).
+      pendingDragPosRef.current = clampPosition(
         ev.clientX - dragOffsetRef.current.x,
         ev.clientY - dragOffsetRef.current.y,
         configRef.current.scale,
       );
-      setPos(next);
     };
 
     const endPointerSession = () => {
@@ -223,7 +257,12 @@ export default function PetMascot() {
       if (isDraggingRef.current) {
         isDraggingRef.current = false;
         setIsDragging(false);
-        savePosition(posRef.current.x, posRef.current.y);
+        // Aplica el último pointermove pendiente (puede no haberse pintado aún).
+        const final = pendingDragPosRef.current ?? posRef.current;
+        pendingDragPosRef.current = null;
+        posRef.current = final;
+        setPos(final);
+        savePosition(final.x, final.y);
       }
 
       resumeMovement();
@@ -277,15 +316,16 @@ export default function PetMascot() {
         aria-label="Arrastra para mover. Clic para saltar."
         style={{
           position: 'fixed',
-          left: `${pos.x}px`,
-          top: `${pos.y}px`,
+          left: 0,
+          top: 0,
+          transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
           width: `${w}px`,
           height: `${h}px`,
           cursor: isDragging ? 'grabbing' : 'grab',
           touchAction: 'none',
           overflow: 'hidden',
           opacity: config.opacity / 100,
-          transition: isDragging || mascotState === 'walking' ? 'none' : 'left 0.15s ease-out, top 0.15s ease-out',
+          transition: isDragging || mascotState === 'walking' ? 'none' : 'transform 0.15s ease-out',
           userSelect: 'none',
         }}
       >

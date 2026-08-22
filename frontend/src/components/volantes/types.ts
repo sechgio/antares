@@ -1,4 +1,5 @@
 export type LayoutMode = "2-up" | "3-up";
+export type BulletStyle = "none" | "disc" | "dash" | "arrow" | "check" | "number";
 
 export interface FlyerRecord {
   id: string;
@@ -9,6 +10,7 @@ export interface FlyerRecord {
   reservorio: string;
   sector: string;
   zonasAfectadas: string;
+  bulletStyle?: BulletStyle;
   districtColor?: string;
   titleSize2up?: number;
   titleSize3up?: number;
@@ -29,6 +31,11 @@ export interface FlyerRecord {
 export interface BrandConfig {
   logoIzquierdo: string | null;
   logoDerecho: string | null;
+}
+
+export interface FooterConfig {
+  logoOperativo: string | null;
+  servicioAgua: string | null;
 }
 
 export interface FlyerHeading {

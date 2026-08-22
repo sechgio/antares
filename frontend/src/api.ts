@@ -44,9 +44,10 @@ declare global {
 
 const IPC_TIMEOUT = 30_000;           // default timeout — most ops finish in <5s
 const IPC_LONG_TIMEOUT = 900_000;     // 15 min for large PDF/ZIP/image batches
-// Renderer backstop must outlive Electron main's IPC timeout so main always
-// clears `_pendingRequests` first. Without this buffer the FE race (started
-// before waitForReady) can reject while main+backend still hold the request.
+// Startup wait budget in Electron Main (waitForReady in ipc-router.js) is 60s.
+// Renderer backstop must outlive Electron main's (STARTUP_WAIT_MS + REQUEST_TIMEOUT_MS)
+// so main always handles/times-out the request and returns structured errors first.
+const FE_STARTUP_BUFFER_MS = 60_000;
 const FE_TIMEOUT_BUFFER_MS = 10_000;
 // No frontend retry layer: the Electron main process (ipc-router._callBackend)
 // already waits for backend readiness and retries transient mid-flight failures
@@ -183,7 +184,9 @@ const _invoke = async <T>(method: string, params?: Record<string, unknown> | obj
   }
 
   const timeoutMs =
-    (LONG_RUNNING_METHODS.has(method) ? IPC_LONG_TIMEOUT : IPC_TIMEOUT) + FE_TIMEOUT_BUFFER_MS;
+    (LONG_RUNNING_METHODS.has(method) ? IPC_LONG_TIMEOUT : IPC_TIMEOUT) +
+    FE_STARTUP_BUFFER_MS +
+    FE_TIMEOUT_BUFFER_MS;
   // Single attempt: retry logic lives in ipc-router._callBackend (main process),
   // which can actually wait for the backend to recover. The timeout race is a
   // backstop for the case where the main process never resolves the invoke.
@@ -275,6 +278,8 @@ export interface PreviewBody {
   id_column?: string;
   rename_column?: string;
   sequence_mode?: SequenceMode;
+  /** Carpeta de salida: el preview replica la dedupe del job contra archivos ya existentes ahí. */
+  destino?: string;
 }
 
 

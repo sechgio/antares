@@ -60,6 +60,30 @@ def test_formatos_generate_writes_to_output_path_without_base64(monkeypatch, tmp
     assert "pdf_base64" not in result
 
 
+def test_formatos_generate_large_persists_to_disk(monkeypatch) -> None:
+    def fake_generate_pdf(format_id: str, desde: int, hasta: int) -> tuple[bytes, str]:
+        return b"%PDF-huge-bytes", "formato_huge.pdf"
+
+    monkeypatch.setattr("backend.core.formatos.generate_pdf", fake_generate_pdf)
+    monkeypatch.setattr("backend.handlers.formatos._MAX_INLINE_PDF_BYTES", 10)
+
+    result = formatos_generate(
+        {
+            "format_id": "template-d",
+            "desde": 1,
+            "hasta": 10,
+        }
+    )
+
+    assert "saved_path" in result
+    assert "pdf_base64" not in result
+    assert result["filename"] == "formato_huge.pdf"
+    from pathlib import Path
+    out_file = Path(result["saved_path"])
+    assert out_file.exists()
+    assert out_file.read_bytes() == b"%PDF-huge-bytes"
+
+
 def test_formatos_get_template_returns_pdf_base64(monkeypatch) -> None:
     def fake_get_template_pdf(fmt_id: str) -> tuple[bytes, str]:
         assert fmt_id == "template-d"

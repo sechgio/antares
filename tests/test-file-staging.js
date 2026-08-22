@@ -53,6 +53,51 @@ async function main() {
     fs.rmSync(root, { recursive: true, force: true });
   }
 
+  // ── B5: contrato de createFileCapability / resolveCapability ──
+  // Lockea el comportamiento que la limpieza del chequeo muerto no debe cambiar
+  // y documenta la restricción de write-tokens (solo archivos existentes; el
+  // flujo "guardar como" usa validación de ruta cruda bajo roots registrados).
+  {
+    const { createFileCapability, resolveCapability, revokeCapability } = require('../electron/file-capabilities.js');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-b5-'));
+    try {
+      const existing = path.join(tmpDir, 'salida.json');
+      fs.writeFileSync(existing, '{}');
+
+      const wCap = createFileCapability({ filePath: existing, mode: 'write' });
+      assert.ok(wCap.token.startsWith('antares-write_'), 'write token usa prefijo antares-write_');
+      revokeCapability(wCap.token);
+
+      let newFileRejected = false;
+      try {
+        createFileCapability({ filePath: path.join(tmpDir, 'no-existe.pdf'), mode: 'write' });
+      } catch {
+        newFileRejected = true;
+      }
+      assert(newFileRejected, 'write token sobre archivo inexistente debe rechazarse');
+
+      const rCap = createFileCapability({ filePath: existing, mode: 'read' });
+      const resolved = resolveCapability(rCap.token, 'read', null);
+      assert.strictEqual(resolved.path, existing, 'resolveCapability devuelve la ruta real');
+      assert.strictEqual(resolved.mode, 'read');
+      revokeCapability(rCap.token);
+
+      if (process.platform !== 'win32') {
+        const link = path.join(tmpDir, 'link.json');
+        fs.symlinkSync(existing, link);
+        let linkRejected = false;
+        try {
+          createFileCapability({ filePath: link, mode: 'read' });
+        } catch {
+          linkRejected = true;
+        }
+        assert(linkRejected, 'symlink debe rechazarse en createFileCapability');
+      }
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  }
+
   console.log('  ✓ staging preserves .xlsx extension (no .tmp rewrite)');
   console.log('\nAll file-staging tests passed.');
 }

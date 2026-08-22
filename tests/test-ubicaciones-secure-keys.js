@@ -76,6 +76,33 @@ function main() {
     failed = true;
   }
 
+  // ── B8: el cache de resolución está acotado ──
+  // Un renderer que enviara fallbacks variables por llamada (hoy envía el
+  // placeholder enmascarado estable) haría crecer el Map sin cota. Con store
+  // vacío, cada fallback distinto genera una entrada nueva: sin tope serían
+  // 40; con tope deben quedar ≤ _RESOLVE_CACHE_MAX (32).
+  {
+    const ubicacionesKeys = require(path.join(ROOT, 'electron', 'ubicaciones-secure-keys'));
+    ubicacionesKeys.clearProviderApiKeyCache();
+    ubicacionesKeys.setUbicacionesApiKeys({}); // store vacío → cada resolución usa el fallback
+    try {
+      for (let i = 0; i < 40; i++) {
+        ubicacionesKeys.resolveProviderApiKey('google', `fallback-${i}`);
+      }
+      const size = ubicacionesKeys.__resolveCacheSizeForTests();
+      if (size > 32) {
+        console.error(`[FAIL] resolve cache unbounded: ${size} entries (max 32)`);
+        failed = true;
+      }
+    } finally {
+      try {
+        fs.unlinkSync(filePath);
+      } catch {
+        // ignore cleanup errors
+      }
+    }
+  }
+
   try {
     fs.unlinkSync(filePath);
   } catch {

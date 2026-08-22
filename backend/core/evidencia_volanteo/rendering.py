@@ -12,7 +12,13 @@ from typing import TYPE_CHECKING, Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from backend.utils.image_data import data_uri_from_bytes
+from backend.utils.image_data import (
+    contain_fit_cm,
+    data_uri_from_b64,
+    data_uri_from_bytes,
+    valid_b64_image,
+    valid_image_bytes,
+)
 from backend.utils.pdf_html import write_pdf_sanitized
 
 from .errors import RenderingError
@@ -154,59 +160,6 @@ _jinja_env = Environment(
 )
 
 
-def _data_uri_from_b64(b64_string: str) -> str:
-    if b64_string.startswith("data:"):
-        header_end = b64_string.find(",")
-        if header_end != -1:
-            b64_string = b64_string[header_end + 1 :]
-    mime = "image/png"
-    try:
-        sample = b64_string[:24] + "=" * ((4 - len(b64_string[:24]) % 4) % 4)
-        header = base64.b64decode(sample, validate=True)
-        if header.startswith(b"\xff\xd8"):
-            mime = "image/jpeg"
-        elif header.startswith(b"\x89PNG"):
-            mime = "image/png"
-        elif header.startswith(b"RIFF") and header[8:12] == b"WEBP":
-            mime = "image/webp"
-    except Exception:
-        pass
-    return f"data:{mime};base64,{b64_string}"
-
-
-def _valid_image_bytes(content: bytes) -> bool:
-    try:
-        from PIL import Image
-
-        with Image.open(BytesIO(content)) as image:
-            image.verify()
-        return True
-    except Exception:
-        return False
-
-
-def _valid_b64_image(b64_string: str) -> bool:
-    try:
-        content = base64.b64decode(b64_string, validate=True)
-    except Exception:
-        return False
-    return _valid_image_bytes(content)
-
-
-def _contain_fit_cm(content: bytes, max_width_cm: float, max_height_cm: float) -> tuple[float, float]:
-    try:
-        from PIL import Image
-
-        with Image.open(BytesIO(content)) as image:
-            width_px, height_px = image.size
-    except Exception:
-        return max_width_cm, max_height_cm
-    if width_px <= 0 or height_px <= 0:
-        return max_width_cm, max_height_cm
-    scale = min(max_width_cm / width_px, max_height_cm / height_px)
-    return width_px * scale, height_px * scale
-
-
 def _serialize_pages(
     document: EvidenciaDocument,
     image_uris: dict[str, str],
@@ -239,21 +192,21 @@ def _build_image_uris(
         if path.is_file():
             with contextlib.suppress(Exception):
                 content = path.read_bytes()
-                if _valid_image_bytes(content):
+                if valid_image_bytes(content):
                     image_uris[filename] = data_uri_from_bytes(content)
     for filename, b64 in images.items():
         if filename in image_uris:
             continue
-        if _valid_b64_image(b64):
-            image_uris[filename] = _data_uri_from_b64(b64)
+        if valid_b64_image(b64):
+            image_uris[filename] = data_uri_from_b64(b64)
     return image_uris
 
 
 def _prepare_logos(logos: dict[str, str | None]) -> tuple[str | None, str | None]:
     left_raw = logos.get("left")
     right_raw = logos.get("right")
-    left = _data_uri_from_b64(left_raw) if left_raw and _valid_b64_image(left_raw) else None
-    right = _data_uri_from_b64(right_raw) if right_raw and _valid_b64_image(right_raw) else None
+    left = data_uri_from_b64(left_raw) if left_raw and valid_b64_image(left_raw) else None
+    right = data_uri_from_b64(right_raw) if right_raw and valid_b64_image(right_raw) else None
     return left, right
 
 
@@ -466,11 +419,11 @@ def render_docx(
             logo_right_bytes = base64.b64decode(right_b64, validate=True)
 
     logo_left_dims = (
-        _contain_fit_cm(logo_left_bytes, LOGO_MAX_WIDTH_CM, LOGO_MAX_HEIGHT_CM)
+        contain_fit_cm(logo_left_bytes, LOGO_MAX_WIDTH_CM, LOGO_MAX_HEIGHT_CM)
         if logo_left_bytes else (0.0, 0.0)
     )
     logo_right_dims = (
-        _contain_fit_cm(logo_right_bytes, LOGO_MAX_WIDTH_CM, LOGO_MAX_HEIGHT_CM)
+        contain_fit_cm(logo_right_bytes, LOGO_MAX_WIDTH_CM, LOGO_MAX_HEIGHT_CM)
         if logo_right_bytes else (0.0, 0.0)
     )
 
@@ -706,7 +659,7 @@ def render_docx(
                 _set_cell_frame(cell)  # interiores sin borde
                 slot_filename = slot_map.get(position)
                 content = image_bytes.get(slot_filename or "")
-                if slot_filename and content and _valid_image_bytes(content):
+                if slot_filename and content and valid_image_bytes(content):
                     run = cell.paragraphs[0].add_run()
                     run.add_picture(
                         BytesIO(content),

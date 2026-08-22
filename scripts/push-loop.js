@@ -20,56 +20,18 @@
  *   node scripts/push-loop.js --ship --merge --message "feat: nueva opción de export"
  */
 
-const path = require('path');
-const { execFileSync, execSync } = require('child_process');
-
-const REPO_OWNER = 'sechgio';
-const REPO_NAME = 'antares';
-const BASE_BRANCH = 'main';
-const ROOT = path.resolve(__dirname, '..');
-
-function sh(command, opts = {}) {
-  const result = execSync(command, {
-    cwd: ROOT,
-    encoding: 'utf8',
-    stdio: 'pipe',
-    maxBuffer: 50 * 1024 * 1024,
-    ...opts,
-  });
-  return (result || '').toString().trim();
-}
-
-function trySh(command, opts = {}) {
-  try {
-    return sh(command, opts);
-  } catch {
-    return null;
-  }
-}
-
-function step(label, fn) {
-  process.stdout.write(`  ${label} ... `);
-  try {
-    const result = fn();
-    console.log('✅');
-    return result;
-  } catch (err) {
-    console.log('❌');
-    console.error(`    ${err.message}`);
-    const e = new Error(err.message || 'Step failed');
-    e.code = err.code || 1;
-    throw e;
-  }
-}
-
-function skip(label, reason) {
-  console.log(`  ${label} ... ⏭️  (${reason})`);
-}
-
-function die(message, code = 1) {
-  console.error(`\n✗ ${message}`);
-  process.exit(code);
-}
+const { execFileSync } = require('child_process');
+const {
+  REPO_OWNER,
+  REPO_NAME,
+  BASE_BRANCH,
+  ROOT,
+  sh,
+  trySh,
+  step,
+  skip,
+  die,
+} = require('./lib/loop-utils');
 
 function parseArgs(argv) {
   const args = argv.slice(2);

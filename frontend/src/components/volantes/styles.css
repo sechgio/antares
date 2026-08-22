@@ -482,17 +482,11 @@ textarea.vgen-input {
     transform: scale(0.985);
 }
 
+.vgen-logos-grid .v-upload-box,
 .vgen-section-logos .v-upload-box {
     min-width: 0;
     min-height: 48px;
     padding: 6px;
-}
-
-.vgen-section-logos .v-upload-box:first-child {
-    justify-self: stretch;
-}
-
-.vgen-section-logos .v-upload-box:nth-child(2) {
     justify-self: stretch;
 }
 
@@ -775,6 +769,51 @@ textarea.vgen-input {
     border: 2px solid #ffffff;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
     cursor: pointer;
+}
+
+/* BULLET TOOLBAR */
+.vgen-bullet-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    margin-top: 6px;
+    padding: 2px 4px;
+    background: var(--vgen-bg-canvas);
+    border: 1px solid var(--vgen-line);
+    border-radius: var(--vgen-radius-control);
+    width: fit-content;
+}
+
+.vgen-bullet-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 22px;
+    border-radius: 5px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--vgen-ink-soft);
+    cursor: pointer;
+    transition: all 120ms ease;
+    padding: 0;
+}
+
+.vgen-bullet-btn:hover {
+    color: var(--vgen-ink);
+    background: var(--vgen-bg-panel);
+    border-color: var(--vgen-line);
+}
+
+.vgen-bullet-btn.active {
+    background: var(--vgen-bg-panel);
+    color: var(--vgen-accent);
+    border-color: color-mix(in srgb, var(--vgen-accent) 40%, transparent);
+    box-shadow: var(--vgen-shadow-sm);
+}
+
+.vgen-bullet-btn svg {
+    flex-shrink: 0;
 }
 
 /* DISTRICT COLOR PICKER */
@@ -1143,6 +1182,7 @@ textarea.vgen-input {
     line-height: 1.22;
     text-align: justify;
     margin: 0;
+    white-space: pre-line;
 }
 
 .flyer-zones-text.compact {

@@ -71,6 +71,7 @@ async function run() {
       fakeProcess.stdout.emit('data', Buffer.from('{"jsonrpc":"2.0","method":"ready","params":{"status":"ok"}}\n'));
     });
 
+    childProcess.spawn.lastProc = fakeProcess;
     return fakeProcess;
   };
 
@@ -104,6 +105,40 @@ async function run() {
 
   try {
     await startPythonBackend(true);
+
+    // Test 1: Responsive backend handling large concurrent stdout traffic during probe
+    const activeProc = childProcess.spawn.lastProc;
+    if (activeProc) {
+      activeProc.stdin.write = (chunk) => {
+        try {
+          const msg = JSON.parse(chunk.toString().trim());
+          if (msg.id && String(msg.id).startsWith('health-')) {
+            // Emit large unrelated RPC response first
+            const hugePayload = JSON.stringify({
+              jsonrpc: '2.0',
+              id: 'large-canvas-123',
+              result: { layers: new Array(100).fill({ type: 'shape', data: 'x'.repeat(2000) }) },
+            });
+            activeProc.stdout.emit('data', Buffer.from(hugePayload + '\n'));
+            // Then emit matching health probe response
+            const probeResponse = JSON.stringify({
+              jsonrpc: '2.0',
+              id: msg.id,
+              result: { version: '0.11.9' },
+            });
+            activeProc.stdout.emit('data', Buffer.from(probeResponse + '\n'));
+          }
+        } catch { /* ignore */ }
+      };
+    }
+    await runHealthCheckOnce();
+    assert(spawnCount === 1, 'Responsive backend should not restart when handling concurrent traffic');
+    assert(getState() === 'ready', 'Backend should remain in ready state');
+
+    // Test 2: Unresponsive backend (stdin.write does nothing) triggers restart
+    if (activeProc) {
+      activeProc.stdin.write = () => {};
+    }
     await runHealthCheckOnce();
     const restarted = await waitFor(() => spawnCount >= 2 && getState() === 'ready');
 

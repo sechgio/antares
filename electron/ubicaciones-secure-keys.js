@@ -51,6 +51,18 @@ function getMaskedUbicacionesApiKeys() {
 
 /** Session cache — avoid OS keychain I/O on every preview/generate call. */
 const _resolveCache = new Map();
+/** Cota del cache de resolución: un renderer que enviara fallbacks variables
+ * por llamada no debe hacer crecer el Map sin límite. La iteración de Map es
+ * en orden de inserción — desalojar el más antiguo alcanza para un cache
+ * acotado a la sesión (se limpia entero en ubicaciones_keys_set). */
+const _RESOLVE_CACHE_MAX = 32;
+
+function _cacheProviderApiKeyResolution(cacheKey, resolved) {
+  _resolveCache.set(cacheKey, resolved);
+  while (_resolveCache.size > _RESOLVE_CACHE_MAX) {
+    _resolveCache.delete(_resolveCache.keys().next().value);
+  }
+}
 
 function clearProviderApiKeyCache() {
   _resolveCache.clear();
@@ -78,7 +90,7 @@ function resolveProviderApiKey(provider, fallbackFromRenderer) {
     // Ignore masked placeholders from the renderer.
     if (fb && !fb.startsWith('••••')) resolved = fb.slice(0, 512);
   }
-  _resolveCache.set(cacheKey, resolved);
+  _cacheProviderApiKeyResolution(cacheKey, resolved);
   return resolved;
 }
 
@@ -91,4 +103,6 @@ module.exports = {
   setUbicacionesApiKeys,
   resolveProviderApiKey,
   clearProviderApiKeyCache,
+  /** Test hook: tamaño del cache de resolución (B8 — acotado a _RESOLVE_CACHE_MAX). */
+  __resolveCacheSizeForTests: () => _resolveCache.size,
 };

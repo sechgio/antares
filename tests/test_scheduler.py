@@ -296,6 +296,28 @@ def test_submit_heavy_releases_slot_when_executor_submit_raises() -> None:
     with pytest.raises(RuntimeError):
         scheduler.submit_heavy(lambda: None)
 
-    assert scheduler.metrics()["heavy_outstanding"] == 0
+    metrics = scheduler.metrics()
+    assert metrics["heavy_outstanding"] == 0
+    # B7: un submit fallido no es un submit — el contador no debe inflarse
+    # (antes quedaba incrementado para siempre en cada fallo).
+    assert metrics["heavy_submitted"] == 0
     for _ in range(capacity):
         assert scheduler._heavy_slots.acquire(blocking=False), "semaphore permit was leaked"
+
+
+def test_submit_light_does_not_inflate_submitted_when_executor_submit_raises() -> None:
+    """B7 (lane light): si executor.submit lanza, outstanding se libera y el
+    contador submitted NO debe quedar incrementado — un fallo de submit no
+    puede ensuciar la telemetría para el resto de la sesión."""
+    from backend.core.scheduler import WorkScheduler
+
+    scheduler = WorkScheduler(light_workers=1, heavy_workers=1, heavy_queue_limit=0)
+    scheduler.shutdown(wait=True)
+
+    with pytest.raises(RuntimeError):
+        scheduler.submit_light(lambda: None)
+
+    metrics = scheduler.metrics()
+    assert metrics["light_outstanding"] == 0
+    assert metrics["light_submitted"] == 0
+    assert scheduler._light_slots.acquire(blocking=False), "semaphore permit was leaked"

@@ -12,6 +12,8 @@ import { DEFAULT_TAB, FULL_BLEED_TABS, TAB_DEFINITIONS, CONFIG_SECTION_DEFINITIO
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import EspaciosAuthSkeleton from './components/espacios/components/EspaciosAuthSkeleton';
 import { subscribeHistoryReexecute } from './components/history/historyEvents';
+import { api } from './api';
+import { bootThemeFromBackend } from './utils/themeApplier';
 
 // Lazy: LoginScreen pulls framer-motion (~100KB+ gzip). Only needed for Espacios auth.
 const LoginScreen = React.lazy(() => import('./auth/LoginScreen'));
@@ -178,6 +180,12 @@ function AppContent() {
     const t = window.setTimeout(prefetchSettingsModal, 1);
     return () => window.clearTimeout(t);
   }, []);
+
+  // Backend theme is the persisted authority: the cached CSS painted first in
+  // main.tsx (no flash), then this reconciles with the saved theme as soon as
+  // IPC answers. Fixes startup ignoring theme_config.json when localStorage
+  // cache is missing or stale.
+  useEffect(() => bootThemeFromBackend(api.getTheme), []);
 
   // Mount PetMascot only when Petdex enables it (same session or prior).
   useEffect(() => {

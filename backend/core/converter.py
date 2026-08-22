@@ -358,11 +358,28 @@ def convertir_a_preview(
     pil_formato = PIL_FORMAT_MAP.get(formato, formato)
 
     with Image.open(ruta_origen) as source_img:
+        # Pre-extract upright metadata dimensions before downsampling/draft
+        raw_w, raw_h = source_img.size
+        try:
+            exif = source_img.getexif()
+            orientation = exif.get(_EXIF_ORIENTATION, 1) if exif is not None else 1
+        except Exception:
+            orientation = 1
+
+        if orientation in (5, 6, 7, 8):
+            orig_w, orig_h = raw_h, raw_w
+        else:
+            orig_w, orig_h = raw_w, raw_h
+
+        orig_size_kb = round(stat.st_size / 1024, 1)
+
+        # Fast path for JPEG: decode at reduced scale directly via libjpeg Turbo
+        if (source_img.format or "").upper() == "JPEG":
+            with contextlib.suppress(Exception):
+                source_img.draft("RGB", (800, 800))
+
         # Match convertir_imagen: bake Orientation so preview is upright.
         working: Image.Image = _bake_orientation(source_img)
-
-        orig_w, orig_h = working.size
-        orig_size_kb = round(stat.st_size / 1024, 1)
 
         # Preview capped at 400px on longest side. When `resize` is provided it
         # defines the target proportions, but the preview itself stays bounded
@@ -373,7 +390,7 @@ def convertir_a_preview(
         if resize and isinstance(resize, (tuple, list)) and len(resize) == 2:
             target_w, target_h = int(resize[0]), int(resize[1])
         else:
-            target_w, target_h = working.size
+            target_w, target_h = orig_w, orig_h
         longest = max(target_w, target_h)
         if longest == 0:
             raise ValueError("Imagen con dimensiones 0x0 no puede ser procesada")

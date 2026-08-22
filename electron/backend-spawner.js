@@ -387,9 +387,10 @@ function _probeBackendResponsiveness(proc) {
   }
 
   const probeId = `health-${crypto.randomUUID()}`;
+  const probeIdBytes = Buffer.from(probeId, 'utf8');
 
   return new Promise((resolve, reject) => {
-    let buffer = '';
+    let pending = Buffer.alloc(0);
     let settled = false;
 
     const cleanup = () => {
@@ -407,20 +408,34 @@ function _probeBackendResponsiveness(proc) {
 
     const onClose = () => finish(reject, new Error('process closed during probe'));
     const onData = (data) => {
-      buffer += data.toString();
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const msg = JSON.parse(line);
-          if (msg.id === probeId) {
-            finish(resolve, true);
-            return;
+      const chunk = Buffer.isBuffer(data) ? data : Buffer.from(data);
+      const buf = pending.length === 0 ? chunk : Buffer.concat([pending, chunk]);
+      let start = 0;
+      for (;;) {
+        const idx = buf.indexOf(0x0a, start);
+        if (idx === -1) break;
+        if (idx > start) {
+          const lineBuf = buf.subarray(start, idx);
+          // Fast byte check: probe response is small (<1 KB) and MUST contain probeId.
+          // Skips string decode and JSON.parse on unrelated large concurrent RPC payloads.
+          if (lineBuf.includes(probeIdBytes)) {
+            try {
+              const msg = JSON.parse(lineBuf.toString('utf8'));
+              if (msg.id === probeId) {
+                finish(resolve, true);
+                return;
+              }
+            } catch {
+              // Ignore malformed lines
+            }
           }
-        } catch {
-          // Ignore malformed lines; the main IPC parser already does the same.
         }
+        start = idx + 1;
+      }
+      pending = start === 0 ? buf : buf.subarray(start);
+      if (pending.length > 128 * 1024) {
+        // Line exceeds 128 KiB without newline — probe response is <500 bytes, drop pending
+        pending = Buffer.alloc(0);
       }
     };
 

@@ -12,6 +12,7 @@ import logging
 import os
 import threading
 import time
+from collections import deque
 from collections.abc import Callable
 from concurrent.futures import ALL_COMPLETED, CancelledError, Future, as_completed, wait
 from pathlib import Path
@@ -290,8 +291,21 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     # ``-2``, ``-3`` suffixes. Mapping keeps raw names + collisions (process aborts).
     if not file_mapping and res:
         reserved_preview: set[str] = set()
-        fake_tasks = [(orig, Path(nuev), False) for orig, nuev, _en_bd in res]
-        deduped = _dedupe_chunk_out_paths(fake_tasks, reserved_preview)
+        # Mismo criterio que el job: escanear destino UNA vez. Sin destino (o
+        # carpeta inexistente) se usa set() — nunca None — para que
+        # _claim_out_path no caiga a Path.exists() sobre nombres pelados
+        # resueltos contra el CWD del backend (divergía del job y miraba una
+        # carpeta sin relación con la salida). Con destino, los fake_tasks van
+        # unidos a destino, así el fallback exists() de un escaneo fallido
+        # (disk_keys=None) consulta la ruta real de salida.
+        destino = str(params.get("destino") or "").strip()
+        disk_keys = _scan_dest_out_keys(destino) if destino else set()
+        dest_base = Path(destino) if destino else None
+        fake_tasks = [
+            (orig, (dest_base / nuev) if dest_base else Path(nuev), False)
+            for orig, nuev, _en_bd in res
+        ]
+        deduped = _dedupe_chunk_out_paths(fake_tasks, reserved_preview, disk_keys=disk_keys)
         res = [
             (orig, Path(out_path).name, en_bd)
             for (orig, _old, en_bd), (_o, out_path, _v) in zip(res, deduped, strict=True)
@@ -720,12 +734,12 @@ def _run_conversion_job(job: Job) -> None:
                         disk_keys=disk_out_keys,
                     )
 
-                    task_queue = list(chunk_tasks)
+                    task_queue = deque(chunk_tasks)
                     in_flight: dict[Future, None] = {}
                     futures = []
 
                     def _submit_one(
-                        _task_queue: list = task_queue,
+                        _task_queue: deque = task_queue,
                         _in_flight: dict[Future, None] = in_flight,
                         _futures: list = futures,
                     ) -> bool:
@@ -733,7 +747,7 @@ def _run_conversion_job(job: Job) -> None:
                         nonlocal cancelled
                         if not _task_queue:
                             return True
-                        task = _task_queue.pop(0)
+                        task = _task_queue.popleft()
                         future = scheduler.submit_heavy(
                             _process_one,
                             task,

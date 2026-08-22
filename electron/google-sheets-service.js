@@ -194,8 +194,13 @@ function _buildAuthUrl(redirectUri, codeChallenge, state) {
 function getAuthUrl() {
   const redirectUri = _pendingRedirectUri || 'http://127.0.0.1:42813';
   const verifier = _pendingCodeVerifier || _generateCodeVerifier();
+  // Persistir: exchangeCode debe usar el MISMO verifier que generó el
+  // challenge. Sin esto, el flujo legacy producía URLs cuyo PKCE jamás
+  // podía completarse (verifier nuevo por llamada, nunca guardado).
+  _pendingCodeVerifier = verifier;
   const challenge = _generateCodeChallenge(verifier);
   const state = _pendingOAuthState || crypto.randomBytes(24).toString('base64url');
+  _pendingOAuthState = state;
   return _buildAuthUrl(redirectUri, challenge, state);
 }
 

@@ -2,6 +2,7 @@
  * Preview A4 — layout espejo de sech-gio/frontend/src/features/fichas-tecnicas/PreviewPanel.tsx
  * Logos llegan como data-URL (string) en Antares (no File).
  */
+import { useMemo } from 'react';
 import { normalizeFichaForPreview, type FichaTecnica } from './types';
 
 interface Props {
@@ -10,7 +11,7 @@ interface Props {
 }
 
 export default function PreviewPanel({ ficha, logoLeft }: Props) {
-  const data = normalizeFichaForPreview(ficha);
+  const data = useMemo(() => normalizeFichaForPreview(ficha), [ficha]);
 
   return (
     <div

@@ -19,9 +19,7 @@ def _fake_map_png(width: int, height: int) -> bytes:
 
 @pytest.fixture(autouse=True)
 def _clear_preview_caches() -> None:
-    ubi._preview_composed_cache.clear()
-    ubi._map_screenshot_cache.clear()
-    ubi._map_screenshot_working_cache.clear()
+    ubi._clear_ubicaciones_caches()
 
 
 def test_manual_preview_cache_differs_by_text_fields() -> None:
@@ -211,3 +209,54 @@ def test_preview_composed_cache_differs_by_zoom() -> None:
     assert zoom15["success"] is True
     assert zoom19["success"] is True
     assert fetch_map.call_count == 2
+
+
+def test_clear_ubicaciones_caches_empties_all_stores() -> None:
+    cap_w, cap_h = ubi._map_capture_size("horizontal", preview=True)
+    fake_map = _fake_map_png(cap_w, cap_h)
+    manual = {
+        "lat": "-11.968674",
+        "lon": "-76.978299",
+        "cod_componente": "COD-X",
+        "direccion": "Calle 1",
+        "localidad": "Loc 1",
+        "distrito": "Dist 1",
+    }
+
+    with patch.object(ubi, "_get_cached_map_screenshot", return_value=fake_map):
+        ubi.handle_preview_ubicacion({
+            "formato": "horizontal",
+            "manualData": manual,
+            "provider": "osm",
+            "zoom": 15,
+        })
+
+    assert len(ubi._preview_composed_cache) > 0
+    ubi._clear_ubicaciones_caches()
+    assert len(ubi._preview_composed_cache) == 0
+    assert len(ubi._map_screenshot_store) == 0
+    assert len(ubi._excel_cache) == 0
+
+
+def test_preview_composed_cache_is_bounded() -> None:
+    cap_w, cap_h = ubi._map_capture_size("horizontal", preview=True)
+    fake_map = _fake_map_png(cap_w, cap_h)
+
+    with patch.object(ubi, "_get_cached_map_screenshot", return_value=fake_map):
+        for i in range(25):
+            ubi.handle_preview_ubicacion({
+                "formato": "horizontal",
+                "manualData": {
+                    "lat": "-11.968674",
+                    "lon": "-76.978299",
+                    "cod_componente": f"COD-{i}",
+                    "direccion": f"Calle {i}",
+                    "localidad": "Loc 1",
+                    "distrito": "Dist 1",
+                },
+                "provider": "osm",
+                "zoom": 15,
+            })
+
+    assert len(ubi._preview_composed_cache) <= ubi._MAX_COMPOSED_CACHE
+    assert ubi._MAX_COMPOSED_CACHE <= 20

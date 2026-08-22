@@ -138,29 +138,34 @@ async function _writeDiskCache(cacheDir, cachePath, jpegBuf) {
 async function _trimDiskCache(cacheDir) {
   try {
     const names = await fsp.readdir(cacheDir);
-    const entries = [];
-    for (const name of names) {
-      if (!name.endsWith('.jpg')) continue;
-      const full = path.join(cacheDir, name);
-      let mtimeMs = 0;
-      try {
-        const st = await fsp.stat(full);
-        mtimeMs = st.mtimeMs;
-      } catch {
-        mtimeMs = 0;
-      }
-      entries.push({ full, mtimeMs });
-    }
+    const jpgNames = names.filter((name) => name.endsWith('.jpg'));
+    if (jpgNames.length <= DISK_CACHE_MAX_FILES) return;
+
+    const entries = await Promise.all(
+      jpgNames.map(async (name) => {
+        const full = path.join(cacheDir, name);
+        try {
+          const st = await fsp.stat(full);
+          return { full, mtimeMs: st.mtimeMs };
+        } catch {
+          return { full, mtimeMs: 0 };
+        }
+      }),
+    );
+
     entries.sort((a, b) => a.mtimeMs - b.mtimeMs);
     const excess = entries.length - DISK_CACHE_MAX_FILES;
     if (excess <= 0) return;
-    for (let i = 0; i < excess; i += 1) {
-      try {
-        await fsp.unlink(entries[i].full);
-      } catch {
-        /* ignore */
-      }
-    }
+
+    await Promise.all(
+      entries.slice(0, excess).map(async (entry) => {
+        try {
+          await fsp.unlink(entry.full);
+        } catch {
+          /* ignore */
+        }
+      }),
+    );
   } catch {
     /* ignore */
   }

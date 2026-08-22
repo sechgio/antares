@@ -5,6 +5,7 @@ const path = require('path');
 const assert = require('assert');
 
 process.env.LOCALAPPDATA = path.join(os.tmpdir(), 'alog-fix-test');
+fs.rmSync(process.env.LOCALAPPDATA, { recursive: true, force: true });
 const l = require('../electron/app-log.js');
 
 const tmp = os.tmpdir();
@@ -46,7 +47,11 @@ console.log('cleanStaleTempDirs: 5/5 escenarios OK');
 // Logging normal (mkdir cacheado + symlink)
 const dir = l.initAppLogs();
 l.appendLogLine('INFO', 'linea normal con\nsalto de linea inyectado');
-const logFile = path.join(dir, `antares-${new Date().toISOString().slice(0, 10)}.log`);
+const d = new Date();
+const yyyy = d.getFullYear();
+const mm = String(d.getMonth() + 1).padStart(2, '0');
+const dd = String(d.getDate()).padStart(2, '0');
+const logFile = path.join(dir, `antares-${yyyy}-${mm}-${dd}.log`);
 const content = fs.readFileSync(logFile, 'utf8');
 assert(content.includes('linea normal con salto de linea inyectado'), 'CRLF sanitizado');
 assert(!content.includes('\n[') || content.split('\n').length === 2, 'una sola linea');

@@ -401,9 +401,9 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot) {
     try {
       await Promise.race([
         pdfWindow.webContents.executeJavaScript(
-          'document.fonts && document.fonts.ready ? document.fonts.ready.then(() => true) : true',
+          'document.fonts && document.fonts.status === "loaded" ? true : (document.fonts && document.fonts.ready ? document.fonts.ready.then(() => true) : true)',
         ),
-        new Promise((resolve) => setTimeout(resolve, 5000)),
+        new Promise((resolve) => setTimeout(resolve, 1500)),
       ]);
     } catch {
       /* fonts.ready unavailable — proceed with system fallbacks */
@@ -415,6 +415,21 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot) {
       pageSize: 'A4',
       margins: { marginType: 'none' },
     });
+
+    // Purgar el documento renderizado de la ventana del pool para que Chromium
+    // libere el DOM y texturas de imágenes de la memoria, y libere el descriptor
+    // de archivo de render.html en Windows (evitando EBUSY al borrar tempDir).
+    if (typeof pdfWindow.loadURL === 'function') {
+      try {
+        await pdfWindow.loadURL('about:blank');
+      } catch {
+        if (!pdfWindow.isDestroyed()) {
+          pdfWindow.destroy();
+          slot.window = null;
+        }
+      }
+    }
+
     const filename = _sanitizeFilename(params.filename) || 'reporte.pdf';
     let outputPath = _sanitizePdfOutputPath(params.outputPath, filename);
 
@@ -516,16 +531,24 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
   if (method === 'file_token_read_json') {
     const token = params && params.token;
     const filePath = _resolveTokenPath(token, _webContentsIdFromWindow(window));
-    const raw = await fs.promises.readFile(filePath, 'utf8');
     const MAX_JSON_READ = 64 * 1024 * 1024;
-    if (Buffer.byteLength(raw, 'utf8') > MAX_JSON_READ) {
-      throw new Error('El resultado JSON es demasiado grande para cargarlo en memoria');
-    }
     let parsed;
     try {
+      // Stat primero: un spill de hasta ~100 MB no debe cargarse a memoria
+      // para ser rechazado recién por el chequeo de tamaño posterior.
+      const st = await fs.promises.stat(filePath);
+      if (!st.isFile()) {
+        throw new Error('El resultado JSON no es un archivo regular');
+      }
+      if (st.size > MAX_JSON_READ) {
+        throw new Error('El resultado JSON es demasiado grande para cargarlo en memoria');
+      }
+      const raw = await fs.promises.readFile(filePath, 'utf8');
       parsed = JSON.parse(raw);
     } finally {
-      // Spill files are one-shot; delete after read so %TEMP% does not grow unbounded.
+      // Spill files are one-shot; delete after read so %TEMP% does not grow
+      // unbounded. El finally cubre también el rechazo por tamaño/stat: el
+      // token se revoca igual (antes quedaba vivo tras el rechazo).
       await cleanupSpreadsheetSpillFile(filePath);
       revokeCapability(token);
     }

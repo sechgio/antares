@@ -116,11 +116,19 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
+      - name: Cache MSYS2 packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: C:\msys64\var\cache\pacman\pkg
+          key: msys2-pango-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            msys2-pango-${{ runner.os }}-
+
       # Native Pango/GTK DLLs so WeasyPrint can load during packaging and so
       # PyInstaller / runtime resolution can see WEASYPRINT_DLL_DIRECTORIES.
       - name: Install Pango/GTK via MSYS2 (for WeasyPrint)
         run: |
-          C:\msys64\usr\bin\bash -lc 'pacman -S mingw-w64-x86_64-pango --noconfirm'
+          C:\msys64\usr\bin\bash -lc 'pacman -S mingw-w64-x86_64-pango --noconfirm --needed'
           echo "C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
           if (Test-Path "C:\msys64\mingw64\bin\python.exe") {
             Remove-Item "C:\msys64\mingw64\bin\python.exe" -Force
@@ -143,9 +151,6 @@ jobs:
           npm ci --prefix frontend
           python -m pip install -e ".[build]"
 
-      - name: Build Backend
-        run: npm run build:backend
-
       - name: Validate required build configuration
         shell: pwsh
         env:
@@ -160,11 +165,11 @@ jobs:
             }
           }
 
-      - name: Build Frontend
+      - name: Build Backend and Frontend
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-        run: npm run build:frontend
+        run: npx concurrently "npm run build:backend" "npm run build:frontend"
 
       - name: Build Electron App
         run: npx --no-install electron-builder --win --publish never

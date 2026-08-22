@@ -1,7 +1,20 @@
+import { base64ToBytes } from '../../utils/bytesToBase64';
 import type { Orientation, PadronItem } from './data';
 
+const _imageBase64Cache = new Map<string, Promise<string>>();
+
+export function clearImageBase64Cache(): void {
+  _imageBase64Cache.clear();
+}
+
 export function loadImageAsBase64(url: string): Promise<string> {
-  return new Promise((resolve) => {
+  if (!url) return Promise.resolve(url);
+  if (url.startsWith('data:')) return Promise.resolve(url);
+
+  const cached = _imageBase64Cache.get(url);
+  if (cached) return cached;
+
+  const promise = new Promise<string>((resolve) => {
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
@@ -20,9 +33,15 @@ export function loadImageAsBase64(url: string): Promise<string> {
         resolve(url);
       }
     };
-    img.onerror = () => resolve(url);
+    img.onerror = () => {
+      _imageBase64Cache.delete(url);
+      resolve(url);
+    };
     img.src = url;
   });
+
+  _imageBase64Cache.set(url, promise);
+  return promise;
 }
 
 export function clamp(value: number, min: number, max: number): number {
@@ -82,12 +101,7 @@ export function canvasToJpegBytes(canvas: HTMLCanvasElement, quality: number): P
     try {
       const dataUrl = canvas.toDataURL('image/jpeg', quality);
       const base64 = dataUrl.split(',')[1] || '';
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i += 1) {
-        bytes[i] = binary.charCodeAt(i);
-      }
-      resolve(bytes);
+      resolve(base64ToBytes(base64));
     } catch (error) {
       reject(error);
     }

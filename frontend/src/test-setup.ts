@@ -4,8 +4,8 @@ import { afterEach } from 'vitest';
 
 afterEach(() => {
   cleanup();
-  localStorage.clear();
-  sessionStorage.clear();
+  if (typeof localStorage !== 'undefined') localStorage.clear();
+  if (typeof sessionStorage !== 'undefined') sessionStorage.clear();
 });
 
 // jsdom does not implement ResizeObserver (used by virtualized lists/grids).
@@ -29,7 +29,7 @@ if (typeof globalThis.ResizeObserver !== 'function') {
 }
 
 // jsdom does not implement matchMedia; EspaciosWelcome / LoginScreen need it.
-if (typeof window.matchMedia !== 'function') {
+if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     configurable: true,
@@ -55,7 +55,8 @@ const defaultTheme = {
 };
 
 // Mock electronAPI for tests
-Object.defineProperty(window, 'electronAPI', {
+if (typeof window !== 'undefined') {
+  Object.defineProperty(window, 'electronAPI', {
   value: {
     invoke: async (method: string, _params?: Record<string, unknown>) => {
       if (method === 'version') return { version: '0.10.6' };
@@ -80,6 +81,7 @@ Object.defineProperty(window, 'electronAPI', {
   },
   writable: true,
 });
+}
 
 // Mock Vite env vars for Supabase tests
 Object.defineProperty(import.meta, 'env', {

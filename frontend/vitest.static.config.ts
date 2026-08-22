@@ -12,6 +12,7 @@ const STATIC_CSS_TESTS = [
   'src/components/canvas/__tests__/canvasThemeAlignment.test.tsx',
   'src/components/panel-aviso-corte/panel-styles.test.ts',
   'src/components/padron/vpad-styles.test.ts',
+  'src/__tests__/perfHarnessPage.test.ts',
 ]
 
 export default defineConfig({

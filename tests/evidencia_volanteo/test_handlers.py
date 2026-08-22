@@ -77,6 +77,33 @@ def test_render_docx_writes_output_path(tmp_path, monkeypatch) -> None:
     assert resp["content_base64"] == ""
 
 
+def test_render_pdf_writes_output_path(tmp_path, monkeypatch) -> None:
+    out = tmp_path / "salida.pdf"
+
+    def fake_render_pdf(document, logos, images, image_paths=None):  # type: ignore[no-untyped-def]
+        return b"%PDF-disk-test", "evidencia.pdf"
+
+    monkeypatch.setattr(handler_module, "render_pdf", fake_render_pdf)
+
+    resp = handler_module.evidencia_volanteo_render(
+        {
+            **_document_payload(),
+            "logos": {},
+            "images": {},
+            "format": "pdf",
+            "output_path": "antares-write_token_pdf_123",
+            "_resolved_output_path": str(out),
+            "_write_token": "antares-write_token_pdf_123",
+        },
+    )
+
+    assert resp["saved_path"] == str(out)
+    assert resp["filename"] == "salida.pdf"
+    assert out.read_bytes() == b"%PDF-disk-test"
+    assert resp["content_base64"] == ""
+    assert resp["pdf_base64"] == ""
+
+
 def test_render_pdf_uses_preview_html_when_provided(monkeypatch) -> None:
     called = {"html": False, "legacy": False}
 

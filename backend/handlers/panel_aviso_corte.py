@@ -121,8 +121,8 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
             return {
                 "pdf_base64": "",
                 "content_base64": "",
-                "saved_path": output_path,
-                "filename": Path(output_path).name,
+                "saved_path": str(out),
+                "filename": out.name,
                 "format": "docx",
                 "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             }

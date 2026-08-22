@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -16,9 +17,14 @@ def formatos_list(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     from backend.core.formatos import list_formats
     return {"formats": list_formats()}
 
+_MAX_INLINE_PDF_BYTES = 40 * 1024 * 1024  # 40 MiB (safe under 64 MiB IPC limit)
+
+
 @with_locale
 def formatos_generate(params: dict[str, Any]) -> dict[str, str]:
     from backend.core.formatos import generate_pdf
+    from backend.utils.paths import user_data_path
+
     fmt_id = params.get("format_id", "")
     desde = parse_positive_int(params.get("desde", 1), "desde")
     hasta = parse_positive_int(params.get("hasta", 1), "hasta")
@@ -41,6 +47,14 @@ def formatos_generate(params: dict[str, Any]) -> dict[str, str]:
         import os as _osF
         _osF.replace(tmp, destination)
         return {"saved_path": str(destination), "filename": destination.name}
+
+    if len(pdf_bytes) > _MAX_INLINE_PDF_BYTES:
+        out_dir = user_data_path("formatos/out")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        tmp_out = out_dir / f"{uuid.uuid4().hex[:12]}_{filename}"
+        tmp_out.write_bytes(pdf_bytes)
+        return {"saved_path": str(tmp_out), "filename": filename}
+
     return {"pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"), "filename": filename}
 
 @with_locale

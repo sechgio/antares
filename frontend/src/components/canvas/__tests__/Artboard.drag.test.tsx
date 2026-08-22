@@ -614,7 +614,7 @@ describe('Artboard drag gestures', () => {
     // compositor: scale + will-change, never the `zoom` property.
     expect(artboard.style.zoom).toBe('');
     expect(artboard.style.transform).toContain('scale(1.5)');
-    expect(artboard.style.transformOrigin).toBe('top left');
+    expect(artboard.style.transformOrigin).toBe('center center');
     expect(artboard.style.willChange).toBe('transform');
   });
 

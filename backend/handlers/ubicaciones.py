@@ -90,8 +90,21 @@ _preview_excel_ctx: tuple[str, float] | None = None
 # _trim_cache + __setitem__ concurrentes pueden lanzar RuntimeError o corromper
 # el orden LRU.
 _cache_lock = threading.Lock()
-_MAX_MAP_CACHE = 40
-_MAX_COMPOSED_CACHE = 80
+_MAX_MAP_CACHE = 20
+_MAX_COMPOSED_CACHE = 16
+
+
+def _clear_ubicaciones_caches() -> None:
+    """Clear all in-memory static caches in ubicaciones handler."""
+    global _preview_excel_ctx
+    with _cache_lock:
+        _map_screenshot_store.clear()
+        _map_screenshot_validated.clear()
+        _preview_composed_cache.clear()
+        _excel_cache.clear()
+        _font_cache.clear()
+        _footer_cache.clear()
+        _preview_excel_ctx = None
 
 
 class _MapScreenshotCacheView:

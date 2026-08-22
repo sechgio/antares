@@ -1,3 +1,4 @@
+import React, { useMemo } from 'react';
 import {
   DIAMETERS,
   LINEA_LABELS,
@@ -23,6 +24,31 @@ function cell(value: number | string | undefined) {
 }
 
 export default function PreviewPanel({ report, logoLeft, logoRight, photos }: Props) {
+  const valvulas = report?.valvulas;
+  const linea = report?.linea;
+
+  const valvTotals = useMemo(
+    () => (valvulas ? sumDiameterColumns(valvulas, VALVULA_ROWS) : {}),
+    [valvulas],
+  );
+  const valvOps = useMemo(
+    () => (valvulas ? sumOperNoOp(valvulas, VALVULA_ROWS) : { oper: 0, noOp: 0 }),
+    [valvulas],
+  );
+  const linTotals = useMemo(
+    () => (linea ? sumDiameterColumns(linea, LINEA_ROWS) : {}),
+    [linea],
+  );
+  const linOps = useMemo(
+    () => (linea ? sumOperNoOp(linea, LINEA_ROWS) : { oper: 0, noOp: 0 }),
+    [linea],
+  );
+  const slots = useMemo(() => {
+    const s: Array<PhotoAsset | null> = [...photos];
+    while (s.length < 6) s.push(null);
+    return s;
+  }, [photos]);
+
   if (!report) {
     return (
       <section className="tr-preview-wrap">
@@ -30,13 +56,6 @@ export default function PreviewPanel({ report, logoLeft, logoRight, photos }: Pr
       </section>
     );
   }
-
-  const valvTotals = sumDiameterColumns(report.valvulas, VALVULA_ROWS);
-  const valvOps = sumOperNoOp(report.valvulas, VALVULA_ROWS);
-  const linTotals = sumDiameterColumns(report.linea, LINEA_ROWS);
-  const linOps = sumOperNoOp(report.linea, LINEA_ROWS);
-  const slots: Array<PhotoAsset | null> = [...photos];
-  while (slots.length < 6) slots.push(null);
 
   return (
     <section className="tr-preview-wrap">
@@ -142,7 +161,7 @@ export default function PreviewPanel({ report, logoLeft, logoRight, photos }: Pr
   );
 }
 
-function DiameterTable({
+const DiameterTable = React.memo(function DiameterTable({
   cornerLabel,
   rows,
   labels,
@@ -206,4 +225,4 @@ function DiameterTable({
       </tbody>
     </table>
   );
-}
+});

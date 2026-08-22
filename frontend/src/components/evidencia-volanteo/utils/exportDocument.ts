@@ -1,21 +1,9 @@
 import { api } from '../../../api';
+import { buildTimestampedFilename, downloadBase64Blob, fileToBase64 } from '../../../utils/pdfAssets';
 import { DEFAULT_CUADRANTE_LABEL, IMAGES_PER_PAGE } from '../constants';
 import type { CuadranteRange, LocalImage, LogoAsset } from '../types';
 import { buildExportHtml, imageExportKey } from './buildExportHtml';
 import { resolveCuadranteForPage } from './cuadranteRanges';
-
-async function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      const comma = result.indexOf(',');
-      resolve(comma >= 0 ? result.slice(comma + 1) : result);
-    };
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
 
 /**
  * Build export image maps.
@@ -48,7 +36,7 @@ export async function buildImagePayload(
 
     // WeasyPrint HTML needs data: URIs. DOCX can use paths alone.
     if (needDataUris || !hasPath) {
-      const base64 = await readFileAsBase64(image.file);
+      const base64 = await fileToBase64(image.file);
       if (!hasPath) {
         imagesBase64[exportKey] = base64;
       }
@@ -66,17 +54,11 @@ export async function readLogoOnce(logo: LogoAsset | null): Promise<{
   dataUri: string | null;
 }> {
   if (!logo) return { dataUri: null };
-  const b64 = await readFileAsBase64(logo.file);
+  const b64 = await fileToBase64(logo.file);
   return {
     b64,
     dataUri: `data:${logo.file.type || 'image/png'};base64,${b64}`,
   };
-}
-
-function defaultFilename(format: 'pdf' | 'docx'): string {
-  const now = new Date();
-  const ts = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-  return `evidencia_volanteo_${ts}.${format}`;
 }
 
 export async function exportEvidenciaDocument(
@@ -118,7 +100,7 @@ export async function exportEvidenciaDocument(
   }
 
   const ext = format === 'docx' ? 'docx' : 'pdf';
-  const defaultName = defaultFilename(format);
+  const defaultName = buildTimestampedFilename('evidencia_volanteo', format);
 
   const html = needHtml
     ? buildExportHtml(
@@ -177,24 +159,11 @@ export async function exportEvidenciaDocument(
   const resp = await api.evidenciaVolanteoRender(payload);
 
   const content = resp.content_base64 || resp.pdf_base64;
-  const contentBytes = atob(content);
-  const buffer = new Uint8Array(contentBytes.length);
-  for (let i = 0; i < contentBytes.length; i++) {
-    buffer[i] = contentBytes.charCodeAt(i);
-  }
-
   const mimeType = format === 'docx'
     ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     : 'application/pdf';
 
-  const blob = new Blob([buffer], { type: mimeType });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = resp.filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(link.href);
+  downloadBase64Blob(content, resp.filename, mimeType);
 
   return { filename: resp.filename };
 }

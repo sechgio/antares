@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+from pathlib import Path
 
 import fitz
 
@@ -203,6 +204,25 @@ def test_canvas_export_cmyk_pdf_writes_to_output_path_without_base64(tmp_path):
     assert "pdf_base64" not in res
     assert output_path.exists()
     assert output_path.read_bytes().startswith(b"%PDF")
+
+
+def test_canvas_export_cmyk_pdf_large_persists_to_disk(monkeypatch):
+    doc = create_empty_document(name="Large CMYK Doc")
+    # Simulate a large render output exceeding the inline threshold
+    monkeypatch.setattr("backend.handlers.canvas._MAX_INLINE_PDF_BYTES", 100)
+    res = canvas_export_cmyk_pdf(
+        {
+            "document": doc,
+            "filename": "large_cmyk.pdf",
+        }
+    )
+
+    assert "saved_path" in res
+    assert "pdf_base64" not in res
+    assert res["filename"] == "large_cmyk.pdf"
+    out_file = Path(res["saved_path"])
+    assert out_file.exists()
+    assert out_file.read_bytes().startswith(b"%PDF")
 
 
 def _page0_contents(pdf_bytes: bytes) -> bytes:

@@ -26,61 +26,21 @@
  *   node scripts/pr-fix-loop.js --ship --merge --pr 42
  */
 
-const { execFileSync, execSync } = require('child_process');
-const path = require('path');
+const {
+  REPO_OWNER,
+  REPO_NAME,
+  BASE_BRANCH,
+  ROOT,
+  sh,
+  trySh,
+  step,
+  skip,
+  die,
+} = require('./lib/loop-utils');
 
-const REPO_OWNER = 'sechgio';
-const REPO_NAME = 'antares';
-const BASE_BRANCH = 'main';
-const ROOT = path.resolve(__dirname, '..');
 const MAX_ITER_DEFAULT = 5;
 const SKIP_TAG = '[skip-ci-fix]';
 const COMMIT_MSG = `fix(pr): auto-fix CI errors ${SKIP_TAG}`;
-
-// ─── Helpers (mismo patron que push-loop.js / release-loop.js) ──────────────
-
-function sh(command, opts = {}) {
-  const result = execSync(command, {
-    cwd: ROOT,
-    encoding: 'utf8',
-    stdio: opts.silent ? 'pipe' : 'pipe',
-    maxBuffer: 50 * 1024 * 1024,
-    ...opts,
-  });
-  return (result || '').toString().trim();
-}
-
-function trySh(command, opts = {}) {
-  try {
-    return sh(command, opts);
-  } catch {
-    return null;
-  }
-}
-
-function step(label, fn) {
-  process.stdout.write(`  ${label} ... `);
-  try {
-    const result = fn();
-    console.log('✅');
-    return result;
-  } catch (err) {
-    console.log('❌');
-    console.error(`    ${err.message}`);
-    const e = new Error(err.message || 'Step failed');
-    e.code = err.code || 1;
-    throw e;
-  }
-}
-
-function skip(label, reason) {
-  console.log(`  ${label} ... ⏭️  (${reason})`);
-}
-
-function die(message, code = 1) {
-  console.error(`\n✗ ${message}`);
-  process.exit(code);
-}
 
 function parseArgs(argv) {
   const args = argv.slice(2);

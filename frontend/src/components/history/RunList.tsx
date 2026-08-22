@@ -1,3 +1,4 @@
+import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   getRunType,
@@ -16,6 +17,120 @@ interface RunListProps {
   selectedIds?: Set<number>;
   onToggleSelect?: (id: number) => void;
 }
+
+interface RunListItemProps {
+  run: HistoryRun;
+  isSelected: boolean;
+  isChecked: boolean;
+  showCheckboxes: boolean;
+  onSelect: (run: HistoryRun) => void;
+  onToggleSelect?: (id: number) => void;
+}
+
+const MemoizedRunListItem = React.memo(function RunListItem({
+  run,
+  isSelected,
+  isChecked,
+  showCheckboxes,
+  onSelect,
+  onToggleSelect,
+}: RunListItemProps) {
+  const { t } = useTranslation();
+  const {
+    fileCount,
+    hasErrors,
+    allErrors,
+    total,
+    successRate,
+    meta,
+    summary,
+    formattedDate,
+    formattedTime,
+  } = useMemo(() => {
+    const files = safeJsonParse<string[]>(run.files_json, []);
+    const options = safeJsonParse<Record<string, unknown>>(run.options_json, {});
+    const tot = run.ok_count + run.err_count;
+    const rate = tot > 0 ? Math.round((run.ok_count / tot) * 100) : 100;
+    const m = getRunType(run.run_type || 'conversion');
+    const s = m.listSummary?.(run, files, options, t);
+    const d = new Date(run.timestamp);
+    return {
+      fileCount: files.length,
+      hasErrors: run.err_count > 0,
+      allErrors: run.ok_count === 0 && run.err_count > 0,
+      total: tot,
+      successRate: rate,
+      meta: m,
+      summary: s,
+      formattedDate: d.toLocaleDateString(),
+      formattedTime: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+  }, [run, t]);
+
+  return (
+    <div
+      className={`w-full text-left px-4 py-3.5 text-sm transition-all border-l-[3px] flex gap-2.5 ${
+        isSelected
+          ? 'bg-[var(--bg-elevated)] border-[var(--accent-primary)]'
+          : 'bg-transparent border-transparent hover:bg-[var(--bg-elevated)]'
+      }`}
+    >
+      {showCheckboxes && (
+        <input
+          type="checkbox"
+          checked={isChecked}
+          onChange={() => onToggleSelect?.(run.id)}
+          onClick={(e) => e.stopPropagation()}
+          aria-label={t('history.selection.toggle', { id: run.id })}
+          className="mt-1 h-3.5 w-3.5 accent-[var(--accent-primary)]"
+        />
+      )}
+      <button
+        type="button"
+        onClick={() => onSelect(run)}
+        className="flex-1 min-w-0 text-left"
+      >
+        <div className="flex items-center justify-between gap-2 mb-1.5">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] shrink-0">
+              #{run.id}
+            </span>
+            <span className="truncate text-[12px] font-medium text-[var(--text-primary)]">
+              {formattedDate}{' '}
+              <span className="text-[var(--text-muted)] font-normal">{formattedTime}</span>
+            </span>
+          </div>
+          <span
+            className={`inline-flex h-5 shrink-0 items-center rounded-full px-1.5 text-[10px] font-bold ${
+              allErrors
+                ? 'bg-[color:var(--accent-red)]/15 text-[var(--accent-red)]'
+                : hasErrors
+                  ? 'bg-[color:var(--accent-yellow)]/15 text-[var(--accent-yellow)]'
+                  : 'bg-[color:var(--accent-green)]/15 text-[var(--accent-green)]'
+            }`}
+            title={`${successRate}% éxito`}
+          >
+            {run.ok_count}/{total}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)] flex-wrap">
+          <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${meta.badgeClass}`}>
+            {t(meta.labelKey)}
+          </span>
+          {summary?.parts.map((part, index) => (
+            <span key={`${run.id}-summary-${index}`} className="truncate">
+              {index > 0 ? <span className="text-[var(--text-muted)] mx-0.5">·</span> : null}
+              {part}
+            </span>
+          ))}
+          {!summary && fileCount > 0 && (
+            <span>{t('history.list.files', { count: fileCount })}</span>
+          )}
+        </div>
+      </button>
+    </div>
+  );
+});
 
 export default function RunList({ runs, selected, onSelect, selectedIds, onToggleSelect }: RunListProps) {
   const { t } = useTranslation();
@@ -41,85 +156,17 @@ export default function RunList({ runs, selected, onSelect, selectedIds, onToggl
 
   return (
     <div className="divide-y divide-[var(--border-subtle)]">
-      {runs.map((run) => {
-        const files = safeJsonParse<string[]>(run.files_json, []);
-        const fileCount = files.length;
-        const options = safeJsonParse<Record<string, unknown>>(run.options_json, {});
-        const hasErrors = run.err_count > 0;
-        const allErrors = run.ok_count === 0 && run.err_count > 0;
-        const total = run.ok_count + run.err_count;
-        const successRate = total > 0 ? Math.round((run.ok_count / total) * 100) : 100;
-        const isSelected = selected?.id === run.id;
-        const isChecked = selectedIds?.has(run.id) ?? false;
-        const meta = getRunType(run.run_type || 'conversion');
-        const summary = meta.listSummary?.(run, files, options, t);
-        const date = new Date(run.timestamp);
-
-        return (
-          <div
-            key={run.id}
-            className={`w-full text-left px-4 py-3.5 text-sm transition-all border-l-[3px] flex gap-2.5 ${
-              isSelected
-                ? 'bg-[var(--bg-elevated)] border-[var(--accent-primary)]'
-                : 'bg-transparent border-transparent hover:bg-[var(--bg-elevated)]'
-            }`}
-          >
-            {showCheckboxes && (
-              <input
-                type="checkbox"
-                checked={isChecked}
-                onChange={() => onToggleSelect?.(run.id)}
-                onClick={(e) => e.stopPropagation()}
-                aria-label={t('history.selection.toggle', { id: run.id })}
-                className="mt-1 h-3.5 w-3.5 accent-[var(--accent-primary)]"
-              />
-            )}
-            <button
-              type="button"
-              onClick={() => onSelect(run)}
-              className="flex-1 min-w-0 text-left"
-            >
-              <div className="flex items-center justify-between gap-2 mb-1.5">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] shrink-0">
-                    #{run.id}
-                  </span>
-                  <span className="truncate text-[12px] font-medium text-[var(--text-primary)]">
-                    {date.toLocaleDateString()}{' '}
-                    <span className="text-[var(--text-muted)] font-normal">{date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                  </span>
-                </div>
-                <span
-                  className={`inline-flex h-5 shrink-0 items-center rounded-full px-1.5 text-[10px] font-bold ${
-                    allErrors
-                      ? 'bg-[color:var(--accent-red)]/15 text-[var(--accent-red)]'
-                      : hasErrors
-                        ? 'bg-[color:var(--accent-yellow)]/15 text-[var(--accent-yellow)]'
-                        : 'bg-[color:var(--accent-green)]/15 text-[var(--accent-green)]'
-                  }`}
-                  title={`${successRate}% éxito`}
-                >
-                  {run.ok_count}/{total}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)] flex-wrap">
-                <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${meta.badgeClass}`}>
-                  {t(meta.labelKey)}
-                </span>
-                {summary?.parts.map((part, index) => (
-                  <span key={`${run.id}-summary-${index}`} className="truncate">
-                    {index > 0 ? <span className="text-[var(--text-muted)] mx-0.5">·</span> : null}
-                    {part}
-                  </span>
-                ))}
-                {!summary && fileCount > 0 && (
-                  <span>{t('history.list.files', { count: fileCount })}</span>
-                )}
-              </div>
-            </button>
-          </div>
-        );
-      })}
+      {runs.map((run) => (
+        <MemoizedRunListItem
+          key={run.id}
+          run={run}
+          isSelected={selected?.id === run.id}
+          isChecked={selectedIds?.has(run.id) ?? false}
+          showCheckboxes={showCheckboxes}
+          onSelect={onSelect}
+          onToggleSelect={onToggleSelect}
+        />
+      ))}
     </div>
   );
 }

@@ -7,9 +7,11 @@ import FloatingRecordsPanel from "./components/FloatingRecordsPanel";
 import DatePicker from "./components/DatePicker";
 import TimePicker from "./components/TimePicker";
 import TutorialOverlay from "./components/TutorialOverlay";
-import { DEFAULT_BRAND, DEFAULT_ENCABEZADOS, DEFAULT_HEADING } from "./constants";
+import { DEFAULT_BRAND, DEFAULT_ENCABEZADOS, DEFAULT_FOOTER, DEFAULT_HEADING } from "./constants";
 import type {
   BrandConfig,
+  BulletStyle,
+  FooterConfig,
   FlyerEncabezados,
   FlyerHeading,
   FlyerRecord,
@@ -22,9 +24,105 @@ import { useToast } from "../../hooks/useToast";
 import { saveFeatureHistory } from "../../utils/history";
 import { WithHoverTooltip } from "@/components/ui/HoverTooltip";
 
+interface BulletOption {
+  id: BulletStyle;
+  label: string;
+  renderIcon: () => React.ReactNode;
+}
+
+const BULLET_OPTIONS: BulletOption[] = [
+  {
+    id: "none",
+    label: "Sin viñeta",
+    renderIcon: () => (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+        <line x1="3" y1="6" x2="21" y2="6" />
+        <line x1="3" y1="12" x2="21" y2="12" />
+        <line x1="3" y1="18" x2="21" y2="18" />
+      </svg>
+    ),
+  },
+  {
+    id: "disc",
+    label: "Punto (•)",
+    renderIcon: () => (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+        <line x1="9" y1="6" x2="21" y2="6" />
+        <line x1="9" y1="12" x2="21" y2="12" />
+        <line x1="9" y1="18" x2="21" y2="18" />
+        <circle cx="4" cy="6" r="1.5" fill="currentColor" />
+        <circle cx="4" cy="12" r="1.5" fill="currentColor" />
+        <circle cx="4" cy="18" r="1.5" fill="currentColor" />
+      </svg>
+    ),
+  },
+  {
+    id: "dash",
+    label: "Guión (–)",
+    renderIcon: () => (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+        <line x1="10" y1="6" x2="21" y2="6" />
+        <line x1="10" y1="12" x2="21" y2="12" />
+        <line x1="10" y1="18" x2="21" y2="18" />
+        <line x1="3" y1="6" x2="6" y2="6" />
+        <line x1="3" y1="12" x2="6" y2="12" />
+        <line x1="3" y1="18" x2="6" y2="18" />
+      </svg>
+    ),
+  },
+  {
+    id: "arrow",
+    label: "Flecha (▸)",
+    renderIcon: () => (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="10" y1="6" x2="21" y2="6" />
+        <line x1="10" y1="12" x2="21" y2="12" />
+        <line x1="10" y1="18" x2="21" y2="18" />
+        <polyline points="3 4 6 6 3 8" />
+        <polyline points="3 10 6 12 3 14" />
+        <polyline points="3 16 6 18 3 20" />
+      </svg>
+    ),
+  },
+  {
+    id: "check",
+    label: "Check (✓)",
+    renderIcon: () => (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="11" y1="6" x2="21" y2="6" />
+        <line x1="11" y1="12" x2="21" y2="12" />
+        <line x1="11" y1="18" x2="21" y2="18" />
+        <polyline points="3 6 5 8 8 4" />
+        <polyline points="3 12 5 14 8 10" />
+        <polyline points="3 18 5 20 8 16" />
+      </svg>
+    ),
+  },
+  {
+    id: "number",
+    label: "Numerado (1, 2, 3...)",
+    renderIcon: () => (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <line x1="10" y1="6" x2="21" y2="6" />
+        <line x1="10" y1="12" x2="21" y2="12" />
+        <line x1="10" y1="18" x2="21" y2="18" />
+        <path d="M4 5v5" />
+        <path d="M3 6l1-1" />
+        <path d="M3 10h2" />
+        <path d="M6 18H3c0-1.2 2-1.8 2-2.5s-.8-1.5-1.5-1.5" />
+      </svg>
+    ),
+  },
+];
+
 const defaultBrand: BrandConfig = {
   logoIzquierdo: DEFAULT_BRAND.logoIzquierdo,
   logoDerecho: DEFAULT_BRAND.logoDerecho,
+};
+
+const defaultFooter: FooterConfig = {
+  logoOperativo: DEFAULT_FOOTER.logoOperativo,
+  servicioAgua: DEFAULT_FOOTER.servicioAgua,
 };
 
 const defaultHeading: FlyerHeading = {
@@ -46,38 +144,40 @@ const LOGO_ALLOWED_TYPES = new Set([
   "image/gif",
   "image/bmp",
 ]);
-// Reuse a single FileReader per side so a quick re-pick aborts the previous
+// Reuse a single FileReader per slot so a quick re-pick aborts the previous
 // in-flight decode instead of racing two onload callbacks.
-const logoReaders: Record<keyof BrandConfig, FileReader | null> = {
+const imageReaders: Record<string, FileReader | null> = {
   logoIzquierdo: null,
   logoDerecho: null,
+  logoOperativo: null,
+  servicioAgua: null,
 };
 
-function readLogoAsDataUrl(
-  side: keyof BrandConfig,
+function readImageAsDataUrl(
+  slotKey: string,
   file: File,
   onError: (message: string) => void,
   onResult: (dataUrl: string) => void,
 ): void {
   if (!LOGO_ALLOWED_TYPES.has(file.type)) {
-    onError("El logo debe ser PNG, JPEG, WebP, GIF o BMP.");
+    onError("La imagen debe ser PNG, JPEG, WebP, GIF o BMP.");
     return;
   }
   if (file.size > LOGO_MAX_BYTES) {
-    onError(`El logo no puede superar 5 MB (recibido: ${(file.size / 1024 / 1024).toFixed(1)} MB).`);
+    onError(`La imagen no puede superar 5 MB (recibido: ${(file.size / 1024 / 1024).toFixed(1)} MB).`);
     return;
   }
-  let reader = logoReaders[side];
+  let reader = imageReaders[slotKey];
   if (reader) {
     try { reader.abort(); } catch { /* already complete */ }
   }
   reader = new FileReader();
-  logoReaders[side] = reader;
+  imageReaders[slotKey] = reader;
   reader.onload = () => {
     if (typeof reader.result === "string") onResult(reader.result);
-    else onError("No se pudo leer el logo.");
+    else onError("No se pudo leer la imagen.");
   };
-  reader.onerror = () => onError("Error leyendo el archivo de logo.");
+  reader.onerror = () => onError("Error leyendo el archivo de imagen.");
   reader.readAsDataURL(file);
 }
 
@@ -85,6 +185,7 @@ export default function VolantesView() {
   const { addToast } = useToast();
   const [records, setRecords] = useState<FlyerRecord[]>([]);
   const [brand, setBrand] = useState<BrandConfig>(defaultBrand);
+  const [footer, setFooter] = useState<FooterConfig>(defaultFooter);
   const [heading, setHeading] = useState<FlyerHeading>(defaultHeading);
   const [encabezados, setEncabezados] =
     useState<FlyerEncabezados>(defaultEncabezados);
@@ -162,7 +263,7 @@ export default function VolantesView() {
     (side: keyof BrandConfig) => (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
       if (!file) return;
-      readLogoAsDataUrl(
+      readImageAsDataUrl(
         side,
         file,
         (message) => addToast({ message, type: "error" }),
@@ -180,11 +281,37 @@ export default function VolantesView() {
       event.preventDefault();
       const file = event.dataTransfer.files?.[0];
       if (!file) return;
-      readLogoAsDataUrl(
+      readImageAsDataUrl(
         side,
         file,
         (message) => addToast({ message, type: "error" }),
         (dataUrl) => setBrand((current) => ({ ...current, [side]: dataUrl })),
+      );
+    };
+
+  const handleFooterChange =
+    (key: keyof FooterConfig) => (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      readImageAsDataUrl(
+        key,
+        file,
+        (message) => addToast({ message, type: "error" }),
+        (dataUrl) => setFooter((current) => ({ ...current, [key]: dataUrl })),
+      );
+      event.target.value = "";
+    };
+
+  const handleFooterDrop =
+    (key: keyof FooterConfig) => (event: DragEvent<HTMLLabelElement>) => {
+      event.preventDefault();
+      const file = event.dataTransfer.files?.[0];
+      if (!file) return;
+      readImageAsDataUrl(
+        key,
+        file,
+        (message) => addToast({ message, type: "error" }),
+        (dataUrl) => setFooter((current) => ({ ...current, [key]: dataUrl })),
       );
     };
 
@@ -649,6 +776,24 @@ export default function VolantesView() {
                       }
                       value={selectedRecord.zonasAfectadas}
                     />
+                    <div className="vgen-bullet-toolbar" role="group" aria-label="Estilo de viñetas">
+                      {BULLET_OPTIONS.map((opt) => (
+                        <WithHoverTooltip key={opt.id} label={opt.label} placement="bottom">
+                          <button
+                            type="button"
+                            className={`vgen-bullet-btn${
+                              (selectedRecord.bulletStyle ?? "none") === opt.id ? " active" : ""
+                            }`}
+                            onClick={() =>
+                              updateSelectedRecord({ bulletStyle: opt.id })
+                            }
+                            aria-label={opt.label}
+                          >
+                            {opt.renderIcon()}
+                          </button>
+                        </WithHoverTooltip>
+                      ))}
+                    </div>
                     <div className="vgen-district-color-row" role="group" aria-label="Color pastilla distrito">
                       {[
                         "#55caeb",
@@ -702,6 +847,84 @@ export default function VolantesView() {
                       </WithHoverTooltip>
                     </div>
                   </div>
+
+                  <div className="vgen-section">
+                    <div className="vgen-group-title">Footer</div>
+                    <div className="vgen-logos-grid">
+                      <label
+                        className="v-upload-box"
+                        onDragOver={handleLogoDragOver}
+                        onDrop={handleFooterDrop("logoOperativo")}
+                        title="Cambiar Logo operativo"
+                      >
+                        {footer.logoOperativo ? (
+                          <img
+                            src={footer.logoOperativo}
+                            alt="Logo operativo"
+                            className="v-upload-preview"
+                          />
+                        ) : (
+                          <>
+                            <svg
+                              width="16"
+                              height="16"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.5"
+                            >
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="17 8 12 3 7 8" />
+                              <line x1="12" y1="3" x2="12" y2="15" />
+                            </svg>
+                            <span>Logo operativo</span>
+                          </>
+                        )}
+                        <input
+                          accept="image/*"
+                          onChange={handleFooterChange("logoOperativo")}
+                          type="file"
+                          hidden
+                        />
+                      </label>
+                      <label
+                        className="v-upload-box"
+                        onDragOver={handleLogoDragOver}
+                        onDrop={handleFooterDrop("servicioAgua")}
+                        title="Cambiar Servicio de agua"
+                      >
+                        {footer.servicioAgua ? (
+                          <img
+                            src={footer.servicioAgua}
+                            alt="Servicio de agua"
+                            className="v-upload-preview"
+                          />
+                        ) : (
+                          <>
+                            <svg
+                              width="16"
+                              height="16"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.5"
+                            >
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="17 8 12 3 7 8" />
+                              <line x1="12" y1="3" x2="12" y2="15" />
+                            </svg>
+                            <span>Servicio de agua</span>
+                          </>
+                        )}
+                        <input
+                          accept="image/*"
+                          onChange={handleFooterChange("servicioAgua")}
+                          type="file"
+                          hidden
+                        />
+                      </label>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="vgen-empty-state">
@@ -731,6 +954,7 @@ export default function VolantesView() {
         <section className="vgen-canvas">
           <SheetPreview
             brand={brand}
+            footer={footer}
             encabezados={encabezados}
             heading={heading}
             layoutMode={layoutMode}
@@ -745,6 +969,7 @@ export default function VolantesView() {
           >
             <SheetPreview
               brand={brand}
+              footer={footer}
               encabezados={encabezados}
               heading={heading}
               exportMode
@@ -762,6 +987,7 @@ export default function VolantesView() {
             {pendingExport && (
               <SheetPreview
                 brand={brand}
+                footer={footer}
                 encabezados={encabezados}
                 heading={heading}
                 exportMode

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../i18n';
 import PetdexView from './PetdexView';
 
@@ -40,6 +40,10 @@ describe('PetdexView', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    // Defensa contra fake timers filtrados de otro archivo en el mismo
+    // worker: performance.now() real es requisito de la cadencia rAF.
+    vi.useRealTimers();
   });
 
   it('renders Petdex settings view and loads pets', async () => {
@@ -258,5 +262,98 @@ describe('PetdexView', () => {
 
     expect(screen.getByText('Custom Test Pet')).toBeInTheDocument();
     expect(screen.queryByText('Modo Offline')).not.toBeInTheDocument();
+  });
+
+  describe('sprite preview animation', () => {
+    function seedFreshCache() {
+      localStorage.setItem(
+        'petdex_manifest_cache',
+        JSON.stringify({ cachedAt: Date.now(), pets: mockPetsManifest.pets }),
+      );
+    }
+
+    function installRafStub() {
+      let pending: FrameRequestCallback | null = null;
+      const rafSpy = vi.fn((cb: FrameRequestCallback) => {
+        pending = cb;
+        return 1;
+      });
+      vi.stubGlobal('requestAnimationFrame', rafSpy);
+      vi.stubGlobal('cancelAnimationFrame', vi.fn());
+      return {
+        rafSpy,
+        tick: (time: number) => {
+          const cb = pending;
+          pending = null;
+          act(() => cb?.(time));
+        },
+      };
+    }
+
+    function firstCardSprite(): HTMLElement {
+      const card = screen.getByTitle('Belayer Cat · creature');
+      const sprite = card.querySelector<HTMLElement>('[style*="background-position"]');
+      expect(sprite, 'sprite div with background-position style').toBeTruthy();
+      return sprite!;
+    }
+
+    it('advances sprite frames on rAF ticks at the 150ms cadence', () => {
+      seedFreshCache();
+      const raf = installRafStub();
+
+      render(<PetdexView />);
+
+      // Re-consultar el sprite tras cada tanda: si un re-render reemplazara el
+      // nodo, una referencia capturada al inicio quedaría detached y el assert
+      // leería un estilo congelado (flaky bajo carga).
+      const spriteAt = () => {
+        const card = screen.getByTitle('Belayer Cat · creature');
+        const sprite = card.querySelector<HTMLElement>('[style*="background-position"]');
+        expect(sprite, 'sprite div with background-position style').toBeTruthy();
+        return sprite!;
+      };
+
+      expect(spriteAt().style.backgroundPosition).toContain('0px 0px');
+
+      // El primer tick establece la línea base (lastTime = primer timestamp de
+      // rAF); los deltas posteriores de ~16ms acumulan hasta la cadencia.
+      let t = performance.now();
+      raf.tick(t); // primer frame: baseline, sin acumulación
+      for (let i = 0; i < 10; i++) {
+        t += 16;
+        raf.tick(t);
+      }
+      expect(spriteAt().style.backgroundPosition).toContain('-192px 0px');
+
+      for (let i = 0; i < 10; i++) {
+        t += 16;
+        raf.tick(t);
+      }
+      expect(spriteAt().style.backgroundPosition).toContain('-384px 0px');
+
+      expect(raf.rafSpy).toHaveBeenCalledTimes(22);
+    });
+
+    it('keeps previews static under prefers-reduced-motion', () => {
+      seedFreshCache();
+      vi.spyOn(window, 'matchMedia').mockImplementation((query: string) => ({
+        matches: query.includes('prefers-reduced-motion'),
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      }) as unknown as MediaQueryList);
+      const rafSpy = vi.fn(() => 1);
+      vi.stubGlobal('requestAnimationFrame', rafSpy);
+
+      render(<PetdexView />);
+
+      const sprite = firstCardSprite();
+      expect(sprite.style.backgroundPosition).toContain('0px 0px');
+      expect(rafSpy).not.toHaveBeenCalled();
+    });
   });
 });

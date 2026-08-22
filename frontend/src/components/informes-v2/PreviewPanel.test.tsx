@@ -23,4 +23,29 @@ describe('Informes v2 PreviewPanel', () => {
     expect(grid.children).toHaveLength(6);
     expect(grid.querySelectorAll('img')).toHaveLength(2);
   });
+
+  it('renders empty message when report is null', () => {
+    render(<PreviewPanel report={null} logoLeft={null} logoRight={null} photos={[]} />);
+    expect(screen.getByText('Selecciona un informe para previsualizar')).toBeInTheDocument();
+  });
+
+  it('computes and renders valve totals in table', () => {
+    const report = createEmptyClientReport(2);
+    report.valvulas.ingreso = {
+      diametros: { '2': 3, '4': 2 },
+      oper: 5,
+      no_op: 0,
+      observaciones: 'ok',
+    };
+    report.valvulas.salida = {
+      diametros: { '2': 1, '4': 4 },
+      oper: 4,
+      no_op: 1,
+      observaciones: 'revisar',
+    };
+
+    render(<PreviewPanel report={report} logoLeft={null} logoRight={null} photos={[]} />);
+    expect(screen.getByText('DIAMETRO DE VALVULAS')).toBeInTheDocument();
+    expect(screen.getByText('DIAMETRO DE TUBERIA')).toBeInTheDocument();
+  });
 });
