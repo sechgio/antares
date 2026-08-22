@@ -554,14 +554,19 @@ async function _callBackend(method, params) {
 
 function _maybeTokenizeResultPaths(method, result, win) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) return result;
-  if (method !== 'spreadsheet_parse' || typeof result.result_path !== 'string') return result;
+  if (typeof result.result_path !== 'string') return result;
   const { createFileCapability } = require('./file-capabilities');
   const webContentsId = win && win.webContents ? win.webContents.id : null;
+  const defaultName = typeof result.filename === 'string' && result.filename.trim()
+    ? result.filename.trim()
+    : method === 'spreadsheet_parse'
+      ? 'spreadsheet-result.json'
+      : 'result-file';
   const cap = createFileCapability({
     filePath: result.result_path,
     mode: 'read',
     webContentsId,
-    name: 'spreadsheet-result.json',
+    name: defaultName,
   });
   const next = { ...result, result_file_token: cap.token };
   delete next.result_path;

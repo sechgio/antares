@@ -146,14 +146,8 @@ export default defineConfig(({ mode }) => ({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
-    // Disables parallelism between test files. The UI suite renders the whole
-    // <App /> (lazy-loading heavy modules such as jspdf, pdfjs-dist and xlsx)
-    // and several `findBy*` assertions use 5s timeouts that are tight enough to
-    // flake when Vitest runs many jsdom environments concurrently: the host is
-    // starved while transforming/importing modules, so the awaited element does
-    // not appear within 5s. Running files sequentially removes the race at its
-    // root instead of bumping every timeout one by one.
-    fileParallelism: false,
+    // Parallel test execution across workers with isolated jsdom/node environments.
+    fileParallelism: true,
     // Static CSS/theme guards run under vitest.static.config.ts (node env).
     exclude: [
       '**/node_modules/**',

@@ -1,3 +1,4 @@
+import { downloadBase64Blob } from "../../../utils/pdfAssets";
 import { REQUIRED_COLUMNS } from "../constants";
 import type {
   FlyerRecord,
@@ -104,9 +105,10 @@ export const importSpreadsheet = async (file: File): Promise<ImportResult> => {
 
 export const exportTemplateWorkbook = async (): Promise<void> => {
   const { api } = await import("../../../api");
-  const res = await (api as unknown as { spreadsheetExportVolantesTemplate:()=>Promise<{content_b64:string,filename:string}> }).spreadsheetExportVolantesTemplate();
-  const bytes = Uint8Array.from(atob(res.content_b64), c=>c.charCodeAt(0));
-  const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a"); a.href=url; a.download=res.filename||"plantilla-volantes.xlsx"; a.click(); setTimeout(()=>URL.revokeObjectURL(url), 2000);
+  const res = await (api as unknown as { spreadsheetExportVolantesTemplate: () => Promise<{ content_b64: string; filename: string }> }).spreadsheetExportVolantesTemplate();
+  downloadBase64Blob(
+    res.content_b64,
+    res.filename || "plantilla-volantes.xlsx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  );
 };

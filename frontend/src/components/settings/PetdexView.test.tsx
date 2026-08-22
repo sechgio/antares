@@ -41,6 +41,9 @@ describe('PetdexView', () => {
     localStorage.clear();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    // Defensa contra fake timers filtrados de otro archivo en el mismo
+    // worker: performance.now() real es requisito de la cadencia rAF.
+    vi.useRealTimers();
   });
 
   it('renders Petdex settings view and loads pets', async () => {
@@ -300,24 +303,33 @@ describe('PetdexView', () => {
 
       render(<PetdexView />);
 
-      const sprite = firstCardSprite();
-      expect(sprite.style.backgroundPosition).toContain('0px 0px');
+      // Re-consultar el sprite tras cada tanda: si un re-render reemplazara el
+      // nodo, una referencia capturada al inicio quedaría detached y el assert
+      // leería un estilo congelado (flaky bajo carga).
+      const spriteAt = () => {
+        const card = screen.getByTitle('Belayer Cat · creature');
+        const sprite = card.querySelector<HTMLElement>('[style*="background-position"]');
+        expect(sprite, 'sprite div with background-position style').toBeTruthy();
+        return sprite!;
+      };
 
-      // Realistic rAF deltas (~16ms): the loop clamps dt to 100ms, so giant
-      // synthetic jumps would never accumulate 150ms in one step.
+      expect(spriteAt().style.backgroundPosition).toContain('0px 0px');
+
+      // El primer tick establece la línea base (lastTime = primer timestamp de
+      // rAF); los deltas posteriores de ~16ms acumulan hasta la cadencia.
       let t = performance.now();
-      raf.tick(t); // first loop iteration: no accumulated time yet
+      raf.tick(t); // primer frame: baseline, sin acumulación
       for (let i = 0; i < 10; i++) {
         t += 16;
         raf.tick(t);
       }
-      expect(sprite.style.backgroundPosition).toContain('-192px 0px');
+      expect(spriteAt().style.backgroundPosition).toContain('-192px 0px');
 
       for (let i = 0; i < 10; i++) {
         t += 16;
         raf.tick(t);
       }
-      expect(sprite.style.backgroundPosition).toContain('-384px 0px');
+      expect(spriteAt().style.backgroundPosition).toContain('-384px 0px');
 
       expect(raf.rafSpy).toHaveBeenCalledTimes(22);
     });

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import base64
 from typing import Any
 
 from backend.handlers.common import with_locale
+from backend.utils.image_data import decode_b64_payload
 
 
 def _db():
@@ -89,7 +89,7 @@ def fichas_tecnicas_import_file(params: dict[str, Any]) -> dict[str, Any]:
     if not filename or not content_b64:
         msg = "filename y content_b64 son requeridos"
         raise ValueError(msg)
-    content = base64.b64decode(content_b64)
+    content = decode_b64_payload(content_b64)
     imported_rows = import_fichas_from_bytes(filename, content)
     imported, deleted_count = _db().replace_all(imported_rows)
     return {

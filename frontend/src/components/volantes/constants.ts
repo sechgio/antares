@@ -4,6 +4,8 @@ import logoAcciona from "../../assets/volanteo-assets/logo_acciona.webp";
 import aquafono from "../../assets/volanteo-assets/aquafono.webp";
 import grifo from "../../assets/volanteo-assets/grifo.webp";
 
+import type { FooterConfig } from "./types";
+
 export const REQUIRED_COLUMNS = [
   "distrito",
   "fecha",
@@ -16,6 +18,11 @@ export const DEFAULT_BRAND = {
   logoIzquierdo: pcmVivienda,
   logoDerecho: logoSedapal,
 } as const;
+
+export const DEFAULT_FOOTER: FooterConfig = {
+  logoOperativo: logoAcciona,
+  servicioAgua: grifo,
+};
 
 export const DEFAULT_HEADING = {
   titulo: "Trabajos de mejoramiento",

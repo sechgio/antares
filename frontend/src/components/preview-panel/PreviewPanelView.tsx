@@ -3,7 +3,7 @@ import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import {
   CheckCircle, AlertCircle, RotateCcw, ChevronLeft, ChevronRight, ChevronDown,
   FileSpreadsheet, Image as ImageIcon, FileCode, Settings,
-  Printer, Search, Table2, X, Download, Loader2,
+  Printer, Search, Table2, Download, Loader2,
 } from 'lucide-react';
 import { api } from '../../api';
 import { useToast } from '../../hooks/useToast';

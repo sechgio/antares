@@ -139,18 +139,24 @@ export default function PetdexView() {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
     let rafId = 0;
-    let lastTime = performance.now();
+    // null hasta el primer frame: la línea base es el primer timestamp de rAF,
+    // no el reloj real del mount. Así el acumulador mide solo intervalos
+    // frame-a-frame (determinista en tests) y el gap mount→primer frame —que
+    // depende de la carga del hilo— nunca cuenta para la cadencia.
+    let lastTime: number | null = null;
     let frameAccum = 0;
     const TICK_MS = 150;
 
     const loop = (time: number) => {
-      const dt = Math.min(Math.max(time - lastTime, 0), 100);
-      lastTime = time;
-      frameAccum += dt;
-      if (frameAccum >= TICK_MS) {
-        frameAccum %= TICK_MS;
-        setPreviewFrame((f) => (f + 1) % 8);
+      if (lastTime !== null) {
+        const dt = Math.min(Math.max(time - lastTime, 0), 100);
+        frameAccum += dt;
+        if (frameAccum >= TICK_MS) {
+          frameAccum %= TICK_MS;
+          setPreviewFrame((f) => (f + 1) % 8);
+        }
       }
+      lastTime = time;
       rafId = requestAnimationFrame(loop);
     };
 

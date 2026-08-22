@@ -44,6 +44,15 @@ function copyDirFlat(src, dest) {
   }
 }
 
+function moveOrCopyDir(src, dest) {
+  try {
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.renameSync(src, dest);
+  } catch {
+    copyDirFlat(src, dest);
+  }
+}
+
 function directorySizeBytes(dir) {
   let total = 0;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -95,7 +104,7 @@ async function main() {
     }
 
     // Flat layout: resources/backend/AntaresBackend.exe (+ deps beside it).
-    copyDirFlat(pyInstallerFolder, distBackendDir);
+    moveOrCopyDir(pyInstallerFolder, distBackendDir);
     const targetExe = path.join(distBackendDir, backendExeName);
     if (!fs.existsSync(targetExe)) {
       throw new Error(`${backendExeName} missing after copy to ${distBackendDir}`);

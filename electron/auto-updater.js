@@ -53,10 +53,13 @@ function _loadAutoUpdater() {
     return null;
   }
 
-  // Firma Windows pospuesta: bloquear instalación automática hasta disponer de artefactos firmados
-  const _isPackagedForUpdates = (() => { try { return require('electron').app.isPackaged; } catch { return false; } })();
-  _autoUpdater.autoDownload = _isPackagedForUpdates ? false : true;
-  _autoUpdater.autoInstallOnAppQuit = _isPackagedForUpdates ? false : true;
+  // Firma Windows pospuesta: la INSTALACIÓN queda bajo confirmación explícita
+  // del usuario (botón de la barra de título → quitAndInstall). La DESCARGA
+  // debe ser automática: con autoDownload=false, checkForUpdates() no baja
+  // nada y el flujo se queda atascado en 'available' sin llegar jamás a
+  // 'ready' (no hay ninguna llamada a downloadUpdate() en el código).
+  _autoUpdater.autoDownload = true;
+  _autoUpdater.autoInstallOnAppQuit = false;
 
   _autoUpdater.logger = {
     info: (...a) => console.log('[auto-updater]', ...a),

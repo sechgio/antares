@@ -453,6 +453,9 @@ export default function ConversionView() {
           key_column: keyColumn || undefined,
           word_separator: wordSeparator,
           sequence_mode: sequenceMode,
+          // El preview replica la dedupe del job contra los archivos ya
+          // existentes en destino (sufijos -2/-3) — ver handlers/conversion.preview.
+          destino: destino.trim() || undefined,
         };
 
     const runPreview = async (requestBody: PreviewBody, requestToken: number): Promise<void> => {
@@ -510,7 +513,7 @@ export default function ConversionView() {
     }, 600);
 
     return () => window.clearTimeout(timer);
-  }, [files, usarRename, mappingMode, mappingData, patron, secuencia, useFilenameSeq, keyColumn, wordSeparator, sequenceMode, dbColumns.length, addToast]);
+  }, [files, usarRename, mappingMode, mappingData, patron, secuencia, useFilenameSeq, keyColumn, wordSeparator, sequenceMode, dbColumns.length, destino, addToast]);
 
   const loadDbColumns = async () => {
     try {

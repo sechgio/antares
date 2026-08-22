@@ -3,7 +3,7 @@ const fs = require('fs');
 const fsp = fs.promises;
 const os = require('os');
 const path = require('path');
-const { assertPathNotSymlink, isPathInside } = require('./path-allowlist');
+const { assertPathNotSymlink } = require('./path-allowlist');
 
 const TOKEN_TTL_MS = 30 * 60 * 1000;
 const MAX_CHUNK_BYTES = 8 * 1024 * 1024;
@@ -41,6 +41,14 @@ function _isExpired(entry) {
   return entry.expiresAt <= _now();
 }
 
+/**
+ * Create a file capability (read/write token) for a local path.
+ *
+ * Write mode requires the target file to EXIST (``lstatSync`` below):
+ * "save as new file" flows cannot use write tokens and instead go through
+ * raw-path validation under registered write roots (dialog-handlers /
+ * ipc-router._validateAndResolveWriteParams).
+ */
 function createFileCapability({ filePath, mode, webContentsId, name, size }) {
   if (!filePath || typeof filePath !== 'string') throw new Error('filePath required');
   const resolved = path.resolve(filePath);
@@ -75,7 +83,6 @@ function resolveCapability(token, expectedMode, webContentsId) {
   }
   const real = fs.realpathSync(entry.path);
   if (real !== entry.path) throw new Error('path symlink escape detected');
-  if (!isPathInside(path.dirname(entry.path), real) && real !== entry.path) throw new Error('path escape');
   return entry;
 }
 

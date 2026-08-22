@@ -527,3 +527,58 @@ def test_cold_import_requests_wait_for_warm_critical(monkeypatch) -> None:
     main._dispatch(lambda _p: {"ok": True}, {}, "w3", "canvas_save")
     assert len(waited) == 1, "canvas_save must not wait for the warm"
     assert len(responses) == 3
+
+
+def test_convertir_a_preview_accelerates_jpeg_with_draft(tmp_path) -> None:
+    """Preview for large JPEG uses draft() downsampling for fast decode."""
+    from PIL import Image
+
+    from backend.core.converter import convertir_a_preview
+
+    # Create a 2000x1500 JPEG
+    img_path = tmp_path / "large_photo.jpg"
+    img = Image.new("RGB", (2000, 1500), color=(120, 80, 200))
+    img.save(img_path, "JPEG")
+
+    result = convertir_a_preview(img_path, "PNG", as_data_uri=False)
+    assert result["width"] == "2000"
+    assert result["height"] == "1500"
+    assert Path(result["preview_path"]).exists()
+
+    with Image.open(result["preview_path"]) as preview_img:
+        # Preview must be capped at max_size=400 on longest side
+        assert max(preview_img.size) <= 400
+        assert preview_img.size == (400, 300)
+
+
+def test_conversion_task_queue_uses_deque() -> None:
+    """Conversion sliding window must use deque.popleft() O(1), not list.pop(0) O(N)."""
+    import inspect
+
+    from backend.handlers import conversion
+
+    source = inspect.getsource(conversion._run_conversion_job)
+    assert "task_queue = deque(chunk_tasks)" in source
+    assert "task = _task_queue.popleft()" in source
+    assert "pop(0)" not in source
+
+
+def test_json_document_store_uses_compact_serialization(tmp_path) -> None:
+    """JsonDocumentStore must serialize without redundant indent whitespace."""
+    from backend.core.json_store import JsonDocumentStore
+
+    db_path = tmp_path / "store.json"
+    store = JsonDocumentStore(db_path, lambda d: d)
+    store._items = {
+        "1": {"id": "1", "title": "Doc 1", "data": [1, 2, 3]},
+        "2": {"id": "2", "title": "Doc 2", "data": [4, 5, 6]},
+    }
+    store._save()
+
+    raw_text = db_path.read_text(encoding="utf-8")
+    assert "\n" not in raw_text
+    assert ": " not in raw_text
+    assert ", " not in raw_text
+    assert '{"1":{"id":"1"' in raw_text or '{"2":{"id":"2"' in raw_text
+
+

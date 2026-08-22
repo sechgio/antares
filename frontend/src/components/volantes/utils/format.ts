@@ -1,3 +1,5 @@
+import type { BulletStyle } from "../types";
+
 const dateFormatter = new Intl.DateTimeFormat("es-PE", {
   weekday: "long",
   day: "numeric",
@@ -162,3 +164,32 @@ export const sanitizeMultilineText = (value: string): string =>
     .map((line) => line.trim())
     .filter(Boolean)
     .join("\n");
+
+export const formatZonesText = (text: string, style?: BulletStyle): string => {
+  if (!text) return "";
+  if (!style || style === "none") return text;
+
+  const lines = text.split("\n");
+  let itemIndex = 1;
+  const formatted = lines.map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return "";
+    const clean = trimmed.replace(/^([•\-\*–—▸►✓✔]|\d+[\.\)])\s*/, "");
+    switch (style) {
+      case "disc":
+        return `• ${clean}`;
+      case "dash":
+        return `– ${clean}`;
+      case "arrow":
+        return `▸ ${clean}`;
+      case "check":
+        return `✓ ${clean}`;
+      case "number":
+        return `${itemIndex++}. ${clean}`;
+      default:
+        return clean;
+    }
+  });
+
+  return formatted.join("\n");
+};

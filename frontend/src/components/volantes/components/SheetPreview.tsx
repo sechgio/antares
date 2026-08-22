@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useRef, useState } from "react";
 import FlyerCard from "./FlyerCard";
 import type {
   BrandConfig,
+  FooterConfig,
   FlyerEncabezados,
   FlyerHeading,
   FlyerRecord,
@@ -10,6 +11,7 @@ import type {
 
 interface SheetPreviewProps {
   brand: BrandConfig;
+  footer?: FooterConfig;
   heading: FlyerHeading;
   encabezados: FlyerEncabezados;
   exportMode?: boolean;
@@ -47,7 +49,7 @@ const buildPages = (
 
 const SheetPreview = forwardRef<HTMLDivElement, SheetPreviewProps>(
   function SheetPreview(
-    { brand, heading, encabezados, exportMode = false, layoutMode, records },
+    { brand, footer, heading, encabezados, exportMode = false, layoutMode, records },
     forwardedRef,
   ) {
     const pages = buildPages(records, layoutMode, exportMode);
@@ -136,6 +138,7 @@ const SheetPreview = forwardRef<HTMLDivElement, SheetPreviewProps>(
                 >
                   <FlyerCard
                     brand={brand}
+                    footer={footer}
                     encabezados={encabezados}
                     heading={heading}
                     record={record}

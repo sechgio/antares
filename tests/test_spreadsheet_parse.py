@@ -305,3 +305,116 @@ def test_b64_inline_rejects_oversized_payload(monkeypatch) -> None:
 
     with pytest.raises(ValueError, match="excede"):
         ss._resolve_input_path({"xlsx_b64": oversized_b64})
+
+
+def test_get_rows_serves_pages_from_cached_spill(tmp_path: Path, monkeypatch) -> None:
+    """B1: cada página de spreadsheet_get_rows re-leía y re-parseaba el JSON
+    completo del spill (O(archivo) por request). Páginas sucesivas del mismo
+    spill deben servirse del cache sin volver a tocar disco."""
+    from backend.handlers import spreadsheet as ss
+    from backend.handlers.spreadsheet import spreadsheet_get_rows
+
+    monkeypatch.setattr(ss, "INLINE_RESULT_MAX_BYTES", 500)
+    staged = tmp_path / "cache.xlsx"
+    rows = [[f"H{c}" for c in range(8)]] + [
+        [str(r), "a", "b", "c", "d", "e", "f", "g"] for r in range(60)
+    ]
+    _write_xlsx(staged, rows)
+
+    parsed = spreadsheet_parse({"path": str(staged), "format_hint": "xlsx"})
+    assert "result_path" in parsed, parsed
+    spill_path = Path(parsed["result_path"]).resolve()
+
+    real_read_text = Path.read_text
+    reads: list[str] = []
+
+    def spy_read_text(self: Path, *args: Any, **kwargs: Any) -> str:
+        reads.append(str(self))
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", spy_read_text)
+
+    page1 = spreadsheet_get_rows(
+        {"result_path": parsed["result_path"], "sheet_index": 0, "offset": 0, "limit": 10},
+    )
+    assert len(page1["rows"]) == 10
+
+    page2 = spreadsheet_get_rows(
+        {"result_path": parsed["result_path"], "offset": 10, "limit": 10},
+    )
+    assert len(page2["rows"]) == 10
+    assert page2["rows"][0][0] == "9"
+
+    spill_reads = [p for p in reads if p == str(spill_path)]
+    assert len(spill_reads) == 1, f"el spill se releyó por página: {spill_reads}"
+
+
+def test_get_rows_cache_invalidated_when_spill_changes(tmp_path: Path, monkeypatch) -> None:
+    """Si el spill cambia en disco (mtime/size), la siguiente página debe
+    releerlo — nunca servir datos obsoletos del cache."""
+    from backend.handlers import spreadsheet as ss
+    from backend.handlers.spreadsheet import spreadsheet_get_rows
+
+    monkeypatch.setattr(ss, "INLINE_RESULT_MAX_BYTES", 500)
+    staged = tmp_path / "inv.xlsx"
+    rows = [[f"H{c}" for c in range(8)]] + [
+        [str(r), "a", "b", "c", "d", "e", "f", "g"] for r in range(30)
+    ]
+    _write_xlsx(staged, rows)
+
+    parsed = spreadsheet_parse({"path": str(staged), "format_hint": "xlsx"})
+    spill_path = Path(parsed["result_path"]).resolve()
+
+    first = spreadsheet_get_rows(
+        {"result_path": parsed["result_path"], "offset": 0, "limit": 10},
+    )
+    assert first["total"] == 31
+
+    # Reescribe el spill con una fila extra: cambia el contenido (y el size),
+    # así la clave (path, mtime, size) debe invalidar la entrada cacheada.
+    payload = json.loads(spill_path.read_text(encoding="utf-8"))
+    payload["sheets"][0]["rows"].append(["nueva", "fila"])
+    spill_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    second = spreadsheet_get_rows(
+        {"result_path": parsed["result_path"], "offset": 0, "limit": 10},
+    )
+    assert second["total"] == 32
+    assert second["has_more"] is True
+
+
+def test_clear_spreadsheet_caches_empties_cache(tmp_path: Path, monkeypatch) -> None:
+    from backend.handlers import spreadsheet as ss
+    from backend.handlers.spreadsheet import spreadsheet_get_rows
+
+    monkeypatch.setattr(ss, "INLINE_RESULT_MAX_BYTES", 50)
+    staged = tmp_path / "clear_test.xlsx"
+    rows = [["A", "B"], ["1", "2"]]
+    _write_xlsx(staged, rows)
+
+    parsed = spreadsheet_parse({"path": str(staged), "format_hint": "xlsx"})
+    spreadsheet_get_rows({"result_path": parsed["result_path"], "offset": 0, "limit": 10})
+
+    assert len(ss._spill_cache) > 0
+    ss._clear_spreadsheet_caches()
+    assert len(ss._spill_cache) == 0
+
+
+def test_spill_cache_oversized_not_cached(tmp_path: Path, monkeypatch) -> None:
+    from backend.handlers import spreadsheet as ss
+    from backend.handlers.spreadsheet import spreadsheet_get_rows
+
+    monkeypatch.setattr(ss, "INLINE_RESULT_MAX_BYTES", 100)
+    # Set threshold very low so this entry is treated as oversized for cache
+    monkeypatch.setattr(ss, "_SPILL_CACHE_MAX_ENTRY_BYTES", 10)
+    staged = tmp_path / "oversized.xlsx"
+    rows = [["Col1", "Col2"], ["Val1", "Val2"]]
+    _write_xlsx(staged, rows)
+
+    ss._clear_spreadsheet_caches()
+    parsed = spreadsheet_parse({"path": str(staged), "format_hint": "xlsx"})
+    res = spreadsheet_get_rows({"result_path": parsed["result_path"], "offset": 0, "limit": 10})
+
+    assert res["total"] == 2
+    # File is larger than 10 bytes so it should NOT be retained in _spill_cache
+    assert len(ss._spill_cache) == 0

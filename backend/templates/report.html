@@ -76,7 +76,7 @@
         .title {
             flex: 1;
             text-align: center;
-            font-size: 13pt;
+            font-size: 15pt;
             font-weight: 700;
             text-transform: uppercase;
             color: #0056b3;
@@ -196,6 +196,11 @@
             grid-template-rows: repeat(2, minmax(0, 1fr));
         }
 
+        /* === LAYOUT: 6 IMAGES (3x2) — full-bleed (previous version behavior) === */
+        .layout-6 .photo-item img {
+            object-fit: fill;
+        }
+
         /* === LAYOUT: 5 IMAGES (3 top + 2 centered bottom) === */
         .layout-5 {
             grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -212,6 +217,10 @@
 
         .layout-5 .photo-item:nth-child(5) {
             grid-column: 4 / span 2;
+        }
+
+        .layout-5 .photo-item img {
+            object-fit: fill;
         }
 
         .photo-item {

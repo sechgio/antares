@@ -181,3 +181,72 @@ def test_preview_mapping_still_reports_collisions_without_suffix(tmp_path) -> No
     assert nuevos["A.jpg"] == "mismo.jpg"
     assert nuevos["B.jpg"] == "mismo.jpg"
     assert result["collisions"]
+
+
+def test_preview_dedupe_sees_pre_existing_destino_files(monkeypatch, tmp_path) -> None:
+    """B2: el preview debe mostrar -2 cuando el nombre YA existe en destino.
+    El job escanea destino (disk_keys) antes de deduplicar; el preview no lo
+    hacía y mostraba el nombre pelado, divergiendo del resultado real."""
+    from backend.handlers import conversion
+
+    destino = tmp_path / "salida"
+    destino.mkdir()
+    (destino / "mismo.jpg").write_text("ya existe")
+
+    source = tmp_path / "a.jpg"
+    source.write_text("x")
+
+    monkeypatch.setattr(
+        "backend.core.database.buscar_lote_por_codigos",
+        lambda _codes: {"a": {"codigo": "a", "nombre": "mismo"}},
+    )
+    monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo", "nombre"])
+
+    result = conversion.preview({
+        "files": [str(source)],
+        "patron": "{nombre}{ext}",
+        "secuencia": 1,
+        "sequence_mode": "global",
+        "use_filename_seq": False,
+        "destino": str(destino),
+    })
+    assert [item["nuevo"] for item in result["preview"]] == ["mismo-2.jpg"]
+
+
+def test_preview_without_destino_never_consults_cwd_exists(monkeypatch, tmp_path) -> None:
+    """B2: sin destino el dedupe del preview debe ser solo en memoria. Antes,
+    _claim_out_path caía a Path.exists() sobre nombres pelados resueltos contra
+    el CWD del backend — una carpeta sin relación con la salida real."""
+    from backend.handlers import conversion
+
+    files = [str(tmp_path / "a.jpg"), str(tmp_path / "b.jpg")]
+    for f in files:
+        Path(f).write_text("x")
+
+    monkeypatch.setattr(
+        "backend.core.database.buscar_lote_por_codigos",
+        lambda _codes: {
+            "a": {"codigo": "a", "nombre": "mismo"},
+            "b": {"codigo": "b", "nombre": "mismo"},
+        },
+    )
+    monkeypatch.setattr("backend.core.renamer.get_field_names", lambda: ["codigo", "nombre"])
+
+    def no_exists(self: Path) -> bool:
+        if not self.is_absolute():
+            raise AssertionError(
+                f"preview sin destino no debe consultar exists() sobre rutas relativas: {self}"
+            )
+        return real_exists(self)
+
+    real_exists = Path.exists
+    monkeypatch.setattr(Path, "exists", no_exists)
+
+    result = conversion.preview({
+        "files": files,
+        "patron": "{nombre}{ext}",
+        "secuencia": 1,
+        "sequence_mode": "global",
+        "use_filename_seq": False,
+    })
+    assert [item["nuevo"] for item in result["preview"]] == ["mismo.jpg", "mismo-2.jpg"]

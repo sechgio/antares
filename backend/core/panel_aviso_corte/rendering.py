@@ -12,14 +12,21 @@ from typing import TYPE_CHECKING, Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from backend.utils.image_data import data_uri_from_bytes
+from backend.utils.image_data import (
+    contain_fit_cm,
+    data_uri_from_b64,
+    data_uri_from_bytes,
+    valid_b64_image,
+    valid_image_bytes,
+)
 from backend.utils.pdf_html import write_pdf_sanitized
 
 from .errors import RenderingError
 from .models import MAX_PANELS
+from .serialization import serialize_panel
 
 if TYPE_CHECKING:
-    from .models import ExportMode, Panel, PanelImageRef
+    from .models import ExportMode, Panel
 
 logger = logging.getLogger(__name__)
 
@@ -72,91 +79,6 @@ _jinja_env = Environment(
 )
 
 
-def _data_uri_from_b64(b64_string: str, default_mime: str = "image/png") -> str:
-    # Clean data URI scheme if already present
-    if b64_string.startswith("data:"):
-        header_end = b64_string.find(",")
-        if header_end != -1:
-            b64_string = b64_string[header_end + 1 :]
-
-    mime = default_mime
-    try:
-        sample = b64_string[:24]
-        # Pad sample to a multiple of 4 to ensure valid base64 decoding format
-        sample += "=" * ((4 - len(sample) % 4) % 4)
-        header = base64.b64decode(sample, validate=True)
-        if header.startswith(b"\xff\xd8"):
-            mime = "image/jpeg"
-        elif header.startswith(b"\x89PNG"):
-            mime = "image/png"
-        elif header.startswith(b"RIFF") and header[8:12] == b"WEBP":
-            mime = "image/webp"
-    except Exception:
-        pass
-    return f"data:{mime};base64,{b64_string}"
-
-
-def _valid_image_bytes(content: bytes) -> bool:
-    """Devuelve True si *content* decodifica como imagen válida (PIL)."""
-    try:
-        from PIL import Image
-
-        with Image.open(BytesIO(content)) as image:
-            image.verify()
-        return True
-    except Exception:
-        return False
-
-
-def _valid_b64_image(b64_string: str) -> bool:
-    """True si *b64_string* decodifica a bytes de imagen válidos."""
-    try:
-        content = base64.b64decode(b64_string, validate=True)
-    except Exception:
-        return False
-    return _valid_image_bytes(content)
-
-
-def _contain_fit_cm(
-    content: bytes, max_width_cm: float, max_height_cm: float,
-) -> tuple[float, float]:
-    """Escala la imagen para *contenerla* en (max_width, max_height) sin recortar.
-
-    Devuelve (ancho_cm, alto_cm) preservando la relación de aspecto. Un logo
-    cuadrado en una celda merged más alta que ancha deja de desbordar: se
-    ajusta al lado que primero toque el límite.
-    """
-    try:
-        from PIL import Image
-
-        with Image.open(BytesIO(content)) as image:
-            width_px, height_px = image.size
-    except Exception:
-        return max_width_cm, max_height_cm
-    if width_px <= 0 or height_px <= 0:
-        return max_width_cm, max_height_cm
-    scale = min(max_width_cm / width_px, max_height_cm / height_px)
-    return width_px * scale, height_px * scale
-
-
-def _serialize_image(ref: PanelImageRef) -> dict[str, Any]:
-    return {
-        "filename": ref.filename,
-        "caption": ref.caption,
-        "position": ref.position,
-    }
-
-
-def _serialize_panel(panel: Panel) -> dict[str, Any]:
-    return {
-        "cuadrante": panel.cuadrante,
-        "fecha_corte": panel.fecha_corte,
-        "motivo": panel.motivo,
-        "imagenes": [_serialize_image(img) for img in panel.imagenes],
-        "source_row_index": panel.source_row_index,
-    }
-
-
 def _prepare_logos(logos: dict[str, str | None]) -> tuple[str | None, str | None, str | None]:
     """Devuelve (logo_left, logo_right, logo_center) como data URIs."""
     left_raw = logos.get("left")
@@ -164,8 +86,8 @@ def _prepare_logos(logos: dict[str, str | None]) -> tuple[str | None, str | None
     # Validar que los logos decodifiquen a una imagen real; un logo corrupto
     # abortaría todo el PDF consolidado (paridad con render_docx, que usa
     # contextlib.suppress al decodificar).
-    left = _data_uri_from_b64(left_raw) if left_raw and _valid_b64_image(left_raw) else None
-    right = _data_uri_from_b64(right_raw) if right_raw and _valid_b64_image(right_raw) else None
+    left = data_uri_from_b64(left_raw) if left_raw and valid_b64_image(left_raw) else None
+    right = data_uri_from_b64(right_raw) if right_raw and valid_b64_image(right_raw) else None
     center = None
     if left and not right:
         center = left
@@ -223,17 +145,17 @@ def render_pdf(
         if path.is_file():
             with contextlib.suppress(Exception):
                 content = path.read_bytes()
-                if _valid_image_bytes(content):
+                if valid_image_bytes(content):
                     image_uris[filename] = data_uri_from_bytes(content)
     for filename, b64 in images.items():
         if filename in image_uris:
             continue
-        if _valid_b64_image(b64):
-            image_uris[filename] = _data_uri_from_b64(b64)
+        if valid_b64_image(b64):
+            image_uris[filename] = data_uri_from_b64(b64)
 
     panels_data: list[dict[str, Any]] = []
     for panel in panels:
-        pdict = _serialize_panel(panel)
+        pdict = serialize_panel(panel)
         pdict["image_uris"] = {
             img["filename"]: image_uris.get(img["filename"])
             for img in pdict["imagenes"]
@@ -476,7 +398,7 @@ def render_docx(
         logo_avail_h = sum(
             ROW_HEIGHTS_CM[k] for k in ("title", "meta_a", "meta_b", "meta_c")
         )
-        logo_w, logo_h = _contain_fit_cm(logo_bytes, logo_avail_w, logo_avail_h)
+        logo_w, logo_h = contain_fit_cm(logo_bytes, logo_avail_w, logo_avail_h)
 
     for pidx, panel in enumerate(panels):
         if pidx > 0:

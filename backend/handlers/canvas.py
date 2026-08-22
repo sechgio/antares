@@ -63,16 +63,21 @@ def canvas_duplicate(params: dict[str, Any]) -> dict[str, Any]:
     return {"document": document}
 
 
+_MAX_INLINE_PDF_BYTES = 40 * 1024 * 1024  # 40 MiB (expands to ~53.3 MiB Base64, safe under 64 MiB limit)
+
+
 @with_locale
 @validate_params("document")
 def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
     import base64
+    import uuid
     from pathlib import Path
 
     from backend.core.cmyk_pdf import CanvasCmykRenderer
+    from backend.utils.paths import user_data_path
 
     document = params["document"]
-    contexts = params.get("contexts") or [{}]
+    contexts = params.get("contexts") or []
     color_profile = str(params.get("color_profile") or "cmyk_iso_coated_v2")
     dpi = int(params.get("dpi") or 300)
     bleed_mm = float(params.get("bleed_mm") or 0.0)
@@ -112,6 +117,16 @@ def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
         return {
             "filename": out.name,
             "saved_path": str(out),
+        }
+
+    if len(pdf_bytes) > _MAX_INLINE_PDF_BYTES:
+        out_dir = user_data_path("canvas/out")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        tmp_out = out_dir / f"{uuid.uuid4().hex[:12]}_{filename}"
+        tmp_out.write_bytes(pdf_bytes)
+        return {
+            "filename": filename,
+            "saved_path": str(tmp_out),
         }
 
     encoded = base64.b64encode(pdf_bytes).decode("ascii")

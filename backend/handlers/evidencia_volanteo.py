@@ -104,7 +104,7 @@ def evidencia_volanteo_render(params: dict[str, Any]) -> dict[str, Any]:
         return {
             "pdf_base64": "",
             "content_base64": "",
-            "saved_path": output_path,
+            "saved_path": str(out),
             "filename": out.name,
             "format": "pdf",
             "mime_type": "application/pdf",

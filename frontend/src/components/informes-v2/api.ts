@@ -1,8 +1,8 @@
 import { api } from '../../api';
-import { downloadBase64Pdf, fileToBase64, fileToDataUrl } from '../../utils/pdfAssets';
+import { downloadBase64Blob, downloadBase64Pdf, fileToBase64, fileToDataUrl } from '../../utils/pdfAssets';
 import type { InformeV2, InformeV2ListItem } from './types';
 
-export { downloadBase64Pdf, fileToBase64, fileToDataUrl };
+export { downloadBase64Blob, downloadBase64Pdf, fileToBase64, fileToDataUrl };
 
 export const informesV2Api = {
   list: (summary = true) =>
@@ -40,8 +40,5 @@ export const informesV2Api = {
 };
 
 export function downloadBase64File(contentB64: string, filename: string, mime: string) {
-  const link = document.createElement('a');
-  link.href = `data:${mime};base64,${contentB64}`;
-  link.download = filename;
-  link.click();
+  downloadBase64Blob(contentB64, filename, mime);
 }

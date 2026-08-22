@@ -101,6 +101,135 @@ describe('pdf local-image allowlist', () => {
   });
 });
 
+describe('fileToPdfImageSource staged upload', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function stubElectronStaging(fileToken = 'antares-read_1') {
+    const api = {
+      registerLocalPath: vi.fn(async () => {
+        throw new Error('register_local_path is deprecated');
+      }),
+      fileStagedCreate: vi.fn(async () => ({ token: 'antares-staged_1' })),
+      fileStagedAppend: vi.fn(async () => ({ bytesWritten: 1 })),
+      fileStagedComplete: vi.fn(async () => ({ file_token: fileToken })),
+    };
+    vi.stubGlobal('window', { electronAPI: api });
+    return api;
+  }
+
+  // jsdom no decodifica imágenes: simula la compresión por canvas.
+  function stubCanvasCompression(dataUrl: string, w = 800, h = 600): void {
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn(() => 'blob:mock'),
+      revokeObjectURL: vi.fn(),
+    });
+    class FakeImage {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      naturalWidth = w;
+      naturalHeight = h;
+      set src(_v: string) {
+        queueMicrotask(() => this.onload?.());
+      }
+    }
+    vi.stubGlobal('Image', FakeImage);
+    const canvas = {
+      width: 0,
+      height: 0,
+      getContext: () => ({ drawImage: vi.fn() }),
+      toDataURL: () => dataUrl,
+    };
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      if (tag === 'canvas') return canvas as unknown as HTMLCanvasElement;
+      return document.createElementNS('http://www.w3.org/1999/xhtml', tag) as HTMLElement;
+    });
+  }
+
+  it('stages a pathless File (persisted panel photo) as a capability token', async () => {
+    const api = stubElectronStaging();
+    const file = new File(['image'], 'persistida.jpg', { type: 'image/jpeg' }); // sin path
+
+    const localImagePaths: Record<string, string> = {};
+    const src = await fileToPdfImageSource(file, 'photo-0', localImagePaths);
+
+    expect(src).toBe(buildLocalImageToken('photo-0'));
+    expect(localImagePaths[src]).toBe('antares-read_1');
+    expect(api.fileStagedCreate).toHaveBeenCalledWith('persistida.jpg', 5);
+    expect(api.fileStagedComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('stages each File object once even when referenced by several keys', async () => {
+    const api = stubElectronStaging();
+    const file = new File(['image'], 'compartida.jpg', { type: 'image/jpeg' });
+
+    const localImagePaths: Record<string, string> = {};
+    const srcA = await fileToPdfImageSource(file, 'panel-0-photo-0', localImagePaths);
+    const srcB = await fileToPdfImageSource(file, 'panel-1-photo-0', localImagePaths);
+
+    expect(srcA).not.toBe(srcB);
+    expect(localImagePaths[srcA]).toBe('antares-read_1');
+    expect(localImagePaths[srcB]).toBe('antares-read_1');
+    expect(api.fileStagedCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('imageToPdfSource max stages the original file as a capability token', async () => {
+    const api = stubElectronStaging();
+    const file = new File(['image'], 'foto.jpg', { type: 'image/jpeg' });
+
+    const source = await imageToPdfSource(file, 'max', 'row-1-img-0');
+
+    expect(source.src).toBe(buildLocalImageToken('row-1-img-0'));
+    expect(source.token).toBe(source.src);
+    expect(source.localPath).toBe('antares-read_1');
+    expect(api.fileStagedCreate).toHaveBeenCalledWith('foto.jpg', 5);
+  });
+
+  it('imageToPdfSource high stages the compressed JPEG instead of inlining base64', async () => {
+    const api = stubElectronStaging();
+    const file = new File(['image'], 'foto.png', { type: 'image/png' });
+
+    stubCanvasCompression('data:image/jpeg;base64,Y29tcHJlc3NlZA==', 4000, 3000);
+
+    const source = await imageToPdfSource(file, 'high', 'row-1-img-0');
+
+    expect(source.src).toBe(buildLocalImageToken('row-1-img-0'));
+    expect(source.localPath).toBe('antares-read_1');
+    // El archivo escenificado es el JPEG comprimido, no el original .png.
+    expect(api.fileStagedCreate).toHaveBeenCalledWith('foto.jpg', expect.any(Number));
+  });
+
+  it('falls back to a data URL when the file extension is not stageable', async () => {
+    const api = stubElectronStaging();
+    const file = new File(['image'], 'foto.heic', { type: 'image/heic' });
+
+    stubCanvasCompression('data:image/jpeg;base64,compressed');
+
+    const localImagePaths: Record<string, string> = {};
+    const src = await fileToPdfImageSource(file, 'photo-0', localImagePaths);
+
+    expect(src).toBe('data:image/jpeg;base64,compressed');
+    expect(Object.keys(localImagePaths)).toHaveLength(0);
+    expect(api.fileStagedCreate).not.toHaveBeenCalled();
+  });
+
+  it('falls back to a data URL when staging rejects', async () => {
+    const api = stubElectronStaging();
+    api.fileStagedComplete.mockRejectedValue(new Error('staged session failed'));
+    const file = new File(['image'], 'falla.jpg', { type: 'image/jpeg' });
+
+    stubCanvasCompression('data:image/jpeg;base64,compressed');
+
+    const localImagePaths: Record<string, string> = {};
+    const src = await fileToPdfImageSource(file, 'photo-0', localImagePaths);
+
+    expect(src).toBe('data:image/jpeg;base64,compressed');
+    expect(Object.keys(localImagePaths)).toHaveLength(0);
+  });
+});
+
 describe('logoToPdfSource', () => {
   afterEach(() => {
     vi.unstubAllGlobals();

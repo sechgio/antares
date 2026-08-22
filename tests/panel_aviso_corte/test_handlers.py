@@ -250,6 +250,33 @@ def test_render_docx_writes_to_disk_when_output_path_given(monkeypatch, tmp_path
     assert output_file.read_bytes() == b"PK\x03\x04docx-disk-content"
 
 
+def test_render_docx_resolves_write_token_saved_path(monkeypatch, tmp_path) -> None:
+    """When output_path is a write token and _resolved_output_path is provided,
+    saved_path must return the resolved physical path on disk, not the token.
+    """
+    def fake_render_docx(*, panels, logos, images, image_paths, export_mode, template_id=None):  # type: ignore[no-untyped-def]
+        return b"PK\x03\x04docx-token-content", "panel.docx"
+
+    monkeypatch.setattr(handler_module, "render_docx", fake_render_docx)
+
+    resolved_file = tmp_path / "panel_final.docx"
+    result = handler_module.panel_aviso_corte_render_pdf(
+        {
+            "panels": [_panel_payload()],
+            "logos": {},
+            "images": {},
+            "image_paths": {},
+            "format": "docx",
+            "output_path": "antares-write_token_12345",
+            "_resolved_output_path": str(resolved_file),
+        },
+    )
+
+    assert result["saved_path"] == str(resolved_file)
+    assert result["filename"] == "panel_final.docx"
+    assert resolved_file.read_bytes() == b"PK\x03\x04docx-token-content"
+
+
 @pytest.mark.parametrize("invalid_path", ["", "   "])
 def test_template_rejects_empty_path(invalid_path: str) -> None:
     with pytest.raises(ValueError, match=r"path|Invalid path"):

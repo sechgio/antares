@@ -238,4 +238,26 @@ describe('API Client', () => {
     expect(result.sheets[0]?.rows).toEqual([['A'], ['1']]);
     expect(result.warnings).toContain('spilled');
   });
+
+  it('should use a timeout budget that outlives Electron main startup wait', async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    mockInvoke.mockResolvedValue({ version: '1' });
+
+    await api.version();
+
+    // Normal method: 30s (IPC_TIMEOUT) + 60s (FE_STARTUP_BUFFER_MS) + 10s (FE_TIMEOUT_BUFFER_MS) = 100_000ms
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 100_000);
+    setTimeoutSpy.mockRestore();
+  });
+
+  it('should use extended timeout budget for long-running methods', async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    mockInvoke.mockResolvedValue({ success: true, count: 1 });
+
+    await api.informesV2RenderConsolidatedHtml({ report_ids: ['1'] });
+
+    // Long running method: 900s + 60s + 10s = 970_000ms
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 970_000);
+    setTimeoutSpy.mockRestore();
+  });
 });

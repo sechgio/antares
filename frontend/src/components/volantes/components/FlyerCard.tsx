@@ -1,10 +1,11 @@
-import type { BrandConfig, FlyerEncabezados, FlyerHeading, FlyerRecord } from "../types";
-import { DEFAULT_ENCABEZADOS, DEFAULT_HEADING, FLYER_ASSETS } from "../constants";
-import { formatFlyerDateLine } from "../utils/format";
+import type { BrandConfig, FooterConfig, FlyerEncabezados, FlyerHeading, FlyerRecord } from "../types";
+import { DEFAULT_ENCABEZADOS, DEFAULT_FOOTER, DEFAULT_HEADING, FLYER_ASSETS } from "../constants";
+import { formatFlyerDateLine, formatZonesText } from "../utils/format";
 
 interface FlyerCardProps {
   record: FlyerRecord;
   brand: BrandConfig;
+  footer?: FooterConfig;
   heading?: FlyerHeading;
   encabezados?: FlyerEncabezados;
   scale?: number;
@@ -54,6 +55,7 @@ const buildCardStyle = (record: FlyerRecord, scale: number): Record<string, stri
 export default function FlyerCard({
   record,
   brand,
+  footer = DEFAULT_FOOTER,
   heading = DEFAULT_HEADING,
   encabezados = DEFAULT_ENCABEZADOS,
   scale = 1
@@ -124,7 +126,9 @@ export default function FlyerCard({
               {encabezados.detalleZonas}
             </div>
 
-            <p className={zonesClassName}>{record.zonasAfectadas}</p>
+            <p className={zonesClassName}>
+              {formatZonesText(record.zonasAfectadas, record.bulletStyle)}
+            </p>
           </div>
         </section>
       </div>
@@ -133,12 +137,12 @@ export default function FlyerCard({
         <img
           alt="Logo operativo"
           className="flyer-footer-acciona"
-          src={FLYER_ASSETS.footerLogo}
+          src={footer.logoOperativo ?? FLYER_ASSETS.footerLogo}
         />
         <img
           alt="Servicio de agua"
           className="flyer-footer-grifo"
-          src={FLYER_ASSETS.grifo}
+          src={footer.servicioAgua ?? FLYER_ASSETS.grifo}
         />
         <p className="flyer-footer-note">{SERVICE_NOTE}</p>
         <p className="flyer-footer-copy">{INFO_COPY}</p>

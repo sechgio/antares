@@ -138,7 +138,12 @@ async function run() {
     async loadFile(filePath) {
       this.loadedFile = filePath;
       this.loadedHtml = await require('fs').promises.readFile(filePath, 'utf8');
-      this.listeners['did-finish-load']();
+      if (this.listeners['did-finish-load']) this.listeners['did-finish-load']();
+    }
+
+    async loadURL(url) {
+      this.loadedUrl = url;
+      if (this.listeners['did-finish-load']) this.listeners['did-finish-load']();
     }
 
     isDestroyed() {
@@ -178,6 +183,7 @@ async function run() {
   assert(pdfWindow.closed === false, 'html_to_pdf keeps the pooled hidden window alive for reuse (no spin-up on next render)');
   assert(!pdfWindow.loadedHtml.includes('<script'), 'html_to_pdf should strip script tags');
   assert(!pdfWindow.loadedHtml.includes('file:///etc/passwd'), 'html_to_pdf should block local file URLs');
+  assert(pdfWindow.loadedUrl === 'about:blank', 'html_to_pdf unloads DOM to about:blank on pooled window to prevent memory leaks');
 
   // Without return_base64 (and without user outputPath): disk + token only — no base64.
   {
@@ -279,7 +285,12 @@ async function run() {
     }
 
     async loadFile() {
-      this.listeners['did-finish-load']();
+      if (this.listeners['did-finish-load']) this.listeners['did-finish-load']();
+    }
+
+    async loadURL(url) {
+      this.loadedUrl = url;
+      if (this.listeners['did-finish-load']) this.listeners['did-finish-load']();
     }
 
     isDestroyed() {
@@ -616,6 +627,60 @@ async function run() {
     assert(badFullPath, 'local_image_data_url should reject relative paths');
   } finally {
     await fs.promises.rm(thumbTempDir, { recursive: true, force: true });
+  }
+
+  // ── B4: file_token_read_json rechaza spills grandes ANTES de leer ──
+  // Antes, readFile cargaba el archivo completo a memoria (hasta ~100 MB de
+  // spill) para descartarlo recién en el chequeo de tamaño posterior; además
+  // el rechazo ocurría FUERA del try/finally y dejaba el token sin revocar.
+  {
+    const osB4 = require('os');
+    const pathB4 = require('path');
+    const { createFileCapability, resolveCapability } = require('../electron/file-capabilities.js');
+    const tmpDir = await fs.promises.mkdtemp(pathB4.join(osB4.tmpdir(), 'antares-b4-'));
+    try {
+      const smallPath = pathB4.join(tmpDir, 'small.json');
+      await fs.promises.writeFile(smallPath, JSON.stringify({ ok: true }), 'utf8');
+      const smallCap = createFileCapability({ filePath: smallPath, mode: 'read' });
+      const smallRes = await handleDialogCall('file_token_read_json', { token: smallCap.token }, dialog, win);
+      assert(smallRes.handled === true, 'file_token_read_json maneja tokens válidos');
+      assert(smallRes.result.ok === true, 'file_token_read_json parsea el JSON pequeño');
+
+      // Sparse file > 64 MB: stat.size ya supera el tope sin llenar disco.
+      const bigPath = pathB4.join(tmpDir, 'big.json');
+      const fh = await fs.promises.open(bigPath, 'w');
+      await fh.truncate(64 * 1024 * 1024 + 1024);
+      await fh.close();
+      const bigCap = createFileCapability({ filePath: bigPath, mode: 'read' });
+
+      const realReadFile = fs.promises.readFile;
+      let bigReadAttempted = false;
+      fs.promises.readFile = async (p, ...rest) => {
+        if (String(p) === bigPath) bigReadAttempted = true;
+        return realReadFile(p, ...rest);
+      };
+
+      let rejected = false;
+      try {
+        await handleDialogCall('file_token_read_json', { token: bigCap.token }, dialog, win);
+      } catch (err) {
+        rejected = /demasiado grande/i.test(err.message);
+      } finally {
+        fs.promises.readFile = realReadFile;
+      }
+      assert(rejected, 'un spill > 64 MB debe ser rechazado');
+      assert(!bigReadAttempted, 'el archivo grande no debe leerse a memoria (stat primero)');
+
+      let revokedOk = false;
+      try {
+        resolveCapability(bigCap.token, 'read', null);
+      } catch {
+        revokedOk = true;
+      }
+      assert(revokedOk, 'el token debe revocarse incluso al rechazar por tamaño');
+    } finally {
+      await fs.promises.rm(tmpDir, { recursive: true, force: true });
+    }
   }
 
   console.log(`\n${'='.repeat(50)}`);

@@ -24,57 +24,16 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
-
-// ─── Config ───────────────────────────────────────────────────────────────────
-const REPO_OWNER = 'sechgio';
-const REPO_NAME = 'antares';
-const ROOT = path.resolve(__dirname, '..');
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function sh(command, opts = {}) {
-  const result = execSync(command, {
-    cwd: ROOT,
-    encoding: 'utf8',
-    stdio: opts.silent ? 'pipe' : 'pipe',
-    maxBuffer: 50 * 1024 * 1024,
-    ...opts,
-  });
-  return (result || '').toString().trim();
-}
-
-function trySh(command, opts = {}) {
-  try {
-    return sh(command, opts);
-  } catch {
-    return null;
-  }
-}
-
-function step(label, fn) {
-  process.stdout.write(`  ${label} ... `);
-  try {
-    fn();
-    console.log('✅');
-  } catch (err) {
-    console.log('❌');
-    console.error(`    ${err.message}`);
-    // Re-throw only the message so we don't dump stack traces
-    const e = new Error(err.message || 'Step failed');
-    e.code = err.status || err.code || 1;
-    throw e;
-  }
-}
-
-function skip(label, reason) {
-  console.log(`  ${label} ... ⏭️  (${reason})`);
-}
-
-function die(message, code = 1) {
-  console.error(`\n✗ ${message}`);
-  process.exit(code);
-}
+const {
+  REPO_OWNER,
+  REPO_NAME,
+  ROOT,
+  sh,
+  trySh,
+  step,
+  skip,
+  die,
+} = require('./lib/loop-utils');
 
 // ─── Validators ───────────────────────────────────────────────────────────────
 

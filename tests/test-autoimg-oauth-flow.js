@@ -38,6 +38,26 @@ async function main() {
     'detecta token revocado',
   );
   assert(!sheets.isInvalidGrantResponse('invalid_client'), 'no confunde invalid_client');
+
+  // ── B3: PKCE del flujo legacy — getAuthUrl debe PERSISTIR el verifier ──
+  // Antes, cada llamada generaba un verifier nuevo sin guardarlo: exchangeCode
+  // fallaba con "Flujo OAuth no iniciado" o usaba un verifier distinto al del
+  // challenge. Contrato observable sin hooks internos: dos llamadas seguidas
+  // deben producir el MISMO code_challenge (S256 del mismo verifier) y state.
+  {
+    const urlA = sheets.getAuthUrl();
+    const urlB = sheets.getAuthUrl();
+    const paramsA = new URL(urlA).searchParams;
+    const paramsB = new URL(urlB).searchParams;
+    assert(
+      paramsA.get('code_challenge') === paramsB.get('code_challenge'),
+      'getAuthUrl reutiliza el mismo code_challenge (verifier persistido)',
+    );
+    assert(
+      paramsA.get('state') === paramsB.get('state'),
+      'getAuthUrl reutiliza el mismo state',
+    );
+  }
   assert(
     typeof sheets.REAUTH_REQUIRED_MESSAGE === 'string' && sheets.REAUTH_REQUIRED_MESSAGE.includes('Conectar'),
     'mensaje de reauth orienta a reconectar',

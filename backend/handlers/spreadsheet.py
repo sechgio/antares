@@ -7,7 +7,9 @@ import csv
 import io
 import json
 import os
+import threading
 import zipfile
+from collections import OrderedDict
 from datetime import date, datetime, time
 from pathlib import Path
 from typing import Any
@@ -26,6 +28,26 @@ INLINE_RESULT_MAX_BYTES = 512 * 1024
 DEFAULT_GET_ROWS_LIMIT = 500
 MAX_GET_ROWS_LIMIT = 5_000
 _SUPPORTED_FORMATS = frozenset({"xlsx", "xls", "csv"})
+
+# ─── Spill cache ────────────────────────────────────────────────────────────
+# La paginación (spreadsheet_get_rows) releía y re-parseaba el JSON completo
+# del spill en CADA página (O(archivo) por request, hasta MAX_SPREADSHEET_BYTES).
+# LRU acotado por número de entradas y por tamaño de entrada: un spill de
+# 100 MB nunca queda retenido en RAM. La clave incluye (mtime_ns, size) para
+# que una reescritura invalide; un spill borrado por file_token_read_json
+# (Electron) falla en el stat() antes de consultar el cache — nunca se sirven
+# datos obsoletos.
+_SPILL_CACHE_MAX_ENTRIES = 2
+_SPILL_CACHE_MAX_ENTRY_BYTES = 8 * 1024 * 1024
+
+_spill_cache: OrderedDict[tuple[str, int, int], dict[str, Any]] = OrderedDict()
+_spill_cache_lock = threading.Lock()
+
+
+def _clear_spreadsheet_caches() -> None:
+    """Clear all in-memory static caches in spreadsheet handler."""
+    with _spill_cache_lock:
+        _spill_cache.clear()
 
 
 def _spill_dir() -> Path:
@@ -51,14 +73,30 @@ def _load_sheet_cache(path: Path) -> dict[str, Any]:
         raise FileNotFoundError(msg)
     if path.is_symlink():
         raise ValueError("symlink no permitido")
-    raw = path.read_text(encoding="utf-8")
-    if len(raw.encode("utf-8")) > MAX_SPREADSHEET_BYTES:
+    try:
+        st = path.stat()
+    except OSError as exc:
+        raise FileNotFoundError(str(exc)) from exc
+    key = (str(path.resolve()), st.st_mtime_ns, st.st_size)
+    with _spill_cache_lock:
+        cached = _spill_cache.get(key)
+        if cached is not None:
+            _spill_cache.move_to_end(key)
+            return cached
+    if st.st_size > MAX_SPREADSHEET_BYTES:
         msg = "cache de spreadsheet demasiado grande"
         raise ValueError(msg)
+    raw = path.read_text(encoding="utf-8")
     data = json.loads(raw)
     if not isinstance(data, dict) or not isinstance(data.get("sheets"), list):
         msg = "cache de spreadsheet corrupto"
         raise ValueError(msg)
+    if st.st_size <= _SPILL_CACHE_MAX_ENTRY_BYTES:
+        with _spill_cache_lock:
+            _spill_cache[key] = data
+            _spill_cache.move_to_end(key)
+            while len(_spill_cache) > _SPILL_CACHE_MAX_ENTRIES:
+                _spill_cache.popitem(last=False)
     return data
 
 

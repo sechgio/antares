@@ -1502,8 +1502,6 @@ function Artboard({
   // Compositor `scale()` is the camera — it must NOT re-layout layers/text.
   const designW = A4_WIDTH_PX;
   const designH = A4_HEIGHT_PX;
-  const visualW = Math.round(A4_WIDTH_PX * zoom);
-  const visualH = Math.round(A4_HEIGHT_PX * zoom);
   const panX = Math.round(pan.x);
   const panY = Math.round(pan.y);
   const guideHit = screenChromePx(GUIDE_HIT_PX, zoom);
@@ -1550,8 +1548,8 @@ function Artboard({
           position: 'absolute',
           left: '50%',
           top: '50%',
-          width: visualW,
-          height: visualH,
+          width: designW,
+          height: designH,
           // Compositor pan (avoids left/top layout thrash on every wheel/drag tick).
           transform: `translate3d(calc(-50% + ${panX}px), calc(-50% + ${panY}px), 0)`,
           willChange: panning ? 'transform' : undefined,
@@ -1567,7 +1565,7 @@ function Artboard({
             // Compositor-only camera: CSS `zoom` re-rasterizes the whole artboard on
             // every zoom frame (pinch jank that scales with painted layers).
             transform: `scale(${zoom})`,
-            transformOrigin: 'top left',
+            transformOrigin: 'center center',
             willChange: 'transform',
             backfaceVisibility: 'hidden',
             background: '#ffffff',

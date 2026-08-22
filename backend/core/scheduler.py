@@ -134,7 +134,6 @@ class WorkScheduler:
 
         with self._lock:
             self._light_outstanding += 1
-            self._light_submitted += 1
 
         def _wrapped() -> Any:
             try:
@@ -152,6 +151,11 @@ class WorkScheduler:
                 self._light_outstanding -= 1
             self._light_slots.release()
             raise
+
+        # Contar solo submissions exitosos: un executor.submit que lanza no
+        # debe inflar la telemetría para el resto de la sesión.
+        with self._lock:
+            self._light_submitted += 1
 
         def _release_if_cancelled(fut: Future) -> None:
             # A future cancelled before _wrapped ran never executes the finally
@@ -187,7 +191,6 @@ class WorkScheduler:
 
         with self._lock:
             self._heavy_outstanding += 1
-            self._heavy_submitted += 1
 
         def _wrapped() -> Any:
             with self._lock:
@@ -208,6 +211,10 @@ class WorkScheduler:
                 self._heavy_outstanding -= 1
             self._heavy_slots.release()
             raise
+
+        # Contar solo submissions exitosos (misma invariante que la lane light).
+        with self._lock:
+            self._heavy_submitted += 1
 
         def _release_if_cancelled(fut: Future) -> None:
             # If the future was cancelled before _wrapped started running, the
