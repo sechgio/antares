@@ -5,6 +5,23 @@ Todas las versiones notables de Antares se documentan aquí.
 Formato basado en [Keep a Changelog](https://keepachangelog.com/),
 y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
+## [0.11.10] — 2026-08-22
+
+### Added
+- **Backend / Store**: implementación genérica y thread-safe de `JsonDocumentStore` con persistencia atómica en disco y recuperación automática de backups corruptos.
+- **Preview Panel**: nuevo diseño y controles avanzados en `DataPreviewModal` con búsqueda en tiempo real, filtrado por columnas y formateo estilizado.
+- **Testing**: suites de prueba completas para `pdfHelpers`, `FlyerCard`, `themeApplier`, tokenización de resultados IPC, deduplicación de rutas y pruebas estáticas de perf harness.
+
+### Changed
+- **Persistencia backend**: migración de las capas de datos de `fichas_tecnicas`, `informes_v2` y `technical_reports` hacia `JsonDocumentStore`.
+- **Canvas**: caché de estimaciones de bytes para pasos de historial inmutables (`WeakMap`), evitando serializaciones innecesarias durante operaciones de deshacer/rehacer.
+- **UI / Mascot**: movimiento fluido de la mascota mediante loop de animación `requestAnimationFrame` + `translate3d` con protecciones para ventanas en segundo plano y `prefers-reduced-motion`.
+- **Electron & IPC**: endurecimiento de comprobaciones de salud en el spawner de backend, handlers de diálogos, resolución de tokens de archivos y optimizaciones en el caché de thumbnails.
+
+### Fixed
+- **UI / Temas**: restauración confiable del tema de apariencia guardado al iniciar la aplicación (resuelto a través de `themeApplier`).
+- **Padron & Volantes**: correcciones y mejoras en la generación y renderizado de documentos y PDFs.
+
 ## [0.11.9] — 2026-08-11
 
 ### Added
