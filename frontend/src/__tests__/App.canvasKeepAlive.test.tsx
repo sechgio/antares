@@ -82,7 +82,7 @@ describe('App Canvas keep-alive', () => {
         expect(screen.getByTestId('canvas-keep-alive')).toBeInTheDocument();
       });
 
-      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 100);
+      await vi.advanceTimersByTimeAsync(60 * 1000 + 100);
       await waitFor(() => {
         expect(screen.queryByTestId('canvas-keep-alive')).not.toBeInTheDocument();
       });

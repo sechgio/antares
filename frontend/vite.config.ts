@@ -47,7 +47,7 @@ export default defineConfig(({ mode }) => ({
         drop_console: true,
         drop_debugger: true,
         pure_funcs: ['console.log', 'console.info', 'console.debug'],
-        passes: 2,
+        passes: 1,
       },
       mangle: {
         safari10: true,
@@ -88,6 +88,7 @@ export default defineConfig(({ mode }) => ({
           if (n.includes('/node_modules/i18next/') || n.includes('/node_modules/react-i18next/')) {
             return 'vendor-i18n'
           }
+          if (n.includes('/node_modules/web-vitals/')) return 'vendor-web-vitals'
           if (n.includes('/node_modules/@fullcalendar/')) return 'vendor-fullcalendar'
           if (n.includes('/node_modules/@supabase/') || n.includes('/src/lib/supabase')) {
             // Keep createClient + our thin wrapper in the same async chunk so
@@ -113,7 +114,7 @@ export default defineConfig(({ mode }) => ({
       },
     },
     chunkSizeWarningLimit: 500,
-    reportCompressedSize: false,
+    reportCompressedSize: true,
     cssCodeSplit: true,
     assetsInlineLimit: 4096,
     // Do not modulepreload lazy-route vendors (supabase/framer) just because the
