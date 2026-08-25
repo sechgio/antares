@@ -42,13 +42,19 @@ import time
 import traceback
 import warnings
 from concurrent.futures import Future
+from typing import Any
 
 from backend.core import ipc_phase_telemetry
 from backend.core.database import init_db
-from backend.core.exceptions import AntaresBaseException, MethodNotFoundError
+from backend.core.exceptions import AntaresBaseException, MemoryPressureError, MethodNotFoundError
 from backend.core.plugins import load_plugins_from_dir
 from backend.core.repository import close_connection
-from backend.core.scheduler import SchedulerBusy, get_scheduler
+from backend.core.scheduler import (
+    MEMORY_PRESSURE_RETRY_AFTER_MS,
+    MEMORY_PRESSURE_THRESHOLD_MB,
+    SchedulerBusy,
+    get_scheduler,
+)
 from backend.handlers import HANDLERS, WARM_CRITICAL_DONE
 from backend.ipc_protocol import _SKIP, read_message, send_notification, send_response
 from backend.utils.i18n import t
@@ -268,7 +274,7 @@ def _reject_submit(
     msg_id: int,
     method_name: str,
     lane: str,
-    error: str,
+    error: Any,
     rejected: str | None = None,
 ) -> None:
     """Responde a una petición que no pudo programarse y registra telemetría."""
@@ -278,13 +284,43 @@ def _reject_submit(
     ipc_phase_telemetry.set_fields(msg_id, **fields)
     send_response(None, msg_id, error=error)
 
-
 def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
     """Submit one handler onto the appropriate scheduler lane."""
     lane = "heavy" if method_name in HEAVY_METHODS else "light"
     ipc_phase_telemetry.set_fields(msg_id, method=method_name, lane=lane)
     ipc_phase_telemetry.mark(msg_id, "enqueue")
     scheduler = get_scheduler()
+    # ── Memory-pressure backpressure antes de encolar (auditoría RAM 92%).
+    # Poll psutil cada canvas_save/history para spill + retry_after sin
+    # retener 16 closures grandes en la light queue (OOM risk).
+    if method_name in ("canvas_save", "canvas_save_history"):
+        try:
+            from backend.handlers.canvas import (
+                _check_history_memory_pressure,
+                _check_memory_pressure_or_spill,
+            )
+
+            if method_name == "canvas_save":
+                doc = params.get("document") if isinstance(params, dict) else None
+                _check_memory_pressure_or_spill(doc if isinstance(doc, dict) else None, context="canvas_save")
+            else:
+                _check_history_memory_pressure(
+                    str(params.get("id", "")) if isinstance(params, dict) else "",
+                    params.get("past") if isinstance(params, dict) else None,
+                    params.get("future") if isinstance(params, dict) else None,
+                )
+        except MemoryPressureError as mp:
+            logger.warning(
+                "Rejecting %s pre-queue due to memory_pressure: %s metrics=%s",
+                method_name,
+                mp.message,
+                scheduler.metrics(),
+            )
+            _reject_submit(msg_id, method_name, lane, mp, rejected="memory_pressure")
+            return None
+        except Exception:
+            # No bloquear el submit si el check falla por otra razón
+            pass
     try:
         if method_name in HEAVY_METHODS:
             future = scheduler.submit_heavy(_dispatch, handler, params, msg_id, method_name)
@@ -292,6 +328,23 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
             future = scheduler.submit_light(_dispatch, handler, params, msg_id, method_name)
     except SchedulerBusy as exc:
         reason = getattr(exc, "reason", "heavy_queue_full")
+        # Caso especial: presión de memoria en light lane (capa dinámica)
+        if reason == "memory_pressure":
+            mp = MemoryPressureError(
+                f"Memoria baja: reintente en {MEMORY_PRESSURE_RETRY_AFTER_MS}ms",
+                details={
+                    "retry_after_ms": MEMORY_PRESSURE_RETRY_AFTER_MS,
+                    "threshold_mb": MEMORY_PRESSURE_THRESHOLD_MB,
+                    "reason": reason,
+                },
+            )
+            logger.warning(
+                "Scheduler memory_pressure while accepting %s: %s",
+                method_name,
+                scheduler.metrics(),
+            )
+            _reject_submit(msg_id, method_name, lane, mp, rejected=reason)
+            return None
         message = (
             "Backend ocupado: cola de trabajo ligera llena"
             if reason == "light_queue_full"
@@ -313,7 +366,6 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
     if future is not None:
         future.add_done_callback(_log_future_exception)
     return future
-
 
 def main() -> None:
     """Bucle principal IPC — diseñado para nunca morir.

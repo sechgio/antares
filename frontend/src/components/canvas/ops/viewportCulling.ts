@@ -14,6 +14,8 @@ export { layerBoundsMm };
 
 /** Overscan around the viewport so layers do not pop in while panning. */
 export const CULLING_MARGIN_MM = 40;
+const ZOOM_FLOOR = 0.4;
+const MARGIN_MAX_MM = CULLING_MARGIN_MM * 2;
 
 /**
  * Page region (mm) currently visible in the viewport, expanded by `marginMm`.
@@ -35,7 +37,7 @@ export function visiblePageRectMm(
   const scale = zoom * MM_TO_PX;
   const effectiveMargin =
     marginMm === CULLING_MARGIN_MM
-      ? Math.max(CULLING_MARGIN_MM, Math.round(CULLING_MARGIN_MM / Math.max(zoom, 0.4)))
+      ? Math.min(MARGIN_MAX_MM, Math.max(CULLING_MARGIN_MM, Math.round(CULLING_MARGIN_MM / Math.max(zoom, ZOOM_FLOOR))))
       : marginMm;
   return {
     x: (0 - pageLeft) / scale - effectiveMargin,

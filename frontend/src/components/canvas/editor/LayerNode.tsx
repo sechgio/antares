@@ -74,12 +74,22 @@ function imgStyleFromCssVars(cssVars: CanvasLayer['cssVars']): CSSProperties {
 }
 
 /** Fingerprint paint-relevant cssVars (position translate excluded — applied separately). */
+const paintKeyCache = new WeakMap<CanvasLayer['cssVars'], Map<string, string>>();
 function paintVarsKey(vars: CanvasLayer['cssVars'], scale: number, lineOverride: boolean): string {
-  let key = `${scale}|${lineOverride ? 1 : 0}`;
+  let byScale = paintKeyCache.get(vars);
+  if (!byScale) {
+    byScale = new Map<string, string>();
+    paintKeyCache.set(vars, byScale);
+  }
+  const cacheKey = `${scale}|${lineOverride ? 1 : 0}`;
+  const hit = byScale.get(cacheKey);
+  if (hit !== undefined) return hit;
+  let key = cacheKey;
   for (const k of Object.keys(vars)) {
     if (k === '--translate-x' || k === '--translate-y') continue;
     key += `|${k}=${vars[k as keyof typeof vars] ?? ''}`;
   }
+  byScale.set(cacheKey, key);
   return key;
 }
 

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && node --max-old-space-size=4096 node_modules/vite/bin/vite.js build && node scripts/canvas-appear-budget.mjs && node scripts/shell-preload-budget.mjs",
+    "check:budgets": "node scripts/canvas-appear-budget.mjs && node scripts/shell-preload-budget.mjs",
     "check:canvas-budget": "node scripts/canvas-appear-budget.mjs",
     "check:shell-budget": "node scripts/shell-preload-budget.mjs",
     "preview": "vite preview",
@@ -39,7 +40,8 @@
     "react-dom": "^18.3.1",
     "react-i18next": "^17.0.4",
     "react-window": "^2.2.7",
-    "tailwind-merge": "^3.6.0"
+    "tailwind-merge": "^3.6.0",
+    "web-vitals": "^4.2.4"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^7.0.0",

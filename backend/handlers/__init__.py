@@ -18,6 +18,7 @@ import importlib
 import logging
 import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, cast
 
 from backend.core.import_guard import serialized_import
@@ -54,6 +55,7 @@ _HANDLER_MODULES: tuple[str, ...] = (
     "backend.handlers.ubicaciones",
     "backend.handlers.evidencia_volanteo",
     "backend.handlers.spreadsheet",
+    "backend.handlers.telemetry",
 )
 
 # Modules required before the ready handshake. Keep this list minimal: default
@@ -97,6 +99,7 @@ _EXACT_MODULE: dict[str, str] = {
     "rename_patterns_get": "backend.handlers.database",
     "rename_patterns_update": "backend.handlers.database",
     "rename_patterns_reset": "backend.handlers.database",
+    "telemetry": "backend.handlers.telemetry",
 }
 
 # Longest-prefix-first feature routing (checked after exact matches).
@@ -204,43 +207,47 @@ class HandlerRegistry:
 
         Every cold-import block runs under ``serialized_import()``: two threads
         loading C extensions at once can deadlock the process on Windows
-        (Python import lock x Windows loader lock - observed with numpy in the
-        heavy worker vs rpds here). Failures are non-fatal - the lazy paths in
-        the handlers still retry.
-        """
-        # Create the historial schema first (before the canvas/conversion
-        # imports) so the first Historial open does not pay the ~250 ms
-        # one-time lazy-migration cost (DDL + indexes + commit).
-        try:
-            with serialized_import():
-                from backend.core.history import _ensure_table
+        (Python import lock x Windows loader lock). Failures are non-fatal.
 
-                _ensure_table()
-            logger.info("history schema post-ready warm complete")
-        except Exception:
-            logger.exception("history schema post-ready warm failed")
-        # pandas/openpyxl are pre-imported synchronously before the ready
-        # handshake (warm_pandas_sync): a cold ``import pandas`` in the
-        # heavy worker serialized behind this daemon's import chain for
-        # ~122 s (Python import lock x serialized_import guard) on the
-        # first db_import. Never touch them again here.
+        History schema is off the critical path: background ThreadPoolExecutor
+        so first ``canvas_list`` (light, no WARM_CRITICAL_DONE wait) never
+        contends the ``serialized_import`` lock for ~180 ms DDL
+        (179.9 ms vs 3.6 ms via ANTARES_IPC_TELEMETRY).
+        """
+        # pandas/openpyxl already pre-imported in warm_pandas_sync before ready;
+        # never touch them here (would re-contend the 122 s guard).
         try:
             with serialized_import():
                 self.warm(_POST_READY_HANDLER_MODULES)
         except Exception:
             logger.exception("canvas/conversion post-ready warm failed")
-        # WeasyPrint: import under the guard (the cold cliff), render outside.
-        # The render must not hold the guard: it takes seconds and would
-        # stall every cold-import request waiting on WARM_CRITICAL_DONE.
+        # WeasyPrint: import under guard (cold cliff), render outside.
         write_pdf_sanitized: Callable[[str], bytes] | None = None
         try:
             with serialized_import():
                 from backend.utils.pdf_html import write_pdf_sanitized
         except Exception:
             logger.exception("WeasyPrint import warm failed")
-        # No more guarded cold imports from this thread: release requests
-        # that cold-import C extensions (db_import, renders, preview, …).
+        # Release cold-import waiters (db_import, renders, preview …).
         WARM_CRITICAL_DONE.set()
+        # History warm off critical path: import under guard, DDL outside.
+        # Runs concurrently with WeasyPrint render (seconds, no guard).
+        try:
+            def _warm_history_bg() -> None:
+                try:
+                    with serialized_import():
+                        from backend.core.history import _ensure_table
+
+                    _ensure_table()
+                    logger.info("history schema background warm complete")
+                except Exception:
+                    logger.exception("history schema background warm failed")
+
+            executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="history-warm")
+            executor.submit(_warm_history_bg)
+            executor.shutdown(wait=False)
+        except Exception:
+            logger.exception("history schema background warm submission failed")
         if write_pdf_sanitized is not None:
             try:
                 write_pdf_sanitized("<!DOCTYPE html><html><body>warm</body></html>")

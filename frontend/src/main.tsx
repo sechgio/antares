@@ -4,8 +4,11 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import './index.css'
 import { restoreCachedTheme } from './utils/themeApplier';
+import { initRUM } from './utils/rum';
 
 restoreCachedTheme();
+// RUM: sampled 10% web-vitals → backend stderr (budget-safe dynamic import)
+initRUM();
 
 const root = ReactDOM.createRoot(document.getElementById('root')!);
 

@@ -353,7 +353,9 @@ class WorkScheduler:
             # Alerta de presión de memoria para dashboards (auditoría RAM 92% → 1 línea).
             avail_mb = m.get("system_ram_available_mb")
             m["memory_pressure"] = bool(avail_mb is not None and avail_mb < MEMORY_PRESSURE_THRESHOLD_MB)
-            m["memory_alert"] = f"low_ram:{avail_mb}MB<{MEMORY_PRESSURE_THRESHOLD_MB}MB" if m["memory_pressure"] else None
+            m["memory_alert"] = (
+                f"low_ram:{avail_mb}MB<{MEMORY_PRESSURE_THRESHOLD_MB}MB" if m["memory_pressure"] else None
+            )
             return m
     def shutdown(self, *, wait: bool = True) -> None:
         """Shut down the light and heavy executors."""

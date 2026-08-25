@@ -168,6 +168,15 @@ function runQualityGate() {
     throw new Error(`Typecheck de frontend falló:\n${tcFrontend.slice(0, 500)}`);
   }
 
+  // Budgets (shell preload + canvas incremental) — build if dist missing
+  const budgets = trySh('npm run check:budgets 2>&1', { silent: true, timeout: 300000 });
+  if (budgets === null) {
+    throw new Error('Budgets fallaron (timeout o error).');
+  }
+  if (budgets.includes('RED:')) {
+    throw new Error(`Budgets fallaron:\n${budgets.slice(0, 800)}`);
+  }
+
   // Tests
   const testResult = trySh('npm test 2>&1', { silent: true, timeout: 900000 });
   if (testResult === null) {

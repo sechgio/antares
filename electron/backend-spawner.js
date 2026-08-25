@@ -622,6 +622,9 @@ function _buildChildEnv(isDev = false) {
   }
   env.PYTHONIOENCODING = 'utf-8';
   env.PYTHONUTF8 = '1';
+  // IPC phase telemetry: always enabled in the child, sampled at emit time
+  // (1% fast-success + 100% errors/slow). Cost ~ <0.1ms per request.
+  env.ANTARES_IPC_TELEMETRY = '1';
   return env;
 }
 

@@ -31,11 +31,27 @@ export async function withTimeout<T>(
   label: string,
 ): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  const msg = `${label} timed out after ${ms}ms`;
+  const wrapped = Promise.resolve(promise).then(
+    (value) => {
+      if (timedOut) throw new Error(msg);
+      return value;
+    },
+    (err) => {
+      if (timedOut) throw new Error(msg);
+      throw err;
+    },
+  );
+  wrapped.catch(() => {});
   try {
     return await Promise.race([
-      promise,
+      wrapped,
       new Promise<T>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+        timer = setTimeout(() => {
+          timedOut = true;
+          reject(new Error(msg));
+        }, ms);
       }),
     ]);
   } finally {

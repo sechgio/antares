@@ -2,12 +2,108 @@
 
 from __future__ import annotations
 
+import json
+import logging
+from pathlib import Path
 from typing import Any
 
 from backend.core import canvas as _canvas_core
-from backend.core.exceptions import NotFoundError, ValidationError
+from backend.core.exceptions import MemoryPressureError, NotFoundError, ValidationError
+from backend.core.scheduler import (
+    MEMORY_PRESSURE_RETRY_AFTER_MS,
+    MEMORY_PRESSURE_THRESHOLD_MB,
+    _available_bytes,
+    is_memory_pressure,
+)
 from backend.handlers.common import validate_params, with_locale
 
+logger = logging.getLogger(__name__)
+
+
+
+def _spill_payload(doc_id: str, payload: dict[str, Any], suffix: str = ".json") -> str | None:
+    """Spill atómico best-effort a ``<docs_dir>/../spill/<safe_id><suffix>``."""
+    try:
+        store = _canvas_core.get_canvas_store()
+        spill_dir = Path(store.docs_dir).parent / "spill"
+        spill_dir.mkdir(parents=True, exist_ok=True)
+        safe_id = Path(str(doc_id)).name or "unknown"
+        tmp = spill_dir / f"{safe_id}{suffix}.tmp"
+        final = spill_dir / f"{safe_id}{suffix}"
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        tmp.replace(final)
+        return str(final)
+    except Exception as exc:
+        logger.warning("canvas spill failed for %s: %s", doc_id, exc)
+        return None
+
+
+def _check_memory_pressure_or_spill(document: dict[str, Any] | None = None, *, context: str = "canvas_save") -> None:
+    """Pollea ``psutil.virtual_memory().available`` en cada save (auditoría RAM 92%).
+
+    Si queda <1 GiB, hace spill y lanza :class:`MemoryPressureError` con ``retry_after_ms``.
+    """
+    if not is_memory_pressure():
+        return
+    available = _available_bytes() or 0
+    available_mb = available // (1024 * 1024)
+    spill_path: str | None = None
+    if isinstance(document, dict):
+        doc_id = str(document.get("id") or "unknown")
+        spill_path = _spill_payload(doc_id, document, suffix=".json")
+        if spill_path:
+            logger.warning(
+                "canvas memory_pressure spill: context=%s doc_id=%s available_mb=%s spill=%s",
+                context,
+                Path(doc_id).name,
+                available_mb,
+                spill_path,
+            )
+    if spill_path is None:
+        logger.warning(
+            "canvas memory_pressure: context=%s available_mb=%s < %s — rejecting with retry_after",
+            context,
+            available_mb,
+            MEMORY_PRESSURE_THRESHOLD_MB,
+        )
+    raise MemoryPressureError(
+        f"Memoria baja ({available_mb}MB < {MEMORY_PRESSURE_THRESHOLD_MB}MB): "
+        f"reintente en {MEMORY_PRESSURE_RETRY_AFTER_MS}ms",
+        details={
+            "available_mb": available_mb,
+            "threshold_mb": MEMORY_PRESSURE_THRESHOLD_MB,
+            "retry_after_ms": MEMORY_PRESSURE_RETRY_AFTER_MS,
+            "spill_path": spill_path,
+            "context": context,
+        },
+    )
+
+
+def _check_history_memory_pressure(doc_id: str, past: Any, future: Any) -> None:
+    """Variante para save_history: spill del historial y rechazo con retry_after."""
+    if not is_memory_pressure():
+        return
+    available = _available_bytes() or 0
+    available_mb = available // (1024 * 1024)
+    spill_path = _spill_payload(str(doc_id), {"past": past, "future": future}, suffix="_history.json")
+    if spill_path:
+        logger.warning(
+            "canvas history memory_pressure spill: doc_id=%s available_mb=%s spill=%s",
+            Path(str(doc_id)).name,
+            available_mb,
+            spill_path,
+        )
+    raise MemoryPressureError(
+        f"Memoria baja ({available_mb}MB < {MEMORY_PRESSURE_THRESHOLD_MB}MB): "
+        f"historial en espera, reintente en {MEMORY_PRESSURE_RETRY_AFTER_MS}ms",
+        details={
+            "available_mb": available_mb,
+            "threshold_mb": MEMORY_PRESSURE_THRESHOLD_MB,
+            "retry_after_ms": MEMORY_PRESSURE_RETRY_AFTER_MS,
+            "spill_path": spill_path,
+            "context": "canvas_save_history",
+        },
+    )
 
 @with_locale
 def canvas_list(params: dict[str, Any]) -> dict[str, Any]:
@@ -30,12 +126,13 @@ def canvas_save(params: dict[str, Any]) -> dict[str, Any]:
     document = params["document"]
     if not isinstance(document, dict):
         raise ValidationError("document debe ser un objeto")
+    # Auditoría RAM 92% (607MB libres): pollea available cada save (verificar).
+    _check_memory_pressure_or_spill(document, context="canvas_save")
     touch = params.get("touch", True)
     if not isinstance(touch, bool):
         touch = True
     saved = _canvas_core.get_canvas_store().save(document, touch=touch)
     return {"document": saved}
-
 
 @with_locale
 def canvas_create(params: dict[str, Any]) -> dict[str, Any]:
@@ -153,9 +250,9 @@ def canvas_save_history(params: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(past, list) or not isinstance(future, list):
         msg = "past and future must be arrays"
         raise ValueError(msg)
+    _check_history_memory_pressure(doc_id, past, future)
     _canvas_core.get_canvas_store().save_history(doc_id, past, future)
     return {"success": True}
-
 
 HANDLERS = {
     "canvas_list": canvas_list,

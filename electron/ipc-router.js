@@ -158,39 +158,121 @@ function _isAllowedIpcSender(event) {
  * growing via Buffer.concat). When exceeded, the partial line is dropped and
  * `dropped` is set so the caller can log it.
  *
- * @param {Buffer} pending
+ * Optimized: pending is stored as {bufs: Buffer[], len: number} in the hot
+ * path (_ensureListeners) to avoid Buffer.concat O(n²) per chunk. This
+ * function accepts both Buffer (legacy/tests) and {bufs,len} (hot path) and
+ * returns the same shape it received, so tests keep passing.
+ *
+ * @param {Buffer|{bufs: Buffer[], len: number}} pending
  * @param {Buffer|string|Uint8Array} chunk
  * @param {number} [maxPendingBytes]
- * @returns {{ pending: Buffer, lines: Buffer[], dropped: boolean }}
+ * @returns {{ pending: Buffer|{bufs: Buffer[], len: number}, lines: Buffer[], dropped: boolean }}
  */
 function _consumeStdoutLines(pending, chunk, maxPendingBytes = Infinity) {
-  const piece = Buffer.isBuffer(chunk)
-    ? chunk
-    : Buffer.from(chunk);
-  const buf = !pending || pending.length === 0
-    ? piece
-    : Buffer.concat([pending, piece]);
-  const lines = [];
-  let start = 0;
-  for (;;) {
-    const idx = buf.indexOf(0x0a, start);
-    if (idx === -1) break;
-    if (idx > start) {
-      lines.push(buf.subarray(start, idx));
+  const piece = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+  // Normalize pending to list form for zero-copy scan
+  let bufs;
+  let totalLen;
+  const isObjectPending = pending && typeof pending === 'object' && Array.isArray(pending.bufs);
+  if (isObjectPending) {
+    bufs = pending.bufs;
+    totalLen = pending.len;
+  } else {
+    bufs = !pending || pending.length === 0 ? [] : [pending];
+    totalLen = !pending ? 0 : pending.length;
+  }
+  bufs.push(piece);
+  totalLen += piece.length;
+
+  // Pending has no newline; if the new piece also has none, no lines can form.
+  if (piece.indexOf(0x0a) === -1) {
+    const pendingRemLen = totalLen;
+    let dropped = false;
+    if (pendingRemLen > maxPendingBytes) {
+      dropped = true;
+      const empty = isObjectPending ? { bufs: [], len: 0 } : Buffer.alloc(0);
+      return { pending: empty, lines: [], dropped };
     }
-    start = idx + 1;
+    if (isObjectPending) {
+      return { pending: { bufs, len: totalLen }, lines: [], dropped };
+    }
+    // Legacy Buffer path — need to materialize pending as single Buffer
+    // but avoid extra copy when pending was empty
+    if (bufs.length === 1) return { pending: bufs[0], lines: [], dropped };
+    return { pending: Buffer.concat(bufs, totalLen), lines: [], dropped };
   }
-  let resultPending = start === 0 ? buf : buf.subarray(start);
+
+  const lines = [];
+  let lineStartPos = 0;
+  let globalPos = 0;
+  // Scan bufs sequentially for 0x0a without concatenating
+  for (let bi = 0; bi < bufs.length; bi++) {
+    const buf = bufs[bi];
+    for (let i = 0; i < buf.length; i++) {
+      if (buf[i] === 0x0a) {
+        const lineLen = globalPos - lineStartPos;
+        if (lineLen > 0) {
+          // Extract line bytes from lineStartPos..globalPos-1 across bufs
+          if (lineLen <= buf.length && lineStartPos >= globalPos - i) {
+            // Line fully inside current buf — zero-copy slice
+            const startInBuf = i - lineLen;
+            lines.push(buf.subarray(startInBuf, i));
+          } else {
+            const parts = [];
+            let curPos = lineStartPos;
+            let pos = 0;
+            for (const b of bufs) {
+              const nextPos = pos + b.length;
+              if (nextPos <= curPos) { pos = nextPos; continue; }
+              if (pos >= curPos + lineLen) break;
+              const s = Math.max(0, curPos - pos);
+              const e = Math.min(b.length, curPos + lineLen - pos);
+              if (e > s) parts.push(b.subarray(s, e));
+              pos = nextPos;
+            }
+            lines.push(parts.length === 1 ? parts[0] : Buffer.concat(parts, lineLen));
+          }
+        }
+        lineStartPos = globalPos + 1;
+      }
+      globalPos++;
+    }
+  }
+  const pendingRemLen = totalLen - lineStartPos;
   let dropped = false;
-  if (resultPending.length > maxPendingBytes) {
+  if (pendingRemLen > maxPendingBytes) {
     dropped = true;
-    resultPending = Buffer.alloc(0);
+    const empty = isObjectPending ? { bufs: [], len: 0 } : Buffer.alloc(0);
+    return { pending: empty, lines, dropped };
   }
-  return {
-    pending: resultPending,
-    lines,
-    dropped,
-  };
+  if (pendingRemLen === 0) {
+    const empty = isObjectPending ? { bufs: [], len: 0 } : Buffer.alloc(0);
+    return { pending: empty, lines, dropped };
+  }
+  // Build pending remainder — keep as list of slices (no copy) so fragmented
+  // large lines (8MB without newline) do not trigger O(n²) Buffer.concat per chunk.
+  if (isObjectPending) {
+    const tailParts = [];
+    let pos = 0;
+    for (const b of bufs) {
+      const nextPos = pos + b.length;
+      if (nextPos <= lineStartPos) { pos = nextPos; continue; }
+      if (pos >= totalLen) break;
+      const s = Math.max(0, lineStartPos - pos);
+      tailParts.push(b.subarray(s));
+      pos = nextPos;
+    }
+    return { pending: { bufs: tailParts, len: pendingRemLen }, lines, dropped };
+  }
+  // Legacy Buffer path — extract tail as Buffer
+  // Fast path when pending was single buffer and lineStartPos inside it
+  if (bufs.length === 1) {
+    return { pending: bufs[0].subarray(lineStartPos), lines, dropped };
+  }
+  const all = Buffer.concat(bufs, totalLen);
+  // Make a copy of the tail so the large `all` buffer can be GC'd
+  const tailSlice = all.subarray(lineStartPos);
+  return { pending: Buffer.from(tailSlice), lines, dropped };
 }
 
 /**
@@ -203,7 +285,7 @@ function _ensureListeners() {
   if (_attachedProcess === proc) return true;
 
   _attachedProcess = proc;
-  let pending = Buffer.alloc(0);
+  let pending = { bufs: [], len: 0 };
 
   // Backend caps payloads at 64 MiB; leave headroom for JSON framing so a
   // legitimate max-size line still parses, but a pathological never-ending
