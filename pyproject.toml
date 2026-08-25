@@ -21,12 +21,12 @@ dependencies = [
     "pandas>=2.0.0",
     "openpyxl>=3.1.0",
     "xlrd>=2.0.1",
-    "pypdf>=6.13.3",
+    "pypdf>=6.15.0",
     "pymupdf>=1.24.0",
     "weasyprint>=68.0",
     "python-docx>=1.1.0",
     "jsonschema>=4.0.0",
-    "lxml>=6.1.0",
+    "lxml>=6.1.2",
     "psutil>=5.9.0",
 ]
 
