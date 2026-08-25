@@ -52,6 +52,8 @@ def is_memory_pressure(*, threshold_bytes: int = MEMORY_PRESSURE_THRESHOLD_BYTES
     if avail is None:
         return False
     return avail < threshold_bytes
+
+
 class SchedulerBusy(RuntimeError):
     """Raised when a scheduler work budget is already fully reserved.
 
@@ -68,6 +70,7 @@ def _light_queue_default(light_workers: int) -> int:
     """Default light queue budget: generous enough for normal IPC concurrency;
     a flooded renderer gets rejected instead of growing memory without limit."""
     return max(light_workers * 4, 16)
+
 
 def _detect_limits() -> tuple[int, int, int, int]:
     """Return conservative `(light_workers, heavy_workers, heavy_queue_limit, light_queue_limit)`.

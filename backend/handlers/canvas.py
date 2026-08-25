@@ -20,7 +20,6 @@ from backend.handlers.common import validate_params, with_locale
 logger = logging.getLogger(__name__)
 
 
-
 def _spill_payload(doc_id: str, payload: dict[str, Any], suffix: str = ".json") -> str | None:
     """Spill atómico best-effort a ``<docs_dir>/../spill/<safe_id><suffix>``."""
     try:
