@@ -330,7 +330,7 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
         reason = getattr(exc, "reason", "heavy_queue_full")
         # Caso especial: presión de memoria en light lane (capa dinámica)
         if reason == "memory_pressure":
-            mp = MemoryPressureError(
+            memory_error = MemoryPressureError(
                 f"Memoria baja: reintente en {MEMORY_PRESSURE_RETRY_AFTER_MS}ms",
                 details={
                     "retry_after_ms": MEMORY_PRESSURE_RETRY_AFTER_MS,
@@ -343,7 +343,7 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
                 method_name,
                 scheduler.metrics(),
             )
-            _reject_submit(msg_id, method_name, lane, mp, rejected=reason)
+            _reject_submit(msg_id, method_name, lane, memory_error, rejected=reason)
             return None
         message = (
             "Backend ocupado: cola de trabajo ligera llena"

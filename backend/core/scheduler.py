@@ -322,7 +322,7 @@ class WorkScheduler:
         """Return internal queue/worker metrics for diagnostics."""
         with self._lock:
             queued = max(0, self._heavy_outstanding - self._heavy_active)
-            m = {
+            m: dict[str, Any] = {
                 "light_workers": self.light_workers,
                 "light_queue_limit": self.light_queue_limit,
                 "light_capacity": self.light_capacity,
