@@ -11,7 +11,47 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Umbral de presión de memoria: por debajo de 1 GiB disponible se activa
+# backpressure para canvas_save / light_queue y se alerta en metrics().
+MEMORY_PRESSURE_THRESHOLD_BYTES: int = 1 * 1024 * 1024 * 1024
+MEMORY_PRESSURE_THRESHOLD_MB: int = MEMORY_PRESSURE_THRESHOLD_BYTES // (1024 * 1024)
+MEMORY_PRESSURE_RETRY_AFTER_MS: int = 2000
 
+
+def _is_memory_pressure_disabled() -> bool:
+    """Evitar flakiness en tests: PYTEST_CURRENT_TEST desactiva el throttle dinámico.
+
+    Producción siempre activo salvo ``ANTARES_MEMORY_PRESSURE_DISABLE=1``.
+    ``ANTARES_MEMORY_PRESSURE_FORCE=1`` fuerza el check incluso bajo pytest
+    (útil para tests que *quieren* verificar el rechazo).
+    """
+    if os.environ.get("ANTARES_MEMORY_PRESSURE_DISABLE", "").strip().lower() in {"1", "true", "yes"}:
+        return True
+    if os.environ.get("ANTARES_MEMORY_PRESSURE_FORCE", "").strip().lower() in {"1", "true", "yes"}:
+        return False
+    return bool(os.environ.get("PYTEST_CURRENT_TEST"))
+
+
+def _available_bytes() -> int | None:
+    """Return ``psutil.virtual_memory().available`` or ``None`` if psutil missing."""
+    try:
+        import psutil
+
+        return int(psutil.virtual_memory().available)
+    except ImportError:
+        return None
+    except Exception:
+        return None
+
+
+def is_memory_pressure(*, threshold_bytes: int = MEMORY_PRESSURE_THRESHOLD_BYTES) -> bool:
+    """True si la RAM disponible está bajo el umbral (default 1 GiB)."""
+    if _is_memory_pressure_disabled():
+        return False
+    avail = _available_bytes()
+    if avail is None:
+        return False
+    return avail < threshold_bytes
 class SchedulerBusy(RuntimeError):
     """Raised when a scheduler work budget is already fully reserved.
 
@@ -28,7 +68,6 @@ def _light_queue_default(light_workers: int) -> int:
     """Default light queue budget: generous enough for normal IPC concurrency;
     a flooded renderer gets rejected instead of growing memory without limit."""
     return max(light_workers * 4, 16)
-
 
 def _detect_limits() -> tuple[int, int, int, int]:
     """Return conservative `(light_workers, heavy_workers, heavy_queue_limit, light_queue_limit)`.
@@ -60,6 +99,13 @@ def _detect_limits() -> tuple[int, int, int, int]:
     # Light work is latency-sensitive (previews, metadata reads) and each
     # queued closure retains its params, so bound the queue too.
     light_queue_limit = _light_queue_default(light_workers)
+    # Bajo presión de RAM los closures grandes (canvas_save con documento entero)
+    # pueden causar OOM si se encolan 16 a la vez. Reducir el budget en low-RAM.
+    if available_gb < 1.0:
+        # <1 GiB: 607MB libres reportado → limitar agresivo (4 es el mínimo útil)
+        light_queue_limit = min(light_queue_limit, max(4, light_workers))
+    elif available_gb < 2.0:
+        light_queue_limit = min(light_queue_limit, max(8, light_workers * 2))
     return light_workers, heavy_workers, heavy_queue_limit, light_queue_limit
 
 
@@ -97,6 +143,7 @@ class WorkScheduler:
         self.light_capacity = self.light_workers + self.light_queue_limit
         self._light_slots = threading.BoundedSemaphore(self.light_capacity)
         self._lock = threading.RLock()
+        self._heavy_cond = threading.Condition(self._lock)
         self._heavy_outstanding = 0
         self._heavy_active = 0
         self._heavy_rejected = 0
@@ -126,12 +173,24 @@ class WorkScheduler:
         Bounded by ``light_capacity`` (workers + queue): when the budget is
         fully reserved, raises ``SchedulerBusy`` instead of queueing without
         limit (each queued closure retains its params in memory).
+
+        Under memory pressure (<1 GiB available) the effective light queue is
+        shrunk to ``max(4, light_workers)`` to avoid OOM from 16 large
+        closures (canvas_save documents) waiting in the queue.
         """
+        # Dynamic backpressure when RAM is low — check before touching the
+        # semaphore so we don't reserve a slot we will immediately reject.
+        if is_memory_pressure():
+            effective_queue = min(self.light_queue_limit, max(4, self.light_workers))
+            effective_capacity = self.light_workers + effective_queue
+            with self._lock:
+                if self._light_outstanding >= effective_capacity:
+                    self._light_rejected += 1
+                    raise SchedulerBusy("light_queue_full", reason="memory_pressure")
         if not self._light_slots.acquire(blocking=False):
             with self._lock:
                 self._light_rejected += 1
             raise SchedulerBusy("light_queue_full")
-
         with self._lock:
             self._light_outstanding += 1
 
@@ -203,6 +262,7 @@ class WorkScheduler:
                     self._heavy_outstanding -= 1
                     self._heavy_completed += 1
                 self._heavy_slots.release()
+                self._notify_heavy()
 
         try:
             future = self._heavy_executor.submit(_wrapped)
@@ -210,6 +270,7 @@ class WorkScheduler:
             with self._lock:
                 self._heavy_outstanding -= 1
             self._heavy_slots.release()
+            self._notify_heavy()
             raise
 
         # Contar solo submissions exitosos (misma invariante que la lane light).
@@ -217,21 +278,19 @@ class WorkScheduler:
             self._heavy_submitted += 1
 
         def _release_if_cancelled(fut: Future) -> None:
-            # If the future was cancelled before _wrapped started running, the
-            # finally above never executed, so the reserved outstanding slot and
-            # the outstanding counter would leak for the rest of the session
-            # (every batch cancellation permanently shrank heavy_capacity).
-            # Queued futures never increment heavy_active. fut.cancelled() is True
-            # only when the future never ran, so this never double-releases against
-            # the finally path.
             if fut.cancelled():
                 with self._lock:
                     self._heavy_outstanding -= 1
                     self._heavy_cancelled += 1
                 self._heavy_slots.release()
+                self._notify_heavy()
 
         future.add_done_callback(_release_if_cancelled)
         return future
+
+    def _notify_heavy(self) -> None:
+        with self._heavy_cond:
+            self._heavy_cond.notify_all()
 
     def _acquire_heavy_slot(
         self,
@@ -246,13 +305,15 @@ class WorkScheduler:
                 self._heavy_rejected += 1
             raise SchedulerBusy("heavy_queue_full")
 
-        while True:
-            if cancel_check and cancel_check():
-                with self._lock:
+        # Event-driven wait: wake on slot release, not poll.
+        with self._heavy_cond:
+            while True:
+                if cancel_check and cancel_check():
                     self._heavy_cancelled_waits += 1
-                return False
-            if self._heavy_slots.acquire(timeout=0.05):
-                return True
+                    return False
+                if self._heavy_slots.acquire(blocking=False):
+                    return True
+                self._heavy_cond.wait(timeout=0.2)
 
     def metrics(self) -> dict[str, Any]:
         """Return internal queue/worker metrics for diagnostics."""
@@ -289,8 +350,11 @@ class WorkScheduler:
                 m["system_ram_percent"] = int(vm.percent)
             except ImportError:
                 pass
+            # Alerta de presión de memoria para dashboards (auditoría RAM 92% → 1 línea).
+            avail_mb = m.get("system_ram_available_mb")
+            m["memory_pressure"] = bool(avail_mb is not None and avail_mb < MEMORY_PRESSURE_THRESHOLD_MB)
+            m["memory_alert"] = f"low_ram:{avail_mb}MB<{MEMORY_PRESSURE_THRESHOLD_MB}MB" if m["memory_pressure"] else None
             return m
-
     def shutdown(self, *, wait: bool = True) -> None:
         """Shut down the light and heavy executors."""
         self._light_executor.shutdown(wait=wait, cancel_futures=True)
