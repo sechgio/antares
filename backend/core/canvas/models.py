@@ -521,9 +521,7 @@ def normalize_document(raw: Any) -> dict[str, Any]:
     }
 
 
-# Alias for type checkers / imports
 CanvasDocument = dict[str, Any]
-
 
 def next_copy_name(name: str, existing_names: set[str] | None = None) -> str:
     """Build a unique copy name: 'X (copia)', 'X (copia 2)', … without nesting suffixes."""

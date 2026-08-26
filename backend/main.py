@@ -47,6 +47,7 @@ from typing import Any
 from backend.core import ipc_phase_telemetry
 from backend.core.database import init_db
 from backend.core.exceptions import AntaresBaseException, MemoryPressureError, MethodNotFoundError
+from backend.core.observability import configure_logging, get_context, request_context
 from backend.core.plugins import load_plugins_from_dir
 from backend.core.repository import close_connection
 from backend.core.scheduler import (
@@ -65,7 +66,6 @@ _shutdown_requested = False
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
-
 def _signal_handler(signum, frame) -> None:
     """Handle termination signals gracefully.
 
@@ -74,7 +74,6 @@ def _signal_handler(signum, frame) -> None:
     """
     global _shutdown_requested
     _shutdown_requested = True
-
 
 if hasattr(signal, "SIGTERM"):
     signal.signal(signal.SIGTERM, _signal_handler)
@@ -87,11 +86,7 @@ if hasattr(signal, "SIGHUP"):
 
 
 # Logging to stderr so stdout stays clean for IPC
-logging.basicConfig(
-    level=logging.INFO,
-    format="[%(levelname)s] %(message)s",
-    stream=sys.stderr,
-)
+configure_logging(sys.stderr)
 logger = logging.getLogger(__name__)
 
 # Keep aligned with shared/long-running-methods.json for Python-handled methods
@@ -105,6 +100,9 @@ HEAVY_METHODS = {
     "db_import",
     "db_export",
     "db_clear",
+    "db_fields_update",
+    "db_fields_reset",
+    "db_parse_mapping",
     "formatos_generate",
     "formatos_render_template_page",
     "image_optimizer_zip",
@@ -139,41 +137,29 @@ HEAVY_METHODS = {
     "canvas_export_cmyk_pdf",
 }
 
-# Methods whose first call cold-imports C extensions (numpy via pandas,
-# weasyprint, PyMuPDF, reportlab, …). They wait for WARM_CRITICAL_DONE before
-# running so the cold import never overlaps the post-ready warm imports
-# (Windows: Python import lock x loader lock can deadlock the process).
-# canvas_get/save/save_history are excluded: they are payload-heavy but
-# import nothing (pure JSON/file I/O) and must not wait behind the warm.
 _WARM_WAIT_METHODS = frozenset(
     HEAVY_METHODS - {"canvas_get", "canvas_save", "canvas_save_history"} | {"preview"}
 )
 _WARM_WAIT_TIMEOUT = 15.0
 
-# Handlers that must answer on the IPC reader thread. Health probes and UI
-# status polls must never wait behind a saturated ThreadPoolExecutor.
 SYNC_METHODS = frozenset({
     "version",
     "process_status",
+    "diagnostics_snapshot",
 })
 
 
 def _utf8_locale_candidates() -> list[str]:
-    """Return locale names to try for UTF-8 system encoding (platform-specific)."""
     candidates = ["C.UTF-8", "en_US.UTF-8"]
     if sys.platform == "win32":
-        # Bare "es-MX" is not a reliable Windows setlocale name; use explicit encoding suffixes.
         candidates.extend(["es-MX.UTF-8", "Spanish_Mexico.UTF-8"])
     return candidates
 
 
 def _validate_encoding() -> None:
-    """Validate that system supports required encoding."""
-    import os as _os
-
     try:
-        _os.environ["PYTHONIOENCODING"] = "utf-8"
-        _os.environ["PYTHONUTF8"] = "1"
+        os.environ["PYTHONIOENCODING"] = "utf-8"
+        os.environ["PYTHONUTF8"] = "1"
 
         locale_ok = False
         for candidate in _utf8_locale_candidates():
@@ -192,18 +178,10 @@ def _validate_encoding() -> None:
         raise
 
 
-# Call at startup
 _validate_encoding()
 
 
 def _user_error_message(exc: Exception) -> str | AntaresBaseException:
-    """User-safe message: typed exceptions pass through; unexpected ones become generic.
-
-    FileNotFoundError messages embed absolute filesystem paths (the full path
-    the backend tried to open); the renderer only needs to know the file was
-    missing, while the full path stays in the backend log (logger.exception
-    in _dispatch).
-    """
     if isinstance(exc, AntaresBaseException):
         return exc
     if isinstance(exc, FileNotFoundError):
@@ -234,6 +212,13 @@ def _maybe_log_ipc_timing(method_name: str, elapsed_ms: float, *, ok: bool) -> N
 
 
 def _dispatch(handler, params, msg_id, method_name) -> None:
+    """Bind request context before running the worker body."""
+    lane = "heavy" if method_name in HEAVY_METHODS else "sync" if method_name in SYNC_METHODS else "light"
+    with request_context(request_id=msg_id, method=method_name, lane=lane):
+        _dispatch_with_context(handler, params, msg_id, method_name)
+
+
+def _dispatch_with_context(handler, params, msg_id, method_name) -> None:
     """Run a handler in a worker thread and send its response back."""
     # Cold C-extension imports (numpy via pandas, weasyprint, PyMuPDF, …)
     # must never overlap the post-ready warm imports: on Windows two threads
@@ -277,7 +262,6 @@ def _reject_submit(
     error: Any,
     rejected: str | None = None,
 ) -> None:
-    """Responde a una petición que no pudo programarse y registra telemetría."""
     fields: dict[str, object] = {"ok": False, "lane": lane, "method": method_name}
     if rejected is not None:
         fields["rejected"] = rejected
@@ -285,15 +269,12 @@ def _reject_submit(
     send_response(None, msg_id, error=error)
 
 def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
-    """Submit one handler onto the appropriate scheduler lane."""
     lane = "heavy" if method_name in HEAVY_METHODS else "light"
     ipc_phase_telemetry.set_fields(msg_id, method=method_name, lane=lane)
     ipc_phase_telemetry.mark(msg_id, "enqueue")
     scheduler = get_scheduler()
-    # ── Memory-pressure backpressure antes de encolar (auditoría RAM 92%).
-    # Poll psutil cada canvas_save/history para spill + retry_after sin
-    # retener 16 closures grandes en la light queue (OOM risk).
     if method_name in ("canvas_save", "canvas_save_history"):
+        request_params = params if isinstance(params, dict) else {}
         try:
             from backend.handlers.canvas import (
                 _check_history_memory_pressure,
@@ -301,13 +282,13 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
             )
 
             if method_name == "canvas_save":
-                doc = params.get("document") if isinstance(params, dict) else None
+                doc = request_params.get("document")
                 _check_memory_pressure_or_spill(doc if isinstance(doc, dict) else None, context="canvas_save")
             else:
                 _check_history_memory_pressure(
-                    str(params.get("id", "")) if isinstance(params, dict) else "",
-                    params.get("past") if isinstance(params, dict) else None,
-                    params.get("future") if isinstance(params, dict) else None,
+                    str(request_params.get("id", "")),
+                    request_params.get("past"),
+                    request_params.get("future"),
                 )
         except MemoryPressureError as mp:
             logger.warning(
@@ -319,8 +300,15 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
             _reject_submit(msg_id, method_name, lane, mp, rejected="memory_pressure")
             return None
         except Exception:
-            # No bloquear el submit si el check falla por otra razón
-            pass
+            logger.exception("Memory pressure pre-queue check failed for %s", method_name)
+            _reject_submit(
+                msg_id,
+                method_name,
+                lane,
+                "Backend no disponible: no se pudo comprobar la presión de memoria",
+                rejected="memory_pressure_check",
+            )
+            return None
     try:
         if method_name in HEAVY_METHODS:
             future = scheduler.submit_heavy(_dispatch, handler, params, msg_id, method_name)
@@ -328,7 +316,6 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
             future = scheduler.submit_light(_dispatch, handler, params, msg_id, method_name)
     except SchedulerBusy as exc:
         reason = getattr(exc, "reason", "heavy_queue_full")
-        # Caso especial: presión de memoria en light lane (capa dinámica)
         if reason == "memory_pressure":
             memory_error = MemoryPressureError(
                 f"Memoria baja: reintente en {MEMORY_PRESSURE_RETRY_AFTER_MS}ms",
@@ -368,14 +355,7 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
     return future
 
 def main() -> None:
-    """Bucle principal IPC — diseñado para nunca morir.
 
-    Requests are dispatched to a ThreadPoolExecutor so that slow handlers
-    (PDF generation, Excel import, etc.) do NOT block the main loop from
-    reading subsequent messages on stdin.
-    """
-    # Fail fast on DB init BEFORE the ready handshake so Electron never marks
-    # the backend healthy while the catalog is unusable.
     try:
         init_db()
     except Exception as exc:
@@ -426,7 +406,10 @@ def main() -> None:
     # A process asked to stop during warm-up must never advertise readiness.
     if not _shutdown_requested:
         logger.info(t("info.backend_ready"))
-        send_notification("ready", {"status": "ok"})
+        send_notification("ready", {
+            "status": "ok",
+            "backend_version": get_context()["backend_version"],
+        })
         # Soft-warm convert/canvas off the handshake path (daemon: never blocks quit).
         threading.Thread(
             target=HANDLERS.warm_post_ready,

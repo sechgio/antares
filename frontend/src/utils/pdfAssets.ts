@@ -20,6 +20,8 @@ const STAGEABLE_IMAGE_EXTENSIONS = new Set([
 /** Limita las subidas escenificadas concurrentes: un consolidado grande no debe
  *  mantener todas las fotos en memoria a la vez. */
 const STAGE_CONCURRENCY = 4;
+export const MAX_PDF_STAGE_QUEUE = 32;
+const PDF_STAGE_CAPACITY_ERROR = 'PDF image staging queue capacity exhausted';
 let stageInFlight = 0;
 const stageWaiters: Array<() => void> = [];
 
@@ -36,7 +38,8 @@ function runStagedLimited<T>(fn: () => Promise<T>): Promise<T> {
         });
     };
     if (stageInFlight < STAGE_CONCURRENCY) start();
-    else stageWaiters.push(start);
+    else if (stageWaiters.length < MAX_PDF_STAGE_QUEUE) stageWaiters.push(start);
+    else reject(new Error(PDF_STAGE_CAPACITY_ERROR));
   });
 }
 
@@ -49,14 +52,21 @@ function stageFileForPdf(file: File): Promise<string | null> {
   if (!STAGEABLE_IMAGE_EXTENSIONS.has(ext)) return Promise.resolve(null);
   const cached = stagedFileTokens.get(file);
   if (cached) return cached;
-  const pending = runStagedLimited(async () => {
+  const queued = runStagedLimited(async () => {
     try {
       return await stageFileForIpc(file);
     } catch {
       return null;
     }
   });
+  const pending = queued.catch((error: unknown) => {
+    if (error instanceof Error && error.message === PDF_STAGE_CAPACITY_ERROR) throw error;
+    return null;
+  });
   stagedFileTokens.set(file, pending);
+  void queued.catch(() => {
+    if (stagedFileTokens.get(file) === pending) stagedFileTokens.delete(file);
+  });
   return pending;
 }
 

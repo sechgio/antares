@@ -9,7 +9,7 @@ import { saveFeatureHistory } from '../../utils/history';
 import DatabasePanel from './DatabasePanel';
 import FormPanel from './FormPanel';
 import PreviewPanel from './PreviewPanel';
-import { downloadBase64File, downloadBase64Pdf, fileToBase64, fileToDataUrl, informesV2Api } from './api';
+import { downloadBase64Blob, downloadBase64Pdf, fileToBase64, fileToDataUrl, informesV2Api } from './api';
 import {
   askPdfSavePath,
   collectFilePaths,
@@ -197,7 +197,7 @@ export default function InformesV2App() {
     setBusy(true);
     try {
       const result = await informesV2Api.downloadTemplate();
-      downloadBase64File(result.content_b64, result.filename, result.mime);
+      downloadBase64Blob(result.content_b64, result.filename, result.mime);
       addToast({ message: 'Plantilla Excel descargada', type: 'success' });
     } catch (error) {
       addToast({ message: error instanceof Error ? error.message : 'No se pudo descargar la plantilla', type: 'error' });
@@ -331,7 +331,7 @@ export default function InformesV2App() {
       const list = await informesV2Api.list(true);
       const items = list.reports || [];
       if (items.length === 0) throw new Error('No hay informes para exportar');
-      const fullReports = await Promise.all(items.map((item) => informesV2Api.get(item.id)));
+      const fullReports = await informesV2Api.getMany(items);
 
       const localImagePaths: Record<string, string> = {};
       const imagesById: Record<string, Array<{ path: string; name?: string }>> = {};

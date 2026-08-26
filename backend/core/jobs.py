@@ -11,28 +11,21 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from backend.core.canvas.models import utc_now_iso as _utc_now
+from backend.core.observability import get_context, log_event, request_context
 from backend.core.state import ProcessState
 
 logger = logging.getLogger(__name__)
 
-# =============================================================================
-# LEGACY SINGLE-JOB COMPATIBILITY LAYER
-# =============================================================================
-# DEFAULT_JOB_ID and the fallback behavior in resolve_job_id() exist solely
-# to keep the old frontend single-job API (process_start / process_status /
-# process_cancel without job_id) working without changes.
-#
-# The modern multi-job system (JobManager) is fully implemented, but it is
-# exposed through the SAME process_* handlers via an explicit ``job_id``
-# param — there are no dedicated ``jobs_*`` IPC methods yet. When the
-# frontend migrates, the handlers (and the dual notification logic in
-# conversion.py) can be simplified.
-# =============================================================================
+# Legacy single-job compat: DEFAULT_JOB_ID keeps old frontend (process_* without job_id) working.
+# Modern multi-job uses same handlers with explicit job_id; no jobs_* IPC yet.
+# When frontend migrates, handlers + conversion.py notifications can be simplified.
 
 DEFAULT_JOB_ID = "default"
 
@@ -90,32 +83,42 @@ class Job:
     job_type: str
     state: ProcessState = field(default_factory=ProcessState)
     thread: threading.Thread | None = None
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=_utc_now)
+    started_at: str | None = None
+    finished_at: str | None = None
+    duration_ms: int | None = None
+    request_id: str | None = None
     params: dict[str, Any] = field(default_factory=dict)
     result: dict[str, Any] | None = None
+
+    def _snapshot_locked(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "job_type": self.job_type,
+            "running": self.state.running,
+            "progress": self.state.progress,
+            "total": self.state.total,
+            "current_file": self.state.current_file,
+            "ok_count": self.state.ok_count,
+            "err_count": self.state.err_count,
+            "cancel_requested": self.state.cancel_requested,
+            "created_at": self.created_at,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "duration_ms": self.duration_ms,
+        }
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize job summary for IPC responses."""
         with self.state._lock:
-            return {
-                "id": self.id,
-                "job_type": self.job_type,
-                "running": self.state.running,
-                "progress": self.state.progress,
-                "total": self.state.total,
-                "current_file": self.state.current_file,
-                "ok_count": self.state.ok_count,
-                "err_count": self.state.err_count,
-                "cancel_requested": self.state.cancel_requested,
-                "created_at": self.created_at,
-            }
+            return self._snapshot_locked()
 
     def to_dict_detail(self) -> dict[str, Any]:
         """Serialize job detail (including logs) for IPC responses."""
         with self.state._lock:
             result = dict(self.result) if isinstance(self.result, dict) else self.result
             return {
-                **self.to_dict(),
+                **self._snapshot_locked(),
                 "logs": [dict(log) for log in self.state.logs],
                 "params": self.params,
                 "result": result,
@@ -203,7 +206,7 @@ class JobManager:
             if job_id in self._jobs:
                 del self._jobs[job_id]
 
-            job = Job(id=job_id, job_type=job_type, params=params)
+            job = Job(id=job_id, job_type=job_type, request_id=get_context().get("request_id"), params=params)
             with job.state._lock:
                 job.state.running = True
                 job.state.total = 0
@@ -223,29 +226,79 @@ class JobManager:
                 traceback). Conversion jobs catch their own exceptions inside
                 the target; this is the safety net for every other job type.
                 """
-                try:
-                    t(j)
-                except Exception as exc:
-                    logger.exception("Job %s crashed: %s", j.id, exc)
-                    with j.state._lock:
-                        j.state.err_count = max(j.state.err_count, 1)
-                        j.state.logs.insert(0, {
-                            "message": f"Error interno: {type(exc).__name__}: {exc}",
-                            "tag": "error",
-                        })
-                        if len(j.state.logs) > 100:
-                            del j.state.logs[100:]
-                        j.result = {
-                            "ok_count": j.state.ok_count,
-                            "err_count": j.state.err_count,
-                            "cancelled": False,
-                            "error": f"{type(exc).__name__}: {exc}",
-                        }
-                finally:
-                    with j.state._lock:
-                        j.state.running = False
-                    self.release_out_paths(j.id)
-                    self._slim_completed_job(j)
+                started_clock = time.perf_counter()
+                with request_context(
+                    request_id=j.request_id,
+                    job_id=j.id,
+                    method=j.job_type,
+                    lane="job",
+                ):
+                    j.started_at = _utc_now()
+                    log_event(
+                        logger,
+                        logging.INFO,
+                        "job.started",
+                        job_id=j.id,
+                        method=j.job_type,
+                    )
+                    try:
+                        t(j)
+                    except Exception as exc:
+                        logger.exception("Job %s crashed: %s", j.id, exc)
+                        log_event(
+                            logger,
+                            logging.ERROR,
+                            "job.failed",
+                            message=f"{type(exc).__name__}: {exc}",
+                            job_id=j.id,
+                            method=j.job_type,
+                            outcome="failed",
+                        )
+                        with j.state._lock:
+                            j.state.err_count = max(j.state.err_count, 1)
+                            j.state.logs.insert(0, {
+                                "message": f"Error interno: {type(exc).__name__}: {exc}",
+                                "tag": "error",
+                            })
+                            if len(j.state.logs) > 100:
+                                del j.state.logs[100:]
+                            j.result = {
+                                "ok_count": j.state.ok_count,
+                                "err_count": j.state.err_count,
+                                "cancelled": False,
+                                "error": f"{type(exc).__name__}: {exc}",
+                            }
+                    finally:
+                        finished_clock = time.perf_counter()
+                        with j.state._lock:
+                            j.state.running = False
+                            cancelled = j.state.cancel_requested or bool(
+                                isinstance(j.result, dict) and j.result.get("cancelled")
+                            )
+                            ok_count = j.state.ok_count
+                            err_count = j.state.err_count
+                        j.finished_at = _utc_now()
+                        j.duration_ms = max(0, round((finished_clock - started_clock) * 1000))
+                        outcome = (
+                            "cancelled"
+                            if cancelled
+                            else "failed"
+                            if err_count > 0 and ok_count == 0
+                            else "partial"
+                            if err_count > 0
+                            else "success"
+                        )
+                        log_event(
+                            logger,
+                            logging.INFO if outcome in {"success", "partial", "cancelled"} else logging.ERROR,
+                            "job.finished",
+                            job_id=j.id,
+                            method=j.job_type,
+                            outcome=outcome,
+                            duration_ms=j.duration_ms,
+                        )
+                        self.release_out_paths(j.id)
+                        self._slim_completed_job(j)
 
             job.thread = threading.Thread(
                 target=_wrapped_target,

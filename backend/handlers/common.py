@@ -50,7 +50,7 @@ def parse_positive_int(value: Any, label: str, *, maximum: int | None = None) ->
     return parsed
 
 
-def validate_params(*required_params):
+def validate_params(*required_params: str):
     """Decorator to validate required parameters.
 
     Path-traversal screening delegates to the single shared loop

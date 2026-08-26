@@ -1,5 +1,6 @@
 const BACKEND_METHODS = [
   'version', 'formats',
+  'diagnostics_snapshot',
   'db_records', 'db_import', 'db_export', 'db_clear', 'db_template',
   'db_parse_mapping', 'db_validate_mapping',
   'db_fields', 'db_fields_update', 'db_fields_reset',

@@ -13,12 +13,7 @@ export const MAX_HISTORY = 30;
 /** Aggregate byte budget for past + future stacks (UTF-16 string estimate). */
 export const MAX_HISTORY_BYTES = 64 * 1024 * 1024;
 
-/**
- * Per-step byte estimates, keyed by step reference. Steps are immutable once
- * pushed, so a step's JSON size never changes; caching avoids re-serializing
- * the whole stack (up to 64 MB of data-URL payloads) on every edit just to
- * decide whether to trim one step. WeakMap lets dropped steps be GC'd.
- */
+/** Per-step byte cache (WeakMap, GC-friendly). */
 const stepBytesCache = new WeakMap<object, number>();
 
 export function estimateStepBytes(step: HistoryStep): number {
@@ -45,10 +40,7 @@ export function estimateHistoryBytes(steps: HistoryStep[]): number {
   return total;
 }
 
-/**
- * Enforce both step-count and aggregate byte budgets.
- * Drops oldest past entries first, then oldest future entries.
- */
+/** Trim to step and byte budgets (drops oldest first). */
 export function trimHistoryByBudget(
   past: HistoryStep[],
   future: HistoryStep[],
@@ -58,8 +50,7 @@ export function trimHistoryByBudget(
   let nextPast = past.slice(-maxSteps);
   let nextFuture = future.slice(-maxSteps);
 
-  // Incremental budget: weigh each step once, then subtract as we drop —
-  // avoids re-JSON.stringify of whole stacks on every while iteration.
+
   let bytes = estimateHistoryBytes(nextPast) + estimateHistoryBytes(nextFuture);
   while (bytes > maxBytes && (nextPast.length > 0 || nextFuture.length > 0)) {
     if (nextPast.length > 0) {
@@ -80,7 +71,7 @@ export function useCanvasHistory(initial: CanvasDocument) {
   const [future, setFuture] = useState<HistoryStep[]>([]);
   const [revision, setRevision] = useState(0);
 
-  // Refs stay in sync so rapid undo/redo / setDocument see the latest stacks.
+
   const documentRef = useRef(document);
   const pastRef = useRef(past);
   const futureRef = useRef(future);
@@ -99,7 +90,7 @@ export function useCanvasHistory(initial: CanvasDocument) {
   }, []);
 
   const setDocument = useCallback((next: CanvasDocument) => {
-    // Skip no-op commits: identical reference would push a useless undo entry.
+
     if (next === documentRef.current) return;
     const prev = documentRef.current;
     const step: HistoryStepDiff = {
@@ -176,7 +167,7 @@ export function useCanvasHistory(initial: CanvasDocument) {
     pastRef.current = trimmed.past;
     futureRef.current = trimmed.future;
     documentRef.current = prev;
-    // Undo leaves memory ≠ last save; cloud sync must treat the open doc as dirty.
+
     hasUnsavedEditsRef.current = true;
     setPast(trimmed.past);
     setFuture(trimmed.future);
@@ -201,7 +192,7 @@ export function useCanvasHistory(initial: CanvasDocument) {
     futureRef.current = trimmed.future;
     pastRef.current = trimmed.past;
     documentRef.current = next;
-    // Same as undo: redo mutates the open document relative to the last save.
+
     hasUnsavedEditsRef.current = true;
     setFuture(trimmed.future);
     setPast(trimmed.past);
@@ -264,3 +255,5 @@ export function useCanvasHistory(initial: CanvasDocument) {
     ],
   );
 }
+
+export type CanvasHistoryHandle = ReturnType<typeof useCanvasHistory>;

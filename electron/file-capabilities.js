@@ -41,14 +41,7 @@ function _isExpired(entry) {
   return entry.expiresAt <= _now();
 }
 
-/**
- * Create a file capability (read/write token) for a local path.
- *
- * Write mode requires the target file to EXIST (``lstatSync`` below):
- * "save as new file" flows cannot use write tokens and instead go through
- * raw-path validation under registered write roots (dialog-handlers /
- * ipc-router._validateAndResolveWriteParams).
- */
+/** Create a file capability for a local path. */
 function createFileCapability({ filePath, mode, webContentsId, name, size }) {
   if (!filePath || typeof filePath !== 'string') throw new Error('filePath required');
   const resolved = path.resolve(filePath);
@@ -88,6 +81,17 @@ function resolveCapability(token, expectedMode, webContentsId) {
 
 function revokeCapability(token) {
   _capabilities.delete(token);
+}
+
+/** Revoke staged capability and remove its temp file. */
+async function cleanupStagedCapability(token, webContentsId = null) {
+  const cap = _capabilities.get(token);
+  if (!cap || !cap.staged || !cap.stagedSessionToken) return false;
+  if (cap.webContentsId !== null && cap.webContentsId !== (webContentsId ?? null)) return false;
+  await abortStagedSession(cap.stagedSessionToken);
+
+  _capabilities.delete(token);
+  return true;
 }
 
 function sweepExpired() {
@@ -246,6 +250,7 @@ module.exports = {
   _chunkToBuffer,
   completeStagedSession,
   abortStagedSession,
+  cleanupStagedCapability,
   cleanupAllStaged,
   _assertNoRawAbsolutePaths,
 };

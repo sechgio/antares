@@ -1,10 +1,12 @@
 import { Component, ReactNode, ErrorInfo } from 'react';
 import { AlertTriangle, RotateCcw, RefreshCw } from 'lucide-react';
 import Button from './Button';
+import { reportFrontendError } from '../../utils/observability';
 
 export interface ErrorBoundaryProps {
   children: ReactNode;
   fallback?: ReactNode;
+  view?: string;
 }
 
 export interface ErrorBoundaryState {
@@ -23,6 +25,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   public override componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
+    reportFrontendError({
+      kind: 'react_error',
+      view: this.props.view,
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+      componentStack: errorInfo.componentStack,
+    });
     console.error('ErrorBoundary caught an error:', error, errorInfo);
   }
 

@@ -81,22 +81,47 @@ describe('AutoIMGApp layout and navigation', () => {
       expect(mockApi.autoimgBootstrap).toHaveBeenCalledWith(true);
     });
   });
+
+  it('coalesces refresh events while a bootstrap is already in flight', async () => {
+    let resolveBootstrap!: (value: Awaited<ReturnType<typeof mockApi.autoimgBootstrap>>) => void;
+    const pendingBootstrap = new Promise<Awaited<ReturnType<typeof mockApi.autoimgBootstrap>>>((resolve) => {
+      resolveBootstrap = resolve;
+    });
+    const bootstrapData = {
+      connected: true,
+      sheetLinked: true,
+      lastSync: '',
+      autoSync: false,
+      folders: [],
+      bdRows: [],
+      logRows: [],
+      arrastre: [],
+    };
+    mockApi.autoimgBootstrap.mockImplementation(() => pendingBootstrap);
+
+    render(<AutoIMGApp />);
+    await waitFor(() => {
+      expect(mockApi.autoimgBootstrap).toHaveBeenCalledTimes(1);
+      expect(notifyState.callback).toBeTruthy();
+    });
+
+    notifyState.callback!('autoimg.sync.from_complete');
+    notifyState.callback!('autoimg.sync.from_complete');
+
+    expect(mockApi.autoimgBootstrap).toHaveBeenCalledTimes(1);
+    resolveBootstrap(bootstrapData);
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'AutoIMG' })).toBeInTheDocument());
+  });
 });
 
-describe('AutoIMGApp bootstrap stale guard', () => {
+describe('AutoIMGApp bootstrap refresh', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     notifyState.callback = null;
   });
 
-  it('ignores stale bootstrap responses when a newer request completes first', async () => {
-    type BootstrapData = Awaited<ReturnType<typeof mockApi.autoimgBootstrap>>;
-    let resolveSlow!: (value: BootstrapData) => void;
-    const slowPromise = new Promise<BootstrapData>((resolve) => {
-      resolveSlow = resolve;
-    });
-
-    const staleBootstrap: BootstrapData = {
+  it('starts a new bootstrap after the previous one completes', async () => {
+    const staleBootstrap = {
       connected: true,
       sheetLinked: true,
       lastSync: '',
@@ -106,7 +131,7 @@ describe('AutoIMGApp bootstrap stale guard', () => {
       logRows: [],
       arrastre: [],
     };
-    const freshBootstrap: BootstrapData = {
+    const freshBootstrap = {
       connected: true,
       sheetLinked: true,
       lastSync: '2026-07-03',
@@ -118,24 +143,21 @@ describe('AutoIMGApp bootstrap stale guard', () => {
     };
 
     mockApi.autoimgBootstrap
-      .mockImplementationOnce(() => slowPromise)
+      .mockImplementationOnce(async () => staleBootstrap)
       .mockImplementationOnce(async () => freshBootstrap);
 
     render(<AutoIMGApp />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Carpetas' }));
     await waitFor(() => {
       expect(notifyState.callback).toBeTruthy();
+      expect(screen.getByText('Stale')).toBeInTheDocument();
     });
     notifyState.callback!('autoimg.sync.from_complete');
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Carpetas' }));
     await waitFor(() => {
       expect(screen.getByText('Fresh')).toBeInTheDocument();
     });
-
-    resolveSlow(staleBootstrap);
-    await waitFor(() => {
-      expect(screen.queryByText('Stale')).not.toBeInTheDocument();
-      expect(screen.getByText('Fresh')).toBeInTheDocument();
-    });
+    expect(mockApi.autoimgBootstrap).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText('Stale')).not.toBeInTheDocument();
   });
 });

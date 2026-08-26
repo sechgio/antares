@@ -13,10 +13,10 @@ import {
 } from '../ops/components';
 import { syncLinkedStylesFromLayer } from '../ops/syncLinkedStyles';
 import type { CanvasDocument, CanvasLayer } from '../types';
-import type { useCanvasHistory } from './useCanvasHistory';
+import type { CanvasHistoryHandle } from './useCanvasHistory';
 
 interface UseGestureBaselinesOptions {
-  history: ReturnType<typeof useCanvasHistory>;
+  history: CanvasHistoryHandle;
   pageIndex: number;
 }
 
@@ -71,8 +71,7 @@ export function useGestureBaselines({ history, pageIndex }: UseGestureBaselinesO
         gestureBaselineRef.current = cloneDocumentBaseline(history.document, pageIndex);
       }
       const layered = setActivePageLayers(history.document, pageIndex, layers);
-      // Gesture-start baseline passes identical layer refs — skip the React commit
-      // (avoid syncImagesPerPage stamping settings and forcing a Capas re-render).
+
       if (layered === history.document) return;
       history.updateSilent(syncImagesPerPage(layered));
     },
@@ -92,7 +91,7 @@ export function useGestureBaselines({ history, pageIndex }: UseGestureBaselinesO
   }, [history]);
 
   const onPanelChangeLive = useCallback((layer: CanvasLayer) => {
-    // Mark dirty immediately so focus/undo gates see an in-flight panel edit.
+
     if (!panelBaselineRef.current) {
       panelBaselineRef.current = cloneDocumentBaseline(
         historyRef.current.document,

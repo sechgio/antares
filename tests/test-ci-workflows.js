@@ -5,6 +5,9 @@ const ROOT = path.join(__dirname, '..');
 const CI_PATH = path.join(ROOT, '.github', 'workflows', 'ci.yml');
 const RELEASE_PATH = path.join(ROOT, '.github', 'workflows', 'release.yml');
 const PACKAGE_PATH = path.join(ROOT, 'package.json');
+const UV_LOCK_PATH = path.join(ROOT, 'uv.lock');
+const VITE_CONFIG_PATH = path.join(ROOT, 'frontend', 'vite.config.ts');
+const STATIC_VITEST_CONFIG_PATH = path.join(ROOT, 'frontend', 'vitest.static.config.ts');
 
 let passed = 0;
 let failed = 0;
@@ -28,12 +31,21 @@ function assertActionsPinned(workflow, label) {
   );
 }
 
+function assertSingleWorker(config, label) {
+  assert(
+    config.includes('fileParallelism: false') && config.includes('maxWorkers: 1'),
+    `${label} runs Vitest with deterministic single-worker scheduling`,
+  );
+}
+
 function run() {
   console.log('Testing CI/CD workflow safety and reproducibility...\n');
 
-  const ci = fs.readFileSync(CI_PATH, 'utf8').replace(/\r\n/g, '\n');
-  const release = fs.readFileSync(RELEASE_PATH, 'utf8').replace(/\r\n/g, '\n');
+  const ci = fs.readFileSync(CI_PATH, 'utf8');
+  const release = fs.readFileSync(RELEASE_PATH, 'utf8');
   const packageJson = JSON.parse(fs.readFileSync(PACKAGE_PATH, 'utf8'));
+  const viteConfig = fs.readFileSync(VITE_CONFIG_PATH, 'utf8');
+  const staticVitestConfig = fs.readFileSync(STATIC_VITEST_CONFIG_PATH, 'utf8');
 
   assert(/permissions:\r?\n\s+contents:\s+read/.test(ci), 'CI has explicit read-only permissions');
   assert(ci.includes('cancel-in-progress: true'), 'CI cancels obsolete runs for the same ref');
@@ -44,9 +56,30 @@ function run() {
   assert(ci.includes('npm ci'), 'CI installs root dependencies with npm ci');
   assert(ci.includes('npm ci --prefix frontend'), 'CI installs frontend dependencies with npm ci');
   assert(!/\bnpm install\b/.test(ci), 'CI never performs mutable npm install');
+  assert(fs.existsSync(UV_LOCK_PATH), 'Python toolchain has a committed uv lockfile');
+  assert(ci.includes('uv sync --locked --extra dev'), 'CI installs Python dependencies from uv.lock');
+  assert(ci.includes('python -m pip install uv==0.11.19'), 'CI bootstraps the pinned uv version');
   assert(ci.includes('persist-credentials: false'), 'CI checkout does not persist Git credentials');
   assertActionsPinned(ci, 'CI');
   assert(packageJson.scripts.ci.includes('npm run audit:node'), 'shared CI gate includes Node dependency audits');
+  assert(
+    packageJson.scripts['typecheck:backend'].includes('uv run --project . --locked --extra dev mypy backend'),
+    'backend typecheck uses the locked Python environment',
+  );
+  assert(
+    packageJson.scripts['lint:fix'].includes('uv run --project . --locked --extra dev ruff check'),
+    'Python lint fixes use the locked environment',
+  );
+  assert(
+    packageJson.scripts.test.includes('uv run --project .. --locked --extra dev pytest ../tests -v'),
+    'full suite runs pytest through the locked Python environment',
+  );
+  assert(
+    packageJson.scripts['test:stress'].includes('uv run --project .. --locked --extra dev pytest'),
+    'stress tests use the locked Python environment',
+  );
+  assertSingleWorker(viteConfig, 'Frontend Vitest');
+  assertSingleWorker(staticVitestConfig, 'Static Vitest');
   assert(
     packageJson.scripts['audit:node'].includes('npm audit --omit=dev --audit-level=high') &&
       packageJson.scripts['audit:node'].includes('npm audit --prefix frontend --omit=dev --audit-level=high'),

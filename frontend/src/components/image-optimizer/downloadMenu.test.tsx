@@ -133,6 +133,42 @@ describe('ImageOptimizer download menu', () => {
     expect(screen.getByLabelText('Opciones de descarga')).toBeInTheDocument();
   });
 
+  it('aborts active processing when the optimizer unmounts', async () => {
+    let observedSignal: AbortSignal | undefined;
+    let release: (() => void) | undefined;
+    const processing = new Promise<never>((resolve) => {
+      release = resolve;
+    });
+    mockPipeline.processImageItem.mockImplementation((_item, _settings, signal) => {
+      observedSignal = signal;
+      return processing;
+    });
+
+    const { unmount } = render(<ImageOptimizer />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['pixel-data'], 'foto.jpg', { type: 'image/jpeg' });
+    Object.defineProperty(input, 'files', {
+      value: [file],
+      writable: false,
+      configurable: true,
+    });
+
+    await act(async () => {
+      fireEvent.change(input);
+    });
+    await waitFor(() => expect(screen.queryByText(/agregada|agregado/i)).toBeTruthy());
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Procesar' }));
+    });
+    await waitFor(() => expect(mockPipeline.processImageItem).toHaveBeenCalled());
+
+    unmount();
+    expect(observedSignal?.aborted).toBe(true);
+    release?.();
+    await act(async () => {});
+  });
+
   it('reveals individual export option when the chevron is clicked', async () => {
     await mountAndAddFiles([makeDownloadableItem('a', 'foto.jpg')]);
 

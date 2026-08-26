@@ -128,6 +128,24 @@ async function run() {
   }
 
   {
+    const previousWarn = console.warn;
+    let telemetryLine = '';
+    console.warn = (...args) => { telemetryLine = args.join(' '); };
+    try {
+      _logIpcTelemetry({
+        method: 'canvas_save',
+        requestId: 'req-observability',
+        elapsedMs: 6_000,
+        requestBytes: 120,
+        responseBytes: 80,
+        outcome: 'timeout',
+      });
+    } finally {
+      console.warn = previousWarn;
+    }
+    assert(telemetryLine.includes('request_id=req-observability'), 'IPC telemetry includes request correlation');
+    assert(telemetryLine.includes('outcome=timeout'), 'IPC telemetry includes normalized outcome');
+
     const originalWarn = console.warn;
     const warnings = [];
     console.warn = (line) => warnings.push(line);

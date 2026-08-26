@@ -165,7 +165,7 @@ export default function PetdexView() {
   }, []);
 
   // Persist settings changes
-  const saveSetting = (key: string, value: any) => {
+  const saveSetting = (key: string, value: unknown) => {
     localStorage.setItem(key, String(value));
   };
 

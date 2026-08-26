@@ -53,6 +53,7 @@ _hidden = [
     # starts (ready) but every IPC method fails with ModuleNotFoundError
     # (templates_list, canvas_*, etc.). At v0.10.20 these were static imports.
     'backend.handlers.info',
+    'backend.handlers.diagnostics',
     'backend.handlers.theme',
     'backend.handlers.history',
     'backend.handlers.database',

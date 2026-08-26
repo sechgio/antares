@@ -109,9 +109,11 @@ import {
   createClipboardCopyCoordinator,
   parseClipboardLayers,
   writeClipboardLayersText,
+  type ClipboardCopyCoordinator,
 } from './ops/clipboardLayers';
 import { nextZoomPreset } from './ops/viewportNav';
 import { cloneDocument } from './ops/document';
+import { autosaveDelayForDoc } from './utils/autosave';
 import {
   A4_HEIGHT_PX,
   A4_WIDTH_PX,
@@ -152,32 +154,11 @@ const DEFAULT_SIZES: Partial<Record<PlaceableTool, { w: number; h: number }>> = 
   signature: { w: 60, h: 20 },
 };
 
-/** Debounce before autosaving the open canvas document after unsaved edits. */
-const AUTOSAVE_DEBOUNCE_MS = 1200;
-const AUTOSAVE_LARGE_MS = 2500;
-const AUTOSAVE_MEDIUM_MS = 1800;
-
-function autosaveDelayForDoc(doc: CanvasDocument | null | undefined): number {
-  try {
-    if (!doc || !Array.isArray(doc.layers)) return AUTOSAVE_DEBOUNCE_MS;
-    // Estimate UTF-16 bytes (JSON len*2) — same as useCanvasHistory budget.
-    // Small docs stringify cheap (0.06 ms for 200 rects → 65 KB). Large docs
-    // (6 MB) cost ~8 ms but debounce is 2500 ms, so amortized.
-    const est = JSON.stringify(doc).length * 2;
-    if (est > 2 * 1024 * 1024) return AUTOSAVE_LARGE_MS;
-    if (est > 512 * 1024) return AUTOSAVE_MEDIUM_MS;
-    return AUTOSAVE_DEBOUNCE_MS;
-  } catch {
-    return AUTOSAVE_DEBOUNCE_MS;
-  }
-}
 export default function CanvasView({ active = true }: { active?: boolean }) {
   const history = useCanvasHistory(createEmptyDocument('Sin título'));
   const historyReadyRef = useRef(false);
   const restoreGenerationRef = useRef(0);
-  // Refs mirror history state so runCloudSync can read the latest values
-  // without depending on `history` (which changes on every mutation and would
-  // re-subscribe the focus listener on every keystroke/drag).
+
   const historyDocRef = useRef(history.document);
   const openDirtyRef = useRef(false);
   historyDocRef.current = history.document;
@@ -271,7 +252,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     }
   }, []);
 
-  /** Pre-edit snapshot while a guide is being dragged out of the rulers (live preview). */
+
   const guideCreateBaselineRef = useRef<CanvasDocument | null>(null);
 
   const onDeleteDocRef = useRef<() => Promise<void>>(async () => {});
@@ -289,8 +270,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     ) {
       return;
     }
-    // Keep full docs only in the ref. React state holds a layers-stripped
-    // copy so the conflict bar does not retain megabyte image payloads.
+
     syncConflictRef.current = conflict;
     setSyncConflict({
       ...conflict,
@@ -312,7 +292,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         dismissedRemoteAtRef.current = conflict.remoteUpdatedAt;
         void (async () => {
           try {
-            // Prefer in-memory open doc so unsaved edits win over stale conflict.localDoc.
+
             const mem =
               historyDocRef.current.id === conflict.localDoc.id
                 ? historyDocRef.current
@@ -358,7 +338,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     active,
   });
 
-  // Drop stale conflict UI when the open document changes.
+
   useEffect(() => {
     if (!syncConflictRef.current) return;
     if (syncConflictRef.current.localDoc.id === history.document.id) return;
@@ -379,7 +359,14 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     runCloudSync,
   });
 
-  const { onSave, onOpenDoc, onNew, onDuplicate, onDeleteDoc } = useDocumentLifecycle({
+  const {
+    onSave,
+    onOpenDoc,
+    onNew,
+    onDuplicate,
+    onDeleteDoc,
+    lastSaveRetryAfterMsRef,
+  } = useDocumentLifecycle({
     history,
     refreshList,
     flashStatus,
@@ -412,49 +399,38 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   } = useGestureBaselines({ history, pageIndex });
 
   const [gestureAbortToken, setGestureAbortToken] = useState(0);
-  // Capture rename baseline near other dirty signals so openDirtyRef can
-  // treat an in-progress rename as dirty (updateSilent alone does not).
-  const renameBaselineRef = useRef<typeof history.document | null>(null);
-  // Single composition of the dirty signals; onRenameCommit re-evaluates it
-  // eagerly (without waiting for a re-render) with the rename already sealed.
-  const computeOpenDirty = (renameActive: boolean) =>
-    isOpenDocumentDirty(
-      history.hasUnsavedEditsRef.current,
-      panelBaselineRef.current != null,
-      gestureBaselineRef.current != null,
-      renameActive,
-    );
-  openDirtyRef.current = computeOpenDirty(renameBaselineRef.current != null);
 
-  // ─── Autosave + close protection ─────────────────────────────────────────
-  // Debounced autosave: persist the open doc shortly after it becomes dirty so
-  // unsaved edits are not lost on app/window close. A ref tracks in-flight
-  // saves so a fast repeat never overlaps the IPC round-trip.
-  // Debounce is adaptive: 1200 ms (small), 1800 ms (medium >512KB/40 layers),
-  // 2500 ms (large >2MB/80 layers) to avoid queueing 19 MB saves every keystroke.
+  const renameBaselineRef = useRef<typeof history.document | null>(null);
+
+  openDirtyRef.current = isOpenDocumentDirty(
+    history.hasUnsavedEditsRef.current,
+    panelBaselineRef.current != null,
+    gestureBaselineRef.current != null,
+    renameBaselineRef.current != null,
+  );
   const autosavePendingRef = useRef(false);
   const autosaveRetryTimerRef = useRef<number | null>(null);
+  const autosaveUnmountedRef = useRef(false);
   const flushAutosaveRef = useRef<() => void>(() => {});
   const flushAutosave = useCallback(() => {
     if (!history.hasUnsavedEditsRef.current) return;
     if (autosavePendingRef.current) return;
     autosavePendingRef.current = true;
-    // Reintenta solo si la revisión avanzó durante el save (hubo ediciones
-    // nuevas que el save en vuelo no cubrió). Un fallo sin cambios no arma
-    // un bucle de reintento: el siguiente edit (o hide/unmount) reintentará.
     const revisionAtStart = history.revisionRef.current;
     onSave({ silent: true }).finally(() => {
       autosavePendingRef.current = false;
-      if (!history.hasUnsavedEditsRef.current) return;
-      if (history.revisionRef.current === revisionAtStart) return;
+      if (!history.hasUnsavedEditsRef.current || autosaveUnmountedRef.current) return;
+      const retryAfterMs = lastSaveRetryAfterMsRef.current;
+      const changedDuringSave = history.revisionRef.current !== revisionAtStart;
+      if (retryAfterMs == null && !changedDuringSave) return;
       if (autosaveRetryTimerRef.current != null) return;
-      const delay = autosaveDelayForDoc(history.documentRef.current);
+      const delay = Math.max(autosaveDelayForDoc(history.documentRef.current), retryAfterMs ?? 0);
       autosaveRetryTimerRef.current = window.setTimeout(() => {
         autosaveRetryTimerRef.current = null;
         flushAutosaveRef.current();
       }, delay);
     });
-  }, [history.hasUnsavedEditsRef, history.revisionRef, onSave]);
+  }, [history.hasUnsavedEditsRef, history.revisionRef, history.documentRef, lastSaveRetryAfterMsRef, onSave]);
   flushAutosaveRef.current = flushAutosave;
 
   useEffect(() => {
@@ -464,26 +440,26 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     const delay = autosaveDelayForDoc(history.document);
     const timer = window.setTimeout(() => flushAutosaveRef.current(), delay);
     return () => window.clearTimeout(timer);
-    // Autosave reacts to a changing dirty flag; hasUnsavedEditsRef flips on edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [history.document, active]);
 
-  // Flush pending dirty edits when the Canvas tab hides (debounce would be cancelled).
   useEffect(() => {
     if (active) return;
     flushAutosaveRef.current();
   }, [active]);
 
-  // Flush on unmount so a dirty open tab does not lose the last debounce window.
-  useEffect(
-    () => () => {
-      if (autosaveRetryTimerRef.current != null) window.clearTimeout(autosaveRetryTimerRef.current);
+  useEffect(() => {
+    autosaveUnmountedRef.current = false;
+    return () => {
+      autosaveUnmountedRef.current = true;
+      if (autosaveRetryTimerRef.current != null) {
+        window.clearTimeout(autosaveRetryTimerRef.current);
+        autosaveRetryTimerRef.current = null;
+      }
       flushAutosaveRef.current();
-    },
-    [],
-  );
-
-  const clipboardCoordinatorRef = useRef<ReturnType<typeof createClipboardCopyCoordinator> | null>(null);
+    };
+  }, []);
+  const clipboardCoordinatorRef = useRef<ClipboardCopyCoordinator | null>(null);
   if (!clipboardCoordinatorRef.current) {
     clipboardCoordinatorRef.current = createClipboardCopyCoordinator(
       (layers) => setClipboard(layers),
@@ -495,14 +471,11 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     );
   }
 
-  // Revoke in-memory ObjectURLs when leaving the canvas view.
   useEffect(() => () => {
     clipboardCoordinatorRef.current?.invalidate();
     clearBlobStore();
   }, []);
 
-  // Keep-alive rarely unmounts CanvasView — sweep orphans when live refs shrink
-  // (layer delete, image replace, doc switch / history clear, clipboard clear).
   useEffect(() => {
     const live = collectImageRefsFromLayers(history.document.layers);
     for (const ref of collectImageRefsFromHistory(history.past)) live.add(ref);
@@ -520,7 +493,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     sweepOrphanBlobs(live);
   }, [history.document, history.past, history.future, clipboard]);
 
-  // Beforeunload: warn and fire a best-effort save when the open doc is dirty.
   const onBeforeUnload = useCallback(
     (e: BeforeUnloadEvent) => {
       if (!history.hasUnsavedEditsRef.current) return;
@@ -530,7 +502,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
           autosavePendingRef.current = false;
         });
       }
-      // Electron honors the returnValue/void form to show a native dialog.
+
       e.preventDefault();
       e.returnValue = '';
     },
@@ -542,7 +514,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [active, onBeforeUnload]);
 
-  /** Seal live panel edit and/or cancel in-flight gesture preview. */
+
   const sealPanelAndAbortGesture = useCallback(() => {
     if (panelBaselineRef.current) onPanelCommitLive();
     const cancelled = cancelPageLayersGesture();
@@ -550,7 +522,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     return cancelled;
   }, [cancelPageLayersGesture, onPanelCommitLive, panelBaselineRef]);
 
-  /** Undo/redo: cancel mid-gesture (revert) instead of committing then undoing. */
+
   const runHistoryOp = useCallback(
     (op: 'undo' | 'redo') => {
       if (gestureBaselineRef.current) {
@@ -637,8 +609,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     (id: string, opts?: { seed?: string }) => {
       const layer = history.document.layers.find((l) => l.id === id);
       if (layer && isLayerContainer(layer)) {
-        // Grid: slots are independently selectable — selecting all kids locks
-        // multi-resize and blocks free per-cell sizing. Groups still drill in.
+
         if (layer.type === 'grid') {
           setTool('select');
           setContextMenu(null);
@@ -770,8 +741,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
 
       const historyChord = matchHistoryShortcut(e);
 
-      // While inline-editing: let the textarea handle keys once focused;
-      // route printable keys if focus hasn't landed yet (type-to-edit race).
       if (editingLayerId) {
         if (e.key === 'Escape') {
           e.preventDefault();
@@ -790,7 +759,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
           runGroup();
           return;
         }
-        // Textarea / contentEditable: keep native undo while typing.
+
         if (isEditableKeyboardTarget(e.target)) return;
         if (historyChord) {
           e.preventDefault();
@@ -808,8 +777,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         // Block tool / delete / nudge shortcuts while editing.
         return;
       }
-      // History chords: canvas document undo. Inspector INPUT/TEXTAREA keep
-      // native field undo — inline canvas editor is handled above (editingLayerId).
+
       if (historyChord) {
         if (isEditableKeyboardTarget(e.target)) return;
         e.preventDefault();
@@ -829,7 +797,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       }
       if (isEditableKeyboardTarget(e.target) && !isDuplicateShortcut) return;
 
-      // Type-to-edit before tool letter shortcuts (Figma: typing replaces text, not tools).
       if (selectedIds.length === 1 && isTypeToEditKey(e.key, e)) {
         const layer = history.document.layers.find((l) => l.id === selectedIds[0]);
         if (canInlineEditLayer(layer)) {
@@ -839,8 +806,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         }
       }
 
-      // Single-letter tool shortcuts must never swallow modifier chords
-      // (Ctrl+V paste, Ctrl+G group, Ctrl+B, Alt combos…).
       const plainKey = !e.ctrlKey && !e.metaKey && !e.altKey;
       if (plainKey) {
         if (e.key === 'v' || e.key === 'V') setTool('select');
@@ -877,7 +842,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
             setTool('bend');
           }
         }
-        // Extra shape tools (Shift+letter; avoid letters used plain above / Ctrl chords).
+
         if (e.shiftKey) {
           if (e.key === 'p' || e.key === 'P') setTool('polygon');
           else if (e.key === 's' || e.key === 'S') setTool('star');
@@ -890,13 +855,13 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         e.preventDefault();
         setTool('image');
       }
-      // Space = temporary hand (OpenPencil)
+
       if (e.code === 'Space' && !e.repeat) {
         e.preventDefault();
         if (toolBeforeSpaceRef.current == null) toolBeforeSpaceRef.current = tool;
         setTool('hand');
       }
-      // Zoom shortcuts: same preset ladder as ZoomMenu (MIN 0.02 … MAX 256).
+
       if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) {
         e.preventDefault();
         viewportNavRef.current?.setZoom((z) => nextZoomPreset(z, 'in'));
@@ -953,7 +918,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         setAllLayers(nudgeLayers(history.document.layers, editableIds, dx, dy));
       }
 
-      // Align / distribute shortcuts (Alt+letter, no Ctrl)
+
       if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
         const alignKey = e.key.toLowerCase();
         const alignMap: Record<string, 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom'> = {
@@ -1052,7 +1017,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         setShowShortcuts((v) => !v);
       }
       if (e.key === 'Escape') {
-        // Mid-gesture / live panel: cancel or seal first (Figma) — do not clear selection.
+
         if (gestureBaselineRef.current) {
           e.preventDefault();
           cancelPageLayersGesture();
@@ -1222,9 +1187,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     });
   };
 
-  // Capture the document snapshot at focus time so the rename can be committed
-  // to history as a single undoable entry on blur/Enter (instead of one entry
-  // per keystroke). Mirrors the gesture pattern used elsewhere in the canvas.
+
   const onRenameStart = () => {
     renameBaselineRef.current = history.document;
     // Sync reads this ref without waiting for a re-render.
@@ -1234,7 +1197,12 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     const baseline = renameBaselineRef.current;
     renameBaselineRef.current = null;
     if (!baseline || baseline.name === history.document.name) {
-      openDirtyRef.current = computeOpenDirty(false);
+      openDirtyRef.current = isOpenDocumentDirty(
+        history.hasUnsavedEditsRef.current,
+        panelBaselineRef.current != null,
+        gestureBaselineRef.current != null,
+        false,
+      );
       return;
     }
     history.commitFromBaseline(baseline);

@@ -64,7 +64,6 @@ class IPCMessage:
         self.method: str = raw.get("method", "")
         self.params: dict[str, Any] = raw.get("params", {})
 
-        # Validate
         if not validate_method(self.method):
             raise InvalidRequestError(f"Invalid method name: {self.method}")
         if not validate_params(self.params):
@@ -75,7 +74,6 @@ class IPCMessage:
 
 
 def _emit_stdout_line(payload_bytes: bytes) -> None:
-    """Write one NDJSON line using a single UTF-8 byte buffer when possible."""
     with _stdout_lock:
         buffer = getattr(sys.stdout, "buffer", None)
         if buffer is not None:
