@@ -31,6 +31,8 @@ const {
 const { getMainWindow, buildAppMenu } = require('./window-manager');
 
 const _pendingRequests = new Map();
+const _pendingMethodCounts = new Map();
+let _pendingRequestCount = 0;
 let _attachedProcess = null;               // process instance we have listeners on
 
 /**
@@ -79,6 +81,22 @@ const BACKEND_RESTART_MIN_INTERVAL_MS = 5_000;
 // Cheap IPC telemetry: always warn on slow/large calls; full log when ANTARES_IPC_TELEMETRY=1.
 const IPC_TELEMETRY_SLOW_MS = 5_000;
 const IPC_TELEMETRY_LARGE_BYTES = 1 * 1024 * 1024;
+const DEFAULT_MAX_PENDING_REQUESTS = 128;
+const DEFAULT_MAX_PENDING_PER_METHOD = 32;
+
+function _positiveIntegerEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isSafeInteger(value) && value > 0 ? value : fallback;
+}
+
+const MAX_PENDING_REQUESTS = _positiveIntegerEnv(
+  'ANTARES_IPC_MAX_PENDING_REQUESTS',
+  DEFAULT_MAX_PENDING_REQUESTS,
+);
+const MAX_PENDING_PER_METHOD = _positiveIntegerEnv(
+  'ANTARES_IPC_MAX_PENDING_PER_METHOD',
+  DEFAULT_MAX_PENDING_PER_METHOD,
+);
 
 let _ipcBackpressureWaits = 0;
 /** Prefix for structured IPC errors embedded in Error.message (Electron only clones message). */
@@ -381,6 +399,39 @@ function _getTimeoutForMethod(method) {
   return _getLongRunningMethods().has(method) ? LONG_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
 }
 
+function _getPendingRequestLimits() {
+  return { maxPendingRequests: MAX_PENDING_REQUESTS, maxPendingPerMethod: MAX_PENDING_PER_METHOD };
+}
+
+function _capacityError(reason, pending, limit) {
+  const err = new Error('IPC pending request capacity exceeded');
+  err.code = -32005;
+  err.category = 'CAPACITY_EXCEEDED';
+  err.details = { retryable: true, reason, pending, limit };
+  return err;
+}
+
+function _reservePendingRequest(method) {
+  if (_pendingRequestCount >= MAX_PENDING_REQUESTS) {
+    return { error: _capacityError('ipc_total_pending_limit', _pendingRequestCount, MAX_PENDING_REQUESTS) };
+  }
+  const methodPending = _pendingMethodCounts.get(method) || 0;
+  if (methodPending >= MAX_PENDING_PER_METHOD) {
+    return { error: _capacityError('ipc_method_pending_limit', methodPending, MAX_PENDING_PER_METHOD) };
+  }
+
+  _pendingRequestCount += 1;
+  _pendingMethodCounts.set(method, methodPending + 1);
+  return {
+    release: () => {
+      _pendingRequestCount -= 1;
+      const current = _pendingMethodCounts.get(method) || 0;
+      if (current <= 1) _pendingMethodCounts.delete(method);
+      else _pendingMethodCounts.set(method, current - 1);
+    },
+  };
+}
+
 function _ipcTelemetryVerbose() {
   const raw = String(process.env.ANTARES_IPC_TELEMETRY || '').trim().toLowerCase();
   return raw === '1' || raw === 'true' || raw === 'yes';
@@ -408,7 +459,7 @@ function _logIpcTelemetry({
 }) {
   const slow = elapsedMs >= IPC_TELEMETRY_SLOW_MS;
   const large = requestBytes >= IPC_TELEMETRY_LARGE_BYTES || responseBytes >= IPC_TELEMETRY_LARGE_BYTES;
-  if (!_ipcTelemetryVerbose() && !slow && !large && !waitedForDrain) return;
+  if (!_ipcTelemetryVerbose() && !slow && !large && !waitedForDrain && outcome === 'ok') return;
 
   const line = `[ipc-router] method=${method} elapsed_ms=${Math.round(elapsedMs)} ` +
     `request_bytes=${requestBytes} response_bytes=${responseBytes} outcome=${outcome}` +
@@ -483,7 +534,6 @@ function _sendRequest(method, params) {
   if (!proc || proc.killed) {
     return Promise.reject(new Error('Backend process not available'));
   }
-  _ensureListeners();
 
   const id = crypto.randomUUID();
   const request = { jsonrpc: '2.0', id, method, params };
@@ -491,6 +541,18 @@ function _sendRequest(method, params) {
   const requestBytes = Buffer.byteLength(line, 'utf8');
   const timeoutMs = _getTimeoutForMethod(method);
   const startedAt = Date.now();
+  const reservation = _reservePendingRequest(method);
+  if (reservation.error) {
+    _logIpcTelemetry({
+      method,
+      elapsedMs: Date.now() - startedAt,
+      requestBytes,
+      outcome: 'rejected',
+    });
+    return Promise.reject(reservation.error);
+  }
+
+  _ensureListeners();
 
   incrementPendingRequests();
 
@@ -513,6 +575,7 @@ function _sendRequest(method, params) {
       releasePending: () => {
         if (entry.pendingReleased) return;
         entry.pendingReleased = true;
+        reservation.release();
         decrementPendingRequests();
       },
       resolve: (result) => {
@@ -944,6 +1007,7 @@ module.exports = {
   _writeStdinWithBackpressure,
   _logIpcTelemetry,
   _estimateJsonBytes,
+  _getPendingRequestLimits,
   _maybeTokenizeResultPaths,
   getIpcBackpressureWaits,
   resetIpcBackpressureWaits,
