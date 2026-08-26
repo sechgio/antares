@@ -459,7 +459,7 @@ function _logIpcTelemetry({
 }) {
   const slow = elapsedMs >= IPC_TELEMETRY_SLOW_MS;
   const large = requestBytes >= IPC_TELEMETRY_LARGE_BYTES || responseBytes >= IPC_TELEMETRY_LARGE_BYTES;
-  if (!_ipcTelemetryVerbose() && !slow && !large && !waitedForDrain && outcome === 'ok') return;
+  if (!_ipcTelemetryVerbose() && !slow && !large && !waitedForDrain && outcome !== 'rejected') return;
 
   const line = `[ipc-router] method=${method} elapsed_ms=${Math.round(elapsedMs)} ` +
     `request_bytes=${requestBytes} response_bytes=${responseBytes} outcome=${outcome}` +

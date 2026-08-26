@@ -245,6 +245,59 @@ async function run() {
 
   {
     const currentProc = { ref: makeProc(1005) };
+    const writes = [];
+    let increments = 0;
+    let decrements = 0;
+    currentProc.ref.stdin.write = (line) => {
+      writes.push(line);
+      return true;
+    };
+    const router = loadRouter({
+      currentProc,
+      incrementPendingRequests: () => { increments += 1; },
+      decrementPendingRequests: () => { decrements += 1; },
+      env: {
+        ANTARES_IPC_MAX_PENDING_REQUESTS: '3',
+        ANTARES_IPC_MAX_PENDING_PER_METHOD: '2',
+      },
+    });
+
+    const attempts = [];
+    for (let index = 0; index < 30; index += 1) {
+      const request = router._sendRequest(index % 2 === 0 ? 'version' : 'formats', { index });
+      attempts.push(request.then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      ));
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const rejected = await Promise.all(attempts.slice(3));
+    assert(writes.length === 3, '10x burst keeps stdin writes at the global limit');
+    assert(increments === 3 && decrements === 0, '10x burst keeps spawner pending count at the global limit');
+    assert(rejected.length === 27 && rejected.every(({ error }) => error instanceof Error), '10x burst rejects excess requests');
+    assert(
+      rejected.every(({ error }) => error?.code === -32005
+        && error?.category === 'CAPACITY_EXCEEDED'
+        && error?.details?.retryable === true
+        && error?.details?.reason === 'ipc_total_pending_limit'),
+      '10x burst rejections preserve structured retryable capacity errors',
+    );
+
+    for (const write of writes) respond(currentProc.ref, write);
+    const settled = await Promise.all(attempts);
+    assert(settled.slice(0, 3).every(({ value }) => value?.ok === true), '10x burst accepted requests resolve');
+    assert(decrements === 3, '10x burst releases every accepted request once');
+
+    const afterRelease = router._sendRequest('version', {});
+    assert(writes.length === 4 && increments === 4, '10x burst capacity is available after responses');
+    respond(currentProc.ref, writes[3]);
+    await afterRelease;
+    assert(decrements === 4, 'post-burst request releases cleanly');
+  }
+
+  {
+    const currentProc = { ref: makeProc(1006) };
     const router = loadRouter({
       currentProc,
       incrementPendingRequests: () => {},
