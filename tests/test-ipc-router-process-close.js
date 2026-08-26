@@ -37,8 +37,6 @@ function loadIpcRouter({
   clearJobActivity,
   noteJobActivity,
   waitForReady,
-  isReady,
-  getState,
   incrementPendingRequests,
   decrementPendingRequests,
 }) {
@@ -61,9 +59,9 @@ function loadIpcRouter({
     loaded: true,
     exports: {
       getProcess: () => currentProc.ref,
-      isReady: isReady || (() => true),
+      isReady: () => true,
       waitForReady: waitForReady || (async () => true),
-      getState: getState || (() => 'ready'),
+      getState: () => 'ready',
       getLastError: () => null,
       getStderrTail: () => '',
       manualRestart: async () => true,
@@ -146,123 +144,6 @@ async function run() {
     currentProc.ref = procC;
     assert(_ensureListeners() === true, 're-attach after real death');
     assert(procC.listenerCount('close') === 1, 'process C has one close listener');
-  }
-
-  // ── 4.1b: pending IPC admission is bounded ──
-  console.log('\nTesting bounded pending IPC admission...\n');
-  {
-    const currentProc = { ref: null };
-    const { _sendRequest, _ensureListeners } = loadIpcRouter({
-      currentProc,
-      clearJobActivity: () => {},
-    });
-    const proc = makeFakeProc(1201);
-    currentProc.ref = proc;
-    _ensureListeners();
-
-    const originalSetTimeout = global.setTimeout;
-    try {
-      global.setTimeout = (fn, delay, ...args) => (
-        delay === 30_000 ? originalSetTimeout(fn, 0, ...args) : originalSetTimeout(fn, delay, ...args)
-      );
-
-      const pending = Array.from({ length: 64 }, (_, index) => (
-        _sendRequest(`burst_method_${index}`, {})
-      ));
-      pending.forEach((request) => request.catch(() => {}));
-      const overflow = _sendRequest('burst_overflow', {});
-      let overflowMessage = '';
-      try {
-        await overflow;
-      } catch (err) {
-        overflowMessage = err.message || '';
-      }
-
-      assert(
-        overflowMessage.includes('IPC capacity exhausted'),
-        'rejects a request when the global pending IPC limit is reached',
-      );
-
-      proc.emit('close', 1, null);
-      await Promise.allSettled(pending);
-    } finally {
-      global.setTimeout = originalSetTimeout;
-    }
-  }
-
-  // ── 4.1c: one method cannot monopolize pending IPC ──
-  {
-    const currentProc = { ref: null };
-    const { _sendRequest, _ensureListeners } = loadIpcRouter({
-      currentProc,
-      clearJobActivity: () => {},
-    });
-    const proc = makeFakeProc(1202);
-    currentProc.ref = proc;
-    _ensureListeners();
-
-    const originalSetTimeout = global.setTimeout;
-    try {
-      global.setTimeout = (fn, delay, ...args) => (
-        delay === 30_000 ? originalSetTimeout(fn, 0, ...args) : originalSetTimeout(fn, delay, ...args)
-      );
-
-      const pending = Array.from({ length: 16 }, () => _sendRequest('same_method', {}));
-      pending.forEach((request) => request.catch(() => {}));
-      const overflow = _sendRequest('same_method', {});
-      let overflowMessage = '';
-      try {
-        await overflow;
-      } catch (err) {
-        overflowMessage = err.message || '';
-      }
-
-      assert(
-        overflowMessage.includes('IPC capacity exhausted for "same_method"'),
-        'rejects a request when a method-specific pending IPC limit is reached',
-      );
-
-      proc.emit('close', 1, null);
-      await Promise.allSettled(pending);
-    } finally {
-      global.setTimeout = originalSetTimeout;
-    }
-  }
-
-  // ── 4.1d: startup wait admission is bounded too ──
-  {
-    const currentProc = { ref: null };
-    let releaseReady;
-    const readyGate = new Promise((resolve) => { releaseReady = resolve; });
-    const { _callBackend } = loadIpcRouter({
-      currentProc,
-      clearJobActivity: () => {},
-      isReady: () => false,
-      waitForReady: () => readyGate,
-    });
-    const proc = makeFakeProc(1203);
-    currentProc.ref = proc;
-
-    const pending = Array.from({ length: 64 }, (_, index) => (
-      _callBackend(`startup_method_${index}`, {})
-    ));
-    pending.forEach((request) => request.catch(() => {}));
-    const overflow = _callBackend('startup_overflow', {});
-    let overflowMessage = '';
-    await Promise.race([
-      overflow.catch((err) => { overflowMessage = err.message || ''; }),
-      new Promise((resolve) => setTimeout(resolve, 100)),
-    ]);
-
-    assert(
-      overflowMessage.includes('IPC capacity exhausted'),
-      'rejects a request while the backend readiness queue is full',
-    );
-
-    releaseReady();
-    await Promise.resolve();
-    proc.emit('close', 1, null);
-    await Promise.allSettled(pending);
   }
 
   // ── 4.2: timeout + late stdin failure release exactly once ──

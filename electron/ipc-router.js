@@ -33,8 +33,8 @@ const { getMainWindow, buildAppMenu } = require('./window-manager');
 const { appendLogEvent } = require('./app-log');
 
 const _pendingRequests = new Map();
-let _pendingBackendCalls = 0;
-const _pendingBackendCallsByMethod = new Map();
+const _pendingMethodCounts = new Map();
+let _pendingRequestCount = 0;
 let _attachedProcess = null;               // process instance we have listeners on
 
 /** Cached IPC allowlist. reloadIpcMethods() busts cache in dev. */
@@ -73,8 +73,23 @@ const MID_FLIGHT_RETRIES = 2;
 const BACKEND_RESTART_MIN_INTERVAL_MS = 5_000;
 const IPC_TELEMETRY_SLOW_MS = 5_000;
 const IPC_TELEMETRY_LARGE_BYTES = 1 * 1024 * 1024;
-const MAX_PENDING_REQUESTS = 64;
-const MAX_PENDING_REQUESTS_PER_METHOD = 16;
+const DEFAULT_MAX_PENDING_REQUESTS = 128;
+const DEFAULT_MAX_PENDING_PER_METHOD = 32;
+
+function _positiveIntegerEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isSafeInteger(value) && value > 0 ? value : fallback;
+}
+
+const MAX_PENDING_REQUESTS = _positiveIntegerEnv(
+  'ANTARES_IPC_MAX_PENDING_REQUESTS',
+  DEFAULT_MAX_PENDING_REQUESTS,
+);
+const MAX_PENDING_PER_METHOD = _positiveIntegerEnv(
+  'ANTARES_IPC_MAX_PENDING_PER_METHOD',
+  DEFAULT_MAX_PENDING_PER_METHOD,
+);
+const MAX_PENDING_REQUESTS_PER_METHOD = MAX_PENDING_PER_METHOD;
 const IPC_CAPACITY_RETRY_AFTER_MS = 250;
 
 let _ipcBackpressureWaits = 0;
@@ -343,6 +358,39 @@ function _getTimeoutForMethod(method) {
   return _getLongRunningMethods().has(method) ? LONG_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
 }
 
+function _getPendingRequestLimits() {
+  return { maxPendingRequests: MAX_PENDING_REQUESTS, maxPendingPerMethod: MAX_PENDING_PER_METHOD };
+}
+
+function _capacityError(reason, pending, limit) {
+  const err = new Error('IPC pending request capacity exceeded');
+  err.code = -32005;
+  err.category = 'CAPACITY_EXCEEDED';
+  err.details = { retryable: true, reason, pending, limit };
+  return err;
+}
+
+function _reservePendingRequest(method) {
+  if (_pendingRequestCount >= MAX_PENDING_REQUESTS) {
+    return { error: _capacityError('ipc_total_pending_limit', _pendingRequestCount, MAX_PENDING_REQUESTS) };
+  }
+  const methodPending = _pendingMethodCounts.get(method) || 0;
+  if (methodPending >= MAX_PENDING_PER_METHOD) {
+    return { error: _capacityError('ipc_method_pending_limit', methodPending, MAX_PENDING_PER_METHOD) };
+  }
+
+  _pendingRequestCount += 1;
+  _pendingMethodCounts.set(method, methodPending + 1);
+  return {
+    release: () => {
+      _pendingRequestCount -= 1;
+      const current = _pendingMethodCounts.get(method) || 0;
+      if (current <= 1) _pendingMethodCounts.delete(method);
+      else _pendingMethodCounts.set(method, current - 1);
+    },
+  };
+}
+
 function _ipcTelemetryVerbose() {
   const raw = String(process.env.ANTARES_IPC_TELEMETRY || '').trim().toLowerCase();
   return raw === '1' || raw === 'true' || raw === 'yes';
@@ -369,8 +417,7 @@ function _logIpcTelemetry({
   const slow = elapsedMs >= IPC_TELEMETRY_SLOW_MS;
   const large = requestBytes >= IPC_TELEMETRY_LARGE_BYTES || responseBytes >= IPC_TELEMETRY_LARGE_BYTES;
   const normalizedOutcome = outcome === 'ok' ? 'success' : outcome === 'error' ? 'failed' : outcome;
-  const failed = normalizedOutcome !== 'success';
-  if (!_ipcTelemetryVerbose() && !slow && !large && !waitedForDrain && !failed) return;
+  if (!_ipcTelemetryVerbose() && !slow && !large && !waitedForDrain && normalizedOutcome !== 'rejected') return;
 
   const safeRequestId = requestId === null || requestId === undefined
     ? ''
@@ -449,65 +496,12 @@ function _writeStdinWithBackpressure(proc, payload) {
   });
 }
 
-function _makeCapacityError(method, pending, limit, label) {
-  const scope = limit === MAX_PENDING_REQUESTS_PER_METHOD ? ` for "${method}"` : '';
-  const error = new Error(`IPC capacity exhausted${scope}: too many pending ${label} (limit ${limit})`);
-  error.code = 'IPC_CAPACITY_EXCEEDED';
-  error.category = 'CAPACITY';
-  error.details = { method, limit, pending, retry_after_ms: IPC_CAPACITY_RETRY_AFTER_MS };
-  return error;
-}
-
-function _pendingCapacityError(method) {
-  if (_pendingRequests.size >= MAX_PENDING_REQUESTS) {
-    return _makeCapacityError(method, _pendingRequests.size, MAX_PENDING_REQUESTS, 'requests');
-  }
-  let methodPending = 0;
-  for (const entry of _pendingRequests.values()) {
-    if (entry.method === method) methodPending += 1;
-  }
-  if (methodPending >= MAX_PENDING_REQUESTS_PER_METHOD) {
-    return _makeCapacityError(method, methodPending, MAX_PENDING_REQUESTS_PER_METHOD, 'requests');
-  }
-  return null;
-}
-
-function _pendingBackendCallCapacityError(method) {
-  if (_pendingBackendCalls >= MAX_PENDING_REQUESTS) {
-    return _makeCapacityError(method, _pendingBackendCalls, MAX_PENDING_REQUESTS, 'calls');
-  }
-  const methodPending = _pendingBackendCallsByMethod.get(method) || 0;
-  if (methodPending >= MAX_PENDING_REQUESTS_PER_METHOD) {
-    return _makeCapacityError(method, methodPending, MAX_PENDING_REQUESTS_PER_METHOD, 'calls');
-  }
-  return null;
-}
-
-function _reservePendingBackendCall(method) {
-  const capacityError = _pendingBackendCallCapacityError(method);
-  if (capacityError) throw capacityError;
-  _pendingBackendCalls += 1;
-  _pendingBackendCallsByMethod.set(method, (_pendingBackendCallsByMethod.get(method) || 0) + 1);
-  let released = false;
-  return () => {
-    if (released) return;
-    released = true;
-    _pendingBackendCalls = Math.max(0, _pendingBackendCalls - 1);
-    const next = (_pendingBackendCallsByMethod.get(method) || 1) - 1;
-    if (next > 0) _pendingBackendCallsByMethod.set(method, next);
-    else _pendingBackendCallsByMethod.delete(method);
-  };
-}
-
 function _sendRequest(method, params) {
   const proc = getProcess();
   if (!proc || proc.killed) {
     return Promise.reject(new Error('Backend process not available'));
   }
-  _ensureListeners();
 
-  const capacityError = _pendingCapacityError(method);
-  if (capacityError) return Promise.reject(capacityError);
 
   const id = crypto.randomUUID();
   const request = { jsonrpc: '2.0', id, method, params };
@@ -515,6 +509,18 @@ function _sendRequest(method, params) {
   const requestBytes = Buffer.byteLength(line, 'utf8');
   const timeoutMs = _getTimeoutForMethod(method);
   const startedAt = Date.now();
+  const reservation = _reservePendingRequest(method);
+  if (reservation.error) {
+    _logIpcTelemetry({
+      method,
+      elapsedMs: Date.now() - startedAt,
+      requestBytes,
+      outcome: 'rejected',
+    });
+    return Promise.reject(reservation.error);
+  }
+
+  _ensureListeners();
 
   incrementPendingRequests();
 
@@ -537,6 +543,7 @@ function _sendRequest(method, params) {
       releasePending: () => {
         if (entry.pendingReleased) return;
         entry.pendingReleased = true;
+        reservation.release();
         decrementPendingRequests();
       },
       resolve: (result) => {
@@ -626,8 +633,6 @@ function _buildUnavailableError() {
 
 
 async function _callBackend(method, params) {
-  const releasePendingCall = _reservePendingBackendCall(method);
-  try {
     // 1. Wait for ready (or fatal). This is the ONLY place we block for boot.
     if (!isReady()) {
       if (getState() === STATE.FATAL) throw _buildUnavailableError();
@@ -657,9 +662,6 @@ async function _callBackend(method, params) {
       }
     }
     throw lastErr || _buildUnavailableError();
-  } finally {
-    releasePendingCall();
-  }
 }
 
 function _maybeTokenizeResultPaths(method, result, win) {
@@ -1010,11 +1012,12 @@ module.exports = {
   _DIALOG_NATIVE_METHODS,
   _toRendererIpcError,
   _writeStdinWithBackpressure,
-  _pendingCapacityError,
-  _pendingBackendCallCapacityError,
-  _reservePendingBackendCall,
   MAX_PENDING_REQUESTS,
   MAX_PENDING_REQUESTS_PER_METHOD,
+  MAX_PENDING_PER_METHOD,
+  DEFAULT_MAX_PENDING_REQUESTS,
+  DEFAULT_MAX_PENDING_PER_METHOD,
+  _getPendingRequestLimits,
   _logIpcTelemetry,
   _estimateJsonBytes,
   _maybeTokenizeResultPaths,

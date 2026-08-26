@@ -73,9 +73,9 @@ async function run() {
   const {
     _writeStdinWithBackpressure,
     _estimateJsonBytes,
+    _logIpcTelemetry,
     getIpcBackpressureWaits,
     resetIpcBackpressureWaits,
-    _logIpcTelemetry,
   } = loadRouter();
 
   resetIpcBackpressureWaits();
@@ -145,6 +145,19 @@ async function run() {
     }
     assert(telemetryLine.includes('request_id=req-observability'), 'IPC telemetry includes request correlation');
     assert(telemetryLine.includes('outcome=timeout'), 'IPC telemetry includes normalized outcome');
+
+    const originalWarn = console.warn;
+    const warnings = [];
+    console.warn = (line) => warnings.push(line);
+    try {
+      _logIpcTelemetry({ method: 'version', elapsedMs: 0, outcome: 'error' });
+      assert(warnings.length === 0, 'ordinary fast IPC errors remain filtered without verbose telemetry');
+
+      _logIpcTelemetry({ method: 'version', elapsedMs: 0, outcome: 'rejected' });
+      assert(warnings.some((line) => line.includes('outcome=rejected')), 'admission rejections bypass cheap telemetry filtering');
+    } finally {
+      console.warn = originalWarn;
+    }
   }
 
   console.log(`\n${passed} passed, ${failed} failed`);
