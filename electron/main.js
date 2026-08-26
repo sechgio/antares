@@ -25,7 +25,6 @@ process.on('unhandledRejection', (reason) => {
 
 const isDev = !app.isPackaged;
 
-// Register IPC handlers before app is ready
 registerRendererObservability(ipcMain);
 registerIpcHandlers();
 
@@ -101,7 +100,7 @@ function _shutdownOnce() {
 }
 
 app.on('before-quit', async () => {
-  try { const { cleanupAllStaged } = require('./file-capabilities'); await cleanupAllStaged(); } catch {}
+  try { const { cleanupAllStaged } = require('./file-capabilities'); await cleanupAllStaged(); } catch (e) { console.warn('[main] cleanupAllStaged failed:', e?.message); }
   _shutdownOnce();
 });
 app.on('will-quit', _shutdownOnce);

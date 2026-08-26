@@ -805,7 +805,7 @@ export const api = {
     api_key?: string;
     zoom?: number;
     customStyles?: Record<string, unknown>;
-    manualData?: Record<string, any>;
+    manualData?: Record<string, unknown>;
   }) => _invoke<{ success: boolean; data?: unknown; error?: string }>('preview_ubicacion', body),
   generarUbicaciones: (body: {
     excelPath: string | null;
@@ -816,7 +816,7 @@ export const api = {
     api_key?: string;
     zoom?: number;
     customStyles?: Record<string, unknown>;
-    manualData?: Record<string, any>;
+    manualData?: Record<string, unknown>;
   }) => _invoke<{ success: boolean; data?: unknown; error?: string }>('generar_ubicaciones', body),
   ubicacionesKeysGet: () =>
     _invoke<{ keys: Record<string, string>; configured?: Record<string, boolean> }>('ubicaciones_keys_get'),

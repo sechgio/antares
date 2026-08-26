@@ -66,7 +66,6 @@ _shutdown_requested = False
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
-
 def _signal_handler(signum, frame) -> None:
     """Handle termination signals gracefully.
 
@@ -75,7 +74,6 @@ def _signal_handler(signum, frame) -> None:
     """
     global _shutdown_requested
     _shutdown_requested = True
-
 
 if hasattr(signal, "SIGTERM"):
     signal.signal(signal.SIGTERM, _signal_handler)

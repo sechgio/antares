@@ -76,9 +76,18 @@ const VIEWS: Record<TabId, React.LazyExoticComponent<React.ComponentType<{ activ
   fichasTecnicas: FichasTecnicasView,
 };
 
+function isElectronRenderer(): boolean {
+  if (typeof window === 'undefined') return false;
+  const w: unknown = window;
+  if (typeof w !== 'object' || w === null || !('process' in w)) return false;
+  const proc = w.process;
+  if (!proc || typeof proc !== 'object' || !('type' in proc)) return false;
+  return proc.type === 'renderer';
+}
+
 function ElectronOnlyNotice() {
-  const isElectron = typeof window !== 'undefined' && (window as any).process?.type === 'renderer';
-  const hasAPI = typeof window !== 'undefined' && !!(window as any).electronAPI;
+  const isElectron = isElectronRenderer();
+  const hasAPI = typeof window !== 'undefined' && !!window.electronAPI;
 
   return (
     <main className="flex h-screen w-screen items-center justify-center bg-[var(--bg-base)] px-6 text-[var(--text-primary)]">

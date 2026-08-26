@@ -147,10 +147,6 @@ async function _cleanupStagedImageCapabilities(rawPaths, webContentsId = null) {
   await Promise.all([...tokens].map((token) => cleanupStagedCapability(token, webContentsId)));
 }
 
-function _injectLocalImageUrls(html, localImages) {
-  return localImages.reduce((current, entry) => current.split(entry.token).join(entry.fileUrl), html);
-}
-
 function _sanitizeFilename(name) {
   if (typeof name !== 'string' || !name.trim()) return 'reporte.pdf';
   const base = path.basename(name);
@@ -170,10 +166,6 @@ function _sanitizePdfOutputPath(outputPath, fallbackFilename) {
   }
   const safeName = _sanitizeFilename(path.basename(resolved) || fallbackFilename);
   return path.join(dir, safeName);
-}
-
-function _handleRegisterLocalPath() {
-  throw new Error(REGISTER_LOCAL_PATH_DEPRECATED_MSG);
 }
 
 function _resolveTokenPath(token, webContentsId) {
@@ -290,8 +282,7 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
   }
 
   // Sanitize before injecting allowlisted file:// URLs.
-  const sanitizedHtml = sanitizeHtmlForPdf(html);
-  const htmlWithLocalImages = _injectLocalImageUrls(sanitizedHtml, localImages);
+  const htmlWithLocalImages = localImages.reduce((current, entry) => current.split(entry.token).join(entry.fileUrl), sanitizedHtml);
 
   const { BrowserWindow, session } = electronModules;
   if (!BrowserWindow) {
@@ -510,7 +501,7 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
   }
 
   if (method === 'register_local_path') {
-    return { handled: true, result: _handleRegisterLocalPath() };
+    throw new Error(REGISTER_LOCAL_PATH_DEPRECATED_MSG);
   }
 
   if (method === 'file_token_resolve') {

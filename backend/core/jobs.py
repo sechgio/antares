@@ -20,6 +20,7 @@ from typing import Any
 from backend.core.canvas.models import utc_now_iso as _utc_now
 from backend.core.observability import get_context, log_event, request_context
 from backend.core.state import ProcessState
+
 logger = logging.getLogger(__name__)
 
 # Legacy single-job compat: DEFAULT_JOB_ID keeps old frontend (process_* without job_id) working.

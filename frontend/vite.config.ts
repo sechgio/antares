@@ -151,7 +151,7 @@ export default defineConfig(({ mode }) => ({
     // allow 2 workers for within-file parallelism; full parallel (true/4)
     // caused flaky timeouts on Windows CI with 120+ jsdom suites.
     fileParallelism: false,
-    maxWorkers: 2,
+    maxWorkers: 1,
     // Static CSS/theme guards run under vitest.static.config.ts (node env).
     exclude: [
       '**/node_modules/**',
