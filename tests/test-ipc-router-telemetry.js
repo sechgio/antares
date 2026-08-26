@@ -73,6 +73,7 @@ async function run() {
   const {
     _writeStdinWithBackpressure,
     _estimateJsonBytes,
+    _logIpcTelemetry,
     getIpcBackpressureWaits,
     resetIpcBackpressureWaits,
   } = loadRouter();
@@ -124,6 +125,21 @@ async function run() {
     const bytes = _estimateJsonBytes({ a: 1, b: 'xy' });
     assert(bytes > 10, 'estimateJsonBytes returns positive size for objects');
     assert(_estimateJsonBytes(undefined) >= 0, 'estimateJsonBytes tolerates bad values');
+  }
+
+  {
+    const originalWarn = console.warn;
+    const warnings = [];
+    console.warn = (line) => warnings.push(line);
+    try {
+      _logIpcTelemetry({ method: 'version', elapsedMs: 0, outcome: 'error' });
+      assert(warnings.length === 0, 'ordinary fast IPC errors remain filtered without verbose telemetry');
+
+      _logIpcTelemetry({ method: 'version', elapsedMs: 0, outcome: 'rejected' });
+      assert(warnings.some((line) => line.includes('outcome=rejected')), 'admission rejections bypass cheap telemetry filtering');
+    } finally {
+      console.warn = originalWarn;
+    }
   }
 
   console.log(`\n${passed} passed, ${failed} failed`);
