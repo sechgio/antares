@@ -92,6 +92,27 @@ try {
   assert.strictEqual(stderrEvent.session_id, firstSession, 'stderr usa la sesión de la app');
   assert.strictEqual(stderrEvent.backend_pid, 5678, 'stderr conserva el PID del proceso hijo');
 
+  backendSpawner._recordStderr(
+    Buffer.from(`${JSON.stringify({
+      event: 'backend.ipc',
+      level: 'WARN',
+      message: 'request degraded',
+      request_id: 'req-2',
+      method: 'canvas_save',
+      lane: 'heavy',
+      outcome: 'degraded',
+      duration_ms: 321,
+    })}\n`),
+    5679,
+  );
+  const structuredEvent = readEvents().find((event) => event.event === 'backend.ipc');
+  assert(structuredEvent, 'el spawner conserva eventos JSON del backend');
+  assert.strictEqual(structuredEvent.request_id, 'req-2', 'evento conserva request_id');
+  assert.strictEqual(structuredEvent.method, 'canvas_save', 'evento conserva método');
+  assert.strictEqual(structuredEvent.lane, 'heavy', 'evento conserva lane');
+  assert.strictEqual(structuredEvent.outcome, 'degraded', 'evento conserva outcome');
+  assert.strictEqual(structuredEvent.duration_ms, 321, 'evento conserva duración');
+
   const humanLog = fs.readdirSync(appLog.getLogsDir())
     .find((name) => /\.log$/.test(name));
   assert(humanLog, 'se conserva el log humano existente');

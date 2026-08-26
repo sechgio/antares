@@ -15,7 +15,7 @@ const DEFAULT_MAX_LOG_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_LOG_DIR_BYTES = 50 * 1024 * 1024;
 const STALE_TEMP_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const MANAGED_LOG_RE = /^antares-\d{4}-\d{2}-\d{2}(?:\.\d+)?\.(?:log|jsonl)$/;
-const SAFE_VALUE_RE = /^[a-zA-Z0-9_.:@-]{1,160}$/;
+const SAFE_VALUE_RE = /^[a-zA-Z0-9_.:-]{1,160}$/;
 const LEVELS = new Set(OBSERVABILITY_CONTRACT.levels);
 const OUTCOMES = new Set(OBSERVABILITY_CONTRACT.outcomes);
 const EVENT_FIELDS = new Set([
@@ -96,7 +96,7 @@ function getSessionId() {
 
 function _safeContextValue(value, maxLength = 80) {
   if (value === null || value === undefined) return null;
-  const safe = String(value).replace(/[^a-zA-Z0-9_.:@-]/g, '_').slice(0, maxLength);
+  const safe = String(value).replace(/[^a-zA-Z0-9_.:-]/g, '_').slice(0, maxLength);
   return safe || null;
 }
 
@@ -186,7 +186,7 @@ function _normaliseLevel(level) {
 
 function _normaliseSafeToken(value) {
   if (value === null || value === undefined) return null;
-  const safe = String(value).replace(/[^a-zA-Z0-9_.:@-]/g, '_').slice(0, 160);
+  const safe = String(value).replace(/[^a-zA-Z0-9_.:-]/g, '_').slice(0, 160);
   return SAFE_VALUE_RE.test(safe) ? safe : null;
 }
 

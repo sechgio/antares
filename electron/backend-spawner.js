@@ -18,7 +18,13 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawn, execFile } = require('child_process');
 const { getBackendCommand } = require('./backend-command');
-const { appendLogEvent, appendLogLine, getAppContext, redactText } = require('./app-log');
+const {
+  appendLogEvent,
+  appendLogLine,
+  getAppContext,
+  redactText,
+  setAppContext,
+} = require('./app-log');
 
 const STATE = Object.freeze({
   IDLE: 'idle',
@@ -57,6 +63,21 @@ let _pendingRequestCount = 0;            // track in-flight IPC requests to avoi
 // timeout during a long job does not force-restart the backend.
 let _lastJobActivityAt = 0;
 const JOB_ACTIVITY_GRACE_MS = 60_000;
+let _healthStatus = {
+  last_probe_at: null,
+  last_success_at: null,
+  last_probe_ms: null,
+  last_probe_outcome: null,
+  consecutive_failures: 0,
+  skipped_total: 0,
+  last_skip_reason: null,
+  last_failure_at: null,
+  last_failure_reason: null,
+  probes_total: 0,
+  successes_total: 0,
+  failures_total: 0,
+  restarts_total: 0,
+};
 
 // Promise-based readiness gate; resolves when state === READY,
 // rejects when state === FATAL.
@@ -117,6 +138,54 @@ function hasRecentJobActivity(windowMs = JOB_ACTIVITY_GRACE_MS) {
   return (Date.now() - _lastJobActivityAt) < windowMs;
 }
 
+function getHealthStatus() {
+  return { ..._healthStatus };
+}
+
+function _recordHealthSkip(reason) {
+  _healthStatus.skipped_total += 1;
+  _healthStatus.last_skip_reason = reason;
+  appendLogEvent('INFO', 'backend.health', {
+    component: 'backend',
+    outcome: 'degraded',
+    reason,
+  });
+}
+
+function _healthFailureReason(error) {
+  const message = String(error?.message || '').toLowerCase();
+  if (message.includes('timeout')) return 'probe_timeout';
+  if (message.includes('write failed')) return 'probe_write_failed';
+  if (message.includes('closed')) return 'process_closed';
+  return 'probe_failed';
+}
+
+function _recordHealthProbe({ outcome, durationMs, reason, errorCode = undefined }) {
+  const now = new Date().toISOString();
+  _healthStatus.probes_total += 1;
+  _healthStatus.last_probe_at = now;
+  _healthStatus.last_probe_ms = Math.max(0, Math.round(durationMs));
+  _healthStatus.last_probe_outcome = outcome;
+  if (outcome === 'success') {
+    _healthStatus.successes_total += 1;
+    _healthStatus.last_success_at = now;
+    _healthStatus.consecutive_failures = 0;
+    _healthStatus.last_skip_reason = null;
+  } else {
+    _healthStatus.failures_total += 1;
+    _healthStatus.consecutive_failures += 1;
+    _healthStatus.last_failure_at = now;
+    _healthStatus.last_failure_reason = reason;
+  }
+  appendLogEvent(outcome === 'success' ? 'INFO' : outcome === 'timeout' ? 'WARN' : 'ERROR', 'backend.health', {
+    component: 'backend',
+    outcome,
+    duration_ms: durationMs,
+    reason,
+    error_code: errorCode,
+  });
+}
+
 /**
  * Wait until the backend is ready. Resolves true when ready, false when it
  * fails fatally or the timeout expires. Never rejects.
@@ -162,6 +231,13 @@ function _resolveAppVersion() {
 }
 
 function _stderrLevel(line) {
+  const structured = _parseStructuredStderr(line);
+  if (structured?.level) {
+    const level = String(structured.level).toUpperCase();
+    if (level === 'WARNING') return 'WARN';
+    if (level === 'CRITICAL') return 'FATAL';
+    if (['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL'].includes(level)) return level;
+  }
   const match = /^\[(DEBUG|INFO|WARN(?:ING)?|ERROR|FATAL|CRITICAL)\]/i.exec(line.trim());
   if (!match) return 'INFO';
   const level = match[1].toUpperCase();
@@ -170,17 +246,46 @@ function _stderrLevel(line) {
   return level;
 }
 
+function _parseStructuredStderr(line) {
+  if (!line.trim().startsWith('{')) return null;
+  try {
+    const payload = JSON.parse(line);
+    if (!payload || typeof payload !== 'object' || typeof payload.event !== 'string') return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 function _persistStderrLine(line, sourcePid) {
-  const safeLine = redactText(line);
+  const structured = _parseStructuredStderr(line);
+  if (structured?.backend_version) {
+    setAppContext({ backendVersion: structured.backend_version });
+  }
+  const safeLine = redactText(structured?.message ?? line);
   if (!safeLine.trim()) return;
   _stderrBuffer.push(safeLine);
-  appendLogLine(_stderrLevel(safeLine), `[backend pid=${sourcePid || 'unknown'}] ${safeLine}`);
-  appendLogEvent(_stderrLevel(safeLine), 'backend.stderr', {
+  const level = _stderrLevel(line);
+  const backendPid = Number.isInteger(sourcePid)
+    ? sourcePid
+    : (Number.isInteger(structured?.backend_pid) ? structured.backend_pid : structured?.pid);
+  appendLogLine(level, `[backend pid=${backendPid || 'unknown'}] ${safeLine}`);
+  appendLogEvent(level, structured?.event || 'backend.stderr', {
     component: 'backend',
-    pid: Number.isInteger(sourcePid) ? sourcePid : undefined,
-    backend_pid: Number.isInteger(sourcePid) ? sourcePid : undefined,
+    pid: Number.isInteger(backendPid) ? backendPid : undefined,
+    backend_pid: Number.isInteger(backendPid) ? backendPid : undefined,
     stream: 'stderr',
     message: safeLine,
+    request_id: structured?.request_id,
+    job_id: structured?.job_id,
+    method: structured?.method,
+    lane: structured?.lane,
+    operation_id: structured?.operation_id,
+    outcome: structured?.outcome,
+    duration_ms: structured?.duration_ms,
+    error_code: structured?.error_code,
+    attempt: structured?.attempt,
+    reason: structured?.reason,
   });
 }
 
@@ -498,29 +603,60 @@ function _probeBackendResponsiveness(proc) {
 }
 
 async function runHealthCheckOnce() {
-  if (_isShuttingDown || _state !== STATE.READY || _healthProbeInFlight) return;
+  if (_isShuttingDown || _state !== STATE.READY) {
+    _recordHealthSkip('not_ready');
+    return;
+  }
+  if (_healthProbeInFlight) {
+    _recordHealthSkip('probe_in_flight');
+    return;
+  }
   if (!pythonProcess || pythonProcess.killed) {
+    _recordHealthProbe({
+      outcome: 'failed',
+      durationMs: 0,
+      reason: 'process_gone',
+      errorCode: 'process_unavailable',
+    });
     console.warn('[backend-spawner] Health check: process is gone, triggering restart.');
-    await _autoRestart();
+    await _autoRestart('process_gone');
     return;
   }
 
   _healthProbeInFlight = true;
   const probedProcess = pythonProcess;
+  const probeStartedAt = Date.now();
   try {
     await _probeBackendResponsiveness(probedProcess);
+    _recordHealthProbe({
+      outcome: 'success',
+      durationMs: Date.now() - probeStartedAt,
+      reason: 'liveness',
+    });
   } catch (err) {
-    if (_isShuttingDown || probedProcess !== pythonProcess) return;
+    if (_isShuttingDown || probedProcess !== pythonProcess) {
+      _recordHealthSkip('process_replaced');
+      return;
+    }
+    const failureReason = _healthFailureReason(err);
+    _recordHealthProbe({
+      outcome: failureReason === 'probe_timeout' ? 'timeout' : 'failed',
+      durationMs: Date.now() - probeStartedAt,
+      reason: failureReason,
+      errorCode: failureReason,
+    });
     // If there are in-flight requests, the backend is likely busy — not dead.
     // A health probe timeout during active work is a false positive; restarting
     // would kill the user's operation mid-flight.
     if (_pendingRequestCount > 0) {
+      _recordHealthSkip('requests_in_flight');
       console.log(`[backend-spawner] Health probe timed out but ${_pendingRequestCount} request(s) in flight — skipping restart (backend is busy, not dead).`);
       return;
     }
     // Conversion jobs release the process_start IPC immediately but keep running.
     // Progress notifications mark recent activity so we don't kill mid-batch.
     if (hasRecentJobActivity()) {
+      _recordHealthSkip('job_active');
       console.log('[backend-spawner] Health probe timed out but a job was recently active — skipping restart (backend is busy, not dead).');
       return;
     }
@@ -528,10 +664,12 @@ async function runHealthCheckOnce() {
     // request could have arrived between the probe failing and this point
     // (await boundaries are scheduling points). Avoid killing it mid-flight.
     if (_pendingRequestCount > 0) {
+      _recordHealthSkip('requests_in_flight_after_probe');
       console.log(`[backend-spawner] Pending request arrived during probe failure handling — skipping restart.`);
       return;
     }
     if (hasRecentJobActivity()) {
+      _recordHealthSkip('job_active_after_probe');
       console.log('[backend-spawner] Job activity arrived during probe failure handling — skipping restart.');
       return;
     }
@@ -545,7 +683,7 @@ async function runHealthCheckOnce() {
       willRetry: true,
       nextRetrySec: 0,
     });
-    await manualRestart(_isDev, { force: true });
+    await manualRestart(_isDev, { force: true, reason: 'health_probe_failed' });
   } finally {
     _healthProbeInFlight = false;
   }
@@ -565,7 +703,7 @@ function _stopHealthCheck() {
   }
 }
 
-async function _autoRestart() {
+async function _autoRestart(reason = 'unexpected_exit', previousPid = null) {
   if (_isShuttingDown || _manualRestartInProgress || _autoRestartInProgress) return;
   if (_state === STATE.FATAL) return;
   if (_currentStart?.inProgress) {
@@ -578,6 +716,11 @@ async function _autoRestart() {
   }
 
   _autoRestartInProgress = true;
+  const restartStartedAt = Date.now();
+  const oldPid = Number.isInteger(previousPid)
+    ? previousPid
+    : (Number.isInteger(pythonProcess?.pid) ? pythonProcess.pid : null);
+  _healthStatus.restarts_total += 1;
   try {
     _abortAutoRestart();
     _autoRestartAbort = new AbortController();
@@ -587,9 +730,11 @@ async function _autoRestart() {
     console.warn(`[backend-spawner] Auto-restart attempt ${_restartCount}/${getAutoRestartLimit()}`);
     appendLogEvent('WARN', 'backend.restarting', {
       component: 'backend',
+      pid: oldPid || undefined,
+      backend_pid: oldPid || undefined,
       outcome: 'failed',
       attempt: _restartCount,
-      reason: 'unexpected_exit',
+      reason,
     });
 
     _state = STATE.STARTING;
@@ -615,6 +760,17 @@ async function _autoRestart() {
     }
     _clearAutoRestartCycle();
     await startPythonBackend(_isDev);
+    if (isReady() && pythonProcess) {
+      appendLogEvent('INFO', 'backend.restarted', {
+        component: 'backend',
+        pid: Number.isInteger(pythonProcess.pid) ? pythonProcess.pid : undefined,
+        backend_pid: Number.isInteger(pythonProcess.pid) ? pythonProcess.pid : undefined,
+        outcome: 'success',
+        attempt: _restartCount,
+        duration_ms: Date.now() - restartStartedAt,
+        reason,
+      });
+    }
   } finally {
     _autoRestartInProgress = false;
   }
@@ -727,7 +883,7 @@ function _spawn(isDev) {
         return;
       }
       // Unexpected crash after being healthy → try to restart.
-      _autoRestart().catch((err) => console.error('[backend-spawner] Auto-restart failed:', err));
+      _autoRestart('unexpected_exit', spawnedPid).catch((err) => console.error('[backend-spawner] Auto-restart failed:', err));
     }
   });
 
@@ -752,6 +908,9 @@ function _spawn(isDev) {
             handshakeDone = true;
             clearTimeout(handshakeTimer);
             spawnedProcess.stdout.off('data', onData);
+            if (msg.params?.backend_version) {
+              setAppContext({ backendVersion: msg.params.backend_version });
+            }
             appendLogEvent('INFO', 'backend.ready', {
               component: 'backend',
               pid: Number.isInteger(spawnedPid) ? spawnedPid : undefined,
@@ -819,7 +978,7 @@ function killPython() {
  * Manual restart: reset the FATAL state so a fresh start cycle can proceed.
  * Returns true if a start cycle was kicked off, false if already running.
  */
-async function manualRestart(isDev, { force = false } = {}) {
+async function manualRestart(isDev, { force = false, reason = null } = {}) {
   // If already ready, nothing to do
   if (!force && _state === STATE.READY && pythonProcess && !pythonProcess.killed) {
     return true;
@@ -837,6 +996,9 @@ async function manualRestart(isDev, { force = false } = {}) {
     _manualRestartInProgress = false;
     return false;
   }
+  const restartStartedAt = Date.now();
+  const oldPid = Number.isInteger(pythonProcess?.pid) ? pythonProcess.pid : null;
+  _healthStatus.restarts_total += 1;
 
   try {
     // Abort any in-flight auto-start/retry so this restart cannot leave a stale
@@ -875,19 +1037,33 @@ async function manualRestart(isDev, { force = false } = {}) {
     }
 
     // Kill-and-replace: tell the UI to drop in-flight job state (unlike cold start).
+    const restartReason = reason || (force ? 'forced' : 'manual');
     _notifyRenderer('backend.restarting', {
-      reason: force ? 'forced' : 'manual',
+      reason: restartReason,
       attempt: 1,
       limit: getAutoRestartLimit(),
     });
     appendLogEvent('INFO', 'backend.restarting', {
       component: 'backend',
+      pid: oldPid || undefined,
+      backend_pid: oldPid || undefined,
       outcome: 'success',
       attempt: 1,
-      reason: force ? 'forced' : 'manual',
+      reason: restartReason,
     });
 
     await startPythonBackend(isDev);
+    if (isReady() && pythonProcess) {
+      appendLogEvent('INFO', 'backend.restarted', {
+        component: 'backend',
+        pid: Number.isInteger(pythonProcess.pid) ? pythonProcess.pid : undefined,
+        backend_pid: Number.isInteger(pythonProcess.pid) ? pythonProcess.pid : undefined,
+        outcome: 'success',
+        attempt: 1,
+        duration_ms: Date.now() - restartStartedAt,
+        reason: restartReason,
+      });
+    }
     return isReady();
   } finally {
     _manualRestartInProgress = false;
@@ -902,6 +1078,7 @@ module.exports = {
   isReady,
   waitForReady,
   getState,
+  getHealthStatus,
   getLastError,
   getStderrTail,
   getAutoRestartLimit,

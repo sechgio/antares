@@ -101,7 +101,13 @@ async function run() {
 
   const backendSpawnerPath = require.resolve('../electron/backend-spawner.js');
   delete require.cache[backendSpawnerPath];
-  const { startPythonBackend, runHealthCheckOnce, getState, killPython } = require('../electron/backend-spawner.js');
+  const {
+    startPythonBackend,
+    runHealthCheckOnce,
+    getHealthStatus,
+    getState,
+    killPython,
+  } = require('../electron/backend-spawner.js');
 
   try {
     await startPythonBackend(true);
@@ -134,6 +140,11 @@ async function run() {
     await runHealthCheckOnce();
     assert(spawnCount === 1, 'Responsive backend should not restart when handling concurrent traffic');
     assert(getState() === 'ready', 'Backend should remain in ready state');
+    const healthyStatus = getHealthStatus();
+    assert(healthyStatus.successes_total === 1, 'Health status counts successful probes');
+    assert(typeof healthyStatus.last_success_at === 'string', 'Health status records last successful probe time');
+    assert(typeof healthyStatus.last_probe_ms === 'number', 'Health status records probe latency');
+    assert(healthyStatus.consecutive_failures === 0, 'Successful probe clears consecutive failures');
 
     // Test 2: Unresponsive backend (stdin.write does nothing) triggers restart
     if (activeProc) {
@@ -144,6 +155,10 @@ async function run() {
 
     assert(restarted, 'Unresponsive backend should be restarted automatically');
     assert(getState() === 'ready', 'Spawner should return to ready after health recovery');
+    const recoveredStatus = getHealthStatus();
+    assert(recoveredStatus.failures_total === 1, 'Health status counts failed probes');
+    assert(recoveredStatus.last_failure_reason === 'probe_timeout', 'Health status classifies probe timeout');
+    assert(recoveredStatus.consecutive_failures === 1, 'Health status preserves failure streak until a probe succeeds');
   } finally {
     killPython();
     childProcess.spawn = originalSpawn;
