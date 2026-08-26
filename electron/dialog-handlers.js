@@ -280,8 +280,8 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
   if (Buffer.byteLength(html, 'utf8') > MAX_HTML_BYTES) {
     throw new Error('HTML excede el tamaño máximo permitido (150 MB)');
   }
-
   // Sanitize before injecting allowlisted file:// URLs.
+  const sanitizedHtml = sanitizeHtmlForPdf(html);
   const htmlWithLocalImages = localImages.reduce((current, entry) => current.split(entry.token).join(entry.fileUrl), sanitizedHtml);
 
   const { BrowserWindow, session } = electronModules;
