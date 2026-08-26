@@ -39,6 +39,7 @@ WARM_CRITICAL_DONE = threading.Event()
 # Module paths eagerly imported by warm().
 _HANDLER_MODULES: tuple[str, ...] = (
     "backend.handlers.info",
+    "backend.handlers.diagnostics",
     "backend.handlers.theme",
     "backend.handlers.history",
     "backend.handlers.database",
@@ -64,6 +65,7 @@ _HANDLER_MODULES: tuple[str, ...] = (
 # they do not block the Electron handshake.
 _CORE_HANDLER_MODULES: tuple[str, ...] = (
     "backend.handlers.info",
+    "backend.handlers.diagnostics",
     "backend.handlers.theme",
     "backend.handlers.history",
     "backend.handlers.database",
@@ -87,6 +89,7 @@ _DEFERRED_HANDLER_MODULES: tuple[str, ...] = tuple(
 _EXACT_MODULE: dict[str, str] = {
     "version": "backend.handlers.info",
     "formats": "backend.handlers.info",
+    "diagnostics_snapshot": "backend.handlers.diagnostics",
     "preview": "backend.handlers.conversion",
     "is_video": "backend.handlers.conversion",
     "process_start": "backend.handlers.conversion",
