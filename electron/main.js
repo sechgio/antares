@@ -2,7 +2,14 @@ const { app, BrowserWindow, Menu } = require('electron');
 const { createWindow } = require('./window-manager');
 const { startPythonBackend, killPython } = require('./backend-spawner');
 const { registerIpcHandlers } = require('./ipc-router');
-const { appendLogLine, cleanStaleTempDirs, initAppLogs, installConsoleLogTee } = require('./app-log');
+const {
+  appendLogEvent,
+  appendLogLine,
+  cleanStaleTempDirs,
+  initAppLogs,
+  installConsoleLogTee,
+  setAppContext,
+} = require('./app-log');
 
 // Persistencia de logs del proceso principal en <dataDir>/logs (antes: solo consola).
 // El tee se instala antes de cualquier handler para que warnings/errores y la
@@ -22,9 +29,11 @@ registerIpcHandlers();
 
 app.whenReady().then(async () => {
   try {
+    setAppContext({ appVersion: app.getVersion() });
     const logsDir = initAppLogs();
     const removedTemp = cleanStaleTempDirs();
     appendLogLine('INFO', `[main] app started (logs_dir=${logsDir}, stale_temp_dirs_removed=${removedTemp})`);
+    appendLogEvent('INFO', 'app.started', { component: 'electron' });
   } catch (err) {
     console.warn('[main] log/temp init failed:', err && err.message);
   }
@@ -69,6 +78,7 @@ function _shutdownOnce() {
   if (_shutdownStarted) return;
   _shutdownStarted = true;
   appendLogLine('INFO', '[main] app quit');
+  appendLogEvent('INFO', 'app.shutdown', { component: 'electron' });
   try {
     const { cleanupAutoSync } = require('./autoimg-sync-engine');
     cleanupAutoSync();

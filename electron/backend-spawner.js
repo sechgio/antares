@@ -18,6 +18,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawn, execFile } = require('child_process');
 const { getBackendCommand } = require('./backend-command');
+const { appendLogEvent, appendLogLine, getAppContext, redactText } = require('./app-log');
 
 const STATE = Object.freeze({
   IDLE: 'idle',
@@ -42,6 +43,7 @@ let _isShuttingDown = false;
 let _restartCount = 0;
 let _restartResetTimer = null;
 let _stderrBuffer = [];
+let _stderrLineBuffer = '';
 let _lastError = null;                   // { kind: 'fatal'|'transient', message, stderrTail }
 let _healthCheckTimer = null;            // periodic health check interval
 let _healthProbeInFlight = false;        // avoid overlapping liveness probes
@@ -159,15 +161,50 @@ function _resolveAppVersion() {
   return process.env.npm_package_version || null;
 }
 
-function _recordStderr(chunk) {
+function _stderrLevel(line) {
+  const match = /^\[(DEBUG|INFO|WARN(?:ING)?|ERROR|FATAL|CRITICAL)\]/i.exec(line.trim());
+  if (!match) return 'INFO';
+  const level = match[1].toUpperCase();
+  if (level === 'WARNING') return 'WARN';
+  if (level === 'CRITICAL') return 'FATAL';
+  return level;
+}
+
+function _persistStderrLine(line, sourcePid) {
+  const safeLine = redactText(line);
+  if (!safeLine.trim()) return;
+  _stderrBuffer.push(safeLine);
+  appendLogLine(_stderrLevel(safeLine), `[backend pid=${sourcePid || 'unknown'}] ${safeLine}`);
+  appendLogEvent(_stderrLevel(safeLine), 'backend.stderr', {
+    component: 'backend',
+    pid: Number.isInteger(sourcePid) ? sourcePid : undefined,
+    backend_pid: Number.isInteger(sourcePid) ? sourcePid : undefined,
+    stream: 'stderr',
+    message: safeLine,
+  });
+}
+
+function _recordStderr(chunk, sourcePid) {
   const text = chunk.toString();
   // Forward to main-process stderr for CLI visibility
   process.stderr.write(text);
-  // Keep a rolling buffer of the last N non-empty lines for diagnostics
-  const lines = text.split(/\r?\n/).map((l) => l.trimEnd()).filter(Boolean);
+  // Keep a rolling buffer of the last N non-empty lines for diagnostics and
+  // persist complete lines so a crash does not erase the useful stderr tail.
+  _stderrLineBuffer += text;
+  const lines = _stderrLineBuffer.split(/\r?\n/);
+  _stderrLineBuffer = lines.pop() || '';
   for (const line of lines) {
-    _stderrBuffer.push(line);
+    _persistStderrLine(line.trimEnd(), sourcePid);
   }
+  if (_stderrBuffer.length > STDERR_BUFFER_LINES) {
+    _stderrBuffer = _stderrBuffer.slice(-STDERR_BUFFER_LINES);
+  }
+}
+
+function _flushStderr(sourcePid) {
+  if (!_stderrLineBuffer) return;
+  _persistStderrLine(_stderrLineBuffer.trimEnd(), sourcePid);
+  _stderrLineBuffer = '';
   if (_stderrBuffer.length > STDERR_BUFFER_LINES) {
     _stderrBuffer = _stderrBuffer.slice(-STDERR_BUFFER_LINES);
   }
@@ -548,6 +585,12 @@ async function _autoRestart() {
 
     _restartCount++;
     console.warn(`[backend-spawner] Auto-restart attempt ${_restartCount}/${getAutoRestartLimit()}`);
+    appendLogEvent('WARN', 'backend.restarting', {
+      component: 'backend',
+      outcome: 'failed',
+      attempt: _restartCount,
+      reason: 'unexpected_exit',
+    });
 
     _state = STATE.STARTING;
     _resetReadyGate();
@@ -622,6 +665,9 @@ function _buildChildEnv(isDev = false) {
   }
   env.PYTHONIOENCODING = 'utf-8';
   env.PYTHONUTF8 = '1';
+  const appContext = getAppContext();
+  env.ANTARES_SESSION_ID = appContext.session_id;
+  if (appContext.app_version) env.ANTARES_APP_VERSION = appContext.app_version;
   // IPC phase telemetry: always enabled in the child, sampled at emit time
   // (1% fast-success + 100% errors/slow). Cost ~ <0.1ms per request.
   env.ANTARES_IPC_TELEMETRY = '1';
@@ -645,15 +691,26 @@ function _spawn(isDev) {
 
   const spawnedProcess = pythonProcess;
   const spawnedPid = spawnedProcess.pid;
+  appendLogEvent('INFO', 'backend.starting', {
+    component: 'backend',
+    pid: Number.isInteger(spawnedPid) ? spawnedPid : undefined,
+  });
 
-  spawnedProcess.stderr.on('data', _recordStderr);
+  spawnedProcess.stderr.on('data', (chunk) => _recordStderr(chunk, spawnedPid));
   spawnedProcess.stdin.on('error', (err) => {
     console.error('[backend-spawner] stdin error:', err.message);
   });
 
   spawnedProcess.on('close', (code, signal) => {
+    _flushStderr(spawnedPid);
     console.log(`[backend-spawner] Python backend exited (code=${code}, signal=${signal})`);
     const wasReady = _state === STATE.READY;
+    appendLogEvent(wasReady ? 'WARN' : 'INFO', 'backend.exited', {
+      component: 'backend',
+      pid: Number.isInteger(spawnedPid) ? spawnedPid : undefined,
+      outcome: wasReady ? 'failed' : 'cancelled',
+      reason: signal ? 'signal' : 'exit',
+    });
     // Only null out pythonProcess if it still references this closed process.
     // Prevents race where a new process was already spawned.
     if (pythonProcess && pythonProcess.pid === spawnedPid) {
@@ -695,6 +752,11 @@ function _spawn(isDev) {
             handshakeDone = true;
             clearTimeout(handshakeTimer);
             spawnedProcess.stdout.off('data', onData);
+            appendLogEvent('INFO', 'backend.ready', {
+              component: 'backend',
+              pid: Number.isInteger(spawnedPid) ? spawnedPid : undefined,
+              outcome: 'success',
+            });
             resolve(spawnedPid);
             return;
           }
@@ -818,6 +880,12 @@ async function manualRestart(isDev, { force = false } = {}) {
       attempt: 1,
       limit: getAutoRestartLimit(),
     });
+    appendLogEvent('INFO', 'backend.restarting', {
+      component: 'backend',
+      outcome: 'success',
+      attempt: 1,
+      reason: force ? 'forced' : 'manual',
+    });
 
     await startPythonBackend(isDev);
     return isReady();
@@ -845,5 +913,7 @@ module.exports = {
   clearJobActivity,
   hasRecentJobActivity,
   _buildChildEnv,
+  _recordStderr,
+  _flushStderr,
   STATE,
 };
