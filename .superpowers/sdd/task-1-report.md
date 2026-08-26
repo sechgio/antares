@@ -142,3 +142,79 @@ static Vitest reported `7 passed / 22 passed`.
 - The local lock/queue waits prove bounded contention measurement only; their
   elapsed values are environment-dependent and not a production throughput
   claim.
+
+## Final review remediation (HEAD 73b630e)
+
+### Implementation
+
+- The per-item measurement loop now catches synthetic transform and JSON
+  serialization failures, records the elapsed attempt and request, samples
+  RSS, and continues with later items. No exception type, message, or
+  traceback is emitted in an artifact.
+- MetricCollector exposes partial and caps errors at
+  MAX_RECORDED_ERRORS = 100. A failed-only scenario therefore still returns a
+  valid measurement.
+- Every measurement has a capacity object. AutoIMG sets
+  capacity.queue_maxsize and capacity.queue_peak_depth from its actual bounded
+  local queue.Queue(maxsize=1). Events coordinate a full queue and blocked
+  enqueue; both threads retain one-second joins.
+- The fixture regression now rejects emails, common API/GitHub-token prefixes,
+  bearer values, JWT-shaped values, Unix/Windows/UNC/file absolute-path
+  markers, and traversal markers.
+
+### TDD evidence
+
+RED, after adding the new behavior tests:
+
+    python -m pytest tests/test_scalability_baseline.py -q
+    collected 0 items / 1 error
+    ImportError: cannot import name 'MAX_RECORDED_ERRORS' from 'scripts.scalability_baseline'
+    ============================== 1 error in 0.42s ===============================
+
+GREEN, after the minimal implementation:
+
+    python -m pytest tests/test_scalability_baseline.py -q
+    collected 6 items
+    ============================== 6 passed in 0.45s ==============================
+
+The deterministic focused test injects both a transform failure and a JSON
+serialization failure, checks continuation, the capped error count, partial,
+and absence of the injected exception text from the artifact.
+
+### Verification commands and exact results
+
+    python -m pytest tests/test_scalability_baseline.py tests/test_benchmark_ipc_latency.py -q
+    collected 11 items
+    tests\test_scalability_baseline.py ......                                [ 54%]
+    tests\test_benchmark_ipc_latency.py .....                                [100%]
+    ============================= 11 passed in 1.53s ==============================
+
+    ruff check scripts/scalability_baseline.py tests/test_scalability_baseline.py
+    All checks passed!
+
+    git diff --check
+    Exit status: 0
+
+    npm test
+    Exit status: 0
+    Python: 939 passed, 1 skipped, 2 deselected in 27.11s
+
+The npm test command was run once. Its process exited 0; the terminal capture
+was truncated after the Python summary, so no frontend pass-count is claimed
+here beyond that successful exit status.
+
+### Changed files
+
+- scripts/scalability_baseline.py
+- tests/test_scalability_baseline.py
+- .superpowers/sdd/task-1-report.md
+
+### Limitations and concerns
+
+- These remain seven offline synthetic scenarios; no live integrations or
+  production IPC behavior were changed or claimed.
+- Error detail is intentionally omitted from artifacts to avoid leaking
+  sensitive values. errors is a capped count (100), so it signals partial
+  failure rather than an unbounded diagnostic total.
+- The AutoIMG capacity metrics describe only the local synthetic queue probe;
+  elapsed lock and queue waits remain environment-dependent.

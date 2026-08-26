@@ -41,6 +41,7 @@ LOAD_UNITS = {
     "concurrent_jobs": "synthetic queued jobs",
 }
 MAX_SERIALIZED_PAYLOAD_BYTES = 64 * 1024 * 1024
+MAX_RECORDED_ERRORS = 100
 Clock = Callable[[], float]
 RssSampler = Callable[[], int]
 
@@ -229,6 +230,7 @@ class MetricCollector:
         self.scale = scale
         self._durations: list[float] = []
         self._totals = {"ipc_bytes": 0, "request_count": 0, "lock_wait_ms": 0.0, "queue_wait_ms": 0.0, "errors": 0}
+        self._partial = False
 
     def observe(
         self,
@@ -247,7 +249,8 @@ class MetricCollector:
         self._totals["request_count"] += request_count
         self._totals["lock_wait_ms"] += lock_wait_ms
         self._totals["queue_wait_ms"] += queue_wait_ms
-        self._totals["errors"] += errors
+        self._totals["errors"] = min(MAX_RECORDED_ERRORS, self._totals["errors"] + errors)
+        self._partial = self._partial or errors > 0
 
     def finish(
         self,
@@ -255,6 +258,7 @@ class MetricCollector:
         peak_rss_bytes: int,
         fixture_domains: tuple[str, ...] = (),
         representative_payload: dict[str, Any] | None = None,
+        capacity: dict[str, int] | None = None,
     ) -> dict[str, Any]:
         if not self._durations:
             raise ValueError("at least one observation is required")
@@ -271,6 +275,8 @@ class MetricCollector:
             "peak_rss_bytes": max(0, int(peak_rss_bytes)),
             "fixture_domains": list(fixture_domains),
             "representative_payload": representative_payload or {},
+            "partial": self._partial,
+            "capacity": capacity or {},
             **{key: round(value, 3) if isinstance(value, float) else value for key, value in self._totals.items()},
         }
 
@@ -338,30 +344,42 @@ def _measure_scenario(
     rss_sampler: RssSampler,
     lock_wait_ms: float = 0.0,
     queue_wait_ms: float = 0.0,
+    capacity: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     collector = MetricCollector(scenario, scale)
     tracker = RssPeakTracker(rss_sampler)
     representative_payload: dict[str, Any] = {}
     for index, item in enumerate(items):
         started = clock()
-        payload = transform(item)
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        decoded = json.loads(encoded)
-        duration_ms = max(0.0, (clock() - started) * 1_000)
-        collector.observe(
-            duration_ms=duration_ms,
-            ipc_bytes=len(encoded) * 2,
-            request_count=1,
-            lock_wait_ms=lock_wait_ms if index == 0 else 0.0,
-            queue_wait_ms=queue_wait_ms if index == 0 else 0.0,
-        )
-        tracker.observe()
-        if index == 0:
-            representative_payload = decoded
+        try:
+            payload = transform(item)
+            encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            decoded = json.loads(encoded)
+        except Exception:
+            collector.observe(
+                duration_ms=max(0.0, (clock() - started) * 1_000),
+                request_count=1,
+                lock_wait_ms=lock_wait_ms if index == 0 else 0.0,
+                queue_wait_ms=queue_wait_ms if index == 0 else 0.0,
+                errors=1,
+            )
+        else:
+            collector.observe(
+                duration_ms=max(0.0, (clock() - started) * 1_000),
+                ipc_bytes=len(encoded) * 2,
+                request_count=1,
+                lock_wait_ms=lock_wait_ms if index == 0 else 0.0,
+                queue_wait_ms=queue_wait_ms if index == 0 else 0.0,
+            )
+            if not representative_payload:
+                representative_payload = decoded
+        finally:
+            tracker.observe()
     return collector.finish(
         peak_rss_bytes=tracker.peak_rss_bytes,
         fixture_domains=fixture_domains,
         representative_payload=representative_payload,
+        capacity=capacity,
     )
 
 
@@ -472,7 +490,7 @@ def run_espacios_scenario(fixtures: dict[str, Any], scale: str, *, clock: Clock,
     )
 
 
-def _measure_autoimg_waits(clock: Clock) -> tuple[float, float]:
+def _measure_autoimg_waits(clock: Clock) -> tuple[float, float, int, int]:
     lock = threading.Lock()
     lock_held = threading.Event()
     contender_started = threading.Event()
@@ -507,29 +525,46 @@ def _measure_autoimg_waits(clock: Clock) -> tuple[float, float]:
 
     jobs: queue.Queue[str] = queue.Queue(maxsize=1)
     queue_ready = threading.Event()
+    queue_contender_started = threading.Event()
+    release_queue = threading.Event()
     queue_waits: list[float] = []
 
     def dequeue_job() -> None:
         queue_ready.set()
-        started = clock()
+        release_queue.wait(timeout=1.0)
         jobs.get()
+
+    def enqueue_job() -> None:
+        queue_contender_started.set()
+        started = clock()
+        jobs.put("synthetic-job-2")
         queue_waits.append(max(0.0, (clock() - started) * 1_000))
 
     worker = threading.Thread(target=dequeue_job)
     worker.start()
     if not queue_ready.wait(timeout=1.0):
         raise RuntimeError("offline queue worker did not start")
+    jobs.put("synthetic-job-1")
+    queue_maxsize = jobs.maxsize
+    queue_peak_depth = jobs.qsize()
+    contender = threading.Thread(target=enqueue_job)
+    contender.start()
+    if not queue_contender_started.wait(timeout=1.0):
+        raise RuntimeError("offline queue contender did not start")
     time.sleep(0.002)
-    jobs.put("synthetic-job")
+    release_queue.set()
     worker.join(timeout=1.0)
-    if worker.is_alive():
+    contender.join(timeout=1.0)
+    if worker.is_alive() or contender.is_alive():
         raise RuntimeError("offline queue measurement did not finish")
-    return lock_waits[0], queue_waits[0]
+    queue_peak_depth = max(queue_peak_depth, jobs.qsize())
+    jobs.get_nowait()
+    return lock_waits[0], queue_waits[0], queue_maxsize, queue_peak_depth
 
 
 def run_autoimg_scenario(fixtures: dict[str, Any], scale: str, *, clock: Clock, rss_sampler: RssSampler) -> dict[str, Any]:
     images = {image["id"]: image for image in fixtures["images"]}
-    lock_wait_ms, queue_wait_ms = _measure_autoimg_waits(clock)
+    lock_wait_ms, queue_wait_ms, queue_maxsize, queue_peak_depth = _measure_autoimg_waits(clock)
     items = [{"job": job, "image": images[job["source_image_id"]]} for job in fixtures["concurrent_jobs"]]
     return _measure_scenario(
         "autoimg",
@@ -547,6 +582,7 @@ def run_autoimg_scenario(fixtures: dict[str, Any], scale: str, *, clock: Clock, 
         rss_sampler=rss_sampler,
         lock_wait_ms=lock_wait_ms,
         queue_wait_ms=queue_wait_ms,
+        capacity={"queue_maxsize": queue_maxsize, "queue_peak_depth": queue_peak_depth},
     )
 
 

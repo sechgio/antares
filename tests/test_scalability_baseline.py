@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import re
 
 from scripts.scalability_baseline import (
     BASE_COUNTS,
+    MAX_RECORDED_ERRORS,
     SCALE_FACTORS,
     MetricCollector,
+    _measure_scenario,
     generate_fixtures,
     run_offline_baseline,
     serialize_result,
@@ -24,7 +27,12 @@ def test_fixture_generation_is_deterministic_and_scales_all_domains() -> None:
         domain: count * SCALE_FACTORS["5x"]
         for domain, count in generate_fixtures("1x", seed=17)["counts"].items()
     }
-    assert all("@" not in value for value in json.dumps(first))
+    serialized = json.dumps(first)
+    assert "@" not in serialized
+    assert not re.search(r"(?i)(?:sk|pk|rk)[_-][a-z0-9]{8,}|gh[pous]_[a-z0-9]{8,}", serialized)
+    assert not re.search(r"(?i)bearer\s+[a-z0-9._-]+", serialized)
+    assert not re.search(r"eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]+\.", serialized)
+    assert not re.search(r'(?i)(?:[a-z]:[\\/]|\\\\|file://|\.\.[\\/]|"/)', serialized)
 
 
 def test_metric_collection_has_required_percentiles_and_counters() -> None:
@@ -41,6 +49,37 @@ def test_metric_collection_has_required_percentiles_and_counters() -> None:
     assert result["lock_wait_ms"] == 0.5
     assert result["queue_wait_ms"] == 1.0
     assert result["errors"] == 1
+
+
+def test_measurement_records_bounded_errors_and_partial_results_without_error_text() -> None:
+    items = [{"id": "first"}]
+    items.extend({"id": "transform-failure"} for _ in range(MAX_RECORDED_ERRORS))
+    items.append({"id": "serialization-failure"})
+    items.append({"id": "last"})
+
+    def transform(item: dict[str, str]) -> dict[str, object]:
+        if item["id"] == "transform-failure":
+            raise RuntimeError("token=do-not-serialize")
+        if item["id"] == "serialization-failure":
+            return {"invalid": {"not JSON serializable"}}
+        return {"id": item["id"]}
+
+    result = _measure_scenario(
+        "synthetic",
+        "1x",
+        items,
+        ("synthetic",),
+        transform,
+        clock=iter(range(1_000)).__next__,
+        rss_sampler=lambda: 64,
+    )
+
+    assert result["samples"] == len(items)
+    assert result["request_count"] == len(items)
+    assert result["errors"] == MAX_RECORDED_ERRORS
+    assert result["partial"] is True
+    assert result["representative_payload"] == {"id": "first"}
+    assert "do-not-serialize" not in json.dumps(result)
 
 
 def test_serialization_is_json_safe_and_preserves_metadata() -> None:
@@ -121,6 +160,7 @@ def test_offline_baseline_at_ten_x_samples_rss_and_records_job_waits_with_bounde
     autoimg = next(measurement for measurement in result["measurements"] if measurement["scenario"] == "autoimg")
     assert autoimg["lock_wait_ms"] > 0
     assert autoimg["queue_wait_ms"] > 0
+    assert autoimg["capacity"] == {"queue_maxsize": 1, "queue_peak_depth": 1}
     assert {"cpu_model", "cpu_count", "memory_total_bytes", "memory_available_bytes"} <= set(result["metadata"])
     assert result["metadata"]["cpu_count"] >= 0
     assert result["metadata"]["memory_total_bytes"] >= 0
