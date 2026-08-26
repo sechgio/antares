@@ -286,14 +286,14 @@ function AppContent() {
                     aria-hidden={!showCanvas}
                     {...(!showCanvas ? ({ inert: '' } as React.HTMLAttributes<HTMLDivElement>) : {})}
                   >
-                    <ErrorBoundary>
+                    <ErrorBoundary view="canvas">
                       <CanvasKeepAlive active={showCanvas} />
                     </ErrorBoundary>
                   </div>
                 )}
                 {ActiveView && (
                   <div className={`h-full min-h-0 ${isFullBleed ? 'overflow-hidden' : 'overflow-y-auto px-6 py-4'}`}>
-                    <ErrorBoundary key={activeTab}>
+                    <ErrorBoundary key={activeTab} view={activeTab}>
                       <ActiveView />
                     </ErrorBoundary>
                   </div>
@@ -327,7 +327,7 @@ function AppContent() {
 
 function App() {
   return (
-    <ErrorBoundary>
+    <ErrorBoundary view="app">
       <ToastProvider>
         <DialogProvider>
           <AuthProvider>

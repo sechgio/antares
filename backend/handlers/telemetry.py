@@ -4,47 +4,71 @@ Stores no PII; logs are sampled (10%) on the frontend.
 """
 from __future__ import annotations
 
-import contextlib
 import logging
-import sys
+import math
+import re
 from typing import Any
 
 from backend.handlers.common import with_locale
 
 logger = logging.getLogger(__name__)
 
+_ALLOWED_METRIC_NAMES = frozenset({"CLS", "INP", "LCP"})
+_ALLOWED_RATINGS = frozenset({"good", "needs-improvement", "poor"})
+_ALLOWED_NAVIGATION_TYPES = frozenset(
+    {"navigate", "reload", "back-forward", "back-forward-cache", "prerender", "restore"}
+)
+_METRIC_ID_PATTERN = re.compile(r"v\d+-\d{13}-\d{13}")
+
+
+def _safe_text(value: Any, max_length: int) -> str:
+    if not isinstance(value, str):
+        return ""
+    return "".join(char for char in value.strip() if char.isprintable())[:max_length]
+
+
+def _safe_metric_id(value: Any) -> str:
+    text = _safe_text(value, 100)
+    return text if _METRIC_ID_PATTERN.fullmatch(text) else ""
+
+
+def _finite_non_negative(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    parsed = float(value)
+    if not math.isfinite(parsed) or parsed < 0:
+        return None
+    return parsed
+
+
 @with_locale
 def telemetry(params: dict[str, Any]) -> dict[str, bool]:
-    name = str(params.get("name") or "").strip().upper()
-    # Accept any web-vital name but normalize known ones; unknown still logged.
-    raw_value = params.get("value")
-    try:
-        value = float(raw_value) if raw_value is not None else 0.0
-    except (TypeError, ValueError):
-        value = 0.0
-    rating = str(params.get("rating") or "").strip() or "unknown"
-    metric_id = str(params.get("id") or "").strip()
-    nav_type = str(params.get("navigationType") or params.get("navigation_type") or "").strip()
-    url = str(params.get("url") or "").strip()
-    # Clamp to avoid log injection
-    if len(url) > 500:
-        url = url[:500]
-    if len(metric_id) > 100:
-        metric_id = metric_id[:100]
+    name = _safe_text(params.get("name"), 20).upper()
+    value = _finite_non_negative(params.get("value"))
+    if name not in _ALLOWED_METRIC_NAMES or value is None:
+        return {"ok": False}
 
-    # Log to stderr via logger (level INFO) and direct stderr for guaranteed capture.
-    # Prefix `rum` makes it easy to grep from app logs.
+    rating = _safe_text(params.get("rating"), 30).lower()
+    if rating not in _ALLOWED_RATINGS:
+        rating = "unknown"
+    metric_id = _safe_metric_id(params.get("id")) or "-"
+    nav_type = _safe_text(params.get("navigationType") or params.get("navigation_type"), 30)
+    if nav_type not in _ALLOWED_NAVIGATION_TYPES:
+        nav_type = "unknown"
+
     msg = (
-        f"rum metric={name or 'unknown'} value={value:.4f} rating={rating} "
-        f"id={metric_id} nav={nav_type} url={url}"
+        f"rum metric={name} value={value:.4f} rating={rating} id={metric_id} nav={nav_type}"
     )
-    # Use INFO so it lands in stderr even when ANTARES_IPC_TELEMETRY is off.
-    # Extra structured fields help log aggregators without parsing the message.
-    logger.info(msg, extra={"rum_name": name, "rum_value": value, "rum_rating": rating})
-    # Ensure it reaches stderr even if logger level filters INFO (e.g., WARNING default).
-    # Print is guarded by sampling on the frontend (10%), so volume is low.
-    with contextlib.suppress(Exception):
-        print(msg, file=sys.stderr, flush=True)
+    logger.info(
+        msg,
+        extra={
+            "rum_name": name,
+            "rum_value": value,
+            "rum_rating": rating,
+            "rum_id": metric_id,
+            "rum_navigation_type": nav_type,
+        },
+    )
     return {"ok": True}
 
 

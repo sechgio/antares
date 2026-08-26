@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  MAX_PROCESS_WORKER_QUEUE,
   PROCESS_WORKER_TIMEOUT_MS,
   _resetProcessWorkersForTests,
   runProcessInWorker,
@@ -59,6 +60,10 @@ function workerInput() {
   };
 }
 
+function workerInputWithSignal(signal: AbortSignal) {
+  return { ...workerInput(), signal };
+}
+
 describe('process worker lifecycle', () => {
   afterEach(() => {
     _resetProcessWorkersForTests();
@@ -104,5 +109,57 @@ describe('process worker lifecycle', () => {
     await vi.advanceTimersByTimeAsync(PROCESS_WORKER_TIMEOUT_MS + 1);
     await assertion;
     expect(HangingWorker.instances[0].terminated).toBe(true);
+  });
+
+  it('rejects and retires an active worker when processing is aborted', async () => {
+    vi.stubGlobal('Worker', HangingWorker);
+    vi.stubGlobal('OffscreenCanvas', class {});
+    vi.stubGlobal('createImageBitmap', vi.fn());
+
+    const controller = new AbortController();
+    const request = runProcessInWorker(workerInputWithSignal(controller.signal));
+    await Promise.resolve();
+    controller.abort();
+    const settled = Promise.race([
+      request,
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('request did not cancel')), 100);
+      }),
+    ]);
+
+    await expect(settled).rejects.toMatchObject({
+      name: 'AbortError',
+      message: 'Image processing cancelled',
+    });
+    expect(HangingWorker.instances[0].terminated).toBe(true);
+  });
+
+  it('bounds the worker wait queue and releases aborted waiters', async () => {
+    vi.stubGlobal('Worker', HangingWorker);
+    vi.stubGlobal('OffscreenCanvas', class {});
+    vi.stubGlobal('createImageBitmap', vi.fn());
+
+    const firstController = new AbortController();
+    const first = runProcessInWorker(workerInputWithSignal(firstController.signal));
+    const workerCount = HangingWorker.instances.length;
+    const activeControllers = [firstController];
+    const active = [first];
+    while (active.length < workerCount) {
+      const controller = new AbortController();
+      activeControllers.push(controller);
+      active.push(runProcessInWorker(workerInputWithSignal(controller.signal)));
+    }
+
+    const queuedControllers = Array.from({ length: MAX_PROCESS_WORKER_QUEUE }, () => new AbortController());
+    const queued = queuedControllers.map((controller) => (
+      runProcessInWorker(workerInputWithSignal(controller.signal))
+    ));
+    const overflow = runProcessInWorker(workerInput());
+    [...active, ...queued, overflow].forEach((request) => request.catch(() => {}));
+
+    await expect(overflow).rejects.toThrow(/worker queue capacity exhausted/);
+
+    [...activeControllers, ...queuedControllers].forEach((controller) => controller.abort());
+    await Promise.allSettled([...active, ...queued]);
   });
 });

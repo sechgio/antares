@@ -5,6 +5,7 @@ import {
   getElectronFilePath,
   imageToPdfSource,
   logoToPdfSource,
+  MAX_PDF_STAGE_QUEUE,
 } from './pdfAssets';
 
 describe('getElectronFilePath', () => {
@@ -227,6 +228,46 @@ describe('fileToPdfImageSource staged upload', () => {
 
     expect(src).toBe('data:image/jpeg;base64,compressed');
     expect(Object.keys(localImagePaths)).toHaveLength(0);
+  });
+
+  it('bounds queued staged files during a large export burst', async () => {
+    let createCalls = 0;
+    const releases: Array<() => void> = [];
+    const api = {
+      registerLocalPath: vi.fn(async () => {
+        throw new Error('register_local_path is deprecated');
+      }),
+      fileStagedCreate: vi.fn((name: string, size: number) => {
+        void name;
+        void size;
+        createCalls += 1;
+        if (createCalls <= 4) {
+          return new Promise<{ token: string }>((resolve) => {
+            releases.push(() => resolve({ token: `staged-${createCalls}` }));
+          });
+        }
+        return Promise.resolve({ token: `staged-${createCalls}` });
+      }),
+      fileStagedAppend: vi.fn(async () => ({ bytesWritten: 1 })),
+      fileStagedComplete: vi.fn(async () => ({ file_token: 'antares-read_queued' })),
+    };
+    vi.stubGlobal('window', { electronAPI: api });
+
+    const active = Array.from({ length: 4 }, (_, index) =>
+      fileToPdfImageSource(new File([`active-${index}`], `active-${index}.jpg`), `active-${index}`, {}),
+    );
+    await vi.waitFor(() => expect(api.fileStagedCreate).toHaveBeenCalledTimes(4));
+
+    const queued = Array.from({ length: MAX_PDF_STAGE_QUEUE }, (_, index) =>
+      fileToPdfImageSource(new File([`queued-${index}`], `queued-${index}.jpg`), `queued-${index}`, {}),
+    );
+    const overflow = fileToPdfImageSource(new File(['overflow'], 'overflow.jpg'), 'overflow', {});
+
+    await expect(overflow).rejects.toThrow(/staging queue capacity exhausted/);
+    expect(api.fileStagedCreate).toHaveBeenCalledTimes(4);
+
+    releases.forEach((release) => release());
+    await Promise.all([...active, ...queued]);
   });
 });
 

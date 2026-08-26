@@ -25,6 +25,14 @@ function resolveAllowedMethods() {
 
 const ALLOWED_RENDERER_METHODS = resolveAllowedMethods();
 
+function reportRendererError(payload) {
+  try {
+    ipcRenderer.send('renderer-error', payload);
+  } catch {
+    // Error reporting is best-effort and must not affect the renderer.
+  }
+}
+
 // NODE_ENV no es confiable en apps empaquetadas (Electron no lo setea por
 // defecto, así que los logs debug aparecían en producción). El marcador fiable
 // es `app.isPackaged`, pero el preload corre con sandbox: true y no tiene
@@ -71,6 +79,7 @@ try {
       }
       return ipcRenderer.invoke('ipc-call', method, params);
     },
+    reportRendererError,
     backendStatus: () => ipcRenderer.invoke('backend-status'),
     backendRestart: () => ipcRenderer.invoke('backend-restart'),
     onNotify: (callback) => {
@@ -126,7 +135,23 @@ try {
 }
 
 window.addEventListener('error', (e) => {
+  reportRendererError({
+    kind: 'global_error',
+    name: e.error?.name,
+    message: e.message || e.error?.message,
+    stack: e.error?.stack,
+  });
   if (isDev) {
     console.error('Renderer error:', e.error);
   }
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event.reason;
+  reportRendererError({
+    kind: 'unhandled_rejection',
+    name: reason?.name,
+    message: reason?.message || String(reason || 'unhandled rejection'),
+    stack: reason?.stack,
+  });
 });

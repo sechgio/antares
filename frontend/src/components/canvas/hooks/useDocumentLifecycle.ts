@@ -10,7 +10,18 @@ import {
   serializeDocumentImages,
   serializeHistorySteps,
 } from '../utils/imageBlobStore';
-import type { useCanvasHistory } from './useCanvasHistory';
+import type { CanvasHistoryHandle } from './useCanvasHistory';
+
+function retryAfterMsFromError(error: unknown): number | null {
+  if (typeof error !== 'object' || error === null) return null;
+  const rec = error as Record<string, unknown>;
+  if (rec.category !== 'MEMORY_PRESSURE') return null;
+  const details = rec.details;
+  if (typeof details !== 'object' || details === null) return null;
+  const ms = (details as Record<string, unknown>).retry_after_ms;
+  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0) return null;
+  return Math.min(Math.ceil(ms), 60_000);
+}
 
 interface DocumentSnapshot {
   documentId: string;
@@ -18,7 +29,7 @@ interface DocumentSnapshot {
 }
 
 export interface UseDocumentLifecycleOptions {
-  history: ReturnType<typeof useCanvasHistory>;
+  history: CanvasHistoryHandle;
   refreshList: () => Promise<void>;
   flashStatus: (message: string, ms?: number) => void;
   setStatus: (message: string | null) => void;
@@ -26,19 +37,15 @@ export interface UseDocumentLifecycleOptions {
   setPageIndex: (index: number) => void;
   setDocs: (docs: CanvasDocumentSummary[]) => void;
   resetViewportPan: () => void;
-  /** Remote timestamp dismissed by a "keep local" conflict decision (shared with the conflict bar). */
+
   dismissedRemoteAtRef: MutableRefObject<string | null>;
-  /** False while a replacement document awaits its persisted undo/redo history. */
+
   historyReadyRef: MutableRefObject<boolean>;
-  /** Monotonic owner token for overlapping document-history restoration. */
+
   restoreGenerationRef: MutableRefObject<number>;
 }
 
-/**
- * Single owner of the document-switch lifecycle: save → persist history →
- * cloud push → create/get → hydrate → replace. Open/new/duplicate/delete and
- * the explicit save all funnel through here so the ordering cannot drift.
- */
+
 export function useDocumentLifecycle({
   history,
   refreshList,
@@ -65,7 +72,7 @@ export function useDocumentLifecycle({
     [history.documentRef, history.revisionRef],
   );
 
-  /** Serialize save-then-switch so concurrent open/new/duplicate/delete cannot interleave. */
+
   const docSwitchLockRef = useRef(false);
   const withDocSwitchLock = useCallback(async (fn: () => Promise<void>) => {
     if (docSwitchLockRef.current) return;
@@ -78,11 +85,11 @@ export function useDocumentLifecycle({
   }, []);
 
   const lastSavedHistorySigRef = useRef('');
+  const lastSaveRetryAfterMsRef = useRef<number | null>(null);
 
   const markHistoryPersisted = useCallback(
     (docId: string) => {
-      // El efecto debounced (sig por revision) no debe re-persistir en disco
-      // lo que saveCurrentDocument/onSave ya escribieron al guardar.
+
       lastSavedHistorySigRef.current = `${docId}:${history.revisionRef.current}`;
     },
     [history.revisionRef],
@@ -112,11 +119,7 @@ export function useDocumentLifecycle({
     [],
   );
 
-  /**
-   * Save the current doc (disk + history + cloud push). Shared by onSave and
-   * every switch op: returns the pre-save snapshot pieces the caller needs
-   * (saved doc for the editor, captured stacks to restore, current flag).
-   */
+
   const saveCurrentDocument = useCallback(async (): Promise<{
     current: boolean;
     saved: CanvasDocument;
@@ -146,7 +149,7 @@ export function useDocumentLifecycle({
     return { current, saved, histPersistOk, document, past, future };
   }, [captureCurrentSnapshot, history.documentRef, history.future, history.past, isCurrentSnapshot, markHistoryPersisted, persistHistoryStacks, warnHistoryPersistFailed]);
 
-  /** Open a document and restore its persisted history (best-effort). */
+
   const openDocumentWithHistory = useCallback(
     async (id: string, source?: DocumentSnapshot): Promise<boolean> => {
       const [getRes, hist] = await Promise.all([api.canvasGet(id), api.canvasGetHistory(id)]);
@@ -182,7 +185,7 @@ export function useDocumentLifecycle({
     [captureCurrentSnapshot, history, historyReadyRef, hydratePersistedHistory, isCurrentSnapshot, restoreGenerationRef],
   );
 
-  // Debounced history persistence on disk (~500ms after stack mutations)
+
   useEffect(() => {
     if (!historyReadyRef.current) return;
     const docId = history.document.id;
@@ -206,16 +209,17 @@ export function useDocumentLifecycle({
 
   const onSave = useCallback(
     async (opts?: { silent?: boolean }): Promise<boolean> => {
+      lastSaveRetryAfterMsRef.current = null;
       try {
         const { current, saved, histPersistOk, document, past, future } = await saveCurrentDocument();
         if (!current) return false;
 
-        // Keep blob:/blobId in the editor; `saved` (data URLs) goes to cloud only.
+
         const forEditor = applySavedDocumentKeepingImages(document, saved);
         history.replaceDocument(forEditor);
         history.restoreHistory(past, future);
         history.markSaved();
-        // Don't drop keep-local dismissal until local timestamp has beaten the remote we dismissed.
+
         const dismissed = dismissedRemoteAtRef.current;
         if (!dismissed || (saved.updatedAt && isNewer(saved.updatedAt, dismissed))) {
           dismissedRemoteAtRef.current = null;
@@ -225,11 +229,12 @@ export function useDocumentLifecycle({
         if (!opts?.silent) flashStatus('Guardado');
         return true;
       } catch (err) {
+        lastSaveRetryAfterMsRef.current = retryAfterMsFromError(err);
         if (!opts?.silent) flashStatus(err instanceof Error ? err.message : 'Error al guardar');
         return false;
       }
     },
-    [applySavedDocumentKeepingImages, dismissedRemoteAtRef, flashStatus, history, isNewer, markHistoryPersisted, refreshList, saveCurrentDocument],
+    [applySavedDocumentKeepingImages, dismissedRemoteAtRef, flashStatus, history, isNewer, lastSaveRetryAfterMsRef, markHistoryPersisted, refreshList, saveCurrentDocument],
   );
 
   const onOpenDoc = useCallback(
@@ -392,5 +397,5 @@ export function useDocumentLifecycle({
     ],
   );
 
-  return { onSave, onOpenDoc, onNew, onDuplicate, onDeleteDoc };
+  return { onSave, onOpenDoc, onNew, onDuplicate, onDeleteDoc, lastSaveRetryAfterMsRef };
 }

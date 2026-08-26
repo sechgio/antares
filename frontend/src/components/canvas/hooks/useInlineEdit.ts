@@ -7,10 +7,10 @@ import {
 } from '../ops/inlineEdit';
 import type { CanvasContextMenuState } from '../editor/ContextMenu';
 import type { CanvasDocument, CanvasTool } from '../types';
-import type { useCanvasHistory } from './useCanvasHistory';
+import type { CanvasHistoryHandle } from './useCanvasHistory';
 
 interface UseInlineEditOptions {
-  history: ReturnType<typeof useCanvasHistory>;
+  history: CanvasHistoryHandle;
   setSelectedIds: React.Dispatch<React.SetStateAction<string[]>>;
   setTool: React.Dispatch<React.SetStateAction<CanvasTool>>;
   setContextMenu: (state: CanvasContextMenuState | null) => void;
@@ -83,7 +83,7 @@ export function useInlineEdit({
         layers: history.document.layers.map((l) => {
           if (l.id !== id) return l;
           const next = { ...l, value };
-          // Live auto-grow while typing (single update so value + height land together).
+
           return contentHeightPx != null && zoom != null
             ? growTextLayerToContent(next, contentHeightPx, zoom)
             : next;

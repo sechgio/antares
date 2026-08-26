@@ -19,6 +19,7 @@ const {
   isReady,
   waitForReady,
   getState,
+  getHealthStatus,
   getLastError,
   getStderrTail,
   manualRestart,
@@ -29,19 +30,14 @@ const {
   STATE,
 } = require('./backend-spawner');
 const { getMainWindow, buildAppMenu } = require('./window-manager');
+const { appendLogEvent } = require('./app-log');
 
 const _pendingRequests = new Map();
+let _pendingBackendCalls = 0;
+const _pendingBackendCallsByMethod = new Map();
 let _attachedProcess = null;               // process instance we have listeners on
 
-/**
- * Resolve IPC allowlist (+ long-running set).
- *
- * The module is cached after first load. In dev, `reloadIpcMethods()` busts
- * the cache so edits to `ipc-methods.js` are picked up without a full
- * Electron restart (Vite HMR does not reload main). `registerIpcHandlers`
- * calls it once at registration; per-call hot-reload is unnecessary and was
- * re-requiring 4 modules on every IPC call.
- */
+/** Cached IPC allowlist. reloadIpcMethods() busts cache in dev. */
 let _ipcMethodsCache = null;
 
 function _loadIpcMethods() {
@@ -70,24 +66,22 @@ function _getLongRunningMethods() {
   return _loadIpcMethods().LONG_RUNNING_METHODS;
 }
 
-// Budgets
-const REQUEST_TIMEOUT_MS = 30_000;         // per-request response timeout — most ops finish in <5s
-const LONG_REQUEST_TIMEOUT_MS = 900_000;   // 15 min for heavy operations (large PDF/ZIP batches)
-const STARTUP_WAIT_MS = 60_000;            // align with backend-spawner handshake (onedir + AV)
-const MID_FLIGHT_RETRIES = 2;              // retries for transient mid-flight errors (idempotent only)
+const REQUEST_TIMEOUT_MS = 30_000;
+const LONG_REQUEST_TIMEOUT_MS = 900_000;
+const STARTUP_WAIT_MS = 60_000;
+const MID_FLIGHT_RETRIES = 2;
 const BACKEND_RESTART_MIN_INTERVAL_MS = 5_000;
-// Cheap IPC telemetry: always warn on slow/large calls; full log when ANTARES_IPC_TELEMETRY=1.
 const IPC_TELEMETRY_SLOW_MS = 5_000;
 const IPC_TELEMETRY_LARGE_BYTES = 1 * 1024 * 1024;
+const MAX_PENDING_REQUESTS = 64;
+const MAX_PENDING_REQUESTS_PER_METHOD = 16;
+const IPC_CAPACITY_RETRY_AFTER_MS = 250;
 
 let _ipcBackpressureWaits = 0;
 /** Prefix for structured IPC errors embedded in Error.message (Electron only clones message). */
 const ANTARES_IPC_ERROR_PREFIX = 'ANTARES_IPC_ERROR:';
 
-/**
- * Encode code/category/details inside Error.message so they survive ipcMain.handle.
- * Plain-object throws are stringified as "[object Object]" by Electron and break the UI.
- */
+/** Encode error fields inside Error.message for ipcMain.handle. */
 function _toRendererIpcError(err) {
   const payload = {
     message: err && err.message ? String(err.message) : String(err),
@@ -98,11 +92,7 @@ function _toRendererIpcError(err) {
   return new Error(ANTARES_IPC_ERROR_PREFIX + JSON.stringify(payload));
 }
 
-/**
- * Mid-flight retries are only safe for idempotent reads. Mutators
- * (process_start, db_import, canvas_save, …) must not be resent — the dying
- * process may already have accepted the RPC.
- */
+/** Only idempotent reads are safe to retry. */
 function _isIdempotentMethod(method) {
   if (typeof method !== 'string') return false;
   // Explicit safe reads that do not end in get/list/status.
@@ -148,26 +138,7 @@ function _isAllowedIpcSender(event) {
   return url.startsWith('file://');
 }
 
-/**
- * Frame NDJSON lines from stdout without string-concat buffering.
- * Keeps pending bytes as Buffer (UTF-8) so large responses do not inflate to
- * UTF-16 JS strings until each complete line is parsed.
- *
- * `maxPendingBytes` caps a fragmented line (backend allows up to 64 MiB
- * payloads; a pathological oversized/never-terminated line must not keep
- * growing via Buffer.concat). When exceeded, the partial line is dropped and
- * `dropped` is set so the caller can log it.
- *
- * Optimized: pending is stored as {bufs: Buffer[], len: number} in the hot
- * path (_ensureListeners) to avoid Buffer.concat O(n²) per chunk. This
- * function accepts both Buffer (legacy/tests) and {bufs,len} (hot path) and
- * returns the same shape it received, so tests keep passing.
- *
- * @param {Buffer|{bufs: Buffer[], len: number}} pending
- * @param {Buffer|string|Uint8Array} chunk
- * @param {number} [maxPendingBytes]
- * @returns {{ pending: Buffer|{bufs: Buffer[], len: number}, lines: Buffer[], dropped: boolean }}
- */
+/** Frame NDJSON lines from stdout without string-concat. Caps pending at maxPendingBytes. */
 function _consumeStdoutLines(pending, chunk, maxPendingBytes = Infinity) {
   const piece = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
   // Normalize pending to list form for zero-copy scan
@@ -275,10 +246,7 @@ function _consumeStdoutLines(pending, chunk, maxPendingBytes = Infinity) {
   return { pending: Buffer.from(tailSlice), lines, dropped };
 }
 
-/**
- * Attach stdout/close listeners to the current backend process if we haven't
- * already. Re-runs whenever the backend is restarted.
- */
+/** Attach stdout/close listeners to the current backend process. */
 function _ensureListeners() {
   const proc = getProcess();
   if (!proc) return false;
@@ -287,9 +255,7 @@ function _ensureListeners() {
   _attachedProcess = proc;
   let pending = { bufs: [], len: 0 };
 
-  // Backend caps payloads at 64 MiB; leave headroom for JSON framing so a
-  // legitimate max-size line still parses, but a pathological never-ending
-  // line cannot grow the pending Buffer without bound.
+  // Cap pending at 68 MiB to avoid unbounded growth.
   const MAX_STDOUT_PENDING_BYTES = 64 * 1024 * 1024 + 4 * 1024 * 1024;
 
   proc.stdout.on('data', (data) => {
@@ -305,9 +271,7 @@ function _ensureListeners() {
         const msg = JSON.parse(line);
         // Notification (no `id`): forward to renderer
         if (msg.method && msg.params !== undefined && msg.id === undefined) {
-          // Track conversion/job liveness so health checks do not force-restart
-          // the backend while process_start has already returned (no pending IPC).
-          // Heartbeats fire while a single file is still converting (no progress yet).
+          // Track job liveness so health checks don't restart mid-job.
           if (
             msg.method === 'process.progress'
             || msg.method === 'process.heartbeat'
@@ -331,7 +295,7 @@ function _ensureListeners() {
           _pendingRequests.delete(String(msg.id));
           entry.releasePending();
           if (typeof entry.responseBytes !== 'number' || entry.responseBytes === 0) {
-            // Prefer framed UTF-8 byte length over re-JSON.stringify(msg).
+
             entry.responseBytes = lineBuf.byteLength;
           }
           if (msg.error) {
@@ -344,9 +308,7 @@ function _ensureListeners() {
             }
             entry.reject(err);
           } else {
-            // Mark job activity as soon as process_start accepts work — before the
-            // first Python heartbeat (~15s wait-first). Prevents health-probe
-            // force-restarts in the post-start window with pending=0.
+
             if (entry.method === 'process_start' && msg.result && msg.result.started) {
               noteJobActivity();
             }
@@ -368,7 +330,7 @@ function _ensureListeners() {
       entry.reject(new Error('Backend process exited while waiting for response'));
       entry.releasePending();
     }
-    // Only detach + clear job activity for the currently attached process.
+
     if (_attachedProcess !== proc) return;
     _attachedProcess = null;
     clearJobActivity();
@@ -394,12 +356,10 @@ function _estimateJsonBytes(value) {
   }
 }
 
-/**
- * Log cheap IPC timing/size signals. Verbose mode logs every call; otherwise
- * only slow or large payloads (regression smoke without drowning stderr).
- */
+
 function _logIpcTelemetry({
   method,
+  requestId = null,
   elapsedMs,
   requestBytes = 0,
   responseBytes = 0,
@@ -408,12 +368,30 @@ function _logIpcTelemetry({
 }) {
   const slow = elapsedMs >= IPC_TELEMETRY_SLOW_MS;
   const large = requestBytes >= IPC_TELEMETRY_LARGE_BYTES || responseBytes >= IPC_TELEMETRY_LARGE_BYTES;
-  if (!_ipcTelemetryVerbose() && !slow && !large && !waitedForDrain) return;
+  const normalizedOutcome = outcome === 'ok' ? 'success' : outcome === 'error' ? 'failed' : outcome;
+  const failed = normalizedOutcome !== 'success';
+  if (!_ipcTelemetryVerbose() && !slow && !large && !waitedForDrain && !failed) return;
 
+  const safeRequestId = requestId === null || requestId === undefined
+    ? ''
+    : String(requestId).replace(/[^a-zA-Z0-9_.:@-]/g, '_').slice(0, 160);
   const line = `[ipc-router] method=${method} elapsed_ms=${Math.round(elapsedMs)} ` +
-    `request_bytes=${requestBytes} response_bytes=${responseBytes} outcome=${outcome}` +
+    `request_id=${safeRequestId || '-'} request_bytes=${requestBytes} ` +
+    `response_bytes=${responseBytes} outcome=${normalizedOutcome}` +
     (waitedForDrain ? ' backpressure=1' : '');
-  if (slow || large || waitedForDrain || outcome !== 'ok') {
+  appendLogEvent(
+    normalizedOutcome === 'success' && !slow && !large && !waitedForDrain ? 'INFO' : 'WARN',
+    'ipc.request',
+    {
+      request_id: safeRequestId || undefined,
+      method,
+      outcome: normalizedOutcome,
+      duration_ms: elapsedMs,
+      bytes: requestBytes + responseBytes,
+      reason: waitedForDrain ? 'backpressure' : undefined,
+    },
+  );
+  if (slow || large || waitedForDrain || normalizedOutcome !== 'success') {
     console.warn(line);
   } else {
     console.log(line);
@@ -428,14 +406,7 @@ function resetIpcBackpressureWaits() {
   _ipcBackpressureWaits = 0;
 }
 
-/**
- * Write one JSON-RPC line to Python stdin. If the pipe buffer is full
- * (`write` returns false), wait for `drain` before resolving so callers do
- * not pile unbounded serialized payloads onto a stalled child.
- *
- * Note: stubs that return `undefined` are treated as success (only `false`
- * means backpressure), matching Node's Writable contract.
- */
+/** Write JSON-RPC line to stdin; wait for drain if buffer full. */
 function _writeStdinWithBackpressure(proc, payload) {
   return new Promise((resolve, reject) => {
     if (!proc || !proc.stdin || typeof proc.stdin.write !== 'function') {
@@ -478,12 +449,65 @@ function _writeStdinWithBackpressure(proc, payload) {
   });
 }
 
+function _makeCapacityError(method, pending, limit, label) {
+  const scope = limit === MAX_PENDING_REQUESTS_PER_METHOD ? ` for "${method}"` : '';
+  const error = new Error(`IPC capacity exhausted${scope}: too many pending ${label} (limit ${limit})`);
+  error.code = 'IPC_CAPACITY_EXCEEDED';
+  error.category = 'CAPACITY';
+  error.details = { method, limit, pending, retry_after_ms: IPC_CAPACITY_RETRY_AFTER_MS };
+  return error;
+}
+
+function _pendingCapacityError(method) {
+  if (_pendingRequests.size >= MAX_PENDING_REQUESTS) {
+    return _makeCapacityError(method, _pendingRequests.size, MAX_PENDING_REQUESTS, 'requests');
+  }
+  let methodPending = 0;
+  for (const entry of _pendingRequests.values()) {
+    if (entry.method === method) methodPending += 1;
+  }
+  if (methodPending >= MAX_PENDING_REQUESTS_PER_METHOD) {
+    return _makeCapacityError(method, methodPending, MAX_PENDING_REQUESTS_PER_METHOD, 'requests');
+  }
+  return null;
+}
+
+function _pendingBackendCallCapacityError(method) {
+  if (_pendingBackendCalls >= MAX_PENDING_REQUESTS) {
+    return _makeCapacityError(method, _pendingBackendCalls, MAX_PENDING_REQUESTS, 'calls');
+  }
+  const methodPending = _pendingBackendCallsByMethod.get(method) || 0;
+  if (methodPending >= MAX_PENDING_REQUESTS_PER_METHOD) {
+    return _makeCapacityError(method, methodPending, MAX_PENDING_REQUESTS_PER_METHOD, 'calls');
+  }
+  return null;
+}
+
+function _reservePendingBackendCall(method) {
+  const capacityError = _pendingBackendCallCapacityError(method);
+  if (capacityError) throw capacityError;
+  _pendingBackendCalls += 1;
+  _pendingBackendCallsByMethod.set(method, (_pendingBackendCallsByMethod.get(method) || 0) + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    _pendingBackendCalls = Math.max(0, _pendingBackendCalls - 1);
+    const next = (_pendingBackendCallsByMethod.get(method) || 1) - 1;
+    if (next > 0) _pendingBackendCallsByMethod.set(method, next);
+    else _pendingBackendCallsByMethod.delete(method);
+  };
+}
+
 function _sendRequest(method, params) {
   const proc = getProcess();
   if (!proc || proc.killed) {
     return Promise.reject(new Error('Backend process not available'));
   }
   _ensureListeners();
+
+  const capacityError = _pendingCapacityError(method);
+  if (capacityError) return Promise.reject(capacityError);
 
   const id = crypto.randomUUID();
   const request = { jsonrpc: '2.0', id, method, params };
@@ -516,12 +540,16 @@ function _sendRequest(method, params) {
         decrementPendingRequests();
       },
       resolve: (result) => {
+        const outcome = result && typeof result === 'object' && result.started === false
+          ? 'rejected'
+          : 'success';
         _logIpcTelemetry({
           method,
+          requestId: id,
           elapsedMs: Date.now() - startedAt,
           requestBytes,
           responseBytes: entry.responseBytes || 0,
-          outcome: 'ok',
+          outcome,
           waitedForDrain: entry.waitedForDrain,
         });
         settle(resolve, result);
@@ -530,6 +558,7 @@ function _sendRequest(method, params) {
         const outcome = err && err.message && /timeout/i.test(err.message) ? 'timeout' : 'error';
         _logIpcTelemetry({
           method,
+          requestId: id,
           elapsedMs: Date.now() - startedAt,
           requestBytes,
           responseBytes: entry.responseBytes || 0,
@@ -566,10 +595,7 @@ function _sendRequest(method, params) {
   });
 }
 
-/**
- * Build a user-facing error message when the backend is not available.
- * Pulls detail from the spawner so the renderer sees what actually happened.
- */
+
 function _buildUnavailableError() {
   const state = getState();
   const last = getLastError();
@@ -598,40 +624,42 @@ function _buildUnavailableError() {
   return err;
 }
 
-/**
- * Call a backend method, waiting for boot if necessary, with a small number
- * of retries if the process dies mid-flight.
- */
+
 async function _callBackend(method, params) {
-  // 1. Wait for ready (or fatal). This is the ONLY place we block for boot.
-  if (!isReady()) {
-    if (getState() === STATE.FATAL) throw _buildUnavailableError();
-    const ready = await waitForReady(STARTUP_WAIT_MS);
-    if (!ready) throw _buildUnavailableError();
-  }
-
-  // 2. Send, retrying on transient mid-flight failures — idempotent methods only.
-  let lastErr = null;
-  for (let attempt = 0; attempt <= MID_FLIGHT_RETRIES; attempt++) {
-    try {
-      _ensureListeners();
-      return await _sendRequest(method, params);
-    } catch (err) {
-      lastErr = err;
-      const msg = err.message || '';
-      const transient = msg.includes('Backend process exited')
-        || msg.includes('Backend process not available')
-        || msg.includes('stdin write failed');
-      if (!transient || !_isIdempotentMethod(method) || attempt === MID_FLIGHT_RETRIES) {
-        throw err;
-      }
-
-      console.warn(`[ipc-router] "${method}" transient failure (attempt ${attempt + 1}/${MID_FLIGHT_RETRIES + 1}): ${msg}. Waiting for backend...`);
+  const releasePendingCall = _reservePendingBackendCall(method);
+  try {
+    // 1. Wait for ready (or fatal). This is the ONLY place we block for boot.
+    if (!isReady()) {
+      if (getState() === STATE.FATAL) throw _buildUnavailableError();
       const ready = await waitForReady(STARTUP_WAIT_MS);
       if (!ready) throw _buildUnavailableError();
     }
+
+    // 2. Send, retrying on transient mid-flight failures — idempotent methods only.
+    let lastErr = null;
+    for (let attempt = 0; attempt <= MID_FLIGHT_RETRIES; attempt++) {
+      try {
+        _ensureListeners();
+        return await _sendRequest(method, params);
+      } catch (err) {
+        lastErr = err;
+        const msg = err.message || '';
+        const transient = msg.includes('Backend process exited')
+          || msg.includes('Backend process not available')
+          || msg.includes('stdin write failed');
+        if (!transient || !_isIdempotentMethod(method) || attempt === MID_FLIGHT_RETRIES) {
+          throw err;
+        }
+
+        console.warn(`[ipc-router] "${method}" transient failure (attempt ${attempt + 1}/${MID_FLIGHT_RETRIES + 1}): ${msg}. Waiting for backend...`);
+        const ready = await waitForReady(STARTUP_WAIT_MS);
+        if (!ready) throw _buildUnavailableError();
+      }
+    }
+    throw lastErr || _buildUnavailableError();
+  } finally {
+    releasePendingCall();
   }
-  throw lastErr || _buildUnavailableError();
 }
 
 function _maybeTokenizeResultPaths(method, result, win) {
@@ -655,16 +683,7 @@ function _maybeTokenizeResultPaths(method, result, win) {
   return next;
 }
 
-/**
- * Prefix-based dispatch for native (non-backend) IPC handlers.
- * Returns 'dialog' | 'autoimg' | 'ubicaciones' | null so the router only
- * invokes the single handler that could match, instead of probing all three.
- * The handlers still do their own Set-based authoritative check.
- *
- * Derived from the single native-method allowlist in ipc-methods.js. The
- * dialog_* group is matched by prefix below, so the derived set excludes it
- * — mirroring the historical inline list exactly.
- */
+/** Prefix dispatch for native IPC handlers. */
 const _DIALOG_NATIVE_METHODS = new Set(
   require('./ipc-methods').NATIVE_METHODS.filter((m) => !m.startsWith('dialog_'))
 );
@@ -709,7 +728,51 @@ function _maybeResolveFileTokens(params, win) {
     if (!mutated) { next = { ...params }; mutated = true; }
     next.file_tokens = resolved;
   }
+  if (params.localImagePaths && typeof params.localImagePaths === 'object' && !Array.isArray(params.localImagePaths)) {
+    const resolved = { ...params.localImagePaths };
+    let localMutated = false;
+    for (const [key, value] of Object.entries(params.localImagePaths)) {
+      if (typeof value !== 'string' || !value.startsWith('antares-read_')) continue;
+      try {
+        const cap = resolveCapability(value, 'read', webContentsId);
+        resolved[key] = cap.path;
+        localMutated = true;
+      } catch (e) {
+        throw new Error(`invalid file token for localImagePaths.${key}: ${e.message}`);
+      }
+    }
+    if (localMutated) {
+      if (!mutated) { next = { ...params }; mutated = true; }
+      next.localImagePaths = resolved;
+    }
+  }
   return next;
+}
+
+function _collectStagedTokens(method, params) {
+  if (typeof method === 'string' && method.startsWith('file_token_')) return [];
+  if (!params || typeof params !== 'object' || Array.isArray(params)) return [];
+
+  const tokens = new Set();
+  const add = (value) => {
+    if (typeof value === 'string' && value.startsWith('antares-read_')) tokens.add(value);
+  };
+  for (const key of ['file_token', 'fileToken', 'excel_file_token', 'excelPath', 'spreadsheet_token', 'result_file_token', 'cache_token']) {
+    add(params[key]);
+  }
+  if (Array.isArray(params.file_tokens)) {
+    for (const token of params.file_tokens) add(token);
+  }
+  if (params.localImagePaths && typeof params.localImagePaths === 'object' && !Array.isArray(params.localImagePaths)) {
+    for (const value of Object.values(params.localImagePaths)) add(value);
+  }
+  return [...tokens];
+}
+
+async function _cleanupStagedTokens(tokens, webContentsId = null) {
+  if (!tokens || tokens.length === 0) return;
+  const { cleanupStagedCapability } = require('./file-capabilities');
+  await Promise.all(tokens.map((token) => cleanupStagedCapability(token, webContentsId)));
 }
 
 function _validateAndResolveWriteParams(params, win) {
@@ -803,46 +866,48 @@ function registerIpcHandlers() {
       throw new Error(`IPC method not allowed: ${method}.${hint}`);
     }
 
-    // Dialog / native methods are handled in Electron main without touching Python.
-    // Prefix-based dispatch avoids three sequential probes per non-native call.
-    const win = getMainWindow();
-    const { BrowserWindow, session, nativeImage } = require('electron');
-    const nativeHandler = _dispatchNative(method);
-    if (nativeHandler) {
-      const result = nativeHandler === 'dialog'
-        ? await handleDialogCall(method, params, dialog, win, { BrowserWindow, session, nativeImage })
-        : nativeHandler === 'autoimg'
-          ? await (async () => {
-            // Lazy: autoimg sync-engine + Google clients are heavy; only load on first use.
-            const { handleAutoimgCall } = require('./autoimg-handlers');
-            return handleAutoimgCall(method, params);
-          })()
-          : await (async () => {
-            const { handleUbicacionesCall } = require('./ubicaciones-handlers');
-            return handleUbicacionesCall(method, params);
-          })();
-      if (result.handled) return result.result;
-    }
-
-    let backendParams = _maybeResolveFileTokens(params, win);
-    backendParams = _validateAndResolveWriteParams(backendParams, win);
-    // Inject map provider secrets from OS-backed store so the renderer never
-    // needs to hold plaintext API keys for preview/generate.
-    if (method === 'preview_ubicacion' || method === 'generar_ubicaciones') {
-      const provider = backendParams && typeof backendParams === 'object' ? backendParams.provider : '';
-      const fallback = backendParams?.api_key;
-      const injected = _resolveCachedApiKey(provider, fallback);
-      backendParams = { ...backendParams, api_key: injected };
-    }
-
+    const stagedTokens = _collectStagedTokens(method, params);
     try {
-      const result = await _callBackend(method, backendParams);
-      return _maybeTokenizeResultPaths(method, result, win);
-    } catch (err) {
-      // Electron ipcMain.handle only clones Error.message to the renderer.
-      // Throwing a plain object becomes "Error invoking remote method …: [object Object]"
-      // and loses the real backend message (templates, reports, etc. look "broken").
-      throw _toRendererIpcError(err);
+
+
+      const win = getMainWindow();
+      const { BrowserWindow, session, nativeImage } = require('electron');
+      const nativeHandler = _dispatchNative(method);
+      if (nativeHandler) {
+        const result = nativeHandler === 'dialog'
+          ? await handleDialogCall(method, params, dialog, win, { BrowserWindow, session, nativeImage })
+          : nativeHandler === 'autoimg'
+            ? await (async () => {
+
+              const { handleAutoimgCall } = require('./autoimg-handlers');
+              return handleAutoimgCall(method, params);
+            })()
+            : await (async () => {
+              const { handleUbicacionesCall } = require('./ubicaciones-handlers');
+              return handleUbicacionesCall(method, params);
+            })();
+        if (result.handled) return result.result;
+      }
+
+      let backendParams = _maybeResolveFileTokens(params, win);
+      backendParams = _validateAndResolveWriteParams(backendParams, win);
+
+      if (method === 'preview_ubicacion' || method === 'generar_ubicaciones') {
+        const provider = backendParams && typeof backendParams === 'object' ? backendParams.provider : '';
+        const fallback = backendParams?.api_key;
+        const injected = _resolveCachedApiKey(provider, fallback);
+        backendParams = { ...backendParams, api_key: injected };
+      }
+
+      try {
+        const result = await _callBackend(method, backendParams);
+        return _maybeTokenizeResultPaths(method, result, win);
+      } catch (err) {
+
+        throw _toRendererIpcError(err);
+      }
+    } finally {
+      await _cleanupStagedTokens(stagedTokens, event?.sender?.id ?? null);
     }
   });
 
@@ -860,6 +925,7 @@ function registerIpcHandlers() {
       state: getState(),
       ready: isReady(),
       lastError: getLastError(),
+      health: getHealthStatus(),
       stderrTail: isPackaged ? '' : getStderrTail(),
     };
   });
@@ -934,6 +1000,8 @@ module.exports = {
   _ensureListeners,
   _consumeStdoutLines,
   _maybeResolveFileTokens,
+  _collectStagedTokens,
+  _cleanupStagedTokens,
   _validateAndResolveWriteParams,
   _isAllowedIpcSender,
   _sendRequest,
@@ -942,6 +1010,11 @@ module.exports = {
   _DIALOG_NATIVE_METHODS,
   _toRendererIpcError,
   _writeStdinWithBackpressure,
+  _pendingCapacityError,
+  _pendingBackendCallCapacityError,
+  _reservePendingBackendCall,
+  MAX_PENDING_REQUESTS,
+  MAX_PENDING_REQUESTS_PER_METHOD,
   _logIpcTelemetry,
   _estimateJsonBytes,
   _maybeTokenizeResultPaths,

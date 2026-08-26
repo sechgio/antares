@@ -10,43 +10,31 @@ import {
   resolveSettingsForItem,
 } from './utils';
 import { canUseProcessWorker, runProcessInWorker } from './processWorkerClient';
-
-export async function loadImageDimensions(file: Blob): Promise<{ width: number; height: number }> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve({ width: img.naturalWidth, height: img.naturalHeight });
-    };
-
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('No se pudo leer la imagen.'));
-    };
-
-    img.src = url;
-  });
-}
+import { throwIfAborted } from './concurrency';
 
 async function loadImageElement(file: Blob): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
-
     img.onload = () => {
       URL.revokeObjectURL(url);
       resolve(img);
     };
-
     img.onerror = () => {
       URL.revokeObjectURL(url);
       reject(new Error('No se pudo cargar la imagen para procesarla.'));
     };
-
     img.src = url;
   });
+}
+
+export async function loadImageDimensions(file: Blob): Promise<{ width: number; height: number }> {
+  try {
+    const img = await loadImageElement(file);
+    return { width: img.naturalWidth, height: img.naturalHeight };
+  } catch {
+    throw new Error('No se pudo leer la imagen.');
+  }
 }
 
 function canvasToFile(canvas: HTMLCanvasElement, fileName: string, mimeType: string, quality: number): Promise<File> {
@@ -190,10 +178,13 @@ async function processImageItemOnMain(
   effectiveSettings: BatchSettings,
   plan: ReturnType<typeof getProcessingPlan>,
   signature: string,
+  signal?: AbortSignal,
 ): Promise<ProcessedArtifact> {
+  throwIfAborted(signal);
   let workingFile = item.sourceFile;
   if (plan.shouldCrop || plan.shouldResize || plan.shouldConvertFormat) {
     workingFile = await renderTransformedFile(item.sourceFile, effectiveSettings, item.overrides.customCropOffset);
+    throwIfAborted(signal);
   }
 
   let resultBlob: Blob = workingFile;
@@ -208,12 +199,14 @@ async function processImageItemOnMain(
       effectiveSettings.compression.quality,
       targetMime,
     );
+    throwIfAborted(signal);
   }
 
   const finalDimensions = await loadImageDimensions(resultBlob).catch(() => ({
     width: item.sourceWidth ?? 0,
     height: item.sourceHeight ?? 0,
   }));
+  throwIfAborted(signal);
 
   return {
     blob: resultBlob,
@@ -228,8 +221,11 @@ async function processImageItemInWorker(
   effectiveSettings: BatchSettings,
   plan: ReturnType<typeof getProcessingPlan>,
   signature: string,
+  signal?: AbortSignal,
 ): Promise<ProcessedArtifact> {
+  throwIfAborted(signal);
   const buffer = await item.sourceFile.arrayBuffer();
+  throwIfAborted(signal);
   const result = await runProcessInWorker({
     buffer,
     sourceType: item.sourceFile.type || 'application/octet-stream',
@@ -240,7 +236,9 @@ async function processImageItemInWorker(
     shouldResize: plan.shouldResize,
     shouldConvertFormat: plan.shouldConvertFormat,
     shouldCompress: plan.shouldCompress,
+    signal,
   });
+  throwIfAborted(signal);
 
   return {
     blob: new Blob([result.buffer], { type: result.mimeType }),
@@ -250,12 +248,18 @@ async function processImageItemInWorker(
   };
 }
 
-export async function processImageItem(item: ImageItem, baseSettings: BatchSettings): Promise<ProcessedArtifact> {
+export async function processImageItem(
+  item: ImageItem,
+  baseSettings: BatchSettings,
+  signal?: AbortSignal,
+): Promise<ProcessedArtifact> {
+  throwIfAborted(signal);
   const effectiveSettings = resolveSettingsForItem(baseSettings, item);
   const plan = getProcessingPlan(item, effectiveSettings);
   const signature = buildItemSignature(item, baseSettings);
 
   if (plan.usesSourceDirectly) {
+    throwIfAborted(signal);
     const width = item.sourceWidth ?? 0;
     const height = item.sourceHeight ?? 0;
     return {
@@ -269,11 +273,12 @@ export async function processImageItem(item: ImageItem, baseSettings: BatchSetti
   const preferWorker = effectiveSettings.compression.useWebWorker !== false;
   if (preferWorker && canUseProcessWorker()) {
     try {
-      return await processImageItemInWorker(item, effectiveSettings, plan, signature);
-    } catch {
+      return await processImageItemInWorker(item, effectiveSettings, plan, signature, signal);
+    } catch (error) {
+      if (signal?.aborted) throw error;
       // Fall back to main-thread canvas path (tests / unsupported environments).
     }
   }
 
-  return processImageItemOnMain(item, effectiveSettings, plan, signature);
+  return processImageItemOnMain(item, effectiveSettings, plan, signature, signal);
 }

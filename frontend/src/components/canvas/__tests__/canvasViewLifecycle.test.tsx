@@ -6,6 +6,7 @@
  * LeftSidebar + TopBar + SyncConflictBar stay real for the UI paths under test.
  */
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEmptyDocument, type CanvasDocument } from '../types';
 
@@ -553,6 +554,30 @@ describe('CanvasView lifecycle', () => {
     }
   });
 
+  it('keeps autosave enabled after StrictMode replays effects', async () => {
+    render(
+      <StrictMode>
+        <CanvasView active />
+      </StrictMode>,
+    );
+    await waitFor(() => expect(screen.getByTestId('mock-design-stage')).toBeInTheDocument());
+    await waitFor(() => expect(api.canvasList).toHaveBeenCalled());
+    vi.mocked(api.canvasSave).mockClear();
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByLabelText('Añadir página'));
+      await act(async () => {
+        vi.advanceTimersByTime(1200);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(api.canvasSave).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('retries autosave after an edit occurs during an in-flight save', async () => {
     let resolveSave: (value: { document: CanvasDocument }) => void = () => {};
     await renderReady();
@@ -614,6 +639,42 @@ describe('CanvasView lifecycle', () => {
         await Promise.resolve();
       });
       expect(api.canvasSave).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('retries autosave after memory pressure without requiring another edit', async () => {
+    await renderReady();
+    vi.mocked(api.canvasSave)
+      .mockRejectedValueOnce({
+        category: 'MEMORY_PRESSURE',
+        details: { retry_after_ms: 2000 },
+      })
+      .mockImplementation(async (doc: CanvasDocument) => ({ document: doc }));
+    vi.mocked(api.canvasSave).mockClear();
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByLabelText('Añadir página'));
+      await act(async () => {
+        vi.advanceTimersByTime(1200);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(api.canvasSave).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        vi.advanceTimersByTime(1999);
+        await Promise.resolve();
+      });
+      expect(api.canvasSave).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        vi.advanceTimersByTime(1);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(api.canvasSave).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }

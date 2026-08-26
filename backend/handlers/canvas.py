@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -16,32 +18,45 @@ from backend.core.scheduler import (
     is_memory_pressure,
 )
 from backend.handlers.common import validate_params, with_locale
+from backend.utils.validators import sanitizar_nombre
 
 logger = logging.getLogger(__name__)
 
 
+def _spill_file_path(doc_id: str, suffix: str = ".json") -> Path:
+    store = _canvas_core.get_canvas_store()
+    spill_dir = store.docs_dir.parent / "spill"
+    safe_id = Path(str(doc_id)).name or "unknown"
+    return spill_dir / f"{safe_id}{suffix}"
+
+
 def _spill_payload(doc_id: str, payload: dict[str, Any], suffix: str = ".json") -> str | None:
-    """Spill atómico best-effort a ``<docs_dir>/../spill/<safe_id><suffix>``."""
+    tmp: Path | None = None
     try:
-        store = _canvas_core.get_canvas_store()
-        spill_dir = Path(store.docs_dir).parent / "spill"
+        final = _spill_file_path(doc_id, suffix)
+        spill_dir = final.parent
         spill_dir.mkdir(parents=True, exist_ok=True)
-        safe_id = Path(str(doc_id)).name or "unknown"
-        tmp = spill_dir / f"{safe_id}{suffix}.tmp"
-        final = spill_dir / f"{safe_id}{suffix}"
-        tmp.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        tmp = final.with_name(f"{final.name}.tmp")
+        with tmp.open("w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, separators=(",", ":"))
         tmp.replace(final)
         return str(final)
     except Exception as exc:
+        if tmp is not None:
+            with contextlib.suppress(OSError):
+                tmp.unlink(missing_ok=True)
         logger.warning("canvas spill failed for %s: %s", doc_id, exc)
         return None
 
 
-def _check_memory_pressure_or_spill(document: dict[str, Any] | None = None, *, context: str = "canvas_save") -> None:
-    """Pollea ``psutil.virtual_memory().available`` en cada save (auditoría RAM 92%).
+def _cleanup_spill(doc_id: str, suffix: str = ".json") -> None:
+    try:
+        _spill_file_path(doc_id, suffix).unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning("canvas spill cleanup failed for %s%s: %s", doc_id, suffix, exc)
 
-    Si queda <1 GiB, hace spill y lanza :class:`MemoryPressureError` con ``retry_after_ms``.
-    """
+
+def _check_memory_pressure_or_spill(document: dict[str, Any] | None = None, *, context: str = "canvas_save") -> None:
     if not is_memory_pressure():
         return
     available = _available_bytes() or 0
@@ -79,7 +94,6 @@ def _check_memory_pressure_or_spill(document: dict[str, Any] | None = None, *, c
 
 
 def _check_history_memory_pressure(doc_id: str, past: Any, future: Any) -> None:
-    """Variante para save_history: spill del historial y rechazo con retry_after."""
     if not is_memory_pressure():
         return
     available = _available_bytes() or 0
@@ -125,12 +139,12 @@ def canvas_save(params: dict[str, Any]) -> dict[str, Any]:
     document = params["document"]
     if not isinstance(document, dict):
         raise ValidationError("document debe ser un objeto")
-    # Auditoría RAM 92% (607MB libres): pollea available cada save (verificar).
     _check_memory_pressure_or_spill(document, context="canvas_save")
     touch = params.get("touch", True)
     if not isinstance(touch, bool):
         touch = True
     saved = _canvas_core.get_canvas_store().save(document, touch=touch)
+    _cleanup_spill(str(document.get("id") or "unknown"))
     return {"document": saved}
 
 @with_locale
@@ -144,7 +158,11 @@ def canvas_create(params: dict[str, Any]) -> dict[str, Any]:
 @validate_params("id")
 def canvas_delete(params: dict[str, Any]) -> dict[str, Any]:
     doc_id = str(params["id"])
-    deleted = _canvas_core.get_canvas_store().delete(doc_id)
+    try:
+        deleted = _canvas_core.get_canvas_store().delete(doc_id)
+    finally:
+        _cleanup_spill(doc_id)
+        _cleanup_spill(doc_id, "_history.json")
     if not deleted:
         raise NotFoundError("Documento no encontrado")
     return {"success": True, "deleted_id": doc_id}
@@ -159,7 +177,7 @@ def canvas_duplicate(params: dict[str, Any]) -> dict[str, Any]:
     return {"document": document}
 
 
-_MAX_INLINE_PDF_BYTES = 40 * 1024 * 1024  # 40 MiB (expands to ~53.3 MiB Base64, safe under 64 MiB limit)
+_MAX_INLINE_PDF_BYTES = 40 * 1024 * 1024
 
 
 @with_locale
@@ -167,7 +185,6 @@ _MAX_INLINE_PDF_BYTES = 40 * 1024 * 1024  # 40 MiB (expands to ~53.3 MiB Base64,
 def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
     import base64
     import uuid
-    from pathlib import Path
 
     from backend.core.cmyk_pdf import CanvasCmykRenderer
     from backend.utils.paths import user_data_path
@@ -196,8 +213,7 @@ def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
 
     if output_path:
         resolved = str(params.get("_resolved_output_path") or output_path).strip()
-        from backend.utils.validators import sanitizar_nombre as _snC
-        safe = _snC(Path(resolved).name) or Path(resolved).name
+        safe = sanitizar_nombre(Path(resolved).name) or Path(resolved).name
         if not safe.lower().endswith(".pdf"):
             safe += ".pdf"
         out = Path(resolved).parent / safe
@@ -208,8 +224,7 @@ def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
             raise FileExistsError(f"El archivo ya existe: {out}")
         tmp = out.with_suffix(out.suffix + ".tmp")
         tmp.write_bytes(pdf_bytes)
-        import os as _osC
-        _osC.replace(tmp, out)
+        os.replace(tmp, out)
         return {
             "filename": out.name,
             "saved_path": str(out),
@@ -251,6 +266,7 @@ def canvas_save_history(params: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(msg)
     _check_history_memory_pressure(doc_id, past, future)
     _canvas_core.get_canvas_store().save_history(doc_id, past, future)
+    _cleanup_spill(doc_id, "_history.json")
     return {"success": True}
 
 HANDLERS = {

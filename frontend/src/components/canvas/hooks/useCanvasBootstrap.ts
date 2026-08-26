@@ -7,7 +7,7 @@ import {
   type CanvasDocumentSummary,
 } from '../types';
 import { hydrateDocumentImages, hydrateHistorySteps } from '../utils/imageBlobStore';
-import type { useCanvasHistory } from './useCanvasHistory';
+import type { CanvasHistoryHandle } from './useCanvasHistory';
 
 /** Dev-only startup timing helper; no-ops in production. */
 function perfMark(label: string) {
@@ -21,17 +21,17 @@ function perfMark(label: string) {
 
 interface UseCanvasBootstrapOptions {
   /** Replace the open document after list/create/get resolves. */
-  replaceDocument: ReturnType<typeof useCanvasHistory>['replaceDocument'];
+  replaceDocument: CanvasHistoryHandle['replaceDocument'];
   /** Restore history stack (past and future) for the loaded document. */
-  restoreHistory?: ReturnType<typeof useCanvasHistory>['restoreHistory'];
+  restoreHistory?: CanvasHistoryHandle['restoreHistory'];
   /** False while the replaced document awaits its persisted undo/redo history. */
   historyReadyRef: MutableRefObject<boolean>;
   /** Monotonic owner token for overlapping document-history restoration. */
   restoreGenerationRef: MutableRefObject<number>;
   /** Current document identity, updated synchronously by the history hook. */
-  currentDocumentRef: ReturnType<typeof useCanvasHistory>['documentRef'];
+  currentDocumentRef: CanvasHistoryHandle['documentRef'];
   /** Current history revision, updated synchronously by the history hook. */
-  currentRevisionRef: ReturnType<typeof useCanvasHistory>['revisionRef'];
+  currentRevisionRef: CanvasHistoryHandle['revisionRef'];
   /** Set the docs sidebar list. */
   setDocs: React.Dispatch<React.SetStateAction<CanvasDocumentSummary[]>>;
   /** Set the loading veil visibility. */
@@ -59,9 +59,7 @@ export function useCanvasBootstrap({
     let cancelled = false;
     (async () => {
       setLoading(true);
-      // Reemplazo del documento bajo una generación monotónica: un reemplazo
-      // posterior (open/new concurrente) invalida la restauración de historial
-      // de este, que recién marca historyReady cuando su generación sigue viva.
+
       const replaceGuarded = async (doc: CanvasDocument): Promise<number> => {
         const restoreGeneration = ++restoreGenerationRef.current;
         historyReadyRef.current = false;
@@ -104,7 +102,7 @@ export function useCanvasBootstrap({
                   }
                   perfMark('history');
                 } catch {
-                  // history restore is best-effort
+
                 } finally {
                   if (restoreGenerationRef.current === restoreGeneration) {
                     historyReadyRef.current = true;
@@ -130,8 +128,7 @@ export function useCanvasBootstrap({
           }
         }
       } catch {
-        // List/get failed — try creating a real persisted doc; never invent a
-        // memory-only phantom that would look syncable but vanish on reload.
+
         if (!cancelled) {
           try {
             const created = await api.canvasCreate('Sin título');
@@ -157,14 +154,13 @@ export function useCanvasBootstrap({
         perfMark('ready');
       }
       if (!cancelled) {
-        // Guarded: this first sync after mount must never clobber documents
-        // that already exist on disk (see SyncOptions.guarded).
+
         void runCloudSync(true).finally(() => perfMark('sync'));
       }
     })();
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount bootstrap only
+
   }, []);
 }

@@ -20,7 +20,8 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: STATIC_CSS_TESTS,
-    fileParallelism: true,
+    fileParallelism: false,
+    maxWorkers: 1,
   },
 })
 

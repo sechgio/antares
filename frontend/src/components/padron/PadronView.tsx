@@ -5,11 +5,20 @@
 import React, { useMemo, useRef, useState, useEffect, useCallback, Component, type ReactNode, type ErrorInfo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
+import { reportFrontendError } from '../../utils/observability';
 
 class PdfErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
   state = { hasError: false };
   static getDerivedStateFromError() { return { hasError: true }; }
   componentDidCatch(error: Error, info: ErrorInfo) {
+    reportFrontendError({
+      kind: 'react_error',
+      view: 'padron_pdf',
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+      componentStack: info.componentStack,
+    });
     console.error('[PadronView] PDF render error:', error, info);
   }
   render() {

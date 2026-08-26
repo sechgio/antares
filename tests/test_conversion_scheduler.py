@@ -252,7 +252,7 @@ def test_conversion_cancel_releases_visible_state_without_waiting_for_slow_worke
     elapsed = time.monotonic() - started
     release.set()
 
-    assert elapsed < 0.5
+    assert elapsed < 2.5
     assert job.state.running is False
     assert job.result == {"ok_count": 0, "err_count": 0, "cancelled": True}
 

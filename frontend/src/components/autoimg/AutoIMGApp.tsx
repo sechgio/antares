@@ -32,22 +32,7 @@ const TABS: { id: AutoImgTab; label: string; icon: LucideIcon; hint: string }[] 
   { id: 'logs', label: 'Logs', icon: ScrollText, hint: 'Historial' },
 ];
 
-function statusFromBootstrap(data: Awaited<ReturnType<typeof api.autoimgBootstrap>>): AutoImgStatus {
-  return {
-    connected: data.connected,
-    sheetName: data.sheetName,
-    sheetId: data.sheetId,
-    sheetLinked: data.sheetLinked,
-    lastSync: data.lastSync,
-    autoSync: data.autoSync,
-    totalNis: data.totalNis,
-    completos: data.completos,
-    faltantes: data.faltantes,
-    sobrantes: data.sobrantes,
-    sinSgio: data.sinSgio,
-    carpetasActivas: data.carpetasActivas,
-  };
-}
+
 
 export default function AutoIMGApp() {
   const [activeTab, setActiveTab] = useState<AutoImgTab>('dashboard');
@@ -61,32 +46,57 @@ export default function AutoIMGApp() {
   const [globalError, setGlobalError] = useState('');
   const [syncStatus, setSyncStatus] = useState<{ error?: string; result?: string }>({});
   const bootstrapRequestRef = useRef(0);
+  const bootstrapPromiseRef = useRef<Promise<void> | null>(null);
 
-  const loadBootstrap = useCallback(async (refresh = true) => {
+  const loadBootstrap = useCallback((refresh = true) => {
+    if (bootstrapPromiseRef.current) return bootstrapPromiseRef.current;
+
     const requestId = ++bootstrapRequestRef.current;
-    try {
-      const data = await api.autoimgBootstrap(refresh);
-      if (requestId !== bootstrapRequestRef.current) return;
-      setStatus(statusFromBootstrap(data));
-      setBdRows(data.bdRows);
-      setLogRows(data.logRows);
-      setFolders(data.folders);
-      setArrastre(data.arrastre);
-      setGoogleConnected(data.connected);
-      if (data.error) {
-        setBootstrapError(data.error);
-      } else {
-        setBootstrapError('');
+    const request = (async () => {
+      try {
+        const data = await api.autoimgBootstrap(refresh);
+        if (requestId !== bootstrapRequestRef.current) return;
+        setStatus({
+          connected: data.connected,
+          sheetName: data.sheetName,
+          sheetId: data.sheetId,
+          sheetLinked: data.sheetLinked,
+          lastSync: data.lastSync,
+          autoSync: data.autoSync,
+          totalNis: data.totalNis,
+          completos: data.completos,
+          faltantes: data.faltantes,
+          sobrantes: data.sobrantes,
+          sinSgio: data.sinSgio,
+          carpetasActivas: data.carpetasActivas,
+        });
+        setBdRows(data.bdRows);
+        setLogRows(data.logRows);
+        setFolders(data.folders);
+        setArrastre(data.arrastre);
+        setGoogleConnected(data.connected);
+        if (data.error) {
+          setBootstrapError(data.error);
+        } else {
+          setBootstrapError('');
+        }
+      } catch (e) {
+        if (requestId !== bootstrapRequestRef.current) return;
+        setStatus(null);
+        const msg = e instanceof Error ? e.message : 'Error al cargar AutoIMG';
+        setBootstrapError(msg);
+        if (/expiró|revocad|Conectar con Google|invalid_grant|No autenticado/i.test(msg)) {
+          setGoogleConnected(false);
+        }
       }
-    } catch (e) {
-      if (requestId !== bootstrapRequestRef.current) return;
-      setStatus(null);
-      const msg = e instanceof Error ? e.message : 'Error al cargar AutoIMG';
-      setBootstrapError(msg);
-      if (/expiró|revocad|Conectar con Google|invalid_grant|No autenticado/i.test(msg)) {
-        setGoogleConnected(false);
+    })();
+    const trackedRequest = request.finally(() => {
+      if (bootstrapPromiseRef.current === trackedRequest) {
+        bootstrapPromiseRef.current = null;
       }
-    }
+    });
+    bootstrapPromiseRef.current = trackedRequest;
+    return trackedRequest;
   }, []);
 
   const refreshFolders = useCallback(async () => {
@@ -96,7 +106,14 @@ export default function AutoIMGApp() {
     } catch { /* sheet not ready */ }
   }, []);
 
-  const refreshAfterFolderChange = useCallback(async () => {
+  const refreshAfterFolderChange = useCallback(async (nextFolders?: AutoImgFolder[]) => {
+    if (nextFolders) {
+      setFolders(nextFolders);
+      setStatus((current) => current
+        ? { ...current, carpetasActivas: nextFolders.filter((folder) => folder.activo).length }
+        : current);
+      return;
+    }
     await refreshFolders();
     try {
       setStatus(await api.autoimgStatus());

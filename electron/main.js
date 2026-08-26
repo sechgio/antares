@@ -1,7 +1,8 @@
-const { app, BrowserWindow, Menu } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain } = require('electron');
 const { createWindow } = require('./window-manager');
 const { startPythonBackend, killPython } = require('./backend-spawner');
 const { registerIpcHandlers } = require('./ipc-router');
+const { registerRendererObservability } = require('./renderer-observability');
 const {
   appendLogEvent,
   appendLogLine,
@@ -25,6 +26,7 @@ process.on('unhandledRejection', (reason) => {
 const isDev = !app.isPackaged;
 
 // Register IPC handlers before app is ready
+registerRendererObservability(ipcMain);
 registerIpcHandlers();
 
 app.whenReady().then(async () => {

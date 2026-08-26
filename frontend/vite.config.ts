@@ -2,9 +2,9 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { visualizer } from 'rollup-plugin-visualizer'
 import path from 'node:path'
-import { STATIC_CSS_TESTS } from './vitest.static.config'
+import { STATIC_CSS_TESTS } from './vitest.static.config.ts'
 
-const sharedHtmlSanitizerPath = path.resolve(__dirname, '../shared/html-sanitizer.js')
+const sharedHtmlSanitizerPath = path.resolve(import.meta.dirname, '../shared/html-sanitizer.js')
 
 const sharedHtmlSanitizerPlugin = {
   name: 'shared-html-sanitizer',
@@ -27,7 +27,7 @@ export default defineConfig(({ mode }) => ({
   ],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(import.meta.dirname, './src'),
     },
   },
   base: mode === 'development' ? '/' : './',
@@ -44,7 +44,7 @@ export default defineConfig(({ mode }) => ({
     minify: 'terser',
     terserOptions: {
       compress: {
-        drop_console: true,
+        drop_console: false,
         drop_debugger: true,
         pure_funcs: ['console.log', 'console.info', 'console.debug'],
         passes: 1,
@@ -128,7 +128,7 @@ export default defineConfig(({ mode }) => ({
     },
   },
   esbuild: {
-    drop: mode === 'production' ? ['console', 'debugger'] : [],
+    drop: mode === 'production' ? ['debugger'] : [],
     legalComments: 'none',
   },
   optimizeDeps: {
@@ -147,8 +147,11 @@ export default defineConfig(({ mode }) => ({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
-    // Parallel test execution across workers with isolated jsdom/node environments.
-    fileParallelism: true,
+    // Sequential file execution avoids OOM on constrained CI (2GB RAM) but
+    // allow 2 workers for within-file parallelism; full parallel (true/4)
+    // caused flaky timeouts on Windows CI with 120+ jsdom suites.
+    fileParallelism: false,
+    maxWorkers: 2,
     // Static CSS/theme guards run under vitest.static.config.ts (node env).
     exclude: [
       '**/node_modules/**',

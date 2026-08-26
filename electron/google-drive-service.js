@@ -252,12 +252,12 @@ function shrinkThumbnailUrl(url) {
 
 async function fetchThumbnailDataUrl(thumbnailLink, accessToken) {
   const url = shrinkThumbnailUrl(thumbnailLink);
-  let res = await fetch(url, {
+  let res = await fetchWithRetry(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   // Some googleusercontent links reject Bearer; retry without auth.
   if (res.status === 401 || res.status === 403) {
-    res = await fetch(url);
+    res = await fetchWithRetry(url);
   }
   if (!res.ok) throw new Error(`Thumb HTTP ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());

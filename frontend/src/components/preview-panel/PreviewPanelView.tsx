@@ -474,6 +474,12 @@ export default function PreviewPanelView() {
     setSelectedSheetName(nextName);
     const gen = ++sheetLoadGenRef.current;
     let sh = sheets.find(s => s.name === nextName);
+    if (spillToken) {
+      // Spill rows are re-fetchable; keep only the selected sheet in RAM.
+      setSheets(prev => prev.map(s => (
+        s.name === nextName || s.rows.length === 0 ? s : { ...s, rows: [] }
+      )));
+    }
     if (sh && sh.rows.length === 0 && spillToken) {
       try {
         const rows = await fetchSheetRows(spillToken, nextName);

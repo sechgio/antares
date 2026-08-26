@@ -10,12 +10,10 @@ from typing import Any
 
 from backend.utils.html_sanitizer import sanitize_html_for_pdf
 
-# One FontConfiguration per worker thread. The heavy scheduler may run several
-# WeasyPrint jobs concurrently; a process-wide mutable singleton would race.
+# Thread-local FontConfiguration (heavy jobs run concurrently).
 _FONT_CONFIG = threading.local()
 
-# Small process-wide LRU of sanitized-HTML digest → PDF bytes. Values are
-# immutable; the lock only protects the map, never WeasyPrint rendering.
+# Process-wide LRU of sanitized HTML → PDF (lock guards map only).
 _PDF_CACHE_MAX_ENTRIES = 2
 _PDF_CACHE_MAX_BYTES = 8 * 1024 * 1024
 _PDF_CACHE: OrderedDict[str, bytes] = OrderedDict()
@@ -32,7 +30,7 @@ def _thread_font_config() -> Any:
     """Return a thread-local WeasyPrint FontConfiguration, creating it once."""
     config = getattr(_FONT_CONFIG, "value", None)
     if config is None:
-        from weasyprint.text.fonts import FontConfiguration  # type: ignore[import-untyped]
+        from weasyprint.text.fonts import FontConfiguration  # type: ignore[import-not-found,import-untyped]
 
         config = FontConfiguration()
         _FONT_CONFIG.value = config
@@ -41,12 +39,10 @@ def _thread_font_config() -> Any:
 
 def deny_external_url_fetcher(url: str, **kwargs: Any) -> Any:
     """Allow only data: URIs; deny all other fetches (defense in depth)."""
-    from weasyprint.urls import URLFetcher, URLFetcherResponse  # type: ignore[import-untyped]
+    from weasyprint.urls import URLFetcher, URLFetcherResponse  # type: ignore[import-not-found,import-untyped]
 
     if str(url).strip().lower().startswith("data:"):
-        # URLFetcher (API nueva; default_url_fetcher fue deprecado) mantiene
-        # estado por request (_request) y no es thread-safe para compartir
-        # entre renders concurrentes del backend, por eso se instancia aquí.
+
         return URLFetcher().fetch(url, **kwargs)
     return URLFetcherResponse(url, body=b"")
 
