@@ -26,11 +26,14 @@ Fixtures contain no tokens, emails, real paths, or private documents.
 ## Metrics and metadata
 
 Each scenario records nearest-rank latency `p50`, `p95`, and `p99` in
-milliseconds; peak observed RSS in bytes; IPC bytes; request count; lock wait
-in milliseconds; queue wait in milliseconds; and errors. The result also
-contains schema version, scale, seed, Python version, platform, machine, and
-runtime. Hardware values are recorded dynamically when the command runs; this
-document makes no hardware performance claim.
+milliseconds; peak RSS sampled before and after each synthetic operation; IPC
+bytes; request count; lock wait in milliseconds; queue wait in milliseconds;
+and errors. AutoIMG uses a local `threading.Lock` and `queue.Queue` to record
+actual bounded contention waits. The result also contains schema version,
+scale, seed, Python version, platform, machine, runtime, CPU model/core count,
+and total/available memory when available (otherwise safe zero/unavailable
+fallbacks are used). Hardware values are recorded dynamically when the command
+runs; this document makes no hardware performance claim.
 
 ## Run
 
@@ -47,10 +50,16 @@ repository. Keep checked-in source free of generated results.
 
 ## Scenario coverage and limitations
 
-The default command covers deterministic offline fixture generation and the
-measurement schema for all eight domains above. The following verification
-scenarios are named for future integration runs: conversion, list, export,
-spreadsheet, Canvas sync, Espacios, and AutoIMG. Their real service/Electron
-measurements are intentionally **not implemented in Task 1** and no live
-measurements are claimed here. They require explicit integration environments
-and credentials; they must remain separate from the safe offline default.
+The default command executes seven named **offline synthetic** scenario
+runners: conversion, list, export, spreadsheet, Canvas sync, Espacios, and
+AutoIMG. They transform representative JSON document, SQLite-shaped record,
+task/user, spreadsheet row, image-metadata, Canvas-layer, and queued-job
+fixtures, then JSON encode/decode the result. The fixture generator has fixed
+1x/5x/10x counts, uses no real paths or payload blobs, and rejects a serialized
+result at or above 64 MiB.
+
+This is explicitly not live-integration coverage. It does not invoke Electron,
+production IPC handlers, SQLite, image codecs, Supabase, or external Espacios
+services, and it needs no credentials, private files, or external services.
+Live integration measurements remain outside Task 1 and require a separately
+authorized environment.

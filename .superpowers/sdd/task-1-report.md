@@ -79,3 +79,66 @@ Exit status: 0
 ## Commits
 
 - `90986d6828ee46c383da98fca0e68697cb1d7e4a` — `feat: add offline scalability baseline`
+
+## Review-fix work
+
+- Added seven default, named **offline synthetic** runners: conversion, list,
+  export, spreadsheet, Canvas sync, Espacios, and AutoIMG.
+- Replaced the generic fixture with deterministic, representative JSON
+  documents, SQLite-shaped history records, Espacios task/user joins,
+  spreadsheet cells/formulas, image payload metadata, Canvas pages/layers,
+  and queued AutoIMG jobs at the same fixed 1x/5x/10x counts.
+- Each scenario serializes a representative transformed payload. RSS is sampled
+  before and after every synthetic operation; AutoIMG measures real local
+  `threading.Lock` and `queue.Queue` wait time. The clock and RSS sampler are
+  injectable for stable tests, and serialized results are rejected at 64 MiB.
+- Added CPU model/core count and total/available memory metadata with safe
+  fallbacks, then updated the baseline documentation.
+
+## Review-fix files
+
+- `scripts/scalability_baseline.py`
+- `tests/test_scalability_baseline.py`
+- `docs/scalability-baseline.md`
+- `.superpowers/sdd/task-1-report.md`
+
+## Review-fix TDD and verification evidence
+
+RED, after adding the focused public-seam tests first:
+
+```text
+python -m pytest tests/test_scalability_baseline.py -q
+2 failed, 3 passed in 0.41s
+KeyError: 'scenario'
+TypeError: run_offline_baseline() got an unexpected keyword argument 'rss_sampler'
+```
+
+GREEN and regression coverage:
+
+```text
+python -m pytest tests/test_scalability_baseline.py tests/test_benchmark_ipc_latency.py -q
+10 passed in 0.86s
+
+ruff check scripts/scalability_baseline.py tests/test_scalability_baseline.py
+All checks passed!
+
+python scripts/scalability_baseline.py --scale 10x
+C:\Users\HIDROAA\AppData\Local\Temp\antares-scalability-7xnzhl9q\baseline-10x.json
+```
+
+The new tests execute `run_offline_baseline` at 1x and 10x, assert all seven
+scenario names, all eight fixture domains and representative transformations,
+the under-64-MiB serialized payload, injected sampled RSS maximum, nonnegative
+metrics, and observed positive AutoIMG lock/queue waits. Final full-suite
+evidence: `npm test` exited 0; Python reported `938 passed, 1 skipped,
+2 deselected in 55.47s`; frontend Vitest reported `196 passed / 1340 passed`;
+static Vitest reported `7 passed / 22 passed`.
+
+## Review-fix limitations and concerns
+
+- The seven scenarios are intentionally offline synthetic coverage, not live
+  integrations. They do not start Electron or invoke production IPC handlers,
+  SQLite, image codecs, Supabase, or external Espacios services.
+- The local lock/queue waits prove bounded contention measurement only; their
+  elapsed values are environment-dependent and not a production throughput
+  claim.
