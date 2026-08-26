@@ -1,6 +1,7 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { api } from '../../../api';
+import { mapWithConcurrencyLimit } from '../../../utils/mapWithConcurrencyLimit';
 import { fileToPdfImageSource } from '../../../utils/pdfAssets';
 import SheetPreview from '../components/SheetPreview';
 import { CHUNK_SIZE, chunkArray } from '../constants';
@@ -52,12 +53,10 @@ async function preparePhotosForPdf(
     localImagePaths: Record<string, string>,
     keyPrefix = 'photo',
 ): Promise<PhotoFile[]> {
-    return Promise.all(
-        photos.map(async (photo, index) => ({
-            ...photo,
-            previewUrl: await fileToPdfImageSource(photo.file, `${keyPrefix}-${index}`, localImagePaths),
-        })),
-    );
+    return mapWithConcurrencyLimit(photos, 4, async (photo, index) => ({
+        ...photo,
+        previewUrl: await fileToPdfImageSource(photo.file, `${keyPrefix}-${index}`, localImagePaths),
+    }));
 }
 
 async function prepareLogoForPdf(
@@ -257,12 +256,10 @@ export async function exportConsolidatedReportPdf(
         prepareLogoForPdf(logoRight, 'logo-right', localImagePaths),
     ]);
 
-    const preparedPanels = await Promise.all(
-        exportablePanels.map(async (panel, panelIndex) => ({
-            header: panel.header,
-            photos: await preparePhotosForPdf(panel.photos, localImagePaths, `panel-${panelIndex}-photo`),
-        })),
-    );
+    const preparedPanels = await mapWithConcurrencyLimit(exportablePanels, 2, async (panel, panelIndex) => ({
+        header: panel.header,
+        photos: await preparePhotosForPdf(panel.photos, localImagePaths, `panel-${panelIndex}-photo`),
+    }));
 
     const html = buildConsolidatedReportPdfHtml({
         config,
