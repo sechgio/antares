@@ -5,6 +5,16 @@
 export type Orientation = 'landscape' | 'portrait';
 export type OutputFormat = 'service-interruption' | 'volante-lurigancho' | 'volanteo-lurigancho-v2' | 'water-cut-notice';
 
+export const MAX_PADRON_ITEMS = 10_000;
+
+export function normalizeItemCount(value: number, fallback = 1): number {
+  const fallbackCount = Number.isFinite(fallback)
+    ? Math.min(MAX_PADRON_ITEMS, Math.max(1, Math.trunc(fallback)))
+    : 1;
+  if (!Number.isFinite(value)) return fallbackCount;
+  return Math.min(MAX_PADRON_ITEMS, Math.max(1, Math.trunc(value)));
+}
+
 export interface HeaderField {
   key: string;
   label: string;
@@ -337,7 +347,8 @@ export function createEmptyItem(num: number): PadronItem {
 }
 
 export function createInitialItems(total = 36): PadronItem[] {
-  return Array.from({ length: total }, (_, i) => createEmptyItem(i + 1));
+  const count = normalizeItemCount(total);
+  return Array.from({ length: count }, (_, i) => createEmptyItem(i + 1));
 }
 
 export function createEmptyWaterCutItem(num: number): WaterCutItem {
@@ -354,5 +365,6 @@ export function createEmptyWaterCutItem(num: number): WaterCutItem {
 }
 
 export function createInitialWaterCutItems(total = 36): WaterCutItem[] {
-  return Array.from({ length: total }, (_, i) => createEmptyWaterCutItem(i + 1));
+  const count = normalizeItemCount(total);
+  return Array.from({ length: count }, (_, i) => createEmptyWaterCutItem(i + 1));
 }
