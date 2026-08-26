@@ -39,8 +39,7 @@ const EspaciosView = React.lazy(() => import('./components/espacios'));
 const CanvasView = React.lazy(() => import('./components/canvas'));
 
 /** Keep Canvas mounted briefly after leaving the tab; then unmount to free blob/history RAM. */
-const CANVAS_KEEPALIVE_MS = 5 * 60 * 1000;
-
+const CANVAS_KEEPALIVE_MS = 60 * 1000;
 function prefetchSettingsModal() {
   void import('./components/settings/SettingsModal');
 }

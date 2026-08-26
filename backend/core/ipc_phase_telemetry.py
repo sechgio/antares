@@ -2,12 +2,17 @@
 
 Enabled when ``ANTARES_IPC_TELEMETRY`` is truthy (1/true/yes). When disabled,
 public helpers are cheap no-ops so the hot path pays only an env check.
+When enabled, every request captures 5 perf_counter marks + 1 RSS sample
+(~<0.1ms). Emission is sampled: 1% of successful fast requests, 100% of
+errors (handler_ok=False / ok=False / rejected) and slow requests
+(any phase >= 5s). Sampling is applied in emit_and_clear.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import random
 import threading
 import time
 from typing import Any
@@ -27,6 +32,9 @@ _MARK_ORDER = (
     "handler_end",
     "serialize_write_end",
 )
+
+_SLOW_THRESHOLD_MS = 5_000.0
+_SAMPLE_RATE = 0.01
 
 
 def enabled() -> bool:
@@ -277,6 +285,16 @@ def _format_line(trace: RequestTrace) -> str:
     return " ".join(parts)
 
 
+def _should_emit(trace: RequestTrace) -> bool:
+    if trace.handler_ok is False or trace.ok is False or trace.rejected is not None or trace.write_ok is False:
+        return True
+    for k in ("handler_ms", "serialize_write_ms", "parse_ms", "scheduler_wait_ms"):
+        v = trace.durations_ms.get(k)
+        if v is not None and v >= _SLOW_THRESHOLD_MS:
+            return True
+    return random.random() < _SAMPLE_RATE
+
+
 def emit_and_clear(msg_id: str | int) -> None:
     if not enabled():
         return
@@ -286,6 +304,9 @@ def emit_and_clear(msg_id: str | int) -> None:
     if trace is None:
         return
     try:
+        _compute_derived(trace)
+        if not _should_emit(trace):
+            return
         line = _format_line(trace)
         level = logging.WARNING if trace.rejected or trace.ok is False else logging.INFO
         logger.log(level, "%s", line)

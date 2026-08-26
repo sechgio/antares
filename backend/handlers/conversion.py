@@ -1029,12 +1029,19 @@ HANDLERS = {
 }
 
 
+_dest_scan_cache: dict[str, tuple[float, set[str]]] = {}
+_dest_scan_lock = threading.Lock()
+
+
 def _calculate_chunk_size() -> int:
     """Choose an adaptive chunk size without materializing the full batch.
 
-    Caps by ``heavy_capacity * 4`` so huge RAM machines do not pick C=1000
+    Caps by ``heavy_capacity * 6`` so huge RAM machines do not pick C=1000
     when the scheduler can only run a handful of heavy tasks at once (progress
-    valleys + futures bloat).
+    valleys + futures bloat). Floor 100 avoids pathological 50-file chunks
+    under memory pressure (20 chunks for 1000 files -> 20x dedupe + prefetch).
+    Heavy workers still bound peak RAM (each Pillow resize holds ~18 MB for
+    3000x2000), so queueing 100 closures is cheap vs processing 100 images.
     """
     size = 500
     if psutil is not None:
@@ -1042,13 +1049,13 @@ def _calculate_chunk_size() -> int:
             available_gb = psutil.virtual_memory().available / (1024 ** 3)
             target_ram_per_chunk = available_gb * 0.25
             chunk_size = int((target_ram_per_chunk * 1024) / 5)
-            size = max(50, min(chunk_size, 1000))
+            size = max(100, min(chunk_size, 1000))
         except Exception:
             size = 500
     try:
         cap = int(getattr(get_scheduler(), "heavy_capacity", 0) or 0)
         if cap > 0:
-            size = min(size, max(50, cap * 4))
+            size = min(size, max(100, cap * 6))
     except Exception:
         pass
     return size
@@ -1060,18 +1067,31 @@ def _scan_dest_out_keys(destino: str | Path) -> set[str] | None:
     Returns an empty set when the directory does not exist yet. Returns
     ``None`` when the scan fails for other OS errors so callers fall back to
     per-path ``exists()`` instead of treating the destination as empty.
+    Cached by directory mtime so repeated preview/convert calls reuse the scan.
     """
     dest = Path(destino)
+    try:
+        dir_mtime = dest.stat().st_mtime if dest.is_dir() else 0.0
+        cache_key = str(dest.resolve()) if dest.is_dir() else str(dest)
+        with _dest_scan_lock:
+            cached = _dest_scan_cache.get(cache_key)
+            if cached and cached[0] == dir_mtime:
+                return set(cached[1])
+    except OSError:
+        dir_mtime = 0.0
+        cache_key = str(dest)
     keys: set[str] = set()
     try:
         with os.scandir(dest) as entries:
             for entry in entries:
                 keys.add(_out_path_key(dest / entry.name))
     except FileNotFoundError:
-        return keys
+        pass
     except OSError:
         logger.debug("scandir failed for destino=%s; falling back to exists()", dest, exc_info=True)
         return None
+    with _dest_scan_lock:
+        _dest_scan_cache[cache_key] = (dir_mtime, set(keys))
     return keys
 
 

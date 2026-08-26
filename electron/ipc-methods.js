@@ -36,6 +36,7 @@ const BACKEND_METHODS = [
   'generar_ubicaciones',
   'preview_ubicacion',
   'evidencia_volanteo_render',
+  'telemetry',
 ];
 
 const NATIVE_METHODS = [

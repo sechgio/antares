@@ -133,8 +133,16 @@ function runQualityGate() {
   }
 
   const tcFrontend = trySh('npm run typecheck:frontend 2>&1');
-  if (tcFrontend && tcFrontend.includes('error')) {
+  if (tcFrontend && (tcFrontend.includes('error') || tcFrontend.includes('Error'))) {
     throw new Error(`Typecheck de frontend falló:\n${tcFrontend.slice(0, 500)}`);
+  }
+
+  const budgets = trySh('npm run check:budgets 2>&1');
+  if (budgets === null) {
+    throw new Error('Budgets fallaron (timeout o error).');
+  }
+  if (budgets.includes('RED:')) {
+    throw new Error(`Budgets fallaron:\n${budgets.slice(0, 800)}`);
   }
 
   const testResult = trySh('npm test 2>&1', { timeout: 900000 });

@@ -69,6 +69,7 @@ _hidden = [
     'backend.handlers.ubicaciones',
     'backend.handlers.evidencia_volanteo',
     'backend.handlers.spreadsheet',
+    'backend.handlers.telemetry',
     'backend.version',
 ]
 # Collect every backend.handlers submodule as a safety net for future features.

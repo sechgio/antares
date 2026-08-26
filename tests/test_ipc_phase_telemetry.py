@@ -18,10 +18,12 @@ from backend.core import ipc_phase_telemetry as telemetry
 def _reset_telemetry(monkeypatch: pytest.MonkeyPatch) -> None:
     telemetry.reset_for_tests()
     monkeypatch.delenv("ANTARES_IPC_TELEMETRY", raising=False)
+    # Force 100% sampling during tests so success-path emits are deterministic.
+    # Sampling-specific tests override random to verify the 1% logic.
+    monkeypatch.setattr(telemetry.random, "random", lambda: 0.0)
     yield
     telemetry.reset_for_tests()
     monkeypatch.delenv("ANTARES_IPC_TELEMETRY", raising=False)
-
 
 def test_enabled_is_false_by_default() -> None:
     assert telemetry.enabled() is False
@@ -240,3 +242,45 @@ def test_submit_handler_logs_rejected_on_scheduler_busy(monkeypatch: pytest.Monk
     line = next(r.message for r in caplog.records if "ipc_phase" in r.message)
     assert "rejected=heavy_queue_full" in line
     assert "handler_ms=" not in line
+
+def test_sampling_drops_fast_success_when_random_high(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("ANTARES_IPC_TELEMETRY", "1")
+    monkeypatch.setattr(telemetry.random, "random", lambda: 0.99)
+    monkeypatch.setattr(telemetry, "_rss_bytes", lambda: 60 * 1024 * 1024)
+    with caplog.at_level(logging.INFO, logger="backend.core.ipc_phase_telemetry"):
+        telemetry.start("sample-drop", method="version", lane="sync")
+        telemetry.mark("sample-drop", "handler_end")
+        telemetry.set_fields("sample-drop", handler_ok=True, ok=True, handler_ms=10.0)
+        telemetry.emit_and_clear("sample-drop")
+    assert not any("ipc_phase" in r.message for r in caplog.records)
+    assert telemetry.trace_count() == 0
+
+
+def test_sampling_keeps_error_even_when_random_high(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("ANTARES_IPC_TELEMETRY", "1")
+    monkeypatch.setattr(telemetry.random, "random", lambda: 0.99)
+    monkeypatch.setattr(telemetry, "_rss_bytes", lambda: 60 * 1024 * 1024)
+    with caplog.at_level(logging.INFO, logger="backend.core.ipc_phase_telemetry"):
+        telemetry.start("sample-err", method="version", lane="sync")
+        telemetry.mark("sample-err", "handler_end")
+        telemetry.set_fields("sample-err", handler_ok=False, ok=False, handler_ms=10.0)
+        telemetry.emit_and_clear("sample-err")
+    assert any("ipc_phase" in r.message and "msg_id=sample-err" in r.message for r in caplog.records)
+
+
+def test_sampling_keeps_slow_even_when_random_high(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("ANTARES_IPC_TELEMETRY", "1")
+    monkeypatch.setattr(telemetry.random, "random", lambda: 0.99)
+    monkeypatch.setattr(telemetry, "_rss_bytes", lambda: 60 * 1024 * 1024)
+    with caplog.at_level(logging.INFO, logger="backend.core.ipc_phase_telemetry"):
+        telemetry.start("sample-slow", method="version", lane="sync")
+        telemetry.mark("sample-slow", "handler_end")
+        telemetry.set_fields("sample-slow", handler_ok=True, ok=True, handler_ms=6000.0)
+        telemetry.emit_and_clear("sample-slow")
+    assert any("ipc_phase" in r.message and "msg_id=sample-slow" in r.message for r in caplog.records)

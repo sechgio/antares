@@ -191,15 +191,32 @@ const _invoke = async <T>(method: string, params?: Record<string, unknown> | obj
   // which can actually wait for the backend to recover. The timeout race is a
   // backstop for the case where the main process never resolves the invoke.
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  const timeoutErr = () => new AntaresAPIError(`IPC timeout: ${method}`, -32001, 'TIMEOUT');
+  const invokePromise = window.electronAPI.invoke(method, params as Record<string, unknown>).then(
+    (value) => {
+      if (timedOut) throw timeoutErr();
+      return value as T;
+    },
+    (err: unknown) => {
+      if (timedOut) throw timeoutErr();
+      throw err;
+    },
+  );
+  invokePromise.catch(() => {});
   try {
-    const result = await Promise.race([
-      window.electronAPI.invoke(method, params as Record<string, unknown>),
+    const result = await Promise.race<T>([
+      invokePromise,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new AntaresAPIError(`IPC timeout: ${method}`, -32001, 'TIMEOUT')), timeoutMs);
+        timer = setTimeout(() => {
+          timedOut = true;
+          reject(timeoutErr());
+        }, timeoutMs);
       }),
     ]);
     return result as T;
   } catch (err: unknown) {
+    if (timedOut) throw timeoutErr();
     const parsed = parseIpcInvokeError(err);
     if (parsed) throw parsed;
     if (err instanceof Error) {
@@ -910,5 +927,17 @@ export const api = {
   autoimgAutoSyncToggle: (enabled: boolean) => _invoke<{ enabled: boolean }>('autoimg_auto_sync_toggle', { enabled }),
   autoimgCancelOperation: () => _invoke<{ success: boolean; operation?: string; reason?: string }>('autoimg_cancel_operation'),
   autoimgStatus: () => _invoke<{ connected: boolean; sheetName?: string; sheetId?: string; sheetLinked?: boolean; lastSync?: string; autoSync: boolean; totalNis?: number; completos?: number; faltantes?: number; sobrantes?: number; sinSgio?: number; carpetasActivas?: number }>('autoimg_status'),
+
+  // ─── RUM Telemetry (web-vitals → stderr) ────────────────────────────────
+  telemetry: (body: {
+    name: string;
+    value: number;
+    rating?: string;
+    delta?: number;
+    id?: string;
+    navigationType?: string;
+    url?: string;
+    timestamp?: number;
+  }) => _invoke<{ ok: boolean }>('telemetry', body as unknown as Record<string, unknown>),
 
 };

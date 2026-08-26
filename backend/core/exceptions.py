@@ -80,3 +80,15 @@ class NotFoundError(AntaresBaseException):
 
     def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
         super().__init__(message, code=-32004, category="NOT_FOUND", details=details)
+
+
+class MemoryPressureError(AntaresBaseException):
+    """Rechazo por presión de memoria: reintentable tras ``retry_after_ms``.
+
+    Se dispara cuando ``psutil.virtual_memory().available`` cae bajo el umbral
+    (1 GiB por defecto). El frontend debe reintentar tras el delay indicado;
+    el backend ya hizo spill a disco para no perder el documento.
+    """
+
+    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
+        super().__init__(message, code=-32003, category="MEMORY_PRESSURE", details=details)

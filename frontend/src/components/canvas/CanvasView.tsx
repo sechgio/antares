@@ -154,7 +154,23 @@ const DEFAULT_SIZES: Partial<Record<PlaceableTool, { w: number; h: number }>> = 
 
 /** Debounce before autosaving the open canvas document after unsaved edits. */
 const AUTOSAVE_DEBOUNCE_MS = 1200;
+const AUTOSAVE_LARGE_MS = 2500;
+const AUTOSAVE_MEDIUM_MS = 1800;
 
+function autosaveDelayForDoc(doc: CanvasDocument | null | undefined): number {
+  try {
+    if (!doc || !Array.isArray(doc.layers)) return AUTOSAVE_DEBOUNCE_MS;
+    // Estimate UTF-16 bytes (JSON len*2) — same as useCanvasHistory budget.
+    // Small docs stringify cheap (0.06 ms for 200 rects → 65 KB). Large docs
+    // (6 MB) cost ~8 ms but debounce is 2500 ms, so amortized.
+    const est = JSON.stringify(doc).length * 2;
+    if (est > 2 * 1024 * 1024) return AUTOSAVE_LARGE_MS;
+    if (est > 512 * 1024) return AUTOSAVE_MEDIUM_MS;
+    return AUTOSAVE_DEBOUNCE_MS;
+  } catch {
+    return AUTOSAVE_DEBOUNCE_MS;
+  }
+}
 export default function CanvasView({ active = true }: { active?: boolean }) {
   const history = useCanvasHistory(createEmptyDocument('Sin título'));
   const historyReadyRef = useRef(false);
@@ -414,6 +430,8 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   // Debounced autosave: persist the open doc shortly after it becomes dirty so
   // unsaved edits are not lost on app/window close. A ref tracks in-flight
   // saves so a fast repeat never overlaps the IPC round-trip.
+  // Debounce is adaptive: 1200 ms (small), 1800 ms (medium >512KB/40 layers),
+  // 2500 ms (large >2MB/80 layers) to avoid queueing 19 MB saves every keystroke.
   const autosavePendingRef = useRef(false);
   const autosaveRetryTimerRef = useRef<number | null>(null);
   const flushAutosaveRef = useRef<() => void>(() => {});
@@ -430,10 +448,11 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       if (!history.hasUnsavedEditsRef.current) return;
       if (history.revisionRef.current === revisionAtStart) return;
       if (autosaveRetryTimerRef.current != null) return;
+      const delay = autosaveDelayForDoc(history.documentRef.current);
       autosaveRetryTimerRef.current = window.setTimeout(() => {
         autosaveRetryTimerRef.current = null;
         flushAutosaveRef.current();
-      }, AUTOSAVE_DEBOUNCE_MS);
+      }, delay);
     });
   }, [history.hasUnsavedEditsRef, history.revisionRef, onSave]);
   flushAutosaveRef.current = flushAutosave;
@@ -442,7 +461,8 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     if (!active) return;
     if (!history.hasUnsavedEditsRef.current) return;
     if (autosavePendingRef.current) return;
-    const timer = window.setTimeout(() => flushAutosaveRef.current(), AUTOSAVE_DEBOUNCE_MS);
+    const delay = autosaveDelayForDoc(history.document);
+    const timer = window.setTimeout(() => flushAutosaveRef.current(), delay);
     return () => window.clearTimeout(timer);
     // Autosave reacts to a changing dirty flag; hasUnsavedEditsRef flips on edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps

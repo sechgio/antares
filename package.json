@@ -32,7 +32,8 @@
     "typecheck:frontend": "cd frontend && npx tsc --noEmit",
     "audit:python": "pip-audit .",
     "audit:node": "npm audit --omit=dev --audit-level=high && npm audit --prefix frontend --omit=dev --audit-level=high",
-    "ci": "npm run lint:python && npm run typecheck:backend && npm run audit:python && npm run audit:node && npm run typecheck:frontend && npm test",
+    "check:budgets": "node scripts/check-budgets.js",
+    "ci": "npm run lint:python && npm run typecheck:backend && npm run audit:python && npm run audit:node && npm run typecheck:frontend && npm run check:budgets && npm test",
     "bump:patch": "node scripts/bump-version.js patch",
     "bump:minor": "node scripts/bump-version.js minor",
     "bump:major": "node scripts/bump-version.js major",
@@ -64,6 +65,7 @@
     "tar": "^7.5.21",
     "dompurify": "^3.4.13",
     "js-yaml": "^4.3.0",
-    "builder-util-runtime": "^9.7.0"
+    "builder-util-runtime": "^9.7.0",
+    "nanoid": "^3.3.18"
   }
 }
