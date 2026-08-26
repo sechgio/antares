@@ -9,16 +9,20 @@ import type { ProcessWorkerRequest, ProcessWorkerResponse } from './imageProcess
 type Pending = {
   resolve: (value: ProcessWorkerResponse) => void;
   reject: (reason?: unknown) => void;
+  timeoutId: ReturnType<typeof setTimeout> | null;
 };
 
 type PooledWorker = {
   worker: Worker;
   busy: boolean;
+  requestId: string | null;
+  retired: boolean;
 };
 
 let pool: PooledWorker[] | null = null;
 const waitQueue: Array<() => void> = [];
 const pendingById = new Map<string, Pending>();
+export const PROCESS_WORKER_TIMEOUT_MS = 30_000;
 
 function poolSize(): number {
   try {
@@ -40,34 +44,78 @@ export function canUseProcessWorker(): boolean {
   );
 }
 
+function wakeNextWorker(): void {
+  const next = waitQueue.shift();
+  if (next) next();
+}
+
+function normalizeWorkerFailure(error: unknown): Error {
+  return error instanceof Error ? error : new Error('Image process worker failed');
+}
+
+function retireWorker(entry: PooledWorker, error: unknown): void {
+  if (entry.retired) return;
+  entry.retired = true;
+  entry.busy = false;
+
+  const requestId = entry.requestId;
+  entry.requestId = null;
+  if (requestId) {
+    const pending = pendingById.get(requestId);
+    if (pending) {
+      pendingById.delete(requestId);
+      if (pending.timeoutId !== null) clearTimeout(pending.timeoutId);
+      pending.reject(normalizeWorkerFailure(error));
+    }
+  }
+
+  console.warn('[image-optimizer] worker error', error);
+  entry.worker.terminate();
+
+  if (pool) {
+    const index = pool.indexOf(entry);
+    if (index >= 0) pool[index] = createPooledWorker();
+  }
+  wakeNextWorker();
+}
+
+function createPooledWorker(): PooledWorker {
+  const entry: PooledWorker = {
+    worker: new Worker(new URL('./imageProcess.worker.ts', import.meta.url), {
+      type: 'module',
+    }),
+    busy: false,
+    requestId: null,
+    retired: false,
+  };
+
+  entry.worker.onmessage = (event: MessageEvent<ProcessWorkerResponse>) => {
+    if (entry.retired) return;
+    const response = event.data;
+    const pending = pendingById.get(response.requestId);
+    if (!pending || entry.requestId !== response.requestId) return;
+
+    pendingById.delete(response.requestId);
+    if (pending.timeoutId !== null) clearTimeout(pending.timeoutId);
+    entry.requestId = null;
+    entry.busy = false;
+    pending.resolve(response);
+    wakeNextWorker();
+  };
+  entry.worker.onerror = (error) => retireWorker(entry, error);
+  entry.worker.onmessageerror = () => {
+    retireWorker(entry, new Error('Image process worker message failed'));
+  };
+
+  return entry;
+}
+
 function ensurePool(): PooledWorker[] {
   if (pool) return pool;
   const size = poolSize();
   pool = [];
   for (let i = 0; i < size; i += 1) {
-    const worker = new Worker(new URL('./imageProcess.worker.ts', import.meta.url), {
-      type: 'module',
-    });
-    const entry: PooledWorker = { worker, busy: false };
-    worker.onmessage = (event: MessageEvent<ProcessWorkerResponse>) => {
-      entry.busy = false;
-      const response = event.data;
-      const pending = pendingById.get(response.requestId);
-      if (pending) {
-        pendingById.delete(response.requestId);
-        pending.resolve(response);
-      }
-      const next = waitQueue.shift();
-      if (next) next();
-    };
-    worker.onerror = (err) => {
-      entry.busy = false;
-      // Reject all in-flight for this worker is hard without tracking; surface next job failure.
-      console.warn('[image-optimizer] worker error', err);
-      const next = waitQueue.shift();
-      if (next) next();
-    };
-    pool.push(entry);
+    pool.push(createPooledWorker());
   }
   return pool;
 }
@@ -127,12 +175,19 @@ export async function runProcessInWorker(input: WorkerProcessInput): Promise<{
   };
 
   const response = await new Promise<ProcessWorkerResponse>((resolve, reject) => {
-    pendingById.set(requestId, { resolve, reject });
+    const timeoutId = setTimeout(() => {
+      retireWorker(entry, new Error('Image process worker timed out'));
+    }, PROCESS_WORKER_TIMEOUT_MS);
+    pendingById.set(requestId, { resolve, reject, timeoutId });
+    entry.requestId = requestId;
     try {
       entry.worker.postMessage(request, [input.buffer]);
     } catch (err) {
       pendingById.delete(requestId);
+      clearTimeout(timeoutId);
+      entry.requestId = null;
       entry.busy = false;
+      wakeNextWorker();
       reject(err);
     }
   });
@@ -157,6 +212,9 @@ export function _resetProcessWorkersForTests(): void {
   }
   pool = null;
   waitQueue.length = 0;
+  for (const pending of pendingById.values()) {
+    if (pending.timeoutId !== null) clearTimeout(pending.timeoutId);
+  }
   pendingById.clear();
   requestSeq = 0;
 }
