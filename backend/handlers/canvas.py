@@ -220,11 +220,14 @@ def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
         if out.is_symlink() or out.parent.is_symlink():
             raise ValueError("symlink no permitido en ruta de salida")
         out.parent.mkdir(parents=True, exist_ok=True)
-        if out.exists():
-            raise FileExistsError(f"El archivo ya existe: {out}")
-        tmp = out.with_suffix(out.suffix + ".tmp")
-        tmp.write_bytes(pdf_bytes)
-        os.replace(tmp, out)
+        tmp = out.with_name(f"{out.stem}_{uuid.uuid4().hex[:8]}.tmp")
+        try:
+            tmp.write_bytes(pdf_bytes)
+            os.replace(tmp, out)
+        except Exception:
+            with contextlib.suppress(OSError):
+                tmp.unlink(missing_ok=True)
+            raise
         return {
             "filename": out.name,
             "saved_path": str(out),

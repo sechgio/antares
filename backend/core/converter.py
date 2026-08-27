@@ -14,6 +14,9 @@ from PIL import Image, ImageOps
 
 from backend.core.format_registry import get_registry
 
+# Allow processing large format images (up to 400 Megapixels) without DecompressionBombError
+Image.MAX_IMAGE_PIXELS = 400_000_000
+
 _registry = get_registry()
 _registry.add_format("JPEG", ".jpg", ("RGB", "L", "CMYK"))
 _registry.add_format("JPG", ".jpg", ("RGB", "L", "CMYK"))
@@ -179,7 +182,11 @@ def _can_fast_copy(
     orientation = exif.get(_EXIF_ORIENTATION, 1) if exif is not None else 1
     if orientation in _TRANSPOSE_ORIENTATIONS:
         return False
-    return not (not keep_exif and exif)
+    if not keep_exif:
+        has_exif = bool(exif) or bool(source_img.info.get("exif"))
+        if has_exif:
+            return False
+    return True
 
 
 def convertir_imagen(

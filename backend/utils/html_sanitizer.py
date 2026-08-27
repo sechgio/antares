@@ -48,6 +48,8 @@ def _neutralize_url_attr(match: re.Match[str]) -> str:
 def sanitize_html_for_pdf(html: str) -> str:
     """Strip active content and external resource URLs before WeasyPrint."""
     stripped = str(html)
+    stripped = re.sub(r"<!--[\s\S]*?-->", "", stripped)
+    stripped = re.sub(r'<meta[^>]+http-equiv=["\']?Content-Security-Policy["\']?[^>]*>', "", stripped, flags=re.IGNORECASE)
     stripped = re.sub(r"<script[^>]*>[\s\S]*?</script>", "", stripped, flags=re.IGNORECASE)
     stripped = re.sub(r"<iframe[^>]*>[\s\S]*?</iframe>", "", stripped, flags=re.IGNORECASE)
     stripped = re.sub(r"<object[^>]*>[\s\S]*?</object>", "", stripped, flags=re.IGNORECASE)
@@ -80,7 +82,6 @@ def sanitize_html_for_pdf(html: str) -> str:
         stripped,
         flags=re.IGNORECASE,
     )
-    injected = re.sub(r"<head([^>]*)>", rf"<head\1>{CSP_META}", stripped, count=1, flags=re.IGNORECASE)
-    if re.search(r"<head", injected, flags=re.IGNORECASE):
-        return injected
-    return CSP_META + injected
+    if re.search(r"(^|[\s>])<head\b([^>]*)>", stripped, flags=re.IGNORECASE):
+        return re.sub(r"(^|[\s>])<head\b([^>]*)>", rf"\1<head\2>{CSP_META}", stripped, count=1, flags=re.IGNORECASE)
+    return CSP_META + stripped

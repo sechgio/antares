@@ -26,10 +26,22 @@ def is_safe_user_path(value: object) -> bool:
     return not ("%2e%2e" in lowered or "%252e" in lowered)
 
 
+_WINDOWS_RESERVED_NAMES = frozenset(
+    {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        *(f"COM{i}" for i in range(1, 10)),
+        *(f"LPT{i}" for i in range(1, 10)),
+    }
+)
+
+
 def sanitizar_nombre(nombre: str | Path) -> str:
     """Elimina caracteres no válidos para nombres de archivo en Windows/Linux.
 
-    Also prevents path traversal attacks.
+    Also prevents path traversal attacks and Windows DOS device collisions.
 
     Args:
         nombre: Nombre de archivo a sanitizar.
@@ -53,7 +65,16 @@ def sanitizar_nombre(nombre: str | Path) -> str:
     # Prevent names starting with dots (hidden files on Unix)
     nombre_limpio = nombre_limpio.lstrip(".")
 
-    return nombre_limpio.strip("_. ")
+    cleaned = nombre_limpio.strip("_. ")
+    if not cleaned:
+        return ""
+
+    # Prevent collision with Windows reserved DOS device names (CON, AUX, NUL, PRN, COM1-9, LPT1-9)
+    stem = Path(cleaned).stem.upper()
+    if stem in _WINDOWS_RESERVED_NAMES:
+        cleaned = f"_{cleaned}"
+
+    return cleaned
 
 
 def obtener_codigo_desde_nombre(nombre_archivo: str | Path) -> str:

@@ -48,8 +48,9 @@ const supabaseMock = vi.hoisted(() => {
 
   const from = vi.fn(() => chainable);
   const getSession = vi.fn();
+  const rpc = vi.fn();
 
-  return { responses, chainable, from, getSession };
+  return { responses, chainable, from, getSession, rpc };
 });
 
 vi.mock('../../../api', () => ({
@@ -65,6 +66,7 @@ vi.mock('../../../lib/supabase', () => ({
   supabase: {
     auth: { getSession: supabaseMock.getSession },
     from: supabaseMock.from,
+    rpc: supabaseMock.rpc,
   },
 }));
 
@@ -112,6 +114,8 @@ function resetMocks(): void {
 
   supabaseMock.responses.length = 0;
   supabaseMock.from.mockClear();
+  supabaseMock.rpc.mockReset();
+  supabaseMock.rpc.mockRejectedValue(new Error('RPC function not found'));
   supabaseMock.getSession.mockReset();
   supabaseMock.getSession.mockResolvedValue({
     data: { session: { user: { id: 'user-1' } } },
@@ -1039,6 +1043,34 @@ describe('pushCanvasDocument', () => {
       created_by: 'user-1',
       created_at: '2026-07-22T10:00:00Z',
     });
+  });
+
+  it('uses atomic RPC canvas_push_document_lww when available and returns true on success', async () => {
+    const doc = makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T12:00:00Z' });
+    supabaseMock.rpc.mockResolvedValueOnce({ data: true, error: null });
+
+    const ok = await pushCanvasDocument(doc);
+
+    expect(ok).toBe(true);
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('canvas_push_document_lww', {
+      p_document: doc,
+      p_updated_at: '2026-07-22T12:00:00Z',
+    });
+    expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
+  });
+
+  it('uses atomic RPC canvas_push_document_lww and returns false when remote was newer', async () => {
+    const doc = makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T10:00:00Z' });
+    supabaseMock.rpc.mockResolvedValueOnce({ data: false, error: null });
+
+    const ok = await pushCanvasDocument(doc);
+
+    expect(ok).toBe(false);
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('canvas_push_document_lww', {
+      p_document: doc,
+      p_updated_at: '2026-07-22T10:00:00Z',
+    });
+    expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
   });
 });
 

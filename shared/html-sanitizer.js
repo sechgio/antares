@@ -73,6 +73,10 @@ function stripOrKeepLink(fullTag) {
 
 function sanitizeHtmlForPdf(html) {
   const stripped = String(html)
+    // Strip comments first so fake/pseudo-heads or payloads in comments cannot fool regex
+    .replace(/<!--[\s\S]*?-->/g, '')
+    // Strip any pre-existing CSP meta tags to prevent spoofing or bypassing CSP
+    .replace(/<meta[^>]+http-equiv=["']?Content-Security-Policy["']?[^>]*>/gi, '')
     // Strip <script>/<iframe>/<object> pairs non-greedily first.
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<iframe[^>]*>[\s\S]*?<\/iframe>/gi, '')
@@ -118,16 +122,18 @@ function sanitizeHtmlForPdf(html) {
       if (isAllowedGoogleFontUrl(urlValue)) return match;
       return "url('')";
     });
-  // Inject CSP into the first <head> only. Multiple <head> elements would
-  // be malformed HTML and a second one would bypass CSP, so if there's no
-  // <head> at all we prepend the meta to guarantee coverage.
-  const injectedHtml = stripped.replace(/<head([^>]*)>/i, `<head$1>${CSP_META}`);
-  return /<head/i.test(injectedHtml) ? injectedHtml : CSP_META + injectedHtml;
+  // Inject CSP into a real <head> tag, or prepend at the beginning of the document
+  if (/(^|[\s>])<head\b([^>]*)>/i.test(stripped)) {
+    return stripped.replace(/(^|[\s>])<head\b([^>]*)>/i, `$1<head$2>${CSP_META}`);
+  }
+  return `${CSP_META}${stripped}`;
 }
 
 function sanitizeHtmlForPreview(html) {
   const raw = String(html);
   let stripped = raw
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<meta[^>]+http-equiv=["']?Content-Security-Policy["']?[^>]*>/gi, '')
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<script[^>]*>/gi, '')
     .replace(/<\/script>/gi, '')
@@ -183,8 +189,10 @@ function sanitizeHtmlForPreview(html) {
     return `<style>${inner}</style>`;
   });
 
-  const injectedHtml = stripped.replace(/<head([^>]*)>/i, `<head$1>${PREVIEW_CSP_META}`);
-  return /<head/i.test(injectedHtml) ? injectedHtml : PREVIEW_CSP_META + injectedHtml;
+  if (/(^|[\s>])<head\b([^>]*)>/i.test(stripped)) {
+    return stripped.replace(/(^|[\s>])<head\b([^>]*)>/i, `$1<head$2>${PREVIEW_CSP_META}`);
+  }
+  return `${PREVIEW_CSP_META}${stripped}`;
 }
 
 module.exports = { sanitizeHtmlForPdf, sanitizeHtmlForPreview, CSP_META, PREVIEW_CSP_META, isSafeDataUrl, isAllowedGoogleFontUrl };

@@ -109,7 +109,18 @@ function writeSecureJson(filename, namespace, payload) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const sealed = encryptPayload(namespace, payload);
   const envelope = { v: sealed.v, data: sealed.data, savedAt: new Date().toISOString() };
-  fs.writeFileSync(filePath, JSON.stringify(envelope, null, 2), { mode: 0o600 });
+  const tmpPath = `${filePath}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  try {
+    fs.writeFileSync(tmpPath, JSON.stringify(envelope, null, 2), { mode: 0o600 });
+    fs.renameSync(tmpPath, filePath);
+  } catch (err) {
+    try {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    } catch {
+      /* ignore cleanup error */
+    }
+    throw err;
+  }
 }
 
 function clearSecureJson(filename) {

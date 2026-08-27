@@ -15,13 +15,16 @@ def convert_pdf_bytes_to_cmyk(pdf_bytes: bytes, dpi: int = 300) -> bytes:
     src_pdf = fitz.open(stream=pdf_bytes, filetype="pdf")
     out_pdf = fitz.open()
 
-    for page in src_pdf:
-        # Render high-resolution CMYK pixmap of the page
-        pix = page.get_pixmap(colorspace=fitz.csCMYK, dpi=dpi)
-        cmyk_page = out_pdf.new_page(width=page.rect.width, height=page.rect.height)
-        cmyk_page.insert_image(page.rect, stream=pix.tobytes("jpeg"))
-
-    res_bytes = cast(bytes, out_pdf.tobytes(clean=True, deflate=True))
-    src_pdf.close()
-    out_pdf.close()
-    return res_bytes
+    try:
+        for page in src_pdf:
+            # Render high-resolution CMYK pixmap of the page
+            pix = page.get_pixmap(colorspace=fitz.csCMYK, dpi=dpi)
+            try:
+                cmyk_page = out_pdf.new_page(width=page.rect.width, height=page.rect.height)
+                cmyk_page.insert_image(page.rect, stream=pix.tobytes("jpeg"))
+            finally:
+                pix = None  # Release unmanaged native memory buffer for the page
+        return cast(bytes, out_pdf.tobytes(clean=True, deflate=True))
+    finally:
+        src_pdf.close()
+        out_pdf.close()
