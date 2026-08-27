@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { api, onNotify } from '../api';
 import { ProcessStatus } from '../types';
 import type { ProcessBody } from '../api';
@@ -30,7 +30,24 @@ function pollErrorMessage(err: unknown): string {
   return String(err);
 }
 
-export function useProcessRunner() {
+export type ProcessRunnerPhase = 'idle' | 'running' | 'completed';
+
+export type ProcessRunnerState =
+  | { phase: 'idle'; status: ProcessStatus | null; pollError: string | null }
+  | { phase: 'running'; status: ProcessStatus; pollError: string | null }
+  | { phase: 'completed'; status: ProcessStatus; cancelled: boolean; pollError: string | null };
+
+export interface ProcessRunnerHookResult {
+  state: ProcessRunnerState;
+  status: ProcessStatus | null;
+  running: boolean;
+  pollError: string | null;
+  pollStatus: () => Promise<void>;
+  startProcess: (body: ProcessBody) => Promise<{ started: boolean; reason?: string; job_id?: string } | undefined>;
+  cancelProcess: () => Promise<void>;
+}
+
+export function useProcessRunner(): ProcessRunnerHookResult {
   const [status, setStatus] = useState<ProcessStatus | null>(null);
   const [running, setRunning] = useState(false);
   const [pollError, setPollError] = useState<string | null>(null);
@@ -118,5 +135,28 @@ export function useProcessRunner() {
     pollStatus();
   }, [pollStatus]);
 
-  return { status, running, pollError, pollStatus, startProcess, cancelProcess };
+  const state: ProcessRunnerState = useMemo(() => {
+    if (running) {
+      return {
+        phase: 'running',
+        status: status ?? emptyStatus(),
+        pollError,
+      };
+    }
+    if (status && (status.progress === 100 || status.cancelled)) {
+      return {
+        phase: 'completed',
+        status,
+        cancelled: Boolean(status.cancelled),
+        pollError,
+      };
+    }
+    return {
+      phase: 'idle',
+      status,
+      pollError,
+    };
+  }, [running, status, pollError]);
+
+  return { state, status, running, pollError, pollStatus, startProcess, cancelProcess };
 }

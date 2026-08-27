@@ -34,7 +34,44 @@ const SAVE_DEBOUNCE_MS = 400;
 /** Style tweaks (size/color) shouldn't thrash IndexedDB with full photo blobs. */
 const STYLE_SAVE_DEBOUNCE_MS = 900;
 
-export function useCampoPanels(config: ReportTypeConfig) {
+export interface CampoPanelsSelectionState {
+    selectedPanel: CampoPanel | null;
+    selectedPanelId: string | null;
+    currentPanelIndex: number;
+}
+
+export interface CampoPanelsActions {
+    createPanel: () => CampoPanel;
+    selectPanel: (id: string) => void;
+    updateHeader: (key: string, value: string) => void;
+    addPhotos: (files: FileList | null) => { added: number; rejected: number };
+    clearPhotos: () => void;
+    deletePanel: (id: string) => void;
+    duplicatePanel: (id: string) => void;
+    goRelativePanel: (direction: -1 | 1) => void;
+    resetSession: () => void;
+}
+
+export interface CampoPanelsHookResult {
+    panels: CampoPanel[];
+    selectedPanel: CampoPanel | null;
+    selectedPanelId: string | null;
+    panelListItems: CampoPanelListItem[];
+    currentPanelIndex: number;
+    selection: CampoPanelsSelectionState;
+    actions: CampoPanelsActions;
+    createPanel: () => CampoPanel;
+    selectPanel: (id: string) => void;
+    updateHeader: (key: string, value: string) => void;
+    addPhotos: (files: FileList | null) => { added: number; rejected: number };
+    clearPhotos: () => void;
+    deletePanel: (id: string) => void;
+    duplicatePanel: (id: string) => void;
+    goRelativePanel: (direction: -1 | 1) => void;
+    resetSession: () => void;
+}
+
+export function useCampoPanels(config: ReportTypeConfig): CampoPanelsHookResult {
     const [panels, setPanels] = useState<CampoPanel[]>(() => [createEmptyPanel(config)]);
     const [selectedPanelId, setSelectedPanelId] = useState<string | null>(() => panels[0]?.id ?? null);
 
@@ -321,12 +358,32 @@ export function useCampoPanels(config: ReportTypeConfig) {
         if (next) setSelectedPanelId(next.id);
     }, [panels, selectedPanelId]);
 
+    const selection: CampoPanelsSelectionState = {
+        selectedPanel,
+        selectedPanelId,
+        currentPanelIndex,
+    };
+
+    const actions: CampoPanelsActions = {
+        createPanel,
+        selectPanel,
+        updateHeader,
+        addPhotos,
+        clearPhotos,
+        deletePanel,
+        duplicatePanel,
+        goRelativePanel,
+        resetSession,
+    };
+
     return {
         panels,
         selectedPanel,
         selectedPanelId,
         panelListItems,
         currentPanelIndex,
+        selection,
+        actions,
         createPanel,
         selectPanel,
         updateHeader,

@@ -11,22 +11,33 @@ const { mockPreview, mockGenerate, mockKeysGet, mockKeysSet, mockDialogFolder } 
   mockPreview: vi.fn(async (body: Record<string, unknown>) => {
     previewPayloads.push(body);
     return {
-      success: true,
-      data: {
-        image: 'data:image/png;base64,abc',
+      image: 'data:image/png;base64,abc',
+      cod_componente: 'COD-1',
+      direccion: 'Calle 1',
+      localidad: 'Loc',
+      distrito: 'Dist',
+      datos: {
         cod_componente: 'COD-1',
+        lat: -12.0,
+        lon: -77.0,
         direccion: 'Calle 1',
         localidad: 'Loc',
         distrito: 'Dist',
-        total_filas: 2,
-        row_index: body.rowIndex ?? 0,
-        formato: body.formato,
       },
+      total_filas: 2,
+      row_index: (body.rowIndex as number) ?? 0,
+      formato: body.formato as string,
     };
   }),
   mockGenerate: vi.fn(async (body: Record<string, unknown>) => {
     generatePayloads.push(body);
-    return { success: true, data: { generados: 1, fallidos: 0, consolidado: body.consolidado } };
+    return {
+      generados: 1,
+      fallidos: 0,
+      outputDir: OUTPUT_DIR,
+      consolidado: Boolean(body.consolidado),
+      consolidatedPath: null,
+    };
   }),
   mockKeysGet: vi.fn(async () => ({ keys: {} })),
   mockKeysSet: vi.fn(async (keys: Record<string, string>) => ({ keys })),

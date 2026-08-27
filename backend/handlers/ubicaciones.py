@@ -21,6 +21,7 @@ from typing import Any, cast
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
+from backend.handlers.common import with_locale
 from backend.utils.paths import resource_path, user_data_path
 from backend.utils.validators import sanitizar_nombre
 from backend.version import __version__ as _antares_version
@@ -796,13 +797,27 @@ def _encode_preview_data(
         _trim_ubicaciones_preview_files(cache_dir)
 
     resolved = out_path.resolve()
+    cod = str(datos.get("cod_componente", ""))
+    dir_str = str(datos.get("direccion", ""))
+    loc = str(datos.get("localidad", ""))
+    dist = str(datos.get("distrito", ""))
+    lat_val = float(datos.get("lat", 0.0))
+    lon_val = float(datos.get("lon", 0.0))
     return {
         "image": f"data:image/jpeg;base64,{base64.b64encode(raw).decode('ascii')}",
         "image_path": str(resolved),
-        "cod_componente": str(datos["cod_componente"]),
-        "direccion": str(datos["direccion"]),
-        "localidad": str(datos["localidad"]),
-        "distrito": str(datos["distrito"]),
+        "cod_componente": cod,
+        "direccion": dir_str,
+        "localidad": loc,
+        "distrito": dist,
+        "datos": {
+            "cod_componente": cod,
+            "lat": lat_val,
+            "lon": lon_val,
+            "direccion": dir_str,
+            "localidad": loc,
+            "distrito": dist,
+        },
         "total_filas": total_filas,
         "row_index": row_index,
         "formato": formato,
@@ -1171,92 +1186,89 @@ def _extract_row_data(row, index, col_cod, col_dir, col_loc, col_dist, col_lat, 
         'lon': row[col_lon]
     }
 
-def handle_preview_ubicacion(payload: dict) -> dict:
+@with_locale
+def handle_preview_ubicacion(payload: dict) -> dict[str, Any]:
     """Genera vista previa WYSIWYG: compone igual que el PDF y reduce para pantalla."""
-    try:
-        excel_path = payload.get("excelPath")
-        manual_data = payload.get("manualData")
-        formato = payload.get("formato", "vertical")
-        row_index = payload.get("rowIndex", 0)
-        recompose_only = bool(payload.get("recomposeOnly", False))
-        map_opts = _map_opts_from_payload(payload)
-        custom_styles = payload.get("customStyles") or None
+    excel_path = payload.get("excelPath")
+    manual_data = payload.get("manualData")
+    formato = payload.get("formato", "vertical")
+    row_index = payload.get("rowIndex", 0)
+    recompose_only = bool(payload.get("recomposeOnly", False))
+    map_opts = _map_opts_from_payload(payload)
+    custom_styles = payload.get("customStyles") or None
 
-        if not excel_path and not manual_data:
-            return {"success": False, "error": "Falta la ruta del Excel o datos manuales."}
+    if not excel_path and not manual_data:
+        raise ValueError("Falta la ruta del Excel o datos manuales.")
 
-        if manual_data:
-            datos = {
-                'cod_componente': str(manual_data.get('cod_componente', '')).strip(),
-                'direccion': str(manual_data.get('direccion', '')).strip(),
-                'localidad': str(manual_data.get('localidad', '')).strip(),
-                'distrito': str(manual_data.get('distrito', '')).strip(),
-                'lat': _coerce_coord(manual_data.get('lat')),
-                'lon': _coerce_coord(manual_data.get('lon')),
-            }
-            total_filas = 1
-            row_index = 0
-        else:
-            if not isinstance(excel_path, str) or not excel_path:
-                return {"success": False, "error": "Falta la ruta del Excel o datos manuales."}
-            df, (col_cod, col_dir, col_loc, col_dist, col_lat, col_lon) = _load_excel_data(excel_path)
-            total_filas = len(df)
+    if manual_data:
+        datos = {
+            'cod_componente': str(manual_data.get('cod_componente', '')).strip(),
+            'direccion': str(manual_data.get('direccion', '')).strip(),
+            'localidad': str(manual_data.get('localidad', '')).strip(),
+            'distrito': str(manual_data.get('distrito', '')).strip(),
+            'lat': _coerce_coord(manual_data.get('lat')),
+            'lon': _coerce_coord(manual_data.get('lon')),
+        }
+        total_filas = 1
+        row_index = 0
+    else:
+        if not isinstance(excel_path, str) or not excel_path:
+            raise ValueError("Falta la ruta del Excel o datos manuales.")
+        df, (col_cod, col_dir, col_loc, col_dist, col_lat, col_lon) = _load_excel_data(excel_path)
+        total_filas = len(df)
 
-            if col_lat is None:
-                return {"success": False, "error": "El Excel debe tener columnas 'latitud' y 'longitud'."}
+        if col_lat is None:
+            raise ValueError("El Excel debe tener columnas 'latitud' y 'longitud'.")
 
-            if row_index >= total_filas:
-                return {"success": False, "error": "No hay mas filas para previsualizar.", "total_filas": total_filas}
+        if row_index >= total_filas:
+            raise ValueError("No hay mas filas para previsualizar.")
 
-            row = df.iloc[row_index]
-            datos = _extract_row_data(row, row_index, col_cod, col_dir, col_loc, col_dist, col_lat, col_lon)
-            excel_ctx = _sync_excel_context(excel_path)
+        row = df.iloc[row_index]
+        datos = _extract_row_data(row, row_index, col_cod, col_dir, col_loc, col_dist, col_lat, col_lon)
+        excel_ctx = _sync_excel_context(excel_path)
 
-        lat = _coerce_coord(datos["lat"])
-        lon = _coerce_coord(datos["lon"])
-        if lat is None or lon is None:
-            return {"success": False, "error": "La fila no tiene coordenadas validas.", "total_filas": total_filas}
-        datos["lat"] = lat
-        datos["lon"] = lon
+    lat = _coerce_coord(datos["lat"])
+    lon = _coerce_coord(datos["lon"])
+    if lat is None or lon is None:
+        raise ValueError("La fila no tiene coordenadas validas.")
+    datos["lat"] = lat
+    datos["lon"] = lon
 
-        lat = float(lat)
-        lon = float(lon)
-        excel_ctx = _manual_preview_ctx(datos) if manual_data else excel_ctx
-        styles_hash = json.dumps(custom_styles, sort_keys=True) if custom_styles else ""
-        composed_key = _composed_preview_key(excel_ctx, row_index, formato, styles_hash, map_opts)
+    lat = float(lat)
+    lon = float(lon)
+    excel_ctx = _manual_preview_ctx(datos) if manual_data else excel_ctx
+    styles_hash = json.dumps(custom_styles, sort_keys=True) if custom_styles else ""
+    composed_key = _composed_preview_key(excel_ctx, row_index, formato, styles_hash, map_opts)
 
-        cached_preview = _preview_composed_cache.get(composed_key)
-        if cached_preview is not None:
-            cached_path = str(cached_preview.get("image_path") or "")
-            if cached_path and Path(cached_path).is_file():
-                return {"success": True, "data": cached_preview}
-            with _cache_lock:
-                _preview_composed_cache.pop(composed_key, None)
+    cached_preview = _preview_composed_cache.get(composed_key)
+    if cached_preview is not None:
+        cached_path = str(cached_preview.get("image_path") or "")
+        if cached_path and Path(cached_path).is_file():
+            return cached_preview
+        with _cache_lock:
+            _preview_composed_cache.pop(composed_key, None)
 
-        if recompose_only:
-            map_key = _map_cache_key(lat, lon, formato, preview=True, map_opts=map_opts)
-            cached_map = _map_screenshot_cache.get(map_key) or _map_screenshot_working_cache.get(map_key)
-            if cached_map is not None:
-                data = _compose_and_cache_preview(
-                    excel_ctx, row_index, formato, datos, cached_map, total_filas,
-                    custom_styles=custom_styles, map_opts=map_opts,
-                )
-                return {"success": True, "data": data}
+    if recompose_only:
+        map_key = _map_cache_key(lat, lon, formato, preview=True, map_opts=map_opts)
+        cached_map = _map_screenshot_cache.get(map_key) or _map_screenshot_working_cache.get(map_key)
+        if cached_map is not None:
+            data = _compose_and_cache_preview(
+                excel_ctx, row_index, formato, datos, cached_map, total_filas,
+                custom_styles=custom_styles, map_opts=map_opts,
+            )
+            return data
 
-        screenshot_bytes = _get_cached_map_screenshot(lat, lon, formato, preview=True, map_opts=map_opts)
-        data = _compose_and_cache_preview(
-            excel_ctx, row_index, formato, datos, screenshot_bytes, total_filas,
-            custom_styles=custom_styles, map_opts=map_opts,
-        )
+    screenshot_bytes = _get_cached_map_screenshot(lat, lon, formato, preview=True, map_opts=map_opts)
+    data = _compose_and_cache_preview(
+        excel_ctx, row_index, formato, datos, screenshot_bytes, total_filas,
+        custom_styles=custom_styles, map_opts=map_opts,
+    )
 
-        _spawn_prefetch(
-            excel_ctx, row_index, formato, datos, lat, lon, total_filas,
-            custom_styles=custom_styles, map_opts=map_opts,
-        )
-        return {"success": True, "data": data}
-    except Exception as e:
-        logger.exception("Error generando preview de ubicacion")
-        return {"success": False, "error": str(e)}
+    _spawn_prefetch(
+        excel_ctx, row_index, formato, datos, lat, lon, total_filas,
+        custom_styles=custom_styles, map_opts=map_opts,
+    )
+    return data
 
 _CONSOLIDATED_PDF_NAME = "ubicaciones_consolidado.pdf"
 
@@ -1355,153 +1367,147 @@ def _write_consolidated_pdf(tmp_path: str, base_path: str) -> str:
     raise _consolidated_pdf_permission_error(base_path)
 
 
-def handle_generar_ubicaciones(payload: dict) -> dict:
-    try:
-        excel_path = payload.get("excelPath")
-        manual_data = payload.get("manualData")
-        output_dir = payload.get("outputDir")
-        formato = payload.get("formato", "vertical")
-        consolidado = payload.get("consolidado", False)
-        map_opts = _map_opts_from_payload(payload)
-        custom_styles = payload.get("customStyles") or None
+@with_locale
+def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:
+    excel_path = payload.get("excelPath")
+    manual_data = payload.get("manualData")
+    output_dir = payload.get("outputDir")
+    formato = payload.get("formato", "vertical")
+    consolidado = payload.get("consolidado", False)
+    map_opts = _map_opts_from_payload(payload)
+    custom_styles = payload.get("customStyles") or None
 
-        if not output_dir or (not excel_path and not manual_data):
-            return {"success": False, "error": "Faltan rutas de entrada/salida o datos manuales."}
+    if not output_dir or (not excel_path and not manual_data):
+        raise ValueError("Faltan rutas de entrada/salida o datos manuales.")
 
-        os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
-        valid_rows: list[dict] = []
+    valid_rows: list[dict] = []
 
-        if manual_data:
-            datos = {
-                'cod_componente': str(manual_data.get('cod_componente', '')).strip(),
-                'direccion': str(manual_data.get('direccion', '')).strip(),
-                'localidad': str(manual_data.get('localidad', '')).strip(),
-                'distrito': str(manual_data.get('distrito', '')).strip(),
-                'lat': _coerce_coord(manual_data.get('lat')),
-                'lon': _coerce_coord(manual_data.get('lon')),
-            }
-            if not _is_na(datos["lat"]) and not _is_na(datos["lon"]):
-                valid_rows.append(datos)
-        else:
-            if not isinstance(excel_path, str) or not excel_path:
-                return {"success": False, "error": "Faltan rutas de entrada/salida o datos manuales."}
-            df, (col_cod, col_dir, col_loc, col_dist, col_lat, col_lon) = _load_excel_data(excel_path)
+    if manual_data:
+        datos = {
+            'cod_componente': str(manual_data.get('cod_componente', '')).strip(),
+            'direccion': str(manual_data.get('direccion', '')).strip(),
+            'localidad': str(manual_data.get('localidad', '')).strip(),
+            'distrito': str(manual_data.get('distrito', '')).strip(),
+            'lat': _coerce_coord(manual_data.get('lat')),
+            'lon': _coerce_coord(manual_data.get('lon')),
+        }
+        if not _is_na(datos["lat"]) and not _is_na(datos["lon"]):
+            valid_rows.append(datos)
+    else:
+        if not isinstance(excel_path, str) or not excel_path:
+            raise ValueError("Faltan rutas de entrada/salida o datos manuales.")
+        df, (col_cod, col_dir, col_loc, col_dist, col_lat, col_lon) = _load_excel_data(excel_path)
 
-            if col_lat is None:
-                return {"success": False, "error": "El Excel debe tener columnas 'latitud' y 'longitud'."}
+        if col_lat is None:
+            raise ValueError("El Excel debe tener columnas 'latitud' y 'longitud'.")
 
-            for index, row in df.iterrows():
-                datos = _extract_row_data(row, index, col_cod, col_dir, col_loc, col_dist, col_lat, col_lon)
-                lat = _coerce_coord(datos["lat"])
-                lon = _coerce_coord(datos["lon"])
-                if lat is None or lon is None:
-                    continue
-                datos["lat"] = lat
-                datos["lon"] = lon
-                valid_rows.append(datos)
+        for index, row in df.iterrows():
+            datos = _extract_row_data(row, index, col_cod, col_dir, col_loc, col_dist, col_lat, col_lon)
+            lat = _coerce_coord(datos["lat"])
+            lon = _coerce_coord(datos["lon"])
+            if lat is None or lon is None:
+                continue
+            datos["lat"] = lat
+            datos["lon"] = lon
+            valid_rows.append(datos)
 
-        if not valid_rows:
-            return {"success": False, "error": "No hay filas con coordenadas validas para generar."}
+    if not valid_rows:
+        raise ValueError("No hay filas con coordenadas validas para generar.")
 
-        if not consolidado:
-            used_stems: dict[str, int] = {}
-            for row_data in valid_rows:
-                row_data["_out_filename"] = _unique_pdf_filename(row_data["cod_componente"], used_stems)
+    if not consolidado:
+        used_stems: dict[str, int] = {}
+        for row_data in valid_rows:
+            row_data["_out_filename"] = _unique_pdf_filename(row_data["cod_componente"], used_stems)
 
-        generados = 0
-        fallidos = 0
-        consolidated_writer: Any | None = None
-        consolidated_temp_dir: str | None = None
-        if consolidado:
-            from pypdf import PdfWriter
+    generados = 0
+    fallidos = 0
+    consolidated_writer: Any | None = None
+    consolidated_temp_dir: str | None = None
+    if consolidado:
+        from pypdf import PdfWriter
 
-            consolidated_writer = PdfWriter()
+        consolidated_writer = PdfWriter()
 
-        def _render_one(d: dict) -> tuple[bool, str | None]:
-            """Renderiza (y guarda en no-consolidado) una fila. Devuelve
-            ``(ok, page_path)``: page_path sólo en modo consolidado y ok.
-            Una fila que falle se aísla (no aborta el batch vía ex.map)."""
-            logger.info(f"Procesando {d['cod_componente']} en {d['lat']}, {d['lon']}...")
-            t0 = time.perf_counter()
-            try:
-                if consolidado:
-                    if consolidated_temp_dir is None:
-                        raise RuntimeError("No se pudo crear el directorio temporal del PDF consolidado.")
-                    fd, tmp_name = tempfile.mkstemp(
-                        suffix=".pdf", prefix="antares_page_", dir=consolidated_temp_dir,
-                    )
-                    os.close(fd)
-                    try:
-                        generar_imagen_ubicacion(d, tmp_name, formato, map_opts=map_opts, custom_styles=custom_styles)
-                        return (True, tmp_name)
-                    except Exception:
-                        with contextlib.suppress(OSError):
-                            os.remove(tmp_name)
-                        raise
-                out_path = os.path.join(output_dir, d["_out_filename"])
-                generar_imagen_ubicacion(d, out_path, formato, map_opts=map_opts, custom_styles=custom_styles)
-                return (True, None)
-            except Exception:
-                logger.exception("Error renderizando ubicación %s; se omite", d["cod_componente"])
-                return (False, None)
-            finally:
-                logger.info(
-                    "Ubicacion %s renderizada en %.1fs",
-                    d["cod_componente"],
-                    time.perf_counter() - t0,
+    def _render_one(d: dict) -> tuple[bool, str | None]:
+        """Renderiza (y guarda en no-consolidado) una fila. Devuelve
+        ``(ok, page_path)``: page_path sólo en modo consolidado y ok.
+        Una fila que falle se aísla (no aborta el batch vía ex.map)."""
+        logger.info(f"Procesando {d['cod_componente']} en {d['lat']}, {d['lon']}...")
+        t0 = time.perf_counter()
+        try:
+            if consolidado:
+                if consolidated_temp_dir is None:
+                    raise RuntimeError("No se pudo crear el directorio temporal del PDF consolidado.")
+                fd, tmp_name = tempfile.mkstemp(
+                    suffix=".pdf", prefix="antares_page_", dir=consolidated_temp_dir,
                 )
+                os.close(fd)
+                try:
+                    generar_imagen_ubicacion(d, tmp_name, formato, map_opts=map_opts, custom_styles=custom_styles)
+                    return (True, tmp_name)
+                except Exception:
+                    with contextlib.suppress(OSError):
+                        os.remove(tmp_name)
+                    raise
+            out_path = os.path.join(output_dir, d["_out_filename"])
+            generar_imagen_ubicacion(d, out_path, formato, map_opts=map_opts, custom_styles=custom_styles)
+            return (True, None)
+        except Exception:
+            logger.exception("Error renderizando ubicación %s; se omite", d["cod_componente"])
+            return (False, None)
+        finally:
+            logger.info(
+                "Ubicacion %s renderizada en %.1fs",
+                d["cod_componente"],
+                time.perf_counter() - t0,
+            )
 
-        with tempfile.TemporaryDirectory(prefix="antares-ubicaciones-") as managed_temp_dir:
-            consolidated_temp_dir = managed_temp_dir if consolidado else None
-            if valid_rows:
-                max_workers = min(_MAX_RENDER_WORKERS, len(valid_rows))
-                # ThreadPoolExecutor local: map() preserva orden de submission → orden
-                # de páginas en el PDF consolidado. Las caches mutables ya están
-                # protegidas por _cache_lock (mismo patrón que el daemon de prefetch).
-                # _render_one atrapa sus propias excepciones y devuelve (False, None),
-                # así que una fila que falle no aborta las demás ni el consolidado.
-                with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="ubic-render") as ex:
-                    for ok, page_path in ex.map(_render_one, valid_rows):
-                        if not ok:
+    with tempfile.TemporaryDirectory(prefix="antares-ubicaciones-") as managed_temp_dir:
+        consolidated_temp_dir = managed_temp_dir if consolidado else None
+        if valid_rows:
+            max_workers = min(_MAX_RENDER_WORKERS, len(valid_rows))
+            # ThreadPoolExecutor local: map() preserva orden de submission → orden
+            # de páginas en el PDF consolidado. Las caches mutables ya están
+            # protegidas por _cache_lock (mismo patrón que el daemon de prefetch).
+            # _render_one atrapa sus propias excepciones y devuelve (False, None),
+            # así que una fila que falle no aborta las demás ni el consolidado.
+            with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="ubic-render") as ex:
+                for ok, page_path in ex.map(_render_one, valid_rows):
+                    if not ok:
+                        fallidos += 1
+                        continue
+                    if consolidado and page_path is not None:
+                        try:
+                            if os.path.getsize(page_path) > _MAX_CONSOLIDATED_PAGE_BYTES:
+                                raise OSError("La página temporal excede el límite de 64 MiB.")
+                            if consolidated_writer is None:
+                                raise RuntimeError("El escritor del PDF consolidado no está disponible.")
+                            consolidated_writer.append(page_path)
+                        except Exception:
+                            logger.exception("Error agregando página al PDF consolidado; se omite")
                             fallidos += 1
-                            continue
-                        if consolidado and page_path is not None:
-                            try:
-                                if os.path.getsize(page_path) > _MAX_CONSOLIDATED_PAGE_BYTES:
-                                    raise OSError("La página temporal excede el límite de 64 MiB.")
-                                if consolidated_writer is None:
-                                    raise RuntimeError("El escritor del PDF consolidado no está disponible.")
-                                consolidated_writer.append(page_path)
-                            except Exception:
-                                logger.exception("Error agregando página al PDF consolidado; se omite")
-                                fallidos += 1
-                            else:
-                                generados += 1
-                            finally:
-                                with contextlib.suppress(OSError):
-                                    os.remove(page_path)
                         else:
                             generados += 1
+                        finally:
+                            with contextlib.suppress(OSError):
+                                os.remove(page_path)
+                    else:
+                        generados += 1
 
-        consolidated_path: str | None = None
-        if consolidado and generados and consolidated_writer is not None:
-            consolidated_path = _save_consolidated_writer(consolidated_writer, output_dir)
-            logger.info(f"PDF consolidado generado: {consolidated_path} ({generados} paginas)")
+    consolidated_path: str | None = None
+    if consolidado and generados and consolidated_writer is not None:
+        consolidated_path = _save_consolidated_writer(consolidated_writer, output_dir)
+        logger.info(f"PDF consolidado generado: {consolidated_path} ({generados} paginas)")
 
-        return {
-            "success": True,
-            "data": {
-                "generados": generados,
-                "fallidos": fallidos,
-                "outputDir": output_dir,
-                "consolidado": consolidado,
-                "consolidatedPath": consolidated_path,
-            },
-        }
-    except Exception as e:
-        logger.exception("Error generando ubicaciones")
-        return {"success": False, "error": str(e)}
+    return {
+        "generados": generados,
+        "fallidos": fallidos,
+        "outputDir": output_dir,
+        "consolidado": consolidado,
+        "consolidatedPath": consolidated_path,
+    }
 
 HANDLERS: dict[str, Any] = {
     "generar_ubicaciones": handle_generar_ubicaciones,

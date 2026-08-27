@@ -1,6 +1,19 @@
 """Excepciones personalizadas estructuradas del dominio de Antares."""
 
-from typing import Any
+from typing import Any, Literal
+
+ErrorCategory = Literal[
+    "INTERNAL_ERROR",
+    "INVALID_REQUEST",
+    "METHOD_NOT_FOUND",
+    "VALIDATION_ERROR",
+    "RESOURCE_LOCKED",
+    "NOT_FOUND",
+    "MEMORY_PRESSURE",
+    "TIMEOUT",
+    "AUTHENTICATION_ERROR",
+    "RENDERING_ERROR",
+]
 
 
 class AntaresError(Exception):
@@ -19,7 +32,7 @@ class AntaresBaseException(AntaresError):
         message: str,
         *,
         code: int = -32000,
-        category: str = "INTERNAL_ERROR",
+        category: ErrorCategory = "INTERNAL_ERROR",
         details: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message)

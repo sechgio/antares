@@ -23,8 +23,12 @@ import { useToast } from '../hooks/useToast';
 import { stageFileForIpc } from '../utils/stageFile';
 import { getLocalImageDataUrl } from '../utils/localThumb';
 import { parseCombinedCoords, isValidCoord } from '../utils/coords';
+import type { GenerarUbicacionesData } from '../api';
 
-type Result = { success: boolean; data?: any; error?: string } | null;
+type Result =
+  | { success: true; data: GenerarUbicacionesData }
+  | { success: false; error: string }
+  | null;
 
 type PreviewData = {
   image: string;
@@ -527,36 +531,22 @@ export const UbicacionesView: React.FC = () => {
         });
         // Ignore stale responses
         if (myId !== fetchIdRef.current) return;
-        const r = resp as { success: boolean; data?: any; error?: string; total_filas?: number };
-        if (r?.total_filas) {
-          setTotalFilas(r.total_filas);
+        if (resp?.total_filas) {
+          setTotalFilas(resp.total_filas);
         }
-        if (r?.success) {
-          // Defensive: if the response carries a formato field and it does
-          // not match the current selection, skip it (stale format toggle).
-          const respFormato = r.data?.formato;
-          if (respFormato && respFormato !== currentFormato) return;
-          if (!r.data) {
-            setPreview(null);
-            hasPreviewRef.current = false;
-            return;
-          }
-          const safeSrc = await resolvePreviewImageSrc(r.data);
-          if (myId !== fetchIdRef.current) return;
-          if (!safeSrc) {
-            setPreview(null);
-            hasPreviewRef.current = false;
-            setPreviewError('No se pudo cargar la imagen de vista previa');
-            return;
-          }
-          setPreview({ ...r.data, image: safeSrc });
-          hasPreviewRef.current = true;
-          if (r.data?.total_filas) {
-            setTotalFilas(r.data.total_filas);
-          }
-        } else {
-          setPreviewError(r?.error || 'Error al generar vista previa');
+        // Defensive: if the response carries a formato field and it does
+        // not match the current selection, skip it (stale format toggle).
+        if (resp?.formato && resp.formato !== currentFormato) return;
+        const safeSrc = await resolvePreviewImageSrc(resp);
+        if (myId !== fetchIdRef.current) return;
+        if (!safeSrc) {
+          setPreview(null);
+          hasPreviewRef.current = false;
+          setPreviewError('No se pudo cargar la imagen de vista previa');
+          return;
         }
+        setPreview({ ...resp, image: safeSrc });
+        hasPreviewRef.current = true;
       } catch (err: any) {
         if (myId !== fetchIdRef.current) return;
         setPreviewError(err.message || 'Error de conexion');
@@ -830,7 +820,7 @@ export const UbicacionesView: React.FC = () => {
         api_key: genApiKeys[genProvider] || '',
         manualData: genInputMode === 'manual' ? genManualData : undefined,
       });
-      setResult(response);
+      setResult({ success: true, data: response });
     } catch (err: any) {
       setResult({ success: false, error: err.message || 'Error desconocido' });
     } finally {
