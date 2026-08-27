@@ -16,6 +16,21 @@ describe('useBackendStatus polling', () => {
         ready: false,
         lastError: null,
         stderrTail: '',
+        health: {
+          last_probe_at: '2026-08-26T00:00:00.000Z',
+          last_success_at: '2026-08-26T00:00:00.000Z',
+          last_probe_ms: 3,
+          last_probe_outcome: 'success',
+          consecutive_failures: 0,
+          skipped_total: 0,
+          last_skip_reason: null,
+          last_failure_at: null,
+          last_failure_reason: null,
+          probes_total: 1,
+          successes_total: 1,
+          failures_total: 0,
+          restarts_total: 0,
+        },
       }),
       backendRestart: vi.fn().mockResolvedValue({ success: true, state: 'ready' }),
       onNotify: vi.fn((callback) => {
@@ -25,10 +40,11 @@ describe('useBackendStatus polling', () => {
     };
     const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
 
-    renderHook(() => useBackendStatus());
+    const { result } = renderHook(() => useBackendStatus());
     await act(async () => Promise.resolve());
 
     expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+    expect(result.current.health?.last_probe_ms).toBe(3);
 
     act(() => {
       notify?.('backend.ready', {});

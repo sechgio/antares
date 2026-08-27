@@ -88,4 +88,49 @@ describe('FolderMgmt — Nueva carpeta', () => {
       });
     });
   });
+
+  it('usa la lista devuelta por la mutación sin recargar carpetas', async () => {
+    const existing = {
+      name: 'Actual',
+      folder_id: '1actualFolder_1',
+      activo: true,
+      ultimo_scan: '',
+      cant_archivos: 0,
+    };
+    const nextFolders = [
+      existing,
+      {
+        name: 'Nueva',
+        folder_id: '1newFolder_123',
+        activo: true,
+        ultimo_scan: '',
+        cant_archivos: 0,
+      },
+    ];
+    const onFoldersChange = vi.fn(async () => {});
+    mockApi.autoimgFoldersAdd.mockImplementationOnce(async () => ({
+      success: true,
+      folders: nextFolders,
+    }));
+    render(<FolderMgmt folders={[existing]} onFoldersChange={onFoldersChange} />);
+
+    fireEvent.change(screen.getByPlaceholderText('Nombre descriptivo'), {
+      target: { value: 'Nueva' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('URL o Folder ID de Drive'), {
+      target: { value: '1newFolder_123' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
+
+    await waitFor(() => {
+      expect(mockApi.autoimgFoldersAdd).toHaveBeenCalledWith({
+        name: 'Nueva',
+        folder_id: '1newFolder_123',
+        activo: true,
+      });
+    });
+    expect(mockApi.autoimgFoldersList).not.toHaveBeenCalled();
+    expect(onFoldersChange).toHaveBeenCalledWith(nextFolders);
+    expect(screen.getByText('Nueva')).toBeInTheDocument();
+  });
 });

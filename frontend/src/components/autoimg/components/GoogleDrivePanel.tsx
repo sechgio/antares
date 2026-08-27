@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, FolderOpen, HardDrive, Loader2, Plus } from 'lucide-react';
 import { api } from '../../../api';
-import type { DriveVerifyResult } from '../types';
+import type { AutoImgFolder, DriveVerifyResult } from '../types';
 import { parseDriveFolderId } from '../utils/parseDriveFolderId';
 import { INPUT_SM_CLASS, InlineMessage, SidebarSection, StatusChip } from './shared';
 
 interface GoogleDrivePanelProps {
   googleConnected: boolean;
-  onFolderAdded?: () => void;
+  onFolderAdded?: (folders?: AutoImgFolder[]) => void | Promise<void>;
 }
 
 export default function GoogleDrivePanel({ googleConnected, onFolderAdded }: GoogleDrivePanelProps) {
@@ -61,12 +61,12 @@ export default function GoogleDrivePanel({ googleConnected, onFolderAdded }: Goo
     setError('');
     setSuccess('');
     try {
-      await api.autoimgFoldersAdd({ name, folder_id: verified.folder_id, activo: true });
+      const result = await api.autoimgFoldersAdd({ name, folder_id: verified.folder_id, activo: true });
       setSuccess(`"${name}" agregada`);
       setFolderInput('');
       setFolderName('');
       setVerified(null);
-      onFolderAdded?.();
+      await onFolderAdded?.(result.folders);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al agregar carpeta');
     } finally {

@@ -209,7 +209,13 @@ async function run() {
   const fsForImage = require('fs');
   const osForImage = require('os');
   const pathForImage = require('path');
-  const { createFileCapability } = require('../electron/file-capabilities');
+  const {
+    createFileCapability,
+    createStagedSession,
+    appendStagedChunk,
+    completeStagedSession,
+    resolveCapability,
+  } = require('../electron/file-capabilities');
   const imageTempDir = await fsForImage.promises.mkdtemp(pathForImage.join(osForImage.tmpdir(), 'antares-pdf-img-'));
   const realImagePath = pathForImage.join(imageTempDir, 'foto.jpg');
   await fsForImage.promises.writeFile(realImagePath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
@@ -262,6 +268,30 @@ async function run() {
   let blockedDecision = null;
   localImageWindow.onBeforeRequest({ url: 'file:///etc/passwd' }, decision => { blockedDecision = decision; });
   assert(blockedDecision.cancel === true, 'html_to_pdf should block unregistered local file URLs');
+
+  const stagedImage = createStagedSession({ name: 'staged.jpg', size: 4, webContentsId: null });
+  await appendStagedChunk(stagedImage.token, Buffer.from([0xff, 0xd8, 0xff, 0xd9]), null);
+  const stagedImageCap = await completeStagedSession(stagedImage.token, null);
+  const stagedImagePath = stagedImageCap.path;
+  await handleDialogCall(
+    'html_to_pdf',
+    {
+      html: '<!doctype html><html><body><img src="antares-local-image:staged"></body></html>',
+      filename: 'staged.pdf',
+      localImagePaths: { 'antares-local-image:staged': stagedImageCap.token },
+    },
+    dialog,
+    win,
+    { BrowserWindow: FakeBrowserWindow },
+  );
+  assert(!fsForImage.existsSync(stagedImagePath), 'html_to_pdf cleans staged image files after rendering');
+  let stagedRevoked = false;
+  try {
+    resolveCapability(stagedImageCap.token, 'read', null);
+  } catch {
+    stagedRevoked = true;
+  }
+  assert(stagedRevoked, 'html_to_pdf revokes staged image capabilities after rendering');
 
   try {
     await fsForImage.promises.rm(imageTempDir, { recursive: true, force: true });

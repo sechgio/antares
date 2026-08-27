@@ -3,7 +3,7 @@ import { api } from '../../../api';
 import type { SyncConflict, SyncResult } from '../sync/syncCompare';
 import { normalizeDocument, type CanvasDocument } from '../types';
 import { hydrateDocumentImages } from '../utils/imageBlobStore';
-import type { useCanvasHistory } from './useCanvasHistory';
+import type { CanvasHistoryHandle } from './useCanvasHistory';
 
 export type SyncConflictChoice = 'use-remote' | 'keep-local';
 
@@ -15,7 +15,7 @@ interface UseCanvasSyncOptions {
   /** Refresh the doc list (also used by docs hook). */
   refreshList: () => Promise<void>;
   /** Replace the open document after a remote-side reload. */
-  replaceDocument: ReturnType<typeof useCanvasHistory>['replaceDocument'];
+  replaceDocument: CanvasHistoryHandle['replaceDocument'];
   /**
    * Notify UI of a conflict. Must not block — sync finishes immediately.
    * Caller owns resolution (keep-local / use-remote) outside the sync cycle.
@@ -70,8 +70,7 @@ export function useCanvasSync({
 
       const applySyncResult = async (result: SyncResult) => {
         if (result.skipped) {
-          // Coalesced followUp can land as skipped (offline / no session / error);
-          // always clear the syncing pulse so the UI does not stick.
+
           setSyncStatus(result.reason === 'error' ? 'error' : 'idle');
           setSyncing(false);
           return;
@@ -89,8 +88,7 @@ export function useCanvasSync({
               const doc = normalizeDocument(got.document as CanvasDocument);
               replaceDocument(await hydrateDocumentImages(doc));
             } else if (onConflict) {
-              // Disk was updated during sync, but the open doc dirtied mid-flight.
-              // Surface a conflict instead of leaving memory stale without UI.
+
               const got = await api.canvasGet(result.reloadOpenId);
               const remoteDoc = normalizeDocument(got.document as CanvasDocument);
               const localDoc = historyDocRef.current;
@@ -121,14 +119,14 @@ export function useCanvasSync({
       if (!result.skipped) {
         await applySyncResult(result);
       } else if (result.reason === 'sync-in-flight') {
-        // Keep syncing/status until followUp finishes the coalesced retry.
+
       } else {
-        // Offline / no session / hard skip: nothing to wait for.
+
         setSyncStatus('idle');
         setSyncing(false);
       }
     } catch {
-      // Unexpected sync failure (import/network). Surface error; local docs stay usable.
+
       setSyncStatus('error');
       setSyncing(false);
     }

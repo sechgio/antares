@@ -5,6 +5,7 @@ import {
   imageToPdfDataUrl,
   type PdfQuality,
 } from '../../utils/pdfAssets';
+import { mapWithConcurrencyLimit } from '../../utils/mapWithConcurrencyLimit';
 import { registerLocalPaths } from '../../utils/registerLocalPath';
 import { matchPhotosForId } from './photoMatch';
 import type { PhotoAsset } from './types';
@@ -73,12 +74,10 @@ export async function preparePhotosForExport(
   quality: PdfQuality = 'high',
 ): Promise<Array<{ path: string; name: string }>> {
   const matched = matchPhotosForId(photos, photoId);
-  return Promise.all(
-    matched.map(async (photo, index) => ({
-      path: await photoToPdfPath(photo, `${keyPrefix}-${index}`, localImagePaths, quality),
-      name: photo.name,
-    })),
-  );
+  return mapWithConcurrencyLimit(matched, 4, async (photo, index) => ({
+    path: await photoToPdfPath(photo, `${keyPrefix}-${index}`, localImagePaths, quality),
+    name: photo.name,
+  }));
 }
 
 export async function askPdfSavePath(defaultFilename: string, title: string): Promise<string | null> {

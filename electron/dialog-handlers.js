@@ -21,21 +21,19 @@ const {
   appendStagedChunk,
   completeStagedSession,
   abortStagedSession,
+  cleanupStagedCapability,
 } = require('./file-capabilities');
 const { putCanvasAsset, getCanvasAsset, parseAssetRef, gcOrphanCanvasAssets } = require('./canvas-assets');
 const { cleanupSpreadsheetSpillFile, sweepIpcTempDirs } = require('./ipc-temp-cleanup');
 
-// Single source of truth: electron/ipc-methods.js exports the native-method
-// allowlist. This authoritative guard derives from it — adding a native
-// method is one edit in ipc-methods.js, never an inline copy here.
+// Guard derives from electron/ipc-methods.js — single source of truth.
 const NATIVE_METHODS = new Set(require('./ipc-methods').NATIVE_METHODS);
 
 const REGISTER_LOCAL_PATH_DEPRECATED_MSG = 'register_local_path is deprecated; use file tokens via dialog or staged upload';
 
 /** @type {Set<string>} Directory roots allowed for PDF writes (from dialogs). */
 const _allowedWriteRoots = new Set();
-// Persisted across sessions so an output folder chosen via native dialog keeps
-// working after an app restart (raw paths are rejected unless under a root).
+// Persisted so chosen output folder survives restarts.
 const WRITE_ROOTS_FILE = 'antares-write-roots.json';
 
 function _persistedWriteRootsPath() {
@@ -48,7 +46,7 @@ function _persistedWriteRootsPath() {
   }
 }
 
-/** Best-effort: failing to persist must never break folder selection. */
+
 function _persistWriteRoots() {
   const file = _persistedWriteRootsPath();
   if (!file) return;
@@ -139,17 +137,20 @@ function _localImageEntries(rawPaths) {
   });
 }
 
-function _injectLocalImageUrls(html, localImages) {
-  return localImages.reduce((current, entry) => current.split(entry.token).join(entry.fileUrl), html);
+async function _cleanupStagedImageCapabilities(rawPaths, webContentsId = null) {
+  if (!rawPaths || typeof rawPaths !== 'object' || Array.isArray(rawPaths)) return;
+  const tokens = new Set(
+    Object.values(rawPaths).filter(
+      (value) => typeof value === 'string' && value.startsWith('antares-read_'),
+    ),
+  );
+  await Promise.all([...tokens].map((token) => cleanupStagedCapability(token, webContentsId)));
 }
 
 function _sanitizeFilename(name) {
   if (typeof name !== 'string' || !name.trim()) return 'reporte.pdf';
-  // Extract just the basename (no path components)
   const base = path.basename(name);
-  // Remove characters invalid on Windows and prevent traversal
   const safe = base.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').replace(/\s+/g, ' ').trim();
-  // Ensure .pdf extension
   if (!safe.toLowerCase().endsWith('.pdf')) return safe + '.pdf';
   return safe || 'reporte.pdf';
 }
@@ -165,10 +166,6 @@ function _sanitizePdfOutputPath(outputPath, fallbackFilename) {
   }
   const safeName = _sanitizeFilename(path.basename(resolved) || fallbackFilename);
   return path.join(dir, safeName);
-}
-
-function _handleRegisterLocalPath() {
-  throw new Error(REGISTER_LOCAL_PATH_DEPRECATED_MSG);
 }
 
 function _resolveTokenPath(token, webContentsId) {
@@ -237,11 +234,7 @@ async function _scanOneDir(dirPath, extensions, results, pending) {
   }
 }
 
-// Pool persistente de ventanas ocultas para printToPDF. Cada slot tiene su
-// propia partición de sesión (los interceptores webRequest son POR-SESIÓN: dos
-// renders concurrentes en la misma partición pisarían sus allowlists) y su
-// propia cola — hasta PDF_RENDER_SLOTS renders en paralelo sin pagar el
-// spin-up de new BrowserWindow (~0.5-1.5 s) en cada render.
+// Pooled hidden windows for printToPDF — each slot has its own partition/session.
 const PDF_RENDER_SLOTS = 2;
 const pdfRenderSlots = Array.from({ length: PDF_RENDER_SLOTS }, (_, i) => ({
   queue: Promise.resolve(),
@@ -257,9 +250,9 @@ function _nextPdfSlot() {
   return slot;
 }
 
-function renderHtmlToPdf(params = {}, electronModules = {}) {
+function renderHtmlToPdf(params = {}, electronModules = {}, webContentsId = null) {
   const slot = _nextPdfSlot();
-  const render = () => _renderHtmlToPdf(params, electronModules, slot);
+  const render = () => _renderHtmlToPdf(params, electronModules, slot, webContentsId);
   const result = slot.queue.then(render, render);
   slot.queue = result.then(() => undefined, () => undefined);
   return result;
@@ -274,7 +267,7 @@ function _resetPdfRenderPool() {
   pdfSlotCursor = 0;
 }
 
-async function _renderHtmlToPdf(params = {}, electronModules = {}, slot) {
+async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webContentsId = null) {
   const html = typeof params.html === 'string' ? params.html : '';
   if (!html.trim()) {
     throw new Error('HTML requerido para generar PDF');
@@ -287,25 +280,16 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot) {
   if (Buffer.byteLength(html, 'utf8') > MAX_HTML_BYTES) {
     throw new Error('HTML excede el tamaño máximo permitido (150 MB)');
   }
-
-  // Sanitize BEFORE injecting allowlisted file:// URLs. The sanitizer strips
-  // file: from src/href (defense-in-depth against arbitrary local reads);
-  // tokens like antares-local-image:* survive sanitization, then we expand
-  // only registered paths into file:// for printToPDF.
+  // Sanitize before injecting allowlisted file:// URLs.
   const sanitizedHtml = sanitizeHtmlForPdf(html);
-  const htmlWithLocalImages = _injectLocalImageUrls(sanitizedHtml, localImages);
+  const htmlWithLocalImages = localImages.reduce((current, entry) => current.split(entry.token).join(entry.fileUrl), sanitizedHtml);
 
   const { BrowserWindow, session } = electronModules;
   if (!BrowserWindow) {
     throw new Error('BrowserWindow no disponible para generar PDF');
   }
 
-  // Align with LONG_REQUEST_TIMEOUT_MS (15 min). A 60s hard cut aborted large
-  // consolidations while the FE/IPC budget still had minutes left. The race
-  // covers the WHOLE render (load, fonts, printToPDF): a window hung before
-  // printToPDF (e.g. did-finish-load never fires) must not stall the shared
-  // queue forever. `timeoutMs` is overridable for callers/tests with a tighter
-  // budget.
+  // 15 min budget (matches FE/IPC); timeoutMs overridable.
   const PDF_TIMEOUT_MS = 900_000;
   const timeoutMs =
     Number.isFinite(params.timeoutMs) && params.timeoutMs > 0 ? params.timeoutMs : PDF_TIMEOUT_MS;
@@ -347,10 +331,7 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot) {
       slot.window = pdfWindow;
     }
 
-    // Block external resource loads to prevent SSRF and local file disclosure.
-    // Cover http(s) AND file:// schemes — `*://*/*` does not match `file://`,
-    // so we register a second filter for file URLs and only allow the
-    // specific file:// URLs we whitelisted (the temp HTML + local images).
+    // Block external resources — only allow data:, fonts.googleapis.com and whitelisted file://.
     clearInterceptors = () => {
       try {
         const targetSession = pdfSession || pdfWindow.webContents.session;
@@ -474,6 +455,7 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot) {
   } finally {
     if (timeoutHandle) clearTimeout(timeoutHandle);
     clearInterceptors();
+    await _cleanupStagedImageCapabilities(params.localImagePaths, webContentsId);
     // Pool: la ventana se reutiliza SOLO tras un render OK. En timeout/error
     // se destruye (destroy() fuerza la cancelación: printToPDF se aborta con
     // el webContents, y un renderer colgado no responde a close()) y el slot
@@ -519,7 +501,7 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
   }
 
   if (method === 'register_local_path') {
-    return { handled: true, result: _handleRegisterLocalPath() };
+    throw new Error(REGISTER_LOCAL_PATH_DEPRECATED_MSG);
   }
 
   if (method === 'file_token_resolve') {
@@ -569,6 +551,7 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
       return { handled: true, result: { cleaned: false } };
     }
     await cleanupSpreadsheetSpillFile(filePath);
+    await cleanupStagedCapability(token, _webContentsIdFromWindow(window));
     revokeCapability(token);
     return { handled: true, result: { cleaned: true } };
   }
@@ -654,7 +637,10 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
   }
 
   if (method === 'html_to_pdf') {
-    return { handled: true, result: await renderHtmlToPdf(params, electronModules) };
+    return {
+      handled: true,
+      result: await renderHtmlToPdf(params, electronModules, _webContentsIdFromWindow(window)),
+    };
   }
 
   if (method === 'dialog_save') {

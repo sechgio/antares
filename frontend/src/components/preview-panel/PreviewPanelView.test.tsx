@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../hooks/useToast';
+import { api } from '../../api';
 import PreviewPanelView from './PreviewPanelView';
 
 vi.mock('../../api', async (importOriginal) => {
@@ -101,5 +102,47 @@ describe('PreviewPanelView column mapping', () => {
     fireEvent.keyDown(nameInput, { key: 'Enter', code: 'Enter' });
 
     expect(await screen.findByText('SGIO EXTRA')).toBeInTheDocument();
-  });
+  }, 15000);
+
+  it('re-fetches a previous spill sheet after switching away from it', async () => {
+    vi.mocked(api.spreadsheetParse).mockReset().mockResolvedValue({
+      workbookName: 'datos.xlsx',
+      sheets: [],
+      warnings: [],
+      result_file_token: 'spill_preview',
+      sheet_meta: [
+        { name: 'Sheet1', rowCount: 2 },
+        { name: 'Sheet2', rowCount: 3 },
+      ],
+    });
+    const getRows = vi.mocked(api.spreadsheetGetRows);
+    getRows.mockReset().mockImplementation(async ({ sheet }) => {
+      const rows = sheet === 'Sheet2'
+        ? [['SGIO', 'OTRA'], ['2', 'dos'], ['3', 'tres']]
+        : [['SGIO', 'OTRA'], ['1', 'uno']];
+      return {
+        name: sheet || '',
+        rows,
+        offset: 0,
+        limit: 2000,
+        total: rows.length,
+        has_more: false,
+      };
+    });
+
+    const { container } = renderView();
+    const fileInput = container.querySelector('input[accept=".csv,.xlsx,.xls"]') as HTMLInputElement | null;
+    fireEvent.change(fileInput!, {
+      target: { files: [new File(['workbook'], 'datos.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })] },
+    });
+
+    await waitFor(() => expect(getRows).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Hoja' }));
+    fireEvent.click(await screen.findByRole('option', { name: /Sheet2/ }));
+    await waitFor(() => expect(getRows).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hoja' }));
+    fireEvent.click(await screen.findByRole('option', { name: /Sheet1/ }));
+    await waitFor(() => expect(getRows).toHaveBeenCalledTimes(3));
+  }, 15000);
 });

@@ -34,4 +34,21 @@ describe('stageFileForIpc', () => {
     );
     expect(total).toBe(bytes.byteLength);
   });
+
+  it('aborts the staged session when uploading or completing fails', async () => {
+    const abort = vi.fn(async () => ({}));
+    (window as unknown as { electronAPI: unknown }).electronAPI = {
+      fileStagedCreate: vi.fn(async () => ({ token: 'staged_failed' })),
+      fileStagedAppend: vi.fn(async () => {
+        throw new Error('append failed');
+      }),
+      fileStagedComplete: vi.fn(async () => ({ file_token: 'read_failed' })),
+      fileStagedAbort: abort,
+    };
+
+    const file = new File([new Uint8Array([1, 2, 3])], 'failed.xlsx');
+    await expect(stageFileForIpc(file)).rejects.toThrow('append failed');
+    expect(abort).toHaveBeenCalledOnce();
+    expect(abort).toHaveBeenCalledWith('staged_failed');
+  });
 });

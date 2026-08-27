@@ -294,9 +294,9 @@ export function usePanelSession(): PanelSession {
         warnings: resp.warnings || [],
       });
       setCurrentPageIndex(0);
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (token !== matchTokenRef.current) return;
-      setErrors([e?.message || 'Error en emparejamiento']);
+      setErrors([e instanceof Error ? e.message : 'Error en emparejamiento']);
       setMatchResult(null);
     }
   }, []);

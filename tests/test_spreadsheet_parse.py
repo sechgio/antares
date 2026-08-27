@@ -105,6 +105,21 @@ def test_parse_xlsx_wrong_suffix_does_not_read_neighbor(tmp_path: Path) -> None:
     assert result["sheets"][0]["rows"][1] == ["1"]
 
 
+def test_parse_xlsx_does_not_copy_the_input_into_bytesio(tmp_path: Path, monkeypatch) -> None:
+    """XLSX parsing must stream from the staged file instead of duplicating it in RAM."""
+    staged = tmp_path / "streamed.xlsx"
+    _write_xlsx(staged, [["HEADER"], ["value"]])
+
+    def fail_read_bytes(_path: Path) -> bytes:
+        raise AssertionError("spreadsheet parsing must not eagerly read the full file")
+
+    monkeypatch.setattr(Path, "read_bytes", fail_read_bytes)
+
+    result = spreadsheet_parse({"path": str(staged), "format_hint": "xlsx"})
+
+    assert result["sheets"][0]["rows"] == [["HEADER"], ["value"]]
+
+
 def test_parse_csv_via_hint_with_tmp_suffix(tmp_path: Path) -> None:
     staged = tmp_path / "datos.csv.tmp"
     staged.write_text("A,B\n1,2\n", encoding="utf-8-sig")
@@ -196,6 +211,33 @@ def test_b64_inline_uses_unique_temp_file() -> None:
     finally:
         p1.unlink(missing_ok=True)
         p2.unlink(missing_ok=True)
+
+
+def test_b64_inline_decodes_in_bounded_chunks(monkeypatch) -> None:
+    """Inline compatibility payloads must not create a full decoded copy."""
+    from backend.handlers import spreadsheet as ss
+    from backend.handlers.spreadsheet import _resolve_input_path
+
+    content = b"x" * (ss._INLINE_B64_CHUNK_CHARS + 17)
+    b64 = base64.b64encode(content).decode("ascii")
+    calls: list[int] = []
+    real_decode = ss.base64.b64decode
+
+    def tracking_decode(payload, *args, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append(len(payload))
+        return real_decode(payload, *args, **kwargs)
+
+    monkeypatch.setattr(ss.base64, "b64decode", tracking_decode)
+    path, is_temp = _resolve_input_path({"xlsx_b64": b64})
+
+    try:
+        assert is_temp
+        assert path.read_bytes() == content
+        assert calls
+        assert max(calls) <= ss._INLINE_B64_CHUNK_CHARS
+        assert max(calls) < len(b64)
+    finally:
+        path.unlink(missing_ok=True)
 
 
 def test_user_file_with_temp_prefix_not_deleted() -> None:

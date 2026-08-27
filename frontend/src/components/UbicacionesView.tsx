@@ -547,9 +547,9 @@ export const UbicacionesView: React.FC = () => {
         }
         setPreview({ ...resp, image: safeSrc });
         hasPreviewRef.current = true;
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (myId !== fetchIdRef.current) return;
-        setPreviewError(err.message || 'Error de conexion');
+        setPreviewError(err instanceof Error ? err.message : 'Error de conexion');
       } finally {
         if (myId === fetchIdRef.current) {
           setPreviewLoading(false);
@@ -821,8 +821,8 @@ export const UbicacionesView: React.FC = () => {
         manualData: genInputMode === 'manual' ? genManualData : undefined,
       });
       setResult({ success: true, data: response });
-    } catch (err: any) {
-      setResult({ success: false, error: err.message || 'Error desconocido' });
+    } catch (err: unknown) {
+      setResult({ success: false, error: err instanceof Error ? err.message : 'Error desconocido' });
     } finally {
       setIsProcessing(false);
     }

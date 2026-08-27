@@ -484,15 +484,66 @@ def _redact_url_for_log(url: str) -> str:
         return "<url redacted>"
 
 
-def _http_get(url: str, headers: dict[str, str], timeout: int = _HTTP_TIMEOUT) -> bytes | None:
-    """HTTP GET returning body bytes, or None on any network/HTTP error."""
-    try:
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=timeout) as resp:  # trusted map endpoints
-            return cast(bytes, resp.read())
-    except (urllib.error.URLError, OSError, TimeoutError) as exc:
-        logger.debug("HTTP GET failed for %s: %s", _redact_url_for_log(url), exc)
-        return None
+def _http_get(
+    url: str,
+    headers: dict[str, str],
+    timeout: int = _HTTP_TIMEOUT,
+    deadline: float | None = None,
+) -> bytes | None:
+    """HTTP GET returning body bytes, or None on any network/HTTP error.
+
+    When *deadline* (seconds) is given, transient failures are retried until
+    the total budget is exhausted. Transient = 408/429/5xx or network errors
+    (URLError/OSError/TimeoutError). Non-transient HTTP errors (e.g. 404)
+    return immediately. Respects ``Retry-After`` (seconds) on 429/503 when
+    present. Without *deadline* the call is single-shot for backward
+    compatibility with existing tile/Google fetches.
+    """
+    _TRANSIENT_CODES = frozenset((408, 429, 500, 502, 503, 504))
+    start = time.monotonic() if deadline is not None else None
+    while True:
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:  # trusted map endpoints
+                return cast(bytes, resp.read())
+        except urllib.error.HTTPError as exc:
+            is_transient = exc.code in _TRANSIENT_CODES
+            if not is_transient or deadline is None:
+                logger.debug("HTTP GET failed for %s: %s", _redact_url_for_log(url), exc)
+                return None
+            # transient with deadline → may retry
+            retry_after = 0.0
+            try:
+                if exc.headers is not None:
+                    raw = exc.headers.get("Retry-After")
+                    if raw is not None:
+                        retry_after = float(str(raw).strip())
+                        if not math.isfinite(retry_after) or retry_after < 0:
+                            retry_after = 0.0
+            except Exception:
+                retry_after = 0.0
+            last_exc: Exception = exc
+        except (urllib.error.URLError, OSError, TimeoutError) as exc:
+            if deadline is None:
+                logger.debug("HTTP GET failed for %s: %s", _redact_url_for_log(url), exc)
+                return None
+            last_exc = exc
+            retry_after = 0.0
+        except Exception as exc:  # defensive: unexpected errors never retry
+            logger.debug("HTTP GET failed for %s: %s", _redact_url_for_log(url), exc)
+            return None
+        # ——— retry path (deadline is not None and transient) ———
+        assert start is not None and deadline is not None
+        elapsed = time.monotonic() - start
+        remaining = deadline - elapsed
+        if remaining <= 0:
+            logger.debug("HTTP GET deadline exceeded for %s: %s", _redact_url_for_log(url), last_exc)
+            return None
+        sleep_for = retry_after if retry_after > 0 else 0.0
+        if sleep_for > remaining:
+            sleep_for = remaining
+        # Always call sleep even with 0 so tests can observe retry count (Retry-After: 0)
+        time.sleep(sleep_for)
 
 
 def _fallback_map_bytes(width: int, height: int) -> bytes:

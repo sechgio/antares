@@ -465,7 +465,7 @@ async function addFolder({ name, folder_id, activo }) {
   _persistFoldersLocal(folders);
   _tryCommitSheetCache({ folders });
   _invalidateCache();
-  return { success: true, folder_id: safeFolderId, drive_name: verified.name };
+  return { success: true, folder_id: safeFolderId, drive_name: verified.name, folders };
 }
 
 async function removeFolder({ folder_id }) {
@@ -480,7 +480,7 @@ async function removeFolder({ folder_id }) {
   _persistFoldersLocal(folders);
   _tryCommitSheetCache({ folders });
   _invalidateCache();
-  return { success: true };
+  return { success: true, folders };
 }
 
 async function toggleFolder({ folder_id, activo }) {
@@ -497,7 +497,7 @@ async function toggleFolder({ folder_id, activo }) {
   _persistFoldersLocal(folders);
   _tryCommitSheetCache({ folders });
   _invalidateCache();
-  return { success: true };
+  return { success: true, folders };
 }
 
 async function _scanAllCore() {

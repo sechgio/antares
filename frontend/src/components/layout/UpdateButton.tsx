@@ -88,7 +88,7 @@ export default function UpdateButton() {
     }
   }, [update.status, promptInstall, handleCheck]);
 
-  const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI;
+  const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
   if (!isElectron) return null;
 
   const isActive = update.status === 'checking' || update.status === 'downloading';

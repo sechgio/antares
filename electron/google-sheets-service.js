@@ -31,6 +31,7 @@ let _pendingRedirectUri = null;
 let _pendingCodeVerifier = null;
 let _pendingOAuthState = null;
 let _oauthFlowPromise = null;
+const _tokenRefreshPromises = new Map();
 
 function isInvalidGrantResponse(body) {
   const text = String(body || '');
@@ -125,7 +126,11 @@ async function _refreshAccessToken(tokens) {
     refresh_token: tokens.refresh_token,
     grant_type: 'refresh_token',
   });
-  const res = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', body });
+  const res = await fetchWithRetry(
+    'https://oauth2.googleapis.com/token',
+    { method: 'POST', body },
+    { retries: 0 },
+  );
   if (!res.ok) {
     const err = await res.text();
     if (isInvalidGrantResponse(err)) {
@@ -146,6 +151,22 @@ async function _refreshAccessToken(tokens) {
   return updated;
 }
 
+function _refreshAccessTokenSingleFlight(tokens) {
+  const refreshToken = tokens?.refresh_token;
+  if (!refreshToken) return _refreshAccessToken(tokens);
+
+  const pending = _tokenRefreshPromises.get(refreshToken);
+  if (pending) return pending;
+
+  const request = _refreshAccessToken(tokens).finally(() => {
+    if (_tokenRefreshPromises.get(refreshToken) === request) {
+      _tokenRefreshPromises.delete(refreshToken);
+    }
+  });
+  _tokenRefreshPromises.set(refreshToken, request);
+  return request;
+}
+
 async function getValidTokens() {
   let tokens = store.loadTokens();
   if (!tokens) return null;
@@ -163,7 +184,7 @@ async function getValidTokens() {
       return null;
     }
     try {
-      tokens = await _refreshAccessToken(tokens);
+      tokens = await _refreshAccessTokenSingleFlight(tokens);
     } catch (err) {
       if (err instanceof Error && err.message === REAUTH_REQUIRED_MESSAGE) {
         return null;
@@ -264,7 +285,11 @@ async function exchangeCode(code, redirectUri) {
     grant_type: 'authorization_code',
     code_verifier: codeVerifier,
   });
-  const res = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', body });
+  const res = await fetchWithRetry(
+    'https://oauth2.googleapis.com/token',
+    { method: 'POST', body },
+    { retries: 0 },
+  );
   if (!res.ok) {
     const errBody = await res.text();
     if (isInvalidGrantResponse(errBody)) {
@@ -353,11 +378,15 @@ async function revokeAuth() {
   cancelBrowserOAuthFlow();
   const tokens = store.loadTokens();
   if (tokens?.access_token) {
-    await fetch('https://oauth2.googleapis.com/revoke', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `token=${encodeURIComponent(tokens.access_token)}`,
-    }).catch(() => {});
+    await fetchWithRetry(
+      'https://oauth2.googleapis.com/revoke',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `token=${encodeURIComponent(tokens.access_token)}`,
+      },
+      { retries: 0 },
+    ).catch(() => {});
   }
   // Solo tokens del usuario activo. Sheet/carpetas quedan en autoimg/users/<hash>/.
   store.clearTokens();
@@ -374,7 +403,7 @@ async function _apiFetch(url, options = {}) {
   const res = await fetchWithRetry(url, { ...options, headers });
   if (res.status === 401 && tokens.refresh_token) {
     try {
-      const refreshed = await _refreshAccessToken(tokens);
+      const refreshed = await _refreshAccessTokenSingleFlight(tokens);
       headers.Authorization = `Bearer ${refreshed.access_token}`;
       return fetchWithRetry(url, { ...options, headers });
     } catch (err) {
@@ -599,7 +628,7 @@ module.exports = {
   appendRow,
   batchWriteRanges,
   getValidTokens,
-  refreshAccessToken: _refreshAccessToken,
+  refreshAccessToken: _refreshAccessTokenSingleFlight,
   ensureAutoImgTabs,
   isInvalidGrantResponse,
   REAUTH_REQUIRED_MESSAGE,
