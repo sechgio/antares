@@ -1,6 +1,12 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { getLocalThumbnail } from '../utils/localThumb';
 
+export type ThumbnailViewState =
+  | { kind: 'out_of_view' }
+  | { kind: 'fetching' }
+  | { kind: 'ready'; displaySrc: string; imageLoaded: boolean }
+  | { kind: 'error' };
+
 interface ThumbnailProps {
   path: string;
   size?: number;
@@ -8,19 +14,21 @@ interface ThumbnailProps {
 }
 
 export default function Thumbnail({ path, size = 48, variant = 'compact' }: ThumbnailProps) {
-  const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState(false);
   const [inView, setInView] = useState(false);
-  /** Final img src: data URL thumb only (file:// is blocked by CSP img-src). */
-  const [displaySrc, setDisplaySrc] = useState<string | null>(null);
+  const [state, setState] = useState<ThumbnailViewState>({ kind: 'out_of_view' });
   const isCard = variant === 'card';
   const containerRef = useRef<HTMLDivElement>(null);
 
   const filename = useMemo(() => path.split(/[\\/]/).pop() || path, [path]);
   const ext = useMemo(() => filename.split('.').pop()?.toUpperCase() ?? '', [filename]);
 
-  const handleLoad = useCallback(() => setLoaded(true), []);
-  const handleError = useCallback(() => { setError(true); setLoaded(true); }, []);
+  const handleLoad = useCallback(() => {
+    setState((prev) => (prev.kind === 'ready' ? { ...prev, imageLoaded: true } : prev));
+  }, []);
+
+  const handleError = useCallback(() => {
+    setState({ kind: 'error' });
+  }, []);
 
   // Lazy-load: only request thumbs when near the viewport.
   useEffect(() => {
@@ -42,19 +50,16 @@ export default function Thumbnail({ path, size = 48, variant = 'compact' }: Thum
   useEffect(() => {
     if (!inView) return;
     let cancelled = false;
-    setLoaded(false);
-    setError(false);
-    setDisplaySrc(null);
+    setState({ kind: 'fetching' });
 
     const localPath = path.startsWith('file://') ? path.replace(/^file:\/\//, '') : path;
 
     getLocalThumbnail(localPath, 256).then((thumb) => {
       if (cancelled) return;
       if (thumb) {
-        setDisplaySrc(thumb);
+        setState({ kind: 'ready', displaySrc: thumb, imageLoaded: false });
       } else {
-        setError(true);
-        setLoaded(true);
+        setState({ kind: 'error' });
       }
     });
 
@@ -62,6 +67,11 @@ export default function Thumbnail({ path, size = 48, variant = 'compact' }: Thum
       cancelled = true;
     };
   }, [inView, path]);
+
+  const isImageLoading =
+    state.kind === 'out_of_view' ||
+    state.kind === 'fetching' ||
+    (state.kind === 'ready' && !state.imageLoaded);
 
   return (
     <div
@@ -73,24 +83,24 @@ export default function Thumbnail({ path, size = 48, variant = 'compact' }: Thum
       }`}
       style={isCard ? undefined : { width: size, height: size }}
     >
-      {!loaded && (
+      {isImageLoading && (
         <div className="absolute inset-0 animate-pulse bg-dark-elevated">
           <div className="h-full w-full bg-gradient-to-r from-transparent via-white/5 to-transparent animate-shimmer" />
         </div>
       )}
 
-      {inView && displaySrc && !error ? (
+      {state.kind === 'ready' ? (
         <img
-          src={displaySrc}
+          src={state.displaySrc}
           alt=""
           loading="lazy"
           className={`h-full w-full object-cover transition-all duration-300 group-hover:scale-105 ${
             isCard ? 'rounded-[10px]' : 'rounded-[10px] border border-bdr-subtle shadow-sm'
-          } ${loaded ? 'opacity-100' : 'opacity-0'}`}
+          } ${state.imageLoaded ? 'opacity-100' : 'opacity-0'}`}
           onLoad={handleLoad}
           onError={handleError}
         />
-      ) : error ? (
+      ) : state.kind === 'error' ? (
         <div className="h-full w-full flex items-center justify-center bg-dark-elevated">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-txt-muted">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />

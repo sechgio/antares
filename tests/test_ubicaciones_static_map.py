@@ -211,8 +211,7 @@ def test_handle_generar_ubicaciones_skips_non_numeric_coords(
         "consolidado": False,
     })
 
-    assert result["success"] is True
-    assert result["data"]["generados"] == 1
+    assert result["generados"] == 1
     pdfs = list(out_dir.glob("*.pdf"))
     assert len(pdfs) == 1
 
@@ -252,9 +251,8 @@ def test_handle_generar_ubicaciones_continues_after_row_failure(
         "consolidado": False,
     })
 
-    assert result["success"] is True
-    assert result["data"]["generados"] == 1
-    assert result["data"]["fallidos"] == 1
+    assert result["generados"] == 1
+    assert result["fallidos"] == 1
     pdfs = [p.name for p in out_dir.glob("*.pdf")]
     assert pdfs == ["ID-1.pdf"]
 
@@ -320,26 +318,22 @@ def test_handle_generar_ubicaciones_rejects_all_invalid_rows(
     ws.append(["also bad"])
     wb.save(xlsx)
 
-    result = ub.handle_generar_ubicaciones({
-        "excelPath": str(xlsx),
-        "outputDir": str(tmp_path / "out"),
-        "formato": "vertical",
-        "consolidado": False,
-    })
-
-    assert result["success"] is False
-    assert "coordenadas validas" in result["error"]
+    with pytest.raises(ValueError, match="coordenadas validas"):
+        ub.handle_generar_ubicaciones({
+            "excelPath": str(xlsx),
+            "outputDir": str(tmp_path / "out"),
+            "formato": "vertical",
+            "consolidado": False,
+        })
 
 
 def test_handle_generar_ubicaciones_rejects_manual_invalid_coords(tmp_path: Path) -> None:
-    result = ub.handle_generar_ubicaciones({
-        "outputDir": str(tmp_path / "out"),
-        "formato": "vertical",
-        "manualData": {"lat": "abc", "lon": "def", "cod_componente": "X"},
-    })
-
-    assert result["success"] is False
-    assert "coordenadas validas" in result["error"]
+    with pytest.raises(ValueError, match="coordenadas validas"):
+        ub.handle_generar_ubicaciones({
+            "outputDir": str(tmp_path / "out"),
+            "formato": "vertical",
+            "manualData": {"lat": "abc", "lon": "def", "cod_componente": "X"},
+        })
 
 
 def test_handle_generar_ubicaciones_unique_pdf_for_duplicate_cod(
@@ -365,35 +359,30 @@ def test_handle_generar_ubicaciones_unique_pdf_for_duplicate_cod(
         "consolidado": False,
     })
 
-    assert result["success"] is True
-    assert result["data"]["generados"] == 2
+    assert result["generados"] == 2
     pdfs = sorted(p.name for p in out_dir.glob("*.pdf"))
     assert pdfs == ["SAME.pdf", "SAME_2.pdf"]
 
 
 @pytest.mark.parametrize("zoom", [-1, 23, 100_000_000, 1.5, "18", True])
 def test_handle_preview_ubicacion_rejects_invalid_zoom(zoom: object) -> None:
-    result = ub.handle_preview_ubicacion({
-        "formato": "vertical",
-        "zoom": zoom,
-        "manualData": {"lat": "-12.0", "lon": "-77.0", "cod_componente": "ZOOM"},
-    })
-
-    assert result["success"] is False
-    assert "zoom" in result["error"].lower()
+    with pytest.raises(ValueError, match=r"(?i)zoom"):
+        ub.handle_preview_ubicacion({
+            "formato": "vertical",
+            "zoom": zoom,
+            "manualData": {"lat": "-12.0", "lon": "-77.0", "cod_componente": "ZOOM"},
+        })
 
 
 @pytest.mark.parametrize("zoom", [-1, 23, 100_000_000, 1.5, "18", True])
 def test_handle_generar_ubicaciones_rejects_invalid_zoom(tmp_path: Path, zoom: object) -> None:
-    result = ub.handle_generar_ubicaciones({
-        "outputDir": str(tmp_path / "out"),
-        "formato": "vertical",
-        "zoom": zoom,
-        "manualData": {"lat": "-12.0", "lon": "-77.0", "cod_componente": "ZOOM"},
-    })
-
-    assert result["success"] is False
-    assert "zoom" in result["error"].lower()
+    with pytest.raises(ValueError, match=r"(?i)zoom"):
+        ub.handle_generar_ubicaciones({
+            "outputDir": str(tmp_path / "out"),
+            "formato": "vertical",
+            "zoom": zoom,
+            "manualData": {"lat": "-12.0", "lon": "-77.0", "cod_componente": "ZOOM"},
+        })
 
 
 def test_handle_generar_ubicaciones_applies_custom_styles_and_map_opts(
@@ -426,8 +415,7 @@ def test_handle_generar_ubicaciones_applies_custom_styles_and_map_opts(
         },
     })
 
-    assert result["success"] is True
-    assert result["data"]["consolidado"] is True
+    assert result["consolidado"] is True
     assert (out_dir / "ubicaciones_consolidado.pdf").is_file()
     assert len(captured) == 1
     formato, map_opts, custom_styles = captured[0]
@@ -543,8 +531,7 @@ def test_consolidated_export_uses_managed_temp_directory(monkeypatch: pytest.Mon
         "consolidado": True,
     })
 
-    assert result["success"] is True
-    assert len(PdfReader(result["data"]["consolidatedPath"]).pages) == 3
+    assert len(PdfReader(result["consolidatedPath"]).pages) == 3
     assert rendered_paths
     assert all(path.parent.name.startswith("antares-ubicaciones-") for path in rendered_paths)
     assert not list(tmp_path.glob("antares-ubicaciones-*"))
@@ -591,13 +578,12 @@ def test_consolidated_mode_closes_rendered_images(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(ub, "render_imagen_ubicacion", fake_render)
     monkeypatch.setattr(ub, "_load_excel_data", fake_load_excel_data)
 
-    result = ub.handle_generar_ubicaciones({
+    ub.handle_generar_ubicaciones({
         "excelPath": str(tmp_path / "fake.xlsx"),
         "outputDir": str(tmp_path),
         "consolidado": True,
     })
 
-    assert result["success"] is True
     assert closed[0] >= 3, f"expected ≥3 images closed (one per page), got {closed[0]}"
 
 
@@ -655,8 +641,7 @@ def test_consolidated_mode_failure_removes_temp_page_and_closes_images(
         "consolidado": True,
     })
 
-    assert result["success"] is True
-    assert result["data"]["fallidos"] == 3
+    assert result["fallidos"] == 3
     leftovers = list(tmp_path.glob("antares_page_*"))
     assert leftovers == [], f"temp page leaked after save failure: {leftovers}"
     assert closed[0] >= 3, f"expected ≥3 images closed, got {closed[0]}"
@@ -681,9 +666,7 @@ def test_preview_composed_cache_differs_by_formato() -> None:
         vertical = ub.handle_preview_ubicacion({"formato": "vertical", "manualData": manual})
         horizontal = ub.handle_preview_ubicacion({"formato": "horizontal", "manualData": manual})
 
-    assert vertical["success"] is True
-    assert horizontal["success"] is True
-    assert vertical["data"]["image"] != horizontal["data"]["image"]
+    assert vertical["image"] != horizontal["image"]
 
 
 @pytest.mark.parametrize(

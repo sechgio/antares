@@ -4,7 +4,11 @@
  */
 
 import type { ProcessStatus, LogEntry, PreviewItem, DBField, RenamePattern, DBRecord, ThemeConfig, VisualMapping, FormatInfo, FormatOrigin, MappingStrategy, MappingResult, MappingCollision } from './types';
-import type { PanelMatchResponse } from './components/panel-aviso-corte/types';
+import type { PanelMatchResponse, PanelVM } from './components/panel-aviso-corte/types';
+import type { FichaTecnica, FichaTecnicaListItem } from './components/fichas-tecnicas/types';
+import type { TechnicalReport, TechnicalReportListItem } from './components/technical-reports/types';
+import type { InformeV2, InformeV2ListItem } from './components/informes-v2/types';
+import type { HistoryRunRow } from './components/history/runTypes';
 import type { AutoImgFolder } from './components/autoimg/types';
 
 export type { ProcessStatus, LogEntry, PreviewItem, DBField, RenamePattern, DBRecord, ThemeConfig, VisualMapping, FormatInfo, FormatOrigin, MappingStrategy, MappingResult, MappingCollision, AutoImgFolder };
@@ -36,9 +40,11 @@ declare global {
       fileStagedAppend?: (token: string, chunk: ArrayBuffer | Uint8Array | string) => Promise<unknown>;
       fileStagedComplete?: (token: string) => Promise<{ file_token: string }>;
       fileStagedAbort?: (token: string) => Promise<unknown>;
+      resolveFileToken?: (token: string) => Promise<{ path: string; name?: string; size?: number }>;
       cleanupFileToken?: (token: string) => Promise<{ cleaned: boolean }>;
       canvasAssetPut?: (chunk: ArrayBuffer | Uint8Array) => Promise<{ asset_id: string; ref: string; bytes: number }>;
       canvasAssetGet?: (ref: string) => Promise<{ ref: string; chunk: ArrayBuffer; bytes: number }>;
+      canvasAssetGc?: () => Promise<{ collected: number; bytes_freed: number }>;
       reportRendererError?: (report: Record<string, unknown>) => Promise<unknown>;
     };
   }
@@ -58,12 +64,24 @@ const FE_TIMEOUT_BUFFER_MS = 10_000;
 // backend's informed recovery. The timeout race below stays as a backstop in
 // case the main process itself hangs before the backend timeout fires.
 
+export type APIErrorCategory =
+  | 'INTERNAL_ERROR'
+  | 'VALIDATION_ERROR'
+  | 'NOT_FOUND'
+  | 'RESOURCE_LOCKED'
+  | 'TIMEOUT'
+  | 'MEMORY_PRESSURE'
+  | 'INVALID_REQUEST'
+  | 'METHOD_NOT_FOUND'
+  | 'AUTHENTICATION_ERROR'
+  | 'RENDERING_ERROR';
+
 export class AntaresAPIError extends Error {
   code: number;
-  category: string;
+  category: APIErrorCategory | string;
   details?: Record<string, unknown>;
 
-  constructor(message: string, code = -32000, category = 'INTERNAL_ERROR', details?: Record<string, unknown>) {
+  constructor(message: string, code = -32000, category: APIErrorCategory | string = 'INTERNAL_ERROR', details?: Record<string, unknown>) {
     super(message);
     this.name = 'AntaresAPIError';
     this.code = code;
@@ -77,6 +95,10 @@ export class AntaresAPIError extends Error {
 
   isValidationError(): boolean {
     return this.code === -32602 || this.category === 'VALIDATION_ERROR';
+  }
+
+  isMemoryPressureError(): boolean {
+    return this.code === -32003 || this.category === 'MEMORY_PRESSURE';
   }
 }
 
@@ -345,7 +367,7 @@ export interface TechnicalReportsImportBody {
 
 export interface TechnicalReportsRenderBody {
   id?: string;
-  report?: unknown;
+  report?: Partial<TechnicalReport>;
   logo_left?: string | null;
   logo_right?: string | null;
 }
@@ -363,7 +385,7 @@ export interface InformesV2ImportBody {
 
 export interface InformesV2RenderBody {
   id?: string;
-  report?: unknown;
+  report?: Partial<InformeV2>;
   logo_left?: string | null;
   logo_right?: string | null;
   images?: Array<{ path: string; name?: string }>;
@@ -383,11 +405,76 @@ export interface FichasTecnicasImportBody {
 
 export interface FichasTecnicasRenderBody {
   id?: string;
-  ficha?: unknown;
+  ficha?: Partial<FichaTecnica>;
   template?: boolean;
   logo_left?: string | null;
   logo_right?: string | null;
 }
+
+export interface UbicacionManualData {
+  cod_componente: string;
+  lat: number | string;
+  lon: number | string;
+  direccion?: string;
+  localidad?: string;
+  distrito?: string;
+}
+
+export interface PreviewUbicacionParams {
+  excelPath: string | null;
+  formato: string;
+  rowIndex: number;
+  recomposeOnly?: boolean;
+  provider?: string;
+  api_key?: string;
+  zoom?: number;
+  customStyles?: Record<string, unknown>;
+  manualData?: UbicacionManualData;
+}
+
+export interface PreviewUbicacionData {
+  image: string;
+  image_path?: string;
+  cod_componente: string;
+  direccion: string;
+  localidad: string;
+  distrito: string;
+  datos: {
+    cod_componente: string;
+    lat: number;
+    lon: number;
+    direccion: string;
+    localidad: string;
+    distrito: string;
+  };
+  row_index: number;
+  total_filas: number;
+  formato: string;
+}
+
+export type PreviewUbicacionResponse = PreviewUbicacionData;
+
+export interface GenerarUbicacionesParams {
+  excelPath: string | null;
+  outputDir: string;
+  formato: string;
+  consolidado: boolean;
+  provider?: string;
+  api_key?: string;
+  zoom?: number;
+  customStyles?: Record<string, unknown>;
+  manualData?: UbicacionManualData;
+}
+
+export interface GenerarUbicacionesData {
+  generados: number;
+  fallidos: number;
+  outputDir: string;
+  consolidado: boolean;
+  consolidatedPath: string | null;
+}
+
+export type GenerarUbicacionesResponse = GenerarUbicacionesData;
 
 export interface HtmlToPdfBody {
   html: string;
@@ -506,8 +593,8 @@ export const api = {
   applyPreset: (name: string) => _invoke<ThemeConfig>('theme_preset', { name }),
   resetTheme: () => _invoke<ThemeConfig>('theme_reset'),
 
-  historyList: (body?: { limit?: number; offset?: number; run_type?: string; date_from?: string; date_to?: string }) => _invoke<{ runs: unknown[] }>('history_list', body),
-  historyGet: (id: number) => _invoke<{ run: unknown }>('history_get', { id }),
+  historyList: (body?: { limit?: number; offset?: number; run_type?: string; date_from?: string; date_to?: string }) => _invoke<{ runs: HistoryRunRow[] }>('history_list', body),
+  historyGet: (id: number) => _invoke<{ run: HistoryRunRow }>('history_get', { id }),
   historyDelete: (id: number) => _invoke<{ deleted: boolean }>('history_delete', { id }),
   historyDeleteMany: (ids: number[]) => _invoke<{ deleted: number; requested: number }>('history_delete_many', { ids }),
   historySave: (body: {
@@ -682,13 +769,13 @@ export const api = {
 
   // ─── Informes técnicos ─────────────────────────────────────────────────
   technicalReportsList: (body?: TechnicalReportsListBody) =>
-    _invoke<{ reports: unknown[] }>('technical_reports_list', body),
+    _invoke<{ reports: TechnicalReportListItem[] | TechnicalReport[] }>('technical_reports_list', body),
   technicalReportsGet: (id: string) =>
-    _invoke<{ report: unknown }>('technical_reports_get', { id }),
-  technicalReportsCreate: (report?: unknown) =>
-    _invoke<{ success: boolean; report: unknown }>('technical_reports_create', report ? { report } : {}),
-  technicalReportsUpdate: (id: string, report: unknown) =>
-    _invoke<{ success: boolean; report: unknown }>('technical_reports_update', { id, report }),
+    _invoke<{ report: TechnicalReport }>('technical_reports_get', { id }),
+  technicalReportsCreate: (report?: Partial<TechnicalReport>) =>
+    _invoke<{ success: boolean; report: TechnicalReport }>('technical_reports_create', report ? { report } : {}),
+  technicalReportsUpdate: (id: string, report: Partial<TechnicalReport>) =>
+    _invoke<{ success: boolean; report: TechnicalReport }>('technical_reports_update', { id, report }),
   technicalReportsDelete: (id: string) =>
     _invoke<{ success: boolean; deleted_id: string }>('technical_reports_delete', { id }),
   technicalReportsClear: () =>
@@ -706,13 +793,13 @@ export const api = {
 
   // ─── Informes v2 ───────────────────────────────────────────────────────
   informesV2List: (body?: InformesV2ListBody) =>
-    _invoke<{ reports: unknown[] }>('informes_v2_list', body),
+    _invoke<{ reports: InformeV2ListItem[] | InformeV2[] }>('informes_v2_list', body),
   informesV2Get: (id: string) =>
-    _invoke<{ report: unknown }>('informes_v2_get', { id }),
-  informesV2Create: (report?: unknown) =>
-    _invoke<{ success: boolean; report: unknown }>('informes_v2_create', report ? { report } : {}),
-  informesV2Update: (id: string, report: unknown) =>
-    _invoke<{ success: boolean; report: unknown }>('informes_v2_update', { id, report }),
+    _invoke<{ report: InformeV2 }>('informes_v2_get', { id }),
+  informesV2Create: (report?: Partial<InformeV2>) =>
+    _invoke<{ success: boolean; report: InformeV2 }>('informes_v2_create', report ? { report } : {}),
+  informesV2Update: (id: string, report: Partial<InformeV2>) =>
+    _invoke<{ success: boolean; report: InformeV2 }>('informes_v2_update', { id, report }),
   informesV2Delete: (id: string) =>
     _invoke<{ success: boolean; deleted_id: string }>('informes_v2_delete', { id }),
   informesV2Clear: () =>
@@ -733,13 +820,13 @@ export const api = {
 
   // ─── Fichas Técnicas ───────────────────────────────────────────────────
   fichasTecnicasList: (body?: FichasTecnicasListBody) =>
-    _invoke<{ fichas: unknown[]; total: number }>('fichas_tecnicas_list', body),
+    _invoke<{ fichas: FichaTecnicaListItem[] | FichaTecnica[]; total: number }>('fichas_tecnicas_list', body),
   fichasTecnicasGet: (id: string) =>
-    _invoke<{ ficha: unknown }>('fichas_tecnicas_get', { id }),
-  fichasTecnicasCreate: (ficha?: unknown) =>
-    _invoke<{ success: boolean; ficha: unknown }>('fichas_tecnicas_create', ficha ? { ficha } : {}),
-  fichasTecnicasUpdate: (id: string, ficha: unknown) =>
-    _invoke<{ success: boolean; ficha: unknown }>('fichas_tecnicas_update', { id, ficha }),
+    _invoke<{ ficha: FichaTecnica }>('fichas_tecnicas_get', { id }),
+  fichasTecnicasCreate: (ficha?: Partial<FichaTecnica>) =>
+    _invoke<{ success: boolean; ficha: FichaTecnica }>('fichas_tecnicas_create', ficha ? { ficha } : {}),
+  fichasTecnicasUpdate: (id: string, ficha: Partial<FichaTecnica>) =>
+    _invoke<{ success: boolean; ficha: FichaTecnica }>('fichas_tecnicas_update', { id, ficha }),
   fichasTecnicasDelete: (id: string) =>
     _invoke<{ success: boolean; deleted_id: string }>('fichas_tecnicas_delete', { id }),
   fichasTecnicasClear: () =>
@@ -764,7 +851,7 @@ export const api = {
     export_mode: string;
   }) => _invoke<PanelMatchResponse>('panel_aviso_corte_compute_match', body),
   panelAvisoCorteRenderPdf: (body: {
-    panels: unknown[];
+    panels: Array<Record<string, unknown>> | PanelVM[];
     logos: { left_b64?: string; right_b64?: string };
     images: Record<string, string>;
     image_paths?: Record<string, string>;
@@ -796,28 +883,8 @@ export const api = {
    * `stageFileForIpc`) or null for manual-data mode. Raw absolute paths are
    * rejected by the IPC router — do not send `getPathForFile` results here.
    */
-  previewUbicacion: (body: {
-    excelPath: string | null;
-    formato: string;
-    rowIndex: number;
-    recomposeOnly?: boolean;
-    provider?: string;
-    api_key?: string;
-    zoom?: number;
-    customStyles?: Record<string, unknown>;
-    manualData?: Record<string, unknown>;
-  }) => _invoke<{ success: boolean; data?: unknown; error?: string }>('preview_ubicacion', body),
-  generarUbicaciones: (body: {
-    excelPath: string | null;
-    outputDir: string;
-    formato: string;
-    consolidado: boolean;
-    provider?: string;
-    api_key?: string;
-    zoom?: number;
-    customStyles?: Record<string, unknown>;
-    manualData?: Record<string, unknown>;
-  }) => _invoke<{ success: boolean; data?: unknown; error?: string }>('generar_ubicaciones', body),
+  previewUbicacion: (body: PreviewUbicacionParams) => _invoke<PreviewUbicacionResponse>('preview_ubicacion', body),
+  generarUbicaciones: (body: GenerarUbicacionesParams) => _invoke<GenerarUbicacionesResponse>('generar_ubicaciones', body),
   ubicacionesKeysGet: () =>
     _invoke<{ keys: Record<string, string>; configured?: Record<string, boolean> }>('ubicaciones_keys_get'),
   ubicacionesKeysSet: (keys: Record<string, string>) =>
@@ -948,8 +1015,9 @@ export const api = {
     cached?: boolean;
   }>('autoimg_bootstrap', { refresh }),
   autoimgAutoSyncToggle: (enabled: boolean) => _invoke<{ enabled: boolean }>('autoimg_auto_sync_toggle', { enabled }),
+  autoimgScanAll: () => _invoke<{ success: boolean; results?: unknown }>('autoimg_scan_all'),
   autoimgCancelOperation: () => _invoke<{ success: boolean; operation?: string; reason?: string }>('autoimg_cancel_operation'),
-  autoimgOperationStatus: () => _invoke<{ running: boolean; operation?: string; progress?: number; message?: string }>('autoimg_operation_status'),
+  autoimgOperationStatus: () => _invoke<{ running: boolean; operation?: string; progress?: number; message?: string; started_at?: string }>('autoimg_operation_status'),
   autoimgStatus: () => _invoke<{ connected: boolean; sheetName?: string; sheetId?: string; sheetLinked?: boolean; lastSync?: string; autoSync: boolean; totalNis?: number; completos?: number; faltantes?: number; sobrantes?: number; sinSgio?: number; carpetasActivas?: number }>('autoimg_status'),
 
   // ─── RUM Telemetry (web-vitals → stderr) ────────────────────────────────

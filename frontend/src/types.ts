@@ -9,6 +9,7 @@ export interface ProcessStatus {
   job_type?: string;
   total?: number;
   cancel_requested?: boolean;
+  cancelled?: boolean;
   created_at?: string;
   params?: Record<string, unknown>;
   result?: Record<string, unknown> | null;

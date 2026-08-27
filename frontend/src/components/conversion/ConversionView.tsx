@@ -63,7 +63,7 @@ export default function ConversionView() {
     [mappingData, files],
   );
   const { selectedFile, setSelectedFile, selectedFiles, setSelectedFiles, handleFileClick, handleFileDoubleClick, selectAllFiles } = useFileSelection(files);
-  const { status, running, pollStatus, pollError, startProcess, cancelProcess } = useProcessRunner();
+  const { state: runnerState, status, running, pollStatus, pollError, startProcess, cancelProcess } = useProcessRunner();
   const { addToast } = useToast();
   const { confirm } = useDialog();
   const defaultsLockedRef = useRef(false);
@@ -735,9 +735,9 @@ export default function ConversionView() {
           )
         ) : undefined}
         progressIndicator={
-          running && status ? (
+          runnerState.phase === 'running' ? (
             <SegmentedProgressBar
-              progress={status.progress}
+              progress={runnerState.status.progress}
               completed={progressCompleted}
               total={Math.max(progressTotal, 1)}
             />

@@ -20,6 +20,76 @@ import {
 import { loadSession, saveSession, storedToSession } from '../utils/storage';
 import { registerLocalPaths } from '../../../utils/registerLocalPath';
 
+export interface EvidenciaMetadataState {
+  title: string;
+  cuadranteLabel: string;
+  showCuadranteLabel: boolean;
+  cuadranteRanges: CuadranteRange[];
+  currentCuadrante: string;
+}
+
+export interface EvidenciaAssetsState {
+  logoLeft: LogoAsset | null;
+  logoRight: LogoAsset | null;
+  images: LocalImage[];
+}
+
+export interface EvidenciaPaginationState {
+  pages: LocalImage[][];
+  currentPageIndex: number;
+  currentPageImages: LocalImage[];
+  totalPages: number;
+}
+
+export interface EvidenciaSessionActions {
+  setTitle: (val: string) => void;
+  setCuadranteLabel: (val: string) => void;
+  setShowCuadranteLabel: (val: boolean) => void;
+  setCuadranteRanges: (ranges: CuadranteRange[]) => void;
+  addCuadranteRange: () => void;
+  setLogo: (side: 'left' | 'right', file: File | null) => string | null;
+  addImages: (files: File[]) => Promise<string[]>;
+  removeImage: (index: number) => void;
+  clearImages: () => void;
+  resolveCuadrante: (pageNum: number) => string;
+  setCurrentPageIndex: (idx: number) => void;
+  setIsExporting: (v: boolean) => void;
+}
+
+export interface EvidenciaSessionHookResult {
+  metadata: EvidenciaMetadataState;
+  assets: EvidenciaAssetsState;
+  pagination: EvidenciaPaginationState;
+  isExporting: boolean;
+  actions: EvidenciaSessionActions;
+
+  // Legacy flat accessors for backward compatibility
+  title: string;
+  cuadranteLabel: string;
+  showCuadranteLabel: boolean;
+  cuadranteRanges: CuadranteRange[];
+  currentCuadrante: string;
+  logoLeft: LogoAsset | null;
+  logoRight: LogoAsset | null;
+  images: LocalImage[];
+  pages: LocalImage[][];
+  currentPageIndex: number;
+  currentPageImages: LocalImage[];
+  totalPages: number;
+  setTitle: (val: string) => void;
+  setCuadranteLabel: (val: string) => void;
+  setShowCuadranteLabel: (val: boolean) => void;
+  setCuadranteRanges: (ranges: CuadranteRange[]) => void;
+  addCuadranteRange: () => void;
+  setLogo: (side: 'left' | 'right', file: File | null) => string | null;
+  addImages: (files: File[]) => Promise<string[]>;
+  removeImage: (index: number) => void;
+  clearImages: () => void;
+  resolveCuadrante: (pageNum: number) => string;
+  setCurrentPageIndex: (idx: number) => void;
+  setIsExporting: (v: boolean) => void;
+}
+
 const SAVE_DEBOUNCE_MS = 400;
 
 function revokeImages(images: LocalImage[]) {
@@ -30,7 +100,7 @@ function revokeLogo(logo: LogoAsset | null) {
   if (logo) URL.revokeObjectURL(logo.objectUrl);
 }
 
-export function useEvidenciaSession() {
+export function useEvidenciaSession(): EvidenciaSessionHookResult {
   const [title, setTitleState] = useState(DEFAULT_TITLE);
   const [cuadranteLabel, setCuadranteLabelState] = useState(DEFAULT_CUADRANTE_LABEL);
   const [showCuadranteLabel, setShowCuadranteLabelState] = useState(true);
@@ -222,7 +292,48 @@ export function useEvidenciaSession() {
     [cuadranteRanges],
   );
 
+  const metadata: EvidenciaMetadataState = {
+    title,
+    cuadranteLabel,
+    showCuadranteLabel,
+    cuadranteRanges,
+    currentCuadrante,
+  };
+
+  const assets: EvidenciaAssetsState = {
+    logoLeft,
+    logoRight,
+    images,
+  };
+
+  const pagination: EvidenciaPaginationState = {
+    pages,
+    currentPageIndex,
+    currentPageImages,
+    totalPages,
+  };
+
+  const actions: EvidenciaSessionActions = {
+    setTitle,
+    setCuadranteLabel,
+    setShowCuadranteLabel,
+    setCuadranteRanges,
+    addCuadranteRange,
+    setLogo,
+    addImages,
+    removeImage,
+    clearImages,
+    resolveCuadrante,
+    setCurrentPageIndex,
+    setIsExporting,
+  };
+
   return {
+    metadata,
+    assets,
+    pagination,
+    isExporting,
+    actions,
     title,
     cuadranteLabel,
     showCuadranteLabel,
@@ -235,7 +346,6 @@ export function useEvidenciaSession() {
     currentPageIndex,
     currentPageImages,
     totalPages,
-    isExporting,
     setTitle,
     setCuadranteLabel,
     setShowCuadranteLabel,

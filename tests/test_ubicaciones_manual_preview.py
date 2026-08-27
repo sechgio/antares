@@ -44,14 +44,12 @@ def test_manual_preview_cache_differs_by_text_fields() -> None:
             {**base_payload, "manualData": {**base_payload["manualData"], "cod_componente": "COD-B"}}
         )
 
-    assert first["success"] is True
-    assert second["success"] is True
-    assert first["data"]["cod_componente"] == "COD-A"
-    assert second["data"]["cod_componente"] == "COD-B"
+    assert first["cod_componente"] == "COD-A"
+    assert second["cod_componente"] == "COD-B"
     # data: URI — Electron CSP blocks file: in img-src
-    assert str(first["data"]["image"]).startswith("data:image/jpeg;base64,")
-    assert Path(first["data"]["image_path"]).is_file()
-    assert "base64," in str(first["data"]["image"])
+    assert str(first["image"]).startswith("data:image/jpeg;base64,")
+    assert Path(first["image_path"]).is_file()
+    assert "base64," in str(first["image"])
 
 
 def test_manual_preview_cache_differs_by_coordinates() -> None:
@@ -78,8 +76,8 @@ def test_manual_preview_cache_differs_by_coordinates() -> None:
             }
         )
 
-    assert first["success"] is True
-    assert second["success"] is True
+    assert first["image"] is not None
+    assert second["image"] is not None
     assert fetch_map.call_count == 2
 
 
@@ -114,10 +112,8 @@ def test_recompose_only_reuses_working_map_cache_without_refetch() -> None:
             }
         )
 
-    assert first["success"] is True
-    assert second["success"] is True
-    assert first["data"]["cod_componente"] == "COD-A"
-    assert second["data"]["cod_componente"] == "COD-B"
+    assert first["cod_componente"] == "COD-A"
+    assert second["cod_componente"] == "COD-B"
     fetch_map.assert_not_called()
 
 
@@ -143,8 +139,8 @@ def test_preview_composed_cache_differs_by_map_provider() -> None:
             "api_key": "MT-KEY",
         })
 
-    assert osm["success"] is True
-    assert maptiler["success"] is True
+    assert osm["image"] is not None
+    assert maptiler["image"] is not None
     assert fetch_map.call_count == 2
 
 
@@ -174,9 +170,7 @@ def test_preview_composed_cache_differs_by_custom_styles() -> None:
             "customStyles": {"map": {"overlayAlpha": 120, "overlayColor": "#F6F6F6"}},
         })
 
-    assert first["success"] is True
-    assert second["success"] is True
-    assert first["data"]["image"] != second["data"]["image"]
+    assert first["image"] != second["image"]
     fetch_map.assert_not_called()
 
 
@@ -206,8 +200,8 @@ def test_preview_composed_cache_differs_by_zoom() -> None:
             "zoom": 19,
         })
 
-    assert zoom15["success"] is True
-    assert zoom19["success"] is True
+    assert zoom15["image"] is not None
+    assert zoom19["image"] is not None
     assert fetch_map.call_count == 2
 
 

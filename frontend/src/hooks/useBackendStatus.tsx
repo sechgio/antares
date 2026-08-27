@@ -2,12 +2,20 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { getBackendStatus, restartBackend, onNotify } from '../api';
 import type { BackendHealthStatus } from '../api';
 
-type BackendState = 'idle' | 'starting' | 'ready' | 'exited' | 'fatal' | 'unknown';
+export type BackendState = 'idle' | 'starting' | 'ready' | 'exited' | 'fatal' | 'unknown';
 
-interface BackendStatusResult {
+export type BackendStatusState =
+  | { status: 'ready' }
+  | { status: 'starting'; isRestarting: boolean }
+  | { status: 'degraded'; phase: 'exited' | 'fatal' | 'unknown'; errorMessage: string; isRestarting: boolean }
+  | { status: 'idle' };
+
+export interface BackendStatusResult {
+  state: BackendStatusState;
   backendState: BackendState;
   errorMessage: string | null;
   isRestarting: boolean;
+  isReady: boolean;
   health: BackendHealthStatus | null;
   restartBackend: () => Promise<void>;
 }
@@ -117,5 +125,27 @@ export function useBackendStatus(): BackendStatusResult {
     }
   }, [pollStatus]);
 
-  return { backendState, errorMessage, isRestarting, health, restartBackend: handleRestart };
+  const state: BackendStatusState =
+    backendState === 'ready'
+      ? { status: 'ready' }
+      : backendState === 'idle'
+        ? { status: 'idle' }
+        : backendState === 'starting'
+          ? { status: 'starting', isRestarting }
+          : {
+              status: 'degraded',
+              phase: backendState,
+              errorMessage: errorMessage || 'Error en backend',
+              isRestarting,
+            };
+
+  return {
+    state,
+    backendState,
+    errorMessage,
+    isRestarting,
+    isReady: backendState === 'ready',
+    health,
+    restartBackend: handleRestart,
+  };
 }

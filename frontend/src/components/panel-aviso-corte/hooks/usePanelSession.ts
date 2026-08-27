@@ -26,6 +26,42 @@ import {
   resolveDefaultKeyColumn,
 } from '../utils/excelPreview';
 
+export interface PanelMatchingState {
+  matchRule: MatchRule;
+  addressColumn: string;
+  exportMode: 'skip_empty' | 'include_empty';
+  matchResult: MatchResult | null;
+  previewPanels: PanelVM[];
+}
+
+export interface PanelFormState {
+  headerForm: HeaderFormState;
+  excelSource: ExcelSource | null;
+}
+
+export interface PanelAssetsState {
+  logoLeft: LogoAsset | null;
+  logoRight: LogoAsset | null;
+  images: LocalImage[];
+}
+
+export interface PanelSessionActions {
+  setHeaderForm: (v: HeaderFormState) => void;
+  setLogoLeft: (file: File | null) => string | null;
+  setLogoRight: (file: File | null) => string | null;
+  addImages: (files: File[]) => string[] | Promise<string[]>;
+  removeImage: (index: number) => void;
+  clearImages: () => void;
+  setExcelSource: (src: ExcelSource | null) => void;
+  setMatchRule: (rule: MatchRule) => void;
+  setAddressColumn: (col: string) => void;
+  setExportMode: (mode: 'skip_empty' | 'include_empty') => void;
+  computeMatch: () => Promise<void>;
+  setCurrentPageIndex: (idx: number) => void;
+  setIsExporting: (v: boolean) => void;
+  clearErrors: () => void;
+}
+
 export interface PanelSession {
   headerForm: HeaderFormState;
   logoLeft: LogoAsset | null;

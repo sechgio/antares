@@ -318,4 +318,40 @@ describe('useProcessRunner', () => {
 
     expect(result.current.running).toBe(true);
   });
+
+  it('reflects phase in state discriminated union across lifecycle', async () => {
+    const { result } = renderHook(() => useProcessRunner());
+    await act(async () => Promise.resolve());
+
+    expect(result.current.state.phase).toBe('idle');
+
+    act(() => {
+      notifyCallback?.('process.progress', {
+        progress: 50,
+        current_file: 'img.jpg',
+        ok_count: 5,
+        err_count: 0,
+      });
+    });
+
+    expect(result.current.state.phase).toBe('running');
+    if (result.current.state.phase === 'running') {
+      expect(result.current.state.status.progress).toBe(50);
+    }
+
+    act(() => {
+      notifyCallback?.('process.complete', {
+        progress: 100,
+        ok_count: 10,
+        err_count: 0,
+        cancelled: false,
+      });
+    });
+
+    expect(result.current.state.phase).toBe('completed');
+    if (result.current.state.phase === 'completed') {
+      expect(result.current.state.cancelled).toBe(false);
+      expect(result.current.state.status.ok_count).toBe(10);
+    }
+  });
 });
