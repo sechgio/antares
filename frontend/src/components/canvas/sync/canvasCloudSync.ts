@@ -98,6 +98,25 @@ export async function pushCanvasDocument(
 
   const updatedAt = doc.updatedAt || new Date().toISOString();
 
+  // Try atomic server-side RPC push first (serializes concurrency with row locks)
+  if (typeof supabase.rpc === 'function' && !options?.forceResurrect) {
+    try {
+      const rpcRes = (await withTimeout(
+        (supabase.rpc as unknown as (n: string, p: unknown) => PromiseLike<{ data: boolean | null; error: { message: string } | null }>)(
+          'canvas_push_document_lww',
+          { p_document: doc, p_updated_at: updatedAt },
+        ),
+        CLOUD_SYNC_TIMEOUT_MS,
+        'canvas-push-rpc',
+      )) as { data: boolean | null; error: { message: string } | null } | null;
+      if (rpcRes && !rpcRes.error && typeof rpcRes.data === 'boolean') {
+        return rpcRes.data;
+      }
+    } catch {
+      // Fall back to client-coordinated select + upsert below
+    }
+  }
+
   const { data: existing, error: selectError } = await withTimeout(
     supabase
       .from('canvas_documents')

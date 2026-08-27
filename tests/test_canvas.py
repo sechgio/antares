@@ -1249,3 +1249,32 @@ def test_normalize_omits_invalid_mask_and_ops() -> None:
     assert meta.get("ops") == [{"op": "intersect", "layerId": "ok"}]
 
 
+def test_normalize_prunes_dangling_and_self_referencing_parent_id() -> None:
+    raw = create_empty_document()
+    raw["layers"].extend(
+        [
+            {
+                "id": "valid-child",
+                "type": "text",
+                "name": "Child",
+                "value": "Text",
+                "parentId": "non-existent-parent",
+                "cssVars": {"--width": "20mm", "--height": "10mm", "--translate-x": "0mm", "--translate-y": "0mm"},
+            },
+            {
+                "id": "self-loop",
+                "type": "text",
+                "name": "Loop",
+                "value": "Text",
+                "parentId": "self-loop",
+                "cssVars": {"--width": "20mm", "--height": "10mm", "--translate-x": "0mm", "--translate-y": "0mm"},
+            },
+        ]
+    )
+    doc = normalize_document(raw)
+    valid_child = next(l for l in doc["layers"] if l["id"] == "valid-child")
+    self_loop = next(l for l in doc["layers"] if l["id"] == "self-loop")
+    assert "parentId" not in valid_child
+    assert "parentId" not in self_loop
+
+

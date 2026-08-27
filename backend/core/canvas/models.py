@@ -506,6 +506,14 @@ def normalize_document(raw: Any) -> dict[str, Any]:
         {**layer, "pageIndex": min(max(0, int(layer.get("pageIndex", 0))), last_page)} for layer in layers
     ]
 
+    # Prune dangling parentId references and self-cycles so dropped layers
+    # never leave broken pointers or loops in the document tree.
+    valid_ids = {layer["id"] for layer in layers}
+    for layer in layers:
+        parent = layer.get("parentId")
+        if parent and (parent not in valid_ids or parent == layer["id"]):
+            layer.pop("parentId", None)
+
     return {
         "version": DOCUMENT_VERSION,
         "id": str(raw.get("id") or _new_id()),

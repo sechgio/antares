@@ -369,10 +369,19 @@ export function normalizeDocument(doc: CanvasDocument): CanvasDocument {
 
   // Match backend normalize_document: clamp pageIndex into the valid page range.
   const lastPage = Math.max(0, (upgraded.pages?.length ?? 1) - 1);
-  const layers = upgraded.layers.map((layer) => {
+  let layers = upgraded.layers.map((layer) => {
     const raw = layer.pageIndex ?? 0;
     const clamped = Math.min(Math.max(0, raw), lastPage);
     return clamped === layer.pageIndex ? layer : { ...layer, pageIndex: clamped };
+  });
+
+  // Prune dangling parentId references and self-cycles
+  const validIds = new Set(layers.map((l) => l.id));
+  layers = layers.map((layer) => {
+    if (layer.parentId && (!validIds.has(layer.parentId) || layer.parentId === layer.id)) {
+      return { ...layer, parentId: undefined };
+    }
+    return layer;
   });
 
   return {

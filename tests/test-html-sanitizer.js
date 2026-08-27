@@ -97,6 +97,20 @@ function run() {
   const evilHrefOut = sanitizeHtmlForPdf(evilHref);
   assert(!evilHrefOut.includes('https://evil.example'), 'still neutralises non-Google https href');
 
+  // Pseudo-head in attribute must not neutralize top-level CSP
+  const attrHeadPayload = '<div data-meta="<head>">Content</div>';
+  const attrHeadOut = sanitizeHtmlForPdf(attrHeadPayload);
+  assert(
+    attrHeadOut.startsWith('<meta http-equiv="Content-Security-Policy"'),
+    'C2: prepends CSP when <head> is only present inside an attribute',
+  );
+
+  // Pre-existing attacker CSP is stripped and replaced with official CSP
+  const spoofedCsp = '<head><meta http-equiv="Content-Security-Policy" content="default-src *;"></head><div>Hi</div>';
+  const spoofedOut = sanitizeHtmlForPdf(spoofedCsp);
+  assert(!spoofedOut.includes('default-src *'), 'C2: strips pre-existing spoofed CSP meta tags');
+  assert(spoofedOut.includes("default-src 'none'"), 'C2: enforces official strict CSP');
+
   console.log(`\n${'='.repeat(50)}`);
   console.log(`Results: ${passed} passed, ${failed} failed`);
   console.log('='.repeat(50));

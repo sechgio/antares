@@ -16,6 +16,8 @@ from typing import Any, cast
 import fitz  # PyMuPDF
 from PIL import Image, ImageOps
 
+Image.MAX_IMAGE_PIXELS = 400_000_000
+
 from backend.core.cmyk_pdf.color import convert_pil_to_cmyk_bytes, css_color_to_cmyk
 from backend.utils.paths import user_data_path
 
@@ -324,76 +326,76 @@ class CanvasCmykRenderer:
     def render(self, local_image_paths: dict[str, str] | None = None) -> bytes:
         local_image_paths = local_image_paths or {}
         pdf = fitz.open()
+        try:
+            bleed_pt = self.bleed_mm * MM_TO_PT
+            trim_w_pt = self.page_w_mm * MM_TO_PT
+            trim_h_pt = self.page_h_mm * MM_TO_PT
 
-        bleed_pt = self.bleed_mm * MM_TO_PT
-        trim_w_pt = self.page_w_mm * MM_TO_PT
-        trim_h_pt = self.page_h_mm * MM_TO_PT
+            # If crop marks are enabled, extend MediaBox beyond bleed by 10mm margin
+            crop_margin_pt = (10.0 * MM_TO_PT) if self.show_crop_marks else 0.0
+            media_w_pt = trim_w_pt + 2 * (bleed_pt + crop_margin_pt)
+            media_h_pt = trim_h_pt + 2 * (bleed_pt + crop_margin_pt)
 
-        # If crop marks are enabled, extend MediaBox beyond bleed by 10mm margin
-        crop_margin_pt = (10.0 * MM_TO_PT) if self.show_crop_marks else 0.0
-        media_w_pt = trim_w_pt + 2 * (bleed_pt + crop_margin_pt)
-        media_h_pt = trim_h_pt + 2 * (bleed_pt + crop_margin_pt)
+            origin_x_pt = bleed_pt + crop_margin_pt
+            origin_y_pt = bleed_pt + crop_margin_pt
 
-        origin_x_pt = bleed_pt + crop_margin_pt
-        origin_y_pt = bleed_pt + crop_margin_pt
+            pages = self.document.get("pages") or [{"id": "page-1"}]
+            layers = self.document.get("layers") or []
 
-        pages = self.document.get("pages") or [{"id": "page-1"}]
-        layers = self.document.get("layers") or []
+            if self.pair_context_pages and len(self.contexts) == len(pages):
+                render_pairs: list[tuple[dict[str, Any], int]] = [
+                    (self.contexts[i], i) for i in range(len(pages))
+                ]
+            else:
+                render_pairs = [
+                    (ctx, page_idx)
+                    for ctx in self.contexts
+                    for page_idx in range(len(pages))
+                ]
 
-        if self.pair_context_pages and len(self.contexts) == len(pages):
-            render_pairs: list[tuple[dict[str, Any], int]] = [
-                (self.contexts[i], i) for i in range(len(pages))
-            ]
-        else:
-            render_pairs = [
-                (ctx, page_idx)
-                for ctx in self.contexts
-                for page_idx in range(len(pages))
-            ]
+            for ctx, page_idx in render_pairs:
+                page = pdf.new_page(width=media_w_pt, height=media_h_pt)
+                media_rect = fitz.Rect(0, 0, media_w_pt, media_h_pt)
+                page.set_mediabox(media_rect)
 
-        for ctx, page_idx in render_pairs:
-            page = pdf.new_page(width=media_w_pt, height=media_h_pt)
-            media_rect = fitz.Rect(0, 0, media_w_pt, media_h_pt)
-            page.set_mediabox(media_rect)
+                # Set PDF geometry boxes (TrimBox & BleedBox)
+                mbox = page.mediabox
+                trim_rect = fitz.Rect(
+                    max(mbox.x0, origin_x_pt),
+                    max(mbox.y0, origin_y_pt),
+                    min(mbox.x1, origin_x_pt + trim_w_pt),
+                    min(mbox.y1, origin_y_pt + trim_h_pt),
+                )
+                bleed_rect = fitz.Rect(
+                    max(mbox.x0, origin_x_pt - bleed_pt),
+                    max(mbox.y0, origin_y_pt - bleed_pt),
+                    min(mbox.x1, origin_x_pt + trim_w_pt + bleed_pt),
+                    min(mbox.y1, origin_y_pt + trim_h_pt + bleed_pt),
+                )
+                page.set_trimbox(trim_rect)
+                page.set_bleedbox(bleed_rect)
 
-            # Set PDF geometry boxes (TrimBox & BleedBox)
-            mbox = page.mediabox
-            trim_rect = fitz.Rect(
-                max(mbox.x0, origin_x_pt),
-                max(mbox.y0, origin_y_pt),
-                min(mbox.x1, origin_x_pt + trim_w_pt),
-                min(mbox.y1, origin_y_pt + trim_h_pt),
-            )
-            bleed_rect = fitz.Rect(
-                max(mbox.x0, origin_x_pt - bleed_pt),
-                max(mbox.y0, origin_y_pt - bleed_pt),
-                min(mbox.x1, origin_x_pt + trim_w_pt + bleed_pt),
-                min(mbox.y1, origin_y_pt + trim_h_pt + bleed_pt),
-            )
-            page.set_trimbox(trim_rect)
-            page.set_bleedbox(bleed_rect)
+                if self.show_crop_marks and crop_margin_pt > 0:
+                    self._draw_crop_marks(page, trim_rect, crop_margin_pt)
 
-            if self.show_crop_marks and crop_margin_pt > 0:
-                self._draw_crop_marks(page, trim_rect, crop_margin_pt)
+                # Render page layers
+                page_layers = [
+                    layer for layer in layers if layer.get("pageIndex", 0) == page_idx and layer.get("visible", True)
+                ]
+                shape = page.new_shape()
 
-            # Render page layers
-            page_layers = [
-                layer for layer in layers if layer.get("pageIndex", 0) == page_idx and layer.get("visible", True)
-            ]
-            shape = page.new_shape()
+                for layer in page_layers:
+                    # Text/image write to the page stream directly: flush pending
+                    # vector ops first so z-order matches document order.
+                    if layer.get("type") in ("text", "field", "image", "logo", "imageSlot"):
+                        shape = self._flush_shape(page, shape)
+                    self._render_layer(page, shape, layer, ctx, origin_x_pt, origin_y_pt, local_image_paths)
 
-            for layer in page_layers:
-                # Text/image write to the page stream directly: flush pending
-                # vector ops first so z-order matches document order.
-                if layer.get("type") in ("text", "field", "image", "logo", "imageSlot"):
-                    shape = self._flush_shape(page, shape)
-                self._render_layer(page, shape, layer, ctx, origin_x_pt, origin_y_pt, local_image_paths)
+                shape.commit()
 
-            shape.commit()
-
-        pdf_bytes = cast(bytes, pdf.tobytes(clean=True, deflate=True))
-        pdf.close()
-        return pdf_bytes
+            return cast(bytes, pdf.tobytes(clean=True, deflate=True))
+        finally:
+            pdf.close()
 
     def _flush_shape(self, page: fitz.Page, shape: fitz.Shape) -> fitz.Shape:
         """Commit accumulated vector ops and start a fresh shape.

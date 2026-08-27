@@ -140,9 +140,11 @@ export function useDocumentLifecycle({
         }),
     ]);
     const saved = normalizeDocument(savedRes.document as CanvasDocument);
-    queueCanvasCloudPush(saved);
     const current = isCurrentSnapshot(snapshot);
-    if (current && histPersistOk) markHistoryPersisted(document.id);
+    if (current) {
+      queueCanvasCloudPush(saved);
+      if (histPersistOk) markHistoryPersisted(document.id);
+    }
     return { current, saved, histPersistOk, document, past, future };
   }, [captureCurrentSnapshot, history.documentRef, history.future, history.past, isCurrentSnapshot, markHistoryPersisted, persistHistoryStacks, warnHistoryPersistFailed]);
 

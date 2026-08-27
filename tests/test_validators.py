@@ -25,6 +25,17 @@ class TestSanitizarNombre:
     def test_sin_cambios(self) -> None:
         assert sanitizar_nombre("nombre_valido-123") == "nombre_valido-123"
 
+    def test_nombres_reservados_windows(self) -> None:
+        assert sanitizar_nombre("CON") == "_CON"
+        assert sanitizar_nombre("con.txt") == "_con.txt"
+        assert sanitizar_nombre("aux.png") == "_aux.png"
+        assert sanitizar_nombre("NUL.json") == "_NUL.json"
+        assert sanitizar_nombre("prn.pdf") == "_prn.pdf"
+        assert sanitizar_nombre("com1.dat") == "_com1.dat"
+        assert sanitizar_nombre("lpt9.log") == "_lpt9.log"
+        assert sanitizar_nombre("control.txt") == "control.txt"
+        assert sanitizar_nombre("auxiliar.png") == "auxiliar.png"
+
 
 class TestObtenerCodigoDesdeNombre:
     def test_stem_simple(self) -> None:
