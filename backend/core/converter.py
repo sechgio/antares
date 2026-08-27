@@ -12,10 +12,10 @@ from typing import cast
 
 from PIL import Image, ImageOps
 
+from backend.core.format_registry import get_registry
+
 # Allow processing large format images (up to 400 Megapixels) without DecompressionBombError
 Image.MAX_IMAGE_PIXELS = 400_000_000
-
-from backend.core.format_registry import get_registry
 
 _registry = get_registry()
 _registry.add_format("JPEG", ".jpg", ("RGB", "L", "CMYK"))

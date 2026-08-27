@@ -16,10 +16,10 @@ from typing import Any, cast
 import fitz  # PyMuPDF
 from PIL import Image, ImageOps
 
-Image.MAX_IMAGE_PIXELS = 400_000_000
-
 from backend.core.cmyk_pdf.color import convert_pil_to_cmyk_bytes, css_color_to_cmyk
 from backend.utils.paths import user_data_path
+
+Image.MAX_IMAGE_PIXELS = 400_000_000
 
 logger = logging.getLogger(__name__)
 

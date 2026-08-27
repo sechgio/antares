@@ -1272,8 +1272,8 @@ def test_normalize_prunes_dangling_and_self_referencing_parent_id() -> None:
         ]
     )
     doc = normalize_document(raw)
-    valid_child = next(l for l in doc["layers"] if l["id"] == "valid-child")
-    self_loop = next(l for l in doc["layers"] if l["id"] == "self-loop")
+    valid_child = next(layer for layer in doc["layers"] if layer["id"] == "valid-child")
+    self_loop = next(layer for layer in doc["layers"] if layer["id"] == "self-loop")
     assert "parentId" not in valid_child
     assert "parentId" not in self_loop
 
