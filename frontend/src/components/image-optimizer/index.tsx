@@ -11,6 +11,7 @@ import {
   mapWithConcurrencyLimit,
   resolveImportConcurrency,
   resolveProcessConcurrency,
+  throwIfAborted,
 } from './concurrency';
 import { DEFAULT_BATCH_SETTINGS, IMAGE_OPTIMIZER_PRESETS, cloneSettings } from './presets';
 import { BatchSettings, CropOffset, ImageItem, PresetId, Toast } from './types';
@@ -59,6 +60,7 @@ export default function ImageOptimizer() {
   const itemsRef = useRef<ImageItem[]>([]);
   const settingsRef = useRef<BatchSettings>(settings);
   const saveCancelledRef = useRef(false);
+  const processingAbortRef = useRef<AbortController | null>(null);
 
   const updateDownloadMenuPosition = useCallback(() => {
     const anchor = downloadMenuAnchorRef.current;
@@ -113,6 +115,8 @@ export default function ImageOptimizer() {
 
   useEffect(() => {
     return () => {
+      processingAbortRef.current?.abort();
+      processingAbortRef.current = null;
       itemsRef.current.forEach((item) => revokeItemUrls(item));
     };
   }, []);
@@ -573,6 +577,10 @@ export default function ImageOptimizer() {
       return;
     }
 
+    processingAbortRef.current?.abort();
+    const controller = new AbortController();
+    const { signal } = controller;
+    processingAbortRef.current = controller;
     setIsProcessing(true);
     setProcessingProgress({ current: 0, total: targets.length });
 
@@ -583,49 +591,72 @@ export default function ImageOptimizer() {
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     let completed = 0;
+    let outcomes: boolean[] | null = null;
+    try {
+      throwIfAborted(signal);
+      outcomes = await mapWithConcurrencyLimit(
+        targets,
+        resolveProcessConcurrency(),
+        async (target) => {
+          if (!signal.aborted) setProcessingMessage(`Procesando ${target.originalName}`);
+          try {
+            throwIfAborted(signal);
+            const latestItem = itemsRef.current.find((item) => item.id === target.id) || target;
+            const artifact = await processImageItem(latestItem, settingsRef.current, signal);
+            throwIfAborted(signal);
+            const previewUrl = URL.createObjectURL(artifact.blob);
+            if (signal.aborted) {
+              URL.revokeObjectURL(previewUrl);
+              throwIfAborted(signal);
+            }
+            commitItems((prev) => prev.map((item) => {
+              if (item.id !== target.id) return item;
+              if (item.resultPreview) URL.revokeObjectURL(item.resultPreview);
+              return {
+                ...item,
+                resultBlob: artifact.blob,
+                resultPreview: previewUrl,
+                resultSize: artifact.blob.size,
+                finalWidth: artifact.width,
+                finalHeight: artifact.height,
+                status: 'completed',
+                error: undefined,
+                stale: false,
+                processedSignature: artifact.signature,
+                processedAt: Date.now(),
+              };
+            }));
+            return true;
+          } catch (error) {
+            if (signal.aborted) throwIfAborted(signal);
+            const message = error instanceof Error ? error.message : 'Error desconocido';
+            commitItems((prev) => prev.map((item) => (item.id === target.id ? { ...item, status: 'error', error: message } : item)));
+            return false;
+          } finally {
+            if (!signal.aborted) {
+              completed += 1;
+              setProcessingProgress({ current: completed, total: targets.length });
+            }
+          }
+        },
+        signal,
+      );
+    } catch (error) {
+      if (!signal.aborted) {
+        console.error('[ImageOptimizer] Error al procesar el lote:', error);
+        addToast('No se pudo completar el procesamiento del lote.', 'error', 4200);
+      }
+      return;
+    } finally {
+      if (processingAbortRef.current === controller) processingAbortRef.current = null;
+      if (!signal.aborted) {
+        setIsProcessing(false);
+        setProcessingMessage('');
+      }
+    }
 
-    const outcomes = await mapWithConcurrencyLimit(
-      targets,
-      resolveProcessConcurrency(),
-      async (target) => {
-        setProcessingMessage(`Procesando ${target.originalName}`);
-        try {
-          const latestItem = itemsRef.current.find((item) => item.id === target.id) || target;
-          const artifact = await processImageItem(latestItem, settingsRef.current);
-          const previewUrl = URL.createObjectURL(artifact.blob);
-          commitItems((prev) => prev.map((item) => {
-            if (item.id !== target.id) return item;
-            if (item.resultPreview) URL.revokeObjectURL(item.resultPreview);
-            return {
-              ...item,
-              resultBlob: artifact.blob,
-              resultPreview: previewUrl,
-              resultSize: artifact.blob.size,
-              finalWidth: artifact.width,
-              finalHeight: artifact.height,
-              status: 'completed',
-              error: undefined,
-              stale: false,
-              processedSignature: artifact.signature,
-              processedAt: Date.now(),
-            };
-          }));
-          return true;
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'Error desconocido';
-          commitItems((prev) => prev.map((item) => (item.id === target.id ? { ...item, status: 'error', error: message } : item)));
-          return false;
-        } finally {
-          completed += 1;
-          setProcessingProgress({ current: completed, total: targets.length });
-        }
-      },
-    );
-
+    if (!outcomes || signal.aborted) return;
     const successCount = outcomes.filter(Boolean).length;
-
-    setIsProcessing(false);
-    setProcessingMessage('');
 
     // Save to history
     const errorCount = targets.length - successCount;

@@ -9,6 +9,7 @@ const {
   appendStagedChunk,
   completeStagedSession,
   abortStagedSession,
+  resolveCapability,
   cleanupAllStaged,
 } = require('../electron/file-capabilities.js');
 
@@ -45,6 +46,25 @@ async function main() {
     const cap3 = await completeStagedSession(session3.token, 1);
     assert.deepStrictEqual([...fs.readFileSync(cap3.path)], [9, 8, 7, 6], 'ArrayBuffer chunk must be written verbatim');
     await abortStagedSession(session3.token);
+  }
+
+  // A completed staged capability must remove both the read token and the temp file.
+  {
+    const session4 = createStagedSession({ name: 'cleanup.xlsx', size: 4, webContentsId: 1 });
+    await appendStagedChunk(session4.token, Buffer.from('data'), 1);
+    const cap4 = await completeStagedSession(session4.token, 1);
+    assert.ok(fs.existsSync(cap4.path), 'completed staged file exists before cleanup');
+
+    const { handleDialogCall } = require('../electron/dialog-handlers.js');
+    const cleaned = await handleDialogCall(
+      'file_token_cleanup',
+      { token: cap4.token },
+      {},
+      { webContents: { id: 1 } },
+    );
+    assert.strictEqual(cleaned.result.cleaned, true);
+    assert.strictEqual(fs.existsSync(cap4.path), false, 'staged file deleted by token cleanup');
+    assert.throws(() => resolveCapability(cap4.token, 'read', 1), /capability not found|expired/);
   }
 
   // Ensure no leftover tmp dirs from this process leak forever (best-effort)

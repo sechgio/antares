@@ -29,6 +29,26 @@ describe('mapWithConcurrencyLimit', () => {
   it('returns empty array for empty input', async () => {
     expect(await mapWithConcurrencyLimit([], 3, async (x) => x)).toEqual([]);
   });
+
+  it('stops scheduling queued work after the signal is aborted', async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    const cancellableMap = mapWithConcurrencyLimit as unknown as <T, R>(
+      items: readonly T[],
+      limit: number,
+      fn: (item: T, index: number) => Promise<R>,
+      signal?: AbortSignal,
+    ) => Promise<R[]>;
+
+    await expect(
+      cancellableMap([1, 2, 3], 1, async (value) => {
+        calls += 1;
+        controller.abort();
+        return value;
+      }, controller.signal),
+    ).rejects.toThrow('Image processing cancelled');
+    expect(calls).toBe(1);
+  });
 });
 
 describe('concurrency resolvers', () => {
@@ -124,5 +144,33 @@ describe('processImageItem passthrough', () => {
     await expect(processImageItem(item, settings)).rejects.toThrow(/No se pudo cargar la imagen/);
 
     vi.stubGlobal('Image', OriginalImage);
+  });
+
+  it('rejects immediately when processing is already aborted', async () => {
+    const file = new File([new Uint8Array([1, 2, 3])], 'a.jpg', { type: 'image/jpeg' });
+    const item: ImageItem = {
+      id: '3',
+      sourceFile: file,
+      preview: 'blob:x',
+      originalName: 'a.jpg',
+      originalSize: 3,
+      sourceWidth: 10,
+      sourceHeight: 10,
+      status: 'pending',
+      stale: false,
+      selected: false,
+      excluded: false,
+      overrides: createImageOverrides(),
+    };
+    const controller = new AbortController();
+    controller.abort();
+    const cancellableProcess = processImageItem as unknown as (
+      image: ImageItem,
+      batchSettings: typeof DEFAULT_BATCH_SETTINGS,
+      signal: AbortSignal,
+    ) => Promise<unknown>;
+
+    await expect(cancellableProcess(item, DEFAULT_BATCH_SETTINGS, controller.signal))
+      .rejects.toMatchObject({ name: 'AbortError', message: 'Image processing cancelled' });
   });
 });

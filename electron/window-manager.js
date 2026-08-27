@@ -4,6 +4,7 @@
 const { BrowserWindow, screen, session, Menu } = require('electron');
 const path = require('path');
 const { ALLOWED_RENDERER_METHODS } = require('./ipc-methods');
+const { appendLogEvent } = require('./app-log');
 
 let mainWindow = null;
 let _isDev = false;
@@ -83,6 +84,38 @@ function createWindow(isDev) {
   });
 
   mainWindow.webContents.setBackgroundThrottling(false);
+
+  mainWindow.webContents.on('render-process-gone', (_event, details = {}) => {
+    appendLogEvent('ERROR', 'renderer.lifecycle', {
+      component: 'renderer',
+      outcome: 'failed',
+      reason: details.reason || 'render_process_gone',
+      message: `exit_code=${Number.isInteger(details.exitCode) ? details.exitCode : 'unknown'}`,
+    });
+  });
+  mainWindow.webContents.on('unresponsive', () => {
+    appendLogEvent('WARN', 'renderer.lifecycle', {
+      component: 'renderer',
+      outcome: 'degraded',
+      reason: 'unresponsive',
+    });
+  });
+  mainWindow.webContents.on('responsive', () => {
+    appendLogEvent('INFO', 'renderer.lifecycle', {
+      component: 'renderer',
+      outcome: 'success',
+      reason: 'responsive',
+    });
+  });
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+    appendLogEvent('ERROR', 'renderer.lifecycle', {
+      component: 'renderer',
+      outcome: 'failed',
+      reason: 'load_failed',
+      error_code: String(errorCode),
+      message: errorDescription || 'renderer load failed',
+    });
+  });
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');

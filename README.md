@@ -120,12 +120,9 @@ cd antares
 npm install
 cd frontend && npm install && cd ..
 
-# Crear venv del proyecto e instalar dependencias Python + PyInstaller
-# (usa Python 3.10+ del sistema; evita el `python` de otros venv del PATH)
-python -m venv venv312
-.\venv312\Scripts\Activate.ps1   # Windows PowerShell
-pip install -e ".[dev]"
-pip install pyinstaller
+# Instalar uv y sincronizar el entorno Python bloqueado
+python -m pip install uv==0.11.19
+uv sync --locked --extra dev --extra build
 ```
 
 ### 2. Ejecutar en Modo Desarrollo

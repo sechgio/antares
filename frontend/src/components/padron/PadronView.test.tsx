@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import PadronView, { getRenderableExportSheets, paginateLuriganchoItems } from './PadronView';
-import { createInitialItems } from './data';
+import { MAX_PADRON_ITEMS, createInitialItems } from './data';
 
 describe('PadronView output formats', () => {
   it('switches to the volante lurigancho layout while keeping padron controls', async () => {
@@ -121,6 +121,17 @@ describe('padron folio controls', () => {
     expect(footer?.style.fontSize).toBe('18px');
     expect(footer?.style.fontWeight).toBe('700');
     expect(footer?.style.fontStyle).toBe('italic');
+  });
+});
+
+describe('padron count safeguards', () => {
+  it('caps manual total rows before rendering the preview', () => {
+    render(<PadronView />);
+
+    const input = screen.getByLabelText('Total ítems') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: String(MAX_PADRON_ITEMS + 1) } });
+
+    expect(input.value).toBe(String(MAX_PADRON_ITEMS));
   });
 });
 

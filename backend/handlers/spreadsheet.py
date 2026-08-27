@@ -7,7 +7,9 @@ import csv
 import io
 import json
 import os
+import tempfile
 import threading
+import uuid
 import zipfile
 from collections import OrderedDict
 from datetime import date, datetime, time
@@ -20,6 +22,7 @@ MAX_SPREADSHEET_BYTES = 100 * 1024 * 1024
 # Temp files for b64 inline payloads: unique per call (concurrency-safe) and
 # deleted by spreadsheet_parse after parsing — never left in %TEMP%.
 _INLINE_TEMP_PREFIX = "antares_inline_"
+_INLINE_B64_CHUNK_CHARS = 1024 * 1024  # divisible by 4; ~768 KiB decoded per block
 MAX_SHEETS = 50
 MAX_CELLS = 2_000_000
 MAX_ZIP_RATIO = 100
@@ -51,16 +54,12 @@ def _clear_spreadsheet_caches() -> None:
 
 
 def _spill_dir() -> Path:
-    import tempfile
-
     out = Path(tempfile.gettempdir()) / "antares-spreadsheet-results"
     out.mkdir(parents=True, exist_ok=True)
     return out
 
 
 def _write_sheet_cache(name: str, sheets: list[dict[str, Any]], warnings: list[str]) -> Path:
-    import uuid
-
     payload = {"workbookName": name, "sheets": sheets, "warnings": warnings}
     out_path = _spill_dir() / f"{uuid.uuid4().hex}.json"
     out_path.write_text(json.dumps(payload, ensure_ascii=False, default=str), encoding="utf-8")
@@ -169,6 +168,31 @@ def _validate_zip_bomb(path: Path) -> None:
         raise ValueError(msg) from exc
 
 
+def _decode_inline_base64_to_fd(encoded: str, fd: int) -> None:
+    """Decode an inline payload without materializing the whole file in RAM."""
+    max_encoded_chars = ((MAX_SPREADSHEET_BYTES + 2) // 3) * 4
+    if len(encoded) > max_encoded_chars:
+        msg = f"Archivo excede {MAX_SPREADSHEET_BYTES // (1024*1024)} MiB"
+        raise ValueError(msg)
+
+    total = 0
+    for start in range(0, len(encoded), _INLINE_B64_CHUNK_CHARS):
+        chunk = encoded[start : start + _INLINE_B64_CHUNK_CHARS]
+        if "=" in chunk and start + len(chunk) < len(encoded):
+            raise ValueError("Payload base64 inválido")
+        decoded = base64.b64decode(chunk, validate=True)
+        total += len(decoded)
+        if total > MAX_SPREADSHEET_BYTES:
+            msg = f"Archivo excede {MAX_SPREADSHEET_BYTES // (1024*1024)} MiB"
+            raise ValueError(msg)
+        written = 0
+        while written < len(decoded):
+            count = os.write(fd, decoded[written:])
+            if count <= 0:
+                raise OSError("No se pudo escribir el payload temporal")
+            written += count
+
+
 def _resolve_input_path(params: dict[str, Any]) -> tuple[Path, bool]:
     """Resuelve la entrada a parsear. Devuelve ``(path, is_temp)``: ``is_temp``
     es True solo cuando el archivo fue creado aquí para un payload b64 inline
@@ -179,18 +203,13 @@ def _resolve_input_path(params: dict[str, Any]) -> tuple[Path, bool]:
         # Also support b64 inline for panel-aviso-corte compat
         b64 = params.get("xlsx_b64")
         if b64:
-            estimated_size = (len(b64) * 3) // 4
-            if estimated_size > MAX_SPREADSHEET_BYTES:
-                msg = f"Archivo excede {MAX_SPREADSHEET_BYTES // (1024*1024)} MiB"
-                raise ValueError(msg)
-            content = base64.b64decode(b64, validate=True)
             import tempfile
 
             fd, tmp_name = tempfile.mkstemp(suffix=".xlsx", prefix=_INLINE_TEMP_PREFIX)
             tmp_path = Path(tmp_name)
             try:
                 try:
-                    os.write(fd, content)
+                    _decode_inline_base64_to_fd(b64, fd)
                 finally:
                     os.close(fd)
             except Exception:
@@ -266,37 +285,38 @@ def _parse_xlsx(path: Path) -> tuple[str, list[dict[str, Any]], list[str]]:
     import openpyxl  # type: ignore
 
     _validate_zip_bomb(path)
-    # Always load via BytesIO so openpyxl never rejects a non-.xlsx staging suffix
-    # and we never risk reading a neighboring *.xlsx created by with_suffix().
-    wb = openpyxl.load_workbook(io.BytesIO(path.read_bytes()), read_only=True, data_only=True)
-    warnings: list[str] = []
-    sheets: list[dict[str, Any]] = []
-    total_cells = 0
-    sheet_count = 0
-    try:
-        for ws in wb.worksheets:
-            sheet_count += 1
-            if sheet_count > MAX_SHEETS:
-                warnings.append(f"Se truncó a {MAX_SHEETS} hojas")
-                break
-            rows: list[list[Any]] = []
-            for row in ws.iter_rows(values_only=True):
-                if row is None:
-                    continue
-                vals = _trim_row([_serialize_cell(v) for v in row])
-                if vals is None:
-                    continue
-                total_cells += len(vals)
-                if total_cells > MAX_CELLS:
-                    warnings.append("Se alcanzó el límite de celdas (2M)")
+    # A file-like object does not depend on the staging suffix and avoids a
+    # second in-memory copy of the complete workbook.
+    with path.open("rb") as source:
+        wb = openpyxl.load_workbook(source, read_only=True, data_only=True)
+        warnings: list[str] = []
+        sheets: list[dict[str, Any]] = []
+        total_cells = 0
+        sheet_count = 0
+        try:
+            for ws in wb.worksheets:
+                sheet_count += 1
+                if sheet_count > MAX_SHEETS:
+                    warnings.append(f"Se truncó a {MAX_SHEETS} hojas")
                     break
-                rows.append(vals)
-            sheets.append({"name": ws.title, "rows": rows})
-            if total_cells > MAX_CELLS:
-                break
-    finally:
-        with contextlib.suppress(Exception):
-            wb.close()
+                rows: list[list[Any]] = []
+                for row in ws.iter_rows(values_only=True):
+                    if row is None:
+                        continue
+                    vals = _trim_row([_serialize_cell(v) for v in row])
+                    if vals is None:
+                        continue
+                    total_cells += len(vals)
+                    if total_cells > MAX_CELLS:
+                        warnings.append("Se alcanzó el límite de celdas (2M)")
+                        break
+                    rows.append(vals)
+                sheets.append({"name": ws.title, "rows": rows})
+                if total_cells > MAX_CELLS:
+                    break
+        finally:
+            with contextlib.suppress(Exception):
+                wb.close()
     return (path.name, sheets, warnings)
 
 

@@ -4,13 +4,29 @@ import type { InformeV2, InformeV2ListItem } from './types';
 
 export { downloadBase64Blob, downloadBase64Pdf, fileToBase64, fileToDataUrl };
 
+const CONSOLIDATED_READ_BATCH_SIZE = 4;
+
+async function getReport(id: string) {
+  const result = await api.informesV2Get(id) as { report: InformeV2 };
+  return result.report;
+}
+
+async function getReportsInBatches(items: readonly InformeV2ListItem[]) {
+  const reports: InformeV2[] = [];
+
+  for (let offset = 0; offset < items.length; offset += CONSOLIDATED_READ_BATCH_SIZE) {
+    const batch = items.slice(offset, offset + CONSOLIDATED_READ_BATCH_SIZE);
+    reports.push(...await Promise.all(batch.map((item) => getReport(item.id))));
+  }
+
+  return reports;
+}
+
 export const informesV2Api = {
   list: (summary = true) =>
     api.informesV2List({ summary }) as Promise<{ reports: InformeV2ListItem[] }>,
-  get: async (id: string) => {
-    const result = await api.informesV2Get(id) as { report: InformeV2 };
-    return result.report;
-  },
+  get: getReport,
+  getMany: getReportsInBatches,
   create: async () => {
     const result = await api.informesV2Create() as { report: InformeV2 };
     return result.report;
@@ -39,6 +55,4 @@ export const informesV2Api = {
   htmlToPdf: api.htmlToPdf,
 };
 
-export function downloadBase64File(contentB64: string, filename: string, mime: string) {
-  downloadBase64Blob(contentB64, filename, mime);
-}
+

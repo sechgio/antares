@@ -20,7 +20,7 @@
  *   node scripts/push-loop.js --ship --merge --message "feat: nueva opción de export"
  */
 
-const { execFileSync } = require('child_process');
+const { execFileSync, execSync } = require('child_process');
 const {
   REPO_OWNER,
   REPO_NAME,
@@ -117,38 +117,42 @@ function ensureFeatureBranch(options) {
   return branch;
 }
 
+function runQualityCommand(command, label, options = {}) {
+  try {
+    return execSync(command, {
+      cwd: ROOT,
+      encoding: 'utf8',
+      stdio: 'pipe',
+      maxBuffer: 50 * 1024 * 1024,
+      ...options,
+    }).trim();
+  } catch (error) {
+    const output = [error.stdout, error.stderr]
+      .filter(Boolean)
+      .map((value) => value.toString())
+      .join('\n')
+      .trim();
+    const status = Number.isInteger(error.status) ? error.status : 1;
+    const failure = new Error(`${label} falló (exit ${status}):\n${output.slice(0, 800)}`);
+    failure.code = status;
+    throw failure;
+  }
+}
+
 function runQualityGate() {
   console.log('');
-  const lintResult = trySh('npm run lint:python 2>&1');
-  if (lintResult && lintResult.includes('error')) {
-    const lintLines = lintResult.split('\n').filter((l) => l.includes('error')).length;
-    if (lintLines > 0) {
-      throw new Error(`Lint de Python falló:\n${lintResult.slice(0, 500)}`);
-    }
-  }
+  runQualityCommand('npm run lint:python 2>&1', 'Lint de Python');
 
-  const tcBackend = trySh('npm run typecheck:backend 2>&1');
-  if (tcBackend && (tcBackend.includes('error') || tcBackend.includes('Error'))) {
-    throw new Error(`Typecheck de backend falló:\n${tcBackend.slice(0, 500)}`);
-  }
+  runQualityCommand('npm run typecheck:backend 2>&1', 'Typecheck de backend');
 
-  const tcFrontend = trySh('npm run typecheck:frontend 2>&1');
-  if (tcFrontend && (tcFrontend.includes('error') || tcFrontend.includes('Error'))) {
-    throw new Error(`Typecheck de frontend falló:\n${tcFrontend.slice(0, 500)}`);
-  }
+  runQualityCommand('npm run typecheck:frontend 2>&1', 'Typecheck de frontend');
 
-  const budgets = trySh('npm run check:budgets 2>&1');
-  if (budgets === null) {
-    throw new Error('Budgets fallaron (timeout o error).');
-  }
+  const budgets = runQualityCommand('npm run check:budgets 2>&1', 'Budgets');
   if (budgets.includes('RED:')) {
     throw new Error(`Budgets fallaron:\n${budgets.slice(0, 800)}`);
   }
 
-  const testResult = trySh('npm test 2>&1', { timeout: 900000 });
-  if (testResult === null) {
-    throw new Error('Tests fallaron (timeout o error).');
-  }
+  const testResult = runQualityCommand('npm test 2>&1', 'Tests', { timeout: 900000 });
 
   const failurePattern = /(?:Test Files|Tests)\s+\d+\s+failed/;
   if (failurePattern.test(testResult)) {
@@ -321,4 +325,8 @@ function main() {
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = { runQualityCommand };

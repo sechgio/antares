@@ -94,7 +94,12 @@ async function run() {
 
   const router = loadRouter({ documentsDir: docsDir, downloadsDir: dlDir });
   const { handleDialogCall, _clearAllowedWriteRoots } = require('../electron/dialog-handlers');
-  const { createFileCapability } = require('../electron/file-capabilities');
+  const {
+    createFileCapability,
+    createStagedSession,
+    appendStagedChunk,
+    completeStagedSession,
+  } = require('../electron/file-capabilities');
   const { clearAllowedReadPaths } = require('../electron/path-allowlist');
 
   try {
@@ -212,6 +217,26 @@ async function run() {
       persisted.includes(path.resolve(path.join(tmpRoot, 'nueva-raiz'))),
       'dialog_folder persiste la raíz de escritura en userData',
     );
+
+    // 10) staged read tokens nested in localImagePaths resolve to paths and
+    // can be cleaned after a backend/native operation.
+    const staged = createStagedSession({ name: 'foto.jpg', size: 4, webContentsId: 1 });
+    await appendStagedChunk(staged.token, Buffer.from([0xff, 0xd8, 0xff, 0xd9]), 1);
+    const stagedCap = await completeStagedSession(staged.token, 1);
+    const resolvedImages = router2._maybeResolveFileTokens(
+      { localImagePaths: { 'antares-local-image:photo': stagedCap.token } },
+      { webContents: { id: 1 } },
+    );
+    assert(
+      resolvedImages.localImagePaths['antares-local-image:photo'] === stagedCap.path,
+      'localImagePaths staged token se resuelve a ruta real',
+    );
+    const stagedTokens = router2._collectStagedTokens(
+      'canvas_export_cmyk_pdf',
+      { localImagePaths: { 'antares-local-image:photo': stagedCap.token } },
+    );
+    await router2._cleanupStagedTokens(stagedTokens, 1);
+    assert(!fs.existsSync(stagedCap.path), 'staged token nested se elimina después de la operación');
   } finally {
     _clearAllowedWriteRoots();
     clearAllowedReadPaths();

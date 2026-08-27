@@ -18,6 +18,7 @@ function loadPreload({ packaged = false, allowedMethods } = {}) {
   const originalLoad = Module._load;
   let exposedApi = null;
   const invokeCalls = [];
+  const sendCalls = [];
 
   Module._load = function patchedLoad(request, parent, isMain) {
     if (request === 'electron') {
@@ -31,6 +32,9 @@ function loadPreload({ packaged = false, allowedMethods } = {}) {
           invoke(method, ...args) {
             invokeCalls.push([method, ...args]);
             return Promise.resolve({ ok: true });
+          },
+          send(method, ...args) {
+            sendCalls.push([method, ...args]);
           },
           on() {},
           removeListener() {},
@@ -51,7 +55,7 @@ function loadPreload({ packaged = false, allowedMethods } = {}) {
   try {
     delete require.cache[require.resolve('../electron/preload.js')];
     require('../electron/preload.js');
-    return { exposedApi, invokeCalls };
+    return { exposedApi, invokeCalls, sendCalls };
   } finally {
     process.argv = prevArgv;
     Module._load = originalLoad;
@@ -63,7 +67,7 @@ async function run() {
   console.log('Testing preload IPC allowlist...\n');
 
   {
-    const { exposedApi, invokeCalls } = loadPreload({ packaged: false });
+    const { exposedApi, invokeCalls, sendCalls } = loadPreload({ packaged: false });
     await exposedApi.invoke('dialog_files');
     assert(invokeCalls[0][0] === 'ipc-call', 'dialog_files should be forwarded through ipc-call');
     assert(invokeCalls[0][1] === 'dialog_files', 'dialog_files should stay allowlisted');
@@ -71,6 +75,10 @@ async function run() {
     invokeCalls.length = 0;
     await exposedApi.invoke('db_columns');
     assert(invokeCalls[0][1] === 'db_columns', 'db_columns should stay allowlisted');
+
+    exposedApi.reportRendererError({ kind: 'global_error', message: 'boom' });
+    assert(sendCalls[0][0] === 'renderer-error', 'renderer errors should use the dedicated safe channel');
+    assert(sendCalls[0][1].kind === 'global_error', 'renderer error kind should be preserved');
 
     invokeCalls.length = 0;
     await exposedApi.invoke('totally_unknown_method');

@@ -39,8 +39,8 @@ export default function ExcelImporter({ source, onSource }: Props) {
         rows: resp.rows,
         warnings: resp.warnings,
       });
-    } catch (e: any) {
-      setError(e?.message || 'Error al importar Excel');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Error al importar Excel');
       onSource(null);
     } finally {
       setLoading(false);
@@ -99,8 +99,8 @@ export default function ExcelImporter({ source, onSource }: Props) {
               if (!savePath) return;
               await api.panelAvisoCorteTemplate({ path: savePath });
               addToast({ message: 'Plantilla de Excel guardada', type: 'success' });
-            } catch (err: any) {
-              setError(err?.message || 'Error al descargar la plantilla');
+            } catch (err: unknown) {
+              setError(err instanceof Error ? err.message : 'Error al descargar la plantilla');
             }
           }}
           className="flex items-center justify-center gap-2 rounded-lg border border-[var(--accent-green)]/30 bg-[var(--accent-green)]/5 px-2.5 py-1.5 text-[11px] font-medium text-[var(--accent-green)] hover:bg-[var(--accent-green)]/10 transition-colors"

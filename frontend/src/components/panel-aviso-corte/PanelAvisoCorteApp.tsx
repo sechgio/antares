@@ -57,8 +57,8 @@ export default function PanelAvisoCorteApp() {
       );
       await saveFeatureHistory('panel_aviso_corte', filename, { format: exportFormat, template: templateId, panels: session.previewPanels.length }, session.previewPanels.length);
       addToast({ message: `Exportado: ${filename}`, type: 'success' });
-    } catch (e: any) {
-      addToast({ message: e?.message || `Error al exportar ${exportFormat.toUpperCase()}`, type: 'error' });
+    } catch (e: unknown) {
+      addToast({ message: e instanceof Error ? e.message : `Error al exportar ${exportFormat.toUpperCase()}`, type: 'error' });
     } finally {
       session.setIsExporting(false);
     }

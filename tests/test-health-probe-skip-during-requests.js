@@ -108,6 +108,7 @@ async function run() {
   const {
     startPythonBackend,
     runHealthCheckOnce,
+    getHealthStatus,
     getState,
     killPython,
     incrementPendingRequests,
@@ -135,6 +136,7 @@ async function run() {
 
     assert(getState() === 'ready', 'Backend should still be ready (no restart triggered)');
     assert(spawnCount === 1, 'Should NOT have spawned a new process (spawnCount still 1)');
+    assert(getHealthStatus().last_skip_reason === 'requests_in_flight', 'Health status records request-based probe skip');
 
     // Clean up the pending request
     decrementPendingRequests();
@@ -149,6 +151,7 @@ async function run() {
     await flushAsyncTurns(5);
     assert(getState() === 'ready', 'Backend should stay ready during recent job activity');
     assert(spawnCount === 1, 'Should NOT restart while job activity is recent');
+    assert(getHealthStatus().last_skip_reason === 'job_active', 'Health status records job-based probe skip');
 
     // Second pulse (as if another heartbeat arrived) still holds the grace window.
     noteJobActivity();

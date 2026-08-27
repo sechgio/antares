@@ -378,8 +378,8 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
             });
             onUploaded(res.format);
             onClose();
-        } catch (e: any) {
-            setError(e?.message ?? 'Error al subir');
+        } catch (e: unknown) {
+            setError(e instanceof Error ? e.message : 'Error al subir');
         } finally {
             setUploading(false);
         }
@@ -573,8 +573,8 @@ export default function FormatosView() {
                 // selectedId — otherwise every selection change would re-fetch.
                 setSelectedId(prev => prev || res.formats[0].id);
             }
-        } catch (err: any) {
-            addToast({ message: 'Error cargando formatos: ' + (err?.message || String(err)), type: 'error' });
+        } catch (err: unknown) {
+            addToast({ message: 'Error cargando formatos: ' + (err instanceof Error ? err.message : String(err)), type: 'error' });
         } finally {
             setLoadingFormats(false);
         }
@@ -605,8 +605,8 @@ export default function FormatosView() {
                 setPreviewBlob(preview.blob);
                 setPreviewDesde(preview.previewDesde);
                 setPreviewTotal(preview.previewTotal);
-            } catch (err: any) {
-                const msg = err?.message || String(err);
+            } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : String(err);
                 console.warn('Preview error:', msg);
                 if (token === previewToken.current) {
                     setError('Error en vista previa: ' + msg);
@@ -654,8 +654,8 @@ export default function FormatosView() {
                 type: 'success',
             });
             await saveFeatureHistory('formato', selected.nombre, { format_id: selected.id, desde, hasta }, hasta - desde + 1);
-        } catch (e: any) {
-            const msg = e?.message || String(e);
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
             setError(msg);
             addToast({ message: 'Error generando PDF: ' + msg, type: 'error' });
         } finally {
@@ -680,8 +680,8 @@ export default function FormatosView() {
                 setSelectedId(formats.find(f => f.id !== fid)?.id ?? null);
             }
             addToast({ message: 'Formato eliminado', type: 'success' });
-        } catch (e: any) {
-            addToast({ message: 'Error eliminando: ' + (e?.message || String(e)), type: 'error' });
+        } catch (e: unknown) {
+            addToast({ message: 'Error eliminando: ' + (e instanceof Error ? e.message : String(e)), type: 'error' });
         }
     };
 
@@ -702,8 +702,8 @@ export default function FormatosView() {
                     setPreviewBlob(preview.blob);
                     setPreviewDesde(preview.previewDesde);
                     setPreviewTotal(preview.previewTotal);
-                } catch (err: any) {
-                    const msg = err?.message || String(err);
+                } catch (err: unknown) {
+                    const msg = err instanceof Error ? err.message : String(err);
                     console.warn('Preview error after mapping save:', msg);
                     setError('Error en vista previa: ' + msg);
                 } finally {
@@ -717,8 +717,8 @@ export default function FormatosView() {
             setEditMapping(null);
             setMappingBaseline(null);
             addToast({ message: 'Mapping guardado', type: 'success' });
-        } catch (e: any) {
-            addToast({ message: 'Error guardando mapping: ' + (e?.message || String(e)), type: 'error' });
+        } catch (e: unknown) {
+            addToast({ message: 'Error guardando mapping: ' + (e instanceof Error ? e.message : String(e)), type: 'error' });
         }
     };
 

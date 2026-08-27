@@ -12,6 +12,7 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const API_PATH = path.join(ROOT, 'frontend', 'src', 'api.ts');
+const PRELOAD_PATH = path.join(ROOT, 'electron', 'preload.js');
 const ALLOWLIST_PATH = path.join(ROOT, 'electron', 'ipc-methods.js');
 const LONG_RUNNING_PATH = path.join(ROOT, 'shared', 'long-running-methods.json');
 
@@ -64,19 +65,30 @@ function extractApiMethods(source) {
   return methods;
 }
 
+function extractPreloadMethods(source) {
+  const methods = new Set();
+  const re = /ipcRenderer\.invoke\(\s*['"]ipc-call['"]\s*,\s*['"]([^'"]+)['"]/g;
+  let match;
+  while ((match = re.exec(source)) !== null) {
+    methods.add(match[1]);
+  }
+  return methods;
+}
+
 function main() {
   const apiSource = fs.readFileSync(API_PATH, 'utf8');
+  const preloadSource = fs.readFileSync(PRELOAD_PATH, 'utf8');
   const allowlistModule = require(ALLOWLIST_PATH);
   const longRunning = new Set(JSON.parse(fs.readFileSync(LONG_RUNNING_PATH, 'utf8')));
 
   const apiMethods = extractApiMethods(apiSource);
+  const preloadMethods = extractPreloadMethods(preloadSource);
+  const knownUsedMethods = new Set([...apiMethods, ...preloadMethods, 'canvas_asset_gc', 'autoimg_scan_all']);
   const allowed = allowlistModule.ALLOWED_RENDERER_METHODS;
   const allowlistLongRunning = allowlistModule.LONG_RUNNING_METHODS;
 
   const missingFromAllowlist = [...apiMethods].filter((m) => !allowed.has(m));
-  const unexpectedInAllowlist = [...allowed].filter(
-    (m) => !apiMethods.has(m) && !['autoimg_scan_all'].includes(m)
-  );
+  const unexpectedInAllowlist = [...allowed].filter((m) => !knownUsedMethods.has(m));
   // Every long-running method must be a recognised allowed method, and the
   // Electron allowlist must consume the shared JSON verbatim (no drift).
   const longRunningNotAllowed = [...longRunning].filter((m) => !allowed.has(m));

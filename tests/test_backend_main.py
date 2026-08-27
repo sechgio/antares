@@ -230,6 +230,9 @@ def test_dispatch_uses_heavy_scheduler_for_heavy_methods(monkeypatch) -> None:
 
 def test_heavy_methods_include_fichas_and_evidencia() -> None:
     """Long PDF/import handlers must not run on the light pool."""
+    assert "db_fields_update" in backend_main.HEAVY_METHODS
+    assert "db_fields_reset" in backend_main.HEAVY_METHODS
+    assert "db_parse_mapping" in backend_main.HEAVY_METHODS
     assert "fichas_tecnicas_import_file" in backend_main.HEAVY_METHODS
     assert "fichas_tecnicas_render_html" in backend_main.HEAVY_METHODS
     assert "fichas_tecnicas_render_consolidated_html" in backend_main.HEAVY_METHODS
@@ -490,6 +493,42 @@ def test_submit_handler_sends_response_when_scheduler_submit_raises(monkeypatch)
     assert len(responses) == 1, "caller must receive a JSON-RPC error response"
     msg_id, _error = responses[0]
     assert msg_id == "42"
+
+
+def test_submit_handler_rejects_unexpected_memory_guard_failure(monkeypatch) -> None:
+    """A failed pre-queue memory check must not silently enqueue its payload."""
+    from backend.handlers import canvas as canvas_handlers
+
+    class FakeScheduler:
+        def metrics(self) -> dict:
+            return {}
+
+    responses: list[tuple] = []
+    monkeypatch.setattr(backend_main, "get_scheduler", lambda: FakeScheduler())
+
+    def fail_memory_check(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("spill guard unavailable")
+
+    monkeypatch.setattr(
+        canvas_handlers,
+        "_check_memory_pressure_or_spill",
+        fail_memory_check,
+    )
+    monkeypatch.setattr(
+        backend_main,
+        "send_response",
+        lambda result, msg_id, *, error=None, **kw: responses.append((msg_id, error)),
+    )
+
+    result = backend_main._submit_handler(
+        lambda _params: {},
+        {"document": {"id": "large-doc"}},
+        "43",
+        "canvas_save",
+    )
+
+    assert result is None
+    assert responses == [("43", "Backend no disponible: no se pudo comprobar la presión de memoria")]
 
 
 def test_main_resolves_deferred_method_in_worker_not_reader(monkeypatch) -> None:

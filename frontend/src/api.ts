@@ -5,8 +5,9 @@
 
 import type { ProcessStatus, LogEntry, PreviewItem, DBField, RenamePattern, DBRecord, ThemeConfig, VisualMapping, FormatInfo, FormatOrigin, MappingStrategy, MappingResult, MappingCollision } from './types';
 import type { PanelMatchResponse } from './components/panel-aviso-corte/types';
+import type { AutoImgFolder } from './components/autoimg/types';
 
-export type { ProcessStatus, LogEntry, PreviewItem, DBField, RenamePattern, DBRecord, ThemeConfig, VisualMapping, FormatInfo, FormatOrigin, MappingStrategy, MappingResult, MappingCollision };
+export type { ProcessStatus, LogEntry, PreviewItem, DBField, RenamePattern, DBRecord, ThemeConfig, VisualMapping, FormatInfo, FormatOrigin, MappingStrategy, MappingResult, MappingCollision, AutoImgFolder };
 
 // Single source of truth for which methods get the extended IPC timeout.
 // Shared with electron/ipc-methods.js via shared/long-running-methods.json so
@@ -38,6 +39,7 @@ declare global {
       cleanupFileToken?: (token: string) => Promise<{ cleaned: boolean }>;
       canvasAssetPut?: (chunk: ArrayBuffer | Uint8Array) => Promise<{ asset_id: string; ref: string; bytes: number }>;
       canvasAssetGet?: (ref: string) => Promise<{ ref: string; chunk: ArrayBuffer; bytes: number }>;
+      reportRendererError?: (report: Record<string, unknown>) => Promise<unknown>;
     };
   }
 }
@@ -235,11 +237,23 @@ export function onNotify(callback: (method: string, params: unknown) => void) {
   return window.electronAPI.onNotify(callback);
 }
 
+export interface BackendHealthStatus {
+  last_probe_at: string | null;
+  last_success_at: string | null;
+  last_probe_ms: number | null;
+  last_probe_outcome: string | null;
+  consecutive_failures: number;
+  skipped_total: number;
+  last_skip_reason: string | null;
+  last_failure_at: string | null;
+}
+
 export interface BackendStatus {
   state: string;
   ready: boolean;
   lastError: { kind: string; message: string; stderrTail: string } | null;
   stderrTail: string;
+  health?: BackendHealthStatus;
 }
 
 export async function getBackendStatus(): Promise<BackendStatus> {
@@ -427,6 +441,8 @@ export interface ImageOptimizerSaveFilesResponse {
 export const api = {
   version: () => _invoke<{ version: string }>('version'),
   formats: () => _invoke<{ formats: string[] }>('formats'),
+  diagnosticsSnapshot: (params?: Record<string, unknown>) =>
+    _invoke<Record<string, unknown>>('diagnostics_snapshot', params ?? {}),
 
   dialogFiles: () => _invoke<{ paths: string[] }>('dialog_files'),
   dialogDest: () => _invoke<{ paths: string[] }>('dialog_dest'),
@@ -449,6 +465,7 @@ export const api = {
   cancelProcess: () => _invoke<{ cancelled: boolean }>('process_cancel'),
 
   preview: (body: PreviewBody) => _invoke<PreviewResult>('preview', body),
+  isVideo: (path: string) => _invoke<{ is_video: boolean }>('is_video', { path }),
 
   dbDetectKeyColumn: (files: string[]) => _invoke<DbDetectKeyColumnResult>('db_detect_key_column', { files }),
 
@@ -459,6 +476,8 @@ export const api = {
     ),
   importExcel: (path: string) =>
     _invoke<{ imported: number; inserted?: number; skipped?: number }>('db_import', { path }),
+  dbExport: (path: string) => _invoke<{ exported: number }>('db_export', { path }),
+  dbTemplate: (path: string) => _invoke<{ path: string }>('db_template', { path }),
   clearDatabase: () => _invoke<{ cleared: number }>('db_clear'),
 
   getFields: () => _invoke<{ fields: DBField[] }>('db_fields'),
@@ -468,6 +487,8 @@ export const api = {
   getDbColumns: () => _invoke<{ columns: string[]; records: DBRecord[]; total: number }>('db_columns'),
   dbParseMapping: (path: string, files?: string[], id_column?: string, rename_column?: string) =>
     _invoke<MappingResult>('db_parse_mapping', { path, files: files ?? [], id_column, rename_column }),
+  dbValidateMapping: (mapping: Record<string, string>, files: string[]) =>
+    _invoke<{ valid: boolean; mapped_count: number; unmapped_files: string[]; missing_keys: string[] }>('db_validate_mapping', { mapping, files }),
 
   getRenamePatterns: () => _invoke<{ patterns: RenamePattern[] }>('rename_patterns_get'),
   updateRenamePatterns: (patterns: RenamePattern[]) => _invoke<{ patterns: RenamePattern[] }>('rename_patterns_update', { patterns }),
@@ -486,6 +507,7 @@ export const api = {
   resetTheme: () => _invoke<ThemeConfig>('theme_reset'),
 
   historyList: (body?: { limit?: number; offset?: number; run_type?: string; date_from?: string; date_to?: string }) => _invoke<{ runs: unknown[] }>('history_list', body),
+  historyGet: (id: number) => _invoke<{ run: unknown }>('history_get', { id }),
   historyDelete: (id: number) => _invoke<{ deleted: boolean }>('history_delete', { id }),
   historyDeleteMany: (ids: number[]) => _invoke<{ deleted: number; requested: number }>('history_delete_many', { ids }),
   historySave: (body: {
@@ -500,6 +522,7 @@ export const api = {
     run_type: string;
     duration_ms?: number;
   }) => _invoke<{ id: number }>('history_save', body),
+  historyExport: (body?: { ids?: number[]; limit?: number; run_type?: string }) => _invoke<{ csv: string; count: number; filename: string }>('history_export', body),
 
   // ─── Formatos PDF ───────────────────────────────────────────────────────
   formatosList: () => _invoke<{ formats: FormatInfo[] }>('formatos_list'),
@@ -782,7 +805,7 @@ export const api = {
     api_key?: string;
     zoom?: number;
     customStyles?: Record<string, unknown>;
-    manualData?: Record<string, any>;
+    manualData?: Record<string, unknown>;
   }) => _invoke<{ success: boolean; data?: unknown; error?: string }>('preview_ubicacion', body),
   generarUbicaciones: (body: {
     excelPath: string | null;
@@ -793,7 +816,7 @@ export const api = {
     api_key?: string;
     zoom?: number;
     customStyles?: Record<string, unknown>;
-    manualData?: Record<string, any>;
+    manualData?: Record<string, unknown>;
   }) => _invoke<{ success: boolean; data?: unknown; error?: string }>('generar_ubicaciones', body),
   ubicacionesKeysGet: () =>
     _invoke<{ keys: Record<string, string>; configured?: Record<string, boolean> }>('ubicaciones_keys_get'),
@@ -823,9 +846,9 @@ export const api = {
     }>('autoimg_drive_folder_preview', { folder_id, force }),
   autoimgDriveStatus: () => _invoke<{ connected: boolean }>('autoimg_drive_status'),
   autoimgFoldersList: (force = false) => _invoke<{ folders: Array<{ name: string; folder_id: string; activo: boolean; ultimo_scan: string; cant_archivos: number }>; cached?: boolean }>('autoimg_folders_list', { force }),
-  autoimgFoldersAdd: (body: { name: string; folder_id: string; activo: boolean }) => _invoke<{ success: boolean }>('autoimg_folders_add', body),
-  autoimgFoldersRemove: (body: { folder_id: string }) => _invoke<{ success: boolean }>('autoimg_folders_remove', body),
-  autoimgFoldersToggle: (body: { folder_id: string; activo: boolean }) => _invoke<{ success: boolean }>('autoimg_folders_toggle', body),
+  autoimgFoldersAdd: (body: { name: string; folder_id: string; activo: boolean }) => _invoke<{ success: boolean; folder_id?: string; drive_name?: string; folders?: AutoImgFolder[] }>('autoimg_folders_add', body),
+  autoimgFoldersRemove: (body: { folder_id: string }) => _invoke<{ success: boolean; folders?: AutoImgFolder[] }>('autoimg_folders_remove', body),
+  autoimgFoldersToggle: (body: { folder_id: string; activo: boolean }) => _invoke<{ success: boolean; folders?: AutoImgFolder[] }>('autoimg_folders_toggle', body),
   autoimgScanAndSync: () => _invoke<{
     success: boolean;
     updated: number;
@@ -926,6 +949,7 @@ export const api = {
   }>('autoimg_bootstrap', { refresh }),
   autoimgAutoSyncToggle: (enabled: boolean) => _invoke<{ enabled: boolean }>('autoimg_auto_sync_toggle', { enabled }),
   autoimgCancelOperation: () => _invoke<{ success: boolean; operation?: string; reason?: string }>('autoimg_cancel_operation'),
+  autoimgOperationStatus: () => _invoke<{ running: boolean; operation?: string; progress?: number; message?: string }>('autoimg_operation_status'),
   autoimgStatus: () => _invoke<{ connected: boolean; sheetName?: string; sheetId?: string; sheetLinked?: boolean; lastSync?: string; autoSync: boolean; totalNis?: number; completos?: number; faltantes?: number; sobrantes?: number; sinSgio?: number; carpetasActivas?: number }>('autoimg_status'),
 
   // ─── RUM Telemetry (web-vitals → stderr) ────────────────────────────────

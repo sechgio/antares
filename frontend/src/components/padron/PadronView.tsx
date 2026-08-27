@@ -5,11 +5,20 @@
 import React, { useMemo, useRef, useState, useEffect, useCallback, Component, type ReactNode, type ErrorInfo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
+import { reportFrontendError } from '../../utils/observability';
 
 class PdfErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
   state = { hasError: false };
   static getDerivedStateFromError() { return { hasError: true }; }
   componentDidCatch(error: Error, info: ErrorInfo) {
+    reportFrontendError({
+      kind: 'react_error',
+      view: 'padron_pdf',
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+      componentStack: info.componentStack,
+    });
     console.error('[PadronView] PDF render error:', error, info);
   }
   render() {
@@ -45,12 +54,14 @@ import {
   WATER_CUT_FIELD_GROUPS,
   DATE_FIELDS,
   WATER_CUT_DATE_FIELDS,
+  MAX_PADRON_ITEMS,
   toDisplayDate,
   toISODate,
   createDefaultHeaderData,
   createDefaultWaterCutData,
   createInitialItems,
   createInitialWaterCutItems,
+  normalizeItemCount,
   type HeaderData,
   type HeaderField,
   type PadronItem,
@@ -152,7 +163,8 @@ export default function PadronView() {
   const waterCutMaxItem = waterCutTotalItemsCount;
 
   const handleTotalItemsChange = useCallback((value: string) => {
-    const count = Math.max(1, Number(value) || 1);
+    const parsed = Number(value);
+    const count = normalizeItemCount(parsed, totalItemsCount);
     setTotalItemsCount(count);
     setItems((prevItems) => {
       const newItems = createInitialItems(count);
@@ -165,10 +177,11 @@ export default function PadronView() {
       return newItems;
     });
     setEndItem((prev) => Math.min(prev, count));
-  }, []);
+  }, [totalItemsCount]);
 
   const handleWaterCutTotalItemsChange = useCallback((value: string) => {
-    const count = Math.max(1, Number(value) || 1);
+    const parsed = Number(value);
+    const count = normalizeItemCount(parsed, waterCutTotalItemsCount);
     setWaterCutTotalItemsCount(count);
     setWaterCutItems((prevItems) => {
       const newItems = createInitialWaterCutItems(count);
@@ -181,7 +194,7 @@ export default function PadronView() {
       return newItems;
     });
     setWaterCutEndItem((prev) => Math.min(prev, count));
-  }, []);
+  }, [waterCutTotalItemsCount]);
 
   const visibleItems = useMemo(() => {
     const s = clamp(startItem, 1, maxItem);
@@ -299,12 +312,15 @@ export default function PadronView() {
       }
       setSelectedRecordId(first.id);
 
-      const importedCount = Number(first.data.cantidadItems) || 0;
+      const requestedCount = Number(first.data.cantidadItems);
+      const importedCount = Number.isFinite(requestedCount) && requestedCount > 0
+        ? normalizeItemCount(requestedCount)
+        : 0;
       if (isWaterCutNotice && data.importedWaterCutItems.length > 0) {
         const sorted = [...data.importedWaterCutItems].sort(
           (a, b) => Number(a.item) - Number(b.item),
         );
-        const total = importedCount > 0 ? importedCount : sorted.length;
+        const total = normalizeItemCount(importedCount > 0 ? importedCount : sorted.length);
         const finalItems =
           total > sorted.length
             ? [
@@ -329,7 +345,7 @@ export default function PadronView() {
         const sorted = [...data.importedItems].sort(
           (a, b) => Number(a.item) - Number(b.item),
         );
-        const total = importedCount > 0 ? importedCount : sorted.length;
+        const total = normalizeItemCount(importedCount > 0 ? importedCount : sorted.length);
         const finalItems =
           total > sorted.length
             ? [
@@ -382,7 +398,10 @@ export default function PadronView() {
       } else {
         setHeaderData(rec.data);
       }
-      const importedCount = Number(rec.data.cantidadItems) || 0;
+      const requestedCount = Number(rec.data.cantidadItems);
+      const importedCount = Number.isFinite(requestedCount) && requestedCount > 0
+        ? normalizeItemCount(requestedCount)
+        : 0;
       if (importedCount > 0 && isWaterCutNotice) {
         handleWaterCutTotalItemsChange(String(importedCount));
         setWaterCutStartItem(1);
@@ -704,6 +723,7 @@ export default function PadronView() {
                           className="vpad-inset-control tabular-nums"
                           type="number"
                           min={1}
+                          max={MAX_PADRON_ITEMS}
                           value={waterCutTotalItemsCount}
                           onChange={(e) => handleWaterCutTotalItemsChange(e.target.value)}
                         />
@@ -753,6 +773,7 @@ export default function PadronView() {
                           className="vpad-inset-control tabular-nums"
                           type="number"
                           min={1}
+                          max={MAX_PADRON_ITEMS}
                           value={totalItemsCount}
                           onChange={(e) => handleTotalItemsChange(e.target.value)}
                         />

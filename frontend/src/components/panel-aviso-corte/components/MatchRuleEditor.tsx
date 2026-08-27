@@ -15,8 +15,8 @@ export default function MatchRuleEditor({ rule, columns, onChange }: Props) {
       new RegExp(rule.regexPattern);
       if (!rule.regexPattern.includes('(?P<clave>')) return 'Falta el grupo nombrado (?P<clave>...)';
       return null;
-    } catch (e: any) {
-      return `Expresión regular inválida: ${e.message}`;
+    } catch (e: unknown) {
+      return `Expresión regular inválida: ${e instanceof Error ? e.message : String(e)}`;
     }
   }, [rule]);
 
@@ -43,7 +43,7 @@ export default function MatchRuleEditor({ rule, columns, onChange }: Props) {
             aria-label={ARIA_LABELS.matchStrategy}
             className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]"
             value={rule.strategy}
-            onChange={(e) => onChange({ ...rule, strategy: e.target.value as any })}
+            onChange={(e) => onChange({ ...rule, strategy: e.target.value as MatchRule['strategy'] })}
           >
             <option value="prefix">Prefijo del nombre</option>
             <option value="contains">Contiene en el nombre</option>

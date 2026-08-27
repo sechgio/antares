@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { getBackendStatus, restartBackend, onNotify } from '../api';
+import type { BackendHealthStatus } from '../api';
 
 type BackendState = 'idle' | 'starting' | 'ready' | 'exited' | 'fatal' | 'unknown';
 
@@ -7,6 +8,7 @@ interface BackendStatusResult {
   backendState: BackendState;
   errorMessage: string | null;
   isRestarting: boolean;
+  health: BackendHealthStatus | null;
   restartBackend: () => Promise<void>;
 }
 
@@ -14,6 +16,7 @@ export function useBackendStatus(): BackendStatusResult {
   const [backendState, setBackendState] = useState<BackendState>('unknown');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isRestarting, setIsRestarting] = useState(false);
+  const [health, setHealth] = useState<BackendHealthStatus | null>(null);
   const mountedRef = useRef(true);
   const backendStateRef = useRef<BackendState>('unknown');
   const lastPollAtRef = useRef(0);
@@ -27,6 +30,7 @@ export function useBackendStatus(): BackendStatusResult {
       if (!mountedRef.current) return;
       const rawState = (status.state as BackendState) || 'unknown';
       setBackendState(rawState);
+      setHealth(status.health ?? null);
       if (status.lastError && rawState !== 'ready') {
         // Only show non-scary truncated error
         setErrorMessage(status.lastError.message);
@@ -113,5 +117,5 @@ export function useBackendStatus(): BackendStatusResult {
     }
   }, [pollStatus]);
 
-  return { backendState, errorMessage, isRestarting, restartBackend: handleRestart };
+  return { backendState, errorMessage, isRestarting, health, restartBackend: handleRestart };
 }

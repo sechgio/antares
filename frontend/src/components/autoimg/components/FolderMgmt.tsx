@@ -9,8 +9,10 @@ import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 
 interface FolderMgmtProps {
   folders?: AutoImgFolder[];
-  onFoldersChange?: () => void | Promise<void>;
+  onFoldersChange?: (folders?: AutoImgFolder[]) => void | Promise<void>;
 }
+
+type FolderMutationResult = { success: boolean; folders?: AutoImgFolder[] };
 
 function Switch({
   checked,
@@ -206,6 +208,15 @@ export default function FolderMgmt({ folders: externalFolders, onFoldersChange }
   const folderIds = folders.map((f) => f.folder_id);
   const { previews, invalidate: invalidatePreview } = useFolderPreviews(folderIds);
 
+  const reconcileMutation = useCallback(async (result: FolderMutationResult) => {
+    if (result.folders) {
+      setFolders(result.folders);
+      await onFoldersChange?.(result.folders);
+      return;
+    }
+    await load(true);
+  }, [load, onFoldersChange]);
+
   const resolvedFolderId = parseDriveFolderId(folderId) || folderId.trim();
 
   const handleVerify = async () => {
@@ -246,11 +257,11 @@ export default function FolderMgmt({ folders: externalFolders, onFoldersChange }
         folderName = res.name || id;
         id = res.folder_id || id;
       }
-      await api.autoimgFoldersAdd({ name: folderName, folder_id: id, activo });
+      const result = await api.autoimgFoldersAdd({ name: folderName, folder_id: id, activo });
       setName('');
       setFolderId('');
       setVerified(null);
-      await load(true);
+      await reconcileMutation(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al agregar carpeta');
     } finally {
@@ -261,8 +272,8 @@ export default function FolderMgmt({ folders: externalFolders, onFoldersChange }
   const handleToggle = async (folder: AutoImgFolder) => {
     setLoading(true);
     try {
-      await api.autoimgFoldersToggle({ folder_id: folder.folder_id, activo: !folder.activo });
-      await load(true);
+      const result = await api.autoimgFoldersToggle({ folder_id: folder.folder_id, activo: !folder.activo });
+      await reconcileMutation(result);
     } finally {
       setLoading(false);
     }
@@ -271,9 +282,9 @@ export default function FolderMgmt({ folders: externalFolders, onFoldersChange }
   const handleRemove = async (id: string) => {
     setLoading(true);
     try {
-      await api.autoimgFoldersRemove({ folder_id: id });
+      const result = await api.autoimgFoldersRemove({ folder_id: id });
       invalidatePreview(id);
-      await load(true);
+      await reconcileMutation(result);
     } finally {
       setLoading(false);
     }

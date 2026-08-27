@@ -24,7 +24,8 @@ import { stageFileForIpc } from '../utils/stageFile';
 import { getLocalImageDataUrl } from '../utils/localThumb';
 import { parseCombinedCoords, isValidCoord } from '../utils/coords';
 
-type Result = { success: boolean; data?: any; error?: string } | null;
+type ResultData = { consolidado?: boolean; generados?: number; fallidos?: number; outputDir?: string; consolidatedPath?: string } & Record<string, unknown>;
+type Result = { success: boolean; data?: ResultData; error?: string } | null;
 
 type PreviewData = {
   image: string;
@@ -527,21 +528,19 @@ export const UbicacionesView: React.FC = () => {
         });
         // Ignore stale responses
         if (myId !== fetchIdRef.current) return;
-        const r = resp as { success: boolean; data?: any; error?: string; total_filas?: number };
+        const r = resp as { success: boolean; data?: Record<string, unknown> & { formato?: string; total_filas?: number }; error?: string; total_filas?: number };
         if (r?.total_filas) {
           setTotalFilas(r.total_filas);
         }
         if (r?.success) {
-          // Defensive: if the response carries a formato field and it does
-          // not match the current selection, skip it (stale format toggle).
-          const respFormato = r.data?.formato;
-          if (respFormato && respFormato !== currentFormato) return;
+          const respFormato = typeof r.data === 'object' && r.data !== null && 'formato' in r.data ? (r.data as Record<string, unknown>).formato : undefined;
+          if (typeof respFormato === 'string' && respFormato !== currentFormato) return;
           if (!r.data) {
             setPreview(null);
             hasPreviewRef.current = false;
             return;
           }
-          const safeSrc = await resolvePreviewImageSrc(r.data);
+          const safeSrc = await resolvePreviewImageSrc(r.data as unknown as PreviewData & Record<string, unknown>);
           if (myId !== fetchIdRef.current) return;
           if (!safeSrc) {
             setPreview(null);
@@ -549,17 +548,18 @@ export const UbicacionesView: React.FC = () => {
             setPreviewError('No se pudo cargar la imagen de vista previa');
             return;
           }
-          setPreview({ ...r.data, image: safeSrc });
+          setPreview({ ...(r.data as object as PreviewData), image: safeSrc } as PreviewData);
           hasPreviewRef.current = true;
-          if (r.data?.total_filas) {
-            setTotalFilas(r.data.total_filas);
+          const totalFromData = (r.data as Record<string, unknown>).total_filas;
+          if (typeof totalFromData === 'number') {
+            setTotalFilas(totalFromData);
           }
         } else {
           setPreviewError(r?.error || 'Error al generar vista previa');
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (myId !== fetchIdRef.current) return;
-        setPreviewError(err.message || 'Error de conexion');
+        setPreviewError(err instanceof Error ? err.message : 'Error de conexion');
       } finally {
         if (myId === fetchIdRef.current) {
           setPreviewLoading(false);
@@ -830,9 +830,9 @@ export const UbicacionesView: React.FC = () => {
         api_key: genApiKeys[genProvider] || '',
         manualData: genInputMode === 'manual' ? genManualData : undefined,
       });
-      setResult(response);
-    } catch (err: any) {
-      setResult({ success: false, error: err.message || 'Error desconocido' });
+      setResult(response as Result);
+    } catch (err: unknown) {
+      setResult({ success: false, error: err instanceof Error ? err.message : 'Error desconocido' });
     } finally {
       setIsProcessing(false);
     }

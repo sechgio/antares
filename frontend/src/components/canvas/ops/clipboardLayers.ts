@@ -39,11 +39,16 @@ export interface ClipboardCopyResult {
   createdUrls: string[];
 }
 
+export interface ClipboardCopyCoordinator {
+  copy(layers: CanvasLayer[], resolve: () => Promise<ClipboardCopyResult>): Promise<void>;
+  invalidate(): void;
+}
+
 export function createClipboardCopyCoordinator(
   onImmediate: (layers: CanvasLayer[]) => void,
   onResolved: (layers: CanvasLayer[]) => void,
   releaseUrl: (url: string) => void,
-) {
+): ClipboardCopyCoordinator {
   let generation = 0;
   const activeUrls = new Set<string>();
 

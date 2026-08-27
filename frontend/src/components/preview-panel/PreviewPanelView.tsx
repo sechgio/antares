@@ -8,6 +8,7 @@ import {
 import { api } from '../../api';
 import { useToast } from '../../hooks/useToast';
 import { useBackendStatus } from '../../hooks/useBackendStatus';
+import { mapWithConcurrencyLimit } from '../../utils/mapWithConcurrencyLimit';
 import PreviewPanel, { renderPreviewHtml } from './PreviewPanel';
 import TemplatePicker from './TemplatePicker';
 import { REPORT_FIELDS } from './constants';
@@ -473,6 +474,12 @@ export default function PreviewPanelView() {
     setSelectedSheetName(nextName);
     const gen = ++sheetLoadGenRef.current;
     let sh = sheets.find(s => s.name === nextName);
+    if (spillToken) {
+      // Spill rows are re-fetchable; keep only the selected sheet in RAM.
+      setSheets(prev => prev.map(s => (
+        s.name === nextName || s.rows.length === 0 ? s : { ...s, rows: [] }
+      )));
+    }
     if (sh && sh.rows.length === 0 && spillToken) {
       try {
         const rows = await fetchSheetRows(spillToken, nextName);
@@ -728,10 +735,10 @@ export default function PreviewPanelView() {
         : 'Generando PDF...');
 
       const localImagePaths: Record<string, string> = {};
-      const documents = await Promise.all(selectedRows.map(async item => {
-        const imageSources = await Promise.all(item.images.map((img, imageIndex) =>
+      const documents = await mapWithConcurrencyLimit(selectedRows, 2, async item => {
+        const imageSources = await mapWithConcurrencyLimit(item.images, 4, (img, imageIndex) =>
           imageToPdfSource(img, pdfQuality, `row-${item.rowIndex}-img-${imageIndex}`)
-        ));
+        );
         imageSources.forEach(source => {
           if (source.token && source.localPath) {
             localImagePaths[source.token] = source.localPath;
@@ -747,7 +754,7 @@ export default function PreviewPanelView() {
           customTemplate,
           customColumns,
         });
-      }));
+      });
 
       const html = exportScope === 'all' ? mergeHtmlDocuments(documents) : documents[0];
       const res = await api.htmlToPdf({

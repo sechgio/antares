@@ -76,13 +76,12 @@ export default function SyncActions({ onSynced, onStatus }: SyncActionsProps) {
     try {
       await api.autoimgSyncFromSheet();
       onStatus?.({ result: 'Datos cargados desde el Sheet' });
-      onSynced?.();
     } catch (e) {
       onStatus?.({ error: e instanceof Error ? e.message : 'Error al leer el Sheet' });
     } finally {
       setSyncing(null);
     }
-  }, [onSynced, onStatus]);
+  }, [onStatus]);
 
   const handleCancel = useCallback(async () => {
     try {

@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "required_fields": [
+    "schema_version",
+    "timestamp",
+    "event",
+    "level",
+    "component",
+    "app_version",
+    "session_id"
+  ],
+  "optional_fields": [
+    "backend_version",
+    "platform",
+    "pid",
+    "backend_pid",
+    "request_id",
+    "job_id",
+    "operation_id",
+    "outcome",
+    "duration_ms",
+    "error_code",
+    "attempt",
+    "message",
+    "method",
+    "lane",
+    "provider",
+    "status_class",
+    "reason",
+    "stream",
+    "bytes",
+    "dropped_events"
+  ],
+  "levels": ["DEBUG", "INFO", "WARN", "ERROR", "FATAL"],
+  "outcomes": [
+    "success",
+    "partial",
+    "degraded",
+    "failed",
+    "timeout",
+    "cancelled",
+    "rejected"
+  ],
+  "allowed_labels": [
+    "method",
+    "lane",
+    "operation",
+    "provider",
+    "outcome",
+    "status_class",
+    "reason"
+  ],
+  "sensitive_fields": [
+    "authorization",
+    "cookie",
+    "token",
+    "secret",
+    "password",
+    "email",
+    "path",
+    "url",
+    "body",
+    "document",
+    "content"
+  ]
+}

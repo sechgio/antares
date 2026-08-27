@@ -1,5 +1,7 @@
 import "./styles.css";
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
+import { createRoot } from "react-dom/client";
 import type { ChangeEvent, DragEvent } from "react";
 import SheetPreview from "./components/SheetPreview";
 import FloatingSizePanel from "./components/FloatingSizePanel";
@@ -18,7 +20,14 @@ import type {
   LayoutMode,
 } from "./types";
 import { sanitizeMultilineText, toSlugId } from "./utils/format";
-import { exportPagesToPdf } from "./utils/pdf";
+import {
+  appendPagesToPdf,
+  chunkExportItems,
+  createPdfDocument,
+  exportPagesToPdf,
+  PDF_EXPORT_BATCH_SIZE,
+  savePdfDocument,
+} from "./utils/pdf";
 import { importSpreadsheet, exportTemplateWorkbook } from "./utils/import";
 import { useToast } from "../../hooks/useToast";
 import { saveFeatureHistory } from "../../utils/history";
@@ -200,7 +209,6 @@ export default function VolantesView() {
   const [isRecordsPanelOpen, setIsRecordsPanelOpen] = useState(false);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
 
-  const previewRef = useRef<HTMLDivElement | null>(null);
   const exportSingleRef = useRef<HTMLDivElement | null>(null);
 
   const selectedRecord =
@@ -364,27 +372,64 @@ export default function VolantesView() {
   };
 
   const handleExportAllPdf = async (): Promise<void> => {
-    if (!previewRef.current) {
+    if (records.length === 0) {
       addToast({ message: "No hay contenido para exportar.", type: "error" });
       return;
     }
+
+    const recordsToExport = records;
+    const exportLayout = layoutMode;
+    const exportRecord = selectedRecord;
+    const layoutNum = exportLayout === "2-up" ? "2" : "3";
+    const fileName = exportRecord
+      ? `${exportRecord.reservorio}_${layoutNum}`
+      : `volantes_${layoutNum}`;
+    let wrapper: HTMLDivElement | null = null;
+    let root: ReturnType<typeof createRoot> | null = null;
+
     try {
-      const layoutNum = layoutMode === "2-up" ? "2" : "3";
-      const fileName = selectedRecord
-        ? `${selectedRecord.reservorio}_${layoutNum}`
-        : `volantes_${layoutNum}`;
-      await exportPagesToPdf(previewRef.current, layoutMode, fileName);
+      const pdf = await createPdfDocument();
+      wrapper = document.createElement("div");
+      wrapper.className = "sheet-export-root";
+      document.body.appendChild(wrapper);
+      root = createRoot(wrapper);
+
+      const batches = chunkExportItems(recordsToExport, PDF_EXPORT_BATCH_SIZE);
+      for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
+        flushSync(() => {
+          root?.render(
+            <SheetPreview
+              brand={brand}
+              footer={footer}
+              encabezados={encabezados}
+              heading={heading}
+              exportMode
+              layoutMode={exportLayout}
+              records={batches[batchIndex]}
+            />,
+          );
+        });
+
+        await appendPagesToPdf(wrapper, pdf, batchIndex > 0);
+        flushSync(() => root?.render(null));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+
+      savePdfDocument(pdf, exportLayout, fileName);
       addToast({ message: "PDF generado correctamente", type: "success" });
       await saveFeatureHistory(
         "volante",
         fileName,
-        { layoutMode, reservorio: selectedRecord?.reservorio || "", records: records.length },
-        records.length,
+        { layoutMode: exportLayout, reservorio: exportRecord?.reservorio || "", records: recordsToExport.length },
+        recordsToExport.length,
       );
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "No se pudo generar el PDF.";
       addToast({ message, type: "error" });
+    } finally {
+      root?.unmount();
+      wrapper?.remove();
     }
   };
 
@@ -960,23 +1005,6 @@ export default function VolantesView() {
             layoutMode={layoutMode}
             records={selectedRecord ? [selectedRecord] : []}
           />
-
-          {/* Hidden: all-records export (bulk download) */}
-          <div
-            aria-hidden="true"
-            className="sheet-export-root"
-            ref={previewRef}
-          >
-            <SheetPreview
-              brand={brand}
-              footer={footer}
-              encabezados={encabezados}
-              heading={heading}
-              exportMode
-              layoutMode={layoutMode}
-              records={records}
-            />
-          </div>
 
           {/* Hidden: single-record export (individual download) */}
           <div
