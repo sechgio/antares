@@ -80,6 +80,10 @@ async function run() {
     assert(sendCalls[0][0] === 'renderer-error', 'renderer errors should use the dedicated safe channel');
     assert(sendCalls[0][1].kind === 'global_error', 'renderer error kind should be preserved');
 
+    exposedApi.reportRendererEvent('canvas.realtime', { status_class: 'live', count: 2 });
+    assert(sendCalls[1][0] === 'renderer-event', 'structured renderer events should use the dedicated safe channel');
+    assert(sendCalls[1][1].event === 'canvas.realtime', 'structured renderer event name should be preserved');
+
     invokeCalls.length = 0;
     await exposedApi.invoke('totally_unknown_method');
     assert(invokeCalls[0][0] === 'ipc-call', 'unknown methods should still be forwarded in dev');

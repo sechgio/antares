@@ -9,7 +9,12 @@ process.env.LOCALAPPDATA = testRoot;
 fs.rmSync(testRoot, { recursive: true, force: true });
 
 const { getLogsDir } = require('../electron/app-log');
-const { recordRendererError, sanitizeRendererError } = require('../electron/renderer-observability');
+const {
+  recordRendererError,
+  recordRendererEvent,
+  sanitizeRendererError,
+  sanitizeRendererEvent,
+} = require('../electron/renderer-observability');
 
 try {
   const raw = {
@@ -43,7 +48,31 @@ try {
   assert.strictEqual(event.view, 'canvas_editor');
   assert(!event.message.includes('alice@example.com'), 'persisted renderer event has no email');
   assert(!event.message.includes('C:\\Users\\Alice'), 'persisted renderer event has no absolute path');
-  console.log('renderer observability: TODO OK');
+
+  const realtime = sanitizeRendererEvent({
+    event: 'canvas.realtime',
+    level: 'INFO',
+    fields: {
+      view: 'canvas',
+      status_class: 'live',
+      count: 2,
+      message: 'document=doc-1 should not be emitted',
+    },
+  });
+  assert.strictEqual(realtime.event, 'canvas.realtime');
+  assert.strictEqual(realtime.fields.count, 2);
+  assert.strictEqual(realtime.fields.message, undefined);
+  recordRendererEvent({
+    event: 'canvas.realtime',
+    level: 'INFO',
+    fields: { view: 'canvas', status_class: 'live', count: 2 },
+  });
+  const realtimeEvent = events
+    .concat(fs.readFileSync(path.join(getLogsDir(), jsonl), 'utf8').trim().split(/\r?\n/).map((line) => JSON.parse(line)))
+    .find((entry) => entry.event === 'canvas.realtime');
+  assert(realtimeEvent, 'canvas realtime event is persisted');
+  assert.strictEqual(realtimeEvent.count, 2);
+  console.log('renderer observability: OK');
 } finally {
   fs.rmSync(testRoot, { recursive: true, force: true });
   if (previousLocalAppData === undefined) delete process.env.LOCALAPPDATA;
