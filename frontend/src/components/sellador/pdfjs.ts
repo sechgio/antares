@@ -14,15 +14,12 @@ export async function ensurePdfJs() {
   const pdfjs = await import('pdfjs-dist');
   if (!pdfWorkerUrl) {
     try {
-      const workerModule = await import('pdfjs-dist/build/pdf.worker.min.mjs?url') as { default: string };
-      pdfWorkerUrl = workerModule.default;
+      pdfWorkerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url') as { default: string }).default;
     } catch {
-      pdfWorkerUrl = '';
+      pdfWorkerUrl = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
     }
   }
-  if (pdfWorkerUrl) {
-    pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-  }
+  if (pdfWorkerUrl) pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
   pdfjsLib = pdfjs;
   return pdfjs;
 }
