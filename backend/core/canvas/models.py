@@ -9,39 +9,57 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-DOCUMENT_VERSION = 2
+import json
+import pathlib
+
+
+def _load_canvas_schema() -> dict[str, Any]:  # noqa: allow-dict-any
+    """Load shared/canvas-schema.json as single source of truth; fallback to hardcoded."""
+    try:
+        p = pathlib.Path(__file__).resolve().parents[3] / "shared" / "canvas-schema.json"
+        if p.exists():
+            return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {
+        "documentVersion": 2,
+        "layerTypes": [
+            "text",
+            "image",
+            "frame",
+            "component",
+            "field",
+            "logo",
+            "imageSlot",
+            "rect",
+            "grid",
+            "group",
+            "table",
+            "checkbox",
+            "signature",
+            "line",
+            "ellipse",
+            "arrow",
+            "polygon",
+            "star",
+            "diamond",
+            "hexagon",
+            "pentagon",
+            "boolean",
+        ],
+        "a4": {"widthMm": 210, "heightMm": 297},
+    }
+
+
+_SCHEMA = _load_canvas_schema()
+DOCUMENT_VERSION: int = int(_SCHEMA.get("documentVersion", 2))
 
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-ALLOWED_LAYER_TYPES = frozenset(
-    {
-        "text",
-        "image",
-        "frame",
-        "component",
-        "field",
-        "logo",
-        "imageSlot",
-        "rect",
-        "grid",
-        "group",
-        "table",
-        "checkbox",
-        "signature",
-        "line",
-        "ellipse",
-        "arrow",
-        "polygon",
-        "star",
-        "diamond",
-        "hexagon",
-        "pentagon",
-        "boolean",
-    }
-)
-A4_WIDTH_MM = 210
-A4_HEIGHT_MM = 297
+ALLOWED_LAYER_TYPES = frozenset(str(x) for x in _SCHEMA.get("layerTypes", []))
+A4_WIDTH_MM = int(_SCHEMA.get("a4", {}).get("widthMm", 210))
+A4_HEIGHT_MM = int(_SCHEMA.get("a4", {}).get("heightMm", 297))
 
 
 def _new_id() -> str:
