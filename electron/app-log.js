@@ -38,6 +38,7 @@ const EVENT_FIELDS = new Set([
   'attempt',
   'component',
   'view',
+  'count',
 ]);
 const SENSITIVE_TEXT_RE = [
   /(\b(?:authorization|proxy-authorization)\s*[:=]\s*bearer\s+)[^\s,;]+/gi,
@@ -194,7 +195,7 @@ function _normaliseEventField(key, value) {
   if (!EVENT_FIELDS.has(key)) return undefined;
   if (key === 'message') return _redactText(value);
   if (key === 'outcome') return OUTCOMES.has(value) ? value : undefined;
-  if (['pid', 'backend_pid', 'bytes', 'attempt'].includes(key)) {
+  if (['pid', 'backend_pid', 'bytes', 'attempt', 'count'].includes(key)) {
     return Number.isInteger(value) && value >= 0 ? value : undefined;
   }
   if (key === 'duration_ms') {

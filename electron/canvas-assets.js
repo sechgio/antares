@@ -63,9 +63,14 @@ async function putCanvasAsset(bytes) {
   const dest = assetPath(assetId);
   await fsp.mkdir(assetsDir(), { recursive: true });
   try {
-    await fsp.access(dest, fs.constants.F_OK);
-  } catch {
-    await fsp.writeFile(dest, buf);
+    const handle = await fsp.open(dest, 'wx');
+    try {
+      await handle.writeFile(buf);
+    } finally {
+      await handle.close();
+    }
+  } catch (e) {
+    if (e && e.code !== 'EEXIST') throw e;
   }
   return { asset_id: assetId, ref: toAssetRef(assetId), bytes: buf.length };
 }

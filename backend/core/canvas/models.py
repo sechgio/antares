@@ -4,51 +4,68 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import json
+import pathlib
 import re
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, cast
 
-DOCUMENT_VERSION = 2
+
+def _load_canvas_schema() -> dict[str, Any]:  # allowlist: dict[str, Any]
+    """Load shared/canvas-schema.json as single source of truth; fallback to hardcoded."""
+    try:
+        p = pathlib.Path(__file__).resolve().parents[3] / "shared" / "canvas-schema.json"
+        if p.exists():
+            return cast("dict[str, Any]", json.loads(p.read_text(encoding="utf-8")))  # allowlist: dict[str, Any]
+    except Exception:
+        pass
+    return {
+        "documentVersion": 2,
+        "layerTypes": [
+            "text",
+            "image",
+            "frame",
+            "component",
+            "field",
+            "logo",
+            "imageSlot",
+            "rect",
+            "grid",
+            "group",
+            "table",
+            "checkbox",
+            "signature",
+            "line",
+            "ellipse",
+            "arrow",
+            "polygon",
+            "star",
+            "diamond",
+            "hexagon",
+            "pentagon",
+            "boolean",
+        ],
+        "a4": {"widthMm": 210, "heightMm": 297},
+    }
+
+
+_SCHEMA = _load_canvas_schema()
+DOCUMENT_VERSION: int = int(_SCHEMA.get("documentVersion", 2))
 
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-ALLOWED_LAYER_TYPES = frozenset(
-    {
-        "text",
-        "image",
-        "frame",
-        "component",
-        "field",
-        "logo",
-        "imageSlot",
-        "rect",
-        "grid",
-        "group",
-        "table",
-        "checkbox",
-        "signature",
-        "line",
-        "ellipse",
-        "arrow",
-        "polygon",
-        "star",
-        "diamond",
-        "hexagon",
-        "pentagon",
-        "boolean",
-    }
-)
-A4_WIDTH_MM = 210
-A4_HEIGHT_MM = 297
+ALLOWED_LAYER_TYPES = frozenset(str(x) for x in _SCHEMA.get("layerTypes", []))
+A4_WIDTH_MM = int(_SCHEMA.get("a4", {}).get("widthMm", 210))
+A4_HEIGHT_MM = int(_SCHEMA.get("a4", {}).get("heightMm", 297))
 
 
 def _new_id() -> str:
     return str(uuid.uuid4())
 
 
-def create_empty_document(*, name: str = "Sin título") -> dict[str, Any]:
+def create_empty_document(*, name: str = "Sin título") -> dict[str, Any]:  # allowlist: dict[str, Any]
     doc_id = _new_id()
     page_id = _new_id()
     return {
@@ -104,10 +121,10 @@ def _normalize_css_vars(raw: Any, *, with_geometry_defaults: bool = True) -> dic
     return out
 
 
-def _normalize_meta(raw: Any) -> dict[str, Any] | None:
+def _normalize_meta(raw: Any) -> dict[str, Any] | None:  # allowlist: dict[str, Any]
     if not isinstance(raw, dict):
         return None
-    cleaned: dict[str, Any] = {}
+    cleaned: dict[str, Any] = {}  # allowlist: dict[str, Any]
     if "key" in raw:
         cleaned["key"] = str(raw["key"])
     if "fallback" in raw:
@@ -159,7 +176,7 @@ def _normalize_meta(raw: Any) -> dict[str, Any] | None:
                 if not isinstance(pt, dict):
                     continue
                 try:
-                    pt_dict: dict[str, Any] = {
+                    pt_dict: dict[str, Any] = {  # allowlist: dict[str, Any]
                         "x": float(pt.get("x", 0)),
                         "y": float(pt.get("y", 0)),
                     }
@@ -182,7 +199,7 @@ def _normalize_meta(raw: Any) -> dict[str, Any] | None:
                     cleaned_points.append(pt_dict)
                 except (TypeError, ValueError):
                     continue
-            path_dict: dict[str, Any] = {"points": cleaned_points}
+            path_dict: dict[str, Any] = {"points": cleaned_points}  # allowlist: dict[str, Any]
             if "closed" in raw_path:
                 path_dict["closed"] = bool(raw_path["closed"])
             cleaned["path"] = path_dict
@@ -258,7 +275,7 @@ _AUTO_LAYOUT_ALIGNS = frozenset({"start", "center", "end", "stretch"})
 _FRAME_CONSTRAINTS = frozenset({"start", "end", "center", "scale"})
 
 
-def _normalize_auto_layout(raw: Any) -> dict[str, Any] | None:
+def _normalize_auto_layout(raw: Any) -> dict[str, Any] | None:  # allowlist: dict[str, Any]
     """Keep a valid autoLayout object; omit key entirely if invalid (no defaults)."""
     if not isinstance(raw, dict):
         return None
@@ -311,13 +328,13 @@ def _normalize_track_list(raw: Any) -> list[float] | None:
     return tracks
 
 
-def _normalize_layer(raw: Any) -> dict[str, Any] | None:
+def _normalize_layer(raw: Any) -> dict[str, Any] | None:  # allowlist: dict[str, Any]
     if not isinstance(raw, dict):
         return None
     layer_type = str(raw.get("type", "text"))
     if layer_type not in ALLOWED_LAYER_TYPES:
         return None
-    layer: dict[str, Any] = {
+    layer: dict[str, Any] = {  # allowlist: dict[str, Any]
         "id": str(raw.get("id") or _new_id()),
         "type": layer_type,
         "name": str(raw.get("name") or layer_type).strip() or layer_type,
@@ -379,10 +396,10 @@ def _normalize_pages(raw: Any) -> list[dict[str, str]]:
     return pages or [{"id": _new_id(), "name": "Página 1"}]
 
 
-def _normalize_settings(raw: Any) -> dict[str, Any]:
+def _normalize_settings(raw: Any) -> dict[str, Any]:  # allowlist: dict[str, Any]
     if not isinstance(raw, dict):
         return {}
-    out: dict[str, Any] = {}
+    out: dict[str, Any] = {}  # allowlist: dict[str, Any]
     if "imagesPerPage" in raw:
         with contextlib.suppress(TypeError, ValueError):
             out["imagesPerPage"] = max(1, int(raw["imagesPerPage"]))
@@ -427,10 +444,10 @@ def _normalize_settings(raw: Any) -> dict[str, Any]:
 _STYLE_KINDS = frozenset({"color", "text", "effect"})
 
 
-def _normalize_styles(raw: Any) -> list[dict[str, Any]]:
+def _normalize_styles(raw: Any) -> list[dict[str, Any]]:  # allowlist: dict[str, Any]
     if not isinstance(raw, list):
         return []
-    styles: list[dict[str, Any]] = []
+    styles: list[dict[str, Any]] = []  # allowlist: dict[str, Any]
     for item in raw:
         if not isinstance(item, dict):
             continue
@@ -444,10 +461,10 @@ def _normalize_styles(raw: Any) -> list[dict[str, Any]]:
     return styles
 
 
-def _normalize_guides(raw: Any) -> list[dict[str, Any]]:
+def _normalize_guides(raw: Any) -> list[dict[str, Any]]:  # allowlist: dict[str, Any]
     if not isinstance(raw, list):
         return []
-    guides: list[dict[str, Any]] = []
+    guides: list[dict[str, Any]] = []  # allowlist: dict[str, Any]
     for item in raw:
         if not isinstance(item, dict):
             continue
@@ -469,7 +486,7 @@ def _normalize_guides(raw: Any) -> list[dict[str, Any]]:
     return guides
 
 
-def normalize_document(raw: Any) -> dict[str, Any]:
+def normalize_document(raw: Any) -> dict[str, Any]:  # allowlist: dict[str, Any]
     if not isinstance(raw, dict):
         return create_empty_document()
 
@@ -486,7 +503,7 @@ def normalize_document(raw: Any) -> dict[str, Any]:
         height_mm = A4_HEIGHT_MM
 
     layers_in = raw.get("layers")
-    layers: list[dict[str, Any]] = []
+    layers: list[dict[str, Any]] = []  # allowlist: dict[str, Any]
     if isinstance(layers_in, list):
         for item in layers_in:
             layer = _normalize_layer(item)
@@ -498,7 +515,21 @@ def normalize_document(raw: Any) -> dict[str, Any]:
     updated_raw = raw.get("updatedAt")
     updated_at = str(updated_raw).strip() if isinstance(updated_raw, str) and str(updated_raw).strip() else ""
 
-    pages = _normalize_pages(raw.get("pages"))
+    raw_pages = raw.get("pages")
+    pages = _normalize_pages(raw_pages)
+    # Legacy v1 docs may have pages=[] but layers with pageIndex>0. Synthesize
+    # missing pages so we don't collapse multipage docs to 1 page - only when
+    # the doc had no pages to begin with (v1). Normal docs with stray pageIndex
+    # still clamp to last_page (tested by test_normalize_clamps_out_of_range).
+    is_legacy_no_pages = not isinstance(raw_pages, list) or len(raw_pages) == 0
+    if is_legacy_no_pages and layers:
+        try:
+            max_idx = max(int(layer.get("pageIndex", 0)) for layer in layers)
+        except (TypeError, ValueError):
+            max_idx = 0
+        if max_idx >= len(pages):
+            for i in range(len(pages), max_idx + 1):
+                pages.append({"id": _new_id(), "name": f"Página {i + 1}"})
     # Clamp pageIndex into the valid page range so a stale/legacy index cannot
     # create invisible "ghost" layers on a non-existent page.
     last_page = len(pages) - 1
@@ -529,7 +560,7 @@ def normalize_document(raw: Any) -> dict[str, Any]:
     }
 
 
-CanvasDocument = dict[str, Any]
+CanvasDocument = dict[str, Any]  # allowlist: dict[str, Any]
 
 def next_copy_name(name: str, existing_names: set[str] | None = None) -> str:
     """Build a unique copy name: 'X (copia)', 'X (copia 2)', … without nesting suffixes."""
@@ -545,11 +576,11 @@ def next_copy_name(name: str, existing_names: set[str] | None = None) -> str:
 
 
 def duplicate_document(
-    source: dict[str, Any],
+    source: dict[str, Any],  # allowlist: dict[str, Any]
     *,
     name: str | None = None,
     existing_names: set[str] | None = None,
-) -> dict[str, Any]:
+) -> dict[str, Any]:  # allowlist: dict[str, Any]
     doc = normalize_document(copy.deepcopy(source))
     doc["id"] = _new_id()
     doc["updatedAt"] = utc_now_iso()

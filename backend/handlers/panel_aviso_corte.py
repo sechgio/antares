@@ -205,7 +205,7 @@ def panel_aviso_corte_template(params: dict[str, Any]) -> dict[str, Any]:
     destination.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        import pandas as pd  # type: ignore
+        import pandas as pd
     except ImportError as exc:
         msg = "pandas no está instalado."
         raise ImportError(msg) from exc

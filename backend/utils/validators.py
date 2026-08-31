@@ -22,8 +22,17 @@ def is_safe_user_path(value: object) -> bool:
         return False
     if "../" in value or "..\\" in value or value.endswith(("/..", "\\..")) or value in ("..", "."):
         return False
+    if any(part == ".." for part in Path(value).parts):
+        return False
     lowered = value.lower()
-    return not ("%2e%2e" in lowered or "%252e" in lowered)
+    return not (
+        "%2e%2e" in lowered
+        or "%252e" in lowered
+        or "%2f" in lowered
+        or "%5c" in lowered
+        or "%252f" in lowered
+        or "%255c" in lowered
+    )
 
 
 _WINDOWS_RESERVED_NAMES = frozenset(

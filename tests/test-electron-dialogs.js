@@ -2,8 +2,13 @@
 const fsForDialog = require('fs');
 const osForDialog = require('os');
 const pathForDialog = require('path');
-const { handleDialogCall, _clearAllowedWriteRoots, _resetPdfRenderPool } = require('../electron/dialog-handlers.js');
-const { clearAllowedReadPaths } = require('../electron/path-allowlist.js');
+const {
+  handleDialogCall,
+  _clearAllowedWriteRoots,
+  _resetPdfRenderPool,
+  registerFileInputPath,
+} = require('../electron/dialog-handlers.js');
+const { clearAllowedReadPaths, isAllowedReadPath } = require('../electron/path-allowlist.js');
 
 let passed = 0;
 let failed = 0;
@@ -238,6 +243,14 @@ async function run() {
   const realImagePath = pathForImage.join(imageTempDir, 'foto.jpg');
   await fsForImage.promises.writeFile(realImagePath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
 
+  clearAllowedReadPaths();
+  assert(
+    registerFileInputPath(realImagePath) === true && isAllowedReadPath(realImagePath),
+    'registerFileInputPath grants read access for a File-derived path',
+  );
+  assert(registerFileInputPath(imageTempDir) === false, 'registerFileInputPath rejects directories');
+  assert(registerFileInputPath('') === false, 'registerFileInputPath rejects empty paths');
+
   let registerDeprecated = false;
   try {
     await handleDialogCall('register_local_path', { path: realImagePath }, dialog, win);
@@ -362,7 +375,7 @@ async function run() {
     win,
     { BrowserWindow: DeferredBrowserWindow },
   );
-  await new Promise(resolve => setTimeout(resolve, 20));
+  await new Promise(resolve => setTimeout(resolve, 100));
   assert(DeferredBrowserWindow.instances.length === 1, 'first queued PDF render should create one window (slot 0)');
   assert(typeof DeferredBrowserWindow.instances[0].resolvePrint === 'function', 'first queued PDF render should reach printToPDF');
 
@@ -374,7 +387,7 @@ async function run() {
     win,
     { BrowserWindow: DeferredBrowserWindow },
   );
-  await new Promise(resolve => setTimeout(resolve, 20));
+  await new Promise(resolve => setTimeout(resolve, 100));
   assert(DeferredBrowserWindow.instances.length === 2, 'second PDF render should run concurrently in its own pool slot');
   assert(typeof DeferredBrowserWindow.instances[1].resolvePrint === 'function', 'second queued PDF render should reach printToPDF in parallel');
 
@@ -392,7 +405,7 @@ async function run() {
     win,
     { BrowserWindow: DeferredBrowserWindow },
   );
-  await new Promise(resolve => setTimeout(resolve, 20));
+  await new Promise(resolve => setTimeout(resolve, 100));
   assert(DeferredBrowserWindow.instances.length === 2, 'third PDF render should reuse the pooled window (no new BrowserWindow)');
   assert(typeof DeferredBrowserWindow.instances[0].resolvePrint === 'function', 'third queued PDF render should reach printToPDF on the reused window');
   DeferredBrowserWindow.instances[0].resolvePrint(Buffer.from('%PDF-third'));

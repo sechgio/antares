@@ -9,6 +9,7 @@ import { isNewer, type SyncConflict } from './sync/syncCompare';
 import type { SyncConflictChoice } from './hooks/useCanvasSync';
 import SyncConflictBar from './editor/SyncConflictBar';
 import SyncStatusBadge from './editor/SyncStatusBadge';
+import CanvasPresenceBadge from './editor/CanvasPresenceBadge';
 import BottomToolbar from './editor/BottomToolbar';
 import ContextMenu, {
   type CanvasContextAction,
@@ -27,6 +28,7 @@ import { useDocumentLifecycle } from './hooks/useDocumentLifecycle';
 import { isOpenDocumentDirty, useCanvasSync } from './hooks/useCanvasSync';
 import { useGestureBaselines } from './hooks/useGestureBaselines';
 import { useInlineEdit } from './hooks/useInlineEdit';
+import { useCanvasQuitFlush } from './hooks/useCanvasQuitFlush';
 import { CANVAS_SHORTCUTS } from './shortcuts';
 import {
   hydrateDocumentImages,
@@ -281,6 +283,31 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     });
   }, []);
 
+  const handleRemoteDocumentApplied = useCallback((document: CanvasDocument) => {
+    const validLayerIds = new Set(document.layers.map((layer) => layer.id));
+    setSelectedIds((ids) => ids.filter((id) => validLayerIds.has(id)));
+    setPageIndex((index) => Math.min(Math.max(0, index), Math.max(0, getPageCount(document) - 1)));
+  }, []);
+
+  const {
+    panelBaselineRef,
+    gestureBaselineRef,
+    setPageLayersLive,
+    commitPageLayersGesture,
+    cancelPageLayersGesture,
+    onPanelChangeLive,
+    onPanelCommitLive,
+  } = useGestureBaselines({ history, pageIndex });
+
+  const renameBaselineRef = useRef<typeof history.document | null>(null);
+
+  openDirtyRef.current = isOpenDocumentDirty(
+    history.hasUnsavedEditsRef.current,
+    panelBaselineRef.current != null,
+    gestureBaselineRef.current != null,
+    renameBaselineRef.current != null,
+  );
+
   const onConflictResolve = useCallback(
     (choice: SyncConflictChoice) => {
       const conflict = syncConflictRef.current;
@@ -318,24 +345,31 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       dismissedRemoteAtRef.current = null;
       void (async () => {
         try {
+          const hydrated = await hydrateDocumentImages(conflict.remoteDoc!, { strict: true });
           await api.canvasSave(conflict.remoteDoc!, { touch: false });
-          history.replaceDocument(await hydrateDocumentImages(conflict.remoteDoc!));
+          history.replaceDocument(hydrated);
+          handleRemoteDocumentApplied(hydrated);
           await refreshList();
         } catch {
           /* local remains; next sync retries */
         }
       })();
     },
-    [history, refreshList],
+    [handleRemoteDocumentApplied, history, refreshList],
   );
 
-  const { runCloudSync, syncing: docsSyncing, syncStatus } = useCanvasSync({
+  const { runCloudSync, syncing: docsSyncing, syncStatus, realtimeStatus, collaborators } = useCanvasSync({
     historyDocRef,
     openDirtyRef,
     refreshList,
     replaceDocument: history.replaceDocument,
     onConflict: handleConflict,
     active,
+    documentId: history.document.id,
+    documentReady: !loading,
+    openDirty: openDirtyRef.current,
+    initialGuarded: true,
+    onRemoteDocumentApplied: handleRemoteDocumentApplied,
   });
 
 
@@ -388,26 +422,8 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     history.setDocument(syncImagesPerPage({ ...history.document, layers }));
   };
 
-  const {
-    panelBaselineRef,
-    gestureBaselineRef,
-    setPageLayersLive,
-    commitPageLayersGesture,
-    cancelPageLayersGesture,
-    onPanelChangeLive,
-    onPanelCommitLive,
-  } = useGestureBaselines({ history, pageIndex });
-
   const [gestureAbortToken, setGestureAbortToken] = useState(0);
 
-  const renameBaselineRef = useRef<typeof history.document | null>(null);
-
-  openDirtyRef.current = isOpenDocumentDirty(
-    history.hasUnsavedEditsRef.current,
-    panelBaselineRef.current != null,
-    gestureBaselineRef.current != null,
-    renameBaselineRef.current != null,
-  );
   const autosavePendingRef = useRef(false);
   const autosaveRetryTimerRef = useRef<number | null>(null);
   const autosaveUnmountedRef = useRef(false);
@@ -514,6 +530,18 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [active, onBeforeUnload]);
 
+  useCanvasQuitFlush({
+    history,
+    editingLayerId,
+    commitInlineEdit,
+    commitPageLayersGesture,
+    onPanelCommitLive,
+    onSave,
+    panelBaselineRef,
+    gestureBaselineRef,
+    renameBaselineRef,
+    openDirtyRef,
+  });
 
   const sealPanelAndAbortGesture = useCallback(() => {
     if (panelBaselineRef.current) onPanelCommitLive();
@@ -1538,7 +1566,10 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
           syncConflict ? (
             <SyncConflictBar conflict={syncConflict} onResolve={onConflictResolve} />
           ) : (
-            <SyncStatusBadge status={syncStatus} />
+            <>
+              <CanvasPresenceBadge collaborators={collaborators} status={realtimeStatus} />
+              <SyncStatusBadge status={syncStatus} />
+            </>
           )
         }
       />

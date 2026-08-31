@@ -1,0 +1,25 @@
+{
+  "canvasAppear": {
+    "incrementalBudgetKb": 500,
+    "forbiddenStatic": [
+      "vendor-jspdf",
+      "vendor-dnd",
+      "vendor-pdfjs",
+      "vendor-data",
+      "vendor-fullcalendar",
+      "vendor-supabase"
+    ]
+  },
+  "shellPreload": {
+    "forbiddenShell": [
+      "vendor-supabase",
+      "vendor-framer",
+      "vendor-jspdf",
+      "vendor-pdfjs",
+      "vendor-fullcalendar"
+    ]
+  },
+  "vite": {
+    "chunkSizeWarningKb": 500
+  }
+}

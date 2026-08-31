@@ -645,9 +645,9 @@ def validate_run_payload(run_type: str, options: Any, files: Any) -> None:
         raise ValueError(msg)
 
     if meta.options_schema:
-        jsonschema.validate(instance=options or {}, schema=meta.options_schema)  # type: ignore[union-attr]
+        jsonschema.validate(instance=options or {}, schema=meta.options_schema)
     if meta.files_schema:
-        jsonschema.validate(instance=files or [], schema=meta.files_schema)  # type: ignore[union-attr]
+        jsonschema.validate(instance=files or [], schema=meta.files_schema)
 
 
 def registry_payload() -> dict[str, Any]:

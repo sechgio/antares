@@ -10,6 +10,7 @@ import type { TechnicalReport, TechnicalReportListItem } from './components/tech
 import type { InformeV2, InformeV2ListItem } from './components/informes-v2/types';
 import type { HistoryRunRow } from './components/history/runTypes';
 import type { AutoImgFolder } from './components/autoimg/types';
+import { createAutoimgApi } from './api/autoimgApi';
 
 export type { ProcessStatus, LogEntry, PreviewItem, DBField, RenamePattern, DBRecord, ThemeConfig, VisualMapping, FormatInfo, FormatOrigin, MappingStrategy, MappingResult, MappingCollision, AutoImgFolder };
 
@@ -17,6 +18,7 @@ export type { ProcessStatus, LogEntry, PreviewItem, DBField, RenamePattern, DBRe
 // Shared with electron/ipc-methods.js via shared/long-running-methods.json so
 // the renderer and main process cannot drift on timeout classification.
 import longRunningMethods from '../../shared/long-running-methods.json';
+import heavyIpcMethods from '../../shared/heavy-ipc-methods.json';
 
 // ─── Electron IPC bridge ───────────────────────────────────────────────────
 
@@ -35,6 +37,9 @@ declare global {
       autoUpdateInstall: () => Promise<{ success: boolean; reason?: string }>;
       onAutoUpdateStatus: (callback: (data: { status: string; version: string | null; progress: number; message?: string }) => void) => () => void;
       getPathForFile: (file: File) => string;
+<      registerFileInputPath?: (filePath: string) => boolean;
+      canvasFlushAck?: () => Promise<unknown>;
+      registerLocalPath: (filePath: string) => Promise<unknown>;
       fileStagedCreate?: (name: string, size: number) => Promise<{ token: string }>;
       fileStagedAppend?: (token: string, chunk: ArrayBuffer | Uint8Array | string) => Promise<unknown>;
       fileStagedComplete?: (token: string) => Promise<{ file_token: string }>;
@@ -45,12 +50,14 @@ declare global {
       canvasAssetGet?: (ref: string) => Promise<{ ref: string; chunk: ArrayBuffer; bytes: number }>;
       canvasAssetGc?: () => Promise<{ collected: number; bytes_freed: number }>;
       reportRendererError?: (report: Record<string, unknown>) => Promise<unknown>;
+      reportRendererEvent?: (event: string, fields?: Record<string, unknown>, level?: string) => void;
     };
   }
 }
 
 const IPC_TIMEOUT = 30_000;           // default timeout — most ops finish in <5s
-const IPC_LONG_TIMEOUT = 900_000;     // 15 min for large PDF/ZIP/image batches
+const IPC_LONG_TIMEOUT = 300_000;     // 5 min for most long ops
+const IPC_HEAVY_TIMEOUT = 900_000;    // 15 min for process_start/spreadsheet_parse/html_to_pdf
 // Startup wait budget in Electron Main (waitForReady in ipc-router.js) is 60s.
 // Renderer backstop must outlive Electron main's (STARTUP_WAIT_MS + REQUEST_TIMEOUT_MS)
 // so main always handles/times-out the request and returns structured errors first.
@@ -144,6 +151,7 @@ function parseProcessStatus(raw: unknown): ProcessStatus {
 }
 
 const LONG_RUNNING_METHODS = new Set<string>(longRunningMethods);
+const HEAVY_IPC_METHODS = new Set<string>(heavyIpcMethods);
 
 /** Must match electron/ipc-router.js — structured fields survive only inside Error.message. */
 const ANTARES_IPC_ERROR_PREFIX = 'ANTARES_IPC_ERROR:';
@@ -206,10 +214,12 @@ const _invoke = async <T>(method: string, params?: Record<string, unknown> | obj
     throw new AntaresAPIError('Electron IPC no disponible', -32000, 'INTERNAL_ERROR');
   }
 
-  const timeoutMs =
-    (LONG_RUNNING_METHODS.has(method) ? IPC_LONG_TIMEOUT : IPC_TIMEOUT) +
-    FE_STARTUP_BUFFER_MS +
-    FE_TIMEOUT_BUFFER_MS;
+  const baseTimeout = HEAVY_IPC_METHODS.has(method)
+    ? IPC_HEAVY_TIMEOUT
+    : LONG_RUNNING_METHODS.has(method)
+      ? IPC_LONG_TIMEOUT
+      : IPC_TIMEOUT;
+  const timeoutMs = baseTimeout + FE_STARTUP_BUFFER_MS + FE_TIMEOUT_BUFFER_MS;
   // Single attempt: retry logic lives in ipc-router._callBackend (main process),
   // which can actually wait for the backend to recover. The timeout race is a
   // backstop for the case where the main process never resolves the invoke.
@@ -895,135 +905,7 @@ export const api = {
   ubicacionesKeysSet: (keys: Record<string, string>) =>
     _invoke<{ keys: Record<string, string>; configured?: Record<string, boolean> }>('ubicaciones_keys_set', { keys }),
 
-  // ─── AutoIMG (Google Sheets + Drive — Electron main) ───────────────────
-  autoimgOAuthConfigStatus: () => _invoke<{ configured: boolean; client_id_masked?: string }>('autoimg_oauth_config_status'),
-  autoimgOAuthConfigSave: (client_id: string, client_secret: string) =>
-    _invoke<{ success: boolean }>('autoimg_oauth_config_save', { client_id, client_secret }),
-  autoimgSheetsAuthUrl: () => _invoke<{ url: string; redirect_uri: string }>('autoimg_sheets_auth_url'),
-  autoimgSheetsAuthCancel: () => _invoke<{ success: boolean }>('autoimg_sheets_auth_cancel'),
-  autoimgSheetsAuthStatus: () => _invoke<{ authenticated: boolean; email?: string }>('autoimg_sheets_auth_status'),
-  autoimgSheetsAuthRevoke: () => _invoke<{ success: boolean }>('autoimg_sheets_auth_revoke'),
-  autoimgSheetsOpen: (sheet_id: string) => _invoke<{ success: boolean; sheet_id?: string; name?: string; sheets?: string[]; created_tabs?: string[] }>('autoimg_sheets_open', { sheet_id }),
-  autoimgSheetsGetConfig: () => _invoke<{ sheet_id: string; name: string; linked: boolean }>('autoimg_sheets_get_config'),
-  autoimgSheetsReadRange: (range: string) => _invoke<{ values: string[][] }>('autoimg_sheets_read_range', { range }),
-  autoimgSheetsWriteRange: (range: string, values: string[][]) => _invoke<{ updated: number }>('autoimg_sheets_write_range', { range, values }),
-  autoimgSheetsAppendRow: (range: string, values: string[]) => _invoke<{ row: number }>('autoimg_sheets_append_row', { range, values }),
-  autoimgDriveListFolder: (folder_id: string) => _invoke<{ files: Array<{ name: string; id: string; modifiedTime: string }> }>('autoimg_drive_list_folder', { folder_id }),
-  autoimgDriveScanNis: (folder_id: string, folder_name?: string) => _invoke<{ nis_map: Record<string, { count: number; files: unknown[] }> }>('autoimg_drive_scan_nis', { folder_id, folder_name }),
-  autoimgDriveVerifyFolder: (urlOrId: string) => _invoke<{ accessible: boolean; folder_id: string; name: string; image_count: number; sample_files: string[] }>('autoimg_drive_verify_folder', { url: urlOrId }),
-  autoimgDriveFolderPreview: (folder_id: string, force = false) =>
-    _invoke<{
-      folder_id: string;
-      thumbs: Array<{ id: string; name: string; dataUrl: string | null }>;
-    }>('autoimg_drive_folder_preview', { folder_id, force }),
-  autoimgDriveStatus: () => _invoke<{ connected: boolean }>('autoimg_drive_status'),
-  autoimgFoldersList: (force = false) => _invoke<{ folders: Array<{ name: string; folder_id: string; activo: boolean; ultimo_scan: string; cant_archivos: number }>; cached?: boolean }>('autoimg_folders_list', { force }),
-  autoimgFoldersAdd: (body: { name: string; folder_id: string; activo: boolean }) => _invoke<{ success: boolean; folder_id?: string; drive_name?: string; folders?: AutoImgFolder[] }>('autoimg_folders_add', body),
-  autoimgFoldersRemove: (body: { folder_id: string }) => _invoke<{ success: boolean; folders?: AutoImgFolder[] }>('autoimg_folders_remove', body),
-  autoimgFoldersToggle: (body: { folder_id: string; activo: boolean }) => _invoke<{ success: boolean; folders?: AutoImgFolder[] }>('autoimg_folders_toggle', body),
-  autoimgScanAndSync: () => _invoke<{
-    success: boolean;
-    updated: number;
-    matched?: number;
-    unmatched_scan?: number;
-    new_rows: number;
-    duplicate_nis?: number;
-    logs: string[];
-    folder_errors: number;
-    scan: {
-      summary: {
-        total: number;
-        completos: number;
-        faltantes: number;
-        sobrantes: number;
-        fuera_padron: number;
-        /** @deprecated alias de fuera_padron */
-        sin_sgio?: number;
-      };
-      folders_failed: number;
-    };
-  }>('autoimg_scan_and_sync'),
-  autoimgSyncToSheet: () => _invoke<{
-    success: boolean;
-    updated: number;
-    matched?: number;
-    unmatched_scan?: number;
-    new_rows: number;
-    duplicate_nis?: number;
-    logs: string[];
-  }>('autoimg_sync_to_sheet'),
-  autoimgSyncFromSheet: () => _invoke<{ success: boolean; rows: string[][]; arrastre?: Array<{ nis: string; sgio: string; motivo: string; fecha: string; observacion: string }> }>('autoimg_sync_from_sheet'),
-  autoimgRenameExport: (body: { dest_folder_id: string; only_completos?: boolean }) =>
-    _invoke<{
-      success: boolean;
-      dest_folder_id: string;
-      dest_name: string;
-      destinos: string[];
-      folders_created: string[];
-      planned: number;
-      copied: Array<{
-        nis: string;
-        sgio: string;
-        destino?: string;
-        slot: number;
-        from: string;
-        to: string;
-        folder?: string;
-        file_id: string;
-      }>;
-      failed: Array<{
-        nis: string;
-        sgio: string;
-        destino?: string;
-        from: string;
-        to: string;
-        error: string;
-      }>;
-      skipped: Array<{
-        nis: string;
-        sgio?: string;
-        destino?: string;
-        reason: string;
-        detail?: string;
-      }>;
-      scan_summary?: {
-        total: number;
-        completos: number;
-        faltantes: number;
-        sobrantes: number;
-        sin_sgio: number;
-      };
-    }>('autoimg_rename_export', body),
-  autoimgRenameDestConfig: () => _invoke<{ folder_id: string }>('autoimg_rename_dest_config'),
-  autoimgArrastreList: (force = false) => _invoke<{ entries: Array<{ nis: string; sgio: string; motivo: string; fecha: string; observacion: string }>; cached?: boolean }>('autoimg_arrastre_list', { force }),
-  autoimgLogsList: (force = false) => _invoke<{ values: string[][]; cached?: boolean }>('autoimg_logs_list', { force }),
-  autoimgBootstrap: (refresh = true) => _invoke<{
-    connected: boolean;
-    sheetName?: string;
-    sheetId?: string;
-    sheetLinked?: boolean;
-    lastSync?: string;
-    autoSync: boolean;
-    totalNis?: number;
-    completos?: number;
-    faltantes?: number;
-    sobrantes?: number;
-    sinSgio?: number;
-    carpetasActivas?: number;
-    folders: Array<{ name: string; folder_id: string; activo: boolean; ultimo_scan: string; cant_archivos: number }>;
-    bdRows: string[][];
-    logRows: string[][];
-    arrastre: Array<{ nis: string; sgio: string; motivo: string; fecha: string; observacion: string }>;
-    error?: string;
-    error_code?: string;
-    stale?: boolean;
-    cached?: boolean;
-  }>('autoimg_bootstrap', { refresh }),
-  autoimgAutoSyncToggle: (enabled: boolean) => _invoke<{ enabled: boolean }>('autoimg_auto_sync_toggle', { enabled }),
-  autoimgScanAll: () => _invoke<{ success: boolean; results?: unknown }>('autoimg_scan_all'),
-  autoimgCancelOperation: () => _invoke<{ success: boolean; operation?: string; reason?: string }>('autoimg_cancel_operation'),
-  autoimgOperationStatus: () => _invoke<{ running: boolean; operation?: string; progress?: number; message?: string; started_at?: string }>('autoimg_operation_status'),
-  autoimgStatus: () => _invoke<{ connected: boolean; sheetName?: string; sheetId?: string; sheetLinked?: boolean; lastSync?: string; autoSync: boolean; totalNis?: number; completos?: number; faltantes?: number; sobrantes?: number; sinSgio?: number; carpetasActivas?: number }>('autoimg_status'),
+  ...createAutoimgApi(_invoke),
 
   // ─── RUM Telemetry (web-vitals → stderr) ────────────────────────────────
   telemetry: (body: {

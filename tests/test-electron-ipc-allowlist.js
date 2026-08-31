@@ -15,6 +15,7 @@ const API_PATH = path.join(ROOT, 'frontend', 'src', 'api.ts');
 const PRELOAD_PATH = path.join(ROOT, 'electron', 'preload.js');
 const ALLOWLIST_PATH = path.join(ROOT, 'electron', 'ipc-methods.js');
 const LONG_RUNNING_PATH = path.join(ROOT, 'shared', 'long-running-methods.json');
+const HEAVY_PATH = path.join(ROOT, 'shared', 'heavy-ipc-methods.json');
 
 /**
  * Extract method names from `_invoke('method')` / `_invoke<...>('method')`.
@@ -80,12 +81,14 @@ function main() {
   const preloadSource = fs.readFileSync(PRELOAD_PATH, 'utf8');
   const allowlistModule = require(ALLOWLIST_PATH);
   const longRunning = new Set(JSON.parse(fs.readFileSync(LONG_RUNNING_PATH, 'utf8')));
+  const heavy = new Set(JSON.parse(fs.readFileSync(HEAVY_PATH, 'utf8')));
 
   const apiMethods = extractApiMethods(apiSource);
   const preloadMethods = extractPreloadMethods(preloadSource);
   const knownUsedMethods = new Set([...apiMethods, ...preloadMethods, 'canvas_asset_gc', 'autoimg_scan_all']);
   const allowed = allowlistModule.ALLOWED_RENDERER_METHODS;
   const allowlistLongRunning = allowlistModule.LONG_RUNNING_METHODS;
+  const allowlistHeavy = allowlistModule.HEAVY_METHODS;
 
   const missingFromAllowlist = [...apiMethods].filter((m) => !allowed.has(m));
   const unexpectedInAllowlist = [...allowed].filter((m) => !knownUsedMethods.has(m));
@@ -95,6 +98,11 @@ function main() {
   const longRunningDrift = [
     ...[...longRunning].filter((m) => !allowlistLongRunning.has(m)),
     ...[...allowlistLongRunning].filter((m) => !longRunning.has(m)),
+  ];
+  const heavyDrift = [
+    ...[...heavy].filter((m) => !allowlistHeavy.has(m)),
+    ...[...allowlistHeavy].filter((m) => !heavy.has(m)),
+    ...[...heavy].filter((m) => !longRunning.has(m)),
   ];
 
   let failed = false;
@@ -120,6 +128,13 @@ function main() {
     failed = true;
   }
 
+  if (heavyDrift.length > 0) {
+    console.error(
+      `[FAIL] HEAVY_METHODS debe coincidir con shared/heavy-ipc-methods.json y ser long-running:\n  - ${[...new Set(heavyDrift)].join('\n  - ')}`
+    );
+    failed = true;
+  }
+
   if (unexpectedInAllowlist.length > 0) {
     console.warn(
       `[WARN] Métodos en ALLOWED_RENDERER_METHODS no usados en api.ts (pueden ser legacy):\n  - ${unexpectedInAllowlist.join('\n  - ')}`
@@ -128,7 +143,7 @@ function main() {
 
   if (!failed) {
     console.log(
-      `[PASS] Allowlist sincronizada: ${apiMethods.size} métodos de api.ts presentes; ${longRunning.size} long-running alineados.`
+      `[PASS] Allowlist sincronizada: ${apiMethods.size} métodos de api.ts presentes; ${longRunning.size} long-running y ${heavy.size} heavy alineados.`
     );
     process.exit(0);
   }

@@ -16,7 +16,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const indexHtmlPath = path.resolve(__dirname, '../dist/index.html');
 
 /** Must never appear in entry script or modulepreload hrefs. */
-const FORBIDDEN_SHELL = ['vendor-supabase', 'vendor-framer', 'vendor-jspdf', 'vendor-pdfjs', 'vendor-fullcalendar'];
+const BUDGETS_PATH = path.resolve(__dirname, '../../shared/budgets.json');
+let FORBIDDEN_SHELL = ['vendor-supabase', 'vendor-framer', 'vendor-jspdf', 'vendor-pdfjs', 'vendor-fullcalendar'];
+try {
+  const _b = JSON.parse(fs.readFileSync(BUDGETS_PATH, 'utf8'));
+  if (Array.isArray(_b?.shellPreload?.forbiddenShell)) FORBIDDEN_SHELL = _b.shellPreload.forbiddenShell;
+} catch {}
 
 function fail(msg) {
   console.error(`RED: ${msg}`);

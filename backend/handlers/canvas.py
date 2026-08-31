@@ -186,17 +186,29 @@ def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
     import base64
     import uuid
 
+    from backend.core.canvas.models import normalize_document
     from backend.core.cmyk_pdf import CanvasCmykRenderer
     from backend.utils.paths import user_data_path
 
-    document = params["document"]
+    document = normalize_document(params["document"])
     contexts = params.get("contexts") or []
+    if not isinstance(contexts, list):
+        contexts = []
+    if len(contexts) > 50:
+        raise ValueError("Demasiados contextos (máx 50)")
+    pages = document.get("pages") or []
+    if len(contexts) * max(1, len(pages)) > 200:
+        raise ValueError("Demasiadas páginas a exportar (máx 200)")
+    if isinstance(params.get("localImagePaths"), dict) and len(params["localImagePaths"]) > 64:
+        raise ValueError("Demasiadas imágenes locales (máx 64)")
     color_profile = str(params.get("color_profile") or "cmyk_iso_coated_v2")
     dpi = int(params.get("dpi") or 300)
     bleed_mm = float(params.get("bleed_mm") or 0.0)
     show_crop_marks = bool(params.get("show_crop_marks", False))
     pair_context_pages = bool(params.get("pair_context_pages", False))
-    filename = str(params.get("filename") or "canvas_cmyk.pdf")
+    filename = sanitizar_nombre(Path(str(params.get("filename") or "canvas_cmyk.pdf")).name) or "canvas_cmyk.pdf"
+    if not filename.lower().endswith(".pdf"):
+        filename += ".pdf"
     output_path = params.get("outputPath")
     local_image_paths = params.get("localImagePaths") or {}
 
@@ -236,10 +248,11 @@ def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
     if len(pdf_bytes) > _MAX_INLINE_PDF_BYTES:
         out_dir = user_data_path("canvas/out")
         out_dir.mkdir(parents=True, exist_ok=True)
-        tmp_out = out_dir / f"{uuid.uuid4().hex[:12]}_{filename}"
+        safe_filename = sanitizar_nombre(Path(filename).name) or "canvas_cmyk.pdf"
+        tmp_out = out_dir / f"{uuid.uuid4().hex[:12]}_{safe_filename}"
         tmp_out.write_bytes(pdf_bytes)
         return {
-            "filename": filename,
+            "filename": safe_filename,
             "saved_path": str(tmp_out),
         }
 

@@ -100,7 +100,7 @@ async function run() {
     appendStagedChunk,
     completeStagedSession,
   } = require('../electron/file-capabilities');
-  const { clearAllowedReadPaths } = require('../electron/path-allowlist');
+  const { clearAllowedReadPaths, registerAllowedReadPath } = require('../electron/path-allowlist');
 
   try {
     // 1) outputDir bajo Documentos → permitido sin mutar el payload.
@@ -291,6 +291,151 @@ async function run() {
     assert(stagedTokens.length === 1 && stagedTokens[0] === stagedCap.token, 'staged tokens are collected from nested read fields');
     await router2._cleanupStagedTokens(stagedTokens, 1);
     assert(!fs.existsSync(stagedCap.path), 'staged token nested se elimina después de la operación');
+
+    // Read capabilities are required recursively. A raw path hidden in an
+    // array/dictionary must not reach a backend handler.
+    const rawInput = path.join(arbitraryDir, 'raw.jpg');
+    await fs.promises.writeFile(rawInput, 'raw');
+    for (const payload of [
+      { files: [rawInput], destino: customDir },
+      { localImagePaths: { 'antares-local-image:raw': rawInput } },
+      { images: [{ path: rawInput }] },
+      { file_token: rawInput },
+    ]) {
+      let rejectedRaw = false;
+      try {
+        router2._maybeResolveFileTokens(payload, { webContents: { id: 1 } }, 'process_start');
+      } catch (e) {
+        rejectedRaw = /raw absolute|file token|capability/i.test(e.message);
+      }
+      assert(rejectedRaw, 'raw read path nested in payload is rejected');
+    }
+
+    const optimizerPayload = router2._maybeResolveFileTokens(
+      { files: [{ filename: '../foto.jpg', content_b64: 'AAAA/AAAA' }] },
+      { webContents: { id: 1 } },
+      'image_optimizer_zip',
+    );
+    assert(
+      optimizerPayload.files[0].content_b64 === 'AAAA/AAAA',
+      'opaque file records are not mistaken for read paths',
+    );
+
+    // A raw path approved by a native dialog (registered read path) is a
+    // legitimate read source and must remain compatible during migration to
+    // capability tokens.
+    const registeredInput = path.join(arbitraryDir, 'approved.jpg');
+    await fs.promises.writeFile(registeredInput, 'approved');
+    registerAllowedReadPath(registeredInput);
+    const winHandle = { webContents: { id: 1 } };
+    const previewParams = router2._maybeResolveFileTokens(
+      { files: [registeredInput], mapping: {} },
+      winHandle,
+      'preview',
+    );
+    assert(previewParams.files[0] === registeredInput, 'preview keeps a registered raw read path');
+    const processParams = router2._maybeResolveFileTokens(
+      { files: [registeredInput], mapping_path: registeredInput },
+      winHandle,
+      'process_start',
+    );
+    assert(processParams.mapping_path === registeredInput, 'process_start keeps a registered raw mapping path');
+    const selladorParams = router2._maybeResolveFileTokens(
+      { pdf_path: registeredInput, stamp_path: registeredInput, filename: 'out.pdf' },
+      winHandle,
+      'sellador_apply',
+    );
+    assert(
+      selladorParams.pdf_path === registeredInput && selladorParams.stamp_path === registeredInput,
+      'sellador_apply keeps registered raw pdf/stamp paths',
+    );
+    const evidenciaParams = router2._maybeResolveFileTokens(
+      { image_paths: { img1: registeredInput } },
+      winHandle,
+      'evidencia_volanteo_render',
+    );
+    assert(evidenciaParams.image_paths.img1 === registeredInput, 'evidencia keeps registered raw image paths');
+    const panelParams = router2._maybeResolveFileTokens(
+      { image_paths: { img1: registeredInput } },
+      winHandle,
+      'panel_aviso_corte_render_pdf',
+    );
+    assert(panelParams.image_paths.img1 === registeredInput, 'panel export keeps registered raw image paths');
+    const cmykParams = router2._maybeResolveFileTokens(
+      { localImagePaths: { 'antares-local-image:logo': registeredInput } },
+      winHandle,
+      'canvas_export_cmyk_pdf',
+    );
+    assert(
+      cmykParams.localImagePaths['antares-local-image:logo'] === registeredInput,
+      'canvas export keeps registered raw localImagePaths',
+    );
+
+    const informesParams = router2._maybeResolveFileTokens(
+      {
+        images: [{ path: 'antares-local-image:iv2-0', name: 'foto.jpg' }],
+        logo_left: 'data:image/png;base64,AAAA',
+      },
+      winHandle,
+      'informes_v2_render_html',
+    );
+    assert(
+      informesParams.images[0].path === 'antares-local-image:iv2-0'
+        && informesParams.logo_left === 'data:image/png;base64,AAAA',
+      'informes keeps logical image tokens and data URLs',
+    );
+
+    const consolidatedParams = router2._maybeResolveFileTokens(
+      { images_by_id: { '3': [{ path: 'antares-local-image:x', name: 'a.jpg' }] } },
+      winHandle,
+      'informes_v2_render_consolidated_html',
+    );
+    assert(
+      consolidatedParams.images_by_id['3'][0].path === 'antares-local-image:x',
+      'consolidated informes keeps logical image tokens',
+    );
+
+    // Exact read tokens resolve in nested fields, and are included in staged
+    // cleanup so a backend/native operation cannot leak temporary files.
+    const nestedCap = createFileCapability({
+      filePath: registeredInput,
+      mode: 'read',
+      webContentsId: 1,
+      name: 'approved.jpg',
+    });
+    const nestedFilesResolved = router2._maybeResolveFileTokens(
+      { files: [nestedCap.token] },
+      winHandle,
+      'process_start',
+    );
+    const nestedImagesResolved = router2._maybeResolveFileTokens(
+      { image_paths: { img1: nestedCap.token } },
+      winHandle,
+      'evidencia_volanteo_render',
+    );
+    const nestedInformeResolved = router2._maybeResolveFileTokens(
+      { images: [{ path: nestedCap.token }] },
+      winHandle,
+      'informes_v2_render_html',
+    );
+    assert(
+      nestedFilesResolved.files[0] === registeredInput
+        && nestedImagesResolved.image_paths.img1 === registeredInput
+        && nestedInformeResolved.images[0].path === registeredInput,
+      'read tokens resolve in nested payload fields',
+    );
+    const collectedNestedTokens = router2._collectStagedTokens('process_start', {
+      files: [nestedCap.token],
+      images: [{ path: nestedCap.token }],
+      image_paths: { img1: nestedCap.token },
+    });
+    assert(collectedNestedTokens.includes(nestedCap.token), 'nested read tokens are collected for cleanup');
+    const unrelatedTokens = router2._collectStagedTokens('canvas_save', {
+      document: { metadata: { source: 'antares-read-unrelated' } },
+    });
+    assert(unrelatedTokens.length === 0, 'tokens in opaque payloads are not revoked as staged inputs');
+    const { revokeCapability } = require('../electron/file-capabilities');
+    revokeCapability(nestedCap.token);
   } finally {
     _clearAllowedWriteRoots();
     clearAllowedReadPaths();

@@ -1,0 +1,31 @@
+{
+  "documentVersion": 2,
+  "layerTypes": [
+    "text",
+    "image",
+    "frame",
+    "component",
+    "field",
+    "logo",
+    "imageSlot",
+    "rect",
+    "grid",
+    "group",
+    "table",
+    "checkbox",
+    "signature",
+    "line",
+    "ellipse",
+    "arrow",
+    "polygon",
+    "star",
+    "diamond",
+    "hexagon",
+    "pentagon",
+    "boolean"
+  ],
+  "a4": {
+    "widthMm": 210,
+    "heightMm": 297
+  }
+}
