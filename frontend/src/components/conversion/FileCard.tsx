@@ -9,10 +9,12 @@ interface FileCardProps {
   onClick: (e: React.MouseEvent) => void;
   onDoubleClick: (e: React.MouseEvent) => void;
   onRemove: (e: React.MouseEvent) => void;
+  fileToken?: string;
+  file?: File;
   isVideo?: boolean;
 }
 
-export default React.memo(function FileCard({ path, selected, isPrimary, onClick, onDoubleClick, onRemove, isVideo = false }: FileCardProps) {
+export default React.memo(function FileCard({ path, selected, isPrimary, onClick, onDoubleClick, onRemove, fileToken, file, isVideo = false }: FileCardProps) {
   const filename = useMemo(() => path.split(/[\\/]/).pop() || path, [path]);
   const ext = useMemo(() => filename.slice(filename.lastIndexOf('.')).toUpperCase(), [filename]);
   const [showRemove, setShowRemove] = useState(false);
@@ -32,7 +34,7 @@ export default React.memo(function FileCard({ path, selected, isPrimary, onClick
       }`}
     >
       <div className="relative aspect-square bg-[var(--bg-elevated)] overflow-hidden">
-        <Thumbnail path={path} variant="card" />
+        <Thumbnail path={path} fileToken={fileToken} file={file} variant="card" />
 
         <div className="absolute right-2 bottom-2 px-1.5 py-0.5 rounded-md backdrop-blur-sm text-[9px] font-bold text-[var(--text-primary)]/90 uppercase tracking-wide" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 60%, transparent)' }}>
           {ext.replace('.', '')}

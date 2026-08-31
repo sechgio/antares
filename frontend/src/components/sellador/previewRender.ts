@@ -6,6 +6,7 @@ import {
   SELLADOR_PREVIEW_CACHE_MAX_BYTES,
 } from './lruMap';
 import { loadPdfDocument } from './pdfjs';
+import { stageFileForIpc } from '../../utils/stageFile';
 import {
   MAX_PREVIEW_PIXEL_WIDTH,
   MIN_PREVIEW_PIXEL_WIDTH,
@@ -29,11 +30,15 @@ function bucketContainerWidth(width: number): number {
 function otherPagesCacheKey(
   pdfPath: string | null,
   pdfBase64: string | null,
+  pdfFile: File | null,
   pageNum: number,
   containerW: number,
   stampRects: StampRect[],
 ): string {
-  const source = pdfPath ?? `b64:${pdfBase64?.length ?? 0}`;
+  const source = pdfPath
+    ?? (pdfFile
+      ? `file:${pdfFile.name}:${pdfFile.size}:${pdfFile.lastModified}`
+      : `b64:${pdfBase64?.length ?? 0}`);
   const stamp = stampRects.map((r) => `${r.x},${r.y},${r.width},${r.height}`).join('|') || 'none';
   return `${OTHER_PAGES_CACHE_VERSION}:${source}:${pageNum}:${containerW}:${stamp}`;
 }
@@ -141,10 +146,31 @@ export async function renderPageWithStampFromPath(
   return canvas.toDataURL('image/png');
 }
 
+async function renderPageWithStampFromFile(
+  pdfFile: File,
+  pageNum: number,
+  containerW: number,
+  stampUrl: string | null,
+  stampRects: StampRect[],
+  pageSize: PdfPageSize,
+): Promise<string> {
+  const fileToken = await stageFileForIpc(pdfFile);
+  if (!fileToken) throw new Error('No se pudo preparar el PDF para la vista previa.');
+  return renderPageWithStampFromPath(
+    fileToken,
+    pageNum,
+    containerW,
+    stampUrl,
+    stampRects,
+    pageSize,
+  );
+}
+
 export async function renderOtherPagesPreview(
   options: {
     pdfPath: string | null;
     pdfBase64: string | null;
+    pdfFile: File | null;
     pageCount: number;
     containerW: number;
     stampUrl: string | null;
@@ -158,6 +184,7 @@ export async function renderOtherPagesPreview(
   const {
     pdfPath,
     pdfBase64,
+    pdfFile,
     pageCount,
     containerW,
     stampUrl,
@@ -170,7 +197,7 @@ export async function renderOtherPagesPreview(
 
   const bucketedWidth = bucketContainerWidth(containerW);
   const previews: Array<{ pageNum: number; url: string; stampCount: number }> = [];
-  const pdf = pdfPath ? null : await loadPdfDocument(pdfBase64!);
+  const pdf = pdfPath || !pdfBase64 ? null : await loadPdfDocument(pdfBase64);
   let lastReportedCount = 0;
 
   const reportProgress = (force = false) => {
@@ -191,6 +218,7 @@ export async function renderOtherPagesPreview(
       const cacheKey = otherPagesCacheKey(
         pdfPath,
         pdfBase64,
+        pdfFile,
         pageNum,
         bucketedWidth,
         stampRects,
@@ -206,6 +234,15 @@ export async function renderOtherPagesPreview(
             stampRects,
             pageSize,
           )
+          : !pdfBase64 && pdfFile
+            ? await renderPageWithStampFromFile(
+              pdfFile,
+              pageNum,
+              bucketedWidth,
+              stampUrl,
+              stampRects,
+              pageSize,
+            )
           : await renderPageWithStampFromPdf(
             pdf!,
             pageNum,

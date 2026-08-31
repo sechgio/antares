@@ -19,7 +19,8 @@ import {
   takePendingHistoryReexecute,
 } from '../history/historyEvents';
 import type { HistoryRun } from '../history/RunList';
-import { registerLocalPaths } from '../../utils/registerLocalPath';
+import { getElectronFilePath } from '../../utils/pdfAssets';
+import { useConversionFileRefs } from './useConversionFileRefs';
 
 export default function ConversionView() {
   const [files, setFiles] = useState<string[]>([]);
@@ -68,8 +69,30 @@ export default function ConversionView() {
   const { state: runnerState, status, running, pollStatus, pollError, startProcess, cancelProcess } = useProcessRunner();
   const { addToast } = useToast();
   const { confirm } = useDialog();
+  const {
+    clearFileRefs,
+    fileObjects,
+    fileRefsReady,
+    fileTokens,
+    hasStagingBridge: hasFileStagingBridge,
+    mergeFiles: mergeFileRefs,
+    removeFileRefs,
+    resolveFileRefs,
+  } = useConversionFileRefs(files);
   const defaultsLockedRef = useRef(false);
   const applyHistoryGenRef = useRef(0);
+
+  const mergeFiles = useCallback((incoming: string[], incomingTokens: string[] = [], incomingFiles: File[] = []) => {
+    if (!incoming.length) return;
+    mergeFileRefs(incoming, incomingTokens, incomingFiles);
+    setFiles((previous) => {
+      if (previous.length === 0) return incoming;
+      const existing = new Set(previous);
+      const additions = incoming.filter((filePath) => !existing.has(filePath));
+      return additions.length ? [...previous, ...additions] : previous;
+    });
+    setSelectedFile((previous) => previous || incoming[0]);
+  }, [mergeFileRefs, setSelectedFile]);
 
   const namingPresets = useMemo(() => {
     return patterns.length > 0 ? patterns : buildDefaultPresets(fields);
@@ -82,7 +105,7 @@ export default function ConversionView() {
   const keyColumnReady = !usarRename || mappingMode || dbColumns.length === 0 || (Boolean(keyColumn) && dbColumns.includes(keyColumn));
   const noMappingCollisions = !mappingMode || (mappingResult?.collisions.length ?? 0) === 0;
   const outputReady = destino.trim().length > 0;
-  const allReady = filesReady && optionsReady && renameReady && keyColumnReady && noMappingCollisions && outputReady;
+  const allReady = filesReady && fileRefsReady && optionsReady && renameReady && keyColumnReady && noMappingCollisions && outputReady;
 
   const currentConfig: ConversionConfig = useMemo(() => ({
     formato, calidad, conversionEnabled, resizeEnabled, resizeAncho, resizeAlto,
@@ -123,6 +146,7 @@ export default function ConversionView() {
       if (gen !== applyHistoryGenRef.current) return;
 
       setFiles(f);
+      clearFileRefs();
       setFormato((options.formato as string) || 'JPEG');
       // Use nullish coalescing so calidad=0 is preserved if ever stored.
       setCalidad(typeof options.calidad === 'number' ? options.calidad : 95);
@@ -170,7 +194,7 @@ export default function ConversionView() {
       const isMappingRun = options.mapping_mode === true || options.rename_source === 'mapping';
       const savedMappingPath = typeof options.mapping_path === 'string' ? options.mapping_path : '';
 
-      if (isMappingRun && savedMappingPath) {
+      if (isMappingRun && savedMappingPath && !hasFileStagingBridge) {
         try {
           const savedIdColumn = typeof options.id_column === 'string' ? options.id_column : '';
           const savedRenameColumn = typeof options.rename_column === 'string' ? options.rename_column : '';
@@ -194,6 +218,11 @@ export default function ConversionView() {
             type: 'error',
           });
         }
+      } else if (isMappingRun && savedMappingPath && hasFileStagingBridge) {
+        addToast({
+          message: 'El historial no conserva permisos de lectura. Vuelve a cargar el Excel y los archivos para reejecutar.',
+          type: 'info',
+        });
       }
 
       if (gen !== applyHistoryGenRef.current) return;
@@ -208,7 +237,7 @@ export default function ConversionView() {
       }
       applyResize();
     })();
-  }, [addToast]);
+  }, [addToast, clearFileRefs, hasFileStagingBridge]);
 
   useEffect(() => {
     // Consume payload buffered while ConversionView was unmounted (other tab).
@@ -290,23 +319,9 @@ export default function ConversionView() {
     });
   }, [pollError, addToast]);
 
-  const mergeFiles = useCallback((incoming: string[]) => {
-    if (!incoming.length) return;
-    // For large incoming batches, avoid the O(n) Set scan of the entire
-    // existing list by using a Set for dedup and converting back to array.
-    setFiles((prev) => {
-      if (prev.length === 0) return incoming;
-      const existing = new Set(prev);
-      const newItems = incoming.filter((f) => !existing.has(f));
-      return newItems.length ? [...prev, ...newItems] : prev;
-    });
-    setSelectedFile((prev) => prev || incoming[0]);
-  }, []);
-
   const addFiles = async () => {
     const r = await api.dialogFiles();
-    registerLocalPaths(r.paths);
-    mergeFiles(r.paths);
+    mergeFiles(r.paths, r.file_tokens);
   };
 
   const clearMapping = useCallback(() => {
@@ -329,7 +344,7 @@ export default function ConversionView() {
       if (!mappingPath || !idColumn || !renameColumn) return;
       const token = ++mappingReloadToken.current;
       try {
-        const result = await api.dbParseMapping(mappingPath, files, idColumn, renameColumn);
+        const result = await api.dbParseMapping(mappingPath, await resolveFileRefs(files), idColumn, renameColumn);
         if (token !== mappingReloadToken.current) return; // a newer change superseded us
         setMappingData(result.mapping);
         setMappingColumns(result.columns ?? []);
@@ -340,10 +355,17 @@ export default function ConversionView() {
         addToast({ message: err instanceof Error ? err.message : String(err), type: 'error' });
       }
     },
-    [mappingPath, files, addToast],
+    [mappingPath, files, resolveFileRefs, addToast],
   );
 
-  const importDatabaseExcel = async (excelPath: string) => {
+  const importDatabaseExcel = async (excelPath: string, excelToken?: string) => {
+    if (hasFileStagingBridge && !excelToken?.startsWith('antares-read_')) {
+      addToast({
+        message: 'El diálogo no entregó un permiso de lectura para el Excel. Vuelve a seleccionarlo.',
+        type: 'error',
+      });
+      return;
+    }
     if (dbColumns.length > 0 || dbRecords.length > 0 || mappingMode) {
       const proceed = await confirm({
         title: 'Reemplazar base de datos',
@@ -358,10 +380,11 @@ export default function ConversionView() {
     // Detect mapping Excel (ID + RENOMBRE columns) before falling back to catalog import.
     // Also runs when files is empty so a mapping workbook is not forced into SQLite catalog.
     try {
-      const result = await api.dbParseMapping(excelPath, files);
+      const mappingRef = excelToken ?? excelPath;
+      const result = await api.dbParseMapping(mappingRef, await resolveFileRefs(files));
       if (result.mapping && Object.keys(result.mapping).length > 0) {
         clearMapping();
-        setMappingPath(excelPath);
+        setMappingPath(mappingRef);
         setMappingData(result.mapping);
         setMappingColumns(result.columns ?? []);
         setMappingIdColumn(result.id_column ?? '');
@@ -388,7 +411,7 @@ export default function ConversionView() {
       // Schema mismatch → not a mapping Excel, fall through to catalog import.
     }
     try {
-      const result = await api.importExcel(excelPath);
+      const result = await api.importExcel(excelToken ?? excelPath);
       clearMapping();
       await loadDbColumns();
       setRenameSource('catalog');
@@ -408,7 +431,13 @@ export default function ConversionView() {
   // changes never stack concurrent api.preview calls on the Python process.
   const previewToken = useRef(0);
   const previewInFlightRef = useRef(false);
-  const previewQueuedArgsRef = useRef<{ body: PreviewBody; token: number } | null>(null);
+  type ResolveFileRefs = (paths: string[]) => Promise<string[]>;
+  const previewQueuedArgsRef = useRef<{
+    files: string[];
+    body: Omit<PreviewBody, 'files'>;
+    token: number;
+    resolveFileRefs: ResolveFileRefs;
+  } | null>(null);
   // After auto-detect applies setKeyColumn, skip the effect re-run that would
   // otherwise fire an identical second preview (keyColumn is still in deps so
   // manual UI changes re-fetch).
@@ -419,6 +448,14 @@ export default function ConversionView() {
 
   useEffect(() => {
     if (!usarRename || files.length === 0) {
+      setRenamePreview([]);
+      setPreviewTruncated(false);
+      setPreviewTotalFiles(null);
+      previewQueuedArgsRef.current = null;
+      return undefined;
+    }
+
+    if (!fileRefsReady) {
       setRenamePreview([]);
       setPreviewTruncated(false);
       setPreviewTotalFiles(null);
@@ -439,16 +476,14 @@ export default function ConversionView() {
     const previewFiles = clientTruncated ? files.slice(0, PREVIEW_SAMPLE_LIMIT) : files;
     const clientTotalFiles = files.length;
 
-    const body: PreviewBody = mappingMode && mappingData
+    const body: Omit<PreviewBody, 'files'> = mappingMode && mappingData
       ? {
-          files: previewFiles,
           patron: '{renombre}{ext}',
           secuencia: 1,
           use_filename_seq: false,
           mapping: mappingData,
         }
       : {
-          files: previewFiles,
           patron,
           secuencia,
           use_filename_seq: useFilenameSeq,
@@ -460,9 +495,18 @@ export default function ConversionView() {
           destino: destino.trim() || undefined,
         };
 
-    const runPreview = async (requestBody: PreviewBody, requestToken: number): Promise<void> => {
+    const runPreview = async (
+      requestFiles: string[],
+      bodyWithoutFiles: Omit<PreviewBody, 'files'>,
+      requestToken: number,
+      resolveFileRefs: ResolveFileRefs,
+    ): Promise<void> => {
       previewInFlightRef.current = true;
       try {
+        const requestBody: PreviewBody = {
+          ...bodyWithoutFiles,
+          files: await resolveFileRefs(requestFiles),
+        };
         const result = await api.preview(requestBody);
         if (requestToken !== previewToken.current) return;
         setRenamePreview(result.preview);
@@ -498,7 +542,7 @@ export default function ConversionView() {
         const queued = previewQueuedArgsRef.current;
         if (queued && queued.token === previewToken.current) {
           previewQueuedArgsRef.current = null;
-          void runPreview(queued.body, queued.token);
+          void runPreview(queued.files, queued.body, queued.token, queued.resolveFileRefs);
         } else if (queued && queued.token !== previewToken.current) {
           // Superseded by a newer effect schedule — drop stale queue entry.
           previewQueuedArgsRef.current = null;
@@ -508,14 +552,19 @@ export default function ConversionView() {
 
     const timer = window.setTimeout(() => {
       if (previewInFlightRef.current) {
-        previewQueuedArgsRef.current = { body, token };
+        previewQueuedArgsRef.current = {
+          files: previewFiles,
+          body,
+          token,
+          resolveFileRefs,
+        };
         return;
       }
-      void runPreview(body, token);
+      void runPreview(previewFiles, body, token, resolveFileRefs);
     }, 600);
 
     return () => window.clearTimeout(timer);
-  }, [files, usarRename, mappingMode, mappingData, patron, secuencia, useFilenameSeq, keyColumn, wordSeparator, sequenceMode, dbColumns.length, destino, addToast]);
+  }, [files, fileRefsReady, usarRename, mappingMode, mappingData, patron, secuencia, useFilenameSeq, keyColumn, wordSeparator, sequenceMode, dbColumns.length, destino, resolveFileRefs, addToast]);
 
   const loadDbColumns = async () => {
     try {
@@ -530,7 +579,7 @@ export default function ConversionView() {
     }
   };
 
-  const addFolder = useCallback((paths: string[]) => mergeFiles(paths), [mergeFiles]);
+  const addFolder = useCallback((paths: string[], tokens?: string[]) => mergeFiles(paths, tokens), [mergeFiles]);
 
   const selectDest = async () => {
     const r = await api.dialogDest();
@@ -542,7 +591,12 @@ export default function ConversionView() {
     if (!enabled) { setResizeAncho(''); setResizeAlto(''); }
   };
 
-  const clearFiles = () => { setFiles([]); setSelectedFile(null); setSelectedFiles(new Set()); };
+  const clearFiles = () => {
+    setFiles([]);
+    clearFileRefs();
+    setSelectedFile(null);
+    setSelectedFiles(new Set());
+  };
 
   const insertVar = (v: string) => {
     setNamingMode('custom');
@@ -571,7 +625,7 @@ export default function ConversionView() {
     if (!allReady || running) return;
     try {
       const result = await startProcess({
-        files, destino, formato, calidad,
+        files: await resolveFileRefs(files), destino, formato, calidad,
         conversion_enabled: conversionEnabled,
         resize_ancho: parsePositiveInt(resizeAncho),
         resize_alto: parsePositiveInt(resizeAlto),
@@ -600,6 +654,7 @@ export default function ConversionView() {
   };
 
   const removeFile = useCallback((path: string) => {
+    removeFileRefs([path]);
     setFiles((prev) => {
       const next = prev.filter((p) => p !== path);
       setSelectedFile((selected) => {
@@ -614,6 +669,7 @@ export default function ConversionView() {
 
   const removeSelectedFiles = useCallback(() => {
     const cur = selectedFilesRef.current;
+    removeFileRefs(cur);
     setFiles((prev) => {
       const next = prev.filter((p) => !cur.has(p));
       setSelectedFile((selected) => (selected && next.includes(selected) ? selected : next[0] || null));
@@ -650,37 +706,17 @@ export default function ConversionView() {
   const onDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
-    // Electron 32+ removed File.path; resolve via the webUtils bridge.
     const fileList = Array.from(e.dataTransfer.files);
-    const dropped = fileList
-      .map((f) => window.electronAPI?.getPathForFile(f) ?? '')
-      .filter((p) => p.length > 0);
-    if (fileList.length > 0 && dropped.length === 0) {
-      addToast({
-        message: 'No se pudieron resolver las rutas de los archivos. Usa el selector de archivos.',
-        type: 'error',
-      });
-      try {
-        const r = await api.dialogFiles();
-        if (r.paths.length > 0) {
-          registerLocalPaths(r.paths);
-          mergeFiles(r.paths);
-        }
-      } catch (err) {
-        addToast({
-          message: err instanceof Error ? err.message : 'Error al seleccionar archivos',
-          type: 'error',
-        });
-      }
-      return;
-    }
-    if (dropped.length) {
-      registerLocalPaths(dropped);
-      mergeFiles(dropped);
-    }
-  }, [mergeFiles, addToast]);
+    if (fileList.length === 0) return;
 
-  const onPasteFiles = useCallback((paths: string[]) => { mergeFiles(paths); }, [mergeFiles]);
+    const dropped = fileList.map((file) => getElectronFilePath(file) || file.name);
+    mergeFiles(dropped, [], fileList);
+  }, [mergeFiles]);
+
+  const onPasteFiles = useCallback((fileList: File[]) => {
+    const pasted = fileList.map((file) => getElectronFilePath(file) || file.name);
+    mergeFiles(pasted, [], fileList);
+  }, [mergeFiles]);
 
   const videoCount = videoFiles.size;
   const imageCount = files.length - videoCount;
@@ -797,6 +833,8 @@ export default function ConversionView() {
                   onFileClick={handleFileClick}
                   onFileDoubleClick={handleFileDoubleClick}
                   onRemoveFile={removeFile}
+                  fileTokens={fileTokens}
+                  fileObjects={fileObjects}
                   videoFiles={videoFiles}
                 />
               </div>

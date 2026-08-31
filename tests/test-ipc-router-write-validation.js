@@ -231,10 +231,64 @@ async function run() {
       resolvedImages.localImagePaths['antares-local-image:photo'] === stagedCap.path,
       'localImagePaths staged token se resuelve a ruta real',
     );
+
+    // 11) Real backend payloads resolve read tokens at every declared nested
+    // read location without treating filenames or data URLs as paths.
+    const nestedPayload = {
+      files: [stagedCap.token],
+      image_paths: { 'foto.jpg': stagedCap.token },
+      images: [{ path: stagedCap.token, name: '../display-name.jpg' }],
+      images_by_id: {
+        informe: [{ path: stagedCap.token, name: '../display-name.jpg' }],
+      },
+      optimizer_files: [{ filename: '../display-name.jpg', content_b64: 'Li4v' }],
+      localImagePaths: {
+        'antares-local-image:data': 'data:image/jpeg;base64,../not-a-filesystem-path',
+      },
+    };
+    const nestedPayloadSnapshot = JSON.stringify(nestedPayload);
+    const nestedResolved = router2._maybeResolveFileTokens(
+      nestedPayload,
+      { webContents: { id: 1 } },
+    );
+    assert(nestedResolved.files[0] === stagedCap.path, 'files[] staged token se resuelve a ruta real');
+    assert(nestedResolved.image_paths['foto.jpg'] === stagedCap.path, 'image_paths token se resuelve a ruta real');
+    assert(nestedResolved.images[0].path === stagedCap.path, 'images[].path staged token se resuelve a ruta real');
+    assert(nestedResolved.images[0].name === '../display-name.jpg', 'nombre en images[] no se interpreta como ruta');
+    assert(nestedResolved.images_by_id.informe[0].path === stagedCap.path, 'images_by_id.*.path token se resuelve a ruta real');
+    assert(nestedResolved.images_by_id.informe[0].name === '../display-name.jpg', 'nombre de imagen no se interpreta como ruta');
+    assert(nestedResolved.optimizer_files[0].filename === '../display-name.jpg', 'filename del optimizador no se interpreta como ruta');
+    assert(
+      nestedResolved.localImagePaths['antares-local-image:data'] === 'data:image/jpeg;base64,../not-a-filesystem-path',
+      'data URI de localImagePaths se conserva aunque contenga traversal textual',
+    );
+    assert(nestedResolved !== nestedPayload, 'resolver devuelve un payload separado');
+    assert(JSON.stringify(nestedPayload) === nestedPayloadSnapshot, 'resolver no muta el payload original');
+
+    let nestedRawRejected = false;
+    try {
+      router2._maybeResolveFileTokens({ image_paths: { 'foto.jpg': stagedCap.path } }, { webContents: { id: 1 } });
+    } catch (e) {
+      nestedRawRejected = /raw absolute paths not allowed/.test(e.message);
+    }
+    assert(nestedRawRejected, 'raw image_paths absolute path is rejected');
+
+    const legacyOutputPath = path.join(customDir, 'catalog-export.xlsx');
+    const legacyOutputParams = router2._maybeResolveFileTokens(
+      { path: legacyOutputPath },
+      null,
+      'db_export',
+    );
+    assert(
+      legacyOutputParams.path === legacyOutputPath,
+      'legacy db_export path remains a write target',
+    );
+
     const stagedTokens = router2._collectStagedTokens(
       'canvas_export_cmyk_pdf',
-      { localImagePaths: { 'antares-local-image:photo': stagedCap.token } },
+      nestedPayload,
     );
+    assert(stagedTokens.length === 1 && stagedTokens[0] === stagedCap.token, 'staged tokens are collected from nested read fields');
     await router2._cleanupStagedTokens(stagedTokens, 1);
     assert(!fs.existsSync(stagedCap.path), 'staged token nested se elimina después de la operación');
 

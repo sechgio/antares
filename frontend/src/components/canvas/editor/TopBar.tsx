@@ -1,5 +1,5 @@
 import { memo, type ReactNode } from 'react';
-import { Copy, Keyboard, Lock, Redo2, Undo2, Unlock } from 'lucide-react';
+import { Copy, Keyboard, Lock, Redo2, Undo2, Unlock, Upload } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import type { CanvasMode } from '../types';
 import BrandFace from './BrandFace';
@@ -25,6 +25,8 @@ interface TopBarProps {
   onRedo: () => void;
   onSave: () => void;
   onDuplicate: () => void;
+  onImportPdf?: () => void;
+  importDisabled?: boolean;
   /** Design-mode UI chrome lock (panels stay put). */
   uiLocked?: boolean;
   onToggleUiLock?: () => void;
@@ -67,6 +69,8 @@ function TopBar({
   onRedo,
   onSave,
   onDuplicate,
+  onImportPdf,
+  importDisabled = false,
   uiLocked = false,
   onToggleUiLock,
   leftPanelOpen = true,
@@ -134,6 +138,19 @@ function TopBar({
             <Copy className="h-3.5 w-3.5" />
           </button>
         </WithHoverTooltip>
+        {onImportPdf ? (
+          <WithHoverTooltip label="Importar PDF" placement="bottom" variant="dark">
+            <button
+              type="button"
+              className="canvas-icon-btn"
+              onClick={onImportPdf}
+              disabled={importDisabled}
+              aria-label="Importar PDF"
+            >
+              <Upload className="h-3.5 w-3.5" />
+            </button>
+          </WithHoverTooltip>
+        ) : null}
         {mode === 'design' && onToggleShortcuts && (
           <WithHoverTooltip label="Atajos" shortcut="?" placement="bottom" variant="dark">
             <button

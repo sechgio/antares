@@ -210,7 +210,7 @@ export default function GeneratePanel({
           }
           urls = sources.map((s) => s.src);
           for (const s of sources) {
-            if (s.token && s.localPath) localImagePaths[s.token] = s.localPath;
+            if (s.token && s.fileToken) localImagePaths[s.token] = s.fileToken;
           }
           // PDF path needs durable data: URLs — blob: is session-local. In RGB
           // mode a local logo File becomes an antares-local-image: token

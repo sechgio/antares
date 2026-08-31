@@ -1,12 +1,11 @@
 import { base64ToBytes } from './bytesToBase64';
-import { registerLocalPath } from './registerLocalPath';
 import { stageFileForIpc } from './stageFile';
 
 export type PdfQuality = 'max' | 'high' | 'low';
 
 export interface PdfImageSource {
   src: string;
-  localPath?: string;
+  fileToken?: string;
   token?: string;
 }
 
@@ -43,34 +42,27 @@ function runStagedLimited<T>(fn: () => Promise<T>): Promise<T> {
   });
 }
 
-/** Un archivo temporal por objeto File (los paneles duplicados comparten el mismo File). */
-const stagedFileTokens = new WeakMap<File, Promise<string | null>>();
-
 function stageFileForPdf(file: File): Promise<string | null> {
+  // Read capabilities are revoked after each IPC operation. Do not cache a
+  // token by File identity or a later export would reuse a dead capability.
   const dot = file.name.lastIndexOf('.');
   const ext = dot >= 0 ? file.name.slice(dot).toLowerCase() : '';
   if (!STAGEABLE_IMAGE_EXTENSIONS.has(ext)) return Promise.resolve(null);
-  const cached = stagedFileTokens.get(file);
-  if (cached) return cached;
-  const queued = runStagedLimited(async () => {
-    try {
-      return await stageFileForIpc(file);
-    } catch {
-      return null;
-    }
-  });
-  const pending = queued.catch((error: unknown) => {
-    if (error instanceof Error && error.message === PDF_STAGE_CAPACITY_ERROR) throw error;
-    return null;
-  });
-  stagedFileTokens.set(file, pending);
-  void queued.catch(() => {
-    if (stagedFileTokens.get(file) === pending) stagedFileTokens.delete(file);
-  });
-  return pending;
+  return runStagedLimited(() => stageFileForIpc(file));
 }
 
 export function fileToDataUrl(file: File): Promise<string> {
+  if (typeof FileReader === 'undefined' && typeof file.arrayBuffer === 'function') {
+    return file.arrayBuffer().then(bytes => {
+      let binary = '';
+      const chunkSize = 0x8000;
+      for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {
+        binary += String.fromCharCode(...new Uint8Array(bytes, offset, Math.min(chunkSize, bytes.byteLength - offset)));
+      }
+      return `data:${file.type || 'application/octet-stream'};base64,${btoa(binary)}`;
+    });
+  }
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ''));
@@ -126,16 +118,8 @@ export async function fileToPdfImageSource(
   key: string,
   localImagePaths: Record<string, string>,
 ): Promise<string> {
-  const localPath = getElectronFilePath(file);
-  if (localPath && (await registerLocalPath(localPath))) {
-    const token = buildLocalImageToken(key);
-    localImagePaths[token] = localPath;
-    return token;
-  }
-  // register_local_path está deprecado en main. Las fotos sin ruta registrable
-  // (persistidas en IndexedDB, blobs) se escenifican en un temp file de main y
-  // el HTML referencia el capability token: el HTML no crece con la cantidad de
-  // fotos y no toca el límite de payload IPC.
+  // Always stage local files before handing them to native PDF rendering.
+  // Raw paths are deliberately not registered or sent over IPC.
   const staged = await stageFileForPdf(file);
   if (staged) {
     const token = buildLocalImageToken(key);
@@ -228,26 +212,20 @@ export async function imageToPdfSource(
   quality: PdfQuality,
   key: string,
 ): Promise<PdfImageSource> {
-  // register_local_path está deprecado en main. Se escenifica el archivo (o su
-  // versión comprimida según la calidad) y el HTML referencia el capability
+  // Main no acepta rutas registradas. Se escenifica el archivo, o su versión
+  // comprimida según la calidad, y el HTML referencia el capability
   // token: el HTML no crece con la cantidad de imágenes (consolidados de
   // cientos de fotos reventaban el límite de 150 MB de html_to_pdf).
   const staged = await stageImageForPdf(file, quality);
   if (staged) {
     const token = buildLocalImageToken(key);
-    return { src: token, localPath: staged, token };
+    return { src: token, fileToken: staged, token };
   }
 
   if (quality === 'max' || quality === 'high') {
-    const localPath = getElectronFilePath(file);
-    if (localPath) {
-      if (await registerLocalPath(localPath)) {
-        const token = buildLocalImageToken(key);
-        return { src: token, localPath, token };
-      }
-      // Register failed — never fall back to full-res max over IPC.
-      return { src: await imageToPdfDataUrl(file, quality === 'max' ? 'high' : quality) };
-    }
+    // Never fall back to a raw local path. A data URL is safe even when the
+    // renderer is running outside Electron or staging is unavailable.
+    return { src: await imageToPdfDataUrl(file, quality === 'max' ? 'high' : quality) };
   }
 
   return { src: await imageToPdfDataUrl(file, quality) };
@@ -271,10 +249,10 @@ export async function logoToPdfSource(
 ): Promise<string | null> {
   if (!url) return null;
   if (useLocalTokens && file) {
-    const localPath = getElectronFilePath(file);
-    if (localPath && (await registerLocalPath(localPath))) {
+    const staged = await stageFileForPdf(file);
+    if (staged) {
       const token = buildLocalImageToken(key);
-      localImagePaths[token] = localPath;
+      localImagePaths[token] = staged;
       return token;
     }
   }

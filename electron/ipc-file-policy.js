@@ -144,7 +144,24 @@ function maybeResolveFileTokens(params, win, method) {
     allowRawAbsolutePathKeys,
   });
   const webContentsId = win && win.webContents ? win.webContents.id : null;
-  const schemas = READ_FILE_TOKEN_SCHEMAS.get(method) || [];
+  let schemas;
+  if (typeof method === 'string' && READ_FILE_TOKEN_SCHEMAS.has(method)) {
+    schemas = READ_FILE_TOKEN_SCHEMAS.get(method);
+  } else if (!method) {
+    const seen = new Set();
+    schemas = [];
+    for (const v of READ_FILE_TOKEN_SCHEMAS.values()) {
+      for (const s of v) {
+        const key = JSON.stringify(s);
+        if (!seen.has(key)) {
+          seen.add(key);
+          schemas.push(s);
+        }
+      }
+    }
+  } else {
+    schemas = [];
+  }
   let next = params;
   for (const schema of schemas) {
     const allowLogical = schema[0] === 'localImagePaths' || schema[0] === 'images' || schema[0] === 'images_by_id';
@@ -232,8 +249,14 @@ function collectStagedTokens(method, params) {
   if (!params || typeof params !== 'object') return [];
 
   const candidates = [];
-  for (const schema of READ_FILE_TOKEN_SCHEMAS.get(method) || []) {
-    collectSchemaValues(params, schema, candidates);
+  const seenSchemas = new Set();
+  for (const schemas of READ_FILE_TOKEN_SCHEMAS.values()) {
+    for (const schema of schemas) {
+      const key = JSON.stringify(schema);
+      if (seenSchemas.has(key)) continue;
+      seenSchemas.add(key);
+      collectSchemaValues(params, schema, candidates);
+    }
   }
   for (const key of LEGACY_READ_TOKEN_KEYS) candidates.push(params[key]);
   if (Array.isArray(params.file_tokens)) candidates.push(...params.file_tokens);

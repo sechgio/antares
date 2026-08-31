@@ -740,8 +740,8 @@ export default function PreviewPanelView() {
           imageToPdfSource(img, pdfQuality, `row-${item.rowIndex}-img-${imageIndex}`)
         );
         imageSources.forEach(source => {
-          if (source.token && source.localPath) {
-            localImagePaths[source.token] = source.localPath;
+          if (source.token && source.fileToken) {
+            localImagePaths[source.token] = source.fileToken;
           }
         });
         return renderPreviewHtml({

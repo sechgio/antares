@@ -71,9 +71,16 @@ function expandCmykDocument(
 export async function exportCanvasPdf(
   options: ExportCanvasPdfOptions,
 ): Promise<{ saved_path?: string; filename: string; pdf_base64?: string }> {
-  const { prepareDocumentImagesForExport } = await import('../utils/imageBlobStore');
+  const { prepareDocumentImagesForExport, serializeDocumentImages } = await import('../utils/imageBlobStore');
+  const { serializeCanvasManifest } = await import('../import/pdfManifest');
   const mode = options.colorMode === 'cmyk' ? 'cmyk' : 'rgb';
-  const document = await prepareDocumentImagesForExport(options.document, { mode });
+  // Persist image refs once for both export preparation and the semantic
+  // manifest. This avoids a second asset-store round trip for the same blob.
+  const manifestDocument = await serializeDocumentImages(options.document, {
+    preferAssetRefs: true,
+  });
+  const document = await prepareDocumentImagesForExport(manifestDocument, { mode });
+  const canvasManifestB64 = await serializeCanvasManifest(manifestDocument);
 
   if (options.colorMode === 'cmyk') {
     const expanded = expandCmykDocument(document, options.contexts);
@@ -88,6 +95,7 @@ export async function exportCanvasPdf(
       filename: options.filename,
       outputPath: options.outputPath,
       localImagePaths: options.localImagePaths,
+      canvas_manifest_b64: canvasManifestB64,
     });
   }
 
@@ -105,5 +113,6 @@ export async function exportCanvasPdf(
     filename: options.filename,
     outputPath: options.outputPath,
     localImagePaths: options.localImagePaths,
+    canvas_manifest_b64: canvasManifestB64,
   });
 }

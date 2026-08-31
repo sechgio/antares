@@ -16,6 +16,7 @@ const POSITION_COLORS = [
 interface StampPlacementEditorProps {
   pdfBase64?: string | null;
   pdfPath?: string | null;
+  pdfFile?: File | null;
   stampUrl: string;
   positions: StampPosition[];
   activeIndex: number;
@@ -27,6 +28,7 @@ interface StampPlacementEditorProps {
 export default function StampPlacementEditor({
   pdfBase64,
   pdfPath,
+  pdfFile,
   stampUrl,
   positions,
   activeIndex,
@@ -212,6 +214,7 @@ export default function StampPlacementEditor({
       <PdfPagePreview
         pdfBase64={pdfBase64}
         pdfPath={pdfPath}
+        pdfFile={pdfFile}
         width={previewWidth}
         overlay={(
           <>

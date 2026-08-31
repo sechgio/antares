@@ -206,6 +206,7 @@ def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
     bleed_mm = float(params.get("bleed_mm") or 0.0)
     show_crop_marks = bool(params.get("show_crop_marks", False))
     pair_context_pages = bool(params.get("pair_context_pages", False))
+    canvas_manifest_b64 = params.get("canvas_manifest_b64")
     filename = sanitizar_nombre(Path(str(params.get("filename") or "canvas_cmyk.pdf")).name) or "canvas_cmyk.pdf"
     if not filename.lower().endswith(".pdf"):
         filename += ".pdf"
@@ -220,6 +221,7 @@ def canvas_export_cmyk_pdf(params: dict[str, Any]) -> dict[str, Any]:
         bleed_mm=bleed_mm,
         show_crop_marks=show_crop_marks,
         pair_context_pages=pair_context_pages,
+        canvas_manifest_b64=canvas_manifest_b64,
     )
     pdf_bytes = renderer.render(local_image_paths=local_image_paths)
 

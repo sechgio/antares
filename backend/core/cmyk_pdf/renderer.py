@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import logging
 import math
 import os
@@ -27,6 +28,9 @@ logger = logging.getLogger(__name__)
 MM_TO_PT = 72.0 / 25.4  # ~2.834645669 pt per mm
 _CANVAS_ASSET_RE = re.compile(r"^canvas-asset:([a-fA-F0-9]{32,128})$")
 _DATA_URL_RE = re.compile(r"^data:([^;,]+)?(;base64)?,(.*)$", re.DOTALL)
+_CANVAS_MANIFEST_FILENAME = "antares-canvas-manifest.json"
+_MAX_CANVAS_MANIFEST_BYTES = 2 * 1024 * 1024
+_MAX_CANVAS_MANIFEST_B64_CHARS = ((_MAX_CANVAS_MANIFEST_BYTES + 2) // 3) * 4
 
 _FONT_MAP: dict[str, str] = {
     "sans-serif": "helv",
@@ -49,6 +53,34 @@ _TEXT_ALIGN: dict[str, int] = {
     "right": fitz.TEXT_ALIGN_RIGHT,
     "justify": fitz.TEXT_ALIGN_JUSTIFY,
 }
+
+
+def _decode_canvas_manifest(value: Any) -> bytes | None:
+    """Validate the small semantic attachment before it enters the PDF."""
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str):
+        raise ValueError("canvas_manifest_b64 must be a base64 string")
+    if len(value) > _MAX_CANVAS_MANIFEST_B64_CHARS:
+        raise ValueError("Canvas manifest exceeds the 2 MiB limit")
+    try:
+        raw = base64.b64decode(value, validate=True)
+    except Exception as exc:
+        raise ValueError("canvas_manifest_b64 is not valid base64") from exc
+    if not raw or len(raw) > _MAX_CANVAS_MANIFEST_BYTES:
+        raise ValueError("Canvas manifest exceeds the 2 MiB limit")
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception as exc:
+        raise ValueError("Canvas manifest is not valid UTF-8 JSON") from exc
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema") != "antares.canvas.pdf"
+        or payload.get("version") != 1
+        or not isinstance(payload.get("document"), dict)
+    ):
+        raise ValueError("Canvas manifest schema is invalid")
+    return raw
 
 
 def _parse_rotate_deg(css_vars: dict[str, Any]) -> float:
@@ -304,6 +336,7 @@ class CanvasCmykRenderer:
         bleed_mm: float = 0.0,
         show_crop_marks: bool = False,
         pair_context_pages: bool = False,
+        canvas_manifest_b64: str | None = None,
     ) -> None:
         self.document = document
         self.contexts = contexts or [{}]
@@ -311,6 +344,7 @@ class CanvasCmykRenderer:
         self.dpi = max(150, min(1200, dpi))
         self.bleed_mm = max(0.0, bleed_mm)
         self.show_crop_marks = show_crop_marks
+        self.canvas_manifest_b64 = canvas_manifest_b64
         # When True and len(contexts)==len(pages), pair context[i] with page i.
         # Otherwise keep legacy cartesian product (N contexts x M pages).
         self.pair_context_pages = pair_context_pages
@@ -394,6 +428,15 @@ class CanvasCmykRenderer:
 
                 shape.commit()
 
+            manifest = _decode_canvas_manifest(self.canvas_manifest_b64)
+            if manifest is not None:
+                pdf.embfile_add(
+                    _CANVAS_MANIFEST_FILENAME,
+                    manifest,
+                    filename=_CANVAS_MANIFEST_FILENAME,
+                    ufilename=_CANVAS_MANIFEST_FILENAME,
+                    desc="Antares Canvas document manifest",
+                )
             return cast(bytes, pdf.tobytes(clean=True, deflate=True))
         finally:
             pdf.close()

@@ -1,28 +1,12 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { safeBase64ToBytes } from '../formatos/base64';
+import { ensurePdfJs } from '../../lib/pdfjs';
+export { ensurePdfJs } from '../../lib/pdfjs';
 import {
   MAX_PREVIEW_PIXEL_WIDTH,
   MIN_PREVIEW_PIXEL_WIDTH,
 } from './previewDpi';
 import type { PdfPageSize } from './utils';
-
-let pdfjsLib: typeof import('pdfjs-dist') | null = null;
-let pdfWorkerUrl: string | null = null;
-
-export async function ensurePdfJs() {
-  if (pdfjsLib) return pdfjsLib;
-  const pdfjs = await import('pdfjs-dist');
-  if (!pdfWorkerUrl) {
-    try {
-      pdfWorkerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url') as { default: string }).default;
-    } catch {
-      pdfWorkerUrl = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
-    }
-  }
-  if (pdfWorkerUrl) pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-  pdfjsLib = pdfjs;
-  return pdfjs;
-}
 
 export async function loadPdfDocument(pdfBase64: string) {
   const pdfjs = await ensurePdfJs();

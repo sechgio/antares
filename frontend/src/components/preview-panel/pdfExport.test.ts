@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildLocalImageToken,
   buildPdfFilename,
@@ -7,9 +7,25 @@ import {
   selectRowsForPdfExport,
 } from './pdfExport';
 
+const stageFileForIpc = vi.hoisted(() => vi.fn());
+
+vi.mock('../../utils/stageFile', () => ({ stageFileForIpc }));
+
 const file = (name: string) => ({ name } as File);
 
 describe('preview panel PDF export helpers', () => {
+  beforeEach(() => {
+    // jsdom exposes Image but never completes blob URL decoding. Make the
+    // browser/no-staging fallback deterministic so the test reaches the
+    // File/arrayBuffer path that it is asserting.
+    vi.stubGlobal('Image', undefined);
+  });
+
+  afterEach(() => {
+    stageFileForIpc.mockReset();
+    vi.unstubAllGlobals();
+  });
+
   it('selects only the current row for single export', () => {
     const rows = [{ OT: 'A1' }, { OT: 'B2' }];
     const selected = selectRowsForPdfExport({
@@ -84,37 +100,42 @@ describe('preview panel PDF export helpers', () => {
     expect(html).toContain('@page { size: A4 portrait; margin: 0; }');
   });
 
-  it('uses local file references for high quality export when Electron exposes a path', async () => {
+  it('uses a local image token for high quality export after staging', async () => {
+    stageFileForIpc.mockResolvedValue('antares-read_preview');
+    const file = new File(['image'], 'foto.jpg', { type: 'image/jpeg' });
     const source = await imageToPdfSource(
-      { name: 'foto.jpg', path: 'C:\\tmp\\foto.jpg' } as unknown as File,
+      file,
       'high',
       'row-1-img-0',
     );
 
     expect(source.src).toBe(buildLocalImageToken('row-1-img-0'));
     expect(source.token).toBe(source.src);
-    expect(source.localPath).toBe('C:\\tmp\\foto.jpg');
+    expect(source.fileToken).toBe('antares-read_preview');
   });
 
-  it('uses local file references for max quality export when Electron exposes a path', async () => {
+  it('uses a local image token for max quality export after staging', async () => {
+    stageFileForIpc.mockResolvedValue('antares-read_preview');
+    const file = new File(['image'], 'foto.jpg', { type: 'image/jpeg' });
     const source = await imageToPdfSource(
-      { name: 'foto.jpg', path: 'C:\\tmp\\foto.jpg' } as unknown as File,
+      file,
       'max',
       'row-1-img-0',
     );
 
     expect(source.src).toBe(buildLocalImageToken('row-1-img-0'));
     expect(source.token).toBe(source.src);
-    expect(source.localPath).toBe('C:\\tmp\\foto.jpg');
+    expect(source.fileToken).toBe('antares-read_preview');
   });
 
   it('uses original file data URL for max quality without Electron path', async () => {
     const content = 'original-image-bytes';
     const file = new File([content], 'foto.jpg', { type: 'image/jpeg' });
+    stageFileForIpc.mockResolvedValue(null);
     const source = await imageToPdfSource(file, 'max', 'row-1-img-0');
 
     expect(source.src).toMatch(/^data:image\/jpeg;base64,/);
-    expect(source.localPath).toBeUndefined();
+    expect(source.fileToken).toBeUndefined();
     expect(source.token).toBeUndefined();
   });
 });

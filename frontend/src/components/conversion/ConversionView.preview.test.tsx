@@ -81,7 +81,10 @@ describe('ConversionView rename preview single-flight', () => {
       )
       .mockResolvedValueOnce(fastResult);
 
-    mockApi.dialogFiles.mockResolvedValueOnce({ paths: ['C:\\fotos\\a.jpg'] });
+    mockApi.dialogFiles.mockResolvedValueOnce({
+      paths: ['C:\\fotos\\a.jpg'],
+      file_tokens: ['antares-read_a'],
+    });
 
     renderView();
     await act(async () => {
@@ -102,7 +105,10 @@ describe('ConversionView rename preview single-flight', () => {
 
     // Change files so a second schedule happens while first is in flight.
     // After files are loaded the primary control becomes "Agregar".
-    mockApi.dialogFiles.mockResolvedValueOnce({ paths: ['C:\\fotos\\b.jpg'] });
+    mockApi.dialogFiles.mockResolvedValueOnce({
+      paths: ['C:\\fotos\\b.jpg'],
+      file_tokens: ['antares-read_b'],
+    });
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /Agregar|Seleccionar archivos/i }));
     });
@@ -128,7 +134,35 @@ describe('ConversionView rename preview single-flight', () => {
     // Final applied preview should come from the latest call params (files include b).
     await waitFor(() => {
       const lastCall = mockApi.preview.mock.calls.at(-1)?.[0] as { files: string[] };
-      expect(lastCall.files.some((f) => f.includes('b.jpg'))).toBe(true);
+      expect(lastCall.files).toContain('antares-read_b');
+    });
+  });
+
+  it('sends the read capability returned by the file dialog to preview', async () => {
+    mockApi.dialogFiles.mockResolvedValueOnce({
+      paths: ['C:\\fotos\\entrada.jpg'],
+      file_tokens: ['antares-read_entrada'],
+    });
+
+    renderView();
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync();
+    });
+    await waitFor(() => expect(mockApi.getDbColumns).toHaveBeenCalled());
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Seleccionar archivos/i }));
+    });
+    await waitFor(() => expect(mockApi.dialogFiles).toHaveBeenCalled());
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+
+    await waitFor(() => {
+      expect(mockApi.preview).toHaveBeenCalledWith(
+        expect.objectContaining({ files: ['antares-read_entrada'] }),
+      );
     });
   });
 
