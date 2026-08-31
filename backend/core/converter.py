@@ -14,9 +14,12 @@ from typing import cast
 from PIL import Image, ImageOps
 
 from backend.core.format_registry import get_registry
+from backend.core.image_limits import apply_default_pixels_limit
 
-# Cap at 100MP to avoid DecompressionBomb / OOM; header is checked before full decode.
-Image.MAX_IMAGE_PIXELS = 100_000_000
+# Tope de píxeles (100MP) para evitar bomba de descompresión/OOM. Fuente única
+# en core/image_limits.py: aplicar una vez a nivel de proceso, todos los
+# decoders heredan el mismo límite.
+apply_default_pixels_limit()
 
 _registry = get_registry()
 _registry.add_format("JPEG", ".jpg", ("RGB", "L", "CMYK"))

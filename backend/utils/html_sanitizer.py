@@ -85,7 +85,7 @@ def sanitize_html_for_pdf(html: str) -> str:
     stripped = re.sub(r"\son[a-z]+\s*=\s*[^\s>]+", "", stripped, flags=re.IGNORECASE)
     stripped = re.sub(r"\son[a-z]+\b(?=\s|>|/)", "", stripped, flags=re.IGNORECASE)
     stripped = re.sub(
-        r'(href|src|xlink:href)\s*=\s*(["\']?)\s*([^"\'>\s]+)\2',
+        r'(href|src|xlink:href)\s*=\s*(["\']?)\s*([^"\'>]+)\2',
         _neutralize_url_attr,
         stripped,
         flags=re.IGNORECASE,

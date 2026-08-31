@@ -43,20 +43,23 @@ function isAllowedGoogleFontUrl(url) {
 }
 
 function neutralizeUrlAttr(match, attr, quote, urlValue) {
-  const lowered = String(urlValue).trim().toLowerCase();
-  if (lowered.startsWith('data:') && !isSafeDataUrl(urlValue)) {
-    return `${attr}=${quote}${quote}`;
+  // Normalize whitespace so `href=" javascript :alert(1)"` (espacio antes del
+  // colon) también se detecta; el regex captura el valor con espacios.
+  const cleaned = String(urlValue).replace(/\s+/g, '').toLowerCase();
+  const schemeMatch = cleaned.match(/^([a-z][a-z0-9+.-]*):/);
+  const scheme = schemeMatch ? schemeMatch[1] : '';
+  if (cleaned.startsWith('data:')) {
+    if (!isSafeDataUrl(urlValue)) return `${attr}=${quote}${quote}`;
+    if (cleaned.startsWith('data:text/html')) return `${attr}=${quote}${quote}`;
+    return match;
   }
   if (isAllowedGoogleFontUrl(urlValue)) {
     return match;
   }
-  if (
-    lowered.startsWith('javascript:')
-    || lowered.startsWith('vbscript:')
-    || lowered.startsWith('http:')
-    || lowered.startsWith('https:')
-    || lowered.startsWith('file:')
-  ) {
+  if (scheme === 'javascript' || scheme === 'vbscript') {
+    return `${attr}=${quote}${quote}`;
+  }
+  if (scheme === 'http' || scheme === 'https' || scheme === 'file') {
     return `${attr}=${quote}${quote}`;
   }
   return match;
@@ -103,7 +106,7 @@ function sanitizeHtmlForPdf(html) {
     // Neutralise unsafe URIs in href/src/xlink:href (javascript, remote, file,
     // and data: except allowlisted safe image prefixes). Google Fonts hrefs
     // are preserved by neutralizeUrlAttr.
-    .replace(/(href|src|xlink:href)\s*=\s*(['"]?)\s*([^"'>\s]+)\2/gi, neutralizeUrlAttr)
+    .replace(/(href|src|xlink:href)\s*=\s*(['"]?)\s*([^"'>]+)\2/gi, neutralizeUrlAttr)
     // Neutralise javascript:/vbscript: URIs inside CSS url(...) — the
     // href/src regex above does not reach into CSS. Without this, a
     // payload like `<style>.x{background:url(javascript:alert(1))}</style>`
@@ -154,7 +157,7 @@ function sanitizeHtmlForPreview(html) {
     .replace(/\son[a-z]+\s*=\s*`[^`]*`/gi, '')
     .replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '')
     .replace(/\son[a-z]+\b(?=\s|>|\/)/gi, '')
-    .replace(/(href|src|xlink:href)\s*=\s*(['"]?)\s*([^"'>\s]+)\2/gi, (match, attr, quote, urlValue) => {
+    .replace(/(href|src|xlink:href)\s*=\s*(['"]?)\s*([^"'>]+)\2/gi, (match, attr, quote, urlValue) => {
       const lowered = String(urlValue).trim().toLowerCase();
       const q = quote || '"';
       if (lowered.startsWith('data:')) {

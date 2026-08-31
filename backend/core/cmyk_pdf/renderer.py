@@ -17,9 +17,10 @@ import fitz  # PyMuPDF
 from PIL import Image, ImageOps
 
 from backend.core.cmyk_pdf.color import convert_pil_to_cmyk_bytes, css_color_to_cmyk
+from backend.core.image_limits import apply_default_pixels_limit
 from backend.utils.paths import user_data_path
 
-Image.MAX_IMAGE_PIXELS = 100_000_000
+apply_default_pixels_limit()
 
 logger = logging.getLogger(__name__)
 
