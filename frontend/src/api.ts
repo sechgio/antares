@@ -37,7 +37,7 @@ declare global {
       autoUpdateInstall: () => Promise<{ success: boolean; reason?: string }>;
       onAutoUpdateStatus: (callback: (data: { status: string; version: string | null; progress: number; message?: string }) => void) => () => void;
       getPathForFile: (file: File) => string;
-<      registerFileInputPath?: (filePath: string) => boolean;
+      registerFileInputPath?: (filePath: string) => boolean;
       canvasFlushAck?: () => Promise<unknown>;
       registerLocalPath: (filePath: string) => Promise<unknown>;
       fileStagedCreate?: (name: string, size: number) => Promise<{ token: string }>;
