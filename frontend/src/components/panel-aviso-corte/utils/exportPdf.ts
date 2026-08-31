@@ -1,5 +1,6 @@
 import { api } from '../../../api';
 import { buildTimestampedFilename, downloadBase64Blob, fileToBase64 } from '../../../utils/pdfAssets';
+import { stageFileForIpc } from '../../../utils/stageFile';
 import { DEFAULT_PANEL_TEMPLATE, type PanelTemplateId } from '../constants';
 import { normalizePanelDateStr } from './excelPreview';
 import type { LocalImage, PanelVM } from '../types';
@@ -15,8 +16,9 @@ export async function buildImagePayload(
   const imagesBase64: Record<string, string> = {};
 
   for (const [filename, image] of images.entries()) {
-    if (image.localPath) {
-      imagePaths[filename] = image.localPath;
+    const token = await stageFileForIpc(image.file);
+    if (token) {
+      imagePaths[filename] = token;
       continue;
     }
     imagesBase64[filename] = await toBase64(image.file);

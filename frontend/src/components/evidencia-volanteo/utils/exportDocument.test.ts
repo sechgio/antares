@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LocalImage, LogoAsset } from '../types';
 import { imageExportKey } from './buildExportHtml';
 import { buildImagePayload, exportEvidenciaDocument, readLogoOnce } from './exportDocument';
@@ -20,29 +20,44 @@ function makeFile(name: string, body = 'img-bytes', type = 'image/jpeg'): File {
   return new File([body], name, { type });
 }
 
-function makeImage(name: string, localPath?: string): LocalImage {
+function makeImage(name: string): LocalImage {
   return {
     file: makeFile(name),
     objectUrl: `blob:${name}`,
-    localPath,
   };
 }
 
+function stubElectronStaging() {
+  let sequence = 0;
+  const api = {
+    fileStagedCreate: vi.fn(async () => ({ token: 'antares-staged_test' })),
+    fileStagedAppend: vi.fn(async () => ({ bytesWritten: 1 })),
+    fileStagedComplete: vi.fn(async () => ({ file_token: `antares-read_${++sequence}` })),
+  };
+  vi.stubGlobal('window', { electronAPI: api });
+  return api;
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe('buildImagePayload', () => {
-  it('prefers local paths and skips Base64 when path is valid (DOCX mode)', async () => {
+  it('prefers staged files and skips Base64 when staging is available', async () => {
+    stubElectronStaging();
     const images = [
-      makeImage('a.jpg', 'C:\\fotos\\a.jpg'),
-      makeImage('b.jpg', 'D:/fotos/b.jpg'),
+      makeImage('a.jpg'),
+      makeImage('b.jpg'),
     ];
     const payload = await buildImagePayload(images, { needDataUris: false });
-    expect(payload.imagePaths['0::a.jpg']).toBe('C:\\fotos\\a.jpg');
-    expect(payload.imagePaths['1::b.jpg']).toBe('D:/fotos/b.jpg');
+    expect(payload.imagePaths['0::a.jpg']).toBe('antares-read_1');
+    expect(payload.imagePaths['1::b.jpg']).toBe('antares-read_2');
     expect(Object.keys(payload.imagesBase64)).toHaveLength(0);
     expect(Object.keys(payload.imageDataUris)).toHaveLength(0);
   });
 
-  it('falls back to Base64 when path is missing or blank', async () => {
-    const images = [makeImage('x.jpg'), makeImage('y.jpg', '   ')];
+  it('uses Base64 when the Electron staging bridge is unavailable', async () => {
+    const images = [makeImage('x.jpg'), makeImage('y.jpg')];
     const payload = await buildImagePayload(images, { needDataUris: false });
     expect(Object.keys(payload.imagePaths)).toHaveLength(0);
     expect(payload.imagesBase64['0::x.jpg']).toBeTruthy();
@@ -50,10 +65,10 @@ describe('buildImagePayload', () => {
   });
 
   it('builds data URIs for PDF HTML without putting path images into imagesBase64', async () => {
-    const images = [makeImage('a.jpg', 'C:\\fotos\\a.jpg'), makeImage('b.jpg')];
+    const images = [makeImage('a.jpg'), makeImage('b.jpg')];
     const payload = await buildImagePayload(images, { needDataUris: true });
-    expect(payload.imagePaths['0::a.jpg']).toBe('C:\\fotos\\a.jpg');
-    expect(payload.imagesBase64['0::a.jpg']).toBeUndefined();
+    expect(payload.imagePaths['0::a.jpg']).toBeUndefined();
+    expect(payload.imagesBase64['0::a.jpg']).toBeTruthy();
     expect(payload.imagesBase64['1::b.jpg']).toBeTruthy();
     expect(payload.imageDataUris['0::a.jpg']).toMatch(/^data:image\/jpeg;base64,/);
     expect(payload.imageDataUris['1::b.jpg']).toMatch(/^data:image\/jpeg;base64,/);
@@ -81,10 +96,10 @@ describe('exportEvidenciaDocument payload', () => {
   });
 
   it('PDF with html omits images and image_paths duplicates', async () => {
-    const images = [makeImage('a.jpg', 'C:\\fotos\\a.jpg')];
+    const images = [makeImage('a.jpg')];
     // Force browser download path: dialogSave returns no path via electron mock above.
     // exportEvidenciaDocument checks window.electronAPI?.invoke — stub without invoke.
-    (window as unknown as { electronAPI?: { invoke?: unknown } }).electronAPI = {};
+    vi.stubGlobal('window', { electronAPI: {} });
     await exportEvidenciaDocument('T', [], images, null, null, 'pdf');
     expect(renderMock).toHaveBeenCalledTimes(1);
     const body = renderMock.mock.calls[0][0] as Record<string, unknown>;
@@ -94,15 +109,15 @@ describe('exportEvidenciaDocument payload', () => {
     expect(body.image_paths).toBeUndefined();
   });
 
-  it('DOCX sends paths first and Base64 only for pathless images', async () => {
-    (window as unknown as { electronAPI?: { invoke?: unknown } }).electronAPI = {};
+  it('DOCX sends staged tokens and skips duplicate Base64 data', async () => {
+    stubElectronStaging();
     renderMock.mockResolvedValueOnce({
       filename: 'out.docx',
       pdf_base64: btoa('docx'),
       content_base64: btoa('docx'),
     });
     const images = [
-      makeImage('a.jpg', 'C:\\fotos\\a.jpg'),
+      makeImage('a.jpg'),
       makeImage('b.jpg'),
     ];
     await exportEvidenciaDocument('T', [], images, null, null, 'docx');
@@ -112,13 +127,14 @@ describe('exportEvidenciaDocument payload', () => {
       html?: string;
     };
     expect(body.html).toBeUndefined();
-    expect(body.image_paths[imageExportKey(0, 'a.jpg')]).toBe('C:\\fotos\\a.jpg');
+    expect(body.image_paths[imageExportKey(0, 'a.jpg')]).toBe('antares-read_1');
+    expect(body.image_paths[imageExportKey(1, 'b.jpg')]).toBe('antares-read_2');
     expect(body.images[imageExportKey(0, 'a.jpg')]).toBeUndefined();
-    expect(body.images[imageExportKey(1, 'b.jpg')]).toBeTruthy();
+    expect(body.images[imageExportKey(1, 'b.jpg')]).toBeUndefined();
   });
 
-  it('works without local paths (browser fallback)', async () => {
-    (window as unknown as { electronAPI?: { invoke?: unknown } }).electronAPI = {};
+  it('works without the Electron bridge (browser fallback)', async () => {
+    vi.stubGlobal('window', { electronAPI: {} });
     const images = [makeImage('only.jpg')];
     await exportEvidenciaDocument('T', [], images, null, null, 'pdf');
     const body = renderMock.mock.calls[0][0] as { html: string };

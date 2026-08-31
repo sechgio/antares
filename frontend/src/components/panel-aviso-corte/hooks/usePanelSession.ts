@@ -18,7 +18,6 @@ import type {
   PanelMatchPanelResponse,
   PanelVM,
 } from '../types';
-import { registerLocalPaths } from '../../../utils/registerLocalPath';
 import {
   buildExcelPreviewPanels,
   normalizePanelDateStr,
@@ -182,12 +181,8 @@ export function usePanelSession(): PanelSession {
         newErrors.push(MSG_IMAGE_TOO_LARGE(file.name));
         continue;
       }
-      const localPath = window.electronAPI?.getPathForFile(file) || undefined;
-      accepted.push({ file, objectUrl: URL.createObjectURL(file), localPath });
+      accepted.push({ file, objectUrl: URL.createObjectURL(file) });
     }
-    await registerLocalPaths(
-      accepted.map((img) => img.localPath).filter((p): p is string => Boolean(p)),
-    );
     setImages((prev) => [...prev, ...accepted]);
     return newErrors;
   }, []);

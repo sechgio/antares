@@ -31,6 +31,11 @@ const {
 } = require('./backend-spawner');
 const { getMainWindow, buildAppMenu } = require('./window-manager');
 const { appendLogEvent } = require('./app-log');
+const {
+  maybeResolveFileTokens: _maybeResolveFileTokens,
+  collectStagedTokens: _collectStagedTokens,
+  cleanupStagedTokens: _cleanupStagedTokens,
+} = require('./file-token-routing');
 
 const _pendingRequests = new Map();
 const _pendingMethodCounts = new Map();
@@ -696,87 +701,6 @@ function _dispatchNative(method) {
   return null;
 }
 
-function _maybeResolveFileTokens(params, win) {
-  if (!params || typeof params !== 'object' || Array.isArray(params)) return params;
-  const { resolveCapability, _assertNoRawAbsolutePaths } = require('./file-capabilities');
-  _assertNoRawAbsolutePaths(params);
-  const webContentsId = win && win.webContents ? win.webContents.id : null;
-  const tokenKeys = ['file_token', 'fileToken', 'excel_file_token', 'excelPath', 'spreadsheet_token', 'result_file_token', 'cache_token'];
-  let next = params;
-  let mutated = false;
-  for (const k of tokenKeys) {
-    if (typeof params[k] === 'string' && params[k].startsWith('antares-')) {
-      try {
-        const cap = resolveCapability(params[k], 'read', webContentsId);
-        if (!mutated) { next = { ...params }; mutated = true; }
-        next[k] = cap.path;
-        if (k === 'file_token' || k === 'result_file_token' || k === 'cache_token') {
-          next._resolved_file_token_path = cap.path;
-          if (cap.name) next._resolved_file_token_name = cap.name;
-        }
-      } catch (e) {
-        throw new Error(`invalid file token for ${k}: ${e.message}`);
-      }
-    }
-  }
-  if (Array.isArray(params.file_tokens)) {
-    const resolved = [];
-    for (const t of params.file_tokens) {
-      if (typeof t === 'string' && t.startsWith('antares-')) {
-        const cap = resolveCapability(t, 'read', webContentsId);
-        resolved.push(cap.path);
-      } else resolved.push(t);
-    }
-    if (!mutated) { next = { ...params }; mutated = true; }
-    next.file_tokens = resolved;
-  }
-  if (params.localImagePaths && typeof params.localImagePaths === 'object' && !Array.isArray(params.localImagePaths)) {
-    const resolved = { ...params.localImagePaths };
-    let localMutated = false;
-    for (const [key, value] of Object.entries(params.localImagePaths)) {
-      if (typeof value !== 'string' || !value.startsWith('antares-read_')) continue;
-      try {
-        const cap = resolveCapability(value, 'read', webContentsId);
-        resolved[key] = cap.path;
-        localMutated = true;
-      } catch (e) {
-        throw new Error(`invalid file token for localImagePaths.${key}: ${e.message}`);
-      }
-    }
-    if (localMutated) {
-      if (!mutated) { next = { ...params }; mutated = true; }
-      next.localImagePaths = resolved;
-    }
-  }
-  return next;
-}
-
-function _collectStagedTokens(method, params) {
-  if (typeof method === 'string' && method.startsWith('file_token_')) return [];
-  if (!params || typeof params !== 'object' || Array.isArray(params)) return [];
-
-  const tokens = new Set();
-  const add = (value) => {
-    if (typeof value === 'string' && value.startsWith('antares-read_')) tokens.add(value);
-  };
-  for (const key of ['file_token', 'fileToken', 'excel_file_token', 'excelPath', 'spreadsheet_token', 'result_file_token', 'cache_token']) {
-    add(params[key]);
-  }
-  if (Array.isArray(params.file_tokens)) {
-    for (const token of params.file_tokens) add(token);
-  }
-  if (params.localImagePaths && typeof params.localImagePaths === 'object' && !Array.isArray(params.localImagePaths)) {
-    for (const value of Object.values(params.localImagePaths)) add(value);
-  }
-  return [...tokens];
-}
-
-async function _cleanupStagedTokens(tokens, webContentsId = null) {
-  if (!tokens || tokens.length === 0) return;
-  const { cleanupStagedCapability } = require('./file-capabilities');
-  await Promise.all(tokens.map((token) => cleanupStagedCapability(token, webContentsId)));
-}
-
 function _validateAndResolveWriteParams(params, win) {
   if (!params || typeof params !== 'object') return params;
   const needsWrite = 'output_path' in params || 'outputPath' in params || 'output_dir' in params || 'outputDir' in params || 'output_folder' in params || 'outputFolder' in params || (params.path && typeof params.path === 'string' && params.path.includes('/'));
@@ -870,8 +794,6 @@ function registerIpcHandlers() {
 
     const stagedTokens = _collectStagedTokens(method, params);
     try {
-
-
       const win = getMainWindow();
       const { BrowserWindow, session, nativeImage } = require('electron');
       const nativeHandler = _dispatchNative(method);
@@ -880,7 +802,6 @@ function registerIpcHandlers() {
           ? await handleDialogCall(method, params, dialog, win, { BrowserWindow, session, nativeImage })
           : nativeHandler === 'autoimg'
             ? await (async () => {
-
               const { handleAutoimgCall } = require('./autoimg-handlers');
               return handleAutoimgCall(method, params);
             })()
@@ -891,7 +812,7 @@ function registerIpcHandlers() {
         if (result.handled) return result.result;
       }
 
-      let backendParams = _maybeResolveFileTokens(params, win);
+      let backendParams = _maybeResolveFileTokens(params, win, method);
       backendParams = _validateAndResolveWriteParams(backendParams, win);
 
       if (method === 'preview_ubicacion' || method === 'generar_ubicaciones') {

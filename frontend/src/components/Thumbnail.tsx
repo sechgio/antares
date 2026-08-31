@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { getLocalThumbnail } from '../utils/localThumb';
+import { stageFileForIpc } from '../utils/stageFile';
 
 export type ThumbnailViewState =
   | { kind: 'out_of_view' }
@@ -9,11 +10,13 @@ export type ThumbnailViewState =
 
 interface ThumbnailProps {
   path: string;
+  fileToken?: string;
+  file?: File;
   size?: number;
   variant?: 'compact' | 'card';
 }
 
-export default function Thumbnail({ path, size = 48, variant = 'compact' }: ThumbnailProps) {
+export default function Thumbnail({ path, fileToken, file, size = 48, variant = 'compact' }: ThumbnailProps) {
   const [inView, setInView] = useState(false);
   const [state, setState] = useState<ThumbnailViewState>({ kind: 'out_of_view' });
   const isCard = variant === 'card';
@@ -52,21 +55,42 @@ export default function Thumbnail({ path, size = 48, variant = 'compact' }: Thum
     let cancelled = false;
     setState({ kind: 'fetching' });
 
-    const localPath = path.startsWith('file://') ? path.replace(/^file:\/\//, '') : path;
-
-    getLocalThumbnail(localPath, 256).then((thumb) => {
-      if (cancelled) return;
-      if (thumb) {
-        setState({ kind: 'ready', displaySrc: thumb, imageLoaded: false });
-      } else {
-        setState({ kind: 'error' });
+    const resolveReference = async (): Promise<string | null> => {
+      if (fileToken?.startsWith('antares-read_')) return fileToken;
+      if (file) {
+        const staged = await stageFileForIpc(file);
+        if (staged) return staged;
+        // No Electron staging bridge means this is a browser/test File. It
+        // has no safe filesystem reference to send to native IPC.
+        return null;
       }
+      // A path without an accompanying token is a legacy/history display
+      // value. Do not forward it to the protected IPC router.
+      return null;
+    };
+
+    resolveReference().then((fileRef) => {
+      if (cancelled) return;
+      if (!fileRef) {
+        setState({ kind: 'error' });
+        return;
+      }
+      return getLocalThumbnail(fileRef, 256).then((thumb) => {
+        if (cancelled) return;
+        if (thumb) {
+          setState({ kind: 'ready', displaySrc: thumb, imageLoaded: false });
+        } else {
+          setState({ kind: 'error' });
+        }
+      });
+    }).catch(() => {
+      if (!cancelled) setState({ kind: 'error' });
     });
 
     return () => {
       cancelled = true;
     };
-  }, [inView, path]);
+  }, [file, fileToken, inView, path]);
 
   const isImageLoading =
     state.kind === 'out_of_view' ||

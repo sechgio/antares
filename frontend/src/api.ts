@@ -35,7 +35,6 @@ declare global {
       autoUpdateInstall: () => Promise<{ success: boolean; reason?: string }>;
       onAutoUpdateStatus: (callback: (data: { status: string; version: string | null; progress: number; message?: string }) => void) => () => void;
       getPathForFile: (file: File) => string;
-      registerLocalPath: (filePath: string) => Promise<unknown>;
       fileStagedCreate?: (name: string, size: number) => Promise<{ token: string }>;
       fileStagedAppend?: (token: string, chunk: ArrayBuffer | Uint8Array | string) => Promise<unknown>;
       fileStagedComplete?: (token: string) => Promise<{ file_token: string }>;
@@ -335,6 +334,12 @@ export interface PreviewBody {
   destino?: string;
 }
 
+export interface FileDialogResult {
+  paths: string[];
+  /** Read capabilities aligned by index with `paths`. */
+  file_tokens: string[];
+}
+
 
 export interface DbDetectKeyColumnResult {
   key_column: string;
@@ -531,18 +536,18 @@ export const api = {
   diagnosticsSnapshot: (params?: Record<string, unknown>) =>
     _invoke<Record<string, unknown>>('diagnostics_snapshot', params ?? {}),
 
-  dialogFiles: () => _invoke<{ paths: string[] }>('dialog_files'),
+  dialogFiles: () => _invoke<FileDialogResult>('dialog_files'),
   dialogDest: () => _invoke<{ paths: string[] }>('dialog_dest'),
   dialogFolder: (params?: { title?: string; pickOnly?: boolean }) =>
-    _invoke<{ paths: string[]; folder?: string }>('dialog_folder', params),
+    _invoke<FileDialogResult & { folder?: string }>('dialog_folder', params),
   dialogSave: (params?: { title?: string; defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }) => _invoke<{ paths: string[] }>('dialog_save', params),
 
   /** Display-size local thumbnail via Electron nativeImage (Path A). */
-  localThumbnail: (body: { path: string; maxEdge?: number }) =>
+  localThumbnail: (body: { path?: string; file_token?: string; maxEdge?: number }) =>
     _invoke<{ dataUrl: string }>('local_thumbnail', body),
 
   /** Full-fidelity allowlisted local image → data URL (CSP-safe; no file://). */
-  localImageDataUrl: (body: { path: string }) =>
+  localImageDataUrl: (body: { path?: string; file_token?: string }) =>
     _invoke<{ dataUrl: string }>('local_image_data_url', body),
 
   startProcess: (body: ProcessBody) =>
@@ -860,7 +865,7 @@ export const api = {
     output_path?: string;
     export_mode?: string;
   }) => _invoke<{ pdf_base64: string; content_base64?: string; saved_path?: string; filename: string; format?: string; mime_type?: string }>('panel_aviso_corte_render_pdf', body),
-  panelAvisoCorteTemplate: (body: { path: string; overwrite?: boolean }) => _invoke<{ path: string }>('panel_aviso_corte_template', body),
+  panelAvisoCorteTemplate: (body: { output_path: string; overwrite?: boolean }) => _invoke<{ path: string }>('panel_aviso_corte_template', body),
 
   // ─── Evidencia Volanteo ───────────────────────────────────────────────
   evidenciaVolanteoRender: (body: {

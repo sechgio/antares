@@ -4,6 +4,7 @@ const fsp = fs.promises;
 const os = require('os');
 const path = require('path');
 const { assertPathNotSymlink } = require('./path-allowlist');
+const { forEachReadLocation } = require('./file-token-contract');
 
 const TOKEN_TTL_MS = 30 * 60 * 1000;
 const MAX_CHUNK_BYTES = 8 * 1024 * 1024;
@@ -221,22 +222,55 @@ async function cleanupAllStaged() {
   }
 }
 
-function _assertNoRawAbsolutePaths(params) {
+const WRITE_PATH_KEYS = new Set([
+  'output_path',
+  'outputPath',
+  'output_dir',
+  'outputDir',
+  'output_folder',
+  'outputFolder',
+]);
+
+function _isLogicalImageReference(value) {
+  return value.startsWith('data:')
+    || value.startsWith('blob:')
+    || value.startsWith('http://')
+    || value.startsWith('https://')
+    || value.startsWith('canvas-asset:')
+    || value.startsWith('antares-read_');
+}
+
+function _assertPathValue(value, label, { allowLogical = false, rejectAbsolute = true } = {}) {
+  if (typeof value !== 'string') return;
+  if (value.includes('\0')) throw new Error(`invalid path param: ${label}`);
+  if (allowLogical && _isLogicalImageReference(value)) return;
+  if (rejectAbsolute && path.isAbsolute(value)) {
+    throw new Error(`raw absolute paths not allowed for ${label}; use file token`);
+  }
+  if (value.includes('..') && (value.includes('/') || value.includes('\\'))) {
+    const norm = path.normalize(value);
+    if (norm.includes('..')) throw new Error(`path traversal not allowed: ${label}`);
+  }
+}
+
+function _assertNoRawAbsolutePaths(params, { pathIsWriteTarget = false } = {}) {
   if (!params || typeof params !== 'object' || Array.isArray(params)) return;
-  const suspiciousKeys = new Set(['path','file_path','filepath','output_path','outputPath','output_dir','outputDir','output_folder','outputFolder','excelPath','pdf_path','stamp_path']);
-  const writeKeys = new Set(['output_path','outputpath','output_dir','outputdir','output_folder','outputfolder']);
-  for (const [k, v] of Object.entries(params)) {
-    if (typeof v !== 'string') continue;
-    const lk = k.toLowerCase();
-    const isPathKey = suspiciousKeys.has(k) || suspiciousKeys.has(lk) || lk.includes('path') || lk.includes('folder');
-    if (!isPathKey) continue;
-    if (v.includes('\0')) throw new Error(`invalid path param: ${k}`);
-    const isWriteKey = writeKeys.has(lk);
-    if (!isWriteKey && path.isAbsolute(v)) throw new Error(`raw absolute paths not allowed for ${k}; use file token`);
-    if (v.includes('..') && (v.includes('/') || v.includes('\\'))) {
-      const norm = path.normalize(v);
-      if (norm.includes('..')) throw new Error(`path traversal not allowed: ${k}`);
-    }
+
+  // Inspect only fields declared by the IPC contract. Filenames inside
+  // optimizer payloads and arbitrary metadata are not filesystem paths.
+  forEachReadLocation(params, ({ kind, label, value }) => {
+    if (pathIsWriteTarget && kind === 'scalar' && label === 'path') return;
+    _assertPathValue(value, label, { allowLogical: kind === 'local-map' });
+  });
+
+  // Write paths remain raw by design, but still receive control-byte and
+  // traversal validation before the write-policy resolver handles them.
+  for (const key of WRITE_PATH_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(params, key)) continue;
+    _assertPathValue(params[key], key, { allowLogical: false, rejectAbsolute: false });
+  }
+  if (pathIsWriteTarget && Object.prototype.hasOwnProperty.call(params, 'path')) {
+    _assertPathValue(params.path, 'path', { allowLogical: false, rejectAbsolute: false });
   }
 }
 

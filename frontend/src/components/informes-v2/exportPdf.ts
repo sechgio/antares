@@ -1,12 +1,10 @@
 import { api } from '../../api';
 import {
   fileToPdfImageSource,
-  getElectronFilePath,
   imageToPdfDataUrl,
   type PdfQuality,
 } from '../../utils/pdfAssets';
 import { mapWithConcurrencyLimit } from '../../utils/mapWithConcurrencyLimit';
-import { registerLocalPaths } from '../../utils/registerLocalPath';
 import { matchPhotosForId } from './photoMatch';
 import type { PhotoAsset } from './types';
 
@@ -24,12 +22,7 @@ export async function photoToPdfPath(
   localImagePaths: Record<string, string>,
   quality: PdfQuality = 'high',
 ): Promise<string> {
-  if (photo.file) {
-    const localPath = getElectronFilePath(photo.file);
-    if (localPath) {
-      return fileToPdfImageSource(photo.file, key, localImagePaths);
-    }
-  }
+  if (photo.file) return fileToPdfImageSource(photo.file, key, localImagePaths);
   if (photo.src.startsWith('data:')) {
     try {
       const res = await fetch(photo.src);
@@ -59,9 +52,7 @@ export async function logoToPdfPath(
   localImagePaths: Record<string, string>,
 ): Promise<string | null> {
   if (!logo) return null;
-  if (logo.file && getElectronFilePath(logo.file)) {
-    return fileToPdfImageSource(logo.file, key, localImagePaths);
-  }
+  if (logo.file) return fileToPdfImageSource(logo.file, key, localImagePaths);
   // Logos are small; data-URL fallback is acceptable.
   return logo.src;
 }
@@ -90,19 +81,4 @@ export async function askPdfSavePath(defaultFilename: string, title: string): Pr
     ],
   });
   return saveTarget.paths[0] || null;
-}
-
-export async function registerExportLocalPaths(localImagePaths: Record<string, string>): Promise<void> {
-  const paths = Object.values(localImagePaths).filter(Boolean);
-  // Also register any Electron File.path that might have been skipped
-  await registerLocalPaths(paths);
-}
-
-export function collectFilePaths(files: Array<File | null | undefined>): string[] {
-  const out: string[] = [];
-  for (const file of files) {
-    const p = file ? getElectronFilePath(file) : null;
-    if (p) out.push(p);
-  }
-  return out;
 }

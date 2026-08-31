@@ -97,7 +97,7 @@ export default function ExcelImporter({ source, onSource }: Props) {
               });
               const savePath = res.paths?.[0]?.trim();
               if (!savePath) return;
-              await api.panelAvisoCorteTemplate({ path: savePath });
+              await api.panelAvisoCorteTemplate({ output_path: savePath });
               addToast({ message: 'Plantilla de Excel guardada', type: 'success' });
             } catch (err: unknown) {
               setError(err instanceof Error ? err.message : 'Error al descargar la plantilla');

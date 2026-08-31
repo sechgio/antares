@@ -39,7 +39,6 @@ function imageToStored(image: LocalImage): StoredImage {
     name: image.file.name,
     type: image.file.type,
     blob: image.file,
-    localPath: image.localPath,
   };
 }
 
@@ -48,7 +47,6 @@ function storedToImage(stored: StoredImage): LocalImage {
   return {
     file,
     objectUrl: URL.createObjectURL(file),
-    localPath: stored.localPath,
   };
 }
 

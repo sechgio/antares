@@ -8,11 +8,15 @@ type StagedElectronApi = {
 };
 
 function getStagedApi(): StagedElectronApi | null {
+  if (typeof window === 'undefined') return null;
   const api = (window as unknown as { electronAPI?: Partial<StagedElectronApi> }).electronAPI;
   if (!api?.fileStagedCreate || !api.fileStagedAppend || !api.fileStagedComplete) return null;
   return api as StagedElectronApi;
 }
 
+export function hasFileStagingBridge(): boolean {
+  return getStagedApi() !== null;
+}
 
 export async function stageFileForIpc(file: File): Promise<string | null> {
   const api = getStagedApi();

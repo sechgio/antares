@@ -8,6 +8,16 @@ import {
   MAX_PDF_STAGE_QUEUE,
 } from './pdfAssets';
 
+function stubElectronStaging(fileToken = 'antares-read_1') {
+  const api = {
+    fileStagedCreate: vi.fn(async () => ({ token: 'antares-staged_1' })),
+    fileStagedAppend: vi.fn(async () => ({ bytesWritten: 1 })),
+    fileStagedComplete: vi.fn(async () => ({ file_token: fileToken })),
+  };
+  vi.stubGlobal('window', { electronAPI: api });
+  return api;
+}
+
 describe('getElectronFilePath', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -39,30 +49,18 @@ describe('pdf local-image allowlist', () => {
     vi.restoreAllMocks();
   });
 
-  it('emits a token when registerLocalPath succeeds', async () => {
+  it('emits a token when File staging succeeds', async () => {
     const file = new File(['x'], 'a.jpg', { type: 'image/jpeg' });
-    Object.defineProperty(file, 'path', { value: 'C:\\fotos\\a.jpg' });
-    vi.stubGlobal('window', {
-      electronAPI: {
-        registerLocalPath: vi.fn(async () => ({ registered: true })),
-      },
-    });
+    stubElectronStaging();
     const localImagePaths: Record<string, string> = {};
     const src = await fileToPdfImageSource(file, 'photo-0', localImagePaths);
     expect(src).toBe(buildLocalImageToken('photo-0'));
-    expect(localImagePaths[src]).toBe('C:\\fotos\\a.jpg');
+    expect(localImagePaths[src]).toBe('antares-read_1');
   });
 
-  it('falls back to compressed data URL when registerLocalPath fails', async () => {
+  it('falls back to compressed data URL when staging is unavailable', async () => {
     const file = new File(['fake-image-bytes'], 'a.jpg', { type: 'image/jpeg' });
-    Object.defineProperty(file, 'path', { value: 'C:\\fotos\\a.jpg' });
-    vi.stubGlobal('window', {
-      electronAPI: {
-        registerLocalPath: vi.fn(async () => {
-          throw new Error('not allowed');
-        }),
-      },
-    });
+    vi.stubGlobal('window', { electronAPI: {} });
 
     // jsdom Image may fail to decode; stub compress path via createObjectURL + Image.
     const objectUrl = 'blob:mock-a';
@@ -108,19 +106,6 @@ describe('fileToPdfImageSource staged upload', () => {
     vi.restoreAllMocks();
   });
 
-  function stubElectronStaging(fileToken = 'antares-read_1') {
-    const api = {
-      registerLocalPath: vi.fn(async () => {
-        throw new Error('register_local_path is deprecated');
-      }),
-      fileStagedCreate: vi.fn(async () => ({ token: 'antares-staged_1' })),
-      fileStagedAppend: vi.fn(async () => ({ bytesWritten: 1 })),
-      fileStagedComplete: vi.fn(async () => ({ file_token: fileToken })),
-    };
-    vi.stubGlobal('window', { electronAPI: api });
-    return api;
-  }
-
   // jsdom no decodifica imágenes: simula la compresión por canvas.
   function stubCanvasCompression(dataUrl: string, w = 800, h = 600): void {
     vi.stubGlobal('URL', {
@@ -162,7 +147,7 @@ describe('fileToPdfImageSource staged upload', () => {
     expect(api.fileStagedComplete).toHaveBeenCalledTimes(1);
   });
 
-  it('stages each File object once even when referenced by several keys', async () => {
+  it('stages each use with a fresh capability when referenced by several keys', async () => {
     const api = stubElectronStaging();
     const file = new File(['image'], 'compartida.jpg', { type: 'image/jpeg' });
 
@@ -173,7 +158,7 @@ describe('fileToPdfImageSource staged upload', () => {
     expect(srcA).not.toBe(srcB);
     expect(localImagePaths[srcA]).toBe('antares-read_1');
     expect(localImagePaths[srcB]).toBe('antares-read_1');
-    expect(api.fileStagedCreate).toHaveBeenCalledTimes(1);
+    expect(api.fileStagedCreate).toHaveBeenCalledTimes(2);
   });
 
   it('imageToPdfSource max stages the original file as a capability token', async () => {
@@ -184,7 +169,7 @@ describe('fileToPdfImageSource staged upload', () => {
 
     expect(source.src).toBe(buildLocalImageToken('row-1-img-0'));
     expect(source.token).toBe(source.src);
-    expect(source.localPath).toBe('antares-read_1');
+    expect(source.fileToken).toBe('antares-read_1');
     expect(api.fileStagedCreate).toHaveBeenCalledWith('foto.jpg', 5);
   });
 
@@ -197,7 +182,7 @@ describe('fileToPdfImageSource staged upload', () => {
     const source = await imageToPdfSource(file, 'high', 'row-1-img-0');
 
     expect(source.src).toBe(buildLocalImageToken('row-1-img-0'));
-    expect(source.localPath).toBe('antares-read_1');
+    expect(source.fileToken).toBe('antares-read_1');
     // El archivo escenificado es el JPEG comprimido, no el original .png.
     expect(api.fileStagedCreate).toHaveBeenCalledWith('foto.jpg', expect.any(Number));
   });
@@ -216,27 +201,22 @@ describe('fileToPdfImageSource staged upload', () => {
     expect(api.fileStagedCreate).not.toHaveBeenCalled();
   });
 
-  it('falls back to a data URL when staging rejects', async () => {
+  it('propagates staging failures in Electron instead of inlining', async () => {
     const api = stubElectronStaging();
     api.fileStagedComplete.mockRejectedValue(new Error('staged session failed'));
     const file = new File(['image'], 'falla.jpg', { type: 'image/jpeg' });
 
-    stubCanvasCompression('data:image/jpeg;base64,compressed');
-
     const localImagePaths: Record<string, string> = {};
-    const src = await fileToPdfImageSource(file, 'photo-0', localImagePaths);
-
-    expect(src).toBe('data:image/jpeg;base64,compressed');
+    await expect(fileToPdfImageSource(file, 'photo-0', localImagePaths))
+      .rejects.toThrow('staged session failed');
     expect(Object.keys(localImagePaths)).toHaveLength(0);
+    expect(api.fileStagedComplete).toHaveBeenCalledTimes(1);
   });
 
   it('bounds queued staged files during a large export burst', async () => {
     let createCalls = 0;
     const releases: Array<() => void> = [];
     const api = {
-      registerLocalPath: vi.fn(async () => {
-        throw new Error('register_local_path is deprecated');
-      }),
       fileStagedCreate: vi.fn((name: string, size: number) => {
         void name;
         void size;
@@ -291,24 +271,16 @@ describe('logoToPdfSource', () => {
 
   it('emits antares-local-image token in RGB mode when the File path is allowlisted', async () => {
     const file = localLogoFile('C:\\logos\\izq.png');
-    vi.stubGlobal('window', {
-      electronAPI: {
-        registerLocalPath: vi.fn(async () => ({ registered: true })),
-      },
-    });
+    stubElectronStaging();
     const localImagePaths: Record<string, string> = {};
     const src = await logoToPdfSource('blob:logo-left', file, 'logo-left', localImagePaths, true);
     expect(src).toBe(buildLocalImageToken('logo-left'));
-    expect(localImagePaths[src]).toBe('C:\\logos\\izq.png');
+    expect(localImagePaths[src]).toBe('antares-read_1');
   });
 
   it('keeps the durable URL (no token) in CMYK mode even with a local File', async () => {
     const file = localLogoFile('C:\\logos\\izq.png');
-    vi.stubGlobal('window', {
-      electronAPI: {
-        registerLocalPath: vi.fn(async () => ({ registered: true })),
-      },
-    });
+    vi.stubGlobal('window', { electronAPI: {} });
     const localImagePaths: Record<string, string> = {};
     // data: URL is already durable — returned unchanged, no token registered.
     const src = await logoToPdfSource('data:image/png;base64,AAAA', file, 'logo-left', localImagePaths, false);
@@ -325,15 +297,9 @@ describe('logoToPdfSource', () => {
     expect(Object.keys(localImagePaths)).toHaveLength(0);
   });
 
-  it('falls back to a durable URL when registerLocalPath rejects the path', async () => {
+  it('falls back to a durable URL when staging is unavailable', async () => {
     const file = localLogoFile('C:\\denied\\logo.png');
-    vi.stubGlobal('window', {
-      electronAPI: {
-        registerLocalPath: vi.fn(async () => {
-          throw new Error('not allowed');
-        }),
-      },
-    });
+    vi.stubGlobal('window', { electronAPI: {} });
     const localImagePaths: Record<string, string> = {};
     const src = await logoToPdfSource('blob:logo-left', file, 'logo-left', localImagePaths, true);
     expect(src).toBe('blob:logo-left');
