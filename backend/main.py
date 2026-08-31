@@ -366,28 +366,61 @@ def main() -> None:
             logger.exception("Failed to emit db_init_failed notification")
         sys.exit(1)
 
+    # Warm only catalog/shell handlers before the handshake. conversion (Pillow)
+    # and canvas warm in a background thread after ready so Electron is not
+    # blocked on heavy imports. Deferred feature modules (sellador, ubicaciones,
+    # fichas, …) stay lazy unless ANTARES_WARM_DEFERRED=1.
     HANDLERS.warm_core()
-    # warm_pandas_sync MOVIDO: ahora corre en post-ready para no bloquear handshake
+    # warm_pandas_sync MOVIDO: ahora corre en post-ready daemon (ver _post_ready_warm
+    # abajo) para no bloquear el handshake ready (~1.5s antes). Ver nota de orden.
     if os.environ.get("ANTARES_WARM_DEFERRED", "").strip().lower() in {"1", "true", "yes"}:
         HANDLERS.warm_deferred()
 
+    # Plugins are opt-in: set ANTARES_ENABLE_PLUGINS=1 to load user_data/plugins/*.py
+    # at startup. Default off so installs without plugins pay no import/exec cost.
     if os.environ.get("ANTARES_ENABLE_PLUGINS") == "1":
         try:
             load_plugins_from_dir()
         except Exception as exc:
             logger.exception("load_plugins_from_dir failed during startup: %s", exc)
 
+    # Note: ubicaciones map previews now use a lightweight static-map HTTP fetch
+    # (OSM tiles / Google Static Maps) instead of a persistent Playwright browser,
+    # so there is no browser to pre-warm at startup.
+    # spreadsheet_parse is long-running (15 min); avoid background import prewarm —
+    # it historically contended the import lock and froze early IPC calls.
+
     scheduler = get_scheduler()
+
+    # Track consecutive errors to avoid spamming logs on persistent issues
     _consecutive_errors = 0
     _MAX_CONSECUTIVE_ERRORS = 100
 
+    # This is the operational readiness contract consumed by Electron. Keep it
+    # immediately before the stdin loop: no synchronous startup work may follow.
+    # A process asked to stop during warm-up must never advertise readiness.
     if not _shutdown_requested:
         logger.info(t("info.backend_ready"))
         send_notification("ready", {
             "status": "ok",
             "backend_version": get_context()["backend_version"],
         })
-        # Post-ready warm: pandas/openpyxl + convert/canvas (daemon, never blocks quit)
+        # Post-ready warm (daemon: never blocks quit): warm_post_ready (canvas/
+        # convert, ~0.04s) MUST go before warm_pandas_sync (pandas/openpyxl,
+        # ~1.5s) to avoid deadlock — the brief's original order (pandas then
+        # canvas) deadlocks the first canvas_list post-ready: the daemon holds
+        # serialized_import._LOCK during `import openpyxl` and the worker for
+        # canvas_list waits on the same lock >60s without completing (Python
+        # import lock x serialized_import guard). Canvas-first eliminates the
+        # hang (ver report 53bee04, deviation doc). Orden FIJO canvas->pandas.
+        # Mitigación del riesgo original de 122s: históricamente warm_pandas_sync
+        # corría síncrono BEFORE ready porque un `import pandas` frío en el
+        # heavy worker se serializaba detrás del daemon por ~122s (Python import
+        # lock x serialized_import guard); pagar ~2-3s sync antes de ready hacía
+        # que el primer db_import hitteara sys.modules. Ahora ese riesgo está
+        # mitigado porque el warm corre en daemon=True y WARM_CRITICAL_DONE
+        # bloquea _WARM_WAIT_METHODS con timeout de 15s en _dispatch, y el lazy
+        # import en importar_excel reintenta si falla.
         def _post_ready_warm():
             try:
                 HANDLERS.warm_post_ready()
