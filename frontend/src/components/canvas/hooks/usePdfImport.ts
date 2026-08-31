@@ -24,7 +24,7 @@ export interface UsePdfImportResult {
   pdfImportReport: PdfImportReport | null;
   pdfImportError: string | null;
   pdfImporting: boolean;
-  pdfInputRef: RefObject<HTMLInputElement>;
+  pdfInputRef: RefObject<HTMLInputElement | null>;
   onImportPdf: () => void;
   onPdfFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
   cancelPdfImport: () => void;
@@ -44,7 +44,7 @@ export function usePdfImport({
   const [pdfImportReport, setPdfImportReport] = useState<PdfImportReport | null>(null);
   const [pdfImportError, setPdfImportError] = useState<string | null>(null);
   const [pdfImporting, setPdfImporting] = useState(false);
-  const pdfInputRef = useRef<HTMLInputElement>(null);
+  const pdfInputRef = useRef<HTMLInputElement | null>(null);
   const pdfImportControllerRef = useRef<AbortController | null>(null);
   const selectionGenerationRef = useRef(0);
 
