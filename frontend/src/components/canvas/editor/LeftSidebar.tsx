@@ -63,6 +63,8 @@ interface LeftSidebarProps {
   onToggleVisible: (id: string, visible: boolean) => void;
   onToggleLocked: (id: string, locked: boolean) => void;
   onRenameLayer: (id: string, name: string) => void;
+  /** F2 from the keyboard handler: open the inline rename of this layer once. */
+  renameRequest?: { layerId: string; nonce: number } | null;
   /** When false, panel collapses via CSS but stays mounted. */
   open?: boolean;
   /** Hide this sidebar (Archivos header). */
@@ -330,6 +332,7 @@ export default memo(function LeftSidebar({
   onToggleVisible,
   onToggleLocked,
   onRenameLayer,
+  renameRequest = null,
   open = true,
   onHidePanel,
   hidePanelDisabled = false,
@@ -461,6 +464,15 @@ export default memo(function LeftSidebar({
     setRenameDraft(name);
     setRenamingLayerId(id);
   }, []);
+
+  // F2 (CanvasView keyboard handler) → abrir el rename inline de esa capa.
+  const lastRenameNonceRef = useRef(-1);
+  useEffect(() => {
+    if (!renameRequest || renameRequest.nonce === lastRenameNonceRef.current) return;
+    lastRenameNonceRef.current = renameRequest.nonce;
+    const layer = layers.find((l) => l.id === renameRequest.layerId);
+    if (layer && !layer.locked) startLayerRename(layer.id, layer.name);
+  }, [renameRequest, layers, startLayerRename]);
 
   const onDropHover = useCallback((id: string, position: CapasDropPosition | null) => {
     if (position === 'inside') {

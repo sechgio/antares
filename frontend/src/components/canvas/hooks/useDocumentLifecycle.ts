@@ -277,7 +277,7 @@ export function useDocumentLifecycle({
   );
 
   const onNew = useCallback(
-    async () => {
+    async (mutate?: (doc: CanvasDocument) => CanvasDocument) => {
       await withDocSwitchLock(async () => {
         try {
           if (!(await saveCurrentDocument()).current) {
@@ -287,7 +287,8 @@ export function useDocumentLifecycle({
           const source = captureCurrentSnapshot();
           const res = await api.canvasCreate('Sin título');
           const doc = normalizeDocument(res.document as CanvasDocument);
-          const hydrated = await hydrateDocumentImages(doc);
+          let hydrated = await hydrateDocumentImages(doc);
+          if (mutate) hydrated = normalizeDocument(mutate(hydrated));
           if (!isCurrentSnapshot(source)) {
             setStatus('Se hicieron cambios mientras se creaba. Repite la acción para crear un documento.');
             return;
@@ -297,7 +298,7 @@ export function useDocumentLifecycle({
           setPageIndex(0);
           resetViewportPan();
           await refreshList();
-          queueCanvasCloudPush(doc);
+          queueCanvasCloudPush(hydrated);
         } catch (err) {
           setStatus(err instanceof Error ? err.message : 'Error al crear');
         }

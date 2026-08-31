@@ -27,6 +27,8 @@ interface TopBarProps {
   onDuplicate: () => void;
   onImportPdf?: () => void;
   importDisabled?: boolean;
+  /** Shows the persistent unsaved-changes dot on the save button. */
+  dirty?: boolean;
   /** Design-mode UI chrome lock (panels stay put). */
   uiLocked?: boolean;
   onToggleUiLock?: () => void;
@@ -71,6 +73,7 @@ function TopBar({
   onDuplicate,
   onImportPdf,
   importDisabled = false,
+  dirty = false,
   uiLocked = false,
   onToggleUiLock,
   leftPanelOpen = true,
@@ -222,7 +225,7 @@ function TopBar({
         )}
 
         <WithHoverTooltip label="Guardar" shortcut="Ctrl+S" placement="bottom" variant="dark">
-          <SaveButton onSave={onSave} />
+          <SaveButton onSave={onSave} dirty={dirty} />
         </WithHoverTooltip>
       </div>
     </header>
