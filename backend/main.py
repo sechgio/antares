@@ -366,56 +366,38 @@ def main() -> None:
             logger.exception("Failed to emit db_init_failed notification")
         sys.exit(1)
 
-    # Warm only catalog/shell handlers before the handshake. conversion (Pillow)
-    # and canvas warm in a background thread after ready so Electron is not
-    # blocked on heavy imports. Deferred feature modules (sellador, ubicaciones,
-    # fichas, …) stay lazy unless ANTARES_WARM_DEFERRED=1.
     HANDLERS.warm_core()
-    # Pre-import pandas/openpyxl synchronously BEFORE ready: a cold ``import
-    # pandas`` in the heavy worker serialized behind the post-ready daemon's
-    # import chain for ~122 s on the first db_import (Python import lock x
-    # serialized_import guard). Paying ~2-3 s here makes the first db_import
-    # hit sys.modules instead of the lock. Failures are non-fatal - the
-    # lazy import in importar_excel still retries.
-    HANDLERS.warm_pandas_sync()
+    # warm_pandas_sync MOVIDO: ahora corre en post-ready para no bloquear handshake
     if os.environ.get("ANTARES_WARM_DEFERRED", "").strip().lower() in {"1", "true", "yes"}:
         HANDLERS.warm_deferred()
 
-    # Plugins are opt-in: set ANTARES_ENABLE_PLUGINS=1 to load user_data/plugins/*.py
-    # at startup. Default off so installs without plugins pay no import/exec cost.
     if os.environ.get("ANTARES_ENABLE_PLUGINS") == "1":
         try:
             load_plugins_from_dir()
         except Exception as exc:
             logger.exception("load_plugins_from_dir failed during startup: %s", exc)
 
-    # Note: ubicaciones map previews now use a lightweight static-map HTTP fetch
-    # (OSM tiles / Google Static Maps) instead of a persistent Playwright browser,
-    # so there is no browser to pre-warm at startup.
-    # spreadsheet_parse is long-running (15 min); avoid background import prewarm —
-    # it historically contended the import lock and froze early IPC calls.
-
     scheduler = get_scheduler()
-
-    # Track consecutive errors to avoid spamming logs on persistent issues
     _consecutive_errors = 0
     _MAX_CONSECUTIVE_ERRORS = 100
 
-    # This is the operational readiness contract consumed by Electron. Keep it
-    # immediately before the stdin loop: no synchronous startup work may follow.
-    # A process asked to stop during warm-up must never advertise readiness.
     if not _shutdown_requested:
         logger.info(t("info.backend_ready"))
         send_notification("ready", {
             "status": "ok",
             "backend_version": get_context()["backend_version"],
         })
-        # Soft-warm convert/canvas off the handshake path (daemon: never blocks quit).
-        threading.Thread(
-            target=HANDLERS.warm_post_ready,
-            name="post-ready-warm",
-            daemon=True,
-        ).start()
+        # Post-ready warm: pandas/openpyxl + convert/canvas (daemon, never blocks quit)
+        def _post_ready_warm():
+            try:
+                HANDLERS.warm_post_ready()
+            except Exception:
+                logger.exception("warm_post_ready failed")
+            try:
+                HANDLERS.warm_pandas_sync()
+            except Exception:
+                logger.exception("warm_pandas_sync post-ready failed")
+        threading.Thread(target=_post_ready_warm, name="post-ready-warm", daemon=True).start()
 
     try:
         while True:
