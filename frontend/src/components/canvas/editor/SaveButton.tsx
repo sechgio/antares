@@ -4,16 +4,18 @@ import { Check, Save } from 'lucide-react';
 
 interface SaveButtonProps {
   onSave: () => void;
+  /** Persistent "there are unsaved changes" signal (not just the transient flash). */
+  dirty?: boolean;
 }
 
-export default function SaveButton({ onSave }: SaveButtonProps) {
+export default function SaveButton({ onSave, dirty = false }: SaveButtonProps) {
   const [hovered, setHovered] = useState(false);
 
   return (
     <motion.button
       type="button"
       data-testid="canvas-save-btn"
-      aria-label="Guardar"
+      aria-label={dirty ? 'Guardar (hay cambios sin guardar)' : 'Guardar'}
       onClick={onSave}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -45,6 +47,13 @@ export default function SaveButton({ onSave }: SaveButtonProps) {
             </motion.span>
           )}
         </AnimatePresence>
+        {dirty && (
+          <span
+            data-testid="canvas-save-dirty"
+            aria-hidden
+            className="absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-amber-400"
+          />
+        )}
       </span>
       Guardar
     </motion.button>

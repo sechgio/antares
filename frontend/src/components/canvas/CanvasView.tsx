@@ -186,6 +186,8 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   const [contextMenu, setContextMenu] = useState<CanvasContextMenuState | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  /** F2 → pide a la sidebar abrir el rename inline de la capa seleccionada. */
+  const [renameRequest, setRenameRequest] = useState<{ layerId: string; nonce: number } | null>(null);
   const [pathEditingLayerId, setPathEditingLayerId] = useState<string | null>(null);
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -849,6 +851,46 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         }
       }
 
+      if (e.key === 'F2') {
+        const only =
+          selectedIds.length === 1
+            ? history.document.layers.find((l) => l.id === selectedIds[0])
+            : undefined;
+        if (only && !only.locked && only.type !== 'frame') {
+          e.preventDefault();
+          setRenameRequest((prev) => ({ layerId: only.id, nonce: (prev?.nonce ?? 0) + 1 }));
+        }
+        return;
+      }
+      // Ctrl+Shift+L/H actúan sobre toda la selección (incluye bloqueadas);
+      // los frames no se bloquean/ocultan por atajo.
+      const chromeToggleIds = selectedIds.filter((id) => {
+        const l = history.document.layers.find((x) => x.id === id);
+        return l && l.type !== 'frame';
+      });
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'L' || e.key === 'l')) {
+        if (chromeToggleIds.length) {
+          e.preventDefault();
+          sealPanelAndAbortGesture();
+          const allLocked = chromeToggleIds.every(
+            (id) => history.document.layers.find((l) => l.id === id)?.locked,
+          );
+          setAllLayers(setLayersLocked(history.document.layers, chromeToggleIds, !allLocked));
+        }
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'H' || e.key === 'h')) {
+        if (chromeToggleIds.length) {
+          e.preventDefault();
+          sealPanelAndAbortGesture();
+          const allHidden = chromeToggleIds.every(
+            (id) => history.document.layers.find((l) => l.id === id)?.visible === false,
+          );
+          setAllLayers(setLayersVisible(history.document.layers, chromeToggleIds, allHidden));
+        }
+        return;
+      }
+
       const plainKey = !e.ctrlKey && !e.metaKey && !e.altKey;
       if (plainKey) {
         if (e.key === 'v' || e.key === 'V') setTool('select');
@@ -1451,6 +1493,23 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     void onNewRef.current();
   }, []);
 
+  /** Crea un documento NUEVO con el contenido de la plantilla (no pisa el actual). */
+  const onNewFromPreset = useCallback(
+    (presetId: string, label: string) => {
+      void loadCanvasPresets().then((presets) => {
+        const preset = presets.find((p) => p.id === presetId);
+        if (!preset) return;
+        void onNewRef.current((doc) => {
+          const tpl = preset.create();
+          tpl.id = doc.id;
+          tpl.name = label || tpl.name;
+          return syncImagesPerPage(tpl);
+        });
+      });
+    },
+    [],
+  );
+
   const onSidebarDeleteDoc = useCallback(() => {
     void onDeleteDocRef.current();
   }, []);
@@ -1598,6 +1657,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         onDuplicate={() => void onDuplicate()}
         onImportPdf={pdfImport.onImportPdf}
         importDisabled={pdfImport.pdfImporting}
+        dirty={history.hasUnsavedEdits}
         leftPanelOpen={leftPanelOpen}
         rightPanelOpen={rightPanelOpen}
         uiLocked={uiLocked}
@@ -1644,6 +1704,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
             onToggleVisible={onToggleVisible}
             onToggleLocked={onToggleLocked}
             onRenameLayer={onRenameLayer}
+            renameRequest={renameRequest}
           />
           <DesignStage
             navRef={viewportNavRef}
@@ -1963,6 +2024,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
               setAllLayers(sendBackward(history.document.layers, selectedIds));
             }}
             onApplyPreset={onApplyPreset}
+            onNewFromPreset={onNewFromPreset}
             logoSideConflict={
               Boolean(selected?.type === 'logo' && logoSideHasConflict(history.document.layers, selected.id))
             }

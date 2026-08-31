@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FileStack, RotateCcw } from 'lucide-react';
+import { FilePlus2, FileStack, RotateCcw } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import {
   loadCanvasPresets,
@@ -9,12 +9,15 @@ import { resetPresetLabel, resolvePresetLabels, setPresetLabel } from '../ops/pr
 
 interface TemplatesSectionProps {
   onApplyPreset: (presetId: string) => void;
+  /** Crea un documento NUEVO con esta plantilla (si falta, solo aplica sobre el actual). */
+  onNewFromPreset?: (presetId: string, label: string) => void;
   /** Tooltip side — left panel uses right; right panel uses left. */
   tooltipPlacement?: 'left' | 'right';
 }
 
 export default function TemplatesSection({
   onApplyPreset,
+  onNewFromPreset,
   tooltipPlacement = 'right',
 }: TemplatesSectionProps) {
   const [presets, setPresets] = useState<ReadonlyArray<CanvasPreset> | null>(null);
@@ -168,6 +171,27 @@ export default function TemplatesSection({
                       <span className="min-w-0 flex-1 truncate">{p.displayLabel}</span>
                     </button>
                   </WithHoverTooltip>
+                  {onNewFromPreset && (
+                    <WithHoverTooltip
+                      label={`Crear documento con «${p.displayLabel}»`}
+                      placement={tooltipPlacement}
+                      variant="dark"
+                    >
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onNewFromPreset(p.id, p.displayLabel);
+                        }}
+                        className={`canvas-icon-btn absolute top-1/2 -translate-y-1/2 !h-5 !w-5 opacity-30 transition-opacity hover:opacity-100 ${p.isCustom ? 'right-6' : 'right-0.5'}`}
+                        aria-label={`Crear documento con plantilla ${p.label}`}
+                        data-testid={`canvas-new-from-preset-${p.id}`}
+                      >
+                        <FilePlus2 className="h-3 w-3" />
+                      </button>
+                    </WithHoverTooltip>
+                  )}
                   {p.isCustom && (
                     <WithHoverTooltip
                       label="Restaurar nombre original"

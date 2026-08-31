@@ -10,6 +10,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { useRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEmptyDocument, type CanvasDocument } from '../types';
+import { createLayer } from '../constants';
 import { MAX_HISTORY, useCanvasHistory } from '../hooks/useCanvasHistory';
 import { useDocumentLifecycle } from '../hooks/useDocumentLifecycle';
 import { useCanvasBootstrap } from '../hooks/useCanvasBootstrap';
@@ -158,6 +159,29 @@ describe('useDocumentLifecycle', () => {
     expect(queueCanvasCloudPush).toHaveBeenCalledTimes(2);
     expect(mocks.resetViewportPan).toHaveBeenCalled();
     expect(mocks.setPageIndex).toHaveBeenCalledWith(0);
+  });
+
+  it('new with mutate: template content lands in the NEW document (not the open one)', async () => {
+    vi.mocked(api.canvasCreate).mockResolvedValue({ document: makeDoc('doc-tpl', 'Sin título') });
+    const { result } = renderLifecycle();
+    await act(async () => {
+      await result.current.onNew((doc) => ({
+        ...doc,
+        name: 'Certificado',
+        layers: [...doc.layers, createLayer('rect', { id: 'tpl-rect', name: 'De plantilla' })],
+      }));
+    });
+
+    const opened = result.current.history.document;
+    expect(opened.id).toBe('doc-tpl');
+    expect(opened.name).toBe('Certificado');
+    expect(opened.layers.some((l) => l.id === 'tpl-rect')).toBe(true);
+    // The cloud push carries the mutated document, not the blank one.
+    const pushed = vi
+      .mocked(queueCanvasCloudPush)
+      .mock.calls.map(([d]) => d)
+      .find((d) => d.id === 'doc-tpl');
+    expect(pushed?.name).toBe('Certificado');
   });
 
   it('duplicate: saves first, duplicates, keeps viewport pan (no reset)', async () => {
