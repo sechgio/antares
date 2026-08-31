@@ -195,10 +195,14 @@ class TestConvertirImagen:
         resultado = convertir_imagen(imagen_rgb, salida, "JPEG", calidad=90)
         assert resultado == salida
         assert salida.exists()
-        assert not list(tmp_path.glob("*.tmp"))
+        # Temp opaco (mkstemp) en el mismo directorio, sin dejar residuos.
+        assert not list(tmp_path.glob("*.antares-tmp"))
         assert len(replace_calls) == 1
         src, dst = replace_calls[0]
-        assert Path(src).name == "atomic.jpg.tmp"
+        src_path = Path(src)
+        assert src_path.parent == tmp_path
+        assert src_path.name.endswith(".antares-tmp")
+        assert src_path.name != salida.name
         assert Path(dst) == salida
 
     def test_ensure_dir_false_writes_when_parent_exists(self, imagen_rgb, tmp_path, monkeypatch) -> None:

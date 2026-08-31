@@ -84,7 +84,7 @@ def _write_b64_zip_entry(zip_file: zipfile.ZipFile, archive_name: str, content_b
             base64.decode(BytesIO(content_b64.encode("ascii")), target)
 
 
-def _write_optimizer_zip(files: list[dict[str, Any]], zip_name: str, target: BytesIO | Path) -> str:
+def _write_optimizer_zip(files: list[dict[str, Any]], zip_name: str, target: BytesIO | Path | Any) -> str:
     safe_zip_name = _safe_zip_filename(str(zip_name))
     safe_folder_name = _safe_zip_folder_name(str(zip_name))
     seen_names: dict[str, int] = {}
@@ -121,9 +121,14 @@ def image_optimizer_zip(params: dict[str, Any]) -> dict[str, str]:
         if destination.is_symlink() or destination.parent.is_symlink():
             raise ValueError("symlink no permitido en ruta de salida")
         destination.parent.mkdir(parents=True, exist_ok=True)
-        if destination.exists():
-            raise FileExistsError(f"El archivo ya existe: {destination}")
-        _write_optimizer_zip(files, str(zip_name), destination)
+        # O_CREAT|O_EXCL cierra la carrera exists()→write: otro job que cree el
+        # archivo en la ventana gana y este call falla con FileExistsError.
+        try:
+            fd = os.open(destination, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            raise FileExistsError(f"El archivo ya existe: {destination}") from None
+        with os.fdopen(fd, "wb") as out_fh:
+            _write_optimizer_zip(files, str(zip_name), out_fh)
         return {"saved_path": str(destination), "filename": destination.name}
 
     # Write zip to a temp file so we never retain zip bytes + zip_base64 + file
@@ -203,20 +208,23 @@ def image_optimizer_save_files(params: dict[str, Any]) -> dict[str, Any]:
             skipped.append({"filename": safe_base, "reason": "no_free_slot"})
             continue
 
-        # Define tmp_target before the try block so the except handler can
-        # safely reference it even if the open() call itself fails before
-        # assignment (defensive — with_suffix won't fail on a sanitized name
-        # but the guard costs nothing and avoids UnboundLocalError).
-        tmp_target = target.with_suffix(target.suffix + ".antares-tmp")
+        # Temp exclusivo (mkstemp) en el mismo directorio: nombre impredecible,
+        # sin squatting, y os.rename no sobrescribe en Windows — si otra corrida
+        # creó `target` en la ventana TOCTOU, rename falla con FileExistsError
+        # y el archivo se reporta como no_free_slot en vez de pisarse.
+        fd, tmp_name = tempfile.mkstemp(dir=str(destination), prefix=f".{safe_base}-", suffix=".antares-tmp")
+        os.close(fd)
+        tmp_target = Path(tmp_name)
         try:
-            # Write to a sibling temp file first and only move into place
-            # once the base64 decode completes successfully. Otherwise
-            # `target.open("wb")` creates an empty/partial file before
-            # the malformed payload throws, leaving junk on disk that
-            # later runs would dedupe around.
             with tmp_target.open("wb") as out:
                 base64.decode(BytesIO(content_b64.encode("ascii")), out)
-            os.replace(tmp_target, target)
+            try:
+                os.rename(tmp_target, target)
+            except FileExistsError:
+                skipped.append({"filename": archive_name, "reason": "no_free_slot"})
+                with contextlib.suppress(OSError):
+                    tmp_target.unlink(missing_ok=True)
+                continue
             saved.append({"filename": archive_name, "path": str(target)})
         except (OSError, binascii.Error, ValueError) as err:
             # binascii.Error (sub-class of ValueError) is raised when

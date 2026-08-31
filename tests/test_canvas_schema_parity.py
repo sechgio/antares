@@ -45,11 +45,11 @@ def test_canvas_document_version_matches_frontend() -> None:
     shared_path = pathlib.Path(__file__).resolve().parent.parent / "shared" / "canvas-schema.json"
     assert shared_path.exists(), f"shared canvas schema missing: {shared_path}"
     schema = json.loads(shared_path.read_text(encoding="utf-8"))
-    assert DOCUMENT_VERSION == schema["documentVersion"]
+    assert schema["documentVersion"] == DOCUMENT_VERSION
     assert DOCUMENT_VERSION == 2
-    assert A4_WIDTH_MM == schema["a4"]["widthMm"]
-    assert A4_HEIGHT_MM == schema["a4"]["heightMm"]
-    assert ALLOWED_LAYER_TYPES == frozenset(schema["layerTypes"])
+    assert schema["a4"]["widthMm"] == A4_WIDTH_MM
+    assert schema["a4"]["heightMm"] == A4_HEIGHT_MM
+    assert frozenset(schema["layerTypes"]) == ALLOWED_LAYER_TYPES
     frontend_types = pathlib.Path(__file__).resolve().parent.parent / "frontend" / "src" / "components" / "canvas" / "types.ts"
     if frontend_types.exists():
         text = frontend_types.read_text(encoding="utf-8")

@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type HTMLAttributes, type RefObject } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import {
   ChevronDown,
   ChevronRight,
@@ -547,7 +547,7 @@ export default memo(function LeftSidebar({
       data-open={open ? 'true' : 'false'}
       data-testid="canvas-left-panel"
       aria-hidden={!open}
-      {...(!open ? ({ inert: '' } as HTMLAttributes<HTMLElement>) : {})}
+      inert={!open ? true : undefined}
     >
       <div className="border-b px-2 py-2" style={{ borderColor: 'var(--cv-border)' }}>
         <div className="canvas-section-title mb-1.5 flex items-center justify-between px-1">

@@ -4,21 +4,20 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import json
+import pathlib
 import re
 import uuid
 from datetime import datetime, timezone
-from typing import Any
-
-import json
-import pathlib
+from typing import Any, cast
 
 
-def _load_canvas_schema() -> dict[str, Any]:  # noqa: allow-dict-any
+def _load_canvas_schema() -> dict[str, Any]:  # allowlist: dict[str, Any]
     """Load shared/canvas-schema.json as single source of truth; fallback to hardcoded."""
     try:
         p = pathlib.Path(__file__).resolve().parents[3] / "shared" / "canvas-schema.json"
         if p.exists():
-            return json.loads(p.read_text(encoding="utf-8"))
+            return cast("dict[str, Any]", json.loads(p.read_text(encoding="utf-8")))  # allowlist: dict[str, Any]
     except Exception:
         pass
     return {
@@ -66,7 +65,7 @@ def _new_id() -> str:
     return str(uuid.uuid4())
 
 
-def create_empty_document(*, name: str = "Sin título") -> dict[str, Any]:  # noqa: allow-dict-any
+def create_empty_document(*, name: str = "Sin título") -> dict[str, Any]:  # allowlist: dict[str, Any]
     doc_id = _new_id()
     page_id = _new_id()
     return {
@@ -122,10 +121,10 @@ def _normalize_css_vars(raw: Any, *, with_geometry_defaults: bool = True) -> dic
     return out
 
 
-def _normalize_meta(raw: Any) -> dict[str, Any] | None:  # noqa: allow-dict-any
+def _normalize_meta(raw: Any) -> dict[str, Any] | None:  # allowlist: dict[str, Any]
     if not isinstance(raw, dict):
         return None
-    cleaned: dict[str, Any] = {}  # noqa: allow-dict-any
+    cleaned: dict[str, Any] = {}  # allowlist: dict[str, Any]
     if "key" in raw:
         cleaned["key"] = str(raw["key"])
     if "fallback" in raw:
@@ -177,7 +176,7 @@ def _normalize_meta(raw: Any) -> dict[str, Any] | None:  # noqa: allow-dict-any
                 if not isinstance(pt, dict):
                     continue
                 try:
-                    pt_dict: dict[str, Any] = {  # noqa: allow-dict-any
+                    pt_dict: dict[str, Any] = {  # allowlist: dict[str, Any]
                         "x": float(pt.get("x", 0)),
                         "y": float(pt.get("y", 0)),
                     }
@@ -200,7 +199,7 @@ def _normalize_meta(raw: Any) -> dict[str, Any] | None:  # noqa: allow-dict-any
                     cleaned_points.append(pt_dict)
                 except (TypeError, ValueError):
                     continue
-            path_dict: dict[str, Any] = {"points": cleaned_points}  # noqa: allow-dict-any
+            path_dict: dict[str, Any] = {"points": cleaned_points}  # allowlist: dict[str, Any]
             if "closed" in raw_path:
                 path_dict["closed"] = bool(raw_path["closed"])
             cleaned["path"] = path_dict
@@ -276,7 +275,7 @@ _AUTO_LAYOUT_ALIGNS = frozenset({"start", "center", "end", "stretch"})
 _FRAME_CONSTRAINTS = frozenset({"start", "end", "center", "scale"})
 
 
-def _normalize_auto_layout(raw: Any) -> dict[str, Any] | None:  # noqa: allow-dict-any
+def _normalize_auto_layout(raw: Any) -> dict[str, Any] | None:  # allowlist: dict[str, Any]
     """Keep a valid autoLayout object; omit key entirely if invalid (no defaults)."""
     if not isinstance(raw, dict):
         return None
@@ -329,13 +328,13 @@ def _normalize_track_list(raw: Any) -> list[float] | None:
     return tracks
 
 
-def _normalize_layer(raw: Any) -> dict[str, Any] | None:  # noqa: allow-dict-any
+def _normalize_layer(raw: Any) -> dict[str, Any] | None:  # allowlist: dict[str, Any]
     if not isinstance(raw, dict):
         return None
     layer_type = str(raw.get("type", "text"))
     if layer_type not in ALLOWED_LAYER_TYPES:
         return None
-    layer: dict[str, Any] = {  # noqa: allow-dict-any
+    layer: dict[str, Any] = {  # allowlist: dict[str, Any]
         "id": str(raw.get("id") or _new_id()),
         "type": layer_type,
         "name": str(raw.get("name") or layer_type).strip() or layer_type,
@@ -397,10 +396,10 @@ def _normalize_pages(raw: Any) -> list[dict[str, str]]:
     return pages or [{"id": _new_id(), "name": "Página 1"}]
 
 
-def _normalize_settings(raw: Any) -> dict[str, Any]:  # noqa: allow-dict-any
+def _normalize_settings(raw: Any) -> dict[str, Any]:  # allowlist: dict[str, Any]
     if not isinstance(raw, dict):
         return {}
-    out: dict[str, Any] = {}  # noqa: allow-dict-any
+    out: dict[str, Any] = {}  # allowlist: dict[str, Any]
     if "imagesPerPage" in raw:
         with contextlib.suppress(TypeError, ValueError):
             out["imagesPerPage"] = max(1, int(raw["imagesPerPage"]))
@@ -445,10 +444,10 @@ def _normalize_settings(raw: Any) -> dict[str, Any]:  # noqa: allow-dict-any
 _STYLE_KINDS = frozenset({"color", "text", "effect"})
 
 
-def _normalize_styles(raw: Any) -> list[dict[str, Any]]:  # noqa: allow-dict-any
+def _normalize_styles(raw: Any) -> list[dict[str, Any]]:  # allowlist: dict[str, Any]
     if not isinstance(raw, list):
         return []
-    styles: list[dict[str, Any]] = []  # noqa: allow-dict-any
+    styles: list[dict[str, Any]] = []  # allowlist: dict[str, Any]
     for item in raw:
         if not isinstance(item, dict):
             continue
@@ -462,10 +461,10 @@ def _normalize_styles(raw: Any) -> list[dict[str, Any]]:  # noqa: allow-dict-any
     return styles
 
 
-def _normalize_guides(raw: Any) -> list[dict[str, Any]]:  # noqa: allow-dict-any
+def _normalize_guides(raw: Any) -> list[dict[str, Any]]:  # allowlist: dict[str, Any]
     if not isinstance(raw, list):
         return []
-    guides: list[dict[str, Any]] = []  # noqa: allow-dict-any
+    guides: list[dict[str, Any]] = []  # allowlist: dict[str, Any]
     for item in raw:
         if not isinstance(item, dict):
             continue
@@ -487,7 +486,7 @@ def _normalize_guides(raw: Any) -> list[dict[str, Any]]:  # noqa: allow-dict-any
     return guides
 
 
-def normalize_document(raw: Any) -> dict[str, Any]:  # noqa: allow-dict-any
+def normalize_document(raw: Any) -> dict[str, Any]:  # allowlist: dict[str, Any]
     if not isinstance(raw, dict):
         return create_empty_document()
 
@@ -504,7 +503,7 @@ def normalize_document(raw: Any) -> dict[str, Any]:  # noqa: allow-dict-any
         height_mm = A4_HEIGHT_MM
 
     layers_in = raw.get("layers")
-    layers: list[dict[str, Any]] = []  # noqa: allow-dict-any
+    layers: list[dict[str, Any]] = []  # allowlist: dict[str, Any]
     if isinstance(layers_in, list):
         for item in layers_in:
             layer = _normalize_layer(item)
@@ -561,7 +560,7 @@ def normalize_document(raw: Any) -> dict[str, Any]:  # noqa: allow-dict-any
     }
 
 
-CanvasDocument = dict[str, Any]  # noqa: allow-dict-any
+CanvasDocument = dict[str, Any]  # allowlist: dict[str, Any]
 
 def next_copy_name(name: str, existing_names: set[str] | None = None) -> str:
     """Build a unique copy name: 'X (copia)', 'X (copia 2)', … without nesting suffixes."""
@@ -577,11 +576,11 @@ def next_copy_name(name: str, existing_names: set[str] | None = None) -> str:
 
 
 def duplicate_document(
-    source: dict[str, Any],  # noqa: allow-dict-any
+    source: dict[str, Any],  # allowlist: dict[str, Any]
     *,
     name: str | None = None,
     existing_names: set[str] | None = None,
-) -> dict[str, Any]:  # noqa: allow-dict-any
+) -> dict[str, Any]:  # allowlist: dict[str, Any]
     doc = normalize_document(copy.deepcopy(source))
     doc["id"] = _new_id()
     doc["updatedAt"] = utc_now_iso()

@@ -7,6 +7,7 @@ import csv
 import io
 import json
 import os
+import stat
 import tempfile
 import threading
 import uuid
@@ -55,7 +56,12 @@ def _clear_spreadsheet_caches() -> None:
 
 def _spill_dir() -> Path:
     out = Path(tempfile.gettempdir()) / "antares-spreadsheet-results"
-    out.mkdir(parents=True, exist_ok=True)
+    with contextlib.suppress(FileExistsError):
+        out.mkdir(parents=True, exist_ok=False)
+    # lstat no sigue symlinks/junctions: si %TEMP%\antares-spreadsheet-results
+    # fue pre-creado como symlink, rechazar en vez de escribir a través de él.
+    if not stat.S_ISDIR(out.lstat().st_mode):
+        raise RuntimeError("antares-spreadsheet-results no es un directorio seguro")
     return out
 
 
