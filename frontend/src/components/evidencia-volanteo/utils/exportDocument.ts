@@ -1,5 +1,6 @@
 import { api } from '../../../api';
 import { buildTimestampedFilename, downloadBase64Blob, fileToBase64 } from '../../../utils/pdfAssets';
+import { stageFileForIpc } from '../../../utils/stageFile';
 import { DEFAULT_CUADRANTE_LABEL, IMAGES_PER_PAGE } from '../constants';
 import type { CuadranteRange, LocalImage, LogoAsset } from '../types';
 import { buildExportHtml, imageExportKey } from './buildExportHtml';
@@ -7,9 +8,9 @@ import { resolveCuadranteForPage } from './cuadranteRanges';
 
 /**
  * Build export image maps.
- * - Paths preferred when available (DOCX / non-html PDF fallback).
- * - Base64 only for images without a valid local path, or when data URIs are
- *   required for WeasyPrint HTML (data: only; file:// is denied).
+ * - Stageable files use read capabilities for DOCX and non-HTML PDF exports.
+ * - Base64 is used when the bridge is unavailable or WeasyPrint needs data:
+ *   URIs. file: URLs stay out of the HTML payload.
  */
 export async function buildImagePayload(
   images: LocalImage[],
@@ -27,17 +28,18 @@ export async function buildImagePayload(
   for (const [index, image] of images.entries()) {
     const filename = image.file.name;
     const exportKey = imageExportKey(index, filename);
-    const localPath = image.localPath?.trim();
-    const hasPath = Boolean(localPath);
 
-    if (hasPath && localPath) {
-      imagePaths[exportKey] = localPath;
+    if (!needDataUris) {
+      const token = await stageFileForIpc(image.file);
+      if (token) imagePaths[exportKey] = token;
     }
 
-    // WeasyPrint HTML needs data: URIs. DOCX can use paths alone.
-    if (needDataUris || !hasPath) {
+    const hasToken = Boolean(imagePaths[exportKey]);
+
+    // WeasyPrint HTML needs data: URIs. DOCX can use capability-backed paths.
+    if (needDataUris || !hasToken) {
       const base64 = await fileToBase64(image.file);
-      if (!hasPath) {
+      if (!hasToken) {
         imagesBase64[exportKey] = base64;
       }
       if (needDataUris) {

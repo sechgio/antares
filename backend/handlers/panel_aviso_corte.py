@@ -179,11 +179,11 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 @with_locale
-@validate_params("path")
+@validate_params()
 def panel_aviso_corte_template(params: dict[str, Any]) -> dict[str, Any]:
-    raw_path = str(params.get("path") or "").strip()
+    raw_path = str(params.get("output_path") or params.get("path") or "").strip()
     if not raw_path:
-        msg = "path es requerido"
+        msg = "output_path es requerido"
         raise ValueError(msg)
     resolved_path = str(params.get("_resolved_output_path") or raw_path).strip()
     if not resolved_path.lower().endswith(".xlsx"):

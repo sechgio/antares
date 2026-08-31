@@ -1,18 +1,17 @@
 import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import Button from '../ui/Button';
 import { api } from '../../api';
-import { registerLocalPaths } from '../../utils/registerLocalPath';
 import { Folder, Plus, RotateCcw, UploadCloud, FileImage, Film, Database } from 'lucide-react';
 
 interface DropzoneProps {
   dragOver: boolean;
   onAddFiles: () => void;
-  onAddFolderPaths: (paths: string[]) => void;
-  onImportDatabase?: (excelPath: string) => void;
+  onAddFolderPaths: (paths: string[], fileTokens?: string[]) => void;
+  onImportDatabase?: (excelPath: string, fileToken?: string) => void;
   fileCount?: number;
   onClear?: () => void;
   videoCount?: number;
-  onPasteFiles?: (files: string[]) => void;
+  onPasteFiles?: (files: File[]) => void;
   centerControls?: ReactNode;
   conversionAction?: ReactNode;
   progressIndicator?: ReactNode;
@@ -40,7 +39,7 @@ export default function Dropzone({
   const openFolderPicker = async () => {
     try {
       const r = await api.dialogFolder();
-      if (r.paths.length > 0) onAddFolderPaths(r.paths);
+      if (r.paths.length > 0) onAddFolderPaths(r.paths, r.file_tokens);
     } catch (err) {
       console.error('[Dropzone] Error al seleccionar carpeta:', err);
     }
@@ -50,18 +49,14 @@ export default function Dropzone({
     if (!onPasteFiles) return;
     const items = e.clipboardData?.items;
     if (!items) return;
-    const files: string[] = [];
+    const files: File[] = [];
     for (const item of Array.from(items)) {
       if (item.kind === 'file') {
         const file = item.getAsFile();
-        if (file) {
-          const path = window.electronAPI?.getPathForFile(file) ?? '';
-          if (path) files.push(path);
-        }
+        if (file) files.push(file);
       }
     }
     if (files.length > 0) {
-      registerLocalPaths(files);
       setPasting(true);
       onPasteFiles(files);
       setTimeout(() => setPasting(false), 500);
@@ -103,7 +98,8 @@ export default function Dropzone({
               <Button variant="ghost" size="sm" onClick={async () => {
                 const r = await api.dialogFiles();
                 const path = r?.paths?.[0];
-                if (path) onImportDatabase(path);
+                const fileToken = r?.file_tokens?.[0];
+                if (path) onImportDatabase(path, fileToken);
               }}>
                 <Database className="h-3.5 w-3.5" />
                 <span className="hidden lg:inline">Base de datos</span>

@@ -8,7 +8,6 @@
  */
 
 import { api } from '../api';
-import { registerLocalPath } from './registerLocalPath';
 
 const MAX_CACHE = 200;
 const MIN_CONCURRENCY = 4;
@@ -62,6 +61,18 @@ function cacheSet(key: string, dataUrl: string): void {
   }
 }
 
+function localImageRequest(fileRef: string, maxEdge?: number): { path?: string; file_token?: string; maxEdge?: number } {
+  return fileRef.startsWith('antares-read_')
+    ? { file_token: fileRef, maxEdge }
+    : { path: fileRef, maxEdge };
+}
+
+function localImageDataRequest(fileRef: string): { path?: string; file_token?: string } {
+  return fileRef.startsWith('antares-read_')
+    ? { file_token: fileRef }
+    : { path: fileRef };
+}
+
 function runLimited<T>(fn: () => Promise<T>): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const start = () => {
@@ -100,9 +111,7 @@ export async function getLocalThumbnail(
 
   const promise = (async (): Promise<string | null> => {
     try {
-      // Allowlist must be registered before local_thumbnail asserts the path.
-      await registerLocalPath(filePath);
-      const result = await runLimited(() => api.localThumbnail({ path: filePath, maxEdge: edge }));
+      const result = await runLimited(() => api.localThumbnail(localImageRequest(filePath, edge)));
       if (result && typeof result.dataUrl === 'string' && result.dataUrl.startsWith('data:')) {
         cacheSet(key, result.dataUrl);
         return result.dataUrl;
@@ -136,8 +145,7 @@ export async function getLocalImageDataUrl(filePath: string): Promise<string | n
 
   const promise = (async (): Promise<string | null> => {
     try {
-      await registerLocalPath(filePath);
-      const result = await runLimited(() => api.localImageDataUrl({ path: filePath }));
+      const result = await runLimited(() => api.localImageDataUrl(localImageDataRequest(filePath)));
       if (result && typeof result.dataUrl === 'string' && result.dataUrl.startsWith('data:')) {
         cacheSet(key, result.dataUrl);
         return result.dataUrl;

@@ -5,7 +5,7 @@ import {
 import { api } from '../../api';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useToast } from '../../hooks/useToast';
-import { getElectronFilePath } from '../../utils/pdfAssets';
+import { stageFileForIpc } from '../../utils/stageFile';
 import { saveFeatureHistory } from '../../utils/history';
 import PositionPanel from './PositionPanel';
 import StampPlacementEditor from './StampPlacementEditor';
@@ -35,6 +35,7 @@ import {
 
 const MAX_IN_MEMORY_BYTES = 8 * 1024 * 1024;
 const MAX_STAMP_BYTES = 10 * 1024 * 1024;
+const READ_FILE_TOKEN_PREFIX = 'antares-read_';
 
 function formatFileSize(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -63,8 +64,6 @@ export default function SelladorView() {
   const [pageCount, setPageCount] = useState(0);
   const [pageSize, setPageSize] = useState<PdfPageSize | null>(null);
   const [stampFile, setStampFile] = useState<File | null>(null);
-  const [stampPath, setStampPath] = useState<string | null>(null);
-  const [stampBase64, setStampBase64] = useState<string | null>(null);
   const [stampPreviewUrl, setStampPreviewUrl] = useState<string | null>(null);
   const [stampCount, setStampCount] = useState(5);
   const [positions, setPositions] = useState<StampPosition[]>([]);
@@ -79,8 +78,8 @@ export default function SelladorView() {
   const [previewWidth, setPreviewWidth] = useState(900);
   const debouncedPreviewWidth = useDebouncedValue(previewWidth, 300);
 
-  const hasPdfSource = !!pdfPath || !!pdfBase64;
-  const hasStampSource = !!stampPath || !!stampBase64;
+  const hasPdfSource = !!pdfPath || !!pdfBase64 || !!pdfFile;
+  const hasStampSource = !!stampFile;
 
   useEffect(() => {
     const node = previewRef.current;
@@ -192,15 +191,19 @@ export default function SelladorView() {
     });
   }, [addToast, initializePositions, stampPreviewUrl]);
 
-  const loadPdfFromPath = useCallback(async (path: string, displayName?: string) => {
-    const info = await api.selladorInspectPdf({ pdf_path: path });
+  const loadPdfFromPath = useCallback(async (path: string, displayName?: string, fileToken?: string) => {
+    if (!fileToken?.startsWith(READ_FILE_TOKEN_PREFIX)) {
+      throw new Error('El diálogo no entregó un permiso de lectura para el PDF. Vuelve a seleccionarlo.');
+    }
+    const source = fileToken;
+    const info = await api.selladorInspectPdf({ pdf_path: source });
     const name = displayName || info.filename || path.split(/[/\\]/).pop() || 'documento.pdf';
     const pseudoFile = new File([], name, { type: 'application/pdf' });
     await applyPdfMetadata(
       pseudoFile,
       info.page_count,
       { width: info.page_width, height: info.page_height },
-      path,
+      source,
       null,
     );
   }, [applyPdfMetadata]);
@@ -212,14 +215,19 @@ export default function SelladorView() {
     }
 
     try {
-      const localPath = getElectronFilePath(file);
-      if (localPath) {
-        const info = await api.selladorInspectPdf({ pdf_path: localPath });
+      let fileToken: string | null = null;
+      try {
+        fileToken = await stageFileForIpc(file);
+      } catch {
+        // A bounded Base64 fallback keeps browser/pathless selection usable.
+      }
+      if (fileToken) {
+        const info = await api.selladorInspectPdf({ pdf_path: fileToken });
         await applyPdfMetadata(
           file,
           info.page_count,
           { width: info.page_width, height: info.page_height },
-          localPath,
+          null,
           null,
         );
         return;
@@ -248,7 +256,7 @@ export default function SelladorView() {
       const path = result.paths[0];
       if (!path) return;
       const name = path.split(/[/\\]/).pop();
-      await loadPdfFromPath(path, name);
+      await loadPdfFromPath(path, name, result.file_tokens?.[0]);
     } catch (error) {
       addToast({ message: error instanceof Error ? error.message : 'No se pudo abrir el PDF.', type: 'error' });
     }
@@ -264,13 +272,10 @@ export default function SelladorView() {
       return;
     }
     try {
-      const localPath = getElectronFilePath(file);
       if (stampPreviewUrl) URL.revokeObjectURL(stampPreviewUrl);
       const previewUrl = URL.createObjectURL(file);
       setStampFile(file);
-      setStampPath(localPath);
-      // Prefer disk path; keep Base64 only when no local path (browser / pathless drop).
-      setStampBase64(localPath ? null : await fileToBase64(file));
+      // Keep the File and create a fresh token when applying the PDF.
       setStampPreviewUrl(previewUrl);
       if (pageSize) {
         await initializePositions(pageSize, previewUrl);
@@ -298,6 +303,7 @@ export default function SelladorView() {
     renderOtherPagesPreview({
       pdfPath,
       pdfBase64,
+      pdfFile,
       pageCount,
       containerW: debouncedPreviewWidth,
       stampUrl: stampPreviewUrl,
@@ -327,6 +333,7 @@ export default function SelladorView() {
     pageCount,
     pageSize,
     pdfBase64,
+    pdfFile,
     pdfPath,
     debouncedPreviewWidth,
     stampPreviewUrl,
@@ -362,7 +369,7 @@ export default function SelladorView() {
   }, [positions.length]);
 
   const handleApply = async () => {
-    if (!canApply || !primaryRect || !pdfFile) return;
+    if (!canApply || !primaryRect || !pdfFile || !stampFile) return;
     setApplying(true);
     try {
       const defaultName = `${stripPdfExtension(pdfFile.name)}_sellado.pdf`;
@@ -377,9 +384,26 @@ export default function SelladorView() {
       const outputPath = saveTarget.paths[0];
       if (!outputPath) return;
 
+      let pdfSource: { pdf_path: string } | { pdf_b64: string };
+      if (pdfPath) {
+        pdfSource = { pdf_path: pdfPath };
+      } else if (pdfBase64) {
+        pdfSource = { pdf_b64: pdfBase64 };
+      } else {
+        const stagedPdf = await stageFileForIpc(pdfFile);
+        if (stagedPdf) {
+          pdfSource = { pdf_path: stagedPdf };
+        } else {
+          if (pdfFile.size > MAX_IN_MEMORY_BYTES) {
+            throw new Error('PDF demasiado grande para procesarlo sin staging.');
+          }
+          pdfSource = { pdf_b64: await fileToBase64(pdfFile) };
+        }
+      }
+
       const stampPlacements = toBackendStampPlacements(resolvedPlacements);
       const applyBase = {
-        ...(pdfPath ? { pdf_path: pdfPath } : { pdf_b64: pdfBase64! }),
+        ...pdfSource,
         stamp_count: resolvedPlacements.length,
         x: primaryRect.x,
         y: primaryRect.y,
@@ -390,24 +414,14 @@ export default function SelladorView() {
         filename: defaultName,
         output_path: outputPath,
       };
-      // Prefer disk path (cheap IPC). Retry with Base64 only if path fails.
-      let res;
-      if (stampPath) {
-        try {
-          res = await api.selladorApply({ ...applyBase, stamp_path: stampPath });
-        } catch (err) {
-          const stampFileForFallback = stampFile;
-          let b64 = stampBase64;
-          if (!b64 && stampFileForFallback) {
-            b64 = await fileToBase64(stampFileForFallback);
-            setStampBase64(b64);
-          }
-          if (!b64) throw err;
-          res = await api.selladorApply({ ...applyBase, stamp_b64: b64 });
-        }
+      const stagedStamp = await stageFileForIpc(stampFile);
+      let stampSource: { stamp_path: string } | { stamp_b64: string };
+      if (stagedStamp) {
+        stampSource = { stamp_path: stagedStamp };
       } else {
-        res = await api.selladorApply({ ...applyBase, stamp_b64: stampBase64! });
+        stampSource = { stamp_b64: await fileToBase64(stampFile) };
       }
+      const res = await api.selladorApply({ ...applyBase, ...stampSource });
 
       addToast({
         message: res.saved_path ? `PDF guardado: ${res.filename}` : 'PDF sellado correctamente.',
@@ -450,8 +464,6 @@ export default function SelladorView() {
   const clearStamp = () => {
     if (stampPreviewUrl) URL.revokeObjectURL(stampPreviewUrl);
     setStampFile(null);
-    setStampPath(null);
-    setStampBase64(null);
     setStampPreviewUrl(null);
     setPositions([]);
   };
@@ -628,6 +640,7 @@ export default function SelladorView() {
                 <StampPlacementEditor
                   pdfBase64={pdfBase64}
                   pdfPath={pdfPath}
+                  pdfFile={pdfFile}
                   stampUrl={stampPreviewUrl}
                   positions={positions}
                   activeIndex={activePositionIndex}
@@ -643,6 +656,7 @@ export default function SelladorView() {
                   <PdfPagePreview
                     pdfBase64={pdfBase64}
                     pdfPath={pdfPath}
+                    pdfFile={pdfFile}
                     width={debouncedPreviewWidth}
                     onPageSize={(size) => setPageSize((current) => current ?? size)}
                   />

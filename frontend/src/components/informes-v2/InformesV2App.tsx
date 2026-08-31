@@ -12,14 +12,11 @@ import PreviewPanel from './PreviewPanel';
 import { downloadBase64Blob, downloadBase64Pdf, fileToBase64, fileToDataUrl, informesV2Api } from './api';
 import {
   askPdfSavePath,
-  collectFilePaths,
   logoToPdfPath,
   preparePhotosForExport,
-  registerExportLocalPaths,
   type LogoAsset,
 } from './exportPdf';
 import { matchPhotosForId } from './photoMatch';
-import { registerLocalPaths } from '../../utils/registerLocalPath';
 import type { InformeV2, InformeV2ListItem, PhotoAsset } from './types';
 
 export default function InformesV2App() {
@@ -213,7 +210,6 @@ export default function InformesV2App() {
       return;
     }
     try {
-      await registerLocalPaths(collectFilePaths([file]));
       const url = await fileToDataUrl(file);
       const asset: LogoAsset = { src: url, file };
       if (side === 'left') setLogoLeft(asset);
@@ -227,7 +223,6 @@ export default function InformesV2App() {
     if (!files || files.length === 0) return;
     try {
       const fileList = Array.from(files);
-      await registerLocalPaths(collectFilePaths(fileList));
       const next: PhotoAsset[] = [];
       for (const file of fileList) {
         const src = await fileToDataUrl(file);
@@ -263,8 +258,6 @@ export default function InformesV2App() {
         logoToPdfPath(logoLeft, 'logo-left', localImagePaths),
         logoToPdfPath(logoRight, 'logo-right', localImagePaths),
       ]);
-      await registerExportLocalPaths(localImagePaths);
-
       const outputPath = await askPdfSavePath(
         `informe_v2_${reportForRender.id}.pdf`,
         'Guardar PDF del informe',
@@ -348,8 +341,6 @@ export default function InformesV2App() {
         logoToPdfPath(logoLeft, 'logo-left', localImagePaths),
         logoToPdfPath(logoRight, 'logo-right', localImagePaths),
       ]);
-      await registerExportLocalPaths(localImagePaths);
-
       // Hard guard: photo data-URLs recreate the 64MB IPC "Response too large" failure.
       const embeddedPhotos = Object.values(imagesById)
         .flat()

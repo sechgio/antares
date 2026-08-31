@@ -1,4 +1,7 @@
 // Tests for Electron dialog IPC handling without requiring Electron at import time.
+const fsForDialog = require('fs');
+const osForDialog = require('os');
+const pathForDialog = require('path');
 const {
   handleDialogCall,
   _clearAllowedWriteRoots,
@@ -25,11 +28,19 @@ async function run() {
   clearAllowedReadPaths();
   _clearAllowedWriteRoots();
 
+  const selectedInputDir = pathForDialog.join(osForDialog.tmpdir(), `antares-dialog-input-${process.pid}`);
+  const selectedInputPath = pathForDialog.join(selectedInputDir, 'data.xlsx');
+  fsForDialog.mkdirSync(selectedInputDir, { recursive: true });
+  fsForDialog.writeFileSync(selectedInputPath, 'test input');
+  process.on('exit', () => {
+    try { fsForDialog.rmSync(selectedInputDir, { recursive: true, force: true }); } catch {}
+  });
+
   const calls = [];
   const dialog = {
     async showOpenDialog(win, options) {
       calls.push({ kind: 'open', win, options });
-      return { canceled: false, filePaths: ['C:/tmp/data.xlsx'] };
+      return { canceled: false, filePaths: [selectedInputPath] };
     },
     async showSaveDialog(win, options) {
       calls.push({ kind: 'save', win, options });
@@ -40,7 +51,10 @@ async function run() {
 
   const files = await handleDialogCall('dialog_files', {}, dialog, win);
   assert(files.handled === true, 'dialog_files should be handled by Electron');
-  assert(files.result.paths[0] === 'C:/tmp/data.xlsx', 'dialog_files should return selected file path');
+  assert(files.result.paths[0] === selectedInputPath, 'dialog_files should return selected file path');
+  assert(Array.isArray(files.result.file_tokens), 'dialog_files should return read capability tokens');
+  assert(files.result.file_tokens.length === files.result.paths.length, 'dialog_files should return one token per selected path');
+  assert(/^antares-read_/.test(files.result.file_tokens[0]), 'dialog_files token should be a read capability');
   assert(calls[0].options.properties.includes('openFile'), 'dialog_files should use openFile');
   assert(calls[0].options.filters[0].extensions.includes('mp4'), 'dialog_files should accept MP4 videos');
   assert(calls[0].options.filters[0].extensions.includes('mkv'), 'dialog_files should accept MKV videos');
@@ -78,6 +92,8 @@ async function run() {
     assert(folderResult.result.paths.some((p) => p.endsWith('clip.mp4')), 'dialog_folder should include top-level mp4');
     assert(folderResult.result.paths.some((p) => folderPath.basename(p) === 'deep.png'), 'dialog_folder should include nested png from subfolder');
     assert(!folderResult.result.paths.some((p) => p.endsWith('notes.txt')), 'dialog_folder should exclude unsupported txt');
+    assert(folderResult.result.file_tokens.length === folderResult.result.paths.length, 'dialog_folder should return one token per scanned file');
+    assert(folderResult.result.file_tokens.every((token) => /^antares-read_/.test(token)), 'dialog_folder tokens should be read capabilities');
 
     const canceledFolder = await handleDialogCall('dialog_folder', {}, {
       async showOpenDialog() { return { canceled: true, filePaths: [] }; },
@@ -85,6 +101,7 @@ async function run() {
     }, win);
     assert(canceledFolder.handled === true, 'dialog_folder should handle cancellation');
     assert(canceledFolder.result.paths.length === 0, 'dialog_folder should return empty paths on cancel');
+    assert(canceledFolder.result.file_tokens.length === 0, 'dialog_folder should return no tokens on cancel');
 
     // dialog_folder with pickOnly: returns the raw folder path without
     // scanning its contents. Used by the optimizer's "save to folder" flow
@@ -100,6 +117,7 @@ async function run() {
     assert(pickOnlyResult.handled === true, 'dialog_folder with pickOnly should be handled');
     assert(pickOnlyResult.result.paths.length === 0, 'dialog_folder with pickOnly should not scan files');
     assert(pickOnlyResult.result.folder === 'C:/tmp/out', 'dialog_folder with pickOnly should return the raw folder path');
+    assert(pickOnlyResult.result.file_tokens.length === 0, 'dialog_folder with pickOnly should return no file tokens');
   } finally {
     await folderFs.promises.rm(tempFolderDir, { recursive: true, force: true });
   }
