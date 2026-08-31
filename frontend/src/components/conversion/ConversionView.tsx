@@ -597,7 +597,7 @@ export default function ConversionView() {
     }
   };
 
-  const removeFile = (path: string) => {
+  const removeFile = useCallback((path: string) => {
     setFiles((prev) => {
       const next = prev.filter((p) => p !== path);
       setSelectedFile((selected) => {
@@ -608,16 +608,16 @@ export default function ConversionView() {
       setSelectedFiles((s) => { const ns = new Set(s); ns.delete(path); return ns; });
       return next;
     });
-  };
+  }, []);
 
-  const removeSelectedFiles = () => {
+  const removeSelectedFiles = useCallback(() => {
     setFiles((prev) => {
       const next = prev.filter((p) => !selectedFiles.has(p));
       setSelectedFile((selected) => (selected && next.includes(selected) ? selected : next[0] || null));
       setSelectedFiles(new Set());
       return next;
     });
-  };
+  }, [selectedFiles]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
