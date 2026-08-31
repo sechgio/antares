@@ -153,6 +153,13 @@ export function useEvidenciaSession(): EvidenciaSessionHookResult {
       if (cancelled) return;
       if (stored && !dirtyRef.current) {
         const restored = storedToSession(stored);
+        // The Electron read allowlist is process-local. Re-grant persisted
+        // File-derived paths before DOCX/PDF export can send them back to the
+        // main process after an application restart.
+        await registerLocalPaths(
+          restored.images.map((image) => image.localPath).filter((p): p is string => Boolean(p)),
+        );
+        if (cancelled) return;
         setTitleState(restored.title);
         setCuadranteLabelState(restored.cuadranteLabel);
         setShowCuadranteLabelState(restored.showCuadranteLabel);

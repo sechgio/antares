@@ -28,23 +28,14 @@ function run() {
   const buildStart = content.indexOf('function runBuild()');
   const qualityGate = content.slice(qualityGateStart, buildStart);
 
-  assert(qualityGate.includes("const lintResult = sh('npm run lint:python 2>&1'"), 'lint propagates command failures');
-  assert(qualityGate.includes("const tcBackend = sh('npm run typecheck:backend 2>&1'"), 'backend typecheck propagates command failures');
-  assert(qualityGate.includes("const tcFrontend = sh('npm run typecheck:frontend 2>&1'"), 'frontend typecheck propagates command failures');
+  assert(qualityGate.includes("sh('npm run ci 2>&1'"), 'quality gate delegates to the fail-closed CI command');
   assert(
     !qualityGate.includes("trySh('npm run lint:python") &&
       !qualityGate.includes("trySh('npm run typecheck:backend") &&
       !qualityGate.includes("trySh('npm run typecheck:frontend"),
     'quality gate does not swallow mandatory command failures'
   );
-  assert(
-    qualityGate.includes("sh('npm run audit:python 2>&1'"),
-    'Python dependency audit propagates command failures'
-  );
-  assert(
-    !qualityGate.includes("trySh('npm run audit:python"),
-    'Python dependency audit cannot fail open'
-  );
+  assert(!qualityGate.includes("trySh('npm run ci"), 'quality gate cannot fail open');
 
   assert(
     content.includes('HEAD...origin/main') || content.includes('HEAD === origin/main'),

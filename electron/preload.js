@@ -33,6 +33,16 @@ function reportRendererError(payload) {
   }
 }
 
+function registerFileInputPath(filePath) {
+  if (typeof filePath !== 'string' || !filePath.trim()) return false;
+  try {
+    ipcRenderer.send('register-file-input-path', filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // NODE_ENV no es confiable en apps empaquetadas (Electron no lo setea por
 // defecto, así que los logs debug aparecían en producción). El marcador fiable
 // es `app.isPackaged`, pero el preload corre con sandbox: true y no tiene
@@ -104,11 +114,20 @@ try {
     // contextIsolation and cannot import electron modules directly.
     getPathForFile: (file) => {
       try {
-        return webUtils.getPathForFile(file) || '';
+        const resolvedPath = webUtils.getPathForFile(file) || '';
+        if (resolvedPath) {
+          // File-derived paths (file inputs / drag-drop) are registered through
+          // a private authenticated channel. Registration is best-effort and
+          // never changes the caller's path-resolution behavior.
+          registerFileInputPath(resolvedPath);
+        }
+        return resolvedPath;
       } catch {
         return '';
       }
     },
+    registerFileInputPath,
+    canvasFlushAck: () => ipcRenderer.invoke('canvas-flush-ack'),
     registerLocalPath: (filePath) => ipcRenderer.invoke('ipc-call', 'register_local_path', { path: filePath }),
     fileStagedCreate: (name, size) => ipcRenderer.invoke('ipc-call', 'file_staged_create', { name, size }),
     // Prefer ArrayBuffer/Uint8Array (no base64). Strings still sent as chunk_b64 for legacy.

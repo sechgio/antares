@@ -27,6 +27,7 @@ import { useDocumentLifecycle } from './hooks/useDocumentLifecycle';
 import { isOpenDocumentDirty, useCanvasSync } from './hooks/useCanvasSync';
 import { useGestureBaselines } from './hooks/useGestureBaselines';
 import { useInlineEdit } from './hooks/useInlineEdit';
+import { useCanvasQuitFlush } from './hooks/useCanvasQuitFlush';
 import { CANVAS_SHORTCUTS } from './shortcuts';
 import {
   hydrateDocumentImages,
@@ -514,6 +515,18 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [active, onBeforeUnload]);
 
+  useCanvasQuitFlush({
+    history,
+    editingLayerId,
+    commitInlineEdit,
+    commitPageLayersGesture,
+    onPanelCommitLive,
+    onSave,
+    panelBaselineRef,
+    gestureBaselineRef,
+    renameBaselineRef,
+    openDirtyRef,
+  });
 
   const sealPanelAndAbortGesture = useCallback(() => {
     if (panelBaselineRef.current) onPanelCommitLive();

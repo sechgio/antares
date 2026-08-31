@@ -12,7 +12,8 @@ import { DEFAULT_TAB, FULL_BLEED_TABS, TAB_DEFINITIONS, CONFIG_SECTION_DEFINITIO
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import EspaciosAuthSkeleton from './components/espacios/components/EspaciosAuthSkeleton';
 import { subscribeHistoryReexecute } from './components/history/historyEvents';
-import { api } from './api';
+import { api, onNotify } from './api';
+import { acknowledgeCanvasFlush } from './utils/ackCanvasFlush';
 import { bootThemeFromBackend } from './utils/themeApplier';
 
 // Lazy: LoginScreen pulls framer-motion (~100KB+ gzip). Only needed for Espacios auth.
@@ -175,6 +176,20 @@ function AppContent() {
     const t = window.setTimeout(() => setCanvasMounted(false), CANVAS_KEEPALIVE_MS);
     return () => window.clearTimeout(t);
   }, [activeTab, canvasMounted]);
+
+  // If Canvas has never been mounted (or its keep-alive already expired),
+  // there is no CanvasView listener to acknowledge the main-process shutdown
+  // request. A no-op flush ACK prevents an unnecessary 120s wait in that case;
+  // while Canvas is mounted, CanvasView owns the ACK after saving dirty state.
+  useEffect(() => {
+    if (canvasMounted) return undefined;
+    return onNotify(async (method) => {
+      if (method !== 'app.flush-canvas-before-quit') return;
+      try {
+        await acknowledgeCanvasFlush();
+      } catch {}
+    });
+  }, [canvasMounted]);
 
   // Prefetch settings chunk after first paint so open feels instant.
   // Skip in Vitest to avoid EnvironmentTeardownError from pending dynamic imports.
