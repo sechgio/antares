@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, type HTMLAttributes } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import {
   AlignHorizontalDistributeCenter,
   AlignVerticalDistributeCenter,
@@ -275,7 +275,7 @@ export default memo(function RightPanel({
       data-open={open ? 'true' : 'false'}
       data-testid="canvas-right-panel"
       aria-hidden={!open}
-      {...(!open ? ({ inert: '' } as HTMLAttributes<HTMLElement>) : {})}
+      inert={!open ? true : undefined}
     >
       <div
         className="canvas-right-panel-header relative z-20 flex items-center gap-2 border-b px-4 py-2"

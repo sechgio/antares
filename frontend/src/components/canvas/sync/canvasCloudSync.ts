@@ -401,8 +401,8 @@ export type SyncOptions = {
 let syncPromise: Promise<unknown> | null = null;
 /** Coalesced options for one retry after the in-flight sync unlocks. */
 let pendingSyncOptions: SyncOptions | null = null;
-/** Side-effects callback from the skipped caller (refreshList / conflict / reload). */
-let pendingSyncFollowUp: ((result: SyncResult) => void) | null = null;
+/** Side-effects callbacks from EVERY skipped caller (refreshList / conflict / reload). */
+const pendingSyncFollowUps: Array<(result: SyncResult) => void> = [];
 /** Chain of in-flight sync/push/delete ops — pushes never overtake a coalesced retry. */
 let opChain: Promise<unknown> = Promise.resolve();
 
@@ -446,7 +446,7 @@ export async function syncCanvasDocuments(options: SyncOptions = {}): Promise<Sy
   if (!supabase) return { ...empty, skipped: true, reason: 'no-supabase' };
   if (syncPromise) {
     pendingSyncOptions = mergeSyncOptions(pendingSyncOptions, options);
-    if (options.followUp) pendingSyncFollowUp = options.followUp;
+    if (options.followUp) pendingSyncFollowUps.push(options.followUp);
     return { ...empty, skipped: true, reason: 'sync-in-flight' };
   }
   let releaseSync!: () => void;
@@ -465,19 +465,20 @@ export async function syncCanvasDocuments(options: SyncOptions = {}): Promise<Sy
       releaseSync();
       syncPromise = null;
       const next = pendingSyncOptions;
-      const followUp = pendingSyncFollowUp;
+      const followUps = pendingSyncFollowUps.splice(0);
       pendingSyncOptions = null;
-      pendingSyncFollowUp = null;
       if (next) {
         // Retry starts here so opChain (updated by this call) includes it before
-        // any queued push's microtask runs.
+        // any queued push's microtask runs. Todos los callers que fueron
+        // coalescidos reciben el mismo resultado, así ningún refreshList o
+        // conflicto se pierde por sobrescritura de followUp.
         const retry = syncCanvasDocuments(next);
         void retry
           .then((retryResult) => {
-            followUp?.(retryResult);
+            for (const cb of followUps) cb?.(retryResult);
           })
           .catch(() => {
-            followUp?.({ ...empty, skipped: true, reason: 'error' });
+            for (const cb of followUps) cb?.({ ...empty, skipped: true, reason: 'error' });
           });
       }
     }

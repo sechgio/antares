@@ -88,6 +88,18 @@
       "absent": ["javascript:"]
     },
     {
+      "id": "href-whitespace-padded-javascript",
+      "note": "S-CRÍTICO-3: javascript: con espacio antes del colon (y padding) debe neutralizarse en href.",
+      "html": "<head></head><a href=\" javascript :alert(1)\">x</a>",
+      "absent": ["javascript", "alert(1)"]
+    },
+    {
+      "id": "xlink-href-whitespace-padded-javascript",
+      "note": "S-CRÍTICO-3: mismo vector en xlink:href (SVG).",
+      "html": "<head></head><svg><a xlink:href=\"\tjavascript :alert(1)\">x</a></svg>",
+      "absent": ["javascript", "alert(1)"]
+    },
+    {
       "id": "external-href-collapse",
       "note": "href https externo (no allowlist) debe neutralizarse.",
       "html": "<head></head><a href=\"https://evil.example/x\">x</a>",

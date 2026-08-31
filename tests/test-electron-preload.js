@@ -14,7 +14,7 @@ function assert(condition, message) {
   }
 }
 
-function loadPreload({ packaged = false, allowedMethods } = {}) {
+function loadPreload({ packaged = false, allowedMethods, filePath = '' } = {}) {
   const originalLoad = Module._load;
   let exposedApi = null;
   const invokeCalls = [];
@@ -39,7 +39,7 @@ function loadPreload({ packaged = false, allowedMethods } = {}) {
           on() {},
           removeListener() {},
         },
-        webUtils: { getPathForFile: () => '' },
+        webUtils: { getPathForFile: () => filePath },
       };
     }
     return originalLoad.call(this, request, parent, isMain);
@@ -88,6 +88,23 @@ async function run() {
     await exposedApi.invoke('totally_unknown_method');
     assert(invokeCalls[0][0] === 'ipc-call', 'unknown methods should still be forwarded in dev');
     assert(invokeCalls[0][1] === 'totally_unknown_method', 'unknown method name should be preserved in dev');
+  }
+
+  {
+    const filePath = 'C:\\tmp\\input.jpg';
+    const { exposedApi, sendCalls, invokeCalls } = loadPreload({ packaged: false, filePath });
+    assert(exposedApi.getPathForFile({}) === filePath, 'getPathForFile should preserve Electron path resolution');
+    assert(
+      sendCalls.some(([channel, value]) => channel === 'register-file-input-path' && value === filePath),
+      'getPathForFile should best-effort register the derived path privately',
+    );
+    assert(exposedApi.registerFileInputPath(filePath) === true, 'private path registration bridge should report dispatch');
+    assert(
+      sendCalls.filter(([channel, value]) => channel === 'register-file-input-path' && value === filePath).length === 2,
+      'explicit private path registration should use the authenticated channel',
+    );
+    await exposedApi.canvasFlushAck();
+    assert(invokeCalls.some(([channel]) => channel === 'canvas-flush-ack'), 'canvas flush ACK should use its private channel');
   }
 
   {

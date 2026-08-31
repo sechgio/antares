@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 import sqlite3
@@ -218,6 +219,13 @@ def init_db(*, allow_catalog_wipe: bool = False) -> None:
                             old_cols = [d[0] for d in read_cursor.description]
                     except sqlite3.Error as exc:
                         logger.warning("No se pudieron leer datos antiguos durante migración: %s", exc)
+                        # Si el SELECT falló a mitad (p. ej. OOM), cerrar el
+                        # cursor antes del DDL: un cursor vivo mantiene el
+                        # lock del btree y bloquearía el siguiente init_db.
+                        if read_cursor is not None:
+                            with contextlib.suppress(sqlite3.Error):
+                                read_cursor.close()
+                            read_cursor = None
                         total_old = 0
                         has_rows = False
                         old_cols = []
@@ -317,7 +325,11 @@ def init_db(*, allow_catalog_wipe: bool = False) -> None:
             cursor.execute("COMMIT")
         except Exception as exc:
             try:
-                cursor.execute("ROLLBACK")
+                # Con isolation_level=None el BEGIN IMMEDIATE es manual: solo
+                # hacemos ROLLBACK si hay una transacción viva, para no correr
+                # un ROLLBACK fantasma que deje la conexión en un estado raro.
+                if conn.in_transaction:
+                    cursor.execute("ROLLBACK")
             except sqlite3.Error as rollback_exc:
                 # Don't shadow the original failure, but surface this for
                 # post-mortem debugging — silent suppression hid real DB
@@ -519,7 +531,7 @@ def importar_excel(excel_path: str) -> dict[str, int]:
 def exportar_excel(excel_path: str) -> int:
     """Exporta los datos actuales de SQLite a un archivo Excel."""
     try:
-        import pandas as pd  # type: ignore
+        import pandas as pd
     except ImportError as exc:
         msg = "pandas no está instalado."
         raise ImportError(msg) from exc
@@ -845,7 +857,7 @@ def parse_id_rename_mapping_full(
         from backend.core.import_guard import serialized_import
 
         with serialized_import():
-            import pandas as pd  # type: ignore
+            import pandas as pd
     except ImportError as exc:
         msg = "pandas no está instalado. Ejecuta: pip install pandas openpyxl"
         raise ImportError(msg) from exc
@@ -936,7 +948,7 @@ def generar_plantilla_excel(ruta_salida: str) -> int:
         ruta_salida: Ruta donde guardar la plantilla.
     """
     try:
-        import pandas as pd  # type: ignore
+        import pandas as pd
     except ImportError as exc:
         msg = "pandas no está instalado."
         raise ImportError(msg) from exc

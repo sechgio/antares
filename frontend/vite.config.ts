@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { visualizer } from 'rollup-plugin-visualizer'
 import path from 'node:path'
+import budgets from '../shared/budgets.json'
 import { STATIC_CSS_TESTS } from './vitest.static.config.ts'
 
 const sharedHtmlSanitizerPath = path.resolve(import.meta.dirname, '../shared/html-sanitizer.js')
@@ -12,9 +13,28 @@ const sharedHtmlSanitizerPlugin = {
   transform(code: string, id: string) {
     if (path.normalize(id.split('?')[0]) !== path.normalize(sharedHtmlSanitizerPath)) return null
 
+    // Robust: extrae claves de `module.exports = { ... }` sin hardcodear lista.
+    // Soporta saltos de línea, espacios y comentarios; fallback a lista conocida
+    // si el parseo falla (evita build silencioso sin exports — bug 0531c66).
+    const match = code.match(/module\.exports\s*=\s*\{([\s\S]*?)\}\s*;/)
+    if (!match) {
+      return `${code}\nexport { sanitizeHtmlForPdf, sanitizeHtmlForPreview, CSP_META, PREVIEW_CSP_META, isSafeDataUrl, isAllowedGoogleFontUrl };\n`
+    }
+    const raw = match[1]
+    const keys = raw
+      .split(',')
+      .map((part) => part.split(':')[0].trim().split(/\s+/)[0].trim())
+      .map((k) => k.replace(/^['"]|['"]$/g, ''))
+      .filter(Boolean)
+    if (keys.length === 0) {
+      return code.replace(
+        /module\.exports\s*=\s*\{[\s\S]*?\}\s*;/,
+        'export { sanitizeHtmlForPdf, sanitizeHtmlForPreview, CSP_META, PREVIEW_CSP_META, isSafeDataUrl, isAllowedGoogleFontUrl };',
+      )
+    }
     return code.replace(
-      /module\.exports = \{[^}]+\};/,
-      'export { sanitizeHtmlForPdf, sanitizeHtmlForPreview, CSP_META, PREVIEW_CSP_META, isSafeDataUrl, isAllowedGoogleFontUrl };',
+      /module\.exports\s*=\s*\{[\s\S]*?\}\s*;/,
+      `export { ${keys.join(', ')} };`,
     )
   },
 }
@@ -113,7 +133,7 @@ export default defineConfig(({ mode }) => ({
         entryFileNames: 'assets/js/[name]-[hash].js',
       },
     },
-    chunkSizeWarningLimit: 500,
+    chunkSizeWarningLimit: budgets.vite?.chunkSizeWarningKb ?? 500,
     reportCompressedSize: true,
     cssCodeSplit: true,
     assetsInlineLimit: 4096,
@@ -161,7 +181,13 @@ export default defineConfig(({ mode }) => ({
     coverage: {
       provider: 'v8',
       reportsDirectory: './coverage',
-      reporter: ['json', 'text'],
+      reporter: ['text', 'lcov', 'html', 'json'],
+      thresholds: {
+        lines: 70,
+        branches: 65,
+        statements: 70,
+        functions: 65,
+      },
     },
   },
 }))

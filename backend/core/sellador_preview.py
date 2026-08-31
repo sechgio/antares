@@ -72,7 +72,7 @@ def _resolve_preview_dpi(
 
 def _require_fitz():
     try:
-        import fitz  # type: ignore[import-untyped]  # pymupdf
+        import fitz  # pymupdf
     except ImportError as exc:
         msg = "PyMuPDF no está instalado. Ejecuta: pip install pymupdf"
         raise ValueError(msg) from exc

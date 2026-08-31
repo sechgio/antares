@@ -13,6 +13,7 @@ import { createEmptyDocument, type CanvasDocument } from '../types';
 const syncCanvasDocuments = vi.fn();
 
 vi.mock('../../../api', () => ({
+  onNotify: vi.fn(() => () => {}),
   api: {
     canvasList: vi.fn(),
     canvasGet: vi.fn(),

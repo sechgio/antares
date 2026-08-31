@@ -7,6 +7,7 @@ import csv
 import io
 import json
 import os
+import stat
 import tempfile
 import threading
 import uuid
@@ -55,7 +56,12 @@ def _clear_spreadsheet_caches() -> None:
 
 def _spill_dir() -> Path:
     out = Path(tempfile.gettempdir()) / "antares-spreadsheet-results"
-    out.mkdir(parents=True, exist_ok=True)
+    with contextlib.suppress(FileExistsError):
+        out.mkdir(parents=True, exist_ok=False)
+    # lstat no sigue symlinks/junctions: si %TEMP%\antares-spreadsheet-results
+    # fue pre-creado como symlink, rechazar en vez de escribir a través de él.
+    if not stat.S_ISDIR(out.lstat().st_mode):
+        raise RuntimeError("antares-spreadsheet-results no es un directorio seguro")
     return out
 
 
@@ -282,7 +288,7 @@ def _resolve_format(params: dict[str, Any], path: Path) -> tuple[str, str]:
 
 
 def _parse_xlsx(path: Path) -> tuple[str, list[dict[str, Any]], list[str]]:
-    import openpyxl  # type: ignore
+    import openpyxl
 
     _validate_zip_bomb(path)
     # A file-like object does not depend on the staging suffix and avoids a
@@ -463,7 +469,7 @@ def spreadsheet_export_volantes_template(params: dict[str, Any]) -> dict[str, An
     output_path = str(params.get("output_path") or params.get("path") or "").strip() or None
     resolved = str(params.get("_resolved_output_path") or output_path or "").strip() or output_path
     try:
-        import pandas as pd  # type: ignore
+        import pandas as pd
     except ImportError as exc:
         msg = "pandas no está instalado."
         raise ImportError(msg) from exc

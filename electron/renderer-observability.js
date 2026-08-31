@@ -106,8 +106,13 @@ function recordRendererEvent(payload) {
 
 function registerRendererObservability(ipcMain) {
   if (!ipcMain || typeof ipcMain.on !== 'function') return;
-  ipcMain.on('renderer-error', (_event, payload) => {
+  ipcMain.on('renderer-error', (event, payload) => {
     try {
+      const { app } = require('electron');
+      const { getMainWindow } = require('./window-manager');
+      const { isTrustedRendererFrame } = require('./renderer-trust');
+      const isDev = !app.isPackaged;
+      if (!isTrustedRendererFrame(event, getMainWindow(), isDev)) return;
       recordRendererError(payload);
     } catch {
       // Renderer diagnostics must never affect the main process.

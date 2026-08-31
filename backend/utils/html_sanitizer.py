@@ -37,10 +37,30 @@ def _neutralize_url_attr(match: re.Match[str]) -> str:
     attr = match.group(1)
     quote = match.group(2) or ""
     url_value = match.group(3)
-    lowered = url_value.strip().lower()
-    if lowered.startswith("data:") and not is_safe_data_url(url_value):
+    # Normalize: remove whitespace, control chars, and decode for scheme check
+    import urllib.parse
+
+    cleaned = re.sub(r"\s+", "", url_value.strip()).lower()
+    # Handle whitespace around colon: "javascript :"
+    cleaned = re.sub(r"\s*:\s*", ":", cleaned)
+    try:
+        parsed = urllib.parse.urlparse(cleaned)
+        scheme = parsed.scheme.lower()
+    except Exception:
+        scheme = ""
+    if cleaned.startswith("data:"):
+        if not is_safe_data_url(url_value):
+            return f"{attr}={quote}{quote}"
+        # Block data:text/html etc even if safe prefix check passed for image
+        if cleaned.startswith("data:text/html"):
+            return f"{attr}={quote}{quote}"
+        return match.group(0)
+    if scheme in ("javascript", "vbscript") or cleaned.startswith(("javascript:", "vbscript:")):
         return f"{attr}={quote}{quote}"
-    if lowered.startswith(("javascript:", "vbscript:", "http:", "https:", "file:")):
+    if scheme in ("http", "https", "file"):
+        return f"{attr}={quote}{quote}"
+    # Fallback for encoded schemes
+    if any(cleaned.startswith(p) for p in ("javascript:", "vbscript:", "http:", "https:", "file:")):
         return f"{attr}={quote}{quote}"
     return match.group(0)
 
@@ -65,7 +85,7 @@ def sanitize_html_for_pdf(html: str) -> str:
     stripped = re.sub(r"\son[a-z]+\s*=\s*[^\s>]+", "", stripped, flags=re.IGNORECASE)
     stripped = re.sub(r"\son[a-z]+\b(?=\s|>|/)", "", stripped, flags=re.IGNORECASE)
     stripped = re.sub(
-        r'(href|src|xlink:href)\s*=\s*(["\']?)\s*([^"\'>\s]+)\2',
+        r'(href|src|xlink:href)\s*=\s*(["\']?)\s*([^"\'>]+)\2',
         _neutralize_url_attr,
         stripped,
         flags=re.IGNORECASE,

@@ -1,6 +1,15 @@
 /** Register absolute paths with Electron allowlist (drag-drop / thumbnails). */
 export async function registerLocalPath(path: string | undefined | null): Promise<boolean> {
   if (!path) return true;
+  const privateFn = window.electronAPI?.registerFileInputPath;
+  if (privateFn) {
+    try {
+      return privateFn(path) !== false;
+    } catch (err) {
+      console.warn('[registerLocalPath] private registration failed:', path, err);
+      return false;
+    }
+  }
   const fn = window.electronAPI?.registerLocalPath;
   if (!fn) return true;
   try {

@@ -21,7 +21,8 @@ const jsDir = path.join(distDir, 'assets/js');
 const indexHtmlPath = path.join(distDir, 'index.html');
 
 /** Vendors Canvas must never statically import (not used by Canvas source). */
-const FORBIDDEN_STATIC = [
+const BUDGETS_PATH = path.resolve(__dirname, '../../shared/budgets.json');
+let FORBIDDEN_STATIC = [
   'vendor-jspdf',
   'vendor-dnd',
   'vendor-pdfjs',
@@ -29,11 +30,12 @@ const FORBIDDEN_STATIC = [
   'vendor-fullcalendar',
   'vendor-supabase',
 ];
-
-/** Incremental JS Canvas may add on top of the already-booted shell.
- * Includes vendor-framer (~124KB): motion lives outside vendor-react so the
- * shell stays lean; Canvas (and Login) pay for it on first open. */
-const INCREMENTAL_BUDGET_KB = 500;
+let INCREMENTAL_BUDGET_KB = 500;
+try {
+  const _b = JSON.parse(fs.readFileSync(BUDGETS_PATH, 'utf8'));
+  if (Array.isArray(_b?.canvasAppear?.forbiddenStatic)) FORBIDDEN_STATIC = _b.canvasAppear.forbiddenStatic;
+  if (typeof _b?.canvasAppear?.incrementalBudgetKb === 'number') INCREMENTAL_BUDGET_KB = _b.canvasAppear.incrementalBudgetKb;
+} catch {}
 
 function fail(msg) {
   console.error(`RED: ${msg}`);
