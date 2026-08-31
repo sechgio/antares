@@ -6,6 +6,25 @@ const ALLOWED_KINDS = new Set([
   'global_error',
   'unhandled_rejection',
 ]);
+const ALLOWED_EVENT_NAMES = new Set(['canvas.realtime']);
+const ALLOWED_EVENT_FIELDS = new Set([
+  'view',
+  'status_class',
+  'outcome',
+  'duration_ms',
+  'count',
+  'reason',
+]);
+const ALLOWED_LEVELS = new Set(['DEBUG', 'INFO', 'WARN', 'ERROR']);
+const ALLOWED_OUTCOMES = new Set([
+  'success',
+  'partial',
+  'degraded',
+  'failed',
+  'timeout',
+  'cancelled',
+  'rejected',
+]);
 
 function _safeToken(value, fallback) {
   const text = String(value ?? '').replace(/[^a-zA-Z0-9_.:-]/g, '_').slice(0, 80);
@@ -49,6 +68,42 @@ function recordRendererError(payload) {
   return safe;
 }
 
+function sanitizeRendererEvent(payload = {}) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  const event = ALLOWED_EVENT_NAMES.has(source.event) ? source.event : null;
+  if (!event) return null;
+  const sourceFields = source.fields && typeof source.fields === 'object' ? source.fields : {};
+  const fields = {};
+  for (const [key, value] of Object.entries(sourceFields)) {
+    if (!ALLOWED_EVENT_FIELDS.has(key)) continue;
+    if (key === 'outcome') {
+      if (ALLOWED_OUTCOMES.has(value)) fields[key] = value;
+    } else if (key === 'duration_ms') {
+      if (typeof value === 'number' && Number.isFinite(value) && value >= 0) fields[key] = Math.round(value);
+    } else if (key === 'count') {
+      if (Number.isInteger(value) && value >= 0) fields[key] = value;
+    } else if (key === 'view' || key === 'status_class' || key === 'reason') {
+      const safe = _safeToken(value, '');
+      if (safe) fields[key] = safe;
+    }
+  }
+  return {
+    event,
+    level: ALLOWED_LEVELS.has(source.level) ? source.level : 'INFO',
+    fields,
+  };
+}
+
+function recordRendererEvent(payload) {
+  const safe = sanitizeRendererEvent(payload);
+  if (!safe) return null;
+  appendLogEvent(safe.level, safe.event, {
+    component: 'renderer',
+    ...safe.fields,
+  });
+  return safe;
+}
+
 function registerRendererObservability(ipcMain) {
   if (!ipcMain || typeof ipcMain.on !== 'function') return;
   ipcMain.on('renderer-error', (_event, payload) => {
@@ -58,10 +113,19 @@ function registerRendererObservability(ipcMain) {
       // Renderer diagnostics must never affect the main process.
     }
   });
+  ipcMain.on('renderer-event', (_event, payload) => {
+    try {
+      recordRendererEvent(payload);
+    } catch {
+      // Renderer diagnostics must never affect the main process.
+    }
+  });
 }
 
 module.exports = {
   recordRendererError,
+  recordRendererEvent,
   registerRendererObservability,
   sanitizeRendererError,
+  sanitizeRendererEvent,
 };

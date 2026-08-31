@@ -46,6 +46,7 @@ declare global {
       canvasAssetGet?: (ref: string) => Promise<{ ref: string; chunk: ArrayBuffer; bytes: number }>;
       canvasAssetGc?: () => Promise<{ collected: number; bytes_freed: number }>;
       reportRendererError?: (report: Record<string, unknown>) => Promise<unknown>;
+      reportRendererEvent?: (event: string, fields?: Record<string, unknown>, level?: string) => void;
     };
   }
 }

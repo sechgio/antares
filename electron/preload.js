@@ -33,6 +33,14 @@ function reportRendererError(payload) {
   }
 }
 
+function reportRendererEvent(event, fields, level) {
+  try {
+    ipcRenderer.send('renderer-event', { event, fields, level });
+  } catch {
+    // Event reporting is best-effort and must not affect the renderer.
+  }
+}
+
 // NODE_ENV no es confiable en apps empaquetadas (Electron no lo setea por
 // defecto, así que los logs debug aparecían en producción). El marcador fiable
 // es `app.isPackaged`, pero el preload corre con sandbox: true y no tiene
@@ -80,6 +88,7 @@ try {
       return ipcRenderer.invoke('ipc-call', method, params);
     },
     reportRendererError,
+    reportRendererEvent,
     backendStatus: () => ipcRenderer.invoke('backend-status'),
     backendRestart: () => ipcRenderer.invoke('backend-restart'),
     onNotify: (callback) => {
