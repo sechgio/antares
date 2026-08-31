@@ -302,4 +302,78 @@ describe('AuthProvider', () => {
     expect(supabase.auth.signOut).toHaveBeenCalled();
     expect(result.current.error).toMatch(/desactivad/i);
   });
+
+  it('does not fetch profile twice on boot', async () => {
+    const session = {
+      access_token: 'tok',
+      user: { id: 'u1', email: 'a@b.com', created_at: '2026-01-01' },
+    };
+    (supabase.auth.getSession as any).mockResolvedValue({ data: { session }, error: null });
+
+    const fromSpy = vi.fn(() => ({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          single: vi.fn(() => ({
+            data: { display_name: 'x', is_admin: false, is_disabled: false },
+            error: null,
+          })),
+        })),
+      })),
+    }));
+    (supabase.from as any).mockImplementation(fromSpy as any);
+
+    // Real supabase fires INITIAL_SESSION async after subscription (microtask)
+    (supabase.auth.onAuthStateChange as any).mockImplementation((cb: any) => {
+      queueMicrotask(() => cb('INITIAL_SESSION', session));
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    });
+
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+      expect(result.current.user?.email).toBe('a@b.com');
+    });
+
+    // Allow any stray second fetch to settle
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(fromSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not fetch profile twice when INITIAL_SESSION fires synchronously', async () => {
+    const session = {
+      access_token: 'tok2',
+      user: { id: 'u1', email: 'sync@b.com', created_at: '2026-01-01' },
+    };
+    (supabase.auth.getSession as any).mockResolvedValue({ data: { session }, error: null });
+
+    const fromSpy = vi.fn(() => ({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          single: vi.fn(() => ({
+            data: { display_name: 'sync', is_admin: false, is_disabled: false },
+            error: null,
+          })),
+        })),
+      })),
+    }));
+    (supabase.from as any).mockImplementation(fromSpy as any);
+
+    (supabase.auth.onAuthStateChange as any).mockImplementation((cb: any) => {
+      cb('INITIAL_SESSION', session);
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    });
+
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+      expect(result.current.user?.email).toBe('sync@b.com');
+    });
+
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(fromSpy).toHaveBeenCalledTimes(1);
+  });
 });

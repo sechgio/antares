@@ -24,22 +24,34 @@ function loadSupabaseModule() {
   return import('../lib/supabase');
 }
 
+const _profileInflight = new Map<string, Promise<Partial<AppUser> | null>>();
+
 async function _fetchProfile(
   client: AuthClient,
   userId: string,
 ): Promise<Partial<AppUser> | null> {
   if (!client) return null;
-  const { data, error } = await client
-    .from('user_profiles')
-    .select('display_name, is_admin, is_disabled')
-    .eq('user_id', userId)
-    .single();
-  if (error || !data) return null;
-  return {
-    displayName: data.display_name ?? null,
-    isAdmin: !!data.is_admin,
-    isDisabled: !!data.is_disabled,
-  };
+  const pending = _profileInflight.get(userId);
+  if (pending) return pending;
+  const p = (async () => {
+    const { data, error } = await client
+      .from('user_profiles')
+      .select('display_name, is_admin, is_disabled')
+      .eq('user_id', userId)
+      .single();
+    if (error || !data) return null;
+    return {
+      displayName: data.display_name ?? null,
+      isAdmin: !!data.is_admin,
+      isDisabled: !!data.is_disabled,
+    };
+  })();
+  _profileInflight.set(userId, p);
+  try {
+    return await p;
+  } finally {
+    _profileInflight.delete(userId);
+  }
 }
 
 function _mapUser(
@@ -147,10 +159,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
         return;
       }
-      await refreshUser();
-      if (cancelled || !mountedRef.current) return;
+      // Subscribe FIRST, then refresh — so INITIAL_SESSION dedupes getSession
+      let initialHandled = false;
       const { data } = supabase.auth.onAuthStateChange((_event, session) => {
         if (!mountedRef.current) return;
+        if (_event === 'INITIAL_SESSION') {
+          initialHandled = true;
+          clearTimeout(timeout);
+        }
         if (!session) {
           const gen = ++authGenRef.current;
           setUser(null);
@@ -172,6 +188,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
       });
       subscription = data.subscription;
+      // Give INITIAL_SESSION a chance to fire (async via initializePromise)
+      await Promise.resolve();
+      await Promise.resolve();
+      if (cancelled || !mountedRef.current) return;
+      if (!initialHandled) {
+        await refreshUser();
+        // If INITIAL_SESSION fired while getSession was in-flight, suppress timeout twice handling
+        if (initialHandled) clearTimeout(timeout);
+      } else {
+        clearTimeout(timeout);
+      }
     })();
 
     return () => {
