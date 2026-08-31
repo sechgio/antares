@@ -25,6 +25,7 @@ const {
 } = require('./file-capabilities');
 const { putCanvasAsset, getCanvasAsset, parseAssetRef, gcOrphanCanvasAssets } = require('./canvas-assets');
 const { cleanupSpreadsheetSpillFile, sweepIpcTempDirs } = require('./ipc-temp-cleanup');
+const { embedCanvasManifest } = require('./canvas-pdf-manifest');
 
 // Guard derives from electron/ipc-methods.js — single source of truth.
 const NATIVE_METHODS = new Set(require('./ipc-methods').NATIVE_METHODS);
@@ -407,12 +408,16 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
       /* fonts.ready unavailable — proceed with system fallbacks */
     }
 
-    const pdfBuffer = await pdfWindow.webContents.printToPDF({
+    let pdfBuffer = await pdfWindow.webContents.printToPDF({
       printBackground: true,
       preferCSSPageSize: true,
       pageSize: 'A4',
       margins: { marginType: 'none' },
     });
+
+    if (params.canvas_manifest_b64) {
+      pdfBuffer = await embedCanvasManifest(pdfBuffer, params.canvas_manifest_b64);
+    }
 
     // Purgar el documento renderizado de la ventana del pool para que Chromium
     // libere el DOM y texturas de imágenes de la memoria, y libere el descriptor
