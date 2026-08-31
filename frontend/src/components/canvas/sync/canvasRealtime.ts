@@ -209,6 +209,8 @@ export function subscribeCanvasDocument(
       handlers.onStatus(mappedStatus);
       if (mappedStatus !== 'live') return;
 
+      // A rejoin starts a fresh server-side presence state.
+      trackedMode = null;
       void subscription.updatePresence(currentPresence).then((tracked) => {
         if (!tracked) handlers.onStatus('error');
       });

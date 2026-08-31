@@ -521,4 +521,3 @@ git commit -m "fix: harden canvas realtime verification"
 ### Step 4: Resultado esperado
 
 La feature queda lista para probar con dos sesiones autenticadas: ambas ven Presence por documento; guardar en una sesión anuncia la invalidez; una sesión limpia trae y persiste el snapshot remoto antes de aplicarlo; una sesión sucia conserva el conflicto existente; al desconectar, el foco y el sync global siguen siendo la recuperación.
-

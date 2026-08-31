@@ -41,6 +41,7 @@ const savedEvent = {
 };
 
 let activeSubscription: Awaited<ReturnType<typeof subscribeCanvasDocument>> = null;
+let subscriptionStatus: ((status: string) => void) | undefined;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -48,6 +49,7 @@ beforeEach(() => {
     return this;
   });
   channel.subscribe.mockImplementation((callback?: (status: string) => void) => {
+    subscriptionStatus = callback;
     callback?.('SUBSCRIBED');
     return channel;
   });
@@ -134,6 +136,22 @@ describe('canvas realtime transport', () => {
 
     expect(channel.track).toHaveBeenCalledTimes(initialTrackCalls + 1);
     expect(channel.track).toHaveBeenLastCalledWith({ ...presence, mode: 'editing' });
+  });
+
+  it('retracks presence after a channel rejoin', async () => {
+    activeSubscription = subscribeCanvasDocument('doc-1', presence, {
+      onSaved: vi.fn(),
+      onPresence: vi.fn(),
+      onStatus: vi.fn(),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const initialTrackCalls = channel.track.mock.calls.length;
+
+    subscriptionStatus?.('SUBSCRIBED');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(channel.track).toHaveBeenCalledTimes(initialTrackCalls + 1);
+    expect(channel.track).toHaveBeenLastCalledWith(presence);
   });
 
   it('derives a safe display name from the authenticated session', async () => {

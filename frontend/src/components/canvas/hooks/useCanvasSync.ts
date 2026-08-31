@@ -107,6 +107,7 @@ export function useCanvasSync({
   const realtimePullTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRealtimeTimestampRef = useRef<string | null>(null);
   const realtimePullInFlightRef = useRef(false);
+  const realtimeEnabledRef = useRef(false);
 
   const runCloudSync = useCallback(async (guardedOverride?: boolean) => {
     setSyncing(true);
@@ -204,7 +205,7 @@ export function useCanvasSync({
 
       if (result.kind === 'applied') {
         const hydrated = await hydrateDocumentImages(result.document);
-        if (currentDocumentIdRef.current !== targetDocumentId) return;
+        if (!realtimeEnabledRef.current || currentDocumentIdRef.current !== targetDocumentId) return;
         if (openDirtyRef.current) {
           const localDoc = historyDocRef.current;
           onConflictRef.current?.({
@@ -221,7 +222,7 @@ export function useCanvasSync({
         onConflictRef.current?.(result.conflict);
       }
     } catch {
-      setRealtimeStatus('error');
+      if (realtimeEnabledRef.current) setRealtimeStatus('error');
     } finally {
       realtimePullInFlightRef.current = false;
       if (pendingRealtimeTimestampRef.current && realtimePullTimerRef.current === null) {
@@ -253,12 +254,14 @@ export function useCanvasSync({
 
   useEffect(() => {
     if (!active || !documentReady || !currentDocumentId) {
+      realtimeEnabledRef.current = false;
       setCollaborators([]);
       setRealtimeStatus(active ? 'idle' : 'offline');
       return;
     }
 
     let disposed = false;
+    realtimeEnabledRef.current = true;
     setRealtimeStatus('connecting');
 
     void import('../sync/canvasRealtime')
@@ -295,6 +298,7 @@ export function useCanvasSync({
 
     return () => {
       disposed = true;
+      realtimeEnabledRef.current = false;
       if (realtimePullTimerRef.current !== null) {
         clearTimeout(realtimePullTimerRef.current);
         realtimePullTimerRef.current = null;
