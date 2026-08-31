@@ -48,6 +48,9 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, './src'),
+      canvg: path.resolve(import.meta.dirname, './src/empty-module.js'),
+      html2canvas: path.resolve(import.meta.dirname, './src/empty-module.js'),
+      dompurify: path.resolve(import.meta.dirname, './src/empty-module.js'),
     },
   },
   base: mode === 'development' ? '/' : './',
