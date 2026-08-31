@@ -120,7 +120,7 @@ try {
     },
     fileStagedComplete: (token) => ipcRenderer.invoke('ipc-call', 'file_staged_complete', { token }),
     fileStagedAbort: (token) => ipcRenderer.invoke('ipc-call', 'file_staged_abort', { token }),
-    resolveFileToken: (token) => ipcRenderer.invoke('ipc-call', 'file_token_resolve', { token }),
+    ...(isDev ? { resolveFileToken: (token) => ipcRenderer.invoke('ipc-call', 'file_token_resolve', { token }) } : {}),
     cleanupFileToken: (token) => ipcRenderer.invoke('ipc-call', 'file_token_cleanup', { token }),
     canvasAssetPut: (chunk) => ipcRenderer.invoke('ipc-call', 'canvas_asset_put', { chunk }),
     canvasAssetGet: (ref) => ipcRenderer.invoke('ipc-call', 'canvas_asset_get', { ref }),

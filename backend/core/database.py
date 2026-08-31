@@ -519,7 +519,7 @@ def importar_excel(excel_path: str) -> dict[str, int]:
 def exportar_excel(excel_path: str) -> int:
     """Exporta los datos actuales de SQLite a un archivo Excel."""
     try:
-        import pandas as pd  # type: ignore
+        import pandas as pd
     except ImportError as exc:
         msg = "pandas no está instalado."
         raise ImportError(msg) from exc
@@ -845,7 +845,7 @@ def parse_id_rename_mapping_full(
         from backend.core.import_guard import serialized_import
 
         with serialized_import():
-            import pandas as pd  # type: ignore
+            import pandas as pd
     except ImportError as exc:
         msg = "pandas no está instalado. Ejecuta: pip install pandas openpyxl"
         raise ImportError(msg) from exc
@@ -936,7 +936,7 @@ def generar_plantilla_excel(ruta_salida: str) -> int:
         ruta_salida: Ruta donde guardar la plantilla.
     """
     try:
-        import pandas as pd  # type: ignore
+        import pandas as pd
     except ImportError as exc:
         msg = "pandas no está instalado."
         raise ImportError(msg) from exc

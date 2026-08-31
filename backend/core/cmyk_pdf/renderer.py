@@ -19,7 +19,7 @@ from PIL import Image, ImageOps
 from backend.core.cmyk_pdf.color import convert_pil_to_cmyk_bytes, css_color_to_cmyk
 from backend.utils.paths import user_data_path
 
-Image.MAX_IMAGE_PIXELS = 400_000_000
+Image.MAX_IMAGE_PIXELS = 100_000_000
 
 logger = logging.getLogger(__name__)
 
@@ -339,7 +339,7 @@ class CanvasCmykRenderer:
             origin_x_pt = bleed_pt + crop_margin_pt
             origin_y_pt = bleed_pt + crop_margin_pt
 
-            pages = self.document.get("pages") or [{"id": "page-1"}]
+            pages = self.document.get("pages") or [{"id": "page-1", "name": "Página 1"}]
             layers = self.document.get("layers") or []
 
             if self.pair_context_pages and len(self.contexts) == len(pages):

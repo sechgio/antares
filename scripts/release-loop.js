@@ -146,55 +146,7 @@ function validateChangelog(version) {
 
 function runQualityGate() {
   console.log('');
-  // Lint
-  const lintResult = sh('npm run lint:python 2>&1', { silent: true });
-  if (lintResult && lintResult.includes('error')) {
-    // Check if it actually found lint errors vs just printed nothing
-    const lintLines = lintResult.split('\n').filter(l => l.includes('error')).length;
-    if (lintLines > 0) {
-      throw new Error(`Lint de Python falló:\n${lintResult.slice(0, 500)}`);
-    }
-  }
-
-  // Typecheck backend
-  const tcBackend = sh('npm run typecheck:backend 2>&1', { silent: true });
-  if (tcBackend && (tcBackend.includes('error') || tcBackend.includes('Error'))) {
-    throw new Error(`Typecheck de backend falló:\n${tcBackend.slice(0, 500)}`);
-  }
-
-  // Typecheck frontend
-  const tcFrontend = sh('npm run typecheck:frontend 2>&1', { silent: true });
-  if (tcFrontend && tcFrontend.includes('error')) {
-    throw new Error(`Typecheck de frontend falló:\n${tcFrontend.slice(0, 500)}`);
-  }
-
-  // Budgets (shell preload + canvas incremental) — build if dist missing
-  const budgets = trySh('npm run check:budgets 2>&1', { silent: true, timeout: 300000 });
-  if (budgets === null) {
-    throw new Error('Budgets fallaron (timeout o error).');
-  }
-  if (budgets.includes('RED:')) {
-    throw new Error(`Budgets fallaron:\n${budgets.slice(0, 800)}`);
-  }
-
-  // Tests
-  const testResult = trySh('npm test 2>&1', { silent: true, timeout: 900000 });
-  if (testResult === null) {
-    throw new Error('Tests fallaron (timeout o error).');
-  }
-  // Look for actual failure summary lines like "Test Files  1 failed | 50 passed" or "Tests  2 failed"
-  const failurePattern = /(?:Test Files|Tests)\s+\d+\s+failed/;
-  if (failurePattern.test(testResult)) {
-    throw new Error(`Tests fallaron.\n${testResult.slice(-500)}`);
-  }
-  // Also catch pytest's FAILED markers (but not in the context of a pure PASSED run)
-  if (testResult.includes('FAILED') && !testResult.includes('PASSED')) {
-    throw new Error(`Tests fallaron.\n${testResult.slice(-500)}`);
-  }
-
-  // Dependency audits are mandatory and fail closed.
-  sh('npm run audit:python 2>&1', { silent: true });
-  sh('npm run audit:node 2>&1', { silent: true });
+  sh('npm run ci 2>&1', { silent: true });
 }
 
 function runBuild() {

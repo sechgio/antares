@@ -67,18 +67,20 @@ function _getLongRunningMethods() {
 }
 
 const REQUEST_TIMEOUT_MS = 30_000;
-const LONG_REQUEST_TIMEOUT_MS = 900_000;
+const LONG_REQUEST_TIMEOUT_MS = 300_000;
+const LONG_REQUEST_TIMEOUT_MS_HEAVY = 900_000;
 const STARTUP_WAIT_MS = 60_000;
 const MID_FLIGHT_RETRIES = 2;
 const BACKEND_RESTART_MIN_INTERVAL_MS = 5_000;
 const IPC_TELEMETRY_SLOW_MS = 5_000;
 const IPC_TELEMETRY_LARGE_BYTES = 1 * 1024 * 1024;
-const DEFAULT_MAX_PENDING_REQUESTS = 128;
-const DEFAULT_MAX_PENDING_PER_METHOD = 32;
+const DEFAULT_MAX_PENDING_REQUESTS = 64;
+const DEFAULT_MAX_PENDING_PER_METHOD = 8;
 
 function _positiveIntegerEnv(name, fallback) {
-  const value = Number(process.env[name]);
-  return Number.isSafeInteger(value) && value > 0 ? value : fallback;
+  const raw = Number(process.env[name]);
+  if (!Number.isSafeInteger(raw) || raw <= 0) return fallback;
+  return Math.min(raw, 256);
 }
 
 const MAX_PENDING_REQUESTS = _positiveIntegerEnv(
@@ -107,30 +109,34 @@ function _toRendererIpcError(err) {
   return new Error(ANTARES_IPC_ERROR_PREFIX + JSON.stringify(payload));
 }
 
-/** Only idempotent reads are safe to retry. */
+/** Only idempotent reads are safe to retry. Explicit allowlist — never heuristic. */
+const IDEMPOTENT_METHODS = new Set([
+  'version',
+  'formats',
+  'preview',
+  'is_video',
+  'db_records',
+  'db_columns',
+  'db_fields',
+  'db_template',
+  'db_parse_mapping',
+  'db_validate_mapping',
+  'db_detect_key_column',
+  'theme_presets',
+  'theme_preset',
+  'panel_aviso_corte_template',
+  'canvas_list',
+  'canvas_get',
+  'canvas_get_history',
+  'espacios_list',
+  'espacios_get',
+]);
+
 function _isIdempotentMethod(method) {
   if (typeof method !== 'string') return false;
-  // Explicit safe reads that do not end in get/list/status.
-  if (
-    method === 'version'
-    || method === 'formats'
-    || method === 'preview'
-    || method === 'is_video'
-    || method === 'db_records'
-    || method === 'db_columns'
-    || method === 'db_fields'
-    || method === 'db_template'
-    || method === 'db_parse_mapping'
-    || method === 'db_validate_mapping'
-    || method === 'db_detect_key_column'
-    || method === 'theme_presets'
-    || method === 'theme_preset'
-    || method === 'panel_aviso_corte_template'
-    || method.includes('_autocomplete_')
-  ) {
-    return true;
-  }
-  return /(?:^|_)(?:get|list|status)$/.test(method);
+  if (IDEMPOTENT_METHODS.has(method)) return true;
+  if (method.includes('_autocomplete_')) return true;
+  return false;
 }
 
 let _lastBackendRestartAt = 0;
@@ -278,6 +284,16 @@ function _ensureListeners() {
     pending = framed.pending;
     if (framed.dropped) {
       console.error('[ipc-router] dropped oversized stdout line (>68 MiB partial); backend framing is corrupted');
+      for (const [id, entry] of _pendingRequests) {
+        if (entry.proc !== proc) continue;
+        clearTimeout(entry.timeout);
+        _pendingRequests.delete(id);
+        const err = new Error('IPC framing corrupted: oversized line dropped');
+        err.code = -32006;
+        err.category = 'FRAMING_CORRUPTED';
+        entry.reject(err);
+        entry.releasePending();
+      }
     }
     for (const lineBuf of framed.lines) {
       const line = lineBuf.toString('utf8');
@@ -355,7 +371,10 @@ function _ensureListeners() {
 }
 
 function _getTimeoutForMethod(method) {
-  return _getLongRunningMethods().has(method) ? LONG_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
+  if (!_getLongRunningMethods().has(method)) return REQUEST_TIMEOUT_MS;
+  const heavy900 = new Set(['process_start', 'spreadsheet_parse', 'html_to_pdf']);
+  if (heavy900.has(method)) return LONG_REQUEST_TIMEOUT_MS_HEAVY;
+  return LONG_REQUEST_TIMEOUT_MS;
 }
 
 function _getPendingRequestLimits() {
@@ -464,11 +483,15 @@ function _writeStdinWithBackpressure(proc, payload) {
     const finish = (waitedForDrain) => {
       if (settled) return;
       settled = true;
+      proc.stdin.removeListener('drain', onDrain);
+      proc.stdin.removeListener('error', onError);
       resolve({ waitedForDrain: !!waitedForDrain });
     };
     const fail = (err) => {
       if (settled) return;
       settled = true;
+      proc.stdin.removeListener('drain', onDrain);
+      proc.stdin.removeListener('error', onError);
       reject(err);
     };
 
@@ -488,7 +511,6 @@ function _writeStdinWithBackpressure(proc, payload) {
     _ipcBackpressureWaits += 1;
     const onDrain = () => finish(true);
     const onError = (err) => {
-      proc.stdin.removeListener('drain', onDrain);
       fail(err instanceof Error ? err : new Error(String(err)));
     };
     proc.stdin.once('drain', onDrain);
@@ -806,6 +828,15 @@ function _validateAndResolveWriteParams(params, win) {
     const { isPathInside, isAllowedReadPath } = require('./path-allowlist');
     try {
       const resolved = path.resolve(outRaw);
+      // Reject if the file itself is a symlink/reparse point
+      try {
+        if (fs.existsSync(resolved)) {
+          const st = fs.lstatSync(resolved);
+          if (st.isSymbolicLink()) throw new Error('symlink no permitido en ruta de salida');
+        }
+      } catch (e) {
+        if (e.message && e.message.includes('symlink')) throw e;
+      }
       const dir = fs.existsSync(resolved)
         ? (fs.lstatSync(resolved).isDirectory() ? resolved : path.dirname(resolved))
         : path.dirname(resolved);
@@ -831,6 +862,11 @@ function _validateAndResolveWriteParams(params, win) {
       }
       const real = fs.realpathSync(dir);
       if (real !== dir) throw new Error('symlink no permitido en ruta de salida');
+      // Also verify the full resolved path's parent chain via realpath of dir + basename
+      if (fs.existsSync(resolved)) {
+        const realFile = fs.realpathSync(resolved);
+        if (realFile !== resolved) throw new Error('symlink no permitido en ruta de salida');
+      }
     } catch (e) {
       if (e.message.includes('no está permitida') || e.message.includes('symlink')) throw e;
       throw new Error(`ruta de salida no permitida: ${e.message}`);

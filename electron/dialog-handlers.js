@@ -65,7 +65,24 @@ function _loadPersistedWriteRoots() {
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (!Array.isArray(raw)) return;
     for (const entry of raw) {
-      if (typeof entry === 'string' && entry.trim()) _allowedWriteRoots.add(path.resolve(entry));
+      if (typeof entry !== 'string' || !entry.trim()) continue;
+      try {
+        const resolved = path.resolve(entry.trim());
+        let canonical = resolved;
+        try {
+          canonical = fs.realpathSync(resolved);
+        } catch {
+          try {
+            canonical = fs.realpathSync(path.dirname(resolved));
+            canonical = path.join(canonical, path.basename(resolved));
+          } catch {
+            canonical = resolved;
+          }
+        }
+        _allowedWriteRoots.add(canonical);
+      } catch {
+        /* skip invalid entry */
+      }
     }
   } catch {
     // No file yet, or corrupted: start with session roots only.

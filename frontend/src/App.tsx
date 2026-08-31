@@ -293,7 +293,7 @@ function AppContent() {
                     data-testid="canvas-keep-alive"
                     className={`h-full min-h-0 overflow-hidden ${showCanvas ? '' : 'hidden'}`}
                     aria-hidden={!showCanvas}
-                    {...(!showCanvas ? ({ inert: '' } as React.HTMLAttributes<HTMLDivElement>) : {})}
+                    inert={!showCanvas ? true : undefined}
                   >
                     <ErrorBoundary view="canvas">
                       <CanvasKeepAlive active={showCanvas} />

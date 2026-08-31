@@ -282,7 +282,7 @@ def _resolve_format(params: dict[str, Any], path: Path) -> tuple[str, str]:
 
 
 def _parse_xlsx(path: Path) -> tuple[str, list[dict[str, Any]], list[str]]:
-    import openpyxl  # type: ignore
+    import openpyxl
 
     _validate_zip_bomb(path)
     # A file-like object does not depend on the staging suffix and avoids a
@@ -463,7 +463,7 @@ def spreadsheet_export_volantes_template(params: dict[str, Any]) -> dict[str, An
     output_path = str(params.get("output_path") or params.get("path") or "").strip() or None
     resolved = str(params.get("_resolved_output_path") or output_path or "").strip() or output_path
     try:
-        import pandas as pd  # type: ignore
+        import pandas as pd
     except ImportError as exc:
         msg = "pandas no está instalado."
         raise ImportError(msg) from exc

@@ -86,9 +86,7 @@ win:
   icon: assets/icon.ico
   legalTrademarks: "Antares"
   requestedExecutionLevel: asInvoker
-  # Disabled because installers are not code-signed. Required for
-  # electron-updater to accept new versions on unsigned Windows builds.
-  verifyUpdateCodeSignature: false
+  verifyUpdateCodeSignature: true
   signtoolOptions:
     signingHashAlgorithms:
       - sha256

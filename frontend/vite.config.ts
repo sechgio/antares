@@ -161,7 +161,13 @@ export default defineConfig(({ mode }) => ({
     coverage: {
       provider: 'v8',
       reportsDirectory: './coverage',
-      reporter: ['json', 'text'],
+      reporter: ['text', 'lcov', 'html', 'json'],
+      thresholds: {
+        lines: 70,
+        branches: 65,
+        statements: 70,
+        functions: 65,
+      },
     },
   },
 }))

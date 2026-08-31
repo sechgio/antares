@@ -14,8 +14,8 @@ from PIL import Image, ImageOps
 
 from backend.core.format_registry import get_registry
 
-# Allow processing large format images (up to 400 Megapixels) without DecompressionBombError
-Image.MAX_IMAGE_PIXELS = 400_000_000
+# Cap at 100MP to avoid DecompressionBomb / OOM; header is checked before full decode.
+Image.MAX_IMAGE_PIXELS = 100_000_000
 
 _registry = get_registry()
 _registry.add_format("JPEG", ".jpg", ("RGB", "L", "CMYK"))
