@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import type { AppUser } from './types';
 
 export const DISABLED_ACCOUNT_MESSAGE =
@@ -273,8 +273,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const value = useMemo(
+    () => ({ user, loading, error, signIn, signUp, signOut, refreshUser }),
+    [user, loading, error, signIn, signUp, signOut, refreshUser],
+  );
+
   return (
-    <AuthContext.Provider value={{ user, loading, error, signIn, signUp, signOut, refreshUser }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
