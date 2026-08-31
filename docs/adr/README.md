@@ -11,5 +11,6 @@ Formato: `docs/adr/NNNN-slug.md` — ver `.agents/skills/domain-modeling/ADR-FOR
 - 0004 — Schema Canvas espejado FE/BE sin fuente compartida (estado actual)
 - 0005 — Motores de reportes paralelos sobre JsonDocumentStore
 - 0006 — Restricción markdown y .gitignore para docs versionados
+- 0007 — Claridad progresiva de Canvas sin alterar la funcionalidad
 
 Estado: `accepted` salvo que el ADR indique lo contrario.
