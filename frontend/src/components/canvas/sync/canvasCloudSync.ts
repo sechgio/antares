@@ -16,6 +16,7 @@ import {
   type SyncConflict,
   type SyncResult,
 } from './syncCompare';
+import { broadcastCanvasDocumentSaved } from './canvasRealtime';
 
 export type { CanvasRemoteMeta, SyncConflict, SyncResult };
 export { isNewer, shouldPushCanvasRow };
@@ -82,13 +83,34 @@ export async function listRemoteCanvasMeta(): Promise<CanvasRemoteMeta[] | null>
   return (data ?? []) as CanvasRemoteMeta[];
 }
 
-export async function pushCanvasDocument(
+export type CanvasPushResult = {
+  accepted: boolean;
+  documentId: string;
+  updatedAt: string;
+  updatedBy: string;
+};
+
+function pushResult(
+  doc: CanvasDocument,
+  accepted: boolean,
+  updatedAt: string,
+  updatedBy = '',
+): CanvasPushResult {
+  return {
+    accepted,
+    documentId: doc.id,
+    updatedAt,
+    updatedBy,
+  };
+}
+
+export async function pushCanvasDocumentResult(
   doc: CanvasDocument,
   options?: { forceResurrect?: boolean },
-): Promise<boolean> {
-  if (!supabase) return false;
+): Promise<CanvasPushResult> {
+  if (!supabase) return pushResult(doc, false, doc.updatedAt || '');
   const uid = await sessionUserId();
-  if (!uid) return false;
+  if (!uid) return pushResult(doc, false, doc.updatedAt || '');
 
   const { embedCanvasAssetsAsDataUrls, countCanvasAssetRefs } = await import('../utils/imageBlobStore');
   doc = await embedCanvasAssetsAsDataUrls(doc, { strict: true });
@@ -110,7 +132,7 @@ export async function pushCanvasDocument(
         'canvas-push-rpc',
       )) as { data: boolean | null; error: { message: string } | null } | null;
       if (rpcRes && !rpcRes.error && typeof rpcRes.data === 'boolean') {
-        return rpcRes.data;
+        return pushResult(doc, rpcRes.data, updatedAt, uid);
       }
     } catch {
       // Fall back to client-coordinated select + upsert below
@@ -155,7 +177,7 @@ export async function pushCanvasDocument(
         );
       } catch { /* ignore */ }
     }
-    return false;
+    return pushResult(doc, false, updatedAt, uid);
   }
 
   // Preserve the original creator on update: upsert overwrites every column,
@@ -179,7 +201,14 @@ export async function pushCanvasDocument(
     'canvas-push-upsert',
   );
   if (error) throw new Error(error.message);
-  return true;
+  return pushResult(doc, true, updatedAt, uid);
+}
+
+export async function pushCanvasDocument(
+  doc: CanvasDocument,
+  options?: { forceResurrect?: boolean },
+): Promise<boolean> {
+  return (await pushCanvasDocumentResult(doc, options)).accepted;
 }
 
 export async function markRemoteCanvasDeleted(id: string): Promise<boolean> {
@@ -213,15 +242,128 @@ async function fetchRemoteDocuments(ids: string[]): Promise<CanvasDocument[]> {
   if (error) throw new Error(error.message);
   const out: CanvasDocument[] = [];
   for (const row of data ?? []) {
-    const raw = row.document as CanvasDocument | null;
-    if (!raw || typeof raw !== 'object') continue;
-    const doc = normalizeDocument({
-      ...raw,
-      updatedAt: raw.updatedAt || row.updated_at,
-    });
-    out.push(doc);
+    const raw = row.document;
+    const remoteId = raw && typeof raw === 'object' && 'id' in raw && typeof raw.id === 'string'
+      ? raw.id
+      : '';
+    out.push(remoteDocumentFromRow(row, remoteId).document);
   }
   return out;
+}
+
+type CanvasRemoteDocumentRow = {
+  document?: unknown;
+  updated_at?: string | null;
+  deleted_at?: string | null;
+};
+
+function isValidTimestamp(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0 && !Number.isNaN(Date.parse(value));
+}
+
+function remoteDocumentFromRow(
+  row: CanvasRemoteDocumentRow,
+  documentId: string,
+): { document: CanvasDocument; updatedAt: string } {
+  if (!documentId || !row.document || typeof row.document !== 'object') {
+    throw new Error('Invalid remote Canvas document snapshot');
+  }
+  const raw = row.document as CanvasDocument;
+  const updatedAt = row.updated_at || raw.updatedAt || '';
+  if (!isValidTimestamp(updatedAt)) {
+    throw new Error('Invalid remote Canvas document timestamp');
+  }
+
+  try {
+    return {
+      document: normalizeDocument({
+        ...raw,
+        id: documentId,
+        updatedAt,
+      }),
+      updatedAt,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Invalid remote Canvas document snapshot: ${msg}`);
+  }
+}
+
+export type TargetedCanvasPullResult =
+  | { kind: 'unchanged'; remoteUpdatedAt?: string }
+  | { kind: 'applied'; document: CanvasDocument; remoteUpdatedAt: string }
+  | { kind: 'conflict'; conflict: SyncConflict }
+  | { kind: 'deleted'; conflict: SyncConflict };
+
+/**
+ * Pull one document after a Realtime invalidation. The remote snapshot is
+ * persisted locally before the caller is allowed to replace the open editor.
+ */
+export async function pullCanvasDocument(
+  documentId: string,
+  options: { localDocument: CanvasDocument; openDirty: boolean },
+): Promise<TargetedCanvasPullResult> {
+  if (!supabase) return { kind: 'unchanged' };
+  const uid = await sessionUserId();
+  if (!uid) return { kind: 'unchanged' };
+
+  const { data, error } = await withTimeout(
+    supabase
+      .from('canvas_documents')
+      .select('document, updated_at, deleted_at')
+      .eq('id', documentId)
+      .maybeSingle(),
+    CLOUD_SYNC_TIMEOUT_MS,
+    'canvas-pull-targeted',
+  );
+  if (error) throw new Error(error.message);
+
+  const row = data as CanvasRemoteDocumentRow | null;
+  if (!row) return { kind: 'unchanged' };
+
+  const localDocument = normalizeDocument(options.localDocument);
+  const remoteUpdatedAt = row.updated_at || row.deleted_at || '';
+  if (row.deleted_at) {
+    if (!isValidTimestamp(remoteUpdatedAt)) {
+      throw new Error('Invalid remote Canvas document deletion timestamp');
+    }
+    return {
+      kind: 'deleted',
+      conflict: {
+        localDoc: localDocument,
+        remoteDoc: null,
+        remoteUpdatedAt,
+        localUpdatedAt: localDocument.updatedAt || '',
+        remoteDeleted: true,
+      },
+    };
+  }
+
+  const remote = remoteDocumentFromRow(row, documentId);
+  if (!isNewer(remote.updatedAt, localDocument.updatedAt)) {
+    return { kind: 'unchanged', remoteUpdatedAt: remote.updatedAt };
+  }
+
+  if (options.openDirty) {
+    return {
+      kind: 'conflict',
+      conflict: {
+        localDoc: localDocument,
+        remoteDoc: remote.document,
+        remoteUpdatedAt: remote.updatedAt,
+        localUpdatedAt: localDocument.updatedAt || '',
+      },
+    };
+  }
+
+  const { assertDocumentImagesResolvable } = await import('../utils/imageBlobStore');
+  await assertDocumentImagesResolvable(remote.document);
+  await api.canvasSave(remote.document, { touch: false });
+  return {
+    kind: 'applied',
+    document: remote.document,
+    remoteUpdatedAt: remote.updatedAt,
+  };
 }
 
 export type SyncOptions = {
@@ -467,8 +609,11 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
     if (r && !localIsNewer) continue;
     try {
       const got = await api.canvasGet(local.id);
-      const ok = await pushCanvasDocument(normalizeDocument(got.document as CanvasDocument));
-      if (ok) pushed += 1;
+      const result = await pushCanvasDocumentResult(normalizeDocument(got.document as CanvasDocument));
+      if (result.accepted) {
+        pushed += 1;
+        await publishAcceptedPush(result);
+      }
     } catch (err) {
       // Offline / RLS — leave local; next sync retries.
       pushErrors += 1;
@@ -477,6 +622,16 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
   }
 
   return { pulled, pushed, deletedLocal, reloadOpenId, skipped: false, pushErrors, lastError, conflict };
+}
+
+async function publishAcceptedPush(result: CanvasPushResult): Promise<void> {
+  if (!result.accepted || !result.updatedBy) return;
+  await broadcastCanvasDocumentSaved({
+    type: 'document_saved',
+    documentId: result.documentId,
+    updatedAt: result.updatedAt,
+    updatedBy: result.updatedBy,
+  }).catch(() => undefined);
 }
 
 /** Fire-and-forget push after a successful local save.
@@ -495,7 +650,8 @@ export function queueCanvasCloudPush(
       const batch = Array.from(pendingPushById.values());
       pendingPushById.clear();
       for (const item of batch) {
-        await pushCanvasDocument(item.doc, item.options);
+        const result = await pushCanvasDocumentResult(item.doc, item.options);
+        await publishAcceptedPush(result);
       }
     });
     // Keep the chain alive after a failed push so later ops are not stuck.

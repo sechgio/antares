@@ -29,6 +29,7 @@
     "reason",
     "stream",
     "bytes",
+    "count",
     "dropped_events"
   ],
   "levels": ["DEBUG", "INFO", "WARN", "ERROR", "FATAL"],

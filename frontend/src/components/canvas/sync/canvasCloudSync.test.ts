@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import type { CanvasDocument } from '../types';
 import {
   isNewer,
+  pullCanvasDocument,
   pushCanvasDocument,
   queueCanvasCloudDelete,
   queueCanvasCloudPush,
@@ -53,6 +54,10 @@ const supabaseMock = vi.hoisted(() => {
   return { responses, chainable, from, getSession, rpc };
 });
 
+const realtimeMock = vi.hoisted(() => ({
+  broadcastCanvasDocumentSaved: vi.fn(async () => true),
+}));
+
 vi.mock('../../../api', () => ({
   api: {
     canvasList: vi.fn(),
@@ -69,6 +74,8 @@ vi.mock('../../../lib/supabase', () => ({
     rpc: supabaseMock.rpc,
   },
 }));
+
+vi.mock('./canvasRealtime', () => realtimeMock);
 
 import { api } from '../../../api';
 
@@ -111,6 +118,8 @@ function resetMocks(): void {
   vi.mocked(api.canvasGet).mockReset();
   vi.mocked(api.canvasSave).mockReset();
   vi.mocked(api.canvasDelete).mockReset();
+  realtimeMock.broadcastCanvasDocumentSaved.mockReset();
+  realtimeMock.broadcastCanvasDocumentSaved.mockResolvedValue(true);
 
   supabaseMock.responses.length = 0;
   supabaseMock.from.mockClear();
@@ -420,6 +429,12 @@ describe('syncCanvasDocuments', () => {
     expect(result.pushed).toBe(1);
     expect(vi.mocked(api.canvasGet)).toHaveBeenCalledWith('doc-1');
     expect(supabaseMock.from).toHaveBeenCalledWith('canvas_documents');
+    expect(realtimeMock.broadcastCanvasDocumentSaved).toHaveBeenCalledWith({
+      type: 'document_saved',
+      documentId: 'doc-1',
+      updatedAt: '2026-07-22T13:00:00Z',
+      updatedBy: 'user-1',
+    });
   });
 
   // --- Step 6: equal timestamps do not push ---
@@ -908,6 +923,35 @@ describe('opChain push serialization', () => {
       expect(events).toEqual(['upsert', 'delete']);
     });
   });
+
+  it('publishes only an accepted queued push', async () => {
+    enqueue(null); // LWW select
+    enqueue(null); // upsert
+
+    await queueCanvasCloudPush(makeDoc({
+      id: 'doc-queued',
+      updatedAt: '2026-07-22T12:00:00Z',
+    }));
+
+    expect(realtimeMock.broadcastCanvasDocumentSaved).toHaveBeenCalledWith({
+      type: 'document_saved',
+      documentId: 'doc-queued',
+      updatedAt: '2026-07-22T12:00:00Z',
+      updatedBy: 'user-1',
+    });
+  });
+
+  it('does not publish a queued push rejected by LWW', async () => {
+    enqueue({ updated_at: '2026-07-22T13:00:00Z', deleted_at: null });
+    enqueue(null); // preserved version
+
+    await queueCanvasCloudPush(makeDoc({
+      id: 'doc-rejected',
+      updatedAt: '2026-07-22T12:00:00Z',
+    }));
+
+    expect(realtimeMock.broadcastCanvasDocumentSaved).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1071,6 +1115,139 @@ describe('pushCanvasDocument', () => {
       p_updated_at: '2026-07-22T10:00:00Z',
     });
     expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('pullCanvasDocument', () => {
+  beforeEach(resetMocks);
+
+  it('persists the remote snapshot before returning applied', async () => {
+    const localDocument = makeDoc({
+      name: 'Local',
+      updatedAt: '2026-07-22T10:00:00Z',
+    });
+    const remoteDocument = makeDoc({
+      name: 'Remote',
+      updatedAt: '2026-07-22T12:00:00Z',
+    });
+    vi.mocked(api.canvasSave).mockResolvedValue({ document: remoteDocument });
+    enqueue({
+      document: remoteDocument,
+      updated_at: '2026-07-22T12:00:00Z',
+      deleted_at: null,
+    });
+
+    const result = await pullCanvasDocument('doc-1', {
+      localDocument,
+      openDirty: false,
+    });
+
+    expect(result).toMatchObject({ kind: 'applied', remoteUpdatedAt: '2026-07-22T12:00:00Z' });
+    expect(vi.mocked(api.canvasSave)).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Remote', updatedAt: '2026-07-22T12:00:00Z' }),
+      { touch: false },
+    );
+  });
+
+  it('returns a conflict without writing when the open document is dirty', async () => {
+    const localDocument = makeDoc({ name: 'Local', updatedAt: '2026-07-22T10:00:00Z' });
+    const remoteDocument = makeDoc({ name: 'Remote', updatedAt: '2026-07-22T12:00:00Z' });
+    enqueue({
+      document: remoteDocument,
+      updated_at: '2026-07-22T12:00:00Z',
+      deleted_at: null,
+    });
+
+    const result = await pullCanvasDocument('doc-1', {
+      localDocument,
+      openDirty: true,
+    });
+
+    expect(result).toMatchObject({
+      kind: 'conflict',
+      conflict: { localDoc: { name: 'Local' }, remoteDoc: { name: 'Remote' } },
+    });
+    expect(vi.mocked(api.canvasSave)).not.toHaveBeenCalled();
+  });
+
+  it('returns a deletion conflict even when the editor is clean', async () => {
+    const localDocument = makeDoc({ updatedAt: '2026-07-22T10:00:00Z' });
+    enqueue({
+      document: null,
+      updated_at: '2026-07-22T12:00:00Z',
+      deleted_at: '2026-07-22T12:00:00Z',
+    });
+
+    const result = await pullCanvasDocument('doc-1', {
+      localDocument,
+      openDirty: false,
+    });
+
+    expect(result).toMatchObject({
+      kind: 'deleted',
+      conflict: { remoteDoc: null, remoteDeleted: true },
+    });
+    expect(vi.mocked(api.canvasSave)).not.toHaveBeenCalled();
+  });
+
+  it('does not apply an equal or older remote snapshot', async () => {
+    const localDocument = makeDoc({ updatedAt: '2026-07-22T12:00:00Z' });
+    const remoteDocument = makeDoc({ name: 'Remote', updatedAt: '2026-07-22T11:00:00Z' });
+    enqueue({
+      document: remoteDocument,
+      updated_at: '2026-07-22T12:00:00Z',
+      deleted_at: null,
+    });
+
+    const result = await pullCanvasDocument('doc-1', {
+      localDocument,
+      openDirty: false,
+    });
+
+    expect(result).toMatchObject({ kind: 'unchanged', remoteUpdatedAt: '2026-07-22T12:00:00Z' });
+    expect(vi.mocked(api.canvasSave)).not.toHaveBeenCalled();
+  });
+
+  it('fails instead of accepting a remote row without a document snapshot', async () => {
+    const localDocument = makeDoc({ updatedAt: '2026-07-22T10:00:00Z' });
+    enqueue({
+      document: null,
+      updated_at: '2026-07-22T12:00:00Z',
+      deleted_at: null,
+    });
+
+    await expect(pullCanvasDocument('doc-1', {
+      localDocument,
+      openDirty: false,
+    })).rejects.toThrow(/remote.*document|snapshot/i);
+  });
+
+  it('fails instead of accepting a remote row with an invalid timestamp', async () => {
+    const localDocument = makeDoc({ updatedAt: '2026-07-22T10:00:00Z' });
+    enqueue({
+      document: makeDoc({ updatedAt: '2026-07-22T12:00:00Z' }),
+      updated_at: 'not-a-date',
+      deleted_at: null,
+    });
+
+    await expect(pullCanvasDocument('doc-1', {
+      localDocument,
+      openDirty: false,
+    })).rejects.toThrow(/timestamp|fecha|remote/i);
+  });
+
+  it('fails instead of accepting a deletion row with an invalid timestamp', async () => {
+    const localDocument = makeDoc({ updatedAt: '2026-07-22T10:00:00Z' });
+    enqueue({
+      document: null,
+      updated_at: 'not-a-date',
+      deleted_at: 'not-a-date',
+    });
+
+    await expect(pullCanvasDocument('doc-1', {
+      localDocument,
+      openDirty: false,
+    })).rejects.toThrow(/timestamp|fecha|remote/i);
   });
 });
 
