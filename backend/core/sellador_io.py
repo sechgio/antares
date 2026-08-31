@@ -10,7 +10,14 @@ MAX_STAMP_BYTES = 10 * 1024 * 1024
 
 
 def read_user_file(path_value: str, label: str, *, max_bytes: int) -> bytes:
-    path = Path(path_value).expanduser().resolve()
+    raw = Path(path_value).expanduser()
+    # Rechazar symlinks ANTES de resolver: resolve() sigue el enlace y un check
+    # posterior sobre el path resuelto ya no puede ver que era un symlink
+    # (lectura arbitraria fuera del alcance del usuario vía junction a %WINDIR%).
+    if raw.is_symlink() or any(parent.is_symlink() for parent in raw.parents):
+        msg = f"{label} no permitido: symlink en la ruta"
+        raise ValueError(msg)
+    path = raw.resolve()
     if not path.is_file():
         msg = f"{label} no encontrado"
         raise ValueError(msg)

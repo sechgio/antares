@@ -7,15 +7,19 @@ import contextlib
 import io
 import os
 import shutil
+import tempfile
 from pathlib import Path
 from typing import cast
 
 from PIL import Image, ImageOps
 
 from backend.core.format_registry import get_registry
+from backend.core.image_limits import apply_default_pixels_limit
 
-# Allow processing large format images (up to 400 Megapixels) without DecompressionBombError
-Image.MAX_IMAGE_PIXELS = 400_000_000
+# Tope de píxeles (100MP) para evitar bomba de descompresión/OOM. Fuente única
+# en core/image_limits.py: aplicar una vez a nivel de proceso, todos los
+# decoders heredan el mismo límite.
+apply_default_pixels_limit()
 
 _registry = get_registry()
 _registry.add_format("JPEG", ".jpg", ("RGB", "L", "CMYK"))
@@ -94,7 +98,23 @@ def copiar_archivo(
 
     if ensure_dir:
         ruta_destino.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(ruta_origen, ruta_destino)
+    if ruta_destino.is_symlink() or ruta_destino.parent.is_symlink():
+        raise ValueError("symlink no permitido en ruta de destino")
+
+    # Copia a un temp exclusivo y mueve atómicamente: cierra la ventana TOCTOU
+    # entre exists() y open('wb') (copy2 seguiría un symlink intercambiado).
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(ruta_destino.parent), prefix=f".{ruta_destino.stem}-", suffix=".antares-tmp"
+    )
+    os.close(fd)
+    tmp_destino = Path(tmp_name)
+    try:
+        shutil.copy2(ruta_origen, tmp_destino)
+        os.replace(tmp_destino, ruta_destino)
+    except Exception:
+        with contextlib.suppress(OSError):
+            tmp_destino.unlink(missing_ok=True)
+        raise
 
     return ruta_destino
 
@@ -274,8 +294,14 @@ def convertir_imagen(
 
         if ensure_dir:
             ruta_destino.parent.mkdir(parents=True, exist_ok=True)
+        if ruta_destino.is_symlink() or ruta_destino.parent.is_symlink():
+            raise ValueError("symlink no permitido en ruta de salida")
         save_kwargs = _build_save_kwargs(formato, calidad, keep_exif, img, optimize=optimize)
-        tmp_destino = ruta_destino.with_name(ruta_destino.name + ".tmp")
+        fd, tmp_name = tempfile.mkstemp(
+            dir=str(ruta_destino.parent), prefix=f".{ruta_destino.stem}-", suffix=".antares-tmp"
+        )
+        os.close(fd)
+        tmp_destino = Path(tmp_name)
 
         try:
             encoder = info.get("encoder")

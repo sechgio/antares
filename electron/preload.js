@@ -33,6 +33,24 @@ function reportRendererError(payload) {
   }
 }
 
+function registerFileInputPath(filePath) {
+  if (typeof filePath !== 'string' || !filePath.trim()) return false;
+  try {
+    ipcRenderer.send('register-file-input-path', filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function reportRendererEvent(event, fields, level) {
+  try {
+    ipcRenderer.send('renderer-event', { event, fields, level });
+  } catch {
+    // Event reporting is best-effort and must not affect the renderer.
+  }
+}
+
 // NODE_ENV no es confiable en apps empaquetadas (Electron no lo setea por
 // defecto, así que los logs debug aparecían en producción). El marcador fiable
 // es `app.isPackaged`, pero el preload corre con sandbox: true y no tiene
@@ -80,6 +98,7 @@ try {
       return ipcRenderer.invoke('ipc-call', method, params);
     },
     reportRendererError,
+    reportRendererEvent,
     backendStatus: () => ipcRenderer.invoke('backend-status'),
     backendRestart: () => ipcRenderer.invoke('backend-restart'),
     onNotify: (callback) => {
@@ -104,11 +123,20 @@ try {
     // contextIsolation and cannot import electron modules directly.
     getPathForFile: (file) => {
       try {
-        return webUtils.getPathForFile(file) || '';
+        const resolvedPath = webUtils.getPathForFile(file) || '';
+        if (resolvedPath) {
+          // File-derived paths (file inputs / drag-drop) are registered through
+          // a private authenticated channel. Registration is best-effort and
+          // never changes the caller's path-resolution behavior.
+          registerFileInputPath(resolvedPath);
+        }
+        return resolvedPath;
       } catch {
         return '';
       }
     },
+    registerFileInputPath,
+    canvasFlushAck: () => ipcRenderer.invoke('canvas-flush-ack'),
     registerLocalPath: (filePath) => ipcRenderer.invoke('ipc-call', 'register_local_path', { path: filePath }),
     fileStagedCreate: (name, size) => ipcRenderer.invoke('ipc-call', 'file_staged_create', { name, size }),
     // Prefer ArrayBuffer/Uint8Array (no base64). Strings still sent as chunk_b64 for legacy.
@@ -120,7 +148,7 @@ try {
     },
     fileStagedComplete: (token) => ipcRenderer.invoke('ipc-call', 'file_staged_complete', { token }),
     fileStagedAbort: (token) => ipcRenderer.invoke('ipc-call', 'file_staged_abort', { token }),
-    resolveFileToken: (token) => ipcRenderer.invoke('ipc-call', 'file_token_resolve', { token }),
+    ...(isDev ? { resolveFileToken: (token) => ipcRenderer.invoke('ipc-call', 'file_token_resolve', { token }) } : {}),
     cleanupFileToken: (token) => ipcRenderer.invoke('ipc-call', 'file_token_cleanup', { token }),
     canvasAssetPut: (chunk) => ipcRenderer.invoke('ipc-call', 'canvas_asset_put', { chunk }),
     canvasAssetGet: (ref) => ipcRenderer.invoke('ipc-call', 'canvas_asset_get', { ref }),

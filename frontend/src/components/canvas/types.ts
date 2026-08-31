@@ -1,9 +1,11 @@
 /** Canvas types — Layer model inspired by shadcn/designer (reference only). */
 
-export const DOCUMENT_VERSION = 2 as const;
+import schema from '../../../../shared/canvas-schema.json';
 
-export const A4_WIDTH_MM = 210;
-export const A4_HEIGHT_MM = 297;
+export const DOCUMENT_VERSION = schema.documentVersion as unknown as 2;
+
+export const A4_WIDTH_MM = schema.a4.widthMm as number;
+export const A4_HEIGHT_MM = schema.a4.heightMm as number;
 
 /** Default print safe-area inset when `settings.pageMarginMm` is unset. */
 export const DEFAULT_PAGE_MARGIN_MM = 10;

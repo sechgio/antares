@@ -24,7 +24,7 @@ function makeProc(pid) {
   return proc;
 }
 
-function loadRouter({ currentProc, incrementPendingRequests, decrementPendingRequests, env = {} }) {
+function loadRouter({ currentProc, incrementPendingRequests, decrementPendingRequests, env = {}, mainWindow = null, isDev = true }) {
   const oldEnv = new Map(Object.entries(env).map(([key]) => [key, process.env[key]]));
   for (const [key, value] of Object.entries(env)) {
     if (value === undefined) delete process.env[key];
@@ -39,7 +39,7 @@ function loadRouter({ currentProc, incrementPendingRequests, decrementPendingReq
     exports: {
       ipcMain: { handle: () => {}, removeHandler: () => {} },
       dialog: {},
-      app: { isPackaged: true },
+      app: { isPackaged: !isDev },
     },
   };
 
@@ -70,9 +70,9 @@ function loadRouter({ currentProc, incrementPendingRequests, decrementPendingReq
     filename: wmPath,
     loaded: true,
     exports: {
-      getMainWindow: () => null,
+      getMainWindow: () => mainWindow,
       buildAppMenu: () => ({ popup: () => {} }),
-      getIsDev: () => true,
+      getIsDev: () => isDev,
     },
   };
 
@@ -108,6 +108,48 @@ async function getRejection(request) {
 
 async function run() {
   console.log('Testing IPC pending-request admission...\n');
+
+  {
+    const path = require('path');
+    const { pathToFileURL } = require('url');
+    const trustedFrame = {
+      url: pathToFileURL(path.join(__dirname, '..', 'frontend', 'dist', 'index.html')).toString(),
+      parent: null,
+    };
+    const mainWindow = {
+      isDestroyed: () => false,
+      webContents: { id: 7, mainFrame: trustedFrame },
+    };
+    const router = loadRouter({
+      currentProc: { ref: makeProc(1000) },
+      incrementPendingRequests: () => {},
+      decrementPendingRequests: () => {},
+      mainWindow,
+      isDev: false,
+    });
+
+    assert(
+      router._isAllowedIpcSender({
+        sender: { id: 7, mainFrame: trustedFrame },
+        senderFrame: trustedFrame,
+      }) === true,
+      'packaged IPC accepts the exact main renderer frame',
+    );
+    assert(
+      router._isAllowedIpcSender({
+        sender: { id: 7, mainFrame: { url: 'file:///C:/evil.html', parent: null } },
+        senderFrame: { url: 'file:///C:/evil.html', parent: null },
+      }) === false,
+      'packaged IPC rejects arbitrary file URLs',
+    );
+    assert(
+      router._isAllowedIpcSender({
+        sender: { id: 8, mainFrame: trustedFrame },
+        senderFrame: trustedFrame,
+      }) === false,
+      'packaged IPC rejects a different webContents',
+    );
+  }
 
   {
     const currentProc = { ref: makeProc(1001) };
@@ -310,8 +352,8 @@ async function run() {
     const limits = typeof router._getPendingRequestLimits === 'function'
       ? router._getPendingRequestLimits()
       : {};
-    assert(limits.maxPendingRequests === 128, 'invalid total pending environment value uses default');
-    assert(limits.maxPendingPerMethod === 32, 'zero per-method pending environment value uses default');
+    assert(limits.maxPendingRequests === 64, 'invalid total pending environment value uses default');
+    assert(limits.maxPendingPerMethod === 8, 'zero per-method pending environment value uses default');
 
     const negativeRouter = loadRouter({
       currentProc,
@@ -323,8 +365,8 @@ async function run() {
       },
     });
     const negativeLimits = negativeRouter._getPendingRequestLimits();
-    assert(negativeLimits.maxPendingRequests === 128, 'negative total pending environment value uses default');
-    assert(negativeLimits.maxPendingPerMethod === 32, 'negative per-method pending environment value uses default');
+    assert(negativeLimits.maxPendingRequests === 64, 'negative total pending environment value uses default');
+    assert(negativeLimits.maxPendingPerMethod === 8, 'negative per-method pending environment value uses default');
   }
 
   console.log(`\n${passed} passed, ${failed} failed`);

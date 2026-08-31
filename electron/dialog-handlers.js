@@ -66,7 +66,24 @@ function _loadPersistedWriteRoots() {
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (!Array.isArray(raw)) return;
     for (const entry of raw) {
-      if (typeof entry === 'string' && entry.trim()) _allowedWriteRoots.add(path.resolve(entry));
+      if (typeof entry !== 'string' || !entry.trim()) continue;
+      try {
+        const resolved = path.resolve(entry.trim());
+        let canonical = resolved;
+        try {
+          canonical = fs.realpathSync(resolved);
+        } catch {
+          try {
+            canonical = fs.realpathSync(path.dirname(resolved));
+            canonical = path.join(canonical, path.basename(resolved));
+          } catch {
+            canonical = resolved;
+          }
+        }
+        _allowedWriteRoots.add(canonical);
+      } catch {
+        /* skip invalid entry */
+      }
     }
   } catch {
     // No file yet, or corrupted: start with session roots only.
@@ -113,7 +130,7 @@ function _isUnderAllowedPdfWriteDir(dir) {
   return false;
 }
 
-function _localImageEntries(rawPaths) {
+function _localImageEntries(rawPaths, webContentsId = null) {
   if (!rawPaths || typeof rawPaths !== 'object' || Array.isArray(rawPaths)) return [];
   const allowedExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif', '.tif', '.tiff', '.ico']);
 
@@ -124,7 +141,7 @@ function _localImageEntries(rawPaths) {
     const isCapabilityToken = typeof rawPath === 'string' && rawPath.startsWith('antares-');
     if (isCapabilityToken) {
       try {
-        resolvedPath = resolveCapability(rawPath, 'read', null).path;
+        resolvedPath = resolveCapability(rawPath, 'read', webContentsId).path;
       } catch {
         return [];
       }
@@ -274,7 +291,7 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
     throw new Error('HTML requerido para generar PDF');
   }
 
-  const localImages = _localImageEntries(params.localImagePaths);
+  const localImages = _localImageEntries(params.localImagePaths, webContentsId);
   const allowedFileUrls = new Set(localImages.map(entry => entry.fileUrl));
 
   const MAX_HTML_BYTES = 150 * 1024 * 1024; // 150 MB
@@ -500,6 +517,27 @@ function _webContentsIdFromWindow(win) {
   try { return win && win.webContents ? win.webContents.id : null; } catch { return null; }
 }
 
+/**
+ * Grant read access for a path derived from a File object (webUtils).
+ * Unlike the public register_local_path compatibility method, this private
+ * grant is reachable only from the preload's authenticated IPC channel.
+ */
+function registerFileInputPath(rawPath) {
+  if (typeof rawPath !== 'string' || !rawPath.trim() || rawPath.includes('\0') || !path.isAbsolute(rawPath)) {
+    return false;
+  }
+  try {
+    const resolvedPath = path.resolve(rawPath);
+    const stat = assertPathNotSymlink(resolvedPath);
+    if (!stat.isFile()) return false;
+    registerAllowedReadPath(resolvedPath);
+    return true;
+  } catch {
+    // Best-effort grant: invalid/unreadable files simply use staging/base64.
+    return false;
+  }
+}
+
 async function handleDialogCall(method, params = {}, dialog, window, electronModules = {}) {
   if (!NATIVE_METHODS.has(method)) {
     return { handled: false };
@@ -716,4 +754,5 @@ module.exports = {
   _clearAllowedWriteRoots: () => _allowedWriteRoots.clear(),
   /** Test hook: reset the persistent PDF render pool (windows/sessions/queues). */
   _resetPdfRenderPool,
+  registerFileInputPath,
 };

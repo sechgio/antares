@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,33 @@ def test_read_user_file_rejects_oversized_pdf(tmp_path: Path) -> None:
     pdf_path.write_bytes(b"%PDF" + b"x" * (MAX_PDF_BYTES + 1))
     with pytest.raises(ValueError, match="demasiado grande"):
         read_user_file(str(pdf_path), "PDF", max_bytes=MAX_PDF_BYTES)
+
+
+def test_read_user_file_rejects_symlink_before_resolve(tmp_path: Path) -> None:
+    """Un symlink a un archivo fuera del alcance no debe leerse (arbitrary read)."""
+    target = tmp_path / "secret.pdf"
+    target.write_bytes(b"%PDF secret")
+    link = tmp_path / "link.pdf"
+    try:
+        os.symlink(target, link)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks no disponibles en este entorno (Windows sin developer mode)")
+    with pytest.raises(ValueError, match="symlink"):
+        read_user_file(str(link), "PDF", max_bytes=MAX_PDF_BYTES)
+
+
+def test_read_user_file_rejects_symlink_in_parent(tmp_path: Path) -> None:
+    """Un symlink en un ancestro de la ruta tampoco debe leerse."""
+    real_dir = tmp_path / "real"
+    real_dir.mkdir()
+    (real_dir / "doc.pdf").write_bytes(b"%PDF doc")
+    link_dir = tmp_path / "linkdir"
+    try:
+        os.symlink(real_dir, link_dir, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks no disponibles en este entorno (Windows sin developer mode)")
+    with pytest.raises(ValueError, match="symlink"):
+        read_user_file(str(link_dir / "doc.pdf"), "PDF", max_bytes=MAX_PDF_BYTES)
 
 
 def test_resolve_stamp_bytes_falls_back_to_b64_when_path_missing(tmp_path: Path) -> None:

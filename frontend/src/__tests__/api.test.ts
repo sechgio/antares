@@ -256,8 +256,8 @@ describe('API Client', () => {
 
     await api.informesV2RenderConsolidatedHtml({ report_ids: ['1'] });
 
-    // Long running method: 900s + 60s + 10s = 970_000ms
-    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 970_000);
+    // Long running method: 300s + 60s + 10s = 370_000ms
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 370_000);
     setTimeoutSpy.mockRestore();
   });
 });

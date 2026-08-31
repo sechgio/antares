@@ -28,4 +28,30 @@ describe('frontend observability', () => {
     window.electronAPI = { ...window.electronAPI!, reportRendererError: undefined };
     expect(() => reportFrontendError({ kind: 'global_error', message: 'boom' })).not.toThrow();
   });
+
+  it('reports bounded canvas realtime metrics without document content', async () => {
+    const module = await import('./observability');
+    const reportFrontendEvent = (module as typeof module & {
+      reportFrontendEvent?: (report: unknown) => void;
+    }).reportFrontendEvent;
+    expect(reportFrontendEvent).toEqual(expect.any(Function));
+
+    const reportRendererEvent = vi.fn();
+    window.electronAPI = { ...window.electronAPI!, reportRendererEvent };
+    reportFrontendEvent?.({
+      event: 'canvas.realtime',
+      status: 'live',
+      count: 2,
+      durationMs: 12.4,
+      reason: 'reconnect',
+    });
+
+    expect(reportRendererEvent).toHaveBeenCalledWith('canvas.realtime', {
+      view: 'canvas',
+      status_class: 'live',
+      count: 2,
+      duration_ms: 12,
+      reason: 'reconnect',
+    }, 'INFO');
+  });
 });

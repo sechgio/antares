@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import App from '../App';
 
 const { mockSupabase } = vi.hoisted(() => {
@@ -52,6 +52,31 @@ vi.mock('../auth/AuthContext', () => ({
 }));
 
 describe('App Canvas keep-alive', () => {
+  it('acknowledges quit flush when Canvas has never been mounted', async () => {
+    const previousApi = window.electronAPI;
+    let notifyHandler: ((method: string, params: unknown) => void | Promise<void>) | undefined;
+    const canvasFlushAck = vi.fn(async () => ({ ok: true }));
+    window.electronAPI = {
+      ...previousApi!,
+      onNotify: (callback) => {
+        notifyHandler = callback;
+        return () => {};
+      },
+      canvasFlushAck,
+    };
+
+    try {
+      render(<App />);
+      await waitFor(() => expect(notifyHandler).toBeDefined());
+      await act(async () => {
+        await notifyHandler?.('app.flush-canvas-before-quit', {});
+      });
+      expect(canvasFlushAck).toHaveBeenCalledTimes(1);
+    } finally {
+      window.electronAPI = previousApi;
+    }
+  });
+
   it('keeps Canvas mounted when switching away and back', async () => {
     render(<App />);
 

@@ -85,6 +85,21 @@ async function main() {
   assert.strictEqual(tokenized.result_path, undefined, 'absolute result_path must not leak to renderer');
   assert.deepStrictEqual(tokenized.sheets, []);
 
+  // Custom filename from the result payload (e.g. consolidated report exports)
+  // must be carried onto the capability so the renderer can resolve it.
+  const { resolveCapability, revokeCapability } = require('../electron/file-capabilities');
+  const named = _maybeTokenizeResultPaths(
+    'informes_v2_export_consolidated_pdf',
+    { success: true, filename: 'informe_consolidado.pdf', result_path: spillPath },
+    null,
+  );
+  assert.strictEqual(named.result_path, undefined, 'result_path stripped for named export');
+  assert.ok(typeof named.result_file_token === 'string');
+  const resolved = resolveCapability(named.result_file_token, 'read', null);
+  assert.strictEqual(resolved.path, spillPath);
+  assert.strictEqual(resolved.name, 'informe_consolidado.pdf', 'custom filename reaches capability');
+  revokeCapability(named.result_file_token);
+
   // Non-spreadsheet methods unchanged
   const passthrough = _maybeTokenizeResultPaths('version', { version: '1' }, null);
   assert.deepStrictEqual(passthrough, { version: '1' });

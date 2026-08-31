@@ -302,8 +302,8 @@ export async function embedCanvasAssetsAsDataUrls(
       continue;
     }
     try {
-      const res = await getAsset(layer.value) as { chunk: ArrayBuffer };
-      const blob = new Blob([res.chunk]);
+      const chunk = await readCanvasAssetChunk(getAsset, layer.value);
+      const blob = new Blob([chunk]);
       const dataUrl = await blobToDataUrl(blob);
       changed = true;
       layers.push({ ...layer, value: dataUrl });
@@ -324,13 +324,15 @@ export async function embedCanvasAssetsAsDataUrls(
 
 /** Count unresolved canvas-asset: refs on image/logo layers. */
 export function countCanvasAssetRefs(doc: CanvasDocument): number {
-  let n = 0;
-  for (const layer of doc.layers) {
-    if ((layer.type === 'image' || layer.type === 'logo') && layer.value?.startsWith('canvas-asset:')) {
-      n += 1;
-    }
-  }
-  return n;
+  return canvasAssetRefs(doc).length;
+}
+
+function canvasAssetRefs(doc: CanvasDocument): string[] {
+  return doc.layers.flatMap((layer) => (
+    (layer.type === 'image' || layer.type === 'logo') && layer.value?.startsWith('canvas-asset:')
+      ? [layer.value]
+      : []
+  ));
 }
 
 /**
@@ -399,6 +401,14 @@ export async function prepareDocumentImagesForCmykExport(doc: CanvasDocument): P
   return next;
 }
 
+type CanvasAssetGetter = (ref: string) => Promise<{ chunk: ArrayBuffer }>;
+
+async function readCanvasAssetChunk(getAsset: CanvasAssetGetter, ref: string): Promise<ArrayBuffer> {
+  const res = await getAsset(ref);
+  if (!res?.chunk) throw new Error('asset vacío');
+  return res.chunk;
+}
+
 /** Convert leftover data: layer values into canvas-asset: refs when Electron can store them. */
 async function persistDataUrlsAsCanvasAssets(doc: CanvasDocument): Promise<CanvasDocument> {
   const putAsset = window.electronAPI?.canvasAssetPut;
@@ -429,9 +439,18 @@ async function persistDataUrlsAsCanvasAssets(doc: CanvasDocument): Promise<Canva
  * Hydrates a document loaded from disk / IPC for rendering.
  * Resolves `canvas-asset:` refs into blob: ObjectURLs; legacy data: URLs stay as-is.
  */
-export async function hydrateDocumentImages(doc: CanvasDocument): Promise<CanvasDocument> {
+export async function hydrateDocumentImages(
+  doc: CanvasDocument,
+  options?: { strict?: boolean },
+): Promise<CanvasDocument> {
+  const strict = options?.strict === true;
   const getAsset = window.electronAPI?.canvasAssetGet;
-  if (!getAsset) return doc;
+  if (!getAsset) {
+    if (strict && countCanvasAssetRefs(doc) > 0) {
+      throw new Error('No se pueden resolver canvas-asset: sin Electron (canvasAssetGet)');
+    }
+    return doc;
+  }
 
   let changed = false;
   const layers: CanvasLayer[] = [];
@@ -441,16 +460,44 @@ export async function hydrateDocumentImages(doc: CanvasDocument): Promise<Canvas
       continue;
     }
     try {
-      const res = await getAsset(layer.value) as { chunk: ArrayBuffer };
-      const blob = new Blob([res.chunk]);
+      const chunk = await readCanvasAssetChunk(getAsset, layer.value);
+      const blob = new Blob([chunk]);
       const reg = await registerImageBlob(blob);
       changed = true;
       layers.push({ ...layer, value: reg.url });
-    } catch {
+    } catch (err) {
+      if (strict) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`No se pudo resolver ${layer.value}: ${msg}`);
+      }
       layers.push(layer);
     }
   }
-  return changed ? { ...doc, layers } : doc;
+  const next = changed ? { ...doc, layers } : doc;
+  if (strict && countCanvasAssetRefs(next) > 0) {
+    throw new Error('Quedan referencias canvas-asset: sin resolver');
+  }
+  return next;
+}
+
+/** Verify persisted canvas assets without mutating the live image store. */
+export async function assertDocumentImagesResolvable(doc: CanvasDocument): Promise<void> {
+  const refs = canvasAssetRefs(doc);
+  if (refs.length === 0) return;
+
+  const getAsset = window.electronAPI?.canvasAssetGet;
+  if (!getAsset) {
+    throw new Error('No se pueden resolver canvas-asset: sin Electron (canvasAssetGet)');
+  }
+
+  for (const ref of refs) {
+    try {
+      await readCanvasAssetChunk(getAsset, ref);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`No se pudo resolver ${ref}: ${msg}`);
+    }
+  }
 }
 
 async function persistLayerImageValue(val: string): Promise<string> {
@@ -491,8 +538,8 @@ async function hydrateLayerImageValue(val: string): Promise<string> {
   const getAsset = window.electronAPI?.canvasAssetGet;
   if (!getAsset) return val;
   try {
-    const res = await getAsset(val) as { chunk: ArrayBuffer };
-    const blob = new Blob([res.chunk]);
+    const chunk = await readCanvasAssetChunk(getAsset, val);
+    const blob = new Blob([chunk]);
     const reg = await registerImageBlob(blob);
     return reg.url;
   } catch {

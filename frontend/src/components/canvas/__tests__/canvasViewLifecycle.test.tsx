@@ -27,6 +27,7 @@ if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
 const syncCanvasDocuments = vi.fn();
 
 vi.mock('../../../api', () => ({
+  onNotify: vi.fn(() => () => {}),
   api: {
     canvasList: vi.fn(),
     canvasGet: vi.fn(),

@@ -72,6 +72,34 @@ describe('imageBlobStore', () => {
     expect(getBlobUrl(imgLayer?.value)).toBe(base64Data);
   });
 
+  it('strict hydration rejects a missing persisted canvas asset', async () => {
+    const get = vi.fn(async () => {
+      throw new Error('asset not found');
+    });
+    (window as unknown as { electronAPI: { canvasAssetGet: typeof get } }).electronAPI = {
+      canvasAssetGet: get,
+    };
+    const doc = createEmptyDocument('Remote');
+    doc.layers.push({
+      id: 'missing-image',
+      type: 'image',
+      name: 'Missing',
+      value: 'canvas-asset:missing',
+      cssVars: {
+        '--width': '10mm',
+        '--height': '10mm',
+        '--translate-x': '0mm',
+        '--translate-y': '0mm',
+      },
+    });
+
+    const hydrate = hydrateDocumentImages as unknown as (
+      document: typeof doc,
+      options?: { strict?: boolean },
+    ) => Promise<typeof doc>;
+    await expect(hydrate(doc, { strict: true })).rejects.toThrow(/asset|resolver|not found/i);
+  });
+
   it('serializes ObjectURL layers back to persistent DataURLs when asset API missing', async () => {
     const fakeBlob = new Blob(['test content'], { type: 'image/png' });
     const registered = await registerImageBlob(fakeBlob);

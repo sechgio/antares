@@ -3,12 +3,42 @@ const fs = require('fs');
 const fsp = fs.promises;
 const os = require('os');
 const path = require('path');
-const { assertPathNotSymlink } = require('./path-allowlist');
+const { assertAllowedReadPath, assertPathNotSymlink } = require('./path-allowlist');
 
 const TOKEN_TTL_MS = 30 * 60 * 1000;
 const MAX_CHUNK_BYTES = 8 * 1024 * 1024;
 const MAX_STAGED_FILE_BYTES = 1024 * 1024 * 1024;
 const STAGED_DIR_PREFIX = 'antares-staged-';
+const PATH_CONTAINER_KEYS = new Set(['files', 'image_paths', 'localimagepaths']);
+const SUSPICIOUS_PATH_KEYS = new Set([
+  'path',
+  'file_path',
+  'filepath',
+  'output_path',
+  'outputpath',
+  'output_dir',
+  'outputdir',
+  'output_folder',
+  'outputfolder',
+  'excelpath',
+  'pdf_path',
+  'stamp_path',
+  'file_token',
+  'filetoken',
+  'excel_file_token',
+  'spreadsheet_token',
+  'result_file_token',
+  'cache_token',
+]);
+const WRITE_PATH_KEYS = new Set([
+  'output_path',
+  'outputpath',
+  'output_dir',
+  'outputdir',
+  'output_folder',
+  'outputfolder',
+]);
+const EMPTY_PATH_KEY_SET = new Set();
 
 const _capabilities = new Map();
 const _stagedSessions = new Map();
@@ -221,23 +251,81 @@ async function cleanupAllStaged() {
   }
 }
 
-function _assertNoRawAbsolutePaths(params) {
-  if (!params || typeof params !== 'object' || Array.isArray(params)) return;
-  const suspiciousKeys = new Set(['path','file_path','filepath','output_path','outputPath','output_dir','outputDir','output_folder','outputFolder','excelPath','pdf_path','stamp_path']);
-  const writeKeys = new Set(['output_path','outputpath','output_dir','outputdir','output_folder','outputfolder']);
-  for (const [k, v] of Object.entries(params)) {
-    if (typeof v !== 'string') continue;
-    const lk = k.toLowerCase();
-    const isPathKey = suspiciousKeys.has(k) || suspiciousKeys.has(lk) || lk.includes('path') || lk.includes('folder');
-    if (!isPathKey) continue;
-    if (v.includes('\0')) throw new Error(`invalid path param: ${k}`);
-    const isWriteKey = writeKeys.has(lk);
-    if (!isWriteKey && path.isAbsolute(v)) throw new Error(`raw absolute paths not allowed for ${k}; use file token`);
-    if (v.includes('..') && (v.includes('/') || v.includes('\\'))) {
-      const norm = path.normalize(v);
-      if (norm.includes('..')) throw new Error(`path traversal not allowed: ${k}`);
+function _assertNoRawAbsolutePaths(params, options = {}) {
+  const allowRegisteredReadPaths = options.allowRegisteredReadPaths === true;
+  // The caller supplies the already-normalized internal allowlist. Reusing an
+  // immutable-by-convention empty set avoids allocating on every IPC request.
+  const allowRawAbsolutePathKeys = options.allowRawAbsolutePathKeys instanceof Set
+    ? options.allowRawAbsolutePathKeys
+    : EMPTY_PATH_KEY_SET;
+
+  const visit = (value, keyPath, inheritedKey = '') => {
+    if (typeof value === 'string') {
+      const last = keyPath[keyPath.length - 1];
+      const inheritedLower = String(inheritedKey).toLowerCase();
+      const key = PATH_CONTAINER_KEYS.has(inheritedLower)
+        || /^\d+$/.test(String(last || ''))
+        ? inheritedKey
+        : (last || inheritedKey);
+      const normalizedKey = String(key).toLowerCase();
+      const isPathKey = SUSPICIOUS_PATH_KEYS.has(normalizedKey)
+        || normalizedKey.includes('path')
+        || normalizedKey.includes('folder')
+        || PATH_CONTAINER_KEYS.has(normalizedKey);
+      if (!isPathKey) return;
+      if (value.includes('\0')) throw new Error(`invalid path param: ${keyPath.join('.')}`);
+
+      const isWriteKey = WRITE_PATH_KEYS.has(normalizedKey);
+      if (!isWriteKey && path.isAbsolute(value)) {
+        const isExplicitlyAllowed = allowRawAbsolutePathKeys.has(normalizedKey);
+        let isRegisteredReadPath = false;
+        if (allowRegisteredReadPaths && !isExplicitlyAllowed) {
+          try {
+            // Validate both the approval grant and the current filesystem
+            // object, including the symlink policy.
+            assertAllowedReadPath(value);
+            isRegisteredReadPath = true;
+          } catch {
+            // Keep the generic rejection below so callers do not learn whether
+            // an arbitrary path exists on disk.
+          }
+        }
+        if (!isExplicitlyAllowed && !isRegisteredReadPath) {
+          throw new Error(`raw absolute paths not allowed for ${keyPath.join('.')}; use file token`);
+        }
+      }
+      if (value.includes('..') && (value.includes('/') || value.includes('\\'))) {
+        const norm = path.normalize(value);
+        if (norm.includes('..')) throw new Error(`path traversal not allowed: ${keyPath.join('.')}`);
+      }
+      return;
     }
-  }
+    if (Array.isArray(value)) {
+      value.forEach((child, index) => {
+        const childInherited = PATH_CONTAINER_KEYS.has(String(inheritedKey).toLowerCase())
+          && (typeof child === 'string' || Array.isArray(child))
+          ? inheritedKey
+          : '';
+        visit(child, [...keyPath, String(index)], childInherited);
+      });
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    for (const [key, child] of Object.entries(value)) {
+      // Propagate container keys so values in files/image_paths/localImagePaths
+      // are checked even when their immediate property is an arbitrary id.
+      // Do not propagate into object records such as image-optimizer's
+      // { filename, content_b64 } entries: those are payload data, not paths.
+      const nextInherited = PATH_CONTAINER_KEYS.has(String(inheritedKey).toLowerCase())
+        && (typeof child === 'string' || Array.isArray(child))
+        ? inheritedKey
+        : key;
+      visit(child, [...keyPath, key], nextInherited);
+    }
+  };
+
+  if (!params || typeof params !== 'object') return;
+  visit(params, []);
 }
 
 module.exports = {

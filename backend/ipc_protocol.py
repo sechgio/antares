@@ -30,7 +30,30 @@ _stdout_lock = threading.Lock()
 # Maximum allowed JSON payload size for IPC messages. Large binary exports
 # should use direct-to-disk handlers, but previews and metadata can exceed the
 # old 10 MB ceiling on high-DPI assets.
-_MAX_PAYLOAD_SIZE = int(os.environ.get("ANTARES_IPC_MAX_PAYLOAD_SIZE", str(64 * 1024 * 1024)))
+def _parse_max_payload_size() -> int:
+    raw = os.environ.get("ANTARES_IPC_MAX_PAYLOAD_SIZE", "")
+    if not raw:
+        return 64 * 1024 * 1024
+    s = raw.strip().lower()
+    try:
+        if s.endswith("mb"):
+            value = int(s[:-2].strip()) * 1024 * 1024
+        elif s.endswith("kb"):
+            value = int(s[:-2].strip()) * 1024
+        elif s.endswith("b"):
+            value = int(s[:-1].strip())
+        else:
+            value = int(s)
+    except ValueError:
+        logger.warning("ANTARES_IPC_MAX_PAYLOAD_SIZE inválido %r, usando 64MB por defecto", raw)
+        return 64 * 1024 * 1024
+    if value <= 0 or value > 256 * 1024 * 1024:
+        logger.warning("ANTARES_IPC_MAX_PAYLOAD_SIZE fuera de rango %r, usando 64MB por defecto", raw)
+        return 64 * 1024 * 1024
+    return value
+
+
+_MAX_PAYLOAD_SIZE = _parse_max_payload_size()
 
 
 def validate_method(method: str) -> bool:
@@ -51,7 +74,7 @@ def validate_params(params: dict) -> bool:
     """
     if not isinstance(params, dict):
         return False
-    return not any(path_param_violations(params, strict=False))
+    return not any(path_param_violations(params, strict=True))
 
 
 # ─── IPC Protocol ────────────────────────────────────────────────────────────

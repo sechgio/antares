@@ -141,26 +141,7 @@ function runQualityCommand(command, label, options = {}) {
 
 function runQualityGate() {
   console.log('');
-  runQualityCommand('npm run lint:python 2>&1', 'Lint de Python');
-
-  runQualityCommand('npm run typecheck:backend 2>&1', 'Typecheck de backend');
-
-  runQualityCommand('npm run typecheck:frontend 2>&1', 'Typecheck de frontend');
-
-  const budgets = runQualityCommand('npm run check:budgets 2>&1', 'Budgets');
-  if (budgets.includes('RED:')) {
-    throw new Error(`Budgets fallaron:\n${budgets.slice(0, 800)}`);
-  }
-
-  const testResult = runQualityCommand('npm test 2>&1', 'Tests', { timeout: 900000 });
-
-  const failurePattern = /(?:Test Files|Tests)\s+\d+\s+failed/;
-  if (failurePattern.test(testResult)) {
-    throw new Error(`Tests fallaron.\n${testResult.slice(-500)}`);
-  }
-  if (testResult.includes('FAILED') && !testResult.includes('PASSED')) {
-    throw new Error(`Tests fallaron.\n${testResult.slice(-500)}`);
-  }
+  runQualityCommand('npm run ci 2>&1', 'Quality gate (npm run ci)', { timeout: 900000 });
 }
 
 function runGit(args) {

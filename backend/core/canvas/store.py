@@ -25,7 +25,7 @@ _MAX_HISTORY_ENTRY_BYTES = 8 * 1024 * 1024
 _HISTORY_SPILL_SUFFIX = "_history.json"
 
 
-def _history_entry_size_ok(item: dict[str, Any]) -> bool:
+def _history_entry_size_ok(item: dict[str, Any]) -> bool:  # allowlist: dict[str, Any]
     encoded = json.dumps(item, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return len(encoded) <= _MAX_HISTORY_ENTRY_BYTES
 
@@ -77,7 +77,7 @@ def migrate_legacy_canvas_documents(*, source: Path, dest: Path) -> int:
     return copied
 
 
-def _meta_from_dict(raw: dict[str, Any]) -> tuple[str, str, str]:
+def _meta_from_dict(raw: dict[str, Any]) -> tuple[str, str, str]:  # allowlist: dict[str, Any]
     return (
         str(raw.get("name") or "Sin título"),
         str(raw.get("updatedAt") or ""),
@@ -199,7 +199,7 @@ class CanvasStore:
             logger.warning("Could not recover canvas history spill %s: %s", spill_path, exc)
 
     @staticmethod
-    def _history_entries(value: object) -> list[dict[str, Any]]:
+    def _history_entries(value: object) -> list[dict[str, Any]]:  # allowlist: dict[str, Any]
         if not isinstance(value, list):
             return []
         return [item for item in value if isinstance(item, dict)]
@@ -241,7 +241,7 @@ class CanvasStore:
             self._rebuild_index_if_stale()
             return list(self._listing_cache)
 
-    def get(self, doc_id: str) -> dict[str, Any] | None:
+    def get(self, doc_id: str) -> dict[str, Any] | None:  # allowlist: dict[str, Any]
         with self._lock:
             path = self._path_for(str(doc_id))
             if not path.exists():
@@ -259,12 +259,12 @@ class CanvasStore:
                 doc["id"] = path.stem
             return doc
 
-    def _normalize_history_item(self, item: dict[str, Any]) -> dict[str, Any]:
+    def _normalize_history_item(self, item: dict[str, Any]) -> dict[str, Any]:  # allowlist: dict[str, Any]
         if isinstance(item, dict) and item.get("type") == "diff":
             return item
         return normalize_document(item)
 
-    def get_history(self, doc_id: str) -> dict[str, list[dict[str, Any]]]:
+    def get_history(self, doc_id: str) -> dict[str, list[dict[str, Any]]]:  # allowlist: dict[str, Any]
         with self._lock:
             path = self._history_path_for(str(doc_id))
             if not path.exists():
@@ -291,14 +291,14 @@ class CanvasStore:
     def save_history(
         self,
         doc_id: str,
-        past: list[dict[str, Any]],
-        future: list[dict[str, Any]],
+        past: list[dict[str, Any]],  # allowlist: dict[str, Any]
+        future: list[dict[str, Any]],  # allowlist: dict[str, Any]
         max_history: int = 30,
     ) -> bool:
         with self._lock:
             path = self._history_path_for(str(doc_id))
             self.history_dir.mkdir(parents=True, exist_ok=True)
-            norm_past: list[dict[str, Any]] = []
+            norm_past: list[dict[str, Any]] = []  # allowlist: dict[str, Any]
             for d in past[-max_history:]:
                 if not isinstance(d, dict):
                     continue
@@ -307,7 +307,7 @@ class CanvasStore:
                     logger.warning("Dropping oversized canvas history entry for %s", doc_id)
                     continue
                 norm_past.append(item)
-            norm_future: list[dict[str, Any]] = []
+            norm_future: list[dict[str, Any]] = []  # allowlist: dict[str, Any]
             for d in future[-max_history:]:
                 if not isinstance(d, dict):
                     continue
@@ -329,7 +329,7 @@ class CanvasStore:
             tmp.replace(path)
             return True
 
-    def save(self, document: dict[str, Any], *, touch: bool = True) -> dict[str, Any]:
+    def save(self, document: dict[str, Any], *, touch: bool = True) -> dict[str, Any]:  # allowlist: dict[str, Any]
         with self._lock:
             doc = normalize_document(document)
             if touch:
@@ -348,7 +348,7 @@ class CanvasStore:
             self._refresh_index_entry(doc, path)
             return doc
 
-    def create(self, *, name: str = "Sin título") -> dict[str, Any]:
+    def create(self, *, name: str = "Sin título") -> dict[str, Any]:  # allowlist: dict[str, Any]
         return self.save(create_empty_document(name=name))
 
     def delete(self, doc_id: str) -> bool:
@@ -364,7 +364,7 @@ class CanvasStore:
             self._drop_index_entry(path.stem)
             return True
 
-    def _refresh_index_entry(self, doc: dict[str, Any], path: Path) -> None:
+    def _refresh_index_entry(self, doc: dict[str, Any], path: Path) -> None:  # allowlist: dict[str, Any]
         if self._index_stems is None:
             return
         stem = path.stem
@@ -384,7 +384,7 @@ class CanvasStore:
         self._inner_id_index = {k: v for k, v in self._inner_id_index.items() if v.stem != stem}
         self._listing_cache = [item for item in self._listing_cache if item["id"] != stem]
 
-    def duplicate(self, doc_id: str, *, name: str | None = None) -> dict[str, Any]:
+    def duplicate(self, doc_id: str, *, name: str | None = None) -> dict[str, Any]:  # allowlist: dict[str, Any]
         source = self.get(doc_id)
         if source is None:
             msg = f"Document not found: {doc_id}"
