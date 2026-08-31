@@ -12,9 +12,28 @@ const sharedHtmlSanitizerPlugin = {
   transform(code: string, id: string) {
     if (path.normalize(id.split('?')[0]) !== path.normalize(sharedHtmlSanitizerPath)) return null
 
+    // Robust: extrae claves de `module.exports = { ... }` sin hardcodear lista.
+    // Soporta saltos de línea, espacios y comentarios; fallback a lista conocida
+    // si el parseo falla (evita build silencioso sin exports — bug 0531c66).
+    const match = code.match(/module\.exports\s*=\s*\{([\s\S]*?)\}\s*;/)
+    if (!match) {
+      return `${code}\nexport { sanitizeHtmlForPdf, sanitizeHtmlForPreview, CSP_META, PREVIEW_CSP_META, isSafeDataUrl, isAllowedGoogleFontUrl };\n`
+    }
+    const raw = match[1]
+    const keys = raw
+      .split(',')
+      .map((part) => part.split(':')[0].trim().split(/\s+/)[0].trim())
+      .map((k) => k.replace(/^['"]|['"]$/g, ''))
+      .filter(Boolean)
+    if (keys.length === 0) {
+      return code.replace(
+        /module\.exports\s*=\s*\{[\s\S]*?\}\s*;/,
+        'export { sanitizeHtmlForPdf, sanitizeHtmlForPreview, CSP_META, PREVIEW_CSP_META, isSafeDataUrl, isAllowedGoogleFontUrl };',
+      )
+    }
     return code.replace(
-      /module\.exports = \{[^}]+\};/,
-      'export { sanitizeHtmlForPdf, sanitizeHtmlForPreview, CSP_META, PREVIEW_CSP_META, isSafeDataUrl, isAllowedGoogleFontUrl };',
+      /module\.exports\s*=\s*\{[\s\S]*?\}\s*;/,
+      `export { ${keys.join(', ')} };`,
     )
   },
 }
