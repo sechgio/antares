@@ -5,6 +5,15 @@ Todas las versiones notables de Antares se documentan aquí.
 Formato basado en [Keep a Changelog](https://keepachangelog.com/),
 y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Canvas / PDF**: importación de PDFs externos como capas editables cuando su semántica es reconocible (texto, rectángulos, elipses, líneas, imágenes y checkboxes), con preflight, progreso, cancelación, límites de rendimiento e informe de contenido omitido.
+- **Canvas / PDF round-trip**: manifiesto semántico embebido en exportaciones RGB y CMYK para reconstruir páginas, capas, estilos y referencias `canvas-asset:` cuando los assets locales están disponibles.
+
+### Changed
+- **Rendimiento Canvas**: PDF.js se carga de forma diferida y Canvas indexa las capas por página; la apertura inicial no incorpora el vendor pesado.
+
 ## [0.11.10] — 2026-08-22
 
 ### Added

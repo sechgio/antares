@@ -13,31 +13,11 @@ import MappingPreviewPanel from './MappingPreviewPanel';
 import MappingColorField from './MappingColorField';
 import { mappingColorCss, mappingFontNameToCss, mappingFontWeight } from './mappingCoords';
 import { safeBase64ToBytes } from './base64';
+import { ensurePdfJs } from '../../lib/pdfjs';
 // Re-export so existing imports (FormatosView.test.tsx) keep working.
 // The canonical home for this helper is now ./base64 — see the docstring
 // there for why it was extracted out of this component module.
 export { safeBase64ToBytes };
-
-let pdfjsLib: typeof import('pdfjs-dist') | null = null;
-let pdfWorkerUrl: string | null = null;
-
-async function ensurePdfJs() {
-  if (pdfjsLib) return pdfjsLib;
-  const pdfjs = await import('pdfjs-dist');
-  if (!pdfWorkerUrl) {
-    try {
-      const workerModule = await import('pdfjs-dist/build/pdf.worker.min.mjs?url') as { default: string };
-      pdfWorkerUrl = workerModule.default;
-    } catch {
-      pdfWorkerUrl = '';
-    }
-  }
-  if (pdfWorkerUrl) {
-    pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-  }
-  pdfjsLib = pdfjs;
-  return pdfjs;
-}
 
 const MAX_PREVIEW_PAGES = 30;
 const PREVIEW_DEBOUNCE_MS = 400;

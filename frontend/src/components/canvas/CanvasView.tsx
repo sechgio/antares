@@ -21,6 +21,8 @@ import PageLayerPreview from './editor/PageLayerPreview';
 import PathEditToolbar from './editor/PathEditToolbar';
 import RightPanel from './editor/RightPanel';
 import TopBar from './editor/TopBar';
+import PdfImportOptionsDialog from './editor/PdfImportOptionsDialog';
+import PdfImportStatus from './editor/PdfImportStatus';
 import { useCanvasHistory } from './hooks/useCanvasHistory';
 import { useCanvasBootstrap } from './hooks/useCanvasBootstrap';
 import { useDocumentLifecycle } from './hooks/useDocumentLifecycle';
@@ -73,6 +75,7 @@ import {
   addPage,
   duplicatePage,
   getPageCount,
+  indexLayersByPage,
   removePage,
   renamePage,
   setActivePageLayers,
@@ -114,6 +117,7 @@ import {
 import { nextZoomPreset } from './ops/viewportNav';
 import { cloneDocument } from './ops/document';
 import { autosaveDelayForDoc } from './utils/autosave';
+import { usePdfImport } from './hooks/usePdfImport';
 import {
   A4_HEIGHT_PX,
   A4_WIDTH_PX,
@@ -184,9 +188,13 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedId = selectedIds[0] ?? null;
+  const layersByPage = useMemo(
+    () => indexLayersByPage(history.document.layers),
+    [history.document.layers],
+  );
   const pageLayers = useMemo(
-    () => history.document.layers.filter((l) => (l.pageIndex ?? 0) === pageIndex),
-    [history.document.layers, pageIndex],
+    () => layersByPage.get(pageIndex) ?? [],
+    [layersByPage, pageIndex],
   );
   const pageColors = useMemo(() => {
     const fromLayers = collectDocumentColors(history.document.layers);
@@ -202,6 +210,13 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       setStatus(null);
     }, ms);
   }, []);
+
+  const pdfImport = usePdfImport({
+    history,
+    flashStatus,
+    setSelectedIds,
+    setPageIndex,
+  });
 
   useEffect(() => {
     writeBoolLS(PANEL_CHROME_KEYS.left, leftPanelOpen);
@@ -1506,6 +1521,14 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
 
   return (
     <>
+    <input
+      ref={pdfImport.pdfInputRef}
+      type="file"
+      accept="application/pdf,.pdf"
+      className="hidden"
+      onChange={(event) => void pdfImport.onPdfFileChange(event)}
+      aria-label="Archivo PDF"
+    />
     <div className="canvas-app relative flex h-full min-h-0 flex-col">
       <TopBar
         name={history.document.name}
@@ -1530,6 +1553,8 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         onRedo={runRedo}
         onSave={() => void onSave()}
         onDuplicate={() => void onDuplicate()}
+        onImportPdf={pdfImport.onImportPdf}
+        importDisabled={pdfImport.pdfImporting}
         leftPanelOpen={leftPanelOpen}
         rightPanelOpen={rightPanelOpen}
         uiLocked={uiLocked}
@@ -1913,7 +1938,21 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
           <GeneratePanel document={history.document} runCloudSync={runCloudSync} />
         </Suspense>
       )}
+      <PdfImportStatus
+        progress={pdfImport.pdfImportProgress}
+        report={pdfImport.pdfImportReport}
+        error={pdfImport.pdfImportError}
+        importing={pdfImport.pdfImporting}
+        onCancel={pdfImport.cancelPdfImport}
+      />
     </div>
+    {pdfImport.pdfFile && pdfImport.pdfPreflight && !pdfImport.pdfImporting ? (
+      <PdfImportOptionsDialog
+        preflight={pdfImport.pdfPreflight}
+        onCancel={pdfImport.cancelPdfImportOptions}
+        onConfirm={(options) => void pdfImport.confirmPdfImport(options)}
+      />
+    ) : null}
     </>
   );
 }

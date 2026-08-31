@@ -140,6 +140,26 @@ export async function registerImageBlob(
 }
 
 /**
+ * Register an imported image for immediate Canvas rendering and persist the
+ * same bytes when the Electron asset bridge is available. The live ObjectURL
+ * is deliberately retained so an import never depends on an IPC round trip to
+ * paint the newly-created layer.
+ */
+export async function registerAndPersistCanvasImage(
+  blob: Blob,
+): Promise<string> {
+  const registered = await registerImageBlob(blob);
+  const putAsset = window.electronAPI?.canvasAssetPut;
+  if (!putAsset) return registered.url;
+  try {
+    await putAsset(await blob.arrayBuffer());
+  } catch {
+    // Keep the live URL. The asset GC will reclaim it if the import fails.
+  }
+  return registered.url;
+}
+
+/**
  * Retrieves the display ObjectURL for a given image value (blobId, blobUrl, dataUrl, etc.).
  */
 export function getBlobUrl(value: string | undefined): string {

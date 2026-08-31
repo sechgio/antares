@@ -11,6 +11,18 @@ export function getActivePageLayers(doc: CanvasDocument, pageIndex: number): Can
   return doc.layers.filter((l) => (l.pageIndex ?? 0) === pageIndex);
 }
 
+/** Index layers once per document revision so page switches do not rescan every layer. */
+export function indexLayersByPage(layers: readonly CanvasLayer[]): Map<number, CanvasLayer[]> {
+  const index = new Map<number, CanvasLayer[]>();
+  for (const layer of layers) {
+    const pageIndex = layer.pageIndex ?? 0;
+    const pageLayers = index.get(pageIndex);
+    if (pageLayers) pageLayers.push(layer);
+    else index.set(pageIndex, [layer]);
+  }
+  return index;
+}
+
 export function addPage(doc: CanvasDocument): CanvasDocument {
   const nextIndex = getPageCount(doc);
   const pageId = newId();

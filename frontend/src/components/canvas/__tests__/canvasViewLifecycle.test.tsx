@@ -10,6 +10,20 @@ import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEmptyDocument, type CanvasDocument } from '../types';
 
+const pdfImportMocks = vi.hoisted(() => ({
+  inspectPdfFile: vi.fn(),
+  importPdfFile: vi.fn(),
+}));
+
+vi.mock('../import/importPdf', () => pdfImportMocks);
+
+if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
+  Object.defineProperty(Element.prototype, 'scrollIntoView', {
+    configurable: true,
+    value: vi.fn(),
+  });
+}
+
 const syncCanvasDocuments = vi.fn();
 
 vi.mock('../../../api', () => ({
@@ -144,6 +158,8 @@ describe('CanvasView lifecycle', () => {
     vi.mocked(api.canvasDuplicate).mockResolvedValue({ document: makeDoc('doc-dup', 'Alpha copia') });
     vi.mocked(api.canvasGetHistory).mockResolvedValue({ past: [], future: [] });
     vi.mocked(api.canvasSaveHistory).mockResolvedValue({ success: true });
+    pdfImportMocks.inspectPdfFile.mockReset();
+    pdfImportMocks.importPdfFile.mockReset();
   });
 
   afterEach(() => {
@@ -768,5 +784,81 @@ describe('CanvasView lifecycle', () => {
     expect(ev.returnValue).toBe('');
 
     addSpy.mockRestore();
+  });
+
+  it('imports a PDF only after the job completes and exposes cancellation', async () => {
+    const importedLayer = {
+      id: 'pdf-layer-1',
+      type: 'rect' as const,
+      name: 'PDF rect',
+      value: '',
+      pageIndex: 0,
+      cssVars: {
+        '--width': '10mm',
+        '--height': '10mm',
+        '--translate-x': '0mm',
+        '--translate-y': '0mm',
+      },
+    };
+    const report = {
+      importedCount: 1,
+      skippedCount: 0,
+      pagesProcessed: 1,
+      issues: [],
+      warnings: [],
+    };
+    pdfImportMocks.inspectPdfFile.mockResolvedValue({
+      pageCount: 1,
+      pageSizes: [{ widthPt: 612, heightPt: 792 }],
+      hasMixedPageSizes: false,
+    });
+    pdfImportMocks.importPdfFile.mockResolvedValue({
+      sourceName: 'import.pdf',
+      fragment: {
+        pages: [{ id: 'pdf-page-1', name: 'PDF Página 1' }],
+        layers: [importedLayer],
+        fields: [],
+        firstPageIndex: 0,
+        importedLayerIds: [importedLayer.id],
+        report,
+      },
+      report,
+    });
+
+    await renderReady();
+    const file = new File(['%PDF-1.7'], 'import.pdf', { type: 'application/pdf' });
+    fireEvent.click(screen.getByRole('button', { name: 'Importar PDF' }));
+    fireEvent.change(screen.getByLabelText('Archivo PDF'), { target: { files: [file] } });
+
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Importar' }));
+    await waitFor(() => expect(pdfImportMocks.importPdfFile).toHaveBeenCalledWith(
+      file,
+      expect.objectContaining({ pageStart: 1, pageEnd: 1, mixedPagePolicy: 'reject' }),
+    ));
+    await waitFor(() => expect(screen.getByText(/1 importados · 0 aproximados/)).toBeInTheDocument());
+    expect(screen.getByText('PDF rect')).toBeInTheDocument();
+
+    let signal: AbortSignal | undefined;
+    let resolveImport: ((value: unknown) => void) | undefined;
+    pdfImportMocks.importPdfFile.mockImplementationOnce((_source: File, options: { signal?: AbortSignal }) => {
+      signal = options.signal;
+      return new Promise((resolve) => {
+        resolveImport = resolve;
+      });
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Importar PDF' }));
+    fireEvent.change(screen.getByLabelText('Archivo PDF'), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Importar' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancelar' })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(signal?.aborted).toBe(true);
+    resolveImport?.({
+      sourceName: 'import.pdf',
+      fragment: { pages: [], layers: [], fields: [], firstPageIndex: 0, importedLayerIds: [], report },
+      report,
+    });
   });
 });

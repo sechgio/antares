@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://antares.app/schemas/canvas-pdf-manifest.schema.json",
+  "title": "Antares Canvas PDF manifest",
+  "type": "object",
+  "required": ["schema", "version", "document"],
+  "properties": {
+    "schema": { "const": "antares.canvas.pdf" },
+    "version": { "const": 1 },
+    "document": { "type": "object" },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["attachmentName"],
+        "properties": {
+          "attachmentName": { "type": "string", "minLength": 1 },
+          "mimeType": { "type": "string" },
+          "originalRef": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

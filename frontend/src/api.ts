@@ -481,6 +481,8 @@ export interface HtmlToPdfBody {
   filename: string;
   localImagePaths?: Record<string, string>;
   outputPath?: string;
+  /** Optional Antares Canvas semantic manifest to embed as a PDF attachment. */
+  canvas_manifest_b64?: string;
   /** Opt-in: inline PDF as base64 (prefer outputPath / saved_path for large exports). */
   return_base64?: boolean;
 }
@@ -497,6 +499,8 @@ export interface CanvasExportCmykPdfBody {
   filename?: string;
   outputPath?: string;
   localImagePaths?: Record<string, string>;
+  /** Optional Antares Canvas semantic manifest to embed as a PDF attachment. */
+  canvas_manifest_b64?: string;
 }
 
 export type HtmlToPdfResponse =
