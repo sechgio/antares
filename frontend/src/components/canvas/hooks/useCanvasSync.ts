@@ -11,10 +11,12 @@ import type {
 import { normalizeDocument, type CanvasDocument } from '../types';
 import { hydrateDocumentImages } from '../utils/imageBlobStore';
 import type { CanvasHistoryHandle } from './useCanvasHistory';
+import { reportFrontendEvent } from '../../../utils/observability';
 
 export type SyncConflictChoice = 'use-remote' | 'keep-local';
 
 const REALTIME_PULL_DEBOUNCE_MS = 350;
+const REALTIME_PULL_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
 
 export interface UseCanvasSyncOptions {
   /** Ref to the current open document id (read inside sync without re-subscribing). */
@@ -106,8 +108,14 @@ export function useCanvasSync({
   const presenceIdentityRef = useRef<CanvasPresence | null>(null);
   const realtimePullTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRealtimeTimestampRef = useRef<string | null>(null);
+  const pendingRealtimePullRef = useRef(false);
   const realtimePullInFlightRef = useRef(false);
+  const realtimePullInFlightGenerationRef = useRef<number | null>(null);
+  const realtimePullRetryRef = useRef(0);
   const realtimeEnabledRef = useRef(false);
+  const realtimeGenerationRef = useRef(0);
+  const realtimeLiveRef = useRef(false);
+  const realtimeEverLiveRef = useRef(false);
 
   const runCloudSync = useCallback(async (guardedOverride?: boolean) => {
     setSyncing(true);
@@ -138,7 +146,7 @@ export function useCanvasSync({
             if (!openDirtyRef.current) {
               const got = await api.canvasGet(result.reloadOpenId);
               const doc = normalizeDocument(got.document as CanvasDocument);
-              const hydrated = await hydrateDocumentImages(doc);
+              const hydrated = await hydrateDocumentImages(doc, { strict: true });
               replaceDocumentRef.current(hydrated);
               onRemoteDocumentAppliedRef.current?.(hydrated);
             } else if (onConflictRef.current) {
@@ -168,7 +176,10 @@ export function useCanvasSync({
         followUp: (retryResult) => {
           if (effectiveGuarded) initialGuardedRef.current = true;
           void applySyncResult(retryResult).finally(() => {
-            if (effectiveGuarded) initialGuardedRef.current = false;
+            if (effectiveGuarded) {
+              initialGuardedRef.current = false;
+              if (realtimeLiveRef.current) scheduleRealtimePull();
+            }
           });
         },
       });
@@ -184,28 +195,46 @@ export function useCanvasSync({
       setSyncStatus('error');
       setSyncing(false);
     } finally {
-      if (effectiveGuarded && !waitingForGuardedFollowUp) initialGuardedRef.current = false;
+      if (effectiveGuarded && !waitingForGuardedFollowUp) {
+        initialGuardedRef.current = false;
+        if (realtimeLiveRef.current) scheduleRealtimePull();
+      }
     }
   }, [guarded, historyDocRef, openDirtyRef, refreshList]);
 
   const drainRealtimePull = useCallback(async () => {
     if (realtimePullInFlightRef.current) return;
+    const targetDocumentId = currentDocumentIdRef.current;
+    const pullGeneration = realtimeGenerationRef.current;
     const pendingTimestamp = pendingRealtimeTimestampRef.current;
-    if (!pendingTimestamp) return;
+    if (!realtimeEnabledRef.current || !targetDocumentId || (
+      !pendingTimestamp && !pendingRealtimePullRef.current
+    )) return;
     pendingRealtimeTimestampRef.current = null;
+    pendingRealtimePullRef.current = false;
     realtimePullInFlightRef.current = true;
+    realtimePullInFlightGenerationRef.current = pullGeneration;
+    const startedAt = Date.now();
+    let retryScheduled = false;
+
+    const isCurrentPull = () => (
+      realtimeEnabledRef.current
+      && currentDocumentIdRef.current === targetDocumentId
+      && realtimeGenerationRef.current === pullGeneration
+    );
 
     try {
       const { pullCanvasDocument } = await import('../sync/canvasCloudSync');
-      const targetDocumentId = currentDocumentIdRef.current;
+      if (!isCurrentPull()) return;
       const result = await pullCanvasDocument(targetDocumentId, {
         localDocument: historyDocRef.current,
         openDirty: openDirtyRef.current,
       });
+      if (!isCurrentPull()) return;
 
       if (result.kind === 'applied') {
-        const hydrated = await hydrateDocumentImages(result.document);
-        if (!realtimeEnabledRef.current || currentDocumentIdRef.current !== targetDocumentId) return;
+        const hydrated = await hydrateDocumentImages(result.document, { strict: true });
+        if (!isCurrentPull()) return;
         if (openDirtyRef.current) {
           const localDoc = historyDocRef.current;
           onConflictRef.current?.({
@@ -221,43 +250,140 @@ export function useCanvasSync({
       } else if (result.kind === 'conflict' || result.kind === 'deleted') {
         onConflictRef.current?.(result.conflict);
       }
+      realtimePullRetryRef.current = 0;
+      if (realtimeLiveRef.current) setRealtimeStatus('live');
+      reportFrontendEvent({
+        event: 'canvas.realtime',
+        level: result.kind === 'unchanged' || result.kind === 'applied' ? 'INFO' : 'WARN',
+        outcome: result.kind === 'unchanged' || result.kind === 'applied' ? 'success' : 'partial',
+        durationMs: Date.now() - startedAt,
+        reason: result.kind,
+      });
     } catch {
-      if (realtimeEnabledRef.current) setRealtimeStatus('error');
+      if (isCurrentPull()) {
+        setRealtimeStatus('error');
+        reportFrontendEvent({
+          event: 'canvas.realtime',
+          level: 'ERROR',
+          outcome: 'failed',
+          durationMs: Date.now() - startedAt,
+          reason: 'pull_failed',
+        });
+        const retryIndex = realtimePullRetryRef.current;
+        const retryDelay = REALTIME_PULL_RETRY_DELAYS_MS[retryIndex];
+        if (retryDelay !== undefined) {
+          realtimePullRetryRef.current = retryIndex + 1;
+          pendingRealtimePullRef.current = true;
+          if (pendingTimestamp && !pendingRealtimeTimestampRef.current) {
+            pendingRealtimeTimestampRef.current = pendingTimestamp;
+          }
+          scheduleRealtimePull(retryDelay);
+          retryScheduled = true;
+        } else {
+          realtimePullRetryRef.current = 0;
+          pendingRealtimePullRef.current = false;
+          pendingRealtimeTimestampRef.current = null;
+        }
+      }
     } finally {
-      realtimePullInFlightRef.current = false;
-      if (pendingRealtimeTimestampRef.current && realtimePullTimerRef.current === null) {
-        realtimePullTimerRef.current = setTimeout(() => {
-          realtimePullTimerRef.current = null;
-          void drainRealtimePull();
-        }, REALTIME_PULL_DEBOUNCE_MS);
+      if (realtimePullInFlightGenerationRef.current === pullGeneration) {
+        realtimePullInFlightRef.current = false;
+        realtimePullInFlightGenerationRef.current = null;
+        if (
+          isCurrentPull()
+          && (pendingRealtimeTimestampRef.current || pendingRealtimePullRef.current)
+          && !retryScheduled
+          && realtimePullTimerRef.current === null
+        ) {
+          scheduleRealtimePull();
+        }
       }
     }
   }, [historyDocRef, openDirtyRef]);
 
-  function scheduleRealtimePull(): void {
+  function scheduleRealtimePull(delay = REALTIME_PULL_DEBOUNCE_MS): void {
     if (realtimePullTimerRef.current !== null) return;
     realtimePullTimerRef.current = setTimeout(() => {
       realtimePullTimerRef.current = null;
       void drainRealtimePull();
-    }, REALTIME_PULL_DEBOUNCE_MS);
+    }, delay);
+  }
+
+  function requestRealtimePull(updatedAt?: string): void {
+    const pending = pendingRealtimeTimestampRef.current;
+    const isNewInvalidation = !pendingRealtimePullRef.current || (
+      !!updatedAt && isLaterTimestamp(updatedAt, pending)
+    );
+    if (updatedAt && (!pending || isLaterTimestamp(updatedAt, pending))) {
+      pendingRealtimeTimestampRef.current = updatedAt;
+    }
+    pendingRealtimePullRef.current = true;
+    if (isNewInvalidation) realtimePullRetryRef.current = 0;
+    if (!initialGuardedRef.current) scheduleRealtimePull();
   }
 
   const handleRealtimeSaved = useCallback((event: CanvasDocumentSavedEvent) => {
     if (initialGuardedRef.current) return;
     if (event.documentId !== currentDocumentIdRef.current) return;
     const pending = pendingRealtimeTimestampRef.current;
-    if (!pending || isLaterTimestamp(event.updatedAt, pending)) {
-      pendingRealtimeTimestampRef.current = event.updatedAt;
+    if (pending && !isLaterTimestamp(event.updatedAt, pending)) {
+      reportFrontendEvent({
+        event: 'canvas.realtime',
+        level: 'DEBUG',
+        outcome: 'partial',
+        reason: 'stale_event',
+      });
     }
-    scheduleRealtimePull();
+    requestRealtimePull(event.updatedAt);
+  }, []);
+
+  const handleRealtimeStatus = useCallback((status: CanvasRealtimeStatus) => {
+    const wasLive = realtimeLiveRef.current;
+    const reconnecting = status === 'live' && realtimeEverLiveRef.current && !wasLive;
+    if (status === 'live') {
+      realtimeLiveRef.current = true;
+      realtimeEverLiveRef.current = true;
+      requestRealtimePull();
+    } else if (status === 'error' || status === 'offline') {
+      realtimeLiveRef.current = false;
+    }
+    setRealtimeStatus(status);
+    reportFrontendEvent({
+      event: 'canvas.realtime',
+      level: status === 'error' ? 'ERROR' : 'INFO',
+      status,
+      reason: reconnecting ? 'reconnect' : undefined,
+    });
   }, []);
 
   useEffect(() => {
+    const generation = ++realtimeGenerationRef.current;
+    const cleanupRealtime = () => {
+      realtimeGenerationRef.current += 1;
+      realtimeEnabledRef.current = false;
+      realtimeLiveRef.current = false;
+      realtimeEverLiveRef.current = false;
+      if (realtimePullTimerRef.current !== null) {
+        clearTimeout(realtimePullTimerRef.current);
+        realtimePullTimerRef.current = null;
+      }
+      pendingRealtimeTimestampRef.current = null;
+      pendingRealtimePullRef.current = false;
+      realtimePullRetryRef.current = 0;
+      realtimePullInFlightRef.current = false;
+      realtimePullInFlightGenerationRef.current = null;
+      const subscription = realtimeSubscriptionRef.current;
+      realtimeSubscriptionRef.current = null;
+      presenceIdentityRef.current = null;
+      setCollaborators([]);
+      void subscription?.close();
+    };
+
     if (!active || !documentReady || !currentDocumentId) {
       realtimeEnabledRef.current = false;
       setCollaborators([]);
       setRealtimeStatus(active ? 'idle' : 'offline');
-      return;
+      return cleanupRealtime;
     }
 
     let disposed = false;
@@ -280,11 +406,23 @@ export function useCanvasSync({
         };
         presenceIdentityRef.current = initialPresence;
         const subscription = subscribeCanvasDocument(currentDocumentId, initialPresence, {
-          onSaved: handleRealtimeSaved,
-          onPresence: (nextCollaborators) => {
-            setCollaborators(nextCollaborators.filter((item) => item.userId !== identity.userId));
+          onSaved: (event) => {
+            if (!disposed) handleRealtimeSaved(event);
           },
-          onStatus: setRealtimeStatus,
+          onPresence: (nextCollaborators) => {
+            if (disposed) return;
+            const visibleCollaborators = nextCollaborators.filter((item) => item.userId !== identity.userId);
+            setCollaborators(visibleCollaborators);
+            reportFrontendEvent({
+              event: 'canvas.realtime',
+              level: 'INFO',
+              count: visibleCollaborators.length,
+              reason: 'presence_sync',
+            });
+          },
+          onStatus: (status) => {
+            if (!disposed && realtimeGenerationRef.current === generation) handleRealtimeStatus(status);
+          },
         });
         if (disposed) {
           void subscription?.close();
@@ -293,24 +431,14 @@ export function useCanvasSync({
         realtimeSubscriptionRef.current = subscription;
       })
       .catch(() => {
-        if (!disposed) setRealtimeStatus('error');
+        if (!disposed && realtimeGenerationRef.current === generation) handleRealtimeStatus('error');
       });
 
     return () => {
       disposed = true;
-      realtimeEnabledRef.current = false;
-      if (realtimePullTimerRef.current !== null) {
-        clearTimeout(realtimePullTimerRef.current);
-        realtimePullTimerRef.current = null;
-      }
-      pendingRealtimeTimestampRef.current = null;
-      const subscription = realtimeSubscriptionRef.current;
-      realtimeSubscriptionRef.current = null;
-      presenceIdentityRef.current = null;
-      setCollaborators([]);
-      void subscription?.close();
+      cleanupRealtime();
     };
-  }, [active, currentDocumentId, documentReady, handleRealtimeSaved, openDirtyRef]);
+  }, [active, currentDocumentId, documentReady, handleRealtimeSaved, handleRealtimeStatus, openDirtyRef]);
 
   useEffect(() => {
     const subscription = realtimeSubscriptionRef.current;

@@ -344,8 +344,8 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       dismissedRemoteAtRef.current = null;
       void (async () => {
         try {
+          const hydrated = await hydrateDocumentImages(conflict.remoteDoc!, { strict: true });
           await api.canvasSave(conflict.remoteDoc!, { touch: false });
-          const hydrated = await hydrateDocumentImages(conflict.remoteDoc!);
           history.replaceDocument(hydrated);
           handleRemoteDocumentApplied(hydrated);
           await refreshList();

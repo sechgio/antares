@@ -1207,5 +1207,47 @@ describe('pullCanvasDocument', () => {
     expect(result).toMatchObject({ kind: 'unchanged', remoteUpdatedAt: '2026-07-22T12:00:00Z' });
     expect(vi.mocked(api.canvasSave)).not.toHaveBeenCalled();
   });
+
+  it('fails instead of accepting a remote row without a document snapshot', async () => {
+    const localDocument = makeDoc({ updatedAt: '2026-07-22T10:00:00Z' });
+    enqueue({
+      document: null,
+      updated_at: '2026-07-22T12:00:00Z',
+      deleted_at: null,
+    });
+
+    await expect(pullCanvasDocument('doc-1', {
+      localDocument,
+      openDirty: false,
+    })).rejects.toThrow(/remote.*document|snapshot/i);
+  });
+
+  it('fails instead of accepting a remote row with an invalid timestamp', async () => {
+    const localDocument = makeDoc({ updatedAt: '2026-07-22T10:00:00Z' });
+    enqueue({
+      document: makeDoc({ updatedAt: '2026-07-22T12:00:00Z' }),
+      updated_at: 'not-a-date',
+      deleted_at: null,
+    });
+
+    await expect(pullCanvasDocument('doc-1', {
+      localDocument,
+      openDirty: false,
+    })).rejects.toThrow(/timestamp|fecha|remote/i);
+  });
+
+  it('fails instead of accepting a deletion row with an invalid timestamp', async () => {
+    const localDocument = makeDoc({ updatedAt: '2026-07-22T10:00:00Z' });
+    enqueue({
+      document: null,
+      updated_at: 'not-a-date',
+      deleted_at: 'not-a-date',
+    });
+
+    await expect(pullCanvasDocument('doc-1', {
+      localDocument,
+      openDirty: false,
+    })).rejects.toThrow(/timestamp|fecha|remote/i);
+  });
 });
 

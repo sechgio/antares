@@ -25,7 +25,6 @@ export type CanvasRealtimeHandlers = {
 };
 
 export type CanvasRealtimeSubscription = {
-  publishSaved: (event: CanvasDocumentSavedEvent) => Promise<boolean>;
   updatePresence: (presence: CanvasPresence) => Promise<boolean>;
   close: () => Promise<void>;
 };
@@ -33,6 +32,7 @@ export type CanvasRealtimeSubscription = {
 type UnknownRecord = Record<string, unknown>;
 
 const realtimeChannels = new Map<string, RealtimeChannel>();
+const realtimeAuthSubscriptions = new Map<string, { unsubscribe: () => void }>();
 
 export function canvasDocumentTopic(documentId: string): string {
   return `canvas-document:${documentId}`;
@@ -46,16 +46,23 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function hasExactKeys(value: UnknownRecord, keys: readonly string[]): boolean {
+  const ownKeys = Object.keys(value);
+  return ownKeys.length === keys.length && keys.every((key) => ownKeys.includes(key));
+}
+
 function isPresence(value: unknown): value is CanvasPresence {
   if (!isRecord(value)) return false;
-  return isNonEmptyString(value.userId)
+  return hasExactKeys(value, ['userId', 'displayName', 'mode'])
+    && isNonEmptyString(value.userId)
     && isNonEmptyString(value.displayName)
     && (value.mode === 'viewing' || value.mode === 'editing');
 }
 
 function isSavedEvent(value: unknown, documentId: string): value is CanvasDocumentSavedEvent {
   if (!isRecord(value)) return false;
-  return value.type === 'document_saved'
+  return hasExactKeys(value, ['type', 'documentId', 'updatedAt', 'updatedBy'])
+    && value.type === 'document_saved'
     && value.documentId === documentId
     && isNonEmptyString(value.updatedAt)
     && !Number.isNaN(Date.parse(value.updatedAt))
@@ -131,6 +138,8 @@ export function subscribeCanvasDocument(
   const previous = realtimeChannels.get(topic);
   if (previous) {
     realtimeChannels.delete(topic);
+    realtimeAuthSubscriptions.get(topic)?.unsubscribe();
+    realtimeAuthSubscriptions.delete(topic);
     void client.removeChannel(previous);
   }
 
@@ -146,21 +155,9 @@ export function subscribeCanvasDocument(
   let closed = false;
   let currentPresence = presence;
   let trackedMode: CanvasPresence['mode'] | null = null;
+  let authSubscription: { unsubscribe: () => void } | null = null;
 
   const subscription: CanvasRealtimeSubscription = {
-    async publishSaved(event) {
-      if (closed || !isSavedEvent(event, documentId)) return false;
-      try {
-        return (await channel.send({
-          type: 'broadcast',
-          event: 'document_saved',
-          payload: event,
-        })) === 'ok';
-      } catch {
-        return false;
-      }
-    },
-
     async updatePresence(nextPresence) {
       if (closed || !isPresence(nextPresence)) return false;
       if (trackedMode === nextPresence.mode) {
@@ -184,6 +181,11 @@ export function subscribeCanvasDocument(
     async close() {
       if (closed) return;
       closed = true;
+      authSubscription?.unsubscribe();
+      if (authSubscription && realtimeAuthSubscriptions.get(topic) === authSubscription) {
+        realtimeAuthSubscriptions.delete(topic);
+      }
+      authSubscription = null;
       if (realtimeChannels.get(topic) === channel) realtimeChannels.delete(topic);
       await client.removeChannel(channel);
     },
@@ -212,11 +214,30 @@ export function subscribeCanvasDocument(
       // A rejoin starts a fresh server-side presence state.
       trackedMode = null;
       void subscription.updatePresence(currentPresence).then((tracked) => {
-        if (!tracked) handlers.onStatus('error');
+        if (!tracked && !closed) handlers.onStatus('error');
       });
     });
   } catch {
     handlers.onStatus('error');
+  }
+
+  try {
+    const authResult = client.auth.onAuthStateChange((event) => {
+      const authEvent = String(event);
+      if (authEvent !== 'SIGNED_OUT' && authEvent !== 'USER_DELETED') return;
+      handlers.onStatus('offline');
+      handlers.onPresence([]);
+      void subscription.close();
+    });
+    authSubscription = authResult.data.subscription;
+    if (closed) {
+      authSubscription.unsubscribe();
+      authSubscription = null;
+    } else {
+      realtimeAuthSubscriptions.set(topic, authSubscription);
+    }
+  } catch {
+    // Auth cleanup is best-effort; channel cleanup remains idempotent.
   }
 
   return subscription;

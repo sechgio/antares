@@ -242,13 +242,11 @@ async function fetchRemoteDocuments(ids: string[]): Promise<CanvasDocument[]> {
   if (error) throw new Error(error.message);
   const out: CanvasDocument[] = [];
   for (const row of data ?? []) {
-    const raw = row.document as CanvasDocument | null;
-    if (!raw || typeof raw !== 'object') continue;
-    const doc = normalizeDocument({
-      ...raw,
-      updatedAt: raw.updatedAt || row.updated_at,
-    });
-    out.push(doc);
+    const raw = row.document;
+    const remoteId = raw && typeof raw === 'object' && 'id' in raw && typeof raw.id === 'string'
+      ? raw.id
+      : '';
+    out.push(remoteDocumentFromRow(row, remoteId).document);
   }
   return out;
 }
@@ -259,23 +257,36 @@ type CanvasRemoteDocumentRow = {
   deleted_at?: string | null;
 };
 
+function isValidTimestamp(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0 && !Number.isNaN(Date.parse(value));
+}
+
 function remoteDocumentFromRow(
   row: CanvasRemoteDocumentRow,
   documentId: string,
-): { document: CanvasDocument; updatedAt: string } | null {
-  if (!row.document || typeof row.document !== 'object') return null;
+): { document: CanvasDocument; updatedAt: string } {
+  if (!documentId || !row.document || typeof row.document !== 'object') {
+    throw new Error('Invalid remote Canvas document snapshot');
+  }
   const raw = row.document as CanvasDocument;
   const updatedAt = row.updated_at || raw.updatedAt || '';
-  if (!updatedAt || Number.isNaN(Date.parse(updatedAt))) return null;
+  if (!isValidTimestamp(updatedAt)) {
+    throw new Error('Invalid remote Canvas document timestamp');
+  }
 
-  return {
-    document: normalizeDocument({
-      ...raw,
-      id: documentId,
+  try {
+    return {
+      document: normalizeDocument({
+        ...raw,
+        id: documentId,
+        updatedAt,
+      }),
       updatedAt,
-    }),
-    updatedAt,
-  };
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Invalid remote Canvas document snapshot: ${msg}`);
+  }
 }
 
 export type TargetedCanvasPullResult =
@@ -313,6 +324,9 @@ export async function pullCanvasDocument(
   const localDocument = normalizeDocument(options.localDocument);
   const remoteUpdatedAt = row.updated_at || row.deleted_at || '';
   if (row.deleted_at) {
+    if (!isValidTimestamp(remoteUpdatedAt)) {
+      throw new Error('Invalid remote Canvas document deletion timestamp');
+    }
     return {
       kind: 'deleted',
       conflict: {
@@ -326,8 +340,8 @@ export async function pullCanvasDocument(
   }
 
   const remote = remoteDocumentFromRow(row, documentId);
-  if (!remote || !isNewer(remote.updatedAt, localDocument.updatedAt)) {
-    return { kind: 'unchanged', remoteUpdatedAt: remote?.updatedAt };
+  if (!isNewer(remote.updatedAt, localDocument.updatedAt)) {
+    return { kind: 'unchanged', remoteUpdatedAt: remote.updatedAt };
   }
 
   if (options.openDirty) {
@@ -342,6 +356,8 @@ export async function pullCanvasDocument(
     };
   }
 
+  const { assertDocumentImagesResolvable } = await import('../utils/imageBlobStore');
+  await assertDocumentImagesResolvable(remote.document);
   await api.canvasSave(remote.document, { touch: false });
   return {
     kind: 'applied',

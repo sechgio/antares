@@ -15,9 +15,9 @@ const realtimeMock = vi.hoisted(() => {
   const state: {
     savedHandler?: (event: unknown) => void;
     presenceHandler?: (collaborators: unknown[]) => void;
+    statusHandler?: (status: string) => void;
   } = {};
   const subscription = {
-    publishSaved: vi.fn(async () => true),
     updatePresence: vi.fn(async () => true),
     close: vi.fn(async () => {}),
   };
@@ -28,6 +28,7 @@ const realtimeMock = vi.hoisted(() => {
   }) => {
     state.savedHandler = handlers.onSaved;
     state.presenceHandler = handlers.onPresence;
+    state.statusHandler = handlers.onStatus;
     handlers.onStatus('live');
     return subscription;
   });
@@ -77,11 +78,12 @@ describe('useCanvasSync conflict handling', () => {
     vi.mocked(api.canvasGet).mockReset();
     realtimeMock.getCanvasPresenceIdentity.mockClear();
     realtimeMock.subscribeCanvasDocument.mockClear();
-    realtimeMock.subscription.publishSaved.mockClear();
     realtimeMock.subscription.updatePresence.mockClear();
     realtimeMock.subscription.close.mockClear();
     realtimeMock.state.savedHandler = undefined;
     realtimeMock.state.presenceHandler = undefined;
+    realtimeMock.state.statusHandler = undefined;
+    pullCanvasDocument.mockResolvedValue({ kind: 'unchanged' });
   });
 
   afterEach(() => {
@@ -529,5 +531,157 @@ describe('useCanvasSync conflict handling', () => {
       mode: 'viewing',
     }));
     expect(realtimeMock.subscribeCanvasDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it('pulls once after the initial guarded bootstrap sees a live channel', async () => {
+    vi.useFakeTimers();
+    const localDoc = createEmptyDocument('Local');
+    localDoc.id = 'doc-1';
+    syncCanvasDocuments.mockResolvedValue({
+      pulled: 0,
+      pushed: 0,
+      deletedLocal: 0,
+      skipped: false,
+      pushErrors: 0,
+    });
+
+    const { result } = renderHook(() => {
+      const historyDocRef = useRef(localDoc);
+      const openDirtyRef = useRef(false);
+      return useCanvasSync({
+        historyDocRef,
+        openDirtyRef,
+        refreshList: vi.fn().mockResolvedValue(undefined),
+        replaceDocument: vi.fn(),
+        documentId: 'doc-1',
+        documentReady: true,
+        initialGuarded: true,
+      });
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await result.current.runCloudSync(true);
+      await vi.advanceTimersByTimeAsync(350);
+    });
+
+    expect(pullCanvasDocument).toHaveBeenCalledTimes(1);
+    expect(pullCanvasDocument).toHaveBeenCalledWith('doc-1', expect.any(Object));
+  });
+
+  it('pulls once after a Realtime reconnect', async () => {
+    vi.useFakeTimers();
+    const localDoc = createEmptyDocument('Local');
+    localDoc.id = 'doc-1';
+
+    renderHook(() => {
+      const historyDocRef = useRef(localDoc);
+      const openDirtyRef = useRef(false);
+      return useCanvasSync({
+        historyDocRef,
+        openDirtyRef,
+        refreshList: vi.fn().mockResolvedValue(undefined),
+        replaceDocument: vi.fn(),
+        documentId: 'doc-1',
+        documentReady: true,
+      });
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(350);
+    });
+    expect(pullCanvasDocument).toHaveBeenCalledTimes(1);
+
+    act(() => realtimeMock.state.statusHandler?.('error'));
+    act(() => realtimeMock.state.statusHandler?.('live'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(350);
+    });
+
+    expect(pullCanvasDocument).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not deliver a stale pull conflict to the next document', async () => {
+    const localDoc = createEmptyDocument('Local A');
+    localDoc.id = 'doc-a';
+    const nextDoc = createEmptyDocument('Local B');
+    nextDoc.id = 'doc-b';
+    let resolvePull!: (result: unknown) => void;
+    pullCanvasDocument.mockImplementation(() => new Promise((resolve) => {
+      resolvePull = resolve;
+    }));
+    const onConflict = vi.fn();
+
+    const { rerender } = renderHook(
+      ({ documentId, document }: { documentId: string; document: typeof localDoc }) => {
+        const historyDocRef = useRef(document);
+        const openDirtyRef = useRef(true);
+        return useCanvasSync({
+          historyDocRef,
+          openDirtyRef,
+          refreshList: vi.fn().mockResolvedValue(undefined),
+          replaceDocument: vi.fn(),
+          onConflict,
+          documentId,
+          documentReady: true,
+          openDirty: true,
+        });
+      },
+      { initialProps: { documentId: 'doc-a', document: localDoc } },
+    );
+
+    await waitFor(() => expect(realtimeMock.state.savedHandler).toBeDefined());
+    realtimeMock.state.savedHandler?.({
+      type: 'document_saved',
+      documentId: 'doc-a',
+      updatedAt: '2026-08-31T12:00:00.000Z',
+      updatedBy: 'user-2',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    rerender({ documentId: 'doc-b', document: nextDoc });
+    resolvePull({
+      kind: 'conflict',
+      conflict: {
+        localDoc,
+        remoteDoc: { ...localDoc, name: 'Remote' },
+        localUpdatedAt: localDoc.updatedAt || '',
+        remoteUpdatedAt: '2026-08-31T12:00:00.000Z',
+      },
+    });
+    await waitFor(() => expect(pullCanvasDocument).toHaveBeenCalled());
+
+    expect(onConflict).not.toHaveBeenCalled();
+  });
+
+  it('retries a failed targeted pull without replacing the editor', async () => {
+    vi.useFakeTimers();
+    const localDoc = createEmptyDocument('Local');
+    localDoc.id = 'doc-1';
+    pullCanvasDocument
+      .mockRejectedValueOnce(new Error('temporary network failure'))
+      .mockResolvedValueOnce({ kind: 'unchanged' });
+
+    renderHook(() => {
+      const historyDocRef = useRef(localDoc);
+      const openDirtyRef = useRef(false);
+      return useCanvasSync({
+        historyDocRef,
+        openDirtyRef,
+        refreshList: vi.fn().mockResolvedValue(undefined),
+        replaceDocument: vi.fn(),
+        documentId: 'doc-1',
+        documentReady: true,
+      });
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(350);
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(pullCanvasDocument).toHaveBeenCalledTimes(2);
   });
 });

@@ -14,6 +14,7 @@ const { channel, supabaseMock } = vi.hoisted(() => {
   const supabaseMock = {
     auth: {
       getSession: vi.fn(),
+      onAuthStateChange: vi.fn(),
     },
     channel: vi.fn(() => channel),
     removeChannel: vi.fn(async () => 'ok'),
@@ -42,6 +43,7 @@ const savedEvent = {
 
 let activeSubscription: Awaited<ReturnType<typeof subscribeCanvasDocument>> = null;
 let subscriptionStatus: ((status: string) => void) | undefined;
+let authStateChangeHandler: ((event: string) => void) | undefined;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -56,8 +58,13 @@ beforeEach(() => {
   channel.send.mockResolvedValue('ok');
   channel.track.mockResolvedValue('ok');
   channel.presenceState.mockReturnValue({});
+  authStateChangeHandler = undefined;
   supabaseMock.auth.getSession.mockResolvedValue({
     data: { session: { user: { id: 'user-1', email: 'ana@example.com', user_metadata: {} } } },
+  });
+  supabaseMock.auth.onAuthStateChange.mockImplementation((callback: (event: string) => void) => {
+    authStateChangeHandler = callback;
+    return { data: { subscription: { unsubscribe: vi.fn() } } };
   });
 });
 
@@ -108,6 +115,7 @@ describe('canvas realtime transport', () => {
 
     broadcastHandler?.({ payload: { ...savedEvent, documentId: 'other-doc' } });
     broadcastHandler?.({ payload: { ...savedEvent, updatedAt: 'not-a-date' } });
+    broadcastHandler?.({ payload: { ...savedEvent, document: { layers: [] } } });
     expect(onSaved).not.toHaveBeenCalled();
   });
 
@@ -171,5 +179,22 @@ describe('canvas realtime transport', () => {
     await activeSubscription.close();
     await activeSubscription.close();
     expect(supabaseMock.removeChannel).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes the channel and clears Presence when the auth session ends', async () => {
+    const onPresence = vi.fn();
+    const onStatus = vi.fn();
+    activeSubscription = subscribeCanvasDocument('doc-1', presence, {
+      onSaved: vi.fn(),
+      onPresence,
+      onStatus,
+    });
+
+    authStateChangeHandler?.('SIGNED_OUT');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(onStatus).toHaveBeenCalledWith('offline');
+    expect(onPresence).toHaveBeenCalledWith([]);
+    expect(supabaseMock.removeChannel).toHaveBeenCalledWith(channel);
   });
 });

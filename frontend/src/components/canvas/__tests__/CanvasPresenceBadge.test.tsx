@@ -33,6 +33,6 @@ describe('CanvasPresenceBadge', () => {
 
   it('shows connection errors', () => {
     render(<CanvasPresenceBadge collaborators={[]} status="error" />);
-    expect(screen.getByRole('status', { name: 'Error de colaboración — reintentando' })).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Error de colaboración, reintentando' })).toBeInTheDocument();
   });
 });
