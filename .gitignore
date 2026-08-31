@@ -82,9 +82,6 @@ skills-lock.json
 opencode.json
 !AGENTS.md
 !CLAUDE.md
-!README.md
-!CHANGELOG.md
-!CONTEXT.md
 .githooks/*
 !.githooks/pre-push
 !.githooks/pre-commit
