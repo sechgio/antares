@@ -3,6 +3,11 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../i18n';
 import AppearanceView from './AppearanceView';
 import { ToastProvider } from '../../hooks/useToast';
+import { invalidateApiCache } from '../../api';
+
+beforeEach(() => {
+  invalidateApiCache();
+});
 
 const baseTheme = {
   name: 'Precision Linear',

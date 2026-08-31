@@ -398,7 +398,25 @@ export default function DataPreviewModal({
     URL.revokeObjectURL(url);
   };
 
-  if (!open || data.length === 0) return null;
+  const VIRTUALIZE_THRESHOLD = 100;
+  const ROW_HEIGHT_MAP = { compact: 32, normal: 40, spacious: 48 } as const;
+  const virtualRowHeight = ROW_HEIGHT_MAP[density];
+  const useVirtual = filteredAndSortedRows.length >= VIRTUALIZE_THRESHOLD;
+  const [listHeight, setListHeight] = useState(400);
+
+  useLayoutEffect(() => {
+    if (!useVirtual || !open) return;
+    const el = tableContainerRef.current;
+    if (!el) return;
+    const update = () => {
+      const h = el.getBoundingClientRect().height;
+      if (h > 0) setListHeight(Math.floor(h));
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [useVirtual, open]);
 
   const currentSelectedOriginalIdx = parseInt(selectedIndex, 10);
   const selectedRecordId =
@@ -412,26 +430,6 @@ export default function DataPreviewModal({
 
   const densityPadding =
     density === 'compact' ? 'px-3 py-1.5 text-[11px]' : density === 'spacious' ? 'px-4 py-3 text-[13px]' : 'px-3.5 py-2.5 text-[12px]';
-
-  const VIRTUALIZE_THRESHOLD = 100;
-  const ROW_HEIGHT_MAP = { compact: 32, normal: 40, spacious: 48 } as const;
-  const virtualRowHeight = ROW_HEIGHT_MAP[density];
-  const useVirtual = filteredAndSortedRows.length >= VIRTUALIZE_THRESHOLD;
-  const [listHeight, setListHeight] = useState(400);
-
-  useLayoutEffect(() => {
-    if (!useVirtual) return;
-    const el = tableContainerRef.current;
-    if (!el) return;
-    const update = () => {
-      const h = el.getBoundingClientRect().height;
-      if (h > 0) setListHeight(Math.floor(h));
-    };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [useVirtual]);
 
   type VirtualRowData = {
     rows: typeof filteredAndSortedRows;
@@ -572,6 +570,8 @@ export default function DataPreviewModal({
     }),
     [filteredAndSortedRows, visibleHeaders, selectedIndex, focusedRowIndex, densityPadding, wrapText, debouncedQuery, handleRowClick],
   );
+
+  if (!open || data.length === 0) return null;
 
   return (
     <div

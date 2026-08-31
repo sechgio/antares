@@ -203,7 +203,17 @@ async function stageImageForPdf(file: File, quality: PdfQuality): Promise<string
     const jpeg = new File([blob], `${base}.jpg`, { type: 'image/jpeg' });
     return await stageFileForPdf(jpeg);
   } catch {
-    return stageFileForPdf(file);
+    // Fallback to legacy canvas compression for jsdom/test where worker unavailable
+    try {
+      const dataUrl = await imageToPdfDataUrl(file, quality);
+      const comma = dataUrl.indexOf(',');
+      const b64 = comma >= 0 ? dataUrl.slice(comma + 1) : '';
+      const base = file.name.replace(/\.[^.]+$/, '') || 'imagen';
+      const jpeg = new File([base64ToBytes(b64)], `${base}.jpg`, { type: 'image/jpeg' });
+      return await stageFileForPdf(jpeg);
+    } catch {
+      return stageFileForPdf(file);
+    }
   }
 }
 
