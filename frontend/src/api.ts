@@ -750,6 +750,10 @@ export const api = {
     _invoke<ImageOptimizerSaveFilesResponse>('image_optimizer_save_files', body),
 
   // ─── Plantillas PreviewPanel ─────────────────────────────────────────────
+  // templates_list is quasi-immutable: bundled HTML under backend/templates (plus
+  // user_data/templates overrides). No mutating IPC exists (no template upload/
+  // delete); the only way to add templates is to drop HTML files and restart.
+  // TTL=5min is intentional — avoids stale while keeping dedupe/cache benefits.
   templatesList: () =>
     cachedInvoke('templates_list', () =>
       _invoke<{ templates: Array<{ id: string; name: string; filename: string; source?: string }> }>('templates_list'),
