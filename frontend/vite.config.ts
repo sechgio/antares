@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { visualizer } from 'rollup-plugin-visualizer'
 import path from 'node:path'
+import budgets from '../shared/budgets.json'
 import { STATIC_CSS_TESTS } from './vitest.static.config.ts'
 
 const sharedHtmlSanitizerPath = path.resolve(import.meta.dirname, '../shared/html-sanitizer.js')
@@ -132,7 +133,7 @@ export default defineConfig(({ mode }) => ({
         entryFileNames: 'assets/js/[name]-[hash].js',
       },
     },
-    chunkSizeWarningLimit: 500,
+    chunkSizeWarningLimit: budgets.vite?.chunkSizeWarningKb ?? 500,
     reportCompressedSize: true,
     cssCodeSplit: true,
     assetsInlineLimit: 4096,
