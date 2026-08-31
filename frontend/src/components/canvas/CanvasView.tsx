@@ -1523,6 +1523,21 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     [history.document.layers],
   );
 
+  const handleSave = useCallback(() => void onSave(), [onSave]);
+
+  const conflictSlot = useMemo(
+    () =>
+      syncConflict ? (
+        <SyncConflictBar conflict={syncConflict} onResolve={onConflictResolve} />
+      ) : (
+        <>
+          <CanvasPresenceBadge collaborators={collaborators} status={realtimeStatus} />
+          <SyncStatusBadge status={syncStatus} />
+        </>
+      ),
+    [syncConflict, collaborators, realtimeStatus, syncStatus, onConflictResolve],
+  );
+
   if (loading) {
     return (
       <div className="canvas-app canvas-loading">
@@ -1556,22 +1571,13 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         }}
         onUndo={runUndo}
         onRedo={runRedo}
-        onSave={() => void onSave()}
+        onSave={handleSave}
         onDuplicate={() => void onDuplicate()}
         leftPanelOpen={leftPanelOpen}
         rightPanelOpen={rightPanelOpen}
         uiLocked={uiLocked}
         onToggleUiLock={toggleUiLock}
-        syncConflictSlot={
-          syncConflict ? (
-            <SyncConflictBar conflict={syncConflict} onResolve={onConflictResolve} />
-          ) : (
-            <>
-              <CanvasPresenceBadge collaborators={collaborators} status={realtimeStatus} />
-              <SyncStatusBadge status={syncStatus} />
-            </>
-          )
-        }
+        syncConflictSlot={conflictSlot}
       />
 
       {mode === 'design' ? (

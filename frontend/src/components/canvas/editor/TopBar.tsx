@@ -40,6 +40,15 @@ function TopBarDivider() {
   return <div className="canvas-topbar-divider" aria-hidden />;
 }
 
+const StatusPill = memo(function StatusPill({ status }: { status: string | null }) {
+  if (!status) return null;
+  return (
+    <span className="canvas-status-pill" role="status">
+      {status}
+    </span>
+  );
+});
+
 function TopBar({
   name,
   mode,
@@ -189,11 +198,7 @@ function TopBar({
             : 'canvas-topbar-trailing'
         }
       >
-        {status && (
-          <span className="canvas-status-pill" role="status">
-            {status}
-          </span>
-        )}
+        <StatusPill status={status} />
 
         {mode === 'design' && onTogglePreview && (
           <PreviewButton active={Boolean(previewOpen)} onToggle={onTogglePreview} />

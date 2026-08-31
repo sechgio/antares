@@ -217,42 +217,36 @@ export function useCanvasHistory(initial: CanvasDocument) {
   const canUndo = past.length > 0;
   const canRedo = future.length > 0;
 
+  const actions = useMemo(
+    () => ({
+      setDocument,
+      replaceDocument,
+      restoreHistory,
+      updateSilent,
+      commitFromBaseline,
+      undo,
+      redo,
+      markSaved,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   return useMemo(
     () => ({
       document,
       past,
       future,
       revision,
-      setDocument,
-      replaceDocument,
-      restoreHistory,
-      updateSilent,
-      commitFromBaseline,
-      undo,
-      redo,
-      markSaved,
       canUndo,
       canRedo,
       documentRef,
       revisionRef,
       hasUnsavedEditsRef,
+      ...actions,
     }),
-    [
-      document,
-      past,
-      future,
-      revision,
-      setDocument,
-      replaceDocument,
-      restoreHistory,
-      updateSilent,
-      commitFromBaseline,
-      undo,
-      redo,
-      markSaved,
-      canUndo,
-      canRedo,
-    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [document, past, future, revision],
   );
 }
 
