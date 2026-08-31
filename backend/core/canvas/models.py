@@ -48,7 +48,7 @@ def _new_id() -> str:
     return str(uuid.uuid4())
 
 
-def create_empty_document(*, name: str = "Sin título") -> dict[str, Any]:  # type: ignore[typeddict-item]
+def create_empty_document(*, name: str = "Sin título") -> dict[str, Any]:  # noqa: allow-dict-any
     doc_id = _new_id()
     page_id = _new_id()
     return {
@@ -104,10 +104,10 @@ def _normalize_css_vars(raw: Any, *, with_geometry_defaults: bool = True) -> dic
     return out
 
 
-def _normalize_meta(raw: Any) -> dict[str, Any] | None:  # type: ignore[typeddict-item]
+def _normalize_meta(raw: Any) -> dict[str, Any] | None:  # noqa: allow-dict-any
     if not isinstance(raw, dict):
         return None
-    cleaned: dict[str, Any] = {}  # type: ignore[typeddict-item]
+    cleaned: dict[str, Any] = {}  # noqa: allow-dict-any
     if "key" in raw:
         cleaned["key"] = str(raw["key"])
     if "fallback" in raw:
@@ -159,7 +159,7 @@ def _normalize_meta(raw: Any) -> dict[str, Any] | None:  # type: ignore[typeddic
                 if not isinstance(pt, dict):
                     continue
                 try:
-                    pt_dict: dict[str, Any] = {  # type: ignore[typeddict-item]
+                    pt_dict: dict[str, Any] = {  # noqa: allow-dict-any
                         "x": float(pt.get("x", 0)),
                         "y": float(pt.get("y", 0)),
                     }
@@ -182,7 +182,7 @@ def _normalize_meta(raw: Any) -> dict[str, Any] | None:  # type: ignore[typeddic
                     cleaned_points.append(pt_dict)
                 except (TypeError, ValueError):
                     continue
-            path_dict: dict[str, Any] = {"points": cleaned_points}  # type: ignore[typeddict-item]
+            path_dict: dict[str, Any] = {"points": cleaned_points}  # noqa: allow-dict-any
             if "closed" in raw_path:
                 path_dict["closed"] = bool(raw_path["closed"])
             cleaned["path"] = path_dict
@@ -258,7 +258,7 @@ _AUTO_LAYOUT_ALIGNS = frozenset({"start", "center", "end", "stretch"})
 _FRAME_CONSTRAINTS = frozenset({"start", "end", "center", "scale"})
 
 
-def _normalize_auto_layout(raw: Any) -> dict[str, Any] | None:  # type: ignore[typeddict-item]
+def _normalize_auto_layout(raw: Any) -> dict[str, Any] | None:  # noqa: allow-dict-any
     """Keep a valid autoLayout object; omit key entirely if invalid (no defaults)."""
     if not isinstance(raw, dict):
         return None
@@ -311,13 +311,13 @@ def _normalize_track_list(raw: Any) -> list[float] | None:
     return tracks
 
 
-def _normalize_layer(raw: Any) -> dict[str, Any] | None:  # type: ignore[typeddict-item]
+def _normalize_layer(raw: Any) -> dict[str, Any] | None:  # noqa: allow-dict-any
     if not isinstance(raw, dict):
         return None
     layer_type = str(raw.get("type", "text"))
     if layer_type not in ALLOWED_LAYER_TYPES:
         return None
-    layer: dict[str, Any] = {  # type: ignore[typeddict-item]
+    layer: dict[str, Any] = {  # noqa: allow-dict-any
         "id": str(raw.get("id") or _new_id()),
         "type": layer_type,
         "name": str(raw.get("name") or layer_type).strip() or layer_type,
@@ -379,10 +379,10 @@ def _normalize_pages(raw: Any) -> list[dict[str, str]]:
     return pages or [{"id": _new_id(), "name": "Página 1"}]
 
 
-def _normalize_settings(raw: Any) -> dict[str, Any]:  # type: ignore[typeddict-item]
+def _normalize_settings(raw: Any) -> dict[str, Any]:  # noqa: allow-dict-any
     if not isinstance(raw, dict):
         return {}
-    out: dict[str, Any] = {}  # type: ignore[typeddict-item]
+    out: dict[str, Any] = {}  # noqa: allow-dict-any
     if "imagesPerPage" in raw:
         with contextlib.suppress(TypeError, ValueError):
             out["imagesPerPage"] = max(1, int(raw["imagesPerPage"]))
@@ -427,10 +427,10 @@ def _normalize_settings(raw: Any) -> dict[str, Any]:  # type: ignore[typeddict-i
 _STYLE_KINDS = frozenset({"color", "text", "effect"})
 
 
-def _normalize_styles(raw: Any) -> list[dict[str, Any]]:  # type: ignore[typeddict-item]
+def _normalize_styles(raw: Any) -> list[dict[str, Any]]:  # noqa: allow-dict-any
     if not isinstance(raw, list):
         return []
-    styles: list[dict[str, Any]] = []  # type: ignore[typeddict-item]
+    styles: list[dict[str, Any]] = []  # noqa: allow-dict-any
     for item in raw:
         if not isinstance(item, dict):
             continue
@@ -444,10 +444,10 @@ def _normalize_styles(raw: Any) -> list[dict[str, Any]]:  # type: ignore[typeddi
     return styles
 
 
-def _normalize_guides(raw: Any) -> list[dict[str, Any]]:  # type: ignore[typeddict-item]
+def _normalize_guides(raw: Any) -> list[dict[str, Any]]:  # noqa: allow-dict-any
     if not isinstance(raw, list):
         return []
-    guides: list[dict[str, Any]] = []  # type: ignore[typeddict-item]
+    guides: list[dict[str, Any]] = []  # noqa: allow-dict-any
     for item in raw:
         if not isinstance(item, dict):
             continue
@@ -469,7 +469,7 @@ def _normalize_guides(raw: Any) -> list[dict[str, Any]]:  # type: ignore[typeddi
     return guides
 
 
-def normalize_document(raw: Any) -> dict[str, Any]:  # type: ignore[typeddict-item]
+def normalize_document(raw: Any) -> dict[str, Any]:  # noqa: allow-dict-any
     if not isinstance(raw, dict):
         return create_empty_document()
 
@@ -486,7 +486,7 @@ def normalize_document(raw: Any) -> dict[str, Any]:  # type: ignore[typeddict-it
         height_mm = A4_HEIGHT_MM
 
     layers_in = raw.get("layers")
-    layers: list[dict[str, Any]] = []  # type: ignore[typeddict-item]
+    layers: list[dict[str, Any]] = []  # noqa: allow-dict-any
     if isinstance(layers_in, list):
         for item in layers_in:
             layer = _normalize_layer(item)
@@ -543,7 +543,7 @@ def normalize_document(raw: Any) -> dict[str, Any]:  # type: ignore[typeddict-it
     }
 
 
-CanvasDocument = dict[str, Any]  # type: ignore[typeddict-item]
+CanvasDocument = dict[str, Any]  # noqa: allow-dict-any
 
 def next_copy_name(name: str, existing_names: set[str] | None = None) -> str:
     """Build a unique copy name: 'X (copia)', 'X (copia 2)', … without nesting suffixes."""
@@ -559,11 +559,11 @@ def next_copy_name(name: str, existing_names: set[str] | None = None) -> str:
 
 
 def duplicate_document(
-    source: dict[str, Any],  # type: ignore[typeddict-item]
+    source: dict[str, Any],  # noqa: allow-dict-any
     *,
     name: str | None = None,
     existing_names: set[str] | None = None,
-) -> dict[str, Any]:  # type: ignore[typeddict-item]
+) -> dict[str, Any]:  # noqa: allow-dict-any
     doc = normalize_document(copy.deepcopy(source))
     doc["id"] = _new_id()
     doc["updatedAt"] = utc_now_iso()

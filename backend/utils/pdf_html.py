@@ -30,7 +30,7 @@ def _thread_font_config() -> Any:
     """Return a thread-local WeasyPrint FontConfiguration, creating it once."""
     config = getattr(_FONT_CONFIG, "value", None)
     if config is None:
-        from weasyprint.text.fonts import FontConfiguration  # type: ignore[import-not-found,import-untyped]
+        from weasyprint.text.fonts import FontConfiguration  # type: ignore[import-untyped]
 
         config = FontConfiguration()
         _FONT_CONFIG.value = config
@@ -39,7 +39,7 @@ def _thread_font_config() -> Any:
 
 def deny_external_url_fetcher(url: str, **kwargs: Any) -> Any:
     """Allow only data: URIs; deny all other fetches (defense in depth)."""
-    from weasyprint.urls import URLFetcher, URLFetcherResponse  # type: ignore[import-not-found,import-untyped]
+    from weasyprint.urls import URLFetcher, URLFetcherResponse  # type: ignore[import-untyped]
 
     if str(url).strip().lower().startswith("data:"):
 
