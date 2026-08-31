@@ -57,10 +57,11 @@ function runOnWorker(tasks: ImageProcessingTask[]): Promise<ImageProcessingResul
   return result;
 }
 
-/** Downscale a single image file in a worker; falls back to the original File. */
+/** Downscale / compress a single image file in a worker; falls back to the original File. */
 export async function processImageFileForCanvas(
   file: File,
   maxDimension = 2048,
+  opts?: { quality?: number; outputType?: string },
 ): Promise<{ blob: Blob; width: number; height: number }> {
   if (!getWorker()) {
     return { blob: file, width: 0, height: 0 };
@@ -71,6 +72,8 @@ export async function processImageFileForCanvas(
       id: `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       file,
       maxDimension,
+      quality: opts?.quality,
+      outputType: opts?.outputType,
     };
     const results = await runOnWorker([task]);
     const first = results[0];

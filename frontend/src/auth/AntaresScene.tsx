@@ -22,7 +22,7 @@ export default function AntaresScene({ reducedMotion }: AntaresSceneProps) {
       muted
       playsInline
       poster="./sign-up-image.png"
-      preload="auto"
+      preload="metadata"
     >
       <source src="./sign-up-video.mp4" type="video/mp4" />
     </video>

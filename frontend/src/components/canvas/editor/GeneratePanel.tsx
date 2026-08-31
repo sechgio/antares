@@ -202,9 +202,12 @@ export default function GeneratePanel({
           urls = matched.map((f) => URL.createObjectURL(f));
           logos = { logoLeft, logoRight };
         } else {
-          const sources = await Promise.all(
-            matched.map((f, idx) => imageToPdfSource(f, quality, `row-${i}-img-${idx}`)),
-          );
+          const sources: Awaited<ReturnType<typeof imageToPdfSource>>[] = [];
+          for (let idx = 0; idx < matched.length; idx++) {
+            const f = matched[idx];
+            sources.push(await imageToPdfSource(f, quality, `row-${i}-img-${idx}`));
+            await new Promise((r) => setTimeout(r, 0));
+          }
           urls = sources.map((s) => s.src);
           for (const s of sources) {
             if (s.token && s.fileToken) localImagePaths[s.token] = s.fileToken;

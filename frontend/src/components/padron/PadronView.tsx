@@ -578,25 +578,29 @@ export default function PadronView() {
           measuredWidth = targets[0].offsetWidth;
         }
 
-        const pageResults = await Promise.all(
-          targets.map(async (target) => {
-            const width = target.offsetWidth;
-            if (width === 0 || !measuredWidth) return null;
-            const height = target.offsetHeight;
-            const captureScale = targetPxW / measuredWidth;
-            const canvas = await toCanvas(target, {
-              backgroundColor: '#ffffff',
-              pixelRatio: captureScale,
-              width: measuredWidth,
-              height,
-              canvasWidth: targetPxW,
-              canvasHeight: Math.round(height * captureScale),
-              fontEmbedCSS: sharedFontEmbedCSS,
-              preferredFontFormat: 'woff2',
-            });
-            return canvasToJpegBytes(canvas, JPEG_QUALITY);
-          }),
-        );
+        const pageResults: (Uint8Array | null)[] = [];
+        for (const target of targets) {
+          const width = target.offsetWidth;
+          if (width === 0 || !measuredWidth) {
+            pageResults.push(null);
+            await new Promise((r) => setTimeout(r, 0));
+            continue;
+          }
+          const height = target.offsetHeight;
+          const captureScale = targetPxW / measuredWidth;
+          const canvas = await toCanvas(target, {
+            backgroundColor: '#ffffff',
+            pixelRatio: captureScale,
+            width: measuredWidth,
+            height,
+            canvasWidth: targetPxW,
+            canvasHeight: Math.round(height * captureScale),
+            fontEmbedCSS: sharedFontEmbedCSS,
+            preferredFontFormat: 'woff2',
+          });
+          pageResults.push(await canvasToJpegBytes(canvas, JPEG_QUALITY));
+          await new Promise((r) => setTimeout(r, 0));
+        }
 
         for (let k = 0; k < pageResults.length; k++) {
           const jpegBytes = pageResults[k];

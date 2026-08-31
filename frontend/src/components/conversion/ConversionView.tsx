@@ -64,6 +64,8 @@ export default function ConversionView() {
     [mappingData, files],
   );
   const { selectedFile, setSelectedFile, selectedFiles, setSelectedFiles, handleFileClick, handleFileDoubleClick, selectAllFiles } = useFileSelection(files);
+  const selectedFilesRef = useRef(selectedFiles);
+  useEffect(() => { selectedFilesRef.current = selectedFiles; }, [selectedFiles]);
   const { state: runnerState, status, running, pollStatus, pollError, startProcess, cancelProcess } = useProcessRunner();
   const { addToast } = useToast();
   const { confirm } = useDialog();
@@ -651,7 +653,7 @@ export default function ConversionView() {
     }
   };
 
-  const removeFile = (path: string) => {
+  const removeFile = useCallback((path: string) => {
     removeFileRefs([path]);
     setFiles((prev) => {
       const next = prev.filter((p) => p !== path);
@@ -663,22 +665,23 @@ export default function ConversionView() {
       setSelectedFiles((s) => { const ns = new Set(s); ns.delete(path); return ns; });
       return next;
     });
-  };
+  }, []);
 
-  const removeSelectedFiles = () => {
-    removeFileRefs(selectedFiles);
+  const removeSelectedFiles = useCallback(() => {
+    const cur = selectedFilesRef.current;
+    removeFileRefs(cur);
     setFiles((prev) => {
-      const next = prev.filter((p) => !selectedFiles.has(p));
+      const next = prev.filter((p) => !cur.has(p));
       setSelectedFile((selected) => (selected && next.includes(selected) ? selected : next[0] || null));
       setSelectedFiles(new Set());
       return next;
     });
-  };
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Delete' && e.key !== 'Backspace') return;
-      if (selectedFiles.size === 0) return;
+      if (selectedFilesRef.current.size === 0) return;
       // Don't hijack Backspace/Delete while the user is editing a text field,
       // a textarea, a select, or any contentEditable — otherwise fixing a typo
       // in the rename pattern / resize fields silently deletes the selected files.
@@ -696,7 +699,7 @@ export default function ConversionView() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedFiles]);
+  }, [removeSelectedFiles]);
 
   const onDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(true); }, []);
   const onDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(false); }, []);

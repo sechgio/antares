@@ -6,6 +6,8 @@ export interface ImageProcessingTask {
   id: string;
   file: File;
   maxDimension?: number;
+  quality?: number;
+  outputType?: string;
 }
 
 export interface ImageProcessingResult {
@@ -38,7 +40,9 @@ self.onmessage = async (e: MessageEvent<ImageProcessingTask[]>) => {
           height = bitmap.height;
 
           const maxDim = task.maxDimension || 2048;
-          if (width > maxDim || height > maxDim) {
+          const needsDownscale = width > maxDim || height > maxDim;
+          const needsReencode = task.quality !== undefined || task.outputType !== undefined;
+          if (needsDownscale || needsReencode) {
             const scale = Math.min(1, maxDim / Math.max(width, height));
             const targetW = Math.max(1, Math.round(width * scale));
             const targetH = Math.max(1, Math.round(height * scale));
@@ -48,7 +52,9 @@ self.onmessage = async (e: MessageEvent<ImageProcessingTask[]>) => {
               const ctx = canvas.getContext('2d');
               if (ctx) {
                 ctx.drawImage(bitmap, 0, 0, targetW, targetH);
-                blob = await canvas.convertToBlob({ type: file.type || 'image/jpeg', quality: 0.9 });
+                const q = task.quality ?? 0.9;
+                const t = task.outputType || file.type || 'image/jpeg';
+                blob = await canvas.convertToBlob({ type: t, quality: q });
               }
             }
           }

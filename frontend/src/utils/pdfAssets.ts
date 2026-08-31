@@ -194,14 +194,26 @@ export async function imageToPdfDataUrl(file: File, quality: PdfQuality): Promis
 async function stageImageForPdf(file: File, quality: PdfQuality): Promise<string | null> {
   if (quality === 'max') return stageFileForPdf(file);
   try {
-    const dataUrl = await imageToPdfDataUrl(file, quality);
-    const comma = dataUrl.indexOf(',');
-    const b64 = comma >= 0 ? dataUrl.slice(comma + 1) : '';
+    const { processImageFileForCanvas } = await import('../components/canvas/workers/imageProcessorClient');
+    const maxDim = quality === 'high' ? 2600 : 1400;
+    const q = quality === 'high' ? 0.9 : 0.68;
+    const { blob } = await processImageFileForCanvas(file, maxDim, { quality: q, outputType: 'image/jpeg' });
+    if (blob === file) return stageFileForPdf(file);
     const base = file.name.replace(/\.[^.]+$/, '') || 'imagen';
-    const jpeg = new File([base64ToBytes(b64)], `${base}.jpg`, { type: 'image/jpeg' });
+    const jpeg = new File([blob], `${base}.jpg`, { type: 'image/jpeg' });
     return await stageFileForPdf(jpeg);
   } catch {
-    return stageFileForPdf(file);
+    // Fallback to legacy canvas compression for jsdom/test where worker unavailable
+    try {
+      const dataUrl = await imageToPdfDataUrl(file, quality);
+      const comma = dataUrl.indexOf(',');
+      const b64 = comma >= 0 ? dataUrl.slice(comma + 1) : '';
+      const base = file.name.replace(/\.[^.]+$/, '') || 'imagen';
+      const jpeg = new File([base64ToBytes(b64)], `${base}.jpg`, { type: 'image/jpeg' });
+      return await stageFileForPdf(jpeg);
+    } catch {
+      return stageFileForPdf(file);
+    }
   }
 }
 

@@ -136,6 +136,9 @@ export const appendPagesToPdf = async (
       }
 
       pdf.addImage(imageData, "JPEG", 0, 0, A4_WIDTH_MM, A4_HEIGHT_MM, undefined, "MEDIUM");
+      if (index < pageNodes.length - 1) {
+        await new Promise((r) => setTimeout(r, 0));
+      }
     }
     return pageNodes.length;
   } finally {

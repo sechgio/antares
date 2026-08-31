@@ -1870,5 +1870,24 @@ describe('useCanvasHistory revision', () => {
     });
     expect(result.current.revision).toBeGreaterThan(beforeCommit);
   });
+
+  it('history actions stable across document changes', () => {
+    const initialDoc = createEmptyDocument('Initial');
+    const newDoc = { ...initialDoc, name: 'New' };
+    const { result } = renderHook(() => useCanvasHistory(initialDoc));
+    const firstSet = result.current.setDocument;
+    const firstSilent = result.current.updateSilent;
+    const firstCommit = result.current.commitFromBaseline;
+    const firstUndo = result.current.undo;
+    const firstRedo = result.current.redo;
+    const firstReplace = result.current.replaceDocument;
+    act(() => result.current.setDocument(newDoc));
+    expect(result.current.setDocument).toBe(firstSet);
+    expect(result.current.updateSilent).toBe(firstSilent);
+    expect(result.current.commitFromBaseline).toBe(firstCommit);
+    expect(result.current.undo).toBe(firstUndo);
+    expect(result.current.redo).toBe(firstRedo);
+    expect(result.current.replaceDocument).toBe(firstReplace);
+  });
 });
 

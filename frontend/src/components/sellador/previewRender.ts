@@ -254,6 +254,7 @@ export async function renderOtherPagesPreview(
       }
       previews.push({ pageNum, url, stampCount: stampsOnPage });
       reportProgress();
+      await new Promise<void>((r) => setTimeout(r, 0));
     }
 
     reportProgress(true);

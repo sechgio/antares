@@ -371,13 +371,8 @@ def main() -> None:
     # blocked on heavy imports. Deferred feature modules (sellador, ubicaciones,
     # fichas, …) stay lazy unless ANTARES_WARM_DEFERRED=1.
     HANDLERS.warm_core()
-    # Pre-import pandas/openpyxl synchronously BEFORE ready: a cold ``import
-    # pandas`` in the heavy worker serialized behind the post-ready daemon's
-    # import chain for ~122 s on the first db_import (Python import lock x
-    # serialized_import guard). Paying ~2-3 s here makes the first db_import
-    # hit sys.modules instead of the lock. Failures are non-fatal - the
-    # lazy import in importar_excel still retries.
-    HANDLERS.warm_pandas_sync()
+    # warm_pandas_sync MOVIDO: ahora corre en post-ready daemon (ver _post_ready_warm
+    # abajo) para no bloquear el handshake ready (~1.5s antes). Ver nota de orden.
     if os.environ.get("ANTARES_WARM_DEFERRED", "").strip().lower() in {"1", "true", "yes"}:
         HANDLERS.warm_deferred()
 
@@ -410,12 +405,32 @@ def main() -> None:
             "status": "ok",
             "backend_version": get_context()["backend_version"],
         })
-        # Soft-warm convert/canvas off the handshake path (daemon: never blocks quit).
-        threading.Thread(
-            target=HANDLERS.warm_post_ready,
-            name="post-ready-warm",
-            daemon=True,
-        ).start()
+        # Post-ready warm (daemon: never blocks quit): warm_post_ready (canvas/
+        # convert, ~0.04s) MUST go before warm_pandas_sync (pandas/openpyxl,
+        # ~1.5s) to avoid deadlock — the brief's original order (pandas then
+        # canvas) deadlocks the first canvas_list post-ready: the daemon holds
+        # serialized_import._LOCK during `import openpyxl` and the worker for
+        # canvas_list waits on the same lock >60s without completing (Python
+        # import lock x serialized_import guard). Canvas-first eliminates the
+        # hang (ver report 53bee04, deviation doc). Orden FIJO canvas->pandas.
+        # Mitigación del riesgo original de 122s: históricamente warm_pandas_sync
+        # corría síncrono BEFORE ready porque un `import pandas` frío en el
+        # heavy worker se serializaba detrás del daemon por ~122s (Python import
+        # lock x serialized_import guard); pagar ~2-3s sync antes de ready hacía
+        # que el primer db_import hitteara sys.modules. Ahora ese riesgo está
+        # mitigado porque el warm corre en daemon=True y WARM_CRITICAL_DONE
+        # bloquea _WARM_WAIT_METHODS con timeout de 15s en _dispatch, y el lazy
+        # import en importar_excel reintenta si falla.
+        def _post_ready_warm():
+            try:
+                HANDLERS.warm_post_ready()
+            except Exception:
+                logger.exception("warm_post_ready failed")
+            try:
+                HANDLERS.warm_pandas_sync()
+            except Exception:
+                logger.exception("warm_pandas_sync post-ready failed")
+        threading.Thread(target=_post_ready_warm, name="post-ready-warm", daemon=True).start()
 
     try:
         while True:

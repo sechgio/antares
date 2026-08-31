@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo } from 'react';
 
 export interface DialogOptions {
   title: string;
@@ -116,8 +116,13 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     });
   }, [closeDialog]);
 
+  const value = useMemo(
+    () => ({ isOpen, options, openDialog, closeDialog, confirm, alert }),
+    [isOpen, options, openDialog, closeDialog, confirm, alert],
+  );
+
   return (
-    <DialogContext.Provider value={{ isOpen, options, openDialog, closeDialog, confirm, alert }}>
+    <DialogContext.Provider value={value}>
       {children}
     </DialogContext.Provider>
   );

@@ -21,7 +21,7 @@ export async function ensurePdfJs(): Promise<typeof import('pdfjs-dist')> {
         ) as { default: string };
         pdfWorkerUrl = workerModule.default;
       } catch {
-        pdfWorkerUrl = '';
+        pdfWorkerUrl = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
       }
     }
     if (pdfWorkerUrl) {
