@@ -176,7 +176,7 @@ export default function AutoIMGApp() {
   }, [loadBootstrap]);
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-[var(--bg-base)]">
+    <div className="flex h-full flex-col overflow-hidden bg-[var(--bg-base)]" data-surface="autoimg">
       <div className="flex h-12 shrink-0 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/80">
         <div className="flex w-[280px] min-w-[240px] shrink-0 items-center border-r border-[var(--border-subtle)] px-4">
           <AutoImgSidebarHeader

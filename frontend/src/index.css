@@ -852,6 +852,16 @@
 
 /* Reduced motion — disable all animations */
 @media (prefers-reduced-motion: reduce) {
+  [data-surface="autoimg"] *,
+  [data-surface="autoimg"] *::before,
+  [data-surface="autoimg"] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
+
   .lg-orb,
   .lg-sparkle,
   .lg-card-enter,

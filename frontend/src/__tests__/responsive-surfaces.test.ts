@@ -25,6 +25,12 @@ describe('responsive surface contracts', () => {
     expect(evidenciaCss).toContain('@media (max-width: 900px)');
     expect(evidenciaCss).toContain('.ev-sidebar {');
     expect(evidenciaCss).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(indexCss).toContain('[data-surface="autoimg"] *');
+    expect(indexCss).toContain('transition-delay: 0ms !important');
+
+    const panelCss = readSource('components/panel-aviso-corte/panel-styles.css');
+    expect(panelCss).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(panelCss).toContain('.pac-app *::before');
 
     expect(indexCss).toContain('@media (max-width: 980px)');
     expect(indexCss).toContain('@media (max-width: 1279px) and (min-width: 900px)');
@@ -35,6 +41,7 @@ describe('responsive surface contracts', () => {
     const formatos = readSource('components/formatos/FormatosView.tsx');
     const ubicaciones = readSource('components/UbicacionesView.tsx');
     const optimizer = readSource('components/image-optimizer/index.tsx');
+    const autoimg = readSource('components/autoimg/AutoIMGApp.tsx');
     const reportesCampo = readSource('components/reportes-campo/ReportesCampoApp.tsx');
     const reportesHeader = readSource('components/reportes-campo/components/HeaderForm.tsx');
     const reportesPhotos = readSource('components/reportes-campo/components/PhotoManager.tsx');
@@ -51,6 +58,7 @@ describe('responsive surface contracts', () => {
     expect(ubicaciones).toContain('data-surface-part="workspace"');
     expect(optimizer).toContain('data-surface="image-optimizer"');
     expect(optimizer).toContain('data-surface-part="workspace"');
+    expect(autoimg).toContain('data-surface="autoimg"');
     expect(reportesCampo).toContain('data-surface="reportes-campo"');
     expect(reportesCampo).toContain('useReducedMotion');
     expect(reportesHeader).toContain('useReducedMotion');

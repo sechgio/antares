@@ -178,6 +178,18 @@
   outline-offset: 2px;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .pac-app *,
+  .pac-app *::before,
+  .pac-app *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
+}
+
 @media (max-width: 900px) {
   .pac-app {
     flex-direction: column;
