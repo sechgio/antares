@@ -250,29 +250,29 @@ export default function TechnicalReportsApp() {
         <h1>INFORMES TÉCNICOS</h1>
         <div className="tr-header-toolbar">
           <div className="tr-header-actions">
-            <button className="tr-secondary" disabled={busy} onClick={() => importInputRef.current?.click()}>
+            <button type="button" className="tr-secondary" disabled={busy} onClick={() => importInputRef.current?.click()}>
               <Upload size={16} />
               Importar
             </button>
             <WithHoverTooltip label="Recargar" placement="bottom">
-              <button className="tr-secondary tr-icon-button" disabled={busy} onClick={() => void loadReports()}>
+              <button type="button" className="tr-secondary tr-icon-button" disabled={busy} onClick={() => void loadReports()}>
                 <RefreshCw size={16} />
               </button>
             </WithHoverTooltip>
             <WithHoverTooltip label="Eliminar todos" placement="bottom">
-              <button className="tr-danger tr-icon-button" disabled={busy || reports.length === 0} onClick={() => void clearReports()}>
+              <button type="button" className="tr-danger tr-icon-button" disabled={busy || reports.length === 0} onClick={() => void clearReports()}>
                 <Trash2 size={16} />
               </button>
             </WithHoverTooltip>
-            <button className="tr-secondary" onClick={createReport} disabled={busy}>
+            <button type="button" className="tr-secondary" onClick={createReport} disabled={busy}>
               <FilePlus2 size={16} />
               Nuevo
             </button>
-            <button className="tr-primary" onClick={exportCurrent} disabled={!formData || busy}>
+            <button type="button" className="tr-primary" onClick={exportCurrent} disabled={!formData || busy}>
               <Download size={16} />
               PDF
             </button>
-            <button className="tr-secondary" onClick={exportConsolidated} disabled={reports.length === 0 || busy}>
+            <button type="button" className="tr-secondary" onClick={exportConsolidated} disabled={reports.length === 0 || busy}>
               <Files size={16} />
               Consolidado
             </button>
@@ -292,15 +292,15 @@ export default function TechnicalReportsApp() {
       </header>
 
       <nav className="tr-mobile-tabs">
-        <button className={`tr-mobile-tab${mobileTab === 'db' ? ' is-active' : ''}`} onClick={() => setMobileTab('db')}>
+        <button type="button" className={`tr-mobile-tab${mobileTab === 'db' ? ' is-active' : ''}`} onClick={() => setMobileTab('db')}>
           <Database size={14} />
           <span>Informes</span>
         </button>
-        <button className={`tr-mobile-tab${mobileTab === 'preview' ? ' is-active' : ''}`} onClick={() => setMobileTab('preview')}>
+        <button type="button" className={`tr-mobile-tab${mobileTab === 'preview' ? ' is-active' : ''}`} onClick={() => setMobileTab('preview')}>
           <Eye size={14} />
           <span>Vista previa</span>
         </button>
-        <button className={`tr-mobile-tab${mobileTab === 'form' ? ' is-active' : ''}`} onClick={() => setMobileTab('form')}>
+        <button type="button" className={`tr-mobile-tab${mobileTab === 'form' ? ' is-active' : ''}`} onClick={() => setMobileTab('form')}>
           <PenLine size={14} />
           <span>Editar</span>
         </button>

@@ -17,6 +17,7 @@ export default function ExportBar({ totalPages = 0, pageIndex = 0, onPrev, onNex
       {totalPages > 1 && (
         <div className="flex items-center gap-1.5">
           <button
+            type="button"
             aria-label="Panel anterior"
             onClick={onPrev}
             disabled={pageIndex <= 0}
@@ -28,6 +29,7 @@ export default function ExportBar({ totalPages = 0, pageIndex = 0, onPrev, onNex
             {pageIndex + 1} / {totalPages}
           </span>
           <button
+            type="button"
             aria-label="Panel siguiente"
             onClick={onNext}
             disabled={pageIndex >= totalPages - 1}

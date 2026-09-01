@@ -56,12 +56,13 @@ export default function ExcelImporter({ source, onSource }: Props) {
             <span className="text-[11px] font-medium text-[var(--text-primary)] truncate">{source.filename}</span>
             <span className="text-[10px] text-[var(--text-muted)]">{source.rows.length} filas · {source.columns.length} columnas</span>
           </div>
-          <button onClick={() => onSource(null)} className="p-1 rounded hover:bg-[var(--bg-elevated)] transition-colors">
+          <button type="button" onClick={() => onSource(null)} className="p-1 rounded hover:bg-[var(--bg-elevated)] transition-colors" aria-label="Quitar archivo Excel">
             <X size={14} className="text-[var(--text-muted)]" />
           </button>
         </div>
       ) : (
         <button
+          type="button"
           onClick={() => inputRef.current?.click()}
           disabled={loading}
           className="flex items-center gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2.5 py-2 hover:border-[var(--accent-primary)]/50 transition-colors disabled:opacity-50"
@@ -88,6 +89,7 @@ export default function ExcelImporter({ source, onSource }: Props) {
       
       {!source && (
         <button
+          type="button"
           onClick={async () => {
             try {
               const res = await api.dialogSave({

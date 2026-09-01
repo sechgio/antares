@@ -53,6 +53,7 @@ export default function DatabasePanel({ reports, selectedId, onSelect }: Props) 
         {filtered.map((report) => (
           <button
             key={report.id}
+            type="button"
             className={`tr-list-item ${selectedId === report.id ? 'active' : ''}`}
             onClick={() => onSelect(report.id)}
           >

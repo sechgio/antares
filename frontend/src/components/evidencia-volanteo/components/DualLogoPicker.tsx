@@ -27,8 +27,14 @@ function LogoSlot({
       <div
         role="button"
         tabIndex={0}
+        aria-label={logo ? `Cambiar ${label}` : `Añadir ${label}`}
         onClick={onSelect}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(); }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSelect();
+          }
+        }}
         className={`group cursor-pointer rounded-md border flex flex-col items-center justify-center transition-all overflow-hidden relative ${
           logo
             ? 'border-[var(--border-subtle)] bg-[var(--bg-surface)]'

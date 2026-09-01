@@ -40,11 +40,11 @@ export default function PhotoManager({
 
     return (
         <div className="rcampo-section">
-            <button className="rcampo-section-header" onClick={() => setIsOpen((v) => !v)}>
+            <button type="button" className="rcampo-section-header" onClick={() => setIsOpen((v) => !v)} aria-expanded={isOpen}>
                 <span className="rcampo-section-title">
                     Imágenes
                     {photos.length > 0 && (
-                        <span style={{ color: '#525252', fontWeight: 500, marginLeft: 4 }}>
+                        <span style={{ color: 'var(--rcampo-muted)', fontWeight: 500, marginLeft: 4 }}>
                             ({photos.length}/{maxPhotos})
                         </span>
                     )}
@@ -90,7 +90,7 @@ export default function PhotoManager({
                                     <span className="rcampo-photos-count">
                                         {photos.length} foto{photos.length !== 1 ? 's' : ''} &middot; {totalPages} hoja{totalPages !== 1 ? 's' : ''}
                                     </span>
-                                    <button className="rcampo-photos-clear" onClick={onClear}>
+                                    <button type="button" className="rcampo-photos-clear" onClick={onClear}>
                                         <Trash2 size={9} /> Limpiar
                                     </button>
                                 </div>

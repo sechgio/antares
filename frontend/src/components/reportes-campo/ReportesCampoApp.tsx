@@ -266,7 +266,7 @@ export default function ReportesCampoApp() {
     }, [photos.length, isExporting, handleExportCurrent]);
 
     return (
-        <div className="rcampo-app">
+        <div className="rcampo-app" data-surface="reportes-campo">
             <header className="rcampo-header">
                 <div className="rcampo-header-side">
                     <div className="rcampo-brand">
@@ -281,6 +281,7 @@ export default function ReportesCampoApp() {
                     {REPORT_TYPES.map((rt) => (
                         <button
                             key={rt.id}
+                            type="button"
                             className={`rcampo-type-pill ${reportType === rt.id ? 'active' : ''}`}
                             onClick={() => setReportType(rt.id)}
                         >

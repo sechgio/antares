@@ -84,12 +84,12 @@ export default function FormPanel({ report, hasChanges, busy, logoLeft, logoRigh
         </h2>
         <div className="tr-form-actions">
           <WithHoverTooltip label={hasChanges ? 'Guardar cambios' : 'Sin cambios'} placement="bottom">
-            <button className="tr-form-action" onClick={onSave} disabled={!hasChanges || busy} aria-label="Guardar">
+            <button type="button" className="tr-form-action" onClick={onSave} disabled={!hasChanges || busy} aria-label="Guardar">
               <Save size={14} strokeWidth={2} />
             </button>
           </WithHoverTooltip>
           <WithHoverTooltip label="Eliminar informe" placement="bottom">
-            <button className="tr-form-action tr-form-action--danger" onClick={onDelete} disabled={busy} aria-label="Eliminar informe">
+            <button type="button" className="tr-form-action tr-form-action--danger" onClick={onDelete} disabled={busy} aria-label="Eliminar informe">
               <Trash2 size={14} strokeWidth={2} />
             </button>
           </WithHoverTooltip>

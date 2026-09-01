@@ -4,6 +4,7 @@ import { useToast } from '../../hooks/useToast';
 import { useDialog } from '../../hooks/useDialog';
 import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut';
 import { saveFeatureHistory } from '../../utils/history';
+import './evidencia-volanteo.css';
 import { MSG_NO_IMAGES, MSG_TITLE_REQUIRED } from './constants';
 import { useEvidenciaSession } from './hooks/useEvidenciaSession';
 import { exportEvidenciaDocument } from './utils/exportDocument';
@@ -15,7 +16,7 @@ import SheetPreview from './components/SheetPreview';
 import ExportBar from './components/ExportBar';
 
 const SIDEBAR_CLASS =
-  'w-[320px] min-w-[280px] flex flex-col border-[var(--border-subtle)] bg-[var(--bg-base)] overflow-y-auto shrink-0';
+  'ev-sidebar flex flex-col border-[var(--border-subtle)] bg-[var(--bg-base)] overflow-y-auto shrink-0';
 const SIDEBAR_HEADER_CLASS = 
   'sticky top-0 z-10 flex h-[45px] items-center border-b border-[var(--border-subtle)] bg-[var(--bg-base)]/95 backdrop-blur-sm px-4 shadow-sm shrink-0';
 
@@ -82,9 +83,9 @@ export default function EvidenciaVolanteoApp() {
   }, [confirm, session]);
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="ev-app flex h-full overflow-hidden" data-surface="evidencia-volanteo">
       {/* Sidebar izquierdo: activos */}
-      <aside className={`${SIDEBAR_CLASS} border-r relative`}>
+      <aside className={`${SIDEBAR_CLASS} ev-sidebar-left border-r relative`}>
         <div className={SIDEBAR_HEADER_CLASS}>
           <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Activos del Documento</span>
         </div>
@@ -131,8 +132,8 @@ export default function EvidenciaVolanteoApp() {
       </aside>
 
       {/* Centro: vista previa */}
-      <div className="flex-1 flex flex-col min-w-0 bg-[var(--bg-elevated)] overflow-hidden">
-        <div className="flex-1 overflow-auto flex items-start justify-center px-6 pb-6 pt-2">
+      <div className="ev-preview flex-1 flex flex-col min-w-0 bg-[var(--bg-elevated)] overflow-hidden">
+        <div className="ev-preview-scroll flex-1 overflow-auto flex items-start justify-center px-6 pb-6 pt-2">
           <SheetPreview
             title={session.title}
             cuadrante={session.currentCuadrante}
@@ -148,7 +149,7 @@ export default function EvidenciaVolanteoApp() {
       </div>
 
       {/* Sidebar derecho: encabezado y cuadrantes */}
-      <aside className={`${SIDEBAR_CLASS} border-l relative`}>
+      <aside className={`${SIDEBAR_CLASS} ev-sidebar-right border-l relative`}>
         <div className={SIDEBAR_HEADER_CLASS}>
           <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Configuración del Documento</span>
         </div>
@@ -194,6 +195,7 @@ export default function EvidenciaVolanteoApp() {
               <div className="flex items-center gap-0.5 bg-[var(--bg-base)] rounded-md border border-[var(--border-subtle)] p-0.5 shadow-sm">
                 <button
                   type="button"
+                  aria-label="Hoja anterior"
                   disabled={session.currentPageIndex <= 0}
                   onClick={() => session.setCurrentPageIndex(session.currentPageIndex - 1)}
                   className="p-1 rounded hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)] disabled:opacity-30 text-[var(--text-muted)] transition-colors"
@@ -202,6 +204,7 @@ export default function EvidenciaVolanteoApp() {
                 </button>
                 <button
                   type="button"
+                  aria-label="Hoja siguiente"
                   disabled={session.currentPageIndex >= session.totalPages - 1}
                   onClick={() => session.setCurrentPageIndex(session.currentPageIndex + 1)}
                   className="p-1 rounded hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)] disabled:opacity-30 text-[var(--text-muted)] transition-colors"

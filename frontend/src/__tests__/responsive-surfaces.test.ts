@@ -11,11 +11,18 @@ function readSource(relativePath: string): string {
 describe('responsive surface contracts', () => {
   const indexCss = readSource('index.css');
   const volantesCss = readSource('components/volantes/styles.css');
+  const reportesCampoCss = readSource('components/reportes-campo/rcampo-styles.css');
+  const evidenciaCss = readSource('components/evidencia-volanteo/evidencia-volanteo.css');
 
   it('scopes responsive rules to the dense feature surfaces', () => {
     for (const surface of ['formatos', 'ubicaciones', 'image-optimizer']) {
       expect(indexCss).toContain(`[data-surface="${surface}"]`);
     }
+
+    expect(reportesCampoCss).toContain('@media (max-width: 900px)');
+    expect(reportesCampoCss).toContain('grid-template-columns: minmax(0, 1fr)');
+    expect(evidenciaCss).toContain('@media (max-width: 900px)');
+    expect(evidenciaCss).toContain('.ev-sidebar {');
 
     expect(indexCss).toContain('@media (max-width: 980px)');
     expect(indexCss).toContain('@media (max-width: 1279px) and (min-width: 900px)');
@@ -26,6 +33,8 @@ describe('responsive surface contracts', () => {
     const formatos = readSource('components/formatos/FormatosView.tsx');
     const ubicaciones = readSource('components/UbicacionesView.tsx');
     const optimizer = readSource('components/image-optimizer/index.tsx');
+    const reportesCampo = readSource('components/reportes-campo/ReportesCampoApp.tsx');
+    const evidencia = readSource('components/evidencia-volanteo/EvidenciaVolanteoApp.tsx');
 
     expect(formatos).toContain('data-surface="formatos"');
     expect(formatos).toContain('data-surface-part="preview"');
@@ -34,6 +43,8 @@ describe('responsive surface contracts', () => {
     expect(ubicaciones).toContain('data-surface-part="workspace"');
     expect(optimizer).toContain('data-surface="image-optimizer"');
     expect(optimizer).toContain('data-surface-part="workspace"');
+    expect(reportesCampo).toContain('data-surface="reportes-campo"');
+    expect(evidencia).toContain('data-surface="evidencia-volanteo"');
   });
 
   it('uses theme tokens for Volantes responsive controls', () => {

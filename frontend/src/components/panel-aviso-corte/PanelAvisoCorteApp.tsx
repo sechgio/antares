@@ -133,6 +133,7 @@ export default function PanelAvisoCorteApp() {
               <option value="docx">Word</option>
             </select>
             <button
+              type="button"
               aria-label="Exportar documento"
               onClick={handleExport}
               disabled={!session.previewPanels.length || session.isExporting}
@@ -164,7 +165,7 @@ export default function PanelAvisoCorteApp() {
                 {session.errors.map((err, i) => (
                   <span key={i} className="text-[11px] text-[var(--accent-red)]">{err}</span>
                 ))}
-                <button className="text-[11px] text-[var(--text-muted)] self-start hover:underline" onClick={session.clearErrors}>Descartar</button>
+                <button type="button" className="text-[11px] text-[var(--text-muted)] self-start hover:underline" onClick={session.clearErrors}>Descartar</button>
               </div>
             </div>
           </div>

@@ -837,6 +837,12 @@
     color: var(--rcampo-accent);
 }
 
+.rcampo-logo-btn:focus-visible,
+.rcampo-logo-remove:focus-visible {
+    outline: 2px solid var(--rcampo-accent);
+    outline-offset: 2px;
+}
+
 .rcampo-logo-btn:hover .rcampo-logo-placeholder {
     color: var(--rcampo-accent);
 }
@@ -1065,12 +1071,69 @@
 }
 
 @media (max-width: 900px) {
-    .rcampo-sidebar {
-        width: 240px;
+    .rcampo-header {
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 8px;
+        padding: 0 8px;
+    }
+
+    .rcampo-header-side-end {
+        display: none;
+    }
+
+    .rcampo-type-pills {
+        justify-self: end;
+        min-width: 0;
+        max-width: 100%;
+        overflow-x: auto;
     }
 
     .rcampo-type-pill {
+        flex: 0 0 auto;
         padding: 3px 8px;
         font-size: 0.64rem;
+    }
+
+    .rcampo-workspace {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto minmax(360px, 1fr) auto;
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+
+    .rcampo-sidebar {
+        width: 100% !important;
+        height: auto;
+        max-height: 320px;
+        min-height: 0;
+    }
+
+    .rcampo-sidebar-right {
+        border-top: 1px solid var(--rcampo-border);
+        border-left: none;
+    }
+
+    .rcampo-canvas {
+        min-height: 420px;
+        height: auto;
+    }
+
+    .sash-module_sash__K-9lB {
+        display: none;
+    }
+
+    .rcampo-sidebar-scroll {
+        overflow-y: auto;
+    }
+}
+
+@media (max-width: 600px) {
+    .rcampo-brand h1 {
+        display: none;
+    }
+
+    .rcampo-canvas-inner {
+        padding: 8px;
     }
 }
