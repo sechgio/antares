@@ -173,6 +173,23 @@ function _isAllowedIpcSender(event) {
   return isTrustedRendererFrame(event, getMainWindow(), isDev);
 }
 
+function _handleBackendTermination(proc) {
+  // `exit` is emitted as soon as the child is gone. `close` follows after all
+  // stdio streams close, which can be delayed by a stuck pipe. Both events can
+  // arrive, so deleting the entry before rejecting makes this idempotent.
+  for (const [id, entry] of _pendingRequests) {
+    if (entry.proc !== proc) continue;
+    clearTimeout(entry.timeout);
+    _pendingRequests.delete(id);
+    entry.reject(new Error('Backend process exited while waiting for response'));
+    entry.releasePending();
+  }
+
+  if (_attachedProcess !== proc) return;
+  _attachedProcess = null;
+  clearJobActivity();
+}
+
 /** Frame NDJSON lines from stdout without string-concat. Caps pending at maxPendingBytes. */
 function _consumeStdoutLines(pending, chunk, maxPendingBytes = Infinity) {
   const piece = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
@@ -364,22 +381,8 @@ function _ensureListeners() {
     }
   });
 
-  proc.on('close', () => {
-    // Always reject requests that were sent on THIS process — even if a newer
-    // process already replaced `_attachedProcess`. Skipping that left orphans
-    // until the per-method timeout after kill+respawn races.
-    for (const [id, entry] of _pendingRequests) {
-      if (entry.proc !== proc) continue;
-      clearTimeout(entry.timeout);
-      _pendingRequests.delete(id);
-      entry.reject(new Error('Backend process exited while waiting for response'));
-      entry.releasePending();
-    }
-
-    if (_attachedProcess !== proc) return;
-    _attachedProcess = null;
-    clearJobActivity();
-  });
+  proc.once('exit', () => _handleBackendTermination(proc));
+  proc.once('close', () => _handleBackendTermination(proc));
 
   return true;
 }

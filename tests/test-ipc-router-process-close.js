@@ -146,6 +146,41 @@ async function run() {
     assert(procC.listenerCount('close') === 1, 'process C has one close listener');
   }
 
+  // ── 4.1b: exit must reject before stdio close ──
+  {
+    const currentProc = { ref: null };
+    let decrementCalls = 0;
+    const { _ensureListeners, _sendRequest } = loadIpcRouter({
+      currentProc,
+      clearJobActivity: () => {},
+      decrementPendingRequests: () => {
+        decrementCalls++;
+      },
+    });
+
+    const proc = makeFakeProc(1101);
+    currentProc.ref = proc;
+    _ensureListeners();
+
+    let rejected = false;
+    const pending = _sendRequest('canvas_save', { id: 'doc-2' });
+    pending.catch(() => {
+      rejected = true;
+    });
+
+    // ChildProcess emits `exit` as soon as the child is gone; `close` can be
+    // delayed while stdout/stderr handles are being torn down.
+    proc.emit('exit', 1, null);
+    await Promise.resolve();
+    assert(rejected, 'child exit rejects pending requests before stdio close');
+    assert(decrementCalls === 1, 'child exit releases the pending request once');
+
+    // The later close event must be harmless and must not release twice.
+    proc.emit('close', 1, null);
+    await Promise.resolve();
+    assert(decrementCalls === 1, 'exit followed by close releases the request only once');
+  }
+
   // ── 4.2: timeout + late stdin failure release exactly once ──
   console.log('\nTesting idempotent pending-request release...\n');
   {

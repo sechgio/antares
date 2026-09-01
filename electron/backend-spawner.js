@@ -36,7 +36,8 @@ const STATE = Object.freeze({
 
 const HANDSHAKE_TIMEOUT_MS = 60_000;    // AV scan of onedir deps can still be slow on cold start
 const AUTO_RESTART_LIMIT = 8;            // max consecutive auto-restarts before FATAL
-const MAX_RESTART_BACKOFF_SEC = 30;      // cap backoff at 30s
+const RESTART_BACKOFF_BASE_MS = 1_000;
+const MAX_RESTART_BACKOFF_MS = 30_000;    // cap backoff at 30s
 const RESTART_RESET_MS = 60_000;         // time of stability before counter resets
 const STDERR_BUFFER_LINES = 30;          // rolling stderr tail
 const HEALTH_CHECK_INTERVAL_MS = 15_000; // detect crashes faster
@@ -402,6 +403,14 @@ function _isFileBackedCommand(cmd) {
   return path.isAbsolute(cmd) || cmd.includes(path.sep) || cmd.includes('/') || cmd.includes('\\');
 }
 
+function _getRestartBackoffMs(attempt) {
+  const normalizedAttempt = Number.isSafeInteger(attempt) && attempt > 0 ? attempt : 1;
+  return Math.min(
+    RESTART_BACKOFF_BASE_MS * Math.pow(2, normalizedAttempt - 1),
+    MAX_RESTART_BACKOFF_MS,
+  );
+}
+
 async function startPythonBackend(isDev, attempt = 1) {
   _isDev = isDev;
   // If the app is quitting, never (re)spawn — killPython() sets this and it
@@ -497,15 +506,15 @@ async function startPythonBackend(isDev, attempt = 1) {
       return;
     }
 
-    const backoffSec = Math.min(Math.pow(2, attempt - 1), MAX_RESTART_BACKOFF_SEC);
+    const backoffMs = _getRestartBackoffMs(attempt);
     _notifyRenderer('backend.error', {
       message: err.message,
       stderrTail,
       attempt,
       willRetry: true,
-      nextRetrySec: backoffSec,
+      nextRetrySec: backoffMs / 1_000,
     });
-    await _sleep(1000 * backoffSec, cycleSignal);
+    await _sleep(backoffMs, cycleSignal);
     if (_isShuttingDown || cycleSignal?.aborted) {
       console.log('[backend-spawner] Start cycle aborted during retry delay.');
       _releaseStartCycleIfOwned(myAbort);
@@ -676,14 +685,18 @@ async function runHealthCheckOnce() {
     const message = `Backend no responde al chequeo de salud: ${err.message}`;
     _lastError = { kind: 'transient', message, stderrTail: getStderrTail() };
     console.warn(`[backend-spawner] ${message}`);
+    const willRetry = _restartCount < getAutoRestartLimit();
+    const nextRetrySec = willRetry
+      ? _getRestartBackoffMs(_restartCount + 1) / 1_000
+      : 0;
     _notifyRenderer('backend.error', {
       message,
       stderrTail: getStderrTail(),
       attempt: _restartCount,
-      willRetry: true,
-      nextRetrySec: 0,
+      willRetry,
+      nextRetrySec,
     });
-    await manualRestart(_isDev, { force: true, reason: 'health_probe_failed' });
+    await _autoRestart('health_probe_failed', probedProcess.pid, { replaceProcess: probedProcess });
   } finally {
     _healthProbeInFlight = false;
   }
@@ -703,7 +716,7 @@ function _stopHealthCheck() {
   }
 }
 
-async function _autoRestart(reason = 'unexpected_exit', previousPid = null) {
+async function _autoRestart(reason = 'unexpected_exit', previousPid = null, { replaceProcess = null } = {}) {
   if (_isShuttingDown || _manualRestartInProgress || _autoRestartInProgress) return;
   if (_state === STATE.FATAL) return;
   if (_currentStart?.inProgress) {
@@ -744,9 +757,8 @@ async function _autoRestart(reason = 'unexpected_exit', previousPid = null) {
       limit: getAutoRestartLimit(),
     });
 
-    // Exponential backoff with a cap so we don't spam too fast
-    const backoffSec = Math.min(Math.pow(2, _restartCount - 1), MAX_RESTART_BACKOFF_SEC);
-    await _sleep(1000 * backoffSec, restartSignal);
+    // Exponential backoff with a cap so we don't spam too fast.
+    await _sleep(_getRestartBackoffMs(_restartCount), restartSignal);
     if (_isShuttingDown || _manualRestartInProgress || _currentStart?.inProgress || restartSignal.aborted) {
       if (_isShuttingDown) {
         console.log('[backend-spawner] Shutdown requested during auto-restart backoff, aborting.');
@@ -757,6 +769,13 @@ async function _autoRestart(reason = 'unexpected_exit', previousPid = null) {
     if (isReady() && pythonProcess && !pythonProcess.killed) {
       _clearAutoRestartCycle();
       return;
+    }
+    // Health probes can detect a live-but-unresponsive child, unlike the
+    // close-driven path where the old process is already gone. Only kill the
+    // exact process that failed the probe; a concurrent replacement wins.
+    if (replaceProcess && pythonProcess === replaceProcess) {
+      _forceKillProcess(pythonProcess);
+      pythonProcess = null;
     }
     _clearAutoRestartCycle();
     await startPythonBackend(_isDev);
