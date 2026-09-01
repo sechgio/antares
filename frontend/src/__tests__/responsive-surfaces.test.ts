@@ -42,6 +42,7 @@ describe('responsive surface contracts', () => {
     const ubicaciones = readSource('components/UbicacionesView.tsx');
     const optimizer = readSource('components/image-optimizer/index.tsx');
     const autoimg = readSource('components/autoimg/AutoIMGApp.tsx');
+    const technicalReports = readSource('components/technical-reports/TechnicalReportsApp.tsx');
     const reportesCampo = readSource('components/reportes-campo/ReportesCampoApp.tsx');
     const reportesHeader = readSource('components/reportes-campo/components/HeaderForm.tsx');
     const reportesPhotos = readSource('components/reportes-campo/components/PhotoManager.tsx');
@@ -59,6 +60,9 @@ describe('responsive surface contracts', () => {
     expect(optimizer).toContain('data-surface="image-optimizer"');
     expect(optimizer).toContain('data-surface-part="workspace"');
     expect(autoimg).toContain('data-surface="autoimg"');
+    expect(technicalReports).toContain('data-surface="technical-reports"');
+    expect(technicalReports).toContain('role="tablist"');
+    expect(technicalReports).toContain('aria-selected={mobileTab ===');
     expect(reportesCampo).toContain('data-surface="reportes-campo"');
     expect(reportesCampo).toContain('useReducedMotion');
     expect(reportesHeader).toContain('useReducedMotion');

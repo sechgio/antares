@@ -245,7 +245,7 @@ export default function TechnicalReportsApp() {
   }, [addToast, logoLeft, logoRight, reports.length]);
 
   return (
-    <div className="tr-app">
+    <div className="tr-app" data-surface="technical-reports">
       <header className="tr-header">
         <h1>INFORMES TÉCNICOS</h1>
         <div className="tr-header-toolbar">
@@ -291,16 +291,16 @@ export default function TechnicalReportsApp() {
         />
       </header>
 
-      <nav className="tr-mobile-tabs">
-        <button type="button" className={`tr-mobile-tab${mobileTab === 'db' ? ' is-active' : ''}`} onClick={() => setMobileTab('db')}>
+      <nav className="tr-mobile-tabs" role="tablist" aria-label="Vista de informes técnicos">
+        <button type="button" role="tab" aria-selected={mobileTab === 'db'} className={`tr-mobile-tab${mobileTab === 'db' ? ' is-active' : ''}`} onClick={() => setMobileTab('db')}>
           <Database size={14} />
           <span>Informes</span>
         </button>
-        <button type="button" className={`tr-mobile-tab${mobileTab === 'preview' ? ' is-active' : ''}`} onClick={() => setMobileTab('preview')}>
+        <button type="button" role="tab" aria-selected={mobileTab === 'preview'} className={`tr-mobile-tab${mobileTab === 'preview' ? ' is-active' : ''}`} onClick={() => setMobileTab('preview')}>
           <Eye size={14} />
           <span>Vista previa</span>
         </button>
-        <button type="button" className={`tr-mobile-tab${mobileTab === 'form' ? ' is-active' : ''}`} onClick={() => setMobileTab('form')}>
+        <button type="button" role="tab" aria-selected={mobileTab === 'form'} className={`tr-mobile-tab${mobileTab === 'form' ? ' is-active' : ''}`} onClick={() => setMobileTab('form')}>
           <PenLine size={14} />
           <span>Editar</span>
         </button>
