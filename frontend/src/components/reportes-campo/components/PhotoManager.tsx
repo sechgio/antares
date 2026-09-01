@@ -102,6 +102,7 @@ export default function PhotoManager({
                                     multiple
                                     className="hidden"
                                     disabled={isFull}
+                                    onClick={(e) => e.stopPropagation()}
                                     onChange={(e) => { onAdd(e.target.files); e.target.value = ''; }}
                                 />
                             </div>

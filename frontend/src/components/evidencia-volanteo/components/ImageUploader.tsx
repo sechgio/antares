@@ -78,7 +78,15 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
           </div>
         )}
       </div>
-      <input ref={inputRef} type="file" multiple accept={ACCEPTED_IMAGE_TYPES.join(',')} className="hidden" onChange={(e) => handleFiles(e.target.files)} />
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        accept={ACCEPTED_IMAGE_TYPES.join(',')}
+        className="hidden"
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => handleFiles(e.target.files)}
+      />
 
       {errors.length > 0 && (
         <div className="flex flex-col gap-1.5 px-2 py-1.5 rounded-md bg-[var(--accent-red)]/10 border border-[var(--accent-red)]/20">
