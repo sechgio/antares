@@ -79,7 +79,7 @@ export default function OptionsCard({
             <span className="text-[11px] font-semibold text-[var(--text-secondary)]">
               {conversionEnabled ? 'Activa' : 'Solo renombrar'}
             </span>
-            <Toggle checked={conversionEnabled} onChange={onToggleConversion} />
+            <Toggle checked={conversionEnabled} onChange={onToggleConversion} aria-label="Activar conversión" />
           </div>
         </div>
       </div>
@@ -213,7 +213,7 @@ export default function OptionsCard({
                 <span className="text-[11px] text-[var(--text-muted)]">Ajustar dimensiones de salida</span>
               </div>
             </div>
-            <Toggle checked={resizeEnabled} onChange={onToggleResize} />
+            <Toggle checked={resizeEnabled} onChange={onToggleResize} aria-label="Activar redimensionado" />
           </div>
 
           {resizeEnabled && (
@@ -253,7 +253,7 @@ export default function OptionsCard({
               <span className="text-[11px] text-[var(--text-muted)]">Cámara, fecha y GPS (EXIF)</span>
             </div>
           </div>
-          <Toggle checked={keepExif} onChange={onToggleExif} />
+          <Toggle checked={keepExif} onChange={onToggleExif} aria-label="Conservar metadatos EXIF" />
             </div>
           </div>
         </>

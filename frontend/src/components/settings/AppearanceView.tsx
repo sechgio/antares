@@ -350,6 +350,7 @@ export default function AppearanceView() {
                     key={option.key}
                     type="button"
                     onClick={() => updateMode(option.key)}
+                    aria-pressed={active}
                     className={`inline-flex h-7 items-center gap-1.5 rounded-full px-3 text-[12px] font-medium transition-colors ${
                       active ? 'bg-[var(--bg-input)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                     }`}
@@ -492,6 +493,8 @@ export default function AppearanceView() {
                         setTheme(nextTheme);
                         applyThemeToCSS(nextTheme, mode, item.key);
                       }}
+                      aria-label={`Acento ${item.key}`}
+                      aria-pressed={isActive}
                       className={`h-4 w-4 shrink-0 rounded-full border transition-all ${
                         isActive ? 'border-[var(--text-primary)] scale-110' : 'border-transparent hover:border-[var(--text-secondary)]'
                       }`}
@@ -518,7 +521,11 @@ export default function AppearanceView() {
               />
             </SettingRow>
             <SettingRow label="Barra lateral translucida">
-              <Toggle checked={sidebarTranslucent} onChange={(value) => updateBool('sidebar_translucent', value)} />
+              <Toggle
+                checked={sidebarTranslucent}
+                onChange={(value) => updateBool('sidebar_translucent', value)}
+                aria-label="Barra lateral translúcida"
+              />
             </SettingRow>
             <SettingRow label="Contraste">
               <div className="flex w-full items-center gap-3">
@@ -537,7 +544,11 @@ export default function AppearanceView() {
           </div>
 
           <SettingRow label="Usar cursores de puntero" hint="Cambia el cursor a un puntero al pasar sobre elementos interactivos">
-            <Toggle checked={pointerCursors} onChange={(value) => updateBool('pointer_cursors', value)} />
+            <Toggle
+              checked={pointerCursors}
+              onChange={(value) => updateBool('pointer_cursors', value)}
+              aria-label="Usar cursores de puntero"
+            />
           </SettingRow>
           <SettingRow label="Tamano de fuente de la interfaz" hint="Ajusta el tamano base usado para la interfaz de HidroConvert">
             <div className="flex items-center gap-2">

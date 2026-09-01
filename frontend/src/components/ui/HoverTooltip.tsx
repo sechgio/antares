@@ -64,6 +64,7 @@ export function HoverTooltip({
         'transition-opacity duration-100 ease-[var(--ease-out)]',
         PLACEMENT_CLASS[placement],
         groupHoverClass,
+        'group-focus-within:opacity-100',
         'motion-reduce:transition-none',
       )}
     >
@@ -172,6 +173,8 @@ export function WithHoverTooltip({
       style={style}
       onMouseEnter={show}
       onMouseLeave={hide}
+      onFocus={show}
+      onBlur={hide}
     >
       {cleaned}
       {open &&
