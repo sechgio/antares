@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import type { Variants } from 'framer-motion';
 import { ChevronDown, ImagePlus, Trash2 } from 'lucide-react';
 import type { PhotoFile } from '../types';
@@ -22,6 +22,11 @@ const collapseVariants: Variants = {
     collapsed: { height: 0, opacity: 0, transition: { duration: 0.15, ease: [0.4, 0, 0.2, 1] } },
 };
 
+const instantCollapseVariants: Variants = {
+    open: { height: 'auto', opacity: 1, transition: { duration: 0 } },
+    collapsed: { height: 0, opacity: 0, transition: { duration: 0 } },
+};
+
 export default function PhotoManager({
     photos,
     maxPhotos,
@@ -36,6 +41,7 @@ export default function PhotoManager({
 }: PhotoManagerProps) {
     const inputRef = useRef<HTMLInputElement>(null);
     const [isOpen, setIsOpen] = useState(true);
+    const reducedMotion = useReducedMotion();
     const isFull = photos.length >= maxPhotos;
 
     return (
@@ -56,7 +62,12 @@ export default function PhotoManager({
 
             <AnimatePresence initial={false}>
                 {isOpen && (
-                    <motion.div initial="collapsed" animate="open" exit="collapsed" variants={collapseVariants}>
+                        <motion.div
+                            initial={reducedMotion ? false : 'collapsed'}
+                            animate="open"
+                            exit={reducedMotion ? undefined : 'collapsed'}
+                            variants={reducedMotion ? instantCollapseVariants : collapseVariants}
+                        >
                         <div className="rcampo-section-body">
                             <div
                                 className={`rcampo-dropzone ${isDragging ? 'dragging' : ''} ${isFull ? 'full' : ''}`}

@@ -68,12 +68,23 @@
 }
 
 @media (max-width: 600px) {
-  .ev-sidebar {
-    max-height: 360px;
+    .ev-sidebar {
+        max-height: 360px;
   }
 
   .ev-preview {
     min-height: 360px;
-    flex-basis: 360px;
+        flex-basis: 360px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ev-app *,
+  .ev-app *::before,
+  .ev-app *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import type { Variants } from 'framer-motion';
 import { ChevronDown, Upload, X, FileText, MapPin, Briefcase, Image as ImageIcon, Minus, Plus, RotateCcw } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
@@ -44,6 +44,11 @@ const collapseVariants: Variants = {
     collapsed: { height: 0, opacity: 0, transition: { duration: 0.18, ease: [0.4, 0, 0.2, 1] } },
 };
 
+const instantCollapseVariants: Variants = {
+    open: { height: 'auto', opacity: 1, transition: { duration: 0 } },
+    collapsed: { height: 0, opacity: 0, transition: { duration: 0 } },
+};
+
 export default function HeaderForm({
     config,
     fields,
@@ -54,6 +59,7 @@ export default function HeaderForm({
     onLogoChange,
     onLogoRemove,
 }: HeaderFormProps) {
+    const reducedMotion = useReducedMotion();
     const logoLeftRef = useRef<HTMLInputElement>(null);
     const logoRightRef = useRef<HTMLInputElement>(null);
 
@@ -136,7 +142,13 @@ export default function HeaderForm({
                 </button>
                 <AnimatePresence initial={false}>
                     {openSections.generales && (
-                        <motion.div initial="collapsed" animate="open" exit="collapsed" variants={collapseVariants} style={{ overflow: 'hidden' }}>
+                        <motion.div
+                            initial={reducedMotion ? false : 'collapsed'}
+                            animate="open"
+                            exit={reducedMotion ? undefined : 'collapsed'}
+                            variants={reducedMotion ? instantCollapseVariants : collapseVariants}
+                            style={{ overflow: 'hidden' }}
+                        >
                             <div className="rcampo-section-body">
                                 {tituloField && (
                                     <div className={`rcampo-field ${(header[tituloField.key] ?? '').trim() ? 'has-value' : ''}`}>
@@ -334,7 +346,13 @@ export default function HeaderForm({
                                 </button>
                                 <AnimatePresence initial={false}>
                                     {isOpen && (
-                                        <motion.div initial="collapsed" animate="open" exit="collapsed" variants={collapseVariants} style={{ overflow: 'hidden' }}>
+                                        <motion.div
+                                            initial={reducedMotion ? false : 'collapsed'}
+                                            animate="open"
+                                            exit={reducedMotion ? undefined : 'collapsed'}
+                                            variants={reducedMotion ? instantCollapseVariants : collapseVariants}
+                                            style={{ overflow: 'hidden' }}
+                                        >
                                             <div className="rcampo-section-body">
                                                 {sectionFields.map(renderField)}
                                             </div>
