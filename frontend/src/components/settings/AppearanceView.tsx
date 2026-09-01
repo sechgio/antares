@@ -21,13 +21,16 @@ import { useToast } from '../../hooks/useToast';
 import {
   ACCENTS,
   CUSTOM_ACCENT_KEY,
+  DEFAULT_THEME_DENSITY,
   accentKeyForTheme,
   applyThemeToCSS,
   composeTheme,
   hasCachedThemeCSS,
+  normalizeThemeDensity,
   normalizeHexColor,
   readCachedActiveTheme,
   shadeHex,
+  type ThemeDensity,
   type ThemeMode,
 } from '../../utils/themeApplier';
 
@@ -46,6 +49,12 @@ const MODE_OPTIONS: ModeOption[] = [
   { key: 'light', label: 'Claro', icon: Sun },
   { key: 'dark', label: 'Oscuro', icon: Moon },
   { key: 'system', label: 'Sistema', icon: Monitor },
+];
+
+const DENSITY_OPTIONS: { key: ThemeDensity; label: string }[] = [
+  { key: 'compact', label: 'Compacta' },
+  { key: 'comfortable', label: 'Cómoda' },
+  { key: 'spacious', label: 'Amplia' },
 ];
 
 const EDITABLE_COLORS: EditableColor[] = [
@@ -89,6 +98,7 @@ export default function AppearanceView() {
   const [pointerCursors, setPointerCursors] = useState(false);
   const [sidebarTranslucent, setSidebarTranslucent] = useState(false);
   const [contrast, setContrast] = useState(60);
+  const [density, setDensity] = useState<ThemeDensity>(DEFAULT_THEME_DENSITY);
   const [interfaceFontSize, setInterfaceFontSize] = useState(13);
   const [codeFontSize, setCodeFontSize] = useState(12);
 
@@ -134,6 +144,7 @@ export default function AppearanceView() {
     setPointerCursors(toStoredBool(initialTheme.pointer_cursors));
     setSidebarTranslucent(toStoredBool(initialTheme.sidebar_translucent));
     setContrast(Number(initialTheme.contrast || 60));
+    setDensity(normalizeThemeDensity(initialTheme.density));
     setInterfaceFontSize(Number(initialTheme.interface_font_size || 13));
     setCodeFontSize(Number(initialTheme.code_font_size || 12));
 
@@ -204,6 +215,11 @@ export default function AppearanceView() {
     patchTheme({ [key]: String(normalized) } as Partial<ThemeConfig>);
   };
 
+  const updateDensity = (value: ThemeDensity) => {
+    setDensity(value);
+    patchTheme({ density: value });
+  };
+
   const buildThemePayload = (): ThemeConfig => {
     const base = theme || ({} as ThemeConfig);
     return {
@@ -212,6 +228,7 @@ export default function AppearanceView() {
       pointer_cursors: String(pointerCursors),
       sidebar_translucent: String(sidebarTranslucent),
       contrast: String(contrast),
+      density,
       interface_font_size: String(interfaceFontSize),
       code_font_size: String(codeFontSize),
       interface_font: base.interface_font || '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -243,6 +260,7 @@ export default function AppearanceView() {
     setPointerCursors(toStoredBool(resetTheme.pointer_cursors));
     setSidebarTranslucent(toStoredBool(resetTheme.sidebar_translucent));
     setContrast(Number(resetTheme.contrast || 60));
+    setDensity(normalizeThemeDensity(resetTheme.density));
     setInterfaceFontSize(Number(resetTheme.interface_font_size || 13));
     setCodeFontSize(Number(resetTheme.code_font_size || 12));
     applyThemeToCSS(resetTheme, nextMode, nextAccent);
@@ -267,6 +285,7 @@ export default function AppearanceView() {
     setPointerCursors(toStoredBool(presetTheme.pointer_cursors, pointerCursors));
     setSidebarTranslucent(toStoredBool(presetTheme.sidebar_translucent, sidebarTranslucent));
     setContrast(Number(presetTheme.contrast || contrast));
+    setDensity(normalizeThemeDensity(presetTheme.density || density));
     setInterfaceFontSize(Number(presetTheme.interface_font_size || interfaceFontSize));
     setCodeFontSize(Number(presetTheme.code_font_size || codeFontSize));
     applyThemeToCSS(presetTheme, nextMode, nextAccent);
@@ -290,6 +309,7 @@ export default function AppearanceView() {
     setPointerCursors(nextPointerCursors);
     setSidebarTranslucent(nextSidebarTranslucent);
     setContrast(nextContrast);
+    setDensity(normalizeThemeDensity(importedTheme.density || density));
     setInterfaceFontSize(nextInterfaceFontSize);
     setCodeFontSize(nextCodeFontSize);
     applyThemeToCSS(importedTheme, nextMode, nextAccent);
@@ -539,6 +559,29 @@ export default function AppearanceView() {
                   className="min-w-0 flex-1 accent-[var(--accent-primary)]"
                 />
                 <span className="w-7 text-right text-[12px] font-medium text-[var(--text-primary)]">{contrast}</span>
+              </div>
+            </SettingRow>
+            <SettingRow label="Densidad de la interfaz" hint="Ajusta el espacio de controles y tarjetas">
+              <div className="inline-flex w-full rounded-lg bg-[var(--bg-base)] p-0.5" role="group" aria-label="Densidad de la interfaz">
+                {DENSITY_OPTIONS.map((option) => {
+                  const active = density === option.key;
+                  return (
+                    <button
+                      key={option.key}
+                      type="button"
+                      aria-label={`Densidad ${option.label.toLowerCase()}`}
+                      aria-pressed={active}
+                      onClick={() => updateDensity(option.key)}
+                      className={`min-w-0 flex-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
+                        active
+                          ? 'bg-[var(--bg-input)] text-[var(--text-primary)] shadow-sm'
+                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
               </div>
             </SettingRow>
           </div>

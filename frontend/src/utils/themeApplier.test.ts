@@ -155,6 +155,7 @@ describe('applyThemeToCSS', () => {
     );
 
     expect(document.documentElement.style.getPropertyValue('--app-contrast')).toBe('100');
+    expect(document.documentElement.style.getPropertyValue('--app-density-scale')).toBe('0.88');
     expect(document.documentElement.style.getPropertyValue('--text-secondary')).toBe('#FFFFFF');
     expect(document.documentElement.dataset.themeDensity).toBe('compact');
     expect(document.documentElement.dataset.sidebarTranslucent).toBe('true');

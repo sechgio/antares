@@ -7,6 +7,7 @@
 import type { ThemeConfig } from '../types';
 
 export type ThemeMode = 'dark' | 'light' | 'system';
+export type ThemeDensity = 'compact' | 'comfortable' | 'spacious';
 
 export const CUSTOM_ACCENT_KEY = 'custom';
 export const THEME_CSS_CACHE_KEY = 'hc_theme_css_cache';
@@ -15,7 +16,12 @@ export const THEME_MODE_CACHE_KEY = 'hc_theme_mode';
 export const THEME_DENSITY_CACHE_KEY = 'hc_theme_density';
 
 const DEFAULT_CONTRAST = 60;
-const DEFAULT_DENSITY = 'comfortable';
+export const DEFAULT_THEME_DENSITY: ThemeDensity = 'comfortable';
+const DENSITY_SCALE: Record<ThemeDensity, string> = {
+  compact: '0.88',
+  comfortable: '1',
+  spacious: '1.12',
+};
 
 export const ACCENTS = [
   { key: 'violet', color: '#3B82F6', hover: '#2563EB', light: '#93C5FD', dark: '#1E40AF' },
@@ -147,8 +153,8 @@ function normalizeContrast(value?: string) {
   return Math.max(1, Math.min(100, Math.round(parsed)));
 }
 
-function normalizeDensity(value?: string) {
-  return value === 'compact' || value === 'spacious' ? value : DEFAULT_DENSITY;
+export function normalizeThemeDensity(value?: string): ThemeDensity {
+  return value === 'compact' || value === 'spacious' ? value : DEFAULT_THEME_DENSITY;
 }
 
 function mixHexColors(from: string, to: string, amount: number) {
@@ -232,6 +238,7 @@ export function composeTheme(theme: ThemeConfig, mode: ThemeMode, accentKey: str
   const accent = isKnownAccentKey(accentKey) ? selectedAccent(accentKey) : null;
   return ensureReadableTheme({
     ...theme,
+    density: normalizeThemeDensity(theme.density),
     ...(useLight ? LIGHT_THEME : {}),
     mode,
     accent_key: accent?.key || CUSTOM_ACCENT_KEY,
@@ -259,7 +266,7 @@ export function applyThemeToCSS(theme: ThemeConfig, mode: ThemeMode, accentKey: 
   const root = document.documentElement;
   const isLightTheme = relativeLuminance(nextTheme.bg) > 0.55;
   const contrast = normalizeContrast(nextTheme.contrast);
-  const density = normalizeDensity(nextTheme.density);
+  const density = normalizeThemeDensity(nextTheme.density);
   const elevated = nextTheme.bg_elevated || shadeHex(nextTheme.bg_secondary, isLightTheme ? -0.04 : 0.04);
   const input = nextTheme.bg_input || shadeHex(nextTheme.bg_secondary, isLightTheme ? -0.07 : 0.07);
   const mediumBorder = nextTheme.border_medium || shadeHex(nextTheme.border, isLightTheme ? -0.12 : 0.12);
@@ -307,6 +314,7 @@ export function applyThemeToCSS(theme: ThemeConfig, mode: ThemeMode, accentKey: 
     '--app-font-size': `${interfaceFontSize}px`,
     '--app-code-font-size': `${codeFontSize}px`,
     '--app-contrast': String(contrast),
+    '--app-density-scale': DENSITY_SCALE[density],
   };
 
   Object.entries(extraVars).forEach(([cssVar, value]) => {
@@ -352,7 +360,11 @@ export function restoreCachedTheme(): void {
       document.documentElement.classList.toggle('theme-light', isLightMode);
       document.documentElement.classList.toggle('theme-dark', !isLightMode);
     }
-    if (density) document.documentElement.dataset.themeDensity = normalizeDensity(density);
+    if (density) {
+      const normalizedDensity = normalizeThemeDensity(density);
+      document.documentElement.dataset.themeDensity = normalizedDensity;
+      document.documentElement.style.setProperty('--app-density-scale', DENSITY_SCALE[normalizedDensity]);
+    }
 
     const activeRaw = localStorage.getItem(THEME_ACTIVE_CACHE_KEY);
     if (activeRaw) {
@@ -370,7 +382,9 @@ export function restoreCachedTheme(): void {
         document.documentElement.classList.toggle('theme-dark', !isLightTheme);
       }
       if (typeof active.density === 'string') {
-        document.documentElement.dataset.themeDensity = normalizeDensity(active.density);
+        const normalizedDensity = normalizeThemeDensity(active.density);
+        document.documentElement.dataset.themeDensity = normalizedDensity;
+        document.documentElement.style.setProperty('--app-density-scale', DENSITY_SCALE[normalizedDensity]);
       }
     }
   } catch {}

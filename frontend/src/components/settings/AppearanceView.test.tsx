@@ -55,6 +55,7 @@ describe('AppearanceView', () => {
     document.documentElement.removeAttribute('style');
     delete document.documentElement.dataset.pointerCursors;
     delete document.documentElement.dataset.sidebarTranslucent;
+    delete document.documentElement.dataset.themeDensity;
   });
 
   it('shows a minimal Codex-like appearance panel and applies a selected style', async () => {
@@ -180,6 +181,7 @@ describe('AppearanceView', () => {
       pointer_cursors: 'true',
       sidebar_translucent: 'true',
       contrast: '72',
+      density: 'compact',
       interface_font_size: '14',
       code_font_size: '13',
     };
@@ -192,9 +194,34 @@ describe('AppearanceView', () => {
       expect(document.documentElement.style.getPropertyValue('--bg-base')).toBe('#101826');
       expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('#14B8A6');
       expect(document.documentElement.dataset.pointerCursors).toBe('true');
+      expect(document.documentElement.style.getPropertyValue('--app-density-scale')).toBe('0.88');
       expect(screen.getByLabelText('Contraste')).toHaveValue('72');
+      expect(screen.getByRole('button', { name: 'Densidad compacta' })).toHaveAttribute('aria-pressed', 'true');
       expect(screen.getByLabelText('Tamano de fuente de la interfaz')).toHaveValue(14);
       expect(screen.getByLabelText('Tamano de fuente del codigo')).toHaveValue(13);
+    });
+  });
+
+  it('applies the selected interface density to shared theme variables', async () => {
+    window.electronAPI = {
+      invoke: async (method: string) => {
+        if (method === 'theme_get') return baseTheme;
+        if (method === 'theme_presets') return { presets: ['Precision Linear'] };
+        return {};
+      },
+      onNotify: () => () => {},
+      onUpdateAvailable: () => () => {},
+      onUpdateDownloaded: () => () => {},
+    };
+
+    renderAppearance();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Densidad amplia' }));
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.themeDensity).toBe('spacious');
+      expect(document.documentElement.style.getPropertyValue('--app-density-scale')).toBe('1.12');
+      expect(screen.getByRole('button', { name: 'Densidad amplia' })).toHaveAttribute('aria-pressed', 'true');
     });
   });
 

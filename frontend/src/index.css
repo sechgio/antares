@@ -37,6 +37,7 @@
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.25);
   --selection-bg: rgba(94, 106, 210, 0.35);
   --selection-fg: #FFFFFF;
+  --app-density-scale: 1;
   --ease-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);
   /* Motion tokens (Emil Kowalski / improve-animations) */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -181,6 +182,8 @@
   }
   .btn-pill {
     @apply inline-flex items-center justify-center gap-2 px-5 py-2 rounded-full text-sm font-medium transition-all duration-200;
+    padding-inline: calc(1.25rem * var(--app-density-scale, 1));
+    padding-block: calc(0.5rem * var(--app-density-scale, 1));
   }
   .btn-pill-primary {
     @apply btn-pill text-[var(--text-on-accent)];
@@ -197,6 +200,8 @@
   }
   .input-base {
     @apply bg-[var(--bg-elevated)] text-[var(--text-primary)] border border-[var(--border-subtle)] rounded-lg px-3 py-2 text-sm outline-none transition-all duration-200;
+    padding-inline: calc(0.75rem * var(--app-density-scale, 1));
+    padding-block: calc(0.5rem * var(--app-density-scale, 1));
   }
   .input-base:focus {
     border-color: var(--accent-orange);
@@ -227,6 +232,7 @@
   }
   .mc-card {
     @apply bg-[var(--bg-elevated)] rounded-card p-6 shadow-card transition-all duration-300;
+    padding: calc(1.5rem * var(--app-density-scale, 1));
     border: 1px solid var(--border-subtle);
   }
   .mc-card-hover:hover {
@@ -235,6 +241,8 @@
   }
   .mc-btn-primary {
     @apply px-[24px] py-[6px] font-medium text-[16px] rounded-btn bg-[var(--accent-orange)] text-[var(--text-on-accent)] border-[1.5px] border-[var(--accent-orange)] transition-all duration-200;
+    padding-inline: calc(24px * var(--app-density-scale, 1));
+    padding-block: calc(6px * var(--app-density-scale, 1));
     letter-spacing: -0.02em;
   }
   .mc-btn-primary:hover {
@@ -245,6 +253,8 @@
   }
   .mc-btn-secondary {
     @apply px-[24px] py-[6px] font-medium text-[16px] rounded-btn bg-transparent text-[var(--text-primary)] border-[1.5px] border-[var(--border-medium)] transition-all duration-200;
+    padding-inline: calc(24px * var(--app-density-scale, 1));
+    padding-block: calc(6px * var(--app-density-scale, 1));
     letter-spacing: -0.02em;
   }
   .mc-btn-secondary:hover {
@@ -252,6 +262,8 @@
   }
   .mc-btn-signal {
     @apply px-[30px] py-[1px] font-normal text-[13px] rounded-[24px] bg-[var(--accent-orange)] text-[var(--text-on-accent)] transition-all duration-200 border-0;
+    padding-inline: calc(30px * var(--app-density-scale, 1));
+    padding-block: calc(1px * var(--app-density-scale, 1));
     letter-spacing: 0.13px;
   }
   .mc-btn-signal:hover {
@@ -259,6 +271,8 @@
   }
   .mc-input {
     @apply bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-subtle)] rounded-pill px-5 py-2.5 text-base outline-none transition-all duration-200;
+    padding-inline: calc(1.25rem * var(--app-density-scale, 1));
+    padding-block: calc(0.625rem * var(--app-density-scale, 1));
     font-weight: 450;
   }
   .mc-input:focus {
@@ -280,6 +294,8 @@
   }
   .mc-chip {
     @apply inline-flex items-center px-5 py-2 rounded-pill bg-[var(--bg-input)] text-[var(--text-primary)] text-sm font-medium transition-all duration-200;
+    padding-inline: calc(1.25rem * var(--app-density-scale, 1));
+    padding-block: calc(0.5rem * var(--app-density-scale, 1));
     border: 1px solid var(--border-subtle);
   }
   .mc-chip:hover {
@@ -287,6 +303,8 @@
   }
   .mc-chip-active {
     @apply inline-flex items-center px-5 py-2 rounded-pill bg-[var(--accent-orange)] text-[var(--text-on-accent)] text-sm font-medium border border-[var(--accent-orange)] transition-all duration-200;
+    padding-inline: calc(1.25rem * var(--app-density-scale, 1));
+    padding-block: calc(0.5rem * var(--app-density-scale, 1));
   }
 
   .app-date-picker {
@@ -340,17 +358,17 @@
   }
 
   .app-date-picker-trigger-sm {
-    padding: 0.25rem 0.5rem;
+    padding: calc(0.25rem * var(--app-density-scale, 1)) calc(0.5rem * var(--app-density-scale, 1));
     font-size: 11px;
   }
 
   .app-date-picker-trigger-md {
-    padding: 0.375rem 0.625rem;
+    padding: calc(0.375rem * var(--app-density-scale, 1)) calc(0.625rem * var(--app-density-scale, 1));
     font-size: 12px;
   }
 
   .app-date-picker-trigger-lg {
-    padding: 0.5rem 0.75rem;
+    padding: calc(0.5rem * var(--app-density-scale, 1)) calc(0.75rem * var(--app-density-scale, 1));
     font-size: 0.875rem;
   }
 
