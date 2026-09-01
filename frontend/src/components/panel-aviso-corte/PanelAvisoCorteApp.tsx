@@ -79,8 +79,8 @@ export default function PanelAvisoCorteApp() {
   const logoCenterUrl = session.logoRight?.objectUrl ?? null;
 
   return (
-    <div className="flex h-full overflow-hidden">
-      <div className="w-[380px] min-w-[340px] flex flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-base)] overflow-y-auto">
+    <div className="pac-app flex h-full overflow-hidden">
+      <div className="pac-sidebar flex flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-base)] overflow-y-auto">
         <div className="flex flex-col gap-3 p-3.5">
           {/* ── Datos del panel ── */}
           <div className="pac-sidebar-section">
@@ -171,7 +171,7 @@ export default function PanelAvisoCorteApp() {
         )}
       </div>
 
-      <div className="flex-1 flex flex-col bg-[var(--bg-elevated)] overflow-hidden">
+      <div className="pac-preview flex-1 flex flex-col bg-[var(--bg-elevated)] overflow-hidden">
         {totalPages > 0 && (
           <div className="shrink-0 border-b border-[var(--border-subtle)] bg-[var(--bg-base)] px-5 py-2.5">
             <ExportBar

@@ -156,6 +156,43 @@
   padding: 0 5.2pt;
 }
 
+/* ── Workspace layout ── */
+
+.pac-app {
+  min-width: 0;
+}
+
+.pac-sidebar {
+  flex: 0 1 380px;
+  width: 380px;
+  min-width: 340px;
+}
+
+.pac-preview {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .pac-app {
+    flex-direction: column;
+    overflow: auto;
+  }
+
+  .pac-sidebar {
+    width: 100%;
+    min-width: 0;
+    max-height: 52%;
+    flex: 0 1 auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .pac-preview {
+    min-height: 360px;
+    flex: 1 1 auto;
+  }
+}
+
 .pac-placeholder {
   color: #999;
   font-style: italic;

@@ -24,4 +24,18 @@ describe('Button', () => {
     render(<Button variant="primary" disabled>Disabled</Button>);
     expect(screen.getByText('Disabled')).toBeDisabled();
   });
+
+  it('forwards native accessibility and DOM attributes', () => {
+    render(
+      <Button aria-label="Guardar" aria-pressed data-testid="save-button">
+        Guardar
+      </Button>,
+    );
+
+    const button = screen.getByTestId('save-button');
+    expect(button).toHaveAttribute('aria-label', 'Guardar');
+    expect(button).toHaveAttribute('aria-pressed', 'true');
+    expect(button).toHaveAttribute('data-slot', 'button');
+    expect(button).toHaveClass('focus-visible:ring-2');
+  });
 });
