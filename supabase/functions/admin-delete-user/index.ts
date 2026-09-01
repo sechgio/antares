@@ -1,4 +1,4 @@
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient } from "jsr:@supabase/supabase-js@2.112.4";
 import { corsHeaders } from "../_shared/cors.ts";
 
 const UUID_RE =
@@ -41,8 +41,6 @@ Deno.serve(async (req: Request) => {
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(
@@ -83,39 +81,9 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const adminClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
+    const { error: deleteError } = await userClient.rpc("admin_delete_user", {
+      p_user_id: targetUserId,
     });
-
-    const { data: targetProfile } = await adminClient
-      .from("user_profiles")
-      .select("is_admin, is_disabled")
-      .eq("user_id", targetUserId)
-      .single();
-
-    if (targetProfile?.is_admin && !targetProfile.is_disabled) {
-      const { count, error: countError } = await adminClient
-        .from("user_profiles")
-        .select("user_id", { count: "exact", head: true })
-        .eq("is_admin", true)
-        .eq("is_disabled", false);
-
-      if (countError) {
-        return new Response(
-          JSON.stringify({ error: countError.message }),
-          { status: 400, headers: { ...cors, "Content-Type": "application/json" } },
-        );
-      }
-
-      if ((count ?? 0) <= 1) {
-        return new Response(
-          JSON.stringify({ error: "No se puede eliminar al último administrador activo" }),
-          { status: 400, headers: { ...cors, "Content-Type": "application/json" } },
-        );
-      }
-    }
-
-    const { error: deleteError } = await adminClient.auth.admin.deleteUser(targetUserId);
 
     if (deleteError) {
       return new Response(
