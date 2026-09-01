@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib
 import time
+from contextlib import nullcontext
 
 import pytest
 
@@ -241,3 +242,68 @@ def test_every_electron_backend_method_resolves() -> None:
     reg = HandlerRegistry()
     unresolved = [m for m in methods if reg.get(m) is None]
     assert unresolved == []
+
+
+def test_warm_post_ready_releases_critical_waiters_before_formatos_warm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """pypdf warm (~770 ms cold) must run AFTER WARM_CRITICAL_DONE is set."""
+    import sys
+    import types
+
+    from backend.handlers import WARM_CRITICAL_DONE, HandlerRegistry
+
+    order: list[str] = []
+    monkeypatch.setattr(WARM_CRITICAL_DONE, "set", lambda: order.append("critical_done"), raising=False)
+
+    fake_pdf_html = types.SimpleNamespace(write_pdf_sanitized=lambda html: b"%PDF-fake")
+    monkeypatch.setitem(sys.modules, "backend.utils.pdf_html", fake_pdf_html)
+    monkeypatch.setattr("backend.handlers.serialized_import", nullcontext)
+
+    reg = HandlerRegistry()
+    # Keep the test hermetic: don't really import canvas/conversion/formatos,
+    # only record that warm_post_ready orders critical release first.
+    monkeypatch.setattr(reg, "warm", lambda modules=None: order.append("handler_warm"))
+    monkeypatch.setattr(reg, "_warm_formatos_core", lambda: order.append("formatos_import"))
+
+    reg.warm_post_ready()
+
+    assert "critical_done" in order, "WARM_CRITICAL_DONE must be set during warm_post_ready"
+    assert "formatos_import" in order, "formatos warm must run during warm_post_ready"
+    assert order.index("critical_done") < order.index("formatos_import"), (
+        f"formatos warm must run after critical release, got order={order}"
+    )
+
+
+def test_warm_formatos_core_failure_is_non_fatal(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failing formatos import must not break warm_post_ready."""
+    from backend.handlers import HandlerRegistry
+
+    real_import = importlib.import_module
+
+    def failing_import(name: str, package: str | None = None):  # type: ignore[no-untyped-def]
+        if name == "backend.core.formatos":
+            raise ImportError("boom")
+        return real_import(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", failing_import)
+    monkeypatch.setattr("backend.handlers.serialized_import", nullcontext)
+
+    reg = HandlerRegistry()
+    reg._warm_formatos_core()  # must not raise
+
+
+def test_warm_core_does_not_import_formatos_core(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The pre-ready handshake must stay off the pypdf cliff."""
+    import sys
+
+    from backend.handlers import HandlerRegistry
+
+    saved = sys.modules.pop("backend.core.formatos", None)
+    try:
+        reg = HandlerRegistry()
+        reg.warm_core()
+        assert "backend.core.formatos" not in sys.modules
+    finally:
+        if saved is not None:
+            sys.modules["backend.core.formatos"] = saved
