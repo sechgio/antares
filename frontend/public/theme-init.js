@@ -13,6 +13,7 @@
     var mode = localStorage.getItem('hc_theme_mode');
     if (mode) {
       root.dataset.themeMode = mode;
+      var isLightMode = mode === 'light';
       if (mode === 'dark') {
         root.classList.add('theme-dark');
         root.classList.remove('theme-light');
@@ -21,6 +22,7 @@
         root.classList.remove('theme-dark');
       } else {
         var systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        isLightMode = !systemDark;
         if (systemDark) {
           root.classList.add('theme-dark');
           root.classList.remove('theme-light');
@@ -29,6 +31,7 @@
           root.classList.remove('theme-dark');
         }
       }
+      root.dataset.theme = isLightMode ? 'light' : 'dark';
     }
     var density = localStorage.getItem('hc_theme_density');
     if (density) {

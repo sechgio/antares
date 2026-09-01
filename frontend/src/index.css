@@ -144,6 +144,22 @@
 }
 
 @layer components {
+  html[data-sidebar-translucent="true"] [data-slot="sidebar"] {
+    background-color: color-mix(in srgb, var(--sidebar) 78%, transparent);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    html[data-sidebar-translucent="true"] [data-slot="sidebar"] {
+      background-color: var(--sidebar);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+}
+
+@layer components {
   .app-titlebar {
     -webkit-app-region: drag;
   }

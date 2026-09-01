@@ -55,6 +55,7 @@ describe('restoreCachedTheme', () => {
 
     expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('#00FF88');
     expect(document.documentElement.dataset.themeMode).toBe('dark');
+    expect(document.documentElement.dataset.theme).toBe('dark');
     expect(document.documentElement.dataset.themeDensity).toBe('compact');
     expect(document.documentElement.dataset.pointerCursors).toBe('true');
     expect(document.documentElement.dataset.sidebarTranslucent).toBe('false');
@@ -133,9 +134,38 @@ describe('applyThemeToCSS', () => {
     applyThemeToCSS(backendTheme, 'dark', 'custom');
 
     expect(document.documentElement.dataset.themeMode).toBe('dark');
+    expect(document.documentElement.dataset.theme).toBe('dark');
     expect(document.documentElement.dataset.pointerCursors).toBe('true');
+    expect(document.documentElement.style.getPropertyValue('--app-contrast')).toBe('60');
     expect(localStorage.getItem(THEME_MODE_CACHE_KEY)).toBe('dark');
     expect(localStorage.getItem(THEME_DENSITY_CACHE_KEY)).toBeTruthy();
     expect(localStorage.getItem(THEME_ACTIVE_CACHE_KEY)).toContain('Vanta Black');
+  });
+
+  it('applies appearance preferences to the live DOM contract', () => {
+    applyThemeToCSS(
+      {
+        ...backendTheme,
+        contrast: '100',
+        density: 'compact',
+        sidebar_translucent: 'true',
+      },
+      'dark',
+      'custom',
+    );
+
+    expect(document.documentElement.style.getPropertyValue('--app-contrast')).toBe('100');
+    expect(document.documentElement.style.getPropertyValue('--text-secondary')).toBe('#FFFFFF');
+    expect(document.documentElement.dataset.themeDensity).toBe('compact');
+    expect(document.documentElement.dataset.sidebarTranslucent).toBe('true');
+    expect(localStorage.getItem(THEME_DENSITY_CACHE_KEY)).toBe('compact');
+  });
+
+  it('marks a light custom theme for legacy module selectors', () => {
+    applyThemeToCSS({ ...backendTheme, bg: '#FFFFFF', bg_secondary: '#F8FAFC' }, 'dark', 'custom');
+
+    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(document.documentElement.classList.contains('theme-light')).toBe(true);
+    expect(document.documentElement.classList.contains('theme-dark')).toBe(false);
   });
 });

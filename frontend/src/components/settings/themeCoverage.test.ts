@@ -18,6 +18,7 @@ const THEMED_UI_FILES = [
   'components/conversion/ConversionPresets.tsx',
   'components/conversion/RenameCard.tsx',
   'components/history/HistoryView.tsx',
+  'components/history/runTypes.ts',
   'components/history/RunList.tsx',
   'components/history/RunDetail.tsx',
   'components/layout/TitleBar.tsx',
