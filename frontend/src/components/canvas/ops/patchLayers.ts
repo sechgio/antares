@@ -18,8 +18,11 @@ export function patchLayersById(
   return next;
 }
 
-/** Replace a single layer by id; returns same ref if id missing. */
+/** Replace a single layer by id; returns same ref if id missing or layer unchanged. */
 export function replaceLayerById(layers: CanvasLayer[], layer: CanvasLayer): CanvasLayer[] {
-  const updates = new Map<string, CanvasLayer>([[layer.id, layer]]);
-  return patchLayersById(layers, updates);
+  const idx = layers.findIndex((l) => l.id === layer.id);
+  if (idx < 0 || layers[idx] === layer) return layers;
+  const next = layers.slice();
+  next[idx] = layer;
+  return next;
 }

@@ -262,4 +262,56 @@ describe('canvas perf hot path', () => {
     }
     expect(performance.now() - t0).toBeLessThan(50);
   });
+
+  it('layerBounds caches results by cssVars reference', async () => {
+    const { layerBounds } = await import('../ops/layerBounds');
+    const layer = createLayer('rect', {
+      id: 'r1',
+      cssVars: {
+        '--translate-x': '15mm',
+        '--translate-y': '25mm',
+        '--width': '30mm',
+        '--height': '40mm',
+      },
+    });
+    const b1 = layerBounds(layer);
+    const b2 = layerBounds(layer);
+    expect(b1).toBe(b2);
+    expect(b1.x).toBe(15);
+    expect(b1.y).toBe(25);
+    expect(b1.w).toBe(30);
+    expect(b1.h).toBe(40);
+  });
+
+  it('selectionBounds single item fast-path matches multi-item logic', async () => {
+    const { selectionBounds } = await import('../ops/selectionTransform');
+    const layers = makeLayers(20);
+    const single = selectionBounds(layers, ['l3']);
+    expect(single).toEqual({
+      x: 30,
+      y: 0,
+      w: 8,
+      h: 8,
+    });
+  });
+
+  it('buildSpatialIndex and compositionHiddenLayerIds cache per layers instance', async () => {
+    const { buildSpatialIndex } = await import('../ops/spatialIndex');
+    const { compositionHiddenLayerIds } = await import('../ops/booleanOps');
+    const layers = makeLayers(50);
+    const idx1 = buildSpatialIndex(layers);
+    const idx2 = buildSpatialIndex(layers);
+    expect(idx1).toBe(idx2);
+
+    const hide1 = compositionHiddenLayerIds(layers);
+    const hide2 = compositionHiddenLayerIds(layers);
+    expect(hide1).toBe(hide2);
+  });
+
+  it('parseMm fast-path parses mm, px and invalid strings accurately', async () => {
+    const { parseMm } = await import('../types');
+    expect(parseMm('96px')).toBeCloseTo(25.4, 10);
+    expect(parseMm(undefined, 5)).toBe(5);
+    expect(parseMm('invalid', 12)).toBe(12);
+  });
 });

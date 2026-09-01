@@ -75,15 +75,35 @@ function isTransformable(layer: CanvasLayer): boolean {
 
 /** Axis-aligned union of selected transformable layers (includes rotation AABB). */
 export function selectionBounds(layers: CanvasLayer[], ids: string[]): RectMm | null {
+  if (!ids.length) return null;
+  if (ids.length === 1) {
+    const targetId = ids[0];
+    const target = layers.find((l) => l.id === targetId);
+    if (!target || !isTransformable(target)) return null;
+    const b = layerBounds(target);
+    return { x: b.x, y: b.y, w: b.w, h: b.h };
+  }
   const idSet = new Set(ids);
-  const targets = layers.filter((l) => idSet.has(l.id) && isTransformable(l));
-  if (!targets.length) return null;
-  const boxes = targets.map(layerBounds);
-  const x = Math.min(...boxes.map((b) => b.x));
-  const y = Math.min(...boxes.map((b) => b.y));
-  const right = Math.max(...boxes.map((b) => b.right));
-  const bottom = Math.max(...boxes.map((b) => b.bottom));
-  return { x, y, w: right - x, h: bottom - y };
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxRight = -Infinity;
+  let maxBottom = -Infinity;
+  let found = false;
+
+  for (let i = 0; i < layers.length; i++) {
+    const layer = layers[i]!;
+    if (idSet.has(layer.id) && isTransformable(layer)) {
+      found = true;
+      const b = layerBounds(layer);
+      if (b.x < minX) minX = b.x;
+      if (b.y < minY) minY = b.y;
+      if (b.right > maxRight) maxRight = b.right;
+      if (b.bottom > maxBottom) maxBottom = b.bottom;
+    }
+  }
+
+  if (!found) return null;
+  return { x: minX, y: minY, w: maxRight - minX, h: maxBottom - minY };
 }
 
 function rectsIntersect(a: RectMm, b: RectMm): boolean {

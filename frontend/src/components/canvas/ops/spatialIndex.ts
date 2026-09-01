@@ -32,12 +32,17 @@ function rectsOverlap(a: BBox, b: BBox): boolean {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
+const spatialIndexCache = new WeakMap<CanvasLayer[], SpatialIndex>();
+
 /**
  * Build a spatial index from the given layers.
  * Only indexes transformable layers (non-frame, visible, unlocked).
  * `hitTest` returns candidates top-most first (higher document index wins).
  */
 export function buildSpatialIndex(layers: CanvasLayer[]): SpatialIndex {
+  const cached = spatialIndexCache.get(layers);
+  if (cached) return cached;
+
   const grid = new Map<string, Cell>();
   const bboxes = new Map<string, BBox>();
   const zOrder = new Map<string, number>();
@@ -110,5 +115,7 @@ export function buildSpatialIndex(layers: CanvasLayer[]): SpatialIndex {
     return hits;
   }
 
-  return { query, hitTest };
+  const index = { query, hitTest };
+  spatialIndexCache.set(layers, index);
+  return index;
 }
