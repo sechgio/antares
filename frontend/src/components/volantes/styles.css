@@ -23,6 +23,7 @@
     --vgen-accent: var(--accent-primary);
     --vgen-on-accent: var(--text-on-accent);
     --vgen-danger: var(--accent-red);
+    --vgen-on-danger: var(--text-on-danger);
     --vgen-shadow-sm: 0 1px 2px color-mix(in srgb, var(--bg-base) 18%, transparent);
     --vgen-shadow-md: 0 8px 24px color-mix(in srgb, var(--bg-base) 28%, transparent);
     --vgen-shadow-float: 0 16px 48px color-mix(in srgb, var(--bg-base) 40%, transparent);
@@ -1882,9 +1883,9 @@ textarea.vgen-input {
 }
 
 .vgen-floating-panel-btn.close:hover {
-    background: #ff4444;
-    border-color: #ff4444;
-    color: #ffffff;
+    background: var(--vgen-danger);
+    border-color: var(--vgen-danger);
+    color: var(--vgen-on-danger);
 }
 
 .vgen-floating-panel-tabs {
@@ -1954,8 +1955,8 @@ textarea.vgen-input {
     padding: 0;
     border: none;
     border-radius: 50%;
-    background: linear-gradient(135deg, #1a1a1a 0%, #000000 100%);
-    color: #ffffff;
+    background: var(--vgen-ink);
+    color: var(--vgen-bg-main);
     font-family: inherit;
     cursor: pointer;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2), 0 2px 6px rgba(0, 0, 0, 0.15);
@@ -1963,13 +1964,13 @@ textarea.vgen-input {
 }
 
 .vgen-fab:hover {
-    background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
+    background: color-mix(in srgb, var(--vgen-ink) 88%, var(--vgen-bg-main));
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25), 0 4px 12px rgba(0, 0, 0, 0.2);
     transform: translateY(-50%) scale(1.08);
 }
 
 .vgen-fab.active {
-    background: linear-gradient(135deg, #333333 0%, #222222 100%);
+    background: color-mix(in srgb, var(--vgen-ink) 78%, var(--vgen-bg-main));
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3), inset 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 
@@ -2404,8 +2405,8 @@ textarea.vgen-input {
     position: absolute;
     top: -4px;
     right: -4px;
-    background: #3b82f6;
-    color: #ffffff;
+    background: var(--accent-blue);
+    color: var(--text-on-accent);
     font-size: 0.65rem;
     font-weight: 700;
     min-width: 18px;
@@ -2442,5 +2443,106 @@ textarea.vgen-input {
     .vgen-date-picker-trigger:active,
     .vgen-time-picker-trigger:active {
         transform: none;
+    }
+}
+
+/* Keep the editor usable when the desktop shell is narrow. */
+@media (max-width: 1100px) {
+    .vgen-header {
+        height: auto;
+        min-height: 45px;
+        gap: 8px;
+        padding: 8px 16px;
+    }
+
+    .vgen-header-actions {
+        gap: 6px;
+    }
+
+    .vgen-sidebar {
+        width: min(300px, 34vw);
+    }
+
+    .vgen-canvas {
+        padding: 24px;
+    }
+
+    .vgen-fab {
+        right: 12px;
+    }
+}
+
+@media (max-width: 800px) {
+    .vgen-app {
+        overflow-y: auto;
+    }
+
+    .vgen-header {
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .vgen-layout-toggle {
+        order: 3;
+        width: 100%;
+    }
+
+    .vgen-layout-toggle button {
+        flex: 1;
+        justify-content: center;
+    }
+
+    .vgen-header-actions {
+        width: 100%;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .vgen-header-actions .v-btn {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .vgen-workspace {
+        flex-direction: column;
+        overflow: visible;
+    }
+
+    .vgen-sidebar {
+        width: 100%;
+        max-height: 54vh;
+        min-height: 220px;
+        border-right: 0;
+        border-bottom: 1px solid var(--vgen-line);
+    }
+
+    .vgen-canvas {
+        min-height: 60vh;
+        padding: 16px 8px;
+    }
+
+    .vgen-fab {
+        right: 12px;
+        width: 44px;
+        height: 44px;
+    }
+
+    .vgen-floating-panel {
+        max-width: calc(100vw - 1rem);
+    }
+}
+
+@media (max-width: 480px) {
+    .vgen-header {
+        padding: 8px;
+    }
+
+    .vgen-header-actions .v-btn {
+        font-size: 0.7rem;
+        padding-inline: 8px;
+    }
+
+    .vgen-canvas {
+        min-height: 55vh;
     }
 }

@@ -31,7 +31,7 @@ export default function SettingsPanel({
   onOpenCropEditor,
 }: SettingsPanelProps) {
   return (
-    <aside className="custom-scrollbar flex h-full flex-col gap-1.5 overflow-y-auto xl:pr-0.5">
+    <aside data-surface-part="settings" className="custom-scrollbar flex h-full flex-col gap-1.5 overflow-y-auto xl:pr-0.5">
 
       <OperationSection
         title="Recorte"

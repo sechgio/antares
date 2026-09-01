@@ -1,0 +1,47 @@
+import { describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const SRC_DIR = path.resolve(__dirname, '..');
+
+function readSource(relativePath: string): string {
+  return fs.readFileSync(path.join(SRC_DIR, relativePath), 'utf-8');
+}
+
+describe('responsive surface contracts', () => {
+  const indexCss = readSource('index.css');
+  const volantesCss = readSource('components/volantes/styles.css');
+
+  it('scopes responsive rules to the dense feature surfaces', () => {
+    for (const surface of ['formatos', 'ubicaciones', 'image-optimizer']) {
+      expect(indexCss).toContain(`[data-surface="${surface}"]`);
+    }
+
+    expect(indexCss).toContain('@media (max-width: 980px)');
+    expect(indexCss).toContain('@media (max-width: 1279px) and (min-width: 900px)');
+    expect(indexCss).toContain('@media (max-width: 899px)');
+  });
+
+  it('keeps surface parts addressable without depending on fragile utility order', () => {
+    const formatos = readSource('components/formatos/FormatosView.tsx');
+    const ubicaciones = readSource('components/UbicacionesView.tsx');
+    const optimizer = readSource('components/image-optimizer/index.tsx');
+
+    expect(formatos).toContain('data-surface="formatos"');
+    expect(formatos).toContain('data-surface-part="preview"');
+    expect(formatos).toContain('data-surface-part="sidebar"');
+    expect(ubicaciones).toContain('data-surface="ubicaciones"');
+    expect(ubicaciones).toContain('data-surface-part="workspace"');
+    expect(optimizer).toContain('data-surface="image-optimizer"');
+    expect(optimizer).toContain('data-surface-part="workspace"');
+  });
+
+  it('uses theme tokens for Volantes responsive controls', () => {
+    const volantes = readSource('components/volantes/VolantesView.tsx');
+
+    expect(volantes).toContain('data-surface="volantes"');
+    expect(volantesCss).toContain('--vgen-on-danger: var(--text-on-danger)');
+    expect(volantesCss).toContain('background: var(--vgen-danger)');
+    expect(volantesCss).toContain('@media (max-width: 800px)');
+  });
+});

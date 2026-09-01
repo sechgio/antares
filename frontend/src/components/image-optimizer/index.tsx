@@ -688,6 +688,7 @@ export default function ImageOptimizer() {
   return (
     <div
       ref={rootRef}
+      data-surface="image-optimizer"
       className={`relative flex h-full flex-col overflow-hidden bg-[var(--bg-base)] px-1.5 py-1.5 text-[var(--text-primary)] antialiased transition-[box-shadow] duration-150 ${
         isDragActive ? 'shadow-[inset_0_0_0_2px_var(--accent-blue)]' : ''
       }`}
@@ -826,7 +827,7 @@ export default function ImageOptimizer() {
           </div>
         </section>
 
-        <div className="grid min-h-0 flex-1 gap-2 pb-1 xl:grid-cols-[220px_minmax(0,1fr)_260px]">
+        <div data-surface-part="workspace" className="grid min-h-0 flex-1 gap-2 pb-1 xl:grid-cols-[220px_minmax(0,1fr)_260px]">
           <SettingsPanel
             settings={settings}
             previewNames={previewNames}

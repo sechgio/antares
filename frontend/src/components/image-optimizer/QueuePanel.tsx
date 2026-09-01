@@ -104,7 +104,7 @@ export default function QueuePanel({
   };
 
   return (
-    <section className={`relative flex h-full flex-col overflow-hidden ${glassPanelClass}`}>
+    <section data-surface-part="queue" className={`relative flex h-full flex-col overflow-hidden ${glassPanelClass}`}>
       <header className="flex shrink-0 flex-col gap-1 px-2.5 pb-1.5 pt-2.5">
         <div className="flex items-center justify-between gap-2">
           <p className="text-[11px] font-semibold text-[var(--text-primary)]">

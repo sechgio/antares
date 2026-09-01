@@ -451,7 +451,7 @@ export default function VolantesView() {
 
   /* ── render ── */
   return (
-    <div className="vgen-app">
+    <div data-surface="volantes" className="vgen-app">
       <header className="vgen-header">
         <div className="vgen-brand">
           <span className="vgen-badge">{records.length} registros</span>

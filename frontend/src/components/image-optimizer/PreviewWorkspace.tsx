@@ -81,6 +81,7 @@ export default function PreviewWorkspace({
   if (items.length === 0) {
     return (
       <section
+        data-surface-part="preview"
         className={`relative flex h-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-xl px-6 text-center transition-[border-color,background-color,box-shadow] duration-150 ${
           isDragActive
             ? 'border border-dashed border-[var(--accent-blue)] bg-[var(--bg-elevated)]'
@@ -120,7 +121,7 @@ export default function PreviewWorkspace({
 
   if (viewMode === 'grid') {
     return (
-      <section className={`relative flex h-full flex-col overflow-hidden ${previewStageShellClass}`}>
+      <section data-surface-part="preview" className={`relative flex h-full flex-col overflow-hidden ${previewStageShellClass}`}>
         <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto p-2.5">
           <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
             {items.map((item) => {
@@ -220,7 +221,7 @@ export default function PreviewWorkspace({
   }
 
   return (
-    <section className="flex h-full flex-col overflow-hidden">
+    <section data-surface-part="preview" className="flex h-full flex-col overflow-hidden">
       <div className={`relative flex flex-1 flex-col gap-1.5 overflow-hidden p-2 ${previewStageShellClass}`}>
         <div className="flex shrink-0 items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1.5">
