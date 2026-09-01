@@ -99,10 +99,20 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
   return (
     <aside className="canvas-generate-aside">
       <div className="canvas-generate-progress">
-        <div className="flex flex-1 gap-1" aria-hidden>
+        <span className="canvas-generate-progress-label">Progreso</span>
+        <div
+          className="flex flex-1 gap-1"
+          role="progressbar"
+          aria-label={`Progreso de generación: ${completedCount} de 6`}
+          aria-valuemin={0}
+          aria-valuemax={6}
+          aria-valuenow={completedCount}
+          aria-valuetext={`${completedCount} de 6 pasos listos`}
+        >
           {stepStates.map((done, i) => (
             <span
               key={i}
+              aria-hidden
               className="h-1 flex-1 rounded-full transition-colors duration-300"
               style={{ background: done ? 'var(--cv-accent)' : 'var(--cv-border-strong)' }}
             />
@@ -114,7 +124,7 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
       </div>
 
       <div className="flex flex-1 flex-col gap-1.5 overflow-y-auto">
-        <GenerateStep number="0" title="Logos y Cabecera" icon={<Settings size={12} />} defaultOpen={!!(logoLeft || logoRight)} status={stepStates[0] ? 'done' : 'pending'}>
+        <GenerateStep number="0" title="Logos y Cabecera" icon={<Settings size={12} />} defaultOpen={!!(logoLeft || logoRight)} status={stepStates[0] ? 'done' : 'pending'} statusLabel={stepStates[0] ? 'Listo' : 'Pendiente'}>
           <div className="grid grid-cols-2 gap-1.5">
             {(['left', 'right'] as const).map((side) => {
               const logo = side === 'left' ? logoLeft : logoRight;
@@ -166,6 +176,7 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
               : <AlertCircle size={11} style={{ color: 'var(--cv-danger)' }} />
           }
           status={stepStates[1] ? 'done' : 'pending'}
+          statusLabel={stepStates[1] ? 'Listo' : 'Pendiente'}
         >
           <div className="space-y-1.5">
             <CanvasSelect
@@ -204,6 +215,9 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
               </div>
               <CanvasToggle checked={requiresImages} onChange={onRequiresImages} />
             </div>
+            <p className="canvas-generate-helper">
+              Actívalo solo si cada fila necesita fotos para completar el PDF.
+            </p>
           </div>
         </GenerateStep>
 
@@ -213,6 +227,7 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
           icon={<FileSpreadsheet size={12} />}
           badge={rows.length > 0 ? <span className="text-[9px] font-medium" style={{ color: 'var(--cv-accent)' }}>{rows.length}</span> : null}
           status={stepStates[2] ? 'done' : 'pending'}
+          statusLabel={stepStates[2] ? 'Listo' : 'Pendiente'}
         >
           <label className="block w-full cursor-pointer">
             <div
@@ -253,6 +268,7 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
           disabled={headers.length === 0}
           defaultOpen={headers.length > 0}
           status={stepStates[3] ? 'done' : 'pending'}
+          statusLabel={stepStates[3] ? 'Listo' : 'Pendiente'}
         >
           <div className="space-y-1.5">
             <label className="block">
@@ -292,7 +308,7 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
                 ))}
               </div>
             ) : (
-              <p className="text-[9px]" style={{ color: 'var(--cv-text-muted)' }}>
+              <p className="canvas-callout-info">
                 Sin campos en la plantilla. Añade capas «Campo» en Diseñar para mapear columnas.
               </p>
             )}
@@ -306,6 +322,7 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
           disabled={!idColumn || !requiresImages}
           badge={images.length > 0 ? <span className="text-[9px] font-medium" style={{ color: 'var(--cv-accent)' }}>{images.length}</span> : null}
           status={stepStates[4] ? 'done' : 'pending'}
+          statusLabel={stepStates[4] ? 'Listo' : 'Pendiente'}
         >
           {requiresImages ? (
             <label className="block w-full cursor-pointer">
@@ -347,6 +364,7 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
           icon={<Search size={12} />}
           disabled={requiresImages ? images.length === 0 : rows.length === 0}
           status={stepStates[5] ? 'done' : 'pending'}
+          statusLabel={stepStates[5] ? 'Listo' : 'Pendiente'}
         >
           <div className="space-y-1.5">
             <div className="relative">
@@ -472,6 +490,14 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
               )}
 
               <CanvasToggle checked={showPlaceholders} onChange={onShowPlaceholders} label="Mostrar placeholders" />
+
+              <p className="canvas-export-scope-hint" data-testid="canvas-export-scope-hint">
+                {rows.length === 0
+                  ? 'Carga un Excel/CSV para habilitar la exportación.'
+                  : exportScope === 'all'
+                    ? `Se exportarán ${rows.length} filas en un PDF consolidado.`
+                    : 'Se exportará solo la fila seleccionada.'}
+              </p>
 
               <div className="space-y-1.5 pt-0.5">
                 <button

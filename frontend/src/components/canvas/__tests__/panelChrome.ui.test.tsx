@@ -90,6 +90,7 @@ describe('RightPanel hide control', () => {
       <RightPanel {...rightPanelBase} layer={layer} open onHidePanel={onHidePanel} />,
     );
 
+    expect(screen.getByTestId('canvas-right-panel')).toHaveClass('canvas-panel-chrome--right');
     expect(screen.getByTestId('canvas-zoom-slot')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('canvas-toggle-right-panel'));
     expect(onHidePanel).toHaveBeenCalledTimes(1);

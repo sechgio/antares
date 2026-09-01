@@ -1,5 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { createLayer } from '../constants';
 import LeftSidebar from '../editor/LeftSidebar';
 
 const baseProps = {
@@ -32,6 +33,12 @@ const baseProps = {
 };
 
 describe('LeftSidebar Archivos picker during sync', () => {
+  it('marks the sidebar as a compact overlay surface', () => {
+    render(<LeftSidebar {...baseProps} />);
+
+    expect(screen.getByTestId('canvas-left-panel')).toHaveClass('canvas-panel-chrome--left');
+  });
+
   it('keeps the Archivos select mounted while docsSyncing', () => {
     const { rerender } = render(<LeftSidebar {...baseProps} />);
     expect(screen.getByLabelText('Archivo abierto')).toBeInTheDocument();
@@ -41,5 +48,44 @@ describe('LeftSidebar Archivos picker during sync', () => {
 
     expect(screen.getByLabelText('Archivo abierto')).toBeInTheDocument();
     expect(screen.queryByLabelText('Sincronizando archivos')).not.toBeInTheDocument();
+  });
+
+  it('shows page and visible layer counts', () => {
+    const layer = createLayer('text', { id: 'layer-title', name: 'Título' });
+    render(
+      <LeftSidebar
+        {...baseProps}
+        layers={[layer]}
+        pageCount={2}
+        pages={[{ id: 'p1', name: 'Página 1' }, { id: 'p2', name: 'Página 2' }]}
+      />,
+    );
+
+    expect(screen.getByTestId('canvas-pages-count')).toHaveTextContent('2');
+    expect(screen.getByTestId('canvas-layers-count')).toHaveTextContent('1');
+  });
+
+  it('explains when a layer search has no matches', () => {
+    const layer = createLayer('text', { id: 'layer-title', name: 'Título' });
+    render(<LeftSidebar {...baseProps} layers={[layer]} />);
+
+    fireEvent.change(screen.getByLabelText('Buscar capas'), { target: { value: 'inexistente' } });
+
+    expect(screen.getByText('No se encontraron capas')).toBeInTheDocument();
+    expect(screen.getByText('Prueba otro nombre o tipo.')).toBeInTheDocument();
+  });
+
+  it('keeps layer selection connected to the existing callback', () => {
+    const onSelect = vi.fn();
+    const layer = createLayer('text', { id: 'layer-title', name: 'Título' });
+    render(<LeftSidebar {...baseProps} layers={[layer]} onSelect={onSelect} />);
+
+    fireEvent.click(
+      screen
+        .getByTestId('canvas-left-panel')
+        .querySelector('[data-layer-id="layer-title"] [role="button"]')!,
+    );
+
+    expect(onSelect).toHaveBeenCalledWith('layer-title', false);
   });
 });
