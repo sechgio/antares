@@ -24,6 +24,7 @@ const THEMED_UI_FILES = [
   'components/layout/TitleBar.tsx',
   'components/layout/TaskNotificationsBell.tsx',
   'components/preview-panel/PreviewPanelView.tsx',
+  'components/preview-panel/DataPreviewModal.tsx',
   'components/formatos/FormatosView.tsx',
   'components/formatos/MappingOverlay.tsx',
   'components/formatos/MappingPreviewPanel.tsx',

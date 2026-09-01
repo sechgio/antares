@@ -25,6 +25,7 @@ import {
   Minimize2,
 } from 'lucide-react';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { buildImagesByRecordId, normalizeRecordId } from '../canvas/runtime/excel';
 
 export interface DataPreviewModalProps {
@@ -107,24 +108,24 @@ function renderStatusBadge(value: string, query = '') {
   const normalized = value.trim().toUpperCase();
   if (['ATENDIDO', 'COMPLETO', 'COMPLETADO', 'EJECUTADO', 'FINALIZADO', 'OK', 'APROBADO', 'ACTIVO'].includes(normalized)) {
     return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 whitespace-nowrap">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[var(--accent-green)]/15 text-[var(--accent-green)] border border-[var(--accent-green)]/30 whitespace-nowrap">
+        <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent-green)]" />
         <HighlightMatch text={value} query={query} />
       </span>
     );
   }
   if (['PENDIENTE', 'EN PROCESO', 'EN CURSO', 'INICIADO', 'ASIGNADO', 'REVISION', 'EN ESPERA'].includes(normalized)) {
     return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30 whitespace-nowrap">
-        <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[var(--accent-yellow)]/15 text-[var(--accent-yellow)] border border-[var(--accent-yellow)]/30 whitespace-nowrap">
+        <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent-yellow)]" />
         <HighlightMatch text={value} query={query} />
       </span>
     );
   }
   if (['CANCELADO', 'ANULADO', 'RECHAZADO', 'NO ATENDIDO', 'URGENTE', 'ERROR', 'BAJA'].includes(normalized)) {
     return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30 whitespace-nowrap">
-        <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[var(--accent-red)]/15 text-[var(--accent-red)] border border-[var(--accent-red)]/30 whitespace-nowrap">
+        <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent-red)]" />
         <HighlightMatch text={value} query={query} />
       </span>
     );
@@ -169,6 +170,9 @@ export default function DataPreviewModal({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const columnMenuRef = useRef<HTMLDivElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  useFocusTrap(modalRef, open && data.length > 0, searchInputRef);
 
   // Sync focused row when selectedIndex changes
   useEffect(() => {
@@ -474,7 +478,7 @@ export default function DataPreviewModal({
             style={style}
             onClick={() => onSetFocused(originalIndex)}
             onDoubleClick={() => onHandleRowClick(originalIndex)}
-            className={`flex items-center border-b border-[#222222] cursor-pointer transition-colors ${
+            className={`flex items-center border-b border-[var(--border-subtle)] cursor-pointer transition-colors ${
               isSelected
                 ? 'bg-[color-mix(in_srgb,var(--accent-primary)_15%,transparent)] font-medium'
                 : isFocused
@@ -485,7 +489,7 @@ export default function DataPreviewModal({
             }`}
           >
             <div
-              className={`flex h-full w-12 shrink-0 items-center justify-center border-r border-[#262626] font-mono text-[11px] tabular-nums ${
+              className={`flex h-full w-12 shrink-0 items-center justify-center border-r border-[var(--border-subtle)] font-mono text-[11px] tabular-nums ${
                 isSelected
                   ? 'bg-[var(--bg-base)] font-bold text-[var(--accent-primary)]'
                   : isFocused
@@ -514,7 +518,7 @@ export default function DataPreviewModal({
               return (
                 <div
                   key={header}
-                  className={`flex h-full min-w-0 flex-1 items-center border-r border-[#1f1f1f] ${dPad} ${
+                  className={`flex h-full min-w-0 flex-1 items-center border-r border-[var(--border-subtle)] ${dPad} ${
                     isSelected ? 'text-[var(--text-primary)] font-medium' : 'text-[var(--text-secondary)]'
                   } ${getColumnWidthClass(header)}`}
                   title={cellText}
@@ -534,12 +538,12 @@ export default function DataPreviewModal({
               );
             })}
             <div
-              className={`flex h-full w-28 shrink-0 items-center justify-center border-l border-[#262626] ${
+              className={`flex h-full w-28 shrink-0 items-center justify-center border-l border-[var(--border-subtle)] ${
                 isSelected ? 'bg-[var(--bg-base)]' : isFocused ? 'bg-[var(--bg-elevated)]' : 'bg-[var(--bg-base)]'
               }`}
             >
               {photoInfo.count > 0 ? (
-                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-400 whitespace-nowrap shadow-sm">
+                <span className="inline-flex items-center gap-1 rounded-full border border-[var(--accent-green)]/30 bg-[var(--accent-green)]/15 px-2 py-0.5 text-[10px] font-semibold text-[var(--accent-green)] whitespace-nowrap shadow-sm">
                   <ImageIcon size={11} />
                   {photoInfo.count} {photoInfo.count === 1 ? 'foto' : 'fotos'}
                 </span>
@@ -588,9 +592,11 @@ export default function DataPreviewModal({
       aria-labelledby="data-preview-modal-title"
     >
       <div
+        ref={modalRef}
         className={`w-full flex flex-col overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-base)] shadow-2xl transition-all duration-200 animate-scale-in ${
           isFullScreen ? 'h-[96vh] max-w-[98vw]' : 'h-[90vh] max-h-[940px] max-w-[1500px]'
         }`}
+        tabIndex={-1}
         style={{
           boxShadow:
             '0 24px 60px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px color-mix(in srgb, var(--border-medium) 60%, transparent)',
@@ -599,7 +605,7 @@ export default function DataPreviewModal({
         {/* ─── Modal Top Header ─── */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/80 px-5 py-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-primary)]/15 text-[var(--accent-primary)] border border-indigo-500/30 shadow-sm">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-primary)]/15 text-[var(--accent-primary)] border border-[var(--accent-primary)]/30 shadow-sm">
               <Table2 size={18} />
             </div>
             <div>
@@ -633,7 +639,7 @@ export default function DataPreviewModal({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Buscar en todas las columnas..."
-                className="h-8 w-full rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] pl-8 pr-7 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none transition-all focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-indigo-500/30"
+                className="h-8 w-full rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] pl-8 pr-7 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none transition-all focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary-glow)]"
               />
               {searchQuery && (
                 <button
@@ -840,7 +846,7 @@ export default function DataPreviewModal({
               <span>Todos</span>
               <span
                 className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
-                  photoFilter === 'all' ? 'bg-black/20 text-white' : 'bg-[var(--bg-input)] text-[var(--text-muted)]'
+                  photoFilter === 'all' ? 'bg-[color:var(--text-on-accent)]/20 text-[var(--text-on-accent)]' : 'bg-[var(--bg-input)] text-[var(--text-muted)]'
                 }`}
               >
                 {photoStats.total}
@@ -852,7 +858,7 @@ export default function DataPreviewModal({
               onClick={() => setPhotoFilter('with-photos')}
               className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-all ${
                 photoFilter === 'with-photos'
-                  ? 'bg-emerald-600 text-white shadow-sm'
+                  ? 'bg-[var(--accent-green)] text-[var(--text-on-accent)] shadow-sm'
                   : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]'
               }`}
             >
@@ -861,8 +867,8 @@ export default function DataPreviewModal({
               <span
                 className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
                   photoFilter === 'with-photos'
-                    ? 'bg-black/20 text-white'
-                    : 'bg-emerald-500/10 text-emerald-400'
+                    ? 'bg-[color:var(--text-on-accent)]/20 text-[var(--text-on-accent)]'
+                    : 'bg-[var(--accent-green)]/10 text-[var(--accent-green)]'
                 }`}
               >
                 {photoStats.withPhotos}
@@ -881,7 +887,7 @@ export default function DataPreviewModal({
               <span>Sin fotos</span>
               <span
                 className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
-                  photoFilter === 'without-photos' ? 'bg-black/20 text-white' : 'bg-[var(--bg-input)] text-[var(--text-muted)]'
+                  photoFilter === 'without-photos' ? 'bg-[color:var(--text-on-accent)]/20 text-[var(--text-on-accent)]' : 'bg-[var(--bg-input)] text-[var(--text-muted)]'
                 }`}
               >
                 {photoStats.withoutPhotos}
@@ -892,7 +898,7 @@ export default function DataPreviewModal({
           {/* Search match stats & Feedback chip */}
           <div className="flex items-center gap-3 text-[11px] text-[var(--text-muted)]">
             {copiedNotification && (
-              <span className="flex items-center gap-1 text-emerald-400 font-medium animate-fade-in">
+              <span className="flex items-center gap-1 text-[var(--accent-green)] font-medium animate-fade-in">
                 <CheckCheck size={12} /> {copiedNotification}
               </span>
             )}
@@ -957,10 +963,10 @@ export default function DataPreviewModal({
             ) : (
               <table className="w-full min-w-full border-collapse text-left">
                 <thead>
-                  <tr className="sticky top-0 z-20 border-b border-[#2a2a2a] bg-[var(--bg-elevated)]/95 backdrop-blur-md shadow-sm">
+                  <tr className="sticky top-0 z-20 border-b border-[var(--border-medium)] bg-[var(--bg-elevated)]/95 backdrop-blur-md shadow-sm">
                     {/* Sticky Row Number Header */}
                     <th
-                      className="sticky left-0 z-30 w-12 px-3 py-2.5 text-center font-semibold text-[11px] uppercase tracking-wider text-[var(--text-secondary)] bg-[var(--bg-elevated)]/95 border-r border-[#262626] cursor-pointer hover:text-[var(--text-primary)] select-none transition-colors"
+                      className="sticky left-0 z-30 w-12 px-3 py-2.5 text-center font-semibold text-[11px] uppercase tracking-wider text-[var(--text-secondary)] bg-[var(--bg-elevated)]/95 border-r border-[var(--border-subtle)] cursor-pointer hover:text-[var(--text-primary)] select-none transition-colors"
                       onClick={() => handleHeaderClick('#')}
                       title="Ordenar por número de fila"
                     >
@@ -982,7 +988,7 @@ export default function DataPreviewModal({
                         <th
                           key={header}
                           onClick={() => handleHeaderClick(header)}
-                          className={`px-3.5 py-2.5 font-semibold text-[11px] uppercase tracking-wider text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer select-none transition-colors border-r border-[#222222] ${getColumnWidthClass(
+                          className={`px-3.5 py-2.5 font-semibold text-[11px] uppercase tracking-wider text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer select-none transition-colors border-r border-[var(--border-subtle)] ${getColumnWidthClass(
                             header
                           )}`}
                           title={`Ordenar por ${header}`}
@@ -1008,7 +1014,7 @@ export default function DataPreviewModal({
                     {/* Photos Column Header */}
                     <th
                       onClick={() => handleHeaderClick('__fotos__')}
-                      className="sticky right-0 z-20 w-28 px-3 py-2.5 text-center font-semibold text-[11px] uppercase tracking-wider text-[var(--text-secondary)] bg-[var(--bg-elevated)]/95 border-l border-[#262626] cursor-pointer hover:text-[var(--text-primary)] select-none transition-colors"
+                      className="sticky right-0 z-20 w-28 px-3 py-2.5 text-center font-semibold text-[11px] uppercase tracking-wider text-[var(--text-secondary)] bg-[var(--bg-elevated)]/95 border-l border-[var(--border-subtle)] cursor-pointer hover:text-[var(--text-primary)] select-none transition-colors"
                       title="Ordenar por cantidad de fotos vinculadas"
                     >
                       <div className="flex items-center justify-center gap-1.5">
@@ -1025,7 +1031,7 @@ export default function DataPreviewModal({
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-[#222222]">
+                <tbody className="divide-y divide-[var(--border-subtle)]">
                   {useVirtual ? (
                     <tr>
                       <td colSpan={visibleHeaders.length + 2} className="p-0">
@@ -1060,7 +1066,7 @@ export default function DataPreviewModal({
                       >
                         {/* Sticky Row Index Cell */}
                         <td
-                          className={`sticky left-0 z-10 px-2 py-2 text-center font-mono text-[11px] tabular-nums border-r border-[#262626] transition-colors ${
+                          className={`sticky left-0 z-10 px-2 py-2 text-center font-mono text-[11px] tabular-nums border-r border-[var(--border-subtle)] transition-colors ${
                             isSelected
                               ? 'bg-[var(--bg-base)] font-bold text-[var(--accent-primary)]'
                               : isFocused
@@ -1092,7 +1098,7 @@ export default function DataPreviewModal({
                           return (
                             <td
                               key={header}
-                              className={`align-top border-r border-[#1f1f1f] ${densityPadding} ${
+                              className={`align-top border-r border-[var(--border-subtle)] ${densityPadding} ${
                                 isSelected ? 'text-[var(--text-primary)] font-medium' : 'text-[var(--text-secondary)]'
                               } ${getColumnWidthClass(header)}`}
                               title={cellText}
@@ -1122,7 +1128,7 @@ export default function DataPreviewModal({
 
                         {/* Photos Count Badge Cell */}
                         <td
-                          className={`sticky right-0 z-10 px-3 py-2.5 text-center align-middle border-l border-[#262626] transition-colors ${
+                          className={`sticky right-0 z-10 px-3 py-2.5 text-center align-middle border-l border-[var(--border-subtle)] transition-colors ${
                             isSelected
                               ? 'bg-[var(--bg-base)]'
                               : isFocused
@@ -1131,7 +1137,7 @@ export default function DataPreviewModal({
                           }`}
                         >
                           {photoInfo.count > 0 ? (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-400 whitespace-nowrap shadow-sm">
+                            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--accent-green)]/30 bg-[var(--accent-green)]/15 px-2 py-0.5 text-[10px] font-semibold text-[var(--accent-green)] whitespace-nowrap shadow-sm">
                               <ImageIcon size={11} />
                               {photoInfo.count} {photoInfo.count === 1 ? 'foto' : 'fotos'}
                             </span>
@@ -1193,7 +1199,7 @@ export default function DataPreviewModal({
                     <span
                       className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
                         focusedRowPhotoInfo.count > 0
-                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                          ? 'bg-[var(--accent-green)]/15 text-[var(--accent-green)] border border-[var(--accent-green)]/30'
                           : 'bg-[var(--bg-elevated)] text-[var(--text-muted)]'
                       }`}
                     >
@@ -1206,7 +1212,7 @@ export default function DataPreviewModal({
                       {focusedRowPhotoInfo.files.map((file, i) => (
                         <div
                           key={i}
-                          className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] bg-[var(--bg-elevated)]/60 px-2 py-1 rounded border border-[#222222]"
+                          className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] bg-[var(--bg-elevated)]/60 px-2 py-1 rounded border border-[var(--border-subtle)]"
                         >
                           <span className="truncate font-mono">{file.name}</span>
                           <span className="text-[9px] text-[var(--text-muted)] shrink-0 font-mono ml-2">
@@ -1233,7 +1239,7 @@ export default function DataPreviewModal({
                     return (
                       <div
                         key={header}
-                        className="group/field relative rounded-lg border border-[#222222] bg-[var(--bg-base)] p-2.5 hover:border-[var(--border-medium)] transition-colors"
+                        className="group/field relative rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] p-2.5 hover:border-[var(--border-medium)] transition-colors"
                       >
                         <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1">
                           <span className="font-semibold">{header}</span>
