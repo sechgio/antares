@@ -14,10 +14,12 @@ const mockApi = vi.hoisted(() => ({
     dialogSave: vi.fn(),
     htmlToPdf: vi.fn(),
 }));
+const stageFileForIpc = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../api', () => ({
     api: mockApi,
 }));
+vi.mock('../../../utils/stageFile', () => ({ stageFileForIpc }));
 
 function makePhoto(name = 'foto.jpg'): PhotoFile {
     const file = new File(['image'], name, { type: 'image/jpeg' });
@@ -193,7 +195,7 @@ describe('reportes-campo report model', () => {
         expect(mockApi.htmlToPdf).toHaveBeenCalledWith(expect.objectContaining({
             filename: config.filename,
             outputPath: 'C:\\tmp\\panel.pdf',
-            localImagePaths: { 'antares-local-image:photo-0': 'C:\\tmp\\foto.jpg' },
+            localImagePaths: { 'antares-local-image:photo-0': 'antares-read_report' },
         }));
         expect(result).toEqual({ filename: 'panel.pdf', savedPath: 'C:\\tmp\\panel.pdf' });
     });
@@ -246,12 +248,20 @@ describe('reportes-campo report model', () => {
 });
 
 beforeEach(() => {
-    mockApi.dialogSave.mockReset();
-    mockApi.htmlToPdf.mockReset();
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-06-24T12:00:00Z'));
+  mockApi.dialogSave.mockReset();
+  mockApi.htmlToPdf.mockReset();
+  stageFileForIpc.mockResolvedValue('antares-read_report');
+  // jsdom exposes Image but never completes blob URL decoding. The export
+  // tests exercise the IPC payload, not canvas decoding, so force the
+  // deterministic FileReader fallback here.
+  vi.stubGlobal('Image', undefined);
+  vi.stubGlobal('FileReader', undefined);
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-06-24T12:00:00Z'));
 });
 
 afterEach(() => {
-    vi.useRealTimers();
+  stageFileForIpc.mockReset();
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
 });

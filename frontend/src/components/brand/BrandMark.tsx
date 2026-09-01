@@ -87,14 +87,14 @@ export default function BrandMark({
 }: BrandMarkProps) {
   const bgIsLight = useIsBgLight();
 
-  // logo1 = dark text "Antares" → for light backgrounds
-  // logo2 = white text "Antares" → for dark backgrounds
-  // favicon1 = eye with dark pupil → for dark backgrounds
-  // favicon2 = eye outline only  → for light backgrounds
-  const iconSrc = bgIsLight ? './favicon2.png' : './favicon1.png';
-  const logoSrc = bgIsLight ? './logo1.png' : './logo2.png';
+  // brand-mark-*@2x.webp = 64px webp (2x for 26px display) — replaces 1024² favicon masters
+  // logo-antares-*@2x.webp = 280×64 webp (2x for 32/24px display) — replaces 525×120 logo masters
+  const iconSrc = bgIsLight ? './brand-mark-light@2x.webp' : './brand-mark-dark@2x.webp';
+  const logoSrc = bgIsLight ? './logo-antares-light@2x.webp' : './logo-antares-dark@2x.webp';
 
   const markPx = size === 'md' ? 26 : 20;
+  const logoHeight = size === 'md' ? 32 : 24;
+  const logoWidth = size === 'md' ? 140 : 105;
 
   return (
     <div className={`inline-flex items-center gap-2 min-w-0 ${className}`}>
@@ -103,8 +103,10 @@ export default function BrandMark({
           <img
             src={logoSrc}
             alt="Antares"
+            width={logoWidth}
+            height={logoHeight}
             className="object-contain shrink-0"
-            style={{ maxHeight: size === 'md' ? 32 : 24, width: 'auto', maxWidth: '100%' }}
+            style={{ maxHeight: logoHeight, width: 'auto', maxWidth: '100%' }}
             draggable={false}
           />
           {tagline && (
@@ -128,6 +130,8 @@ export default function BrandMark({
             src={iconSrc}
             alt=""
             aria-hidden="true"
+            width={markPx}
+            height={markPx}
             className="w-full h-full object-contain"
             draggable={false}
           />

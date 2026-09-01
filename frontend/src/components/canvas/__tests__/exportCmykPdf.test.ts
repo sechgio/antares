@@ -12,10 +12,12 @@ vi.mock('../../../api', () => ({
 }));
 
 const prepareDocumentImagesForExport = vi.fn(async (doc: unknown) => doc);
+const serializeDocumentImages = vi.fn(async (doc: unknown) => doc);
 
 vi.mock('../utils/imageBlobStore', () => ({
   prepareDocumentImagesForExport: (...args: unknown[]) =>
     prepareDocumentImagesForExport(...args),
+  serializeDocumentImages: (...args: unknown[]) => serializeDocumentImages(...args),
 }));
 
 function emptyCtx(images: string[] = []): FillContext {
@@ -43,6 +45,7 @@ describe('exportCanvasPdf with CMYK color mode', () => {
     });
 
     expect(prepareDocumentImagesForExport).toHaveBeenCalledWith(doc, { mode: 'rgb' });
+    expect(serializeDocumentImages).toHaveBeenCalledWith(doc, { preferAssetRefs: true });
     expect(api.htmlToPdf).toHaveBeenCalled();
   });
 
@@ -61,6 +64,7 @@ describe('exportCanvasPdf with CMYK color mode', () => {
     });
 
     expect(prepareDocumentImagesForExport).toHaveBeenCalledWith(doc, { mode: 'cmyk' });
+    expect(serializeDocumentImages).toHaveBeenCalledWith(doc, { preferAssetRefs: true });
     expect(api.canvasExportCmykPdf).toHaveBeenCalled();
   });
 

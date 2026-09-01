@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { List } from 'react-window';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import {
   Table2,
@@ -23,7 +24,8 @@ import {
   Maximize2,
   Minimize2,
 } from 'lucide-react';
-import { matchesRecordId } from './utils';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { buildImagesByRecordId, normalizeRecordId } from '../canvas/runtime/excel';
 
 export interface DataPreviewModalProps {
   open: boolean;
@@ -146,6 +148,7 @@ export default function DataPreviewModal({
   sheetName,
 }: DataPreviewModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(searchQuery, 200);
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDirection>('asc');
   const [photoFilter, setPhotoFilter] = useState<FilterPhotoType>('all');
@@ -226,20 +229,25 @@ export default function DataPreviewModal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [open, onClose, data.length, focusedRowIndex, onSelectRow, showColumnDropdown]);
 
-  // Pre-calculate photo counts and matched files per row record ID
+  // O(n) photo index: build once, lookup per row (avoid O(n*m) filter per row)
+  const imagesByRecordId = useMemo(
+    () => buildImagesByRecordId(data as Record<string, string>[], idColumn, images),
+    [data, idColumn, images],
+  );
+
   const rowPhotoMap = useMemo(() => {
     const map = new Map<number, { count: number; files: File[] }>();
     data.forEach((row, idx) => {
-      const recordId = idColumn ? String(row[idColumn] ?? '').trim() : '';
-      if (!recordId) {
+      const normalized = normalizeRecordId(String(row[idColumn] ?? '').trim());
+      if (!normalized) {
         map.set(idx, { count: 0, files: [] });
         return;
       }
-      const matched = images.filter((img) => matchesRecordId(img.name, recordId));
-      map.set(idx, { count: matched.length, files: matched });
+      const files = imagesByRecordId.get(normalized) ?? [];
+      map.set(idx, { count: files.length, files });
     });
     return map;
-  }, [data, idColumn, images]);
+  }, [data, idColumn, imagesByRecordId]);
 
   // Total counts for photo tabs
   const photoStats = useMemo(() => {
@@ -258,9 +266,9 @@ export default function DataPreviewModal({
     return headers.filter((h) => !hiddenColumns.has(h));
   }, [headers, hiddenColumns]);
 
-  // Filter & Sort Rows
+  // Filter & Sort Rows (debounced query avoids per-keystroke rescan)
   const filteredAndSortedRows = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
+    const query = debouncedQuery.trim().toLowerCase();
 
     // Map each original item with its original index
     let items = data.map((row, originalIndex) => ({
@@ -314,7 +322,7 @@ export default function DataPreviewModal({
     }
 
     return items;
-  }, [data, headers, rowPhotoMap, photoFilter, searchQuery, sortCol, sortDir]);
+  }, [data, headers, rowPhotoMap, photoFilter, debouncedQuery, sortCol, sortDir]);
 
   const handleHeaderClick = (colKey: string) => {
     if (sortCol === colKey) {
@@ -390,7 +398,25 @@ export default function DataPreviewModal({
     URL.revokeObjectURL(url);
   };
 
-  if (!open || data.length === 0) return null;
+  const VIRTUALIZE_THRESHOLD = 100;
+  const ROW_HEIGHT_MAP = { compact: 32, normal: 40, spacious: 48 } as const;
+  const virtualRowHeight = ROW_HEIGHT_MAP[density];
+  const useVirtual = filteredAndSortedRows.length >= VIRTUALIZE_THRESHOLD;
+  const [listHeight, setListHeight] = useState(400);
+
+  useLayoutEffect(() => {
+    if (!useVirtual || !open) return;
+    const el = tableContainerRef.current;
+    if (!el) return;
+    const update = () => {
+      const h = el.getBoundingClientRect().height;
+      if (h > 0) setListHeight(Math.floor(h));
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [useVirtual, open]);
 
   const currentSelectedOriginalIdx = parseInt(selectedIndex, 10);
   const selectedRecordId =
@@ -404,6 +430,148 @@ export default function DataPreviewModal({
 
   const densityPadding =
     density === 'compact' ? 'px-3 py-1.5 text-[11px]' : density === 'spacious' ? 'px-4 py-3 text-[13px]' : 'px-3.5 py-2.5 text-[12px]';
+
+  type VirtualRowData = {
+    rows: typeof filteredAndSortedRows;
+    visibleHeaders: string[];
+    selectedIndex: string;
+    focusedRowIndex: number;
+    densityPadding: string;
+    wrapText: boolean;
+    query: string;
+    onSetFocused: (idx: number) => void;
+    onHandleRowClick: (idx: number) => void;
+  };
+
+  type VirtualRowProps = {
+    index: number;
+    style: React.CSSProperties;
+    ariaAttributes: { 'aria-posinset': number; 'aria-setsize': number; role: 'listitem' };
+  } & VirtualRowData;
+
+  const PreviewVirtualRow = useMemo(
+    () =>
+      React.memo(function PreviewVirtualRowInner({
+        index,
+        style,
+        rows,
+        visibleHeaders: vHeaders,
+        selectedIndex: selIdx,
+        focusedRowIndex: focIdx,
+        densityPadding: dPad,
+        wrapText: wText,
+        query,
+        onSetFocused,
+        onHandleRowClick,
+      }: VirtualRowProps) {
+        const item = rows[index];
+        if (!item) return <div style={style} />;
+        const { row, originalIndex, photoInfo } = item;
+        const isSelected = selIdx === String(originalIndex);
+        const isFocused = focIdx === originalIndex;
+        return (
+          <div
+            style={style}
+            onClick={() => onSetFocused(originalIndex)}
+            onDoubleClick={() => onHandleRowClick(originalIndex)}
+            className={`flex items-center border-b border-[#222222] cursor-pointer transition-colors ${
+              isSelected
+                ? 'bg-[color-mix(in_srgb,var(--accent-primary)_15%,transparent)] font-medium'
+                : isFocused
+                  ? 'bg-[color-mix(in_srgb,var(--bg-elevated)_75%,transparent)]'
+                  : index % 2 === 0
+                    ? 'bg-transparent hover:bg-[color-mix(in_srgb,var(--accent-primary)_8%,transparent)]'
+                    : 'bg-[color-mix(in_srgb,var(--bg-surface)_25%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent-primary)_8%,transparent)]'
+            }`}
+          >
+            <div
+              className={`flex h-full w-12 shrink-0 items-center justify-center border-r border-[#262626] font-mono text-[11px] tabular-nums ${
+                isSelected
+                  ? 'bg-[var(--bg-base)] font-bold text-[var(--accent-primary)]'
+                  : isFocused
+                    ? 'bg-[var(--bg-elevated)]'
+                    : 'bg-[var(--bg-base)] text-[var(--text-muted)]'
+              }`}
+            >
+              <span
+                className={`inline-flex h-5 w-5 items-center justify-center rounded ${
+                  isSelected
+                    ? 'bg-[var(--accent-primary)] font-semibold text-[var(--text-on-accent)] shadow-sm'
+                    : isFocused
+                      ? 'bg-[var(--border-medium)] text-[var(--text-primary)]'
+                      : 'text-[var(--text-muted)]'
+                }`}
+              >
+                {originalIndex + 1}
+              </span>
+            </div>
+            {vHeaders.map((header) => {
+              const rawValue = row[header];
+              const cellText = rawValue !== null && rawValue !== undefined ? String(rawValue).trim() : '';
+              const isStatusCol =
+                header.toUpperCase().includes('ESTADO') || header.toUpperCase().includes('STATUS');
+              const isMono = isMonospaceColumn(header);
+              return (
+                <div
+                  key={header}
+                  className={`flex h-full min-w-0 flex-1 items-center border-r border-[#1f1f1f] ${dPad} ${
+                    isSelected ? 'text-[var(--text-primary)] font-medium' : 'text-[var(--text-secondary)]'
+                  } ${getColumnWidthClass(header)}`}
+                  title={cellText}
+                >
+                  {isStatusCol && cellText ? (
+                    renderStatusBadge(cellText, query)
+                  ) : (
+                    <div
+                      className={`${isMono ? 'font-mono text-[11.5px] tabular-nums text-[var(--text-primary)]' : ''} ${
+                        wText ? 'whitespace-normal break-words leading-relaxed' : 'truncate max-w-xs'
+                      } w-full`}
+                    >
+                      {cellText ? <HighlightMatch text={cellText} query={query} /> : <span className="text-[var(--text-muted)] opacity-50">—</span>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            <div
+              className={`flex h-full w-28 shrink-0 items-center justify-center border-l border-[#262626] ${
+                isSelected ? 'bg-[var(--bg-base)]' : isFocused ? 'bg-[var(--bg-elevated)]' : 'bg-[var(--bg-base)]'
+              }`}
+            >
+              {photoInfo.count > 0 ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-400 whitespace-nowrap shadow-sm">
+                  <ImageIcon size={11} />
+                  {photoInfo.count} {photoInfo.count === 1 ? 'foto' : 'fotos'}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-muted)] whitespace-nowrap">
+                  <ImageIcon size={11} className="opacity-35" />
+                  0 fotos
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      }),
+    [],
+  );
+
+  const virtualRowProps = useMemo<VirtualRowData>(
+    () => ({
+      rows: filteredAndSortedRows,
+      visibleHeaders,
+      selectedIndex,
+      focusedRowIndex,
+      densityPadding,
+      wrapText,
+      query: debouncedQuery,
+      onSetFocused: setFocusedRowIndex,
+      onHandleRowClick: handleRowClick,
+    }),
+    [filteredAndSortedRows, visibleHeaders, selectedIndex, focusedRowIndex, densityPadding, wrapText, debouncedQuery, handleRowClick],
+  );
+
+  if (!open || data.length === 0) return null;
 
   return (
     <div
@@ -858,7 +1026,22 @@ export default function DataPreviewModal({
                 </thead>
 
                 <tbody className="divide-y divide-[#222222]">
-                  {filteredAndSortedRows.map(({ row, originalIndex, photoInfo }) => {
+                  {useVirtual ? (
+                    <tr>
+                      <td colSpan={visibleHeaders.length + 2} className="p-0">
+                        <List
+                          rowCount={filteredAndSortedRows.length}
+                          rowHeight={virtualRowHeight}
+                          defaultHeight={listHeight}
+                          overscanCount={5}
+                          rowComponent={PreviewVirtualRow as never}
+                          rowProps={virtualRowProps}
+                          style={{ height: listHeight, width: '100%' }}
+                        />
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredAndSortedRows.map(({ row, originalIndex, photoInfo }) => {
                     const isSelected = selectedIndex === String(originalIndex);
                     const isFocused = focusedRowIndex === originalIndex;
 
@@ -915,7 +1098,7 @@ export default function DataPreviewModal({
                               title={cellText}
                             >
                               {isStatusCol && cellText ? (
-                                renderStatusBadge(cellText, searchQuery)
+                                renderStatusBadge(cellText, debouncedQuery)
                               ) : (
                                 <div
                                   className={`${
@@ -927,7 +1110,7 @@ export default function DataPreviewModal({
                                   }`}
                                 >
                                   {cellText ? (
-                                    <HighlightMatch text={cellText} query={searchQuery} />
+                                    <HighlightMatch text={cellText} query={debouncedQuery} />
                                   ) : (
                                     <span className="text-[var(--text-muted)] opacity-50">—</span>
                                   )}
@@ -961,7 +1144,8 @@ export default function DataPreviewModal({
                         </td>
                       </tr>
                     );
-                  })}
+                  })
+                  )}
                 </tbody>
               </table>
             )}

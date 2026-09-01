@@ -25,6 +25,7 @@ const {
 } = require('./file-capabilities');
 const { putCanvasAsset, getCanvasAsset, parseAssetRef, gcOrphanCanvasAssets } = require('./canvas-assets');
 const { cleanupSpreadsheetSpillFile, sweepIpcTempDirs } = require('./ipc-temp-cleanup');
+const { embedCanvasManifest } = require('./canvas-pdf-manifest');
 
 // Guard derives from electron/ipc-methods.js — single source of truth.
 const NATIVE_METHODS = new Set(require('./ipc-methods').NATIVE_METHODS);
@@ -108,6 +109,17 @@ function _registerDialogPaths(paths) {
   if (!Array.isArray(paths)) return;
   registerAllowedReadPaths(paths);
   for (const p of paths) _registerWriteRootFromPath(p);
+}
+
+function _createReadFileTokens(paths, window) {
+  if (!Array.isArray(paths) || paths.length === 0) return [];
+  const webContentsId = _webContentsIdFromWindow(window);
+  return paths.map((filePath) => createFileCapability({
+    filePath,
+    mode: 'read',
+    webContentsId,
+    name: path.basename(filePath),
+  }).token);
 }
 
 function _isUnderAllowedPdfWriteDir(dir) {
@@ -407,12 +419,16 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
       /* fonts.ready unavailable — proceed with system fallbacks */
     }
 
-    const pdfBuffer = await pdfWindow.webContents.printToPDF({
+    let pdfBuffer = await pdfWindow.webContents.printToPDF({
       printBackground: true,
       preferCSSPageSize: true,
       pageSize: 'A4',
       margins: { marginType: 'none' },
     });
+
+    if (params.canvas_manifest_b64) {
+      pdfBuffer = await embedCanvasManifest(pdfBuffer, params.canvas_manifest_b64);
+    }
 
     // Purgar el documento renderizado de la ventana del pool para que Chromium
     // libere el DOM y texturas de imágenes de la memoria, y libere el descriptor
@@ -701,7 +717,7 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
       properties: ['openDirectory'],
     });
     if (response.canceled || !response.filePaths || response.filePaths.length === 0) {
-      return { handled: true, result: { paths: [] } };
+      return { handled: true, result: { paths: [], file_tokens: [] } };
     }
     const folderPath = response.filePaths[0];
     // `pickOnly` returns just the folder path without scanning its contents.
@@ -709,11 +725,14 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
     // "save to folder"), so we avoid an expensive recursive scan.
     _registerWriteRootFromPath(folderPath);
     if (params && params.pickOnly) {
-      return { handled: true, result: { paths: [], folder: folderPath } };
+      return { handled: true, result: { paths: [], file_tokens: [], folder: folderPath } };
     }
     const files = await _scanFolderRecursive(folderPath, FOLDER_SCAN_EXTENSIONS);
     _registerDialogPaths(files);
-    return { handled: true, result: { paths: files } };
+    return {
+      handled: true,
+      result: { paths: files, file_tokens: _createReadFileTokens(files, window) },
+    };
   }
 
   const properties = method === 'dialog_dest'
@@ -734,7 +753,13 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
     _registerWriteRootFromPath(result.paths[0]);
   }
   _registerDialogPaths(result.paths);
-  return { handled: true, result };
+  return {
+    handled: true,
+    result: {
+      ...result,
+      file_tokens: method === 'dialog_dest' ? [] : _createReadFileTokens(result.paths, window),
+    },
+  };
 }
 
 // Folders approved via native dialogs survive restarts (raw output paths are

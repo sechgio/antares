@@ -18,7 +18,6 @@ import {
   resolveCuadranteForPage,
 } from '../utils/cuadranteRanges';
 import { loadSession, saveSession, storedToSession } from '../utils/storage';
-import { registerLocalPaths } from '../../../utils/registerLocalPath';
 
 export interface EvidenciaMetadataState {
   title: string;
@@ -153,13 +152,6 @@ export function useEvidenciaSession(): EvidenciaSessionHookResult {
       if (cancelled) return;
       if (stored && !dirtyRef.current) {
         const restored = storedToSession(stored);
-        // The Electron read allowlist is process-local. Re-grant persisted
-        // File-derived paths before DOCX/PDF export can send them back to the
-        // main process after an application restart.
-        await registerLocalPaths(
-          restored.images.map((image) => image.localPath).filter((p): p is string => Boolean(p)),
-        );
-        if (cancelled) return;
         setTitleState(restored.title);
         setCuadranteLabelState(restored.cuadranteLabel);
         setShowCuadranteLabelState(restored.showCuadranteLabel);
@@ -264,13 +256,9 @@ export function useEvidenciaSession(): EvidenciaSessionHookResult {
         errors.push(MSG_IMAGE_TOO_LARGE(file.name));
         continue;
       }
-      const localPath = window.electronAPI?.getPathForFile?.(file) || undefined;
-      accepted.push({ file, objectUrl: URL.createObjectURL(file), localPath });
+      accepted.push({ file, objectUrl: URL.createObjectURL(file) });
     }
     if (accepted.length > 0) {
-      await registerLocalPaths(
-        accepted.map((img) => img.localPath).filter((p): p is string => Boolean(p)),
-      );
       setImages((prev) => [...prev, ...accepted]);
     }
     return errors;

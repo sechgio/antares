@@ -153,6 +153,31 @@ function parseProcessStatus(raw: unknown): ProcessStatus {
 const LONG_RUNNING_METHODS = new Set<string>(longRunningMethods);
 const HEAVY_IPC_METHODS = new Set<string>(heavyIpcMethods);
 
+const CACHE_TTL_MS = 5 * 60 * 1000;
+type CacheEntry<T> = { value: T; expires: number; promise?: Promise<T> };
+const _cache = new Map<string, CacheEntry<any>>();
+function cachedInvoke<T>(key: string, fn: () => Promise<T>, ttl = CACHE_TTL_MS): Promise<T> {
+  const now = Date.now();
+  const hit = _cache.get(key);
+  if (hit?.promise) return hit.promise;
+  if (hit && hit.expires > now) return Promise.resolve(hit.value);
+  const p = fn()
+    .then((v) => {
+      _cache.set(key, { value: v, expires: now + ttl });
+      return v;
+    })
+    .finally(() => {
+      const e = _cache.get(key);
+      if (e?.promise === p) delete (e as { promise?: Promise<T> }).promise;
+    });
+  _cache.set(key, { value: undefined, expires: 0, promise: p } as unknown as CacheEntry<T>);
+  return p;
+}
+export function invalidateApiCache(key?: string) {
+  if (key) _cache.delete(key);
+  else _cache.clear();
+}
+
 /** Must match electron/ipc-router.js — structured fields survive only inside Error.message. */
 const ANTARES_IPC_ERROR_PREFIX = 'ANTARES_IPC_ERROR:';
 const ELECTRON_INVOKE_PREFIX = /^Error invoking remote method '[^']+': (?:Error: )?/;
@@ -344,6 +369,12 @@ export interface PreviewBody {
   destino?: string;
 }
 
+export interface FileDialogResult {
+  paths: string[];
+  /** Read capabilities aligned by index with `paths`. */
+  file_tokens: string[];
+}
+
 
 export interface DbDetectKeyColumnResult {
   key_column: string;
@@ -490,6 +521,8 @@ export interface HtmlToPdfBody {
   filename: string;
   localImagePaths?: Record<string, string>;
   outputPath?: string;
+  /** Optional Antares Canvas semantic manifest to embed as a PDF attachment. */
+  canvas_manifest_b64?: string;
   /** Opt-in: inline PDF as base64 (prefer outputPath / saved_path for large exports). */
   return_base64?: boolean;
 }
@@ -506,6 +539,8 @@ export interface CanvasExportCmykPdfBody {
   filename?: string;
   outputPath?: string;
   localImagePaths?: Record<string, string>;
+  /** Optional Antares Canvas semantic manifest to embed as a PDF attachment. */
+  canvas_manifest_b64?: string;
 }
 
 export type HtmlToPdfResponse =
@@ -536,22 +571,22 @@ export interface ImageOptimizerSaveFilesResponse {
 
 export const api = {
   version: () => _invoke<{ version: string }>('version'),
-  formats: () => _invoke<{ formats: string[] }>('formats'),
+  formats: () => cachedInvoke('formats', () => _invoke<{ formats: string[] }>('formats')),
   diagnosticsSnapshot: (params?: Record<string, unknown>) =>
     _invoke<Record<string, unknown>>('diagnostics_snapshot', params ?? {}),
 
-  dialogFiles: () => _invoke<{ paths: string[] }>('dialog_files'),
+  dialogFiles: () => _invoke<FileDialogResult>('dialog_files'),
   dialogDest: () => _invoke<{ paths: string[] }>('dialog_dest'),
   dialogFolder: (params?: { title?: string; pickOnly?: boolean }) =>
-    _invoke<{ paths: string[]; folder?: string }>('dialog_folder', params),
+    _invoke<FileDialogResult & { folder?: string }>('dialog_folder', params),
   dialogSave: (params?: { title?: string; defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }) => _invoke<{ paths: string[] }>('dialog_save', params),
 
   /** Display-size local thumbnail via Electron nativeImage (Path A). */
-  localThumbnail: (body: { path: string; maxEdge?: number }) =>
+  localThumbnail: (body: { path?: string; file_token?: string; maxEdge?: number }) =>
     _invoke<{ dataUrl: string }>('local_thumbnail', body),
 
   /** Full-fidelity allowlisted local image → data URL (CSP-safe; no file://). */
-  localImageDataUrl: (body: { path: string }) =>
+  localImageDataUrl: (body: { path?: string; file_token?: string }) =>
     _invoke<{ dataUrl: string }>('local_image_data_url', body),
 
   startProcess: (body: ProcessBody) =>
@@ -571,36 +606,70 @@ export const api = {
       opts ?? {},
     ),
   importExcel: (path: string) =>
-    _invoke<{ imported: number; inserted?: number; skipped?: number }>('db_import', { path }),
+    _invoke<{ imported: number; inserted?: number; skipped?: number }>('db_import', { path }).then((v) => {
+      invalidateApiCache('db_columns');
+      return v;
+    }),
   dbExport: (path: string) => _invoke<{ exported: number }>('db_export', { path }),
   dbTemplate: (path: string) => _invoke<{ path: string }>('db_template', { path }),
-  clearDatabase: () => _invoke<{ cleared: number }>('db_clear'),
+  clearDatabase: () =>
+    _invoke<{ cleared: number }>('db_clear').then((v) => {
+      invalidateApiCache('db_columns');
+      return v;
+    }),
 
-  getFields: () => _invoke<{ fields: DBField[] }>('db_fields'),
-  updateFields: (fields: DBField[]) => _invoke<{ fields: DBField[] }>('db_fields_update', { fields }),
-  resetFields: () => _invoke<{ fields: DBField[] }>('db_fields_reset'),
+  getFields: () => cachedInvoke('db_fields', () => _invoke<{ fields: DBField[] }>('db_fields')),
+  updateFields: (fields: DBField[]) =>
+    _invoke<{ fields: DBField[] }>('db_fields_update', { fields }).then((v) => {
+      invalidateApiCache('db_fields');
+      return v;
+    }),
+  resetFields: () =>
+    _invoke<{ fields: DBField[] }>('db_fields_reset').then((v) => {
+      invalidateApiCache('db_fields');
+      return v;
+    }),
 
-  getDbColumns: () => _invoke<{ columns: string[]; records: DBRecord[]; total: number }>('db_columns'),
+  getDbColumns: () => cachedInvoke('db_columns', () => _invoke<{ columns: string[]; records: DBRecord[]; total: number }>('db_columns')),
   dbParseMapping: (path: string, files?: string[], id_column?: string, rename_column?: string) =>
     _invoke<MappingResult>('db_parse_mapping', { path, files: files ?? [], id_column, rename_column }),
   dbValidateMapping: (mapping: Record<string, string>, files: string[]) =>
     _invoke<{ valid: boolean; mapped_count: number; unmapped_files: string[]; missing_keys: string[] }>('db_validate_mapping', { mapping, files }),
 
-  getRenamePatterns: () => _invoke<{ patterns: RenamePattern[] }>('rename_patterns_get'),
-  updateRenamePatterns: (patterns: RenamePattern[]) => _invoke<{ patterns: RenamePattern[] }>('rename_patterns_update', { patterns }),
-  resetRenamePatterns: () => _invoke<{ patterns: RenamePattern[] }>('rename_patterns_reset'),
+  getRenamePatterns: () => cachedInvoke('rename_patterns_get', () => _invoke<{ patterns: RenamePattern[] }>('rename_patterns_get')),
+  updateRenamePatterns: (patterns: RenamePattern[]) =>
+    _invoke<{ patterns: RenamePattern[] }>('rename_patterns_update', { patterns }).then((v) => {
+      invalidateApiCache('rename_patterns_get');
+      return v;
+    }),
+  resetRenamePatterns: () =>
+    _invoke<{ patterns: RenamePattern[] }>('rename_patterns_reset').then((v) => {
+      invalidateApiCache('rename_patterns_get');
+      return v;
+    }),
 
-  getTheme: () => _invoke<ThemeConfig>('theme_get'),
+  getTheme: () => cachedInvoke('theme_get', () => _invoke<ThemeConfig>('theme_get')),
   saveTheme: (theme: ThemeConfig) => {
     const safe: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(theme)) {
       if (typeof v === 'string') safe[k] = v;
     }
-    return _invoke<ThemeConfig>('theme_save', safe);
+    return _invoke<ThemeConfig>('theme_save', safe).then((v) => {
+      invalidateApiCache('theme_get');
+      return v;
+    });
   },
   getPresets: () => _invoke<{ presets: string[] }>('theme_presets'),
-  applyPreset: (name: string) => _invoke<ThemeConfig>('theme_preset', { name }),
-  resetTheme: () => _invoke<ThemeConfig>('theme_reset'),
+  applyPreset: (name: string) =>
+    _invoke<ThemeConfig>('theme_preset', { name }).then((v) => {
+      invalidateApiCache('theme_get');
+      return v;
+    }),
+  resetTheme: () =>
+    _invoke<ThemeConfig>('theme_reset').then((v) => {
+      invalidateApiCache('theme_get');
+      return v;
+    }),
 
   historyList: (body?: { limit?: number; offset?: number; run_type?: string; date_from?: string; date_to?: string }) => _invoke<{ runs: HistoryRunRow[] }>('history_list', body),
   historyGet: (id: number) => _invoke<{ run: HistoryRunRow }>('history_get', { id }),
@@ -691,8 +760,14 @@ export const api = {
     _invoke<ImageOptimizerSaveFilesResponse>('image_optimizer_save_files', body),
 
   // ─── Plantillas PreviewPanel ─────────────────────────────────────────────
+  // templates_list is quasi-immutable: bundled HTML under backend/templates (plus
+  // user_data/templates overrides). No mutating IPC exists (no template upload/
+  // delete); the only way to add templates is to drop HTML files and restart.
+  // TTL=5min is intentional — avoids stale while keeping dedupe/cache benefits.
   templatesList: () =>
-    _invoke<{ templates: Array<{ id: string; name: string; filename: string; source?: string }> }>('templates_list'),
+    cachedInvoke('templates_list', () =>
+      _invoke<{ templates: Array<{ id: string; name: string; filename: string; source?: string }> }>('templates_list'),
+    ),
   templateGet: (name: string) =>
     _invoke<{ name: string; content: string; source?: string }>('template_get', { name }),
 
@@ -869,7 +944,7 @@ export const api = {
     output_path?: string;
     export_mode?: string;
   }) => _invoke<{ pdf_base64: string; content_base64?: string; saved_path?: string; filename: string; format?: string; mime_type?: string }>('panel_aviso_corte_render_pdf', body),
-  panelAvisoCorteTemplate: (body: { path: string; overwrite?: boolean }) => _invoke<{ path: string }>('panel_aviso_corte_template', body),
+  panelAvisoCorteTemplate: (body: { output_path: string; overwrite?: boolean }) => _invoke<{ path: string }>('panel_aviso_corte_template', body),
 
   // ─── Evidencia Volanteo ───────────────────────────────────────────────
   evidenciaVolanteoRender: (body: {

@@ -261,6 +261,17 @@ function _assertNoRawAbsolutePaths(params, options = {}) {
 
   const visit = (value, keyPath, inheritedKey = '') => {
     if (typeof value === 'string') {
+      if (
+        value.startsWith('data:') ||
+        value.startsWith('blob:') ||
+        value.startsWith('http://') ||
+        value.startsWith('https://') ||
+        value.startsWith('canvas-asset:') ||
+        value.startsWith('antares-read_') ||
+        value.startsWith('antares-local-image:')
+      ) {
+        return;
+      }
       const last = keyPath[keyPath.length - 1];
       const inheritedLower = String(inheritedKey).toLowerCase();
       const key = PATH_CONTAINER_KEYS.has(inheritedLower)

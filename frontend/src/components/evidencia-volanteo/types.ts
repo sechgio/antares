@@ -1,7 +1,6 @@
 export interface LocalImage {
   file: File;
   objectUrl: string;
-  localPath?: string;
 }
 
 export interface LogoAsset {
@@ -39,6 +38,7 @@ export interface StoredImage {
   name: string;
   type: string;
   blob: Blob;
+  /** Legacy field from sessions created before file capabilities. */
   localPath?: string;
 }
 
