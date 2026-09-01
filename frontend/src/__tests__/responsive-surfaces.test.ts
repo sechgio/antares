@@ -39,6 +39,8 @@ describe('responsive surface contracts', () => {
     const reportesHeader = readSource('components/reportes-campo/components/HeaderForm.tsx');
     const reportesPhotos = readSource('components/reportes-campo/components/PhotoManager.tsx');
     const evidencia = readSource('components/evidencia-volanteo/EvidenciaVolanteoApp.tsx');
+    const fichas = readSource('components/fichas-tecnicas/FichasTecnicasApp.tsx');
+    const fichasPreview = readSource('components/fichas-tecnicas/PreviewPanel.tsx');
 
     expect(formatos).toContain('data-surface="formatos"');
     expect(formatos).toContain('data-surface-part="preview"');
@@ -52,6 +54,10 @@ describe('responsive surface contracts', () => {
     expect(reportesHeader).toContain('useReducedMotion');
     expect(reportesPhotos).toContain('useReducedMotion');
     expect(evidencia).toContain('data-surface="evidencia-volanteo"');
+    expect(fichas).toContain('data-surface="fichas-tecnicas"');
+    expect(fichas).toContain('data-mobile-tab={mobileTab}');
+    expect(fichas).toContain('role="tablist"');
+    expect(fichasPreview).toContain('tr-preview-wrap');
   });
 
   it('uses theme tokens for Volantes responsive controls', () => {
