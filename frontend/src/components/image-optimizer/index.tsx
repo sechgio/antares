@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { AlertCircle, ChevronDown, FileDown, FolderOpen, Loader2, Sparkles, Trash2 } from 'lucide-react';
 import CropEditor from './CropEditor';
 import PreviewWorkspace from './PreviewWorkspace';
@@ -40,6 +41,7 @@ import { saveFeatureHistory } from '../../utils/history';
 import { api } from '../../api';
 
 export default function ImageOptimizer() {
+  const { t } = useTranslation();
   const [items, setItems] = useState<ImageItem[]>([]);
   const [settings, setSettings] = useState<BatchSettings>(DEFAULT_BATCH_SETTINGS);
   const [activePresetId, setActivePresetId] = useState<PresetId | null>(null);
@@ -229,7 +231,7 @@ export default function ImageOptimizer() {
     const validFiles = fileArray.filter((file) => file.type.startsWith('image/') && !file.type.includes('gif'));
     const ignored = fileArray.length - validFiles.length;
     if (ignored > 0) {
-      addToast(`${ignored} archivo(s) ignorado(s). Formatos aceptados: JPG, PNG, WEBP, AVIF, BMP.`, 'error', 4500);
+      addToast(t('optimizer.toast.invalidFiles', { count: ignored }), 'error', 4500);
     }
     if (validFiles.length === 0) return;
 
@@ -240,8 +242,8 @@ export default function ImageOptimizer() {
     );
     commitItems((prev) => [...prev, ...createdItems]);
     setActiveItemId((current) => current || createdItems[0]?.id || null);
-    addToast(`${createdItems.length} imagen(es) agregada(s) al lote.`, 'success', 2200);
-  }, [addToast, commitItems]);
+    addToast(t('optimizer.toast.addedCount', { count: createdItems.length }), 'success', 2200);
+  }, [addToast, commitItems, t]);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -316,20 +318,22 @@ export default function ImageOptimizer() {
     const preset = IMAGE_OPTIMIZER_PRESETS.find((item) => item.id === presetId);
     if (!preset) return;
     commitSettings(cloneSettings(preset.settings), presetId);
-    addToast(`Preset global aplicado: ${preset.label}.`, 'success', 2200);
-  }, [addToast, commitSettings]);
+    addToast(t('optimizer.toast.globalPresetApplied', {
+      preset: t(`optimizer.presets.${preset.id}`, { defaultValue: preset.label }),
+    }), 'success', 2200);
+  }, [addToast, commitSettings, t]);
 
   const handleApplyPresetToSelection = useCallback(() => {
     if (!activePresetId || selectedCount === 0) {
-      addToast('Selecciona imagenes y un preset activo para aplicar.', 'info', 2600);
+      addToast(t('optimizer.toast.selectImagesAndPreset'), 'info', 2600);
       return;
     }
     commitItems((prev) => prev.map((item) => {
       if (!item.selected) return item;
       return { ...item, overrides: { ...item.overrides, presetId: activePresetId } };
     }));
-    addToast('Preset activo aplicado a la seleccion.', 'success', 2200);
-  }, [activePresetId, addToast, commitItems, selectedCount]);
+    addToast(t('optimizer.toast.selectionPresetApplied'), 'success', 2200);
+  }, [activePresetId, addToast, commitItems, selectedCount, t]);
 
   const handleSelectAll = useCallback(() => {
     const allSelected = items.length > 0 && items.every((item) => item.selected);
@@ -342,17 +346,17 @@ export default function ImageOptimizer() {
 
   const handleReprocessSelected = useCallback(() => {
     if (selectedCount === 0) {
-      addToast('No hay imagenes seleccionadas para reprocesar.', 'info', 1800);
+      addToast(t('optimizer.toast.noSelectedToReprocess'), 'info', 1800);
       return;
     }
     commitItems((prev) => prev.map((item) => item.selected ? { ...item, status: 'pending', error: undefined, stale: !!item.resultBlob } : item));
-    addToast('Seleccion marcada para reprocesar.', 'success', 2000);
-  }, [addToast, commitItems, selectedCount]);
+    addToast(t('optimizer.toast.selectionMarked'), 'success', 2000);
+  }, [addToast, commitItems, selectedCount, t]);
 
   const handleToggleExcludeSelected = useCallback(() => {
     const selectedItems = items.filter((item) => item.selected);
     if (selectedItems.length === 0) {
-      addToast('Selecciona una o mas imagenes.', 'info', 1800);
+      addToast(t('optimizer.toast.selectOneOrMore'), 'info', 1800);
       return;
     }
     const shouldExclude = selectedItems.some((item) => !item.excluded);
@@ -361,19 +365,19 @@ export default function ImageOptimizer() {
       excluded: shouldExclude,
       overrides: { ...item.overrides, excluded: shouldExclude },
     } : item));
-    addToast(shouldExclude ? 'Seleccion excluida del lote.' : 'Seleccion incluida nuevamente.', 'success', 2200);
-  }, [addToast, commitItems, items]);
+    addToast(shouldExclude ? t('optimizer.toast.selectionExcluded') : t('optimizer.toast.selectionIncluded'), 'success', 2200);
+  }, [addToast, commitItems, items, t]);
 
   const handleRemoveSelected = useCallback(() => {
     const selectedItems = items.filter((item) => item.selected);
     if (selectedItems.length === 0) {
-      addToast('No hay imagenes seleccionadas.', 'info', 1800);
+      addToast(t('optimizer.toast.noSelected'), 'info', 1800);
       return;
     }
     selectedItems.forEach((item) => revokeItemUrls(item));
     commitItems((prev) => prev.filter((item) => !item.selected));
-    addToast(`${selectedItems.length} imagen(es) eliminada(s).`, 'success', 2200);
-  }, [addToast, commitItems, items]);
+    addToast(t('optimizer.toast.removedCount', { count: selectedItems.length }), 'success', 2200);
+  }, [addToast, commitItems, items, t]);
 
   const handleRemoveItem = useCallback((id: string) => {
     commitItems((prev) => {
@@ -381,8 +385,8 @@ export default function ImageOptimizer() {
       if (target) revokeItemUrls(target);
       return prev.filter((item) => item.id !== id);
     });
-    addToast('Imagen eliminada de la cola.', 'info', 1800);
-  }, [addToast, commitItems]);
+    addToast(t('optimizer.toast.removedOne'), 'info', 1800);
+  }, [addToast, commitItems, t]);
 
   const handleReorderItems = useCallback((draggedId: string, targetId: string) => {
     commitItems((prev) => reorderImageItems(prev, draggedId, targetId));
@@ -392,13 +396,13 @@ export default function ImageOptimizer() {
     items.forEach((item) => revokeItemUrls(item));
     setItems([]);
     setActiveItemId(null);
-    addToast('Cola limpiada.', 'info', 2000);
-  }, [addToast, items]);
+    addToast(t('optimizer.toast.queueCleared'), 'info', 2000);
+  }, [addToast, items, t]);
 
   const handleSaveCropOffset = useCallback((imageId: string, offset: CropOffset) => {
     updateItem(imageId, (item) => ({ ...item, overrides: { ...item.overrides, customCropOffset: offset } }));
-    addToast('Recorte personalizado guardado.', 'success', 1800);
-  }, [addToast, updateItem]);
+    addToast(t('optimizer.toast.cropSaved'), 'success', 1800);
+  }, [addToast, t, updateItem]);
 
   const getResolvedBlob = useCallback((item: ImageItem): Blob | null => {
     if (isItemDirectExport(item, settingsRef.current)) {
@@ -426,7 +430,7 @@ export default function ImageOptimizer() {
     saveCancelledRef.current = false;
     setIsProcessing(true);
     setProcessingProgress({ current: 0, total: entries.length });
-    setProcessingMessage('Guardando archivos en carpeta...');
+    setProcessingMessage(t('optimizer.processing.savingFolder'));
 
     try {
       const namedEntries = entries.map((entry) => ({
@@ -472,15 +476,15 @@ export default function ImageOptimizer() {
       setProcessingMessage('');
       setProcessingProgress({ current: 0, total: 0 });
     }
-  }, [addToast, getExportNameMap]);
+  }, [addToast, getExportNameMap, t]);
 
   const downloadItemsAsZip = useCallback(async (itemsToDownload: ImageItem[]) => {
     const entries = collectDownloadEntries(itemsToDownload);
     if (!entries) {
       addToast(
         itemsToDownload.length === 0
-          ? 'No hay archivos listos para descargar en este alcance.'
-          : 'Todavia no hay resultados descargables.',
+          ? t('optimizer.toast.noDownloadable')
+          : t('optimizer.toast.noResults'),
         'info',
         2200,
       );
@@ -498,21 +502,21 @@ export default function ImageOptimizer() {
         zipFilename,
       );
       downloadBlob(zipBlob, zipFilename);
-      addToast(`ZIP generado con ${entries.length} archivo(s).`, 'success', 2400);
+      addToast(t('optimizer.toast.zipGenerated', { count: entries.length }), 'success', 2400);
     } catch (error) {
       console.error('ZIP creation failed', error);
       const message = error instanceof Error ? error.message : 'Error desconocido';
       addToast(`No se pudo generar el ZIP: ${message}.`, 'error', 4200);
     }
-  }, [addToast, collectDownloadEntries, getExportNameMap]);
+  }, [addToast, collectDownloadEntries, getExportNameMap, t]);
 
   const downloadItems = useCallback(async (itemsToDownload: ImageItem[]) => {
     const entries = collectDownloadEntries(itemsToDownload);
     if (!entries) {
       addToast(
         itemsToDownload.length === 0
-          ? 'No hay archivos listos para descargar en este alcance.'
-          : 'Todavia no hay resultados descargables.',
+          ? t('optimizer.toast.noDownloadable')
+          : t('optimizer.toast.noResults'),
         'info',
         2200,
       );
@@ -525,20 +529,20 @@ export default function ImageOptimizer() {
       const entry = entries[0];
       const filename = nameMap.get(entry.item.id) || entry.item.originalName;
       downloadBlob(entry.blob, filename);
-      addToast('Descargando 1 archivo.', 'success', 2200);
+      addToast(t('optimizer.toast.downloadOne'), 'success', 2200);
       return;
     }
 
     await downloadItemsAsZip(itemsToDownload);
-  }, [addToast, collectDownloadEntries, downloadItemsAsZip, getExportNameMap]);
+  }, [addToast, collectDownloadEntries, downloadItemsAsZip, getExportNameMap, t]);
 
   const downloadItemsIndividually = useCallback(async (itemsToDownload: ImageItem[]) => {
     const entries = collectDownloadEntries(itemsToDownload);
     if (!entries) {
       addToast(
         itemsToDownload.length === 0
-          ? 'No hay archivos listos para descargar en este alcance.'
-          : 'Todavia no hay resultados descargables.',
+          ? t('optimizer.toast.noDownloadable')
+          : t('optimizer.toast.noResults'),
         'info',
         2200,
       );
@@ -547,17 +551,17 @@ export default function ImageOptimizer() {
 
     const outputFolder = settingsRef.current.export.outputFolder.trim();
     if (!outputFolder) {
-      addToast('Elige la carpeta de destino junto al boton Procesar antes de exportar individualmente.', 'info', 3600);
+      addToast(t('optimizer.toast.chooseFolderBeforeIndividual'), 'info', 3600);
       return;
     }
 
     await writeEntriesToFolder(entries, outputFolder);
-  }, [addToast, collectDownloadEntries, writeEntriesToFolder]);
+  }, [addToast, collectDownloadEntries, t, writeEntriesToFolder]);
 
   const handleDownloadSingle = useCallback(async (item: ImageItem) => {
     const entries = collectDownloadEntries([item]);
     if (!entries) {
-      addToast('Todavia no hay resultados descargables.', 'info', 2200);
+      addToast(t('optimizer.toast.noResults'), 'info', 2200);
       return;
     }
 
@@ -568,7 +572,7 @@ export default function ImageOptimizer() {
     }
 
     await downloadItems([item]);
-  }, [addToast, collectDownloadEntries, downloadItems, writeEntriesToFolder]);
+  }, [addToast, collectDownloadEntries, downloadItems, t, writeEntriesToFolder]);
 
   const handleProcessScope = useCallback(async (scope: 'all' | 'selected') => {
     const targets = getProcessableItems(itemsRef.current, settingsRef.current, scope);
@@ -644,7 +648,7 @@ export default function ImageOptimizer() {
     } catch (error) {
       if (!signal.aborted) {
         console.error('[ImageOptimizer] Error al procesar el lote:', error);
-        addToast('No se pudo completar el procesamiento del lote.', 'error', 4200);
+        addToast(t('optimizer.toast.batchFailed'), 'error', 4200);
       }
       return;
     } finally {
@@ -674,8 +678,8 @@ export default function ImageOptimizer() {
       successCount,
     );
 
-    addToast(`${successCount}/${targets.length} imagen(es) procesadas.`, successCount === targets.length ? 'success' : 'info', 2800);
-  }, [addToast, commitItems, downloadItems, activePresetId]);
+    addToast(t('optimizer.toast.processedCount', { success: successCount, total: targets.length }), successCount === targets.length ? 'success' : 'info', 2800);
+  }, [addToast, commitItems, downloadItems, activePresetId, t]);
 
   const cropEditorItem = cropEditorItemId ? items.find((item) => item.id === cropEditorItemId) ?? null : null;
   const activeItemOutputName = activeItem ? downloadNameMap.get(activeItem.id) || activeItem.originalName : '';
@@ -714,7 +718,7 @@ export default function ImageOptimizer() {
               {IMAGE_OPTIMIZER_PRESETS.map((preset) => (
                 <PillPreset
                   key={preset.id}
-                  label={preset.label}
+                  label={t(`optimizer.presets.${preset.id}`, { defaultValue: preset.label })}
                   accentClassName={preset.accentClassName}
                   active={activePresetId === preset.id}
                   onClick={() => handleApplyGlobalPreset(preset.id as PresetId)}
@@ -726,7 +730,7 @@ export default function ImageOptimizer() {
               <div className="flex flex-wrap items-center gap-1">
                 <button
                   type="button"
-                  aria-label="Elegir carpeta de destino"
+                  aria-label={t('optimizer.actions.chooseFolder')}
                   onClick={handlePickOutputFolder}
                   disabled={isProcessing}
                   className={`${toolbarBtn} max-w-[min(11rem,100%)] border border-[var(--border-medium)] bg-[var(--bg-input)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]`}
@@ -743,6 +747,7 @@ export default function ImageOptimizer() {
 
               <div className="flex flex-wrap items-center gap-1">
                 <button
+                  type="button"
                   onClick={() => handleProcessScope(activeScope)}
                   disabled={isProcessing || stats.includedCount === 0}
                   className={`${toolbarBtn} bg-[var(--text-primary)] text-[var(--bg-base)] hover:opacity-90 disabled:opacity-30`}
@@ -764,7 +769,7 @@ export default function ImageOptimizer() {
                     className={`inline-flex h-full items-center gap-1.5 px-2.5 text-[10px] font-medium transition-[opacity,transform] duration-100 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40 ${downloadableItems.length > 0 && !isProcessing ? 'text-[var(--accent-green)]' : 'text-[var(--text-secondary)]'}`}
                   >
                     <FileDown size={12} />
-                    {downloadableItems.length > 1 ? 'ZIP' : 'Descargar'}
+                    {downloadableItems.length > 1 ? 'ZIP' : t('optimizer.actions.download')}
                   </button>
                   {downloadableItems.length > 0 && (
                     <button
@@ -773,7 +778,7 @@ export default function ImageOptimizer() {
                       disabled={isProcessing || downloadableItems.length === 0}
                       aria-expanded={downloadMenuOpen}
                       aria-haspopup="menu"
-                      aria-label="Opciones de descarga"
+                      aria-label={t('optimizer.actions.downloadOptions')}
                       className="inline-flex h-full items-center border-l border-[var(--accent-green)]/30 px-1.5 text-[var(--accent-green)] transition-transform duration-100 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <ChevronDown size={11} className={`transition-transform duration-100 ${downloadMenuOpen ? 'rotate-180' : ''}`} />
@@ -796,7 +801,7 @@ export default function ImageOptimizer() {
                           className="flex h-8 w-full items-center gap-2 px-3 text-left text-[11px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-input)]"
                         >
                           <FileDown size={12} className="shrink-0 text-[var(--accent-green)]" />
-                          Descargar como ZIP
+                          {t('optimizer.actions.downloadZip')}
                           <span className="ml-auto font-mono text-[9px] tabular-nums text-[var(--text-secondary)]">{downloadableItems.length}</span>
                         </button>
                       )}
@@ -807,7 +812,7 @@ export default function ImageOptimizer() {
                         className="flex h-8 w-full items-center gap-2 px-3 text-left text-[11px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-input)]"
                       >
                         <FileDown size={12} className="shrink-0 text-sky-500" />
-                        Descargar individual a carpeta
+                        {t('optimizer.actions.downloadIndividual')}
                         <span className="ml-auto font-mono text-[9px] tabular-nums text-[var(--text-secondary)]">{downloadableItems.length}</span>
                       </button>
                     </div>
@@ -815,12 +820,13 @@ export default function ImageOptimizer() {
                   document.body,
                 )}
                 <button
+                  type="button"
                   onClick={handleClearAll}
                   disabled={isProcessing || items.length === 0}
                   className={`${toolbarBtn} border border-[var(--border-medium)] bg-[var(--bg-input)] text-[var(--text-secondary)] hover:border-[var(--accent-red)]/40 hover:text-[var(--accent-red)] disabled:opacity-30`}
                 >
                   <Trash2 size={12} />
-                  Limpiar
+                  {t('optimizer.actions.clear')}
                 </button>
               </div>
             </div>
@@ -911,7 +917,7 @@ export default function ImageOptimizer() {
         isProcessing ? (
           <div className="fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-3 py-1.5 text-[12px] tabular-nums text-[var(--text-primary)] shadow-lg">
             <Loader2 size={14} className="animate-spin text-[var(--accent-primary)]" />
-            {processingMessage || `Procesando ${processableItems.length} imagen(es)`}
+            {processingMessage || t('optimizer.actions.processingImages', { count: processableItems.length })}
           </div>
         ) : null
       }
