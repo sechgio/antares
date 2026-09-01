@@ -46,4 +46,24 @@ describe('DatePicker', () => {
     expect(container.contains(dialog)).toBe(false);
     expect(document.body.contains(dialog)).toBe(true);
   });
+
+  it('supports keyboard navigation and returns focus to the trigger on close', () => {
+    const onChange = vi.fn();
+    render(<DatePicker value="2026-09-01" onChange={onChange} aria-label="Fecha" />);
+
+    const trigger = screen.getByRole('button', { name: 'Fecha' });
+    fireEvent.click(trigger);
+
+    const currentDay = screen.getByRole('button', { name: 'martes, 1 de septiembre de 2026' });
+    expect(document.activeElement).toBe(currentDay);
+
+    fireEvent.keyDown(currentDay, { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'miércoles, 2 de septiembre de 2026' }),
+    );
+
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Enter' });
+    expect(onChange).toHaveBeenCalledWith('2026-09-02');
+    expect(document.activeElement).toBe(trigger);
+  });
 });

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 export interface DatePickerProps {
   value: string;
@@ -106,11 +107,14 @@ export default function DatePicker({
   'aria-label': ariaLabel,
 }: DatePickerProps) {
   const popupId = useId();
+  const triggerId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
+  const focusedDayRef = useRef<HTMLButtonElement>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState<PopupPosition | null>(null);
   const [currentMonth, setCurrentMonth] = useState(() => parseIsoDate(value) ?? new Date());
+  const [focusedDate, setFocusedDate] = useState(() => parseIsoDate(value) ?? new Date());
 
   const updatePosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -135,7 +139,10 @@ export default function DatePicker({
 
   useEffect(() => {
     const parsed = parseIsoDate(value);
-    if (parsed) setCurrentMonth(parsed);
+    if (parsed) {
+      setCurrentMonth(parsed);
+      setFocusedDate(parsed);
+    }
   }, [value]);
 
   useLayoutEffect(() => {
@@ -154,10 +161,14 @@ export default function DatePicker({
       if (triggerRef.current?.contains(target)) return;
       if (popupRef.current?.contains(target)) return;
       setIsOpen(false);
+      triggerRef.current?.focus({ preventScroll: true });
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsOpen(false);
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+        triggerRef.current?.focus({ preventScroll: true });
+      }
     };
 
     const handleLayout = () => updatePosition();
@@ -174,6 +185,12 @@ export default function DatePicker({
     };
   }, [isOpen, updatePosition]);
 
+  useFocusTrap(popupRef, isOpen, focusedDayRef);
+
+  useEffect(() => {
+    if (isOpen) focusedDayRef.current?.focus({ preventScroll: true });
+  }, [focusedDate, isOpen]);
+
   const selectedDate = parseIsoDate(value);
   const today = new Date();
   const days = getCalendarDays(currentMonth);
@@ -185,13 +202,58 @@ export default function DatePicker({
         : 'app-date-picker-trigger-md';
 
   const handleSelect = (date: Date) => {
+    setFocusedDate(date);
     onChange(toIsoDateLocal(date));
     setIsOpen(false);
+    triggerRef.current?.focus({ preventScroll: true });
+  };
+
+  const openCalendar = () => {
+    const nextDate = selectedDate ?? new Date();
+    setFocusedDate(nextDate);
+    setCurrentMonth(new Date(nextDate.getFullYear(), nextDate.getMonth(), 1));
+    setIsOpen(true);
+  };
+
+  const handleTriggerKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (disabled) return;
+    if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openCalendar();
+    }
+  };
+
+  const handleDayKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, date: Date) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      handleSelect(date);
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setIsOpen(false);
+      triggerRef.current?.focus({ preventScroll: true });
+      return;
+    }
+
+    const nextDate = new Date(date);
+    if (event.key === 'ArrowLeft') nextDate.setDate(nextDate.getDate() - 1);
+    else if (event.key === 'ArrowRight') nextDate.setDate(nextDate.getDate() + 1);
+    else if (event.key === 'ArrowUp') nextDate.setDate(nextDate.getDate() - 7);
+    else if (event.key === 'ArrowDown') nextDate.setDate(nextDate.getDate() + 7);
+    else if (event.key === 'Home') nextDate.setDate(nextDate.getDate() - nextDate.getDay());
+    else if (event.key === 'End') nextDate.setDate(nextDate.getDate() + (6 - nextDate.getDay()));
+    else return;
+
+    event.preventDefault();
+    setFocusedDate(nextDate);
+    setCurrentMonth(new Date(nextDate.getFullYear(), nextDate.getMonth(), 1));
   };
 
   const handleClear = () => {
     onChange('');
     setIsOpen(false);
+    triggerRef.current?.focus({ preventScroll: true });
   };
 
   const handleToday = () => {
@@ -199,21 +261,32 @@ export default function DatePicker({
     onChange(toIsoDateLocal(next));
     setCurrentMonth(next);
     setIsOpen(false);
+    triggerRef.current?.focus({ preventScroll: true });
   };
 
   return (
     <div className={`app-date-picker ${className}`}>
       {label && (
-        <label className="app-date-picker-label">
+        <label htmlFor={triggerId} className="app-date-picker-label">
           {label}
         </label>
       )}
 
       <button
         ref={triggerRef}
+        id={triggerId}
         type="button"
         className={`app-date-picker-trigger ${triggerSizeClass} ${isOpen ? 'is-open' : ''}`}
-        onClick={() => !disabled && setIsOpen((open) => !open)}
+        onClick={() => {
+          if (disabled) return;
+          if (isOpen) {
+            setIsOpen(false);
+            triggerRef.current?.focus({ preventScroll: true });
+          } else {
+            openCalendar();
+          }
+        }}
+        onKeyDown={handleTriggerKeyDown}
         disabled={disabled}
         aria-label={ariaLabel}
         aria-haspopup="dialog"
@@ -238,6 +311,7 @@ export default function DatePicker({
             className="app-date-picker-popup"
             role="dialog"
             aria-label={ariaLabel || label || 'Selector de fecha'}
+            aria-modal="true"
             style={
               position
                 ? { top: position.top, left: position.left, width: position.width }
@@ -249,7 +323,11 @@ export default function DatePicker({
               <button
                 type="button"
                 className="app-date-picker-nav"
-                onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))}
+                onClick={() => {
+                  const nextMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1);
+                  setCurrentMonth(nextMonth);
+                  setFocusedDate(nextMonth);
+                }}
                 aria-label="Mes anterior"
               >
                 <ChevronLeft size={15} strokeWidth={2} />
@@ -262,7 +340,11 @@ export default function DatePicker({
               <button
                 type="button"
                 className="app-date-picker-nav"
-                onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))}
+                onClick={() => {
+                  const nextMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
+                  setCurrentMonth(nextMonth);
+                  setFocusedDate(nextMonth);
+                }}
                 aria-label="Mes siguiente"
               >
                 <ChevronRight size={15} strokeWidth={2} />
@@ -286,6 +368,11 @@ export default function DatePicker({
                   <button
                     key={`${date.toISOString()}-${outside ? 'outside' : 'inside'}`}
                     type="button"
+                    ref={isSameDay(date, focusedDate) ? focusedDayRef : undefined}
+                    tabIndex={isSameDay(date, focusedDate) ? 0 : -1}
+                    aria-current={isToday ? 'date' : undefined}
+                    aria-label={date.toLocaleDateString('es-ES', { dateStyle: 'full' })}
+                    onKeyDown={(event) => handleDayKeyDown(event, date)}
                     onClick={() => handleSelect(date)}
                     className={[
                       'app-date-picker-day',

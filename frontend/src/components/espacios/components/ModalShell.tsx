@@ -1,6 +1,7 @@
 import { X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { useFocusTrap } from '../../../hooks/useFocusTrap';
 
 interface ModalShellProps {
   open: boolean;
@@ -26,6 +27,10 @@ export default function ModalShell({
   size = 'sm',
 }: ModalShellProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+
+  useFocusTrap(dialogRef, open);
 
   useEffect(() => {
     if (!open) return;
@@ -53,14 +58,16 @@ export default function ModalShell({
       }}
     >
       <div
+        ref={dialogRef}
         className={`w-full ${maxWidth} animate-scale-in rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-base)]`}
+        tabIndex={-1}
         style={{
           boxShadow:
             '0 24px 48px color-mix(in srgb, var(--bg-base) 55%, transparent), 0 0 0 1px color-mix(in srgb, var(--border-subtle) 80%, transparent)',
         }}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="espacios-modal-title"
+        aria-labelledby={titleId}
       >
         <div className="flex items-start gap-3 border-b border-[var(--border-subtle)] px-5 py-4">
           {Icon && (
@@ -75,7 +82,7 @@ export default function ModalShell({
             </div>
           )}
           <div className="min-w-0 flex-1 pt-0.5">
-            <h2 id="espacios-modal-title" className="text-base font-semibold tracking-tight text-[var(--text-primary)]">
+            <h2 id={titleId} className="text-base font-semibold tracking-tight text-[var(--text-primary)]">
               {title}
             </h2>
             {description && (
