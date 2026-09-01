@@ -924,9 +924,9 @@ export const UbicacionesView: React.FC = () => {
   const hasData = inputMode === 'excel' ? !!excelFile : true;
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div data-surface="ubicaciones" className="flex h-full overflow-hidden">
       {/* ── Sidebar: Config ── */}
-      <div className="w-[340px] flex flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-base)] overflow-hidden">
+      <div data-surface-part="sidebar" className="w-[340px] flex flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-base)] overflow-hidden">
         {/* Title (fixed top) */}
         <div className="shrink-0 flex items-center gap-2.5 px-4 h-11 border-b border-[var(--border-subtle)]">
           <MapPin size={16} className="text-[var(--accent-primary)] shrink-0" />
@@ -1576,7 +1576,7 @@ export const UbicacionesView: React.FC = () => {
       </div>
 
       {/* ── Main: Preview & Results ── */}
-      <div className="flex-1 flex flex-col bg-[var(--bg-elevated)] overflow-hidden">
+      <div data-surface-part="workspace" className="flex-1 flex flex-col bg-[var(--bg-elevated)] overflow-hidden">
         {result ? (
           <ResultPanel result={result} outputDir={outputDir} />
         ) : hasData ? (

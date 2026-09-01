@@ -74,6 +74,26 @@ describe('PreviewPanelView column mapping', () => {
     expect(getMappingScrollContainer().scrollTop).toBe(96);
   });
 
+  it('keeps focus inside the custom column dialog and closes it with Escape', async () => {
+    renderView();
+
+    const trigger = screen.getByRole('button', { name: /Columna Personalizada/i });
+    trigger.focus();
+    fireEvent.click(trigger);
+
+    const dialog = await screen.findByRole('dialog', { name: /Agregar Columna Personalizada/ });
+    const nameInput = screen.getByPlaceholderText('Ej: FECHA CORTE');
+    expect(dialog).toBeInTheDocument();
+    expect(document.activeElement).toBe(nameInput);
+
+    fireEvent.keyDown(nameInput, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: /Agregar Columna Personalizada/ })).not.toBeInTheDocument();
+      expect(document.activeElement).toBe(trigger);
+    });
+  });
+
   it('imports CSV via backend spreadsheetParse and adds custom column', async () => {
     const { container } = renderView();
     const fileInput = container.querySelector('input[accept=".csv,.xlsx,.xls"]') as HTMLInputElement | null;

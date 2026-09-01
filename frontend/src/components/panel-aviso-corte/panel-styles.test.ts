@@ -14,4 +14,15 @@ describe('panel aviso preview styles', () => {
     expect(css).toMatch(/\.pac-cell-photo img\s*\{[^}]*height:\s*9\.82cm/s);
     expect(css).toMatch(/\.pac-cell-photo img\s*\{[^}]*object-fit:\s*cover/s);
   });
+
+  it('keeps the workspace usable below the desktop sidebar width', () => {
+    const css = readFileSync(
+      join(process.cwd(), 'src/components/panel-aviso-corte/panel-styles.css'),
+      'utf-8',
+    );
+
+    expect(css).toMatch(/\.pac-sidebar\s*\{[^}]*min-width:\s*340px/s);
+    expect(css).toMatch(/@media\s*\(max-width:\s*900px\)[\s\S]*?\.pac-sidebar\s*\{[^}]*min-width:\s*0/s);
+    expect(css).toMatch(/@media\s*\(max-width:\s*900px\)[\s\S]*?\.pac-preview\s*\{[^}]*min-height:\s*360px/s);
+  });
 });

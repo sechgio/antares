@@ -4,6 +4,7 @@ import { History, Palette, X, Users, PawPrint, type LucideIcon } from 'lucide-re
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { CONFIG_SECTION_DEFINITIONS, type ConfigSectionId } from '../../navigation';
 import { useAuth } from '../../auth/AuthContext';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 const AppearanceView = React.lazy(() => import('./AppearanceView'));
 const HistoryView = React.lazy(() => import('../history/HistoryView'));
@@ -36,6 +37,8 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
   const overlayRef = useRef<HTMLDivElement>(null);
   const sectionButtonsRef = useRef<Record<string, HTMLButtonElement | null>>({});
 
+  useFocusTrap(overlayRef, isOpen);
+
   const visibleSectionDefs = useMemo(
     () => CONFIG_SECTION_DEFINITIONS.filter((def) => def.id !== 'panel' || user?.isAdmin),
     [user?.isAdmin],
@@ -49,6 +52,8 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
         e.stopPropagation();
         onClose();
       } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        const target = e.target as HTMLElement | null;
+        if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
         const ids = visibleSectionDefs.map((s) => s.id);
         const currentIndex = Math.max(0, ids.indexOf(section));
         const nextIndex = e.key === 'ArrowDown'
@@ -108,6 +113,7 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
         role="dialog"
         aria-modal="true"
         aria-label="Configuración"
+        tabIndex={-1}
         className="relative flex h-full w-full max-w-[1380px] max-h-[900px] overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-base)] animate-scale-in"
         style={{
           boxShadow:

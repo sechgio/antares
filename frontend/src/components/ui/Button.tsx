@@ -1,26 +1,18 @@
-import React from 'react';
+import React, { forwardRef } from 'react';
 
-interface ButtonProps {
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
   size?: 'sm' | 'md' | 'lg';
-  type?: 'button' | 'submit' | 'reset';
-  form?: string;
-  onClick?: () => void;
-  disabled?: boolean;
-  className?: string;
-  children: React.ReactNode;
 }
 
-export default function Button({
+const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button({
   variant = 'primary',
   size = 'md',
   type = 'button',
-  form,
-  onClick,
-  disabled = false,
   className = '',
   children,
-}: ButtonProps) {
+  ...props
+}, ref) {
   const sizeClasses = {
     sm: 'px-3 py-1.5 text-xs',
     md: 'px-5 py-2 text-sm',
@@ -36,13 +28,17 @@ export default function Button({
 
   return (
     <button
+      ref={ref}
+      data-slot="button"
       type={type}
-      form={form}
-      onClick={onClick}
-      disabled={disabled}
-      className={`inline-flex items-center justify-center gap-2 rounded-full transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] ${sizeClasses[size]} ${variants[variant]} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 rounded-full transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-base)] ${sizeClasses[size]} ${variants[variant]} ${className}`}
+      {...props}
     >
       {children}
     </button>
   );
-}
+});
+
+Button.displayName = 'Button';
+
+export default Button;

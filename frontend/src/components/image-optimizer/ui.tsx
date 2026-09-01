@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertCircle, Check, CheckCircle, ChevronDown, Info, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import '../../i18n';
 import { ImageItem, Toast } from './types';
 import { formatBytes } from './utils';
 
@@ -210,6 +212,7 @@ export function ToastContainer({ toasts, removeToast }: { toasts: Toast[]; remov
           {toast.type === 'info' && <Info size={14} className="shrink-0" />}
           <span className="flex-1 text-[12px] leading-snug">{toast.message}</span>
           <button
+            type="button"
             onClick={() => removeToast(toast.id)}
             className={`flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)] ${pressable}`}
           >
@@ -247,6 +250,7 @@ export function SegmentedControl<T extends string>({
       {options.map((option) => (
         <button
           key={option.value}
+          type="button"
           onClick={() => onChange(option.value)}
           className={`h-7 flex-1 rounded-md px-2 text-[10px] font-medium transition-[color,background-color,transform] duration-100 ${pressable} ${value === option.value
             ? 'bg-[var(--bg-elevated)] text-[var(--text-primary)] shadow-sm'
@@ -261,22 +265,23 @@ export function SegmentedControl<T extends string>({
 }
 
 export function BeforeAfterSlider({ before, after, alt }: { before: string; after: string; alt: string }) {
+  const { t } = useTranslation();
   const [position, setPosition] = useState(50);
   return (
     <div className="flex h-full max-h-full w-full max-w-full flex-col gap-1.5">
       <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg">
-        <img src={before} alt={`${alt} original`} className="absolute inset-0 h-full w-full object-contain" />
+        <img src={before} alt={`${alt} ${t('optimizer.preview.original')}`} className="absolute inset-0 h-full w-full object-contain" />
         <div className="absolute inset-y-0 left-0 overflow-hidden" style={{ width: `${position}%` }}>
-          <img src={after} alt={`${alt} resultado`} className="h-full w-full object-contain" />
+          <img src={after} alt={`${alt} ${t('optimizer.preview.result')}`} className="h-full w-full object-contain" />
         </div>
         <div className="absolute inset-y-0" style={{ left: `calc(${position}% - 0.5px)` }}>
           <div className="h-full w-px bg-[var(--text-primary)]/70" />
         </div>
         <div className="absolute left-2 top-2 rounded-md border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--text-primary)]">
-          Original
+          {t('optimizer.preview.original')}
         </div>
         <div className="absolute right-2 top-2 rounded-md border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--text-primary)]">
-          Resultado
+          {t('optimizer.preview.result')}
         </div>
       </div>
       <input
@@ -286,25 +291,26 @@ export function BeforeAfterSlider({ before, after, alt }: { before: string; afte
         value={position}
         onChange={(e) => setPosition(Number(e.target.value))}
         className="w-full shrink-0 accent-[var(--text-primary)]"
-        aria-label="Comparar antes y despues"
+        aria-label={t('optimizer.preview.compare')}
       />
     </div>
   );
 }
 
 export function ItemSummary({ item }: { item: ImageItem }) {
+  const { t } = useTranslation();
   const reduction = item.resultSize && item.originalSize > 0
     ? Math.max(0, ((item.originalSize - item.resultSize) / item.originalSize) * 100)
     : 0;
 
   const statusLabel = useMemo(() => {
-    if (item.excluded) return 'Excluida';
-    if (item.status === 'processing') return 'Procesando';
-    if (item.status === 'error') return 'Error';
-    if (item.stale) return 'Stale';
-    if (item.status === 'completed') return 'Lista';
-    return 'Pendiente';
-  }, [item]);
+    if (item.excluded) return t('optimizer.status.excluded');
+    if (item.status === 'processing') return t('optimizer.status.processing');
+    if (item.status === 'error') return t('optimizer.status.error');
+    if (item.stale) return t('optimizer.status.stale');
+    if (item.status === 'completed') return t('optimizer.status.completed');
+    return t('optimizer.status.pending');
+  }, [item, t]);
 
   const weightValue = item.resultSize
     ? `${formatBytes(item.originalSize)} / ${formatBytes(item.resultSize)}`
@@ -314,15 +320,15 @@ export function ItemSummary({ item }: { item: ImageItem }) {
     ? item.finalWidth && item.finalHeight
       ? `${item.sourceWidth}×${item.sourceHeight} / ${item.finalWidth}×${item.finalHeight}`
       : `${item.sourceWidth}×${item.sourceHeight}`
-    : 'Sin datos';
+    : t('optimizer.stats.noData');
 
   const savingsValue = item.resultSize ? `${reduction.toFixed(1)}%` : '—';
 
   const stats = [
-    { label: 'Estado', value: statusLabel },
-    { label: 'Peso', value: weightValue },
-    { label: 'Dims', value: dimensionsValue },
-    { label: 'Ahorro', value: savingsValue },
+    { label: t('optimizer.stats.status'), value: statusLabel },
+    { label: t('optimizer.stats.size'), value: weightValue },
+    { label: t('optimizer.stats.dimensions'), value: dimensionsValue },
+    { label: t('optimizer.stats.savings'), value: savingsValue },
   ];
 
   return (

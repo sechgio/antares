@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ImageItem, PresetId } from './types';
 import { IMAGE_OPTIMIZER_PRESETS } from './presets';
 import { FormField, SettingSwitchRow, ThemeSelect, formControlClassName } from './ui';
@@ -24,42 +25,46 @@ export default function ItemOverridesPanel({
   onToggleExcluded,
   onClearPresetOverride,
 }: ItemOverridesPanelProps) {
+  const { t } = useTranslation();
   const skipCompressionId = useId();
   const excludeId = useId();
 
   const presetOptions = [
-    { value: '', label: 'Global' },
-    ...IMAGE_OPTIMIZER_PRESETS.map((preset) => ({ value: preset.id, label: preset.label })),
+    { value: '', label: t('optimizer.presets.global') },
+    ...IMAGE_OPTIMIZER_PRESETS.map((preset) => ({
+      value: preset.id,
+      label: t(`optimizer.presets.${preset.id}`, { defaultValue: preset.label }),
+    })),
   ];
 
   return (
     <div className="space-y-1.5 border-t border-[var(--border-medium)] pt-1.5 pb-1.5">
       <div className="grid gap-x-4 gap-y-1.5 sm:grid-cols-2">
-        <FormField label="Nombre final">
+        <FormField label={t('optimizer.item.finalName')}>
           <input
             type="text"
             value={item.overrides.customFilename}
             onChange={(e) => onUpdateCustomFilename(item.id, e.target.value)}
-            placeholder="Opcional"
+            placeholder={t('optimizer.item.optional')}
             className={formControlClassName}
           />
         </FormField>
 
         <div className="space-y-1">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[10px] font-medium text-[var(--text-secondary)]">Preset local</span>
+            <span className="text-[10px] font-medium text-[var(--text-secondary)]">{t('optimizer.item.localPreset')}</span>
             {item.overrides.presetId ? (
               <button
                 type="button"
                 onClick={() => onClearPresetOverride(item.id)}
                 className="text-[10px] font-medium text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
               >
-                Limpiar
+                {t('optimizer.queue.clearSelection')}
               </button>
             ) : null}
           </div>
           <ThemeSelect
-            aria-label="Preset local"
+            aria-label={t('optimizer.item.localPreset')}
             value={item.overrides.presetId || ''}
             options={presetOptions}
             onChange={(value) => onUpdatePresetOverride(item.id, (value || null) as PresetId | null)}
@@ -70,7 +75,7 @@ export default function ItemOverridesPanel({
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         <SettingSwitchRow
           switchId={skipCompressionId}
-          label="Omitir compresión"
+          label={t('optimizer.item.skipCompression')}
           checked={item.overrides.skipCompression}
           onChange={(value) => onToggleSkipCompression(item.id, value)}
           accentColor="var(--accent-primary)"
@@ -78,7 +83,7 @@ export default function ItemOverridesPanel({
 
         <SettingSwitchRow
           switchId={excludeId}
-          label="Excluir del lote"
+          label={t('optimizer.item.excludeBatch')}
           labelClassName={item.excluded ? 'text-[var(--accent-red)]' : 'text-[var(--text-secondary)]'}
           checked={item.excluded}
           onChange={(value) => onToggleExcluded(item.id, value)}
@@ -88,7 +93,7 @@ export default function ItemOverridesPanel({
         <p className="text-[10px] text-[var(--text-secondary)] sm:ml-auto">
           {primaryActionLabel}
           <span className="mx-1 text-[var(--border-medium)]">·</span>
-          {isDirect ? 'Directa' : 'Con procesado'}
+          {isDirect ? t('optimizer.item.direct') : t('optimizer.item.processed')}
         </p>
       </div>
 

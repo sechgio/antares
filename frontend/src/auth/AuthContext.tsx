@@ -140,6 +140,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     let subscription: { unsubscribe: () => void } | null = null;
+    const deferredProfileFetches = new Set<ReturnType<typeof setTimeout>>();
+
+    const deferProfileFetch = (
+      supabaseUser: { id: string; email?: string; created_at?: string },
+      gen: number,
+    ) => {
+      // Supabase holds an internal auth lock while invoking this callback.
+      // Defer the profile query until the callback has returned to avoid a
+      // client deadlock (see Supabase's onAuthStateChange guidance).
+      const timer = setTimeout(() => {
+        deferredProfileFetches.delete(timer);
+        if (cancelled || !mountedRef.current || gen !== authGenRef.current) return;
+        applyAuthenticatedUser(supabaseUser, gen).catch((err) => {
+          console.warn('[auth] onAuthStateChange profile fetch failed:', err);
+          if (mountedRef.current && gen === authGenRef.current) {
+            setUser(null);
+            setLoading(false);
+          }
+        });
+      }, 0);
+      deferredProfileFetches.add(timer);
+    };
     // Safety timeout: if Supabase is slow, show login UI after 5s — but do NOT
     // bump authGenRef. Invalidating the generation discarded a late valid
     // getSession() result and left users stuck on the login screen.
@@ -179,13 +201,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // user appears without a loading gate and the app flickers).
         const gen = ++authGenRef.current;
         setLoading(true);
-        applyAuthenticatedUser(session.user, gen).catch((err) => {
-          console.warn('[auth] onAuthStateChange profile fetch failed:', err);
-          if (mountedRef.current && gen === authGenRef.current) {
-            setUser(null);
-            setLoading(false);
-          }
-        });
+        deferProfileFetch(session.user, gen);
       });
       subscription = data.subscription;
       // Give INITIAL_SESSION a chance to fire (async via initializePromise)
@@ -204,6 +220,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
       clearTimeout(timeout);
+      for (const timer of deferredProfileFetches) clearTimeout(timer);
+      deferredProfileFetches.clear();
       subscription?.unsubscribe();
     };
   }, [refreshUser, applyAuthenticatedUser]);

@@ -368,7 +368,7 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 85%, transparent)' }} onClick={onClose}>
             <div
-              className="w-[380px] space-y-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-6"
+              className="w-[min(380px,calc(100vw-2rem))] space-y-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-6"
               style={{
                 boxShadow:
                   '0 24px 48px color-mix(in srgb, var(--bg-base) 55%, transparent), 0 0 0 1px color-mix(in srgb, var(--border-subtle) 80%, transparent)',
@@ -712,9 +712,9 @@ export default function FormatosView() {
     const isCapped = previewTotal > MAX_PREVIEW_PAGES;
 
     return (
-        <div className="flex h-full min-h-0 overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]" style={{ fontFamily: "'Outfit', sans-serif" }}>
+        <div data-surface="formatos" className="flex h-full min-h-0 overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]" style={{ fontFamily: "'Outfit', sans-serif" }}>
             {/* ── LEFT: PREVIEW ─────────────────────────────────────── */}
-            <div className="flex-1 flex flex-col min-w-0 relative">
+            <div data-surface-part="preview" className="flex-1 flex flex-col min-w-0 relative">
                 <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle, color-mix(in srgb, var(--border-medium) 70%, transparent) 1px, transparent 1px)', backgroundSize: '28px 28px' }} />
 
                 {/* topbar */}
@@ -822,7 +822,7 @@ export default function FormatosView() {
             </div>
 
             {/* ── RIGHT: SIDEBAR ────────────────────────────────────── */}
-            <div className="w-[320px] flex-shrink-0 flex flex-col border-l border-[var(--border-subtle)] bg-[var(--bg-base)]">
+            <div data-surface-part="sidebar" className="w-[320px] flex-shrink-0 flex flex-col border-l border-[var(--border-subtle)] bg-[var(--bg-base)]">
                 {/* scrollable config */}
                 <div className={`flex-1 px-6 pt-5 pb-3 space-y-4 ${mappingMode ? 'overflow-y-auto' : 'overflow-y-hidden'}`}>
 

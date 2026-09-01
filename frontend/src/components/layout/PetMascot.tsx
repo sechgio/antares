@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 
 type MascotState = 'idle' | 'walking' | 'reacting' | 'clicked';
+type Position = { x: number; y: number };
 
 const SPRITE_W = 192;
 const SPRITE_H = 208;
@@ -30,6 +31,10 @@ function savePosition(x: number, y: number) {
   localStorage.setItem('petdex_pos_y', String(Math.round(y)));
 }
 
+function applyPosition(element: HTMLDivElement | null, position: Position) {
+  if (element) element.style.transform = `translate3d(${position.x}px, ${position.y}px, 0)`;
+}
+
 export default function PetMascot() {
   const [config, setConfig] = useState({
     enabled: false,
@@ -39,7 +44,6 @@ export default function PetMascot() {
     movement: 'walk' as 'static' | 'walk',
   });
 
-  const [pos, setPos] = useState(() => loadSavedPosition(1));
   const [direction, setDirection] = useState<1 | -1>(-1);
   const [mascotState, setMascotState] = useState<MascotState>('idle');
   const [frameCol, setFrameCol] = useState(0);
@@ -55,12 +59,23 @@ export default function PetMascot() {
   const pointerStartRef = useRef({ x: 0, y: 0 });
   const dragOffsetRef = useRef({ x: 0, y: 0 });
   const pendingDragPosRef = useRef<{ x: number; y: number } | null>(null);
-  const posRef = useRef(pos);
+  const posRef = useRef<Position | null>(null);
   const configRef = useRef(config);
+  const mascotRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    posRef.current = pos;
-  }, [pos]);
+  const readPosition = useCallback((): Position => {
+    const current = posRef.current;
+    if (current) return current;
+
+    const initial = loadSavedPosition(1);
+    posRef.current = initial;
+    return initial;
+  }, []);
+
+  const writePosition = useCallback((next: Position) => {
+    posRef.current = next;
+    applyPosition(mascotRef.current, next);
+  }, []);
 
   useEffect(() => {
     configRef.current = config;
@@ -84,8 +99,9 @@ export default function PetMascot() {
     const movement = (localStorage.getItem('petdex_movement') as 'static' | 'walk') || 'walk';
 
     setConfig({ enabled, spritesheetUrl, scale, opacity, movement });
-    setPos((prev) => clampPosition(prev.x, prev.y, scale));
-  }, []);
+    const currentPosition = readPosition();
+    writePosition(clampPosition(currentPosition.x, currentPosition.y, scale));
+  }, [readPosition, writePosition]);
 
   useEffect(() => {
     loadConfig();
@@ -100,12 +116,17 @@ export default function PetMascot() {
 
   useEffect(() => {
     const handleResize = () => {
-      setPos((prev) => clampPosition(prev.x, prev.y, config.scale));
+      const currentPosition = readPosition();
+      writePosition(clampPosition(currentPosition.x, currentPosition.y, config.scale));
     };
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [config.scale]);
+  }, [config.scale, readPosition, writePosition]);
+
+  useLayoutEffect(() => {
+    if (config.enabled) applyPosition(mascotRef.current, readPosition());
+  }, [config.enabled, config.scale, readPosition]);
 
   useEffect(() => {
     if (!config.enabled) return;
@@ -144,7 +165,7 @@ export default function PetMascot() {
         idleTicksRef.current -= 1;
         if (idleTicksRef.current <= 0) {
           let nextDir: 1 | -1 = Math.random() > 0.5 ? 1 : -1;
-          const currentX = posRef.current.x;
+          const currentX = readPosition().x;
           if (currentX < 100) nextDir = 1;
           else if (currentX > window.innerWidth - petWidth - 100) nextDir = -1;
 
@@ -161,12 +182,11 @@ export default function PetMascot() {
       lastTime = time;
 
       // Coalescing del drag: los pointermove solo guardan en el ref y aquí se
-      // aplica un único setPos por frame (latest-event-wins).
+      // aplica una única posición por frame (latest-event-wins).
       if (pendingDragPosRef.current) {
         const next = pendingDragPosRef.current;
         pendingDragPosRef.current = null;
-        posRef.current = next;
-        setPos(next);
+        writePosition(next);
       }
 
       if (!isDraggingRef.current) {
@@ -177,23 +197,22 @@ export default function PetMascot() {
         }
 
         if (stateRef.current === 'walking' && config.movement === 'walk') {
-          setPos((prev) => {
-            const petWidth = SPRITE_W * config.scale;
-            const currentDir = dirRef.current;
-            let nextX = prev.x + currentDir * walkSpeed * dt;
+          const petWidth = SPRITE_W * config.scale;
+          const currentDir = dirRef.current;
+          const currentPosition = readPosition();
+          let nextX = currentPosition.x + currentDir * walkSpeed * dt;
 
-            if (currentDir === 1 && nextX >= window.innerWidth - petWidth) {
-              dirRef.current = -1;
-              setDirection(-1);
-              nextX = window.innerWidth - petWidth;
-            } else if (currentDir === -1 && nextX <= 0) {
-              dirRef.current = 1;
-              setDirection(1);
-              nextX = 0;
-            }
+          if (currentDir === 1 && nextX >= window.innerWidth - petWidth) {
+            dirRef.current = -1;
+            setDirection(-1);
+            nextX = window.innerWidth - petWidth;
+          } else if (currentDir === -1 && nextX <= 0) {
+            dirRef.current = 1;
+            setDirection(1);
+            nextX = 0;
+          }
 
-            return { ...prev, x: nextX };
-          });
+          writePosition({ ...currentPosition, x: nextX });
         }
       }
 
@@ -202,7 +221,7 @@ export default function PetMascot() {
 
     rafId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafId);
-  }, [config.enabled, config.movement, config.scale]);
+  }, [config.enabled, config.movement, config.scale, readPosition, writePosition]);
 
   const getRow = () => {
     if (mascotState === 'clicked') return 4;
@@ -218,8 +237,8 @@ export default function PetMascot() {
     pointerSessionRef.current = true;
     pointerStartRef.current = { x: e.clientX, y: e.clientY };
     dragOffsetRef.current = {
-      x: e.clientX - posRef.current.x,
-      y: e.clientY - posRef.current.y,
+      x: e.clientX - readPosition().x,
+      y: e.clientY - readPosition().y,
     };
 
     const handlePointerMove = (ev: PointerEvent) => {
@@ -238,7 +257,7 @@ export default function PetMascot() {
       }
 
       didDragRef.current = true;
-      // El bucle rAF aplica un solo setPos por frame (coalescing, latest-event-wins).
+      // El bucle rAF aplica una sola posición por frame (coalescing, latest-event-wins).
       pendingDragPosRef.current = clampPosition(
         ev.clientX - dragOffsetRef.current.x,
         ev.clientY - dragOffsetRef.current.y,
@@ -258,10 +277,9 @@ export default function PetMascot() {
         isDraggingRef.current = false;
         setIsDragging(false);
         // Aplica el último pointermove pendiente (puede no haberse pintado aún).
-        const final = pendingDragPosRef.current ?? posRef.current;
+        const final = pendingDragPosRef.current ?? readPosition();
         pendingDragPosRef.current = null;
-        posRef.current = final;
-        setPos(final);
+        writePosition(final);
         savePosition(final.x, final.y);
       }
 
@@ -309,6 +327,7 @@ export default function PetMascot() {
     <WithHoverTooltip label="Arrastra para mover. Clic para saltar." placement="bottom">
       <div
         data-testid="pet-mascot-container"
+        ref={mascotRef}
         className="z-[90]"
         onPointerDown={handlePointerDown}
         onMouseEnter={handleMouseEnter}
@@ -318,7 +337,6 @@ export default function PetMascot() {
           position: 'fixed',
           left: 0,
           top: 0,
-          transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
           width: `${w}px`,
           height: `${h}px`,
           cursor: isDragging ? 'grabbing' : 'grab',

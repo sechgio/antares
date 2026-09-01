@@ -60,16 +60,14 @@ const ICONS: Record<TabId, ComponentType<{ className?: string }>> = {
   fichasTecnicas: FileText,
 };
 
-const NAV_GROUPS: { id: string; label: string; tabs: TabId[] }[] = [
-  { id: 'general', label: 'General', tabs: ['espacios'] },
+const NAV_GROUPS: { id: string; tabs: TabId[] }[] = [
+  { id: 'general', tabs: ['espacios'] },
   {
     id: 'produccion',
-    label: 'Producción',
     tabs: ['convert', 'formatos', 'sellador', 'padron', 'volantes'],
   },
   {
     id: 'reportes',
-    label: 'Reportes',
     tabs: [
       'reportesCampo',
       'technicalReports',
@@ -83,7 +81,6 @@ const NAV_GROUPS: { id: string; label: string; tabs: TabId[] }[] = [
   },
   {
     id: 'herramientas',
-    label: 'Herramientas',
     tabs: ['imageOptimizer', 'ubicaciones', 'autoimg'],
   },
 ];
@@ -138,15 +135,10 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: Sideb
       data-expanded={expanded ? 'true' : 'false'}
       data-slot="sidebar"
       aria-label="Barra lateral de navegación"
-      className="flex shrink-0 flex-col overflow-visible border-r border-[var(--sidebar-border)] bg-[var(--sidebar)] text-[var(--sidebar-foreground)] transition-[width] duration-200 ease-[var(--ease-out)] motion-reduce:transition-none"
+      className="flex min-w-0 shrink-0 flex-col overflow-visible border-r border-[var(--sidebar-border)] bg-[var(--sidebar)] text-[var(--sidebar-foreground)] transition-[width] duration-200 ease-[var(--ease-out)] motion-reduce:transition-none"
       style={{ width: expanded ? SIDEBAR_WIDTH_EXPANDED : SIDEBAR_WIDTH_COLLAPSED }}
     >
-      <div
-        className={cn(
-          'flex h-11 shrink-0 items-center',
-          expanded ? 'gap-1.5 px-1.5' : 'justify-center px-1',
-        )}
-      >
+      <div className="flex h-11 shrink-0 items-center gap-1.5 px-1.5">
         <div className="group/toggle relative shrink-0">
           <button
             type="button"
@@ -160,38 +152,36 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: Sideb
           </button>
           <HoverTooltip label={expanded ? 'Hide Sidebar' : 'Show Sidebar'} groupHoverClass="group-hover/toggle:opacity-100" />
         </div>
-        {expanded && (
-          <div className="min-w-0 flex-1 overflow-hidden">
-            <BrandMark showText size="md" />
-          </div>
-        )}
+        <div
+          className={cn(
+            'min-w-0 overflow-hidden transition-[max-width,opacity] duration-150 ease-[var(--ease-out)] motion-reduce:transition-none',
+            expanded ? 'max-w-[140px] opacity-100' : 'max-w-0 opacity-0',
+          )}
+        >
+          <BrandMark showText size="md" />
+        </div>
       </div>
 
-      {expanded && <Separator className="mx-1.5 w-auto" />}
+      {expanded && <Separator className="mx-1.5 -mb-px w-auto" />}
 
       <nav
         className={cn(
           'flex min-h-0 flex-1 flex-col py-2',
-          expanded ? 'gap-3 overflow-y-auto overflow-x-hidden px-1.5' : 'items-center gap-2 overflow-visible px-1',
+          expanded ? 'gap-0.5 overflow-y-auto overflow-x-hidden px-1.5' : 'items-center gap-0.5 overflow-visible px-1.5',
         )}
       >
         {NAV_GROUPS.map((group) => (
           <div
             key={group.id}
-            className={cn('flex w-full min-w-0 flex-col', expanded ? 'gap-0.5' : 'items-center gap-0.5')}
+            className={cn('relative flex w-full min-w-0 flex-col gap-0.5', !expanded && 'items-start')}
             data-slot="sidebar-group"
           >
-            {expanded && (
-              <div className="px-1.5 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
-                {group.label}
-              </div>
-            )}
             {group.tabs.map((tabId) => {
               const tab = TAB_BY_ID[tabId];
               const isActive = activeTab === tabId;
               const Icon = ICONS[tabId];
               return (
-                <div key={tabId} className={cn('relative', !expanded && 'group/nav-item')}>
+                <div key={tabId} className={cn('relative', !expanded && 'group/nav-item flex size-8 items-center')}>
                   <button
                     type="button"
                     onClick={() => onTabChange(tabId)}
@@ -202,7 +192,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: Sideb
                     data-active={isActive ? 'true' : undefined}
                     className={cn(
                       'group/menu-button flex items-center rounded-md text-left transition-[color,background-color,transform] duration-150 ease-[var(--ease-out)] active:scale-[0.97] motion-reduce:active:scale-100',
-                      expanded ? 'w-full gap-2 px-1.5 py-1.5' : 'size-8 shrink-0 justify-center p-0',
+                      expanded ? 'h-8 w-full gap-2 px-2 py-1.5' : 'size-8 shrink-0 justify-start gap-0 p-0 pl-2',
                       isActive
                         ? 'bg-[var(--sidebar-accent)] font-medium text-[var(--sidebar-accent-foreground)]'
                         : 'text-[var(--text-muted)] hover:bg-[var(--sidebar-accent)]/60 hover:text-[var(--text-secondary)]',
@@ -216,11 +206,15 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: Sideb
                         )}
                       />
                     </span>
-                    {expanded && (
-                      <span className="truncate text-[13px] whitespace-nowrap" aria-hidden="true">
-                        {tab.label}
-                      </span>
-                    )}
+                    <span
+                      className={cn(
+                        'min-w-0 max-w-0 overflow-hidden truncate whitespace-nowrap text-[13px] opacity-0 transition-[max-width,opacity] duration-150 ease-[var(--ease-out)] motion-reduce:transition-none',
+                        expanded ? 'max-w-[140px] opacity-100' : 'pointer-events-none',
+                      )}
+                      aria-hidden="true"
+                    >
+                      {tab.label}
+                    </span>
                   </button>
                   {!expanded && (
                     <HoverTooltip label={tab.label} groupHoverClass="group-hover/nav-item:opacity-100" />
@@ -235,8 +229,8 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: Sideb
       {expanded && user && <Separator className="mx-1.5 w-auto" />}
 
       {user && (
-        <div className={cn('shrink-0 py-1.5', expanded ? 'px-1.5' : 'flex justify-center px-1')}>
-          <div className={cn('relative', !expanded && 'group/signout')}>
+        <div className="shrink-0 px-1.5 py-1.5">
+          <div className={cn('relative', !expanded && 'group/signout flex size-8 items-start')}>
             <button
               type="button"
               data-testid="sidebar-signout-button"
@@ -245,17 +239,21 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: Sideb
               onClick={handleSignOut}
               className={cn(
                 'flex items-center rounded-md text-left text-[var(--text-muted)] transition-[color,background-color,transform] duration-150 ease-[var(--ease-out)] hover:bg-[var(--sidebar-accent)]/60 hover:text-[var(--text-secondary)] active:scale-[0.97] disabled:opacity-50 motion-reduce:active:scale-100',
-                expanded ? 'w-full gap-2 px-1.5 py-1.5' : 'size-8 shrink-0 justify-center p-0',
+                expanded ? 'h-8 w-full gap-2 px-2 py-1.5' : 'size-8 shrink-0 justify-start gap-0 p-0 pl-2',
               )}
             >
               <span className="flex size-4 shrink-0 items-center justify-center">
                 <LogOut className="size-4" strokeWidth={1.75} />
               </span>
-              {expanded && (
-                <span className="min-w-0 truncate text-[13px] font-medium whitespace-nowrap" aria-hidden="true">
-                  {t('auth.signOut')}
-                </span>
-              )}
+              <span
+                className={cn(
+                  'min-w-0 max-w-0 overflow-hidden truncate whitespace-nowrap text-[13px] font-medium opacity-0 transition-[max-width,opacity] duration-150 ease-[var(--ease-out)] motion-reduce:transition-none',
+                  expanded ? 'max-w-[140px] opacity-100' : 'pointer-events-none',
+                )}
+                aria-hidden="true"
+              >
+                {t('auth.signOut')}
+              </span>
             </button>
             {!expanded && (
               <HoverTooltip label={t('auth.signOut')} groupHoverClass="group-hover/signout:opacity-100" />

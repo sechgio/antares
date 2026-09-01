@@ -145,8 +145,12 @@ export function applyBooleanCompose(
   });
 }
 
+const compositionHiddenCache = new WeakMap<CanvasLayer[], Set<string>>();
+
 /** Layer ids that must not paint as standalone nodes (boolean operands / masks). */
 export function compositionHiddenLayerIds(layers: CanvasLayer[]): Set<string> {
+  const cached = compositionHiddenCache.get(layers);
+  if (cached) return cached;
   const hide = new Set<string>();
   for (const layer of layers) {
     for (const op of layer.meta?.ops ?? []) {
@@ -154,6 +158,7 @@ export function compositionHiddenLayerIds(layers: CanvasLayer[]): Set<string> {
     }
     if (layer.meta?.maskLayerId) hide.add(layer.meta.maskLayerId);
   }
+  compositionHiddenCache.set(layers, hide);
   return hide;
 }
 

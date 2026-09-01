@@ -690,12 +690,23 @@ export const api = {
   historyExport: (body?: { ids?: number[]; limit?: number; run_type?: string }) => _invoke<{ csv: string; count: number; filename: string }>('history_export', body),
 
   // ─── Formatos PDF ───────────────────────────────────────────────────────
-  formatosList: () => _invoke<{ formats: FormatInfo[] }>('formatos_list'),
+  // formatos_list es quasi-estático (catálogo builtin + uploads locales); las
+  // mutaciones lo invalidan explícitamente. Dedupe in-flight evita que la
+  // doble invocación en dev pague dos veces el import frío de core.formatos.
+  formatosList: () =>
+    cachedInvoke('formatos_list', () => _invoke<{ formats: FormatInfo[] }>('formatos_list')),
   formatosGenerate: (body: { format_id: string; desde: number; hasta: number; output_path?: string }) =>
     _invoke<FormatosGenerateResponse>('formatos_generate', body),
   formatosUpload: (body: { nombre: string; filename: string; content_b64: string; persisted?: boolean; filename_pattern?: string }) =>
-    _invoke<{ format: FormatInfo }>('formatos_upload', body),
-  formatosDelete: (format_id: string) => _invoke<{ deleted: boolean }>('formatos_delete', { format_id }),
+    _invoke<{ format: FormatInfo }>('formatos_upload', body).then((v) => {
+      invalidateApiCache('formatos_list');
+      return v;
+    }),
+  formatosDelete: (format_id: string) =>
+    _invoke<{ deleted: boolean }>('formatos_delete', { format_id }).then((v) => {
+      invalidateApiCache('formatos_list');
+      return v;
+    }),
   formatosGetTemplate: (format_id: string) =>
     _invoke<{ pdf_base64: string; filename: string }>('formatos_get_template', { format_id }),
   formatosRenderTemplatePage: (body: { format_id: string; page_num?: number; max_width?: number }) =>
@@ -706,7 +717,10 @@ export const api = {
       mime_type: string;
     }>('formatos_render_template_page', body),
   formatosUpdateMapping: (format_id: string, mapping: VisualMapping) =>
-    _invoke<{ format: FormatInfo }>('formatos_update_mapping', { format_id, mapping }),
+    _invoke<{ format: FormatInfo }>('formatos_update_mapping', { format_id, mapping }).then((v) => {
+      invalidateApiCache('formatos_list');
+      return v;
+    }),
 
   // ─── Sellador ───────────────────────────────────────────────────────────
   selladorInspectPdf: (body: { pdf_path: string }) =>

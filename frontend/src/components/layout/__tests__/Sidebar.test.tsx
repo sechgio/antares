@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import Sidebar from '../Sidebar';
 import { TAB_DEFINITIONS } from '../../../navigation';
 import { ToastProvider } from '../../../hooks/useToast';
@@ -119,6 +119,59 @@ describe('Sidebar', () => {
     const tooltips = screen.getAllByRole('tooltip');
     expect(tooltips).toHaveLength(1);
     expect(tooltips[0]).toHaveTextContent('Hide Sidebar');
+  });
+
+  it('keeps collapsed labels centered on the icon row', () => {
+    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
+
+    fireEvent.click(screen.getByTestId('sidebar-toggle'));
+
+    const convertButton = screen.getByRole('button', { name: 'Conversión' });
+    expect(convertButton.parentElement).toHaveClass('flex', 'size-8', 'items-center');
+
+    const convertTooltip = screen
+      .getAllByRole('tooltip')
+      .find((node) => node.textContent === 'Conversión');
+    expect(convertTooltip).toHaveClass('left-full', 'top-1/2', '-translate-y-1/2');
+  });
+
+  it('keeps navigation rows on a uniform rhythm', () => {
+    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
+
+    const nav = screen.getByRole('navigation');
+    const expandedButton = screen.getByRole('button', { name: 'Conversión' });
+
+    expect(nav).toHaveClass('gap-0.5');
+    expect(expandedButton).toHaveClass('h-8');
+    fireEvent.click(screen.getByTestId('sidebar-toggle'));
+
+    expect(nav).toHaveClass('gap-0.5');
+    expect(screen.getByRole('button', { name: 'Conversión' })).toHaveClass('size-8');
+  });
+
+  it('hides all navigation group headings', () => {
+    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
+
+    expect(screen.queryByText('General')).not.toBeInTheDocument();
+    expect(screen.queryByText('Reportes')).not.toBeInTheDocument();
+    expect(screen.queryByText('Herramientas')).not.toBeInTheDocument();
+    expect(screen.queryByText('Producción')).not.toBeInTheDocument();
+  });
+
+  it('keeps navigation content mounted while toggling', () => {
+    renderSidebar({ activeTab: 'convert', onTabChange: vi.fn() });
+
+    const sidebar = screen.getByTestId('app-sidebar');
+    const conversionButton = screen.getByRole('button', { name: 'Conversión' });
+    const conversionLabel = within(conversionButton).getByText('Conversión');
+
+    expect(sidebar).toHaveClass('min-w-0');
+    fireEvent.click(screen.getByTestId('sidebar-toggle'));
+
+    expect(within(conversionButton).getByText('Conversión')).toBe(conversionLabel);
+    expect(conversionLabel).toHaveClass('max-w-0', 'opacity-0');
+    expect(screen.getByRole('button', { name: 'Conversión' })).toHaveClass('gap-0', 'justify-start', 'pl-2');
+    expect(screen.getByAltText('Antares')).toBeInTheDocument();
   });
 
   it('persists the collapsed state in localStorage', () => {

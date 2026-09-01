@@ -56,6 +56,21 @@ describe('WithHoverTooltip', () => {
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
   });
 
+  it('shows and hides the tooltip for keyboard focus', () => {
+    render(
+      <WithHoverTooltip label="Acción accesible">
+        <button type="button" aria-label="Acción accesible">A</button>
+      </WithHoverTooltip>,
+    );
+
+    const button = screen.getByRole('button', { name: 'Acción accesible' });
+    fireEvent.focus(button);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Acción accesible');
+
+    fireEvent.blur(button);
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+  });
+
   it('renders dark Figma-style tooltip with shortcut', () => {
     render(
       <WithHoverTooltip label="Acciones" shortcut="Ctrl+," placement="top" variant="dark">

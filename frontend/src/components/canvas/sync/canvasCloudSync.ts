@@ -104,6 +104,11 @@ function pushResult(
   };
 }
 
+function isMissingRpcError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return /PGRST202|RPC function not found|function .* does not exist/i.test(message);
+}
+
 export async function pushCanvasDocumentResult(
   doc: CanvasDocument,
   options?: { forceResurrect?: boolean },
@@ -131,11 +136,16 @@ export async function pushCanvasDocumentResult(
         CLOUD_SYNC_TIMEOUT_MS,
         'canvas-push-rpc',
       )) as { data: boolean | null; error: { message: string } | null } | null;
-      if (rpcRes && !rpcRes.error && typeof rpcRes.data === 'boolean') {
+      if (rpcRes?.error) {
+        if (!isMissingRpcError(rpcRes.error)) throw new Error(rpcRes.error.message);
+      } else if (rpcRes && typeof rpcRes.data === 'boolean') {
         return pushResult(doc, rpcRes.data, updatedAt, uid);
+      } else if (rpcRes) {
+        throw new Error('Respuesta inválida de canvas_push_document_lww');
       }
-    } catch {
-      // Fall back to client-coordinated select + upsert below
+    } catch (err) {
+      if (!isMissingRpcError(err)) throw err;
+      console.warn('[canvas-sync] canvas_push_document_lww no está disponible; usando compatibilidad legacy');
     }
   }
 
@@ -163,7 +173,8 @@ export async function pushCanvasDocumentResult(
         CLOUD_SYNC_TIMEOUT_MS,
         'canvas-push-skip-preserve',
       );
-    } catch {
+    } catch (err) {
+      if (!isMissingRpcError(err)) throw err;
       try {
         await withTimeout(
           supabase.from('canvas_document_versions').insert({

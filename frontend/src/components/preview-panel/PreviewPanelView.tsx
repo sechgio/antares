@@ -8,6 +8,7 @@ import {
 import { api } from '../../api';
 import { useToast } from '../../hooks/useToast';
 import { useBackendStatus } from '../../hooks/useBackendStatus';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { mapWithConcurrencyLimit } from '../../utils/mapWithConcurrencyLimit';
 import PreviewPanel, { renderPreviewHtml } from './PreviewPanel';
 import TemplatePicker from './TemplatePicker';
@@ -250,6 +251,10 @@ export default function PreviewPanelView() {
   const [newColumnName, setNewColumnName] = useState('');
   const [newColumnMapping, setNewColumnMapping] = useState('');
   const [columnError, setColumnError] = useState('');
+  const columnDialogRef = useRef<HTMLFormElement>(null);
+  const newColumnNameRef = useRef<HTMLInputElement>(null);
+
+  useFocusTrap(columnDialogRef, showColumnModal, newColumnNameRef);
 
   // ─── Images Required ───
   const [requiresImages, setRequiresImages] = useState(true);
@@ -612,6 +617,11 @@ export default function PreviewPanelView() {
   };
 
   const handleCustomColumnKeyDown = (event: React.KeyboardEvent<HTMLFormElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      resetColumnModal();
+      return;
+    }
     if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
     // Solo desde inputs de texto: el picker usa Enter para elegir opción.
     if ((event.target as HTMLElement).tagName !== 'INPUT') return;
@@ -857,7 +867,7 @@ export default function PreviewPanelView() {
                 </div>
                 {customTemplate && (
                   <WithHoverTooltip label="Usar Plantilla Predeterminada" placement="bottom">
-                    <button onClick={handleResetTemplate} className="shrink-0 p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors">
+                    <button type="button" aria-label="Usar plantilla predeterminada" onClick={handleResetTemplate} className="shrink-0 p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors">
                       <RotateCcw size={12} />
                     </button>
                   </WithHoverTooltip>
@@ -866,11 +876,11 @@ export default function PreviewPanelView() {
 
               <div className="flex items-center justify-between px-2 py-1 rounded-md border border-[var(--border-medium)] bg-[var(--bg-elevated)]">
                 <div className="flex items-center gap-1.5">
-                  <ImageIcon size={10} className={requiresImages ? 'text-[var(--text-muted)]' : 'text-amber-400'} />
+                  <ImageIcon size={10} className={requiresImages ? 'text-[var(--text-muted)]' : 'text-[var(--accent-yellow)]'} />
                   <span className="text-[9px] text-[var(--text-muted)]">Requiere imágenes</span>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" checked={requiresImages} onChange={e => setRequiresImages(e.target.checked)} className="sr-only peer" />
+                  <input type="checkbox" aria-label="La plantilla requiere imágenes" checked={requiresImages} onChange={e => setRequiresImages(e.target.checked)} className="sr-only peer" />
                   <div className="w-7 h-3.5 bg-[var(--bg-base)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-[var(--text-on-accent)] after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-[var(--text-primary)] after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-[var(--accent-green)] border border-[var(--border-medium)]"></div>
                 </label>
               </div>
@@ -924,7 +934,7 @@ export default function PreviewPanelView() {
                 </div>
               )}
               {data.length > 0 && (
-                <button onClick={() => setShowDataPreview(true)} className="w-full flex items-center justify-center gap-1.5 border border-[var(--border-medium)] hover:border-[var(--text-secondary)] rounded-md py-1 text-center hover:bg-[var(--bg-elevated)] transition-all text-[10px] text-[var(--text-secondary)]">
+                <button type="button" onClick={() => setShowDataPreview(true)} className="w-full flex items-center justify-center gap-1.5 border border-[var(--border-medium)] hover:border-[var(--text-secondary)] rounded-md py-1 text-center hover:bg-[var(--bg-elevated)] transition-all text-[10px] text-[var(--text-secondary)]">
                   <Table2 size={12} /> Ver Datos
                 </button>
               )}
@@ -991,7 +1001,7 @@ export default function PreviewPanelView() {
                 })}
               </div>
 
-              <button onClick={() => setShowColumnModal(true)} className="w-full border border-dashed border-[var(--border-medium)] hover:border-[var(--text-secondary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] rounded-md py-1 text-center hover:bg-[var(--bg-elevated)] transition-all flex items-center justify-center gap-1.5 text-[10px]">
+              <button type="button" onClick={() => setShowColumnModal(true)} className="w-full border border-dashed border-[var(--border-medium)] hover:border-[var(--text-secondary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] rounded-md py-1 text-center hover:bg-[var(--bg-elevated)] transition-all flex items-center justify-center gap-1.5 text-[10px]">
                 + Columna Personalizada
               </button>
             </div>
@@ -1104,6 +1114,7 @@ export default function PreviewPanelView() {
 
                 <div className="space-y-1.5 pt-0.5">
                   <button
+                    type="button"
                     onClick={handleDownloadPdf}
                     disabled={(exportScope === 'single' && selectedIndex === '') || data.length === 0 || isPdfLoading}
                     className="flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--accent-primary)] py-2 px-3 text-[11px] font-semibold text-[var(--text-on-accent)] shadow-[0_0_0_1px_color-mix(in_srgb,var(--accent-primary)_40%,transparent)] transition-colors hover:bg-[var(--accent-primary-hover)] disabled:opacity-40"
@@ -1112,6 +1123,7 @@ export default function PreviewPanelView() {
                     {isPdfLoading ? (pdfLoadingMessage || 'Generando...') : exportScope === 'all' ? 'PDF Consolidado' : 'Descargar PDF'}
                   </button>
                   <button
+                    type="button"
                     onClick={handlePrint}
                     disabled={selectedIndex === '' || exportScope === 'all'}
                     className="flex w-full items-center justify-center gap-1.5 rounded-md border border-[var(--border-medium)] bg-[var(--bg-elevated)] py-1.5 text-[10px] font-medium text-[var(--text-secondary)] transition-colors hover:border-[var(--border-active)] hover:text-[var(--text-primary)] disabled:opacity-40"
@@ -1157,8 +1169,20 @@ export default function PreviewPanelView() {
 
         {/* Custom Column Modal */}
         {showColumnModal && (
-          <div className="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 85%, transparent)', backdropFilter: 'blur(6px)' }}>
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center"
+            role="presentation"
+            style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 85%, transparent)', backdropFilter: 'blur(6px)' }}
+            onClick={(event) => {
+              if (event.target === event.currentTarget) resetColumnModal();
+            }}
+          >
             <form
+              ref={columnDialogRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="preview-column-modal-title"
+              tabIndex={-1}
               onSubmit={(event) => {
                 event.preventDefault();
                 addCustomColumn();
@@ -1170,7 +1194,7 @@ export default function PreviewPanelView() {
                   '0 24px 48px color-mix(in srgb, var(--bg-base) 55%, transparent), 0 0 0 1px color-mix(in srgb, var(--border-subtle) 80%, transparent)',
               }}
             >
-              <h3 className="text-[var(--text-primary)] font-semibold text-sm mb-4 flex items-center gap-2">
+              <h3 id="preview-column-modal-title" className="text-[var(--text-primary)] font-semibold text-sm mb-4 flex items-center gap-2">
                 <span>+</span> Agregar Columna Personalizada
               </h3>
               {columnError && (
@@ -1181,7 +1205,7 @@ export default function PreviewPanelView() {
               <div className="space-y-3">
                 <div>
                   <label className="block text-[var(--text-secondary)] text-[11px] mb-1 font-medium uppercase">Nombre de la Columna</label>
-                  <input type="text" value={newColumnName} onChange={e => setNewColumnName(e.target.value)} placeholder="Ej: FECHA CORTE" className="w-full h-8 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-3 text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]" />
+                  <input ref={newColumnNameRef} type="text" value={newColumnName} onChange={e => setNewColumnName(e.target.value)} placeholder="Ej: FECHA CORTE" className="w-full h-8 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-3 text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]" />
                 </div>
                 <div>
                   <label className="block text-[var(--text-secondary)] text-[11px] mb-1 font-medium uppercase">Columna del Excel a Mapear</label>
@@ -1205,10 +1229,10 @@ export default function PreviewPanelView() {
         {/* Focus Mode Navigation */}
         {isFocusMode && (
           <>
-            <button onClick={goToPrevRow} disabled={!canPrevRow} className={`fixed left-4 top-1/2 -translate-y-1/2 p-2 transition-colors z-[100] ${!canPrevRow ? 'text-[var(--text-muted)] opacity-30 cursor-not-allowed' : 'text-[var(--accent-primary)] hover:opacity-100 opacity-70'}`}>
+            <button type="button" aria-label={canPrevRow ? 'Registro anterior' : 'Registro anterior (deshabilitado)'} onClick={goToPrevRow} disabled={!canPrevRow} className={`fixed left-4 top-1/2 -translate-y-1/2 p-2 transition-colors z-[100] ${!canPrevRow ? 'text-[var(--text-muted)] opacity-30 cursor-not-allowed' : 'text-[var(--accent-primary)] hover:opacity-100 opacity-70'}`}>
               <ChevronLeft size={64} strokeWidth={1.5} />
             </button>
-            <button onClick={goToNextRow} disabled={!canNextRow} className={`fixed right-4 top-1/2 -translate-y-1/2 p-2 transition-colors z-[100] ${!canNextRow ? 'text-[var(--text-muted)] opacity-30 cursor-not-allowed' : 'text-[var(--accent-primary)] hover:opacity-100 opacity-70'}`}>
+            <button type="button" aria-label={canNextRow ? 'Registro siguiente' : 'Registro siguiente (deshabilitado)'} onClick={goToNextRow} disabled={!canNextRow} className={`fixed right-4 top-1/2 -translate-y-1/2 p-2 transition-colors z-[100] ${!canNextRow ? 'text-[var(--text-muted)] opacity-30 cursor-not-allowed' : 'text-[var(--accent-primary)] hover:opacity-100 opacity-70'}`}>
               <ChevronRight size={64} strokeWidth={1.5} />
             </button>
             <div className="fixed top-4 right-4 z-[100] text-[var(--text-muted)] text-[10px] font-mono pointer-events-none select-none px-3 py-1 rounded-full" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 40%, transparent)' }}>

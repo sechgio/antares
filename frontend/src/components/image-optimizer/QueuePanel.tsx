@@ -1,4 +1,5 @@
 import { DragEvent, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { Crop, FileDown, GripVertical, Image as ImageIcon, Loader2, Trash2 } from 'lucide-react';
 import { BatchSettings, ImageItem } from './types';
@@ -63,6 +64,7 @@ export default function QueuePanel({
   onReorderItems,
   getResolvedBlob,
 }: QueuePanelProps) {
+  const { t } = useTranslation();
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const downloadNameMap = useMemo(
@@ -104,40 +106,41 @@ export default function QueuePanel({
   };
 
   return (
-    <section className={`relative flex h-full flex-col overflow-hidden ${glassPanelClass}`}>
+    <section data-surface-part="queue" className={`relative flex h-full flex-col overflow-hidden ${glassPanelClass}`}>
       <header className="flex shrink-0 flex-col gap-1 px-2.5 pb-1.5 pt-2.5">
         <div className="flex items-center justify-between gap-2">
           <p className="text-[11px] font-semibold text-[var(--text-primary)]">
-            Cola <span className="ml-1 font-mono text-[10px] tabular-nums text-[var(--text-secondary)]">{items.length}</span>
+            {t('optimizer.queue.title')} <span className="ml-1 font-mono text-[10px] tabular-nums text-[var(--text-secondary)]">{items.length}</span>
           </p>
           <div className="flex items-center gap-1">
-            <button onClick={onSelectAll} className={chipBtn}>
-              {allSelected ? 'Deselect' : 'Todo'}
+            <button type="button" onClick={onSelectAll} className={chipBtn}>
+              {allSelected ? t('optimizer.queue.deselectAll') : t('optimizer.queue.selectAll')}
             </button>
             {selectedCount > 0 && (
-              <button onClick={onClearSelection} className={chipBtn}>
-                Limpiar
+              <button type="button" onClick={onClearSelection} className={chipBtn}>
+                {t('optimizer.queue.clearSelection')}
               </button>
             )}
           </div>
         </div>
         <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-[10px] tabular-nums text-[var(--text-secondary)]">
-          <span>{includedCount} incluidas</span>
-          {pendingCount > 0 && <span>{pendingCount} pendientes</span>}
+          <span>{t('optimizer.queue.included', { count: includedCount })}</span>
+          {pendingCount > 0 && <span>{t('optimizer.queue.pending', { count: pendingCount })}</span>}
           {downloadableItems.length > 0 && (
-            <span className="text-[var(--accent-green)]">{downloadableItems.length} listas</span>
+            <span className="text-[var(--accent-green)]">{t('optimizer.queue.ready', { count: downloadableItems.length })}</span>
           )}
         </div>
         {selectedCount > 0 && (
           <div className="flex flex-wrap gap-1">
-            <button onClick={onApplyPresetToSelection} className={chipBtn}>Preset</button>
-            <button onClick={onReprocessSelected} className={chipBtn}>Reprocesar</button>
-            <button onClick={onToggleExcludeSelected} className={chipBtn}>Excluir</button>
+            <button type="button" onClick={onApplyPresetToSelection} className={chipBtn}>{t('optimizer.queue.applyPreset')}</button>
+            <button type="button" onClick={onReprocessSelected} className={chipBtn}>{t('optimizer.queue.reprocess')}</button>
+            <button type="button" onClick={onToggleExcludeSelected} className={chipBtn}>{t('optimizer.queue.exclude')}</button>
             <button
+              type="button"
               onClick={onRemoveSelected}
               className="h-6 rounded-md border border-[var(--accent-red)]/25 px-2 text-[10px] font-medium text-[var(--accent-red)] transition-[background-color,transform] duration-100 hover:bg-[var(--accent-red)]/10 active:scale-[0.96]"
             >
-              Quitar
+              {t('optimizer.queue.remove')}
             </button>
           </div>
         )}
@@ -156,7 +159,7 @@ export default function QueuePanel({
             return (
               <WithHoverTooltip
                 key={item.id}
-                label="Arrastra para cambiar el orden de exportación"
+                label={t('optimizer.queue.dragHint')}
                 placement="bottom"
                 className="block w-full"
               >
@@ -212,9 +215,10 @@ export default function QueuePanel({
                   </div>
 
                   <div className="flex shrink-0 items-center gap-px opacity-70 transition-opacity group-hover:opacity-100">
-                    <WithHoverTooltip label="Editor de recorte" placement="bottom">
+                    <WithHoverTooltip label={t('optimizer.queue.cropEditor')} placement="bottom">
                       <button
                         type="button"
+                        aria-label={t('optimizer.queue.cropEditor')}
                         onClick={(e) => { e.stopPropagation(); onOpenCropEditor(item.id); }}
                         disabled={!itemSettings.operations.cropEnabled || itemSettings.crop.aspectRatio === 'original'}
                         className={iconBtn}
@@ -222,9 +226,10 @@ export default function QueuePanel({
                         <Crop size={12} />
                       </button>
                     </WithHoverTooltip>
-                    <WithHoverTooltip label="Descargar" placement="bottom">
+                    <WithHoverTooltip label={t('optimizer.preview.download')} placement="bottom">
                       <button
                         type="button"
+                        aria-label={t('optimizer.preview.download')}
                         onClick={(e) => { e.stopPropagation(); onDownloadSingle(item); }}
                         disabled={!isReady}
                         className={iconBtn}
@@ -232,9 +237,10 @@ export default function QueuePanel({
                         <FileDown size={12} />
                       </button>
                     </WithHoverTooltip>
-                    <WithHoverTooltip label="Quitar" placement="bottom">
+                    <WithHoverTooltip label={t('optimizer.queue.remove')} placement="bottom">
                       <button
                         type="button"
+                        aria-label={t('optimizer.queue.remove')}
                         onClick={(e) => { e.stopPropagation(); onRemoveItem(item.id); }}
                         className={`${iconBtn} hover:bg-[var(--accent-red)]/10 hover:text-[var(--accent-red)]`}
                       >
@@ -254,7 +260,7 @@ export default function QueuePanel({
           {items.length === 0 && (
             <div className="flex h-full min-h-[7rem] w-full flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-[var(--border-medium)] text-center">
               <ImageIcon size={14} className="mb-1.5 text-[var(--text-secondary)]" />
-              <p className="text-[10px] font-medium text-[var(--text-secondary)]">Cola vacía</p>
+              <p className="text-[10px] font-medium text-[var(--text-secondary)]">{t('optimizer.queue.empty')}</p>
             </div>
           )}
         </div>

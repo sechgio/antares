@@ -1116,6 +1116,14 @@ describe('pushCanvasDocument', () => {
     });
     expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
   });
+
+  it('does not hide transient LWW RPC failures behind the legacy upsert', async () => {
+    const doc = makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T12:00:00Z' });
+    supabaseMock.rpc.mockRejectedValueOnce(new Error('deadlock detected'));
+
+    await expect(pushCanvasDocument(doc)).rejects.toThrow('deadlock detected');
+    expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
+  });
 });
 
 describe('pullCanvasDocument', () => {

@@ -162,3 +162,43 @@ describe('TemplatesSection rename', () => {
     expect(await screen.findByText('Persistente')).toBeTruthy();
   });
 });
+
+describe('TemplatesSection new-from-template', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('per-row button creates a NEW document with the preset label', async () => {
+    const onNewFromPreset = vi.fn();
+    render(
+      <TemplatesSection onApplyPreset={vi.fn()} onNewFromPreset={onNewFromPreset} />,
+    );
+    fireEvent.mouseEnter(screen.getByTestId('canvas-templates-section'));
+
+    const newBtn = await screen.findByTestId('canvas-new-from-preset-report');
+    fireEvent.click(newBtn);
+    expect(onNewFromPreset).toHaveBeenCalledWith('report', 'Panel fotográfico');
+  });
+
+  it('does not also apply the preset on the current document', async () => {
+    const onApplyPreset = vi.fn();
+    const onNewFromPreset = vi.fn();
+    render(
+      <TemplatesSection
+        onApplyPreset={onApplyPreset}
+        onNewFromPreset={onNewFromPreset}
+      />,
+    );
+    fireEvent.mouseEnter(screen.getByTestId('canvas-templates-section'));
+
+    fireEvent.click(await screen.findByTestId('canvas-new-from-preset-report'));
+    expect(onApplyPreset).not.toHaveBeenCalled();
+  });
+
+  it('button is hidden when the handler is not provided', async () => {
+    render(<TemplatesSection onApplyPreset={vi.fn()} />);
+    fireEvent.mouseEnter(screen.getByTestId('canvas-templates-section'));
+    await screen.findByLabelText('Aplicar plantilla Panel fotográfico');
+    expect(screen.queryByTestId('canvas-new-from-preset-report')).toBeNull();
+  });
+});

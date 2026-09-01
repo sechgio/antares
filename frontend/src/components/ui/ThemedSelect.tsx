@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 
@@ -38,9 +38,17 @@ export default function ThemedSelect({
   const [menuBox, setMenuBox] = useState<MenuBox | null>(null);
   const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuId = useId();
+  const [highlightedIndex, setHighlightedIndex] = useState(() => Math.max(0, options.findIndex((o) => o.value === value)));
 
   const selected = options.find((o) => o.value === value);
+  const selectedIndex = Math.max(0, options.findIndex((o) => o.value === value));
+
+  useEffect(() => {
+    setHighlightedIndex(selectedIndex);
+  }, [selectedIndex]);
 
   const updateMenuBox = useCallback(() => {
     const el = containerRef.current;
@@ -99,16 +107,65 @@ export default function ThemedSelect({
     if (disabled) return;
     onChange(val);
     setIsOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  const moveHighlight = (direction: 1 | -1) => {
+    if (options.length === 0) return;
+    setHighlightedIndex((current) => (current + direction + options.length) % options.length);
+  };
+
+  const handleTriggerKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (disabled) return;
+
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (!isOpen) {
+        setHighlightedIndex(selectedIndex);
+        setIsOpen(true);
+        return;
+      }
+      moveHighlight(event.key === 'ArrowDown' ? 1 : -1);
+      return;
+    }
+
+    if (event.key === 'Home' || event.key === 'End') {
+      if (!isOpen || options.length === 0) return;
+      event.preventDefault();
+      setHighlightedIndex(event.key === 'Home' ? 0 : options.length - 1);
+      return;
+    }
+
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      if (!isOpen) {
+        setHighlightedIndex(selectedIndex);
+        setIsOpen(true);
+      } else if (options[highlightedIndex]) {
+        handleSelect(options[highlightedIndex].value);
+      }
+      return;
+    }
+
+    if (event.key === 'Escape' && isOpen) {
+      event.preventDefault();
+      setIsOpen(false);
+    }
   };
 
   return (
     <div ref={containerRef} className="relative w-full">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => !disabled && setIsOpen((o) => !o)}
+        onKeyDown={handleTriggerKeyDown}
         disabled={disabled}
         aria-expanded={isOpen}
         aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-controls={isOpen ? menuId : undefined}
+        aria-activedescendant={isOpen && options[highlightedIndex] ? `${menuId}-${options[highlightedIndex].value}` : undefined}
         className={`flex w-full items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left text-[11px] font-medium transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none ${
           isOpen
             ? 'bg-[var(--bg-elevated)] border-[var(--accent-primary)] ring-2 ring-[var(--accent-primary-glow)]'
@@ -130,6 +187,7 @@ export default function ThemedSelect({
         createPortal(
           <div
             ref={menuRef}
+            id={menuId}
             role="listbox"
             aria-label={ariaLabel}
             className="fixed z-[300] overflow-y-auto rounded-lg border p-1 shadow-xl custom-scrollbar"
@@ -145,7 +203,7 @@ export default function ThemedSelect({
             }}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            {options.map((opt) => {
+            {options.map((opt, index) => {
               const isSelected = opt.value === value;
               return (
                 <button
@@ -153,9 +211,13 @@ export default function ThemedSelect({
                   type="button"
                   role="option"
                   aria-selected={isSelected}
+                  id={`${menuId}-${opt.value}`}
+                  tabIndex={-1}
+                  data-highlighted={index === highlightedIndex ? 'true' : undefined}
+                  onMouseEnter={() => setHighlightedIndex(index)}
                   onClick={() => handleSelect(opt.value)}
                   className={`flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-[11px] transition-colors ${
-                    isSelected
+                    index === highlightedIndex
                       ? 'bg-[var(--accent-primary)] text-[var(--text-on-accent)] font-semibold'
                       : 'text-[var(--text-primary)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]'
                   }`}

@@ -233,6 +233,10 @@ class HandlerRegistry:
             logger.exception("WeasyPrint import warm failed")
         # Release cold-import waiters (db_import, renders, preview …).
         WARM_CRITICAL_DONE.set()
+        # Formatos core (pypdf) costs ~770 ms on cold import; the first
+        # formatos_list/render used to pay it on the IPC path. Warm it after
+        # WARM_CRITICAL_DONE so critical waiters are released first.
+        self._warm_formatos_core()
         # History warm off critical path: import under guard, DDL outside.
         # Runs concurrently with WeasyPrint render (seconds, no guard).
         try:
@@ -261,6 +265,21 @@ class HandlerRegistry:
     def warm_deferred(self) -> None:
         """Load remaining feature modules (opt-in via ANTARES_WARM_DEFERRED)."""
         self.warm(_DEFERRED_HANDLER_MODULES)
+
+    def _warm_formatos_core(self) -> None:
+        """Pre-import backend.core.formatos (pulls pypdf, ~770 ms cold).
+
+        Runs in warm_post_ready AFTER WARM_CRITICAL_DONE so critical waiters
+        are released first. Failures are non-fatal: formatos handlers lazy-
+        import the module per call and still work (paying the cold cost).
+        """
+        try:
+            with serialized_import():
+                import backend.core.formatos  # noqa: F401
+
+            logger.info("formatos core post-ready warm complete")
+        except Exception:
+            logger.exception("formatos core post-ready warm failed")
 
     def get(self, key: str, default: Any = None) -> Any:
         with self._lock:

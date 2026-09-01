@@ -1,4 +1,4 @@
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient } from "jsr:@supabase/supabase-js@2.112.4";
 import { corsHeaders } from "../_shared/cors.ts";
 
 interface CreateUserBody {
@@ -34,9 +34,9 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    if (password.length < 6) {
+    if (password.length < 8) {
       return new Response(
-        JSON.stringify({ error: "La contraseña debe tener al menos 6 caracteres" }),
+        JSON.stringify({ error: "La contraseña debe tener al menos 8 caracteres" }),
         { status: 400, headers: { ...cors, "Content-Type": "application/json" } },
       );
     }

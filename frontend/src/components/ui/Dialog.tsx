@@ -1,10 +1,14 @@
 import { useEffect, useRef } from 'react';
 import { AlertTriangle, Info, ShieldCheck } from 'lucide-react';
 import { useDialog } from '../../hooks/useDialog';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 export default function Dialog() {
   const { isOpen, options, closeDialog } = useDialog();
   const overlayRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useFocusTrap(dialogRef, isOpen);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -56,8 +60,10 @@ export default function Dialog() {
       }}
     >
       <div
+        ref={dialogRef}
         data-testid="app-dialog"
         className="w-full max-w-[28rem] rounded-xl p-5 animate-scale-in"
+        tabIndex={-1}
         style={{
           backgroundColor: 'var(--bg-base)',
           color: 'var(--text-primary)',

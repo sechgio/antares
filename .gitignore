@@ -63,6 +63,9 @@ worktrees/
 # Local dev server scratch files
 .vite-brand.*
 scratch/_smoke*.db
+
+# DESIGN.md: design audit artifact, not allowed under the Markdown rule.
+DESIGN.md
 # AI tool configs (not project-specific)
 .claude/
 .codex/

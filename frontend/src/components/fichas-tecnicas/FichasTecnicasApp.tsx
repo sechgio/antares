@@ -1,6 +1,6 @@
 import '../technical-reports/technical-reports.css';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
-import { ChevronLeft, ChevronRight, Download, FilePlus2, Files, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Database, Download, Eye, FilePlus2, Files, PenLine, RefreshCw, Trash2, Upload } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
@@ -12,6 +12,7 @@ import { downloadBase64Pdf, fileToBase64, fileToDataUrl, fichasTecnicasApi } fro
 import { normalizeFicha, type FichaTecnica, type FichaTecnicaListItem } from './types';
 
 const DRAFT_KEY = 'current_ficha_draft';
+type MobileTab = 'db' | 'preview' | 'form';
 
 function formatIpcError(error: unknown, fallback: string): string {
   const message = error instanceof Error ? error.message : String(error || fallback);
@@ -51,6 +52,7 @@ export default function FichasTecnicasApp() {
   const [busy, setBusy] = useState(false);
   const [logoLeft, setLogoLeft] = useState<string | null>(null);
   const [focusMode, setFocusMode] = useState(false);
+  const [mobileTab, setMobileTab] = useState<MobileTab>('preview');
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const hasChanges = dirtyCount > 0;
@@ -114,6 +116,10 @@ export default function FichasTecnicasApp() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  useEffect(() => {
+    if (focusMode) setMobileTab('preview');
+  }, [focusMode]);
+
   const loadFichas = useCallback(async () => {
     const result = await fichasTecnicasApi.list(true);
     setFichas(result.fichas || []);
@@ -149,6 +155,7 @@ export default function FichasTecnicasApp() {
         const ficha = normalizeFicha(await fichasTecnicasApi.get(id));
         if (gen !== selectGenRef.current) return;
         applyFicha(ficha);
+        setMobileTab('preview');
       }, 'No se pudo abrir la ficha');
     },
     [addToast, applyFicha, dialog, formData, hasChanges, loadFichas, withBusy],
@@ -159,6 +166,7 @@ export default function FichasTecnicasApp() {
       const ficha = normalizeFicha(await fichasTecnicasApi.create());
       await loadFichas();
       applyFicha(ficha);
+      setMobileTab('preview');
       addToast({ message: 'Ficha creada', type: 'success' });
     }, 'No se pudo crear la ficha');
   }, [addToast, applyFicha, loadFichas, withBusy]);
@@ -324,7 +332,7 @@ export default function FichasTecnicasApp() {
   };
 
   return (
-    <div className="tr-app ft-app">
+    <div className="tr-app ft-app" data-surface="fichas-tecnicas">
       <header className="tr-header">
         <h1>FICHAS TÉCNICAS</h1>
         <div className="tr-header-toolbar">
@@ -400,8 +408,42 @@ export default function FichasTecnicasApp() {
         />
       </header>
 
+      <nav className="tr-mobile-tabs" role="tablist" aria-label="Vista de fichas técnicas">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mobileTab === 'db'}
+          className={`tr-mobile-tab${mobileTab === 'db' ? ' is-active' : ''}`}
+          onClick={() => setMobileTab('db')}
+        >
+          <Database size={14} />
+          <span>Fichas</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mobileTab === 'preview'}
+          className={`tr-mobile-tab${mobileTab === 'preview' ? ' is-active' : ''}`}
+          onClick={() => setMobileTab('preview')}
+        >
+          <Eye size={14} />
+          <span>Vista previa</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mobileTab === 'form'}
+          className={`tr-mobile-tab${mobileTab === 'form' ? ' is-active' : ''}`}
+          onClick={() => setMobileTab('form')}
+        >
+          <PenLine size={14} />
+          <span>Editar</span>
+        </button>
+      </nav>
+
       <div
         className="tr-workspace"
+        data-mobile-tab={mobileTab}
         style={focusMode ? { gridTemplateColumns: '0px 1fr 0px' } : undefined}
       >
         {!focusMode && (

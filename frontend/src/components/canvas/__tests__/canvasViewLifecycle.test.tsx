@@ -7,8 +7,9 @@
  */
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { StrictMode } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEmptyDocument, type CanvasDocument } from '../types';
+import { createLayer } from '../constants';
 
 const pdfImportMocks = vi.hoisted(() => ({
   inspectPdfFile: vi.fn(),
@@ -861,5 +862,62 @@ describe('CanvasView lifecycle', () => {
       fragment: { pages: [], layers: [], fields: [], firstPageIndex: 0, importedLayerIds: [], report },
       report,
     });
+  });
+});
+
+describe('CanvasView shortcuts (F2, Ctrl+Shift+L/H) y punto dirty', () => {
+  // jsdom no implementa scrollIntoView (autoscroll de la sidebar al seleccionar).
+  // Se define como propiedad configurable para no chocar con setup que ya la fije.
+  beforeAll(() => {
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      value: function scrollIntoView() {},
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  async function renderReadyWithRect() {
+    const doc = makeDoc('doc-kbd', 'Kbd');
+    doc.layers.push(createLayer('rect', { id: 'r1', name: 'Caja' }));
+    vi.mocked(api.canvasList).mockResolvedValue({
+      documents: [{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt! }],
+    });
+    vi.mocked(api.canvasGet).mockImplementation(async (id: string) => ({ document: doc }));
+    render(<CanvasView active />);
+    await waitFor(() => expect(screen.getByText('Caja')).toBeTruthy());
+  }
+
+  it('F2 con una capa seleccionada abre el rename inline de la sidebar', async () => {
+    await renderReadyWithRect();
+    fireEvent.click(screen.getByText('Caja'));
+    fireEvent.keyDown(window, { key: 'F2' });
+    const input = await screen.findByLabelText('Nombre de capa');
+    expect(input.value).toBe('Caja');
+  });
+
+  it('Ctrl+Shift+L bloquea/desbloquea y Ctrl+Shift+H oculta/muestra la selección', async () => {
+    await renderReadyWithRect();
+    fireEvent.click(screen.getByText('Caja'));
+    const row = () => document.querySelector('[data-layer-id="r1"]');
+
+    fireEvent.keyDown(window, { key: 'L', ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(row()?.getAttribute('data-locked')).toBe('true'));
+
+    fireEvent.keyDown(window, { key: 'L', ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(row()?.getAttribute('data-locked')).toBe('false'));
+
+    fireEvent.keyDown(window, { key: 'H', ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(row()?.getAttribute('data-dimmed')).toBe('true'));
+
+    fireEvent.keyDown(window, { key: 'H', ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(row()?.getAttribute('data-dimmed')).toBe('false'));
+  });
+
+  it('el punto de "sin guardar" aparece al editar y no existe en limpio', async () => {
+    await renderReadyWithRect();
+    expect(screen.queryByTestId('canvas-save-dirty')).toBeNull();
+    fireEvent.click(screen.getByText('Caja'));
+    fireEvent.keyDown(window, { key: 'L', ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(screen.queryByTestId('canvas-save-dirty')).toBeTruthy());
   });
 });

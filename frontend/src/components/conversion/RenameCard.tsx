@@ -237,7 +237,11 @@ export default function RenameCard(props: RenameCardProps) {
             </span>
           </div>
         </div>
-        <Toggle checked={usarRename} onChange={(v) => { if (!v) onNamingModeChange('keep'); else onNamingModeChange('custom'); }} />
+        <Toggle
+          checked={usarRename}
+          onChange={(v) => { if (!v) onNamingModeChange('keep'); else onNamingModeChange('custom'); }}
+          aria-label="Activar renombrado"
+        />
       </div>
 
       {usarRename && (
@@ -428,7 +432,7 @@ export default function RenameCard(props: RenameCardProps) {
                   <div className="space-y-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/40 p-3">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[11px] text-[var(--text-secondary)]">Incluir número</span>
-                      <Toggle checked={usesSeq} onChange={toggleSeq} />
+                      <Toggle checked={usesSeq} onChange={toggleSeq} aria-label="Incluir número en el nombre" />
                     </div>
                     {usesSeq && (
                       <>
@@ -439,7 +443,11 @@ export default function RenameCard(props: RenameCardProps) {
                               <span className="block text-[10px] text-[var(--text-muted)]">Cada fila comienza en 001</span>
                             )}
                           </div>
-                          <Toggle checked={useFilenameSeq} onChange={onToggleFilenameSeq} />
+                          <Toggle
+                            checked={useFilenameSeq}
+                            onChange={onToggleFilenameSeq}
+                            aria-label="Numerar por fila de base de datos"
+                          />
                         </div>
                         {!useFilenameSeq && (
                           <div className="flex items-center gap-2">

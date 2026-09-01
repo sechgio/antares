@@ -14,6 +14,9 @@ const ToastItem = memo(function ToastItem({ toast, onRemove }: { toast: ToastIte
 
   return (
     <div
+      role={toast.type === 'error' ? 'alert' : 'status'}
+      aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
+      aria-atomic="true"
       className={`pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-xl border ${styles.bg} ${styles.border} shadow-lg min-w-[280px] max-w-[400px] animate-slide-left`}
     >
       <div className={`mt-0.5 ${styles.icon}`}>
@@ -34,6 +37,7 @@ const ToastItem = memo(function ToastItem({ toast, onRemove }: { toast: ToastIte
         <p className="text-sm text-txt-primary leading-snug">{toast.message}</p>
         {toast.action && (
           <button
+            type="button"
             onClick={() => { toast.action?.onClick(); onRemove(toast.id); }}
             className="mt-1.5 text-xs font-semibold text-accent-orange hover:text-accent-orange-hover underline"
           >
@@ -42,6 +46,8 @@ const ToastItem = memo(function ToastItem({ toast, onRemove }: { toast: ToastIte
         )}
       </div>
       <button
+        type="button"
+        aria-label="Cerrar notificación"
         onClick={() => onRemove(toast.id)}
         className="text-txt-muted hover:text-txt-primary transition-colors shrink-0 mt-0.5"
       >

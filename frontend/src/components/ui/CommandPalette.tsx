@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 interface CommandItem {
   id: string;
@@ -18,6 +19,9 @@ export default function CommandPalette({ isOpen, onClose, items }: CommandPalett
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useFocusTrap(dialogRef, isOpen);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return items;
@@ -32,7 +36,6 @@ export default function CommandPalette({ isOpen, onClose, items }: CommandPalett
   useEffect(() => {
     if (isOpen) {
       setQuery('');
-      setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [isOpen]);
 
@@ -73,6 +76,11 @@ export default function CommandPalette({ isOpen, onClose, items }: CommandPalett
       }}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Paleta de comandos"
+        tabIndex={-1}
         className="w-full max-w-xl overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-base)] animate-scale-in"
         style={{
           boxShadow:
@@ -86,6 +94,7 @@ export default function CommandPalette({ isOpen, onClose, items }: CommandPalett
           <input
             ref={inputRef}
             type="text"
+            aria-label="Buscar acción"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Buscar acción..."
@@ -94,7 +103,7 @@ export default function CommandPalette({ isOpen, onClose, items }: CommandPalett
           <span className="rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2 py-1 text-xs text-[var(--text-muted)]">ESC</span>
         </div>
 
-        <div className="max-h-[50vh] overflow-y-auto py-2">
+        <div className="max-h-[50vh] overflow-y-auto py-2" role="listbox" aria-label="Acciones">
           {filtered.length === 0 && (
             <div className="px-4 py-8 text-center text-sm text-[var(--text-muted)]">
               No se encontraron resultados
@@ -103,6 +112,9 @@ export default function CommandPalette({ isOpen, onClose, items }: CommandPalett
           {filtered.map((item, index) => (
             <button
               key={item.id}
+              type="button"
+              role="option"
+              aria-selected={index === selectedIndex}
               onClick={() => { item.action(); onClose(); }}
               onMouseEnter={() => setSelectedIndex(index)}
               className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${

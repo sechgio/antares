@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import type { Variants } from 'framer-motion';
 import { ChevronDown, Upload, X, FileText, MapPin, Briefcase, Image as ImageIcon, Minus, Plus, RotateCcw } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
@@ -44,6 +44,11 @@ const collapseVariants: Variants = {
     collapsed: { height: 0, opacity: 0, transition: { duration: 0.18, ease: [0.4, 0, 0.2, 1] } },
 };
 
+const instantCollapseVariants: Variants = {
+    open: { height: 'auto', opacity: 1, transition: { duration: 0 } },
+    collapsed: { height: 0, opacity: 0, transition: { duration: 0 } },
+};
+
 export default function HeaderForm({
     config,
     fields,
@@ -54,6 +59,7 @@ export default function HeaderForm({
     onLogoChange,
     onLogoRemove,
 }: HeaderFormProps) {
+    const reducedMotion = useReducedMotion();
     const logoLeftRef = useRef<HTMLInputElement>(null);
     const logoRightRef = useRef<HTMLInputElement>(null);
 
@@ -122,7 +128,7 @@ export default function HeaderForm({
         <>
             {/* ── DATOS GENERALES ── */}
             <div className={`rcampo-section ${openSections.generales ? 'is-open' : ''}`}>
-                <button className="rcampo-section-header" onClick={() => toggle('generales')}>
+                <button type="button" className="rcampo-section-header" onClick={() => toggle('generales')} aria-expanded={openSections.generales}>
                     <span className="rcampo-section-title">
                         <span className="rcampo-section-icon">{sectionIcons.generales}</span>
                         {sectionLabels.generales}
@@ -136,7 +142,13 @@ export default function HeaderForm({
                 </button>
                 <AnimatePresence initial={false}>
                     {openSections.generales && (
-                        <motion.div initial="collapsed" animate="open" exit="collapsed" variants={collapseVariants} style={{ overflow: 'hidden' }}>
+                        <motion.div
+                            initial={reducedMotion ? false : 'collapsed'}
+                            animate="open"
+                            exit={reducedMotion ? undefined : 'collapsed'}
+                            variants={reducedMotion ? instantCollapseVariants : collapseVariants}
+                            style={{ overflow: 'hidden' }}
+                        >
                             <div className="rcampo-section-body">
                                 {tituloField && (
                                     <div className={`rcampo-field ${(header[tituloField.key] ?? '').trim() ? 'has-value' : ''}`}>
@@ -227,9 +239,18 @@ export default function HeaderForm({
                                             <ImageIcon size={9} />
                                             Logo Izquierdo
                                         </span>
-                                        <button
+                                        <div
+                                            role="button"
+                                            tabIndex={0}
+                                            aria-label="Subir o cambiar logo izquierdo"
                                             className={`rcampo-logo-btn ${logoLeft ? 'has-logo' : ''}`}
                                             onClick={() => logoLeftRef.current?.click()}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' || e.key === ' ') {
+                                                    e.preventDefault();
+                                                    logoLeftRef.current?.click();
+                                                }
+                                            }}
                                         >
                                             {logoLeft ? (
                                                 <img src={logoLeft.url} alt="Logo izquierdo" />
@@ -240,11 +261,16 @@ export default function HeaderForm({
                                                 </span>
                                             )}
                                             {logoLeft && (
-                                                <span role="button" tabIndex={0} className="rcampo-logo-remove" onClick={(e) => { e.stopPropagation(); onLogoRemove('left'); }}>
+                                                <button
+                                                    type="button"
+                                                    className="rcampo-logo-remove"
+                                                    aria-label="Quitar logo izquierdo"
+                                                    onClick={(e) => { e.stopPropagation(); onLogoRemove('left'); }}
+                                                >
                                                     <X size={7} />
-                                                </span>
+                                                </button>
                                             )}
-                                        </button>
+                                        </div>
                                         <input ref={logoLeftRef} type="file" accept="image/*" className="hidden" onChange={(e) => onLogoChange('left', e.target.files)} />
                                     </div>
                                     <div className="rcampo-logo-slot">
@@ -252,9 +278,18 @@ export default function HeaderForm({
                                             <ImageIcon size={9} />
                                             Logo Derecho
                                         </span>
-                                        <button
+                                        <div
+                                            role="button"
+                                            tabIndex={0}
+                                            aria-label="Subir o cambiar logo derecho"
                                             className={`rcampo-logo-btn ${logoRight ? 'has-logo' : ''}`}
                                             onClick={() => logoRightRef.current?.click()}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' || e.key === ' ') {
+                                                    e.preventDefault();
+                                                    logoRightRef.current?.click();
+                                                }
+                                            }}
                                         >
                                             {logoRight ? (
                                                 <img src={logoRight.url} alt="Logo derecho" />
@@ -265,11 +300,16 @@ export default function HeaderForm({
                                                 </span>
                                             )}
                                             {logoRight && (
-                                                <span role="button" tabIndex={0} className="rcampo-logo-remove" onClick={(e) => { e.stopPropagation(); onLogoRemove('right'); }}>
+                                                <button
+                                                    type="button"
+                                                    className="rcampo-logo-remove"
+                                                    aria-label="Quitar logo derecho"
+                                                    onClick={(e) => { e.stopPropagation(); onLogoRemove('right'); }}
+                                                >
                                                     <X size={7} />
-                                                </span>
+                                                </button>
                                             )}
-                                        </button>
+                                        </div>
                                         <input ref={logoRightRef} type="file" accept="image/*" className="hidden" onChange={(e) => onLogoChange('right', e.target.files)} />
                                     </div>
                                 </div>
@@ -292,7 +332,7 @@ export default function HeaderForm({
                     return (
                         <React.Fragment key={section}>
                             <div className={`rcampo-section ${isOpen ? 'is-open' : ''}`}>
-                                <button className="rcampo-section-header" onClick={() => toggle(section)}>
+                                <button type="button" className="rcampo-section-header" onClick={() => toggle(section)} aria-expanded={isOpen}>
                                     <span className="rcampo-section-title">
                                         <span className="rcampo-section-icon">{sectionIcons[section]}</span>
                                         {sectionLabels[section]}
@@ -306,7 +346,13 @@ export default function HeaderForm({
                                 </button>
                                 <AnimatePresence initial={false}>
                                     {isOpen && (
-                                        <motion.div initial="collapsed" animate="open" exit="collapsed" variants={collapseVariants} style={{ overflow: 'hidden' }}>
+                                        <motion.div
+                                            initial={reducedMotion ? false : 'collapsed'}
+                                            animate="open"
+                                            exit={reducedMotion ? undefined : 'collapsed'}
+                                            variants={reducedMotion ? instantCollapseVariants : collapseVariants}
+                                            style={{ overflow: 'hidden' }}
+                                        >
                                             <div className="rcampo-section-body">
                                                 {sectionFields.map(renderField)}
                                             </div>

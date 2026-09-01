@@ -7,12 +7,21 @@
 import type { ThemeConfig } from '../types';
 
 export type ThemeMode = 'dark' | 'light' | 'system';
+export type ThemeDensity = 'compact' | 'comfortable' | 'spacious';
 
 export const CUSTOM_ACCENT_KEY = 'custom';
 export const THEME_CSS_CACHE_KEY = 'hc_theme_css_cache';
 export const THEME_ACTIVE_CACHE_KEY = 'hc_theme_active_cache';
 export const THEME_MODE_CACHE_KEY = 'hc_theme_mode';
 export const THEME_DENSITY_CACHE_KEY = 'hc_theme_density';
+
+const DEFAULT_CONTRAST = 60;
+export const DEFAULT_THEME_DENSITY: ThemeDensity = 'comfortable';
+const DENSITY_SCALE: Record<ThemeDensity, string> = {
+  compact: '0.88',
+  comfortable: '1',
+  spacious: '1.12',
+};
 
 export const ACCENTS = [
   { key: 'violet', color: '#3B82F6', hover: '#2563EB', light: '#93C5FD', dark: '#1E40AF' },
@@ -138,6 +147,37 @@ export function normalizeHexColor(value: string) {
   return /^#[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed.toUpperCase() : null;
 }
 
+function normalizeContrast(value?: string) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_CONTRAST;
+  return Math.max(1, Math.min(100, Math.round(parsed)));
+}
+
+export function normalizeThemeDensity(value?: string): ThemeDensity {
+  return value === 'compact' || value === 'spacious' ? value : DEFAULT_THEME_DENSITY;
+}
+
+function mixHexColors(from: string, to: string, amount: number) {
+  const left = hexToRgb(from);
+  const right = hexToRgb(to);
+  if (!left || !right) return from;
+
+  const weight = Math.max(0, Math.min(1, amount));
+  return `#${[left.r, left.g, left.b]
+    .map((channel, index) => clamp(channel + (([right.r, right.g, right.b][index] - channel) * weight)).toString(16).padStart(2, '0'))
+    .join('')}`.toUpperCase();
+}
+
+function applyContrastToColor(color: string, foreground: string, background: string, value: number) {
+  if (value === DEFAULT_CONTRAST) return color;
+
+  const target = value > DEFAULT_CONTRAST ? foreground : background;
+  const amount = value > DEFAULT_CONTRAST
+    ? (value - DEFAULT_CONTRAST) / (100 - DEFAULT_CONTRAST)
+    : (DEFAULT_CONTRAST - value) / (DEFAULT_CONTRAST - 1);
+  return mixHexColors(color, target, amount);
+}
+
 function isThemeConfig(value: unknown): value is ThemeConfig {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Partial<ThemeConfig>;
@@ -198,6 +238,7 @@ export function composeTheme(theme: ThemeConfig, mode: ThemeMode, accentKey: str
   const accent = isKnownAccentKey(accentKey) ? selectedAccent(accentKey) : null;
   return ensureReadableTheme({
     ...theme,
+    density: normalizeThemeDensity(theme.density),
     ...(useLight ? LIGHT_THEME : {}),
     mode,
     accent_key: accent?.key || CUSTOM_ACCENT_KEY,
@@ -224,6 +265,8 @@ export function applyThemeToCSS(theme: ThemeConfig, mode: ThemeMode, accentKey: 
   const nextTheme = composeTheme(theme, mode, accentKey);
   const root = document.documentElement;
   const isLightTheme = relativeLuminance(nextTheme.bg) > 0.55;
+  const contrast = normalizeContrast(nextTheme.contrast);
+  const density = normalizeThemeDensity(nextTheme.density);
   const elevated = nextTheme.bg_elevated || shadeHex(nextTheme.bg_secondary, isLightTheme ? -0.04 : 0.04);
   const input = nextTheme.bg_input || shadeHex(nextTheme.bg_secondary, isLightTheme ? -0.07 : 0.07);
   const mediumBorder = nextTheme.border_medium || shadeHex(nextTheme.border, isLightTheme ? -0.12 : 0.12);
@@ -231,6 +274,9 @@ export function applyThemeToCSS(theme: ThemeConfig, mode: ThemeMode, accentKey: 
   const codeFontSize = nextTheme.code_font_size || '12';
   const interfaceFont = nextTheme.interface_font || '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
   const codeFont = nextTheme.code_font || 'ui-monospace, SFMono-Regular, Consolas, monospace';
+  const secondaryText = applyContrastToColor(nextTheme.fg_muted, nextTheme.fg, nextTheme.bg, contrast);
+  const strongText = applyContrastToColor(nextTheme.fg_secondary, nextTheme.fg, nextTheme.bg, contrast);
+  const tertiaryText = applyContrastToColor(nextTheme.fg_tertiary, nextTheme.fg, nextTheme.bg, contrast);
   const cssCache: Record<string, string> = {};
 
   Object.entries(CSS_VAR_MAP).forEach(([key, cssVars]) => {
@@ -248,9 +294,13 @@ export function applyThemeToCSS(theme: ThemeConfig, mode: ThemeMode, accentKey: 
     '--border-medium': mediumBorder,
     '--mc-lifted': elevated,
     '--mc-ghost': elevated,
-    '--text-secondary-strong': nextTheme.fg_secondary || nextTheme.fg_muted,
-    '--text-muted': nextTheme.fg_muted,
-    '--text-tertiary': nextTheme.fg_tertiary || nextTheme.fg_muted,
+    '--text-secondary': secondaryText,
+    '--text-secondary-strong': strongText,
+    '--text-muted': secondaryText,
+    '--text-tertiary': tertiaryText,
+    '--mc-charcoal': secondaryText,
+    '--mc-slate': secondaryText,
+    '--mc-graphite': strongText,
     '--text-on-accent': readableTextFor(nextTheme.accent),
     '--text-on-danger': readableTextFor(nextTheme.error || '#EF4444'),
     '--accent-primary-glow': `${nextTheme.accent}33`,
@@ -263,6 +313,8 @@ export function applyThemeToCSS(theme: ThemeConfig, mode: ThemeMode, accentKey: 
     '--app-code-font': codeFont,
     '--app-font-size': `${interfaceFontSize}px`,
     '--app-code-font-size': `${codeFontSize}px`,
+    '--app-contrast': String(contrast),
+    '--app-density-scale': DENSITY_SCALE[density],
   };
 
   Object.entries(extraVars).forEach(([cssVar, value]) => {
@@ -271,14 +323,18 @@ export function applyThemeToCSS(theme: ThemeConfig, mode: ThemeMode, accentKey: 
   });
 
   root.dataset.themeMode = mode;
+  root.dataset.theme = isLightTheme ? 'light' : 'dark';
+  root.classList.toggle('theme-light', isLightTheme);
+  root.classList.toggle('theme-dark', !isLightTheme);
   root.dataset.pointerCursors = nextTheme.pointer_cursors || 'false';
   root.dataset.sidebarTranslucent = nextTheme.sidebar_translucent || 'false';
+  root.dataset.themeDensity = density;
 
   try {
     localStorage.setItem(THEME_CSS_CACHE_KEY, JSON.stringify(cssCache));
     localStorage.setItem(THEME_ACTIVE_CACHE_KEY, JSON.stringify(nextTheme));
     localStorage.setItem(THEME_MODE_CACHE_KEY, mode);
-    localStorage.setItem(THEME_DENSITY_CACHE_KEY, document.documentElement.dataset.themeDensity || nextTheme.density || 'comfortable');
+    localStorage.setItem(THEME_DENSITY_CACHE_KEY, density);
   } catch {}
 }
 
@@ -297,8 +353,18 @@ export function restoreCachedTheme(): void {
 
     const mode = localStorage.getItem(THEME_MODE_CACHE_KEY);
     const density = localStorage.getItem(THEME_DENSITY_CACHE_KEY);
-    if (mode) document.documentElement.dataset.themeMode = mode;
-    if (density) document.documentElement.dataset.themeDensity = density;
+    if (mode) {
+      document.documentElement.dataset.themeMode = mode;
+      const isLightMode = mode === 'light' || (mode === 'system' && !systemPrefersDark());
+      document.documentElement.dataset.theme = isLightMode ? 'light' : 'dark';
+      document.documentElement.classList.toggle('theme-light', isLightMode);
+      document.documentElement.classList.toggle('theme-dark', !isLightMode);
+    }
+    if (density) {
+      const normalizedDensity = normalizeThemeDensity(density);
+      document.documentElement.dataset.themeDensity = normalizedDensity;
+      document.documentElement.style.setProperty('--app-density-scale', DENSITY_SCALE[normalizedDensity]);
+    }
 
     const activeRaw = localStorage.getItem(THEME_ACTIVE_CACHE_KEY);
     if (activeRaw) {
@@ -308,6 +374,17 @@ export function restoreCachedTheme(): void {
       }
       if (typeof active.sidebar_translucent === 'string') {
         document.documentElement.dataset.sidebarTranslucent = active.sidebar_translucent;
+      }
+      if (typeof active.bg === 'string') {
+        const isLightTheme = relativeLuminance(active.bg) > 0.55;
+        document.documentElement.dataset.theme = isLightTheme ? 'light' : 'dark';
+        document.documentElement.classList.toggle('theme-light', isLightTheme);
+        document.documentElement.classList.toggle('theme-dark', !isLightTheme);
+      }
+      if (typeof active.density === 'string') {
+        const normalizedDensity = normalizeThemeDensity(active.density);
+        document.documentElement.dataset.themeDensity = normalizedDensity;
+        document.documentElement.style.setProperty('--app-density-scale', DENSITY_SCALE[normalizedDensity]);
       }
     }
   } catch {}

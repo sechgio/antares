@@ -73,6 +73,8 @@ interface RightPanelProps {
   onSendBackward: () => void;
   /** Apply a canvas preset when nothing is selected. */
   onApplyPreset?: (presetId: string) => void;
+  /** Create a NEW document seeded with a preset. */
+  onNewFromPreset?: (presetId: string, label: string) => void;
   /** Shared document styles catalog. */
   documentStyles?: CanvasSharedStyle[];
   onCreateStyle?: (kind: CanvasStyleKind) => void;
@@ -160,6 +162,7 @@ export default memo(function RightPanel({
   onSendBack,
   onSendBackward,
   onApplyPreset,
+  onNewFromPreset,
   documentStyles = [],
   onCreateStyle,
   onApplyStyle,
@@ -440,7 +443,11 @@ export default memo(function RightPanel({
         <>
           {selectedCount === 0 && onApplyPreset && (
             <div className="border-b px-4 py-3" style={{ borderColor: 'var(--cv-border)' }}>
-              <TemplatesSection onApplyPreset={onApplyPreset} tooltipPlacement="left" />
+              <TemplatesSection
+                onApplyPreset={onApplyPreset}
+                onNewFromPreset={onNewFromPreset}
+                tooltipPlacement="left"
+              />
             </div>
           )}
 

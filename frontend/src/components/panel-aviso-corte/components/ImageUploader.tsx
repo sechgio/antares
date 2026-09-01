@@ -42,8 +42,16 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
     <div className="flex flex-col gap-2">
       {/* Drop zone */}
       <div
+        role="button"
+        tabIndex={0}
         aria-label={ARIA_LABELS.imageUploader}
         onClick={() => inputRef.current?.click()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            inputRef.current?.click();
+          }
+        }}
         onDrop={onDrop}
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
@@ -64,7 +72,15 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
           </span>
         )}
       </div>
-      <input ref={inputRef} type="file" multiple accept={ACCEPTED_IMAGE_TYPES.join(',')} className="hidden" onChange={(e) => handleFiles(e.target.files)} />
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        accept={ACCEPTED_IMAGE_TYPES.join(',')}
+        className="hidden"
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => handleFiles(e.target.files)}
+      />
 
       {/* Errors */}
       {errors.length > 0 && (
@@ -72,7 +88,7 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
           {errors.map((err, i) => (
             <span key={i} className="text-[11px] text-[var(--accent-red)]">{err}</span>
           ))}
-          <button className="text-[11px] text-[var(--text-muted)] self-start hover:underline" onClick={() => setErrors([])}>Descartar</button>
+          <button type="button" className="text-[11px] text-[var(--text-muted)] self-start hover:underline" onClick={() => setErrors([])}>Descartar</button>
         </div>
       )}
 
@@ -84,7 +100,7 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
               <ImageIcon size={11} />
               {images.length} imagen{images.length !== 1 && 'es'}
             </span>
-            <button onClick={onClear} className="text-[11px] text-[var(--accent-red)] hover:opacity-80 flex items-center gap-1 transition-colors">
+            <button type="button" onClick={onClear} className="text-[11px] text-[var(--accent-red)] hover:opacity-80 flex items-center gap-1 transition-colors">
               <Trash2 size={11} />
               Limpiar
             </button>
@@ -94,6 +110,8 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
               <div key={idx} className="relative group rounded-md overflow-hidden border border-[var(--border-subtle)] aspect-square w-full bg-[var(--bg-surface)]">
                 <img src={img.objectUrl} alt={img.file.name} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                 <button
+                  type="button"
+                  aria-label={`Eliminar imagen ${idx + 1}`}
                   onClick={() => onRemove(idx)}
                   className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                   style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 50%, transparent)' }}
@@ -107,6 +125,7 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
           {/* Ver más / Ver menos toggle */}
           {hasMore && (
             <button
+              type="button"
               onClick={() => setExpanded((prev) => !prev)}
               className="mx-auto flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-full text-[11px] font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] bg-[var(--bg-surface)] hover:bg-[var(--bg-elevated)] border border-[var(--border-subtle)] transition-all"
             >

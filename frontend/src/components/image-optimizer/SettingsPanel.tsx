@@ -1,4 +1,5 @@
 import { Crop, Download, FileImage, Gauge, Maximize2, Tag } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { ASPECT_RATIO_OPTIONS, BatchSettings, ImageItem } from './types';
 import { OperationSection, SegmentedControl, ThemeSelect, formControlClassName } from './ui';
 
@@ -30,11 +31,12 @@ export default function SettingsPanel({
   onUpdateSettings,
   onOpenCropEditor,
 }: SettingsPanelProps) {
+  const { t } = useTranslation();
   return (
-    <aside className="custom-scrollbar flex h-full flex-col gap-1.5 overflow-y-auto xl:pr-0.5">
+    <aside data-surface-part="settings" className="custom-scrollbar flex h-full flex-col gap-1.5 overflow-y-auto xl:pr-0.5">
 
       <OperationSection
-        title="Recorte"
+        title={t('optimizer.operations.crop')}
         icon={<Crop size={13} />}
         accentColor="#8B5CF6"
         enabled={settings.operations.cropEnabled}
@@ -42,11 +44,14 @@ export default function SettingsPanel({
         disabled={renameOnlyMode}
       >
         <label className="block space-y-1">
-          <span className={fieldLabel}>Relación</span>
+          <span className={fieldLabel}>{t('optimizer.fields.aspectRatio')}</span>
           <ThemeSelect
-            aria-label="Relación de aspecto"
+            aria-label={t('optimizer.fields.aspectRatio')}
             value={settings.crop.aspectRatio}
-            options={ASPECT_RATIO_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            options={ASPECT_RATIO_OPTIONS.map((o) => ({
+              value: o.value,
+              label: o.value === 'original' ? t('optimizer.preview.original') : o.label,
+            }))}
             onChange={(value) => onUpdateSettings((draft) => {
               draft.crop.aspectRatio = value as BatchSettings['crop']['aspectRatio'];
             })}
@@ -54,29 +59,30 @@ export default function SettingsPanel({
         </label>
         {settings.crop.aspectRatio !== 'original' && (
           <label className="block space-y-1">
-            <span className={fieldLabel}>Dirección</span>
+            <span className={fieldLabel}>{t('optimizer.fields.direction')}</span>
             <SegmentedControl
               value={settings.crop.cropOrigin}
               options={[
-                { value: 'top', label: 'Arriba → Abajo' },
-                { value: 'bottom', label: 'Abajo → Arriba' },
+                { value: 'top', label: t('optimizer.fields.topToBottom') },
+                { value: 'bottom', label: t('optimizer.fields.bottomToTop') },
               ]}
               onChange={(value) => onUpdateSettings((draft) => { draft.crop.cropOrigin = value as 'top' | 'bottom'; })}
             />
           </label>
         )}
         <button
+          type="button"
           onClick={onOpenCropEditor}
           disabled={!activeItem || !settings.operations.cropEnabled || settings.crop.aspectRatio === 'original'}
           className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-input)] px-2 text-[11px] font-medium text-[var(--text-primary)] transition-[background-color,transform] duration-100 hover:border-[var(--accent-primary)]/40 active:scale-[0.96] motion-reduce:active:scale-100 disabled:pointer-events-none disabled:opacity-40"
         >
           <Crop size={12} />
-          Ajustar recorte
+          {t('optimizer.fields.adjustCrop')}
         </button>
       </OperationSection>
 
       <OperationSection
-        title="Redimensionar"
+        title={t('optimizer.operations.resize')}
         icon={<Maximize2 size={13} />}
         accentColor="#3B82F6"
         enabled={settings.operations.resizeEnabled}
@@ -85,7 +91,7 @@ export default function SettingsPanel({
       >
         <div className="grid grid-cols-2 gap-2">
           <label className="block space-y-1">
-            <span className={fieldLabel}>Ancho max</span>
+            <span className={fieldLabel}>{t('optimizer.fields.maxWidth')}</span>
             <input
               type="number"
               min="1"
@@ -95,7 +101,7 @@ export default function SettingsPanel({
             />
           </label>
           <label className="block space-y-1">
-            <span className={fieldLabel}>Alto max</span>
+            <span className={fieldLabel}>{t('optimizer.fields.maxHeight')}</span>
             <input
               type="number"
               min="1"
@@ -106,7 +112,7 @@ export default function SettingsPanel({
           </label>
         </div>
         <label className="flex cursor-pointer items-center justify-between rounded-lg border border-[var(--border-medium)] bg-[var(--bg-input)] px-2.5 py-1.5 transition-colors hover:border-[var(--accent-primary)]/35">
-          <span className="text-[11px] font-medium text-[var(--text-primary)]">No ampliar pequeñas</span>
+          <span className="text-[11px] font-medium text-[var(--text-primary)]">{t('optimizer.fields.noUpscale')}</span>
           <input
             type="checkbox"
             checked={settings.resize.noUpscale}
@@ -117,7 +123,7 @@ export default function SettingsPanel({
       </OperationSection>
 
       <OperationSection
-        title="Formato"
+        title={t('optimizer.operations.format')}
         icon={<FileImage size={13} />}
         accentColor="#10B981"
         enabled={settings.operations.formatEnabled}
@@ -125,11 +131,14 @@ export default function SettingsPanel({
         disabled={renameOnlyMode}
       >
         <label className="block space-y-1">
-          <span className={fieldLabel}>Salida</span>
+          <span className={fieldLabel}>{t('optimizer.fields.output')}</span>
           <ThemeSelect
-            aria-label="Formato de salida"
+            aria-label={t('optimizer.fields.outputFormat')}
             value={settings.format.outputFormat}
-            options={[...FORMAT_OPTIONS]}
+            options={FORMAT_OPTIONS.map((option) => ({
+              ...option,
+              label: option.value === 'original' ? t('optimizer.preview.original') : option.label,
+            }))}
             onChange={(value) => onUpdateSettings((draft) => {
               draft.format.outputFormat = value as BatchSettings['format']['outputFormat'];
             })}
@@ -138,7 +147,7 @@ export default function SettingsPanel({
       </OperationSection>
 
       <OperationSection
-        title="Compresión"
+        title={t('optimizer.operations.compression')}
         icon={<Gauge size={13} />}
         accentColor="#F59E0B"
         enabled={settings.operations.compressionEnabled}
@@ -147,7 +156,7 @@ export default function SettingsPanel({
       >
         <label className="block space-y-1">
           <span className={`flex items-center justify-between ${fieldLabel}`}>
-            <span>Calidad</span>
+            <span>{t('optimizer.fields.quality')}</span>
             <span className="font-mono tabular-nums text-[var(--text-primary)]">{Math.round(settings.compression.quality * 100)}%</span>
           </span>
           <input
@@ -161,7 +170,7 @@ export default function SettingsPanel({
           />
         </label>
         <label className="block space-y-1">
-          <span className={fieldLabel}>Peso máximo (MB)</span>
+          <span className={fieldLabel}>{t('optimizer.fields.maxSizeMb')}</span>
           <input
             type="number"
             min="0.1"
@@ -174,7 +183,7 @@ export default function SettingsPanel({
       </OperationSection>
 
       <OperationSection
-        title="Renombrar"
+        title={t('optimizer.operations.rename')}
         icon={<Tag size={13} />}
         accentColor="#06B6D4"
         enabled={settings.operations.renameEnabled}
@@ -182,7 +191,7 @@ export default function SettingsPanel({
       >
         <div className="grid grid-cols-2 gap-2">
           <label className="block space-y-1">
-            <span className={fieldLabel}>Prefijo</span>
+            <span className={fieldLabel}>{t('optimizer.fields.prefix')}</span>
             <input
               type="text"
               value={settings.rename.prefix}
@@ -191,7 +200,7 @@ export default function SettingsPanel({
             />
           </label>
           <label className="block space-y-1">
-            <span className={fieldLabel}>Inicio</span>
+            <span className={fieldLabel}>{t('optimizer.fields.start')}</span>
             <input
               type="number"
               min="0"
@@ -208,19 +217,19 @@ export default function SettingsPanel({
         style={{ borderLeftWidth: 3, borderLeftColor: '#06B6D4' }}
       >
         <p className={fieldLabel}>
-          Preview {settings.operations.renameEnabled ? '' : '(activa Renombrar)'}
+          {t('optimizer.fields.preview')} {settings.operations.renameEnabled ? '' : `(${t('optimizer.fields.enableRename')})`}
         </p>
         <p className="mt-0.5 truncate font-mono text-[11px] text-[var(--text-primary)]">{previewNames.join(', ')}</p>
       </div>
 
       <OperationSection
-        title="Exportar"
+        title={t('optimizer.operations.export')}
         icon={<Download size={13} />}
         accentColor="#6366F1"
         enabled={true}
       >
         <label className="block space-y-1">
-          <span className={fieldLabel}>Carpeta ZIP</span>
+          <span className={fieldLabel}>{t('optimizer.fields.zipFolder')}</span>
           <input
             type="text"
             value={settings.export.zipName}

@@ -1,4 +1,5 @@
 import type { DragEvent, KeyboardEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { CheckCircle2, Crop, Download, Eye, Loader2, Sparkles, Trash2 } from 'lucide-react';
 import { BatchSettings, CropRectangle, ImageItem, PreviewTab, PresetId } from './types';
@@ -75,12 +76,14 @@ export default function PreviewWorkspace({
   onDragOver,
   onDrop,
 }: PreviewWorkspaceProps) {
+  const { t } = useTranslation();
   const previewStageClass = 'flex min-h-0 flex-1 items-center justify-center overflow-hidden';
   const previewImageClass = 'block max-h-full max-w-full object-contain';
 
   if (items.length === 0) {
     return (
       <section
+        data-surface-part="preview"
         className={`relative flex h-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-xl px-6 text-center transition-[border-color,background-color,box-shadow] duration-150 ${
           isDragActive
             ? 'border border-dashed border-[var(--accent-blue)] bg-[var(--bg-elevated)]'
@@ -96,7 +99,7 @@ export default function PreviewWorkspace({
         onDrop={onDrop}
         role="button"
         tabIndex={0}
-        aria-label="Agregar imágenes"
+        aria-label={t('optimizer.preview.addImages')}
       >
         <div
           className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl border bg-[var(--bg-input)] transition-colors ${
@@ -109,10 +112,10 @@ export default function PreviewWorkspace({
           />
         </div>
         <p className="text-[13px] font-semibold tracking-tight text-[var(--text-primary)] text-balance">
-          {isDragActive ? 'Suelta aquí' : 'Selecciona una imagen'}
+          {isDragActive ? t('optimizer.preview.dropHere') : t('optimizer.preview.selectImage')}
         </p>
         <p className="mt-1 max-w-[16rem] text-[11px] leading-snug text-[var(--text-secondary)] text-pretty">
-          {isDragActive ? 'Los archivos se agregarán al lote.' : 'Haz clic aquí o arrastra archivos.'}
+          {isDragActive ? t('optimizer.preview.dropHint') : t('optimizer.preview.clickOrDrop')}
         </p>
       </section>
     );
@@ -120,7 +123,7 @@ export default function PreviewWorkspace({
 
   if (viewMode === 'grid') {
     return (
-      <section className={`relative flex h-full flex-col overflow-hidden ${previewStageShellClass}`}>
+      <section data-surface-part="preview" className={`relative flex h-full flex-col overflow-hidden ${previewStageShellClass}`}>
         <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto p-2.5">
           <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
             {items.map((item) => {
@@ -152,8 +155,10 @@ export default function PreviewWorkspace({
                     )}
 
                     <div className="absolute inset-0 flex items-start justify-end p-1.5 opacity-0 transition-opacity duration-100 group-hover:opacity-100">
-                      <WithHoverTooltip label="Ajustar recorte" placement="bottom">
+                      <WithHoverTooltip label={t('optimizer.preview.adjustCrop')} placement="bottom">
                         <button
+                          type="button"
+                          aria-label={t('optimizer.preview.adjustCrop')}
                           onClick={(e) => {
                             e.stopPropagation();
                             onOpenCropEditor(item.id);
@@ -220,7 +225,7 @@ export default function PreviewWorkspace({
   }
 
   return (
-    <section className="flex h-full flex-col overflow-hidden">
+    <section data-surface-part="preview" className="flex h-full flex-col overflow-hidden">
       <div className={`relative flex flex-1 flex-col gap-1.5 overflow-hidden p-2 ${previewStageShellClass}`}>
         <div className="flex shrink-0 items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1.5">
@@ -231,20 +236,20 @@ export default function PreviewWorkspace({
               )}
             </div>
             {activeItem.status === 'completed' && !activeItem.stale ? <CheckCircle2 size={11} className="shrink-0 text-[var(--accent-green)]" /> : null}
-            {activeItem.excluded && <span className="shrink-0 text-[9px] font-medium text-[var(--accent-red)]">Excluida</span>}
-            {activeItem.stale && <span className="shrink-0 text-[9px] font-medium text-[var(--accent-yellow)]">Stale</span>}
-            {activeItem.overrides.skipCompression && <span className="shrink-0 text-[9px] font-medium text-[var(--text-secondary)]">Sin compresión</span>}
-            {activeItem.overrides.presetId && <span className="shrink-0 text-[9px] font-medium text-[var(--text-secondary)]">Preset local</span>}
+            {activeItem.excluded && <span className="shrink-0 text-[9px] font-medium text-[var(--accent-red)]">{t('optimizer.status.excluded')}</span>}
+            {activeItem.stale && <span className="shrink-0 text-[9px] font-medium text-[var(--accent-yellow)]">{t('optimizer.status.stale')}</span>}
+            {activeItem.overrides.skipCompression && <span className="shrink-0 text-[9px] font-medium text-[var(--text-secondary)]">{t('optimizer.item.skipCompression')}</span>}
+            {activeItem.overrides.presetId && <span className="shrink-0 text-[9px] font-medium text-[var(--text-secondary)]">{t('optimizer.item.localPreset')}</span>}
           </div>
           <div className="flex shrink-0 items-center">
-            <button onClick={() => onViewModeChange('grid')} className={chromeBtn}>← Grid</button>
-            <button onClick={() => onDownloadSingle(activeItem)} disabled={!activeItemDownloadable} className={chromeBtn}>
+            <button type="button" onClick={() => onViewModeChange('grid')} className={chromeBtn}>{t('optimizer.preview.backToGrid')}</button>
+            <button type="button" onClick={() => onDownloadSingle(activeItem)} disabled={!activeItemDownloadable} className={chromeBtn}>
               <Download size={11} />
-              Descargar
+              {t('optimizer.preview.download')}
             </button>
-            <button onClick={() => onRemoveItem(activeItem.id)} className={`${chromeBtn} hover:text-[var(--accent-red)]`}>
+            <button type="button" onClick={() => onRemoveItem(activeItem.id)} className={`${chromeBtn} hover:text-[var(--accent-red)]`}>
               <Trash2 size={11} />
-              Quitar
+              {t('optimizer.preview.remove')}
             </button>
           </div>
         </div>
@@ -252,13 +257,14 @@ export default function PreviewWorkspace({
         <div className="flex shrink-0 items-center gap-2">
           <div className="inline-flex items-center gap-0.5 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-input)] p-0.5">
             {([
-              { value: 'original', label: 'Original' },
-              { value: 'crop', label: 'Recorte' },
-              { value: 'result', label: 'Resultado' },
-              { value: 'compare', label: 'Comparar' },
+              { value: 'original', label: t('optimizer.preview.original') },
+              { value: 'crop', label: t('optimizer.preview.crop') },
+              { value: 'result', label: t('optimizer.preview.result') },
+              { value: 'compare', label: t('optimizer.preview.compareShort') },
             ] as const).map((tab) => (
               <button
                 key={tab.value}
+                type="button"
                 onClick={() => onChangePreviewTab(tab.value)}
                 className={`h-6 rounded-md px-2 text-[10px] font-medium transition-[color,background-color,transform] duration-100 active:scale-[0.96] motion-reduce:active:scale-100 ${previewTab === tab.value
                   ? 'bg-[var(--bg-elevated)] text-[var(--text-primary)] shadow-sm'
@@ -307,22 +313,23 @@ export default function PreviewWorkspace({
                 </div>
                 <div className="flex shrink-0 items-center justify-between gap-2">
                   <p className="font-mono text-[9px] tabular-nums text-[var(--text-secondary)]">
-                    Recorte {activeCropPreview.width}×{activeCropPreview.height}
+                    {t('optimizer.preview.cropSize', { width: activeCropPreview.width, height: activeCropPreview.height })}
                   </p>
                   <button
+                    type="button"
                     onClick={() => onOpenCropEditor()}
                     className="text-[10px] font-medium text-[var(--accent-primary)] transition-colors hover:text-[var(--accent-primary-hover)]"
                   >
-                    Ajustar
+                    {t('optimizer.preview.adjust')}
                   </button>
                 </div>
               </div>
             ) : (
               <div className={`${previewStageClass} flex-col gap-1.5 text-center`}>
                 <Crop size={16} className="text-[var(--text-secondary)]" />
-                <p className="text-[11px] font-medium text-[var(--text-primary)]">Sin recorte activo</p>
+                <p className="text-[11px] font-medium text-[var(--text-primary)]">{t('optimizer.preview.noActiveCrop')}</p>
                 <p className="max-w-[240px] text-[10px] leading-snug text-[var(--text-secondary)] text-pretty">
-                  Activa recorte y elige una relación.
+                  {t('optimizer.preview.enableCrop')}
                 </p>
               </div>
             )
@@ -334,22 +341,22 @@ export default function PreviewWorkspace({
                 <div className={previewStageClass}>
                   <img
                     src={activeIsDirect ? activeItem.preview : activeItem.resultPreview || activeItem.preview}
-                    alt={`${activeItem.originalName} resultado`}
+                    alt={`${activeItem.originalName} ${t('optimizer.preview.result')}`}
                     className={previewImageClass}
                   />
                 </div>
                 <p className="shrink-0 text-center text-[10px] text-[var(--text-secondary)]">
                   {activeIsDirect
-                    ? 'Modo directo: se descargará el original con el nombre final.'
-                    : 'Listo para descarga.'}
+                    ? t('optimizer.preview.directMode')
+                    : t('optimizer.preview.readyForDownload')}
                 </p>
               </div>
             ) : (
               <div className={`${previewStageClass} flex-col gap-1.5 text-center`}>
                 <Sparkles size={16} className="text-[var(--text-secondary)]" />
-                <p className="text-[11px] font-medium text-[var(--text-primary)]">Aún no hay resultado</p>
+                <p className="text-[11px] font-medium text-[var(--text-primary)]">{t('optimizer.preview.noResult')}</p>
                 <p className="max-w-[240px] text-[10px] leading-snug text-[var(--text-secondary)] text-pretty">
-                  Procesa la imagen para ver el preview.
+                  {t('optimizer.preview.processToPreview')}
                 </p>
               </div>
             )
@@ -363,9 +370,9 @@ export default function PreviewWorkspace({
             ) : (
               <div className={`${previewStageClass} flex-col gap-1.5 text-center`}>
                 <Eye size={16} className="text-[var(--text-secondary)]" />
-                <p className="text-[11px] font-medium text-[var(--text-primary)]">Comparación no disponible</p>
+                <p className="text-[11px] font-medium text-[var(--text-primary)]">{t('optimizer.preview.compareUnavailable')}</p>
                 <p className="max-w-[240px] text-[10px] leading-snug text-[var(--text-secondary)] text-pretty">
-                  Aparece con un resultado distinto del original.
+                  {t('optimizer.preview.compareHint')}
                 </p>
               </div>
             )

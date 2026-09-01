@@ -1,6 +1,6 @@
 import './rcampo-styles.css';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
     Camera,
     Droplet,
@@ -41,6 +41,7 @@ const DEFAULT_SIDEBAR_WIDTH = 264;
 export default function ReportesCampoApp() {
     const { addToast } = useToast();
     const dialog = useDialog();
+    const reducedMotion = useReducedMotion();
     const [reportType, setReportType] = useState<ReportType>('panel-fotografico');
     const config = getReportConfig(reportType);
 
@@ -266,7 +267,7 @@ export default function ReportesCampoApp() {
     }, [photos.length, isExporting, handleExportCurrent]);
 
     return (
-        <div className="rcampo-app">
+        <div className="rcampo-app" data-surface="reportes-campo">
             <header className="rcampo-header">
                 <div className="rcampo-header-side">
                     <div className="rcampo-brand">
@@ -281,6 +282,7 @@ export default function ReportesCampoApp() {
                     {REPORT_TYPES.map((rt) => (
                         <button
                             key={rt.id}
+                            type="button"
                             className={`rcampo-type-pill ${reportType === rt.id ? 'active' : ''}`}
                             onClick={() => setReportType(rt.id)}
                         >
@@ -335,10 +337,10 @@ export default function ReportesCampoApp() {
                         <AnimatePresence mode="wait">
                             <motion.div
                                 key={`${reportType}-${selectedPanelId}-${currentPage}`}
-                                initial={{ opacity: 0, y: 8 }}
+                                initial={reducedMotion ? false : { opacity: 0, y: 8 }}
                                 animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -8 }}
-                                transition={{ duration: 0.2 }}
+                                exit={reducedMotion ? undefined : { opacity: 0, y: -8 }}
+                                transition={{ duration: reducedMotion ? 0 : 0.2 }}
                                 className="rcampo-preview-frame"
                             >
                                 <SheetPreview

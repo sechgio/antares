@@ -22,6 +22,41 @@ describe('api cache dedupe', () => {
     expect(b).toEqual({ templates: [] });
   });
 
+  it('dedupes concurrent formatosList calls', async () => {
+    mockInvoke.mockImplementation(async () => ({ formats: [] }));
+    const [a, b] = await Promise.all([api.formatosList(), api.formatosList()]);
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
+    expect(mockInvoke).toHaveBeenCalledWith('formatos_list', undefined);
+    expect(a).toEqual({ formats: [] });
+    expect(b).toEqual({ formats: [] });
+  });
+
+  it('formatos mutations invalidate formatos_list cache', async () => {
+    mockInvoke.mockResolvedValueOnce({ formats: [{ id: 'f1' }] });
+    await api.formatosList();
+    mockInvoke.mockResolvedValueOnce({ formats: [{ id: 'f1' }] });
+    await api.formatosList();
+    expect(mockInvoke).toHaveBeenCalledTimes(1); // served from cache
+    mockInvoke.mockResolvedValueOnce({ format: { id: 'f2' } });
+    await api.formatosUpload({ nombre: 'n', filename: 'f.pdf', content_b64: 'x' });
+    expect(mockInvoke).toHaveBeenCalledTimes(2); // upload invalidates
+    mockInvoke.mockResolvedValueOnce({ formats: [{ id: 'f1' }, { id: 'f2' }] });
+    await api.formatosList();
+    expect(mockInvoke).toHaveBeenCalledTimes(3);
+    mockInvoke.mockResolvedValueOnce({ deleted: true });
+    await api.formatosDelete('f2');
+    expect(mockInvoke).toHaveBeenCalledTimes(4); // delete invalidates
+    mockInvoke.mockResolvedValueOnce({ formats: [{ id: 'f1' }] });
+    await api.formatosList();
+    expect(mockInvoke).toHaveBeenCalledTimes(5);
+    mockInvoke.mockResolvedValueOnce({ format: { id: 'f1' } });
+    await api.formatosUpdateMapping('f1', {} as never);
+    expect(mockInvoke).toHaveBeenCalledTimes(6); // updateMapping invalidates
+    mockInvoke.mockResolvedValueOnce({ formats: [{ id: 'f1' }] });
+    await api.formatosList();
+    expect(mockInvoke).toHaveBeenCalledTimes(7);
+  });
+
   it('caches sequential calls within TTL', async () => {
     mockInvoke.mockResolvedValue({ formats: ['JPEG'] });
     const first = await api.formats();

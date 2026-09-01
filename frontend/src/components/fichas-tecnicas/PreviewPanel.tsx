@@ -15,7 +15,7 @@ export default function PreviewPanel({ ficha, logoLeft }: Props) {
 
   return (
     <div
-      className="ft-preview-scroll h-full min-h-0 overflow-auto rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3"
+      className="tr-preview-wrap ft-preview-scroll h-full min-h-0 overflow-auto rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3"
       data-testid="ficha-preview-scroll"
     >
       <div
