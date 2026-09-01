@@ -11,6 +11,7 @@ interface StepProps {
   badge?: ReactNode;
   defaultOpen?: boolean;
   status?: 'pending' | 'done';
+  statusLabel?: string;
 }
 
 export function GenerateStep({
@@ -22,6 +23,7 @@ export function GenerateStep({
   badge,
   defaultOpen = true,
   status = 'pending',
+  statusLabel,
 }: StepProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const wasDisabled = useRef(!!disabled);
@@ -58,10 +60,19 @@ export function GenerateStep({
         </span>
         <span className="truncate text-[11px] font-semibold" style={{ color: 'var(--cv-text)' }}>{title}</span>
         <span className="shrink-0" style={{ color: 'var(--cv-text-muted)' }}>{icon}</span>
-        {badge && <span className="ml-auto mr-1">{badge}</span>}
+        {(statusLabel || badge) && (
+          <span className="ml-auto flex shrink-0 items-center gap-1">
+            {statusLabel && (
+              <span className={`canvas-generate-step-status ${done ? 'canvas-generate-step-status--done' : ''}`}>
+                {statusLabel}
+              </span>
+            )}
+            {badge && <span>{badge}</span>}
+          </span>
+        )}
         <ChevronDown
           size={12}
-          className={`ml-auto shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-0' : '-rotate-90'}`}
+          className={`shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-0' : '-rotate-90'}`}
           style={{ color: 'var(--cv-text-muted)' }}
         />
       </button>

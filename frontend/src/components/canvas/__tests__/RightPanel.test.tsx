@@ -341,12 +341,55 @@ describe('RightPanel shape inspector', () => {
     expect(screen.getByRole('button', { name: /Exportar/ })).toBeTruthy();
   });
 
+  it('explains the selected layer and prioritizes the main controls', () => {
+    render(<RightPanel layer={createLayer('rect')} onChange={vi.fn()} {...panelProps} />);
+
+    expect(screen.getByTestId('canvas-inspector-context')).toHaveTextContent('Capa seleccionada:');
+    expect(screen.getByTestId('canvas-inspector-priority-hint')).toHaveTextContent(
+      'Posición, tamaño y apariencia',
+    );
+  });
+
+  it('organizes inspector controls into visible priority groups', () => {
+    render(<RightPanel layer={createLayer('text')} onChange={vi.fn()} {...panelProps} />);
+
+    expect(screen.getByTestId('canvas-inspector-group-layer')).toHaveAttribute('data-open', 'true');
+    expect(screen.getByTestId('canvas-inspector-group-transform')).toHaveTextContent('Posición');
+    expect(screen.getByTestId('canvas-inspector-group-content')).toBeInTheDocument();
+    expect(screen.getByText('Estilo visual')).toBeInTheDocument();
+
+    const advanced = screen.getByTestId('canvas-inspector-group-advanced');
+    expect(advanced).toHaveAttribute('data-open', 'false');
+    fireEvent.click(advanced.querySelector('summary') as HTMLElement);
+    expect(advanced).toHaveAttribute('data-open', 'true');
+  });
+
   it('multi-select shows bulk panel only', () => {
     const layer = createLayer('rect');
     render(<RightPanel layer={layer} onChange={vi.fn()} {...panelProps} selectedCount={3} />);
     expect(screen.getByText('3 seleccionados')).toBeTruthy();
+    expect(screen.getByTestId('canvas-inspector-context')).toHaveTextContent('3 capas seleccionadas');
+    expect(screen.getByTestId('canvas-inspector-priority-hint')).toHaveTextContent(
+      'Alinear, distribuir y ordenar',
+    );
     expect(screen.queryByText('Relleno')).toBeNull();
     expect(screen.getByLabelText('Adelante')).toBeTruthy();
+  });
+
+  it('explains why distribution is unavailable for two selected layers', () => {
+    render(
+      <RightPanel
+        layer={createLayer('rect')}
+        onChange={vi.fn()}
+        {...panelProps}
+        selectedCount={2}
+      />,
+    );
+
+    expect(screen.getByTestId('canvas-distribution-hint')).toHaveTextContent(
+      'Selecciona al menos 3 objetos para distribuirlos.',
+    );
+    expect(screen.getByTestId('canvas-distribute-horizontal')).toBeDisabled();
   });
 
   it('fill hex change updates background-color and keeps opacity in one onChange', () => {

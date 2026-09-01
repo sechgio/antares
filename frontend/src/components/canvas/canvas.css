@@ -124,6 +124,23 @@ select.canvas-input option {
   margin-bottom: 10px;
 }
 
+.canvas-section-count {
+  display: inline-flex;
+  min-width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--cv-border);
+  border-radius: 9999px;
+  background: var(--cv-hover);
+  padding: 0 5px;
+  color: var(--cv-text-secondary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1;
+}
+
 .canvas-section-header {
   display: flex;
   align-items: center;
@@ -696,6 +713,146 @@ select.canvas-input option {
   gap: 2px;
 }
 
+.canvas-inspector-context {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--cv-border);
+  background: var(--cv-hover);
+  padding: 7px 14px;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.canvas-inspector-context-label,
+.canvas-inspector-priority-label {
+  flex-shrink: 0;
+  color: var(--cv-text-muted);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.canvas-inspector-context-detail {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--cv-text-secondary);
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-inspector-priority-hint {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 2px;
+  margin: 10px 12px 0;
+  border: 1px solid color-mix(in srgb, var(--cv-accent) 28%, transparent);
+  border-radius: var(--cv-radius-sm);
+  background: var(--cv-accent-soft);
+  padding: 7px 9px;
+  color: var(--cv-text-secondary);
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.canvas-inspector-priority-hint > span:last-child {
+  min-width: 0;
+  color: var(--cv-text-secondary);
+}
+
+.canvas-inspector-group {
+  border-bottom: 1px solid var(--cv-border);
+}
+
+.canvas-inspector-group-summary {
+  display: flex;
+  min-width: 0;
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--cv-text);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  transition: background-color 0.12s ease;
+}
+
+.canvas-inspector-group-summary::-webkit-details-marker,
+.canvas-inspector-group-summary::marker {
+  display: none;
+}
+
+.canvas-inspector-group-summary:hover {
+  background: var(--cv-hover);
+}
+
+.canvas-inspector-group-summary:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--cv-accent);
+}
+
+.canvas-inspector-group-heading {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.canvas-inspector-group-title {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.canvas-inspector-group-description {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--cv-text-muted);
+  font-size: 10px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-inspector-group-chevron {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--cv-text-muted);
+  transition: transform 0.15s ease, color 0.12s ease;
+}
+
+.canvas-inspector-group-summary:hover .canvas-inspector-group-chevron {
+  color: var(--cv-text-secondary);
+}
+
+.canvas-inspector-group[data-open='true'] .canvas-inspector-group-chevron {
+  transform: rotate(180deg);
+}
+
+.canvas-inspector-group[data-open='false'] > .canvas-inspector-group-content {
+  display: none;
+}
+
+.canvas-inspector-group-content > .canvas-section:last-child {
+  border-bottom: none;
+}
+
+.canvas-distribution-hint {
+  margin: -2px 0 6px;
+  color: var(--cv-text-muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
 .canvas-icon-btn {
   display: inline-flex;
   align-items: center;
@@ -782,6 +939,12 @@ select.canvas-input option {
   transition: width 0.15s ease;
 }
 
+.canvas-panel-chrome--left,
+.canvas-panel-chrome--right {
+  position: relative;
+  z-index: 20;
+}
+
 .canvas-panel-chrome[data-open='false'] {
   pointer-events: none;
   border-color: transparent;
@@ -831,6 +994,45 @@ select.canvas-input option {
 .canvas-topbar-trailing--panel {
   width: 272px;
   border-left: 1px solid var(--cv-border);
+}
+
+/*
+ * On compact windows the canvas is the primary surface. Keep the existing
+ * panel controls and callbacks, but let the sidebars float over the stage
+ * instead of reserving 520 px of horizontal space.
+ */
+@media (max-width: 1180px) {
+  .canvas-panel-chrome--left,
+  .canvas-panel-chrome--right {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 60;
+    box-shadow: var(--cv-shadow-float);
+  }
+
+  .canvas-panel-chrome--left {
+    left: 0;
+  }
+
+  .canvas-panel-chrome--right {
+    right: 0;
+  }
+
+  .canvas-panel-chrome--left[data-open='false'],
+  .canvas-panel-chrome--right[data-open='false'] {
+    box-shadow: none;
+  }
+
+  .canvas-topbar-leading--panel {
+    width: auto;
+    border-right: none;
+  }
+
+  .canvas-topbar-trailing--panel {
+    width: auto;
+    border-left: none;
+  }
 }
 
 .canvas-topbar-tools {
@@ -1004,7 +1206,7 @@ select.canvas-input option {
 
 .canvas-toolbar-float {
   display: flex;
-  max-width: 94vw;
+  max-width: min(94vw, 760px);
   align-items: center;
   gap: 2px;
   overflow: visible;
@@ -1025,11 +1227,11 @@ select.canvas-input option {
   background: var(--cv-border);
 }
 
-/* Contextual path-edit toolbar (above bottom tools) */
+/* Contextual path-edit toolbar (below the primary Figma-like tool dock) */
 .canvas-path-edit-toolbar {
   position: absolute;
   left: 50%;
-  bottom: 72px;
+  top: 64px;
   z-index: 40;
   display: flex;
   transform: translateX(-50%);
@@ -1093,6 +1295,37 @@ select.canvas-input option {
     transform 0.08s ease;
 }
 
+.canvas-toolbar-tool.canvas-toolbar-tool--labeled {
+  width: auto;
+  min-width: 36px;
+  gap: 6px;
+  padding: 0 9px;
+}
+
+.canvas-toolbar-tool-label {
+  overflow: hidden;
+  max-width: 88px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 10px;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+
+@media (max-width: 1100px) {
+  .canvas-toolbar-tool.canvas-toolbar-tool--labeled {
+    width: 36px;
+    min-width: 36px;
+    gap: 0;
+    padding: 0;
+  }
+
+  .canvas-toolbar-tool-label {
+    display: none;
+  }
+}
+
 .canvas-toolbar-tool:hover:not(:disabled):not([data-active="true"]) {
   background: var(--cv-hover);
   color: var(--cv-text);
@@ -1116,6 +1349,16 @@ select.canvas-input option {
 .canvas-toolbar-tool[data-active="true"]:active {
   background: var(--cv-accent-hover);
   transform: scale(0.96);
+}
+
+.canvas-more-tools-trigger[data-open='true'] {
+  background: var(--cv-hover);
+  color: var(--cv-text);
+}
+
+.canvas-more-tools-trigger[data-open='true'][data-active='true'] {
+  background: var(--cv-accent);
+  color: var(--text-on-accent, #ffffff);
 }
 
 .canvas-toolbar-tool:focus-visible {
@@ -1173,13 +1416,15 @@ select.canvas-input option {
 .canvas-shape-menu {
   z-index: 12000;
   width: 220px;
+  max-height: min(520px, calc(100vh - 84px));
+  overflow-y: auto;
   padding: 6px;
   border: 1px solid var(--cv-border-strong);
   border-radius: 10px;
   background: var(--cv-panel-elevated);
   box-shadow: var(--cv-shadow-float);
   color: var(--cv-text);
-  transform-origin: bottom center;
+  transform-origin: top center;
   animation: canvas-shape-menu-in 0.12s ease-out;
 }
 
@@ -1265,6 +1510,24 @@ select.canvas-input option {
 .canvas-shape-menu-item[aria-checked='true'] .canvas-shape-menu-tip {
   border-color: color-mix(in srgb, var(--cv-accent) 28%, var(--cv-border));
   background: color-mix(in srgb, var(--cv-accent) 10%, var(--cv-panel-elevated));
+  color: var(--cv-accent);
+}
+
+.canvas-tool-menu-heading {
+  padding: 7px 8px 4px;
+  color: var(--cv-text-muted);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.canvas-tool-menu-check {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  margin-left: auto;
   color: var(--cv-accent);
 }
 
@@ -1418,8 +1681,14 @@ select.canvas-input option {
   background: var(--cv-hover);
 }
 
+.canvas-list-row:focus-within {
+  background: var(--cv-hover);
+  box-shadow: inset 2px 0 0 var(--cv-accent);
+}
+
 .canvas-list-row[data-selected="true"] {
   background: var(--cv-active);
+  box-shadow: inset 2px 0 0 var(--cv-accent);
 }
 
 .canvas-list-row[data-dimmed="true"] {
@@ -1549,11 +1818,20 @@ select.canvas-input option {
 }
 
 .canvas-empty-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   padding: 24px 12px;
   text-align: center;
   font-size: 11px;
   line-height: 1.45;
   color: var(--cv-text-muted);
+}
+
+.canvas-empty-hint strong {
+  color: var(--cv-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .canvas-callout-warn {
@@ -1564,6 +1842,16 @@ select.canvas-input option {
   font-size: 11px;
   line-height: 1.4;
   color: var(--cv-warn-text);
+}
+
+.canvas-callout-info {
+  margin-top: 8px;
+  border-radius: var(--cv-radius-sm);
+  background: var(--cv-accent-soft);
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--cv-text-secondary);
 }
 
 .canvas-status-pill {
@@ -1596,6 +1884,50 @@ select.canvas-input option {
   gap: 8px;
   border-bottom: 1px solid var(--cv-border);
   padding: 0 12px;
+}
+
+.canvas-generate-progress-label {
+  flex-shrink: 0;
+  color: var(--cv-text-muted);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.canvas-generate-step-status {
+  color: var(--cv-text-muted);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.canvas-generate-step-status::before {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  content: '';
+  vertical-align: middle;
+}
+
+.canvas-generate-step-status--done {
+  color: var(--cv-accent);
+}
+
+.canvas-generate-helper,
+.canvas-export-scope-hint {
+  margin: 0;
+  color: var(--cv-text-muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.canvas-export-scope-hint {
+  border-top: 1px solid var(--cv-border);
+  padding-top: 7px;
 }
 
 .canvas-generate-aside > .flex-1 {
@@ -1759,6 +2091,20 @@ select.canvas-input option {
   padding: 12px;
   box-shadow: var(--cv-shadow-float);
   backdrop-filter: blur(12px);
+}
+
+@media (max-width: 1180px) {
+  /* Keep this transient overlay out of either floating sidebar's hit area. */
+  .canvas-shortcuts-panel {
+    top: 64px;
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .canvas-path-edit-toolbar {
+    z-index: 70;
+  }
 }
 
 @keyframes canvas-pulse {

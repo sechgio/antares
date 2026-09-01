@@ -124,6 +124,16 @@ describe('GeneratePanel wizard', () => {
     expect(screen.getByText('Mapeo de Columnas')).toBeTruthy();
     expect(screen.getByText('Imágenes')).toBeTruthy();
     expect(screen.getByText('Seleccionar y Exportar')).toBeTruthy();
+    expect(screen.getByRole('progressbar', { name: 'Progreso de generación: 1 de 6' })).toHaveAttribute(
+      'aria-valuenow',
+      '1',
+    );
+    expect(screen.getByText('Progreso')).toBeTruthy();
+    expect(screen.getByText('Listo')).toBeTruthy();
+    expect(screen.getAllByText('Pendiente')).toHaveLength(5);
+    expect(screen.getByTestId('canvas-export-scope-hint')).toHaveTextContent(
+      'Carga un Excel/CSV para habilitar la exportación.',
+    );
 
     const picker = await screen.findByLabelText('Elegir plantilla Canvas');
     await waitFor(() => {

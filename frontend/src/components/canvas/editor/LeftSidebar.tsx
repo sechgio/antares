@@ -127,7 +127,7 @@ interface LayerRowProps {
   renaming: boolean;
   renameDraft: string;
   dropPosition: CapasDropPosition | null;
-  layerRenameRef: RefObject<HTMLInputElement | null>;
+  layerRenameRef: RefObject<HTMLInputElement>;
   onToggleExpanded: (id: string) => void;
   onSelect: (id: string, additive?: boolean) => void;
   onStartRename: (id: string, name: string) => void;
@@ -541,8 +541,8 @@ export default memo(function LeftSidebar({
     <aside
       className={
         open
-          ? 'canvas-panel canvas-panel-chrome flex h-full w-[248px] shrink-0 flex-col overflow-hidden border-r'
-          : 'canvas-panel canvas-panel-chrome flex h-full w-0 min-w-0 shrink-0 flex-col overflow-hidden border-r-0'
+          ? 'canvas-panel canvas-panel-chrome canvas-panel-chrome--left flex h-full w-[248px] shrink-0 flex-col overflow-hidden border-r'
+          : 'canvas-panel canvas-panel-chrome canvas-panel-chrome--left flex h-full w-0 min-w-0 shrink-0 flex-col overflow-hidden border-r-0'
       }
       data-open={open ? 'true' : 'false'}
       data-testid="canvas-left-panel"
@@ -600,6 +600,9 @@ export default memo(function LeftSidebar({
           <span className="flex items-center gap-1.5">
             <FileText className="h-3 w-3" />
             Páginas
+          </span>
+          <span className="canvas-section-count ml-auto mr-1" data-testid="canvas-pages-count" aria-label={`${pageCount} páginas`}>
+            {pageCount}
           </span>
           <div className="flex gap-0.5">
             <WithHoverTooltip label="Añadir página" placement="bottom" variant="dark">
@@ -689,6 +692,9 @@ export default memo(function LeftSidebar({
         <div className="canvas-section-title flex items-center gap-1.5 px-3 pt-3">
           <Layers className="h-3 w-3" />
           <span className="min-w-0 flex-1">Capas</span>
+          <span className="canvas-section-count" data-testid="canvas-layers-count" aria-label={`${rows.length} capas`}>
+            {rows.length}
+          </span>
           <WithHoverTooltip label="Agrupar (Ctrl+G)" placement="bottom" variant="dark">
             <button
               type="button"
@@ -716,7 +722,7 @@ export default memo(function LeftSidebar({
           <input
             type="search"
             className="canvas-input !py-1.5 text-[11px]"
-            placeholder="Buscar capas…"
+            placeholder="Buscar por nombre o tipo…"
             value={layerQuery}
             aria-label="Buscar capas"
             onChange={(e) => setLayerQuery(e.target.value)}
@@ -766,7 +772,17 @@ export default memo(function LeftSidebar({
           )}
           {rows.length === 0 && (
             <li className="canvas-empty-hint">
-              Sin capas. Usa la barra inferior o un preset.
+              {layerQuery.trim() ? (
+                <>
+                  <strong>No se encontraron capas</strong>
+                  <span>Prueba otro nombre o tipo.</span>
+                </>
+              ) : (
+                <>
+                  <strong>Sin capas todavía</strong>
+                  <span>Usa la barra inferior o aplica un preset.</span>
+                </>
+              )}
             </li>
           )}
         </ul>
