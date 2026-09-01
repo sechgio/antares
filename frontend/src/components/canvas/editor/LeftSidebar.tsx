@@ -127,7 +127,7 @@ interface LayerRowProps {
   renaming: boolean;
   renameDraft: string;
   dropPosition: CapasDropPosition | null;
-  layerRenameRef: RefObject<HTMLInputElement>;
+  layerRenameRef: RefObject<HTMLInputElement | null>;
   onToggleExpanded: (id: string) => void;
   onSelect: (id: string, additive?: boolean) => void;
   onStartRename: (id: string, name: string) => void;
