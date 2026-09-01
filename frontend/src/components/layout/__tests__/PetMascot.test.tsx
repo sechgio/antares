@@ -1,11 +1,16 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { Profiler } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import PetMascot from '../PetMascot';
 
 describe('PetMascot', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('renders nothing when disabled', () => {
@@ -27,6 +32,54 @@ describe('PetMascot', () => {
     expect(mascot.className).toContain('z-[90]');
     expect(mascot.style.opacity).toBe('0.8');
     expect(mascot.style.width).toBe(`${192 * 1.25}px`);
+  });
+
+  it('does not commit React renders for each autonomous movement frame', async () => {
+    localStorage.setItem('petdex_enabled', 'true');
+    localStorage.setItem('petdex_pet_spritesheet', 'https://assets.petdex.dev/pets/belayer-cat-7fa042c8b542/sprite.webp');
+
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrameId = 1;
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      const frameId = nextFrameId++;
+      frames.set(frameId, callback);
+      return frameId;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (frameId: number) => {
+      frames.delete(frameId);
+    });
+
+    let commitCount = 0;
+    render(
+      <Profiler id="pet-mascot" onRender={() => { commitCount += 1; }}>
+        <PetMascot />
+      </Profiler>,
+    );
+
+    const mascot = await screen.findByTestId('pet-mascot-container');
+    const runNextFrame = (time: number) => {
+      const pending = [...frames.values()];
+      frames.clear();
+      expect(pending).toHaveLength(1);
+      act(() => pending[0](time));
+    };
+
+    // The first sprite/state tick transitions the pet from idle to walking.
+    const initialCommitCount = commitCount;
+    const firstFrameTime = performance.now() + 16.7;
+    for (let frame = 1; frame <= 8; frame += 1) {
+      runNextFrame(firstFrameTime + frame * 16.7);
+    }
+
+    const walkingCommitCount = commitCount;
+    const walkingTransform = mascot.style.transform;
+    runNextFrame(firstFrameTime + 9 * 16.7);
+    runNextFrame(firstFrameTime + 10 * 16.7);
+    runNextFrame(firstFrameTime + 11 * 16.7);
+
+    expect(commitCount).toBe(walkingCommitCount);
+    expect(mascot.style.transform).not.toBe(walkingTransform);
+    expect(commitCount).toBeGreaterThan(initialCommitCount);
   });
 
   it('triggers reaction animation on mouse hover', async () => {

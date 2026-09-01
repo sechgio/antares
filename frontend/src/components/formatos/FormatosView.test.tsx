@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import FormatosView, { safeBase64ToBytes } from './FormatosView';
 import { DialogProvider } from '../../hooks/useDialog';
 import { ToastProvider } from '../../hooks/useToast';
+import { invalidateApiCache } from '../../api';
 
 function renderFormatosView() {
   return render(
@@ -15,6 +16,10 @@ function renderFormatosView() {
 }
 
 describe('FormatosView', () => {
+  beforeEach(() => {
+    invalidateApiCache();
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
   });

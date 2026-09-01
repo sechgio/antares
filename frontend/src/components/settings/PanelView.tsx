@@ -18,7 +18,7 @@ type AdminUser = {
 
 type UserRole = 'user' | 'admin';
 
-const MIN_PASSWORD_LENGTH = 6;
+const MIN_PASSWORD_LENGTH = 8;
 
 /** Admin gate is UX-only; RLS, RPCs, and edge functions enforce real authorization. */
 export default function PanelView() {
