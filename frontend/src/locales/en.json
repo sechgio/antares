@@ -356,5 +356,17 @@
   "optimizer.toast.addedCount": "{{count}} image(s) added to the batch.",
   "optimizer.processing.savingFolder": "Saving files to folder...",
   "optimizer.toast.processedCount": "{{success}}/{{total}} image(s) processed.",
-  "optimizer.toast.chooseFolderBeforeIndividual": "Choose the destination folder next to Process before downloading files individually."
+  "optimizer.toast.chooseFolderBeforeIndividual": "Choose the destination folder next to Process before downloading files individually.",
+  "optimizer.fields.outputFolder": "Destination folder",
+  "optimizer.processing.processingItem": "Processing {{name}}",
+  "optimizer.errors.unknown": "Unknown error",
+  "optimizer.history.batchName": "Batch of {{count}} image(s)",
+  "optimizer.toast.skippedSuffix": " {{count}} skipped.",
+  "optimizer.toast.saveCancelledEmpty": "Save cancelled. No files were written.",
+  "optimizer.toast.saveCancelledPartial": "Save cancelled. {{saved}} file(s) were written before stopping.{{skippedSuffix}} Folder: {{folder}}",
+  "optimizer.toast.saveNone": "No files could be saved to the folder.",
+  "optimizer.toast.savedAll": "Saved {{saved}} file(s) to: {{folder}}",
+  "optimizer.toast.savedWithSkipped": "Saved {{saved}} file(s). {{skipped}} skipped. Folder: {{folder}}",
+  "optimizer.toast.saveFailed": "Could not save to the folder: {{message}}.",
+  "optimizer.toast.zipFailed": "Could not generate the ZIP: {{message}}."
 }

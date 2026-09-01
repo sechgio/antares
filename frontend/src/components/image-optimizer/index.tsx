@@ -169,13 +169,13 @@ export default function ImageOptimizer() {
 
   const outputFolderLabel = useMemo(() => {
     const folder = settings.export.outputFolder.trim();
-    if (!folder) return 'Carpeta de destino';
+    if (!folder) return t('optimizer.fields.outputFolder');
     return folder.split(/[\\/]/).pop() || folder;
-  }, [settings.export.outputFolder]);
+  }, [settings.export.outputFolder, t]);
 
   const handlePickOutputFolder = useCallback(async () => {
     try {
-      const result = await api.dialogFolder({ title: 'Carpeta de destino', pickOnly: true });
+      const result = await api.dialogFolder({ title: t('optimizer.fields.outputFolder'), pickOnly: true });
       const folder = result?.folder?.trim();
       if (folder) {
         updateSettings((draft) => { draft.export.outputFolder = folder; });
@@ -183,7 +183,7 @@ export default function ImageOptimizer() {
     } catch (error) {
       console.error('[ImageOptimizer] Error al seleccionar carpeta de destino:', error);
     }
-  }, [updateSettings]);
+  }, [t, updateSettings]);
 
   const updateItem = useCallback((id: string, updater: (item: ImageItem) => ImageItem) => {
     commitItems((prev) => prev.map((item) => {
@@ -451,25 +451,28 @@ export default function ImageOptimizer() {
       const skipped = result.skipped_count;
       if (result.cancelled) {
         if (saved === 0) {
-          addToast('Guardado cancelado. No se escribio ningun archivo.', 'info', 4200);
+          addToast(t('optimizer.toast.saveCancelledEmpty'), 'info', 4200);
         } else {
+          const skippedSuffix = skipped > 0
+            ? t('optimizer.toast.skippedSuffix', { count: skipped })
+            : '';
           addToast(
-            `Guardado cancelado. ${saved} archivo(s) escritos antes de detener.${skipped > 0 ? ` ${skipped} omitido(s).` : ''} Carpeta: ${folder}`,
+            t('optimizer.toast.saveCancelledPartial', { saved, skippedSuffix, folder }),
             'info',
             5200,
           );
         }
       } else if (saved === 0) {
-        addToast('No se pudo guardar ningun archivo en la carpeta.', 'error', 4200);
+        addToast(t('optimizer.toast.saveNone'), 'error', 4200);
       } else if (skipped === 0) {
-        addToast(`Guardados ${saved} archivo(s) en: ${folder}`, 'success', 4200);
+        addToast(t('optimizer.toast.savedAll', { saved, folder }), 'success', 4200);
       } else {
-        addToast(`Guardados ${saved} archivo(s). ${skipped} omitido(s). Carpeta: ${folder}`, 'info', 5200);
+        addToast(t('optimizer.toast.savedWithSkipped', { saved, skipped, folder }), 'info', 5200);
       }
     } catch (error) {
       console.error('Save to folder failed', error);
-      const message = error instanceof Error ? error.message : 'Error desconocido';
-      addToast(`No se pudo guardar en la carpeta: ${message}.`, 'error', 4600);
+      const message = error instanceof Error ? error.message : t('optimizer.errors.unknown');
+      addToast(t('optimizer.toast.saveFailed', { message }), 'error', 4600);
     } finally {
       saveCancelledRef.current = false;
       setIsProcessing(false);
@@ -505,8 +508,8 @@ export default function ImageOptimizer() {
       addToast(t('optimizer.toast.zipGenerated', { count: entries.length }), 'success', 2400);
     } catch (error) {
       console.error('ZIP creation failed', error);
-      const message = error instanceof Error ? error.message : 'Error desconocido';
-      addToast(`No se pudo generar el ZIP: ${message}.`, 'error', 4200);
+      const message = error instanceof Error ? error.message : t('optimizer.errors.unknown');
+      addToast(t('optimizer.toast.zipFailed', { message }), 'error', 4200);
     }
   }, [addToast, collectDownloadEntries, getExportNameMap, t]);
 
@@ -602,7 +605,9 @@ export default function ImageOptimizer() {
         targets,
         resolveProcessConcurrency(),
         async (target) => {
-          if (!signal.aborted) setProcessingMessage(`Procesando ${target.originalName}`);
+          if (!signal.aborted) {
+            setProcessingMessage(t('optimizer.processing.processingItem', { name: target.originalName }));
+          }
           try {
             throwIfAborted(signal);
             const latestItem = itemsRef.current.find((item) => item.id === target.id) || target;
@@ -633,7 +638,7 @@ export default function ImageOptimizer() {
             return true;
           } catch (error) {
             if (signal.aborted) throwIfAborted(signal);
-            const message = error instanceof Error ? error.message : 'Error desconocido';
+            const message = error instanceof Error ? error.message : t('optimizer.errors.unknown');
             commitItems((prev) => prev.map((item) => (item.id === target.id ? { ...item, status: 'error', error: message } : item)));
             return false;
           } finally {
@@ -667,7 +672,7 @@ export default function ImageOptimizer() {
     const settingsJson = JSON.stringify(settingsRef.current);
     saveFeatureHistory(
       'image_optimizer',
-      `Lote ${successCount + errorCount} imágenes`,
+      t('optimizer.history.batchName', { count: successCount + errorCount }),
       {
         preset: activePresetId || 'custom',
         scope,

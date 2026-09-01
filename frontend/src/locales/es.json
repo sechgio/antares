@@ -356,5 +356,17 @@
   "optimizer.toast.addedCount": "{{count}} imagen(es) agregada(s) al lote.",
   "optimizer.processing.savingFolder": "Guardando archivos en carpeta...",
   "optimizer.toast.processedCount": "{{success}}/{{total}} imagen(es) procesadas.",
-  "optimizer.toast.chooseFolderBeforeIndividual": "Elige la carpeta de destino junto al boton Procesar antes de exportar individualmente."
+  "optimizer.toast.chooseFolderBeforeIndividual": "Elige la carpeta de destino junto al boton Procesar antes de exportar individualmente.",
+  "optimizer.fields.outputFolder": "Carpeta de destino",
+  "optimizer.processing.processingItem": "Procesando {{name}}",
+  "optimizer.errors.unknown": "Error desconocido",
+  "optimizer.history.batchName": "Lote de {{count}} imagen(es)",
+  "optimizer.toast.skippedSuffix": " {{count}} omitido(s).",
+  "optimizer.toast.saveCancelledEmpty": "Guardado cancelado. No se escribió ningún archivo.",
+  "optimizer.toast.saveCancelledPartial": "Guardado cancelado. {{saved}} archivo(s) escritos antes de detener.{{skippedSuffix}} Carpeta: {{folder}}",
+  "optimizer.toast.saveNone": "No se pudo guardar ningún archivo en la carpeta.",
+  "optimizer.toast.savedAll": "Guardados {{saved}} archivo(s) en: {{folder}}",
+  "optimizer.toast.savedWithSkipped": "Guardados {{saved}} archivo(s). {{skipped}} omitido(s). Carpeta: {{folder}}",
+  "optimizer.toast.saveFailed": "No se pudo guardar en la carpeta: {{message}}.",
+  "optimizer.toast.zipFailed": "No se pudo generar el ZIP: {{message}}."
 }
