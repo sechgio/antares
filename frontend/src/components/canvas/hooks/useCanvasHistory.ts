@@ -78,10 +78,19 @@ export function useCanvasHistory(initial: CanvasDocument) {
   const revisionRef = useRef(revision);
   /** True after discrete edits until replaceDocument (load / save / cloud apply). */
   const hasUnsavedEditsRef = useRef(false);
+  /** Reactive mirror of hasUnsavedEditsRef so UI (SaveButton dot) can render it. */
+  const [hasUnsavedEdits, setHasUnsavedEditsState] = useState(false);
   documentRef.current = document;
   pastRef.current = past;
   futureRef.current = future;
   revisionRef.current = revision;
+
+  const markUnsaved = useCallback((dirty: boolean) => {
+    if (hasUnsavedEditsRef.current !== dirty) {
+      hasUnsavedEditsRef.current = dirty;
+      setHasUnsavedEditsState(dirty);
+    }
+  }, []);
 
   const bumpRevision = useCallback(() => {
     const next = revisionRef.current + 1;
@@ -105,23 +114,23 @@ export function useCanvasHistory(initial: CanvasDocument) {
     pastRef.current = trimmed.past;
     futureRef.current = trimmed.future;
     documentRef.current = next;
-    hasUnsavedEditsRef.current = true;
+    markUnsaved(true);
     setPast(trimmed.past);
     setFuture(trimmed.future);
     setDocumentState(next);
     bumpRevision();
-  }, [bumpRevision]);
+  }, [bumpRevision, markUnsaved]);
 
   const replaceDocument = useCallback((next: CanvasDocument) => {
     pastRef.current = [];
     futureRef.current = [];
     documentRef.current = next;
-    hasUnsavedEditsRef.current = false;
+    markUnsaved(false);
     setPast([]);
     setFuture([]);
     setDocumentState(next);
     bumpRevision();
-  }, [bumpRevision]);
+  }, [bumpRevision, markUnsaved]);
 
   const updateSilent = useCallback((next: CanvasDocument) => {
     if (next === documentRef.current) return;
@@ -144,11 +153,11 @@ export function useCanvasHistory(initial: CanvasDocument) {
     );
     pastRef.current = trimmed.past;
     futureRef.current = trimmed.future;
-    hasUnsavedEditsRef.current = true;
+    markUnsaved(true);
     setPast(trimmed.past);
     setFuture(trimmed.future);
     bumpRevision();
-  }, [bumpRevision]);
+  }, [bumpRevision, markUnsaved]);
 
   const undo = useCallback(() => {
     const p = pastRef.current;
@@ -168,12 +177,12 @@ export function useCanvasHistory(initial: CanvasDocument) {
     futureRef.current = trimmed.future;
     documentRef.current = prev;
 
-    hasUnsavedEditsRef.current = true;
+    markUnsaved(true);
     setPast(trimmed.past);
     setFuture(trimmed.future);
     setDocumentState(prev);
     bumpRevision();
-  }, [bumpRevision]);
+  }, [bumpRevision, markUnsaved]);
 
   const redo = useCallback(() => {
     const f = futureRef.current;
@@ -193,12 +202,12 @@ export function useCanvasHistory(initial: CanvasDocument) {
     pastRef.current = trimmed.past;
     documentRef.current = next;
 
-    hasUnsavedEditsRef.current = true;
+    markUnsaved(true);
     setFuture(trimmed.future);
     setPast(trimmed.past);
     setDocumentState(next);
     bumpRevision();
-  }, [bumpRevision]);
+  }, [bumpRevision, markUnsaved]);
 
   const restoreHistory = useCallback((nextPast: HistoryStep[], nextFuture: HistoryStep[]) => {
     const trimmed = trimHistoryByBudget(nextPast || [], nextFuture || []);
@@ -211,8 +220,8 @@ export function useCanvasHistory(initial: CanvasDocument) {
 
   /** Clear dirty after a successful save without wiping undo/redo stacks. */
   const markSaved = useCallback(() => {
-    hasUnsavedEditsRef.current = false;
-  }, []);
+    markUnsaved(false);
+  }, [markUnsaved]);
 
   const canUndo = past.length > 0;
   const canRedo = future.length > 0;
@@ -240,13 +249,14 @@ export function useCanvasHistory(initial: CanvasDocument) {
       revision,
       canUndo,
       canRedo,
+      hasUnsavedEdits,
       documentRef,
       revisionRef,
       hasUnsavedEditsRef,
       ...actions,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [document, past, future, revision],
+    [document, past, future, revision, hasUnsavedEdits],
   );
 }
 
