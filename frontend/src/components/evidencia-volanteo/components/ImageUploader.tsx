@@ -46,7 +46,16 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
       </div>
 
       <div
+        role="button"
+        tabIndex={0}
+        aria-label="Cargar lote de fotos"
         onClick={() => inputRef.current?.click()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            inputRef.current?.click();
+          }
+        }}
         onDrop={onDrop}
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}

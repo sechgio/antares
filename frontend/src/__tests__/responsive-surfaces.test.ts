@@ -41,6 +41,8 @@ describe('responsive surface contracts', () => {
     const evidencia = readSource('components/evidencia-volanteo/EvidenciaVolanteoApp.tsx');
     const fichas = readSource('components/fichas-tecnicas/FichasTecnicasApp.tsx');
     const fichasPreview = readSource('components/fichas-tecnicas/PreviewPanel.tsx');
+    const panelImages = readSource('components/panel-aviso-corte/components/ImageUploader.tsx');
+    const evidenciaImages = readSource('components/evidencia-volanteo/components/ImageUploader.tsx');
 
     expect(formatos).toContain('data-surface="formatos"');
     expect(formatos).toContain('data-surface-part="preview"');
@@ -58,6 +60,10 @@ describe('responsive surface contracts', () => {
     expect(fichas).toContain('data-mobile-tab={mobileTab}');
     expect(fichas).toContain('role="tablist"');
     expect(fichasPreview).toContain('tr-preview-wrap');
+    expect(reportesPhotos).toContain('role="button"');
+    expect(reportesPhotos).toContain('inputRef.current?.click()');
+    expect(panelImages).toContain('role="button"');
+    expect(evidenciaImages).toContain('role="button"');
   });
 
   it('uses theme tokens for Volantes responsive controls', () => {

@@ -42,8 +42,16 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
     <div className="flex flex-col gap-2">
       {/* Drop zone */}
       <div
+        role="button"
+        tabIndex={0}
         aria-label={ARIA_LABELS.imageUploader}
         onClick={() => inputRef.current?.click()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            inputRef.current?.click();
+          }
+        }}
         onDrop={onDrop}
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}

@@ -172,6 +172,12 @@
   min-width: 0;
 }
 
+.pac-app [role='button']:focus-visible,
+.pac-app button:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
 @media (max-width: 900px) {
   .pac-app {
     flex-direction: column;

@@ -70,12 +70,22 @@ export default function PhotoManager({
                         >
                         <div className="rcampo-section-body">
                             <div
+                                role="button"
+                                tabIndex={isFull ? -1 : 0}
+                                aria-disabled={isFull}
+                                aria-label={isFull ? `Límite alcanzado (${maxPhotos} imágenes)` : 'Agregar imágenes'}
                                 className={`rcampo-dropzone ${isDragging ? 'dragging' : ''} ${isFull ? 'full' : ''}`}
                                 onDragOver={isFull ? undefined : onDragOver}
                                 onDragEnter={isFull ? undefined : onDragEnter}
                                 onDragLeave={isFull ? undefined : onDragLeave}
                                 onDrop={isFull ? undefined : onDrop}
                                 onClick={() => !isFull && inputRef.current?.click()}
+                                onKeyDown={(e) => {
+                                    if (!isFull && (e.key === 'Enter' || e.key === ' ')) {
+                                        e.preventDefault();
+                                        inputRef.current?.click();
+                                    }
+                                }}
                             >
                                 <div className="rcampo-dropzone-icon"><ImagePlus size={16} /></div>
                                 <div className="rcampo-dropzone-text">
