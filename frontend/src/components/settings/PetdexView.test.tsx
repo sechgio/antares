@@ -210,7 +210,7 @@ describe('PetdexView', () => {
     render(<PetdexView />);
 
     expect(screen.getByText('Custom Test Pet')).toBeInTheDocument();
-    expect(screen.getByText('Sincronizado con Petdex')).toBeInTheDocument();
+    expect(screen.getByText('Catálogo en caché')).toBeInTheDocument();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -252,7 +252,7 @@ describe('PetdexView', () => {
 
     render(<PetdexView />);
 
-    expect(screen.getByText('Sincronizado con Petdex')).toBeInTheDocument();
+    expect(screen.getByText('Catálogo en caché')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Recargar catálogo' }));
 

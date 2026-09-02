@@ -120,7 +120,7 @@ export default function PetdexView() {
   const initialCache = readManifestCache();
   const [pets, setPets] = useState<Pet[]>(() => initialCache ?? []);
   const [loading, setLoading] = useState(() => initialCache === null);
-  const [catalogSource, setCatalogSource] = useState<CatalogSource>(() => (initialCache ? 'live' : 'presets'));
+  const [catalogSource, setCatalogSource] = useState<CatalogSource>(() => (initialCache ? 'cache' : 'presets'));
 
   // Search & filter states
   const [searchQuery, setSearchQuery] = useState('');

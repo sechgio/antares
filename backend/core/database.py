@@ -10,9 +10,9 @@ import unicodedata
 from pathlib import Path
 from typing import Any, cast
 
-from backend.core.config_fields import get_field_names, load_fields, save_fields
+from backend.core.config_fields import get_field_names, load_fields, sanitize_field_defs, save_fields
 from backend.core.exceptions import DatabaseError
-from backend.core.repository import _db_lock, _db_read_lock, get_connection, get_read_connection
+from backend.core.repository import _db_lock, _db_read_lock, _db_schema_lock, get_connection, get_read_connection
 from backend.utils.paths import user_data_path
 
 logger = logging.getLogger(__name__)
@@ -173,6 +173,11 @@ def _create_indexes(cursor: sqlite3.Cursor, fields: list[dict[str, Any]]) -> Non
 
 
 def init_db(*, allow_catalog_wipe: bool = False) -> None:
+    with _db_schema_lock.write():
+        _init_db(allow_catalog_wipe=allow_catalog_wipe)
+
+
+def _init_db(*, allow_catalog_wipe: bool = False) -> None:
     """Inicializa la base de datos SQLite con la tabla principal según campos configurados.
 
     Args:
@@ -343,6 +348,11 @@ def init_db(*, allow_catalog_wipe: bool = False) -> None:
 
 
 def validate_fields_migration(fields: list[dict[str, Any]]) -> None:
+    with _db_schema_lock.read():
+        _validate_fields_migration(fields)
+
+
+def _validate_fields_migration(fields: list[dict[str, Any]]) -> None:
     """Dry-run: raise DatabaseError si aplicar estos fields al catálogo vivo abortaría.
 
     La migración aborta cuando el nuevo esquema elimina/cambia columnas, el
@@ -356,7 +366,7 @@ def validate_fields_migration(fields: list[dict[str, Any]]) -> None:
     El veredicto replica exactamente la rama de aborto de ``init_db`` usando
     ``_schema_diff``, así la validación y la migración real no pueden divergir.
     """
-    with _db_read_lock:
+    with _db_schema_lock.read(), _db_read_lock:
         conn = _get_read_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='imagenes'")
@@ -393,7 +403,7 @@ def importar_excel(excel_path: str) -> dict[str, int]:
 
     Raises:
         ImportError: Si openpyxl no está instalado.
-        ValueError: Si faltan columnas requeridas.
+        ValueError: Si el Excel no contiene columnas válidas.
         DatabaseError: Si ocurre un error de base de datos.
     """
     try:
@@ -429,44 +439,43 @@ def importar_excel(excel_path: str) -> dict[str, int]:
         header = next(rows_iter, None)
         columns = _normalize_excel_columns(list(header) if header is not None else [])
 
-        existing_fields = {f["name"]: f for f in load_fields()}
-        fields = [
-            {
-                **existing_fields.get(column, {}),
-                "name": column,
-                "type": existing_fields.get(column, {}).get("type", "TEXT"),
-                "required": bool(existing_fields.get(column, {}).get("required", False)),
-                "unique": bool(existing_fields.get(column, {}).get("unique", False)),
-            }
-            for column in columns
-        ]
-        if not fields:
-            msg = f"El Excel no contiene columnas válidas para importar: {columns}"
-            raise ValueError(msg)
-
-        with _db_lock:
-            fields = save_fields(fields)
+        with _db_schema_lock.write(), _db_lock:
+            old_fields = load_fields()
+            existing_fields = {f["name"]: f for f in old_fields}
+            fields = sanitize_field_defs([
+                {
+                    **existing_fields.get(column, {}),
+                    "name": column,
+                    "type": existing_fields.get(column, {}).get("type", "TEXT"),
+                    "required": bool(existing_fields.get(column, {}).get("required", False)),
+                    "unique": bool(existing_fields.get(column, {}).get("unique", False)),
+                }
+                for column in columns
+            ])
             if not fields:
                 msg = f"El Excel no contiene columnas válidas para importar: {columns}"
                 raise ValueError(msg)
-            field_names = [f["name"] for f in fields]
 
-            # Asegurar que el esquema de BD coincida con los campos, incluyendo columnas del Excel.
-            init_db(allow_catalog_wipe=True)
+            fields = save_fields(fields)
+            try:
+                # Asegurar que el esquema de BD coincida con los campos, incluyendo columnas del Excel.
+                init_db(allow_catalog_wipe=True)
+            except Exception:
+                # The importer intentionally replaces the configured schema, but
+                # a failed migration must not leave the JSON config ahead of SQLite.
+                with contextlib.suppress(Exception):
+                    save_fields(old_fields)
+                raise
+
+        # Keep the long row insertion readable while preventing a concurrent
+        # schema publication from changing the columns used by this import.
+        with _db_schema_lock.read(), _db_lock:
+            if load_fields() != fields:
+                raise DatabaseError(
+                    "La configuración de campos cambió durante la importación; vuelve a intentarlo."
+                )
+            field_names = [_validate_identifier(f["name"]) for f in fields]
             required = [f["name"] for f in fields if f.get("required")]
-
-            # Validate all field names as safe SQL identifiers (defense in depth)
-            field_names = [_validate_identifier(fn) for fn in field_names]
-
-            missing = [r for r in required if r not in columns]
-            if missing:
-                msg = (
-                    f"El Excel debe contener al menos las columnas requeridas: {missing}. "
-                    f"Columnas encontradas: {columns}"
-                )
-                raise ValueError(
-                    msg,
-                )
 
             conn = _get_connection()
             cursor = conn.cursor()
@@ -536,7 +545,7 @@ def exportar_excel(excel_path: str) -> int:
         msg = "pandas no está instalado."
         raise ImportError(msg) from exc
 
-    with _db_read_lock:
+    with _db_schema_lock.read(), _db_read_lock:
         conn = _get_read_connection()
         field_names = [_validate_identifier(fn) for fn in get_field_names()]
         cols = ", ".join(_qi(fn) for fn in field_names)
@@ -591,7 +600,7 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
     """
     if not codigos:
         return {}
-    with _db_read_lock:
+    with _db_schema_lock.read(), _db_read_lock:
         conn = _get_read_connection()
         cursor = conn.cursor()
         field_names = [_validate_identifier(fn) for fn in get_field_names()]
@@ -687,7 +696,7 @@ def buscar_por_columna(codigos: list[str], column: str) -> dict[str, dict[str, A
     if not codigos or not column:
         return {}
     safe_column = _validate_identifier(column)
-    with _db_read_lock:
+    with _db_schema_lock.read(), _db_read_lock:
         conn = _get_read_connection()
         cursor = conn.cursor()
         field_names_list = [_validate_identifier(fn) for fn in get_field_names()]
@@ -742,7 +751,7 @@ def obtener_todos(limit: int | None = None, offset: int = 0) -> list[dict[str, A
         limit: Número máximo de registros a retornar. None = todos.
         offset: Número de registros a saltar desde el inicio.
     """
-    with _db_read_lock:
+    with _db_schema_lock.read(), _db_read_lock:
         conn = _get_read_connection()
         cursor = conn.cursor()
         field_names = [_validate_identifier(fn) for fn in get_field_names()]

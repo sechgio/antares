@@ -14,6 +14,7 @@ const ACTIVE_NS = 'active_user';
 
 let _activeUserKey = null;
 let _activeEmail = null;
+let _activeUserGeneration = 0;
 /** @type {Array<(info: { previousKey: string|null, nextKey: string|null }) => void>} */
 const _activeUserChangeListeners = [];
 
@@ -78,6 +79,20 @@ function getActiveEmail() {
   return _activeEmail || null;
 }
 
+/** Snapshot estable para no publicar resultados después de un cambio de sesión. */
+function getActiveUserSnapshot() {
+  return {
+    userKey: getActiveUserKey(),
+    generation: _activeUserGeneration,
+  };
+}
+
+function isActiveUserSnapshotCurrent(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return false;
+  const current = getActiveUserSnapshot();
+  return current.userKey === snapshot.userKey && current.generation === snapshot.generation;
+}
+
 /**
  * Activa el scope del usuario. Debe llamarse tras OAuth con el email real.
  * Migra datos legacy globales (una sola vez) hacia el almacén del usuario.
@@ -100,6 +115,7 @@ function setActiveUser(email) {
   });
 
   if (prev !== key) {
+    _activeUserGeneration += 1;
     _notifyActiveUserChange(prev, key);
     migrateLegacyIntoActiveUser();
   }
@@ -112,6 +128,7 @@ function clearActiveUser() {
   _activeUserKey = null;
   _activeEmail = null;
   clearSecureJson(ACTIVE_FILE);
+  if (prev !== null) _activeUserGeneration += 1;
   _notifyActiveUserChange(prev, null);
 }
 
@@ -173,6 +190,8 @@ module.exports = {
   maskEmail,
   getActiveUserKey,
   getActiveEmail,
+  getActiveUserSnapshot,
+  isActiveUserSnapshotCurrent,
   setActiveUser,
   clearActiveUser,
   onActiveUserChange,

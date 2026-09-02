@@ -165,4 +165,47 @@ describe('PreviewPanelView column mapping', () => {
     fireEvent.click(await screen.findByRole('option', { name: /Sheet1/ }));
     await waitFor(() => expect(getRows).toHaveBeenCalledTimes(3));
   }, 15000);
+
+  it('ignores stale file parses and cleans discarded spill results', async () => {
+    type ParseResult = Awaited<ReturnType<typeof api.spreadsheetParse>>;
+    let resolveFirst: (result: ParseResult) => void = () => {};
+    let resolveSecond: (result: ParseResult) => void = () => {};
+    const first = new Promise<ParseResult>((resolve) => { resolveFirst = resolve; });
+    const second = new Promise<ParseResult>((resolve) => { resolveSecond = resolve; });
+
+    vi.mocked(api.spreadsheetParse).mockReset()
+      .mockImplementationOnce(async () => first)
+      .mockImplementationOnce(async () => second);
+    vi.mocked(api.fileTokenCleanup).mockReset().mockResolvedValue({ cleaned: true });
+
+    const { container } = renderView();
+    const fileInput = container.querySelector('input[accept=".csv,.xlsx,.xls"]') as HTMLInputElement | null;
+    fireEvent.change(fileInput!, {
+      target: { files: [new File(['first'], 'first.csv', { type: 'text/csv' })] },
+    });
+    await waitFor(() => expect(api.spreadsheetParse).toHaveBeenCalledTimes(1));
+    fireEvent.change(fileInput!, {
+      target: { files: [new File(['second'], 'second.csv', { type: 'text/csv' })] },
+    });
+
+    await waitFor(() => expect(api.spreadsheetParse).toHaveBeenCalledTimes(2));
+    resolveSecond({
+      workbookName: 'second.csv',
+      sheets: [{ name: 'Sheet1', rows: [['ID'], ['second-value']] }],
+      warnings: [],
+    });
+    await waitFor(() => expect(screen.getByText('second-value')).toBeInTheDocument());
+
+    resolveFirst({
+      workbookName: 'first.xlsx',
+      sheets: [],
+      warnings: [],
+      result_file_token: 'spill-from-stale-file',
+      sheet_meta: [{ name: 'Sheet1', rowCount: 2 }],
+    });
+
+    await waitFor(() => expect(api.fileTokenCleanup).toHaveBeenCalledWith('spill-from-stale-file'));
+    expect(screen.getByText('second-value')).toBeInTheDocument();
+    expect(screen.queryByText('first-value')).not.toBeInTheDocument();
+  }, 15000);
 });

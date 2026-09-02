@@ -15,6 +15,7 @@ from backend.core.database import (
     obtener_todos,
     parse_id_rename_mapping_full,
 )
+from backend.core.repository import _db_schema_lock
 from backend.handlers.common import parse_positive_int, validate_params, with_locale
 
 _DB_RECORDS_DEFAULT_LIMIT = 500
@@ -41,12 +42,13 @@ def db_records(params: dict[str, Any]) -> dict[str, Any]:
         maximum=_DB_RECORDS_MAX_LIMIT,
     )
     offset = _parse_offset(params.get("offset", 0), "offset")
-    return {
-        "records": obtener_todos(limit=limit, offset=offset),
-        "fields": get_field_names(),
-        "limit": limit,
-        "offset": offset,
-    }
+    with _db_schema_lock.read():
+        return {
+            "records": obtener_todos(limit=limit, offset=offset),
+            "fields": get_field_names(),
+            "limit": limit,
+            "offset": offset,
+        }
 
 @with_locale
 @validate_params("path")
@@ -87,41 +89,43 @@ def db_fields_update(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     from backend.core.config_fields import load_fields, sanitize_field_defs, save_fields
     from backend.core.database import init_db, validate_fields_migration
 
-    result = sanitize_field_defs(fields)
-    # Dry-run contra el catálogo vivo ANTES de tocar disco: una migración que
-    # abortaría (esquema nuevo sin columna compartida + filas existentes) debe
-    # fallar sin persistir la config nueva. Antes se guardaba la config y luego
-    # fallaba init_db, dejando disco ≠ esquema de tabla y rompiendo el arranque
-    # del backend en el siguiente inicio (init_db falla → sys.exit(1)).
-    validate_fields_migration(result)
-    old_fields = load_fields()
-    save_fields(result)
-    try:
-        init_db()
-    except Exception:
-        # Red de seguridad residual (p. ej. error I/O real de sqlite a mitad de
-        # la migración): restaura la config previa para que disco y tabla nunca
-        # queden divergentes.
-        with contextlib.suppress(Exception):
-            save_fields(old_fields)
-        raise
-    return {"fields": result}
+    with _db_schema_lock.write():
+        result = sanitize_field_defs(fields)
+        # Dry-run contra el catálogo vivo ANTES de tocar disco: una migración que
+        # abortaría (esquema nuevo sin columna compartida + filas existentes) debe
+        # fallar sin persistir la config nueva. Antes se guardaba la config y luego
+        # fallaba init_db, dejando disco ≠ esquema de tabla y rompiendo el arranque
+        # del backend en el siguiente inicio (init_db falla → sys.exit(1)).
+        validate_fields_migration(result)
+        old_fields = load_fields()
+        save_fields(result)
+        try:
+            init_db()
+        except Exception:
+            # Red de seguridad residual (p. ej. error I/O real de sqlite a mitad de
+            # la migración): restaura la config previa para que disco y tabla nunca
+            # queden divergentes.
+            with contextlib.suppress(Exception):
+                save_fields(old_fields)
+            raise
+        return {"fields": result}
 
 @with_locale
 def db_fields_reset(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     from backend.core.config_fields import DEFAULT_FIELDS, load_fields, reset_to_defaults, save_fields
     from backend.core.database import init_db, validate_fields_migration
 
-    validate_fields_migration(DEFAULT_FIELDS)
-    old_fields = load_fields()
-    result = reset_to_defaults()
-    try:
-        init_db()
-    except Exception:
-        with contextlib.suppress(Exception):
-            save_fields(old_fields)
-        raise
-    return {"fields": result}
+    with _db_schema_lock.write():
+        validate_fields_migration(DEFAULT_FIELDS)
+        old_fields = load_fields()
+        result = reset_to_defaults()
+        try:
+            init_db()
+        except Exception:
+            with contextlib.suppress(Exception):
+                save_fields(old_fields)
+            raise
+        return {"fields": result}
 
 @with_locale
 @validate_params("path")
@@ -164,9 +168,10 @@ def db_validate_mapping(params: dict[str, Any]) -> dict[str, Any]:
 def db_columns(params: dict[str, Any]) -> dict[str, Any]:
     """Retorna las columnas disponibles en la BD con datos de muestra."""
     from backend.core.database import obtener_todos
-    fields = get_field_names()
-    records = obtener_todos(limit=100)
-    return {"columns": fields, "records": records, "total": len(records)}
+    with _db_schema_lock.read():
+        fields = get_field_names()
+        records = obtener_todos(limit=100)
+        return {"columns": fields, "records": records, "total": len(records)}
 
 @with_locale
 def rename_patterns_get(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:

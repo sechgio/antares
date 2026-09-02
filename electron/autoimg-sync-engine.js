@@ -34,6 +34,7 @@ const RENAME_DEST_CONFIG_KEY = 'RENAME_DEST_FOLDER_ID';
 const AUTO_SYNC_INTERVAL_MS = 5 * 60_000;
 const RENAME_COPY_CONCURRENCY_MIN = 2;
 const RENAME_COPY_CONCURRENCY_MAX = 8;
+const SHEET_CACHE_BLOCKS = Object.freeze(['bdImg', 'logs', 'arrastre', 'folders']);
 
 let _autoSyncEnabled = false;
 let _autoSyncTimer = null;
@@ -45,9 +46,12 @@ let _cachedBdImg = [];
 let _cachedLogs = [];
 let _cachedBdArrastre = [];
 let _cachedFolders = [];
-let _cacheLoadedAt = 0;
-/** Drive modifiedTime of the spreadsheet when cache was last filled from Sheets. */
-let _cacheSheetRevision = null;
+const _sheetCacheState = {
+  bdImg: { loadedAt: 0, revision: null },
+  logs: { loadedAt: 0, revision: null },
+  arrastre: { loadedAt: 0, revision: null },
+  folders: { loadedAt: 0, revision: null },
+};
 /** Raise on repeated 429s during rename copies; decay after clean batches. */
 let _renameConcurrencyBias = 0;
 /** Test-only override for sheet cache budget (null = use default). */
@@ -83,17 +87,30 @@ function _sheetCacheBudgetBytes() {
   return _sheetCacheBudgetOverride == null ? SHEET_CACHE_BUDGET_BYTES : _sheetCacheBudgetOverride;
 }
 
-function _isCacheFresh() {
-  return _cacheLoadedAt > 0 && Date.now() - _cacheLoadedAt < CACHE_TTL_MS;
+function _normalizeCacheBlocks(blocks = SHEET_CACHE_BLOCKS) {
+  return blocks.filter((block) => Object.prototype.hasOwnProperty.call(_sheetCacheState, block));
 }
 
-function _touchCache() {
-  _cacheLoadedAt = Date.now();
+function _isCacheFresh(blocks = SHEET_CACHE_BLOCKS) {
+  const now = Date.now();
+  return _normalizeCacheBlocks(blocks).every((block) => {
+    const loadedAt = _sheetCacheState[block].loadedAt;
+    return loadedAt > 0 && now - loadedAt < CACHE_TTL_MS;
+  });
 }
 
-function _invalidateCache() {
-  _cacheLoadedAt = 0;
-  _cacheSheetRevision = null;
+function _touchCache(blocks = SHEET_CACHE_BLOCKS) {
+  const loadedAt = Date.now();
+  for (const block of _normalizeCacheBlocks(blocks)) {
+    _sheetCacheState[block].loadedAt = loadedAt;
+  }
+}
+
+function _invalidateCache(blocks = SHEET_CACHE_BLOCKS) {
+  for (const block of _normalizeCacheBlocks(blocks)) {
+    _sheetCacheState[block].loadedAt = 0;
+    _sheetCacheState[block].revision = null;
+  }
 }
 
 function _clearSheetCaches() {
@@ -174,20 +191,29 @@ async function _readSheetRevision() {
  * True when in-memory sheet data is present and Drive reports the same revision.
  * Allows skipping full Sheets reads after TTL expiry when nothing changed.
  */
-async function _canServeUnchangedRevision() {
-  if (!_cacheSheetRevision) return false;
-  if (!_cachedBdImg.length && !_cachedFolders.length && !_cachedLogs.length) return false;
-  const rev = await _readSheetRevision();
-  return Boolean(rev && rev === _cacheSheetRevision);
+async function _canServeUnchangedRevision(blocks = SHEET_CACHE_BLOCKS, knownRevision = null) {
+  const requested = _normalizeCacheBlocks(blocks);
+  if (!requested.length) return false;
+  if (!requested.every((block) => {
+    const state = _sheetCacheState[block];
+    return state.loadedAt > 0 && state.revision;
+  })) return false;
+  const rev = knownRevision || await _readSheetRevision();
+  return Boolean(rev && requested.every((block) => _sheetCacheState[block].revision === rev));
 }
 
-async function _rememberSheetRevision(knownRev) {
+async function _rememberSheetRevision(knownRev, blocks = SHEET_CACHE_BLOCKS) {
+  const requested = _normalizeCacheBlocks(blocks);
+  if (!requested.length) return;
+  let revision = knownRev;
   if (knownRev) {
-    _cacheSheetRevision = knownRev;
-    return;
+    revision = knownRev;
+  } else {
+    revision = await _readSheetRevision();
   }
-  const rev = await _readSheetRevision();
-  if (rev) _cacheSheetRevision = rev;
+  if (revision) {
+    for (const block of requested) _sheetCacheState[block].revision = revision;
+  }
 }
 
 function _parseAutoSyncConfig(value) {
@@ -408,11 +434,11 @@ function _persistFoldersLocal(folders) {
 }
 
 async function listFolders({ force = false } = {}) {
-  if (!force && _isCacheFresh()) {
+  if (!force && _isCacheFresh(['folders'])) {
     return { folders: _cachedFolders, cached: true };
   }
-  if (!force && _cachedFolders.length && await _canServeUnchangedRevision()) {
-    _touchCache();
+  if (!force && await _canServeUnchangedRevision(['folders'])) {
+    _touchCache(['folders']);
     return { folders: _cachedFolders, cached: true, revision_match: true };
   }
   try {
@@ -423,8 +449,8 @@ async function listFolders({ force = false } = {}) {
     _persistFoldersLocal(folders);
     const retained = _tryCommitSheetCache({ folders });
     if (retained) {
-      _touchCache();
-      await _rememberSheetRevision(rev);
+      _touchCache(['folders']);
+      await _rememberSheetRevision(rev, ['folders']);
       return { folders: _cachedFolders, cached: false };
     }
     return { folders, cached: false, cache_skipped: true };
@@ -621,7 +647,7 @@ async function _applySheetBatch(batch) {
     if (Object.prototype.hasOwnProperty.call(partial, 'folders') && _cachedFolders.length) {
       _persistFoldersLocal(_cachedFolders);
     }
-    _touchCache();
+    _touchCache(Object.keys(partial));
   } else if (Object.prototype.hasOwnProperty.call(partial, 'folders') && snapshot.folders.length) {
     // Persist folders to disk even when RAM cache is skipped.
     _persistFoldersLocal(snapshot.folders);
@@ -638,12 +664,8 @@ async function syncFromSheet() {
   return _runLocked('sync_from', async () => {
     await _ensureSheetId();
     const rev = await _readSheetRevision();
-    if (
-      rev
-      && rev === _cacheSheetRevision
-      && (_cachedBdImg.length || _cachedBdArrastre.length)
-    ) {
-      _touchCache();
+    if (await _canServeUnchangedRevision(['bdImg', 'arrastre'], rev)) {
+      _touchCache(['bdImg', 'arrastre']);
       emit('autoimg.sync.from_complete', { rows: _cachedBdImg.length, cached: true });
       return {
         success: true,
@@ -659,7 +681,7 @@ async function syncFromSheet() {
       'LOGS!A:E': batch['LOGS!A:E'],
       'BD_ARRASTRE!A:E': batch['BD_ARRASTRE!A:E'],
     });
-    if (applied.retained) await _rememberSheetRevision(rev);
+    if (applied.retained) await _rememberSheetRevision(rev, ['bdImg', 'arrastre']);
     emit('autoimg.sync.from_complete', { rows: applied.bdImg.length });
     return {
       success: true,
@@ -672,11 +694,11 @@ async function syncFromSheet() {
 }
 
 async function listLogs({ force = false } = {}) {
-  if (!force && _isCacheFresh()) {
+  if (!force && _isCacheFresh(['logs'])) {
     return { values: _cachedLogs, cached: true };
   }
-  if (!force && _cachedLogs.length && await _canServeUnchangedRevision()) {
-    _touchCache();
+  if (!force && await _canServeUnchangedRevision(['logs'])) {
+    _touchCache(['logs']);
     return { values: _cachedLogs, cached: true, revision_match: true };
   }
   await _ensureSheetId();
@@ -685,19 +707,19 @@ async function listLogs({ force = false } = {}) {
   const nextLogs = values || [];
   const retained = _tryCommitSheetCache({ logs: nextLogs });
   if (retained) {
-    _touchCache();
-    await _rememberSheetRevision(rev);
+    _touchCache(['logs']);
+    await _rememberSheetRevision(rev, ['logs']);
     return { values: _cachedLogs, cached: false };
   }
   return { values: nextLogs, cached: false, cache_skipped: true };
 }
 
 async function listArrastre({ force = false } = {}) {
-  if (!force && _isCacheFresh()) {
+  if (!force && _isCacheFresh(['arrastre'])) {
     return { entries: _cachedBdArrastre, cached: true };
   }
-  if (!force && _cachedBdArrastre.length && await _canServeUnchangedRevision()) {
-    _touchCache();
+  if (!force && await _canServeUnchangedRevision(['arrastre'])) {
+    _touchCache(['arrastre']);
     return { entries: _cachedBdArrastre, cached: true, revision_match: true };
   }
   await _ensureSheetId();
@@ -706,8 +728,8 @@ async function listArrastre({ force = false } = {}) {
   const nextArrastre = parseArrastreRows(values || []);
   const retained = _tryCommitSheetCache({ arrastre: nextArrastre });
   if (retained) {
-    _touchCache();
-    await _rememberSheetRevision(rev);
+    _touchCache(['arrastre']);
+    await _rememberSheetRevision(rev, ['arrastre']);
     return { entries: _cachedBdArrastre, cached: false };
   }
   return { entries: nextArrastre, cached: false, cache_skipped: true };
@@ -841,9 +863,9 @@ async function getStatus() {
     const batch = await _fetchSheetBatch(['CONFIG!A:B', 'RESUMEN!A:C', 'FOLDERS!A:E']);
     fields = _statusFieldsFromBatch(batch, sheets.getStoredSheetConfig());
     const folders = fields.folders || [];
-    _tryCommitSheetCache({ folders });
+    const retained = _tryCommitSheetCache({ folders });
     _restoreAutoSyncFromConfig(batch['CONFIG!A:B'] || []);
-    if (_cachedFolders.length) _touchCache();
+    if (retained) _touchCache(['folders']);
   } catch { /* sheet not configured yet */ }
 
   return {
@@ -882,13 +904,13 @@ async function bootstrap({ refresh = true } = {}) {
 
   if (!auth.authenticated) return base;
 
-  const useCache = !refresh && _isCacheFresh();
+  const useCache = !refresh && _isCacheFresh(SHEET_CACHE_BLOCKS);
   if (useCache) {
     return { ...base, cached: true };
   }
 
-  if (!refresh && await _canServeUnchangedRevision()) {
-    _touchCache();
+  if (!refresh && await _canServeUnchangedRevision(SHEET_CACHE_BLOCKS)) {
+    _touchCache(SHEET_CACHE_BLOCKS);
     return {
       ...base,
       folders: _cachedFolders.length ? _cachedFolders : foldersForUi,
@@ -912,7 +934,7 @@ async function bootstrap({ refresh = true } = {}) {
       'BD_ARRASTRE!A:E',
     ]);
     const applied = await _applySheetBatch(batch);
-    if (applied.retained) await _rememberSheetRevision(rev);
+    if (applied.retained) await _rememberSheetRevision(rev, SHEET_CACHE_BLOCKS);
     const fields = _statusFieldsFromBatch(batch, sheets.getStoredSheetConfig());
     _restoreAutoSyncFromConfig(batch['CONFIG!A:B'] || []);
     return {
@@ -1188,13 +1210,22 @@ module.exports = {
     _sheetCacheBudgetOverride = bytes == null ? null : Number(bytes);
   },
   __inspectSheetCacheForTests() {
+    const loadedAtByBlock = Object.fromEntries(
+      SHEET_CACHE_BLOCKS.map((block) => [block, _sheetCacheState[block].loadedAt]),
+    );
+    const revisionByBlock = Object.fromEntries(
+      SHEET_CACHE_BLOCKS.map((block) => [block, _sheetCacheState[block].revision]),
+    );
+    const revisions = [...new Set(Object.values(revisionByBlock).filter(Boolean))];
     return {
       bdImgLen: _cachedBdImg.length,
       logsLen: _cachedLogs.length,
       arrastreLen: _cachedBdArrastre.length,
       foldersLen: _cachedFolders.length,
-      loadedAt: _cacheLoadedAt,
-      revision: _cacheSheetRevision,
+      loadedAt: Math.max(...Object.values(loadedAtByBlock)),
+      revision: revisions.length === 1 ? revisions[0] : null,
+      loadedAtByBlock,
+      revisionByBlock,
       approxBytes: estimateSheetPayloadBytes({
         bdImg: _cachedBdImg,
         logs: _cachedLogs,

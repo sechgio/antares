@@ -121,6 +121,34 @@ def test_dedupe_uses_disk_keys_without_exists(tmp_path, monkeypatch) -> None:
     assert exists_calls["n"] == 0
 
 
+def test_destination_scan_is_bounded_without_returning_partial_keys(tmp_path, monkeypatch) -> None:
+    """A huge destination falls back to exact per-path checks, never a partial snapshot."""
+    from backend.handlers import conversion
+
+    destino = tmp_path / "large-destination"
+    destino.mkdir()
+    (destino / "first.jpg").write_bytes(b"1")
+    (destino / "second.jpg").write_bytes(b"2")
+    monkeypatch.setattr(conversion, "_MAX_DEST_SCAN_ENTRIES", 1)
+
+    assert conversion._scan_dest_out_keys(destino) is None
+
+
+def test_destination_scan_cache_is_lru_bounded(tmp_path, monkeypatch) -> None:
+    from backend.handlers import conversion
+
+    monkeypatch.setattr(conversion, "_MAX_DEST_SCAN_CACHE", 1)
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    assert conversion._scan_dest_out_keys(first) == set()
+    assert conversion._scan_dest_out_keys(second) == set()
+
+    assert len(conversion._dest_scan_cache) <= 1
+    assert str(second.resolve()) in conversion._dest_scan_cache
+
+
 def test_dedupe_spans_chunks_via_shared_reserved_set() -> None:
     reserved: set[str] = set()
     chunk1 = _dedupe_chunk_out_paths(

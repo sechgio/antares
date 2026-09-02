@@ -97,6 +97,64 @@ describe('api cache dedupe', () => {
     expect(mockInvoke).toHaveBeenCalledTimes(1);
   });
 
+  it('does not repopulate an invalidated cache with an in-flight result', async () => {
+    let resolveColumns: (value: { columns: string[]; records: any[]; total: number }) => void = () => {};
+    const pendingColumns = new Promise<{ columns: string[]; records: any[]; total: number }>((resolve) => {
+      resolveColumns = resolve;
+    });
+    mockInvoke.mockImplementation((method: string) => {
+      if (method === 'db_columns') return pendingColumns;
+      if (method === 'db_clear') return Promise.resolve({ cleared: 1 });
+      throw new Error(`Unexpected method: ${method}`);
+    });
+
+    const staleRead = api.getDbColumns();
+    await Promise.resolve();
+    await api.clearDatabase();
+    resolveColumns({ columns: ['old'], records: [], total: 0 });
+    await staleRead;
+
+    mockInvoke.mockResolvedValueOnce({ columns: ['new'], records: [], total: 0 });
+    await expect(api.getDbColumns()).resolves.toEqual({ columns: ['new'], records: [], total: 0 });
+    expect(mockInvoke).toHaveBeenCalledTimes(3);
+  });
+
+  it('invalidates fields and columns together after catalog mutations', async () => {
+    mockInvoke
+      .mockResolvedValueOnce({ fields: [{ name: 'codigo', type: 'TEXT' }] })
+      .mockResolvedValueOnce({ columns: ['codigo'], records: [], total: 0 });
+    await api.getFields();
+    await api.getDbColumns();
+
+    mockInvoke.mockResolvedValueOnce({ imported: 1 });
+    await api.importExcel('catalogo.xlsx');
+
+    mockInvoke
+      .mockResolvedValueOnce({ fields: [{ name: 'codigo', type: 'TEXT' }, { name: 'marca', type: 'TEXT' }] })
+      .mockResolvedValueOnce({ columns: ['codigo', 'marca'], records: [], total: 0 });
+    await api.getFields();
+    await api.getDbColumns();
+
+    expect(mockInvoke).toHaveBeenCalledTimes(5);
+  });
+
+  it('clearing records invalidates columns without refetching fields', async () => {
+    mockInvoke
+      .mockResolvedValueOnce({ fields: [{ name: 'codigo', type: 'TEXT' }] })
+      .mockResolvedValueOnce({ columns: ['codigo'], records: [], total: 1 });
+    await api.getFields();
+    await api.getDbColumns();
+
+    mockInvoke.mockResolvedValueOnce({ cleared: 1 });
+    await api.clearDatabase();
+
+    mockInvoke.mockResolvedValueOnce({ columns: ['codigo'], records: [], total: 0 });
+    await api.getFields();
+    await api.getDbColumns();
+
+    expect(mockInvoke).toHaveBeenCalledTimes(4);
+  });
+
   it('dedupes concurrent getTheme calls', async () => {
     mockInvoke.mockResolvedValue({ name: 'test' });
     const [a, b] = await Promise.all([api.getTheme(), api.getTheme()]);

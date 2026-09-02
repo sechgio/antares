@@ -537,3 +537,21 @@ class TestConvertirAPreview:
         os.utime(origen, (2_000_000, 2_000_000))
         r3 = convertir_a_preview(origen, "PNG")
         assert r3["preview"] != r1["preview"], "preview stale tras editar imagen"
+
+    def test_preview_cache_normaliza_formato_y_detecta_reemplazo_rapido(self, tmp_path) -> None:
+        from backend.core.preview_cache import get_preview_cache
+
+        get_preview_cache().clear()
+        origen = tmp_path / "quick-replace.png"
+        fixed_ns = 2_000_000_000_000_000_000
+
+        Image.new("RGB", (80, 60), color=(255, 0, 0)).save(origen)
+        os.utime(origen, ns=(fixed_ns, fixed_ns))
+        first = convertir_a_preview(origen, "PNG")
+        alias = convertir_a_preview(origen, "png")
+        assert alias["preview"] == first["preview"]
+
+        Image.new("RGB", (80, 60), color=(0, 0, 255)).save(origen)
+        os.utime(origen, ns=(fixed_ns, fixed_ns))
+        replaced = convertir_a_preview(origen, "PNG")
+        assert replaced["preview"] != first["preview"], "quick replacement reused stale preview"

@@ -10,19 +10,49 @@ function assert(condition, message) {
 
 const sheetsPath = require.resolve('../electron/google-sheets-service');
 const drivePath = require.resolve('../electron/google-drive-service');
+const scopePath = require.resolve('../electron/autoimg-user-scope');
 
 delete require.cache[sheetsPath];
 delete require.cache[drivePath];
 
 const sheets = require('../electron/google-sheets-service');
 const originalGetValidTokens = sheets.getValidTokens;
-sheets.getValidTokens = async () => ({ access_token: 'tok', refresh_token: 'r' });
+let activeTokens = { access_token: 'tok', refresh_token: 'r' };
+sheets.getValidTokens = async () => activeTokens;
+
+let activeUserKey = 'user-a';
+let activeUserGeneration = 1;
+const userChangeListeners = [];
+const fakeScope = {
+  getActiveUserSnapshot: () => ({ userKey: activeUserKey, generation: activeUserGeneration }),
+  isActiveUserSnapshotCurrent: (snapshot) => (
+    snapshot?.userKey === activeUserKey && snapshot?.generation === activeUserGeneration
+  ),
+  onActiveUserChange: (listener) => {
+    userChangeListeners.push(listener);
+    return () => {
+      const index = userChangeListeners.indexOf(listener);
+      if (index >= 0) userChangeListeners.splice(index, 1);
+    };
+  },
+};
+require.cache[scopePath] = { id: scopePath, filename: scopePath, loaded: true, exports: fakeScope };
+
+function changeUser(userKey) {
+  const previousKey = activeUserKey;
+  activeUserKey = userKey;
+  activeUserGeneration += 1;
+  for (const listener of userChangeListeners.slice()) listener({ previousKey, nextKey: userKey });
+}
 
 const drive = require('../electron/google-drive-service');
 
 const FOLDER_ID = '1AbCdEfGhIjKlMnOpQrSt';
 let listCalls = 0;
 let thumbCalls = 0;
+let delayNextList = false;
+let delayedListStarted;
+let releaseDelayedList;
 const originalFetch = global.fetch;
 
 global.fetch = async (url) => {
@@ -31,6 +61,11 @@ global.fetch = async (url) => {
     listCalls += 1;
     assert(u.includes('pageSize=4'), 'pageSize debe ser 4');
     assert(u.includes('thumbnailLink'), 'fields debe pedir thumbnailLink');
+    if (delayNextList) {
+      delayNextList = false;
+      delayedListStarted?.();
+      await new Promise((resolve) => { releaseDelayedList = resolve; });
+    }
     return {
       ok: true,
       status: 200,
@@ -74,6 +109,39 @@ global.fetch = async (url) => {
     drive.invalidateFolderPreview(FOLDER_ID);
     await drive.previewFolder(FOLDER_ID);
     assert(listCalls === 2, 'invalidate fuerza relista');
+
+    changeUser('user-b');
+    await drive.previewFolder(FOLDER_ID);
+    assert(listCalls === 3, 'cambiar de usuario no reutiliza preview anterior');
+
+    activeTokens = null;
+    let unauthorized = false;
+    try {
+      await drive.previewFolder(FOLDER_ID);
+    } catch {
+      unauthorized = true;
+    }
+    assert(unauthorized, 'un usuario no autenticado no recibe un hit de caché');
+    assert(listCalls === 3, 'la validación de auth ocurre antes de consultar Drive');
+    activeTokens = { access_token: 'tok', refresh_token: 'r' };
+
+    changeUser('user-c');
+    delayNextList = true;
+    const delayedList = new Promise((resolve) => { delayedListStarted = resolve; });
+    const staleRequest = drive.previewFolder(FOLDER_ID);
+    await delayedList;
+    changeUser('user-d');
+    releaseDelayedList();
+    let staleRejected = false;
+    try {
+      await staleRequest;
+    } catch {
+      staleRejected = true;
+    }
+    assert(staleRejected, 'una preview iniciada antes del cambio de usuario se descarta');
+
+    await drive.previewFolder(FOLDER_ID);
+    assert(listCalls === 5, 'la respuesta descartada no repuebla la caché de la nueva sesión');
 
     console.log('[PASS] test-autoimg-folder-preview');
   } catch (e) {

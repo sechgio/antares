@@ -89,6 +89,16 @@ let tokens = store.loadTokens();
 assert(tokens.access_token === 'a' && tokens.refresh_token === 'r' && tokens.expiry_date === 123, 'tokens round-trip');
 assert(tokens.id_token === undefined, 'campos extra de tokens descartados');
 
+const capturedUserKey = scope.userKeyFromEmail('captured-scope@example.com');
+store.saveTokensForUserKey(capturedUserKey, { access_token: 'captured', refresh_token: 'r2', expiry_date: 456 });
+assert(store.loadTokens()?.access_token === 'a', 'guardar en scope capturado no altera el usuario activo');
+assert(
+  store.loadTokensForUserKey(capturedUserKey)?.access_token === 'captured',
+  'tokens se pueden leer desde el scope capturado',
+);
+store.clearTokensForUserKey(capturedUserKey);
+assert(!store.loadTokensForUserKey(capturedUserKey), 'limpiar scope capturado elimina solo ese usuario');
+
 // ---------------------------------------------------------------------------
 // Invariante crítico del refactor: logout parcial
 // ---------------------------------------------------------------------------

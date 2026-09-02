@@ -1,6 +1,11 @@
 const { getValidTokens, refreshAccessToken } = require('./google-sheets-service');
 const { fetchWithRetry } = require('./autoimg-google-fetch');
 const nis = require('./autoimg-nis');
+const {
+  getActiveUserSnapshot,
+  isActiveUserSnapshotCurrent,
+  onActiveUserChange,
+} = require('./autoimg-user-scope');
 
 // Prefer MIME image/*, also catch common photo extensions when Drive marks them as octet-stream.
 const IMAGE_QUERY =
@@ -13,9 +18,21 @@ const DRIVE_SHARED_PARAMS = {
   includeItemsFromAllDrives: 'true',
 };
 
-async function _driveRequest(path, { method = 'GET', params = {}, body } = {}, retried = false) {
-  const tokens = await getValidTokens();
+const SESSION_CHANGED_MESSAGE = 'La sesión de Google cambió durante la operación.';
+
+function _assertSessionCurrent(session) {
+  if (!isActiveUserSnapshotCurrent(session)) throw new Error(SESSION_CHANGED_MESSAGE);
+}
+
+async function _driveRequest(
+  path,
+  { method = 'GET', params = {}, body } = {},
+  retried = false,
+  session = getActiveUserSnapshot(),
+) {
+  const tokens = await getValidTokens(session);
   if (!tokens) throw new Error('No autenticado con Google');
+  _assertSessionCurrent(session);
   const qs = new URLSearchParams({ ...DRIVE_SHARED_PARAMS, ...params });
   const url = `https://www.googleapis.com/drive/v3/${path}?${qs.toString()}`;
   const headers = { Authorization: `Bearer ${tokens.access_token}` };
@@ -28,18 +45,26 @@ async function _driveRequest(path, { method = 'GET', params = {}, body } = {}, r
     rateLimitMessage: 'Rate limit excedido en Drive API',
   });
   if (res.status === 401 && !retried && tokens.refresh_token) {
-    await refreshAccessToken(tokens);
-    return _driveRequest(path, { method, params, body }, true);
+    await refreshAccessToken(tokens, session);
+    return _driveRequest(path, { method, params, body }, true, session);
   }
   if (!res.ok) throw new Error(`Drive API error (${res.status}): ${await res.text()}`);
-  if (res.status === 204) return {};
+  if (res.status === 204) {
+    _assertSessionCurrent(session);
+    return {};
+  }
   const text = await res.text();
-  if (!text) return {};
-  return JSON.parse(text);
+  if (!text) {
+    _assertSessionCurrent(session);
+    return {};
+  }
+  const result = JSON.parse(text);
+  _assertSessionCurrent(session);
+  return result;
 }
 
-async function _driveFetch(path, params = {}) {
-  return _driveRequest(path, { method: 'GET', params });
+async function _driveFetch(path, params = {}, session = getActiveUserSnapshot()) {
+  return _driveRequest(path, { method: 'GET', params }, false, session);
 }
 
 function parseFolderId(input) {
@@ -228,19 +253,27 @@ async function getDriveStatus() {
 
 const PREVIEW_LIMIT = 4;
 const PREVIEW_TTL_MS = 10 * 60 * 1000;
-/** Align with FolderPreviewStrip SESSION_CACHE_MAX — hard cap on retained thumbs. */
+/** Single authoritative TTL/LRU cache; the renderer keeps only mounted state. */
 const PREVIEW_CACHE_MAX = 30;
 /** @type {Map<string, { at: number, result: { folder_id: string, thumbs: Array<{ id: string, name: string, dataUrl: string | null }> } }>} */
 const previewCache = new Map();
 
-function _setPreviewCache(folderId, entry) {
-  if (previewCache.has(folderId)) previewCache.delete(folderId);
-  previewCache.set(folderId, entry);
+function _previewCacheKey(session, folderId, pageSize) {
+  return `${session.userKey || 'anonymous'}:${folderId}:${pageSize}`;
+}
+
+function _setPreviewCache(cacheKey, entry) {
+  if (previewCache.has(cacheKey)) previewCache.delete(cacheKey);
+  previewCache.set(cacheKey, entry);
   while (previewCache.size > PREVIEW_CACHE_MAX) {
     const oldest = previewCache.keys().next().value;
     previewCache.delete(oldest);
   }
 }
+
+onActiveUserChange(() => {
+  previewCache.clear();
+});
 
 function shrinkThumbnailUrl(url) {
   const raw = String(url || '');
@@ -268,27 +301,32 @@ async function fetchThumbnailDataUrl(thumbnailLink, accessToken) {
 
 /**
  * Preview rápido: hasta 4 miniaturas (no lista toda la carpeta).
- * Cache en memoria por folder_id.
+ * Cache en memoria por usuario, folder_id y cantidad solicitada.
  */
 async function previewFolder(input, { limit = PREVIEW_LIMIT, force = false } = {}) {
   const folderId = assertValidFolderId(input);
-  const cached = previewCache.get(folderId);
-  if (!force && cached) {
-    if (Date.now() - cached.at < PREVIEW_TTL_MS) {
-      return cached.result;
-    }
-    previewCache.delete(folderId);
-  }
-
-  const tokens = await getValidTokens();
+  const session = getActiveUserSnapshot();
+  const tokens = await getValidTokens(session);
   if (!tokens) throw new Error('No autenticado con Google');
+  _assertSessionCurrent(session);
 
   const pageSize = Math.min(Math.max(1, Number(limit) || PREVIEW_LIMIT), PREVIEW_LIMIT);
+  const cacheKey = _previewCacheKey(session, folderId, pageSize);
+  const cached = previewCache.get(cacheKey);
+  if (!force && cached) {
+    if (Date.now() - cached.at < PREVIEW_TTL_MS) {
+      previewCache.delete(cacheKey);
+      previewCache.set(cacheKey, cached);
+      return cached.result;
+    }
+    previewCache.delete(cacheKey);
+  }
+
   const data = await _driveFetch('files', {
     q: `'${folderId}' in parents and trashed=false and ${IMAGE_QUERY}`,
     fields: 'files(id,name,thumbnailLink)',
     pageSize: String(pageSize),
-  });
+  }, session);
   const files = (data.files || []).slice(0, pageSize);
 
   const thumbs = await Promise.all(
@@ -303,14 +341,19 @@ async function previewFolder(input, { limit = PREVIEW_LIMIT, force = false } = {
     }),
   );
 
+  _assertSessionCurrent(session);
   const result = { folder_id: folderId, thumbs };
-  _setPreviewCache(folderId, { at: Date.now(), result });
+  _setPreviewCache(cacheKey, { at: Date.now(), result });
   return result;
 }
 
 function invalidateFolderPreview(folderId) {
   const id = String(folderId || '').trim();
-  if (id) previewCache.delete(id);
+  if (!id) return;
+  const prefix = `${getActiveUserSnapshot().userKey || 'anonymous'}:${id}:`;
+  for (const key of previewCache.keys()) {
+    if (key.startsWith(prefix)) previewCache.delete(key);
+  }
 }
 
 /**

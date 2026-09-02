@@ -14,7 +14,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import OrderedDict
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
 from typing import Any, cast
@@ -78,31 +78,38 @@ _font_cache: OrderedDict[tuple[str, int], ImageFont.FreeTypeFont | ImageFont.Ima
 _footer_cache: OrderedDict[tuple[int, int, int], Image.Image | None] = OrderedDict()
 _MAX_FONT_CACHE = 32
 _MAX_FOOTER_CACHE = 8
-_excel_cache: OrderedDict[str, tuple[float, Any, tuple[Any, ...]]] = OrderedDict()
+_excel_cache: OrderedDict[str, tuple[tuple[int, int, int], Any, tuple[Any, ...], int]] = OrderedDict()
 _MAX_EXCEL_CACHE = 8
+_MAX_EXCEL_CACHE_BYTES = 64 * 1024 * 1024
+_excel_cache_bytes = 0
 # Single shared LRU for map screenshots. Validated vs working is tracked with a
 # side set so callers keep the same hit/miss semantics without retaining up to
 # 2x buffers for the same key.
 _map_screenshot_store: OrderedDict[tuple[Any, ...], bytes] = OrderedDict()
 _map_screenshot_validated: set[tuple[Any, ...]] = set()
-_preview_composed_cache: dict[tuple[int, int, tuple[str, float], int, str], dict[str, Any]] = {}
-_preview_excel_ctx: tuple[str, float] | None = None
+_map_screenshot_negative_at: OrderedDict[tuple[Any, ...], float] = OrderedDict()
+_map_screenshot_inflight: dict[tuple[Any, ...], Future[bytes]] = {}
+_preview_composed_cache: dict[tuple[Any, ...], dict[str, Any]] = {}
+_preview_excel_ctx: tuple[str, tuple[int, int, int]] | None = None
 # Guarda las caches mutadas desde el thread daemon de prefetch (B1): sin lock,
 # _trim_cache + __setitem__ concurrentes pueden lanzar RuntimeError o corromper
 # el orden LRU.
 _cache_lock = threading.Lock()
 _MAX_MAP_CACHE = 20
+_MAP_NEGATIVE_TTL_SECONDS = 30.0
 _MAX_COMPOSED_CACHE = 16
 
 
 def _clear_ubicaciones_caches() -> None:
     """Clear all in-memory static caches in ubicaciones handler."""
-    global _preview_excel_ctx
+    global _preview_excel_ctx, _excel_cache_bytes
     with _cache_lock:
         _map_screenshot_store.clear()
         _map_screenshot_validated.clear()
+        _map_screenshot_negative_at.clear()
         _preview_composed_cache.clear()
         _excel_cache.clear()
+        _excel_cache_bytes = 0
         _font_cache.clear()
         _footer_cache.clear()
         _preview_excel_ctx = None
@@ -118,6 +125,7 @@ class _MapScreenshotCacheView:
         with _cache_lock:
             _map_screenshot_store.clear()
             _map_screenshot_validated.clear()
+            _map_screenshot_negative_at.clear()
 
     def get(self, key: tuple[Any, ...], default: bytes | None = None) -> bytes | None:
         with _cache_lock:
@@ -134,10 +142,12 @@ class _MapScreenshotCacheView:
             _map_screenshot_store.move_to_end(key)
             if self._validated_only:
                 _map_screenshot_validated.add(key)
+                _map_screenshot_negative_at.pop(key, None)
             # Working writes must not mark validated; a later validated write upgrades.
             while len(_map_screenshot_store) > _MAX_MAP_CACHE:
                 old_key, _ = _map_screenshot_store.popitem(last=False)
                 _map_screenshot_validated.discard(old_key)
+                _map_screenshot_negative_at.pop(old_key, None)
 
     def __contains__(self, key: object) -> bool:
         if not isinstance(key, tuple):
@@ -693,13 +703,37 @@ def _is_na(value: Any) -> bool:
         return False
 
 
+def _excel_cache_key(excel_path: str) -> str:
+    return os.path.normcase(os.path.abspath(excel_path))
+
+
+def _excel_file_signature(excel_path: str) -> tuple[int, int, int]:
+    stat = os.stat(excel_path)
+    return (int(stat.st_mtime_ns), int(stat.st_size), int(stat.st_ctime_ns))
+
+
+def _estimate_excel_cache_bytes(df: Any) -> int:
+    try:
+        return max(1, int(df.memory_usage(index=True, deep=True).sum()))
+    except (AttributeError, TypeError, ValueError):
+        return max(1, int(getattr(df, "nbytes", 0) or 0))
+
+
+def _trim_excel_cache() -> None:
+    global _excel_cache_bytes
+    while len(_excel_cache) > _MAX_EXCEL_CACHE or _excel_cache_bytes > _MAX_EXCEL_CACHE_BYTES:
+        _key, entry = _excel_cache.popitem(last=False)
+        _excel_cache_bytes = max(0, _excel_cache_bytes - entry[3])
+
+
 def _load_excel_data(excel_path: str) -> tuple[Any, tuple[Any, ...]]:
     """Load and parse Excel, reusing cache when the file has not changed."""
-    mtime = os.path.getmtime(excel_path)
+    cache_key = _excel_cache_key(excel_path)
+    signature = _excel_file_signature(excel_path)
     with _cache_lock:
-        cached = _excel_cache.get(excel_path)
-        if cached and cached[0] == mtime:
-            _excel_cache.move_to_end(excel_path)
+        cached = _excel_cache.get(cache_key)
+        if cached and cached[0] == signature:
+            _excel_cache.move_to_end(cache_key)
             return cached[1], cached[2]
     # Local import: pandas/numpy stays out of the module top-level (deferred
     # module — the first call must not pay ~400 ms of cold imports in the IPC
@@ -708,10 +742,17 @@ def _load_excel_data(excel_path: str) -> tuple[Any, tuple[Any, ...]]:
 
     df = pd.read_excel(excel_path, engine="openpyxl")
     cols = _parse_excel_columns(df)
+    entry_bytes = _estimate_excel_cache_bytes(df)
     with _cache_lock:
-        _excel_cache[excel_path] = (mtime, df, cols)
-        _excel_cache.move_to_end(excel_path)
-        _trim_cache(_excel_cache, _MAX_EXCEL_CACHE)
+        global _excel_cache_bytes
+        previous = _excel_cache.pop(cache_key, None)
+        if previous is not None:
+            _excel_cache_bytes = max(0, _excel_cache_bytes - previous[3])
+        if entry_bytes <= _MAX_EXCEL_CACHE_BYTES:
+            _excel_cache[cache_key] = (signature, df, cols, entry_bytes)
+            _excel_cache.move_to_end(cache_key)
+            _excel_cache_bytes += entry_bytes
+            _trim_excel_cache()
     return df, cols
 
 
@@ -741,10 +782,10 @@ def _map_capture_size(formato: str, *, preview: bool = False) -> tuple[int, int]
     return out_w, out_h - footer_h
 
 
-def _sync_excel_context(excel_path: str) -> tuple[str, float]:
+def _sync_excel_context(excel_path: str) -> tuple[str, tuple[int, int, int]]:
     """Invalida caché de previews compuestos cuando cambia el Excel."""
     global _preview_excel_ctx
-    ctx = (excel_path, os.path.getmtime(excel_path))
+    ctx = (_excel_cache_key(excel_path), _excel_file_signature(excel_path))
     if _preview_excel_ctx != ctx:
         with _cache_lock:
             _preview_composed_cache.clear()
@@ -786,21 +827,66 @@ def _get_cached_map_screenshot(
     key = _map_cache_key(lat, lon, formato, preview=preview, map_opts=map_opts)
     # El caché sólo guarda capturas que ya pasaron _screenshot_has_map_tiles
     # (ver gate de escritura más abajo), así que no re-validamos en cada hit.
-    cached = _map_screenshot_cache.get(key)
-    if cached is not None:
-        return cached
+    with _cache_lock:
+        cached = _map_screenshot_store.get(key) if key in _map_screenshot_validated else None
+        if cached is not None:
+            _map_screenshot_store.move_to_end(key)
+            return cached
+
+        # Un fallback gris no debe convertirse en un hit permanente, pero sí
+        # debe tener una ventana corta de backoff para no golpear al proveedor
+        # en cada fila cuando está caído o sin credenciales.
+        negative_at = _map_screenshot_negative_at.get(key)
+        if negative_at is not None:
+            if time.monotonic() - negative_at < _MAP_NEGATIVE_TTL_SECONDS:
+                negative = _map_screenshot_store.get(key)
+                if negative is not None:
+                    _map_screenshot_negative_at.move_to_end(key)
+                    _map_screenshot_store.move_to_end(key)
+                    return negative
+            _map_screenshot_negative_at.pop(key, None)
+
+        # Recheck under the same lock before creating the flight. This closes
+        # the race where another caller completed and cached the fetch between
+        # the initial lookup and this section.
+        pending = _map_screenshot_inflight.get(key)
+        if pending is None:
+            pending = Future()
+            _map_screenshot_inflight[key] = pending
+            is_owner = True
+        else:
+            is_owner = False
+
+    if not is_owner:
+        return pending.result()
+
     cap_w, cap_h = _map_capture_size(formato, preview=preview)
     provider = _resolve_provider(map_opts)
-    zoom = int(map_opts["zoom"]) if map_opts and map_opts.get("zoom") is not None else _MAP_ZOOM
-    screenshot = fetch_static_map(
-        lat, lon, cap_w, cap_h, zoom,
-        provider=provider, api_key=_resolve_api_key(map_opts),
-    )
-    # Shared LRU: one buffer per key. Working write first; upgrade if tiles OK.
-    _map_screenshot_working_cache[key] = screenshot
-    if _screenshot_has_map_tiles(screenshot):
-        _map_screenshot_cache[key] = screenshot
-    return screenshot
+    try:
+        zoom = int(map_opts["zoom"]) if map_opts and map_opts.get("zoom") is not None else _MAP_ZOOM
+        screenshot = fetch_static_map(
+            lat, lon, cap_w, cap_h, zoom,
+            provider=provider, api_key=_resolve_api_key(map_opts),
+        )
+        # Shared LRU: one buffer per key. Working write first; upgrade if tiles OK.
+        _map_screenshot_working_cache[key] = screenshot
+        if _screenshot_has_map_tiles(screenshot):
+            _map_screenshot_cache[key] = screenshot
+        else:
+            with _cache_lock:
+                _map_screenshot_negative_at[key] = time.monotonic()
+                _map_screenshot_negative_at.move_to_end(key)
+                while len(_map_screenshot_negative_at) > _MAX_MAP_CACHE:
+                    _map_screenshot_negative_at.popitem(last=False)
+        pending.set_result(screenshot)
+        return screenshot
+    except BaseException as exc:
+        pending.set_exception(exc)
+        raise
+    finally:
+        with _cache_lock:
+            if _map_screenshot_inflight.get(key) is pending:
+                _map_screenshot_inflight.pop(key, None)
 
 
 _MAX_UBIC_PREVIEW_FILES = 200
@@ -876,7 +962,7 @@ def _encode_preview_data(
 
 
 def _compose_and_cache_preview(
-    excel_ctx: tuple[str, float],
+    excel_ctx: tuple[str, tuple[int, int, int]],
     row_index: int,
     formato: str,
     datos: dict,
@@ -902,7 +988,7 @@ def _compose_and_cache_preview(
 
 
 def _prefetch_alternate_formato(
-    excel_ctx: tuple[str, float],
+    excel_ctx: tuple[str, tuple[int, int, int]],
     row_index: int,
     formato: str,
     datos: dict,

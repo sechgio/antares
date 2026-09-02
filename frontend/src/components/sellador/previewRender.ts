@@ -21,26 +21,39 @@ const otherPagesRenderCache = createLruMap<string, string>({
   maxBytes: SELLADOR_PREVIEW_CACHE_MAX_BYTES,
   sizeOf: estimateStringBytes,
 });
+let nextFileIdentity = 1;
+const fileIdentities = new WeakMap<File, number>();
+
+function fileCacheIdentity(file: File): number {
+  const existing = fileIdentities.get(file);
+  if (existing !== undefined) return existing;
+  const identity = nextFileIdentity;
+  nextFileIdentity += 1;
+  fileIdentities.set(file, identity);
+  return identity;
+}
 
 function bucketContainerWidth(width: number): number {
   const clamped = Math.max(width, 320);
   return Math.round(clamped / WIDTH_BUCKET) * WIDTH_BUCKET;
 }
 
-function otherPagesCacheKey(
+export function otherPagesCacheKey(
   pdfPath: string | null,
   pdfBase64: string | null,
   pdfFile: File | null,
+  sourceRevision: number,
   pageNum: number,
   containerW: number,
+  stampUrl: string | null,
   stampRects: StampRect[],
 ): string {
   const source = pdfPath
     ?? (pdfFile
-      ? `file:${pdfFile.name}:${pdfFile.size}:${pdfFile.lastModified}`
+      ? `file:${fileCacheIdentity(pdfFile)}:${pdfFile.name}:${pdfFile.size}:${pdfFile.lastModified}`
       : `b64:${pdfBase64?.length ?? 0}`);
   const stamp = stampRects.map((r) => `${r.x},${r.y},${r.width},${r.height}`).join('|') || 'none';
-  return `${OTHER_PAGES_CACHE_VERSION}:${source}:${pageNum}:${containerW}:${stamp}`;
+  return `${OTHER_PAGES_CACHE_VERSION}:${sourceRevision}:${source}:${pageNum}:${containerW}:${stampUrl ?? 'none'}:${stamp}`;
 }
 
 async function loadStampImage(stampUrl: string): Promise<HTMLImageElement> {
@@ -171,6 +184,7 @@ export async function renderOtherPagesPreview(
     pdfPath: string | null;
     pdfBase64: string | null;
     pdfFile: File | null;
+    sourceRevision?: number;
     pageCount: number;
     containerW: number;
     stampUrl: string | null;
@@ -185,6 +199,7 @@ export async function renderOtherPagesPreview(
     pdfPath,
     pdfBase64,
     pdfFile,
+    sourceRevision = 0,
     pageCount,
     containerW,
     stampUrl,
@@ -219,8 +234,10 @@ export async function renderOtherPagesPreview(
         pdfPath,
         pdfBase64,
         pdfFile,
+        sourceRevision,
         pageNum,
         bucketedWidth,
+        stampUrl,
         stampRects,
       );
       let url = otherPagesRenderCache.get(cacheKey);

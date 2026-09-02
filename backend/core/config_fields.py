@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from backend.core.repository import _db_schema_lock
 from backend.utils.paths import cached_config_path
 
 logger = logging.getLogger(__name__)
@@ -102,11 +103,17 @@ _cached_field_names: tuple[Path, list[str]] | None = None
 def _invalidate_fields_cache() -> None:
     """Clear the in-memory fields cache so next read hits disk."""
     global _cached_fields, _cached_field_names
-    _cached_fields = None
-    _cached_field_names = None
+    with _db_schema_lock.write():
+        _cached_fields = None
+        _cached_field_names = None
 
 
 def load_fields() -> list[dict[str, Any]]:
+    with _db_schema_lock.read():
+        return _load_fields_unlocked()
+
+
+def _load_fields_unlocked() -> list[dict[str, Any]]:
     """Carga la configuración de campos desde disco o retorna los defaults.
 
     Results are cached in memory and invalidated on write or if the config
@@ -161,11 +168,12 @@ def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
 
 def save_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Guarda la configuración de campos en disco."""
-    path = _config_file()
-    validated = sanitize_field_defs(fields)
-    _atomic_write_json(path, {"fields": validated})
-    _invalidate_fields_cache()
-    return validated
+    with _db_schema_lock.write():
+        path = _config_file()
+        validated = sanitize_field_defs(fields)
+        _atomic_write_json(path, {"fields": validated})
+        _invalidate_fields_cache()
+        return validated
 
 
 def get_field_names() -> list[str]:
@@ -176,12 +184,13 @@ def get_field_names() -> list[str]:
     (immutable) strings so callers may mutate the result safely.
     """
     global _cached_field_names
-    path = _config_file()
-    if _cached_field_names is not None and _cached_field_names[0] == path:
-        return list(_cached_field_names[1])
-    names = [f["name"] for f in load_fields()]
-    _cached_field_names = (path, names)
-    return list(names)
+    with _db_schema_lock.read():
+        path = _config_file()
+        if _cached_field_names is not None and _cached_field_names[0] == path:
+            return list(_cached_field_names[1])
+        names = [f["name"] for f in load_fields()]
+        _cached_field_names = (path, names)
+        return list(names)
 
 
 def get_required_fields() -> list[str]:

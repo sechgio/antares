@@ -2,7 +2,7 @@
  * Lightweight local image thumbnails via Electron nativeImage.
  * Path A for conversion grid display — never touches Python preview_image.
  *
- * Optional on-disk cache keyed by path + mtime + maxEdge so revisiting a
+ * Optional on-disk cache keyed by path + file signature + maxEdge so revisiting a
  * folder across sessions avoids re-decoding via nativeImage.
  */
 
@@ -18,6 +18,7 @@ const MIN_MAX_EDGE = 32;
 const MAX_MAX_EDGE = 1024;
 const JPEG_QUALITY = 60;
 const DISK_CACHE_MAX_FILES = 400;
+const DISK_CACHE_MAX_BYTES = 64 * 1024 * 1024;
 /** Cap for full-fidelity local → data URL reads (Ubicaciones preview, etc.). */
 const MAX_LOCAL_IMAGE_BYTES = 12 * 1024 * 1024;
 
@@ -94,10 +95,10 @@ function clampMaxEdge(maxEdge) {
   return n;
 }
 
-function _cacheKey(resolved, mtimeMs, edge) {
+function _cacheKey(resolved, fileSignature, edge) {
   return crypto
     .createHash('sha1')
-    .update(`${resolved}|${mtimeMs}|${edge}`)
+    .update(`${resolved}|${fileSignature}|${edge}`)
     .digest('hex');
 }
 
@@ -105,6 +106,15 @@ async function _readDiskCache(cachePath) {
   try {
     const buf = await fsp.readFile(cachePath);
     if (!buf || !buf.length) return null;
+    // atime is not reliable on Windows/NTFS, so explicitly refresh mtime to
+    // make the disk cache eviction order reflect actual use (LRU), not writes.
+    try {
+      const now = new Date();
+      await fsp.utimes(cachePath, now, now);
+    } catch {
+      /* cache hit remains valid when touching is unavailable */
+    }
+    _scheduleTrim(path.dirname(cachePath));
     return `data:image/jpeg;base64,${buf.toString('base64')}`;
   } catch (err) {
     if (err && (err.code === 'ENOENT' || err.code === 'ENOTDIR')) return null;
@@ -135,30 +145,38 @@ async function _writeDiskCache(cacheDir, cachePath, jpegBuf) {
   }
 }
 
-async function _trimDiskCache(cacheDir) {
+async function _trimDiskCache(cacheDir, { maxFiles = DISK_CACHE_MAX_FILES, maxBytes = DISK_CACHE_MAX_BYTES } = {}) {
   try {
     const names = await fsp.readdir(cacheDir);
     const jpgNames = names.filter((name) => name.endsWith('.jpg'));
-    if (jpgNames.length <= DISK_CACHE_MAX_FILES) return;
 
     const entries = await Promise.all(
       jpgNames.map(async (name) => {
         const full = path.join(cacheDir, name);
         try {
           const st = await fsp.stat(full);
-          return { full, mtimeMs: st.mtimeMs };
+          return { full, mtimeMs: st.mtimeMs, size: st.size };
         } catch {
-          return { full, mtimeMs: 0 };
+          return { full, mtimeMs: 0, size: 0 };
         }
       }),
     );
 
     entries.sort((a, b) => a.mtimeMs - b.mtimeMs);
-    const excess = entries.length - DISK_CACHE_MAX_FILES;
-    if (excess <= 0) return;
+    let totalBytes = entries.reduce((sum, entry) => sum + entry.size, 0);
+    const staleEntries = [];
+    while (
+      (entries.length - staleEntries.length > maxFiles || totalBytes > maxBytes)
+      && staleEntries.length < entries.length
+    ) {
+      const stale = entries[staleEntries.length];
+      staleEntries.push(stale);
+      totalBytes = Math.max(0, totalBytes - stale.size);
+    }
+    if (staleEntries.length === 0) return;
 
     await Promise.all(
-      entries.slice(0, excess).map(async (entry) => {
+      staleEntries.map(async (entry) => {
         try {
           await fsp.unlink(entry.full);
         } catch {
@@ -185,16 +203,18 @@ async function createLocalThumbnail(filePath, maxEdge, nativeImage) {
   const resolved = assertSafeLocalPath(filePath);
   const edge = clampMaxEdge(maxEdge);
 
-  let mtimeMs = 0;
+  let fileSignature = '';
   try {
     const st = await fsp.stat(resolved);
-    mtimeMs = st.mtimeMs;
+    // mtime alone can be preserved by copy tools/editors. Size and ctime add
+    // cheap protection against serving bytes from a replaced local image.
+    fileSignature = `${st.mtimeMs}|${st.size}|${st.ctimeMs}`;
   } catch {
     throw new Error('unable to load image');
   }
 
   const cacheDir = getThumbnailCacheDir();
-  const cachePath = path.join(cacheDir, `${_cacheKey(resolved, mtimeMs, edge)}.jpg`);
+  const cachePath = path.join(cacheDir, `${_cacheKey(resolved, fileSignature, edge)}.jpg`);
   const cached = await _readDiskCache(cachePath);
   if (cached) return { dataUrl: cached };
 
@@ -289,5 +309,6 @@ module.exports = {
   // Test helpers (not part of public IPC contract)
   _trimDiskCache,
   DISK_CACHE_MAX_FILES,
+  DISK_CACHE_MAX_BYTES,
   MAX_LOCAL_IMAGE_BYTES,
 };

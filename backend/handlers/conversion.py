@@ -12,7 +12,7 @@ import logging
 import os
 import threading
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from collections.abc import Callable
 from concurrent.futures import ALL_COMPLETED, CancelledError, Future, as_completed, wait
 from pathlib import Path
@@ -1029,8 +1029,10 @@ HANDLERS = {
 }
 
 
-_dest_scan_cache: dict[str, tuple[float, set[str]]] = {}
+_dest_scan_cache: OrderedDict[str, tuple[float, set[str]]] = OrderedDict()
 _dest_scan_lock = threading.Lock()
+_MAX_DEST_SCAN_CACHE = 32
+_MAX_DEST_SCAN_ENTRIES = 100_000
 
 
 def _calculate_chunk_size() -> int:
@@ -1068,6 +1070,9 @@ def _scan_dest_out_keys(destino: str | Path) -> set[str] | None:
     ``None`` when the scan fails for other OS errors so callers fall back to
     per-path ``exists()`` instead of treating the destination as empty.
     Cached by directory mtime so repeated preview/convert calls reuse the scan.
+    Large directories return ``None`` after a bounded prefix; callers then use
+    per-path existence checks, preserving collision safety without retaining an
+    unbounded set of every directory entry.
     """
     dest = Path(destino)
     try:
@@ -1076,6 +1081,7 @@ def _scan_dest_out_keys(destino: str | Path) -> set[str] | None:
         with _dest_scan_lock:
             cached = _dest_scan_cache.get(cache_key)
             if cached and cached[0] == dir_mtime:
+                _dest_scan_cache.move_to_end(cache_key)
                 return set(cached[1])
     except OSError:
         dir_mtime = 0.0
@@ -1083,7 +1089,13 @@ def _scan_dest_out_keys(destino: str | Path) -> set[str] | None:
     keys: set[str] = set()
     try:
         with os.scandir(dest) as entries:
-            for entry in entries:
+            for index, entry in enumerate(entries, start=1):
+                if index > _MAX_DEST_SCAN_ENTRIES:
+                    logger.debug(
+                        "scandir entry cap reached for destino=%s; falling back to exists()",
+                        dest,
+                    )
+                    return None
                 keys.add(_out_path_key(dest / entry.name))
     except FileNotFoundError:
         pass
@@ -1092,6 +1104,9 @@ def _scan_dest_out_keys(destino: str | Path) -> set[str] | None:
         return None
     with _dest_scan_lock:
         _dest_scan_cache[cache_key] = (dir_mtime, set(keys))
+        _dest_scan_cache.move_to_end(cache_key)
+        while len(_dest_scan_cache) > _MAX_DEST_SCAN_CACHE:
+            _dest_scan_cache.popitem(last=False)
     return keys
 
 

@@ -10,6 +10,74 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+
+class _ReadWriteLock:
+    """Lock reentrante para publicar configuración y esquema como una unidad."""
+
+    def __init__(self) -> None:
+        self._condition = threading.Condition(threading.RLock())
+        self._readers = 0
+        self._reader_counts: dict[int, int] = {}
+        self._writer_thread: int | None = None
+        self._writer_depth = 0
+        self._waiting_writers = 0
+
+    @contextlib.contextmanager
+    def read(self):
+        thread_id = threading.get_ident()
+        reentrant_writer = False
+        with self._condition:
+            if self._writer_thread == thread_id:
+                reentrant_writer = True
+            elif self._reader_counts.get(thread_id, 0):
+                self._readers += 1
+                self._reader_counts[thread_id] += 1
+            else:
+                while self._writer_thread is not None or self._waiting_writers:
+                    self._condition.wait()
+                self._readers += 1
+                self._reader_counts[thread_id] = self._reader_counts.get(thread_id, 0) + 1
+        try:
+            yield
+        finally:
+            if not reentrant_writer:
+                with self._condition:
+                    count = self._reader_counts.get(thread_id, 0)
+                    if count <= 1:
+                        self._reader_counts.pop(thread_id, None)
+                    else:
+                        self._reader_counts[thread_id] = count - 1
+                    self._readers -= 1
+                    if self._readers == 0:
+                        self._condition.notify_all()
+
+    @contextlib.contextmanager
+    def write(self):
+        thread_id = threading.get_ident()
+        with self._condition:
+            if self._writer_thread == thread_id:
+                self._writer_depth += 1
+            else:
+                self._waiting_writers += 1
+                try:
+                    while self._writer_thread is not None or self._readers:
+                        self._condition.wait()
+                    self._writer_thread = thread_id
+                    self._writer_depth = 1
+                finally:
+                    self._waiting_writers -= 1
+        try:
+            yield
+        finally:
+            with self._condition:
+                if self._writer_thread == thread_id:
+                    self._writer_depth -= 1
+                    if self._writer_depth == 0:
+                        self._writer_thread = None
+                        self._condition.notify_all()
+
+
+_db_schema_lock = _ReadWriteLock()
 _db_lock = threading.RLock()
 _db_read_lock = threading.RLock()
 _db_conn: sqlite3.Connection | None = None

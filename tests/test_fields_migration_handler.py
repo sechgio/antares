@@ -9,6 +9,7 @@ esquema real de la tabla y el siguiente arranque del backend moría en init_db
 """
 
 import sqlite3
+import threading
 
 import pytest
 
@@ -87,6 +88,64 @@ class TestDbFieldsUpdateMigrationSafety:
         assert load_fields()[1]["name"] == "marca"
         # ALTER TABLE ADD COLUMN ... DEFAULT '' → las filas existentes leen ''.
         assert db.obtener_todos() == [{"codigo": "A1", "marca": ""}]
+
+    def test_lectura_espera_mientras_se_publica_config_y_esquema(self, db_path, config_path, monkeypatch) -> None:
+        """Una lectura no debe observar fields nuevos contra una tabla vieja."""
+        save_fields([{"name": "codigo", "type": "TEXT", "required": True}])
+        db.init_db()
+        _insert(db_path, ("codigo",), ("A1",))
+
+        migration_entered = threading.Event()
+        release_migration = threading.Event()
+        original_init = db._init_db
+
+        def blocked_init(*args, **kwargs):
+            migration_entered.set()
+            assert release_migration.wait(timeout=5)
+            return original_init(*args, **kwargs)
+
+        monkeypatch.setattr(db, "_init_db", blocked_init)
+        migration_errors: list[Exception] = []
+
+        def migrate() -> None:
+            try:
+                db_fields_update({"fields": [
+                    {"name": "codigo", "type": "TEXT", "required": True},
+                    {"name": "marca", "type": "TEXT"},
+                ]})
+            except Exception as exc:
+                migration_errors.append(exc)
+
+        migration_thread = threading.Thread(target=migrate)
+        migration_thread.start()
+        assert migration_entered.wait(timeout=5)
+
+        read_started = threading.Event()
+        read_finished = threading.Event()
+        read_result: list[list[dict[str, object]]] = []
+        read_errors: list[Exception] = []
+
+        def read() -> None:
+            read_started.set()
+            try:
+                read_result.append(db.obtener_todos())
+            except Exception as exc:
+                read_errors.append(exc)
+            finally:
+                read_finished.set()
+
+        reader_thread = threading.Thread(target=read)
+        reader_thread.start()
+        assert read_started.wait(timeout=5)
+        assert not read_finished.wait(timeout=0.2)
+
+        release_migration.set()
+        migration_thread.join(timeout=5)
+        reader_thread.join(timeout=5)
+
+        assert migration_errors == []
+        assert read_errors == []
+        assert read_result == [[{"codigo": "A1", "marca": ""}]]
 
     def test_cambio_con_solape_preserva_datos(self, db_path, config_path) -> None:
         """Esquema nuevo que conserva al menos una columna sigue migrando y

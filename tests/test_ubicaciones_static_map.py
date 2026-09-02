@@ -4,6 +4,7 @@ import math
 import os
 import tempfile
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
@@ -139,6 +140,61 @@ def test_fetch_static_map_fallback_on_http_failure(monkeypatch: pytest.MonkeyPat
     assert img.size == (fw, fh)
     # Uniform gray placeholder does NOT pass the tiles heuristic.
     assert not ub._screenshot_has_map_tiles(data)
+
+
+def test_map_screenshot_fetch_is_single_flight(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Concurrent requests for one map key share the same provider fetch."""
+    import threading
+
+    ub._clear_ubicaciones_caches()
+    started = threading.Event()
+    release = threading.Event()
+    calls = 0
+    screenshot = _png_bytes((320, 240), (80, 130, 180))
+
+    def fake_fetch(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        started.set()
+        assert release.wait(timeout=2), "single-flight owner did not finish"
+        return screenshot
+
+    monkeypatch.setattr(ub, "fetch_static_map", fake_fetch)
+    monkeypatch.setattr(ub, "_screenshot_has_map_tiles", lambda _data: True)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(ub._get_cached_map_screenshot, -12.0, -77.0, "vertical", preview=True)
+        assert started.wait(timeout=2), "provider fetch did not start"
+        second = executor.submit(ub._get_cached_map_screenshot, -12.0, -77.0, "vertical", preview=True)
+        release.set()
+        assert first.result(timeout=2) == screenshot
+        assert second.result(timeout=2) == screenshot
+
+    assert calls == 1
+    ub._clear_ubicaciones_caches()
+
+
+def test_map_fallback_uses_short_negative_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A provider failure is backed off briefly but retries after the TTL."""
+    ub._clear_ubicaciones_caches()
+    calls = 0
+    fallback = ub._fallback_map_bytes(320, 240)
+
+    def fake_fetch(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return fallback
+
+    monkeypatch.setattr(ub, "fetch_static_map", fake_fetch)
+    first = ub._get_cached_map_screenshot(-12.0, -77.0, "vertical", preview=True)
+    second = ub._get_cached_map_screenshot(-12.0, -77.0, "vertical", preview=True)
+    assert first == second == fallback
+    assert calls == 1
+
+    monkeypatch.setattr(ub, "_MAP_NEGATIVE_TTL_SECONDS", 0.0)
+    ub._get_cached_map_screenshot(-12.0, -77.0, "vertical", preview=True)
+    assert calls == 2
+    ub._clear_ubicaciones_caches()
 
 
 def test_fetch_static_map_google_without_key_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -277,6 +333,48 @@ def test_map_cache_key_with_zoom_and_provider() -> None:
 
     assert key_zoom15[-3:] == ("osm", 15, "")
     assert key_google[-3:-1] == ("google", 18)
+
+
+def test_excel_cache_reloads_when_content_changes_without_mtime_change(tmp_path: Path) -> None:
+    import openpyxl
+
+    xlsx = tmp_path / "addresses.xlsx"
+    fixed_ns = 2_000_000_000_000_000_000
+
+    def write_address(address: str) -> None:
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(["direccion", "latitud", "longitud"])
+        ws.append([address, -12.0, -77.0])
+        wb.save(xlsx)
+        os.utime(xlsx, ns=(fixed_ns, fixed_ns))
+
+    ub._clear_ubicaciones_caches()
+    write_address("Avenida Roja")
+    first, _ = ub._load_excel_data(str(xlsx))
+    write_address("Avenida Azul")
+    second, _ = ub._load_excel_data(str(xlsx))
+    ub._clear_ubicaciones_caches()
+
+    assert first.iloc[0]["direccion"] == "Avenida Roja"
+    assert second.iloc[0]["direccion"] == "Avenida Azul"
+
+
+def test_excel_cache_does_not_retain_oversized_dataframes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import openpyxl
+
+    xlsx = tmp_path / "large.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["direccion", "latitud", "longitud"])
+    ws.append(["Avenida con datos", -12.0, -77.0])
+    wb.save(xlsx)
+
+    monkeypatch.setattr(ub, "_MAX_EXCEL_CACHE_BYTES", 1)
+    ub._clear_ubicaciones_caches()
+    ub._load_excel_data(str(xlsx))
+
+    assert len(ub._excel_cache) == 0
 
 
 def test_parse_combined_coord_value_rejects_invalid_text() -> None:

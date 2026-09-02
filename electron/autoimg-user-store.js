@@ -62,6 +62,26 @@ function _tokenPaths() {
   };
 }
 
+function _tokenPathsForUserKey(userKey) {
+  const key = userKey == null || userKey === '' ? 'anonymous' : String(userKey).trim();
+  if (key === 'anonymous') {
+    return { file: 'autoimg/anonymous/tokens.json', ns: 'tokens:u:anonymous' };
+  }
+  if (!/^[a-f0-9]{16,64}$/i.test(key)) return null;
+  return {
+    file: `autoimg/users/${key}/tokens.json`,
+    ns: `tokens:u:${key}`,
+  };
+}
+
+function _safeTokens(tokens) {
+  return {
+    access_token: tokens?.access_token,
+    refresh_token: tokens?.refresh_token,
+    expiry_date: tokens?.expiry_date,
+  };
+}
+
 function loadTokens() {
   // Solo el scope del usuario activo (o anonymous). Sin fallback a legacy
   // para no mezclar tokens entre cuentas.
@@ -70,11 +90,7 @@ function loadTokens() {
 }
 
 function saveTokens(tokens) {
-  const safe = {
-    access_token: tokens?.access_token,
-    refresh_token: tokens?.refresh_token,
-    expiry_date: tokens?.expiry_date,
-  };
+  const safe = _safeTokens(tokens);
   const { file, ns } = _tokenPaths();
   writeSecureJson(file, ns, safe);
 }
@@ -82,6 +98,21 @@ function saveTokens(tokens) {
 function clearTokens() {
   const { file } = _tokenPaths();
   clearSecureJson(file);
+}
+
+function loadTokensForUserKey(userKey) {
+  const paths = _tokenPathsForUserKey(userKey);
+  return paths ? readSecureJson(paths.file, paths.ns) : null;
+}
+
+function saveTokensForUserKey(userKey, tokens) {
+  const paths = _tokenPathsForUserKey(userKey);
+  if (paths) writeSecureJson(paths.file, paths.ns, _safeTokens(tokens));
+}
+
+function clearTokensForUserKey(userKey) {
+  const paths = _tokenPathsForUserKey(userKey);
+  if (paths) clearSecureJson(paths.file);
 }
 
 /** Borra restos de tokens en rutas legacy/anonymous (usado al vincular sesión a un usuario). */
@@ -235,6 +266,9 @@ module.exports = {
   loadTokens,
   saveTokens,
   clearTokens,
+  loadTokensForUserKey,
+  saveTokensForUserKey,
+  clearTokensForUserKey,
   clearTokensLegacyPaths,
   // sheet
   loadSheetConfig,

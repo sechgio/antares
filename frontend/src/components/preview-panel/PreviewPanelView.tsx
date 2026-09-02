@@ -208,11 +208,18 @@ export default function PreviewPanelView() {
   /** Spill cache token from spreadsheet_parse — rows loaded per sheet on demand. */
   const [spillToken, setSpillToken] = useState<string | null>(null);
   const spillTokenRef = useRef<string | null>(null);
-  spillTokenRef.current = spillToken;
   const sheetLoadGenRef = useRef(0);
+  const parseGenRef = useRef(0);
+  const releasedSpillTokensRef = useRef<Set<string>>(new Set());
 
   const releaseSpillToken = useCallback(async (token: string | null) => {
     if (!token) return;
+    if (releasedSpillTokensRef.current.has(token)) return;
+    if (releasedSpillTokensRef.current.size >= 64) {
+      const oldest = releasedSpillTokensRef.current.values().next().value;
+      if (oldest) releasedSpillTokensRef.current.delete(oldest);
+    }
+    releasedSpillTokensRef.current.add(token);
     try {
       await api.fileTokenCleanup(token);
     } catch (err) {
@@ -222,6 +229,7 @@ export default function PreviewPanelView() {
   }, []);
 
   useEffect(() => () => {
+    parseGenRef.current += 1;
     void releaseSpillToken(spillTokenRef.current);
   }, [releaseSpillToken]);
 
@@ -527,6 +535,8 @@ export default function PreviewPanelView() {
 
   /** Parse Excel/CSV via backend staging only (no SheetJS on the renderer). */
   const parseFile = async (file: File) => {
+    const parseGen = ++parseGenRef.current;
+    const prevSpill = spillTokenRef.current;
     const win = window as unknown as {
       electronAPI?: {
         fileStagedCreate: (n: string, s: number) => Promise<{ token: string }>;
@@ -540,6 +550,7 @@ export default function PreviewPanelView() {
       return;
     }
 
+    let resultSpillToken: string | null = null;
     try {
       const { stageFileForIpc } = await import('../../utils/stageFile');
       const fileToken = await stageFileForIpc(file);
@@ -547,17 +558,26 @@ export default function PreviewPanelView() {
       const ext = file.name.toLowerCase().split('.').pop() || '';
       const formatHint = ['xlsx', 'xls', 'csv'].includes(ext) ? ext : undefined;
       // Avoid hydrating multi-MB spill JSON in one shot — page via get_rows.
-      const prevSpill = spillTokenRef.current;
       const res = await api.spreadsheetParse(
         { file_token: fileToken, format_hint: formatHint },
         { hydrate: false },
       );
-      if (prevSpill && prevSpill !== res.result_file_token) {
+
+      resultSpillToken = res.result_file_token || null;
+      if (parseGen !== parseGenRef.current) {
+        if (resultSpillToken && resultSpillToken !== spillTokenRef.current) {
+          void releaseSpillToken(resultSpillToken);
+        }
+        return;
+      }
+
+      if (prevSpill && prevSpill !== resultSpillToken) {
         void releaseSpillToken(prevSpill);
       }
 
-      if (res.result_file_token && res.sheet_meta?.length) {
-        const token = res.result_file_token;
+      if (resultSpillToken && res.sheet_meta?.length) {
+        const token = resultSpillToken;
+        spillTokenRef.current = token;
         setSpillToken(token);
         const stubs = res.sheet_meta.map((m) => ({
           name: m.name,
@@ -572,6 +592,10 @@ export default function PreviewPanelView() {
           return;
         }
         const rows = await fetchSheetRows(token, pick.name);
+        if (parseGen !== parseGenRef.current) {
+          if (spillTokenRef.current !== token) void releaseSpillToken(token);
+          return;
+        }
         const loaded = stubs.map((s) =>
           s.name === pick.name ? { ...s, rows, rowCount: rows.length } : s,
         );
@@ -579,9 +603,19 @@ export default function PreviewPanelView() {
         return;
       }
 
+      if (resultSpillToken) void releaseSpillToken(resultSpillToken);
+      spillTokenRef.current = null;
       setSpillToken(null);
       applyParsedSheets(res.sheets, res.warnings);
     } catch (err: unknown) {
+      if (resultSpillToken && resultSpillToken !== spillTokenRef.current) {
+        void releaseSpillToken(resultSpillToken);
+      } else if (resultSpillToken && parseGen === parseGenRef.current) {
+        spillTokenRef.current = null;
+        setSpillToken(null);
+        void releaseSpillToken(resultSpillToken);
+      }
+      if (parseGen !== parseGenRef.current) return;
       const msg = err instanceof Error ? err.message : String(err);
       addToast({ message: msg || 'No se pudo leer el archivo Excel/CSV', type: 'error' });
     }
