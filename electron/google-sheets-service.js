@@ -14,6 +14,8 @@ const {
   getActiveUserPublic,
   maskEmail,
   onActiveUserChange,
+  getActiveUserSnapshot,
+  isActiveUserSnapshotCurrent,
 } = require('./autoimg-user-scope');
 
 const SCOPES = [
@@ -26,6 +28,7 @@ const SCOPES = [
 /** Mensaje cuando Google invalida el refresh token (revocado, caducado o secret cambiado). */
 const REAUTH_REQUIRED_MESSAGE =
   'La sesión de Google expiró o fue revocada. Vuelve a conectar tu cuenta con "Conectar con Google".';
+const SESSION_CHANGED_MESSAGE = 'La sesión de Google cambió durante la operación.';
 
 let _pendingRedirectUri = null;
 let _pendingCodeVerifier = null;
@@ -110,14 +113,35 @@ function _requireConfig() {
   return cfg;
 }
 
-function _clearSessionTokens() {
-  store.clearTokens();
+function _captureAuthSession() {
+  if (typeof getActiveUserSnapshot === 'function') return getActiveUserSnapshot();
+  return { userKey: null, generation: 0 };
 }
 
-async function _refreshAccessToken(tokens) {
+function _isAuthSessionCurrent(session) {
+  if (typeof isActiveUserSnapshotCurrent === 'function') {
+    return isActiveUserSnapshotCurrent(session);
+  }
+  return true;
+}
+
+function _sessionStoreKey(session) {
+  return session?.userKey || 'anonymous';
+}
+
+function _clearSessionTokens(session = _captureAuthSession()) {
+  store.clearTokensForUserKey(_sessionStoreKey(session));
+}
+
+function _assertAuthSessionCurrent(session) {
+  if (!_isAuthSessionCurrent(session)) throw new Error(SESSION_CHANGED_MESSAGE);
+}
+
+async function _refreshAccessToken(tokens, session = _captureAuthSession()) {
+  _assertAuthSessionCurrent(session);
   const cfg = _requireConfig();
   if (!tokens?.refresh_token) {
-    _clearSessionTokens();
+    _clearSessionTokens(session);
     throw new Error(REAUTH_REQUIRED_MESSAGE);
   }
   const body = new URLSearchParams({
@@ -134,7 +158,7 @@ async function _refreshAccessToken(tokens) {
   if (!res.ok) {
     const err = await res.text();
     if (isInvalidGrantResponse(err)) {
-      _clearSessionTokens();
+      _clearSessionTokens(session);
       throw new Error(REAUTH_REQUIRED_MESSAGE);
     }
     throw new Error(`No se pudo refrescar el token: ${err}`);
@@ -147,29 +171,35 @@ async function _refreshAccessToken(tokens) {
     refresh_token: data.refresh_token || tokens.refresh_token,
     expiry_date: Date.now() + (data.expires_in || 3600) * 1000,
   };
-  store.saveTokens(updated);
+  _assertAuthSessionCurrent(session);
+  store.saveTokensForUserKey(_sessionStoreKey(session), updated);
   return updated;
 }
 
-function _refreshAccessTokenSingleFlight(tokens) {
+function _refreshAccessTokenSingleFlight(tokens, session = _captureAuthSession()) {
   const refreshToken = tokens?.refresh_token;
-  if (!refreshToken) return _refreshAccessToken(tokens);
+  if (!refreshToken) return _refreshAccessToken(tokens, session);
 
-  const pending = _tokenRefreshPromises.get(refreshToken);
+  _assertAuthSessionCurrent(session);
+  const key = `${_sessionStoreKey(session)}:${session.generation}:${refreshToken}`;
+
+  const pending = _tokenRefreshPromises.get(key);
   if (pending) return pending;
 
-  const request = _refreshAccessToken(tokens).finally(() => {
-    if (_tokenRefreshPromises.get(refreshToken) === request) {
-      _tokenRefreshPromises.delete(refreshToken);
+  const request = _refreshAccessToken(tokens, session).finally(() => {
+    if (_tokenRefreshPromises.get(key) === request) {
+      _tokenRefreshPromises.delete(key);
     }
   });
-  _tokenRefreshPromises.set(refreshToken, request);
+  _tokenRefreshPromises.set(key, request);
   return request;
 }
 
-async function getValidTokens() {
+async function getValidTokens(expectedSession) {
+  const session = expectedSession || _captureAuthSession();
   let tokens = store.loadTokens();
   if (!tokens) return null;
+  if (!_isAuthSessionCurrent(session)) return null;
 
   const hasAccess = Boolean(tokens.access_token);
   const hasRefresh = Boolean(tokens.refresh_token);
@@ -180,18 +210,22 @@ async function getValidTokens() {
 
   if (needsRefresh) {
     if (!hasRefresh) {
-      _clearSessionTokens();
+      _clearSessionTokens(session);
       return null;
     }
     try {
-      tokens = await _refreshAccessTokenSingleFlight(tokens);
+      tokens = await _refreshAccessTokenSingleFlight(tokens, session);
     } catch (err) {
-      if (err instanceof Error && err.message === REAUTH_REQUIRED_MESSAGE) {
+      if (err instanceof Error && (
+        err.message === REAUTH_REQUIRED_MESSAGE
+        || err.message === SESSION_CHANGED_MESSAGE
+      )) {
         return null;
       }
       throw err;
     }
   }
+  if (!_isAuthSessionCurrent(session)) return null;
   return tokens;
 }
 
@@ -376,6 +410,7 @@ async function getAuthStatus() {
 
 async function revokeAuth() {
   cancelBrowserOAuthFlow();
+  const session = _captureAuthSession();
   const tokens = store.loadTokens();
   if (tokens?.access_token) {
     await fetchWithRetry(
@@ -389,23 +424,28 @@ async function revokeAuth() {
     ).catch(() => {});
   }
   // Solo tokens del usuario activo. Sheet/carpetas quedan en autoimg/users/<hash>/.
-  store.clearTokens();
-  clearActiveUser();
+  store.clearTokensForUserKey(_sessionStoreKey(session));
+  if (_isAuthSessionCurrent(session)) clearActiveUser();
   _sheetId = null;
   _sheetMeta = null;
   return { success: true };
 }
 
 async function _apiFetch(url, options = {}) {
-  const tokens = await getValidTokens();
+  const session = _captureAuthSession();
+  const tokens = await getValidTokens(session);
   if (!tokens) throw new Error('No autenticado con Google. Conecta tu cuenta en AutoIMG.');
+  _assertAuthSessionCurrent(session);
   const headers = { ...(options.headers || {}), Authorization: `Bearer ${tokens.access_token}` };
   const res = await fetchWithRetry(url, { ...options, headers });
+  _assertAuthSessionCurrent(session);
   if (res.status === 401 && tokens.refresh_token) {
     try {
-      const refreshed = await _refreshAccessTokenSingleFlight(tokens);
+      const refreshed = await _refreshAccessTokenSingleFlight(tokens, session);
       headers.Authorization = `Bearer ${refreshed.access_token}`;
-      return fetchWithRetry(url, { ...options, headers });
+      const retried = await fetchWithRetry(url, { ...options, headers });
+      _assertAuthSessionCurrent(session);
+      return retried;
     } catch (err) {
       if (err instanceof Error && err.message === REAUTH_REQUIRED_MESSAGE) {
         throw err;

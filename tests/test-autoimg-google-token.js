@@ -23,22 +23,44 @@ async function main() {
   };
   const previousFetch = global.fetch;
   let refreshCalls = 0;
+  let currentTokens = { access_token: 'expired', refresh_token: 'refresh-token', expiry_date: 0 };
+  let activeUserKey = 'user-key';
+  let activeUserGeneration = 1;
+  const userChangeListeners = [];
+  const savedScopes = [];
+  const clearedScopes = [];
 
   const fakeStore = {
-    loadTokens: () => ({ access_token: 'expired', refresh_token: 'refresh-token', expiry_date: 0 }),
+    loadTokens: () => ({ ...currentTokens }),
     saveTokens: () => {},
     clearTokens: () => {},
+    saveTokensForUserKey: (userKey, tokens) => savedScopes.push({ userKey, tokens }),
+    clearTokensForUserKey: (userKey) => clearedScopes.push(userKey),
     clearTokensLegacyPaths: () => {},
     loadOAuthConfigFromDisk: () => ({ clientId: '', clientSecret: '' }),
     saveOAuthConfig: () => ({ success: true }),
   };
   const fakeScope = {
-    setActiveUser: () => 'user-key',
+    setActiveUser: () => activeUserKey,
     clearActiveUser: () => {},
     getActiveUserPublic: () => ({ active: true }),
-    onActiveUserChange: () => () => {},
+    getActiveUserSnapshot: () => ({ userKey: activeUserKey, generation: activeUserGeneration }),
+    isActiveUserSnapshotCurrent: (snapshot) => (
+      snapshot?.userKey === activeUserKey && snapshot?.generation === activeUserGeneration
+    ),
+    onActiveUserChange: (listener) => {
+      userChangeListeners.push(listener);
+      return () => {};
+    },
     maskEmail: (email) => email,
   };
+
+  function changeUser(userKey) {
+    const previousKey = activeUserKey;
+    activeUserKey = userKey;
+    activeUserGeneration += 1;
+    for (const listener of userChangeListeners) listener({ previousKey, nextKey: userKey });
+  }
 
   require.cache[storePath] = { id: storePath, filename: storePath, loaded: true, exports: fakeStore };
   require.cache[scopePath] = { id: scopePath, filename: scopePath, loaded: true, exports: fakeScope };
@@ -68,6 +90,69 @@ async function main() {
 
     assert(refreshCalls === 1, 'refresh concurrente se deduplica en una sola llamada');
     assert(tokens.every((value) => value?.access_token === 'fresh-token'), 'todos reciben el token nuevo');
+    assert(savedScopes.length === 1 && savedScopes[0].userKey === 'user-key', 'refresh guarda en el scope capturado');
+
+    // Un refresh iniciado por A no debe guardar su respuesta ni devolverla
+    // después de cambiar a B. B tampoco debe unirse al vuelo de A.
+    currentTokens = { access_token: 'expired-a', refresh_token: 'refresh-a', expiry_date: 0 };
+    savedScopes.length = 0;
+    let releaseA;
+    let startedA;
+    const startedAPromise = new Promise((resolve) => { startedA = resolve; });
+    let holdNextRefresh = true;
+    global.fetch = async (_url, options = {}) => {
+      assert(options.signal, 'refresh token recibe timeout cancelable');
+      refreshCalls += 1;
+      if (holdNextRefresh) {
+        holdNextRefresh = false;
+        startedA();
+        await new Promise((resolve) => { releaseA = resolve; });
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ access_token: 'fresh-token', expires_in: 3600 }),
+      };
+    };
+    const refreshA = sheets.getValidTokens();
+    await startedAPromise;
+    changeUser('user-b');
+    currentTokens = { access_token: 'expired-b', refresh_token: 'refresh-b', expiry_date: 0 };
+    const refreshB = await sheets.getValidTokens();
+    assert(refreshB?.access_token === 'fresh-token', 'B puede refrescar sin unirse al vuelo de A');
+    releaseA();
+    assert((await refreshA) === null, 'A obsoleto no se entrega después del cambio de sesión');
+    assert(savedScopes.length === 1 && savedScopes[0].userKey === 'user-b', 'A obsoleto no se guarda en B');
+
+    // Un invalid_grant de A solo limpia el scope de A, nunca los tokens de B.
+    changeUser('user-a');
+    currentTokens = { access_token: 'expired-a', refresh_token: 'refresh-a', expiry_date: 0 };
+    clearedScopes.length = 0;
+    let releaseInvalid;
+    let startedInvalid;
+    const startedInvalidPromise = new Promise((resolve) => { startedInvalid = resolve; });
+    holdNextRefresh = true;
+    global.fetch = async (_url, options = {}) => {
+      assert(options.signal, 'refresh token recibe timeout cancelable');
+      refreshCalls += 1;
+      if (holdNextRefresh) {
+        holdNextRefresh = false;
+        startedInvalid();
+        await new Promise((resolve) => { releaseInvalid = resolve; });
+      }
+      return {
+        ok: false,
+        status: 400,
+        text: async () => '{"error":"invalid_grant"}',
+      };
+    };
+    const invalidA = sheets.getValidTokens();
+    await startedInvalidPromise;
+    changeUser('user-b');
+    releaseInvalid();
+    assert((await invalidA) === null, 'invalid_grant obsoleto no rompe la sesión B');
+    assert(clearedScopes.length === 1 && clearedScopes[0] === 'user-a', 'invalid_grant limpia solo A');
+
     console.log('[PASS] Google token refresh single-flight.');
   } finally {
     global.fetch = previousFetch;

@@ -86,6 +86,12 @@ async function main() {
   const first = await engine.listFolders({ force: true });
   assert(first.folders.length === 1, 'listFolders force carga 1 carpeta');
 
+  const logsAfterFolders = await engine.listLogs({ force: false });
+  assert(
+    logsAfterFolders.cached === false && logsAfterFolders.values.length === 2,
+    'cargar folders no debe marcar logs no cargados como cache fresco',
+  );
+
   await engine.addFolder({ name: 'PEDRO', folder_id: 'folder-pedro', activo: true });
 
   const cachedAfterAdd = await engine.listFolders({ force: false });

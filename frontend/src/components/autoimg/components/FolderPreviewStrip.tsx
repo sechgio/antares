@@ -5,26 +5,11 @@ import type { DriveFolderThumb } from '../types';
 
 const SLOT_COUNT = 4;
 const CONCURRENCY = 2;
-const SESSION_CACHE_MAX = 30;
 
 type PreviewState =
   | { status: 'idle' | 'loading' }
   | { status: 'ready'; thumbs: DriveFolderThumb[] }
   | { status: 'error' };
-
-/** Cache de sesión en el renderer — evita re-pedir al cambiar de tab. LRU max SESSION_CACHE_MAX. */
-const sessionCache = new Map<string, DriveFolderThumb[]>();
-
-function setSessionCache(folderId: string, thumbs: DriveFolderThumb[]) {
-  // Refresh insertion order on hit-then-set so LRU deletes the oldest Map key.
-  if (sessionCache.has(folderId)) sessionCache.delete(folderId);
-  sessionCache.set(folderId, thumbs);
-  while (sessionCache.size > SESSION_CACHE_MAX) {
-    const oldest = sessionCache.keys().next().value;
-    if (oldest === undefined) break;
-    sessionCache.delete(oldest);
-  }
-}
 
 async function mapWithConcurrency<T>(
   items: T[],
@@ -46,8 +31,7 @@ export function useFolderPreviews(folderIds: string[]) {
   const [previews, setPreviews] = useState<Record<string, PreviewState>>(() => {
     const init: Record<string, PreviewState> = {};
     for (const id of folderIds) {
-      const cached = sessionCache.get(id);
-      init[id] = cached ? { status: 'ready', thumbs: cached } : { status: 'idle' };
+      init[id] = { status: 'idle' };
     }
     return init;
   });
@@ -57,32 +41,30 @@ export function useFolderPreviews(folderIds: string[]) {
   useEffect(() => {
     const gen = ++reqGen.current;
     const ids = idsKey ? idsKey.split('|').filter(Boolean) : [];
-    if (!ids.length) return;
+    if (!ids.length) {
+      setPreviews({});
+      return;
+    }
 
     setPreviews((prev) => {
       const next = { ...prev };
       for (const id of ids) {
-        if (sessionCache.has(id)) {
-          next[id] = { status: 'ready', thumbs: sessionCache.get(id)! };
-        } else if (!next[id] || next[id].status === 'idle' || next[id].status === 'error') {
+        if (!next[id] || next[id].status === 'idle' || next[id].status === 'error') {
           next[id] = { status: 'loading' };
         }
       }
-      // Drop removed folders from state (keep sessionCache for revisit).
+      // Drop removed folders from state. The TTL/LRU cache lives in the main
+      // process, so the renderer retains only the currently mounted result.
       for (const key of Object.keys(next)) {
         if (!ids.includes(key)) delete next[key];
       }
       return next;
     });
 
-    const pending = ids.filter((id) => !sessionCache.has(id));
-    if (!pending.length) return;
-
-    void mapWithConcurrency(pending, CONCURRENCY, async (folderId) => {
+    void mapWithConcurrency(ids, CONCURRENCY, async (folderId) => {
       try {
         const res = await api.autoimgDriveFolderPreview(folderId);
         if (gen !== reqGen.current) return;
-        setSessionCache(folderId, res.thumbs);
         setPreviews((prev) => ({
           ...prev,
           [folderId]: { status: 'ready', thumbs: res.thumbs },
@@ -98,7 +80,6 @@ export function useFolderPreviews(folderIds: string[]) {
   }, [idsKey]);
 
   const invalidate = (folderId: string) => {
-    sessionCache.delete(folderId);
     setPreviews((prev) => ({ ...prev, [folderId]: { status: 'idle' } }));
   };
 
