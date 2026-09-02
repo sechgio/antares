@@ -39,7 +39,6 @@ declare global {
       getPathForFile: (file: File) => string;
       registerFileInputPath?: (filePath: string) => boolean;
       canvasFlushAck?: () => Promise<unknown>;
-      registerLocalPath: (filePath: string) => Promise<unknown>;
       fileStagedCreate?: (name: string, size: number) => Promise<{ token: string }>;
       fileStagedAppend?: (token: string, chunk: ArrayBuffer | Uint8Array | string) => Promise<unknown>;
       fileStagedComplete?: (token: string) => Promise<{ file_token: string }>;
@@ -156,14 +155,18 @@ const HEAVY_IPC_METHODS = new Set<string>(heavyIpcMethods);
 const CACHE_TTL_MS = 5 * 60 * 1000;
 type CacheEntry<T> = { value: T; expires: number; promise?: Promise<T> };
 const _cache = new Map<string, CacheEntry<any>>();
+const _cacheGenerations = new Map<string, number>();
 function cachedInvoke<T>(key: string, fn: () => Promise<T>, ttl = CACHE_TTL_MS): Promise<T> {
   const now = Date.now();
+  const generation = _cacheGenerations.get(key) ?? 0;
   const hit = _cache.get(key);
   if (hit?.promise) return hit.promise;
   if (hit && hit.expires > now) return Promise.resolve(hit.value);
   const p = fn()
     .then((v) => {
-      _cache.set(key, { value: v, expires: now + ttl });
+      if ((_cacheGenerations.get(key) ?? 0) === generation) {
+        _cache.set(key, { value: v, expires: now + ttl });
+      }
       return v;
     })
     .finally(() => {
@@ -174,8 +177,20 @@ function cachedInvoke<T>(key: string, fn: () => Promise<T>, ttl = CACHE_TTL_MS):
   return p;
 }
 export function invalidateApiCache(key?: string) {
-  if (key) _cache.delete(key);
-  else _cache.clear();
+  if (key) {
+    _cacheGenerations.set(key, (_cacheGenerations.get(key) ?? 0) + 1);
+    _cache.delete(key);
+    return;
+  }
+  for (const cacheKey of _cache.keys()) {
+    _cacheGenerations.set(cacheKey, (_cacheGenerations.get(cacheKey) ?? 0) + 1);
+  }
+  _cache.clear();
+}
+
+function invalidateDatabaseCaches() {
+  invalidateApiCache('db_fields');
+  invalidateApiCache('db_columns');
 }
 
 /** Must match electron/ipc-router.js — structured fields survive only inside Error.message. */
@@ -607,7 +622,7 @@ export const api = {
     ),
   importExcel: (path: string) =>
     _invoke<{ imported: number; inserted?: number; skipped?: number }>('db_import', { path }).then((v) => {
-      invalidateApiCache('db_columns');
+      invalidateDatabaseCaches();
       return v;
     }),
   dbExport: (path: string) => _invoke<{ exported: number }>('db_export', { path }),
@@ -621,12 +636,12 @@ export const api = {
   getFields: () => cachedInvoke('db_fields', () => _invoke<{ fields: DBField[] }>('db_fields')),
   updateFields: (fields: DBField[]) =>
     _invoke<{ fields: DBField[] }>('db_fields_update', { fields }).then((v) => {
-      invalidateApiCache('db_fields');
+      invalidateDatabaseCaches();
       return v;
     }),
   resetFields: () =>
     _invoke<{ fields: DBField[] }>('db_fields_reset').then((v) => {
-      invalidateApiCache('db_fields');
+      invalidateDatabaseCaches();
       return v;
     }),
 

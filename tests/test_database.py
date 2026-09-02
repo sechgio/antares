@@ -365,6 +365,38 @@ class TestBuscarLotePorCodigos:
 
 
 class TestImportarExcel:
+    def test_fallo_de_migracion_no_deja_la_configuracion_adelantada(
+        self, db_path, monkeypatch, tmp_path,
+    ) -> None:
+        """Un error de esquema debe conservar la configuración anterior."""
+        config_path = tmp_path / "fields_config.json"
+        monkeypatch.setattr(
+            "backend.core.config_fields._config_file",
+            lambda: config_path,
+        )
+        old_fields = [
+            {"name": "codigo", "type": "TEXT", "required": True, "unique": True},
+            {"name": "nombre", "type": "TEXT", "required": False, "unique": False},
+        ]
+        save_fields(old_fields)
+
+        pandas = pytest.importorskip("pandas")
+        excel_path = tmp_path / "migration-error.xlsx"
+        pandas.DataFrame([{"codigo": "C-1", "nuevo": "valor"}]).to_excel(
+            excel_path,
+            index=False,
+        )
+
+        def fail_init(**_kwargs):
+            raise RuntimeError("schema migration failed")
+
+        monkeypatch.setattr(db, "init_db", fail_init)
+
+        with pytest.raises(RuntimeError, match="schema migration failed"):
+            db.importar_excel(str(excel_path))
+
+        assert load_fields() == old_fields
+
     def test_importacion_no_desplaza_valores_con_columna_id_reservada(self, db_path, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"
         monkeypatch.setattr(
