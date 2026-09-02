@@ -1,5 +1,5 @@
 /**
- * Disk cache for Electron local thumbnails (path + mtime + edge).
+ * Disk cache for Electron local thumbnails (path + file signature + edge).
  */
 
 const fs = require('fs');
@@ -23,6 +23,7 @@ async function main() {
     setThumbnailCacheDir,
     _trimDiskCache,
     DISK_CACHE_MAX_FILES,
+    DISK_CACHE_MAX_BYTES,
   } = require('../electron/local-thumbnail');
   const { registerAllowedReadPath, clearAllowedReadPaths } = require('../electron/path-allowlist');
 
@@ -33,7 +34,8 @@ async function main() {
   // Minimal 1x1 JPEG
   const jpegB64 =
     '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAn/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAGfAP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAQUCf//EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQMBAT8Bf//EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQIBAT8Bf//Z';
-  const src = path.join(cacheDir, 'source.jpg');
+  const sourceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-thumb-source-'));
+  const src = path.join(sourceDir, 'source.jpg');
   fs.writeFileSync(src, Buffer.from(jpegB64, 'base64'));
   registerAllowedReadPath(src);
 
@@ -63,6 +65,13 @@ async function main() {
   assert(second.dataUrl === first.dataUrl, 'second call returns same data url');
   assert(createFromPathCalls === 1, 'second call hits disk cache (no re-decode)');
 
+  // A replacement with the same size and restored mtime must still invalidate
+  // the thumbnail through the metadata-change timestamp in the file signature.
+  fs.writeFileSync(src, Buffer.from(jpegB64, 'base64'));
+  fs.utimesSync(src, new Date(1_000_000_000), new Date(1_000_000_000));
+  await createLocalThumbnail(src, 64, nativeImage);
+  assert(createFromPathCalls === 2, 'same-size replacement does not reuse stale thumb');
+
   // Deferred trim must not delete a valid entry when under the cap.
   await _trimDiskCache(cacheDir);
   const afterTrim = fs.readdirSync(cacheDir).filter((n) => n.endsWith('.jpg') && n !== 'source.jpg');
@@ -79,8 +88,25 @@ async function main() {
   }
   await _trimDiskCache(cacheDir);
   const jpgCount = fs.readdirSync(cacheDir).filter((n) => n.endsWith('.jpg')).length;
-  // source.jpg + cached thumb + pads, but trim only counts *.jpg and caps at MAX.
+  // The cache contains the cached thumb and pads; trim caps all *.jpg entries.
   assert(jpgCount <= DISK_CACHE_MAX_FILES, `trim caps jpg files at ${DISK_CACHE_MAX_FILES}, got ${jpgCount}`);
+
+  const cacheFilesBeforeLruCheck = fs.readdirSync(cacheDir)
+    .filter((n) => n.endsWith('.jpg') && n !== 'source.jpg')
+    .sort((a, b) => fs.statSync(path.join(cacheDir, b)).mtimeMs - fs.statSync(path.join(cacheDir, a)).mtimeMs);
+  assert(cacheFilesBeforeLruCheck.length >= 1, 'cache entry remains for LRU check');
+  const cachedPath = path.join(cacheDir, cacheFilesBeforeLruCheck[0]);
+  const old = new Date(Date.now() - 60 * 60 * 1000);
+  fs.utimesSync(cachedPath, old, old);
+  await createLocalThumbnail(src, 64, nativeImage);
+  await _trimDiskCache(cacheDir);
+  assert(fs.existsSync(cachedPath), 'reading a thumb refreshes its LRU position');
+
+  await _trimDiskCache(cacheDir, { maxFiles: DISK_CACHE_MAX_FILES, maxBytes: 10 });
+  const remainingBytes = fs.readdirSync(cacheDir)
+    .filter((n) => n.endsWith('.jpg'))
+    .reduce((total, name) => total + fs.statSync(path.join(cacheDir, name)).size, 0);
+  assert(remainingBytes <= 10, `trim caps disk bytes (default ${DISK_CACHE_MAX_BYTES}), got ${remainingBytes}`);
 
   console.log('[PASS] local-thumbnail disk cache OK.');
 }

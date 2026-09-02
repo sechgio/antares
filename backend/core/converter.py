@@ -369,21 +369,24 @@ def convertir_a_preview(
 
     from backend.utils.paths import user_data_path
 
-    ruta_origen = Path(ruta_origen)
+    ruta_origen = Path(ruta_origen).resolve()
     if not ruta_origen.exists():
         msg = f"No se encontró: {ruta_origen}"
         raise FileNotFoundError(msg)
 
-    # Cache lookup — include st_mtime so an edited/replaced image invalidates
-    # the cached preview instead of serving stale bytes for the TTL window.
+    # Cache lookup — use a normalized format and nanosecond file signature so
+    # aliases ("png"/"PNG") do not duplicate entries and quick replacements
+    # cannot reuse a preview from the same mtime-second.
     from backend.core.preview_cache import get_preview_cache
 
     stat = ruta_origen.stat()
+    formato = formato_salida.upper()
+    pil_formato = PIL_FORMAT_MAP.get(formato, formato)
     resize_key = f"{resize[0]}x{resize[1]}" if resize and len(resize) == 2 else "none"
     mode_key = "data" if as_data_uri else "path"
     cache_key = (
-        f"{ruta_origen}:{formato_salida}:{calidad}:{resize_key}:"
-        f"{int(stat.st_mtime)}:{mode_key}"
+        f"{ruta_origen}:{formato}:{calidad}:{resize_key}:"
+        f"{stat.st_mtime_ns}:{stat.st_size}:{stat.st_ctime_ns}:{mode_key}"
     )
     cache = get_preview_cache()
     cached_result = cache.get(cache_key)
@@ -396,9 +399,6 @@ def convertir_a_preview(
                 return cached
         else:
             return cached
-
-    formato = formato_salida.upper()
-    pil_formato = PIL_FORMAT_MAP.get(formato, formato)
 
     with Image.open(ruta_origen) as source_img:
         # Pre-extract upright metadata dimensions before downsampling/draft

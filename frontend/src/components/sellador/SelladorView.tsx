@@ -61,6 +61,7 @@ export default function SelladorView() {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [pdfPath, setPdfPath] = useState<string | null>(null);
   const [pdfBase64, setPdfBase64] = useState<string | null>(null);
+  const [pdfSourceRevision, setPdfSourceRevision] = useState(0);
   const [pageCount, setPageCount] = useState(0);
   const [pageSize, setPageSize] = useState<PdfPageSize | null>(null);
   const [stampFile, setStampFile] = useState<File | null>(null);
@@ -176,6 +177,7 @@ export default function SelladorView() {
     setPdfFile(file);
     setPdfPath(path);
     setPdfBase64(base64);
+    setPdfSourceRevision((revision) => revision + 1);
     setPageCount(nextPageCount);
     setPageSize(size);
     setSeed(randomSeed());
@@ -304,6 +306,7 @@ export default function SelladorView() {
       pdfPath,
       pdfBase64,
       pdfFile,
+      sourceRevision: pdfSourceRevision,
       pageCount,
       containerW: debouncedPreviewWidth,
       stampUrl: stampPreviewUrl,
@@ -335,6 +338,7 @@ export default function SelladorView() {
     pdfBase64,
     pdfFile,
     pdfPath,
+    pdfSourceRevision,
     debouncedPreviewWidth,
     stampPreviewUrl,
     placementsByPage,
@@ -657,6 +661,7 @@ export default function SelladorView() {
                     pdfBase64={pdfBase64}
                     pdfPath={pdfPath}
                     pdfFile={pdfFile}
+                    sourceRevision={pdfSourceRevision}
                     width={debouncedPreviewWidth}
                     onPageSize={(size) => setPageSize((current) => current ?? size)}
                   />
