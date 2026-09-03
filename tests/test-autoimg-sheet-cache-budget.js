@@ -1,10 +1,3 @@
-/**
- * Presupuesto de caché AutoIMG (32 MiB agregado):
- * - lote bajo el límite → se retiene
- * - lote sobre el límite → respuesta completa, sin retención
- * - consulta grande posterior → no sirve caché obsoleta
- * - scanAll → syncToSheet intacto
- */
 
 const path = require('path');
 
@@ -45,7 +38,6 @@ async function main() {
 
   const bdHeader = ['NIS', 'SGIO', 'DESTINO', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
   const smallBd = [bdHeader, ['4210801', '69656525', 'DVD 03', '', '', '', '', '', '', '', '', '', '']];
-  // ~1 MiB of filler cells so a tiny budget (e.g. 8 KiB) is exceeded.
   const fatCell = 'X'.repeat(2048);
   const largeBd = [bdHeader];
   for (let i = 0; i < 80; i += 1) {
@@ -133,7 +125,6 @@ async function main() {
 
   assert(engine.SHEET_CACHE_BUDGET_BYTES === 32 * 1024 * 1024, 'presupuesto por defecto 32 MiB');
 
-  // --- Lote bajo el límite: se retiene ---
   engine.__resetSheetCacheForTests();
   bdRows = smallBd;
   const under = await engine.syncFromSheet();
@@ -146,7 +137,6 @@ async function main() {
   assert(cachedAgain.cached === true && cachedAgain.revision_match === true, 'segunda sync usa cache');
   assert(readRangesCalls === 1, `bajo límite no debe re-leer (got ${readRangesCalls})`);
 
-  // --- Lote sobre el límite: respuesta completa, sin retención ---
   engine.__resetSheetCacheForTests();
   engine.__setSheetCacheBudgetForTests(8 * 1024);
   bdRows = largeBd;
@@ -161,25 +151,21 @@ async function main() {
   assert(inspectOver.bdImgLen === 0, 'lote grande no retenido');
   assert(inspectOver.logsLen === 0, 'caches previas invalidadas al superar presupuesto');
 
-  // --- Repetición posterior de consulta grande: vuelve a leer, sin datos obsoletos ---
   const overAgain = await engine.syncFromSheet();
   assert(overAgain.rows.length === largeBd.length, 'reconsulta grande sigue completa');
   assert(overAgain.cache_skipped === true, 'reconsulta grande no retiene');
   assert(readRangesCalls === 2, `reconsulta grande debe re-leer (got ${readRangesCalls})`);
   assert(engine.__inspectSheetCacheForTests().bdImgLen === 0, 'sigue sin retener tras reconsulta');
 
-  // --- Tras un lote grande, un lote pequeño no debe servir filas viejas ---
   bdRows = smallBd;
   sheetModifiedTime = '2026-08-06T12:00:00.000Z';
-  engine.__setSheetCacheBudgetForTests(null); // restore 32 MiB
+  engine.__setSheetCacheBudgetForTests(null);
   const backSmall = await engine.syncFromSheet();
   assert(backSmall.rows.length === 2, 'vuelta a lote pequeño completa');
   assert(backSmall.rows[1][0] === '4210801', 'datos frescos, no truncados/obsoletos');
   assert(engine.__inspectSheetCacheForTests().bdImgLen === 2, 'lote pequeño se retiene de nuevo');
 
-  // --- scanAll → syncToSheet intacto ---
   engine.__resetSheetCacheForTests();
-  // Force lastScanResults via scanAll (empty folders → empty nis_results still ok)
   const scan = await engine.scanAll();
   assert(scan && typeof scan === 'object', 'scanAll responde');
   const sync = await engine.syncToSheet();

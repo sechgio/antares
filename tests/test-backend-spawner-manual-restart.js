@@ -1,5 +1,3 @@
-// Regression test: manualRestart must preempt a stuck start cycle instead of
-// leaving the start cycle latched and blocking all future restarts.
 const { EventEmitter } = require('events');
 const childProcess = require('child_process');
 

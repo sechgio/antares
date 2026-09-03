@@ -1,7 +1,6 @@
 import type { CanvasDocument, CanvasLayer, LayerCssVars } from '../types';
 import { mm, newId, parseMm } from '../types';
 
-/** Offset applied to new instances so they don't stack on the master. */
 export const INSTANCE_OFFSET_MM = 5;
 
 function cssVarsEqual(a: Partial<LayerCssVars>, b: Partial<LayerCssVars>): boolean {
@@ -34,7 +33,6 @@ function variantPatch(
   return patch && typeof patch === 'object' ? patch : {};
 }
 
-/** Master cssVars (+ optional variant patch) before instance overrides. */
 export function masterBaseCssVars(master: CanvasLayer, variant?: string): LayerCssVars {
   return {
     ...master.cssVars,
@@ -42,7 +40,6 @@ export function masterBaseCssVars(master: CanvasLayer, variant?: string): LayerC
   } as LayerCssVars;
 }
 
-/** Convert a layer into a component master (same id). Children keep parentId. */
 export function createComponentFromLayer(layer: CanvasLayer, _doc: CanvasDocument): CanvasLayer {
   const { instanceOf: _instanceOf, overrideVars: _ov, variant: _v, ...restMeta } = layer.meta ?? {};
   return {
@@ -55,11 +52,6 @@ export function createComponentFromLayer(layer: CanvasLayer, _doc: CanvasDocumen
   };
 }
 
-/**
- * Create an instance of a master component.
- * Returns the root instance plus remapped child copies (parentId rewritten).
- * Seeds geometry overrides and offsets position so the instance stays independent.
- */
 export function instantiateComponent(
   master: CanvasLayer,
   doc: CanvasDocument,
@@ -108,7 +100,6 @@ export function instantiateComponent(
   const idMap = new Map<string, string>();
   idMap.set(master.id, instanceId);
 
-  // Remap nested descendants under the master's subtree.
   const masterDescendantIds = new Set<string>([master.id]);
   let grew = true;
   while (grew) {
@@ -138,7 +129,6 @@ export function instantiateComponent(
   return { instance, childLayers };
 }
 
-/** Final cssVars for an instance: master (+ variant) merged with overrideVars (override wins). */
 export function applyInstanceOverrides(
   instance: CanvasLayer,
   master: CanvasLayer | undefined,
@@ -154,10 +144,6 @@ export function applyInstanceOverrides(
   } as LayerCssVars;
 }
 
-/**
- * Persist cssVars that differ from master(+variant) into overrideVars so
- * LayerNode's applyInstanceOverrides keeps panel/gesture edits.
- */
 export function bakeInstanceOverrides(
   instance: CanvasLayer,
   master: CanvasLayer | undefined,
@@ -190,7 +176,6 @@ export function bakeInstanceOverrides(
   };
 }
 
-/** Bake overrideVars for every instance in the document. */
 export function bakeAllInstances(doc: CanvasDocument): CanvasDocument {
   let changed = false;
   const layers = doc.layers.map((layer) => {
@@ -203,10 +188,6 @@ export function bakeAllInstances(doc: CanvasDocument): CanvasDocument {
   return changed ? { ...doc, layers } : doc;
 }
 
-/**
- * Push master cssVars (and variant patches) to every instance of `masterId`,
- * preserving each instance's overrideVars (same idea as syncLinkedStyles).
- */
 export function syncComponentToInstances(
   doc: CanvasDocument,
   masterId: string,
@@ -223,10 +204,6 @@ export function syncComponentToInstances(
   return changed ? { ...doc, layers } : doc;
 }
 
-/**
- * After a panel/gesture commit on a master, propagate to instances.
- * No-op when the edit comes from an instance (has instanceOf).
- */
 export function syncComponentFromLayer(
   doc: CanvasDocument,
   prev: CanvasLayer | undefined,
@@ -241,7 +218,6 @@ export function syncComponentFromLayer(
   return syncComponentToInstances(doc, masterId, next);
 }
 
-/** Sync every master that changed relative to `baseline` (e.g. after a gesture). */
 export function syncChangedMasters(
   doc: CanvasDocument,
   baseline: CanvasDocument | undefined,
@@ -255,7 +231,6 @@ export function syncChangedMasters(
   return out;
 }
 
-/** Find the master layer for an instanceOf id. */
 export function findComponentMaster(
   layers: CanvasLayer[],
   masterId: string,

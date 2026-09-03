@@ -63,14 +63,10 @@ interface LeftSidebarProps {
   onToggleVisible: (id: string, visible: boolean) => void;
   onToggleLocked: (id: string, locked: boolean) => void;
   onRenameLayer: (id: string, name: string) => void;
-  /** F2 from the keyboard handler: open the inline rename of this layer once. */
   renameRequest?: { layerId: string; nonce: number } | null;
-  /** When false, panel collapses via CSS but stays mounted. */
   open?: boolean;
-  /** Hide this sidebar (Archivos header). */
   onHidePanel?: () => void;
   hidePanelDisabled?: boolean;
-  /** Cloud sync in flight — pulse Archivos select (keep mounted; no skeleton swap). */
   docsSyncing?: boolean;
 }
 
@@ -119,7 +115,6 @@ function layerIcon(type: CanvasLayer['type'], value?: string) {
   return <Layers className="h-3 w-3" />;
 }
 
-/** Capas row: chevron + type icon + name; lock/eye on hover (Figma-like). */
 interface LayerRowProps {
   layer: CanvasLayer;
   depth: number;
@@ -383,7 +378,6 @@ export default memo(function LeftSidebar({
     return [...byId.values()];
   }, [docs, documentId, documentName]);
 
-  // Keep newly created containers expanded by default.
   useEffect(() => {
     setExpandedIds((prev) => {
       let changed = false;
@@ -398,7 +392,6 @@ export default memo(function LeftSidebar({
     });
   }, [containerIds]);
 
-  // Expand ancestors + scroll selected Capas row into view (selection-driven, not every layers edit).
   useEffect(() => {
     const id = selectedIds[0];
     if (!id) return;
@@ -465,7 +458,6 @@ export default memo(function LeftSidebar({
     setRenamingLayerId(id);
   }, []);
 
-  // F2 (CanvasView keyboard handler) → abrir el rename inline de esa capa.
   const lastRenameNonceRef = useRef(-1);
   useEffect(() => {
     if (!renameRequest || renameRequest.nonce === lastRenameNonceRef.current) return;
@@ -516,7 +508,6 @@ export default memo(function LeftSidebar({
   }, [tree, expandedIds, layerQuery, containerIds, layers]);
   const pageLabel = (i: number) => pages?.[i]?.name ?? `Página ${i + 1}`;
 
-  /** Windowed Capas list — skip mounting off-screen rows when the tree is large. */
   const LAYER_ROW_H = 28;
   const LAYER_OVERSCAN = 8;
   const LAYER_VIRTUALIZE_AT = 80;

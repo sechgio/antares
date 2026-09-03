@@ -1,4 +1,3 @@
-"""Rasterize PDF pages for sellador previews on large files."""
 from __future__ import annotations
 
 import math
@@ -48,7 +47,6 @@ def _resolve_preview_dpi(
         )
         dpi = min(dpi, pixel_cap_dpi)
 
-    # Validate integer raster dimensions because PyMuPDF rounds page pixels up.
     candidate = math.floor(dpi)
     while candidate >= 1:
         pixel_width = math.ceil(rect_width * candidate / 72.0)
@@ -72,7 +70,7 @@ def _resolve_preview_dpi(
 
 def _require_fitz():
     try:
-        import fitz  # pymupdf
+        import fitz
     except ImportError as exc:
         msg = "PyMuPDF no está instalado. Ejecuta: pip install pymupdf"
         raise ValueError(msg) from exc

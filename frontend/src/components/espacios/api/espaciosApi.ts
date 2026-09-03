@@ -20,7 +20,6 @@ function requireClient() {
   return supabase;
 }
 
-/** Supabase returns plain { message, code, ... } objects, not Error instances. */
 function throwOnError(error: { message?: string; code?: string } | null): void {
   if (!error) return;
   const code = error.code ? ` [${error.code}]` : '';
@@ -118,7 +117,6 @@ export async function fetchTareas(proyectoId: string): Promise<Tarea[]> {
   return data ?? [];
 }
 
-/** Open tasks with due_date on/before horizon (for titlebar due notifications). */
 export interface DueSoonTareaRow {
   id: string;
   title: string;
@@ -169,7 +167,6 @@ export async function fetchDueSoonTareas(horizonIso: string): Promise<DueSoonTar
       };
     });
 
-  // Drop tasks whose status is a done-like board column (including custom is_done keys).
   const proyectoIds = [...new Set(rows.map((r) => r.proyecto_id))];
   if (proyectoIds.length === 0) return rows;
 
@@ -180,7 +177,6 @@ export async function fetchDueSoonTareas(horizonIso: string): Promise<DueSoonTar
     .eq('is_done', true);
 
   if (doneColsError || !doneCols) {
-    // Pre-migration / offline: fall back to builtin done/closed only.
     return rows.filter((r) => r.status !== 'done' && r.status !== 'closed');
   }
 
@@ -253,12 +249,10 @@ export async function fetchBoardColumns(proyectoId: string): Promise<BoardColumn
   throwOnError(error);
   const rows = (data ?? []) as BoardColumn[];
   if (rows.length === 0) {
-    // Migration not applied yet or seed lag: ensure defaults server-side, then re-fetch.
     const { error: seedError } = await client.rpc('seed_default_board_columns', {
       p_proyecto_id: proyectoId,
     });
     if (seedError) {
-      // Offline / pre-migration: local defaults so the board still works.
       return fallbackBoardColumns(proyectoId);
     }
     const second = await client

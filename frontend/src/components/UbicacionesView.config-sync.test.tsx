@@ -62,8 +62,6 @@ import { UbicacionesView, loadCustomStylesFromStorage } from './UbicacionesView'
 
 function setupElectronApi() {
   const electronApi = window.electronAPI!;
-  // The Excel file is staged through the IPC upload API and the resulting
-  // read token travels in `excelPath` (raw absolute paths are router-rejected).
   Object.defineProperty(electronApi, 'fileStagedCreate', {
     value: vi.fn(async () => ({ token: 'antares-staged-test' })),
     configurable: true,

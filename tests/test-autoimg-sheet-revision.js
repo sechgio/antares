@@ -1,7 +1,3 @@
-/**
- * Regresión: skip de lectura de Sheets cuando Drive modifiedTime no cambió,
- * y concurrencia adaptativa de rename copy.
- */
 
 const path = require('path');
 
@@ -94,13 +90,7 @@ async function main() {
   assert(first.success && first.cached === false, 'primer syncFromSheet lee sheet');
   assert(readRangesCalls === 1, `primer sync debe llamar readRanges 1 vez (got ${readRangesCalls})`);
 
-  // Expire TTL without changing Drive revision — should skip Sheets batch read.
   const CACHE_TTL_MS = 60_000;
-  // Force TTL stale by touching internal clock via a second sync after mutating
-  // cacheLoadedAt is private — call sync again after waiting is slow; instead
-  // bump modifiedTime equality path: first sync set revision; clear TTL by
-  // calling listFolders with force then sync again... Actually syncFromSheet
-  // checks revision before TTL. Second call with same revision should skip.
   const second = await engine.syncFromSheet();
   assert(second.cached === true && second.revision_match === true, 'syncFromSheet con misma revision debe cachear');
   assert(readRangesCalls === 1, `segunda sync no debe readRanges (got ${readRangesCalls})`);
@@ -110,20 +100,13 @@ async function main() {
   assert(third.cached === false, 'revision distinta debe refetch');
   assert(readRangesCalls === 2, `tercera sync debe readRanges (got ${readRangesCalls})`);
 
-  // listFolders revision skip after TTL-style miss: warm folders, then list with force false
-  // after we already have revision from last sync.
   readRangeCalls = 0;
   const foldersForce = await engine.listFolders({ force: true });
   assert(foldersForce.folders.length === 1, 'listFolders force carga');
   const beforeRev = readRangeCalls;
   const foldersCached = await engine.listFolders({ force: false });
   assert(foldersCached.cached === true, 'listFolders force:false con TTL fresco usa cache');
-  // Expire by changing nothing but calling with revision path: invalidate TTL only
-  // by waiting is hard; force:false + fresh TTL already covered. Change revision
-  // and force:false after touching cache via force:true with new rev already set.
   sheetModifiedTime = '2026-07-03T00:00:00.000Z';
-  // Cache still fresh from last listFolders force — TTL wins first. Use force:true then
-  // immediately force:false with same rev.
   await engine.listFolders({ force: true });
   const sameRev = await engine.listFolders({ force: false });
   assert(sameRev.cached === true, 'listFolders TTL fresco');

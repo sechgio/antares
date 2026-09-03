@@ -105,7 +105,10 @@ import {
 import {
   nextBothPanelsOpen,
   PANEL_CHROME_KEYS,
+  readToolbarPosition,
   readBoolLS,
+  type CanvasToolbarPosition,
+  writeToolbarPosition,
   writeBoolLS,
 } from './ops/panelChrome';
 import { canFocusFieldBinding, canInlineEditLayer, isEditableKeyboardTarget, isTypeToEditKey } from './ops/inlineEdit';
@@ -178,6 +181,9 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   const [leftPanelOpen, setLeftPanelOpen] = useState(() => readBoolLS(PANEL_CHROME_KEYS.left, true));
   const [rightPanelOpen, setRightPanelOpen] = useState(() => readBoolLS(PANEL_CHROME_KEYS.right, true));
   const [uiLocked, setUiLocked] = useState(() => readBoolLS(PANEL_CHROME_KEYS.lock, false));
+  const [toolbarPosition, setToolbarPosition] = useState<CanvasToolbarPosition>(() =>
+    readToolbarPosition(PANEL_CHROME_KEYS.toolbar, 'top'),
+  );
   const [tool, setTool] = useState<CanvasTool>('select');
   const toolBeforeSpaceRef = useRef<CanvasTool | null>(null);
   const [clipboard, setClipboard] = useState<CanvasLayer[]>([]);
@@ -186,7 +192,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   const [contextMenu, setContextMenu] = useState<CanvasContextMenuState | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  /** F2 → pide a la sidebar abrir el rename inline de la capa seleccionada. */
   const [renameRequest, setRenameRequest] = useState<{ layerId: string; nonce: number } | null>(null);
   const [pathEditingLayerId, setPathEditingLayerId] = useState<string | null>(null);
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -231,6 +236,9 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
   useEffect(() => {
     writeBoolLS(PANEL_CHROME_KEYS.lock, uiLocked);
   }, [uiLocked]);
+  useEffect(() => {
+    writeToolbarPosition(PANEL_CHROME_KEYS.toolbar, toolbarPosition);
+  }, [toolbarPosition]);
 
   useEffect(
     () => () => {
@@ -271,14 +279,12 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     }
   }, []);
 
-
   const guideCreateBaselineRef = useRef<CanvasDocument | null>(null);
 
   const onDeleteDocRef = useRef<() => Promise<void>>(async () => {});
 
   const [syncConflict, setSyncConflict] = useState<SyncConflict | null>(null);
   const syncConflictRef = useRef<SyncConflict | null>(null);
-  /** After Mantener, ignore the same remote timestamp until a newer one arrives. */
   const dismissedRemoteAtRef = useRef<string | null>(null);
 
   const handleConflict = useCallback((conflict: SyncConflict) => {
@@ -388,7 +394,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     initialGuarded: true,
     onRemoteDocumentApplied: handleRemoteDocumentApplied,
   });
-
 
   useEffect(() => {
     if (!syncConflictRef.current) return;
@@ -566,7 +571,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     setGestureAbortToken((n) => n + 1);
     return cancelled;
   }, [cancelPageLayersGesture, onPanelCommitLive, panelBaselineRef]);
-
 
   const runHistoryOp = useCallback(
     (op: 'undo' | 'redo') => {
@@ -819,7 +823,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
           if (layer) onInlineEditValue(editingLayerId, `${layer.value}${e.key}`);
           return;
         }
-        // Block tool / delete / nudge shortcuts while editing.
         return;
       }
 
@@ -862,8 +865,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         }
         return;
       }
-      // Ctrl+Shift+L/H actúan sobre toda la selección (incluye bloqueadas);
-      // los frames no se bloquean/ocultan por atajo.
       const chromeToggleIds = selectedIds.filter((id) => {
         const l = history.document.layers.find((x) => x.id === id);
         return l && l.type !== 'frame';
@@ -1003,7 +1004,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         setAllLayers(nudgeLayers(history.document.layers, editableIds, dx, dy));
       }
 
-
       if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
         const alignKey = e.key.toLowerCase();
         const alignMap: Record<string, 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom'> = {
@@ -1124,7 +1124,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
           setPathEditingLayerId(null);
           return;
         }
-        // Esc → select parent when all selected share one parent (Figma-like).
         if (selectedIds.length) {
           const parents = new Set(
             selectedIds.map((id) => {
@@ -1272,10 +1271,8 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     });
   };
 
-
   const onRenameStart = () => {
     renameBaselineRef.current = history.document;
-    // Sync reads this ref without waiting for a re-render.
     openDirtyRef.current = true;
   };
   const onRenameCommit = () => {
@@ -1474,7 +1471,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     (draggedId: string, targetId: string, position: 'before' | 'after' | 'inside') => {
       setAllLayers(moveLayerInTree(history.document.layers, draggedId, targetId, position));
     },
-    // setAllLayers closes over history.document; re-bind when layers change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [history.document.layers],
   );
@@ -1493,7 +1489,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     void onNewRef.current();
   }, []);
 
-  /** Crea un documento NUEVO con el contenido de la plantilla (no pisa el actual). */
   const onNewFromPreset = useCallback(
     (presetId: string, label: string) => {
       void loadCanvasPresets().then((presets) => {
@@ -1765,7 +1760,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
               }
             }}
             onMoveGuide={(id, posMm) => {
-              // Called once on pointerup (Artboard keeps live preview local during drag).
               history.setDocument(moveGuide(history.document, id, posMm));
             }}
             onRemoveGuide={(id) => {
@@ -1834,6 +1828,7 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
             {showPathToolbar && (
               <PathEditToolbar
                 tool={tool}
+                toolbarPosition={toolbarPosition}
                 onTool={(t) => {
                   setTool(t);
                   if (t !== 'select' && selectedLine) {
@@ -1850,7 +1845,12 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
                 }}
               />
             )}
-            <BottomToolbar tool={tool} onTool={setTool} />
+            <BottomToolbar
+              tool={tool}
+              onTool={setTool}
+              position={toolbarPosition}
+              onPositionChange={setToolbarPosition}
+            />
             {showShortcuts && (
               <div className="canvas-shortcuts-panel" data-testid="canvas-shortcuts-panel">
                 <div className="canvas-section-title mb-2 flex items-center justify-between">
@@ -1911,7 +1911,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
                 );
               }
               const prev = history.document.layers.find((l) => l.id === nextLayer.id);
-              // Same gate as live path: only cols/rows/gap rebuild sibling slots.
               const layers = applyContainerLayoutPanelEffects(
                 applyLivePanelLayerChange(history.document.layers, prev, nextLayer),
                 prev,

@@ -7,7 +7,6 @@ def sum_diameter_columns(
     rows: list[dict[str, Any] | None],
     diameters: list[str],
 ) -> dict[str, int]:
-    """Sum quantity values vertically for each diameter across table rows."""
     totals = {diameter: 0 for diameter in diameters}
     for row in rows:
         if not row:
@@ -27,7 +26,6 @@ def sum_diameter_row(
     row: dict[str, Any] | None,
     diameters: list[str],
 ) -> int:
-    """Sum quantity values horizontally for a single row (OPER. column)."""
     if not row:
         return 0
     total = 0

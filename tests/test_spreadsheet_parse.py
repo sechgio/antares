@@ -1,4 +1,3 @@
-"""Regresión: spreadsheet_parse con staging .tmp, fechas y format_hint."""
 
 from __future__ import annotations
 
@@ -27,7 +26,6 @@ def _write_xlsx(path: Path, rows: list[list[Any]]) -> None:
 
 
 def test_parse_xlsx_with_tmp_suffix_via_format_hint(tmp_path: Path) -> None:
-    """Staging histórico guardaba datos.xlsx.tmp; format_hint debe bastar."""
     staged = tmp_path / "token_datos.xlsx.tmp"
     _write_xlsx(
         staged,
@@ -47,7 +45,6 @@ def test_parse_xlsx_with_tmp_suffix_via_format_hint(tmp_path: Path) -> None:
 
 
 def test_parse_xlsx_with_tmp_suffix_via_token_name(tmp_path: Path) -> None:
-    """Sin format_hint, el nombre original del token define el formato."""
     staged = tmp_path / "antares-staged_upload.tmp"
     _write_xlsx(
         staged,
@@ -69,7 +66,6 @@ def test_parse_xlsx_with_tmp_suffix_via_token_name(tmp_path: Path) -> None:
 
 
 def test_parse_xlsx_datetime_cells_are_json_serializable(tmp_path: Path) -> None:
-    """openpyxl puede devolver datetime; el resultado debe ser JSON-safe."""
     staged = tmp_path / "fechas.xlsx"
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -82,7 +78,7 @@ def test_parse_xlsx_datetime_cells_are_json_serializable(tmp_path: Path) -> None
 
     result = spreadsheet_parse({"path": str(staged), "format_hint": "xlsx"})
 
-    json.dumps(result)  # no debe lanzar TypeError
+    json.dumps(result)
     fecha_1 = result["sheets"][0]["rows"][1][0]
     fecha_2 = result["sheets"][0]["rows"][2][0]
     assert isinstance(fecha_1, str)
@@ -92,7 +88,6 @@ def test_parse_xlsx_datetime_cells_are_json_serializable(tmp_path: Path) -> None
 
 
 def test_parse_xlsx_wrong_suffix_does_not_read_neighbor(tmp_path: Path) -> None:
-    """Copia/renombre temporal no debe reutilizar un .xlsx vecino distinto."""
     neighbor = tmp_path / "upload.xlsx"
     _write_xlsx(neighbor, [["VECINO"], ["999"]])
 
@@ -106,7 +101,6 @@ def test_parse_xlsx_wrong_suffix_does_not_read_neighbor(tmp_path: Path) -> None:
 
 
 def test_parse_xlsx_does_not_copy_the_input_into_bytesio(tmp_path: Path, monkeypatch) -> None:
-    """XLSX parsing must stream from the staged file instead of duplicating it in RAM."""
     staged = tmp_path / "streamed.xlsx"
     _write_xlsx(staged, [["HEADER"], ["value"]])
 
@@ -130,7 +124,6 @@ def test_parse_csv_via_hint_with_tmp_suffix(tmp_path: Path) -> None:
 
 
 def test_parse_spills_large_result_to_disk(tmp_path: Path, monkeypatch) -> None:
-    """Large grids must not travel as inline JSON on the IPC pipe."""
     from backend.handlers import spreadsheet as ss
 
     monkeypatch.setattr(ss, "INLINE_RESULT_MAX_BYTES", 2_000)
@@ -187,8 +180,6 @@ def test_get_rows_pages_spilled_cache(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_b64_inline_uses_unique_temp_file() -> None:
-    """b64 inline parse must use a unique temp file per call — a fixed name
-    races between concurrent threads in the same process (scheduler pool)."""
     from backend.handlers.spreadsheet import _resolve_input_path
 
     wb = openpyxl.Workbook()
@@ -214,7 +205,6 @@ def test_b64_inline_uses_unique_temp_file() -> None:
 
 
 def test_b64_inline_decodes_in_bounded_chunks(monkeypatch) -> None:
-    """Inline compatibility payloads must not create a full decoded copy."""
     from backend.handlers import spreadsheet as ss
     from backend.handlers.spreadsheet import _resolve_input_path
 
@@ -241,9 +231,6 @@ def test_b64_inline_decodes_in_bounded_chunks(monkeypatch) -> None:
 
 
 def test_user_file_with_temp_prefix_not_deleted() -> None:
-    """A real user file whose name starts with the temp prefix must NOT be
-    unlinked by spreadsheet_parse — only files created for b64 payloads are
-    (provenance, not name sniffing)."""
     from backend.handlers.spreadsheet import _INLINE_TEMP_PREFIX, spreadsheet_parse
 
     wb = openpyxl.Workbook()
@@ -271,9 +258,6 @@ def test_user_file_with_temp_prefix_not_deleted() -> None:
 
 
 def test_b64_inline_temp_file_removed_after_parse() -> None:
-    """The unique temp file created for b64 inline parses must be deleted
-    after parsing — unique names mean they would otherwise accumulate in
-    %TEMP% for the app's lifetime."""
     from backend.handlers.spreadsheet import _INLINE_TEMP_PREFIX, spreadsheet_parse
 
     wb = openpyxl.Workbook()
@@ -294,8 +278,6 @@ def test_b64_inline_temp_file_removed_after_parse() -> None:
 
 
 def test_b64_inline_parse_succeeds_even_if_temp_unlink_locked(monkeypatch) -> None:
-    """A Windows lock on the temp file (PermissionError from unlink) must not
-    fail an already-successful parse — cleanup is best-effort."""
     from backend.handlers import spreadsheet as ss
 
     wb = openpyxl.Workbook()
@@ -318,8 +300,6 @@ def test_b64_inline_parse_succeeds_even_if_temp_unlink_locked(monkeypatch) -> No
 
 
 def test_b64_inline_write_failure_removes_temp_file(monkeypatch) -> None:
-    """Si os.write falla (p.ej. disco lleno), el mkstemp no debe quedar
-    huérfano — el cleanup ocurre dentro de _resolve_input_path."""
     from backend.handlers import spreadsheet as ss
 
     b64 = base64.b64encode(b"x" * 64).decode("ascii")
@@ -338,8 +318,6 @@ def test_b64_inline_write_failure_removes_temp_file(monkeypatch) -> None:
 
 
 def test_b64_inline_rejects_oversized_payload(monkeypatch) -> None:
-    """A b64 payload whose decoded size exceeds MAX_SPREADSHEET_BYTES must be
-    rejected before decode to prevent OOM (same guard as the file-path branch)."""
     from backend.handlers import spreadsheet as ss
 
     monkeypatch.setattr(ss, "MAX_SPREADSHEET_BYTES", 100)
@@ -350,9 +328,6 @@ def test_b64_inline_rejects_oversized_payload(monkeypatch) -> None:
 
 
 def test_get_rows_serves_pages_from_cached_spill(tmp_path: Path, monkeypatch) -> None:
-    """B1: cada página de spreadsheet_get_rows re-leía y re-parseaba el JSON
-    completo del spill (O(archivo) por request). Páginas sucesivas del mismo
-    spill deben servirse del cache sin volver a tocar disco."""
     from backend.handlers import spreadsheet as ss
     from backend.handlers.spreadsheet import spreadsheet_get_rows
 
@@ -392,8 +367,6 @@ def test_get_rows_serves_pages_from_cached_spill(tmp_path: Path, monkeypatch) ->
 
 
 def test_get_rows_cache_invalidated_when_spill_changes(tmp_path: Path, monkeypatch) -> None:
-    """Si el spill cambia en disco (mtime/size), la siguiente página debe
-    releerlo — nunca servir datos obsoletos del cache."""
     from backend.handlers import spreadsheet as ss
     from backend.handlers.spreadsheet import spreadsheet_get_rows
 
@@ -412,8 +385,6 @@ def test_get_rows_cache_invalidated_when_spill_changes(tmp_path: Path, monkeypat
     )
     assert first["total"] == 31
 
-    # Reescribe el spill con una fila extra: cambia el contenido (y el size),
-    # así la clave (path, mtime, size) debe invalidar la entrada cacheada.
     payload = json.loads(spill_path.read_text(encoding="utf-8"))
     payload["sheets"][0]["rows"].append(["nueva", "fila"])
     spill_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
@@ -447,7 +418,6 @@ def test_spill_cache_oversized_not_cached(tmp_path: Path, monkeypatch) -> None:
     from backend.handlers.spreadsheet import spreadsheet_get_rows
 
     monkeypatch.setattr(ss, "INLINE_RESULT_MAX_BYTES", 100)
-    # Set threshold very low so this entry is treated as oversized for cache
     monkeypatch.setattr(ss, "_SPILL_CACHE_MAX_ENTRY_BYTES", 10)
     staged = tmp_path / "oversized.xlsx"
     rows = [["Col1", "Col2"], ["Val1", "Val2"]]
@@ -458,5 +428,4 @@ def test_spill_cache_oversized_not_cached(tmp_path: Path, monkeypatch) -> None:
     res = spreadsheet_get_rows({"result_path": parsed["result_path"], "offset": 0, "limit": 10})
 
     assert res["total"] == 2
-    # File is larger than 10 bytes so it should NOT be retained in _spill_cache
     assert len(ss._spill_cache) == 0

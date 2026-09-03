@@ -71,7 +71,6 @@ describe('relayoutAutoFrame', () => {
     const a = childAt('a', 0, 0, 20, 10);
     const b = childAt('b', 0, 0, 30, 10);
     const { frame: next } = relayoutAutoFrame(frame, [a, b]);
-    // content = 20+30+4 = 54; + 2*3 = 60
     expect(parseMm(next.cssVars['--width'])).toBe(60);
     expect(parseMm(next.cssVars['--height'])).toBe(10 + 2 * 3);
   });
@@ -89,7 +88,6 @@ describe('relayoutAutoFrame', () => {
     const a = childAt('a', 0, 0, 20, 10);
     const b = childAt('b', 0, 0, 20, 10);
     const { children } = relayoutAutoFrame(frame, [a, b]);
-    // content = 40, free = 60, start = 30
     expect(parseMm(children[0]!.cssVars['--translate-x'])).toBe(30);
     expect(parseMm(children[1]!.cssVars['--translate-x'])).toBe(50);
   });

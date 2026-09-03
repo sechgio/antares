@@ -1,12 +1,3 @@
-"""Opt-in IPC phase telemetry: latency + RSS correlated by msg_id.
-
-Enabled when ``ANTARES_IPC_TELEMETRY`` is truthy (1/true/yes). When disabled,
-public helpers are cheap no-ops so the hot path pays only an env check.
-When enabled, every request captures 5 perf_counter marks + 1 RSS sample
-(~<0.1ms). Emission is sampled: 1% of successful fast requests, 100% of
-errors (handler_ok=False / ok=False / rejected) and slow requests
-(any phase >= 5s). Sampling is applied in emit_and_clear.
-"""
 
 from __future__ import annotations
 
@@ -43,7 +34,6 @@ def enabled() -> bool:
 
 
 def reset_for_tests() -> None:
-    """Clear in-flight traces (test helper)."""
     global _PROCESS, _PROCESS_FAILED
     with _LOCK:
         _TRACES.clear()
@@ -61,7 +51,6 @@ def _key(msg_id: str | int) -> str:
 
 
 def _rss_bytes() -> int | None:
-    """Return current process RSS in bytes, or None if unavailable."""
     global _PROCESS, _PROCESS_FAILED
     if _PROCESS_FAILED:
         return None
@@ -155,7 +144,6 @@ def mark(msg_id: str | int, name: str) -> None:
 
 
 def begin_parse() -> tuple[float, int | None] | None:
-    """Capture parse start immediately after stdin line bytes are available."""
     if not enabled():
         return None
     try:
@@ -174,7 +162,6 @@ def finish_parse(
     *,
     method: str = "",
 ) -> None:
-    """Close the parse window and attach it to the request trace."""
     if not enabled() or msg_id is None or parse_start is None:
         return
     try:
@@ -226,7 +213,6 @@ def _compute_derived(trace: RequestTrace) -> None:
         wait_ms = (marks["dispatch_start"][0] - marks["enqueue"][0]) * 1000.0
         trace.durations_ms["scheduler_wait_ms"] = max(0.0, wait_ms)
     elif "dispatch_start" in marks and "enqueue" not in marks:
-        # Sync path: dispatch runs inline with no queue wait.
         trace.durations_ms.setdefault("scheduler_wait_ms", 0.0)
 
     if "dispatch_start" in marks and "handler_end" in marks:
@@ -259,7 +245,6 @@ def _format_line(trace: RequestTrace) -> str:
         if key in trace.durations_ms:
             parts.append(f"{key}={trace.durations_ms[key]:.1f}")
 
-    # RSS snapshots and consecutive deltas following mark order.
     ordered = [name for name in _MARK_ORDER if name in trace.marks]
     rss_parts: list[str] = []
     prev_rss: int | None = None
@@ -277,7 +262,6 @@ def _format_line(trace: RequestTrace) -> str:
             f"{_mib(trace.marks[n][1]):.1f}" for n in ordered if trace.marks[n][1] is not None
         ))
         parts.extend(rss_parts)
-        # Compact consecutive delta summary for log grepping.
         deltas = [p for p in rss_parts if p.startswith("drss_")]
         if deltas:
             parts.append("drss_miB=" + ",".join(d.split("=", 1)[1] for d in deltas))

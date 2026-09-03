@@ -90,9 +90,6 @@ def test_blocking_heavy_submit_stops_when_cancel_requested() -> None:
 
 
 def test_cancelled_queued_heavy_future_releases_slot() -> None:
-    """Cancelar un heavy future antes de que arranque debe devolver su slot al
-    budget. Sin el done-callback, el finally de _wrapped nunca corre y el slot
-    queda perdido para toda la sesión (regresión del job-cancellation)."""
     from backend.core.scheduler import WorkScheduler
 
     release = threading.Event()
@@ -107,13 +104,11 @@ def test_cancelled_queued_heavy_future_releases_slot() -> None:
         scheduler.submit_heavy(blocker)
         assert started.wait(timeout=1)
 
-        # The only heavy worker is busy, so this future remains queued.
         queued = scheduler.submit_heavy(lambda: None)
         assert scheduler.metrics()["heavy_outstanding"] == scheduler.heavy_capacity
 
         assert queued.cancel() is True
 
-        # El slot liberado debe permitir un nuevo submit sin SchedulerBusy.
         extra = scheduler.submit_heavy(lambda: None)
         assert extra is not None
         assert scheduler.metrics()["heavy_outstanding"] == scheduler.heavy_capacity
@@ -123,8 +118,6 @@ def test_cancelled_queued_heavy_future_releases_slot() -> None:
         scheduler.shutdown(wait=True)
 
 def test_heavy_run_concurrency_capped_at_heavy_workers() -> None:
-    """Outstanding may fill capacity, but concurrent heavy fn execution must
-    stay ≤ heavy_workers even when the unified pool is larger."""
     from backend.core.scheduler import SchedulerBusy, WorkScheduler
 
     heavy_workers = 2
@@ -147,7 +140,6 @@ def test_heavy_run_concurrency_capped_at_heavy_workers() -> None:
         with lock:
             active -= 1
 
-    # The heavy executor caps execution at heavy_workers.
     scheduler = WorkScheduler(
         light_workers=4,
         heavy_workers=heavy_workers,
@@ -161,7 +153,6 @@ def test_heavy_run_concurrency_capped_at_heavy_workers() -> None:
         assert scheduler.heavy_capacity == heavy_workers + queue_limit
         assert saw_capacity.wait(timeout=2)
 
-        # Steady state: capacity reserved, but only heavy_workers running.
         deadline = time.monotonic() + 0.3
         while time.monotonic() < deadline:
             metrics = scheduler.metrics()
@@ -197,7 +188,6 @@ def test_light_queue_is_bounded() -> None:
     scheduler = WorkScheduler(light_workers=1, heavy_workers=1, heavy_queue_limit=1, light_queue_limit=1)
 
     try:
-        # 1 worker + 1 queue slot: the third submit must be rejected.
         scheduler.submit_light(lambda: (started.set(), release.wait(5)))
         assert started.wait(2), "first light task did not start"
 
@@ -214,7 +204,6 @@ def test_light_queue_is_bounded() -> None:
         release.set()
         scheduler.shutdown(wait=True)
 
-    # After the blocked task finishes, a new submit must succeed (slot freed).
     scheduler = WorkScheduler(light_workers=1, heavy_workers=1, heavy_queue_limit=1, light_queue_limit=1)
     try:
         future = scheduler.submit_light(lambda: "ok")
@@ -284,9 +273,6 @@ def test_detect_limits_caps_at_6_below_16gb(monkeypatch) -> None:
 
 
 def test_submit_heavy_releases_slot_when_executor_submit_raises() -> None:
-    """Si executor.submit lanza (pool apagado / broken thread), el semáforo
-    _heavy_slots y el contador _heavy_outstanding deben liberarse para no
-    reducir heavy_capacity permanentemente en cada fallo (regresión del leak)."""
     from backend.core.scheduler import WorkScheduler
 
     scheduler = WorkScheduler(light_workers=1, heavy_workers=2, heavy_queue_limit=1)
@@ -298,17 +284,12 @@ def test_submit_heavy_releases_slot_when_executor_submit_raises() -> None:
 
     metrics = scheduler.metrics()
     assert metrics["heavy_outstanding"] == 0
-    # B7: un submit fallido no es un submit — el contador no debe inflarse
-    # (antes quedaba incrementado para siempre en cada fallo).
     assert metrics["heavy_submitted"] == 0
     for _ in range(capacity):
         assert scheduler._heavy_slots.acquire(blocking=False), "semaphore permit was leaked"
 
 
 def test_submit_light_does_not_inflate_submitted_when_executor_submit_raises() -> None:
-    """B7 (lane light): si executor.submit lanza, outstanding se libera y el
-    contador submitted NO debe quedar incrementado — un fallo de submit no
-    puede ensuciar la telemetría para el resto de la sesión."""
     from backend.core.scheduler import WorkScheduler
 
     scheduler = WorkScheduler(light_workers=1, heavy_workers=1, heavy_queue_limit=0)

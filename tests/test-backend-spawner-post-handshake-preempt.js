@@ -1,13 +1,3 @@
-// Regression: after a preempt, an aborted start cycle whose handshake resolves
-// late must NOT kill the successor's process or clear the successor's start slot.
-//
-// Race window:
-//   1. Cycle A spawns and waits for ready.
-//   2. manualRestart preempts A, kills A (mock does not emit close), starts B.
-//   3. Cycle B spawns and is still in handshake (held).
-//   4. Cycle A's stdout finally emits ready → A's await _spawn resolves.
-//   5. A sees cycleSignal.aborted. Without ownership checks it would
-//      _forceKillProcess(pythonProcess) (B!) and _clearStartCycle() (B's slot!).
 const { EventEmitter } = require('events');
 const childProcess = require('child_process');
 
@@ -72,8 +62,6 @@ async function run() {
     fakeProcess.stdin.write = () => true;
     fakeProcess.killed = false;
     fakeProcess.pid = 40000 + spawnCount;
-    // Deliberately do NOT emit 'close' on kill — mirrors the window where
-    // A's handshake can still resolve after the global pythonProcess moved to B.
     fakeProcess.kill = () => {
       fakeProcess.killed = true;
     };
@@ -83,7 +71,6 @@ async function run() {
       // Hold A's ready until the test releases it after B owns pythonProcess.
     } else if (spawnCount === 2) {
       processB = fakeProcess;
-      // Hold B's ready so B still owns `_currentStart` when A resumes.
       releaseB = () => emitReady(fakeProcess);
     } else {
       process.nextTick(() => emitReady(fakeProcess));
@@ -134,8 +121,6 @@ async function run() {
     assert(getState() === 'starting', 'cycle A should be in starting while handshake is held');
     assert(processA && !processA.killed, 'cycle A process should still be alive before preempt');
 
-    // Start manual restart but do not await it yet — it will claim cycle B and
-    // hang in B's handshake (held by the mock).
     let manualSettled = false;
     let manualResult = null;
     const manualPromise = manualRestart(true, { force: true }).then((ok) => {
@@ -151,7 +136,6 @@ async function run() {
     assert(getState() === 'starting', 'cycle B should still be in handshake');
     assert(!manualSettled, 'manualRestart should still be awaiting cycle B handshake');
 
-    // Late handshake for the preempted cycle A — this is the dangerous resume.
     emitReady(processA);
     await cycleA;
     await flushAsyncTurns(8);
@@ -161,7 +145,6 @@ async function run() {
     assert(getState() === 'starting', 'cycle B start slot must remain in progress (A must not clear it)');
     assert(!manualSettled, 'manualRestart must still own the in-flight start after A settles');
 
-    // Let cycle B finish; ownership checks should have left its slot intact.
     releaseB();
     await manualPromise;
     await flushAsyncTurns(4);

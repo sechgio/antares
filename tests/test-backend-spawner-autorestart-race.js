@@ -1,5 +1,3 @@
-// Regression test: manualRestart during _autoRestart backoff must not leave a
-// second Python process when the deferred auto-restart cycle resumes.
 const { EventEmitter } = require('events');
 const childProcess = require('child_process');
 

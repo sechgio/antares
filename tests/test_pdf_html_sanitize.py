@@ -1,4 +1,3 @@
-"""Shared write_pdf_sanitized helper characterization."""
 
 from __future__ import annotations
 
@@ -20,7 +19,6 @@ def _reset_pdf_cache() -> None:
 
 def test_deny_external_url_fetcher_blocks_http() -> None:
     resp = deny_external_url_fetcher("https://evil.example/x.png")
-    # Empty body means WeasyPrint gets no remote bytes.
     file_obj = getattr(resp, "_file_obj", None)
     assert file_obj is not None
     assert file_obj.read() == b""

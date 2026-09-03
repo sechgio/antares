@@ -1,6 +1,3 @@
-/**
- * Bounded concurrency mapper — preserves result order by index.
- */
 export async function mapWithConcurrencyLimit<T, R>(
   items: readonly T[],
   limit: number,

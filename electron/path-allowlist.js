@@ -1,7 +1,3 @@
-/**
- * Allowed local filesystem read paths (files chosen via dialogs; the legacy
- * register_local_path entry point is retained only to reject old callers).
- */
 const fs = require('fs');
 const path = require('path');
 

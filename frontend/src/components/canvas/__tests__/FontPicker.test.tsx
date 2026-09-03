@@ -47,7 +47,6 @@ describe('FontPicker', () => {
   });
 
   it('opens beside the trigger (left when space allows), not below', () => {
-    // Place trigger on the right so the menu prefers the left (Figma-style).
     Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
       configurable: true,
       value() {

@@ -251,9 +251,6 @@ beforeEach(() => {
   mockApi.dialogSave.mockReset();
   mockApi.htmlToPdf.mockReset();
   stageFileForIpc.mockResolvedValue('antares-read_report');
-  // jsdom exposes Image but never completes blob URL decoding. The export
-  // tests exercise the IPC payload, not canvas decoding, so force the
-  // deterministic FileReader fallback here.
   vi.stubGlobal('Image', undefined);
   vi.stubGlobal('FileReader', undefined);
   vi.useFakeTimers();

@@ -1,4 +1,3 @@
-"""HTML sanitizer for PDF rendering (Python mirror of shared/html-sanitizer.js)."""
 
 from __future__ import annotations
 
@@ -37,11 +36,9 @@ def _neutralize_url_attr(match: re.Match[str]) -> str:
     attr = match.group(1)
     quote = match.group(2) or ""
     url_value = match.group(3)
-    # Normalize: remove whitespace, control chars, and decode for scheme check
     import urllib.parse
 
     cleaned = re.sub(r"\s+", "", url_value.strip()).lower()
-    # Handle whitespace around colon: "javascript :"
     cleaned = re.sub(r"\s*:\s*", ":", cleaned)
     try:
         parsed = urllib.parse.urlparse(cleaned)
@@ -51,7 +48,6 @@ def _neutralize_url_attr(match: re.Match[str]) -> str:
     if cleaned.startswith("data:"):
         if not is_safe_data_url(url_value):
             return f"{attr}={quote}{quote}"
-        # Block data:text/html etc even if safe prefix check passed for image
         if cleaned.startswith("data:text/html"):
             return f"{attr}={quote}{quote}"
         return match.group(0)
@@ -59,14 +55,12 @@ def _neutralize_url_attr(match: re.Match[str]) -> str:
         return f"{attr}={quote}{quote}"
     if scheme in ("http", "https", "file"):
         return f"{attr}={quote}{quote}"
-    # Fallback for encoded schemes
     if any(cleaned.startswith(p) for p in ("javascript:", "vbscript:", "http:", "https:", "file:")):
         return f"{attr}={quote}{quote}"
     return match.group(0)
 
 
 def sanitize_html_for_pdf(html: str) -> str:
-    """Strip active content and external resource URLs before WeasyPrint."""
     stripped = str(html)
     stripped = re.sub(r"<!--[\s\S]*?-->", "", stripped)
     stripped = re.sub(r'<meta[^>]+http-equiv=["\']?Content-Security-Policy["\']?[^>]*>', "", stripped, flags=re.IGNORECASE)

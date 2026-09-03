@@ -1,4 +1,3 @@
-"""Format registry for extensible image format support."""
 
 from __future__ import annotations
 
@@ -10,7 +9,6 @@ FormatEncoder = Callable[[Any, Path, str, dict[str, Any]], None]
 
 
 class FormatRegistry:
-    """Registry of supported image formats."""
 
     def __init__(self) -> None:
         self._formats: dict[str, dict[str, Any]] = {}
@@ -22,11 +20,6 @@ class FormatRegistry:
         modes: tuple[str, ...],
         encoder: FormatEncoder | None = None,
     ) -> None:
-        """Register a new image format.
-
-        Custom encoders receive the prepared PIL image, destination path,
-        registered format name, and save options.
-        """
         self._formats[name.upper()] = {
             "ext": ext,
             "modes": modes,
@@ -34,7 +27,6 @@ class FormatRegistry:
         }
 
     def list_formats(self) -> list[str]:
-        """List all registered format names."""
         return list(self._formats.keys())
 
     def __contains__(self, name: str) -> bool:
@@ -44,11 +36,8 @@ class FormatRegistry:
         return self._formats[name.upper()]
 
 
-
-# Global registry instance initialized with defaults
 _registry = FormatRegistry()
 
 
 def get_registry() -> FormatRegistry:
-    """Return the global format registry."""
     return _registry

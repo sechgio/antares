@@ -2,12 +2,6 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 
-/**
- * Audita que las clases CSS referenciadas en los componentes
- * estén realmente definidas en algún archivo CSS o en el config de Tailwind.
- * Esto previene clases "muertas" que no aplican ningún estilo.
- */
-
 const SRC_DIR = path.resolve(__dirname, '..');
 const CSS_FILES = [
   path.join(SRC_DIR, 'index.css'),
@@ -39,7 +33,6 @@ function findTsxFiles(dir: string): string[] {
 function extractClassNames(filePath: string): string[] {
   const content = fs.readFileSync(filePath, 'utf-8');
   const classes: string[] = [];
-  // Match className="..." and className={`...`}
   const regex = /className=["'`{]([^"'`}]+)["'`}/]/g;
   let match: RegExpExecArray | null;
   while ((match = regex.exec(content)) !== null) {
@@ -54,7 +47,6 @@ describe('CSS class audit', () => {
   const tailwindConfig = readTailwindConfig();
   const allDefined = `${allCss}\n${tailwindConfig}`;
 
-  // Classes that are referenced in components but not defined anywhere
   const SUSPECT_CLASSES = [
     'animate-shimmer',
     'animate-slide-left',
@@ -62,7 +54,6 @@ describe('CSS class audit', () => {
   ];
 
   it.each(SUSPECT_CLASSES)('should define "%s" in CSS or Tailwind config', (className) => {
-    // Check if the class is defined as a CSS class, keyframe, or in Tailwind config
     const definedInCss = allCss.includes(`.${className}`) ||
       allCss.includes(`@keyframes ${className.replace('animate-', '')}`) ||
       allCss.includes(className.replace('animate-', ''));
@@ -85,7 +76,6 @@ describe('CSS class audit', () => {
       }
     }
 
-    // All suspect classes that are used should be defined
     const undefined: string[] = [];
     for (const cls of usedClasses) {
       const definedInCss = allCss.includes(`.${cls}`) ||

@@ -26,7 +26,7 @@ interface MenuBox {
 }
 
 const MENU_GAP = 4;
-const MENU_MAX_H = 224; // ~max-h-56
+const MENU_MAX_H = 224;
 
 export default function CanvasSelect({
   value,
@@ -70,7 +70,6 @@ export default function CanvasSelect({
       setPortalRoot(null);
       return;
     }
-    // Prefer .canvas-app so --cv-* tokens inherit; body loses scoped theme vars.
     const host =
       (containerRef.current?.closest('.canvas-app') as HTMLElement | null) ?? document.body;
     setPortalRoot(host);

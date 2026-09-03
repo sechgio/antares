@@ -162,7 +162,6 @@ export default function FormPanel({
     );
   }
 
-  // Drafts / partial IPC payloads can omit nested objects — normalize before render.
   const safe = normalizeFicha(ficha);
 
   const patch = (next: Partial<FichaTecnica>) => onChange(normalizeFicha({ ...safe, ...next }));

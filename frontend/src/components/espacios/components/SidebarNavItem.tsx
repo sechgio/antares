@@ -64,7 +64,6 @@ export default function SidebarNavItem({
   };
 
   const commitEditing = () => {
-    // Guard against Enter+blur double commit.
     if (finishedRef.current) return;
     finishedRef.current = true;
     const trimmed = draft.trim();

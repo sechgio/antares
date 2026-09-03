@@ -114,7 +114,6 @@ describe('packLanes', () => {
   });
 
   it('allows tasks that touch at the boundary to share a lane', () => {
-    // end = 02, next start = 03 → start > end, same lane
     const lanes = packLanes([
       { id: 'a', start: '2026-07-01', end: '2026-07-02' },
       { id: 'b', start: '2026-07-03', end: '2026-07-04' },
@@ -149,7 +148,6 @@ describe('buildGanttBars', () => {
 
 describe('buildDays / buildWeekGroups', () => {
   it('marks weekends and today', () => {
-    // 2026-07-04 is Saturday, 2026-07-05 is Sunday, 2026-07-08 is Wednesday
     const days = buildDays('2026-07-04', '2026-07-08', '2026-07-08');
     expect(days).toHaveLength(5);
     expect(days[0].isWeekend).toBe(true);
@@ -184,7 +182,6 @@ describe('Gantt zoom presets (Día / Semana / Mes)', () => {
     expect(resolveGanttColW('month', null)).toBe(26);
     expect(resolveGanttColW('day', 90)).toBe(90);
 
-    // Wide viewport must NOT inflate presets to the same fill width
     expect(resolveGanttColW('day', null)).not.toBe(resolveGanttColW('week', null));
     expect(resolveGanttColW('week', null)).not.toBe(resolveGanttColW('month', null));
 
@@ -196,7 +193,6 @@ describe('Gantt zoom presets (Día / Semana / Mes)', () => {
     expect(daySpan.minSpanDays).toBeGreaterThanOrEqual(21);
     expect(weekSpan.minSpanDays).toBeGreaterThan(daySpan.minSpanDays);
     expect(monthSpan.minSpanDays).toBeGreaterThan(weekSpan.minSpanDays);
-    // Fill viewport at current col width (+2 overflow cue)
     expect(monthSpan.minSpanDays).toBeGreaterThanOrEqual(Math.ceil(wide / 26) + 2);
   });
 });

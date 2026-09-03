@@ -111,7 +111,6 @@ export default function HeaderForm({
         );
     };
 
-    /* Count filled fields per section for progress indicator */
     const filledCount = (sectionFields: FieldDef[]) =>
         sectionFields.filter((f) => !!(header[f.key] ?? '').trim()).length;
 

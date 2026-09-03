@@ -1,4 +1,3 @@
-"""Tests: evidencia preview HTML sanitization before WeasyPrint."""
 
 from __future__ import annotations
 

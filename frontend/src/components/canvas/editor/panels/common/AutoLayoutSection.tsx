@@ -43,7 +43,6 @@ function patchAutoLayout(
   return { ...(current ?? defaultAutoLayout()), ...patch };
 }
 
-/** Auto-layout controls for frame/group containers. */
 export default function AutoLayoutSection({
   layer,
   onChange,
@@ -63,13 +62,10 @@ export default function AutoLayoutSection({
       });
       return;
     }
-    // Commit path so applyContainerLayoutPanelEffects can relayout children.
     onChange({ ...layer, meta: { ...layer.meta, autoLayout: next } });
   };
 
   const patchLive = (patch: Partial<LayerAutoLayout>) => {
-    // Use mapLive so rapid gap/pad edits merge against the latest live layer,
-    // not stale React props.
     mapLive((l) => ({
       ...l,
       meta: {
@@ -158,7 +154,6 @@ export default function AutoLayoutSection({
   );
 }
 
-/** Parent-relative constraints for children nested under a frame/group. */
 export function ConstraintsSection({ layer, layers, setMeta }: SectionProps) {
   const parent = layers?.find((l) => l.id === layer.parentId);
   if (parent && parent.type !== 'frame' && parent.type !== 'group' && parent.type !== 'component') {

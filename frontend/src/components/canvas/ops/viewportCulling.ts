@@ -1,27 +1,15 @@
-/**
- * Viewport-based layer culling (virtualized rendering).
- * Only layers intersecting the visible page region are mounted in the DOM,
- * keeping pan/zoom/drag smooth on documents with many layers.
- */
 
 import type { CanvasLayer } from '../types';
 import { MM_TO_PX } from './drawHelpers';
 import { layerBounds, layerBoundsMm, type RectMm } from './layerBounds';
 
-// Re-export for existing importers of these symbols from viewportCulling.
 export type { RectMm };
 export { layerBoundsMm };
 
-/** Overscan around the viewport so layers do not pop in while panning. */
 export const CULLING_MARGIN_MM = 40;
 const ZOOM_FLOOR = 0.4;
 const MARGIN_MAX_MM = CULLING_MARGIN_MM * 2;
 
-/**
- * Page region (mm) currently visible in the viewport, expanded by `marginMm`.
- * The page is centered on the viewport and offset by pan (screen px).
- * Returns null for degenerate viewports (caller renders everything).
- */
 export function visiblePageRectMm(
   viewportW: number,
   viewportH: number,
@@ -51,10 +39,6 @@ export function rectsOverlapMm(a: RectMm, b: RectMm): boolean {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
-/**
- * Layers to render: those intersecting the visible page rect plus `alwaysIds`
- * (selection, inline/path editing) so interaction chrome never loses its node.
- */
 export function filterVisibleLayers(
   layers: CanvasLayer[],
   viewRect: RectMm | null,

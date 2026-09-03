@@ -1,11 +1,3 @@
-/**
- * Resize constraints (Figma/Canva-like): a 9-point anchor pins an edge, corner
- * or the center of a layer so inspector W/H edits grow away from that anchor
- * instead of always from the top-left corner.
- *
- * Parent-relative constraints (constraintH/V) live alongside the manual anchor
- * and respond to parent resize deltas — see applyParentConstraint.
- */
 
 import type { CanvasLayer, FrameConstraint } from '../types';
 import { mm, parseMm } from '../types';
@@ -35,17 +27,12 @@ export function parseResizeAnchor(raw: string | undefined): ResizeAnchor {
 
 type Edge = 'start' | 'center' | 'end';
 
-/** New origin so the pinned edge/center stays put after the size change. */
 function anchoredStart(start: number, size: number, nextSize: number, edge: Edge): number {
   if (edge === 'start') return start;
   if (edge === 'center') return start + (size - nextSize) / 2;
   return start + size - nextSize;
 }
 
-/**
- * Resize W/H (mm) keeping the layer's anchor point fixed on canvas.
- * Anchor 'tl' reproduces the legacy behavior (position untouched).
- */
 export function applyAnchoredResize(
   layer: CanvasLayer,
   next: { w?: number; h?: number },
@@ -71,10 +58,6 @@ export function applyAnchoredResize(
   };
 }
 
-/**
- * Inspector W/H edit with aspect-lock + resize constraint applied.
- * Aspect lock resolves both dimensions first, then the anchor fixes position.
- */
 export function resizeLayerAnchored(
   layer: CanvasLayer,
   dim: 'width' | 'height',
@@ -93,11 +76,6 @@ export function resizeLayerAnchored(
 
 export type ParentResizeDelta = { dx: number; dy: number; dw: number; dh: number };
 
-/**
- * Adjust a child when its parent container moves/resizes, according to
- * horizontal/vertical FrameConstraint values (start | end | center | scale).
- * Child geometry is absolute page-space (same as --translate-x/y elsewhere).
- */
 export function applyParentConstraint(
   child: CanvasLayer,
   parentDelta: ParentResizeDelta,
@@ -125,13 +103,11 @@ export function applyParentConstraint(
       return { start: start + dStart, size };
     }
     if (constraint === 'end') {
-      // Pin end edge to parent end: keep start inset, grow/shrink with dw/dh.
       return { start: start + dStart, size: Math.max(1, size + dSize) };
     }
     if (constraint === 'center') {
       return { start: start + dStart + dSize / 2, size };
     }
-    // scale
     if (!(parentSize > 0)) return { start: start + dStart, size };
     const sx = (parentSize + dSize) / parentSize;
     const rel = start - parentStart;

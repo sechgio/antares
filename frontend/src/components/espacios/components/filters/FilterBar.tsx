@@ -5,7 +5,6 @@ import { countActiveFilters } from '../../utils/filters';
 import { pickerColumns } from '../../utils/statusConfig';
 import SelectPicker from './SelectPicker';
 
-/** Shared compact control: same height, radius and type scale across the bar. */
 const CTRL =
   'h-8 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-xs text-[var(--text-secondary)] outline-none transition-colors placeholder:text-[var(--text-muted)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)] focus:border-[var(--border-medium)] focus:text-[var(--text-primary)]';
 

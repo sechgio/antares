@@ -33,9 +33,6 @@ describe('matchHistoryShortcut', () => {
     ).toBeNull();
   });
 
-  // CanvasView wiring: when the chord matches AND the target is an inspector
-  // INPUT/TEXTAREA, history must NOT intercept (native field undo). Inline
-  // canvas editors are gated separately via editingLayerId.
   it('inspector editable targets are detectable so CanvasView can skip history chords', () => {
     const input = document.createElement('input');
     const textarea = document.createElement('textarea');

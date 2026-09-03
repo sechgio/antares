@@ -1,12 +1,3 @@
-"""Modelos canónicos del dominio Panel Aviso de Corte.
-
-Todos los modelos son ``@dataclass(frozen=True)``: se comportan como valores
-inmutables y son seguros para pasar entre capas (core ↔ handlers ↔ tests).
-Los constructores aplican las invariantes I1..I6 descritas en la sección
-"Invariantes globales del modelo" del documento de diseño; cualquier
-violación se traduce en :class:`InvalidPanelError` o
-:class:`InvalidMatchRuleError` con un mensaje que nombra el campo inválido.
-"""
 
 from __future__ import annotations
 
@@ -16,60 +7,34 @@ from typing import Literal
 
 from .errors import InvalidMatchRuleError, InvalidPanelError
 
-# Constantes públicas del dominio
-
-#: Máximo de imágenes permitidas por Panel (ver I1).
 MAX_IMAGES_PER_PANEL: int = 4
 
-#: Límite superior de filas aceptadas al importar un Excel.
 MAX_EXCEL_ROWS: int = 10_000
 
-#: Tope de paneles en un PDF/DOCX consolidado (alineado a formatos MAX_UPLOAD_PDF_PAGES).
 MAX_PANELS: int = 1000
 
-#: Tamaño máximo (bytes) admitido para cada logo del encabezado (5 MB).
 MAX_LOGO_BYTES: int = 5 * 1024 * 1024
 
-#: Tamaño máximo (bytes) admitido para cada imagen del bulk set (15 MB).
 MAX_IMAGE_BYTES: int = 15 * 1024 * 1024
 
-# Alias de tipo literales (espejo de los contratos TypeScript del frontend)
 
 MatchStrategy = Literal["prefix", "contains", "exact", "regex"]
 ExportMode = Literal["skip_empty", "include_empty"]
 
-# Conjunto canónico de estrategias aceptadas (se usa en validaciones).
 _VALID_MATCH_STRATEGIES: frozenset[str] = frozenset(
     {"prefix", "contains", "exact", "regex"},
 )
 
-# Regex internos de validación
 
-# I4: fecha ISO-8601 "YYYY-MM-DD" (o cadena vacía, permitida en form-mode).
 _ISO_DATE_RE: re.Pattern[str] = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
-# I3: caption "IMAGEN N°{N}: {direccion}" — captura el número secuencial
-# global (no necesariamente 1..4) para usarlo en leyendas.
 _CAPTION_RE: re.Pattern[str] = re.compile(r"^IMAGEN N°(\d+): .+$")
 
-# I6: presencia del grupo nombrado (?P<clave>...) dentro del patrón regex.
 _NAMED_CLAVE_GROUP_RE: re.Pattern[str] = re.compile(r"\(\?P<clave>")
-
-
-# Modelos del dominio
 
 
 @dataclass(frozen=True)
 class PanelImageRef:
-    """Referencia a una imagen dentro de un Panel.
-
-    Invariantes aplicadas en ``__post_init__``:
-
-    * ``filename`` es una cadena no vacía.
-    * ``position`` ∈ {1, 2, 3, 4} (I2 parcial) — posición dentro del grid 2x2.
-    * ``caption`` cumple ``^IMAGEN N°\\d+: .+$`` (I3) — el número es
-      secuencial global (no necesariamente 1..4).
-    """
 
     filename: str
     caption: str
@@ -81,7 +46,6 @@ class PanelImageRef:
             raise InvalidPanelError(
                 msg,
             )
-        # ``bool`` es subtipo de ``int`` en Python; excluirlo explícitamente.
         if not isinstance(self.position, int) or isinstance(self.position, bool):
             msg = (
                 "PanelImageRef.position: debe ser int, no "
@@ -116,19 +80,6 @@ class PanelImageRef:
 
 @dataclass(frozen=True)
 class Panel:
-    """Panel canónico (una hoja A4 del PDF consolidado).
-
-    Invariantes aplicadas en ``__post_init__``:
-
-    * ``fecha_corte`` cumple ``^\\d{4}-\\d{2}-\\d{2}$`` o es cadena vacía
-      (I4; vacía permitida en form-mode).
-    * ``imagenes`` es una tupla con a lo sumo :data:`MAX_IMAGES_PER_PANEL`
-      elementos (I1).
-    * Las ``position`` de las imágenes son únicas dentro del Panel (I2).
-
-    La invariante I5 (unicidad global de una imagen entre Paneles) se
-    aplica en el matcher, no aquí.
-    """
 
     cuadrante: str
     fecha_corte: str
@@ -213,16 +164,6 @@ class Panel:
 
 @dataclass(frozen=True)
 class MatchRule:
-    """Regla de emparejamiento imagen → fila del Excel.
-
-    Invariantes aplicadas en ``__post_init__``:
-
-    * ``key_column`` es una cadena no vacía.
-    * ``strategy`` ∈ {prefix, contains, exact, regex}.
-    * Si ``strategy == 'regex'`` (I6):
-        - ``regex_pattern`` compila sin errores.
-        - ``regex_pattern`` contiene el grupo nombrado ``(?P<clave>...)``.
-    """
 
     key_column: str
     strategy: MatchStrategy
@@ -274,12 +215,6 @@ class MatchRule:
 
 @dataclass(frozen=True)
 class ExcelSource:
-    """Archivo Excel importado y normalizado.
-
-    No aplica invariantes adicionales más allá de las de tipado del
-    dataclass: el importer (:mod:`.importer`) es el responsable de validar
-    extensión, número de filas y estructura antes de construir este modelo.
-    """
 
     filename: str
     columns: tuple[str, ...]
@@ -290,7 +225,6 @@ class ExcelSource:
 
 @dataclass(frozen=True)
 class MatchSummary:
-    """Resumen numérico del emparejamiento (para la UI y los reportes)."""
 
     total_rows: int
     rows_with_images: int
@@ -304,7 +238,6 @@ class MatchSummary:
 
 @dataclass(frozen=True)
 class MatchResult:
-    """Resultado completo del emparejamiento: paneles, resumen, advertencias."""
 
     panels: tuple[Panel, ...]
     summary: MatchSummary

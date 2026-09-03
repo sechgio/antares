@@ -1,4 +1,3 @@
-// Smoke test: push-loop.js exporta flujo y bloquea main en ship mode.
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');

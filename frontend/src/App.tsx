@@ -16,7 +16,6 @@ import { api, onNotify } from './api';
 import { acknowledgeCanvasFlush } from './utils/ackCanvasFlush';
 import { bootThemeFromBackend } from './utils/themeApplier';
 
-// Lazy: LoginScreen pulls framer-motion (~100KB+ gzip). Only needed for Espacios auth.
 const LoginScreen = React.lazy(() => import('./auth/LoginScreen'));
 const SettingsModal = React.lazy(() => import('./components/settings/SettingsModal'));
 const PetMascot = React.lazy(() => import('./components/layout/PetMascot'));
@@ -39,7 +38,6 @@ const FichasTecnicasView = React.lazy(() => import('./components/fichas-tecnicas
 const EspaciosView = React.lazy(() => import('./components/espacios'));
 const CanvasView = React.lazy(() => import('./components/canvas'));
 
-/** Keep Canvas mounted briefly after leaving the tab; then unmount to free blob/history RAM. */
 const CANVAS_KEEPALIVE_MS = 60 * 1000;
 function prefetchSettingsModal() {
   void import('./components/settings/SettingsModal');
@@ -111,13 +109,11 @@ function ElectronOnlyNotice() {
   );
 }
 
-/** Tabs that require Supabase auth (cloud collaboration). Local tools stay usable offline. */
 const CLOUD_AUTH_TABS = new Set<TabId>(['espacios']);
 
 function AuthGate() {
   const { user, loading, signOut } = useAuth();
 
-  // Electron bridge is required for the whole app — check before auth.
   if (!window.electronAPI) {
     return <ElectronOnlyNotice />;
   }
@@ -126,7 +122,6 @@ function AuthGate() {
     return <DisabledUserNotice onSignOut={signOut} />;
   }
 
-  // Show the shell immediately (default tab is local). Do not block on session resolve.
   return <AppContent />;
 }
 
@@ -147,7 +142,6 @@ function DisabledUserNotice({ onSignOut }: { onSignOut: () => Promise<void> }) {
 function AppContent() {
   const { user, loading: authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<TabId>(DEFAULT_TAB);
-  /** Once visited, Canvas stays mounted (hidden) briefly so docs/picker/history survive tab switches. */
   const [canvasMounted, setCanvasMounted] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -177,10 +171,6 @@ function AppContent() {
     return () => window.clearTimeout(t);
   }, [activeTab, canvasMounted]);
 
-  // If Canvas has never been mounted (or its keep-alive already expired),
-  // there is no CanvasView listener to acknowledge the main-process shutdown
-  // request. A no-op flush ACK prevents an unnecessary 120s wait in that case;
-  // while Canvas is mounted, CanvasView owns the ACK after saving dirty state.
   useEffect(() => {
     if (canvasMounted) return undefined;
     return onNotify(async (method) => {
@@ -191,8 +181,6 @@ function AppContent() {
     });
   }, [canvasMounted]);
 
-  // Prefetch settings chunk after first paint so open feels instant.
-  // Skip in Vitest to avoid EnvironmentTeardownError from pending dynamic imports.
   useEffect(() => {
     if (import.meta.env.MODE === 'test') return;
     const ric = window.requestIdleCallback?.bind(window);
@@ -204,13 +192,8 @@ function AppContent() {
     return () => window.clearTimeout(t);
   }, []);
 
-  // Backend theme is the persisted authority: the cached CSS painted first in
-  // main.tsx (no flash), then this reconciles with the saved theme as soon as
-  // IPC answers. Fixes startup ignoring theme_config.json when localStorage
-  // cache is missing or stale.
   useEffect(() => bootThemeFromBackend(api.getTheme), []);
 
-  // Mount PetMascot only when Petdex enables it (same session or prior).
   useEffect(() => {
     const sync = () => setPetEnabled(isPetMascotEnabled());
     window.addEventListener('petdex-config-changed', sync);
@@ -239,9 +222,6 @@ function AppContent() {
   useKeyboardShortcut('j', () => handleTabChange('informesV2'), { ctrl: true, shift: true, preventDefault: true });
   useKeyboardShortcut('d', () => openSettings('petdex'), { ctrl: true, shift: true, preventDefault: true });
 
-  // History "Reejecutar" only has a listener inside ConversionView, which is
-  // unmounted when another tab is active. Switch to convert so the pending
-  // payload (or the live event) can be applied.
   useEffect(() => {
     return subscribeHistoryReexecute(() => {
       setActiveTab('convert');

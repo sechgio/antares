@@ -309,7 +309,6 @@ describe('useEspaciosSync', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     await waitFor(() => expect(result.current.espacios).toEqual([espacioA, espacioB]));
 
-    // Wait a tick for the nested load to fail
     await waitFor(() => expect(result.current.proyectos).toEqual([]));
     expect(result.current.error).toBeNull();
   });
@@ -322,8 +321,6 @@ describe('useEspaciosSync', () => {
       title: 'Creada durante load',
     };
 
-    // 1st call: initial project load (stale if it finishes after create)
-    // 2nd call: reconcile load after create (server includes the new row)
     fetchTareas
       .mockImplementationOnce(
         () =>
@@ -401,7 +398,6 @@ describe('useEspaciosSync', () => {
 
     const created = { ...tareaA, id: 'tarea-new', title: 'Nueva' };
     createTarea.mockResolvedValue(created);
-    // Server still has the soft-deleted row until the undo timer commits.
     fetchTareas.mockResolvedValueOnce([tareaA, created]);
 
     await act(async () => {
@@ -420,7 +416,6 @@ describe('useEspaciosSync', () => {
       result.current.softRemoveTarea('tarea-a');
     });
 
-    // Switch espacio so the active project becomes proy-b (different from tareaA).
     await act(async () => {
       result.current.setActiveEspacioId('esp-b');
     });

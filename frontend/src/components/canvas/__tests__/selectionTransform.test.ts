@@ -26,7 +26,6 @@ describe('selectionTransform', () => {
     const at2 = snapThresholdMm(2, 5);
     expect(at1).toBeCloseTo(5 / MM_TO_PX, 5);
     expect(at2).toBeCloseTo(at1 / 2, 5);
-    // Uncapped 5/(MM_TO_PX*0.02) ≈ 66mm — must not feel like page-lock.
     expect(snapThresholdMm(0.02, 5)).toBe(SNAP_THRESHOLD_MAX_MM);
     expect(snapThresholdMm(0.05, 5)).toBeLessThanOrEqual(SNAP_THRESHOLD_MAX_MM);
   });
@@ -133,7 +132,6 @@ describe('selectionTransform', () => {
         '--rotate': '90deg',
       },
     });
-    // Marquee overlaps the tall rotated AABB (≈ x 5–15, y 0–20) but misses a flat-only local hit.
     expect(layersInMarquee([rotated], { x: 0, y: 12, w: 10, h: 4 })).toEqual([rotated.id]);
   });
 
@@ -189,7 +187,6 @@ describe('selectionTransform', () => {
         '--height': '10mm',
       },
     });
-    // Moving left edge is at 48; other right edge at 30. dx=-17.7 → left at 30.3, snaps to 30.
     const result = snapMoveWithGuides(
       [moving, other],
       [moving.id],
@@ -213,7 +210,6 @@ describe('selectionTransform', () => {
       },
     });
     const bounds = selectionBounds([layer], [layer.id])!;
-    // 20×10 rotated 90° around center → visual ~10×20
     expect(bounds.w).toBeCloseTo(10, 5);
     expect(bounds.h).toBeCloseTo(20, 5);
   });
@@ -309,7 +305,6 @@ describe('selectionTransform', () => {
     const c = next.find((l) => l.id === 'c1')!;
     expect(g.cssVars['--rotate']).toBe('90deg');
     expect(c.cssVars['--rotate']).toBe('90deg');
-    // Group center is (20, 10); child center was (30, 10) → after 90° CCW around group center → (20, 20)
     expect(parseMm(c.cssVars['--translate-x'])).toBeCloseTo(10, 5);
     expect(parseMm(c.cssVars['--translate-y'])).toBeCloseTo(10, 5);
   });
@@ -343,7 +338,6 @@ describe('selectionTransform', () => {
     const slotAfter = next.find((l) => l.id === slotBefore.id)!;
     expect(parseMm(gridNext.cssVars['--width'])).toBeCloseTo(140, 5);
     expect(parseMm(gridNext.cssVars['--height'])).toBeCloseTo(100, 5);
-    // Right-column slot should move further right after a wider grid
     expect(parseMm(slotAfter.cssVars['--translate-x'])).toBeGreaterThan(
       parseMm(slotBefore.cssVars['--translate-x']),
     );

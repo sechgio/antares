@@ -1,5 +1,3 @@
-// stdout NDJSON framing must use Buffer (not string concat) to avoid UTF-16
-// doubling and GC pressure on large IPC responses.
 const assert = require('assert');
 const path = require('path');
 
@@ -60,7 +58,6 @@ function run() {
   const { _consumeStdoutLines } = loadRouter();
   assert.strictEqual(typeof _consumeStdoutLines, 'function', '_consumeStdoutLines exported');
 
-  // Empty pending + partial chunk → no lines, pending is Buffer
   {
     const r = _consumeStdoutLines(Buffer.alloc(0), Buffer.from('{"a":1'));
     assert.ok(Buffer.isBuffer(r.pending), 'pending remains Buffer');
@@ -68,7 +65,6 @@ function run() {
     assert.strictEqual(r.pending.toString('utf8'), '{"a":1');
   }
 
-  // Split across two chunks
   {
     let state = Buffer.alloc(0);
     let r = _consumeStdoutLines(state, Buffer.from('{"id":1,"result":{"ok":tru'));
@@ -80,7 +76,6 @@ function run() {
     assert.strictEqual(r.pending.length, 0, 'no leftover');
   }
 
-  // Accept string chunk (legacy EventEmitter string mode) without string-concat pending
   {
     const r = _consumeStdoutLines(Buffer.alloc(0), 'hello\n');
     assert.ok(Buffer.isBuffer(r.pending), 'pending is Buffer even for string chunk');
@@ -88,7 +83,6 @@ function run() {
     assert.strictEqual(r.lines[0].toString('utf8'), 'hello');
   }
 
-  // Large-ish line: line buffer byteLength equals UTF-8 size (telemetry-friendly)
   {
     const payload = JSON.stringify({ jsonrpc: '2.0', id: 'x', result: { data: 'á'.repeat(1000) } });
     const chunk = Buffer.from(`${payload}\n`, 'utf8');
@@ -97,7 +91,6 @@ function run() {
     assert.strictEqual(r.lines[0].byteLength, Buffer.byteLength(payload, 'utf8'));
   }
 
-  // Skip empty lines (double newline)
   {
     const r = _consumeStdoutLines(Buffer.alloc(0), Buffer.from('a\n\nb\n'));
     assert.strictEqual(r.lines.length, 2);
@@ -105,7 +98,6 @@ function run() {
     assert.strictEqual(r.lines[1].toString('utf8'), 'b');
   }
 
-  // maxPendingBytes drops an oversized fragmented line and keeps framing sane
   {
     const small = Buffer.from('{"id":1,"result":1}\n');
     const r1 = _consumeStdoutLines(Buffer.alloc(0), small, 16);

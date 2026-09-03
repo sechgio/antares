@@ -2,11 +2,6 @@ import { act, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import BrandFace from '../editor/BrandFace';
 
-/**
- * BrandFace must not force layout on every mousemove: coalesce to one
- * apply per animation frame and reuse a cached face rect.
- * Eye tracking and blink must stay off the React commit path.
- */
 describe('BrandFace pointer batching', () => {
   let frames: Map<number, FrameRequestCallback>;
   let nextId: number;
@@ -71,7 +66,6 @@ describe('BrandFace pointer batching', () => {
     };
     const rectSpy = vi.spyOn(face, 'getBoundingClientRect').mockReturnValue(faceRect);
 
-    // Invalidate cache so the next RAF re-reads once (covers resize path).
     act(() => {
       window.dispatchEvent(new Event('resize'));
     });
@@ -82,7 +76,6 @@ describe('BrandFace pointer batching', () => {
     window.dispatchEvent(new MouseEvent('mousemove', { clientX: 220, clientY: 110 }));
     window.dispatchEvent(new MouseEvent('mousemove', { clientX: 240, clientY: 120 }));
 
-    // No DOM writes until the animation frame.
     expect(eyes[0]!.style.transform).toBe('');
     expect(eyes[1]!.style.transform).toBe('');
 
@@ -92,10 +85,8 @@ describe('BrandFace pointer batching', () => {
     expect(eyes[0]!.style.transform).toBe(latest);
     expect(eyes[1]!.style.transform).toBe(latest);
 
-    // One rect refresh for the dirty flag; no per-mousemove layout reads.
     expect(rectSpy.mock.calls.length).toBe(readsBeforeMoves + 1);
 
-    // Second frame with same size: reuse cache (no extra getBoundingClientRect).
     const readsAfterFirstFrame = rectSpy.mock.calls.length;
     window.dispatchEvent(new MouseEvent('mousemove', { clientX: 126, clientY: 70 }));
     act(() => tick());
@@ -142,7 +133,6 @@ describe('BrandFace pointer batching', () => {
 
     expect(pupils[0]!.getAttribute('data-blink')).toBe('true');
     expect(pupils[1]!.getAttribute('data-blink')).toBe('true');
-    // Blink must not force a React re-render of BrandFace.
     expect(renderCount).toBe(1);
 
     act(() => {

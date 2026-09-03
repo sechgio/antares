@@ -1,7 +1,6 @@
 import type { BoardColumn, TareaStatus } from '../types';
 import { pickDefaultColor } from './colors';
 
-/** Built-in keys used by seed + legacy tasks. */
 export const BUILTIN_STATUS = {
   todo: 'todo',
   in_progress: 'in_progress',
@@ -20,7 +19,6 @@ export const STATUS_LABELS: Record<BuiltinTareaStatus, string> = {
   closed: 'Cerrada',
 };
 
-/** Solid accents for dots, borders and text (ClickUp-like). */
 export const STATUS_COLORS: Record<BuiltinTareaStatus, string> = {
   todo: '#87909E',
   in_progress: '#5F55EE',
@@ -29,7 +27,6 @@ export const STATUS_COLORS: Record<BuiltinTareaStatus, string> = {
   closed: '#64748B',
 };
 
-/** Filled header pills (white text on solid). */
 export const STATUS_PILL_FILLED: Record<BuiltinTareaStatus, boolean> = {
   todo: false,
   in_progress: true,
@@ -38,7 +35,6 @@ export const STATUS_PILL_FILLED: Record<BuiltinTareaStatus, boolean> = {
   closed: false,
 };
 
-/** Todos los valores built-in válidos (incluye legacy closed). */
 export const ALL_STATUS_VALUES: BuiltinTareaStatus[] = [
   'todo',
   'in_progress',
@@ -105,21 +101,18 @@ export function columnPillFilled(columns: BoardColumn[], key: TareaStatus): bool
   return columnIsDone(columns, key);
 }
 
-/** Visible board columns: all except closed unless showClosed. */
 export function visibleBoardColumns(columns: BoardColumn[], showClosed: boolean): BoardColumn[] {
   const sorted = [...columns].sort((a, b) => a.sort_order - b.sort_order);
   if (showClosed) return sorted;
   return sorted.filter((c) => c.key !== 'closed');
 }
 
-/** Status options for pickers/filters (hide closed). */
 export function pickerColumns(columns: BoardColumn[]): BoardColumn[] {
   return [...columns]
     .filter((c) => c.key !== 'closed')
     .sort((a, b) => a.sort_order - b.sort_order);
 }
 
-/** Fallback columns when API has not loaded yet. */
 export function fallbackBoardColumns(proyectoId: string): BoardColumn[] {
   const now = new Date().toISOString();
   return DEFAULT_BOARD_COLUMN_DEFS.map((def, i) => ({

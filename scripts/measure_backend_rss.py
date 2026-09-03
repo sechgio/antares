@@ -1,13 +1,3 @@
-#!/usr/bin/env python3
-"""Measure backend process RSS after a production-like boot path.
-
-Usage (from repo root):
-  python scripts/measure_backend_rss.py
-  python scripts/measure_backend_rss.py --warm-deferred
-  ANTARES_WARM_DEFERRED=1 python scripts/measure_backend_rss.py
-
-Prints a machine-readable line: RSS_MB=...
-"""
 from __future__ import annotations
 
 import argparse
@@ -31,7 +21,6 @@ def _boot(warm_deferred: bool) -> None:
     root = _repo_root()
     sys.path.insert(0, str(root))
 
-    # Mirror backend/main.py path adjustment when importing as a package.
     from backend.bootstrap import adjust_backend_import_path
 
     backend_dir = root / "backend"
@@ -47,18 +36,15 @@ def _boot(warm_deferred: bool) -> None:
     if warm_deferred:
         HANDLERS.warm_deferred()
     else:
-        # Light workload: resolve a few core methods without pulling every feature module.
         for method in ("version", "formats", "preview", "canvas_get", "db_get_fields"):
             HANDLERS.get(method)
 
-    # Re-touch the SQLite pool so pragmas are exercised after warm.
     get_connection(get_db_path())
     gc.collect()
     close_connection()
 
 
 def _isolate_user_data() -> Path:
-    """Use a fresh temp Antares data dir so a corrupt local catalog cannot skew RSS."""
     import tempfile
 
     root = Path(tempfile.mkdtemp(prefix="antares-rss-"))

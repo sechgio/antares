@@ -23,7 +23,6 @@ async function main() {
   await cleanupSpreadsheetSpillFile(spillFile);
   assert.strictEqual(fs.existsSync(spillFile), false, 'spill file deleted after cleanup');
 
-  // Outside spill dir must not be deleted
   const other = path.join(os.tmpdir(), `antares-not-spill-${process.pid}.json`);
   await fsp.writeFile(other, 'x', 'utf8');
   await cleanupSpreadsheetSpillFile(other);
@@ -46,7 +45,6 @@ async function main() {
   assert.ok(ipcTempDirs().length >= 2);
   console.log('  ✓ spill cleanup + age sweep');
 
-  // file_token_cleanup via dialog-handlers: delete spill + revoke capability
   const { handleDialogCall } = require('../electron/dialog-handlers.js');
   const { createFileCapability, resolveCapability } = require('../electron/file-capabilities.js');
   const cleanupSpill = path.join(spillDir, `cleanup-token-${process.pid}.json`);

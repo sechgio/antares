@@ -1,4 +1,3 @@
-"""Tests for the RunType registry and payload validation."""
 
 from __future__ import annotations
 
@@ -36,9 +35,8 @@ class TestRegistryShape:
         import json
 
         payload = registry_payload()
-        # Round-trip through json.dumps; must not raise.
         text = json.dumps(payload)
-        assert text  # non-empty
+        assert text
         assert payload["all_run_types"] == ALL_RUN_TYPES
         assert {rt["id"] for rt in payload["run_types"]} == set(ALL_RUN_TYPES)
 
@@ -49,7 +47,6 @@ class TestValidateRunPayload:
             validate_run_payload("inventado-2027", {}, [])
 
     def test_known_type_with_empty_payload_does_not_raise(self) -> None:
-        # Padron schema is permissive — empty options / files are valid.
         validate_run_payload("padron", {}, [])
 
     def test_known_type_with_typical_conversion_payload(self) -> None:
@@ -60,7 +57,6 @@ class TestValidateRunPayload:
         )
 
     def test_files_must_be_non_empty_for_conversion(self) -> None:
-        # The conversion schema requires at least one file.
         from jsonschema.exceptions import ValidationError
 
         with pytest.raises(ValidationError):

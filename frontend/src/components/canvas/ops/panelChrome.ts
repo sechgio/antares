@@ -1,9 +1,11 @@
-/** Session UI chrome prefs for Canvas sidebars (not document settings). */
+
+export type CanvasToolbarPosition = 'top' | 'bottom';
 
 export const PANEL_CHROME_KEYS = {
   left: 'antares.canvas.leftPanelOpen',
   right: 'antares.canvas.rightPanelOpen',
   lock: 'antares.canvas.uiLocked',
+  toolbar: 'antares.canvas.toolbarPosition',
 } as const;
 
 export function readBoolLS(key: string, fallback: boolean): boolean {
@@ -24,7 +26,27 @@ export function writeBoolLS(key: string, value: boolean): void {
   }
 }
 
-/** Figma-like Ctrl+\ : any open → close both; both closed → open both. */
+export function readToolbarPosition(
+  key: string,
+  fallback: CanvasToolbarPosition,
+): CanvasToolbarPosition {
+  try {
+    const value = localStorage.getItem(key);
+    if (value === 'top' || value === 'bottom') return value;
+  } catch {
+    // Private mode / unavailable storage — use the default.
+  }
+  return fallback;
+}
+
+export function writeToolbarPosition(key: string, value: CanvasToolbarPosition): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Quota / private mode — ignore.
+  }
+}
+
 export function nextBothPanelsOpen(leftOpen: boolean, rightOpen: boolean): boolean {
   return !(leftOpen || rightOpen);
 }

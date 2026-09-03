@@ -1,9 +1,3 @@
-/**
- * Regresión: validación de rutas de escritura en el router IPC.
- * `outputDir` de `generar_ubicaciones` debe pasar por la misma política que
- * el resto de salidas: token `antares-write-*` resuelto, raíz registrada por
- * diálogo, o Documentos/Descargas. Cualquier otra ruta se rechaza.
- */
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
@@ -103,15 +97,12 @@ async function run() {
   const { clearAllowedReadPaths, registerAllowedReadPath } = require('../electron/path-allowlist');
 
   try {
-    // 1) outputDir bajo Documentos → permitido sin mutar el payload.
     const p1 = router._validateAndResolveWriteParams({ outputDir: path.join(docsDir, 'salidas') }, null);
     assert(p1.outputDir === path.join(docsDir, 'salidas'), 'outputDir bajo Documentos se acepta');
 
-    // 2) outputDir bajo Descargas → permitido.
     const p2 = router._validateAndResolveWriteParams({ outputDir: path.join(dlDir, 'x') }, null);
     assert(p2.outputDir === path.join(dlDir, 'x'), 'outputDir bajo Descargas se acepta');
 
-    // 3) outputDir arbitrario sin registro → rechazado.
     let threw = false;
     try {
       router._validateAndResolveWriteParams({ outputDir: path.join(arbitraryDir, 'salidas') }, null);
@@ -120,7 +111,6 @@ async function run() {
     }
     assert(threw, 'outputDir sin autorización se rechaza');
 
-    // 4) outputDir elegido con dialog_folder(pickOnly) → permitido (write root registrado).
     _clearAllowedWriteRoots();
     clearAllowedReadPaths();
     const dialog = {
@@ -135,13 +125,11 @@ async function run() {
     const p4 = router._validateAndResolveWriteParams({ outputDir: path.join(customDir, 'salidas') }, null);
     assert(p4.outputDir === path.join(customDir, 'salidas'), 'outputDir elegido por diálogo se acepta');
 
-    // 5) token antares-write-* en outputDir → se resuelve a la ruta real autorizada.
     const cap = createFileCapability({ filePath: customDir, mode: 'write', webContentsId: null });
     const p5 = router._validateAndResolveWriteParams({ outputDir: cap.token }, null);
     assert(p5.outputDir === customDir, 'outputDir con token se resuelve a la ruta real');
     assert(p5._write_token === cap.token, 'outputDir con token conserva _write_token');
 
-    // 6) los campos existentes mantienen su contrato (output_path → _resolved_output_path).
     const outFile = path.join(customDir, 'reporte.pdf');
     await fs.promises.writeFile(outFile, 'x');
     const cap2 = createFileCapability({ filePath: outFile, mode: 'write', webContentsId: null });
@@ -149,12 +137,9 @@ async function run() {
     assert(p6._resolved_output_path === outFile, 'output_path con token sigue resolviéndose a _resolved_output_path');
     assert(p6.output_path === cap2.token, 'output_path con token no muta el campo original');
 
-    // 7) payload sin campos de escritura no se toca.
     const p7 = router._validateAndResolveWriteParams({ zoom: 18, formato: 'vertical' }, null);
     assert(p7.zoom === 18 && p7._resolved_output_path === undefined, 'payload sin salida no se procesa');
 
-    // 7b) un path legítimo cuyo nombre empiece con 'antares-write' (sin el
-    //     separador '_' del token real) no debe confundirse con un token.
     let notTokenError = '';
     try {
       router._validateAndResolveWriteParams(
@@ -169,8 +154,6 @@ async function run() {
       'path con prefijo antares-write sin separador no se confunde con un token',
     );
 
-    // 8) raíz elegida por diálogo en una sesión ANTERIOR → sigue válida tras
-    //    recargar el módulo (raíces de escritura persistidas en userData).
     const userDataDir = path.join(tmpRoot, 'userData');
     const persistedRoot = path.join(tmpRoot, 'raiz-persistida');
     await fs.promises.mkdir(userDataDir, { recursive: true });
@@ -179,8 +162,6 @@ async function run() {
       path.join(userDataDir, 'antares-write-roots.json'),
       JSON.stringify([persistedRoot]),
     );
-    // Fresh dialog-handlers so the top-level persisted-roots load runs with
-    // the userData mock (the module was already cached from the first load).
     const dialogHandlersPath = require.resolve('../electron/dialog-handlers');
     delete require.cache[dialogHandlersPath];
     const router2 = loadRouter({ documentsDir: docsDir, downloadsDir: dlDir, userDataDir });
@@ -197,7 +178,6 @@ async function run() {
     }
     assert(rejectedOutsideRoot, 'ruta fuera de la raíz persistida sigue rechazada');
 
-    // 9) elegir carpeta por diálogo persiste la raíz para la próxima sesión.
     const dialog2 = {
       async showOpenDialog() {
         return { canceled: false, filePaths: [path.join(tmpRoot, 'nueva-raiz')] };
@@ -218,8 +198,6 @@ async function run() {
       'dialog_folder persiste la raíz de escritura en userData',
     );
 
-    // 10) staged read tokens nested in localImagePaths resolve to paths and
-    // can be cleaned after a backend/native operation.
     const staged = createStagedSession({ name: 'foto.jpg', size: 4, webContentsId: 1 });
     await appendStagedChunk(staged.token, Buffer.from([0xff, 0xd8, 0xff, 0xd9]), 1);
     const stagedCap = await completeStagedSession(staged.token, 1);
@@ -232,8 +210,6 @@ async function run() {
       'localImagePaths staged token se resuelve a ruta real',
     );
 
-    // 11) Real backend payloads resolve read tokens at every declared nested
-    // read location without treating filenames or data URLs as paths.
     const nestedPayload = {
       files: [stagedCap.token],
       image_paths: { 'foto.jpg': stagedCap.token },
@@ -292,8 +268,6 @@ async function run() {
     await router2._cleanupStagedTokens(stagedTokens, 1);
     assert(!fs.existsSync(stagedCap.path), 'staged token nested se elimina después de la operación');
 
-    // Read capabilities are required recursively. A raw path hidden in an
-    // array/dictionary must not reach a backend handler.
     const rawInput = path.join(arbitraryDir, 'raw.jpg');
     await fs.promises.writeFile(rawInput, 'raw');
     for (const payload of [
@@ -314,16 +288,13 @@ async function run() {
     const optimizerPayload = router2._maybeResolveFileTokens(
       { files: [{ filename: '../foto.jpg', content_b64: 'AAAA/AAAA' }] },
       { webContents: { id: 1 } },
-      'image_optimizer_zip',
+      'image_optimizer_save_files',
     );
     assert(
       optimizerPayload.files[0].content_b64 === 'AAAA/AAAA',
       'opaque file records are not mistaken for read paths',
     );
 
-    // A raw path approved by a native dialog (registered read path) is a
-    // legitimate read source and must remain compatible during migration to
-    // capability tokens.
     const registeredInput = path.join(arbitraryDir, 'approved.jpg');
     await fs.promises.writeFile(registeredInput, 'approved');
     registerAllowedReadPath(registeredInput);
@@ -395,8 +366,6 @@ async function run() {
       'consolidated informes keeps logical image tokens',
     );
 
-    // Exact read tokens resolve in nested fields, and are included in staged
-    // cleanup so a backend/native operation cannot leak temporary files.
     const nestedCap = createFileCapability({
       filePath: registeredInput,
       mode: 'read',

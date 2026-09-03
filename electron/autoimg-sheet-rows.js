@@ -20,10 +20,6 @@ function listMissingAutoImgTabs(existingTabNames) {
   return Object.keys(AUTOIMG_SHEET_TABS).filter((tab) => !existing.has(tab));
 }
 
-/**
- * NOTAS en sync: el padrón no se amplía desde el escaneo, así que siempre
- * se conservan las notas existentes de la fila.
- */
 function resolveNotasForSync({ existingNotas }) {
   return existingNotas || '';
 }
@@ -44,7 +40,6 @@ function countSinSgioRows(rows) {
   return _bdImgDataRows(rows).filter((row) => !String(row[1] || '').trim()).length;
 }
 
-/** Deriva métricas RESUMEN desde filas BD_IMG mergeadas (col CANTIDAD = índice 8). */
 function countBdImgEstadoMetrics(rows) {
   const dataRows = _bdImgDataRows(rows);
   let completos = 0;
@@ -64,15 +59,10 @@ function countBdImgEstadoMetrics(rows) {
   };
 }
 
-/**
- * NIS del escaneo ausentes en el padrón BD_IMG (fuera del padrón).
- * No confundir con countSinSgioRows (filas del padrón sin SGIO en col B).
- */
 function countScanFueraPadron(nisList, existingNisSet) {
   return nisList.filter((nis) => !existingNisSet.has(nis)).length;
 }
 
-/** @deprecated Use countScanFueraPadron — nombre histórico ambiguo. */
 function countScanSinSgio(nisList, existingNisSet) {
   return countScanFueraPadron(nisList, existingNisSet);
 }
@@ -85,7 +75,6 @@ function findNisRowIndex(values, nis) {
   return -1;
 }
 
-/** Map NIS → último índice de fila (compat). Preferir buildNisRowIndexesMap. */
 function buildNisRowIndexMap(values) {
   const map = new Map();
   const start = _bdImgStartIndex(values);
@@ -96,7 +85,6 @@ function buildNisRowIndexMap(values) {
   return map;
 }
 
-/** Map NIS → todos los índices de fila (soporta duplicados en el padrón). */
 function buildNisRowIndexesMap(values) {
   const map = new Map();
   const start = _bdImgStartIndex(values);
@@ -114,13 +102,6 @@ function _rowSignature(row) {
   return JSON.stringify(row || []);
 }
 
-/**
- * Fusiona el escaneo con el padrón BD_IMG.
- * BD_IMG es la fuente de verdad: solo se actualizan filas cuyo NIS ya está
- * en la hoja. NIS detectados en carpetas pero ausentes del padrón se ignoran
- * (no se insertan filas nuevas). Filas del padrón sin imágenes en el escaneo
- * quedan con CANTIDAD 0 y ESTADO FALTANTE. NIS duplicados: se actualizan todas.
- */
 function applyScanResultsToRows(rows, nisResults, verification) {
   const nextRows = rows.length ? [...rows] : [BD_IMG_HEADER];
   const nisIndexes = buildNisRowIndexesMap(nextRows);
@@ -157,7 +138,6 @@ function applyScanResultsToRows(rows, nisResults, verification) {
     if (!nisIndexes.has(nis)) unmatchedScan += 1;
   }
 
-  // newRows siempre 0: el padrón no se amplía desde el escaneo
   return {
     rows: nextRows,
     updated,

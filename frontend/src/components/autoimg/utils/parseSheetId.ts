@@ -1,4 +1,3 @@
-/** Extrae el ID de un Google Sheet desde URL o ID directo. */
 export function parseSheetId(input: string): string {
   const trimmed = input.trim();
   if (!trimmed) return '';

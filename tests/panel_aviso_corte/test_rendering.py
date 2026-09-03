@@ -1,4 +1,3 @@
-"""Tests de rendering PDF y DOCX para Panel Aviso de Corte."""
 
 from __future__ import annotations
 
@@ -31,7 +30,6 @@ _A_NS = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
 
 
 def _tiny_png() -> str:
-    """Devuelve una imagen PNG válida de 1x1 píxel codificada en base64."""
     return (
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
     )
@@ -57,12 +55,6 @@ def _png_b64(width: int, height: int) -> str:
 
 
 def _fixture_panels_and_images() -> tuple[tuple[Panel, ...], dict[str, str]]:
-    """Build panels and synthetic images without disk fixtures.
-
-    Generates 8 synthetic 100x100 PNG images (base64-encoded) matching IDs
-    1001-1008, then runs ``build_panels`` with exact strategy to produce 2
-    panels with 4 images each.
-    """
     source = ExcelSource(
         filename="aviso.xlsx",
         columns=("ID", "DIRECCION", "FECHA DE CORTE", "CUADRANTE AFECTADO", "MOTIVO"),
@@ -204,7 +196,6 @@ def test_render_pdf_accepts_disk_backed_images(tmp_path: Path) -> None:
 
     assert pdf_bytes.startswith(b"%PDF")
     assert filename.endswith(".pdf")
-    # Regression: path-backed images must embed (WeasyPrint rejects file://).
     reader = PdfReader(BytesIO(pdf_bytes))
     assert any(page.images for page in reader.pages), "disk-backed image missing from PDF"
 
@@ -218,7 +209,6 @@ def test_render_docx_success() -> None:
         images=images,
         export_mode="include_empty",
     )
-    # Magic number ZIP / DOCX
     assert docx_bytes[:4] == b"PK\x03\x04"
     assert filename.endswith(".docx")
 
@@ -321,9 +311,6 @@ def test_render_docx_limits_photo_height_to_image_row() -> None:
 
 
 def test_render_docx_applies_cover_crop_to_off_aspect_photo() -> None:
-    """Una foto con aspect ratio distinto al de la celda debe recibir un srcRect
-    de cover-crop en su blipFill; si no, se estira non-uniformemente al forzar
-    width+height fijos en add_picture (regresión del namespace de _apply_crop)."""
     panel = Panel(
         cuadrante="C001",
         fecha_corte="2025-06-15",
@@ -347,8 +334,6 @@ def test_render_docx_applies_cover_crop_to_off_aspect_photo() -> None:
 
     src_rects = root.findall(".//a:srcRect", _A_NS)
     assert src_rects, "esperaba al menos un <a:srcRect> de cover-crop sobre la foto"
-    # La foto 600x2000 en celda 7.36x9.82cm -> cover scale cubre altura => sobra
-    # altura => recorte por abajo (b > 0), lados intactos (l == r == 0).
     cropped = next((sr for sr in src_rects if int(sr.attrib.get("b", 0)) > 0), None)
     assert cropped is not None, "esperaba un srcRect con recorte inferior (b > 0)"
     assert cropped.attrib.get("l", "0") == "0"
@@ -356,22 +341,14 @@ def test_render_docx_applies_cover_crop_to_off_aspect_photo() -> None:
 
 
 def test_match_image_to_row_empty_key_matches_nothing() -> None:
-    """Una celda clave vacía (o sólo whitespace) no debe matchear ninguna imagen.
-
-    Regresión de prefix/contains: ``startswith('')`` y ``'' in stem`` son siempre
-    True, así que una fila con clave vacía capturaba todas las imágenes no
-    asignadas y robaba fotos de filas posteriores.
-    """
     for strategy in ("prefix", "contains"):
         rule = MatchRule(key_column="ID", strategy=strategy)
         assert match_image_to_row(rule, "", "1001.jpg") is False
         assert match_image_to_row(rule, "   ", "1001.jpg") is False
-        # Sanity: la clave no-vacía sigue matcheando como antes.
         assert match_image_to_row(rule, "1001", "1001.jpg") is True
 
 
 def test_build_panels_empty_key_row_does_not_steal_images() -> None:
-    """Una fila con la columna clave vacía no debe robar la imagen de otra fila."""
     source = ExcelSource(
         filename="test.xlsx",
         columns=("ID", "DIRECCION"),
@@ -396,10 +373,6 @@ def test_build_panels_empty_key_row_does_not_steal_images() -> None:
 
 
 def test_build_panels_overflow_images_reported_as_unmatched() -> None:
-    """Las imágenes que una fila descarta por exceder MAX_IMAGES_PER_PANEL y
-    ninguna fila posterior reclama deben reportarse como unmatched (no como
-    matched) — de lo contrario el summary dice "matched: 5" cuando sólo 4
-    imágenes aparecen en el export y la 5ta desaparece silenciosamente."""
     source = ExcelSource(
         filename="test.xlsx",
         columns=("ID", "DIRECCION"),
@@ -421,7 +394,6 @@ def test_build_panels_overflow_images_reported_as_unmatched() -> None:
     panel_imgs = [ref.filename for panel in result.panels for ref in panel.imagenes]
     assert "1001_5.jpg" not in panel_imgs
     assert len(panel_imgs) == 4
-    # El summary debe reflejar lo que realmente fue a paneles.
     assert result.summary.matched_images == 4
     assert result.summary.unmatched_images == 1
     assert "1001_5.jpg" in result.summary.unmatched_image_names
@@ -432,10 +404,6 @@ def test_build_panels_overflow_images_reported_as_unmatched() -> None:
 
 
 def test_build_panels_overflow_reclaimed_by_later_row_stays_matched() -> None:
-    """Guard: una imagen descartada por overflow de una fila puede ser
-    reclamada legítimamente por una fila posterior más específica (prefix
-    jerárquico). En ese caso debe quedar en un panel y contarse como matched,
-    no descartarse."""
     source = ExcelSource(
         filename="test.xlsx",
         columns=("ID", "DIRECCION"),
@@ -464,7 +432,6 @@ def test_build_panels_overflow_reclaimed_by_later_row_stays_matched() -> None:
 def test_render_docx_fixture_keeps_four_images_without_internal_page_break() -> None:
     _, images = _fixture_panels_and_images()
 
-    # Construct a panel with exactly 4 images to verify layout limits
     panel = Panel(
         cuadrante="CUADRANTE A-12",
         fecha_corte="2024-05-15",

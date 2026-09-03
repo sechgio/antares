@@ -5,7 +5,6 @@ import PetdexView from './PetdexView';
 
 const PETDEX_MANIFEST_URL = 'https://assets.petdex.dev/manifests/petdex-v1.json';
 
-// Mock fetch
 const mockPetsManifest = {
   total: 3,
   pets: [
@@ -41,13 +40,10 @@ describe('PetdexView', () => {
     localStorage.clear();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
-    // Defensa contra fake timers filtrados de otro archivo en el mismo
-    // worker: performance.now() real es requisito de la cadencia rAF.
     vi.useRealTimers();
   });
 
   it('renders Petdex settings view and loads pets', async () => {
-    // Mock global fetch
     const fetchSpy = vi.spyOn(global, 'fetch').mockImplementation(() =>
       Promise.resolve({
         ok: true,
@@ -60,7 +56,6 @@ describe('PetdexView', () => {
     expect(screen.getByRole('switch', { name: 'Activar mascota' })).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Buscar mascota...')).toBeInTheDocument();
 
-    // Wait for the custom test pet to load
     await waitFor(() => {
       expect(screen.getByText('Custom Test Pet')).toBeInTheDocument();
     });
@@ -84,7 +79,6 @@ describe('PetdexView', () => {
       expect(screen.getByText('Custom Test Pet')).toBeInTheDocument();
     });
 
-    // Search for Capibara
     const searchInput = screen.getByPlaceholderText('Buscar mascota...');
     fireEvent.change(searchInput, { target: { value: 'Capibara' } });
 
@@ -161,36 +155,30 @@ describe('PetdexView', () => {
 
     render(<PetdexView />);
 
-    // Change scale slider
     const scaleSlider = screen.getByLabelText('Escala');
     fireEvent.change(scaleSlider, { target: { value: '1.25' } });
     expect(localStorage.getItem('petdex_scale')).toBe('1.25');
 
-    // Change opacity slider
     const opacitySlider = screen.getByLabelText('Opacidad');
     fireEvent.change(opacitySlider, { target: { value: '70' } });
     expect(localStorage.getItem('petdex_opacity')).toBe('70');
 
-    // Change movement behavior
     const staticBtn = screen.getByText('Fijo');
     fireEvent.click(staticBtn);
     expect(localStorage.getItem('petdex_movement')).toBe('static');
   });
 
   it('falls back to offline presets cleanly on network failure', async () => {
-    // Mock fetch to reject (offline state)
     vi.spyOn(global, 'fetch').mockImplementation(() =>
       Promise.reject(new Error('Network error'))
     );
 
     render(<PetdexView />);
 
-    // Should display offline warning
     await waitFor(() => {
       expect(screen.getByText('Modo Offline')).toBeInTheDocument();
     });
 
-    // Should display default preset pets
     expect(screen.getAllByText('Belayer Cat').length).toBeGreaterThan(0);
     expect(screen.getByText('Capibara Lulu')).toBeInTheDocument();
     expect(screen.queryByText('Custom Test Pet')).not.toBeInTheDocument();
@@ -303,9 +291,6 @@ describe('PetdexView', () => {
 
       render(<PetdexView />);
 
-      // Re-consultar el sprite tras cada tanda: si un re-render reemplazara el
-      // nodo, una referencia capturada al inicio quedaría detached y el assert
-      // leería un estilo congelado (flaky bajo carga).
       const spriteAt = () => {
         const card = screen.getByTitle('Belayer Cat · creature');
         const sprite = card.querySelector<HTMLElement>('[style*="background-position"]');
@@ -315,10 +300,8 @@ describe('PetdexView', () => {
 
       expect(spriteAt().style.backgroundPosition).toContain('0px 0px');
 
-      // El primer tick establece la línea base (lastTime = primer timestamp de
-      // rAF); los deltas posteriores de ~16ms acumulan hasta la cadencia.
       let t = performance.now();
-      raf.tick(t); // primer frame: baseline, sin acumulación
+      raf.tick(t);
       for (let i = 0; i < 10; i++) {
         t += 16;
         raf.tick(t);

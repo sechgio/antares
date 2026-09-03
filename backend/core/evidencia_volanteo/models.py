@@ -1,4 +1,3 @@
-"""Modelos canónicos para Evidencia Volanteo."""
 
 from __future__ import annotations
 

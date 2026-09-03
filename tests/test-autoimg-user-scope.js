@@ -1,6 +1,3 @@
-/**
- * Aislamiento multi-usuario AutoIMG + no filtrar secretos.
- */
 
 const fs = require('fs');
 const path = require('path');
@@ -35,7 +32,6 @@ function resetUser(email) {
   clearLocalPrefs();
 }
 
-// Keys distintos por usuario
 const keyA = userKeyFromEmail('alice@example.com');
 const keyB = userKeyFromEmail('bob@example.com');
 assert(keyA && keyB && keyA !== keyB, 'hashes de usuario distintos');
@@ -43,7 +39,6 @@ assert(!keyA.includes('@'), 'key no contiene email');
 assert(maskEmail('alice@example.com').includes('…@'), 'email enmascarado');
 assert(!maskEmail('alice@example.com').includes('alice@example.com'), 'mask no filtra email completo');
 
-// Perfil Alice limpio
 clearActiveUser();
 resetUser('alice@example.com');
 assert(getActiveUserKey() === keyA, 'active key A');
@@ -57,7 +52,6 @@ assert(loadLocalFolders()[0].folder_id === 'folderAlice01xx', 'folder de Alice')
 assert(scopedFilename('sheet.json').includes(keyA), 'path scoped a Alice');
 assert(scopedNamespace('sheet').includes(keyA), 'namespace scoped a Alice');
 
-// Cambiar a Bob limpio — no debe ver datos de Alice
 resetUser('bob@example.com');
 assert(getActiveUserKey() === keyB, 'active key B');
 assert(!loadTokens(), 'Bob no tiene tokens');
@@ -68,24 +62,20 @@ saveTokens({ access_token: 'tok-B', refresh_token: 'ref-B', expiry_date: Date.no
 saveSheetConfig('SheetIdBob0000002', 'Sheet Bob');
 saveLocalFolders([{ name: 'CarpetaB', folder_id: 'folderBob02xxxx', activo: true }]);
 
-// Volver a Alice — restaura su perfil (sin reset)
 setActiveUser('alice@example.com');
 assert(loadTokens()?.access_token === 'tok-A', 'Alice recupera tokens');
 assert(loadSheetConfig().sheet_id === 'SheetIdAlice0001', 'Alice recupera sheet');
 assert(loadLocalFolders()[0].folder_id === 'folderAlice01xx', 'Alice recupera carpetas');
 
-// Bob intacto
 setActiveUser('bob@example.com');
 assert(loadTokens()?.access_token === 'tok-B', 'Bob conserva tokens');
 assert(loadSheetConfig().sheet_id === 'SheetIdBob0000002', 'Bob conserva sheet');
 
-// Logout no debe devolver sheet de nadie
 clearTokens();
 clearActiveUser();
 assert(!getActiveUserKey(), 'sin usuario activo');
 assert(!loadSheetConfig().sheet_id, 'sin active no se expone sheet');
 
-// Seguridad: assertNoSecretInObject
 let threw = false;
 try {
   assertNoSecretInObject({ refresh_token: 'x' });
@@ -102,7 +92,6 @@ try {
 }
 assert(threw, 'assertNoSecretInObject bloquea patrón de access token');
 
-// revokeAuth no limpia sheet del usuario (código)
 const sheetsSrc = fs.readFileSync(path.join(__dirname, '..', 'electron', 'google-sheets-service.js'), 'utf8');
 const revokeBody = sheetsSrc.slice(
   sheetsSrc.indexOf('async function revokeAuth'),
@@ -124,7 +113,7 @@ const unsub = onActiveUserChange(() => { notified += 1; });
 clearUser();
 setUser('notify-a@example.com');
 setUser('notify-b@example.com');
-setUser('notify-b@example.com'); // same user — no notify
+setUser('notify-b@example.com');
 assert(notified >= 2, 'onActiveUserChange dispara al cambiar/cerrar usuario');
 unsub();
 

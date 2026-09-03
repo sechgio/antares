@@ -1,4 +1,3 @@
-/** Lista única de métodos IPC AutoIMG (allowlist + router). Sin dependencias para evitar ciclos. */
 const AUTOIMG_METHODS = new Set([
   'autoimg_oauth_config_status',
   'autoimg_oauth_config_save',

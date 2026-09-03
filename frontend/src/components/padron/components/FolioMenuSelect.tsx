@@ -12,9 +12,7 @@ import { Check, ChevronDown } from 'lucide-react';
 export interface FolioMenuOption {
   value: string;
   label: string;
-  /** Trailing secondary text (muted), e.g. format example. */
   detail?: string;
-  /** Optional inline style applied to the option label (weight/italic). */
   labelStyle?: CSSProperties;
 }
 
@@ -23,10 +21,6 @@ interface FolioMenuSelectProps {
   options: ReadonlyArray<FolioMenuOption>;
   onChange: (value: string) => void;
   'aria-label': string;
-  /**
-   * `setting` — value on the right of a Settings row (folio popover).
-   * `toolbar` — accent outline control for the preview toolbar.
-   */
   variant?: 'setting' | 'toolbar';
 }
 

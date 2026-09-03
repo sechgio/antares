@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CANVAS_PRESETS } from '../presets';
 
-/** Root HTML templates in backend/templates (excludes fichas_tecnicas + technical_reports). */
 const EXPECTED_PRESETS = [
   { id: 'report', label: 'Panel fotográfico' },
   { id: 'emergencias', label: 'Emergencias' },

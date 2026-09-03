@@ -28,19 +28,12 @@ interface TemplatePickerProps {
   placeholder: string;
   'aria-label'?: string;
   disabled?: boolean;
-  /** Cap list height (px) and scroll when options are long. */
   maxMenuHeight?: number;
-  /** Extra classes on the trigger (e.g. mapped accent border). */
   triggerClassName?: string;
 }
 
 const MENU_GAP = 4;
 
-/**
- * Template dropdown for Generador de Reportes.
- * Options open in a portal (like a native select) so the full list shows
- * without a clipped scrollbar inside the sidebar.
- */
 export default function TemplatePicker({
   value,
   options,
@@ -71,10 +64,6 @@ export default function TemplatePicker({
     if (!trigger) return;
 
     const rect = trigger.getBoundingClientRect();
-    // El primer paint mide el menú sin maxHeight (el cap se aplica junto con la
-    // posición en el siguiente render): una lista larga (p.ej. 74 filas) medía
-    // ~1500px y anclaba el menú arriba de la ventana (top=8) en vez de junto al
-    // trigger. Clamp aquí para que la decisión openUp use la altura real.
     const rawHeight = listRef.current?.offsetHeight ?? 0;
     const menuHeight = maxMenuHeight != null ? Math.min(rawHeight, maxMenuHeight) : rawHeight;
     const spaceBelow = window.innerHeight - rect.bottom - 8;
@@ -85,7 +74,6 @@ export default function TemplatePicker({
       ? Math.max(8, rect.top - menuHeight - MENU_GAP)
       : rect.bottom + MENU_GAP;
 
-    // Keep fully on-screen without forcing an inner scrollbar when possible
     if (!openUp && top + menuHeight > window.innerHeight - 8) {
       top = Math.max(8, window.innerHeight - menuHeight - 8);
     }

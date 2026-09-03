@@ -1,14 +1,13 @@
 const BACKEND_METHODS = [
   'version', 'formats',
   'diagnostics_snapshot',
-  'db_records', 'db_import', 'db_export', 'db_clear', 'db_template',
+  'db_import', 'db_export', 'db_clear', 'db_template',
   'db_parse_mapping', 'db_validate_mapping',
   'db_fields', 'db_fields_update', 'db_fields_reset',
   'db_columns',
   'rename_patterns_get', 'rename_patterns_update', 'rename_patterns_reset',
   'process_start', 'process_status', 'process_cancel',
   'preview', 'is_video',
-  'db_detect_key_column',
   'formatos_list', 'formatos_generate', 'formatos_upload', 'formatos_delete', 'formatos_get_template', 'formatos_render_template_page', 'formatos_update_mapping',
   'history_list', 'history_get', 'history_delete', 'history_delete_many', 'history_save',
   'history_export',
@@ -28,7 +27,6 @@ const BACKEND_METHODS = [
   'panel_aviso_corte_parse_excel', 'panel_aviso_corte_compute_match',
   'panel_aviso_corte_render_pdf', 'panel_aviso_corte_template',
   'spreadsheet_parse', 'spreadsheet_get_rows', 'spreadsheet_export_volantes_template',
-  'image_optimizer_zip',
   'image_optimizer_save_files',
   'sellador_apply', 'sellador_inspect_pdf', 'sellador_render_page',
   'theme_get', 'theme_save', 'theme_presets', 'theme_preset', 'theme_reset',
@@ -64,8 +62,6 @@ const NATIVE_METHODS = [
 const { AUTOIMG_METHODS } = require('./autoimg-ipc-methods');
 const { UBICACIONES_METHODS } = require('./ubicaciones-ipc-methods');
 
-// Keep timeout classifications in shared JSON so Electron main and the
-// renderer use the same budgets without duplicating method lists.
 const LONG_RUNNING_METHODS = new Set(require('../shared/long-running-methods.json'));
 const HEAVY_METHODS = new Set(require('../shared/heavy-ipc-methods.json'));
 

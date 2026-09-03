@@ -1,4 +1,3 @@
-"""Pruebas unitarias para errores estructurados de IPC."""
 
 from backend.core.exceptions import (
     AntaresBaseException,
@@ -13,7 +12,6 @@ from backend.ipc_protocol import send_response
 
 
 def test_antares_base_exception_serialization() -> None:
-    """Verifica que AntaresBaseException serialice a dict con code, message y category."""
     exc = AntaresBaseException("Mensaje de prueba", code=-32000, category="CUSTOM_ERROR", details={"file": "test.txt"})
     serialized = exc.to_dict()
 
@@ -24,7 +22,6 @@ def test_antares_base_exception_serialization() -> None:
 
 
 def test_specific_exception_subclasses() -> None:
-    """Verifica que las subclases específicas contengan los códigos JSON-RPC estándar."""
     val_err = ValidationError("Parámetro inválido", details={"param": "output_path"})
     assert val_err.code == -32602
     assert val_err.category == "VALIDATION_ERROR"
@@ -51,7 +48,6 @@ def test_specific_exception_subclasses() -> None:
 
 
 def test_send_response_with_structured_exception(capsys) -> None:
-    """Verifica que send_response formatee correctamente la respuesta JSON-RPC con excepción estructurada."""
     err = ValidationError("Ruta no permitida", details={"key": "output"})
     send_response(None, "req-101", error=err)
 

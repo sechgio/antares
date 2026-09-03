@@ -48,51 +48,35 @@ interface RightPanelProps {
   selectedIds?: string[];
   pageColors: string[];
   onChange: (layer: CanvasLayer) => void;
-  /** Replace the full layer list (multi-layer panel commits such as boolean compose). */
   onReplaceLayers?: (layers: CanvasLayer[]) => void;
-  /** Live updates without undo (typing). Pair with onCommitLive on blur. */
   onChangeLive?: (layer: CanvasLayer) => void;
   onCommitLive?: () => void;
   onDelete: (id: string) => void;
   onAlign: (align: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => void;
   onDistribute: (axis: 'horizontal' | 'vertical') => void;
-  /** Nudge multi-selection by dx/dy mm (shared X/Y fields). */
   onNudgeSelection?: (dxMm: number, dyMm: number) => void;
-  /** Selection AABB origin for multi-select X/Y fields. */
   selectionOrigin?: { x: number; y: number } | null;
   onBulkVisible: (visible: boolean) => void;
   onBulkLocked: (locked: boolean) => void;
   onBulkOpacity: (opacity: number) => void;
-  /** Current opacity for multi-selection: a number when all selected layers share
-   * the same opacity, or `null` when they differ (mixed). Undefined falls back
-   * to the legacy default of 100. */
   bulkOpacityValue?: number | null;
   onBringFront: () => void;
   onBringForward: () => void;
   onSendBack: () => void;
   onSendBackward: () => void;
-  /** Apply a canvas preset when nothing is selected. */
   onApplyPreset?: (presetId: string) => void;
-  /** Create a NEW document seeded with a preset. */
   onNewFromPreset?: (presetId: string, label: string) => void;
-  /** Shared document styles catalog. */
   documentStyles?: CanvasSharedStyle[];
   onCreateStyle?: (kind: CanvasStyleKind) => void;
   onApplyStyle?: (styleId: string) => void;
   onDetachStyle?: (kind: CanvasStyleKind) => void;
   onRemoveStyle?: (styleId: string) => void;
   onRenameStyle?: (styleId: string, name: string) => void;
-  /** All layers (component master resolution for instances). */
   layers?: CanvasLayer[];
-  /** Create an instance of the selected component master. */
   onInstantiateComponent?: () => void;
-  /** True when another logo layer shares this layer's side. */
   logoSideConflict?: boolean;
-  /** Mount point for viewport ZoomMenu (portal from DesignStage). */
   zoomSlotRef?: (el: HTMLDivElement | null) => void;
-  /** When false, panel collapses via CSS but stays mounted. */
   open?: boolean;
-  /** Hide this sidebar (next to zoom). */
   onHidePanel?: () => void;
   hidePanelDisabled?: boolean;
 }
@@ -182,8 +166,6 @@ export default memo(function RightPanel({
   const [exportScale, setExportScale] = useState(1);
   const inspectorScrollRef = useRef<HTMLDivElement>(null);
 
-  // Latest layer for live edits: props lag behind rapid field changes (X then Y),
-  // so setVarLive must accumulate on the last emit, not the stale prop snapshot.
   const liveLayerRef = useRef<CanvasLayer | null>(layer);
   useEffect(() => {
     liveLayerRef.current = layer;
@@ -453,10 +435,6 @@ export default memo(function RightPanel({
 
       {selectedCount > 1 && (
         <>
-          <div className="canvas-inspector-priority-hint" data-testid="canvas-inspector-priority-hint">
-            <span className="canvas-inspector-priority-label">Acciones principales</span>
-            <span>Alinear, distribuir y ordenar</span>
-          </div>
           <InspectorGroup
             title="Transformación"
             description="Alinear y distribuir"
@@ -634,11 +612,6 @@ export default memo(function RightPanel({
 
       {hasSelection && layer && selectedCount === 1 && (
         <div ref={inspectorScrollRef} className="min-h-0 flex-1 overflow-y-auto">
-          <div className="canvas-inspector-priority-hint" data-testid="canvas-inspector-priority-hint">
-            <span className="canvas-inspector-priority-label">Acciones principales</span>
-            <span>Posición, tamaño y apariencia</span>
-          </div>
-
           <InspectorGroup
             title="Capa"
             description="Nombre y orden"

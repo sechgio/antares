@@ -74,7 +74,6 @@ describe('pathGeometry', () => {
       },
       meta: {},
     });
-    // strip default path if createLayer adds one — test migration path
     delete legacy.meta!.path;
     const migrated = ensureLinePath(legacy);
     expect(migrated.meta?.path?.points.length).toBe(2);
@@ -106,13 +105,10 @@ describe('pathGeometry', () => {
     const y0 = migrated.meta!.path!.points[0].y;
     const y1 = migrated.meta!.path!.points[1].y;
 
-    // Must stay near 1px stroke in mm (~0.26), not jump to MIN_BBOX 0.5mm
     expect(h).toBeLessThan(0.35);
     expect(h).toBeGreaterThan(0.2);
-    // Path centered in the stroke box (legacy bar WYSIWYG)
     expect(y0).toBeCloseTo(h / 2, 5);
     expect(y1).toBeCloseTo(h / 2, 5);
-    // Origin unchanged — visual top stays where the designer placed it
     expect(migrated.cssVars['--translate-y']).toBe('78.83mm');
   });
 
@@ -224,7 +220,6 @@ describe('pathGeometry', () => {
         },
       },
     });
-    // Polygon around the middle of the stroke, not covering the full bbox corners alone.
     const aroundMid = [
       { x: 40, y: -5 },
       { x: 60, y: -5 },

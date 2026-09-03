@@ -1,4 +1,3 @@
-"""Renderizado de Evidencia Volanteo a PDF (WeasyPrint) y DOCX (python-docx)."""
 
 from __future__ import annotations
 
@@ -65,7 +64,6 @@ def _display_cuadrante(value: str) -> str:
 
 
 def _breakable_text(value: str, chunk: int = 20) -> str:
-    """Inserta saltos opcionales para que Word envuelva tokens largos sin espacios."""
     if len(value) <= chunk or any(ch.isspace() for ch in value):
         return value
     zwsp = "\u200b"
@@ -86,7 +84,6 @@ def _table_borders_xml() -> str:
 
 
 def _photos_table_borders_xml() -> str:
-    """Solo marco exterior del panel; sin líneas internas."""
     return (
         '<w:tblBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
         f'<w:top w:val="single" w:sz="{BORDER_SZ}" w:space="0" w:color="000000"/>'
@@ -117,8 +114,6 @@ def _cell_borders_xml(
     left: bool = False,
     right: bool = False,
 ) -> str:
-    """Bordes de celda. En Word tcBorders anula tblBorders: el marco exterior
-    del panel de fotos debe pintarse en las celdas del perímetro."""
     def side(name: str, on: bool) -> str:
         if on:
             return (
@@ -185,7 +180,6 @@ def _build_image_uris(
     images: dict[str, str],
     image_paths: dict[str, str] | None,
 ) -> dict[str, str]:
-    # WeasyPrint only fetches data: URIs — never emit file:// via as_uri().
     image_uris: dict[str, str] = {}
     for filename, raw_path in (image_paths or {}).items():
         path = Path(raw_path)
@@ -267,7 +261,6 @@ def render_pdf(
 
     try:
         html_string = template.render(context)
-        # Images/logos are already data-URIs; do not open base_url file/http fetch.
         return write_pdf_sanitized(html_string), filename
     except RenderingError:
         raise
@@ -311,7 +304,6 @@ def render_docx(
         ))
 
     def set_row_height(row: Any, height_cm: float, *, rule: str = "exact") -> None:
-        """rule='exact' fija altura; 'atLeast' permite crecer (p. ej. cuadrante multilínea)."""
         tr = row._tr
         trPr = tr.get_or_add_trPr()
         for old in trPr.findall(qn("w:trHeight")):
@@ -338,9 +330,6 @@ def render_docx(
         run._element.rPr.rFonts.set(qn("w:eastAsia"), DOC_FONT)
 
     def reset_cell_paragraph(paragraph: Any, *, line_spacing: float = 1.0) -> None:
-        """Neutraliza los defaults heredados (10pt after, 1.15x) que desplazan/recortan
-        el contenido en celdas de altura exacta, replicando margin/padding 0 y
-        line-height 0 del preview y del HTML."""
         pf = paragraph.paragraph_format
         pf.space_before = Pt(0)
         pf.space_after = Pt(0)
@@ -371,8 +360,6 @@ def render_docx(
         ))
 
     def set_table_no_cell_margins(table: Any) -> None:
-        """Anula los margenes de celda por defecto (108 twips L/R) para que las
-        fotos llenen la celda exactamente, igual que padding 0 del preview/PDF."""
         tblPr = table._tbl.tblPr
         for old in tblPr.findall(qn("w:tblCellMar")):
             tblPr.remove(old)
@@ -428,7 +415,6 @@ def render_docx(
     )
 
     for page_idx, page in enumerate(document.pages):
-        # 1. Header Table: 2 rows x 3 cols
         header_table = doc.add_table(rows=2, cols=3)
         header_table.alignment = WD_TABLE_ALIGNMENT.CENTER
         header_table.autofit = False
@@ -441,7 +427,6 @@ def render_docx(
                 '<w:pageBreakBefore xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
             ))
 
-        # Set borders for header_table
         tblPr = header_table._tbl.tblPr
         for tag in ("w:tblBorders",):
             existing = tblPr.find(qn(tag))
@@ -458,21 +443,17 @@ def render_docx(
         ))
         set_table_no_cell_margins(header_table)
 
-        # Set header column widths
         header_widths = [HEADER_LOGO_WIDTH_CM, HEADER_TITLE_WIDTH_CM, HEADER_LOGO_WIDTH_CM]
         grid = header_table._tbl.tblGrid
         for col, width_cm in zip(grid.gridCol_lst, header_widths, strict=True):
             col.set(qn("w:w"), str(cm_to_twips(width_cm)))
 
-        # Header heights — info usa atLeast: exact recorta el cuadrante multilínea en Word
         set_row_height(header_table.rows[0], HEADER_TITLE_HEIGHT_CM)
         set_row_height(header_table.rows[1], HEADER_INFO_HEIGHT_CM, rule="atLeast")
 
-        # Merge logo cells vertically
         header_table.cell(0, 0).merge(header_table.cell(1, 0))
         header_table.cell(0, 2).merge(header_table.cell(1, 2))
 
-        # Populate Logo Left
         merged_left = header_table.cell(0, 0)
         set_cell_width(merged_left, HEADER_LOGO_WIDTH_CM)
         set_cell_margins(merged_left, top_pt=2, left_pt=4, bottom_pt=2, right_pt=4)
@@ -484,7 +465,6 @@ def render_docx(
             run = merged_left.paragraphs[0].add_run()
             run.add_picture(BytesIO(logo_left_bytes), width=Cm(logo_left_dims[0]), height=Cm(logo_left_dims[1]))
 
-        # Populate Title (with underline!)
         title_cell = header_table.cell(0, 1)
         set_cell_width(title_cell, HEADER_TITLE_WIDTH_CM)
         set_cell_margins(title_cell, top_pt=2, left_pt=4, bottom_pt=2, right_pt=4)
@@ -500,7 +480,6 @@ def render_docx(
             format_run(run, TITLE_FONT_PT, bold=True)
             run.underline = True
 
-        # Populate Logo Right
         merged_right = header_table.cell(0, 2)
         set_cell_width(merged_right, HEADER_LOGO_WIDTH_CM)
         set_cell_margins(merged_right, top_pt=2, left_pt=4, bottom_pt=2, right_pt=4)
@@ -512,7 +491,6 @@ def render_docx(
             run = merged_right.paragraphs[0].add_run()
             run.add_picture(BytesIO(logo_right_bytes), width=Cm(logo_right_dims[0]), height=Cm(logo_right_dims[1]))
 
-        # Populate Cuadrante (optional label on line 1, value on line 2, centered)
         info_cell = header_table.cell(1, 1)
         set_cell_width(info_cell, HEADER_TITLE_WIDTH_CM)
         set_cell_margins(info_cell, top_pt=3, left_pt=5, bottom_pt=3, right_pt=5)
@@ -529,7 +507,6 @@ def render_docx(
         value_run = info_cell.paragraphs[0].add_run(page_cuadrante)
         format_run(value_run, INFO_FONT_PT, bold=True)
 
-        # 2. Spacer = tabla 1x1 sin bordes (fiable en Word; line-spacing no lo es)
         spacer = doc.add_table(rows=1, cols=1)
         spacer.alignment = WD_TABLE_ALIGNMENT.CENTER
         spacer.autofit = False
@@ -561,7 +538,6 @@ def render_docx(
             tc_pr.remove(old)
         tc_pr.append(parse_xml(_nil_cell_borders_xml()))
 
-        # 3. Photos: mismo grid que SheetPreview + marco exterior
         photos_table = doc.add_table(rows=PHOTO_TABLE_ROWS, cols=PHOTO_TABLE_COLS)
         photos_table.alignment = WD_TABLE_ALIGNMENT.CENTER
         photos_table.autofit = False
@@ -628,7 +604,6 @@ def render_docx(
             format_run(run, 1)
             _set_cell_frame(cell, top=top, bottom=bottom, left=left, right=right)
 
-        # Filas gap + marco exterior en perímetro (tcBorders; tblBorders solo no basta en Word)
         last_col = PHOTO_TABLE_COLS - 1
         for gap_row_idx in (0, 2, 4):
             gap_row = photos_table.rows[gap_row_idx]
@@ -656,7 +631,7 @@ def render_docx(
                 cell.paragraphs[0].clear()
                 reset_cell_paragraph(cell.paragraphs[0])
                 cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-                _set_cell_frame(cell)  # interiores sin borde
+                _set_cell_frame(cell)
                 slot_filename = slot_map.get(position)
                 content = image_bytes.get(slot_filename or "")
                 if slot_filename and content and valid_image_bytes(content):

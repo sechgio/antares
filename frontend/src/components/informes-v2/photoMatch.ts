@@ -15,7 +15,6 @@ function naturalSortPhotos(a: PhotoAsset, b: PhotoAsset): number {
   return a.name.localeCompare(b.name);
 }
 
-/** Filter and sort photos for a report photo_id; cap at 6 for the 3×2 grid. */
 export function matchPhotosForId(photos: PhotoAsset[], photoId: string, limit = 6): PhotoAsset[] {
   const id = String(photoId || '').trim();
   if (!id) return [];

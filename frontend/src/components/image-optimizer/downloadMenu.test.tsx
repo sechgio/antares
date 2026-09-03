@@ -1,15 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-// Hoisted mocks — must be defined before the vi.mock call.
 const mockApi = vi.hoisted(() => ({
   dialogFolder: vi.fn().mockResolvedValue({ paths: [], folder: '' }),
   imageOptimizerSaveFiles: vi.fn(),
 }));
 
 const mockPipeline = vi.hoisted(() => ({
-  // Synchronous-friendly stub: skip the real loadImageDimensions which
-  // jsdom can't fulfill (no real image decoding).
   createImageItem: vi.fn(async (file: File) => ({
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     sourceFile: file,
@@ -45,7 +42,6 @@ vi.mock('./pipeline', () => ({
 import ImageOptimizer from './index';
 import { ImageItem } from './types';
 
-// jsdom does not implement ResizeObserver — stub it so the optimizer mounts.
 class ResizeObserverStub {
   observe() {}
   unobserve() {}
@@ -76,17 +72,9 @@ function makeDownloadableItem(id: string, originalName: string): ImageItem {
   };
 }
 
-// jsdom does not implement DataTransfer, so we synthesize a FileList by
-// attaching files to the hidden <input type="file"> via Object.defineProperty
-// and firing the change event — the same path the user takes when picking
-// files from the native dialog.
 async function mountAndAddFiles(items: ImageItem[]): Promise<void> {
   render(<ImageOptimizer />);
 
-  // Activate the "Solo renombrar" preset so added images are direct-export
-  // (no crop/resize/format/compression) and therefore immediately
-  // downloadable without processing. This is the cleanest way to reach the
-  // download menu state in jsdom, where canvas-based processing can't run.
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: /Solo renombrar/i }));
   });
@@ -105,7 +93,6 @@ async function mountAndAddFiles(items: ImageItem[]): Promise<void> {
     fireEvent.change(input);
   });
 
-  // Wait for createImageItem (async) to populate state and the toast to fire.
   await waitFor(() => {
     expect(screen.queryByText(/agregada|agregado/i)).toBeTruthy();
   });

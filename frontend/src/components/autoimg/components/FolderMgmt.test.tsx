@@ -66,7 +66,6 @@ describe('FolderMgmt — Nueva carpeta', () => {
         activo: true,
       });
     });
-    // Con nombre, no hace falta verificar en cliente (backend valida).
     expect(mockApi.autoimgDriveVerifyFolder).not.toHaveBeenCalled();
     expect(onFoldersChange).toHaveBeenCalled();
   });

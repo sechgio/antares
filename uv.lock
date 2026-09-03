@@ -19,6 +19,68 @@ wheels = [
 ]
 
 [[package]]
+name = "antares"
+version = "0.11.10"
+source = { editable = "." }
+dependencies = [
+    { name = "jinja2" },
+    { name = "jsonschema" },
+    { name = "lxml" },
+    { name = "openpyxl" },
+    { name = "pandas" },
+    { name = "pillow" },
+    { name = "psutil" },
+    { name = "pymupdf" },
+    { name = "pypdf" },
+    { name = "python-docx" },
+    { name = "weasyprint" },
+    { name = "xlrd" },
+]
+
+[package.optional-dependencies]
+build = [
+    { name = "pyinstaller" },
+]
+dev = [
+    { name = "hypothesis" },
+    { name = "lxml-stubs" },
+    { name = "mypy" },
+    { name = "pip-audit" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+    { name = "types-openpyxl" },
+    { name = "types-psutil" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.100.0" },
+    { name = "jinja2", specifier = ">=3.1.0" },
+    { name = "jsonschema", specifier = ">=4.0.0" },
+    { name = "lxml", specifier = ">=6.1.2" },
+    { name = "lxml-stubs", marker = "extra == 'dev'", specifier = ">=0.5.0" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10.0" },
+    { name = "openpyxl", specifier = ">=3.1.0" },
+    { name = "pandas", specifier = ">=2.0.0,<3" },
+    { name = "pillow", specifier = ">=12.3.0" },
+    { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.7.0" },
+    { name = "psutil", specifier = ">=5.9.0" },
+    { name = "pyinstaller", marker = "extra == 'build'", specifier = "==6.21.0" },
+    { name = "pymupdf", specifier = ">=1.24.0" },
+    { name = "pypdf", specifier = ">=6.15.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0.0" },
+    { name = "python-docx", specifier = ">=1.1.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5.0" },
+    { name = "types-openpyxl", marker = "extra == 'dev'", specifier = ">=3.1.0" },
+    { name = "types-psutil", marker = "extra == 'dev'", specifier = ">=5.9.0" },
+    { name = "weasyprint", specifier = ">=68.0" },
+    { name = "xlrd", specifier = ">=2.0.1" },
+]
+provides-extras = ["dev", "build"]
+
+[[package]]
 name = "ast-serialize"
 version = "0.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -756,68 +818,6 @@ woff = [
     { name = "brotlicffi", marker = "platform_python_implementation != 'CPython'" },
     { name = "zopfli" },
 ]
-
-[[package]]
-name = "hidro-convert-backend"
-version = "0.11.10"
-source = { editable = "." }
-dependencies = [
-    { name = "jinja2" },
-    { name = "jsonschema" },
-    { name = "lxml" },
-    { name = "openpyxl" },
-    { name = "pandas" },
-    { name = "pillow" },
-    { name = "psutil" },
-    { name = "pymupdf" },
-    { name = "pypdf" },
-    { name = "python-docx" },
-    { name = "weasyprint" },
-    { name = "xlrd" },
-]
-
-[package.optional-dependencies]
-build = [
-    { name = "pyinstaller" },
-]
-dev = [
-    { name = "hypothesis" },
-    { name = "lxml-stubs" },
-    { name = "mypy" },
-    { name = "pip-audit" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-    { name = "types-openpyxl" },
-    { name = "types-psutil" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.100.0" },
-    { name = "jinja2", specifier = ">=3.1.0" },
-    { name = "jsonschema", specifier = ">=4.0.0" },
-    { name = "lxml", specifier = ">=6.1.2" },
-    { name = "lxml-stubs", marker = "extra == 'dev'", specifier = ">=0.5.0" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10.0" },
-    { name = "openpyxl", specifier = ">=3.1.0" },
-    { name = "pandas", specifier = ">=2.0.0,<3" },
-    { name = "pillow", specifier = ">=12.3.0" },
-    { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.7.0" },
-    { name = "psutil", specifier = ">=5.9.0" },
-    { name = "pyinstaller", marker = "extra == 'build'", specifier = "==6.21.0" },
-    { name = "pymupdf", specifier = ">=1.24.0" },
-    { name = "pypdf", specifier = ">=6.15.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0.0" },
-    { name = "python-docx", specifier = ">=1.1.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5.0" },
-    { name = "types-openpyxl", marker = "extra == 'dev'", specifier = ">=3.1.0" },
-    { name = "types-psutil", marker = "extra == 'dev'", specifier = ">=5.9.0" },
-    { name = "weasyprint", specifier = ">=68.0" },
-    { name = "xlrd", specifier = ">=2.0.1" },
-]
-provides-extras = ["dev", "build"]
 
 [[package]]
 name = "hypothesis"

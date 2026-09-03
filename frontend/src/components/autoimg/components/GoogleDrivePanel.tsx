@@ -74,7 +74,6 @@ export default function GoogleDrivePanel({ googleConnected, onFolderAdded }: Goo
     }
   };
 
-  // No placeholder section when disconnected — cuenta Google is the gate.
   if (!googleConnected) return null;
 
   const parsedId = parseDriveFolderId(folderInput);

@@ -64,7 +64,6 @@ def _normalize_diameter_row(source: Any) -> dict[str, Any]:
     if isinstance(diam_src, dict):
         row["diametros"] = _diameter_map(diam_src)
     else:
-        # Allow flat diameter keys on the row itself
         flat = {d: source.get(d) for d in DIAMETERS if d in source}
         if flat:
             row["diametros"] = _diameter_map(flat)
@@ -162,7 +161,6 @@ def sum_oper_no_op(table: dict[str, Any], rows: list[str]) -> tuple[int, int]:
 
 
 class InformeV2:
-    """Dictionary-based normalizer for Informes v2 IPC payloads."""
 
     @staticmethod
     def normalize(data: dict[str, Any] | None) -> dict[str, Any]:
@@ -188,8 +186,6 @@ class InformeV2:
         header["volumen"] = _safe_int(header.get("volumen"), 0)
         for key in ["photo_id", "estacion", "ubicacion", "distrito", "fecha_ejecucion", "suministro", "sgio"]:
             header[key] = _safe_str(header.get(key), "")
-        # Keep photo_id empty when unset — do not invent a match key from estacion.
-        # Importer may still default photo_id from estacion/suministro at import time.
         report["header"] = header
 
         report["valvulas"] = _normalize_table(source.get("valvulas"), VALVULA_ROWS)

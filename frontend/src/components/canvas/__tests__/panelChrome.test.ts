@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { nextBothPanelsOpen, readBoolLS, writeBoolLS } from '../ops/panelChrome';
+import {
+  nextBothPanelsOpen,
+  readBoolLS,
+  readToolbarPosition,
+  writeBoolLS,
+  writeToolbarPosition,
+} from '../ops/panelChrome';
 
 describe('panelChrome', () => {
   it('nextBothPanelsOpen closes when any panel is open', () => {
@@ -20,6 +26,19 @@ describe('panelChrome', () => {
     expect(readBoolLS(key, true)).toBe(false);
     writeBoolLS(key, true);
     expect(readBoolLS(key, false)).toBe(true);
+    localStorage.removeItem(key);
+  });
+
+  it('readToolbarPosition / writeToolbarPosition round-trip and validate values', () => {
+    const key = 'antares.canvas.test.toolbarPosition';
+    localStorage.removeItem(key);
+    expect(readToolbarPosition(key, 'top')).toBe('top');
+
+    writeToolbarPosition(key, 'bottom');
+    expect(readToolbarPosition(key, 'top')).toBe('bottom');
+
+    localStorage.setItem(key, 'invalid');
+    expect(readToolbarPosition(key, 'bottom')).toBe('bottom');
     localStorage.removeItem(key);
   });
 });

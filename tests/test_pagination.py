@@ -1,4 +1,3 @@
-"""Tests for history pagination and run_type filtering."""
 
 from __future__ import annotations
 
@@ -8,7 +7,6 @@ from backend.core.history import _ensure_table, list_runs, save_run
 
 
 def test_pagination(tmp_path, monkeypatch) -> None:
-    """list_runs supports offset/limit and run_type filtering."""
     db_file = tmp_path / "test_pagination.db"
     monkeypatch.setattr(db, "get_db_path", lambda: db_file)
     monkeypatch.setattr(history, "get_db_path", lambda: db_file)

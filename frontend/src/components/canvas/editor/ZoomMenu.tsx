@@ -64,7 +64,6 @@ export default function ZoomMenu({
     const el = rootRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    // Right-align under trigger (same as previous absolute right:0).
     const left = Math.max(
       MENU_EDGE,
       Math.min(rect.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - MENU_EDGE),
@@ -72,7 +71,6 @@ export default function ZoomMenu({
     setMenuBox({ top: rect.bottom + MENU_GAP, left });
   }, []);
 
-  // On open: seed draft, resolve portal host, position menu, focus input.
   useLayoutEffect(() => {
     if (!open) {
       setMenuBox(null);
@@ -93,9 +91,6 @@ export default function ZoomMenu({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, updateMenuBox]);
 
-  // While open, keep draft in sync with pct — but never clobber what the user
-  // is actively typing. If the input is focused, the animated zoom must not
-  // overwrite the in-progress edit.
   useEffect(() => {
     if (!open) return;
     if (document.activeElement === inputRef.current) return;

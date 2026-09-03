@@ -36,7 +36,7 @@ describe('createLruMap weighted', () => {
       sizeOf: estimateStringBytes,
     });
     cache.set('a', 'xx');
-    expect(cache.get('a')).toBe('xx'); // promote a
+    expect(cache.get('a')).toBe('xx');
     cache.set('b', 'xx');
     expect(cache.get('a')).toBeUndefined();
     expect(cache.get('b')).toBe('xx');

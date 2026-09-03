@@ -27,10 +27,6 @@ export interface RenderPreviewHtmlOptions {
 
 const EMPTY_PIXEL = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1' height='1'%3E%3C/svg%3E";
 
-/** Nombres exactos de templates con layout A4 fijo.
- *  Si se agrega un nuevo template que requiera comportamiento especial de preview,
- *  registrarlo aquí en lugar de hardcodear strings dispersos en el componente.
- */
 const KNOWN_TEMPLATES = {
   maqBalde: 'maq balde sjl.html',
   maquinaBalde: 'maquina-balde.html',
@@ -302,8 +298,6 @@ function processJinja2Template(
       if (TEMPLATE_KEY_MAP[key]) {
         reportData[TEMPLATE_KEY_MAP[key]] = value;
       }
-      // Also store under the original Excel column name so templates
-      // that reference it directly (e.g. 'Nro OT') can resolve it.
       const excelCol = mappings[key];
       if (excelCol) {
         reportData[excelCol] = value;
@@ -640,7 +634,6 @@ const PreviewPanel = forwardRef<HTMLIFrameElement, PreviewPanelProps>(
     }, [images]);
 
     useEffect(() => {
-      // Revoke old template object URLs
       templateObjUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
       templateObjUrlsRef.current = [];
 

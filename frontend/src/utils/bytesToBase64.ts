@@ -1,6 +1,5 @@
-/** Chunked Uint8Array → base64. Avoids stack overflow on large buffers. */
 
-const CHUNK = 0x8000; // 32 KiB
+const CHUNK = 0x8000;
 
 export function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -15,7 +14,6 @@ export function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return bytesToBase64(new Uint8Array(buffer));
 }
 
-/** Decode a base64 string into a Uint8Array. */
 export function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
   const binary = atob(b64);
   const buffer = new ArrayBuffer(binary.length);

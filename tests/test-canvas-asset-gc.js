@@ -1,4 +1,3 @@
-// Canvas asset GC: drop unreferenced files older than grace period.
 const assert = require('assert');
 const fs = require('fs');
 const fsp = fs.promises;
@@ -8,13 +7,11 @@ const path = require('path');
 async function main() {
   console.log('Testing canvas asset GC...\n');
 
-  // Isolate under a temp LOCALAPPDATA so we do not touch real user assets.
   const fakeHome = await fsp.mkdtemp(path.join(os.tmpdir(), 'antares-asset-gc-'));
   const prev = process.env.LOCALAPPDATA;
   process.env.LOCALAPPDATA = fakeHome;
 
   try {
-    // Fresh require after env so assetsDir() picks up fake root.
     delete require.cache[require.resolve('../electron/canvas-assets.js')];
     const {
       putCanvasAsset,
@@ -37,7 +34,6 @@ async function main() {
       'utf8',
     );
 
-    // Age the orphan past grace; keep "kept" young / referenced.
     const orphanPath = path.join(assetsDir(), orphan.asset_id);
     const old = (Date.now() - GC_GRACE_MS - 60_000) / 1000;
     fs.utimesSync(orphanPath, old, old);
@@ -49,7 +45,6 @@ async function main() {
     assert.ok(fs.existsSync(path.join(assetsDir(), kept.asset_id)), 'referenced asset kept');
     assert.ok(toAssetRef(kept.asset_id).startsWith('canvas-asset:'));
 
-    // Fresh orphan within grace must survive.
     const young = await putCanvasAsset(Buffer.from('young-orphan-cccccccc'));
     const youngPath = path.join(assetsDir(), young.asset_id);
     const grace = await gcOrphanCanvasAssets({ nowMs: Date.now(), graceMs: GC_GRACE_MS });

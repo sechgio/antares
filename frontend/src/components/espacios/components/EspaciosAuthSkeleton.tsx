@@ -1,4 +1,3 @@
-/** Espacios-shaped pulse shell while cloud session resolves (auth gate only). */
 export default function EspaciosAuthSkeleton() {
   return (
     <div

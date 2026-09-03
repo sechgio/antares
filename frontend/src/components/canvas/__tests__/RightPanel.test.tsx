@@ -341,13 +341,11 @@ describe('RightPanel shape inspector', () => {
     expect(screen.getByRole('button', { name: /Exportar/ })).toBeTruthy();
   });
 
-  it('explains the selected layer and prioritizes the main controls', () => {
+  it('keeps the selected-layer context without the redundant priority callout', () => {
     render(<RightPanel layer={createLayer('rect')} onChange={vi.fn()} {...panelProps} />);
 
     expect(screen.getByTestId('canvas-inspector-context')).toHaveTextContent('Capa seleccionada:');
-    expect(screen.getByTestId('canvas-inspector-priority-hint')).toHaveTextContent(
-      'Posición, tamaño y apariencia',
-    );
+    expect(screen.queryByTestId('canvas-inspector-priority-hint')).toBeNull();
   });
 
   it('organizes inspector controls into visible priority groups', () => {
@@ -369,9 +367,7 @@ describe('RightPanel shape inspector', () => {
     render(<RightPanel layer={layer} onChange={vi.fn()} {...panelProps} selectedCount={3} />);
     expect(screen.getByText('3 seleccionados')).toBeTruthy();
     expect(screen.getByTestId('canvas-inspector-context')).toHaveTextContent('3 capas seleccionadas');
-    expect(screen.getByTestId('canvas-inspector-priority-hint')).toHaveTextContent(
-      'Alinear, distribuir y ordenar',
-    );
+    expect(screen.queryByTestId('canvas-inspector-priority-hint')).toBeNull();
     expect(screen.queryByText('Relleno')).toBeNull();
     expect(screen.getByLabelText('Adelante')).toBeTruthy();
   });
@@ -455,7 +451,6 @@ describe('RightPanel shape inspector', () => {
       />,
     );
     expect(screen.getByText('Plantillas')).toBeTruthy();
-    // TemplatesSection loads presets lazily via hover/focus; trigger it in tests.
     const section = screen.getByTestId('canvas-templates-section');
     fireEvent.mouseEnter(section);
     const button = await screen.findByLabelText('Aplicar plantilla Panel fotográfico');
@@ -546,8 +541,6 @@ describe('RightPanel shape inspector', () => {
     layer.cssVars['--translate-x'] = '10mm';
     layer.cssVars['--translate-y'] = '20mm';
     const onChangeLive = vi.fn();
-    // Parent intentionally keeps the stale `layer` prop (no rerender) — mimics
-    // rapid X then Y edits before React commits the live update.
     render(
       <RightPanel layer={layer} onChange={vi.fn()} onChangeLive={onChangeLive} {...panelProps} />,
     );

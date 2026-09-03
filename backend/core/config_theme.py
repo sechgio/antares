@@ -1,4 +1,3 @@
-"""Configuración personalizable de colores/temas de la aplicación."""
 
 from __future__ import annotations
 
@@ -7,11 +6,10 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from backend.utils.paths import cached_config_path
+from backend.utils.paths import cached_config_path, resource_path
 
 logger = logging.getLogger(__name__)
 
-# ─── Schema: required keys for a valid theme ────────────────────────────────
 
 _THEME_KEYS = frozenset([
     "name", "bg", "bg_secondary", "fg", "fg_muted", "fg_secondary", "fg_tertiary",
@@ -19,7 +17,7 @@ _THEME_KEYS = frozenset([
     "blue_hover", "error", "warning", "success", "orange",
 ])
 
-DEFAULT_THEME: dict[str, str] = {
+_FALLBACK_DEFAULT_THEME: dict[str, str] = {
     "name": "Slate Professional",
     "bg": "#0F172A",
     "bg_secondary": "#172033",
@@ -39,7 +37,22 @@ DEFAULT_THEME: dict[str, str] = {
     "orange": "#38BDF8",
 }
 
-# ─── Load presets from JSON ──────────────────────────────────────────────────
+
+def _load_default_theme() -> dict[str, str]:
+    try:
+        shared_theme_path = resource_path("shared/default-theme.json")
+        if shared_theme_path.is_file():
+            with open(shared_theme_path, encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and _THEME_KEYS.issubset(data.keys()):
+                return {k: str(v) for k, v in data.items()}
+    except Exception as exc:
+        logger.warning("Error leyendo shared/default-theme.json: %s", exc)
+    return dict(_FALLBACK_DEFAULT_THEME)
+
+
+DEFAULT_THEME: dict[str, str] = _load_default_theme()
+
 
 def _load_presets() -> dict[str, dict[str, str]]:
     presets_path = Path(__file__).parent / "presets.json"
@@ -63,7 +76,6 @@ def _load_presets() -> dict[str, dict[str, str]]:
 
 PRESETS: dict[str, dict[str, str]] = _load_presets()
 
-# ─── Config file ─────────────────────────────────────────────────────────────
 
 _CONFIG_PATH: Path | None = None
 
@@ -76,7 +88,6 @@ def _config_file() -> Path:
 
 
 def load_theme() -> dict[str, str]:
-    """Carga el tema desde disco o retorna el default."""
     path = _config_file()
     if path.exists():
         try:
@@ -92,7 +103,6 @@ def load_theme() -> dict[str, str]:
 
 
 def save_theme(theme: dict[str, Any]) -> dict[str, str]:
-    """Guarda el tema en disco."""
     path = _config_file()
     validated: dict[str, str] = {}
     for k, v in theme.items():
@@ -106,18 +116,15 @@ def save_theme(theme: dict[str, Any]) -> dict[str, str]:
 
 
 def reset_theme() -> dict[str, str]:
-    """Restaura el tema por defecto."""
     save_theme(DEFAULT_THEME)
     return dict(DEFAULT_THEME)
 
 
 def get_preset_names() -> list[str]:
-    """Retorna la lista de nombres de presets disponibles."""
     return list(PRESETS.keys())
 
 
 def load_preset(name: str) -> dict[str, str]:
-    """Retorna una copia del preset solicitado o el default si no existe."""
     preset = PRESETS.get(name)
     if preset:
         return dict(preset)

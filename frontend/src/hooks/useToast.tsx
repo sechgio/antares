@@ -20,15 +20,11 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
-  // Per-instance timeout map. A module-level Map would be shared across
-  // providers and across HMR boundaries, so one provider's cleanup could clear
-  // another's timers. useRef keeps the map scoped to this provider instance.
   const toastTimeouts = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => {
     const timeouts = toastTimeouts.current;
     return () => {
-      // Clear all pending timeouts on unmount
       for (const tid of timeouts.values()) {
         clearTimeout(tid);
       }

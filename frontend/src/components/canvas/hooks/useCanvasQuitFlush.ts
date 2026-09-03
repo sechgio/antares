@@ -19,7 +19,6 @@ interface UseCanvasQuitFlushOptions {
   openDirtyRef: MutableRefObject<boolean>;
 }
 
-/** Flush the hidden Canvas document before Electron destroys its renderer. */
 export function useCanvasQuitFlush({
   history,
   editingLayerId,
@@ -67,8 +66,6 @@ export function useCanvasQuitFlush({
         await onSave({ silent: true });
       } catch {}
 
-      // onSave reports failures without throwing. Keep a direct final attempt
-      // for the quit path while the main process is still waiting.
       if (history.hasUnsavedEditsRef.current) {
         try {
           const serialized = await serializeDocumentImages(history.documentRef.current);

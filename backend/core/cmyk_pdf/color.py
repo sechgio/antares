@@ -1,4 +1,3 @@
-"""Color conversion utilities for CMYK print-ready rendering."""
 
 from __future__ import annotations
 
@@ -9,15 +8,11 @@ from PIL import Image
 
 
 def hex_to_rgb(hex_str: str) -> tuple[float, float, float]:
-    """Convert hex color string (#RGB, #RRGGBB, or #RRGGBBAA) to RGB floats [0.0, 1.0].
-
-    Eight-digit hex drops the alpha channel: CMYK print has no transparency.
-    """
     cleaned = hex_str.lstrip("#").strip()
     if len(cleaned) == 3:
         cleaned = "".join(c * 2 for c in cleaned)
     if len(cleaned) == 8:
-        cleaned = cleaned[:6]  # drop alpha; CMYK has no transparency
+        cleaned = cleaned[:6]
     if len(cleaned) != 6:
         return (0.0, 0.0, 0.0)
     try:
@@ -30,7 +25,6 @@ def hex_to_rgb(hex_str: str) -> tuple[float, float, float]:
 
 
 def parse_css_color_to_rgb(color_str: str) -> tuple[float, float, float]:
-    """Parse common CSS color representations (#hex, rgb(), rgba(), named) to RGB floats [0.0, 1.0]."""
     if not color_str or not isinstance(color_str, str):
         return (0.0, 0.0, 0.0)
     val = color_str.strip().lower()
@@ -78,7 +72,6 @@ def parse_css_color_to_rgb(color_str: str) -> tuple[float, float, float]:
 
 
 def rgb_to_cmyk(r: float, g: float, b: float) -> tuple[float, float, float, float]:
-    """Convert RGB float values [0.0, 1.0] to CMYK floats [0.0, 1.0]."""
     r = max(0.0, min(1.0, r))
     g = max(0.0, min(1.0, g))
     b = max(0.0, min(1.0, b))
@@ -103,13 +96,11 @@ def rgb_to_cmyk(r: float, g: float, b: float) -> tuple[float, float, float, floa
 
 
 def css_color_to_cmyk(color_str: str) -> tuple[float, float, float, float]:
-    """Parse CSS color string directly to CMYK floats [0.0, 1.0]."""
     r, g, b = parse_css_color_to_rgb(color_str)
     return rgb_to_cmyk(r, g, b)
 
 
 def convert_pil_to_cmyk_bytes(img: Image.Image, dpi: int = 300) -> bytes:
-    """Convert a Pillow Image (RGB, RGBA, P, etc.) to a high-DPI CMYK JPEG buffer."""
     if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
         bg = Image.new("RGB", img.size, (255, 255, 255))
         if img.mode != "RGBA":

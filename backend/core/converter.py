@@ -1,4 +1,3 @@
-"""Módulo de conversión de imágenes usando Pillow."""
 
 from __future__ import annotations
 
@@ -16,9 +15,6 @@ from PIL import Image, ImageOps
 from backend.core.format_registry import get_registry
 from backend.core.image_limits import apply_default_pixels_limit
 
-# Tope de píxeles (100MP) para evitar bomba de descompresión/OOM. Fuente única
-# en core/image_limits.py: aplicar una vez a nivel de proceso, todos los
-# decoders heredan el mismo límite.
 apply_default_pixels_limit()
 
 _registry = get_registry()
@@ -32,7 +28,6 @@ _registry.add_format("GIF", ".gif", ("P", "RGB", "L"))
 _registry.add_format("ICO", ".ico", ("RGB", "RGBA", "L"))
 _registry.add_format("PDF", ".pdf", ("RGB", "RGBA", "L", "P"))
 
-# Video formats (for rename-only support)
 VIDEO_FORMATS = {
     "MP4": ".mp4",
     "AVI": ".avi",
@@ -47,22 +42,17 @@ VIDEO_FORMATS = {
     "MPEG": ".mpeg",
 }
 
-# Backward compatibility alias — _registry manages format registration;
-# external code should modify formats via FormatRegistry.add_format() only.
 FORMATOS_SOPORTADOS = _registry
 
 PIL_FORMAT_MAP: dict[str, str] = {
     "JPG": "JPEG",
 }
 
-# EXIF Orientation tag. Pillow's ImageOps.exif_transpose copies the buffer even
-# when Orientation is missing/1 (no-op) — skip that copy on the hot path.
 _EXIF_ORIENTATION = 0x0112
 _TRANSPOSE_ORIENTATIONS = frozenset({2, 3, 4, 5, 6, 7, 8})
 
 
 def _bake_orientation(source_img: Image.Image) -> Image.Image:
-    """Bake EXIF Orientation into pixels; avoid no-op buffer copy when upright."""
     try:
         orientation = source_img.getexif().get(_EXIF_ORIENTATION, 1)
     except Exception:
@@ -76,7 +66,6 @@ _BILINEAR = getattr(Image, "Resampling", Image).BILINEAR
 _BOX = getattr(Image, "Resampling", Image).BOX
 
 def es_video(ruta: str | Path) -> bool:
-    """Detecta si un archivo es un video basado en su extensión."""
     ruta = Path(ruta)
     ext = ruta.suffix.lower()
     return ext in VIDEO_FORMATS.values()
@@ -88,7 +77,6 @@ def copiar_archivo(
     *,
     ensure_dir: bool = True,
 ) -> Path:
-    """Copia un archivo sin conversión, preservando metadatos."""
     ruta_origen = Path(ruta_origen)
     ruta_destino = Path(ruta_destino)
 
@@ -101,8 +89,6 @@ def copiar_archivo(
     if ruta_destino.is_symlink() or ruta_destino.parent.is_symlink():
         raise ValueError("symlink no permitido en ruta de destino")
 
-    # Copia a un temp exclusivo y mueve atómicamente: cierra la ventana TOCTOU
-    # entre exists() y open('wb') (copy2 seguiría un symlink intercambiado).
     fd, tmp_name = tempfile.mkstemp(
         dir=str(ruta_destino.parent), prefix=f".{ruta_destino.stem}-", suffix=".antares-tmp"
     )
@@ -120,10 +106,8 @@ def copiar_archivo(
 
 
 def _ensure_mode(img: Image.Image, target_modes: tuple[str, ...]) -> Image.Image:
-    """Convierte la imagen al modo compatible con el formato destino."""
     if img.mode in target_modes:
         return img
-    # Manejar transparencia -> fondo blanco
     if img.mode in ("RGBA", "LA", "P", "1") and "RGBA" not in target_modes:
         if img.mode == "1":
             return img.convert("RGB")
@@ -145,12 +129,10 @@ def _build_save_kwargs(
     img: Image.Image,
     optimize: bool | None = None,
 ) -> dict:
-    """Construye kwargs para img.save según el formato."""
     kwargs: dict = {}
     upper_fmt = formato.upper()
     if upper_fmt in ("JPEG", "JPG", "WEBP"):
         kwargs["quality"] = max(1, min(100, int(calidad)))
-    # optimize is opt-in only; do not auto-enable based on quality.
     if upper_fmt in ("JPEG", "JPG") and optimize is True:
         kwargs["optimize"] = True
     if keep_exif and "exif" in img.info:
@@ -166,22 +148,6 @@ def _can_fast_copy(
     keep_exif: bool,
     optimize: bool,
 ) -> bool:
-    """True si convertir_imagen puede ser un copy2 byte-idéntico.
-
-    Conservador por contrato: si el resultado observable pudiera diferir del
-    re-encode actual, se re-encodea. Condiciones:
-    - Mismo formato REAL (Pillow) origen == destino (JPG→JPEG normaliza).
-    - Calidad >= 95: el usuario pide máxima fidelidad; copiar es el mejor
-      resultado posible (re-encode de un JPEG ya comprimido solo añade pérdida).
-    - Sin resize ni optimize (ambos piden trabajo real).
-    - Orientación upright (sin bake de píxeles).
-    - keep_exif=False solo si el origen NO tiene EXIF: el re-encode actual lo
-      quita; copiar lo conservaría (cambio de contrato).
-    - Un solo frame (GIF/WEBP/ICO animados: contrato = solo primer frame).
-    - Modo ya compatible con el destino (sin _ensure_mode).
-    - No PDF (Image.open lo trata como primera página; copiar conservaría el
-      documento completo — semántica distinta).
-    """
     if resize is not None or optimize:
         return False
     if calidad < 95:
@@ -220,28 +186,6 @@ def convertir_imagen(
     optimize: bool = False,
     ensure_dir: bool = True,
 ) -> Path:
-    """Convierte una imagen a otro formato.
-
-    Animated GIF/WEBP sources: only the **first frame** is converted. Frame
-    delays and multi-frame sequences are not preserved (Pillow opens frame 0).
-
-    Args:
-        ruta_origen: Ruta de la imagen origen.
-        ruta_destino: Ruta de salida.
-        formato_salida: Formato destino, ej: 'JPEG', 'PNG', 'WEBP'.
-        calidad: Calidad 1-100 para formatos con compresión (JPEG, WEBP).
-        resize: Tupla (ancho, alto) opcional para redimensionar.
-        keep_exif: Preservar metadatos EXIF.
-        optimize: Si True, pasa optimize=True a Pillow (JPEG/JPG). Opt-in.
-        ensure_dir: Si True, crea el directorio padre del destino.
-
-    Returns:
-        Path del archivo generado.
-
-    Raises:
-        FileNotFoundError: Si la imagen origen no existe.
-        ValueError: Si el formato no está soportado.
-    """
     ruta_origen = Path(ruta_origen)
     ruta_destino = Path(ruta_destino)
 
@@ -261,14 +205,9 @@ def convertir_imagen(
             msg = f"Imagen con dimensiones inválidas ({source_img.width}x{source_img.height}): {ruta_origen}"
             raise ValueError(msg)
 
-        # Fast-path: mismo formato, calidad alta y sin transformaciones que
-        # exijan re-encode → copia byte-idéntica (evita decode+encode, el
-        # costo dominante del pipeline de conversión: ~0.5-0.9 s → ~5-15 ms).
         if _can_fast_copy(source_img, formato, calidad, resize, keep_exif, optimize):
             return copiar_archivo(ruta_origen, ruta_destino, ensure_dir=ensure_dir)
 
-        # Bake EXIF Orientation into pixels so phone photos are upright even
-        # when keep_exif is False (default) or the destination strips tags.
         working: Image.Image = _bake_orientation(source_img)
 
         info = _registry[formato]
@@ -278,8 +217,6 @@ def convertir_imagen(
             if rw <= 0 or rh <= 0:
                 msg = f"Dimensiones de resize inválidas ({rw}x{rh})"
                 raise ValueError(msg)
-            # Large downscales: BOX is 4.5x faster than LANCZOS and sharper for averaging.
-            # Threshold 4x keeps quality for modest resizes, speeds up batch 800x600 from 4000x3000.
             try:
                 scale = max(img.width / rw, img.height / rh) if rw and rh else 1.0
             except ZeroDivisionError:
@@ -320,7 +257,6 @@ def convertir_imagen(
     return ruta_destino
 
 
-# Mirror ubicaciones disk-preview cap so the converter cache cannot grow without bound.
 _MAX_PREVIEW_CACHE_FILES = 200
 
 
@@ -346,25 +282,6 @@ def convertir_a_preview(
     *,
     as_data_uri: bool = False,
 ) -> dict[str, str]:
-    """Genera una vista previa en el formato seleccionado y retorna metadata.
-
-    By default writes the preview to a disk cache under the user data dir and
-    returns a ``file://`` URI (plus ``preview_path``). Pass ``as_data_uri=True``
-    to keep the legacy base64 data-URI in ``preview`` (larger IPC payloads).
-
-    Args:
-        ruta_origen: Path de la imagen origen.
-        formato_salida: Formato destino para la preview (JPEG, PNG, WEBP, etc.).
-        calidad: Calidad 1-100 para formatos con pérdida.
-        resize: Tupla (ancho, alto) opcional.
-        as_data_uri: If True, embed base64 in ``preview`` (legacy).
-
-    Returns:
-        Diccionario con:
-            - preview: file URI (default) or base64 data URI
-            - preview_path: absolute path to cached preview bytes (when not data-URI)
-            - width / height / orig_size_kb
-    """
     import hashlib
 
     from backend.utils.paths import user_data_path
@@ -374,9 +291,6 @@ def convertir_a_preview(
         msg = f"No se encontró: {ruta_origen}"
         raise FileNotFoundError(msg)
 
-    # Cache lookup — use a normalized format and nanosecond file signature so
-    # aliases ("png"/"PNG") do not duplicate entries and quick replacements
-    # cannot reuse a preview from the same mtime-second.
     from backend.core.preview_cache import get_preview_cache
 
     stat = ruta_origen.stat()
@@ -392,7 +306,6 @@ def convertir_a_preview(
     cached_result = cache.get(cache_key)
     if cached_result:
         cached = cast(dict[str, str], cached_result)
-        # Path mode: ensure file still on disk before serving.
         if not as_data_uri:
             path_str = cached.get("preview_path") or ""
             if path_str and Path(path_str).is_file():
@@ -401,7 +314,6 @@ def convertir_a_preview(
             return cached
 
     with Image.open(ruta_origen) as source_img:
-        # Pre-extract upright metadata dimensions before downsampling/draft
         raw_w, raw_h = source_img.size
         try:
             exif = source_img.getexif()
@@ -416,19 +328,12 @@ def convertir_a_preview(
 
         orig_size_kb = round(stat.st_size / 1024, 1)
 
-        # Fast path for JPEG: decode at reduced scale directly via libjpeg Turbo
         if (source_img.format or "").upper() == "JPEG":
             with contextlib.suppress(Exception):
                 source_img.draft("RGB", (800, 800))
 
-        # Match convertir_imagen: bake Orientation so preview is upright.
         working: Image.Image = _bake_orientation(source_img)
 
-        # Preview capped at 400px on longest side. When `resize` is provided it
-        # defines the target proportions, but the preview itself stays bounded
-        # so IPC payloads remain small — a 4000x3000 resize used to produce a
-        # 4000x3000 base64 preview (huge) upscaled from the <=400 intermediate
-        # step (blurry). One resize straight to the capped target is sharper.
         max_size = 400
         if resize and isinstance(resize, (tuple, list)) and len(resize) == 2:
             target_w, target_h = int(resize[0]), int(resize[1])
@@ -439,9 +344,6 @@ def convertir_a_preview(
             raise ValueError("Imagen con dimensiones 0x0 no puede ser procesada")
         ratio = min(max_size / longest, 1.0)
         preview_size = (max(1, int(target_w * ratio)), max(1, int(target_h * ratio)))
-        # Preview downscale >2.5x at 400px is visually identical with BILINEAR/BOX
-        # but 2.7-4.5x faster than LANCZOS (38.9 ms -> 14.5/8.6 ms for 3000x2000->400).
-        # Keep LANCZOS for modest scales where sharpness matters.
         try:
             scale_factor = max(orig_w / preview_size[0], orig_h / preview_size[1]) if preview_size[0] and preview_size[1] else 1.0
         except ZeroDivisionError:
@@ -479,7 +381,6 @@ def convertir_a_preview(
         cache_dir.mkdir(parents=True, exist_ok=True)
         digest = hashlib.sha1(cache_key.encode("utf-8", errors="replace")).hexdigest()
         out_path = cache_dir / f"{digest}{ext}"
-        # Atomic-ish write: temp then replace
         tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
         tmp_path.write_bytes(raw)
         tmp_path.replace(out_path)

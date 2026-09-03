@@ -64,8 +64,6 @@ describe('TemplatePicker', () => {
       label: `${i + 1}. id-${i}`,
     }));
 
-    // jsdom mide 0/rect vacío: simular el primer paint real, donde el menú aún
-    // NO tiene maxHeight aplicado y mide su altura natural (~1500px).
     const origGetRect = Element.prototype.getBoundingClientRect;
     const offsetHeightDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
     Element.prototype.getBoundingClientRect = function () {
@@ -86,8 +84,6 @@ describe('TemplatePicker', () => {
       );
       fireEvent.click(screen.getByRole('button', { name: /elegir fila/i }));
       const listbox = screen.getByRole('listbox');
-      // Altura natural 1500px capada a 280px → abrir hacia arriba junto al
-      // trigger (600 - 280 - 4), NUNCA anclado arriba de la ventana (top=8).
       expect(listbox.style.top).toBe('316px');
       expect(listbox.style.maxHeight).toBe('280px');
     } finally {

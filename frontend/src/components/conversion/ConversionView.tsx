@@ -36,8 +36,6 @@ export default function ConversionView() {
   const [patron, setPatron] = useState(DEFAULT_PATTERN);
   const [wordSeparator, setWordSeparator] = useState('_');
   const [secuencia, setSecuencia] = useState(1);
-  // Default matches current UI ("Por fila de BD" → record). ``filename`` is
-  // preserved when restoring history so re-run matches the original job.
   const [sequenceMode, setSequenceMode] = useState<SequenceMode>('record');
   const useFilenameSeq = sequenceMode !== 'global';
   const [namingMode, setNamingMode] = useState<string>('code_name');
@@ -148,7 +146,6 @@ export default function ConversionView() {
       setFiles(f);
       clearFileRefs();
       setFormato((options.formato as string) || 'JPEG');
-      // Use nullish coalescing so calidad=0 is preserved if ever stored.
       setCalidad(typeof options.calidad === 'number' ? options.calidad : 95);
       setConversionEnabled(options.conversion_enabled !== false);
       setKeepExif(Boolean(options.keep_exif));
@@ -172,7 +169,6 @@ export default function ConversionView() {
       ) {
         setSequenceMode(options.sequence_mode);
       } else if (typeof options.use_filename_seq === 'boolean') {
-        // Legacy runs without sequence_mode: UI maps the boolean to record|global.
         setSequenceMode(options.use_filename_seq ? 'record' : 'global');
       }
 
@@ -240,12 +236,10 @@ export default function ConversionView() {
   }, [addToast, clearFileRefs, hasFileStagingBridge]);
 
   useEffect(() => {
-    // Consume payload buffered while ConversionView was unmounted (other tab).
     const pending = takePendingHistoryReexecute();
     if (pending) applyHistoryRun(pending);
 
     return subscribeHistoryReexecute((run) => {
-      // Live event while mounted: drop buffer so remount does not re-apply.
       takePendingHistoryReexecute();
       applyHistoryRun(run);
     });
@@ -336,8 +330,6 @@ export default function ConversionView() {
     setPreviewTotalFiles(null);
   }, [dbColumns.length]);
 
-  // B-06: reload the mapping Excel with new column choices, guarded by a
-  // cancellation token so rapid selector changes can't overwrite each other.
   const mappingReloadToken = useRef(0);
   const reloadMappingWithColumns = useCallback(
     async (idColumn: string, renameColumn: string) => {
@@ -345,7 +337,7 @@ export default function ConversionView() {
       const token = ++mappingReloadToken.current;
       try {
         const result = await api.dbParseMapping(mappingPath, await resolveFileRefs(files), idColumn, renameColumn);
-        if (token !== mappingReloadToken.current) return; // a newer change superseded us
+        if (token !== mappingReloadToken.current) return;
         setMappingData(result.mapping);
         setMappingColumns(result.columns ?? []);
         setMappingIdColumn(result.id_column ?? idColumn);
@@ -377,8 +369,6 @@ export default function ConversionView() {
       });
       if (!proceed) return;
     }
-    // Detect mapping Excel (ID + RENOMBRE columns) before falling back to catalog import.
-    // Also runs when files is empty so a mapping workbook is not forced into SQLite catalog.
     try {
       const mappingRef = excelToken ?? excelPath;
       const result = await api.dbParseMapping(mappingRef, await resolveFileRefs(files));
@@ -427,8 +417,6 @@ export default function ConversionView() {
     }
   };
 
-  // Preview debounce (600ms) + token ignore + single-flight queue so rapid
-  // changes never stack concurrent api.preview calls on the Python process.
   const previewToken = useRef(0);
   const previewInFlightRef = useRef(false);
   type ResolveFileRefs = (paths: string[]) => Promise<string[]>;
@@ -438,12 +426,8 @@ export default function ConversionView() {
     token: number;
     resolveFileRefs: ResolveFileRefs;
   } | null>(null);
-  // After auto-detect applies setKeyColumn, skip the effect re-run that would
-  // otherwise fire an identical second preview (keyColumn is still in deps so
-  // manual UI changes re-fetch).
   const skipPreviewForKeyOnlyRef = useRef(false);
 
-  // Bump token on unmount so late in-flight results never setState.
   useEffect(() => () => { previewToken.current += 1; }, []);
 
   useEffect(() => {
@@ -469,8 +453,6 @@ export default function ConversionView() {
     }
 
     const token = ++previewToken.current;
-    // For very large file lists, sample the first 200 files for the preview
-    // to avoid sending a massive payload to the backend on every keystroke.
     const PREVIEW_SAMPLE_LIMIT = 200;
     const clientTruncated = files.length > PREVIEW_SAMPLE_LIMIT;
     const previewFiles = clientTruncated ? files.slice(0, PREVIEW_SAMPLE_LIMIT) : files;
@@ -490,8 +472,6 @@ export default function ConversionView() {
           key_column: keyColumn || undefined,
           word_separator: wordSeparator,
           sequence_mode: sequenceMode,
-          // El preview replica la dedupe del job contra los archivos ya
-          // existentes en destino (sufijos -2/-3) — ver handlers/conversion.preview.
           destino: destino.trim() || undefined,
         };
 
@@ -510,7 +490,6 @@ export default function ConversionView() {
         const result = await api.preview(requestBody);
         if (requestToken !== previewToken.current) return;
         setRenamePreview(result.preview);
-        // Prefer backend truncation flag; also mark when the client sampled the request.
         const truncated = Boolean(result.truncated) || clientTruncated;
         setPreviewTruncated(truncated);
         setPreviewTotalFiles(
@@ -544,7 +523,6 @@ export default function ConversionView() {
           previewQueuedArgsRef.current = null;
           void runPreview(queued.files, queued.body, queued.token, queued.resolveFileRefs);
         } else if (queued && queued.token !== previewToken.current) {
-          // Superseded by a newer effect schedule — drop stale queue entry.
           previewQueuedArgsRef.current = null;
         }
       }
@@ -610,9 +588,6 @@ export default function ConversionView() {
     setPatron(preset.pattern);
   };
 
-  // Compute video files via useMemo instead of useEffect+setState.
-  // This avoids an extra render cycle and keeps videoFiles stable when
-  // files hasn't changed.
   const videoFiles = useMemo(() => {
     const videoSet = new Set<string>();
     for (const file of files) {
@@ -682,9 +657,6 @@ export default function ConversionView() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Delete' && e.key !== 'Backspace') return;
       if (selectedFilesRef.current.size === 0) return;
-      // Don't hijack Backspace/Delete while the user is editing a text field,
-      // a textarea, a select, or any contentEditable — otherwise fixing a typo
-      // in the rename pattern / resize fields silently deletes the selected files.
       const t = e.target as HTMLElement | null;
       if (
         t instanceof HTMLInputElement ||

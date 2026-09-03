@@ -1,4 +1,3 @@
-/** Sidebar width limits for Espacios (px). Default matches previous `w-60` (240px). */
 export const ESPACIOS_SIDEBAR_DEFAULT_WIDTH = 240;
 export const ESPACIOS_SIDEBAR_MIN_WIDTH = 180;
 export const ESPACIOS_SIDEBAR_MAX_WIDTH = 420;

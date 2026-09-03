@@ -1,4 +1,3 @@
-"""Pruebas del envelope estructurado y la correlación del backend."""
 
 import json
 import logging

@@ -20,7 +20,6 @@ interface SpaceSidebarProps {
   onProyectoColorChange: (id: string, color: string) => void;
 }
 
-/** Nav list only — width/border live on the parent column so header + body stay aligned. */
 export default function SpaceSidebar({
   espacios,
   proyectos,

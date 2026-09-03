@@ -71,7 +71,6 @@ function _isExpired(entry) {
   return entry.expiresAt <= _now();
 }
 
-/** Create a file capability for a local path. */
 function createFileCapability({ filePath, mode, webContentsId, name, size }) {
   if (!filePath || typeof filePath !== 'string') throw new Error('filePath required');
   const resolved = path.resolve(filePath);
@@ -113,7 +112,6 @@ function revokeCapability(token) {
   _capabilities.delete(token);
 }
 
-/** Revoke staged capability and remove its temp file. */
 async function cleanupStagedCapability(token, webContentsId = null) {
   const cap = _capabilities.get(token);
   if (!cap || !cap.staged || !cap.stagedSessionToken) return false;
@@ -180,7 +178,6 @@ function _chunkToBuffer(chunk) {
     return Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
   }
   if (typeof chunk === 'string') {
-    // Legacy renderer path: base64 text.
     return Buffer.from(chunk, 'base64');
   }
   throw new Error('invalid chunk');
@@ -253,8 +250,6 @@ async function cleanupAllStaged() {
 
 function _assertNoRawAbsolutePaths(params, options = {}) {
   const allowRegisteredReadPaths = options.allowRegisteredReadPaths === true;
-  // The caller supplies the already-normalized internal allowlist. Reusing an
-  // immutable-by-convention empty set avoids allocating on every IPC request.
   const allowRawAbsolutePathKeys = options.allowRawAbsolutePathKeys instanceof Set
     ? options.allowRawAbsolutePathKeys
     : EMPTY_PATH_KEY_SET;
@@ -292,8 +287,6 @@ function _assertNoRawAbsolutePaths(params, options = {}) {
         let isRegisteredReadPath = false;
         if (allowRegisteredReadPaths && !isExplicitlyAllowed) {
           try {
-            // Validate both the approval grant and the current filesystem
-            // object, including the symlink policy.
             assertAllowedReadPath(value);
             isRegisteredReadPath = true;
           } catch {
@@ -323,10 +316,6 @@ function _assertNoRawAbsolutePaths(params, options = {}) {
     }
     if (!value || typeof value !== 'object') return;
     for (const [key, child] of Object.entries(value)) {
-      // Propagate container keys so values in files/image_paths/localImagePaths
-      // are checked even when their immediate property is an arbitrary id.
-      // Do not propagate into object records such as image-optimizer's
-      // { filename, content_b64 } entries: those are payload data, not paths.
       const nextInherited = PATH_CONTAINER_KEYS.has(String(inheritedKey).toLowerCase())
         && (typeof child === 'string' || Array.isArray(child))
         ? inheritedKey

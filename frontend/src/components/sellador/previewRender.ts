@@ -102,7 +102,6 @@ export async function renderPageWithStampFromPdf(
 ): Promise<string> {
   const page = await pdf.getPage(pageNum);
   const unscaled = page.getViewport({ scale: 1 });
-  // Align client canvas with previewDpi display caps (same as backend max_width path).
   const dpr = selladorPreviewDpr();
   const minScale = MIN_PREVIEW_PIXEL_WIDTH / unscaled.width;
   const maxScale = MAX_PREVIEW_PIXEL_WIDTH / unscaled.width;

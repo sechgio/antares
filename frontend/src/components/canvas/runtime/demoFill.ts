@@ -3,7 +3,6 @@ import type { FillContext } from './renderHtml';
 import { renderMultiPageHtml } from './planning';
 import { templateImagesPerPage } from '../ops/pages';
 
-/** Realistic sample values for common field keys (case-insensitive). */
 const SAMPLE_BY_KEY: Record<string, string> = {
   CENTRO: 'CS Norte',
   NIS: '45871203',
@@ -38,7 +37,6 @@ function parseTableFieldKeys(raw: string | undefined): string[] {
     if (!Array.isArray(parsed.fieldKeys)) return [];
     return parsed.fieldKeys.flat().filter((k): k is string => typeof k === 'string' && k.length > 0);
   } catch {
-    // Malformed rowsData JSON — treat as no field bindings rather than crash demo preview.
     return [];
   }
 }
@@ -51,7 +49,6 @@ export function sampleValueForKey(key: string): string {
   return SAMPLE_POOL[hash % SAMPLE_POOL.length];
 }
 
-/** Offline SVG placeholder — works in Electron and Vitest without canvas/network. */
 export function placeholderImageDataUrl(index: number, label?: string): string {
   const bg = IMAGE_COLORS[index % IMAGE_COLORS.length];
   const text = label ?? `Foto ${index + 1}`;
@@ -76,7 +73,6 @@ export function collectDemoFieldKeys(doc: CanvasDocument): string[] {
   return [...keys];
 }
 
-/** Build FillContext with random-looking sample data and placeholder images/logos. */
 export function buildDemoFillContext(doc: CanvasDocument): FillContext {
   const data: Record<string, string> = {};
   for (const key of collectDemoFieldKeys(doc)) {
@@ -115,7 +111,6 @@ export function buildDemoFillContext(doc: CanvasDocument): FillContext {
   };
 }
 
-/** Render filled HTML preview for design-mode demo (always page-aware + screen px). */
 export function renderDemoPreviewHtml(doc: CanvasDocument): string {
   const ctx = buildDemoFillContext(doc);
   return renderMultiPageHtml(doc, ctx, { forScreen: true });

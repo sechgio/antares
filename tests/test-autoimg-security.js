@@ -1,9 +1,3 @@
-/**
- * Regresión de seguridad AutoIMG para repo público:
- * - Respuestas IPC no exponen secrets
- * - Archivos locales sensibles están en .gitignore
- * - El árbol versionado no contiene patrones de credenciales
- */
 
 const fs = require('fs');
 const path = require('path');
@@ -33,18 +27,15 @@ function main() {
   const { maskClientId, sanitizeErrorMessage, assertNoSecretInObject } = require('../electron/autoimg-security');
   const sheets = require('../electron/google-sheets-service');
 
-  // IPC status nunca devuelve secretos
   const status = sheets.getOAuthConfigStatus();
   assertNoSecretInObject(status);
   assert(!('client_id' in status), 'oauth status no debe exponer client_id completo');
   assert(!('client_secret' in status), 'oauth status no debe exponer client_secret');
 
-  // Enmascarado de Client ID
   const masked = maskClientId('123456789012-abcdefghijklmnop.apps.googleusercontent.com');
   assert(masked.includes('…'), 'client_id_masked debe estar parcialmente oculto');
   assert(!masked.includes('abcdefghijklmnop'), 'client_id_masked no debe filtrar el ID completo');
 
-  // Errores con tokens no se propagan literales
   const sanitized = sanitizeErrorMessage('OAuth failed: {"access_token":"SECRET123","client_secret":"X"}');
   assert(!sanitized.includes('SECRET123'), 'sanitizeErrorMessage debe redactar access_token');
   assert(!sanitized.includes('client_secret'), 'sanitizeErrorMessage debe redactar client_secret');
@@ -53,13 +44,11 @@ function main() {
   assert(rateLimited.includes('Límite de consultas'), 'sanitizeErrorMessage debe traducir error 429');
   assert(!rateLimited.includes('472350177078'), 'sanitizeErrorMessage no debe exponer IDs de proyecto Google');
 
-  // .gitignore cubre archivos locales de AutoIMG
   const gitignore = fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8');
   for (const entry of ['autoimg-oauth-config.json', 'autoimg-tokens.json', 'autoimg-sheet.json', '.env.local']) {
     assert(gitignore.includes(entry) || gitignore.includes('.env.*'), `.gitignore debe cubrir ${entry}`);
   }
 
-  // frontend/.env.local no debe estar versionado
   const tracked = gitLsFiles();
   assert(!tracked.includes('frontend/.env.local'), 'frontend/.env.local no debe estar en git');
   assert(!tracked.includes('.env.local'), '.env.local no debe estar en git');
@@ -80,7 +69,6 @@ function main() {
   assert(preCommit.includes('sb_publishable_'), 'pre-commit debe bloquear publishable keys');
   assert(preCommit.includes('sbp_'), 'pre-commit debe bloquear access tokens Supabase');
 
-  // Supabase: archivos locales sensibles no versionados
   for (const entry of ['supabase/.env', 'supabase/.env.local', '.cursor/settings.json']) {
     assert(gitignore.includes(entry) || gitignore.includes('supabase/.env'), `.gitignore debe cubrir ${entry}`);
   }
@@ -88,7 +76,6 @@ function main() {
   assert(!tracked.includes('supabase/.env.local'), 'supabase/.env.local no debe estar en git');
   assert(!tracked.includes('.cursor/settings.json'), '.cursor/settings.json no debe estar en git');
 
-  // Barrido de secretos en archivos versionados (excluye ejemplos y tests de redacción)
   const secretPatterns = [
     /client_secret\s*[:=]\s*['"][a-zA-Z0-9_\-]{8,}['"]/i,
     /AUTOIMG_GOOGLE_CLIENT_SECRET\s*=\s*\S+/,

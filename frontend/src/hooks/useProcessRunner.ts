@@ -64,8 +64,6 @@ export function useProcessRunner(): ProcessRunnerHookResult {
       setStatus(s);
       setRunning(s.running);
     } catch (err) {
-      // Keep optimistic/running state: a transient getStatus failure must not
-      // look like the job finished. Surface the error so the UI can retry poll.
       if (runningRef.current) {
         setPollError(pollErrorMessage(err));
       }
@@ -74,7 +72,6 @@ export function useProcessRunner(): ProcessRunnerHookResult {
 
   useEffect(() => {
     const unsub = onNotify((method, params) => {
-      // Backend lifecycle: handle before params filter so empty/undefined params still reset.
       if (method === 'backend.restarting' || method === 'backend.fatal' || method === 'backend.error') {
         setRunning(false);
         setStatus((prev) => (prev ? { ...prev, running: false } : prev));
@@ -103,10 +100,6 @@ export function useProcessRunner(): ProcessRunnerHookResult {
   }, []);
 
   const startProcess = useCallback(async (body: ProcessBody) => {
-    // Flip running optimistically BEFORE the await: api.startProcess can block
-    // up to ~30s while the backend boots (waitForReady), and the start button
-    // is gated on `running`. Setting it after the await left the button enabled
-    // during that window, so a second click enqueued a second process_start.
     setPollError(null);
     setRunning(true);
     setStatus((prev) => ({ ...(prev ?? emptyStatus()), running: true, progress: 0 }));

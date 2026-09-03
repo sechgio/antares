@@ -1,4 +1,3 @@
-"""CSV/XLSX import for Fichas Técnicas."""
 
 from __future__ import annotations
 
@@ -42,7 +41,6 @@ def parse_csv_bytes(content: bytes) -> list[dict[str, Any]]:
     def _read(delimiter: str) -> list[dict[str, Any]]:
         return list(csv.DictReader(io.StringIO(decoded), delimiter=delimiter))
 
-    # Prefer the delimiter that yields more real columns (headers that are not None).
     semicolon_rows = _read(";")
     comma_rows = _read(",")
     semi_cols = len([k for k in (semicolon_rows[0].keys() if semicolon_rows else []) if k])

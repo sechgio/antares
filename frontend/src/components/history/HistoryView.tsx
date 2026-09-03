@@ -2,10 +2,11 @@ import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 
 import { useTranslation } from 'react-i18next';
 
-import { Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { Download, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 
 import { api } from '../../api';
+import { downloadBase64Blob } from '../../utils/pdfAssets';
 
 import { useToast } from '../../hooks/useToast';
 
@@ -48,6 +49,7 @@ export default function HistoryView() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const runsRef = useRef<HistoryRun[]>([]);
   runsRef.current = runs;
@@ -241,7 +243,30 @@ export default function HistoryView() {
 
   };
 
-
+  const handleExportCsv = async (idsToExport?: number[]) => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const params = idsToExport && idsToExport.length > 0
+        ? { ids: idsToExport }
+        : { run_type: activeType !== 'all' ? activeType : undefined };
+      const res = await api.historyExport(params);
+      if (!res.csv) {
+        addToast({ message: t('history.errors.export'), type: 'error' });
+        return;
+      }
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+      const filename = `historial_antares_${timestamp}.csv`;
+      downloadBase64Blob(res.csv, filename, 'text/csv;charset=utf-8;');
+      addToast({ message: t('history.toasts.exported', { count: res.count }), type: 'success' });
+    } catch {
+      addToast({ message: t('history.errors.export'), type: 'error' });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const hasActiveFilters = activeType !== 'all';
 
@@ -355,6 +380,30 @@ export default function HistoryView() {
 
             </WithHoverTooltip>
 
+            <WithHoverTooltip label={t('history.actions.exportCsv')} placement="bottom">
+
+              <button
+
+                type="button"
+
+                onClick={() => void handleExportCsv()}
+
+                disabled={exporting || filteredRuns.length === 0}
+
+                aria-label={t('history.actions.exportCsv')}
+
+                className="inline-flex h-9 items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 text-[12px] font-medium text-[var(--text-secondary)] transition-all hover:border-[var(--border-medium)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed"
+
+              >
+
+                <Download size={14} strokeWidth={2} />
+
+                <span className="hidden sm:inline">{exporting ? t('history.exporting') : t('history.actions.exportCsv')}</span>
+
+              </button>
+
+            </WithHoverTooltip>
+
           </div>
 
         </div>
@@ -440,6 +489,22 @@ export default function HistoryView() {
             </div>
 
             <div className="flex items-center gap-2">
+
+              <button
+
+                onClick={() => void handleExportCsv(Array.from(selectedIds))}
+
+                disabled={exporting}
+
+                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-surface)] disabled:opacity-40"
+
+              >
+
+                <Download size={12} strokeWidth={2} />
+
+                {exporting ? t('history.exporting') : t('history.actions.exportCsv')}
+
+              </button>
 
               <button
 

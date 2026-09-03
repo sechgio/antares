@@ -1,4 +1,3 @@
-"""File-backed Canvas document store under user data (survives app updates)."""
 
 from __future__ import annotations
 
@@ -34,12 +33,10 @@ _store_lock = threading.Lock()
 
 
 def _default_docs_dir() -> Path:
-    """Writable store outside the install tree — survives updates."""
     return user_data_path("canvas/documents")
 
 
 def _legacy_docs_dir() -> Path:
-    """Pre-user-data location (repo / bundled data/)."""
     return resource_path("data/canvas/documents")
 
 
@@ -53,7 +50,6 @@ def get_canvas_store(docs_dir: str | Path | None = None) -> CanvasStore:
 
 
 def migrate_legacy_canvas_documents(*, source: Path, dest: Path) -> int:
-    """Copy JSON docs from *source* into *dest* without overwriting. Returns count copied."""
     if not source.is_dir():
         return 0
     try:
@@ -215,7 +211,6 @@ class CanvasStore:
                 self._recover_document_spill(spill_path)
 
     def _rebuild_index_if_stale(self) -> None:
-        """Rebuild id index and listing cache if *.json set changed."""
         current_stems = {p.stem for p in self.docs_dir.glob("*.json")}
         if self._index_stems == current_stems:
             return

@@ -1,9 +1,5 @@
 import type { CanvasLayer } from '../types';
 
-/**
- * Parse system-clipboard JSON into canvas layers (best-effort).
- * Minimal shape: array of objects with `type` (string) and `cssVars` (object).
- */
 export function parseClipboardLayers(text: string): CanvasLayer[] | null {
   if (!text || typeof text !== 'string') return null;
   let parsed: unknown;
@@ -24,7 +20,6 @@ export function parseClipboardLayers(text: string): CanvasLayer[] | null {
   return layers;
 }
 
-/** Best-effort write of layers JSON to the system clipboard. Never throws. */
 export function writeClipboardLayersText(layers: CanvasLayer[]): void {
   if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) return;
   try {

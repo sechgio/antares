@@ -1,11 +1,6 @@
-/**
- * Map-backed LRU for sellador preview data-URL caches.
- * Evicts oldest keys when entry count or weighted byte budget is exceeded.
- */
 
 export const SELLADOR_PREVIEW_CACHE_MAX_BYTES = 24 * 1024 * 1024;
 
-/** JS strings are UTF-16; ASCII data-URLs cost ~2 bytes/char on the heap. */
 export function estimateStringBytes(value: string): number {
   return value.length * 2;
 }
@@ -75,7 +70,6 @@ export function createLruMap<K, V>(
     set(key: K, value: V): void {
       if (map.has(key)) forget(key);
       const weight = Math.max(0, sizeOf(value));
-      // Skip caching entries that alone exceed the budget.
       if (weight > maxBytes && Number.isFinite(maxBytes)) {
         return;
       }

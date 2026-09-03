@@ -116,7 +116,6 @@ describe('reorderAmongSiblings', () => {
     const g = createLayer('group', { id: 'g' });
     const a = createLayer('text', { id: 'a', parentId: 'g' });
     const b = createLayer('text', { id: 'b', parentId: 'g' });
-    // doc [g,a,b] → Capas siblings top-first [b,a]
     const next = reorderAmongSiblings([g, a, b], 'a', 'b', 'before');
     expect(next.filter((l) => l.parentId === 'g').map((l) => l.id)).toEqual(['b', 'a']);
   });
@@ -159,7 +158,6 @@ describe('moveLayerInTree', () => {
     const g = createLayer('group', { id: 'g' });
     const a = createLayer('text', { id: 'a', parentId: 'g' });
     const b = createLayer('text', { id: 'b' });
-    // Capas roots top-first [b, g]; drop a before b → a becomes root, above b
     const next = moveLayerInTree([g, a, b], 'a', 'b', 'before');
     expect(next.find((l) => l.id === 'a')!.parentId).toBeUndefined();
     const roots = next.filter((l) => !l.parentId && l.type !== 'frame');
@@ -245,7 +243,6 @@ describe('setActivePageLayers', () => {
     const p0c = createLayer('rect', { id: 'p0c', pageIndex: 0 });
     const doc = makeDoc([p0a, p1b, p0c]);
 
-    // Update only p0a on page 0; p0c is dropped (not in incoming), p1b stays.
     const updated = setActivePageLayers(doc, 0, [
       { ...p0a, name: 'Renamed' },
     ]);

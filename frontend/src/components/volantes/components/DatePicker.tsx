@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAnchoredPopover } from "../hooks/useAnchoredPopover";
+import { isSameDate, parseIsoDateLocal, toIsoDateLocal } from "../../../utils/dates";
 
 interface DatePickerProps {
   value: string;
@@ -45,9 +46,7 @@ export default function DatePicker({
   label,
   className = "",
 }: DatePickerProps) {
-  const [currentMonth, setCurrentMonth] = useState(() =>
-    value ? new Date(`${value}T00:00:00`) : new Date(),
-  );
+  const [currentMonth, setCurrentMonth] = useState(() => parseIsoDateLocal(value) ?? new Date());
   const { isOpen, position, triggerRef, popupRef, toggle, close, updatePosition } =
     useAnchoredPopover({
       estimatedHeight: 300,
@@ -56,8 +55,8 @@ export default function DatePicker({
     });
 
   useEffect(() => {
-    if (!value) return;
-    setCurrentMonth(new Date(`${value}T00:00:00`));
+    const parsed = parseIsoDateLocal(value);
+    if (parsed) setCurrentMonth(parsed);
   }, [value]);
 
   useEffect(() => {
@@ -66,30 +65,15 @@ export default function DatePicker({
 
   const days = buildMonthDays(currentMonth);
 
-  const isToday = (date: Date) => {
-    const today = new Date();
-    return (
-      date.getDate() === today.getDate() &&
-      date.getMonth() === today.getMonth() &&
-      date.getFullYear() === today.getFullYear()
-    );
-  };
+  const isToday = (date: Date) => isSameDate(date, new Date());
 
   const isSelected = (date: Date) => {
-    if (!value) return false;
-    const selected = new Date(`${value}T00:00:00`);
-    return (
-      date.getDate() === selected.getDate() &&
-      date.getMonth() === selected.getMonth() &&
-      date.getFullYear() === selected.getFullYear()
-    );
+    const selected = parseIsoDateLocal(value);
+    return selected !== null && isSameDate(date, selected);
   };
 
   const selectDate = (date: Date) => {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, "0");
-    const d = String(date.getDate()).padStart(2, "0");
-    onChange(`${y}-${m}-${d}`);
+    onChange(toIsoDateLocal(date));
     close();
   };
 

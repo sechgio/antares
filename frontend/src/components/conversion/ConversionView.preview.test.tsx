@@ -3,7 +3,6 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ToastProvider } from '../../hooks/useToast';
 import { DialogProvider } from '../../hooks/useDialog';
 
-// Hoisted mocks — must be defined before the vi.mock call.
 const mockApi = vi.hoisted(() => ({
   formats: vi.fn().mockResolvedValue({ formats: ['JPEG', 'PNG'] }),
   getFields: vi.fn().mockResolvedValue({ fields: [{ name: 'codigo', type: 'string', required: true, unique: false }] }),
@@ -29,7 +28,6 @@ vi.mock('../history/historyEvents', () => ({
 
 import ConversionView from './ConversionView';
 
-// jsdom does not implement ResizeObserver — stub it so FileGrid can mount.
 class ResizeObserverStub {
   observe() {}
   unobserve() {}
@@ -97,14 +95,11 @@ describe('ConversionView rename preview single-flight', () => {
     });
     await waitFor(() => expect(mockApi.dialogFiles).toHaveBeenCalled());
 
-    // Fire the first debounced preview (slow).
     await act(async () => {
       await vi.advanceTimersByTimeAsync(600);
     });
     await waitFor(() => expect(mockApi.preview).toHaveBeenCalledTimes(1));
 
-    // Change files so a second schedule happens while first is in flight.
-    // After files are loaded the primary control becomes "Agregar".
     mockApi.dialogFiles.mockResolvedValueOnce({
       paths: ['C:\\fotos\\b.jpg'],
       file_tokens: ['antares-read_b'],
@@ -118,8 +113,6 @@ describe('ConversionView rename preview single-flight', () => {
       await vi.advanceTimersByTimeAsync(600);
     });
 
-    // While first still pending, second should queue (single-flight) rather than stack.
-    // Resolve the slow call — its result must not stick if superseded.
     await act(async () => {
       resolveSlow?.(slowResult);
       await Promise.resolve();
@@ -127,11 +120,9 @@ describe('ConversionView rename preview single-flight', () => {
     });
 
     await waitFor(() => {
-      // At most two network calls for this sequence (single-flight + latest).
       expect(mockApi.preview.mock.calls.length).toBeLessThanOrEqual(2);
     });
 
-    // Final applied preview should come from the latest call params (files include b).
     await waitFor(() => {
       const lastCall = mockApi.preview.mock.calls.at(-1)?.[0] as { files: string[] };
       expect(lastCall.files).toContain('antares-read_b');
@@ -199,16 +190,13 @@ describe('ConversionView rename preview single-flight', () => {
 
     await waitFor(() => expect(mockApi.preview).toHaveBeenCalled());
 
-    // Allow any detect-driven setKeyColumn effect to settle.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(700);
       await Promise.resolve();
     });
 
-    // Detect apply must not storm another full preview for the same inputs.
     expect(mockApi.preview.mock.calls.length).toBeLessThanOrEqual(2);
 
-    // UI key column should reflect detect (select shows codigo).
     await waitFor(() => {
       const select = screen.getByRole('combobox');
       expect((select as HTMLSelectElement).value).toBe('codigo');
@@ -246,7 +234,6 @@ describe('ConversionView rename preview single-flight', () => {
     });
     await waitFor(() => expect(mockApi.preview).toHaveBeenCalled());
 
-    // Settle detect apply (skip re-fetch).
     await act(async () => {
       await vi.advanceTimersByTimeAsync(700);
     });

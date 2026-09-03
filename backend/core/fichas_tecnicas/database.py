@@ -28,7 +28,6 @@ _db_instance_lock = threading.Lock()
 
 
 def get_fichas_db(db_path: str | Path | None = None) -> FichasTecnicasDB:
-    """Return the process-wide FichasTecnicasDB singleton."""
     global _db_instance
     if _db_instance is None:
         with _db_instance_lock:

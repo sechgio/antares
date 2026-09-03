@@ -52,7 +52,6 @@ export function useCampoBranding(reportType: ReportType) {
         }, SAVE_DEBOUNCE_MS);
     }, [persistNow]);
 
-    // Load branding per plantilla; flush previous type before swap.
     useEffect(() => {
         const type = reportType;
         const prev = loadedTypeRef.current;

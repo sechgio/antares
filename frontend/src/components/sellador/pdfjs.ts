@@ -28,7 +28,6 @@ export async function renderPdfPageToDataUrl(
 ): Promise<{ url: string; pageSize: PdfPageSize }> {
   const page = await pdf.getPage(pageNum);
   const unscaled = page.getViewport({ scale: 1 });
-  // Display-path caps from previewDpi (preview only; export apply is separate).
   const minScale = MIN_PREVIEW_PIXEL_WIDTH / unscaled.width;
   const maxScale = MAX_PREVIEW_PIXEL_WIDTH / unscaled.width;
   const scale = Math.min(Math.max((containerW / unscaled.width) * dpr, minScale), maxScale);

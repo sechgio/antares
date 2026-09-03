@@ -1,8 +1,3 @@
-"""Offline, deterministic load model and measurement schema for Task 1.
-
-The command exercises synthetic payloads only. It does not start Electron,
-connect to a service, read user files, or write into the source tree.
-"""
 
 from __future__ import annotations
 
@@ -199,7 +194,6 @@ def _concurrent_jobs(count: int, seed: int, image_count: int) -> list[dict[str, 
 
 
 def generate_fixtures(scale: str, *, seed: int = 1) -> dict[str, Any]:
-    """Return deterministic, non-sensitive fixtures for every load domain."""
     factor = _validate_scale(scale)
     counts = {domain: count * factor for domain, count in BASE_COUNTS.items()}
     data = {
@@ -222,7 +216,6 @@ def _nearest_rank(values: list[float], quantile: float) -> float:
 
 
 class MetricCollector:
-    """Collect one scenario's measurements without depending on a service."""
 
     def __init__(self, domain: str, scale: str) -> None:
         _validate_scale(scale)
@@ -282,7 +275,6 @@ class MetricCollector:
 
 
 class RssPeakTracker:
-    """Sample RSS at bounded operation points and retain the observed maximum."""
 
     def __init__(self, sampler: RssSampler) -> None:
         self._sampler = sampler
@@ -604,7 +596,6 @@ def run_offline_baseline(
     clock: Clock = time.perf_counter,
     rss_sampler: RssSampler | None = None,
 ) -> dict[str, Any]:
-    """Run all seven deterministic offline synthetic scenarios for one scale."""
     fixtures = generate_fixtures(scale, seed=seed)
     sampler = rss_sampler or _peak_rss_bytes
     measurements = [runner(fixtures["data"], scale, clock=clock, rss_sampler=sampler) for runner in SCENARIO_RUNNERS.values()]

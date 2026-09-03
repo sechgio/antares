@@ -15,7 +15,6 @@ interface PdfPagePreviewProps {
   pdfBase64?: string | null;
   pdfPath?: string | null;
   pdfFile?: File | null;
-  /** Monotonic identity assigned when the loaded PDF source changes. */
   sourceRevision?: number;
   pageNum?: number;
   width?: number;

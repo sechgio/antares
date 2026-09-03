@@ -1,4 +1,3 @@
-"""HTML rendering parity for Fichas Técnicas logos/export markup."""
 
 from __future__ import annotations
 

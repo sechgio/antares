@@ -44,7 +44,6 @@ describe('context memoization', () => {
     const Consumer = memo(function Consumer() {
       renders++;
       const { addToast } = useToast();
-      // use addToast to ensure context read
       void addToast;
       return null;
     });
@@ -100,7 +99,6 @@ describe('context memoization', () => {
         <Consumer />
       </AuthProvider>,
     );
-    // wait a tick for async init to settle
     await new Promise((r) => setTimeout(r, 20));
     const before = renders;
     rerender(
@@ -108,7 +106,6 @@ describe('context memoization', () => {
         <Consumer />
       </AuthProvider>,
     );
-    // allow effects to run
     await new Promise((r) => setTimeout(r, 10));
     expect(renders).toBe(before);
   });

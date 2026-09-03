@@ -63,7 +63,6 @@ function barSurface(accent: string): string {
   return `color-mix(in srgb, ${accent} 16%, var(--bg-elevated))`;
 }
 
-/** e.g. "jul. 5 – jul. 6 (2d)" */
 function formatRangeDuration(start: string, end: string): string {
   const a = DATE_SHORT.format(parseLocalDate(start)).toLowerCase();
   const b = DATE_SHORT.format(parseLocalDate(end)).toLowerCase();
@@ -95,7 +94,6 @@ export default function GanttView({
   onEditTask,
 }: GanttViewProps) {
   const [zoom, setZoom] = useState<ZoomLevel>('day');
-  /** null = use preset for current zoom; number = free zoom (Ctrl+rueda / +/-). */
   const [colWManual, setColWManual] = useState<number | null>(null);
   const [rangeOffset, setRangeOffset] = useState(0);
   const [hoverDate, setHoverDate] = useState<string | null>(null);
@@ -104,7 +102,6 @@ export default function GanttView({
   const [viewportH, setViewportH] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const didScrollToday = useRef(false);
-  /** Keep scroll anchored under the cursor while free-zooming. */
   const zoomAnchorRef = useRef<{ dayAtMouse: number; viewRatio: number } | null>(null);
   const colWRef = useRef(GANTT_ZOOM_PRESET_COL.day);
   const dragRef = useRef<{
@@ -126,8 +123,6 @@ export default function GanttView({
 
   const bars = useMemo(() => buildGanttBars(tareas, today, columns), [tareas, today, columns]);
 
-  // Honor Día/Semana/Mes presets exactly. Stretching columns to fill the viewport used to
-  // force the same width for every preset on wide screens / short task ranges.
   const colW = useMemo(() => resolveGanttColW(zoom, colWManual), [zoom, colWManual]);
 
   const baseRange = useMemo(() => {
@@ -151,8 +146,6 @@ export default function GanttView({
   const gridWidth = days.length * colW;
   colWRef.current = colW;
 
-  // Stretch the body so day columns + lane guides fill the chart viewport (no white half below).
-  // viewportH is clientHeight, which already excludes scrollbars when present.
   const bodyHeight = useMemo(() => {
     const fromLanes = lanes * LANE_HEIGHT + 24;
     if (viewportH <= 0) return fromLanes;
@@ -160,10 +153,8 @@ export default function GanttView({
     return Math.max(fromLanes, Math.max(0, available));
   }, [lanes, viewportH]);
 
-  /** How many lane rows to draw so guides cover the full stretched body. */
   const visualLanes = Math.max(lanes, Math.floor(Math.max(0, bodyHeight - 8) / LANE_HEIGHT));
 
-  // Measure scroll viewport so columns fill width and the grid body fills height.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -181,7 +172,6 @@ export default function GanttView({
     return () => ro.disconnect();
   }, [tareas.length]);
 
-  /** Apply free zoom centered on the cursor (or chart center). Stable callback via colWRef. */
   const applyFreeZoom = useCallback((nextColW: number, clientX?: number) => {
     const el = scrollRef.current;
     const current = colWRef.current;
@@ -202,7 +192,6 @@ export default function GanttView({
     setZoom(zoomLevelFromColW(clamped));
   }, []);
 
-  // After free zoom, keep the day under the cursor fixed.
   useEffect(() => {
     const anchor = zoomAnchorRef.current;
     const el = scrollRef.current;
@@ -213,7 +202,6 @@ export default function GanttView({
     el.scrollLeft = Math.max(0, Math.min(nextScroll, el.scrollWidth - el.clientWidth));
   }, [colW]);
 
-  // Ctrl/Meta + mouse wheel → free zoom (non-passive so we can block browser/Electron page zoom).
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -224,7 +212,6 @@ export default function GanttView({
       e.stopPropagation();
 
       const raw = e.deltaY;
-      // 0 = pixel, 1 = line, 2 = page
       const steps = e.deltaMode === 1 ? raw : e.deltaMode === 2 ? Math.sign(raw) * 3 : raw / 40;
       const magnitude = Math.max(COL_W_WHEEL_STEP, Math.min(14, Math.abs(steps) * COL_W_WHEEL_STEP));
       const delta = -Math.sign(steps || raw) * magnitude;
@@ -260,11 +247,6 @@ export default function GanttView({
     [colW, days],
   );
 
-  /**
-   * Initial / "Hoy" horizontal scroll.
-   * Prefer bringing task bars into view (otherwise a task on e.g. jul. 22 is
-   * off-screen when the viewport is centered only on today).
-   */
   const scrollChartIntoFocus = useCallback(
     (preferToday: boolean) => {
       const el = scrollRef.current;
@@ -286,10 +268,8 @@ export default function GanttView({
         const maxEnd = Math.min(days.length - 1, Math.max(...barIndexes.map((b) => b.e)));
         const spanPx = (maxEnd - minStart + 1) * colW;
         if (spanPx <= el.clientWidth * 0.85) {
-          // All bars fit: pad a couple of days before the first bar
           scrollLeft = minStart * colW - Math.min(colW * 2, el.clientWidth * 0.15);
         } else {
-          // Show from the first bar (overdue / earliest)
           scrollLeft = minStart * colW - colW;
         }
       } else if (todayIdx >= 0) {
@@ -303,8 +283,6 @@ export default function GanttView({
     [bars, colW, days, rangeStart],
   );
 
-  // Scroll once when the chart is measured so tasks are not left off-screen.
-  // Wait for viewportW > 0 (ResizeObserver) so colW/scrollWidth are final.
   useEffect(() => {
     if (didScrollToday.current) return;
     if (days.length === 0 || colW <= 0 || viewportW <= 0) return;
@@ -394,7 +372,6 @@ export default function GanttView({
       if (!drag || drag.id !== bar.tarea.id) return;
 
       if (!drag.moved) {
-        // Resize handles never open edit on plain click
         if (drag.mode === 'move') onEditTask?.(bar.tarea);
         return;
       }
@@ -430,7 +407,6 @@ export default function GanttView({
   const goToday = () => {
     setRangeOffset(0);
     didScrollToday.current = true;
-    // After range resets, scroll to today on next paint
     requestAnimationFrame(() => scrollChartIntoFocus(true));
   };
 
@@ -708,14 +684,12 @@ export default function GanttView({
               const end = preview?.end ?? bar.end;
               const startIdx = dayIndex(start);
               const endIdx = dayIndex(end);
-              // Clip to visible window
               if (endIdx < 0 || startIdx >= days.length) return null;
               const leftIdx = Math.max(0, startIdx);
               const rightIdx = Math.min(days.length - 1, endIdx);
               const spanDays = rightIdx - leftIdx + 1;
               const durationDays = diffDaysIso(start, end) + 1;
               const isSingleDay = durationDays <= 1;
-              // Marker only — never grows to fit a title. Single-day = compact chip; multi-day = range strip.
               const width = isSingleDay
                 ? 28
                 : Math.max(colW - 8, spanDays * colW - 8);
@@ -728,7 +702,6 @@ export default function GanttView({
               const isActive = Boolean(preview);
               const isHovered = hoveredBarId === bar.tarea.id || isActive;
               const showHandles = isHovered || isActive;
-              // Title lives only in the external label (never a child of the bar).
               const labelGap = 12;
               const labelMaxW = Math.max(160, colW * 4);
               const spaceRight = gridWidth - (left + width + labelGap);

@@ -1,6 +1,3 @@
-/**
- * Contrato del transporte HTTP de Google: timeout, retry transitorio y cancelación.
- */
 
 function assert(condition, message) {
   if (!condition) {
@@ -26,7 +23,6 @@ async function main() {
   const originalFetch = global.fetch;
 
   try {
-    // RED: el wrapper debe propagar una señal con timeout y cancelar el fetch.
     let aborted = false;
     global.fetch = async (_url, options = {}) => {
       assert(options.signal, 'fetch recibe una señal de cancelación');
@@ -49,7 +45,6 @@ async function main() {
     assert(timeoutError?.name === 'TimeoutError', 'timeout devuelve un error identificable');
     assert(aborted, 'timeout aborta el fetch subyacente');
 
-    // GET reintenta 5xx y finalmente devuelve la respuesta exitosa.
     let calls = 0;
     global.fetch = async () => {
       calls += 1;
@@ -63,7 +58,6 @@ async function main() {
     assert(recovered.status === 200, 'GET recupera después de un 5xx transitorio');
     assert(calls === 3, 'GET respeta el máximo de retries configurado');
 
-    // Retry-After debe prevalecer sobre el backoff local.
     calls = 0;
     const startedAt = Date.now();
     global.fetch = async () => {
@@ -78,7 +72,6 @@ async function main() {
     assert(rateLimited.status === 200, 'GET reintenta después de un 429');
     assert(Date.now() - startedAt < 90, 'Retry-After evita esperar el backoff innecesario');
 
-    // POST no se reintenta automáticamente para evitar duplicar escrituras.
     calls = 0;
     global.fetch = async () => {
       calls += 1;

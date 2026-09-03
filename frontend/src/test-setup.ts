@@ -1,14 +1,15 @@
 import '@testing-library/jest-dom';
 import { cleanup } from '@testing-library/react';
 import { afterEach } from 'vitest';
+import i18n from './i18n';
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
   if (typeof localStorage !== 'undefined') localStorage.clear();
   if (typeof sessionStorage !== 'undefined') sessionStorage.clear();
+  await i18n.changeLanguage('es');
 });
 
-// jsdom does not implement ResizeObserver (used by virtualized lists/grids).
 if (typeof globalThis.ResizeObserver !== 'function') {
   class ResizeObserverStub {
     callback: ResizeObserverCallback;
@@ -28,7 +29,6 @@ if (typeof globalThis.ResizeObserver !== 'function') {
   globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
 }
 
-// jsdom does not implement matchMedia; EspaciosWelcome / LoginScreen need it.
 if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
@@ -54,7 +54,6 @@ const defaultTheme = {
   error: '#EB001B', warning: '#F79E1B', success: '#76b900', orange: '#8B93FF',
 };
 
-// Mock electronAPI for tests
 if (typeof window !== 'undefined') {
   Object.defineProperty(window, 'electronAPI', {
   value: {
@@ -62,7 +61,6 @@ if (typeof window !== 'undefined') {
       if (method === 'version') return { version: '0.10.6' };
       if (method === 'formats') return { formats: ['JPEG', 'PNG', 'WEBP'] };
       if (method === 'formatos_list') return { formats: [] };
-      if (method === 'db_records') return { records: [], fields: ['codigo'] };
       if (method === 'db_fields') return { fields: [{ name: 'codigo', type: 'string', required: true, unique: false }] };
       if (method === 'theme_get') return defaultTheme;
       if (method === 'theme_presets') return { presets: ['Precision Linear'] };
@@ -83,7 +81,6 @@ if (typeof window !== 'undefined') {
 });
 }
 
-// Mock Vite env vars for Supabase tests
 Object.defineProperty(import.meta, 'env', {
   value: {
     ...import.meta.env,

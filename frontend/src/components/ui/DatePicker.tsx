@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type 
 import { createPortal } from 'react-dom';
 import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { isSameDate, monthStart, parseIsoDateLocal, toIsoDateLocal } from '../../utils/dates';
 
 export interface DatePickerProps {
   value: string;
@@ -36,21 +37,8 @@ type PopupPosition = {
   width: number;
 };
 
-function toIsoDateLocal(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function parseIsoDate(value: string): Date | null {
-  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  const parsed = new Date(`${value}T00:00:00`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
 function formatDisplayDate(value: string, placeholder: string): string {
-  const parsed = parseIsoDate(value);
+  const parsed = parseIsoDateLocal(value);
   if (!parsed) return placeholder;
   return parsed.toLocaleDateString('es-ES', {
     day: '2-digit',
@@ -87,14 +75,6 @@ function getCalendarDays(month: Date): CalendarDay[] {
   return days;
 }
 
-function isSameDay(left: Date, right: Date): boolean {
-  return (
-    left.getDate() === right.getDate()
-    && left.getMonth() === right.getMonth()
-    && left.getFullYear() === right.getFullYear()
-  );
-}
-
 export default function DatePicker({
   value,
   onChange,
@@ -113,8 +93,8 @@ export default function DatePicker({
   const focusedDayRef = useRef<HTMLButtonElement>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState<PopupPosition | null>(null);
-  const [currentMonth, setCurrentMonth] = useState(() => parseIsoDate(value) ?? new Date());
-  const [focusedDate, setFocusedDate] = useState(() => parseIsoDate(value) ?? new Date());
+  const [currentMonth, setCurrentMonth] = useState(() => parseIsoDateLocal(value) ?? new Date());
+  const [focusedDate, setFocusedDate] = useState(() => parseIsoDateLocal(value) ?? new Date());
 
   const updatePosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -138,7 +118,7 @@ export default function DatePicker({
   }, []);
 
   useEffect(() => {
-    const parsed = parseIsoDate(value);
+    const parsed = parseIsoDateLocal(value);
     if (parsed) {
       setCurrentMonth(parsed);
       setFocusedDate(parsed);
@@ -191,7 +171,7 @@ export default function DatePicker({
     if (isOpen) focusedDayRef.current?.focus({ preventScroll: true });
   }, [focusedDate, isOpen]);
 
-  const selectedDate = parseIsoDate(value);
+  const selectedDate = parseIsoDateLocal(value);
   const today = new Date();
   const days = getCalendarDays(currentMonth);
   const triggerSizeClass =
@@ -211,7 +191,7 @@ export default function DatePicker({
   const openCalendar = () => {
     const nextDate = selectedDate ?? new Date();
     setFocusedDate(nextDate);
-    setCurrentMonth(new Date(nextDate.getFullYear(), nextDate.getMonth(), 1));
+    setCurrentMonth(monthStart(nextDate));
     setIsOpen(true);
   };
 
@@ -361,15 +341,15 @@ export default function DatePicker({
 
             <div className="app-date-picker-days">
               {days.map(({ date, outside }) => {
-                const selected = selectedDate ? isSameDay(date, selectedDate) : false;
-                const isToday = isSameDay(date, today);
+                const selected = selectedDate ? isSameDate(date, selectedDate) : false;
+                const isToday = isSameDate(date, today);
 
                 return (
                   <button
                     key={`${date.toISOString()}-${outside ? 'outside' : 'inside'}`}
                     type="button"
-                    ref={isSameDay(date, focusedDate) ? focusedDayRef : undefined}
-                    tabIndex={isSameDay(date, focusedDate) ? 0 : -1}
+                    ref={isSameDate(date, focusedDate) ? focusedDayRef : undefined}
+                    tabIndex={isSameDate(date, focusedDate) ? 0 : -1}
                     aria-current={isToday ? 'date' : undefined}
                     aria-label={date.toLocaleDateString('es-ES', { dateStyle: 'full' })}
                     onKeyDown={(event) => handleDayKeyDown(event, date)}

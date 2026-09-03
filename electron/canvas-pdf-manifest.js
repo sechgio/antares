@@ -29,7 +29,6 @@ async function embedCanvasManifest(pdfBytes, manifestB64) {
     throw new Error('PDF requerido para adjuntar el manifiesto');
   }
   const manifest = decodeManifest(manifestB64);
-  // Keep pdf-lib out of Electron startup and load it only for this opt-in path.
   const { PDFDocument } = await import('pdf-lib');
   const source = Buffer.from(pdfBytes);
   const pdf = await PDFDocument.load(source, { updateMetadata: false });

@@ -23,7 +23,6 @@ const PLACEMENT_CLASS: Record<Placement, string> = {
   left: 'right-full top-1/2 mr-2 -translate-y-1/2',
 };
 
-/** Caret points toward the trigger (opposite of tooltip placement). Needs w-0 h-0 for CSS triangle. */
 const CARET_CLASS: Record<Placement, string> = {
   top: 'pointer-events-none absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-[5px] border-transparent border-t-[#1e1e1e]',
   bottom:
@@ -36,8 +35,6 @@ const CARET_CLASS: Record<Placement, string> = {
 const SURFACE: Record<TooltipVariant, string> = {
   default:
     'pointer-events-none z-[11000] flex items-center gap-2 whitespace-nowrap rounded-md border border-[var(--border-medium)] bg-[var(--bg-input)] px-2.5 py-1.5 text-xs text-[var(--text-secondary)] shadow-sm',
-  // No `relative` here — it fights `fixed` via twMerge and turns the portal into a full-width bottom bar.
-  // `fixed`/`absolute` already create a containing block for the caret.
   dark:
     'pointer-events-none z-[11000] flex items-center gap-2 whitespace-nowrap rounded-[6px] bg-[#1e1e1e] px-2 py-[5px] text-[11px] font-semibold leading-none text-white shadow-[0_2px_10px_rgba(0,0,0,0.28)]',
 };

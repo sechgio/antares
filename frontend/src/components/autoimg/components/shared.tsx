@@ -120,7 +120,6 @@ export function EstadoBadge({ estado }: { estado: string }) {
   );
 }
 
-/** Three-frame image presence indicator (slot 1–3). */
 export function ImgSlot({ value }: { value: string }) {
   const ok = value === '✅' || value === '1' || value?.toLowerCase() === 'true';
   return (

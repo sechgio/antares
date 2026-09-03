@@ -12,7 +12,7 @@ describe('canvasDiff', () => {
 
   it('correctly tracks layer position changes without copying value property', () => {
     const doc1 = createEmptyDocument('Test');
-    const largeImageValue = 'data:image/png;base64,' + 'A'.repeat(1000000); // 1MB string
+    const largeImageValue = 'data:image/png;base64,' + 'A'.repeat(1000000);
     const imageLayer: CanvasLayer = {
       id: newId(),
       type: 'image',
@@ -28,7 +28,6 @@ describe('canvasDiff', () => {
     };
     doc1.layers.push(imageLayer);
 
-    // doc2 moves imageLayer by 10mm
     const doc2: CanvasDocument = {
       ...doc1,
       layers: doc1.layers.map((l) =>
@@ -41,7 +40,6 @@ describe('canvasDiff', () => {
     const redoDiff = computeDocumentDiff(doc1, doc2);
     const undoDiff = computeDocumentDiff(doc2, doc1);
 
-    // The large value string MUST NOT be in modifiedLayers patch
     expect(redoDiff.modifiedLayers).toHaveLength(1);
     expect(redoDiff.modifiedLayers![0].changes.value).toBeUndefined();
     expect(redoDiff.modifiedLayers![0].changes.cssVars).toEqual({
@@ -51,15 +49,12 @@ describe('canvasDiff', () => {
       '--translate-y': '0mm',
     });
 
-    // Check size of diff serialization is tiny (< 500 bytes vs 1MB)
     const jsonSize = JSON.stringify(redoDiff).length;
     expect(jsonSize).toBeLessThan(500);
 
-    // Applying redoDiff to doc1 produces doc2
     const restoredDoc2 = applyDocumentDiff(doc1, redoDiff);
     expect(restoredDoc2).toEqual(doc2);
 
-    // Applying undoDiff to doc2 produces doc1
     const restoredDoc1 = applyDocumentDiff(doc2, undoDiff);
     expect(restoredDoc1).toEqual(doc1);
   });

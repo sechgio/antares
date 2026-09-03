@@ -1,4 +1,3 @@
-"""Shared persistence layer: SQLite connection pool and repository base."""
 from __future__ import annotations
 
 import contextlib
@@ -12,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 
 class _ReadWriteLock:
-    """Lock reentrante para publicar configuración y esquema como una unidad."""
 
     def __init__(self) -> None:
         self._condition = threading.Condition(threading.RLock())
@@ -87,12 +85,6 @@ _db_read_conn_path: str | None = None
 
 
 def _apply_pragmas(conn: sqlite3.Connection) -> None:
-    """Shared performance pragmas for write and read pools.
-
-    Defaults favour a smaller RSS footprint: 4 MiB page cache, 16 MiB mmap, and
-    temp_store=FILE. Set ANTARES_SQLITE_TEMP_STORE=MEMORY to keep temp tables in
-    RAM when a machine has headroom and large IN-lookup sorts dominate.
-    """
     temp_store = os.environ.get("ANTARES_SQLITE_TEMP_STORE", "FILE").strip().upper()
     if temp_store not in {"FILE", "MEMORY"}:
         temp_store = "FILE"
@@ -107,10 +99,6 @@ def _apply_pragmas(conn: sqlite3.Connection) -> None:
 
 
 def get_connection(db_path: Path) -> sqlite3.Connection:
-    """Return a persistent WAL-mode connection (thread-safe via lock).
-
-    Reconnects if db_path changes (e.g. during tests).
-    """
     global _db_conn, _db_conn_path, _db_read_conn, _db_read_conn_path
     with _db_lock:
         current_path = str(db_path)
@@ -118,7 +106,6 @@ def get_connection(db_path: Path) -> sqlite3.Connection:
             if _db_conn is not None:
                 with contextlib.suppress(Exception):
                     _db_conn.close()
-            # Path change invalidates the read pool too (same file, two handles).
             if _db_read_conn is not None:
                 with contextlib.suppress(Exception):
                     _db_read_conn.close()
@@ -132,19 +119,6 @@ def get_connection(db_path: Path) -> sqlite3.Connection:
 
 
 def get_read_connection(db_path: Path) -> sqlite3.Connection:
-    """Return a pooled read-only connection for SELECT paths.
-
-    WAL allows many concurrent readers, so the read pool is guarded by its own
-    ``_db_read_lock`` (never by the write ``_db_lock``): reads from this pool
-    no longer serialize behind writers or behind other reads. The connection
-    lifecycle (create/close/reconnect) is still protected by ``_db_lock``.
-
-    Always returns the dedicated read handle: if the DB file does not exist
-    yet (mode=ro cannot create the file), the file is created through the
-    write pool first. If the read-only connect itself fails, a second
-    read/write handle to the same file is used instead — never the shared
-    write connection, which would need the write lock to be touched safely.
-    """
     global _db_read_conn, _db_read_conn_path
     with _db_lock:
         current_path = str(db_path)
@@ -153,7 +127,6 @@ def get_read_connection(db_path: Path) -> sqlite3.Connection:
                 with contextlib.suppress(Exception):
                     _db_read_conn.close()
             if not db_path.exists():
-                # Create the file through the write pool (mode=ro cannot create).
                 get_connection(db_path)
             uri = db_path.resolve().as_uri()
             uri = f"{uri}?mode=ro" if "?" not in uri else f"{uri}&mode=ro"
@@ -184,7 +157,6 @@ def get_read_connection(db_path: Path) -> sqlite3.Connection:
 
 
 def close_connection() -> None:
-    """Close the pooled write and read connections (call on shutdown)."""
     global _db_conn, _db_conn_path, _db_read_conn, _db_read_conn_path
     with _db_lock:
         if _db_conn is not None:

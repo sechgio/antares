@@ -1,10 +1,3 @@
-/**
- * CanvasView lifecycle tests (plan 010).
- *
- * Mocks heavy editor chrome (DesignStage, RightPanel, …) so we can assert
- * save-on-switch, history debounce, and sync conflict without mounting Artboard.
- * LeftSidebar + TopBar + SyncConflictBar stay real for the UI paths under test.
- */
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -173,7 +166,6 @@ describe('CanvasView lifecycle', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('mock-design-stage')).toBeTruthy();
     });
-    // Bootstrap finished (loading veil gone / stage visible).
     await waitFor(() => {
       expect(api.canvasList).toHaveBeenCalled();
     });
@@ -279,7 +271,6 @@ describe('CanvasView lifecycle', () => {
     });
 
     await renderReady();
-    // Bootstrap may have called get for A — clear order after ready.
     callOrder.length = 0;
     vi.mocked(api.canvasSave).mockClear();
     vi.mocked(api.canvasGet).mockClear();
@@ -380,7 +371,6 @@ describe('CanvasView lifecycle', () => {
 
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 
-    // Add a page → past grows (discrete history entry).
     fireEvent.click(screen.getByLabelText('Añadir página'));
 
     await act(async () => {
@@ -417,7 +407,6 @@ describe('CanvasView lifecycle', () => {
       remoteUpdatedAt: remoteDoc.updatedAt!,
     };
 
-    // Bootstrap sync skips; later focus sync returns conflict once.
     let syncCalls = 0;
     syncCanvasDocuments.mockImplementation(async () => {
       syncCalls += 1;
@@ -474,7 +463,6 @@ describe('CanvasView lifecycle', () => {
       { forceResurrect: true },
     );
 
-    // Same remote ts → dismissed; bar must not reappear.
     await act(async () => {
       window.dispatchEvent(new Event('focus'));
     });
@@ -483,7 +471,6 @@ describe('CanvasView lifecycle', () => {
     });
     expect(screen.queryByTestId('sync-conflict-bar')).toBeNull();
 
-    // Newer remote → bar again; use-remote persists.
     const newer = {
       ...conflict,
       remoteUpdatedAt: '2026-07-31T13:00:00.000Z',
@@ -552,7 +539,6 @@ describe('CanvasView lifecycle', () => {
 
     vi.useFakeTimers();
     try {
-      // Add a page → discrete history edit marks the doc dirty.
       fireEvent.click(screen.getByLabelText('Añadir página'));
 
       await act(async () => {
@@ -560,7 +546,6 @@ describe('CanvasView lifecycle', () => {
       });
       expect(api.canvasSave).not.toHaveBeenCalled();
 
-      // Cross the debounce window; then flush onSave's async chain.
       await act(async () => {
         vi.advanceTimersByTime(10);
         await Promise.resolve();
@@ -651,7 +636,6 @@ describe('CanvasView lifecycle', () => {
       });
       expect(api.canvasSave).toHaveBeenCalledTimes(1);
 
-      // Sin ediciones nuevas, un save fallido no debe armar reintentos.
       await act(async () => {
         vi.advanceTimersByTime(5000);
         await Promise.resolve();
@@ -705,7 +689,6 @@ describe('CanvasView lifecycle', () => {
     try {
       fireEvent.click(screen.getByLabelText('Añadir página'));
 
-      // Debounce del historial (500ms) → primera persistencia.
       await act(async () => {
         vi.advanceTimersByTime(500);
         await Promise.resolve();
@@ -713,7 +696,6 @@ describe('CanvasView lifecycle', () => {
       });
       expect(vi.mocked(api.canvasSaveHistory).mock.calls.length).toBeGreaterThanOrEqual(1);
 
-      // Autosave (1200ms) → onSave persiste las stacks y marca el sig.
       await act(async () => {
         vi.advanceTimersByTime(700);
         await Promise.resolve();
@@ -722,8 +704,6 @@ describe('CanvasView lifecycle', () => {
       expect(api.canvasSave).toHaveBeenCalled();
       const callsAfterSave = vi.mocked(api.canvasSaveHistory).mock.calls.length;
 
-      // Sin ediciones nuevas, el render post-save no debe disparar otra
-      // persistencia de historial (sig ya marcado por onSave).
       await act(async () => {
         vi.advanceTimersByTime(2000);
         await Promise.resolve();
@@ -771,7 +751,6 @@ describe('CanvasView lifecycle', () => {
     const addSpy = vi.spyOn(window, 'addEventListener');
     fireEvent.click(screen.getByLabelText('Añadir página'));
 
-    // Re-render flushes the effect that registers the beforeunload listener.
     await act(async () => {
       await Promise.resolve();
     });
@@ -866,8 +845,6 @@ describe('CanvasView lifecycle', () => {
 });
 
 describe('CanvasView shortcuts (F2, Ctrl+Shift+L/H) y punto dirty', () => {
-  // jsdom no implementa scrollIntoView (autoscroll de la sidebar al seleccionar).
-  // Se define como propiedad configurable para no chocar con setup que ya la fije.
   beforeAll(() => {
     Object.defineProperty(Element.prototype, 'scrollIntoView', {
       value: function scrollIntoView() {},

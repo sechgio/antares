@@ -15,7 +15,6 @@ describe('PreviewViewport', () => {
     expect(screen.getByText('85%')).toBeTruthy();
 
     const stage = container.querySelector('[data-testid="generate-preview-stage"]') as HTMLElement;
-    // Crisp zoom: Chromium `zoom` re-rasterizes; never GPU `scale()` a 1× bitmap.
     expect(stage.style.transform).not.toContain('scale(');
     expect(stage.style.willChange || '').toBe('');
     expect(String((stage.style as CSSStyleDeclaration & { zoom?: string }).zoom)).toBe('0.85');
@@ -25,7 +24,7 @@ describe('PreviewViewport', () => {
     const { container } = render(
       <PreviewViewport html="<html><body>ok</body></html>" widthPx={200} heightPx={280} />,
     );
-    fireEvent.click(screen.getByLabelText('Acercar')); // 0.95
+    fireEvent.click(screen.getByLabelText('Acercar'));
     const viewport = screen.getByTestId('generate-preview-viewport');
     fireEvent.pointerDown(viewport, { button: 0, clientX: 10, clientY: 10 });
     act(() => {
@@ -35,7 +34,6 @@ describe('PreviewViewport', () => {
     const stage = container.querySelector('[data-testid="generate-preview-stage"]') as HTMLElement;
     const zoom = Number((stage.style as CSSStyleDeclaration & { zoom?: string }).zoom);
     expect(zoom).toBeCloseTo(0.95, 5);
-    // translate uses pan/zoom so visual offset stays in screen px after CSS zoom
     expect(stage.style.transform).toMatch(/translate\(/);
     expect(stage.style.transform).not.toMatch(/scale\(/);
   });

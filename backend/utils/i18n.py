@@ -1,4 +1,3 @@
-"""Simple i18n module for backend translations."""
 
 from __future__ import annotations
 
@@ -35,11 +34,9 @@ def set_locale(locale: str) -> None:
         _translations[locale] = _load(locale)
 
 
-# Load default locale on import so t() works immediately
 set_locale("es")
 
 
 def t(key: str, **kwargs: Any) -> str:
-    """Translate a key with optional format arguments."""
     text = _translations.get(_current_locale, {}).get(key, key)
     return text.format(**kwargs) if kwargs else text

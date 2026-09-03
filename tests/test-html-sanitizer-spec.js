@@ -1,8 +1,3 @@
-// Parity contract test: every case in shared/html-sanitizer-spec.json must
-// hold for the JS adapters (sanitizeHtmlForPdf + sanitizeHtmlForPreview).
-// The same corpus runs against the Python adapter in
-// tests/test_html_sanitizer_spec.py — drift between the twins becomes a
-// failing build.
 const { sanitizeHtmlForPdf, sanitizeHtmlForPreview } = require('../shared/html-sanitizer');
 const spec = require('../shared/html-sanitizer-spec.json');
 

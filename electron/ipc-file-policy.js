@@ -1,8 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 
-// These legacy backend handlers use `path` for a destination. All other
-// absolute read paths must already be approved by a native file dialog.
 const RAW_OUTPUT_PATH_METHODS = new Set([
   'db_export',
   'db_template',
@@ -11,14 +9,10 @@ const RAW_OUTPUT_PATH_METHODS = new Set([
 ]);
 const RAW_OUTPUT_PATH_KEYS = new Set(['path']);
 
-// Read paths are declared at the IPC boundary instead of inferred from every
-// arbitrary object key. This keeps flexible document payloads intact while
-// making filesystem reads explicit and consistently resolvable.
 const READ_FILE_TOKEN_SCHEMAS = new Map([
   ['process_start', [['files', '*'], ['mapping_path']]],
   ['preview', [['files', '*'], ['mapping_path']]],
   ['is_video', [['path']]],
-  ['db_detect_key_column', [['files', '*']]],
   ['db_import', [['path']]],
   ['db_parse_mapping', [['path'], ['files', '*']]],
   ['db_validate_mapping', [['files', '*']]],
@@ -138,8 +132,6 @@ function maybeResolveFileTokens(params, win, method) {
     ? RAW_OUTPUT_PATH_KEYS
     : undefined;
   _assertNoRawAbsolutePaths(params, {
-    // Native dialogs already approve their returned paths. Keep accepting
-    // those paths while callers migrate to staged read tokens.
     allowRegisteredReadPaths: true,
     allowRawAbsolutePathKeys,
   });
@@ -177,8 +169,6 @@ function maybeResolveFileTokens(params, win, method) {
     );
   }
 
-  // Preserve the spreadsheet/result-file internal contract: handlers consume
-  // a real path through this private field, while the renderer sees a token.
   for (const key of ['file_token', 'result_file_token', 'cache_token']) {
     const value = params[key];
     if (!READ_TOKEN_RE.test(String(value || ''))) continue;
@@ -188,7 +178,6 @@ function maybeResolveFileTokens(params, win, method) {
     if (cap.name) next._resolved_file_token_name = cap.name;
   }
 
-  // localImagePaths may carry read tokens regardless of the method schema.
   const rawLocal = params.localImagePaths;
   if (rawLocal && typeof rawLocal === 'object' && !Array.isArray(rawLocal)) {
     const resolvedLocal = { ...rawLocal };
@@ -208,7 +197,6 @@ function maybeResolveFileTokens(params, win, method) {
     }
   }
 
-  // Legacy token fields stay supported even when a method has no schema yet.
   let legacyMutated = false;
   for (const key of ['excelPath', 'fileToken', 'excel_file_token', 'spreadsheet_token']) {
     const value = next && typeof next === 'object' ? next[key] : undefined;
@@ -295,16 +283,11 @@ function validateAndResolveWriteParams(params, win, method) {
     || params.output_folder
     || params.outputFolder
     || params.path;
-  // Token format is `antares-write_<uuid>` (file-capabilities._newToken uses an
-  // underscore separator). Match the exact prefix so a legitimate folder named
-  // e.g. `antares-write-notes` is not mistaken for a token.
   if (typeof outRaw === 'string' && outRaw.startsWith('antares-write_')) {
     const { resolveCapability } = require('./file-capabilities');
     const webContentsId = win && win.webContents ? win.webContents.id : null;
     try {
       const cap = resolveCapability(outRaw, 'write', webContentsId);
-      // Rewrite the raw field the backend reads (outputDir stays a real path
-      // for handlers that consume it directly).
       const next = { ...params, _resolved_output_path: cap.path, _write_token: outRaw };
       if ('outputDir' in params) next.outputDir = cap.path;
       if ('output_dir' in params) next.output_dir = cap.path;
@@ -317,7 +300,6 @@ function validateAndResolveWriteParams(params, win, method) {
     const { isPathInside, isAllowedReadPath } = require('./path-allowlist');
     try {
       const resolved = path.resolve(outRaw);
-      // Reject if the file itself is a symlink/reparse point.
       if (fs.existsSync(resolved) && fs.lstatSync(resolved).isSymbolicLink()) {
         throw new Error('symlink no permitido en ruta de salida');
       }
@@ -335,7 +317,6 @@ function validateAndResolveWriteParams(params, win, method) {
         }
       } catch { /* Electron unavailable in unit tests */ }
       if (!allowed) {
-        // Folders chosen through native dialogs are registered write roots.
         const { isUnderAllowedWriteRoot } = require('./dialog-handlers');
         if (isUnderAllowedWriteRoot(dir)) allowed = true;
       }
@@ -344,7 +325,6 @@ function validateAndResolveWriteParams(params, win, method) {
       }
       const real = fs.realpathSync(dir);
       if (real !== dir) throw new Error('symlink no permitido en ruta de salida');
-      // Also verify the full resolved path when it already exists.
       if (fs.existsSync(resolved) && fs.realpathSync(resolved) !== resolved) {
         throw new Error('symlink no permitido en ruta de salida');
       }

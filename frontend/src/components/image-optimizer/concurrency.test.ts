@@ -100,7 +100,6 @@ describe('processImageItem passthrough', () => {
   });
 
   it('falls back to main path when worker unavailable and ops enabled', async () => {
-    // In jsdom Image/canvas will fail; ensure we surface an Error rather than hanging.
     const file = new File([new Uint8Array([1, 2, 3])], 'a.jpg', { type: 'image/jpeg' });
     const item: ImageItem = {
       id: '2',
@@ -130,7 +129,6 @@ describe('processImageItem passthrough', () => {
       compression: { ...DEFAULT_BATCH_SETTINGS.compression, useWebWorker: true },
     };
 
-    // Stub Image so load fails quickly with our pipeline error
     const OriginalImage = globalThis.Image;
     class FailingImage {
       onload: (() => void) | null = null;

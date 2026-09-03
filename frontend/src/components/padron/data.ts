@@ -1,6 +1,3 @@
-/**
- * Tipos y datos para el Generador de Padrones
- */
 
 export type Orientation = 'landscape' | 'portrait';
 export type OutputFormat = 'service-interruption' | 'volante-lurigancho' | 'volanteo-lurigancho-v2' | 'water-cut-notice';
@@ -21,7 +18,6 @@ export interface HeaderField {
   shortLabel?: string;
   required: boolean;
   wide?: boolean;
-  /** Full-width stacked row (label above control) inside an inset group */
   stacked?: boolean;
 }
 

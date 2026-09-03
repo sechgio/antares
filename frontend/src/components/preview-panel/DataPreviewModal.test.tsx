@@ -2,7 +2,6 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect, beforeAll } from 'vitest';
 import DataPreviewModal from './DataPreviewModal';
 
-// jsdom lacks ResizeObserver
 class ResizeObserverMock {
   observe() {}
   unobserve() {}

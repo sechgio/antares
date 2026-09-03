@@ -591,10 +591,8 @@ export default function ImageOptimizer() {
     setIsProcessing(true);
     setProcessingProgress({ current: 0, total: targets.length });
 
-    // Marcar todos como procesando para evitar condition de carrera con UI reactiva
     commitItems((prev) => prev.map((item) => targets.some((t) => t.id === item.id) ? { ...item, status: 'processing', error: undefined } : item));
 
-    // Esperar el sig frame para dibujar
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     let completed = 0;
@@ -667,7 +665,6 @@ export default function ImageOptimizer() {
     if (!outcomes || signal.aborted) return;
     const successCount = outcomes.filter(Boolean).length;
 
-    // Save to history
     const errorCount = targets.length - successCount;
     const settingsJson = JSON.stringify(settingsRef.current);
     saveFeatureHistory(

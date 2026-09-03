@@ -1,4 +1,3 @@
-"""Informes v2 handlers."""
 from __future__ import annotations
 
 import base64

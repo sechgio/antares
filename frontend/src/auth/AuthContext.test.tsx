@@ -54,7 +54,6 @@ function mockProfile(row: { display_name: string; is_admin: boolean; is_disabled
 
 describe('AuthProvider', () => {
   beforeEach(() => {
-    // Only clear call history, not implementations (vitest 4 clearAllMocks resets impls)
     (supabase.auth.getSession as any).mockClear();
     (supabase.auth.onAuthStateChange as any).mockClear();
     (supabase.auth.signInWithPassword as any).mockClear();
@@ -62,7 +61,6 @@ describe('AuthProvider', () => {
     (supabase.from as any).mockClear();
     (supabase.channel as any).mockClear();
     (supabase.removeChannel as any).mockClear();
-    // Ensure onAuthStateChange always returns a valid subscription object
     (supabase.auth.onAuthStateChange as any).mockImplementation(() => ({
       data: { subscription: { unsubscribe: vi.fn() } },
     }));
@@ -322,7 +320,6 @@ describe('AuthProvider', () => {
     }));
     (supabase.from as any).mockImplementation(fromSpy as any);
 
-    // Real supabase fires INITIAL_SESSION async after subscription (microtask)
     (supabase.auth.onAuthStateChange as any).mockImplementation((cb: any) => {
       queueMicrotask(() => cb('INITIAL_SESSION', session));
       return { data: { subscription: { unsubscribe: vi.fn() } } };
@@ -335,7 +332,6 @@ describe('AuthProvider', () => {
       expect(result.current.user?.email).toBe('a@b.com');
     });
 
-    // Allow any stray second fetch to settle
     await new Promise((r) => setTimeout(r, 20));
 
     expect(fromSpy).toHaveBeenCalledTimes(1);

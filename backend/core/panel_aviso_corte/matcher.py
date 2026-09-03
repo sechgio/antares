@@ -1,4 +1,3 @@
-"""Estrategias de emparejamiento de imágenes a filas y helpers de normalización."""
 
 from __future__ import annotations
 
@@ -21,130 +20,39 @@ from .models import (
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-# Patrones precompilados usados por la pipeline de normalización de columnas
 
-#: Conjunto de caracteres permitidos en el nombre de columna antes del
-#: ``casefold`` final. Incluye dígitos, ASCII alfabético en ambos casings
-#: (el casing se normaliza al final), espacio, guion bajo y guion.
 _ALLOWED_CHARS_RE: re.Pattern[str] = re.compile(r"[^0-9A-Za-z _\-]")
 
-#: Whitespace interno (para colapsar a un único espacio).
 _WHITESPACE_RE: re.Pattern[str] = re.compile(r"\s+")
 
-#: Date normalization patterns (module-level to avoid per-call recompilation).
 _ISO_DATE_RE: re.Pattern[str] = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _ISO_DATETIME_RE: re.Pattern[str] = re.compile(r"^(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}")
 _DD_MM_YYYY_RE: re.Pattern[str] = re.compile(r"^(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})$")
 
 
-# Helpers de normalización (tarea 5.1)
-
-
 def _strip_diacritics(s: str) -> str:
-    """Aplica NFKD y descarta cualquier *combining mark*.
-
-    Helper privado compartido por :func:`_normalize` y
-    :func:`_normalize_column_name`. Aislarlo evita duplicar la misma
-    secuencia NFKD + filtro en dos funciones y garantiza que ambas
-    pipelines partan exactamente de los mismos primitivos Unicode.
-    """
     decomposed = unicodedata.normalize("NFKD", s)
     return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
 
 
 def _normalize(s: str) -> str:
-    """Normaliza una cadena para comparaciones insensibles a tildes y mayúsculas.
-
-    Pipeline determinista:
-
-    1. Coaccionar a ``str`` si el caller pasa algo distinto (defensivo;
-       los callers suelen haber coaccionado antes).
-    2. ``unicodedata.normalize('NFKD', s)`` — descompone ``á`` → ``a`` + ◌́,
-       ``ﬁ`` → ``f`` + ``i``, etc.
-    3. Descartar cualquier carácter *combining* (``unicodedata.combining``
-       ≠ 0): elimina los diacríticos sueltos que deja el paso anterior.
-    4. ``strip`` inicial: elimina espacios accidentales al inicio o fin.
-    5. ``casefold`` final: equivalente a ``lower()`` pero más estricto para
-       texto Unicode (``ß`` → ``ss``, etc.).
-
-    **Preserva** espacios internos y símbolos. Úsese para comparar nombres de
-    archivo o valores de celda donde los separadores son significativos.
-    Para normalizar cabeceras de Excel use :func:`_normalize_column_name`.
-
-    Función total: nunca lanza. Una entrada ``None`` se trata como ``""``.
-
-    Ejemplos::
-
-        >>> _normalize("Dirección")
-        'direccion'
-        >>> _normalize("  AV. Principal 123  ")
-        'av. principal 123'
-        >>> _normalize("Niño.JPG")
-        'nino.jpg'
-
-    :param s: cadena a normalizar.
-    :returns: cadena normalizada, lista para comparación ``==`` /
-        ``startswith`` / ``in``.
-    """
     if not isinstance(s, str):
         s = str(s) if s is not None else ""
     return _strip_diacritics(s.strip()).casefold()
 
 
 def _normalize_column_name(name: str) -> str:
-    """Normaliza un nombre de columna de Excel preservando la semántica histórica.
-
-    Pipeline (determinista), **idéntica byte-por-byte** a la que vivía
-    inline en el importer:
-
-    1. Coacción defensiva a ``str``.
-    2. ``NFKD`` + descarte de *combining marks* (via :func:`_strip_diacritics`).
-    3. ``strip`` + colapso de whitespace interno a un solo espacio.
-    4. Eliminación de todos los caracteres fuera de ``[0-9 A-Za-z _-]``
-       (paréntesis, dos puntos, comas, puntos, etc.).
-    5. Segundo colapso de whitespace por si la limpieza dejó espacios
-       dobles.
-    6. ``casefold`` **al final**.
-
-    El ``casefold`` se aplica tras la eliminación de símbolos para
-    mantener la compatibilidad exacta con la implementación previa: esto
-    significa, p. ej., que un carácter como ``ß`` (que no está en
-    ``[A-Za-z]``) se elimina antes de que ``casefold`` pueda expandirlo
-    a ``ss``. Cambiar este orden rompería el contrato con los tests
-    existentes del importer.
-
-    Función total: nunca lanza. Un nombre que se vuelve cadena vacía
-    tras el pipeline lo detecta el caller y es tratado como cabecera
-    inválida (Req 6.6).
-
-    Ejemplos::
-
-        >>> _normalize_column_name("Cuadrante Afectado")
-        'cuadrante afectado'
-        >>> _normalize_column_name("DIRECCIÓN")
-        'direccion'
-        >>> _normalize_column_name("  Fecha de Corte  ")
-        'fecha de corte'
-        >>> _normalize_column_name("Motivo (principal):")
-        'motivo principal'
-
-    :param name: nombre de columna original (tal como aparece en la
-        cabecera del Excel).
-    :returns: nombre normalizado, adecuado como clave estable de columna.
-    """
     if not isinstance(name, str):
         name = str(name) if name is not None else ""
 
     without_diacritics = _strip_diacritics(name)
     collapsed = _WHITESPACE_RE.sub(" ", without_diacritics).strip()
     cleaned = _ALLOWED_CHARS_RE.sub("", collapsed)
-    # Segundo colapso por si la limpieza dejó espacios dobles.
     cleaned = _WHITESPACE_RE.sub(" ", cleaned).strip()
     return cleaned.casefold()
 
 
 def _normalize_date_str(raw: str) -> str:
-    """Normaliza una cadena de fecha a ISO YYYY-MM-DD."""
     raw = raw.strip()
     if not raw:
         return ""
@@ -183,7 +91,6 @@ def match_regex(normalized_value: str, normalized_stem: str, compiled: re.Patter
 
 
 def compile_match_rule(rule: MatchRule) -> re.Pattern[str] | None:
-    """Pre-compila el patrón regex de una regla."""
     if rule.strategy != "regex":
         return None
     assert rule.regex_pattern is not None
@@ -207,10 +114,6 @@ def match_image_to_row(rule: MatchRule, cell_value: str, filename: str, compiled
     stem, _ = os.path.splitext(filename)
     normalized_stem = _normalize(stem)
 
-    # Una celda clave vacía (o sólo whitespace) no debe matchear ninguna imagen:
-    # bajo prefix/contains, startswith('') y '' in stem son siempre True, así que
-    # una fila sin clave capturaría todas las imágenes no asignadas y robaría
-    # fotos que pertenecen a filas posteriores.
     if not normalized_value:
         return False
 
@@ -324,10 +227,6 @@ def build_panels(
             assigned_images.add(img_name)
             all_entries.append((img_name, direccion, row_idx))
 
-    # Empaqueta MAX_IMAGES_PER_PANEL entradas por Panel. Por diseño (ver
-    # test_render_pdf_fixture_keeps_four_images_per_page) un batch puede cruzar
-    # filas para llenar la hoja A4 con 4 fotos; la metadata del encabezado
-    # (cuadrante/fecha/motivo) se toma de la primera fila del batch.
     global_img_number = 0
     for batch_start in range(0, len(all_entries), MAX_IMAGES_PER_PANEL):
         batch = all_entries[batch_start:batch_start + MAX_IMAGES_PER_PANEL]
@@ -352,11 +251,6 @@ def build_panels(
         )
         panels.append(panel)
 
-    # El summary se computa desde assigned_images (las imágenes que realmente
-    # terminaron en un panel), no desde el set de imágenes matcheadas: una
-    # imagen descartada por overflow que ninguna fila posterior reclamó no está
-    # en ningún panel, así que debe reportarse como unmatched — no como matched
-    # — o de lo contrario el conteo miente y la imagen desaparece silenciosamente.
     unmatched = [img for img in image_names if img not in assigned_images]
     summary = MatchSummary(
         total_rows=len(source.rows),

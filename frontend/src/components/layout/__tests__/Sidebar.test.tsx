@@ -212,7 +212,7 @@ describe('Sidebar', () => {
 
     const signOut = screen.getByTestId('sidebar-signout-button');
     expect(signOut).not.toHaveAttribute('title');
-    expect(screen.getAllByRole('tooltip').some((node) => node.textContent === 'auth.signOut')).toBe(true);
+    expect(screen.getAllByRole('tooltip').some((node) => node.textContent === 'Cerrar sesión')).toBe(true);
   });
 
   it('calls signOut from the bottom logout button', async () => {

@@ -76,8 +76,6 @@ export function useConversionFileRefs(files: readonly string[]) {
       if (hasStagingBridge) {
         throw new Error(`El archivo "${filePath}" necesita volver a cargarse para continuar.`);
       }
-      // Browser/unit-test fallback. Electron rejects raw paths at the boundary;
-      // desktop calls with the bridge always return a capability token.
       return filePath;
     });
   }, [fileObjects, fileTokens, hasStagingBridge]);

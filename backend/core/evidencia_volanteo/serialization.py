@@ -1,4 +1,3 @@
-"""Serialización round-trip para Evidencia Volanteo."""
 
 from __future__ import annotations
 

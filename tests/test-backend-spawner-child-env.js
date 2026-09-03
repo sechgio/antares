@@ -1,7 +1,3 @@
-/**
- * Regression: child env whitelist must still pass ANTARES_* and Windows/TLS
- * essentials that the Python backend reads (post-0.10.20 perf whitelist).
- */
 const path = require('path');
 
 let passed = 0;
@@ -20,7 +16,6 @@ function assert(condition, message) {
 function run() {
   console.log('Testing backend child env whitelist...\n');
 
-  // Isolate: stub backend-command so requiring spawner does not need Electron.
   const backendCommandPath = require.resolve('../electron/backend-command.js');
   require.cache[backendCommandPath] = {
     id: backendCommandPath,
@@ -50,7 +45,6 @@ function run() {
   process.env.SSL_CERT_FILE = '/tmp/cert.pem';
   process.env.PYTHONPATH = 'C:\\should-not-reach-frozen';
   process.env.VIRTUAL_ENV = 'C:\\venv-dev-only';
-  // A secret that must NOT leak into the child.
   process.env.UNRELATED_SECRET_TOKEN = 'should-not-appear';
 
   try {

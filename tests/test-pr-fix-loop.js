@@ -1,4 +1,3 @@
-// Smoke test: el fixer local conserva sus guardas y el workflow remoto solo diagnostica manualmente.
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
@@ -35,7 +34,6 @@ function run() {
   assert(content.includes('APPROVED'), 'script enforces APPROVED review');
   assert(content.includes('lint:fix') || content.includes('lint:fix'), 'script applies deterministic heuristics (ruff --fix)');
   assert(content.includes('invokeDroidFixer'), 'script has droid fallback for residual errors');
-  // Never delete code
   assert(/NO elimines/i.test(content) || /no elimines codigo/i.test(content), 'script instructs droid to never delete code');
 
   assert(fs.existsSync(workflowPath), '.github/workflows/pr-fix-loop.yml exists');

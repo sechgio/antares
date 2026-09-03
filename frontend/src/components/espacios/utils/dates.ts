@@ -1,15 +1,13 @@
+import { toIsoDateLocal } from '../../../utils/dates';
+
 export function toLocalDateString(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return toIsoDateLocal(date);
 }
 
 export function localTodayString(): string {
   return toLocalDateString(new Date());
 }
 
-/** Add whole calendar days to an ISO local date (YYYY-MM-DD). */
 export function addDaysToIsoDate(isoDate: string, days: number): string {
   const [year, month, day] = isoDate.split('-').map(Number);
   if (!year || !month || !day) return isoDate;
@@ -18,7 +16,6 @@ export function addDaysToIsoDate(isoDate: string, days: number): string {
   return toLocalDateString(date);
 }
 
-/** Signed day delta: negative = past, 0 = today, positive = future. */
 export function daysBetweenIsoDates(fromIso: string, toIso: string): number | null {
   const [fy, fm, fd] = fromIso.split('-').map(Number);
   const [ty, tm, td] = toIso.split('-').map(Number);
@@ -41,7 +38,6 @@ export function formatDisplayDate(isoDate: string | null): string {
   return DISPLAY_FORMATTER.format(new Date(year, month - 1, day));
 }
 
-/** Relative date labels like ClickUp: "Hoy", "Ayer", "Hace 3 días", "En 2 días". */
 export function formatRelativeDate(isoDate: string | null, today = localTodayString()): string {
   if (!isoDate) return '—';
   const [y, m, d] = isoDate.split('-').map(Number);

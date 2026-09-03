@@ -68,7 +68,6 @@ describe('imageBlobStore', () => {
 
     expect(imgLayer).toBeDefined();
     expect(imgLayer?.value).toBe(base64Data);
-    // Renderers fall back to the raw value, so a dataUrl is directly displayable.
     expect(getBlobUrl(imgLayer?.value)).toBe(base64Data);
   });
 
@@ -123,7 +122,6 @@ describe('imageBlobStore', () => {
 
     expect(imgLayer).toBeDefined();
     expect(imgLayer?.value).toMatch(/^data:/);
-    // Registered blob must not retain the dataUrl copy after serialize.
     expect(registered.dataUrl).toBeUndefined();
   });
 
@@ -310,9 +308,6 @@ describe('imageBlobStore', () => {
 
     const hydrated = await hydrateDocumentImages(serialized);
     for (const layer of hydrated.layers.filter((l) => l.type === 'image' || l.type === 'logo')) {
-      // Hydrate is now a startup fast-path: images stay as the persistent
-      // dataUrl (renderers fall back to the raw value) instead of being
-      // re-decoded to blob: on the main thread.
       expect(layer.value).toMatch(/^data:/);
     }
   });
@@ -369,9 +364,7 @@ describe('imageBlobStore', () => {
     expect(forEditor.name).toBe('Renamed');
     expect(forEditor.layers.find((l) => l.id === 'img')?.value).toBe(reg.url);
     expect(forEditor.layers.find((l) => l.id === 'logo')?.value).toBe(reg.blobId);
-    // Persisted copy still has data URLs for IPC/cloud.
     expect(saved.layers.find((l) => l.id === 'img')?.value).toMatch(/^data:/);
-    // Editor must not hold megabyte data: strings after save.
     const editorImg = forEditor.layers.find((l) => l.id === 'img')?.value ?? '';
     expect(editorImg.startsWith('data:')).toBe(false);
   });

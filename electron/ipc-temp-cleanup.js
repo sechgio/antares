@@ -1,7 +1,3 @@
-/**
- * Sweep ephemeral IPC temp dirs (PDF auto-out, spreadsheet spill JSON).
- * Files older than MAX_AGE_MS are deleted; best-effort, never throws to callers.
- */
 const fs = require('fs');
 const fsp = fs.promises;
 const os = require('os');
@@ -20,9 +16,6 @@ function isUnderDir(filePath, dir) {
   return resolved === root || resolved.startsWith(root + path.sep);
 }
 
-/**
- * Delete a spreadsheet spill JSON after a successful read (when under our temp dir).
- */
 async function cleanupSpreadsheetSpillFile(filePath) {
   if (typeof filePath !== 'string' || !filePath) return;
   const spillRoot = path.join(os.tmpdir(), 'antares-spreadsheet-results');
@@ -30,10 +23,6 @@ async function cleanupSpreadsheetSpillFile(filePath) {
   await fsp.rm(filePath, { force: true }).catch(() => {});
 }
 
-/**
- * Remove files (not dirs) older than MAX_AGE_MS from IPC temp folders.
- * @returns {Promise<number>} number of files removed
- */
 async function sweepIpcTempDirs(nowMs = Date.now()) {
   let removed = 0;
   for (const dir of ipcTempDirs()) {
@@ -53,16 +42,13 @@ async function sweepIpcTempDirs(nowMs = Date.now()) {
           removed += 1;
         }
       } catch {
-        /* ignore */
       }
     }
   }
-  // Opportunistic orphan canvas-asset GC (best-effort; never throws).
   try {
     const { gcOrphanCanvasAssets } = require('./canvas-assets');
     await gcOrphanCanvasAssets({ nowMs });
   } catch {
-    /* optional */
   }
   return removed;
 }

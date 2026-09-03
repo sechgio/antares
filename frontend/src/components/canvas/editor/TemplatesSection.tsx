@@ -9,9 +9,7 @@ import { resetPresetLabel, resolvePresetLabels, setPresetLabel } from '../ops/pr
 
 interface TemplatesSectionProps {
   onApplyPreset: (presetId: string) => void;
-  /** Crea un documento NUEVO con esta plantilla (si falta, solo aplica sobre el actual). */
   onNewFromPreset?: (presetId: string, label: string) => void;
-  /** Tooltip side — left panel uses right; right panel uses left. */
   tooltipPlacement?: 'left' | 'right';
 }
 
@@ -41,8 +39,6 @@ export default function TemplatesSection({
     });
   }, [presets]);
 
-  // Soft prefetch after paint so the list appears without blocking CanvasView evaluate.
-  // Skip in Vitest — pending dynamic imports after environment teardown are noisy false failures.
   useEffect(() => {
     if (import.meta.env.MODE === 'test') return;
     const ric = window.requestIdleCallback?.bind(window);
@@ -79,7 +75,6 @@ export default function TemplatesSection({
     setRenamingId(null);
   }, []);
 
-  /** Enter/Escape unmount the input and can fire blur — skip the duplicate commit/cancel. */
   const suppressBlurCommitRef = useRef(false);
 
   const handleResetLabel = useCallback((presetId: string, originalLabel: string) => {
@@ -89,7 +84,6 @@ export default function TemplatesSection({
       delete next[presetId];
       return next;
     });
-    // Also exit rename mode if this preset was being edited.
     if (renamingId === presetId) {
       setRenameDraft(originalLabel);
       setRenamingId(null);

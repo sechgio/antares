@@ -67,7 +67,6 @@ def test_conversion_prepares_work_incrementally(monkeypatch) -> None:
 
 
 def test_conversion_prefetches_next_chunk_while_heavy_runs(monkeypatch) -> None:
-    """Next chunk prepare (submit_light) must overlap the current chunk's heavy work."""
     first_heavy_started = threading.Event()
     release_heavy = threading.Event()
     prepare_during_heavy = threading.Event()
@@ -125,7 +124,6 @@ def test_conversion_prefetches_next_chunk_while_heavy_runs(monkeypatch) -> None:
     thread = threading.Thread(target=_run_job, daemon=True)
     thread.start()
     assert first_heavy_started.wait(timeout=5)
-    # Give submit_light a moment to run while heavy is blocked.
     assert prepare_during_heavy.wait(timeout=2), "expected next-chunk prepare while heavy still running"
     release_heavy.set()
     thread.join(timeout=5)
@@ -135,7 +133,6 @@ def test_conversion_prefetches_next_chunk_while_heavy_runs(monkeypatch) -> None:
 
 
 def test_conversion_cancel_discards_prefetched_chunk(monkeypatch, tmp_path) -> None:
-    """Cancel after chunk 0 must not write outputs from a prefetched chunk 1."""
     destino = tmp_path / "out"
     destino.mkdir()
     src_a = tmp_path / "a.jpg"
@@ -155,8 +152,6 @@ def test_conversion_cancel_discards_prefetched_chunk(monkeypatch, tmp_path) -> N
                 first_heavy_started.set()
                 release_heavy.wait(timeout=5)
                 if cancel_check and cancel_check():
-                    # Bare Future.cancel() succeeds even while our thread runs;
-                    # always finish the future so the job loop cannot stall.
                     try:
                         future.set_exception(CancelledError())
                     except Exception:
@@ -208,7 +203,6 @@ def test_conversion_cancel_discards_prefetched_chunk(monkeypatch, tmp_path) -> N
     assert not thread.is_alive()
     assert job.result is not None
     assert job.result["cancelled"] is True
-    # Prefetched chunk must never be submitted → at most the first file may appear.
     assert len(written) <= 1
     assert not (destino / "b.jpg").exists()
 
@@ -258,7 +252,6 @@ def test_conversion_cancel_releases_visible_state_without_waiting_for_slow_worke
 
 
 def test_progress_notifications_throttled_by_interval(monkeypatch, tmp_path) -> None:
-    """Progress IPC must not emit on every 1% — interval + first + last only."""
     notifies: list[dict] = []
 
     class _Immediate:
@@ -283,7 +276,6 @@ def test_progress_notifications_throttled_by_interval(monkeypatch, tmp_path) -> 
     monkeypatch.setattr(conversion, "_emit_heartbeat", lambda *_a, **_k: None)
     monkeypatch.setattr("backend.core.history.save_run", lambda **_k: None)
 
-    # Stay within the 0.5s notify interval for middle files; last always emits.
     times = iter([1000.0] + [1000.1] * 200)
     monkeypatch.setattr(conversion.time, "time", lambda: next(times, 1000.1))
 
@@ -305,7 +297,6 @@ def test_progress_notifications_throttled_by_interval(monkeypatch, tmp_path) -> 
         job.state.total = n
     conversion._run_conversion_job(job)
 
-    # First + last only while clock stays inside the interval.
     assert len(notifies) == 2
     assert notifies[0]["progress"] >= 1
     assert notifies[-1]["progress"] == 100

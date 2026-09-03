@@ -81,8 +81,6 @@ export default function ReportesCampoApp() {
 
     const exportablePanelCount = panels.filter((panel) => panel.photos.length > 0).length;
 
-    // Al cambiar de plantilla solo reiniciamos la página; la carga de las hojas
-    // persistentes de cada tipo la hace useCampoPanels internamente.
     useEffect(() => {
         setCurrentPage(0);
     }, [reportType]);

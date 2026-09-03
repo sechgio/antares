@@ -1,6 +1,3 @@
-/**
- * Regresión: provisión de pestañas AutoIMG y headers de FOLDERS.
- */
 
 function assert(condition, message) {
   if (!condition) {

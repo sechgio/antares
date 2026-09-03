@@ -1,16 +1,3 @@
-"""Panel Aviso de Corte domain services.
-
-Este paquete contiene la lógica de dominio de la herramienta
-"Panel Aviso de Corte": importación de Excel, emparejamiento de
-imágenes, modelos canónicos, serialización y renderizado a PDF.
-
-La API pública se expone progresivamente a medida que se
-implementan los submódulos (`models`, `serialization`, `importer`,
-`matcher`, `rendering`). Actualmente se exportan la jerarquía de
-errores, los modelos canónicos del dominio, las funciones de
-serialización round-trip (`serialize_panel` / `deserialize_panel`)
-y el importador de Excel (`parse_excel_bytes`).
-"""
 
 from .errors import (
     InvalidExcelError,

@@ -1,7 +1,3 @@
-"""Microbenchmark for panel aviso / write_pdf_sanitized warm latency.
-
-Prints JSON only; no repository writes.
-"""
 
 from __future__ import annotations
 
@@ -43,7 +39,6 @@ def _panel_html() -> str:
 
 
 def _measure(call, samples: int) -> dict[str, float]:
-    # Primera / cold
     started = time.perf_counter_ns()
     call()
     first_ms = (time.perf_counter_ns() - started) / 1_000_000.0
@@ -61,7 +56,6 @@ def _measure(call, samples: int) -> dict[str, float]:
 
 
 def _measure_phases(html: str, samples: int) -> dict[str, object]:
-    """Time sanitize vs WeasyPrint for an identical repeated payload."""
     from io import BytesIO
 
     from weasyprint import HTML
@@ -71,7 +65,6 @@ def _measure_phases(html: str, samples: int) -> dict[str, object]:
     weasy_ms: list[float] = []
     cached_ms: list[float] = []
 
-    # Cold WeasyPrint path once (no cache yet).
     cleaned = sanitize_html_for_pdf(html)
     buf = BytesIO()
     t0 = time.perf_counter_ns()
@@ -81,7 +74,6 @@ def _measure_phases(html: str, samples: int) -> dict[str, object]:
     ).write_pdf(buf, font_config=pdf_html._thread_font_config())
     cold_weasy_ms = (time.perf_counter_ns() - t0) / 1_000_000.0
 
-    # Warm phase split without cache helper.
     for _ in range(samples):
         t0 = time.perf_counter_ns()
         cleaned = sanitize_html_for_pdf(html)
@@ -94,7 +86,6 @@ def _measure_phases(html: str, samples: int) -> dict[str, object]:
         ).write_pdf(buf, font_config=pdf_html._thread_font_config())
         weasy_ms.append((time.perf_counter_ns() - t0) / 1_000_000.0)
 
-    # Cached path: first call fills LRU, remaining are hits.
     pdf_html.reset_pdf_cache_for_tests()
     write_pdf_sanitized(html)
     for _ in range(samples):

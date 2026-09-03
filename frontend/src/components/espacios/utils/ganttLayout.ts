@@ -6,7 +6,6 @@ export interface GanttBar {
   tarea: Tarea;
   start: string;
   end: string;
-  /** Inclusive day span (at least 1). */
   durationDays: number;
   lane: number;
   overdue: boolean;
@@ -19,7 +18,6 @@ export interface GanttDay {
   isToday: boolean;
 }
 
-/** Parse YYYY-MM-DD as local midnight. */
 export function parseLocalDate(iso: string): Date {
   const [y, m, d] = iso.split('-').map(Number);
   return new Date(y, (m ?? 1) - 1, d ?? 1);
@@ -37,10 +35,6 @@ export function diffDaysIso(from: string, to: string): number {
   return Math.round((b - a) / 86_400_000);
 }
 
-/**
- * Resolve the inclusive [start, end] range for a task on the Gantt.
- * Falls back to due_date or created_at so every task can be drawn.
- */
 export function resolveTaskRange(tarea: Tarea): { start: string; end: string } {
   const created = tarea.created_at.slice(0, 10);
   const start = tarea.start_date ?? tarea.due_date ?? created;
@@ -56,14 +50,9 @@ export function isTaskOverdue(
 ): boolean {
   if (!tarea.due_date || tarea.due_date >= today) return false;
   if (columns.length > 0) return !columnIsDone(columns, tarea.status);
-  // Fallback when columns are not loaded yet (builtin done-like keys).
   return tarea.status !== 'done' && tarea.status !== 'closed';
 }
 
-/**
- * Pack intervals into non-overlapping horizontal lanes (first-fit).
- * Tasks that share dates never share a lane, so bars never stack on top of each other.
- */
 export function packLanes(
   items: Array<{ id: string; start: string; end: string }>,
 ): Map<string, number> {
@@ -73,14 +62,12 @@ export function packLanes(
     return a.id.localeCompare(b.id);
   });
 
-  /** laneEnds[i] = last end date currently placed in lane i */
   const laneEnds: string[] = [];
   const lanes = new Map<string, number>();
 
   for (const item of sorted) {
     let placed = -1;
     for (let i = 0; i < laneEnds.length; i += 1) {
-      // Non-overlap: next start must be strictly after previous end
       if (item.start > laneEnds[i]) {
         placed = i;
         break;
@@ -127,7 +114,6 @@ export function laneCount(bars: GanttBar[]): number {
   return Math.max(...bars.map((b) => b.lane)) + 1;
 }
 
-/** Visible day window padded around tasks (and always including today). */
 export function computeVisibleRange(
   bars: GanttBar[],
   today = localTodayString(),
@@ -181,7 +167,6 @@ export interface GanttWeekGroup {
   span: number;
 }
 
-/** ISO-like week label: W27 · 5–11 jul. */
 export function buildWeekGroups(days: GanttDay[]): GanttWeekGroup[] {
   if (days.length === 0) return [];
 
@@ -190,7 +175,6 @@ export function buildWeekGroups(days: GanttDay[]): GanttWeekGroup[] {
 
   const weekKey = (iso: string) => {
     const d = parseLocalDate(iso);
-    // ISO week: Thursday-based week number
     const tmp = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
     const dayNum = tmp.getUTCDay() || 7;
     tmp.setUTCDate(tmp.getUTCDate() + 4 - dayNum);
@@ -245,21 +229,18 @@ export type GanttDragMode = 'move' | 'resize-start' | 'resize-end';
 
 export type GanttZoomLevel = 'day' | 'week' | 'month';
 
-/** Preset day-column widths for Día / Semana / Mes. */
 export const GANTT_ZOOM_PRESET_COL: Record<GanttZoomLevel, number> = {
   day: 72,
   week: 44,
   month: 26,
 };
 
-/** Padding (days) around the task window per zoom preset. */
 export const GANTT_ZOOM_PAD_DAYS: Record<GanttZoomLevel, number> = {
   day: 7,
   week: 14,
   month: 30,
 };
 
-/** Minimum visible day span per zoom preset. */
 export const GANTT_ZOOM_MIN_SPAN: Record<GanttZoomLevel, number> = {
   day: 21,
   week: 56,
@@ -273,11 +254,6 @@ export function clampGanttColW(w: number): number {
   return Math.min(GANTT_COL_W_MAX, Math.max(GANTT_COL_W_MIN, Math.round(w)));
 }
 
-/**
- * Resolve column width for a zoom mode.
- * Presets must stay distinct — never inflate to fill the viewport (that made
- * Día / Semana / Mes look identical on wide screens or short ranges).
- */
 export function resolveGanttColW(zoom: GanttZoomLevel, colWManual: number | null): number {
   return clampGanttColW(colWManual ?? GANTT_ZOOM_PRESET_COL[zoom]);
 }
@@ -288,10 +264,6 @@ export function zoomLevelFromColW(w: number): GanttZoomLevel {
   return 'month';
 }
 
-/**
- * Minimum day span so the chart can fill the viewport at the current column width
- * without stretching columns (which would erase zoom differences).
- */
 export function resolveGanttMinSpan(
   zoom: GanttZoomLevel,
   colW: number,
@@ -302,15 +274,10 @@ export function resolveGanttMinSpan(
   if (viewportW <= 0 || colW <= 0) {
     return { padDays, minSpanDays: presetMin };
   }
-  // +2 so there is a little overflow (scrollbar cue) rather than a flush edge
   const fillSpan = Math.ceil(viewportW / colW) + 2;
   return { padDays, minSpanDays: Math.max(presetMin, fillSpan) };
 }
 
-/**
- * Apply a day delta from a Gantt drag/resize gesture.
- * Resize never collapses below 1 day (start cannot pass end).
- */
 export function applyGanttDragDelta(
   mode: GanttDragMode,
   originStart: string,

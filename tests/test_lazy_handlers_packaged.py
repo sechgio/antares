@@ -1,9 +1,3 @@
-"""Regression: every lazy handler module must be listed in backend.spec.
-
-After the HandlerRegistry switched to importlib lazy loads, PyInstaller no
-longer sees static imports of backend.handlers.* — without hiddenimports the
-frozen installer starts but every IPC call fails with ModuleNotFoundError.
-"""
 
 from __future__ import annotations
 

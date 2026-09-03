@@ -16,11 +16,6 @@ function stylePatchEqual(a: Partial<LayerCssVars>, b: Partial<LayerCssVars>): bo
 
 const STYLE_KINDS: CanvasStyleKind[] = ['color', 'text', 'effect'];
 
-/**
- * If `next` changed paint keys that belong to a linked shared style,
- * push those keys into the style (and all other linked layers).
- * Position/size-only edits are a no-op for styles.
- */
 export function syncLinkedStylesFromLayer(
   doc: CanvasDocument,
   prev: CanvasLayer | undefined,

@@ -1,20 +1,3 @@
-"""Versioned, idempotent SQLite schema migrations for Antares.
-
-Each migration is identified by a unique string id (e.g. ``"001_historial_baseline"``).
-Applied migrations are recorded in the ``_schema_migrations`` table. Re-running a
-migration is a no-op. Statements that would fail because a column or table
-already exists (e.g. ``ALTER TABLE ... ADD COLUMN`` run twice) are tolerated
-so migrations are safe to re-apply.
-
-Policy (see ``docs/superpowers/plans/2026-06-12-history-professional-durable.md``):
-
-* New columns are always ``NULL``-able and have a ``DEFAULT NULL``/``0``.
-* Columns are never dropped. Renames and type changes are introduced as a new
-  column suffixed with ``_v2``; the old column is left readable for 2 minor
-  versions.
-* Migrations are forward-only and additive; ``bump:patch/minor/major`` never
-  wipes data.
-"""
 
 from __future__ import annotations
 
@@ -28,7 +11,6 @@ MIGRATIONS_TABLE = "_schema_migrations"
 
 @dataclass(frozen=True)
 class Migration:
-    """A single forward-only, idempotent schema migration."""
 
     id: str
     sql: tuple[str, ...]
@@ -36,13 +18,11 @@ class Migration:
 
 
 class MigrationManager:
-    """Apply a list of forward-only, idempotent SQL migrations to a connection."""
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
     def ensure_table(self) -> None:
-        """Create the bookkeeping table that records applied migrations."""
         self.conn.execute(
             f"""
             CREATE TABLE IF NOT EXISTS {MIGRATIONS_TABLE} (
@@ -54,7 +34,6 @@ class MigrationManager:
         )
 
     def applied(self) -> set[str]:
-        """Return the set of migration ids already applied."""
         self.ensure_table()
         rows = self.conn.execute(f"SELECT id FROM {MIGRATIONS_TABLE}").fetchall()
         return {row[0] for row in rows}
@@ -63,7 +42,6 @@ class MigrationManager:
         return migration_id in self.applied()
 
     def apply(self, migration: Migration) -> bool:
-        """Apply a single migration. Returns ``True`` if newly applied, ``False`` if already present."""
         self.ensure_table()
         if self.is_applied(migration.id):
             return False
@@ -77,7 +55,6 @@ class MigrationManager:
         return True
 
     def apply_all(self, migrations: Iterable[Migration]) -> list[str]:
-        """Apply all pending migrations in order. Returns the list of newly applied ids."""
         applied_now: list[str] = []
         for migration in migrations:
             if self.apply(migration):
@@ -85,7 +62,6 @@ class MigrationManager:
         return applied_now
 
     def _execute_idempotent(self, sql: str) -> None:
-        """Execute SQL tolerating "duplicate column" / "already exists" errors."""
         try:
             self.conn.execute(sql)
         except sqlite3.OperationalError as exc:

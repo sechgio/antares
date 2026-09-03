@@ -302,7 +302,6 @@ export function buildDownloadNameMap(items: ImageItem[], settings: BatchSettings
   return new Map(items.map((item, index) => [item.id, uniqueNames[index]]));
 }
 
-/** Name map keyed by queue position (non-excluded items only). Use for UI and export lookup. */
 export function buildExportNameMap(allItems: ImageItem[], settings: BatchSettings): Map<string, string> {
   return buildDownloadNameMap(getEligibleItems(allItems), settings);
 }
@@ -465,7 +464,6 @@ export function revokeItemUrls(item: ImageItem): void {
   }
 }
 
-/** Max files per `image_optimizer_save_files` IPC call (avoids 64 MB JSON-RPC cliff). */
 export const SAVE_CHUNK_SIZE = 25;
 
 export type OptimizerSaveFilePayload = { filename: string; content_b64: string };
@@ -481,10 +479,6 @@ export type SaveEntriesInChunksResult = {
   cancelled: boolean;
 };
 
-/**
- * Encode blobs and persist via chunked IPC so a large batch never materializes
- * the full Base64 payload in one JSON-RPC request.
- */
 export async function saveEntriesInChunks(options: {
   entries: Array<{ filename: string; blob: Blob }>;
   outputFolder: string;

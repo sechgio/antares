@@ -9,7 +9,6 @@ import {
 import { hydrateDocumentImages, hydrateHistorySteps } from '../utils/imageBlobStore';
 import type { CanvasHistoryHandle } from './useCanvasHistory';
 
-/** Dev-only startup timing helper; no-ops in production. */
 function perfMark(label: string) {
   if (import.meta.env.MODE !== 'development') return;
   if (typeof performance !== 'undefined' && typeof performance.mark === 'function') {
@@ -20,30 +19,17 @@ function perfMark(label: string) {
 }
 
 interface UseCanvasBootstrapOptions {
-  /** Replace the open document after list/create/get resolves. */
   replaceDocument: CanvasHistoryHandle['replaceDocument'];
-  /** Restore history stack (past and future) for the loaded document. */
   restoreHistory?: CanvasHistoryHandle['restoreHistory'];
-  /** False while the replaced document awaits its persisted undo/redo history. */
   historyReadyRef: MutableRefObject<boolean>;
-  /** Monotonic owner token for overlapping document-history restoration. */
   restoreGenerationRef: MutableRefObject<number>;
-  /** Current document identity, updated synchronously by the history hook. */
   currentDocumentRef: CanvasHistoryHandle['documentRef'];
-  /** Current history revision, updated synchronously by the history hook. */
   currentRevisionRef: CanvasHistoryHandle['revisionRef'];
-  /** Set the docs sidebar list. */
   setDocs: React.Dispatch<React.SetStateAction<CanvasDocumentSummary[]>>;
-  /** Set the loading veil visibility. */
   setLoading: React.Dispatch<React.SetStateAction<boolean>>;
-  /** One-shot cloud sync after the initial load (guarded never clobbers disk). */
   runCloudSync: (guardedOverride?: boolean) => Promise<void>;
 }
 
-/** Mount bootstrap: list docs → open first (or create one) → unblock loading.
- *
- * Runs once on mount; the cancelled flag guards against state updates after
- * unmount. Triggers the initial cloud sync once the open document is ready. */
 export function useCanvasBootstrap({
   replaceDocument,
   restoreHistory,

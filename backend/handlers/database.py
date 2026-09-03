@@ -1,4 +1,3 @@
-"""Database and field/pattern configuration handlers."""
 from __future__ import annotations
 
 import contextlib
@@ -12,43 +11,11 @@ from backend.core.database import (
     generar_plantilla_excel,
     importar_excel,
     limpiar_base_datos,
-    obtener_todos,
     parse_id_rename_mapping_full,
 )
 from backend.core.repository import _db_schema_lock
-from backend.handlers.common import parse_positive_int, validate_params, with_locale
+from backend.handlers.common import validate_params, with_locale
 
-_DB_RECORDS_DEFAULT_LIMIT = 500
-_DB_RECORDS_MAX_LIMIT = 2000
-
-
-def _parse_offset(value: Any, label: str) -> int:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError) as exc:
-        msg = f"{label} inválido"
-        raise ValueError(msg) from exc
-    if parsed < 0:
-        msg = f"{label} no puede ser negativo"
-        raise ValueError(msg)
-    return parsed
-
-
-@with_locale
-def db_records(params: dict[str, Any]) -> dict[str, Any]:
-    limit = parse_positive_int(
-        params.get("limit", _DB_RECORDS_DEFAULT_LIMIT),
-        "limit",
-        maximum=_DB_RECORDS_MAX_LIMIT,
-    )
-    offset = _parse_offset(params.get("offset", 0), "offset")
-    with _db_schema_lock.read():
-        return {
-            "records": obtener_todos(limit=limit, offset=offset),
-            "fields": get_field_names(),
-            "limit": limit,
-            "offset": offset,
-        }
 
 @with_locale
 @validate_params("path")
@@ -91,20 +58,12 @@ def db_fields_update(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
 
     with _db_schema_lock.write():
         result = sanitize_field_defs(fields)
-        # Dry-run contra el catálogo vivo ANTES de tocar disco: una migración que
-        # abortaría (esquema nuevo sin columna compartida + filas existentes) debe
-        # fallar sin persistir la config nueva. Antes se guardaba la config y luego
-        # fallaba init_db, dejando disco ≠ esquema de tabla y rompiendo el arranque
-        # del backend en el siguiente inicio (init_db falla → sys.exit(1)).
         validate_fields_migration(result)
         old_fields = load_fields()
         save_fields(result)
         try:
             init_db()
         except Exception:
-            # Red de seguridad residual (p. ej. error I/O real de sqlite a mitad de
-            # la migración): restaura la config previa para que disco y tabla nunca
-            # queden divergentes.
             with contextlib.suppress(Exception):
                 save_fields(old_fields)
             raise
@@ -130,7 +89,6 @@ def db_fields_reset(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
 @with_locale
 @validate_params("path")
 def db_parse_mapping(params: dict[str, Any]) -> dict[str, Any]:
-    """Parsea un Excel ID→RENOMBRE sin tocar la BD del catálogo."""
     from backend.core.mapping_index import MappingIndex
 
     excel_path = params.get("path", "")
@@ -152,7 +110,6 @@ def db_parse_mapping(params: dict[str, Any]) -> dict[str, Any]:
 
 @with_locale
 def db_validate_mapping(params: dict[str, Any]) -> dict[str, Any]:
-    """Valida un mapeo ya cargado contra una lista de archivos (sin releer Excel)."""
     from backend.core.mapping_index import MappingIndex
 
     mapping = params.get("mapping") or {}
@@ -166,7 +123,6 @@ def db_validate_mapping(params: dict[str, Any]) -> dict[str, Any]:
 
 @with_locale
 def db_columns(params: dict[str, Any]) -> dict[str, Any]:
-    """Retorna las columnas disponibles en la BD con datos de muestra."""
     from backend.core.database import obtener_todos
     with _db_schema_lock.read():
         fields = get_field_names()
@@ -186,7 +142,6 @@ def rename_patterns_reset(params: dict[str, Any]) -> dict[str, list[dict[str, An
     return {"patterns": reset_patterns_defaults()}
 
 HANDLERS = {
-    "db_records": db_records,
     "db_import": db_import,
     "db_export": db_export,
     "db_clear": db_clear,

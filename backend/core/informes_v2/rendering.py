@@ -68,7 +68,6 @@ def _environment() -> Environment:
 def _prepare_report(report: dict[str, Any], images: list[dict[str, str]] | None = None) -> dict[str, Any]:
     normalized = InformeV2.normalize(report)
     photos = images if isinstance(images, list) else []
-    # Cap at 6; pad with empty slots for fixed 3x2 grid
     slots: list[dict[str, str] | None] = []
     for img in photos[:6]:
         if isinstance(img, dict) and (img.get("path") or img.get("src")):

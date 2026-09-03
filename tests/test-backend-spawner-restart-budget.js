@@ -1,5 +1,3 @@
-// Regression test: persistent crashes must exhaust the auto-restart budget and
-// enter FATAL; manualRestart must clear FATAL and allow a fresh start.
 const { EventEmitter } = require('events');
 const childProcess = require('child_process');
 

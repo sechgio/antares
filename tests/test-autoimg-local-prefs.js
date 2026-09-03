@@ -1,6 +1,3 @@
-/**
- * Preferencias locales por usuario: Sheet/carpetas no se borran al limpiar store.
- */
 
 const fs = require('fs');
 const path = require('path');
@@ -38,12 +35,10 @@ assert(store.loadSheetConfig().sheet_id.startsWith('199VwTc4'), 'sheet sobrevive
 assert(store.loadLocalFolders().length === 2, 'carpetas sobreviven clearTokens');
 assert(store.loadRenameDest().folder_id === 'rootFOLDER999', 'rename dest sobrevive clearTokens');
 
-// Sin usuario activo no se exponen datos de perfil
 scope.clearActiveUser();
 assert(!store.loadSheetConfig().sheet_id, 'sin usuario no expone sheet');
 assert(store.loadLocalFolders().length === 0, 'sin usuario no expone carpetas');
 
-// revokeAuth no limpia sheet del usuario
 const sheetsSvcPath = path.join(__dirname, '..', 'electron', 'google-sheets-service.js');
 const src = fs.readFileSync(sheetsSvcPath, 'utf8');
 const revokeBody = src.slice(src.indexOf('async function revokeAuth'), src.indexOf('async function _apiFetch'));

@@ -8,7 +8,6 @@ function readSource(path: string) {
   return readFileSync(resolve(srcRoot, path), 'utf8');
 }
 
-/** Tailwind palette / black scrims that bypass Appearance CSS vars. */
 const FORBIDDEN_HARDCODE =
   /bg-black\/|text-red-\d|bg-red-\d|border-red-\d|hover:text-red-\d|hover:bg-red-\d|text-green-\d|bg-green-\d|text-emerald-|bg-emerald-|border-emerald-|hover:text-emerald-|hover:bg-emerald-|#ef4444\b|#10b981\b|#f59e0b\b/i;
 

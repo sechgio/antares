@@ -51,7 +51,6 @@ describe('propagateContainerResize', () => {
   it('leaves children without constraints unchanged when moving the group', () => {
     const g = groupAt('g1', { x: 10, y: 10, w: 100, h: 50 });
     const a = child('a', 'g1', { x: 20, y: 20, w: 30, h: 20 });
-    // Group moved +20,+10 (already reflected on g); delta describes the change.
     const moved = groupAt('g1', { x: 30, y: 20, w: 100, h: 50 });
     const next = propagateContainerResize([moved, a], 'g1', { dx: 20, dy: 10, dw: 0, dh: 0 });
     const childNext = next.find((l) => l.id === 'a')!;
@@ -125,7 +124,6 @@ describe('resizeSelection + layout constraints', () => {
     const gNext = next.find((l) => l.id === 'g1')!;
     const aNext = next.find((l) => l.id === 'a')!;
     expect(parseMm(gNext.cssVars['--width'])).toBe(150);
-    // end: width grows by dw=50, x unchanged
     expect(parseMm(aNext.cssVars['--translate-x'])).toBe(10);
     expect(parseMm(aNext.cssVars['--width'])).toBe(90);
   });
@@ -136,7 +134,6 @@ describe('resizeSelection + layout constraints', () => {
     expect(containerUsesLayoutConstraints([g, a], 'g1')).toBe(false);
     const next = resizeSelection([g, a], ['g1'], 'e', 50, 0, { aspectLock: false });
     const aNext = next.find((l) => l.id === 'a')!;
-    // Uniform scale: relX=0.1, relW=0.4 → x=15, w=60 on 150-wide box
     expect(parseMm(aNext.cssVars['--translate-x'])).toBe(15);
     expect(parseMm(aNext.cssVars['--width'])).toBe(60);
   });

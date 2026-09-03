@@ -1,4 +1,3 @@
-"""Formatos PDF handlers."""
 from __future__ import annotations
 
 import base64
@@ -17,7 +16,7 @@ def formatos_list(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     from backend.core.formatos import list_formats
     return {"formats": list_formats()}
 
-_MAX_INLINE_PDF_BYTES = 40 * 1024 * 1024  # 40 MiB (safe under 64 MiB IPC limit)
+_MAX_INLINE_PDF_BYTES = 40 * 1024 * 1024
 
 
 @with_locale

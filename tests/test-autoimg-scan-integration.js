@@ -1,6 +1,3 @@
-/**
- * Integración: concurrencia de escaneo, cancelación y applyScanResultsToRows.
- */
 
 function assert(condition, message) {
   if (!condition) {

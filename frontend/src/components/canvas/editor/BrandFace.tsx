@@ -1,7 +1,6 @@
 import { memo, useEffect, useRef } from 'react';
 import { createGestureRaf } from '../ops/gestureRaf';
 
-/** Animated face mark — eyes follow cursor (compositor translate) and blink (scaleY). */
 function BrandFace() {
   const faceRef = useRef<HTMLDivElement>(null);
   const leftEyeRef = useRef<HTMLDivElement>(null);
@@ -13,7 +12,6 @@ function BrandFace() {
     const face = faceRef.current;
     if (!face) return;
 
-    // Cache face geometry; refresh only when layout may have changed (not every move).
     let rect = face.getBoundingClientRect();
     let rectDirty = false;
     const refreshRect = () => {
@@ -29,7 +27,6 @@ function BrandFace() {
     window.addEventListener('scroll', invalidateRect, true);
 
     const raf = createGestureRaf((ev: { clientX: number; clientY: number }) => {
-      // Pause eye tracking while the artboard owns an active pointer gesture.
       if (document.body.dataset.canvasGesture === '1') return;
 
       const left = leftEyeRef.current;

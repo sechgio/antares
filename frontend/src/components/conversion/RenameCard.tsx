@@ -15,9 +15,7 @@ interface RenameCardProps {
   mappingIdColumn?: string;
   mappingRenameColumn?: string;
   renamePreview?: PreviewItem[];
-  /** Backend capped the rename preview batch. */
   previewTruncated?: boolean;
-  /** Full file count before preview truncation. */
   previewTotalFiles?: number | null;
   onClearMapping?: () => void;
   namingMode: string;

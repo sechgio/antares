@@ -1,18 +1,9 @@
-/**
- * Layer bounding-box helpers (single source for the rotated/unrotated AABB
- * routines used across selection, ops, culling, and the spatial index).
- *
- * `layerBoundsMm` is the unrotated local box; `layerBounds` returns the
- * axis-aligned bounding box of the rotated box (transform-origin = center),
- * plus convenience edges (`right`/`bottom`) and center (`cx`/`cy`).
- */
 
 import type { CanvasLayer } from '../types';
 import { parseMm } from '../types';
 
 export type RectMm = { x: number; y: number; w: number; h: number };
 
-/** Parse a layer's `--rotate` cssVar into degrees (0 when unset/invalid). */
 export function parseRotateDeg(layer: CanvasLayer): number {
   return parseFloat(layer.cssVars['--rotate'] || '0') || 0;
 }
@@ -20,7 +11,6 @@ export function parseRotateDeg(layer: CanvasLayer): number {
 const layerBoundsMmCache = new WeakMap<CanvasLayer['cssVars'], RectMm>();
 const layerBoundsCache = new WeakMap<CanvasLayer['cssVars'], RectMm & { right: number; bottom: number; cx: number; cy: number }>();
 
-/** Unrotated layer bounding box in page mm. */
 export function layerBoundsMm(layer: CanvasLayer): RectMm {
   const cached = layerBoundsMmCache.get(layer.cssVars);
   if (cached) return cached;
@@ -34,7 +24,6 @@ export function layerBoundsMm(layer: CanvasLayer): RectMm {
   return res;
 }
 
-/** Rotated AABB of a layer with edges and center (transform-origin = center). */
 export function layerBounds(
   layer: CanvasLayer,
 ): RectMm & { right: number; bottom: number; cx: number; cy: number } {
@@ -87,7 +76,6 @@ export function layerBounds(
   return res;
 }
 
-/** Unrotated local box with edges and center (used for resize mapping). */
 export function layerLocalBounds(
   layer: CanvasLayer,
 ): RectMm & { right: number; bottom: number; cx: number; cy: number } {

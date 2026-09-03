@@ -4,7 +4,6 @@ import type { AppUser } from './types';
 export const DISABLED_ACCOUNT_MESSAGE =
   'Tu cuenta ha sido desactivada. Contacta al administrador.';
 
-/** Inline import type — avoids a static runtime edge to @supabase/supabase-js. */
 type AuthClient = import('@supabase/supabase-js').SupabaseClient | null;
 
 interface AuthContextValue {
@@ -19,7 +18,6 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-/** Dynamic import keeps @supabase/supabase-js out of the app-shell entry preload. */
 function loadSupabaseModule() {
   return import('../lib/supabase');
 }
@@ -75,12 +73,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const mountedRef = useRef(true);
   const loadingRef = useRef(loading);
   const clientRef = useRef<AuthClient>(null);
-  // authGenRef serialises refreshUser and onAuthStateChange: each in-flight
-  // auth check increments the generation and only the latest one is allowed
-  // to flip `loading=false`. Without this, when Supabase is slow the safety
-  // timeout can flip loading to false and then a late onAuthStateChange
-  // resolves and calls setUser without re-entering the loading state,
-  // producing flicker login→app and non-deterministic session visibility.
   const authGenRef = useRef(0);
 
   useEffect(() => { loadingRef.current = loading; }, [loading]);
@@ -122,7 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const gen = ++authGenRef.current;
     try {
       const { data: { session } } = await client.auth.getSession();
-      if (gen !== authGenRef.current) return; // a newer check wins
+      if (gen !== authGenRef.current) return;
       if (!session) {
         if (mountedRef.current) { setUser(null); setLoading(false); }
         return;
@@ -146,9 +138,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       supabaseUser: { id: string; email?: string; created_at?: string },
       gen: number,
     ) => {
-      // Supabase holds an internal auth lock while invoking this callback.
-      // Defer the profile query until the callback has returned to avoid a
-      // client deadlock (see Supabase's onAuthStateChange guidance).
       const timer = setTimeout(() => {
         deferredProfileFetches.delete(timer);
         if (cancelled || !mountedRef.current || gen !== authGenRef.current) return;
@@ -162,9 +151,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }, 0);
       deferredProfileFetches.add(timer);
     };
-    // Safety timeout: if Supabase is slow, show login UI after 5s — but do NOT
-    // bump authGenRef. Invalidating the generation discarded a late valid
-    // getSession() result and left users stuck on the login screen.
     const timeout = setTimeout(() => {
       if (mountedRef.current && loadingRef.current) {
         console.warn('[auth] Session check timed out, showing login screen');
@@ -181,7 +167,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
         return;
       }
-      // Subscribe FIRST, then refresh — so INITIAL_SESSION dedupes getSession
       let initialHandled = false;
       const { data } = supabase.auth.onAuthStateChange((_event, session) => {
         if (!mountedRef.current) return;
@@ -195,22 +180,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (gen === authGenRef.current) setLoading(false);
           return;
         }
-        // Treat onAuthStateChange as the latest authority: bump the generation
-        // so any in-flight refreshUser gives up before touching state, then
-        // flip loading back to true while we fetch the profile (otherwise the
-        // user appears without a loading gate and the app flickers).
         const gen = ++authGenRef.current;
         setLoading(true);
         deferProfileFetch(session.user, gen);
       });
       subscription = data.subscription;
-      // Give INITIAL_SESSION a chance to fire (async via initializePromise)
       await Promise.resolve();
       await Promise.resolve();
       if (cancelled || !mountedRef.current) return;
       if (!initialHandled) {
         await refreshUser();
-        // If INITIAL_SESSION fired while getSession was in-flight, suppress timeout twice handling
         if (initialHandled) clearTimeout(timeout);
       } else {
         clearTimeout(timeout);
@@ -226,7 +205,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [refreshUser, applyAuthenticatedUser]);
 
-  // Immediate logout when an admin flips is_disabled on this user's profile.
   useEffect(() => {
     const client = clientRef.current;
     if (!client || !user?.id) return;

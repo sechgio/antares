@@ -1,6 +1,4 @@
-/* Informes v2 — layout scroll fixes + preview paper styles */
 
-/* Scroll areas must grow/shrink inside the flex panel or content is clipped. */
 .iv2-app .tr-list,
 .iv2-app .tr-form-scroll,
 .iv2-app .tr-preview-wrap {
@@ -15,8 +13,6 @@
   align-items: flex-start;
 }
 
-/* Between 900–1200px technical-reports hides the form without tabs.
-   Keep tabs available so logos/edit remain reachable. */
 @media (max-width: 1200px) {
   .iv2-app .tr-mobile-tabs {
     display: flex;

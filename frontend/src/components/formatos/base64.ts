@@ -1,14 +1,3 @@
-/**
- * Decode a base64 string into a `Uint8Array`.
- *
- * Extracted as a pure module so other components (MappingPreviewPanel,
- * sellador/pdfjs) can import it without dragging in the full FormatosView
- * bundle, which previously created a dynamic-import cycle:
- *   MappingPreviewPanel -> import('./FormatosView') -> MappingPreviewPanel
- *
- * Validates the input shape before calling `atob` so corrupt payloads
- * raise a typed Error instead of a cryptic DOMException.
- */
 export function safeBase64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
   if (!b64 || typeof b64 !== 'string') throw new Error('Datos base64 inválidos');
   const cleaned = b64.replace(/\s/g, '');

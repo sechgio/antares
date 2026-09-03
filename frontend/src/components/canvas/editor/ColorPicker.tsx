@@ -59,10 +59,8 @@ function hsvToHex(h: number, s: number, v: number): string {
 function positionBeside(anchor: DOMRect, height: number): { left: number; top: number } {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  // Prefer left of the sidebar/swatch (Figma pattern)
   let left = anchor.left - PICKER_WIDTH - GAP;
   if (left < 8) {
-    // Not enough room on the left — place to the right of the swatch
     left = Math.min(anchor.right + GAP, vw - PICKER_WIDTH - 8);
   }
   left = Math.max(8, left);
@@ -99,12 +97,10 @@ export default function ColorPicker({
     setHexInput(hex.replace('#', ''));
   }, [hex]);
 
-  // Emit only when HSV/opacity actually change from user interaction (skip identical mount emit)
   const lastEmit = useRef<string>('');
   useEffect(() => {
     const key = `${hex}|${op}`;
     if (lastEmit.current === key) return;
-    // Skip first paint if still at the prop-initialized color
     if (!lastEmit.current) {
       const initialHex = normalizeHex(color).toUpperCase();
       const initialOp = clampOpacity(opacity);
@@ -122,7 +118,6 @@ export default function ColorPicker({
   }, [anchor, pageColors.length]);
 
   useEffect(() => {
-    // Ignore the opening click so the panel doesn't instantly close
     const t = window.setTimeout(() => {
       skipCloseRef.current = false;
     }, 0);
@@ -305,10 +300,6 @@ export default function ColorPicker({
                 setH(next.h);
                 setS(next.s);
                 setV(next.v);
-                // Re-typing the same hex that's already current would not
-                // change h/s/v, so the emit effect would no-op. Force-emit so
-                // the host always receives a confirmed value on valid input
-                // (e.g. user deleted last char and re-typed it).
                 const candidate = `#${raw}`.toUpperCase();
                 if (candidate === hex) {
                   emitRef.current(candidate, op);

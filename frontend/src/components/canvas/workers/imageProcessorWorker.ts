@@ -1,6 +1,3 @@
-/**
- * Web Worker for offloading batch image processing, resizing, and Blob conversion off the main UI thread.
- */
 
 export interface ImageProcessingTask {
   id: string;
@@ -28,7 +25,6 @@ self.onmessage = async (e: MessageEvent<ImageProcessingTask[]>) => {
   for (const task of tasks) {
     try {
       const { id, file } = task;
-      // In Worker context, use createImageBitmap or FileReader / OffscreenCanvas if available
       let blob: Blob = file;
       let width = 0;
       let height = 0;

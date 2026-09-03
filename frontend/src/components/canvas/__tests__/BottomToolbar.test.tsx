@@ -81,4 +81,46 @@ describe('BottomToolbar discoverability', () => {
 
     expect(screen.queryByRole('menu', { name: 'Más herramientas' })).toBeNull();
   });
+
+  it('lets the user move the toolbar to the top or bottom', () => {
+    const onPositionChange = vi.fn();
+    const { rerender } = render(
+      <div className="canvas-app">
+        <BottomToolbar
+          tool="select"
+          onTool={vi.fn()}
+          position="top"
+          onPositionChange={onPositionChange}
+        />
+      </div>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Más herramientas' }));
+
+    expect(screen.getByRole('menuitemradio', { name: 'Parte superior' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('menuitemradio', { name: 'Parte inferior' })).toHaveAttribute('aria-checked', 'false');
+
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Parte inferior' }));
+    expect(onPositionChange).toHaveBeenCalledWith('bottom');
+
+    rerender(
+      <div className="canvas-app">
+        <BottomToolbar
+          tool="select"
+          onTool={vi.fn()}
+          position="bottom"
+          onPositionChange={onPositionChange}
+        />
+      </div>,
+    );
+
+    const dock = screen.getByTestId('canvas-toolbar-dock');
+    expect(dock).toHaveClass('bottom-3');
+    expect(dock).not.toHaveClass('top-3');
+    fireEvent.click(screen.getByRole('button', { name: 'Más herramientas' }));
+    expect(screen.getByRole('menu', { name: 'Más herramientas' })).toHaveStyle({
+      transform: 'translate(-50%, -100%)',
+    });
+    expect(screen.getByRole('menuitemradio', { name: 'Parte inferior' })).toHaveAttribute('aria-checked', 'true');
+  });
 });

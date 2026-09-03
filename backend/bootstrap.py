@@ -1,4 +1,3 @@
-"""Startup path helpers for the backend entrypoint."""
 
 from __future__ import annotations
 
@@ -11,11 +10,6 @@ def adjust_backend_import_path(
     *,
     frozen: bool = False,
 ) -> list[str]:
-    """Return sys.path entries that make ``backend`` importable from source.
-
-    PyInstaller needs its runtime directory to stay on sys.path, so frozen
-    builds must not rewrite the temporary extraction path.
-    """
 
     if frozen:
         return paths

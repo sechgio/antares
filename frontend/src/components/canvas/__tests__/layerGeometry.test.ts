@@ -10,10 +10,6 @@ import {
 import { ensureLinePath } from '../ops/pathGeometry';
 import { mm, parseMm } from '../types';
 
-// Geometry contract: drag (imperativeLayerDom), rest (LayerNode) and export
-// (renderHtml) must all compose the layer transform from the SAME source, so
-// mid-drag preview === committed frame === exported frame.
-
 describe('layerGeometry contract', () => {
   it('returns translate-only transform and no origin for plain rects', () => {
     const layer = createLayer('rect', {
@@ -28,8 +24,8 @@ describe('layerGeometry contract', () => {
     const g = layerGeometry(layer);
     expect(g.transform).toBe('translate(38px, 76px)');
     expect(g.transformOrigin).toBeUndefined();
-    expect(g.widthPx).toBe(30); // Math.round(8 * 96 / 25.4)
-    expect(g.heightPx).toBe(15); // Math.round(4 * 96 / 25.4)
+    expect(g.widthPx).toBe(30);
+    expect(g.heightPx).toBe(15);
   });
 
   it('composes rotate/scale in buildLayerTransform order and pins origin center center', () => {
@@ -51,8 +47,6 @@ describe('layerGeometry contract', () => {
   });
 
   it('uses the ensured line height for legacy lines (parity with LayerNode), not the 10mm drag default', () => {
-    // Legacy line: no --height, no --border-width, no path (meta.path is
-    // stripped so ensureLinePath must synthesize the bar geometry).
     const line = createLayer('line', {
       id: 'geo3',
       meta: {},
@@ -64,11 +58,8 @@ describe('layerGeometry contract', () => {
     });
     const ensured = ensureLinePath(line);
     const g = layerGeometry(line);
-    // The contract must agree with what LayerNode renders (ensured height),
-    // not the old imperative default of 10mm.
     expect(g.heightPx).toBe(mmToScreenPx(parseMm(ensured.cssVars['--height']), 1));
     expect(g.heightPx).not.toBe(mmToScreenPx(10, 1));
-    // Width reads the layer's own --width (151px = 40mm), like LayerNode.
     expect(g.widthPx).toBe(mmToScreenPx(40, 1));
   });
 });

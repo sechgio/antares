@@ -45,9 +45,7 @@ export interface CanvasContextMenuState {
   canGroup: boolean;
   canUngroup: boolean;
   canPaste: boolean;
-  /** When set, show "Editar texto/campo" at the top. */
   editKind?: 'text' | 'field' | null;
-  /** Show "Mismo tamaño para todos" for an imageSlot inside a grid. */
   canMatchGridSlotSize?: boolean;
 }
 
@@ -64,7 +62,6 @@ interface MenuItem {
   icon: ComponentType<{ className?: string; size?: string | number }>;
   danger?: boolean;
   disabled?: boolean;
-  /** Render a group separator above this item. */
   sepBefore?: boolean;
 }
 

@@ -1,4 +1,3 @@
-// Electron must tokenize spreadsheet spill paths before they reach the renderer.
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
@@ -85,8 +84,6 @@ async function main() {
   assert.strictEqual(tokenized.result_path, undefined, 'absolute result_path must not leak to renderer');
   assert.deepStrictEqual(tokenized.sheets, []);
 
-  // Custom filename from the result payload (e.g. consolidated report exports)
-  // must be carried onto the capability so the renderer can resolve it.
   const { resolveCapability, revokeCapability } = require('../electron/file-capabilities');
   const named = _maybeTokenizeResultPaths(
     'informes_v2_export_consolidated_pdf',
@@ -100,7 +97,6 @@ async function main() {
   assert.strictEqual(resolved.name, 'informe_consolidado.pdf', 'custom filename reaches capability');
   revokeCapability(named.result_file_token);
 
-  // Non-spreadsheet methods unchanged
   const passthrough = _maybeTokenizeResultPaths('version', { version: '1' }, null);
   assert.deepStrictEqual(passthrough, { version: '1' });
 

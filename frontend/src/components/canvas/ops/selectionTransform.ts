@@ -11,7 +11,6 @@ import { expandWithDescendants } from './layerTree';
 import { patchLayersById } from './patchLayers';
 import { ensureLinePath, scalePathPoints } from './pathGeometry';
 
-// Re-export the canonical RectMm so existing importers (guides, Artboard) keep working.
 export type { RectMm };
 
 export type HandlePos = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
@@ -19,11 +18,9 @@ export type HandlePos = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 export type SmartGuide = { axis: 'x' | 'y'; pos: number };
 
 export const SNAP_THRESHOLD_MM = 0.5;
-/** Cap so low zoom does not inflate screen-px snap into page-lock (≈66mm at z=0.02). */
 export const SNAP_THRESHOLD_MAX_MM = 10;
 export const POINTER_CLICK_PX = 4;
 
-/** Screen-pixel snap feel (~5px) converted to mm at current zoom. */
 export function snapThresholdMm(zoom: number, screenPx = 5): number {
   const z = Math.max(0.05, zoom);
   return Math.min(screenPx / (MM_TO_PX * z), SNAP_THRESHOLD_MAX_MM);
@@ -36,7 +33,6 @@ export function snapToGridMm(value: number, gridMm: number): number {
   return Math.round(value / gridMm) * gridMm;
 }
 
-/** Snap a box so left/top/right/bottom land on the grid. */
 export function snapRectToGrid(box: RectMm, gridMm: number): RectMm {
   if (!(gridMm > 0)) return box;
   const x = snapToGridMm(box.x, gridMm);
@@ -51,15 +47,10 @@ export function snapRectToGrid(box: RectMm, gridMm: number): RectMm {
   };
 }
 
-/** True when pointer travel is small enough to treat as a click (not a drag). */
 export function isPointerClick(dxPx: number, dyPx: number, thresholdPx = POINTER_CLICK_PX): boolean {
   return dxPx * dxPx + dyPx * dyPx <= thresholdPx * thresholdPx;
 }
 
-/**
- * Figma-like Shift while moving: lock to the dominant axis (larger |delta| wins;
- * ties keep X). When `lock` is false, returns the raw delta unchanged.
- */
 export function constrainMoveToAxis(
   dx: number,
   dy: number,
@@ -73,7 +64,6 @@ function isTransformable(layer: CanvasLayer): boolean {
   return layer.type !== 'frame' && layer.visible !== false && !layer.locked;
 }
 
-/** Axis-aligned union of selected transformable layers (includes rotation AABB). */
 export function selectionBounds(layers: CanvasLayer[], ids: string[]): RectMm | null {
   if (!ids.length) return null;
   if (ids.length === 1) {
@@ -110,15 +100,11 @@ function rectsIntersect(a: RectMm, b: RectMm): boolean {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
-/** Layers whose bounds intersect the marquee (unlocked, visible, non-frame). */
 export function layersInMarquee(layers: CanvasLayer[], marquee: RectMm): string[] {
   if (marquee.w <= 0 || marquee.h <= 0) return [];
   return layers.filter((l) => isTransformable(l) && rectsIntersect(layerBounds(l), marquee)).map((l) => l.id);
 }
 
-/** Translate selection by dx/dy mm. Negative coords are allowed (free canvas).
- * Selecting a group/grid also moves its descendants (including locked children).
- * Only touched layers get new object identity (O(k) patches). */
 export function moveSelection(
   layers: CanvasLayer[],
   ids: string[],
@@ -166,7 +152,6 @@ function applyAspectLock(
     return { x, y, w, h };
   }
 
-  // Side handles: expand the free axis and scale the other from center.
   if (handle === 'e' || handle === 'w') {
     h = w / ratio;
     y = origin.y + (origin.h - h) / 2;
@@ -219,13 +204,6 @@ function resizeBBox(
   return { x, y, w, h };
 }
 
-/**
- * Resize all selected layers by mapping them from the original group bbox
- * into the resized bbox (uniform scale per axis).
- * Selecting a group/grid also scales its descendants (including locked children).
- * A single grid imageSlot resizes only itself — sibling cells are untouched.
- * Resizing the grid container scales children with the box (no equal-cell relayout).
- */
 export function resizeSelection(
   layers: CanvasLayer[],
   ids: string[],
@@ -258,8 +236,6 @@ export function resizeSelection(
     }
   }
 
-  // Single container with constraints/autoLayout: resize the container only,
-  // then propagate (avoids double-scaling children via the uniform path).
   if (ids.length === 1) {
     const rootId = ids[0]!;
     const root = layers.find((l) => l.id === rootId);
@@ -356,8 +332,6 @@ function normalizeDeg(deg: number): number {
   return Math.round(d * 1000) / 1000;
 }
 
-/** Rotate selection around its bbox center. Optional 15° snap on the delta.
- * Selecting a group also rotates its descendants around the same center. */
 export function rotateSelection(
   layers: CanvasLayer[],
   ids: string[],
@@ -399,7 +373,6 @@ export function rotateSelection(
   return patchLayersById(layers, updates);
 }
 
-/** Export resize bbox helper for Artboard snap pipeline. */
 export function computeResizeBox(
   origin: RectMm,
   handle: HandlePos,
@@ -461,7 +434,6 @@ function sortRails(rails: SnapRails): SnapRails {
   };
 }
 
-/** First index in sorted `arr` with value >= target (binary search). */
 function lowerBound(arr: number[], target: number): number {
   let lo = 0;
   let hi = arr.length;
@@ -473,10 +445,6 @@ function lowerBound(arr: number[], target: number): number {
   return lo;
 }
 
-/**
- * Scan sorted rails in [pos - threshold, pos + threshold] for the closest hit.
- * Same winner as a full nested loop when ties break by first-seen (ascending order).
- */
 function nearestRailInRange(
   sorted: number[],
   pos: number,
@@ -495,7 +463,6 @@ function nearestRailInRange(
   return best;
 }
 
-/** Cache guide rails keyed by the layers array (gesture snapshot). WeakMap avoids a module singleton. */
 const guideCacheByLayers = new WeakMap<
   CanvasLayer[],
   {
@@ -542,10 +509,6 @@ function guidePositionsCached(
   return next;
 }
 
-/**
- * Build sorted snap rails once per gesture (snapshot is immutable during drag).
- * Prefer this over per-frame WeakMap lookup when the caller holds the snapshot.
- */
 export function prepareSnapRails(
   layers: CanvasLayer[],
   ids: string[],
@@ -557,11 +520,6 @@ export function prepareSnapRails(
   return guidePositionsCached(layers, exclude, page, manualGuides, pageMarginMm);
 }
 
-/**
- * Adjust a proposed move so selection edges/centers snap to page or other layers.
- * Returns corrected delta and active guide lines (in mm).
- * Pass `rails` from `prepareSnapRails` to skip per-frame rail collection.
- */
 export function snapMoveWithGuides(
   layers: CanvasLayer[],
   ids: string[],
@@ -624,11 +582,6 @@ export function snapMoveWithGuides(
   return { dx: bestDx, dy: bestDy, guides };
 }
 
-/**
- * Snap a resized selection bbox to page/sibling edges.
- * Returns adjusted box (mm) and active guides.
- * Pass `rails` from `prepareSnapRails` to skip per-frame rail collection.
- */
 export function snapResizeBox(
   layers: CanvasLayer[],
   ids: string[],
@@ -692,7 +645,6 @@ export function snapResizeBox(
   return { box: { x, y, w, h }, guides };
 }
 
-/** True when smart-guide lists are equal (axis + pos). */
 export function smartGuidesEqual(a: SmartGuide[], b: SmartGuide[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
@@ -701,7 +653,6 @@ export function smartGuidesEqual(a: SmartGuide[], b: SmartGuide[]): boolean {
   return true;
 }
 
-/** Angle in degrees from bbox top-center to pointer (for rotate handle). */
 export function angleFromCenter(cx: number, cy: number, x: number, y: number): number {
   return (Math.atan2(y - cy, x - cx) * 180) / Math.PI;
 }

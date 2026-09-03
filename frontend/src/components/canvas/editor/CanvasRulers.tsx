@@ -14,13 +14,10 @@ interface CanvasRulersProps {
   pageHeightMm: number;
   pageIndex: number;
   onCreateGuide: (guide: CanvasGuide) => void;
-  /** Commit a guide after ruler drag completes on the canvas. */
   onCommitGuideCreate?: (guide: CanvasGuide) => void;
-  /** Abort an in-progress guide creation (Esc, or released back onto the ruler). */
   onCancelCreate?: (id: string) => void;
 }
 
-/** Compact pill for sizes, gaps, and guide positions. */
 export function MeasurementBadge({
   label,
   style,
@@ -32,7 +29,6 @@ export function MeasurementBadge({
   style?: CSSProperties;
   testId?: string;
   danger?: boolean;
-  /** Use selection blue instead of magenta (guide position chips). */
   accent?: boolean;
 }) {
   const bg = danger ? 'var(--cv-danger)' : accent ? 'var(--cv-accent)' : 'var(--cv-accent-2)';
@@ -56,7 +52,6 @@ export function MeasurementBadge({
   );
 }
 
-/** Floating label that follows the pointer while creating/dragging a guide. */
 export function GuidePositionChip({
   x,
   y,
@@ -84,11 +79,6 @@ export function GuidePositionChip({
   );
 }
 
-/**
- * Top + left rulers synced to the A4 page under the current pan/zoom.
- * Drag from a ruler into the canvas to create a persistent guide.
- * Preview stays local until pointerup so CanvasView skips per-frame history writes.
- */
 function CanvasRulers({
   zoom,
   pan,
@@ -106,10 +96,6 @@ function CanvasRulers({
 
   const ticksH = useMemo(() => {
     const stepMm = zoom >= 1.5 ? 5 : zoom >= 0.6 ? 10 : 20;
-    // Major ticks carry labels; at low zoom the major step (stepMm*2) still
-    // places labels too close (e.g. "200" needs ~24px). Double the label cadence
-    // until there's enough horizontal room, so intermediate labels hide
-    // instead of overlapping — Figma hides labels when space is tight.
     let labelStepMm = stepMm * 2;
     while (labelStepMm * MM_TO_PX * zoom < 24 && labelStepMm < pageWidthMm) {
       labelStepMm *= 2;
@@ -131,10 +117,6 @@ function CanvasRulers({
     return out;
   }, [pageHeightMm, zoom]);
 
-  /**
-   * Page origin (0,0) relative to the ruler strip. The strip starts RULER px
-   * into the viewport, so shift by -RULER / 2 to keep ticks aligned with the page.
-   */
   const originX = `calc(50% + ${Math.round(pan.x) - RULER / 2}px - ${frameW / 2}px)`;
   const originY = `calc(50% + ${Math.round(pan.y) - RULER / 2}px - ${frameH / 2}px)`;
 
@@ -162,12 +144,10 @@ function CanvasRulers({
       return (client - pageTop) / (MM_TO_PX * zoom);
     };
 
-    // Local preview only — commit on pointerup so history/CanvasView skip per-frame updates.
     const raf = createGestureRaf((ev: PointerEvent) => {
       if (cancelled) return;
       const pos = toMm(axis === 'x' ? ev.clientX : ev.clientY);
       if (!created) {
-        // Only create after leaving the ruler strip.
         const delta = Math.abs((axis === 'x' ? ev.clientX : ev.clientY) - startClient);
         if (delta < 4) return;
         created = createGuide(axis, clampGuidePos(pos, maxMm), pageIndex);
@@ -209,7 +189,6 @@ function CanvasRulers({
       },
     });
   };
-
 
   return (
     <>

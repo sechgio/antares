@@ -1,4 +1,3 @@
-"""Regresión: preview manual no reutiliza caché entre filas distintas."""
 
 from io import BytesIO
 from pathlib import Path
@@ -46,7 +45,6 @@ def test_manual_preview_cache_differs_by_text_fields() -> None:
 
     assert first["cod_componente"] == "COD-A"
     assert second["cod_componente"] == "COD-B"
-    # data: URI — Electron CSP blocks file: in img-src
     assert str(first["image"]).startswith("data:image/jpeg;base64,")
     assert Path(first["image_path"]).is_file()
     assert "base64," in str(first["image"])

@@ -1,5 +1,3 @@
-"""Read-only operational diagnostics for local support and health tooling."""
-
 from __future__ import annotations
 
 import os
@@ -52,7 +50,6 @@ def _temporary_storage_snapshot() -> dict[str, Any]:
 
 
 def diagnostics_snapshot(params: dict[str, Any]) -> dict[str, Any]:
-    """Return bounded scheduler/process/temp-storage data without request data."""
     del params
     return {
         "component": "backend",

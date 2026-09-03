@@ -15,9 +15,6 @@ const file = (name: string) => ({ name } as File);
 
 describe('preview panel PDF export helpers', () => {
   beforeEach(() => {
-    // jsdom exposes Image but never completes blob URL decoding. Make the
-    // browser/no-staging fallback deterministic so the test reaches the
-    // File/arrayBuffer path that it is asserting.
     vi.stubGlobal('Image', undefined);
   });
 

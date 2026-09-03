@@ -1,10 +1,3 @@
-"""Regresión M5: un job cuyo target lanza una excepción debe quedar reportado
-en el estado del job (result + log + err_count), no morir silenciosamente en el
-hilo con solo un traceback en stderr.
-
-Los jobs de conversión atrapan sus propias excepciones dentro del target; este
-wrapper es la red de seguridad para cualquier otro tipo de job.
-"""
 
 from backend.core.jobs import JobManager
 
@@ -48,6 +41,5 @@ class TestJobCrashReporting:
         assert not job.state.running
         assert job.state.err_count == 0
         assert job.state.ok_count == 3
-        # El wrapper no inventa un result: solo lo puebla en caso de crash.
         assert job.result is None
         assert not any(log["tag"] == "error" for log in job.state.logs)

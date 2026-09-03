@@ -81,7 +81,6 @@ describe('resolvePhysicalFolios', () => {
   });
 
   it('never duplicates folios when start is offset and end was page-count synced', () => {
-    // Regression: old lerp+round produced [2,3,3] for 3 pages with end=3
     const folios = resolvePhysicalFolios(3, {
       folioStart: 2,
       folioEnd: 3,

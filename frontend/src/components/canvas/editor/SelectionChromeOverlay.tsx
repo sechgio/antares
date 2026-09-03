@@ -10,11 +10,8 @@ import { MeasurementBadge } from './CanvasRulers';
 
 const HANDLE = 7;
 const RADIUS_HANDLE = 8;
-/** Distance from selection top edge to rotate-knob center (screen px). */
 const ROTATE_HANDLE_OFFSET = 20;
-/** Rotate knob diameter (screen px) — slightly larger than resize squares. */
 const ROTATE_KNOB = 8;
-/** Air gap between stem ends and knob / north handle (screen px). */
 const ROTATE_STEM_GAP = 2;
 
 function handleStyle(left: number, top: number, cursor: string, cameraZoom: number): CSSProperties {
@@ -30,7 +27,6 @@ function handleStyle(left: number, top: number, cursor: string, cameraZoom: numb
     background: '#fff',
     border: `${screenChromePx(1, cameraZoom)}px solid var(--cv-accent)`,
     borderRadius: 1,
-    // Above radius handles so corner resize always wins on overlap.
     zIndex: 42,
     cursor,
     boxSizing: 'border-box',
@@ -60,7 +56,6 @@ function radiusHandleStyle(left: number, top: number, cameraZoom: number): CSSPr
 export interface SelectionChromeOverlayProps {
   bbox: RectMm;
   zoom: number;
-  /** When false, only the outline + size badge show (locked / non-editable selection). */
   showHandles?: boolean;
   showRadiusHandles?: boolean;
   cornerRadii?: Record<CornerId, number>;
@@ -71,7 +66,6 @@ export interface SelectionChromeOverlayProps {
   onRadiusResize?: (e: ReactPointerEvent<HTMLDivElement>, corner: CornerId) => void;
 }
 
-/** Selection outline + handles + size badge — isolated from LayerNode paint. */
 export const SelectionChromeOverlay = memo(function SelectionChromeOverlay({
   bbox,
   zoom,
@@ -95,20 +89,17 @@ export const SelectionChromeOverlay = memo(function SelectionChromeOverlay({
   const stemWidth = screenChromePx(1, zoom);
   const rotateHandleX = x + w / 2;
   const rotateHandleY = y - rotateOffset;
-  // Stem sits in the clear air between knob and north handle (no T-junction).
   const stemTop = rotateHandleY + rotateKnob / 2 + stemGap * 0.5;
   const stemBottom = y - handleSize / 2 - stemGap;
   const stemHeight = Math.max(0, stemBottom - stemTop);
 
   const radii = cornerRadii ?? { tl: 0, tr: 0, br: 0, bl: 0 };
-  // Inset is already layout px (document CSS + min clearance under camera zoom).
   const inset = {
     tl: radiusHandleInsetPx(radii.tl, zoom),
     tr: radiusHandleInsetPx(radii.tr, zoom),
     br: radiusHandleInsetPx(radii.br, zoom),
     bl: radiusHandleInsetPx(radii.bl, zoom),
   };
-  // Keep handles inside the box for tiny selections.
   const maxInsetX = Math.max(0, w / 2 - screenChromePx(RADIUS_HANDLE, zoom));
   const maxInsetY = Math.max(0, h / 2 - screenChromePx(RADIUS_HANDLE, zoom));
   const clampInset = (v: number) => Math.min(v, maxInsetX, maxInsetY);

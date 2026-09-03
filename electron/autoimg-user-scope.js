@@ -1,11 +1,3 @@
-/**
- * Scope de datos AutoIMG por usuario de Google.
- *
- * - Clave de carpeta: SHA-256 del email (nunca el email en el nombre de archivo).
- * - Datos por usuario en userData/autoimg/users/<key>/
- * - El Client ID OAuth de la app sigue siendo global (no es del usuario final).
- * - Al cerrar sesión se borra el puntero "activo", no el almacén del usuario.
- */
 const crypto = require('crypto');
 const { readSecureJson, writeSecureJson, clearSecureJson } = require('./autoimg-secure-storage');
 
@@ -15,14 +7,8 @@ const ACTIVE_NS = 'active_user';
 let _activeUserKey = null;
 let _activeEmail = null;
 let _activeUserGeneration = 0;
-/** @type {Array<(info: { previousKey: string|null, nextKey: string|null }) => void>} */
 const _activeUserChangeListeners = [];
 
-/**
- * Registra un callback al cambiar/cerrar el usuario activo (p.ej. limpiar caches en RAM).
- * @param {(info: { previousKey: string|null, nextKey: string|null }) => void} fn
- * @returns {() => void} unsubscribe
- */
 function onActiveUserChange(fn) {
   if (typeof fn !== 'function') return () => {};
   _activeUserChangeListeners.push(fn);
@@ -38,7 +24,6 @@ function _notifyActiveUserChange(previousKey, nextKey) {
     try {
       fn({ previousKey, nextKey });
     } catch {
-      /* listener failures must not break auth */
     }
   }
 }
@@ -47,7 +32,6 @@ function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
 
-/** Hash estable y no reversible del email (para paths en disco). */
 function userKeyFromEmail(email) {
   const e = normalizeEmail(email);
   if (!e || !e.includes('@')) return null;
@@ -79,7 +63,6 @@ function getActiveEmail() {
   return _activeEmail || null;
 }
 
-/** Snapshot estable para no publicar resultados después de un cambio de sesión. */
 function getActiveUserSnapshot() {
   return {
     userKey: getActiveUserKey(),
@@ -93,10 +76,6 @@ function isActiveUserSnapshotCurrent(snapshot) {
   return current.userKey === snapshot.userKey && current.generation === snapshot.generation;
 }
 
-/**
- * Activa el scope del usuario. Debe llamarse tras OAuth con el email real.
- * Migra datos legacy globales (una sola vez) hacia el almacén del usuario.
- */
 function setActiveUser(email) {
   const e = normalizeEmail(email);
   const key = userKeyFromEmail(e);
@@ -108,7 +87,6 @@ function setActiveUser(email) {
 
   writeSecureJson(ACTIVE_FILE, ACTIVE_NS, {
     user_key: key,
-    // Email cifrado dentro del blob; no va en el nombre de archivo.
     email: e,
     email_masked: maskEmail(e),
     updated_at: new Date().toISOString(),
@@ -122,7 +100,6 @@ function setActiveUser(email) {
   return key;
 }
 
-/** Cierra sesión activa sin borrar el almacén por-usuario. */
 function clearActiveUser() {
   const prev = _activeUserKey;
   _activeUserKey = null;
@@ -144,11 +121,6 @@ function scopedNamespace(baseNs) {
   return `${baseNs}:u:${key}`;
 }
 
-/**
- * Copia datos de rutas legacy (pre multi-usuario) al usuario activo
- * solo si el destino aún no tiene datos. Tras migrar, borra el legacy
- * para no reinyectarlo al siguiente usuario.
- */
 function migrateLegacyIntoActiveUser() {
   const key = getActiveUserKey();
   if (!key) return;
@@ -163,7 +135,6 @@ function migrateLegacyIntoActiveUser() {
     const destFile = scopedFilename(p.file);
     const destNs = scopedNamespace(p.ns);
     if (readSecureJson(destFile, destNs)) {
-      // Destino ya tiene datos: elimina legacy residual para no contaminar a otros
       clearSecureJson(p.legacy);
       continue;
     }

@@ -1,4 +1,3 @@
-"""Format strategy interface and registry for PDF generation."""
 from __future__ import annotations
 
 from typing import Any, Protocol
@@ -8,11 +7,9 @@ from backend.core.format_strategies.visual_overlay import SimpleOverlayStrategy,
 
 
 class FormatStrategy(Protocol):
-    """Interface for PDF generation strategies."""
     def generate(self, template_bytes: bytes, desde: int, hasta: int, mapping: dict[str, Any] | None = None) -> bytes: ...
 
 
-# Strategy registry
 _strategies: dict[str, FormatStrategy] = {}
 
 
@@ -27,7 +24,6 @@ def get_strategy(name: str) -> FormatStrategy:
     return _strategies[name]
 
 
-# Register built-in strategies
 register_strategy("legacy_xobject", LegacyXObjectStrategy())
 register_strategy("visual_overlay", VisualOverlayStrategy())
 register_strategy("simple_overlay", SimpleOverlayStrategy())

@@ -23,7 +23,6 @@ const sampleRun = {
 
 describe('history reexecute events', () => {
   afterEach(() => {
-    // Drain any leftover pending payload between tests.
     takePendingHistoryReexecute();
   });
 

@@ -51,7 +51,6 @@ export default function FontPicker({
     return CANVAS_FONTS.filter((f) => f.label.toLowerCase().includes(q));
   }, [query]);
 
-  /** Float to the left of the trigger (Figma-style), clamped to the viewport. */
   const updateMenuBox = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -59,7 +58,6 @@ export default function FontPicker({
     const width = MENU_WIDTH;
     const spaceLeft = rect.left - MENU_GAP - MENU_EDGE;
     const spaceRight = window.innerWidth - rect.right - MENU_GAP - MENU_EDGE;
-    // Prefer left (reference); fall back to right if left is too tight.
     const openLeft = spaceLeft >= width || spaceLeft >= spaceRight;
     const left = openLeft
       ? Math.max(MENU_EDGE, rect.left - width - MENU_GAP)
@@ -69,7 +67,6 @@ export default function FontPicker({
       MENU_MAX_H,
       Math.max(180, window.innerHeight - MENU_EDGE * 2),
     );
-    // Align top with trigger; if it would overflow bottom, shift up.
     let top = Math.max(MENU_EDGE, rect.top);
     if (top + maxHeight > window.innerHeight - MENU_EDGE) {
       top = Math.max(MENU_EDGE, window.innerHeight - MENU_EDGE - maxHeight);

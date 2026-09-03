@@ -11,13 +11,10 @@ export interface PdfImageSource {
 
 const LOCAL_IMAGE_TOKEN_PREFIX = 'antares-local-image:';
 
-/** Espejo del allowlist de extensiones en electron/dialog-handlers.js (_localImageEntries). */
 const STAGEABLE_IMAGE_EXTENSIONS = new Set([
   '.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif', '.tif', '.tiff', '.ico',
 ]);
 
-/** Limita las subidas escenificadas concurrentes: un consolidado grande no debe
- *  mantener todas las fotos en memoria a la vez. */
 const STAGE_CONCURRENCY = 4;
 export const MAX_PDF_STAGE_QUEUE = 32;
 const PDF_STAGE_CAPACITY_ERROR = 'PDF image staging queue capacity exhausted';
@@ -43,8 +40,6 @@ function runStagedLimited<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 function stageFileForPdf(file: File): Promise<string | null> {
-  // Read capabilities are revoked after each IPC operation. Do not cache a
-  // token by File identity or a later export would reuse a dead capability.
   const dot = file.name.lastIndexOf('.');
   const ext = dot >= 0 ? file.name.slice(dot).toLowerCase() : '';
   if (!STAGEABLE_IMAGE_EXTENSIONS.has(ext)) return Promise.resolve(null);
@@ -71,7 +66,6 @@ export function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-/** Persist blob:/http(s) URLs to data: for PDF export (cross-context safe). */
 export async function toPersistentUrl(url: string | null): Promise<string | null> {
   if (!url) return null;
   if (url.startsWith('data:')) return url;
@@ -98,7 +92,6 @@ export async function fileToBase64(file: File): Promise<string> {
 }
 
 export function getElectronFilePath(file: File): string | null {
-  // Electron 32+ removed File.path — preload exposes webUtils.getPathForFile.
   try {
     const fromApi = window.electronAPI?.getPathForFile?.(file);
     if (typeof fromApi === 'string' && fromApi.trim()) return fromApi.trim();
@@ -118,16 +111,12 @@ export async function fileToPdfImageSource(
   key: string,
   localImagePaths: Record<string, string>,
 ): Promise<string> {
-  // Always stage local files before handing them to native PDF rendering.
-  // Raw paths are deliberately not registered or sent over IPC.
   const staged = await stageFileForPdf(file);
   if (staged) {
     const token = buildLocalImageToken(key);
     localImagePaths[token] = staged;
     return token;
   }
-  // Sin Electron (tests / navegador) o sin staging: comprimir en vez de mandar
-  // la foto a resolución completa por IPC.
   return imageToPdfDataUrl(file, 'high');
 }
 
@@ -186,11 +175,6 @@ export async function imageToPdfDataUrl(file: File, quality: PdfQuality): Promis
   }
 }
 
-/**
- * Escenifica una versión apta para PDF del archivo. 'high'/'low' se comprimen
- * a JPEG por canvas (mismo criterio que el fallback data-URL de hoy); 'max'
- * escenifica el archivo original. Devuelve un capability token o null.
- */
 async function stageImageForPdf(file: File, quality: PdfQuality): Promise<string | null> {
   if (quality === 'max') return stageFileForPdf(file);
   try {
@@ -203,7 +187,6 @@ async function stageImageForPdf(file: File, quality: PdfQuality): Promise<string
     const jpeg = new File([blob], `${base}.jpg`, { type: 'image/jpeg' });
     return await stageFileForPdf(jpeg);
   } catch {
-    // Fallback to legacy canvas compression for jsdom/test where worker unavailable
     try {
       const dataUrl = await imageToPdfDataUrl(file, quality);
       const comma = dataUrl.indexOf(',');
@@ -222,10 +205,6 @@ export async function imageToPdfSource(
   quality: PdfQuality,
   key: string,
 ): Promise<PdfImageSource> {
-  // Main no acepta rutas registradas. Se escenifica el archivo, o su versión
-  // comprimida según la calidad, y el HTML referencia el capability
-  // token: el HTML no crece con la cantidad de imágenes (consolidados de
-  // cientos de fotos reventaban el límite de 150 MB de html_to_pdf).
   const staged = await stageImageForPdf(file, quality);
   if (staged) {
     const token = buildLocalImageToken(key);
@@ -233,23 +212,12 @@ export async function imageToPdfSource(
   }
 
   if (quality === 'max' || quality === 'high') {
-    // Never fall back to a raw local path. A data URL is safe even when the
-    // renderer is running outside Electron or staging is unavailable.
     return { src: await imageToPdfDataUrl(file, quality === 'max' ? 'high' : quality) };
   }
 
   return { src: await imageToPdfDataUrl(file, quality) };
 }
 
-/**
- * Logo source for canvas RGB PDF export. When the logo came from a local File
- * and its path is allowlisted, return an `antares-local-image:` token that
- * Electron expands to a file:// URL — the logo is referenced ONCE instead of
- * being base64-duplicated on every page (O(pages × logo size) → O(pages)).
- * Any other case falls back to the durable data: URL (same contract as the
- * previous always-base64 behavior). CMYK keeps base64: the backend renderer
- * does not resolve local image tokens.
- */
 export async function logoToPdfSource(
   url: string | null,
   file: File | null,

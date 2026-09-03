@@ -8,7 +8,6 @@ export function filterTareas(
   columns: BoardColumn[] = [],
 ): Tarea[] {
   return tareas.filter((t) => {
-    // Hide done/closed columns unless the user opts in (works with custom is_done keys).
     if (!filters.showClosed && columnIsDone(columns, t.status)) return false;
     if (filters.status !== 'all' && t.status !== filters.status) return false;
     if (filters.assigneeId !== 'all' && t.assignee_id !== filters.assigneeId) return false;

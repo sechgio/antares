@@ -7,7 +7,6 @@ interface SyncStatusBadgeProps {
 }
 
 export default memo(function SyncStatusBadge({ status }: SyncStatusBadgeProps) {
-  // Idle = never synced / offline skip — hide so we don't imply "Sincronizado".
   if (status === 'idle') return null;
 
   const isSyncing = status === 'syncing';
@@ -61,5 +60,4 @@ export default memo(function SyncStatusBadge({ status }: SyncStatusBadgeProps) {
     </WithHoverTooltip>
   );
 });
-
 

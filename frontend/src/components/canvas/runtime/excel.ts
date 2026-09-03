@@ -1,4 +1,3 @@
-/** Excel/CSV parsing for Canvas generate mode (module-local, no Generador imports). */
 
 import { stageFileForIpc } from '../../../utils/stageFile';
 
@@ -24,20 +23,12 @@ export async function parseSpreadsheetFile(file: File): Promise<{ headers: strin
   return { headers: header, rows };
 }
 
-
-/**
- * Nombres de archivo que pueden referirse a un registro: el base sin extensión
- * y, si termina en `-N`/`_N`, su forma sin ese sufijo numerado. Es la misma
- * regla que `matchesRecordId` y `buildImagesByRecordId` comparten para que el
- * match por escaneo y el match por índice nunca divergan.
- */
 export function imageNameCandidates(filename: string): string[] {
   const base = filename.replace(/\.[^.]+$/, '');
   const numbered = base.match(/^(.*)[-_]\d+$/);
   return numbered ? [base, numbered[1]] : [base];
 }
 
-/** Match image filenames like `{recordId}-1.jpg` or `{recordId}_2.png`. */
 export function matchesRecordId(filename: string, recordId: string): boolean {
   const id = normalizeRecordId(recordId);
   if (!id) return false;
@@ -52,7 +43,6 @@ export function normalizeRecordId(recordId: string): string {
   return String(recordId).trim().toLocaleLowerCase();
 }
 
-/** Build the image lookup once so previews and bulk export avoid rescanning every file per row. */
 export function buildImagesByRecordId(
   rows: Record<string, string>[],
   idColumn: string,

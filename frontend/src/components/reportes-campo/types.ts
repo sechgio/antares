@@ -59,10 +59,6 @@ export interface CampoPanelListItem {
     pageCount: number;
 }
 
-// ─── Persistencia (IndexedDB) ──────────────────────────────────────────────
-// Las fotos se guardan como Blob nativo (File extiende Blob); al cargar se
-// reconstruye el File y se regenera el previewUrl con URL.createObjectURL.
-
 export interface StoredPhoto {
     id: string;
     name: string;
@@ -80,7 +76,6 @@ export interface StoredPanel {
     photos: StoredPhoto[];
 }
 
-/** Logos de sesión por plantilla (compartidos entre paneles del mismo tipo). */
 export interface StoredBranding {
     reportType: ReportType;
     logoLeft: StoredPhoto | null;

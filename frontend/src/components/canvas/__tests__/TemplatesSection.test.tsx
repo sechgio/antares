@@ -72,12 +72,10 @@ describe('TemplatesSection rename', () => {
     fireEvent.change(input, { target: { value: 'Mi panel' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
-    // Label persisted to localStorage
     expect(JSON.parse(localStorage.getItem('antares.canvas.presetLabels')!)).toEqual({
       report: 'Mi panel',
     });
 
-    // After commit, the renamed label is shown
     expect(await screen.findByText('Mi panel')).toBeTruthy();
   });
 

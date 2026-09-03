@@ -1,4 +1,3 @@
-"""Tests for the plugin system."""
 
 from __future__ import annotations
 
@@ -10,7 +9,6 @@ from backend.core.plugins import load_plugins_from_dir
 
 
 def _write_allowlisted_plugin(plugins_dir, filename: str, source: str) -> None:
-    """Write a plugin and record its SHA-256 in allowlist.json."""
     (plugins_dir / filename).write_text(source, encoding="utf-8")
     allow_path = plugins_dir / "allowlist.json"
     allow: dict[str, str] = {}
@@ -22,7 +20,6 @@ def _write_allowlisted_plugin(plugins_dir, filename: str, source: str) -> None:
 
 class TestPluginLoader:
     def test_loads_plugin_and_adds_format(self, tmp_path, monkeypatch) -> None:
-        # Reset registry for test isolation
         registry = format_registry.FormatRegistry()
         monkeypatch.setattr(format_registry, "_registry", registry)
 
@@ -59,7 +56,6 @@ class TestPluginLoader:
             "x = 1\n",
         )
         load_plugins_from_dir(plugins_dir)
-        # Should not crash
         assert registry.list_formats() == []
 
     def test_gracefully_handles_broken_plugin(self, tmp_path, monkeypatch) -> None:
@@ -72,7 +68,6 @@ class TestPluginLoader:
             'raise ValueError("boom")\n',
         )
         load_plugins_from_dir(plugins_dir)
-        # Should not crash
         assert registry.list_formats() == []
 
     def test_blocks_import_os(self, tmp_path, monkeypatch) -> None:

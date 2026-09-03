@@ -6,10 +6,6 @@ import { getActivePageLayers } from '../ops/pages';
 import { parseTableData } from '../ops/tableData';
 import LayerNode from './LayerNode';
 
-/**
- * Apply runtime fill so LayerNode shows the same content as HTML export.
- * Photo captions (imageMeta) stay PDF-only via renderHtml — not ported to screen.
- */
 export function documentWithFill(doc: CanvasDocument, ctx: FillContext): CanvasDocument {
   return {
     ...doc,
@@ -26,7 +22,6 @@ export function documentWithFill(doc: CanvasDocument, ctx: FillContext): CanvasD
       if (layer.type === 'logo') {
         const src = layer.meta?.side === 'right' ? ctx.logoRight : ctx.logoLeft;
         if (!src) return layer;
-        // Match PDF export: drop placeholder fill/border behind filled logos.
         return {
           ...layer,
           type: 'image' as const,
@@ -82,16 +77,10 @@ function noopPointerDown(_id: string, _additive: boolean, _e: ReactPointerEvent<
 
 interface PageLayerPreviewProps {
   document: CanvasDocument;
-  /** Which design page to show (matches Diseño). Defaults to 0. */
   pageIndex?: number;
-  /** Layer paint/layout scale — 1 matches Design artboard at 100%. */
   scale?: number;
 }
 
-/**
- * Read-only A4 page using the same LayerNode renderer as Design mode.
- * Guarantees screen preview matches the artboard (fonts, spacing, chrome).
- */
 export default function PageLayerPreview({
   document,
   pageIndex = 0,
@@ -116,7 +105,6 @@ export default function PageLayerPreview({
         background: '#ffffff',
         overflow: 'hidden',
         boxShadow: '0 0 0 1px rgba(0,0,0,0.08), 0 12px 40px rgba(0,0,0,0.14)',
-        // Match Design artboard: no UI chrome letter-spacing bleed.
         fontFamily: 'var(--cv-font, "Segoe UI", "Helvetica Neue", Arial, sans-serif)',
         letterSpacing: 'normal',
       }}

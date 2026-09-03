@@ -1,6 +1,3 @@
-/**
- * Cold-start: ipc-router must not load ubicaciones-handlers until first use.
- */
 const fs = require('fs');
 const path = require('path');
 
@@ -72,7 +69,6 @@ function stubElectronAndDeps() {
   };
 }
 
-// Write roots the stub dialog-handlers acknowledges (mutable per assertion).
 const allowedWriteRoots = new Set();
 
 function run() {
@@ -107,7 +103,6 @@ function run() {
     'requiring ipc-router does not populate ubicaciones-handlers in require.cache',
   );
 
-  // First explicit require (simulates first IPC) loads the module.
   require(ubicacionesPath);
   assert(!!require.cache[ubicacionesPath], 'ubicaciones-handlers loads on demand');
 
@@ -119,12 +114,6 @@ function run() {
   if (failed > 0) process.exit(1);
 }
 
-/**
- * Smoke tests for the Ubicaciones IPC contract (frontend payload shape from
- * frontend/src/api.ts: previewUbicacion / generarUbicaciones):
- *  - excelPath must be a staged read token, never a raw absolute path
- *  - outputDir must be a write token or a path under an allowed write root
- */
 function runRouterSmokeTests() {
   console.log('\nSmoke: Ubicaciones payload contract through the IPC router...\n');
   const os = require('os');
@@ -139,7 +128,6 @@ function runRouterSmokeTests() {
   } = require('../electron/ipc-router');
   const { createFileCapability, revokeCapability } = require('../electron/file-capabilities');
 
-  // 1) Raw absolute excelPath (old frontend behavior) → rejected
   try {
     _maybeResolveFileTokens({ excelPath: excelFile, formato: 'vertical' }, null);
     assert(false, 'raw absolute excelPath must be rejected');
@@ -147,7 +135,6 @@ function runRouterSmokeTests() {
     assert(/raw absolute paths not allowed/.test(e.message), `raw excelPath rejected: ${e.message}`);
   }
 
-  // 2) Staged read token in excelPath → resolved to the real path
   const readCap = createFileCapability({ filePath: excelFile, mode: 'read', webContentsId: null });
   try {
     const resolved = _maybeResolveFileTokens({ excelPath: readCap.token, formato: 'vertical' }, null);
@@ -158,7 +145,6 @@ function runRouterSmokeTests() {
     revokeCapability(readCap.token);
   }
 
-  // 3) Arbitrary outputDir (not chosen via dialog) → rejected
   const arbitrary = path.join(tmp, 'no-registrado');
   try {
     _validateAndResolveWriteParams({ excelPath: null, outputDir: arbitrary, consolidado: false }, null);
@@ -167,7 +153,6 @@ function runRouterSmokeTests() {
     assert(/no está permitida/.test(e.message), `arbitrary outputDir rejected: ${e.message}`);
   }
 
-  // 4) outputDir under a dialog-registered write root → accepted as-is
   allowedWriteRoots.add(tmp);
   try {
     const out = path.join(tmp, 'salida');
@@ -180,7 +165,6 @@ function runRouterSmokeTests() {
     allowedWriteRoots.delete(tmp);
   }
 
-  // 5) outputDir as a write token → rewritten to the capability path
   const writeCap = createFileCapability({ filePath: tmp, mode: 'write', webContentsId: null });
   try {
     const params = _validateAndResolveWriteParams({ excelPath: null, outputDir: writeCap.token, consolidado: false }, null);
@@ -192,7 +176,6 @@ function runRouterSmokeTests() {
     revokeCapability(writeCap.token);
   }
 
-  // 6) Non-path payloads are untouched (manual-data mode)
   try {
     const manual = { excelPath: null, outputDir: undefined, manualData: { lat: -12.0, lon: -77.0 } };
     const out1 = _maybeResolveFileTokens({ ...manual }, null);

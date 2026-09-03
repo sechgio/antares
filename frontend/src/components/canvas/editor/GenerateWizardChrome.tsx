@@ -29,7 +29,6 @@ export function GenerateStep({
   const wasDisabled = useRef(!!disabled);
   const done = status === 'done';
 
-  // When a step unlocks (e.g. Excel loaded → Mapeo), open it so content is visible.
   useEffect(() => {
     if (wasDisabled.current && !disabled) setIsOpen(true);
     wasDisabled.current = !!disabled;
@@ -96,11 +95,6 @@ export function GenerateStep({
   );
 }
 
-/**
- * Thin wrapper around `CanvasSegmented` (compact `sm` size) for the Generate
- * wizard. Kept as a named export so existing imports keep working; new code
- * should use `CanvasSegmented` directly with `size="sm"`.
- */
 export function GenerateSegmented<T extends string>({
   value,
   onChange,

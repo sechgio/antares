@@ -97,7 +97,6 @@ describe('selectGenerateRowIndices', () => {
   });
 });
 
-
 describe('GeneratePanel wizard', () => {
   beforeEach(() => {
     canvasList.mockReset();
@@ -309,7 +308,6 @@ describe('GeneratePanel wizard', () => {
       expect(screen.getByLabelText(`Mapeo ${key}`)).toBeTruthy();
     }
 
-    // Open ID column dropdown — every Excel header must be reachable via portal
     const idSelect = screen.getByLabelText('Columna ID (Clave)');
     const idTrigger = idSelect.parentElement?.querySelector('button[aria-expanded]') as HTMLButtonElement;
     fireEvent.click(idTrigger);

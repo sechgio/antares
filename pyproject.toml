@@ -7,9 +7,9 @@ build-backend = "setuptools.build_meta"
 include = ["backend*"]
 
 [project]
-name = "hidro-convert-backend"
+name = "Antares"
 version = "0.11.10"
-description = "Backend for Antares - Image conversion and renaming"
+description = "Backend for Antares"
 authors = [
     {name = "Antares", email = "dev@antares.app"},
 ]

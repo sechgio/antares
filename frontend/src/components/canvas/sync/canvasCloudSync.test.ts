@@ -11,22 +11,6 @@ import {
   withTimeout,
 } from './canvasCloudSync';
 
-// ---------------------------------------------------------------------------
-// Mock infrastructure
-// ---------------------------------------------------------------------------
-
-/**
- * Supabase mock: `from()` returns a chainable object whose every method
- * (`.select`, `.eq`, `.in`, `.is`, `.maybeSingle`, `.update`, `.insert`,
- * `.upsert`) returns `this` for chaining.  The object is also *thenable*:
- * when `await`-ed it resolves to the next response from the FIFO queue.
- *
- * This satisfies all chains used in canvasCloudSync.ts:
- *   listRemoteCanvasMeta:    from().select(...)              -> terminal
- *   fetchRemoteDocuments:    from().select().in().is()       -> terminal
- *   pushCanvasDocument:      from().upsert()                 -> terminal
- *   markRemoteCanvasDeleted: from().update().eq()            -> terminal
- */
 const supabaseMock = vi.hoisted(() => {
   const responses: Array<
     { data: unknown; error: unknown } | Promise<{ data: unknown; error: unknown }>
@@ -38,7 +22,6 @@ const supabaseMock = vi.hoisted(() => {
     chainable[m] = vi.fn(() => chainable);
   }
 
-  // Thenable: when awaited, resolves to the next queued response.
   chainable.then = (
     onFulfilled: ((v: unknown) => unknown) | undefined,
     onRejected?: ((e: unknown) => unknown) | undefined,
@@ -79,10 +62,6 @@ vi.mock('./canvasRealtime', () => realtimeMock);
 
 import { api } from '../../../api';
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function makeDoc(overrides: Partial<CanvasDocument> = {}): CanvasDocument {
   return {
     version: 2,
@@ -96,12 +75,10 @@ function makeDoc(overrides: Partial<CanvasDocument> = {}): CanvasDocument {
   };
 }
 
-/** Enqueue a supabase chain response (consumed in FIFO order by `await`). */
 function enqueue(data: unknown, error: unknown = null): void {
   supabaseMock.responses.push({ data, error });
 }
 
-/** Enqueue a response that stays pending until the returned release() is called. */
 function enqueueDeferred(): (data?: unknown, error?: unknown) => void {
   let release!: (v: { data: unknown; error: unknown }) => void;
   const pending = new Promise<{ data: unknown; error: unknown }>((resolve) => {
@@ -134,10 +111,6 @@ function resetMocks(): void {
     (supabaseMock.chainable[m] as ReturnType<typeof vi.fn>).mockClear();
   }
 }
-
-// ---------------------------------------------------------------------------
-// withTimeout / isNewer / shouldPushCanvasRow (canonical unit cases)
-// ---------------------------------------------------------------------------
 
 describe('withTimeout', () => {
   afterEach(() => {
@@ -205,14 +178,8 @@ describe('shouldPushCanvasRow', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// syncCanvasDocuments characterization tests
-// ---------------------------------------------------------------------------
-
 describe('syncCanvasDocuments', () => {
   beforeEach(resetMocks);
-
-  // --- Step 2: remote-newer triggers pull and reloadOpenId ---
 
   it('pulls remote doc when remote is newer and sets reloadOpenId', async () => {
     const localDoc = { id: 'doc-1', name: 'Old', updatedAt: '2026-07-01T00:00:00Z' };
@@ -227,9 +194,7 @@ describe('syncCanvasDocuments', () => {
     vi.mocked(api.canvasList).mockResolvedValue({ documents: [localDoc] });
     vi.mocked(api.canvasSave).mockResolvedValue({ document: pulledDoc });
 
-    // Response 1: listRemoteCanvasMeta
     enqueue([remoteMeta]);
-    // Response 2: fetchRemoteDocuments
     enqueue([{ document: pulledDoc, updated_at: '2026-07-22T12:00:00Z' }]);
 
     const result = await syncCanvasDocuments({
@@ -249,8 +214,6 @@ describe('syncCanvasDocuments', () => {
     );
   });
 
-  // --- Step 3a: openDirty prevents pull ---
-
   it('does not pull when openDirty is true (open doc is dirty)', async () => {
     const localDoc = { id: 'doc-1', name: 'Old', updatedAt: '2026-07-01T00:00:00Z' };
     const remoteMeta = {
@@ -265,7 +228,6 @@ describe('syncCanvasDocuments', () => {
     vi.mocked(api.canvasList).mockResolvedValue({ documents: [localDoc] });
     vi.mocked(api.canvasGet).mockResolvedValue({ document: localFull });
 
-    // listRemote + fetchRemoteDocuments for conflict payload
     enqueue([remoteMeta]);
     enqueue([{ document: remoteDoc, updated_at: '2026-07-22T12:00:00Z' }]);
 
@@ -314,8 +276,6 @@ describe('syncCanvasDocuments', () => {
     expect(result.conflict!.localDoc.name).toBe('Unsaved memory');
     expect(vi.mocked(api.canvasGet)).not.toHaveBeenCalled();
   });
-
-  // --- Step 3b: open dirty + remote deleted → conflict (not silent skip) ---
 
   it('reports remoteDeleted conflict when open doc is dirty and remote is deleted', async () => {
     const localDoc = { id: 'doc-1', name: 'Old', updatedAt: '2026-07-01T00:00:00Z' };
@@ -379,8 +339,6 @@ describe('syncCanvasDocuments', () => {
     expect(result.conflict!.localDoc.name).toBe('Old');
   });
 
-  // --- Step 4: remote-deleted removes local doc ---
-
   it('deletes local doc when remote is deleted and it is not the open doc', async () => {
     const localDoc = { id: 'doc-1', name: 'Old', updatedAt: '2026-07-01T00:00:00Z' };
     const remoteMeta = {
@@ -401,8 +359,6 @@ describe('syncCanvasDocuments', () => {
     expect(vi.mocked(api.canvasDelete)).toHaveBeenCalledWith('doc-1');
   });
 
-  // --- Step 5: local-newer triggers push ---
-
   it('pushes local doc when local is newer than remote', async () => {
     const localDoc = { id: 'doc-1', name: 'New', updatedAt: '2026-07-22T13:00:00Z' };
     const remoteMeta = {
@@ -417,11 +373,8 @@ describe('syncCanvasDocuments', () => {
       document: makeDoc({ id: 'doc-1', name: 'New', updatedAt: '2026-07-22T13:00:00Z' }),
     });
 
-    // Response 1: listRemoteCanvasMeta
     enqueue([remoteMeta]);
-    // Response 2: pushCanvasDocument LWW select
     enqueue({ updated_at: '2026-07-22T12:00:00Z', deleted_at: null });
-    // Response 3: pushCanvasDocument upsert
     enqueue(null);
 
     const result = await syncCanvasDocuments({});
@@ -436,8 +389,6 @@ describe('syncCanvasDocuments', () => {
       updatedBy: 'user-1',
     });
   });
-
-  // --- Step 6: equal timestamps do not push ---
 
   it('does not push when local and remote have equal timestamps', async () => {
     const localDoc = { id: 'doc-1', name: 'Same', updatedAt: '2026-07-22T12:00:00Z' };
@@ -506,11 +457,6 @@ describe('syncCanvasDocuments', () => {
     expect(vi.mocked(api.canvasGet)).not.toHaveBeenCalled();
   });
 
-  // --- Regression: do not resurrect remotely-deleted docs on push ---
-  // Uses openDirty:true so the pull phase reports a conflict instead of deleting
-  // the local doc — the doc stays in localById and the push loop skips it via
-  // `if (r?.deleted_at) continue;` unless forceResurrect is used explicitly.
-
   it('does not push when remote is deleted and open doc is dirty (conflict instead)', async () => {
     const localDoc = { id: 'doc-1', name: 'Edited', updatedAt: '2026-07-22T13:00:00Z' };
     const localFull = makeDoc({ id: 'doc-1', name: 'Edited', updatedAt: '2026-07-22T13:00:00Z' });
@@ -537,8 +483,6 @@ describe('syncCanvasDocuments', () => {
     expect(result.conflict?.remoteDeleted).toBe(true);
   });
 
-  // --- Push error surfacing (plan 004) ---
-
   it('surfaces push errors in SyncResult when pushCanvasDocument throws', async () => {
     const localDoc = { id: 'doc-1', name: 'New', updatedAt: '2026-07-22T13:00:00Z' };
     const remoteMeta = {
@@ -553,11 +497,8 @@ describe('syncCanvasDocuments', () => {
       document: makeDoc({ id: 'doc-1', name: 'New', updatedAt: '2026-07-22T13:00:00Z' }),
     });
 
-    // Response 1: listRemoteCanvasMeta
     enqueue([remoteMeta]);
-    // Response 2: pushCanvasDocument LWW select
     enqueue({ updated_at: '2026-07-22T12:00:00Z', deleted_at: null });
-    // Response 3: pushCanvasDocument upsert — RLS denial
     enqueue(null, { message: 'RLS denied' });
 
     const result = await syncCanvasDocuments({});
@@ -577,11 +518,10 @@ describe('syncCanvasDocuments', () => {
       .mockResolvedValue({ data: { session: { user: { id: 'user-1' } } } });
 
     vi.mocked(api.canvasList).mockResolvedValue({ documents: [] });
-    enqueue([]); // first sync listRemote
-    enqueue([]); // retry listRemote
+    enqueue([]);
+    enqueue([]);
 
     const first = syncCanvasDocuments({ openDocumentId: 'doc-a', openDirty: false });
-    // Let the first call take the mutex (await sessionUserId).
     await Promise.resolve();
     await Promise.resolve();
 
@@ -651,15 +591,14 @@ describe('syncCanvasDocuments', () => {
     const remoteDoc = makeDoc({ id: 'doc-1', name: 'New', updatedAt: '2026-07-22T12:00:00Z' });
     const localFull = makeDoc({ id: 'doc-1', name: 'Old', updatedAt: '2026-07-01T00:00:00Z' });
 
-    // First sync: empty local so it does not push (would steal supabase responses).
     vi.mocked(api.canvasList)
       .mockResolvedValueOnce({ documents: [] })
       .mockResolvedValue({ documents: [localDoc] });
     vi.mocked(api.canvasGet).mockResolvedValue({ document: localFull });
 
-    enqueue([]); // first listRemote
-    enqueue([remoteMeta]); // retry listRemote
-    enqueue([{ document: remoteDoc, updated_at: '2026-07-22T12:00:00Z' }]); // conflict fetch
+    enqueue([]);
+    enqueue([remoteMeta]);
+    enqueue([{ document: remoteDoc, updated_at: '2026-07-22T12:00:00Z' }]);
 
     const followUp = vi.fn();
     const first = syncCanvasDocuments({ openDocumentId: 'other', openDirty: false });
@@ -691,11 +630,8 @@ describe('syncCanvasDocuments', () => {
       followUp,
     });
     expect(result.skipped).toBe(false);
-    // followUp is only for coalesced retries; primary caller applies when !skipped.
     expect(followUp).not.toHaveBeenCalled();
   });
-
-  // --- Guarded (first-boot) sync: never clobber an existing local doc ---
 
   it('guarded: does NOT delete a local doc when remote is soft-deleted', async () => {
     const localDoc = { id: 'doc-1', name: 'Old', updatedAt: '2026-07-01T00:00:00Z' };
@@ -755,7 +691,6 @@ describe('syncCanvasDocuments', () => {
   });
 
   it('guarded: DOES pull a remote doc that has no local counterpart', async () => {
-    // Local list has only doc-a; remote has doc-remote (not present locally).
     const localDoc = { id: 'doc-a', name: 'A', updatedAt: '2026-07-01T00:00:00Z' };
     const remoteMeta = {
       id: 'doc-remote',
@@ -780,10 +715,6 @@ describe('syncCanvasDocuments', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// opChain serialization (plan 018)
-// ---------------------------------------------------------------------------
-
 describe('opChain push serialization', () => {
   beforeEach(resetMocks);
 
@@ -801,8 +732,8 @@ describe('opChain push serialization', () => {
       events.push('list');
       return { documents: [] };
     });
-    enqueue([]); // sync A remote list
-    enqueue([]); // retry remote list
+    enqueue([]);
+    enqueue([]);
 
     const upsert = supabaseMock.chainable.upsert as ReturnType<typeof vi.fn>;
     upsert.mockImplementation(() => {
@@ -814,8 +745,8 @@ describe('opChain push serialization', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    enqueue(null); // push LWW select
-    enqueue(null); // push upsert
+    enqueue(null);
+    enqueue(null);
     queueCanvasCloudPush(makeDoc({ id: 'doc-push' }));
 
     const skipped = await syncCanvasDocuments({ openDocumentId: 'doc-b', openDirty: true });
@@ -838,9 +769,9 @@ describe('opChain push serialization', () => {
   it('serializes two queued pushes (second waits for first)', async () => {
     const events: string[] = [];
     const releaseSelect1 = enqueueDeferred();
-    enqueue(null); // upsert 1
-    enqueue(null); // select 2
-    enqueue(null); // upsert 2
+    enqueue(null);
+    enqueue(null);
+    enqueue(null);
 
     const upsert = supabaseMock.chainable.upsert as ReturnType<typeof vi.fn>;
     upsert.mockImplementation(() => {
@@ -862,8 +793,8 @@ describe('opChain push serialization', () => {
   });
 
   it('coalesces five pushes of the same id into one upsert (last-write-wins)', async () => {
-    enqueue(null); // LWW select
-    enqueue(null); // upsert
+    enqueue(null);
+    enqueue(null);
 
     const upsert = supabaseMock.chainable.upsert as ReturnType<typeof vi.fn>;
     const names: string[] = [];
@@ -899,8 +830,8 @@ describe('opChain push serialization', () => {
   it('serializes delete behind a pending push', async () => {
     const events: string[] = [];
     const releaseSelect = enqueueDeferred();
-    enqueue(null); // push upsert
-    enqueue(null); // delete update
+    enqueue(null);
+    enqueue(null);
 
     const upsert = supabaseMock.chainable.upsert as ReturnType<typeof vi.fn>;
     upsert.mockImplementation(() => {
@@ -925,8 +856,8 @@ describe('opChain push serialization', () => {
   });
 
   it('publishes only an accepted queued push', async () => {
-    enqueue(null); // LWW select
-    enqueue(null); // upsert
+    enqueue(null);
+    enqueue(null);
 
     await queueCanvasCloudPush(makeDoc({
       id: 'doc-queued',
@@ -943,7 +874,7 @@ describe('opChain push serialization', () => {
 
   it('does not publish a queued push rejected by LWW', async () => {
     enqueue({ updated_at: '2026-07-22T13:00:00Z', deleted_at: null });
-    enqueue(null); // preserved version
+    enqueue(null);
 
     await queueCanvasCloudPush(makeDoc({
       id: 'doc-rejected',
@@ -953,10 +884,6 @@ describe('opChain push serialization', () => {
     expect(realtimeMock.broadcastCanvasDocumentSaved).not.toHaveBeenCalled();
   });
 });
-
-// ---------------------------------------------------------------------------
-// pushCanvasDocument upsert verification (plan 005)
-// ---------------------------------------------------------------------------
 
 describe('pushCanvasDocument', () => {
   beforeEach(resetMocks);
@@ -968,9 +895,7 @@ describe('pushCanvasDocument', () => {
       updatedAt: '2026-07-22T12:00:00Z',
     });
 
-    // Response 1: LWW select (no remote row)
     enqueue(null);
-    // Response 2: upsert
     enqueue(null);
 
     const ok = await pushCanvasDocument(doc);
@@ -1005,9 +930,7 @@ describe('pushCanvasDocument', () => {
 
   it('preserves existing created_by on update instead of overwriting with the current user', async () => {
     const doc = makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T13:00:00Z' });
-    // Response 1: LWW select — existing row created by another user.
     enqueue({ updated_at: '2026-07-22T12:00:00Z', deleted_at: null, created_by: 'user-original' });
-    // Response 2: upsert
     enqueue(null);
 
     const ok = await pushCanvasDocument(doc);
@@ -1015,16 +938,13 @@ describe('pushCanvasDocument', () => {
     expect(ok).toBe(true);
     const upsert = supabaseMock.chainable.upsert as ReturnType<typeof vi.fn>;
     const [row] = upsert.mock.calls[0];
-    // created_by must stay the original creator, not the current session user.
     expect(row.created_by).toBe('user-original');
     expect(row.updated_by).toBe('user-1');
   });
 
   it('sets created_by to the current user when the row is new', async () => {
     const doc = makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T13:00:00Z' });
-    // Response 1: LWW select — no existing row.
     enqueue(null);
-    // Response 2: upsert
     enqueue(null);
 
     const ok = await pushCanvasDocument(doc);
@@ -1072,9 +992,7 @@ describe('pushCanvasDocument', () => {
 
   it('preserves local version on skip when remote is newer', async () => {
     const doc = makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T10:00:00Z' });
-    // Response 1: select existing — remote is newer
     enqueue({ updated_at: '2026-07-22T12:00:00Z', deleted_at: null, created_by: 'user-other' });
-    // Response 2: insert into canvas_document_versions
     enqueue(null);
 
     const ok = await pushCanvasDocument(doc);

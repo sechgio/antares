@@ -1,4 +1,3 @@
-"""Tests for IPC handlers."""
 
 from backend import handlers
 from backend.handlers import conversion
@@ -20,7 +19,6 @@ class TestProcessStart:
 
 
 class TestEmitHeartbeat:
-    """Heartbeat notifications keep Electron job-activity grace alive (plan 002)."""
 
     def test_emit_heartbeat_legacy_default_job(self, monkeypatch) -> None:
         calls: list[tuple[str, dict]] = []
@@ -36,7 +34,6 @@ class TestEmitHeartbeat:
             ("job.default.heartbeat", {"running": True, "job_id": "default"}),
             ("process.heartbeat", {"running": True, "job_id": "default"}),
         ]
-        # No fake progress fields
         for _method, params in calls:
             assert "progress" not in params
             assert "ok_count" not in params
@@ -56,7 +53,6 @@ class TestEmitHeartbeat:
         ]
 
     def test_run_conversion_emits_immediate_heartbeat_before_work(self, monkeypatch, tmp_path) -> None:
-        """First heartbeat must land at T≈0 so Electron grace covers post-start."""
         from backend.core.jobs import Job
 
         calls: list[str] = []
@@ -79,7 +75,6 @@ class TestEmitHeartbeat:
 
         assert "job.default.heartbeat" in calls
         assert "process.heartbeat" in calls
-        # Immediate emit is the first notification, before complete.
         assert calls.index("job.default.heartbeat") < calls.index("process.complete") or (
             "process.complete" not in calls and calls[0] == "job.default.heartbeat"
         )

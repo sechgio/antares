@@ -1,5 +1,3 @@
-/** User-renamed canvas preset labels (session UI pref, not document state).
- * Mirrors the panelChrome.ts LS pattern: best-effort, silent on quota/private mode. */
 
 const STORAGE_KEY = 'antares.canvas.presetLabels';
 

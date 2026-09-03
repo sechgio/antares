@@ -1,8 +1,4 @@
-/**
- * Utilidades para el Generador de Reportes
- */
 
-// Basename match (optional `[-_]\d+` suffix); keep in sync with canvas/runtime/excel.ts
 import { matchesRecordId as matchesRecordIdCanvas } from '../canvas/runtime/excel';
 
 export function formatDateValue(value: string | number | undefined): string {
@@ -10,7 +6,6 @@ export function formatDateValue(value: string | number | undefined): string {
   const text = String(value).trim();
   if (!text) return '-';
 
-  // Patrones comunes de fecha
   const datePatterns = [
     /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/, // DD/MM/YYYY
     /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/, // YYYY/MM/DD
@@ -29,7 +24,6 @@ export function formatDateValue(value: string | number | undefined): string {
 }
 
 export function excelSerialToDate(serial: number): string {
-  // Excel serial date base: 30 Dec 1899
   const epoch = new Date(1899, 11, 30);
   const days = Math.floor(serial);
   const msPerDay = 24 * 60 * 60 * 1000;

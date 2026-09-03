@@ -1,4 +1,3 @@
-/** Parse Canvas table layer `meta.rowsData` JSON. */
 
 export function parseTableData(
   raw: string | undefined,

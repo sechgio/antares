@@ -1,4 +1,3 @@
-"""Tests for Canvas document store and schema."""
 
 from __future__ import annotations
 
@@ -198,7 +197,6 @@ def test_normalize_rejects_unknown_layer_types() -> None:
 
 
 def test_normalize_preserves_editor_settings_and_guides() -> None:
-    """Saving must keep showRulers/snap/guides — otherwise rulers reappear after Guardar."""
     raw = create_empty_document()
     raw["settings"] = {
         "imagesPerPage": 4,
@@ -529,7 +527,6 @@ def test_path_traversal_rejected(tmp_path: Path) -> None:
 
 
 def test_list_uses_stem_when_body_id_mismatches(tmp_path: Path) -> None:
-    """list → get must work when filename stem ≠ document body id."""
     import json
 
     store = CanvasStore(tmp_path)
@@ -546,43 +543,34 @@ def test_list_uses_stem_when_body_id_mismatches(tmp_path: Path) -> None:
     assert by_stem["id"] == "file-stem"
     assert by_stem["name"] == "Mismatch"
 
-    # Transitional fallback: older clients may still ask by body id.
     by_inner = store.get("inner-id")
     assert by_inner is not None
     assert by_inner["id"] == "file-stem"
 
-    # Save under the repaired id consolidates onto the stem file.
     saved = store.save(by_stem)
     assert saved["id"] == "file-stem"
     assert (tmp_path / "file-stem.json").exists()
 
 
 def test_corrupt_document_is_logged_and_skipped(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-    """A corrupt JSON file is skipped from listings (no crash) and logged."""
     store = CanvasStore(tmp_path)
-    # Write a valid doc first so the directory has one readable file.
     store.create(name="Good")
-    # Drop a corrupt JSON file alongside it.
     (tmp_path / "broken.json").write_text("{not valid json", encoding="utf-8")
 
     with caplog.at_level("WARNING", logger="backend.core.canvas.store"):
         items = store.list_documents()
 
-    # The good doc is listed; the corrupt one is skipped (no exception).
     assert [item["name"] for item in items] == ["Good"]
-    # A warning was emitted naming the corrupt file.
     assert any("broken.json" in record.getMessage() for record in caplog.records)
 
 
 def test_list_large_document_uses_extract_doc_meta(tmp_path: Path) -> None:
-    """Listing a large canvas doc must succeed via light meta extraction (no full normalize)."""
     import json
 
     store = CanvasStore(tmp_path)
     body = create_empty_document(name="Large Doc")
     body["id"] = "inner-large"
     body["updatedAt"] = "2026-08-02T12:00:00.000Z"
-    # Fake dataURL payload pushes file well past the 64 KiB head-parse threshold.
     body["layers"].append(
         {
             "id": "img1",
@@ -603,7 +591,6 @@ def test_list_large_document_uses_extract_doc_meta(tmp_path: Path) -> None:
     assert listed[0]["name"] == "Large Doc"
     assert listed[0]["updatedAt"] == "2026-08-02T12:00:00.000Z"
 
-    # Inner-id index must also be populated from light meta (not full rebuild parse).
     by_inner = store.get("inner-large")
     assert by_inner is not None
     assert by_inner["id"] == "large-stem"
@@ -611,7 +598,6 @@ def test_list_large_document_uses_extract_doc_meta(tmp_path: Path) -> None:
 
 
 def test_corrupt_document_get_returns_none_and_logs(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-    """Reading a specific corrupt file returns None and logs a warning."""
     store = CanvasStore(tmp_path)
     (tmp_path / "broken.json").write_text("{not valid json", encoding="utf-8")
 
@@ -690,7 +676,6 @@ def test_normalize_preserves_layer_meta_path() -> None:
 
 
 def test_normalize_clamps_out_of_range_page_index() -> None:
-    """A layer whose pageIndex exceeds the page count is clamped to the last page."""
     raw = create_empty_document()
     raw["pages"] = [{"id": "p1", "name": "Página 1"}, {"id": "p2", "name": "Página 2"}]
     raw["layers"].append(
@@ -795,7 +780,6 @@ def test_normalize_meta_bool_strings() -> None:
 
 
 def test_duplicate_document_drops_orphan_parent_id() -> None:
-    """A layer whose parentId points to a non-existent layer loses the dangling ref on duplicate."""
     raw = create_empty_document()
     raw["layers"].append(
         {
@@ -894,15 +878,10 @@ def test_canvas_history_ipc_handlers(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
 
 def test_store_index_avoids_full_rescan_on_steady_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """After the initial build, save()/list_documents() must not re-read every doc from disk.
-
-    Regression for the O(docs) per-save/scan that parsed all *.json on each operation.
-    """
     store = CanvasStore(tmp_path)
     for i in range(5):
         store.create(name=f"Doc {i}")
 
-    # Prime the index with one list call.
     store.list_documents()
 
     read_calls = 0
@@ -915,24 +894,19 @@ def test_store_index_avoids_full_rescan_on_steady_state(tmp_path: Path, monkeypa
 
     monkeypatch.setattr(Path, "read_text", counting_read_text)
 
-    # Steady-state operations: save an existing doc, then list.
     first_doc = store.list_documents()[0]
     doc = store.get(first_doc["id"])
     assert doc is not None
     store.save(doc, touch=False)
     store.list_documents()
 
-    # The index should be up to date, so no file re-reads are needed for the
-    # listing (get() still reads its own file, which is expected).
     assert read_calls == 1, f"Expected 1 read (the get), got {read_calls}"
 
-    # Creating a new doc must update the index incrementally without re-reading all.
     read_calls = 0
     store.create(name="New Doc")
     store.list_documents()
     assert read_calls == 0, f"Expected 0 reads (incremental index update), got {read_calls}"
 
-    # Deleting must also update incrementally.
     read_calls = 0
     all_docs = store.list_documents()
     store.delete(all_docs[0]["id"])
@@ -941,14 +915,12 @@ def test_store_index_avoids_full_rescan_on_steady_state(tmp_path: Path, monkeypa
 
 
 def test_store_index_detects_external_file_changes(tmp_path: Path) -> None:
-    """Files written externally (not via save()) must appear on the next list."""
     import json
 
     store = CanvasStore(tmp_path)
     store.create(name="Original")
-    store.list_documents()  # prime the index
+    store.list_documents()
 
-    # External write, bypassing the store API.
     body = create_empty_document(name="External")
     body["id"] = "ext-id"
     (tmp_path / "ext.json").write_text(json.dumps(body), encoding="utf-8")

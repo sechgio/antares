@@ -1,15 +1,6 @@
-/**
- * Coalesce high-frequency gesture updates to one apply per animation frame
- * (Figma-style drag loop). Pointer events can fire several times per display
- * frame; applying each one wastes renders on states nobody ever sees. The
- * latest event wins — intermediate positions are skipped, never queued.
- */
 export interface GestureRaf<E> {
-  /** Keep the newest event and schedule a single frame apply (noop if one is queued). */
   schedule: (ev: E) => void;
-  /** Apply the pending event synchronously (if any) and cancel the queued frame. */
   flush: () => void;
-  /** Drop the pending event without applying it. */
   cancel: () => void;
 }
 

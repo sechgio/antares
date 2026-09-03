@@ -15,9 +15,6 @@ interface TaskCardActionsProps {
 const BTN =
   'flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]/35';
 
-/**
- * Floating action strip on task cards (ClickUp-style): complete, add, edit, more.
- */
 export default function TaskCardActions({
   title,
   isDone,

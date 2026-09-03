@@ -1,4 +1,3 @@
-/* Shared tutorial overlay — uses global theme tokens (works via portal on body) */
 
 .tutorial-backdrop-container {
     position: fixed;

@@ -1,11 +1,3 @@
-"""Tests unitarios de invariantes de los modelos canónicos.
-
-Cubre las invariantes I1..I6 descritas en el diseño y en el docstring de
-:mod:`backend.core.panel_aviso_corte.models`. No usa Hypothesis: se trata
-de casos puntuales con valores fijos.
-
-Validates: Requirements 13.1, 13.4
-"""
 
 from __future__ import annotations
 
@@ -27,8 +19,6 @@ from backend.core.panel_aviso_corte.models import (
     PanelImageRef,
 )
 
-# Helpers
-
 
 def _ref(position: int, *, filename: str | None = None, direccion: str = "Calle X") -> PanelImageRef:
     return PanelImageRef(
@@ -36,9 +26,6 @@ def _ref(position: int, *, filename: str | None = None, direccion: str = "Calle 
         caption=f"IMAGEN N°{position}: {direccion}",
         position=position,
     )
-
-
-# Constantes del módulo
 
 
 class TestModuleConstants:
@@ -53,9 +40,6 @@ class TestModuleConstants:
 
     def test_max_image_bytes_is_15_mib(self) -> None:
         assert MAX_IMAGE_BYTES == 15 * 1024 * 1024
-
-
-# PanelImageRef: caption + position (I3)
 
 
 class TestPanelImageRefCaption:
@@ -76,8 +60,6 @@ class TestPanelImageRefCaption:
             )
 
     def test_caption_with_number_above_4_is_valid(self) -> None:
-        # El número de caption ya no está limitado a 1..4; es un
-        # secuencial global (I3 relajado).
         ref = PanelImageRef(
             filename="foto.jpg",
             caption="IMAGEN N°5: direccion",
@@ -87,8 +69,6 @@ class TestPanelImageRefCaption:
         assert ref.caption == "IMAGEN N°5: direccion"
 
     def test_caption_number_mismatched_with_position_is_valid(self) -> None:
-        # Ya no se exige que el número del caption coincida con position
-        # (I3 relajado: caption es secuencial global, position es 1..4).
         ref = PanelImageRef(
             filename="foto.jpg",
             caption="IMAGEN N°42: direccion",
@@ -114,12 +94,8 @@ class TestPanelImageRefCaption:
             )
 
 
-# Panel: capacidad y posiciones (I1 + I2) y fecha (I4)
-
-
 class TestPanelCapacityAndPositions:
     def test_panel_with_5_images_raises(self) -> None:
-        """I1: más de 4 imágenes debe lanzar InvalidPanelError."""
         refs = (*tuple(_ref(p) for p in [1, 2, 3, 4]), PanelImageRef(filename="extra.jpg", caption="IMAGEN N°4: extra", position=4))
         with pytest.raises(InvalidPanelError, match="imagenes"):
             Panel(
@@ -130,7 +106,6 @@ class TestPanelCapacityAndPositions:
             )
 
     def test_panel_with_repeated_positions_raises(self) -> None:
-        """I2: posiciones repetidas deben lanzar."""
         refs = (_ref(1), _ref(2), _ref(2, filename="dup.jpg"))
         with pytest.raises(InvalidPanelError, match="posiciones"):
             Panel(
@@ -152,8 +127,6 @@ class TestPanelCapacityAndPositions:
             assert len(panel.imagenes) == count
 
     def test_panel_imagenes_must_be_tuple(self) -> None:
-        # Un list con posiciones únicas debe rechazarse por tipo: la API
-        # exige ``tuple`` inmutable.
         with pytest.raises(InvalidPanelError, match="imagenes"):
             Panel(
                 cuadrante="CUAD-1",
@@ -192,17 +165,16 @@ class TestPanelFechaCorte:
     @pytest.mark.parametrize(
         "bad_date",
         [
-            "31-12-2024",    # formato DD-MM-YYYY
-            "2024/12/31",    # separadores distintos
-            "2024-1-1",      # sin ceros a la izquierda
-            "2024-13-01 ",   # espacio al final
-            "2024-12-31T00:00:00",  # datetime
+            "31-12-2024",
+            "2024/12/31",
+            "2024-1-1",
+            "2024-13-01 ",
+            "2024-12-31T00:00:00",
             "abcd-ef-gh",
             "2024",
         ],
     )
     def test_non_iso_fecha_raises(self, bad_date: str) -> None:
-        """I4: fecha fuera de ISO-8601 YYYY-MM-DD debe lanzar."""
         with pytest.raises(InvalidPanelError, match="fecha_corte"):
             Panel(
                 cuadrante="CUAD-1",
@@ -240,9 +212,6 @@ class TestPanelSourceRowIndex:
             )
 
 
-# MatchRule: regex con grupo (?P<clave>...) (I6)
-
-
 class TestMatchRule:
     def test_prefix_without_regex_is_valid(self) -> None:
         rule = MatchRule(key_column="CODIGO", strategy="prefix")
@@ -263,12 +232,11 @@ class TestMatchRule:
         assert rule.regex_pattern is not None
 
     def test_regex_without_named_clave_group_raises(self) -> None:
-        """I6: regex sin ``(?P<clave>...)`` debe lanzar."""
         with pytest.raises(InvalidMatchRuleError, match="clave"):
             MatchRule(
                 key_column="CODIGO",
                 strategy="regex",
-                regex_pattern=r"^img_(\d+)",  # grupo anónimo
+                regex_pattern=r"^img_(\d+)",
             )
 
     def test_regex_with_different_named_group_raises(self) -> None:
@@ -284,7 +252,7 @@ class TestMatchRule:
             MatchRule(
                 key_column="CODIGO",
                 strategy="regex",
-                regex_pattern=r"(?P<clave>[",  # corchete sin cerrar
+                regex_pattern=r"(?P<clave>[",
             )
 
     def test_regex_strategy_requires_pattern(self) -> None:
@@ -305,9 +273,6 @@ class TestMatchRule:
                 key_column="CODIGO",
                 strategy="fuzzy",  # type: ignore[arg-type]
             )
-
-
-# Inmutabilidad de los dataclasses (frozen=True)
 
 
 class TestFrozenDataclasses:

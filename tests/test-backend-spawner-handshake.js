@@ -1,4 +1,3 @@
-// Regression test: a successful handshake must cancel its timeout.
 const { EventEmitter } = require('events');
 const childProcess = require('child_process');
 
@@ -57,7 +56,6 @@ async function run() {
     if (delay === 30_000 || delay === 60_000) {
       const timer = { fn, delay, args };
       inertTimers.add(timer);
-      // The handshake timer is the first 30s/60s timer created by the spawn flow.
       if (!handshakeTimer) handshakeTimer = timer;
       return timer;
     }

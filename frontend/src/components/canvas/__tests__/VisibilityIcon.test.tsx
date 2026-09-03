@@ -9,7 +9,6 @@ describe('VisibilityIcon', () => {
     const { container, rerender } = render(<VisibilityIcon visible={false} className="h-3.5 w-3.5" />);
     const slash = screen.getByTestId('canvas-eye-slash');
     expect(slash.tagName.toLowerCase()).toBe('svg');
-    // Full iris circle — Lucide EyeOff only keeps a truncated arc.
     expect(slash.querySelector('circle')).not.toBeNull();
     expect(slash.querySelectorAll('path')).toHaveLength(2);
     expect(container.querySelector('.lucide-eye-off')).toBeNull();

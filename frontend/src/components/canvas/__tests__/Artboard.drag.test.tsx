@@ -16,17 +16,12 @@ describe('createFrameRectCache', () => {
     const zoomRef = { current: 1 };
     const cache = createFrameRectCache(frame, zoomRef);
     expect(cache.read()).toBe(rects[0]);
-    expect(cache.read()).toBe(rects[0]); // cached
+    expect(cache.read()).toBe(rects[0]);
     zoomRef.current = 2;
     expect(cache.read()).toBe(rects[1]);
   });
 });
 
-/**
- * Drag gestures are coalesced to one state update per animation frame
- * (Figma-style): pointermove alone must not render, and the final
- * document is committed exactly once on pointerup.
- */
 describe('Artboard drag gestures', () => {
   let frames: Map<number, FrameRequestCallback>;
   let nextId: number;
@@ -75,33 +70,30 @@ describe('Artboard drag gestures', () => {
   };
 
   it('shows a size badge under the selection bbox', () => {
-    const layer = createLayer('rect'); // 50mm × 40mm
+    const layer = createLayer('rect');
     setup([layer], [layer.id]);
     expect(screen.getByTestId('canvas-size-badge').textContent).toBe('50 × 40');
   });
 
   it('coalesces pointermove to one preview per frame and commits once on pointerup', () => {
-    const layer = createLayer('rect'); // x=20mm, y=100mm → translate(76px, 378px) at zoom 1
+    const layer = createLayer('rect');
     const { container, onChangeLayers } = setup([layer], [layer.id]);
     const node = container.querySelector<HTMLElement>(`[data-layer-id="${layer.id}"]`)!;
     expect(node.style.transform).toBe('translate(76px, 378px)');
 
     fireEvent.pointerDown(node, { button: 0, clientX: 100, clientY: 100 });
-    // Two moves within the same frame — only the latest may apply.
-    fireEvent.pointerMove(window, { clientX: 100 + 10 * (96 / 25.4), clientY: 100 }); // +10mm
-    fireEvent.pointerMove(window, { clientX: 100 + 20 * (96 / 25.4), clientY: 100 }); // +20mm
+    fireEvent.pointerMove(window, { clientX: 100 + 10 * (96 / 25.4), clientY: 100 });
+    fireEvent.pointerMove(window, { clientX: 100 + 20 * (96 / 25.4), clientY: 100 });
 
-    // Nothing rendered yet: updates wait for the animation frame.
     expect(node.style.transform).toBe('translate(76px, 378px)');
     expect(onChangeLayers).not.toHaveBeenCalled();
 
     act(() => tick());
-    expect(node.style.transform).toBe('translate(151px, 378px)'); // 40mm
+    expect(node.style.transform).toBe('translate(151px, 378px)');
     expect(node.style.willChange).toBe('transform');
     expect(onChangeLayers).not.toHaveBeenCalled();
 
-    // One more move, released before the next frame: flush applies it.
-    fireEvent.pointerMove(window, { clientX: 100 + 40 * (96 / 25.4), clientY: 100 }); // +40mm
+    fireEvent.pointerMove(window, { clientX: 100 + 40 * (96 / 25.4), clientY: 100 });
     fireEvent.pointerUp(window, { clientX: 100 + 40 * (96 / 25.4), clientY: 100 });
 
     expect(onChangeLayers).toHaveBeenCalledTimes(1);
@@ -118,7 +110,7 @@ describe('Artboard drag gestures', () => {
     const nodeA = container.querySelector<HTMLElement>(`[data-layer-id="${a.id}"]`)!;
 
     fireEvent.pointerDown(nodeA, { button: 0, clientX: 100, clientY: 100 });
-    fireEvent.pointerMove(window, { clientX: 100 + 20 * (96 / 25.4), clientY: 100 }); // +20mm
+    fireEvent.pointerMove(window, { clientX: 100 + 20 * (96 / 25.4), clientY: 100 });
     act(() => tick());
     fireEvent.pointerUp(window, { clientX: 100 + 20 * (96 / 25.4), clientY: 100 });
 
@@ -129,7 +121,7 @@ describe('Artboard drag gestures', () => {
   });
 
   it('Alt+drag duplicates then moves the copy in one commit (Figma)', () => {
-    const layer = createLayer('rect'); // 20mm, 100mm
+    const layer = createLayer('rect');
     const document = createEmptyDocument('Test');
     document.layers.push(layer);
     const onChangeLayers = vi.fn();
@@ -174,7 +166,6 @@ describe('Artboard drag gestures', () => {
     const copy = committed.find((l) => l.id === newIds[0])!;
     expect(original).toBeTruthy();
     expect(copy).toBeTruthy();
-    // Original stays put; the duplicate receives the drag delta.
     expect(original.cssVars['--translate-x']).toBe('20mm');
     expect(copy.cssVars['--translate-x']).toBe('40mm');
   });
@@ -303,7 +294,7 @@ describe('Artboard drag gestures', () => {
   });
 
   it('Shift+drag moves with axis lock instead of aborting (Figma)', () => {
-    const layer = createLayer('rect'); // 20mm, 100mm
+    const layer = createLayer('rect');
     const document = createEmptyDocument('Test');
     document.layers.push(layer);
     const onChangeLayers = vi.fn();
@@ -323,7 +314,6 @@ describe('Artboard drag gestures', () => {
     );
     const node = container.querySelector<HTMLElement>(`[data-layer-id="${layer.id}"]`)!;
     const mm = 96 / 25.4;
-    // Shift held: previously aborted the move (treated as multi-select only).
     fireEvent.pointerDown(node, { button: 0, clientX: 100, clientY: 100, shiftKey: true });
     fireEvent.pointerMove(window, {
       clientX: 100 + 30 * mm,
@@ -339,8 +329,8 @@ describe('Artboard drag gestures', () => {
 
     expect(onChangeLayers).toHaveBeenCalledTimes(1);
     const moved = (onChangeLayers.mock.calls[0][0] as CanvasLayer[]).find((l) => l.id === layer.id)!;
-    expect(moved.cssVars['--translate-x']).toBe('50mm'); // 20 + 30 (dominant axis)
-    expect(moved.cssVars['--translate-y']).toBe('100mm'); // locked
+    expect(moved.cssVars['--translate-x']).toBe('50mm');
+    expect(moved.cssVars['--translate-y']).toBe('100mm');
     expect(onSelectIds).not.toHaveBeenCalled();
   });
 
@@ -357,7 +347,7 @@ describe('Artboard drag gestures', () => {
   });
 
   it('pointercancel aborts move without committing (reverts DOM preview)', () => {
-    const layer = createLayer('rect'); // 20mm, 100mm → translate(76px, 378px)
+    const layer = createLayer('rect');
     const { container, onChangeLayers } = setup([layer], [layer.id]);
     const node = container.querySelector<HTMLElement>(`[data-layer-id="${layer.id}"]`)!;
     const origin = node.style.transform;
@@ -403,7 +393,7 @@ describe('Artboard drag gestures', () => {
   });
 
   it('Escape aborts resize without committing', () => {
-    const layer = createLayer('rect'); // 50×40 mm
+    const layer = createLayer('rect');
     const { container, onChangeLayers } = setup([layer], [layer.id]);
     const node = container.querySelector<HTMLElement>(`[data-layer-id="${layer.id}"]`)!;
     const se = screen.getByTestId('canvas-resize-handle-se');
@@ -473,7 +463,6 @@ describe('Artboard drag gestures', () => {
     const handle = screen.getByTestId('canvas-radius-handle-tl');
 
     fireEvent.pointerDown(handle, { button: 0, clientX: 100, clientY: 100 });
-    // Toward center (+x, +y) increases TL radius.
     fireEvent.pointerMove(window, { clientX: 140, clientY: 140 });
     act(() => tick());
     expect(screen.getByTestId('canvas-radius-badge').textContent).toMatch(/^Radius \d+$/);
@@ -488,13 +477,12 @@ describe('Artboard drag gestures', () => {
   });
 
   it('corner resize still works when radius handles are visible', () => {
-    const layer = createLayer('rect'); // 50×40 mm
+    const layer = createLayer('rect');
     const { onChangeLayers } = setup([layer], [layer.id]);
     expect(screen.getByTestId('canvas-radius-handle-tl')).toBeTruthy();
     const nw = screen.getByTestId('canvas-resize-handle-nw');
 
     fireEvent.pointerDown(nw, { button: 0, clientX: 200, clientY: 200 });
-    // Drag NW outward (−x, −y) → larger box.
     fireEvent.pointerMove(window, {
       clientX: 200 - 10 * (96 / 25.4),
       clientY: 200 - 10 * (96 / 25.4),
@@ -508,13 +496,12 @@ describe('Artboard drag gestures', () => {
     expect(onChangeLayers).toHaveBeenCalledTimes(1);
     const committed = onChangeLayers.mock.calls[0][0] as CanvasLayer[];
     const resized = committed.find((l) => l.id === layer.id)!;
-    // Width/height grow; radius must not be the only change.
     expect(parseFloat(resized.cssVars['--width'])).toBeGreaterThan(50);
     expect(parseFloat(resized.cssVars['--height'])).toBeGreaterThan(40);
   });
 
   it('coalesces resize to DOM geometry mid-gesture and commits once on pointerup', () => {
-    const layer = createLayer('rect'); // 50×40 mm
+    const layer = createLayer('rect');
     const { container, onChangeLayers } = setup([layer], [layer.id]);
     const node = container.querySelector<HTMLElement>(`[data-layer-id="${layer.id}"]`)!;
     const se = screen.getByTestId('canvas-resize-handle-se');
@@ -609,9 +596,6 @@ describe('Artboard drag gestures', () => {
       />,
     );
     const artboard = container.querySelector<HTMLElement>('[data-testid="canvas-artboard"]')!;
-    // CSS `zoom` re-rasterizes the whole artboard on every zoom frame (measured
-    // pinch jank that scales with painted layers). The camera must stay on the
-    // compositor: scale + will-change, never the `zoom` property.
     expect(artboard.style.zoom).toBe('');
     expect(artboard.style.transform).toContain('scale(1.5)');
     expect(artboard.style.transformOrigin).toBe('center center');
@@ -655,7 +639,6 @@ describe('Artboard drag gestures', () => {
       />,
     );
     const artboard = container.querySelector('[data-testid="canvas-artboard"]')!;
-    // Mock frame rect so clientToMm maps 1:1 with mm→px at zoom 1.
     const mmPx = 96 / 25.4;
     vi.spyOn(artboard, 'getBoundingClientRect').mockReturnValue({
       left: 0,
@@ -670,7 +653,6 @@ describe('Artboard drag gestures', () => {
         return {};
       },
     });
-    // Click at 20mm,20mm — inside both; top should win.
     fireEvent.pointerDown(artboard, { button: 0, clientX: 20 * mmPx, clientY: 20 * mmPx });
     fireEvent.pointerUp(window, { button: 0, clientX: 20 * mmPx, clientY: 20 * mmPx });
     expect(onSelect).toHaveBeenCalledWith('top');

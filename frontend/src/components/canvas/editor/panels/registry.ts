@@ -14,7 +14,6 @@ import AutoLayoutSection, { ConstraintsSection } from './common/AutoLayoutSectio
 import InstanceSection from './common/InstanceSection';
 import BooleanMaskSection, { showBooleanMaskSection } from './common/BooleanMaskSection';
 
-/** Layout/constraint sections rendered with the common inspectors. */
 export const LAYOUT_SECTIONS: PanelSection[] = [
   { test: (l) => l.type === 'frame' || l.type === 'group' || l.type === 'component', Component: AutoLayoutSection },
   {
@@ -33,10 +32,6 @@ export const LAYOUT_SECTIONS: PanelSection[] = [
   { test: showBooleanMaskSection, Component: BooleanMaskSection },
 ];
 
-/** Ordered type-specific tail sections. Render ALL matching entries (in
- *  order): `field` matches both TextSection and FieldSection, so a field layer
- *  renders the Text inspector followed by the Campo Excel inspector, matching
- *  the original single-selection body order. */
 export const TAIL_SECTIONS: PanelSection[] = [
   { test: (l) => l.type === 'text' || l.type === 'field', Component: TextSection },
   { test: (l) => l.type === 'field', Component: FieldSection },
@@ -49,7 +44,6 @@ export const TAIL_SECTIONS: PanelSection[] = [
   { test: (l) => l.type === 'table', Component: TableSection },
 ];
 
-/** Type guard matching the original `{shape && (...)}` block. */
 export function isShapeTail(layer: CanvasLayer): boolean {
   return isShapeLayer(layer);
 }

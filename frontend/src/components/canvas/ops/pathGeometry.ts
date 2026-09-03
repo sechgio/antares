@@ -1,4 +1,3 @@
-/** Pure path geometry for vector line layers. */
 
 import type { CanvasLayer, LayerPath, PathPoint } from '../types';
 import { mm, newId, parseMm } from '../types';
@@ -15,7 +14,6 @@ export function parseStrokeCap(raw: string | undefined): 'none' | 'round' | 'squ
   return 'none';
 }
 
-/** Two-point horizontal path from legacy bar-line dimensions. */
 export function linePathFromLegacy(layer: Pick<CanvasLayer, 'cssVars' | 'type'>): LayerPath {
   const w = Math.max(MIN_BBOX_MM, parseMm(layer.cssVars['--width'], 80));
   const strokeMm = Math.max(0.05, pxToMm(lineStrokeWidthPx(layer as CanvasLayer)));
@@ -30,7 +28,6 @@ export function linePathFromLegacy(layer: Pick<CanvasLayer, 'cssVars' | 'type'>)
   };
 }
 
-/** Diagonal open path from page-mm drag endpoints; returns local points + page origin. */
 export function pathFromDrag(
   x0: number,
   y0: number,
@@ -60,7 +57,6 @@ function sampleHandles(p: PathPoint): { hin: { x: number; y: number }; hout: { x
   };
 }
 
-/** SVG path `d` in the same unit system as point coordinates (mm). */
 export function pathToSvgD(points: PathPoint[], closed = false): string {
   if (points.length === 0) return '';
   const parts: string[] = [`M ${round2(points[0].x)} ${round2(points[0].y)}`];
@@ -130,7 +126,6 @@ export function pathBounds(
   return { minX, minY, maxX, maxY, width, height };
 }
 
-/** Shift all path coordinates so min is at (0,0); returns offset applied. */
 export function normalizePathOrigin(path: LayerPath): {
   path: LayerPath;
   dx: number;
@@ -162,9 +157,6 @@ export function ensureLinePath(layer: CanvasLayer): CanvasLayer {
   if (layer.type !== 'line') return layer;
   if (layer.meta?.path?.points && layer.meta.path.points.length >= 2) return layer;
 
-  // Legacy bar → stroke-centered path. Do NOT run through pathBounds/normalizePathOrigin:
-  // pathBounds forces MIN_BBOX_MM (0.5mm) on zero-thickness axes, which moves the stroke
-  // to y=0 (top of an inflated box) and breaks WYSIWYG vs the design-time bar.
   const strokeMm = Math.max(0.05, pxToMm(lineStrokeWidthPx(layer)));
   const w = Math.max(MIN_BBOX_MM, parseMm(layer.cssVars['--width'], 80));
   const h = strokeMm;
@@ -211,7 +203,6 @@ export function applyPathToLayer(layer: CanvasLayer, path: LayerPath, originX: n
   };
 }
 
-/** Bend the segment between `segmentIndex` and next by pulling toward (tx,ty) in layer-local mm. */
 export function bendSegment(path: LayerPath, segmentIndex: number, tx: number, ty: number): LayerPath {
   const points = path.points.map((p) => ({ ...p, hin: p.hin ? { ...p.hin } : p.hin, hout: p.hout ? { ...p.hout } : p.hout }));
   if (segmentIndex < 0 || segmentIndex >= points.length - 1) return path;
@@ -269,7 +260,6 @@ function splitCubic(
 ): { mid: PathPoint; leftEnd: PathPoint; rightStart: PathPoint } {
   const { hout: c1 } = sampleHandles(p0);
   const { hin: c2 } = sampleHandles(p1);
-  // De Casteljau
   const p01 = { x: p0.x + (c1.x - p0.x) * t, y: p0.y + (c1.y - p0.y) * t };
   const p12 = { x: c1.x + (c2.x - c1.x) * t, y: c1.y + (c2.y - c1.y) * t };
   const p23 = { x: c2.x + (p1.x - c2.x) * t, y: c2.y + (p1.y - c2.y) * t };
@@ -296,10 +286,6 @@ function splitCubic(
   };
 }
 
-/**
- * Split open path at segment `segmentIndex` near parameter t (0..1).
- * Returns two path geometries in the same local coordinate space.
- */
 export function splitPathAt(path: LayerPath, segmentIndex: number, t = 0.5): [LayerPath, LayerPath] | null {
   if (path.closed) return null;
   if (segmentIndex < 0 || segmentIndex >= path.points.length - 1) return null;
@@ -307,7 +293,6 @@ export function splitPathAt(path: LayerPath, segmentIndex: number, t = 0.5): [La
   const a = path.points[segmentIndex];
   const b = path.points[segmentIndex + 1];
   const { mid, leftEnd, rightStart } = splitCubic(a, b, clampedT);
-  // Rebuild left: points[0..segmentIndex-1] + updated a + mid
   const leftPoints: PathPoint[] = [
     ...path.points.slice(0, segmentIndex).map((p) => ({ ...p })),
     { ...leftEnd, x: round2(a.x), y: round2(a.y) },
@@ -318,7 +303,6 @@ export function splitPathAt(path: LayerPath, segmentIndex: number, t = 0.5): [La
       hout: null,
     },
   ];
-  // Fix leftEnd's hout on the last-but-one
   leftPoints[leftPoints.length - 2] = {
     ...leftPoints[leftPoints.length - 2],
     hout: leftEnd.hout,
@@ -343,7 +327,6 @@ export function splitPathAt(path: LayerPath, segmentIndex: number, t = 0.5): [La
   ];
 }
 
-/** Split a line layer into two layers sharing stroke styles. */
 export function splitLineLayer(
   layer: CanvasLayer,
   segmentIndex: number,
@@ -409,7 +392,6 @@ export function togglePathClosed(path: LayerPath): LayerPath {
   return { ...path, closed: !path.closed };
 }
 
-/** Point-in-polygon (ray cast) for lasso selection. */
 export function pointInPolygon(x: number, y: number, polygon: Array<{ x: number; y: number }>): boolean {
   let inside = false;
   for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
@@ -440,7 +422,6 @@ export function rectIntersectsPolygon(
   return pointInPolygon(rect.x + rect.w / 2, rect.y + rect.h / 2, polygon);
 }
 
-/** True if any path point (page mm) or segment midpoint lies inside the lasso polygon. */
 export function lineIntersectsPolygon(layer: CanvasLayer, polygon: Array<{ x: number; y: number }>): boolean {
   const ensured = ensureLinePath(layer);
   const path = ensured.meta?.path;

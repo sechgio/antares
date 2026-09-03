@@ -13,7 +13,6 @@ async function handleUbicacionesCall(method, params = {}) {
 
     case 'ubicaciones_keys_set': {
       const raw = params.keys && typeof params.keys === 'object' ? params.keys : {};
-      // Merge with existing so masked placeholders do not wipe other providers.
       const { getUbicacionesApiKeys } = require('./ubicaciones-secure-keys');
       const existing = getUbicacionesApiKeys();
       const merged = { ...existing };

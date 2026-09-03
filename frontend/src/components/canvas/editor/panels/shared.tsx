@@ -14,8 +14,6 @@ import {
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { clampOpacity, normalizeHex } from '../../ops/layerStyle';
 
-/** Labeled number input with a focus draft so partial input ("", "-", "1.")
- *  doesn't snap to 0. Used by grid (Cols/Rows/Gap) and imageSlot (Índice). */
 export function NumField({
   label,
   value,
@@ -65,8 +63,6 @@ export function NumField({
   );
 }
 
-/** Hex input with a focus draft; commits only when the 6-digit value is valid.
- *  Used by the Efectos shadow rows. */
 export function HexField({
   color,
   ariaLabel,
@@ -100,11 +96,6 @@ export function HexField({
   );
 }
 
-/** Opacidad para multi-selección.
- *  - `value` es `number` cuando todas las capas comparten opacidad, `null` cuando
- *    son mixtas, o `undefined` si el padre no la calcula (legacy → 100).
- *  - Draft local permite escribir un valor aunque el display esté vacío (mixed).
- *  - `selectionKey` fuerza reset del draft al cambiar de selección. */
 export function BulkOpacityField({
   value,
   onCommit,
@@ -150,7 +141,6 @@ export function BulkOpacityField({
   );
 }
 
-/** Z-order buttons shared by the single-selection and multi-selection sections. */
 export function ZOrderButtons({
   onBringFront,
   onBringForward,

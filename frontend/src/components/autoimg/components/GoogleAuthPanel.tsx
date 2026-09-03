@@ -143,8 +143,6 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
     setLoading(true);
     try {
       await api.autoimgSheetsAuthRevoke();
-      // Cerrar sesión: limpia UI. Sheet/carpetas de este usuario quedan en disco
-      // cifrados bajo su hash; se restauran al volver a conectar con el mismo Google.
       setEmail('');
       setSheetId('');
       setSheetName('');

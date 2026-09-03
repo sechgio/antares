@@ -1,8 +1,3 @@
-"""Tests para el módulo de base de datos SQLite.
-
-Usa monkeypatch para redirigir la BD a un archivo temporal,
-garantizando aislamiento entre tests.
-"""
 
 import pytest
 
@@ -12,7 +7,6 @@ from backend.core.config_fields import load_fields, save_fields
 
 @pytest.fixture
 def db_path(tmp_path, monkeypatch):
-    """Fixture que redirige la BD a un archivo temporal y limpia entre tests."""
     db_file = tmp_path / "test_catalogo.db"
     monkeypatch.setattr(db, "get_db_path", lambda: db_file)
     return db_file
@@ -20,7 +14,6 @@ def db_path(tmp_path, monkeypatch):
 
 class TestInitDb:
     def test_build_schema_skips_reserved_id_field(self) -> None:
-        """Config may list id; PK column must not be duplicated in CREATE TABLE."""
         sql = db._build_schema(
             [
                 {"name": "id", "type": "TEXT"},
@@ -44,7 +37,6 @@ class TestInitDb:
         assert db_path.exists()
 
     def test_init_db_tolera_campo_id_en_config_antigua(self, db_path, monkeypatch, tmp_path) -> None:
-        """Regresión: fields con name=id chocaba con la PK → duplicate column name: id."""
         import json
         import sqlite3
 
@@ -82,20 +74,17 @@ class TestInitDb:
             lambda: config_path,
         )
 
-        # Primer esquema
         save_fields([
             {"name": "codigo", "type": "TEXT", "required": True},
             {"name": "nombre", "type": "TEXT"},
         ])
         db.init_db()
-        # Insertar dato directo
         import sqlite3
         conn = sqlite3.connect(str(db_path))
         conn.execute("INSERT INTO imagenes (codigo, nombre) VALUES (?, ?)", ("1", "Test"))
         conn.commit()
         conn.close()
 
-        # Cambiar esquema (agregar campo)
         save_fields([
             {"name": "codigo", "type": "TEXT", "required": True},
             {"name": "nombre", "type": "TEXT"},
@@ -109,7 +98,6 @@ class TestInitDb:
         assert lote["1"]["nombre"] == "Test"
 
     def test_aborta_migracion_si_vaciaria_catalogo(self, db_path, monkeypatch, tmp_path) -> None:
-        """Renaming all columns must not silently wipe existing rows."""
         from backend.core.exceptions import DatabaseError
 
         config_path = tmp_path / "fields_config.json"
@@ -135,7 +123,6 @@ class TestInitDb:
         with pytest.raises(DatabaseError, match=r"vacía|vaciar|abortada|catálogo"):
             db.init_db()
 
-        # Catalog intact under previous schema
         save_fields([
             {"name": "codigo", "type": "TEXT", "required": True},
             {"name": "nombre", "type": "TEXT"},
@@ -167,7 +154,6 @@ class TestBuscarLotePorCodigos:
         assert "ABC" in resultado
         assert resultado["ABC"]["codigo"] == "ABC"
         assert resultado["ABC"]["nombre"] == "Producto"
-        # Explicit projection: only configured field names (no extra/id columns)
         assert set(resultado["ABC"].keys()) == {"codigo", "nombre"}
 
     def test_busca_case_insensitive(self, db_path, monkeypatch, tmp_path) -> None:
@@ -274,9 +260,6 @@ class TestBuscarLotePorCodigos:
     def test_buscar_por_columna_duplicado_conserva_primero_y_avisa(
         self, db_path, monkeypatch, tmp_path, caplog,
     ) -> None:
-        """Dos registros con el mismo código en la columna clave no deben
-        silenciosamente dejar ganar al último: se conserva el primero y se
-        emite un warning que evidencia la colisión."""
         config_path = tmp_path / "fields_config.json"
         monkeypatch.setattr(
             "backend.core.config_fields._config_file",
@@ -306,9 +289,6 @@ class TestBuscarLotePorCodigos:
     def test_buscar_lote_por_codigos_duplicado_conserva_primero_y_avisa(
         self, db_path, monkeypatch, tmp_path, caplog,
     ) -> None:
-        """Mismo contrato que buscar_por_columna: ante un código que coincide
-        con dos registros distintos, gana el primero de forma determinista y
-        se registra un warning (no hay 'last wins' silencioso)."""
         config_path = tmp_path / "fields_config.json"
         monkeypatch.setattr(
             "backend.core.config_fields._config_file",
@@ -337,8 +317,6 @@ class TestBuscarLotePorCodigos:
     def test_buscar_lote_por_codigos_mismo_registro_varios_campos_no_es_colision(
         self, db_path, monkeypatch, tmp_path, caplog,
     ) -> None:
-        """Un mismo registro cuyo código aparece en varios campos no debe
-        tratarse como colisión: el código mapea a ese único registro sin warning."""
         config_path = tmp_path / "fields_config.json"
         monkeypatch.setattr(
             "backend.core.config_fields._config_file",
@@ -368,7 +346,6 @@ class TestImportarExcel:
     def test_fallo_de_migracion_no_deja_la_configuracion_adelantada(
         self, db_path, monkeypatch, tmp_path,
     ) -> None:
-        """Un error de esquema debe conservar la configuración anterior."""
         config_path = tmp_path / "fields_config.json"
         monkeypatch.setattr(
             "backend.core.config_fields._config_file",
@@ -462,7 +439,6 @@ class TestImportarExcel:
             {"codigo": "OK2", "nombre": "Otro"},
         ]).to_excel(excel_path, index=False)
 
-        # Seed prior catalog that must be wiped on import
         db.init_db()
         import sqlite3
         conn = sqlite3.connect(str(db_path))
@@ -515,7 +491,6 @@ class TestObtenerTodos:
 
 
 class TestLowerExpressionIndexes:
-    """Expression indexes on lower(col) for index-friendly case-insensitive lookups."""
 
     def _setup_fields(self, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"
@@ -580,7 +555,6 @@ class TestLowerExpressionIndexes:
         assert por_col["Mixed"]["nombre"] == "Producto Tres"
 
     def test_explain_puede_usar_indice_lower(self, db_path, monkeypatch, tmp_path) -> None:
-        """Soft assert: with enough rows, planner prefers idx_imagenes_lower_*."""
         self._setup_fields(monkeypatch, tmp_path)
         db.init_db()
 
@@ -603,7 +577,6 @@ class TestLowerExpressionIndexes:
             conn.close()
 
         plan_text = " ".join(str(cell) for row in plan_rows for cell in row).upper()
-        # Soft: SQLite may SCAN tiny tables; with 200 rows it usually uses the index.
         if "SCAN" in plan_text and "INDEX" not in plan_text:
             pytest.skip(f"planner chose scan (flaky on small DBs): {plan_rows}")
         assert "INDEX" in plan_text
@@ -611,8 +584,6 @@ class TestLowerExpressionIndexes:
 
 
 class TestMigrationStreaming:
-    """N6: la migración de esquema con datos preserva todo el catálogo
-    (streaming por chunks, sin fetchall del catálogo completo)."""
 
     def _seed(self, db_path: object, n: int) -> None:
         import sqlite3
@@ -627,8 +598,6 @@ class TestMigrationStreaming:
             conn.close()
 
     def test_migracion_preserva_miles_de_filas(self, db_path, monkeypatch, tmp_path) -> None:
-        """1500 filas (3 chunks de 500) sobreviven a un cambio de esquema
-        con columna compartida, en el mismo orden y con los mismos valores."""
         config_path = tmp_path / "fields_config.json"
         monkeypatch.setattr(
             "backend.core.config_fields._config_file",
@@ -641,7 +610,6 @@ class TestMigrationStreaming:
         db.init_db()
         self._seed(db_path, 1500)
 
-        # Cambio de esquema: agrega columna (mantiene codigo/nombre).
         save_fields([
             {"name": "codigo", "type": "TEXT", "required": True},
             {"name": "nombre", "type": "TEXT"},
@@ -656,8 +624,6 @@ class TestMigrationStreaming:
         assert all(r["nombre"] == f"Name {i}" for i, r in enumerate(rows))
 
     def test_migracion_wipe_con_muchas_filas(self, db_path, monkeypatch, tmp_path) -> None:
-        """El wipe sin solape (allow_catalog_wipe) con catálogo grande no
-        materializa filas y deja el catálogo vacío, sin error."""
         config_path = tmp_path / "fields_config.json"
         monkeypatch.setattr(
             "backend.core.config_fields._config_file",

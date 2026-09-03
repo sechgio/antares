@@ -1,8 +1,3 @@
-"""Protocolo IPC via stdin/stdout JSON-RPC.
-
-El backend lee líneas JSON desde stdin, procesa y escribe respuestas JSON a stdout.
-Cada línea es un mensaje completo.
-"""
 
 from __future__ import annotations
 
@@ -27,9 +22,6 @@ logger = logging.getLogger(__name__)
 
 _stdout_lock = threading.Lock()
 
-# Maximum allowed JSON payload size for IPC messages. Large binary exports
-# should use direct-to-disk handlers, but previews and metadata can exceed the
-# old 10 MB ceiling on high-DPI assets.
 def _parse_max_payload_size() -> int:
     raw = os.environ.get("ANTARES_IPC_MAX_PAYLOAD_SIZE", "")
     if not raw:
@@ -57,30 +49,18 @@ _MAX_PAYLOAD_SIZE = _parse_max_payload_size()
 
 
 def validate_method(method: str) -> bool:
-    """Validate that method name is alphanumeric with underscores only."""
     if not method or not isinstance(method, str):
         return False
     return bool(re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", method))
 
 
 def validate_params(params: dict) -> bool:
-    """Validate params dict for basic safety.
-
-    Defense-in-depth: the handler ``@validate_params`` decorator remains the
-    authoritative layer, but we apply the same shared path-screening loop here
-    (``path_param_violations``) so handlers using non-canonical keys (e.g.
-    ``output_path``) — including those without the decorator — still get an
-    early path-traversal screen at the IPC boundary.
-    """
     if not isinstance(params, dict):
         return False
     return not any(path_param_violations(params, strict=True))
 
 
-# ─── IPC Protocol ────────────────────────────────────────────────────────────
-
 class IPCMessage:
-    """Mensaje IPC entrante."""
 
     def __init__(self, raw: dict[str, Any]) -> None:
         self.id: str | int = raw.get("id", "")
@@ -103,7 +83,6 @@ def _emit_stdout_line(payload_bytes: bytes) -> None:
             buffer.write(payload_bytes + b"\n")
             buffer.flush()
             return
-        # Text-only test doubles (e.g. io.StringIO) have no binary buffer.
         sys.stdout.write(payload_bytes.decode("utf-8") + "\n")
         sys.stdout.flush()
 
@@ -116,7 +95,6 @@ def send_response(
     error_code: int = -32000,
     error_category: str = "INTERNAL_ERROR",
 ) -> None:
-    """Escribe una respuesta JSON-RPC a stdout. Nunca levanta excepción."""
     payload: dict[str, Any] = {
         "jsonrpc": "2.0",
         "id": msg_id,
@@ -138,7 +116,6 @@ def send_response(
     write_ok = False
     t0 = time.perf_counter()
     try:
-        # Encode once: size check and write share the same UTF-8 buffer.
         payload_bytes = json.dumps(payload, ensure_ascii=False, default=_json_default).encode("utf-8")
         if len(payload_bytes) > _MAX_PAYLOAD_SIZE:
             logger.error(
@@ -146,7 +123,6 @@ def send_response(
                 len(payload_bytes),
                 _MAX_PAYLOAD_SIZE,
             )
-            # Send error response instead of oversized payload
             error_payload = {
                 "jsonrpc": "2.0",
                 "id": msg_id,
@@ -159,8 +135,6 @@ def send_response(
         _emit_stdout_line(payload_bytes)
         write_ok = True
     except Exception as exc:
-        # If stdout is broken (e.g., Electron closed the pipe), log to stderr
-        # but DO NOT crash the backend process.
         logger.error("Failed to write response to stdout: %s", exc)
     finally:
         if ipc_phase_telemetry.enabled():
@@ -182,7 +156,6 @@ def send_response(
 
 
 def send_notification(method: str, params: dict[str, Any]) -> None:
-    """Escribe una notificación (sin id) a stdout — usada para progreso. Nunca levanta excepción."""
     payload = {
         "jsonrpc": "2.0",
         "method": method,
@@ -196,17 +169,15 @@ def send_notification(method: str, params: dict[str, Any]) -> None:
                 len(payload_bytes),
                 _MAX_PAYLOAD_SIZE,
             )
-            return  # Drop oversized notifications to prevent pipe blocking
+            return
         _emit_stdout_line(payload_bytes)
     except Exception as exc:
-        # If stdout is broken, log to stderr but DO NOT crash the backend.
         logger.error("Failed to write notification to stdout: %s", exc)
 
 
 def _json_default(obj: Any) -> Any:
     if isinstance(obj, Path):
         return str(obj)
-    # Defense-in-depth for handlers that forget to normalize openpyxl dates
     if isinstance(obj, datetime):
         if obj.time() == dt_time(0, 0):
             return obj.date().isoformat()
@@ -219,20 +190,15 @@ def _json_default(obj: Any) -> Any:
     raise TypeError(msg)
 
 
-# Sentinel returned on parse errors (not EOF)
 _SKIP = object()
 
 _REQUEST_ID_RE = re.compile(r'"id"\s*:\s*(?:"([^"\\]*(?:\\.[^"\\]*)*)"|(-?\d+))')
-# Variante bytes para el path oversized: el prefijo truncado puede cortar un
-# carácter UTF-8 multibyte, así que el id se extrae de los bytes crudos en vez
-# de depender de un decode que puede fallar.
 _REQUEST_ID_RE_BYTES = re.compile(rb'"id"\s*:\s*(?:"([^"\\]*(?:\\.[^"\\]*)*)"|(-?\d+))')
 _READ_CHUNK_SIZE = 64 * 1024
 _REQUEST_ID_PREFIX_SIZE = 4096
 
 
 def _try_extract_request_id(line: str) -> str | int | None:
-    """Best-effort id extraction without parsing the full JSON payload."""
     match = _REQUEST_ID_RE.search(line)
     if not match:
         return None
@@ -242,7 +208,6 @@ def _try_extract_request_id(line: str) -> str | int | None:
 
 
 def _try_extract_request_id_bytes(prefix: bytes) -> str | int | None:
-    """Best-effort id extraction from a truncated raw-bytes prefix."""
     match = _REQUEST_ID_RE_BYTES.search(prefix)
     if not match:
         return None
@@ -314,13 +279,6 @@ def _drain_line(stream: Any, binary: bool) -> int:
 
 
 def read_message() -> IPCMessage | None:
-    """Lee una línea JSON desde stdin. Returns None on EOF, _SKIP on parse error.
-
-    Parse errors are logged to stderr (no response is sent) because the
-    request id is unknown and an `id=None` response cannot be correlated
-    by the IPC router on the renderer side — it would just be discarded
-    and the caller would block until its own timeout.
-    """
     try:
         stdin = getattr(sys.stdin, "buffer", None)
         binary = stdin is not None
@@ -329,14 +287,8 @@ def read_message() -> IPCMessage | None:
         line, line_bytes, oversized = _read_limited_line(stdin, binary=binary)
         if line is None:
             return None
-        # Parse window starts only after the line is fully read (excludes stdin idle).
         parse_start = ipc_phase_telemetry.begin_parse()
         if oversized:
-            # El prefijo truncado puede cortar un carácter UTF-8 multibyte: el
-            # id se extrae de los bytes crudos (viaja al inicio del JSON) para
-            # que la respuesta -32600 sí se envíe. Antes, el decode estricto
-            # lanzaba UnicodeDecodeError, caía en el except genérico y el
-            # caller esperaba hasta su timeout sin respuesta alguna.
             msg_id = (
                 _try_extract_request_id_bytes(line)
                 if isinstance(line, bytes)

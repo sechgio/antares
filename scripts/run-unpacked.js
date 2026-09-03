@@ -1,7 +1,4 @@
-/**
- * Launch the unpacked Windows Electron build produced by `electron-builder --dir`.
- * Does not create or run an installer — only starts Antares.exe from win-unpacked.
- */
+
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');

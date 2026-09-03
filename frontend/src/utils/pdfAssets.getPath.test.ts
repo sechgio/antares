@@ -62,7 +62,6 @@ describe('pdf local-image allowlist', () => {
     const file = new File(['fake-image-bytes'], 'a.jpg', { type: 'image/jpeg' });
     vi.stubGlobal('window', { electronAPI: {} });
 
-    // jsdom Image may fail to decode; stub compress path via createObjectURL + Image.
     const objectUrl = 'blob:mock-a';
     vi.stubGlobal('URL', {
       createObjectURL: vi.fn(() => objectUrl),
@@ -106,7 +105,6 @@ describe('fileToPdfImageSource staged upload', () => {
     vi.restoreAllMocks();
   });
 
-  // jsdom no decodifica imágenes: simula la compresión por canvas.
   function stubCanvasCompression(dataUrl: string, w = 800, h = 600): void {
     vi.stubGlobal('URL', {
       createObjectURL: vi.fn(() => 'blob:mock'),
@@ -136,7 +134,7 @@ describe('fileToPdfImageSource staged upload', () => {
 
   it('stages a pathless File (persisted panel photo) as a capability token', async () => {
     const api = stubElectronStaging();
-    const file = new File(['image'], 'persistida.jpg', { type: 'image/jpeg' }); // sin path
+    const file = new File(['image'], 'persistida.jpg', { type: 'image/jpeg' });
 
     const localImagePaths: Record<string, string> = {};
     const src = await fileToPdfImageSource(file, 'photo-0', localImagePaths);
@@ -183,7 +181,6 @@ describe('fileToPdfImageSource staged upload', () => {
 
     expect(source.src).toBe(buildLocalImageToken('row-1-img-0'));
     expect(source.fileToken).toBe('antares-read_1');
-    // El archivo escenificado es el JPEG comprimido, no el original .png.
     expect(api.fileStagedCreate).toHaveBeenCalledWith('foto.jpg', expect.any(Number));
   });
 
@@ -282,18 +279,17 @@ describe('logoToPdfSource', () => {
     const file = localLogoFile('C:\\logos\\izq.png');
     vi.stubGlobal('window', { electronAPI: {} });
     const localImagePaths: Record<string, string> = {};
-    // data: URL is already durable — returned unchanged, no token registered.
     const src = await logoToPdfSource('data:image/png;base64,AAAA', file, 'logo-left', localImagePaths, false);
     expect(src).toBe('data:image/png;base64,AAAA');
     expect(Object.keys(localImagePaths)).toHaveLength(0);
   });
 
   it('falls back to a durable URL when the File has no local path', async () => {
-    const file = new File(['x'], 'logo.png', { type: 'image/png' }); // no path
+    const file = new File(['x'], 'logo.png', { type: 'image/png' });
     vi.stubGlobal('window', { electronAPI: { getPathForFile: vi.fn(() => '') } });
     const localImagePaths: Record<string, string> = {};
     const src = await logoToPdfSource('blob:logo-left', file, 'logo-left', localImagePaths, true);
-    expect(src).toBe('blob:logo-left'); // fetch fails in jsdom → returns url unchanged
+    expect(src).toBe('blob:logo-left');
     expect(Object.keys(localImagePaths)).toHaveLength(0);
   });
 

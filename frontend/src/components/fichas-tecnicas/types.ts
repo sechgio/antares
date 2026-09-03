@@ -115,7 +115,6 @@ export const createEmptyFicha = (): FichaTecnica => ({
   last_modified: '',
 });
 
-/** Demo placeholder matching backend `template_placeholder_ficha` — used for live plantilla preview. */
 export function createTemplatePlaceholderFicha(): FichaTecnica {
   const today = new Date().toISOString().slice(0, 10);
   return {
@@ -129,7 +128,6 @@ export function createTemplatePlaceholderFicha(): FichaTecnica {
   };
 }
 
-/** Merge partial/incomplete payloads (drafts, list items) so nested fields never crash the form. */
 export function normalizeFicha(ficha: Partial<FichaTecnica> | null | undefined): FichaTecnica {
   const base = createEmptyFicha();
   if (!ficha) return base;
@@ -168,7 +166,6 @@ export function normalizeFicha(ficha: Partial<FichaTecnica> | null | undefined):
   };
 }
 
-/** Preview helper: empty selection shows blank plantilla structure (sech-gio style). */
 export function normalizeFichaForPreview(ficha: FichaTecnica | null | undefined): FichaTecnica {
   if (!ficha) return createEmptyFicha();
   return normalizeFicha(ficha);

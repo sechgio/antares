@@ -341,7 +341,6 @@ export default function InformesV2App() {
         logoToPdfPath(logoLeft, 'logo-left', localImagePaths),
         logoToPdfPath(logoRight, 'logo-right', localImagePaths),
       ]);
-      // Hard guard: photo data-URLs recreate the 64MB IPC "Response too large" failure.
       const embeddedPhotos = Object.values(imagesById)
         .flat()
         .filter((img) => String(img.path || '').startsWith('data:'));

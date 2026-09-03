@@ -8,12 +8,9 @@ import {
   type HistoryStepDiff,
 } from '../utils/canvasDiff';
 
-/** Cap undo depth to limit RAM when documents embed large data-URL images. */
 export const MAX_HISTORY = 30;
-/** Aggregate byte budget for past + future stacks (UTF-16 string estimate). */
 export const MAX_HISTORY_BYTES = 64 * 1024 * 1024;
 
-/** Per-step byte cache (WeakMap, GC-friendly). */
 const stepBytesCache = new WeakMap<object, number>();
 
 export function estimateStepBytes(step: HistoryStep): number {
@@ -40,7 +37,6 @@ export function estimateHistoryBytes(steps: HistoryStep[]): number {
   return total;
 }
 
-/** Trim to step and byte budgets (drops oldest first). */
 export function trimHistoryByBudget(
   past: HistoryStep[],
   future: HistoryStep[],
@@ -49,7 +45,6 @@ export function trimHistoryByBudget(
 ): { past: HistoryStep[]; future: HistoryStep[] } {
   let nextPast = past.slice(-maxSteps);
   let nextFuture = future.slice(-maxSteps);
-
 
   let bytes = estimateHistoryBytes(nextPast) + estimateHistoryBytes(nextFuture);
   while (bytes > maxBytes && (nextPast.length > 0 || nextFuture.length > 0)) {
@@ -71,14 +66,11 @@ export function useCanvasHistory(initial: CanvasDocument) {
   const [future, setFuture] = useState<HistoryStep[]>([]);
   const [revision, setRevision] = useState(0);
 
-
   const documentRef = useRef(document);
   const pastRef = useRef(past);
   const futureRef = useRef(future);
   const revisionRef = useRef(revision);
-  /** True after discrete edits until replaceDocument (load / save / cloud apply). */
   const hasUnsavedEditsRef = useRef(false);
-  /** Reactive mirror of hasUnsavedEditsRef so UI (SaveButton dot) can render it. */
   const [hasUnsavedEdits, setHasUnsavedEditsState] = useState(false);
   documentRef.current = document;
   pastRef.current = past;
@@ -139,7 +131,6 @@ export function useCanvasHistory(initial: CanvasDocument) {
     bumpRevision();
   }, [bumpRevision]);
 
-  /** Push a pre-edit snapshot into undo without changing the current document. */
   const commitFromBaseline = useCallback((baseline: CanvasDocument) => {
     const current = documentRef.current;
     const step: HistoryStepDiff = {
@@ -218,7 +209,6 @@ export function useCanvasHistory(initial: CanvasDocument) {
     bumpRevision();
   }, [bumpRevision]);
 
-  /** Clear dirty after a successful save without wiping undo/redo stacks. */
   const markSaved = useCallback(() => {
     markUnsaved(false);
   }, [markUnsaved]);

@@ -1,4 +1,3 @@
-"""Verify that concurrent access to ProcessState is thread-safe."""
 
 from __future__ import annotations
 
@@ -8,7 +7,6 @@ from backend.handlers import _state
 
 
 def test_concurrent_state_access() -> None:
-    """Concurrent reads and writes to ProcessState must not lose data."""
     results: list[bool] = []
 
     def reader() -> None:

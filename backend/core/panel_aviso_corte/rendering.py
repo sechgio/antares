@@ -1,4 +1,3 @@
-"""Renderizado de :class:`Panel` a PDF mediante Jinja2 + WeasyPrint."""
 
 from __future__ import annotations
 
@@ -56,7 +55,6 @@ DEFAULT_PANEL_TEMPLATE_ID = "aviso-corte-ad"
 
 
 def resolve_panel_template_file(template_id: str | None) -> str:
-    """Devuelve el nombre del archivo HTML Jinja2 para *template_id*."""
     key = (template_id or "").strip() or DEFAULT_PANEL_TEMPLATE_ID
     filename = PANEL_TEMPLATE_FILES.get(key)
     if filename is None:
@@ -80,12 +78,8 @@ _jinja_env = Environment(
 
 
 def _prepare_logos(logos: dict[str, str | None]) -> tuple[str | None, str | None, str | None]:
-    """Devuelve (logo_left, logo_right, logo_center) como data URIs."""
     left_raw = logos.get("left")
     right_raw = logos.get("right")
-    # Validar que los logos decodifiquen a una imagen real; un logo corrupto
-    # abortaría todo el PDF consolidado (paridad con render_docx, que usa
-    # contextlib.suppress al decodificar).
     left = data_uri_from_b64(left_raw) if left_raw and valid_b64_image(left_raw) else None
     right = data_uri_from_b64(right_raw) if right_raw and valid_b64_image(right_raw) else None
     center = None
@@ -94,8 +88,6 @@ def _prepare_logos(logos: dict[str, str | None]) -> tuple[str | None, str | None
     elif right and not left:
         center = right
     elif left and right:
-        # Cuando ambos logos existen, mostramos solo el izquierdo centrado
-        # para coincidir con el documento Word de referencia.
         center = left
     return left, right, center
 
@@ -114,7 +106,6 @@ def render_pdf(
     image_paths: dict[str, str] | None = None,
     template_id: str | None = None,
 ) -> tuple[bytes, str]:
-    """Renderiza un PDF consolidado con una p\u00e1gina por Panel."""
     panels = _panels_for_export(panels, export_mode)
     if not panels:
         msg = "No hay paneles para exportar"
@@ -133,12 +124,6 @@ def render_pdf(
 
     logo_left, logo_right, logo_center = _prepare_logos(logos)
 
-    # Validar cada imagen antes de entregarla a WeasyPrint: una sola imagen
-    # corrupta abortaría el PDF consolidado. Las inválidas se descartan y el
-    # template renderiza "Sin imagen" en su casilla (paridad con render_docx,
-    # que aísla con contextlib.suppress al decodificar).
-    # WeasyPrint only fetches data: URIs (sanitizer + deny_external_url_fetcher
-    # strip file://). Embed disk images as data URIs — never path.as_uri().
     image_uris: dict[str, str] = {}
     for filename, raw_path in (image_paths or {}).items():
         path = Path(raw_path)
@@ -181,7 +166,6 @@ def render_pdf(
         raise RenderingError(msg) from exc
 
     try:
-        # Logos/images are data-URIs; deny open base_url/network fetch.
         pdf_bytes = write_pdf_sanitized(html_string)
     except Exception as exc:
         logger.exception("WeasyPrint fall\u00f3 al generar el PDF")
@@ -199,7 +183,6 @@ def render_docx(
     image_paths: dict[str, str] | None = None,
     template_id: str | None = None,
 ) -> tuple[bytes, str]:
-    """Genera un documento Word (.docx) con tabla de 9 filas x 4 columnas con merges."""
     resolve_panel_template_file(template_id)
     panels = _panels_for_export(panels, export_mode)
     if not panels:
@@ -291,11 +274,6 @@ def render_docx(
     def cover_image_size_cm(
         content: bytes, max_width_cm: float, max_height_cm: float,
     ) -> tuple[float, float, tuple[int, int, int, int]]:
-        """Scale image to *cover* the cell and return crop offsets.
-
-        Returns (insert_width_cm, insert_height_cm, (crop_top, crop_bottom, crop_left, crop_right))
-        where crop values are in units of 1/100000 used by ``<a:srcRect>``.
-        """
         from PIL import Image
 
         with Image.open(BytesIO(content)) as image:
@@ -306,7 +284,6 @@ def render_docx(
 
         width_ratio = max_width_cm / width_px
         height_ratio = max_height_cm / height_px
-        # Use max to *cover* (fill) the cell, opposite of *contain*
         scale = max(width_ratio, height_ratio)
         scaled_w = width_px * scale
         scaled_h = height_px * scale
@@ -324,21 +301,15 @@ def render_docx(
 
         if scaled_h > max_height_cm + 0.01:
             excess_pct = (scaled_h - max_height_cm) / scaled_h
-            # Crop from bottom only (align top, matching preview's flex-start)
             crop_top = 0
             crop_bottom = round(excess_pct * 100_000)
 
         return max_width_cm, max_height_cm, (crop_top, crop_bottom, crop_left, crop_right)
 
     def _apply_crop(inline_shape: Any, crop: tuple[int, int, int, int]) -> None:
-        """Apply Word XML cropping to an inline picture."""
         top, bottom, left, right = crop
         if top == 0 and bottom == 0 and left == 0 and right == 0:
             return
-        # Navigate to the blipFill element in the inline shape's XML. python-docx
-        # serializes it under the *picture* namespace (pic:blipFill), not the
-        # drawingml/main one (a:) — searching a:blipFill always missed it and the
-        # srcRect crop was never applied, so photos were stretched to the cell.
         nsmap = {
             "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
             "pic": "http://schemas.openxmlformats.org/drawingml/2006/picture",
@@ -348,7 +319,6 @@ def render_docx(
         )
         if blip_fill is None:
             return
-        # Remove existing srcRect if any (srcRect itself lives in the `a` ns)
         for old in blip_fill.findall("a:srcRect", nsmap):
             blip_fill.remove(old)
         from lxml import etree
@@ -390,8 +360,6 @@ def render_docx(
         with contextlib.suppress(Exception):
             logo_bytes = base64.b64decode(right_raw, validate=True)
 
-    # Logo dimensions are identical for every panel (same logo, same merged
-    # cell), so fit the image once instead of re-opening it per panel.
     logo_w = logo_h = 0.0
     if logo_bytes:
         logo_avail_w = LOGO_WIDTH_CM - 2 * (CELL_MARGIN_TWIPS / 567)
@@ -402,9 +370,6 @@ def render_docx(
 
     for pidx, panel in enumerate(panels):
         if pidx > 0:
-            # Insert a page break on the first row of the new table instead
-            # of using doc.add_page_break(), which creates a standalone empty
-            # paragraph that Word renders as a blank page between panels.
             pass
 
         table = doc.add_table(rows=9, cols=4)
@@ -412,8 +377,6 @@ def render_docx(
         table.autofit = False
         table.allow_autofit = False
 
-        # Page break before this table (except the first one), applied as a
-        # paragraph property on the first cell so no extra paragraph is added.
         if pidx > 0:
             first_cell = table.cell(0, 0)
             pPr = first_cell.paragraphs[0]._p.get_or_add_pPr()
@@ -459,7 +422,6 @@ def render_docx(
         for row, key in zip(table.rows, row_keys, strict=True):
             set_row_height(row, ROW_HEIGHTS_CM[key])
 
-        # --- Row 0: Titulo (cols 0-2) + Logo (col 3, rowspan 4) ---
         table.cell(0, 0).merge(table.cell(0, 2))
         title_cell = table.cell(0, 0)
         title_cell.paragraphs[0].clear()
@@ -478,12 +440,8 @@ def render_docx(
             p = logo_cell.paragraphs[0]
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             run = p.add_run()
-            # La celda merged del logo ocupa la col 3 (LOGO_WIDTH_CM) a lo ancho
-            # y las filas title..meta_c a lo alto (~3.51cm); el contain-fit al
-            # espacio útil se calculó una vez antes del bucle de paneles.
             run.add_picture(BytesIO(logo_bytes), width=Cm(logo_w), height=Cm(logo_h))
 
-        # --- Rows 1-3: Label + Value ---
         data_items = [
             (1, "CUADRANTE AFECTADO", panel.cuadrante),
             (2, "FECHA DE CORTE", panel.fecha_corte),
@@ -497,7 +455,6 @@ def render_docx(
             run = lbl_cell.paragraphs[0].add_run(label)
             format_run(run, 9, bold=True)
 
-            # Value (merge cols 1-2)
             table.cell(ri, 1).merge(table.cell(ri, 2))
             val_cell = table.cell(ri, 1)
             val_cell.paragraphs[0].clear()
@@ -505,7 +462,6 @@ def render_docx(
             run = val_cell.paragraphs[0].add_run(value)
             format_run(run, 9.5, bold=True, color=TEAL_RGB)
 
-        # --- Row 4: PANEL FOTOGRAFICO (span 4) ---
         table.cell(4, 0).merge(table.cell(4, 3))
         sec_cell = table.cell(4, 0)
         sec_cell.paragraphs[0].clear()
@@ -514,12 +470,9 @@ def render_docx(
         run = p.add_run("PANEL FOTOGRAFICO")
         format_run(run, 12, bold=True)
 
-        # --- Rows 5-8: Imagenes y captions ---
-        # (img_row, cap_row, pos_left, pos_right)
         photo_rows = [(5, 6, 1, 2), (7, 8, 3, 4)]
 
         for img_row, cap_row, pos_left, pos_right in photo_rows:
-            # Merge: cols 0-1 y cols 2-3
             merged_cells = {
                 pos_left: (
                     table.cell(img_row, 0).merge(table.cell(img_row, 1)),

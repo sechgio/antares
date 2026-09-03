@@ -1,5 +1,3 @@
-"""IPC handlers for the Canvas tool."""
-
 from __future__ import annotations
 
 import contextlib

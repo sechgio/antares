@@ -1,5 +1,3 @@
-"""Handlers IPC para Evidencia Volanteo."""
-
 from __future__ import annotations
 
 import base64
@@ -54,7 +52,6 @@ def evidencia_volanteo_render(params: dict[str, Any]) -> dict[str, Any]:
             out.parent.mkdir(parents=True, exist_ok=True)
             if out.exists():
                 raise FileExistsError(f"El archivo ya existe: {out}")
-            # realpath confinement: ensure final path is inside resolved parent
             real_parent = Path(str(out.parent.resolve()))
             if real_parent != Path(str(Path(resolved).parent.resolve())) and out.parent.resolve() != Path(resolved).parent.resolve():
                 raise ValueError("ruta de salida fuera de la raíz autorizada")

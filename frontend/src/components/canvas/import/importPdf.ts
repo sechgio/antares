@@ -151,8 +151,6 @@ export async function mapPdfPagesToCanvasWithAssets(
       imageBytes += primitive.asset.bytes.byteLength;
       try {
         const liveValue = await persistPdfImage(primitive.asset);
-        // Keep the ObjectURL for immediate painting; the normal Canvas save
-        // lifecycle serializes the same bytes to the asset reference.
         assetValues.set(primitive.asset.key, liveValue);
       } catch {
         page.primitives[primitiveIndex] = withUnsupportedImage(primitive);
@@ -242,8 +240,6 @@ export async function importPdfFile(
   });
   throwIfAborted(options.signal);
 
-  // Keep compatibility with mocked/custom extractors that return the attachment
-  // without invoking the early-exit hook.
   if (!manifestChecked && extraction.manifestBytes) {
     await acceptManifest(extraction.manifestBytes);
   }

@@ -1,4 +1,3 @@
-"""Regression: conversion must not silently overwrite when out_paths collide."""
 
 from __future__ import annotations
 
@@ -9,18 +8,16 @@ from backend.handlers.conversion import _dedupe_chunk_out_paths, _out_path_key
 
 
 def test_cross_job_reservation_blocks_other_job() -> None:
-    """Two jobs must not claim the same normalized out path."""
     mgr = JobManager()
     key = _out_path_key(Path("out/same.jpg"))
     assert mgr.try_reserve_out_path("job_a", key) is True
     assert mgr.try_reserve_out_path("job_b", key) is False
-    assert mgr.try_reserve_out_path("job_a", key) is True  # same job re-claim ok
+    assert mgr.try_reserve_out_path("job_a", key) is True
     mgr.release_out_paths("job_a")
     assert mgr.try_reserve_out_path("job_b", key) is True
 
 
 def test_dedupe_renames_when_other_job_holds_path(monkeypatch) -> None:
-    """In-batch dedupe must treat another job's reservation as taken."""
     mgr = JobManager()
     monkeypatch.setattr(
         "backend.handlers.conversion.get_job_manager",
@@ -69,8 +66,6 @@ def test_dedupe_suffixes_colliding_out_paths() -> None:
 
 
 def test_dedupe_is_case_insensitive() -> None:
-    # Forward slashes keep pathlib consistent on Windows and Linux CI.
-    # The auto-suffix keeps the colliding path's own stem/suffix casing.
     tasks = [
         ("x.jpg", Path("out/Photo.JPG"), False),
         ("y.jpg", Path("out/photo.jpg"), False),
@@ -84,7 +79,6 @@ def test_dedupe_is_case_insensitive() -> None:
 
 
 def test_dedupe_falls_back_to_exists_when_disk_keys_is_none(tmp_path) -> None:
-    """disk_keys=None must keep path.exists() anti-overwrite behavior."""
     existing = tmp_path / "a.jpg"
     existing.write_bytes(b"old")
     reserved: set[str] = set()
@@ -98,7 +92,6 @@ def test_dedupe_falls_back_to_exists_when_disk_keys_is_none(tmp_path) -> None:
 
 
 def test_dedupe_uses_disk_keys_without_exists(tmp_path, monkeypatch) -> None:
-    """Pre-scanned disk_keys must block claims without calling path.exists()."""
     existing = tmp_path / "a.jpg"
     existing.write_bytes(b"old")
     keys = {_out_path_key(existing)}
@@ -122,7 +115,6 @@ def test_dedupe_uses_disk_keys_without_exists(tmp_path, monkeypatch) -> None:
 
 
 def test_destination_scan_is_bounded_without_returning_partial_keys(tmp_path, monkeypatch) -> None:
-    """A huge destination falls back to exact per-path checks, never a partial snapshot."""
     from backend.handlers import conversion
 
     destino = tmp_path / "large-destination"
@@ -164,7 +156,6 @@ def test_dedupe_spans_chunks_via_shared_reserved_set() -> None:
 
 
 def test_preview_catalog_applies_out_path_dedupe_suffixes(monkeypatch, tmp_path) -> None:
-    """Catalog preview must show -2/-3 like process, not colliding bare names."""
     from backend.handlers import conversion
 
     files = [str(tmp_path / "a.jpg"), str(tmp_path / "b.jpg")]
@@ -193,7 +184,6 @@ def test_preview_catalog_applies_out_path_dedupe_suffixes(monkeypatch, tmp_path)
 
 
 def test_preview_mapping_still_reports_collisions_without_suffix(tmp_path) -> None:
-    """Mapping preview must NOT auto-suffix; process aborts on collisions."""
     from backend.handlers import conversion
 
     files = [str(tmp_path / "A.jpg"), str(tmp_path / "B.jpg")]
@@ -212,9 +202,6 @@ def test_preview_mapping_still_reports_collisions_without_suffix(tmp_path) -> No
 
 
 def test_preview_dedupe_sees_pre_existing_destino_files(monkeypatch, tmp_path) -> None:
-    """B2: el preview debe mostrar -2 cuando el nombre YA existe en destino.
-    El job escanea destino (disk_keys) antes de deduplicar; el preview no lo
-    hacía y mostraba el nombre pelado, divergiendo del resultado real."""
     from backend.handlers import conversion
 
     destino = tmp_path / "salida"
@@ -242,9 +229,6 @@ def test_preview_dedupe_sees_pre_existing_destino_files(monkeypatch, tmp_path) -
 
 
 def test_preview_without_destino_never_consults_cwd_exists(monkeypatch, tmp_path) -> None:
-    """B2: sin destino el dedupe del preview debe ser solo en memoria. Antes,
-    _claim_out_path caía a Path.exists() sobre nombres pelados resueltos contra
-    el CWD del backend — una carpeta sin relación con la salida real."""
     from backend.handlers import conversion
 
     files = [str(tmp_path / "a.jpg"), str(tmp_path / "b.jpg")]

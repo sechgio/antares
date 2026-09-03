@@ -1,4 +1,3 @@
-"""Apply image stamps to PDF pages with non-uniform random distribution."""
 from __future__ import annotations
 
 import io
@@ -19,13 +18,10 @@ def effective_stamp_count(num_pages: int, stamp_count: int) -> int:
 
 
 def distribute_stamp_pages(num_pages: int, stamp_count: int, seed: int | None = None) -> tuple[list[int], int]:
-    """Return distinct 0-based page indices — at most one stamp per page."""
     count = effective_stamp_count(num_pages, stamp_count)
     if count <= 0:
         return [], seed if seed is not None else 0
     effective_seed = seed if seed is not None else random.randint(0, 2_147_483_647)
-    # ponytail: random.Random.sample — sin reemplazo, determinista por seed.
-    # Reemplaza el LCG + Fisher-Yates a mano (mismo contrato, una línea).
     indices = random.Random(effective_seed).sample(range(num_pages), count)
     return indices, effective_seed
 
@@ -44,7 +40,6 @@ def group_stamp_pages(page_indices: list[int]) -> dict[int, int]:
 
 
 def _prepare_stamp_image(stamp_bytes: bytes, width_pt: float, height_pt: float) -> tuple[Image.Image, float, float]:
-    # load() keeps pixel data after close; avoid Image.copy() for RGB/RGBA.
     opened = Image.open(io.BytesIO(stamp_bytes))
     opened.load()
     img: Image.Image = opened.convert("RGBA") if opened.mode not in ("RGB", "RGBA") else opened
@@ -118,7 +113,6 @@ def _build_png_overlay_pdf(img: Image.Image, dpi: float = STAMP_EXPORT_DPI) -> b
     content = f"q {width_pt:.4f} 0 0 {height_pt:.4f} 0 0 cm /Im1 Do Q\n".encode("ascii")
     objects.append(_pdf_object(f"<< /Length {len(content)} >>\nstream\n".encode("ascii") + content + b"endstream", 6))
 
-    # Build with a bytearray to avoid quadratic pdf += copies on large stamps.
     pdf = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
     offsets: list[int] = []
     for obj in objects:
@@ -156,7 +150,6 @@ def _apply_stamp_placements(
     stamp_bytes: bytes,
     stamp_placements: list[dict[str, float | int]],
 ) -> None:
-    """Apply stamps using per-stamp page index and geometry (0-based page_index)."""
     by_page: dict[int, list[dict[str, float | int]]] = {}
     for placement in stamp_placements:
         page_idx = int(placement["page_index"])
@@ -165,11 +158,6 @@ def _apply_stamp_placements(
             raise ValueError(msg)
         by_page.setdefault(page_idx, []).append(placement)
 
-    # ponytail: cache por (width, height) — los placements pueden tener tamaños
-    # distintos (hasta MAX_STAMP_POSITIONS=8 en la UI), pero N sellos los comparten.
-    # Reuse el stamp_page dentro de cada grupo: K prepares en vez de N. La
-    # reusabilidad multi-merge la demuestra el path sin placements (mismo
-    # stamp_page pegado en N páginas sin deepcopy).
     page_cache: dict[tuple[float, float], tuple[Any, float]] = {}
 
     def _stamp_page_for(width: float, height: float) -> tuple[Any, float]:

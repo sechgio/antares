@@ -1,4 +1,3 @@
-"""Tests for CMYK PDF Rendering and Color Conversion Subsystem."""
 
 from __future__ import annotations
 
@@ -42,11 +41,11 @@ def test_parse_css_named_and_rgba():
 
 
 def test_rgb_to_cmyk():
-    assert rgb_to_cmyk(1.0, 0.0, 0.0) == (0.0, 1.0, 1.0, 0.0)  # Pure Red
-    assert rgb_to_cmyk(0.0, 1.0, 0.0) == (1.0, 0.0, 1.0, 0.0)  # Pure Green
-    assert rgb_to_cmyk(0.0, 0.0, 1.0) == (1.0, 1.0, 0.0, 0.0)  # Pure Blue
-    assert rgb_to_cmyk(0.0, 0.0, 0.0) == (0.0, 0.0, 0.0, 1.0)  # Pure Black
-    assert rgb_to_cmyk(1.0, 1.0, 1.0) == (0.0, 0.0, 0.0, 0.0)  # Pure White
+    assert rgb_to_cmyk(1.0, 0.0, 0.0) == (0.0, 1.0, 1.0, 0.0)
+    assert rgb_to_cmyk(0.0, 1.0, 0.0) == (1.0, 0.0, 1.0, 0.0)
+    assert rgb_to_cmyk(0.0, 0.0, 1.0) == (1.0, 1.0, 0.0, 0.0)
+    assert rgb_to_cmyk(0.0, 0.0, 0.0) == (0.0, 0.0, 0.0, 1.0)
+    assert rgb_to_cmyk(1.0, 1.0, 1.0) == (0.0, 0.0, 0.0, 0.0)
 
 
 def test_css_color_to_cmyk():
@@ -103,9 +102,6 @@ def test_canvas_cmyk_renderer():
 
     page = pdf_doc[0]
 
-    # MediaBox should be larger than A4 (210mm x 297mm) due to 3mm bleed + 10mm crop margin
-    # 210mm + 2*(3+10) = 236mm = ~668.97pt
-    # 297mm + 2*(3+10) = 323mm = ~915.59pt
     assert page.rect.width > 210 * 72.0 / 25.4
     assert page.rect.height > 297 * 72.0 / 25.4
 
@@ -113,7 +109,6 @@ def test_canvas_cmyk_renderer():
 
 
 def test_cmyk_renderer_bbox_fallback_for_unsupported_types():
-    """Clipped shapes / table / checkbox must not be silently dropped."""
     doc = create_empty_document(name="Fallback")
     for i, l_type in enumerate(("star", "table", "checkbox", "polygon", "grid")):
         doc["layers"].append(
@@ -133,7 +128,6 @@ def test_cmyk_renderer_bbox_fallback_for_unsupported_types():
                 },
             }
         )
-    # Group is chrome-only — must not crash.
     doc["layers"].append(
         {
             "id": "layer-group",
@@ -153,7 +147,6 @@ def test_cmyk_renderer_bbox_fallback_for_unsupported_types():
     assert pdf_bytes.startswith(b"%PDF")
     pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     assert len(pdf_doc) == 1
-    # Drawings present beyond an empty page (fallback rects were painted).
     assert len(pdf_doc[0].get_drawings()) > 0
     pdf_doc.close()
 
@@ -208,7 +201,6 @@ def test_canvas_export_cmyk_pdf_writes_to_output_path_without_base64(tmp_path):
 
 def test_canvas_export_cmyk_pdf_large_persists_to_disk(monkeypatch):
     doc = create_empty_document(name="Large CMYK Doc")
-    # Simulate a large render output exceeding the inline threshold
     monkeypatch.setattr("backend.handlers.canvas._MAX_INLINE_PDF_BYTES", 100)
     res = canvas_export_cmyk_pdf(
         {
@@ -226,13 +218,10 @@ def test_canvas_export_cmyk_pdf_large_persists_to_disk(monkeypatch):
 
 
 def _page0_contents(pdf_bytes: bytes) -> bytes:
-    """Raw content stream of page 0 (drawing order = byte order in PDF)."""
     pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     try:
         page = pdf_doc[0]
         raw = b""
-        # PyMuPDF: get_contents() → xrefs; xref_stream → bytes.
-        # Pattern for a filled rect is `re f` (confirmed on PyMuPDF 1.x).
         for xref in page.get_contents():
             raw += pdf_doc.xref_stream(xref)
         return raw
@@ -241,11 +230,6 @@ def _page0_contents(pdf_bytes: bytes) -> bytes:
 
 
 def test_cmyk_renderer_z_order_background_does_not_cover_text():
-    """Rect fill must precede text in the stream so the text paints on top.
-
-    Today this fails: shapes commit after insert_textbox, so the fill covers
-    the text. Plans 003/004 make this green.
-    """
     doc = create_empty_document(name="Z-order")
     doc["layers"] = [
         {
@@ -280,11 +264,9 @@ def test_cmyk_renderer_z_order_background_does_not_cover_text():
 
     raw = _page0_contents(CanvasCmykRenderer(document=doc).render())
     text_at = raw.find(b"HOLA")
-    # `re f` = rectangle path + fill (PyMuPDF Shape.commit output).
     fill_at = raw.rfind(b"re f")
     assert text_at >= 0, "text HOLA missing from content stream"
     assert fill_at >= 0, "rect fill operator missing from content stream"
-    # Later content paints on top: fill must appear BEFORE text.
     assert fill_at < text_at, (
         f"z-order inverted: fill at {fill_at}, text at {text_at} "
         "(background would cover text)"
@@ -292,7 +274,6 @@ def test_cmyk_renderer_z_order_background_does_not_cover_text():
 
 
 def test_cmyk_renderer_z_order_text_below_rect():
-    """When text is below a rect in layer order, fill must paint after text."""
     doc = create_empty_document(name="Z-order inverse")
     doc["layers"] = [
         {
@@ -335,11 +316,6 @@ def test_cmyk_renderer_z_order_text_below_rect():
 
 
 def test_cmyk_renderer_resolves_runtime_content_from_context():
-    """CMYK export must fill {{key}}, field meta.key, and imageSlot from ctx.
-
-    Today fails: renderer only reads ctx['values'] and layer.value.
-    Plan 003 makes this green.
-    """
     import os
     import tempfile
 
@@ -426,7 +402,6 @@ def test_cmyk_renderer_resolves_runtime_content_from_context():
 
 
 def test_cmyk_renderer_multiple_contexts_and_pages():
-    """N contexts x M pages -> N*M PDF pages with per-context substitution."""
     doc = create_empty_document(name="Multi")
     doc["pages"] = [
         {"id": "page-1", "name": "Página 1"},
@@ -457,8 +432,7 @@ def test_cmyk_renderer_multiple_contexts_and_pages():
 
     pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     try:
-        assert len(pdf_doc) == 4  # 2 contexts x 2 pages
-        # Text layer is only on pageIndex 0 -> odd pages (1, 3) stay empty.
+        assert len(pdf_doc) == 4
         assert "A" in pdf_doc[0].get_text()
         assert "B" in pdf_doc[2].get_text()
     finally:
@@ -466,7 +440,6 @@ def test_cmyk_renderer_multiple_contexts_and_pages():
 
 
 def test_cmyk_renderer_pair_context_pages():
-    """pair_context_pages=True pairs context[i] with page i (no cartesian product)."""
     doc = create_empty_document(name="Paired")
     doc["pages"] = [
         {"id": "page-1", "name": "Página 1"},
@@ -533,7 +506,7 @@ def test_cmyk_renderer_pair_context_pages():
 
     pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     try:
-        assert len(pdf_doc) == 3  # paired, not 3x3=9
+        assert len(pdf_doc) == 3
         assert "ONE" in pdf_doc[0].get_text()
         assert "TWO" in pdf_doc[1].get_text()
         assert "THREE" in pdf_doc[2].get_text()
@@ -542,7 +515,6 @@ def test_cmyk_renderer_pair_context_pages():
 
 
 def test_cmyk_renderer_rotated_rect():
-    """Rotated rect draws a quad path instead of a plain axis-aligned fill."""
     doc = create_empty_document(name="Rotate rect")
     doc["layers"] = [
         {
@@ -638,7 +610,6 @@ def test_cmyk_renderer_image_object_fit_cover():
 
 
 def test_cmyk_renderer_caches_repeated_image_bytes(monkeypatch):
-    """Un logo repetido en N páginas se decodifica/convierte UNA vez (caché LRU)."""
     import os
     import tempfile
 
@@ -653,7 +624,6 @@ def test_cmyk_renderer_caches_repeated_image_bytes(monkeypatch):
             Image.new("RGB", (40, 20), color=(200, 30, 90)).save(png_path)
 
         doc = create_empty_document(name="Cached logo")
-        # 3 páginas: el logo (misma imagen) aparece en cada una.
         doc["pages"] = [{"id": f"page-{i}", "name": f"Página {i + 1}"} for i in range(3)]
         logo_layer = {
             "id": "layer-logo",
@@ -697,7 +667,6 @@ def test_cmyk_renderer_caches_repeated_image_bytes(monkeypatch):
 
 
 def test_cmyk_renderer_image_cache_evicts_lru(monkeypatch):
-    """La caché de imágenes no crece sin límite (LRU acotado a 128 entradas)."""
     from contextlib import contextmanager
 
     from PIL import Image
@@ -712,8 +681,7 @@ def test_cmyk_renderer_image_cache_evicts_lru(monkeypatch):
 
     monkeypatch.setattr(renderer_mod, "_open_export_image", fake_open)
 
-    rect = fitz.Rect(0, 0, 30, 15)  # px fijos a 300 dpi
-    # > max entradas con srcs distintos (miss forzado en cada llamada).
+    rect = fitz.Rect(0, 0, 30, 15)
     for i in range(renderer._image_cache_max + 10):
         prepared = renderer._prepare_image_for_rect_cached(
             f"fake-{i}", {}, rect, "fill",
@@ -753,7 +721,6 @@ def test_cmyk_renderer_text_align_and_font():
 
 
 def test_cmyk_renderer_opens_data_url_without_disk_path():
-    """M2: data: images must embed without writing a temp file (fallback path)."""
     from io import BytesIO
 
     from PIL import Image
@@ -789,7 +756,6 @@ def test_cmyk_renderer_opens_data_url_without_disk_path():
 
 
 def test_cmyk_renderer_resolves_canvas_asset_ref(tmp_path, monkeypatch):
-    """M2: canvas-asset:<sha> resolves under user_data_path('canvas/assets')."""
     from PIL import Image
 
     from backend.core.cmyk_pdf import renderer as renderer_mod

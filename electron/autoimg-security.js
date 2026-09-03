@@ -49,7 +49,6 @@ function assertNoSecretInObject(obj, path = 'root') {
     ) {
       throw new Error(`Respuesta IPC expone dato sensible en ${path}.${key}`);
     }
-    // No devolver email completo en objetos anidados de config (solo status de auth)
     if (typeof value === 'string' && value.length > 40) {
       if (/ya29\.|1\/\/|GOCSPX-/i.test(value)) {
         throw new Error(`Respuesta IPC parece incluir token en ${path}.${key}`);

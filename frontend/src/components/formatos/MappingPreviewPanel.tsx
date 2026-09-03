@@ -23,7 +23,6 @@ interface MappingPreviewPanelProps {
 
 type LoadStage = 'rendering' | 'template' | 'idle';
 
-/** Ignore scrollbar/layout jitter that would otherwise reload the page image in a loop. */
 const CONTAINER_WIDTH_RELOAD_THRESHOLD = 48;
 
 async function loadPdfFromBlob(blob: Blob): Promise<PDFDocumentProxy> {
@@ -160,8 +159,6 @@ export default function MappingPreviewPanel({
         if (await withMappingLoadTimeout(tryBackendRender())) return;
       } catch (err) {
         lastError = err instanceof Error ? err : new Error('No se pudo renderizar el template.');
-        // App sin reiniciar: el backend/preload en ejecución no conoce el método.
-        // Los fallbacks de pdfjs se cuelgan, así que mostramos la guía de reinicio ya.
         if (isStaleBackendError(err)) {
           if (generation !== loadGenerationRef.current) return;
           setLoading(false);

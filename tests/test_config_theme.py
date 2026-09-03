@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import backend.core.config_theme as config_theme
 from backend.core.config_theme import (
     DEFAULT_THEME,
@@ -83,3 +86,36 @@ def test_all_presets_define_required_theme_keys() -> None:
 def test_preset_list_includes_varied_appearance_styles() -> None:
     names = set(get_preset_names())
     assert {"Porcelain Light", "Graphite Focus", "Olive Operations", "Copper Night", "Midnight Ocean", "Forest Zen", "Royal Purple", "Arctic Frost"}.issubset(names)
+
+
+def test_default_theme_strictly_matches_shared_default_theme_json() -> None:
+    shared_path = Path(__file__).resolve().parent.parent / "shared" / "default-theme.json"
+    assert shared_path.is_file(), f"Missing shared contract: {shared_path}"
+    shared_theme = json.loads(shared_path.read_text(encoding="utf-8"))
+
+    assert shared_theme == DEFAULT_THEME
+    assert shared_theme == load_preset("Slate Professional")
+
+
+def test_frontend_theme_contract_parity() -> None:
+    frontend_applier = Path(__file__).resolve().parent.parent / "frontend" / "src" / "utils" / "themeApplier.ts"
+    assert frontend_applier.is_file(), f"Missing frontend themeApplier: {frontend_applier}"
+    applier_text = frontend_applier.read_text(encoding="utf-8")
+    assert "shared/default-theme.json" in applier_text, (
+        "frontend themeApplier.ts must import single source shared/default-theme.json"
+    )
+    assert "export const DEFAULT_THEME" in applier_text
+
+    appearance_view = (
+        Path(__file__).resolve().parent.parent
+        / "frontend"
+        / "src"
+        / "components"
+        / "settings"
+        / "AppearanceView.tsx"
+    )
+    assert appearance_view.is_file(), f"Missing AppearanceView: {appearance_view}"
+    view_text = appearance_view.read_text(encoding="utf-8")
+    assert "DEFAULT_THEME" in view_text
+    assert "bg: '#0F172A'" not in view_text, "AppearanceView.tsx must not hardcode Slate Professional colors"
+

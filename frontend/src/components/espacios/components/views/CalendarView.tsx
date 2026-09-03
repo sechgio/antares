@@ -25,7 +25,6 @@ interface CalendarViewProps {
   tareas: Tarea[];
   columns?: BoardColumn[];
   onDateChange: (id: string, dueDate: string | null) => void;
-  /** Prefer this when available so multi-day drag keeps start+due. */
   onDatesChange?: (id: string, startDate: string | null, dueDate: string | null) => void;
   onAddTask?: () => void;
   onAddTaskOnDate?: (dueDate: string) => void;
@@ -46,7 +45,6 @@ function statusAccent(status: TareaStatus, overdue: boolean, columns: BoardColum
   return columnColor(columns, status);
 }
 
-/** Exclusive end date (YYYY-MM-DD) for FullCalendar all-day ranges. */
 function exclusiveEndIso(inclusiveEnd: string): string {
   const [y, m, d] = inclusiveEnd.split('-').map(Number);
   const date = new Date(y, (m ?? 1) - 1, d ?? 1);
@@ -59,7 +57,6 @@ function toEvent(tarea: Tarea, columns: BoardColumn[]): EventInput | null {
 
   let start = tarea.start_date ?? tarea.due_date!;
   let inclusiveEnd = tarea.due_date ?? tarea.start_date!;
-  // Keep parity with Gantt: never emit inverted ranges to FullCalendar.
   if (inclusiveEnd < start) {
     const tmp = start;
     start = inclusiveEnd;
@@ -170,7 +167,6 @@ export default function CalendarView({
     }
 
     const start = toLocalDateString(event.start);
-    // FullCalendar exclusive end → inclusive due
     let due = start;
     if (event.end) {
       const end = new Date(event.end);
@@ -209,7 +205,6 @@ export default function CalendarView({
 
   const renderDayCell = useCallback(
     (arg: DayCellContentArg) => {
-      // Week time-grid paints dates in the column header, not inside cells.
       if (arg.view.type === 'timeGridWeek') {
         return <span className="fc-day-num-hidden" aria-hidden />;
       }

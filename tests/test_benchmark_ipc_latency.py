@@ -1,4 +1,3 @@
-"""Unit tests for IPC latency benchmark helpers (no live backend spawn)."""
 
 from __future__ import annotations
 
@@ -30,7 +29,6 @@ def test_nearest_rank_percentile() -> None:
 
 def test_summarize_excludes_first_from_stable_percentiles() -> None:
     bench = _load_bench()
-    # First is huge; stable samples are small — p95 must ignore first.
     summary = bench.summarize_latencies(
         method="version",
         first_ms=5000.0,

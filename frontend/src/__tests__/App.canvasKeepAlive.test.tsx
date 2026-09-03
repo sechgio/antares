@@ -88,7 +88,6 @@ describe('App Canvas keep-alive', () => {
       expect(screen.getByText(/Arrastra imágenes o videos aquí/i)).toBeInTheDocument();
     }, { timeout: 8000 });
 
-    // Still in the DOM while another tab is active (not remounted on return).
     expect(screen.getByTestId('canvas-keep-alive')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Canvas' }));

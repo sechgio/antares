@@ -97,8 +97,6 @@ describe('exportEvidenciaDocument payload', () => {
 
   it('PDF with html omits images and image_paths duplicates', async () => {
     const images = [makeImage('a.jpg')];
-    // Force browser download path: dialogSave returns no path via electron mock above.
-    // exportEvidenciaDocument checks window.electronAPI?.invoke — stub without invoke.
     vi.stubGlobal('window', { electronAPI: {} });
     await exportEvidenciaDocument('T', [], images, null, null, 'pdf');
     expect(renderMock).toHaveBeenCalledTimes(1);

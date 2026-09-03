@@ -1,8 +1,3 @@
-"""Parity contract test: shared/html-sanitizer-spec.json must hold for the
-Python/WeasyPrint adapter (sanitize_html_for_pdf). The same corpus runs
-against the JS adapters in tests/test-html-sanitizer-spec.js — drift
-between the twins becomes a failing build.
-"""
 
 from __future__ import annotations
 

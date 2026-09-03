@@ -1,4 +1,3 @@
-"""Shared WeasyPrint HTML→PDF helpers with sanitizer + deny-by-default fetch."""
 
 from __future__ import annotations
 
@@ -10,10 +9,8 @@ from typing import Any
 
 from backend.utils.html_sanitizer import sanitize_html_for_pdf
 
-# Thread-local FontConfiguration (heavy jobs run concurrently).
 _FONT_CONFIG = threading.local()
 
-# Process-wide LRU of sanitized HTML → PDF (lock guards map only).
 _PDF_CACHE_MAX_ENTRIES = 2
 _PDF_CACHE_MAX_BYTES = 8 * 1024 * 1024
 _PDF_CACHE: OrderedDict[str, bytes] = OrderedDict()
@@ -21,13 +18,11 @@ _PDF_CACHE_LOCK = threading.Lock()
 
 
 def reset_pdf_cache_for_tests() -> None:
-    """Clear the sanitized-PDF LRU (test helper)."""
     with _PDF_CACHE_LOCK:
         _PDF_CACHE.clear()
 
 
 def _thread_font_config() -> Any:
-    """Return a thread-local WeasyPrint FontConfiguration, creating it once."""
     config = getattr(_FONT_CONFIG, "value", None)
     if config is None:
         from weasyprint.text.fonts import FontConfiguration  # type: ignore[import-untyped]
@@ -38,7 +33,6 @@ def _thread_font_config() -> Any:
 
 
 def deny_external_url_fetcher(url: str, **kwargs: Any) -> Any:
-    """Allow only data: URIs; deny all other fetches (defense in depth)."""
     from weasyprint.urls import URLFetcher, URLFetcherResponse  # type: ignore[import-untyped]
 
     if str(url).strip().lower().startswith("data:"):
@@ -67,7 +61,6 @@ def _cache_put(digest: str, pdf: bytes) -> None:
 
 
 def write_pdf_sanitized(html_string: str) -> bytes:
-    """Sanitize HTML then render PDF with network/file URL fetch denied."""
     from weasyprint import HTML
 
     cleaned = sanitize_html_for_pdf(html_string)

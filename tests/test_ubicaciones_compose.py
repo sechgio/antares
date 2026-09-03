@@ -1,4 +1,3 @@
-"""Tests de composición UBICACIONES (sin Playwright)."""
 
 from io import BytesIO
 from typing import cast
@@ -24,11 +23,6 @@ from backend.utils.paths import resource_path
 
 
 def _measure_footer_band_height(jpg_path: str) -> int:
-    """Mide la altura (px) de la banda negra principal en una plantilla JPG.
-
-    Helper de test (era shipped en prod): usa getpixel() por pixel, lento pero
-    suficiente para validar medidas de las plantillas de referencia una vez.
-    """
     img = Image.open(jpg_path).convert("RGB")
     w, h = img.size
     black_rows: list[int] = []
@@ -114,19 +108,16 @@ def test_compose_preview_dimensions(formato: str) -> None:
 @pytest.mark.parametrize("formato", ["vertical", "horizontal"])
 def test_footer_is_black_without_map_strip(formato: str) -> None:
     cap_w, cap_h = _map_capture_size(formato, preview=False)
-    # Mapa distinto del footer para detectar franjas de mapa bajo la barra
     map_bytes = _fake_map_png(cap_w, cap_h, (100, 150, 200))
     img = _compose_ubicacion_image(SAMPLE_DATOS, formato, map_bytes, preview=False)
     out_w, out_h, footer_h = _dimensions_for(formato, preview=False)
     map_h = out_h - footer_h
 
-    # Borde superior del footer: negro en los extremos
     left = img.getpixel((0, map_h))
     right = img.getpixel((out_w - 1, map_h))
     assert sum(left) < 80
     assert sum(right) < 80
 
-    # Fila inmediatamente encima del footer: tono del mapa (no negro puro)
     above = img.getpixel((out_w // 2, map_h - 1))
     assert sum(above) > 150
 
@@ -136,7 +127,6 @@ def test_crop_footer_bar_removes_map_preview_strip() -> None:
     original = Image.open(footer_path)
     cropped = _crop_footer_bar(original)
     assert cropped.height <= original.height
-    # PNG legacy incluía mapa debajo (~260px); el repo usa barra negra ~133px.
     assert cropped.height <= max(original.height, 260) * 0.55
 
 
@@ -291,22 +281,16 @@ def test_export_fetch_has_wider_geo_footprint_than_preview(formato: str) -> None
 
 
 def test_output_pdf_filename_sanitizes_windows_invalid_chars() -> None:
-    """El nombre del PDF no debe contener caracteres inválidos en Windows
-    (:*?\"<>|) ni separadores de path — de lo contrario PIL.save levanta
-    OSError y aborta el batch entero de ubicaciones."""
     invalid = set('<>:"/\\|?*')
 
-    # Casos con cada carácter inválido suelto.
     assert _output_pdf_filename("A:B") == "A_B.pdf"
     assert _output_pdf_filename("A?B*C") == "A_B_C.pdf"
     assert _output_pdf_filename('A"B|C') == "A_B_C.pdf"
     assert _output_pdf_filename("A<B>C") == "A_B_C.pdf"
     assert _output_pdf_filename("A/B\\C") == "A_B_C.pdf"
 
-    # Un código válido no se altera.
     assert _output_pdf_filename("RA-10") == "RA-10.pdf"
 
-    # Ningún caso produce un nombre con caracteres inválidos.
     for cod in ["A:B", "A?B*C", 'A"B|C', "A<B>C", "A/B\\C", "RA-10", "ID 42"]:
         name = _output_pdf_filename(cod)
         assert not (invalid & set(name)), f"{name!r} still contains invalid chars"

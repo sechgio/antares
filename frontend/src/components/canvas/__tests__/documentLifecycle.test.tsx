@@ -1,11 +1,3 @@
-/**
- * useDocumentLifecycle tests — the document-switch lifecycle owns the
- * save → persist history → cloud push → create/get → hydrate → replace chain.
- *
- * These pin the ordering and per-operation differences directly on the hook
- * (no 2,000-line component render): save-before-switch for open/new/duplicate,
- * no pre-save for delete, cloud queue calls, and viewport/selection resets.
- */
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { useRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -176,7 +168,6 @@ describe('useDocumentLifecycle', () => {
     expect(opened.id).toBe('doc-tpl');
     expect(opened.name).toBe('Certificado');
     expect(opened.layers.some((l) => l.id === 'tpl-rect')).toBe(true);
-    // The cloud push carries the mutated document, not the blank one.
     const pushed = vi
       .mocked(queueCanvasCloudPush)
       .mock.calls.map(([d]) => d)
@@ -529,7 +520,6 @@ describe('useDocumentLifecycle', () => {
 
     const { result } = renderLifecycle();
     const first = result.current.onOpenDoc('doc-b');
-    // Flush microtasks so the first op reaches the in-flight canvasSave.
     await act(async () => {
       await Promise.resolve();
     });

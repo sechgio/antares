@@ -1,4 +1,3 @@
-"""IPC integration tests — spawn real Python backend and verify JSON-RPC."""
 
 import json
 import os
@@ -16,7 +15,6 @@ BACKEND_SCRIPT = Path(__file__).parent.parent / "backend" / "main.py"
 
 
 def _drain_stderr(proc: subprocess.Popen, sink: list[str]) -> None:
-    """Drain stderr so warm-up logs cannot fill the Windows pipe and deadlock IPC."""
     if proc.stderr is None:
         return
     for line in iter(proc.stderr.readline, ""):
@@ -25,7 +23,6 @@ def _drain_stderr(proc: subprocess.Popen, sink: list[str]) -> None:
 
 @pytest.fixture
 def backend_process():
-    """Spawn the Python backend and wait for the ready message."""
     project_root = BACKEND_SCRIPT.parent.parent
     proc = subprocess.Popen(
         [sys.executable, "-m", "backend.main"],
@@ -39,7 +36,6 @@ def backend_process():
     stderr_lines: list[str] = []
     threading.Thread(target=_drain_stderr, args=(proc, stderr_lines), daemon=True).start()
 
-    # Wait for ready message (max 10 seconds)
     buffer = ""
     start = time.time()
     while time.time() - start < 10:
@@ -63,14 +59,12 @@ def backend_process():
 
     yield proc
 
-    # Cleanup
     proc.stdin.close()
     proc.kill()
     proc.wait()
 
 
 def _rpc_call(proc, method: str, params: dict, timeout: float = 5.0):
-    """Send a JSON-RPC request and return the response."""
     req_id = str(int(time.time() * 1000))
     request = {
         "jsonrpc": "2.0",
@@ -169,11 +163,11 @@ class TestIPC:
         assert "PNG" in formats
         assert "WEBP" in formats
 
-    def test_db_records_shape(self, backend_process) -> None:
-        resp = _rpc_call(backend_process, "db_records", {})
+    def test_db_columns_shape(self, backend_process) -> None:
+        resp = _rpc_call(backend_process, "db_columns", {})
         assert "result" in resp
         assert isinstance(resp["result"]["records"], list)
-        assert "fields" in resp["result"]
+        assert "columns" in resp["result"]
 
     def test_theme_get(self, backend_process) -> None:
         resp = _rpc_call(backend_process, "theme_get", {})

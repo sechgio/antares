@@ -12,7 +12,6 @@ export interface PopoverPosition {
 interface UseAnchoredPopoverOptions {
   estimatedHeight: number;
   estimatedWidth: number;
-  /** Prefer aligning popup to the right edge of the trigger when space is tight. */
   align?: "start" | "end" | "center";
 }
 

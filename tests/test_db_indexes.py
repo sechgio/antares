@@ -1,4 +1,3 @@
-"""Verify that init_db creates explicit indexes on the imagenes table."""
 
 from __future__ import annotations
 
@@ -7,7 +6,6 @@ from backend.core.database import get_db_path, init_db
 
 
 def test_indexes_created() -> None:
-    """Required explicit indexes must exist after init_db."""
     init_db()
 
     import sqlite3
@@ -20,14 +18,12 @@ def test_indexes_created() -> None:
         assert len(explicit_indexes) > 0, "No explicit indexes found on imagenes table"
 
         index_names = {idx[1] for idx in explicit_indexes}
-        # Reserved PK ``id`` is not indexed as a data column (see _data_fields).
         for field_name in get_field_names():
             if field_name.lower() == "id":
                 continue
             assert f"idx_imagenes_{field_name}" in index_names
             assert f"idx_imagenes_lower_{field_name}" in index_names
 
-        # Each explicit index must reference at least one column (cid=-2 for exprs)
         for idx in explicit_indexes:
             idx_name = idx[1]
             info = conn.execute(f"PRAGMA index_info({idx_name})").fetchall()

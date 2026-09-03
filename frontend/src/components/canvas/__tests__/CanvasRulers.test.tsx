@@ -3,11 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CanvasRulers from '../editor/CanvasRulers';
 import { MM_TO_PX } from '../ops/drawHelpers';
 
-/**
- * Guide creation from rulers (Figma parity): drag out of a ruler creates a
- * guide with a live position chip; releasing back on the ruler or pressing
- * Esc cancels the creation. History commits only on pointerup confirm.
- */
 describe('CanvasRulers guide creation', () => {
   let frames: Map<number, FrameRequestCallback>;
   let nextId: number;

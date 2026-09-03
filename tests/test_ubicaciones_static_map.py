@@ -1,4 +1,3 @@
-"""Tests para el provider de mapas estáticos (reemplazo de Playwright)."""
 
 import math
 import os
@@ -48,7 +47,6 @@ def test_resolve_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     assert ub._resolve_api_key({"api_key": "xyz"}) == "xyz"
     monkeypatch.setenv("ANTARES_GOOGLE_MAPS_KEY", "envkey")
     assert ub._resolve_api_key(None) == "envkey"
-    # payload wins over env
     assert ub._resolve_api_key({"api_key": "pk"}) == "pk"
 
 
@@ -59,7 +57,6 @@ class TestCapFetchSize:
     def test_caps_long_side_preserving_aspect(self) -> None:
         w, h = ub._cap_fetch_size(2480, 3386)
         assert max(w, h) <= ub._MAP_FETCH_MAX_DIM
-        # aspect preserved within rounding
         assert w / h == pytest.approx(2480 / 3386, rel=0.01)
 
     def test_never_zero(self) -> None:
@@ -68,7 +65,6 @@ class TestCapFetchSize:
 
 
 def test_lonlat_to_webmercator_pixel_origin() -> None:
-    # Web Mercator: (lon=-180, lat~0) maps to x=0; lat=0 maps to y = n*128.
     x, y = ub._lonlat_to_webmercator_pixel(-180.0, 0.0, 0)
     assert x == pytest.approx(0.0, abs=1e-3)
     assert y == pytest.approx(128.0, abs=1e-3)
@@ -77,8 +73,8 @@ def test_lonlat_to_webmercator_pixel_origin() -> None:
 @pytest.mark.parametrize(
     ("lat", "lon"),
     [
-        (-12.0464, -77.0428),  # Plaza de Armas de Lima
-        (40.6892, -74.0445),   # Estatua de la Libertad
+        (-12.0464, -77.0428),
+        (40.6892, -74.0445),
     ],
 )
 def test_webmercator_center_round_trips_to_requested_coordinates(lat: float, lon: float) -> None:
@@ -101,7 +97,6 @@ def test_fetch_static_map_osm_returns_image(monkeypatch: pytest.MonkeyPatch) -> 
     data = ub.fetch_static_map(-12.046, -77.042, 800, 600, zoom=18, provider="osm")
     img = Image.open(BytesIO(data))
     assert img.size == ub._cap_fetch_size(800, 600)
-    # A real (colored) map passes the tiles heuristic.
     assert ub._screenshot_has_map_tiles(data)
 
 
@@ -138,12 +133,10 @@ def test_fetch_static_map_fallback_on_http_failure(monkeypatch: pytest.MonkeyPat
     img = Image.open(BytesIO(data))
     fw, fh = ub._cap_fetch_size(800, 600)
     assert img.size == (fw, fh)
-    # Uniform gray placeholder does NOT pass the tiles heuristic.
     assert not ub._screenshot_has_map_tiles(data)
 
 
 def test_map_screenshot_fetch_is_single_flight(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Concurrent requests for one map key share the same provider fetch."""
     import threading
 
     ub._clear_ubicaciones_caches()
@@ -175,7 +168,6 @@ def test_map_screenshot_fetch_is_single_flight(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_map_fallback_uses_short_negative_cache(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A provider failure is backed off briefly but retries after the TTL."""
     ub._clear_ubicaciones_caches()
     calls = 0
     fallback = ub._fallback_map_bytes(320, 240)
@@ -241,12 +233,6 @@ def test_fetch_static_map_google_requests_proportional_viewport(monkeypatch: pyt
 
 def test_handle_generar_ubicaciones_skips_non_numeric_coords(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Una fila con lat/lon no numérico debe skiparse, no crashar el batch.
-
-    El filtro histórico sólo rechazaba NaN (``pd.isna("abc")`` es False), así que
-    un texto en la columna de coordenadas pasaba y luego ``float(datos['lat'])``
-    levantaba ValueError dentro del worker, abortando todo el batch vía ex.map.
-    """
     import openpyxl
 
     monkeypatch.setattr(ub, "fetch_static_map", lambda *a, **k: _png_bytes((256, 256)))
@@ -255,8 +241,8 @@ def test_handle_generar_ubicaciones_skips_non_numeric_coords(
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.append(["latitud", "longitud"])
-    ws.append([-12.0, -77.0])   # válida
-    ws.append(["abc", -77.0])   # lat no-numérica -> debe skiparse
+    ws.append([-12.0, -77.0])
+    ws.append(["abc", -77.0])
     wb.save(xlsx)
 
     out_dir = tmp_path / "out"
@@ -274,10 +260,6 @@ def test_handle_generar_ubicaciones_skips_non_numeric_coords(
 
 def test_handle_generar_ubicaciones_continues_after_row_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Una fila que falla al renderizar (IO, imagen corrupta, etc.) no debe
-    abortar el batch: las demás filas se procesan y se reporta el conteo de
-    fallidos. Antes el try/finally sin except dejaba que ex.map re-lanzara y
-    el handler devolvía success:False con archivos huérfanos."""
     import openpyxl
 
     monkeypatch.setattr(ub, "fetch_static_map", lambda *a, **k: _png_bytes((256, 256)))
@@ -286,8 +268,8 @@ def test_handle_generar_ubicaciones_continues_after_row_failure(
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.append(["latitud", "longitud"])
-    ws.append([-12.0, -77.0])   # ID-1: ok
-    ws.append([-13.0, -78.0])   # ID-2: simulamos fallo de render
+    ws.append([-12.0, -77.0])
+    ws.append([-13.0, -78.0])
     wb.save(xlsx)
 
     real_gen = ub.generar_imagen_ubicacion
@@ -486,7 +468,6 @@ def test_handle_generar_ubicaciones_rejects_invalid_zoom(tmp_path: Path, zoom: o
 def test_handle_generar_ubicaciones_applies_custom_styles_and_map_opts(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    """generar_ubicaciones debe pasar customStyles y map_opts al renderer."""
     captured: list[tuple] = []
 
     def fake_render(d, formato, map_opts=None, custom_styles=None):
@@ -524,7 +505,6 @@ def test_handle_generar_ubicaciones_applies_custom_styles_and_map_opts(
 
 
 def _make_single_page_pdfs(tmp_path: Path, count: int = 1) -> list[str]:
-    """Create temp single-page PDFs for merge tests."""
     paths = []
     for i in range(count):
         img = Image.new("RGB", (10, 10), (1, 2, 3))
@@ -538,7 +518,6 @@ def _make_single_page_pdfs(tmp_path: Path, count: int = 1) -> list[str]:
 def test_merge_consolidated_pdfs_falls_back_when_default_locked(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    """Si ubicaciones_consolidado.pdf está bloqueado, guardar en nombre alternativo."""
     page_paths = _make_single_page_pdfs(tmp_path, 1)
     original_replace = os.replace
 
@@ -558,7 +537,6 @@ def test_merge_consolidated_pdfs_falls_back_when_default_locked(
 def test_merge_consolidated_pdfs_falls_back_on_windows_sharing_violation(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    """WinError 32 (archivo en uso) también debe probar ubicaciones_consolidado_2.pdf."""
     page_paths = _make_single_page_pdfs(tmp_path, 1)
     original_replace = os.replace
 
@@ -592,7 +570,6 @@ def test_merge_consolidated_pdfs_raises_clear_error_when_all_paths_locked(
 
 
 def test_merge_consolidated_pdfs_produces_multipage_pdf(tmp_path: Path) -> None:
-    """Merge single-page temp PDFs into one multi-page PDF; clean up temps."""
     page_paths = _make_single_page_pdfs(tmp_path, 3)
 
     result = ub._merge_consolidated_pdfs(page_paths, str(tmp_path))
@@ -636,10 +613,8 @@ def test_consolidated_export_uses_managed_temp_directory(monkeypatch: pytest.Mon
 
 
 def test_consolidated_mode_closes_rendered_images(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Consolidated mode must close each PIL image after saving to a temp page
-    PDF — holding all images in RAM OOMs on large batches."""
     closed = [0]
-    held: list = []  # strong refs prevent GC → __del__ → close()
+    held: list = []
 
     def _track(img: Image.Image) -> None:
         held.append(img)
@@ -688,8 +663,6 @@ def test_consolidated_mode_closes_rendered_images(monkeypatch: pytest.MonkeyPatc
 def test_consolidated_mode_failure_removes_temp_page_and_closes_images(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    """Si rgb.save falla en modo consolidado, la página temporal debe
-    eliminarse y las imágenes cerrarse — sin fugas en lotes con filas fallidas."""
 
     class Boom(Exception):
         pass
@@ -713,8 +686,6 @@ def test_consolidated_mode_failure_removes_temp_page_and_closes_images(
     real_mkstemp = tempfile.mkstemp
 
     def fake_mkstemp(**kw) -> tuple[int, str]:
-        # Capture the real mkstemp before patching: tempfile.mkstemp is patched
-        # at module level, so calling it by name here would recurse forever.
         kw.pop("dir", None)
         return real_mkstemp(dir=str(tmp_path), **kw)
 
@@ -746,7 +717,6 @@ def test_consolidated_mode_failure_removes_temp_page_and_closes_images(
 
 
 def test_preview_composed_cache_differs_by_formato() -> None:
-    """Cambiar formato debe producir previews compuestas distintas."""
     manual = {
         "lat": "-11.968674",
         "lon": "-76.978299",

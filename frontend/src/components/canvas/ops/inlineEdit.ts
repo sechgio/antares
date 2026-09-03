@@ -2,7 +2,6 @@ import type { CanvasLayer } from '../types';
 import { mm, parseMm } from '../types';
 import { MM_TO_PX } from './drawHelpers';
 
-/** Text layers that can enter on-canvas inline edit (not Excel field bindings). */
 export function canInlineEditLayer(layer: CanvasLayer | null | undefined): boolean {
   if (!layer) return false;
   if (layer.type !== 'text') return false;
@@ -11,7 +10,6 @@ export function canInlineEditLayer(layer: CanvasLayer | null | undefined): boole
   return true;
 }
 
-/** Field layers can open the binding editor (RightPanel), not free-form text. */
 export function canFocusFieldBinding(layer: CanvasLayer | null | undefined): boolean {
   if (!layer) return false;
   if (layer.type !== 'field') return false;
@@ -20,10 +18,6 @@ export function canFocusFieldBinding(layer: CanvasLayer | null | undefined): boo
   return true;
 }
 
-/**
- * Design-time label for Excel field layers.
- * Prefers fallback sample text (WYSIWYG of empty Generar) over the {{ KEY }} token.
- */
 export function fieldDesignLabel(layer: CanvasLayer): string {
   const key = layer.meta?.key || 'FIELD';
   const fallback = layer.meta?.fallback;
@@ -39,7 +33,6 @@ export function justifyContentForTextAlign(
   return 'flex-start';
 }
 
-/** True when global canvas shortcuts must not run (typing / form focus). */
 export function isEditableKeyboardTarget(el: EventTarget | null): boolean {
   if (!el || typeof el !== 'object') return false;
   const node = el as unknown as Pick<HTMLElement, 'tagName' | 'isContentEditable'>;
@@ -48,24 +41,18 @@ export function isEditableKeyboardTarget(el: EventTarget | null): boolean {
   return Boolean(node.isContentEditable);
 }
 
-/** True when a key should type-to-edit a selected text layer (Figma-like). */
 export function isTypeToEditKey(
   key: string,
   mods: { ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean } = {},
 ): boolean {
   if (mods.ctrlKey || mods.metaKey || mods.altKey) return false;
   if (key.length !== 1) return false;
-  if (key === ' ') return false; // Space stays temporary hand
+  if (key === ' ') return false;
   const code = key.charCodeAt(0);
   if (code < 32) return false;
   return true;
 }
 
-
-/**
- * Grow-only height (mm) so multiline text fits the measured content box.
- * `contentHeightPx` is scrollHeight of the editor at the current zoom.
- */
 export function fitTextHeightMm(
   currentHeightMm: number,
   contentHeightPx: number,
@@ -77,7 +64,6 @@ export function fitTextHeightMm(
   return Math.max(currentHeightMm, needed);
 }
 
-/** Apply grow-only height from editor scrollHeight; returns same layer if unchanged. */
 export function growTextLayerToContent(
   layer: CanvasLayer,
   contentHeightPx: number,

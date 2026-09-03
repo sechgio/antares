@@ -4,7 +4,6 @@ import { newId } from '../types';
 import { planMultiPageRender, renderMultiPageHtmlAsync } from '../runtime/planning';
 import { mergeCanvasHtmlDocuments, type FillContext } from '../runtime/renderHtml';
 
-/** Yield to the event loop so large bulk exports do not freeze the UI. */
 function yieldToMain(): Promise<void> {
   return new Promise((resolve) => {
     if (typeof requestAnimationFrame === 'function') {
@@ -30,10 +29,6 @@ export interface ExportCanvasPdfOptions {
   showCropMarks?: boolean;
 }
 
-/**
- * Expand each FillContext via planMultiPageRender into a flat document where
- * pageIndex 0..N-1 aligns 1:1 with contexts (pair_context_pages on the backend).
- */
 function expandCmykDocument(
   document: CanvasDocument,
   contexts: FillContext[],
@@ -74,8 +69,6 @@ export async function exportCanvasPdf(
   const { prepareDocumentImagesForExport, serializeDocumentImages } = await import('../utils/imageBlobStore');
   const { serializeCanvasManifest } = await import('../import/pdfManifest');
   const mode = options.colorMode === 'cmyk' ? 'cmyk' : 'rgb';
-  // Persist image refs once for both export preparation and the semantic
-  // manifest. This avoids a second asset-store round trip for the same blob.
   const manifestDocument = await serializeDocumentImages(options.document, {
     preferAssetRefs: true,
   });
@@ -101,7 +94,6 @@ export async function exportCanvasPdf(
 
   const htmlParts: string[] = [];
   for (let i = 0; i < options.contexts.length; i += 1) {
-    // Yields between pages inside each context, and between contexts.
     htmlParts.push(await renderMultiPageHtmlAsync(document, options.contexts[i]));
     if (i > 0 && i % YIELD_EVERY_CONTEXT === 0) {
       await yieldToMain();

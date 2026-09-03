@@ -1,7 +1,4 @@
-/* ===== VPAD – Padron Generator Styles ===== */
-/* All classes prefixed with vpad- to avoid conflicts */
 
-/* ===== APP LAYOUT ===== */
 .vpad-app {
     --vpad-base: var(--bg-base);
     --vpad-surface: var(--bg-surface);
@@ -36,14 +33,12 @@
     grid-template-columns: 0 1fr;
 }
 
-/* When embedded inside another app layout (not full viewport) */
 .vpad-app.vpad-app-embedded {
     height: 100%;
     min-height: 100%;
     max-height: 100%;
 }
 
-/* PDF Generation host */
 .vpad-pdf-hidden-container {
     position: fixed;
     left: -200vw;
@@ -89,7 +84,6 @@
     text-rendering: auto;
 }
 
-/* ===== SIDEBAR ===== */
 .vpad-sidebar {
     background: var(--vpad-surface);
     display: flex;
@@ -138,7 +132,6 @@
     height: 20px;
 }
 
-/* ---- Sidebar collapsed state ---- */
 .vpad-sidebar.collapsed {
     width: 0;
     min-width: 0;
@@ -159,7 +152,6 @@
     display: none;
 }
 
-/* ---- Scrollable config panel ---- */
 .vpad-config-panel {
     flex: 1 1 auto;
     overflow-y: auto;
@@ -184,7 +176,6 @@
     background: var(--scrollbar-thumb-hover);
 }
 
-/* ---- Sections ---- */
 .vpad-section {
     margin-bottom: 16px;
 }
@@ -199,7 +190,6 @@
     text-wrap: balance;
 }
 
-/* ---- Inset form groups (Apple Settings) ---- */
 .vpad-inset-group {
     border-radius: 11px;
     background: color-mix(in srgb, var(--vpad-input) 55%, transparent);
@@ -363,7 +353,6 @@
     justify-content: flex-start;
 }
 
-/* Legacy card (upload modal / unused form shells) */
 .vpad-card {
     background: var(--vpad-elevated);
     border: 1px solid var(--vpad-border);
@@ -371,7 +360,6 @@
     padding: 10px 12px;
 }
 
-/* ---- Upload Zone ---- */
 .vpad-upload-zone {
     display: flex;
     align-items: center;
@@ -443,7 +431,6 @@
     font-weight: 500;
 }
 
-/* ---- Fields ---- */
 .vpad-field {
     display: flex;
     flex-direction: column;
@@ -542,7 +529,6 @@
     grid-column: span 2;
 }
 
-/* ---- Action Box (inside config panel) ---- */
 .vpad-action-box {
     padding: 8px 0 4px;
     margin-top: 4px;
@@ -613,7 +599,6 @@
     color: var(--vpad-primary);
 }
 
-/* ---- Buttons ---- */
 .vpad-btn {
     display: inline-flex;
     align-items: center;
@@ -680,7 +665,6 @@
     background: color-mix(in srgb, var(--vpad-elevated) 70%, transparent);
 }
 
-/* ===== PREVIEW AREA ===== */
 .vpad-preview-area {
     display: flex;
     flex-direction: column;
@@ -699,7 +683,6 @@
     min-height: 45px;
     max-height: 45px;
     padding: 0 16px;
-    /* Always light material over the document canvas (Apple Preview) */
     background: rgba(247, 247, 248, 0.78);
     backdrop-filter: blur(20px) saturate(180%);
     -webkit-backdrop-filter: blur(20px) saturate(180%);
@@ -874,7 +857,6 @@
     page-break-after: always;
 }
 
-/* ===== SHEET (PRINT DOCUMENT) ===== */
 .vpad-sheet {
     width: 297mm;
     height: 210mm;
@@ -897,7 +879,6 @@
     padding: 8mm 10mm;
 }
 
-/* Sheet Header */
 .vpad-sheet-head {
     display: grid;
     grid-template-columns: 150px 1fr 180px;
@@ -964,7 +945,6 @@
     margin: 0;
 }
 
-/* Meta block */
 .vpad-meta {
     display: grid;
     grid-template-columns: 1.15fr 0.85fr;
@@ -995,7 +975,6 @@
     gap: 1px;
 }
 
-/* Value lines */
 .vpad-vline {
     display: grid;
     grid-template-columns: auto 1fr;
@@ -1056,7 +1035,6 @@
     padding: 0 2px;
 }
 
-/* Areas */
 .vpad-areas {
     margin-top: 5px;
     border: 1.5px solid #333;
@@ -1111,7 +1089,6 @@
     margin-top: 2px;
 }
 
-/* Notes */
 .vpad-notes {
     display: grid;
     grid-template-columns: 1.15fr 0.85fr;
@@ -1187,7 +1164,6 @@
     overflow: visible;
 }
 
-/* Table */
 .vpad-tbl {
     margin-top: 4px;
 }
@@ -1250,7 +1226,6 @@
     background: #eef3fa;
 }
 
-/* Footer */
 .vpad-sheet-foot {
     position: absolute;
     right: 14mm;
@@ -1288,7 +1263,6 @@
     font-size: 9px;
 }
 
-/* Volanteo Lurigancho V2 – hide top folio, use bottom sequential numbering */
 .vpad-sheet.volanteo-lurigancho-v2 .vpad-sheet-folio-top {
     display: none;
 }
@@ -1314,7 +1288,6 @@
     color: #000;
 }
 
-/* Volanteo section (last page only) */
 .vpad-volanteo-section {
     margin-top: 8px;
     padding-top: 6px;
@@ -1376,7 +1349,6 @@
     font-weight: 400;
 }
 
-/* ===== Water cut notice format ===== */
 .vpad-cut-sheet {
     padding: 14mm 10mm 12mm;
 }
@@ -1505,7 +1477,6 @@
     bottom: 4mm;
 }
 
-/* ===== RESPONSIVE ===== */
 @media (max-width: 1100px) {
     .vpad-app {
         grid-template-columns: 1fr;
@@ -1600,7 +1571,6 @@
     }
 }
 
-/* ===== PRINT ===== */
 @media print {
     .vpad-app {
         display: block;
@@ -1636,7 +1606,6 @@
     }
 }
 
-/* ===== LIGHT THEME OVERRIDES ===== */
 [data-theme="light"] .vpad-sidebar {
     background: #f7f7f8;
     border-right-color: rgba(0, 0, 0, 0.08);
@@ -1856,9 +1825,6 @@
     }
 }
 
-/* ── Toolbar chips — forced dark ink on light bar (legible) ─ */
-/* Scope under .vpad-preview-toolbar so theme text tokens cannot wash out labels */
-
 .vpad-preview-toolbar .vpad-toolbar-right {
     margin-left: auto;
     display: flex;
@@ -1892,7 +1858,6 @@
     border: none;
     border-radius: 8px;
     background: transparent;
-    /* Hardcoded — never inherit white/gray from dark theme tokens */
     color: #111111 !important;
     -webkit-text-fill-color: #111111;
     font-family: inherit;
@@ -1959,7 +1924,6 @@
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--vpad-accent) 50%, transparent);
 }
 
-/* Active / open — accent only when selected */
 .vpad-preview-toolbar .vpad-tool-chip.is-active,
 .vpad-preview-toolbar .vpad-tool-chip.is-open,
 .vpad-preview-toolbar .vpad-tool-chip.vpad-btn-folio-active,
@@ -1988,7 +1952,6 @@
     background: color-mix(in srgb, var(--vpad-accent) 22%, #ffffff);
 }
 
-/* Cómo usar — same black ink (must stay readable) */
 .vpad-preview-toolbar .vpad-tool-chip-quiet {
     color: #1f1f1f !important;
     -webkit-text-fill-color: #1f1f1f;
@@ -2053,7 +2016,6 @@
     transform-origin: top left;
 }
 
-/* ── Popover — restrained glass, Settings density ────────── */
 .vpad-folio-popover {
     position: absolute;
     top: calc(100% + 6px);
@@ -2102,7 +2064,6 @@
     color: var(--vpad-primary);
 }
 
-/* ── Inset groups ────────────────────────────────────────── */
 .vpad-folio-group {
     border-radius: 11px;
     background: color-mix(in srgb, var(--vpad-input) 55%, transparent);
@@ -2144,7 +2105,6 @@
     cursor: text;
 }
 
-/* Settings row: Label left · value › right */
 .vpad-folio-row-setting {
     justify-content: space-between;
     gap: 12px;
@@ -2225,7 +2185,6 @@
     color: var(--vpad-accent);
 }
 
-/* ── Switch ──────────────────────────────────────────────── */
 .vpad-folio-row-toggle {
     justify-content: space-between;
     cursor: pointer;
@@ -2280,14 +2239,12 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--vpad-accent) 26%, transparent);
 }
 
-/* ── Menu — text only, like macOS / iOS ──────────────────── */
 .vpad-folio-menu {
     position: relative;
     min-width: 0;
     z-index: 1;
 }
 
-/* Settings-row variant only: keep value column narrow */
 .vpad-folio-menu--setting {
     max-width: 62%;
     margin-left: auto;
@@ -2466,7 +2423,6 @@
     color: var(--vpad-accent);
 }
 
-/* ── Preview footer ──────────────────────────────────────── */
 .vpad-folio-preview {
     display: flex;
     flex-direction: column;
@@ -2499,7 +2455,6 @@
     opacity: 0.5;
 }
 
-/* ── Reset ───────────────────────────────────────────────── */
 .vpad-folio-reset {
     display: inline-flex;
     align-items: center;
@@ -2593,14 +2548,9 @@
     }
 }
 
-
-
-/* Tutorial uses vpad-tool-chip; keep class for any external refs */
 .tutorial-trigger-btn {
-    /* styled via .vpad-tool-chip */
 }
 
-/* Excel Modal */
 .vpad-excel-modal-overlay {
     position: fixed;
     inset: 0;

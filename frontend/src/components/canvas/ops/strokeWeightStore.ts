@@ -12,18 +12,15 @@ export function clampStrokeWeight(px: number): number {
 
 let lastStrokeWeightPx = DEFAULT_LINE_STROKE_PX;
 
-/** Remember a positive stroke weight for subsequent line inserts. */
 export function rememberStrokeWeight(px: number): void {
   const weight = clampStrokeWeight(px);
   if (weight > 0) lastStrokeWeightPx = weight;
 }
 
-/** Stroke weight to apply when placing a new line with the line tool. */
 export function strokeWeightForNewLine(): number {
   return lastStrokeWeightPx > 0 ? lastStrokeWeightPx : DEFAULT_LINE_STROKE_PX;
 }
 
-/** Reset session last-used weight (tests / explicit restore). */
 export function resetLastStrokeWeight(px = DEFAULT_LINE_STROKE_PX): void {
   lastStrokeWeightPx = clampStrokeWeight(px) || DEFAULT_LINE_STROKE_PX;
 }

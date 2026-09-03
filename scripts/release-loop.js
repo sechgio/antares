@@ -1,26 +1,5 @@
 #!/usr/bin/env node
 
-/**
- * Antares Release Pipeline Loop
- * ==============================
- *
- * Flujo de 7 pasos para validar y disparar releases automatizados.
- *
- * Flags:
- *   (ninguno)  = dry-run — valida todo, sin side effects
- *   --ship     = crea y empuja el tag; GitHub Actions publica la release
- *   --build    = también corre build local (backend + frontend)
- *
- * Exit codes:
- *   0 = todo OK, release completado (o dry-run pasó)
- *   1 = validación falló
- *   2 = error inesperado
- *
- * Uso:
- *   node scripts/release-loop.js           # dry-run
- *   node scripts/release-loop.js --ship    # release real
- *   node scripts/release-loop.js --ship --build  # release + build local
- */
 
 const fs = require('fs');
 const path = require('path');
@@ -30,21 +9,18 @@ const {
   ROOT,
   sh,
   trySh,
+  shDetailed,
   step,
   skip,
   die,
 } = require('./lib/loop-utils');
 
-// ─── Validators ───────────────────────────────────────────────────────────────
-
-function validateEnvironment() {
-  // gh auth
+function validateEnvironment({ refreshRemote = true } = {}) {
   const ghStatus = trySh('gh auth status 2>&1', { silent: true });
   if (!ghStatus) {
     throw new Error('GitHub CLI (gh) no está autenticado. Corre: gh auth login');
   }
 
-  // remote URL
   const remoteUrl = trySh('git remote get-url origin', { silent: true });
   if (!remoteUrl || !remoteUrl.includes(`${REPO_OWNER}/${REPO_NAME}`)) {
     throw new Error(
@@ -52,26 +28,36 @@ function validateEnvironment() {
     );
   }
 
-  // branch = main
   const branch = sh('git rev-parse --abbrev-ref HEAD', { silent: true });
   if (branch !== 'main') {
     throw new Error(`Debes estar en main (actual: ${branch}). Los releases solo desde main.`);
   }
 
-  // clean tree
   const status = sh('git status --porcelain', { silent: true });
   if (status) {
     throw new Error('El working tree no está limpio. Commit o stash tus cambios primero.');
   }
 
-  // HEAD must be exactly the reviewed commit currently at origin/main.
-  sh('git fetch origin main 2>&1', { silent: true });
-  const [ahead, behind] = sh('git rev-list --left-right --count HEAD...origin/main', { silent: true })
-    .split(/\s+/)
-    .map(Number);
-  if (ahead !== 0 || behind !== 0) {
+  if (refreshRemote) {
+    sh('git fetch origin main 2>&1', { silent: true });
+    const [ahead, behind] = sh('git rev-list --left-right --count HEAD...origin/main', { silent: true })
+      .split(/\s+/)
+      .map(Number);
+    if (ahead !== 0 || behind !== 0) {
+      throw new Error(
+        `HEAD debe coincidir exactamente con origin/main (ahead=${ahead}, behind=${behind}).`
+      );
+    }
+    return;
+  }
+
+  sh('git fetch --dry-run origin main 2>&1', { silent: true });
+  const remoteHead = sh('git ls-remote origin refs/heads/main', { silent: true })
+    .split(/\s+/)[0];
+  const head = sh('git rev-parse HEAD', { silent: true });
+  if (remoteHead && remoteHead !== head) {
     throw new Error(
-      `HEAD debe coincidir exactamente con origin/main (ahead=${ahead}, behind=${behind}).`
+      `HEAD debe coincidir exactamente con origin/main (HEAD=${head}, origin/main=${remoteHead}).`
     );
   }
 }
@@ -84,24 +70,26 @@ function detectVersion() {
     throw new Error(`Versión inválida en package.json: "${version}". Debe ser semver (X.Y.Z).`);
   }
 
-  // Check tag doesn't already exist
-  const existingTag = trySh(`git tag -l "v${version}"`, { silent: true });
+  const existingTag = sh(`git tag -l "v${version}"`, { silent: true });
   if (existingTag) {
     throw new Error(`El tag v${version} ya existe localmente. Bump la versión primero.`);
   }
 
-  // Check remote tag
-  const remoteTag = trySh(`git ls-remote --tags origin "v${version}" 2>/dev/null`, { silent: true });
+  const remoteTag = sh(`git ls-remote --tags origin "v${version}"`, { silent: true });
   if (remoteTag) {
     throw new Error(`El tag v${version} ya existe en origin. Bump la versión primero.`);
   }
 
-  // Check release doesn't already exist
-  const existingRelease = trySh(
+  const releaseCheck = shDetailed(
     `gh release view "v${version}" --json tagName 2>&1`,
     { silent: true }
   );
-  if (existingRelease && !existingRelease.includes('release not found')) {
+  if (!releaseCheck.ok && !/release not found/i.test(releaseCheck.output)) {
+    throw new Error(
+      `No se pudo verificar si existe el release v${version}: ${releaseCheck.output || 'gh falló.'}`
+    );
+  }
+  if (releaseCheck.ok && releaseCheck.output) {
     throw new Error(`El release v${version} ya existe en GitHub.`);
   }
 
@@ -127,7 +115,6 @@ function validateChangelog(version) {
     );
   }
 
-  // Extract the entry content
   const startIndex = match.index + match[0].length;
   const remaining = content.slice(startIndex);
   const nextHeader = remaining.match(/\n##\s+\[/);
@@ -135,7 +122,6 @@ function validateChangelog(version) {
     ? remaining.slice(0, nextHeader.index)
     : remaining;
 
-  // Must have at least one section heading
   if (!/###\s+(Added|Changed|Deprecated|Removed|Fixed|Security)/.test(entryContent)) {
     throw new Error(
       `La entrada de CHANGELOG para [${version}] no tiene secciones.\n` +
@@ -177,8 +163,6 @@ function pushTag(version) {
   console.log(`    Tag v${version} pusheado a origin.`);
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
-
 function main() {
   const args = process.argv.slice(2);
   const isShip = args.includes('--ship');
@@ -198,44 +182,39 @@ function main() {
 }
 
 function runReleaseLoop(isShip, doBuild) {
-  // ── Step 1: Validate Environment ──
-  step('① Entorno (gh auth, remote, branch, clean, up-to-date)', validateEnvironment);
+  step(
+    '① Entorno (gh auth, remote, branch, clean, up-to-date)',
+    () => validateEnvironment({ refreshRemote: isShip }),
+  );
 
-  // ── Step 2: Detect Version ──
   let version;
   step('② Detectar versión', () => {
     version = detectVersion();
     console.log(`    Versión: ${version}`);
   });
 
-  // ── Step 3: Validate Changelog ──
   step('③ Validar CHANGELOG.md', () => validateChangelog(version));
 
-  // ── Step 4: Quality Gate ──
   step('④ Quality Gate (lint + typecheck + test + audit)', runQualityGate);
 
-  // ── Step 5: Build (opcional con --build) ──
   if (doBuild) {
     step('⑤ Build local (backend + frontend)', runBuild);
   } else {
     skip('⑤ Build local', 'omitido, usa --build para incluir');
   }
 
-  // ── Step 6: Create Git Tag ──
   if (isShip) {
     step('⑥ Crear git tag', () => createGitTag(version));
   } else {
     skip('⑥ Crear git tag', 'dry-run, usa --ship para ejecutar');
   }
 
-  // ── Step 7: Push Tag ──
   if (isShip) {
     step('⑦ Push tag a origin', () => pushTag(version));
   } else {
     skip('⑦ Push tag a origin', 'dry-run, usa --ship para ejecutar');
   }
 
-  // ── Summary ──
   console.log(`\n════════════════════════════════════════════`);
   if (isShip) {
     console.log(`  ✅ Tag v${version} enviado.`);

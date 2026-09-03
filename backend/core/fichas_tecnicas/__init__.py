@@ -1,5 +1,3 @@
-"""Fichas Técnicas de Evaluación de Actividades — core package."""
-
 from __future__ import annotations
 
 from backend.core.fichas_tecnicas.database import FichasTecnicasDB, get_fichas_db

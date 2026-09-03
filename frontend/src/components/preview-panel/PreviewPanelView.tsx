@@ -199,13 +199,11 @@ export default function PreviewPanelView() {
   const { backendState } = useBackendStatus();
   const panelRef = useRef<HTMLIFrameElement>(null);
 
-  // ─── Data State ───
   const [data, setData] = useState<Record<string, unknown>[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [images, setImages] = useState<File[]>([]);
   const [sheets, setSheets] = useState<Array<{ name: string; rows: unknown[][]; rowCount?: number }>>([]);
   const [selectedSheetName, setSelectedSheetName] = useState('');
-  /** Spill cache token from spreadsheet_parse — rows loaded per sheet on demand. */
   const [spillToken, setSpillToken] = useState<string | null>(null);
   const spillTokenRef = useRef<string | null>(null);
   const sheetLoadGenRef = useRef(0);
@@ -223,7 +221,6 @@ export default function PreviewPanelView() {
     try {
       await api.fileTokenCleanup(token);
     } catch (err) {
-      // Best-effort: 24h sweep still covers leftovers.
       console.warn('[preview] spill cleanup failed:', err instanceof Error ? err.message : err);
     }
   }, []);
@@ -233,25 +230,20 @@ export default function PreviewPanelView() {
     void releaseSpillToken(spillTokenRef.current);
   }, [releaseSpillToken]);
 
-  // ─── Config State ───
   const [mappings, setMappings] = useState<Record<string, string>>({});
   const [idColumn, setIdColumn] = useState('');
 
-  // ─── Selection State ───
   const [selectedIndex, setSelectedIndex] = useState('');
   const [searchOrder, setSearchOrder] = useState('');
 
-  // ─── Logos ───
   const [logoLeft, setLogoLeft] = useState<string | null>(null);
   const [logoRight, setLogoRight] = useState<string | null>(null);
 
-  // ─── Template State ───
   const [customTemplate, setCustomTemplate] = useState<{ name: string; content: string } | null>(null);
   const [templateStatus, setTemplateStatus] = useState<'valid' | 'invalid' | null>(null);
   const [templateError, setTemplateError] = useState('');
   const [availableTemplates, setAvailableTemplates] = useState<TemplateInfo[]>([]);
 
-  // ─── Custom Columns ───
   const [customColumns, setCustomColumns] = useState<CustomColumn[]>(() => {
     try { const s = localStorage.getItem(CUSTOM_COLS_KEY); return s ? JSON.parse(s) : []; } catch { return []; }
   });
@@ -264,26 +256,20 @@ export default function PreviewPanelView() {
 
   useFocusTrap(columnDialogRef, showColumnModal, newColumnNameRef);
 
-  // ─── Images Required ───
   const [requiresImages, setRequiresImages] = useState(true);
 
-  // ─── Data Preview ───
   const [showDataPreview, setShowDataPreview] = useState(false);
 
-  // ─── Focus Mode ───
   const [isFocusMode, setIsFocusMode] = useState(false);
 
-  // ─── PDF Export ───
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const [pdfLoadingMessage, setPdfLoadingMessage] = useState('');
   const [exportScope, setExportScope] = useState<PdfExportScope>('single');
   const [pdfQuality, setPdfQuality] = useState<PdfQuality>('high');
 
-  // ─── Drag states ───
   const [dragStep2, setDragStep2] = useState(false);
   const [dragStep4, setDragStep4] = useState(false);
 
-  // ─── Load persisted logos ───
   useEffect(() => {
     const l = loadPersistedLogo(LOGO_LEFT_KEY);
     if (l) setLogoLeft(l.dataUrl);
@@ -305,7 +291,6 @@ export default function PreviewPanelView() {
     try { localStorage.setItem(CUSTOM_COLS_KEY, JSON.stringify(customColumns)); } catch { /* ignore */ }
   }, [customColumns]);
 
-  // ─── Load backend templates ───
   const loadTemplates = useCallback(async () => {
     try {
       const res = await api.templatesList();
@@ -333,7 +318,6 @@ export default function PreviewPanelView() {
     return () => { cancelled = true; };
   }, [backendState, loadTemplates]);
 
-  // ─── Logo upload ───
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>, side: 'left' | 'right') => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -346,7 +330,6 @@ export default function PreviewPanelView() {
     }
   };
 
-  // ─── Template upload ───
   const handleTemplateUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -410,7 +393,6 @@ export default function PreviewPanelView() {
     }
   };
 
-  // ─── File upload (Excel/CSV) ───
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -488,7 +470,6 @@ export default function PreviewPanelView() {
     const gen = ++sheetLoadGenRef.current;
     let sh = sheets.find(s => s.name === nextName);
     if (spillToken) {
-      // Spill rows are re-fetchable; keep only the selected sheet in RAM.
       setSheets(prev => prev.map(s => (
         s.name === nextName || s.rows.length === 0 ? s : { ...s, rows: [] }
       )));
@@ -515,7 +496,6 @@ export default function PreviewPanelView() {
       return;
     }
     warnings?.forEach(w => addToast({ message: w, type: 'warning' }));
-    // Prefer a sheet with header + at least one data row (skip cover sheets with only a title)
     const rowLen = (s: { rows: unknown[][]; rowCount?: number }) =>
       s.rows.length > 0 ? s.rows.length : (s.rowCount ?? 0);
     const withData = allSheets.filter(s => rowLen(s) > 1);
@@ -533,7 +513,6 @@ export default function PreviewPanelView() {
     }
   }, [addToast, loadSheetData]);
 
-  /** Parse Excel/CSV via backend staging only (no SheetJS on the renderer). */
   const parseFile = async (file: File) => {
     const parseGen = ++parseGenRef.current;
     const prevSpill = spillTokenRef.current;
@@ -557,7 +536,6 @@ export default function PreviewPanelView() {
       if (!fileToken) throw new Error('No se pudo preparar el archivo para lectura');
       const ext = file.name.toLowerCase().split('.').pop() || '';
       const formatHint = ['xlsx', 'xls', 'csv'].includes(ext) ? ext : undefined;
-      // Avoid hydrating multi-MB spill JSON in one shot — page via get_rows.
       const res = await api.spreadsheetParse(
         { file_token: fileToken, format_hint: formatHint },
         { hydrate: false },
@@ -621,13 +599,11 @@ export default function PreviewPanelView() {
     }
   };
 
-  // ─── Image upload ───
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
     setImages(prev => [...prev, ...files]);
   };
 
-  // ─── Custom Columns ───
   const addCustomColumn = () => {
     if (!newColumnName.trim()) { setColumnError('El nombre de la columna es requerido'); return; }
     if (!newColumnMapping) { setColumnError('Debe seleccionar una columna del Excel'); return; }
@@ -657,7 +633,6 @@ export default function PreviewPanelView() {
       return;
     }
     if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
-    // Solo desde inputs de texto: el picker usa Enter para elegir opción.
     if ((event.target as HTMLElement).tagName !== 'INPUT') return;
     event.preventDefault();
     addCustomColumn();
@@ -675,7 +650,6 @@ export default function PreviewPanelView() {
     setColumnError('');
   };
 
-  // ─── Filtered images for selected row ───
   const filteredImages = useMemo(() => {
     if (selectedIndex === '' || !idColumn) return [];
     const idx = Number(selectedIndex);
@@ -694,7 +668,6 @@ export default function PreviewPanelView() {
     return unique.sort(naturalSortByName);
   }, [selectedIndex, data, idColumn, images]);
 
-  // ─── Per-step completion (drives sidebar progress + status badges) ───
   const stepStates = useMemo(() => [
     !!(logoLeft || logoRight),
     templateStatus === 'valid',
@@ -714,7 +687,6 @@ export default function PreviewPanelView() {
   const goToPrevRow = () => { if (canPrevRow) setSelectedIndex(String(parseInt(selectedIndex) - 1)); };
   const goToNextRow = () => { if (canNextRow) setSelectedIndex(String(parseInt(selectedIndex) + 1)); };
 
-  // ─── Keyboard shortcuts ───
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === '.' && e.ctrlKey) {
@@ -1170,7 +1142,6 @@ export default function PreviewPanelView() {
           </Step>
 
         </div>
-
 
       </aside>
 

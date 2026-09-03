@@ -1,11 +1,3 @@
-/**
- * Regresión: todos los métodos invocados desde frontend/src/api.ts deben
- * estar presentes en ALLOWED_RENDERER_METHODS de electron/ipc-methods.js.
- *
- * Objetivo: evitar que un nuevo handler del backend o un nuevo método nativo
- * se consuma desde el frontend sin pasar por la allowlist del preload y del
- * ipc-router (defensa en profundidad).
- */
 
 const fs = require('fs');
 const path = require('path');
@@ -17,11 +9,6 @@ const ALLOWLIST_PATH = path.join(ROOT, 'electron', 'ipc-methods.js');
 const LONG_RUNNING_PATH = path.join(ROOT, 'shared', 'long-running-methods.json');
 const HEAVY_PATH = path.join(ROOT, 'shared', 'heavy-ipc-methods.json');
 
-/**
- * Extract method names from `_invoke('method')` / `_invoke<...>('method')`.
- * Skips the `_invoke` definition itself (first param is typed `method: string`).
- * Balances nested generics (e.g. `Array<{…}>`) before reading the string literal.
- */
 function extractApiMethods(source) {
   const methods = new Set();
   const invokeAt = /_invoke\b/g;
@@ -30,7 +17,6 @@ function extractApiMethods(source) {
     let i = at.index + at[0].length;
     while (i < source.length && /\s/.test(source[i])) i++;
 
-    // Optional type args: balance `<…>` including nested generics.
     if (source[i] === '<') {
       let depth = 0;
       for (; i < source.length; i++) {
@@ -92,8 +78,6 @@ function main() {
 
   const missingFromAllowlist = [...apiMethods].filter((m) => !allowed.has(m));
   const unexpectedInAllowlist = [...allowed].filter((m) => !knownUsedMethods.has(m));
-  // Every long-running method must be a recognised allowed method, and the
-  // Electron allowlist must consume the shared JSON verbatim (no drift).
   const longRunningNotAllowed = [...longRunning].filter((m) => !allowed.has(m));
   const longRunningDrift = [
     ...[...longRunning].filter((m) => !allowlistLongRunning.has(m)),

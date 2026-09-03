@@ -1,10 +1,3 @@
-"""Regresión M2: obtener_todos devuelve un orden determinista (por id).
-
-El modo ``use_column_rename`` empareja archivo i ↔ registro i por posición
-(preview y chunks del job usan obtener_todos con limit/offset). Sin ORDER BY,
-el orden de filas era un detalle del plan de consulta de SQLite; con ORDER BY
-id, preview y job siempre ven la misma secuencia.
-"""
 
 import sqlite3
 
@@ -17,7 +10,6 @@ def _setup(db_path, config_path) -> None:
     db.init_db()
     conn = sqlite3.connect(str(db_path))
     try:
-        # Inserciones deliberadamente desordenadas alfabéticamente.
         for codigo in ("ZETA", "ALFA", "MIKE", "BRAVO"):
             conn.execute("INSERT INTO imagenes (codigo) VALUES (?)", (codigo,))
         conn.commit()
@@ -47,8 +39,6 @@ class TestObtenerTodosOrder:
         )
         _setup(db_file, tmp_path / "fields_config.json")
 
-        # La secuencia por chunks (offset 0,2 y 2,2) debe ser la misma que la
-        # secuencia completa — el contrato del mapeo posicional por chunks.
         full = [r["codigo"] for r in db.obtener_todos()]
         chunked = [
             r["codigo"] for r in db.obtener_todos(limit=2, offset=0)

@@ -109,40 +109,28 @@ const PRESET_PETS: Pet[] = [
 ];
 
 export default function PetdexView() {
-  // Config states persisted to localStorage
   const [enabled, setEnabled] = useState(() => localStorage.getItem('petdex_enabled') === 'true');
   const [activePet, setActivePet] = useState(() => localStorage.getItem('petdex_active_pet') || 'belayer-cat');
   const [scale, setScale] = useState(() => Number(localStorage.getItem('petdex_scale')) || 1.0);
   const [opacity, setOpacity] = useState(() => Number(localStorage.getItem('petdex_opacity')) || 100);
   const [movement, setMovement] = useState<'static' | 'walk'>(() => (localStorage.getItem('petdex_movement') as 'static' | 'walk') || 'walk');
 
-  // API list states
   const initialCache = readManifestCache();
   const [pets, setPets] = useState<Pet[]>(() => initialCache ?? []);
   const [loading, setLoading] = useState(() => initialCache === null);
   const [catalogSource, setCatalogSource] = useState<CatalogSource>(() => (initialCache ? 'cache' : 'presets'));
 
-  // Search & filter states
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedKind, setSelectedKind] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 36;
 
-  // Animation ticks for previews in settings (0-7 sprite columns)
   const [previewFrame, setPreviewFrame] = useState(0);
 
-  // Sprite preview ticker: ~150ms cadence via a rAF accumulator. Chromium
-  // pauses rAF when the window is hidden/minimized, so the panel stops
-  // re-rendering in background (setInterval kept ticking). Reduced-motion is
-  // checked once per mount (the modal is short-lived).
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
     let rafId = 0;
-    // null hasta el primer frame: la línea base es el primer timestamp de rAF,
-    // no el reloj real del mount. Así el acumulador mide solo intervalos
-    // frame-a-frame (determinista en tests) y el gap mount→primer frame —que
-    // depende de la carga del hilo— nunca cuenta para la cadencia.
     let lastTime: number | null = null;
     let frameAccum = 0;
     const TICK_MS = 150;
@@ -164,7 +152,6 @@ export default function PetdexView() {
     return () => cancelAnimationFrame(rafId);
   }, []);
 
-  // Persist settings changes
   const saveSetting = (key: string, value: unknown) => {
     localStorage.setItem(key, String(value));
   };
@@ -172,7 +159,6 @@ export default function PetdexView() {
   const handleToggleEnabled = (val: boolean) => {
     setEnabled(val);
     saveSetting('petdex_enabled', val);
-    // Dispatch a custom event to notify PetMascot immediately
     window.dispatchEvent(new Event('petdex-config-changed'));
   };
 
@@ -206,7 +192,6 @@ export default function PetdexView() {
     setCatalogSource(source);
   };
 
-  // Fetch Petdex manifest (redirects to assets.petdex.dev — must be allowed in CSP connect-src)
   const fetchManifest = async () => {
     setLoading(true);
     try {
@@ -232,12 +217,10 @@ export default function PetdexView() {
   };
 
   useEffect(() => {
-    // Fresh cache: show instantly, skip network until user hits refresh
     if (readManifestCache()) return;
     fetchManifest();
   }, []);
 
-  // Keep spritesheet in sync when active pet is set but URL was never persisted
   useEffect(() => {
     if (localStorage.getItem('petdex_pet_spritesheet')) return;
     const pet = pets.find((p) => p.slug === activePet) ?? PRESET_PETS[0];
@@ -245,7 +228,6 @@ export default function PetdexView() {
     window.dispatchEvent(new Event('petdex-config-changed'));
   }, [pets, activePet]);
 
-  // Filter and search logic
   const filteredPets = useMemo(() => {
     return pets.filter((pet) => {
       const matchesSearch =
@@ -256,12 +238,10 @@ export default function PetdexView() {
     });
   }, [pets, searchQuery, selectedKind]);
 
-  // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, selectedKind]);
 
-  // Pagination calculations
   const totalPages = Math.ceil(filteredPets.length / itemsPerPage) || 1;
   const paginatedPets = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;

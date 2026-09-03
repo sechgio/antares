@@ -65,11 +65,6 @@ function useReducedMotion() {
   return reduced;
 }
 
-/**
- * Enter animation without opacity fade.
- * Opacity 0→1 is unsafe: if the animation never commits (tab switch, reduced-motion
- * edge cases, StrictMode remount), the whole welcome panel stays invisible.
- */
 function fadeUp(delay: number, reducedMotion: boolean) {
   if (reducedMotion) return { initial: false as const };
   return {

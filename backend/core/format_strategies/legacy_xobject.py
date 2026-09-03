@@ -1,4 +1,3 @@
-"""Legacy XObject strategy for PDF correlative number generation."""
 from __future__ import annotations
 
 import io

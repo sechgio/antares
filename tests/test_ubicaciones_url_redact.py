@@ -1,4 +1,3 @@
-"""Unit tests for map URL secret redaction (no network)."""
 
 from __future__ import annotations
 

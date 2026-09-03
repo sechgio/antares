@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { api, AntaresAPIError } from '../api';
 
-// Mock electronAPI
 const mockInvoke = vi.fn();
 const mockOnNotify = vi.fn();
 
@@ -24,8 +23,6 @@ describe('API Client', () => {
   });
 
   it('should propagate IPC errors without frontend retries', async () => {
-    // Retry logic lives in the Electron main process (ipc-router._callBackend),
-    // so the frontend issues a single invoke and surfaces whatever it returns.
     mockInvoke.mockRejectedValue(new Error('Backend no disponible'));
 
     await expect(api.version()).rejects.toThrow('Backend no disponible');
@@ -174,9 +171,6 @@ describe('API Client', () => {
   });
 
   it('should clear the IPC timeout timer on success (no leak)', async () => {
-    // Fix: el timer del race de timeout debe limpiarse cuando el invoke
-    // resuelve, para no gotear closures en sesiones largas. Antes del fix
-    // clearTimeout nunca se llamaba en éxito.
     const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
     mockInvoke.mockResolvedValue({ version: '1' });
 
@@ -245,7 +239,6 @@ describe('API Client', () => {
 
     await api.version();
 
-    // Normal method: 30s (IPC_TIMEOUT) + 60s (FE_STARTUP_BUFFER_MS) + 10s (FE_TIMEOUT_BUFFER_MS) = 100_000ms
     expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 100_000);
     setTimeoutSpy.mockRestore();
   });
@@ -256,7 +249,6 @@ describe('API Client', () => {
 
     await api.informesV2RenderConsolidatedHtml({ report_ids: ['1'] });
 
-    // Long running method: 300s + 60s + 10s = 370_000ms
     expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 370_000);
     setTimeoutSpy.mockRestore();
   });

@@ -188,7 +188,7 @@ export const importSpreadsheet = async (file: File): Promise<ImportResult> => {
 
 export const exportTemplateWorkbook = async (): Promise<void> => {
   const { api } = await import("../../../api");
-  const res = await (api as unknown as { spreadsheetExportVolantesTemplate: () => Promise<{ content_b64: string; filename: string }> }).spreadsheetExportVolantesTemplate();
+  const res = await api.spreadsheetExportVolantesTemplate();
   downloadBase64Blob(
     res.content_b64,
     res.filename || "plantilla-volantes.xlsx",

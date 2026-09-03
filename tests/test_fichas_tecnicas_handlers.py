@@ -68,7 +68,6 @@ def test_import_file_handler_imports_csv(monkeypatch, tmp_path) -> None:
 
 
 def test_import_csv_semicolon_with_few_columns(monkeypatch, tmp_path) -> None:
-    """Regression: delimiter detection must not require >3 columns."""
     from backend.core.fichas_tecnicas import database as db_module
 
     monkeypatch.setattr(db_module, "DEFAULT_DB_PATH", tmp_path / "fichas_tecnicas.json")
@@ -95,7 +94,6 @@ def test_render_html_template_and_inline(monkeypatch, tmp_path) -> None:
     assert "FICHA TÉCNICA DE EVALUACIÓN DE ACTIVIDADES" in template["html"]
     assert template["filename"] == "plantilla_ficha_tecnica.pdf"
     assert "NOMBRE DEL CLIENTE" in template["html"]
-    # Single-page A4, mirror of PreviewPanel (210x297 mm)
     assert "height: 297mm" in template["html"]
     assert "width: 210mm" in template["html"]
     assert "size: A4 portrait" in template["html"]

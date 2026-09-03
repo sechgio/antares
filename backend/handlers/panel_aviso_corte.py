@@ -1,4 +1,3 @@
-"""Panel Aviso de Corte handlers."""
 from __future__ import annotations
 
 import base64
@@ -127,9 +126,6 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
                 "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             }
         encoded = base64.b64encode(docx_bytes).decode("ascii")
-        # NOTE: `pdf_base64` is kept for backward compatibility with existing
-        # frontend code. New consumers should rely on `content_base64` +
-        # `format` (or `mime_type`) to handle the file correctly.
         return {
             "pdf_base64": encoded,
             "content_base64": encoded,
@@ -194,7 +190,6 @@ def panel_aviso_corte_template(params: dict[str, Any]) -> dict[str, Any]:
         safe += ".xlsx"
     destination = Path(resolved_path).parent / safe
     if Path(resolved_path) != destination and not params.get("_write_token"):
-        # Enforce sanitized name when not via write token
         pass
     if destination.is_symlink() or destination.parent.is_symlink():
         raise ValueError("symlink no permitido en ruta de salida")

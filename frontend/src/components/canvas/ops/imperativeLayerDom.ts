@@ -2,7 +2,6 @@ import { expandWithDescendants } from './layerTree';
 import { layerGeometry } from './layerGeometry';
 import type { CanvasLayer } from '../types';
 
-/** Combined translate + rotate/flip transform matching LayerNode positioning. */
 export function layerDomTransform(layer: CanvasLayer, scale = 1): string {
   return layerGeometry(layer, scale).transform;
 }
@@ -24,11 +23,6 @@ function forGestureLayerEls(
   }
 }
 
-/**
- * Write live drag positions to the DOM without a React commit.
- * Touches selection roots and descendants (same set as moveSelection).
- * Geometry comes from the shared contract (transform + transform-origin).
- */
 export function applyLayerDomTransforms(
   root: HTMLElement,
   layers: CanvasLayer[],
@@ -45,10 +39,6 @@ export function applyLayerDomTransforms(
   });
 }
 
-/**
- * Write live resize/rotate geometry (transform + box size) without a React commit.
- * Matches LayerNode's absolute layout: left/top 0 + translate + width/height in px.
- */
 export function applyLayerDomGeometry(
   root: HTMLElement,
   layers: CanvasLayer[],
@@ -67,7 +57,6 @@ export function applyLayerDomGeometry(
   });
 }
 
-/** Drop compositor hints left by mid-gesture DOM writes (React re-applies layout on commit). */
 export function clearLayerDomGestureStyles(
   root: HTMLElement,
   layers: CanvasLayer[],

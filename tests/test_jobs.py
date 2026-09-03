@@ -1,8 +1,3 @@
-"""Tests for the concurrent jobs system.
-
-Uses only synchronous tests to avoid pytest hanging on daemon threads.
-Thread-safety is verified separately in test_race_condition.py.
-"""
 from __future__ import annotations
 
 from backend.core.jobs import DEFAULT_JOB_ID, MAX_COMPLETED_JOBS, Job, JobManager, resolve_job_id
@@ -14,7 +9,6 @@ class TestResolveJobId:
         assert resolve_job_id({}) == DEFAULT_JOB_ID
 
     def test_none_value_falls_back_to_default(self):
-        # Regression: str(None) used to leak "None" as the job id.
         assert resolve_job_id({"job_id": None}) == DEFAULT_JOB_ID
 
     def test_empty_string_kept_as_is(self):
@@ -208,7 +202,6 @@ class TestJobManager:
         assert job is not None
         assert job.thread is not None
         job.thread.join(timeout=2.0)
-        # Allow finally block to run
         time.sleep(0.05)
         assert job.params.get("files") == []
         assert job.params.get("file_count") == 100

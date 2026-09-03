@@ -1,11 +1,3 @@
-"""Resolución de renombrado con catálogo, compartida por preview y process.
-
-Una sola implementación del esqueleto que antes vivía duplicado en
-``backend/handlers/conversion.py``: parseo de nombres, elección de la
-estrategia de BD, preferencia de stem y resolución por archivo. preview y
-process consumen este módulo, de modo que la paridad (lo que la UI promete
-es lo que el disco escribe) es por construcción.
-"""
 
 from __future__ import annotations
 
@@ -19,7 +11,6 @@ from backend.utils.validators import parse_filename_parts
 
 
 def record_group_key(datos: dict[str, Any] | None, key_column: str, fallback: str) -> str:
-    """Calcula la clave estable de fila usada por el modo ``record``."""
     raw_value = datos.get(key_column) if key_column and datos else None
     value = str(raw_value or fallback).strip()
     return value.casefold()
@@ -33,7 +24,6 @@ def apply_catalog_rename(
     parsed_sequence: str,
     key_column: str,
 ) -> str:
-    """Aplica el renombrado con catálogo pasando el grupo de fila al motor."""
     return engine.aplicar(
         path,
         datos_bd=datos,
@@ -45,13 +35,6 @@ def apply_catalog_rename(
 
 @dataclass(frozen=True)
 class RenamePlan:
-    """Resolución de un lote: nombres por archivo y artefactos del modo lote.
-
-    ``items`` consume process y los modos de catálogo de preview; los
-    artefactos (``codigos_manuales``, ``file_seqs``, ``sequence_groups``,
-    ``lookup``) alimentan ``RenamerEngine.preview_lote`` en el modo lote de
-    preview, que conserva su propia restauración de estado.
-    """
 
     items: list[tuple[str, str, bool]]
     codigos_manuales: dict[str, str]
@@ -69,19 +52,6 @@ def resolve_rename_plan(
     global_offset: int = 0,
     lookup_batch: Callable[[list[str]], dict[str, Any]] | None = None,
 ) -> RenamePlan:
-    """Resuelve el renombrado con catálogo para un lote.
-
-    Estrategias (misma precedencia que los callers): ``key_column`` gana,
-    le sigue ``use_column_rename`` (posicional por índice global) y el modo
-    lote por defecto (búsqueda multi-campo). ``lookup_batch`` es la búsqueda
-    de lote inyectable (en tests, un fake; en producción,
-    ``buscar_lote_por_codigos``). La preferencia de stem — el stem completo
-    del catálogo gana sobre el código parseado y fuerza secuencia "1" — se
-    aplica solo a los modos de catálogo, no al posicional.
-
-    El engine se muta (contadores de secuencia avanzan): preview lo aísla
-    con su snapshot, process necesita la mutación entre chunks.
-    """
     codigos_manuales: dict[str, str] = {}
     file_seqs: dict[str, str] = {}
     codigos_list: list[str] = []

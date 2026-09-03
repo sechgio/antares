@@ -28,7 +28,6 @@ interface TableViewProps {
 type SortKey = 'title' | 'assignee' | 'status' | 'due_date' | 'priority';
 type SortDir = 'asc' | 'desc';
 
-/** Priority derived from status/overdue (no separate DB field). */
 function priorityMeta(tarea: Tarea, columns: BoardColumn[] = []): { label: string; color: string } | null {
   if (tarea.status === 'urgent') return { label: 'Urgente', color: 'var(--accent-red)' };
   if (isOverdue(tarea, columns)) return { label: 'Alta', color: 'var(--accent-yellow)' };

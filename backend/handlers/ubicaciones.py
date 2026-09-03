@@ -28,14 +28,7 @@ from backend.version import __version__ as _antares_version
 
 logger = logging.getLogger(__name__)
 
-# ponytail: este módulo stay-as-is (~909 líneas, 1 feature completa).
-# Split en core/ubicaciones/ rechazado: tests parchean ub._http_get por globals del
-# módulo (test_ubicaciones_static_map.py L69/79/100); mudar la cadena HTTP a otro
-# módulo rompe esos 3 patches sin tocar tests. Reabrir cuando un 2do consumidor
-# necesite compose o map_provider aislados.
 
-# Layout medido desde assets/ubicaciones/vertical.jpg y Horizontal.jpg (300 DPI).
-# vertical.jpg es referencia visual a escala reducida; footer_h = altura de la banda negra.
 _REF_LAYOUT: dict[str, dict[str, int | float]] = {
     "vertical": {
         "out_w": 2480,
@@ -69,11 +62,10 @@ _REF_LAYOUT: dict[str, dict[str, int | float]] = {
     },
 }
 _PIN_TIP_X_RATIO = 0.4846
-_PIN_TIP_RATIO = 0.7432  # punta coloreada; el PNG conserva una sombra debajo
+_PIN_TIP_RATIO = 0.7432
 _MAP_OVERLAY_ALPHA = 120
 _BG_RGB = (246, 246, 246)
 
-# ── Asset caches (fonts, footers, excel) ─────────────────────────────────────
 _font_cache: OrderedDict[tuple[str, int], ImageFont.FreeTypeFont | ImageFont.ImageFont] = OrderedDict()
 _footer_cache: OrderedDict[tuple[int, int, int], Image.Image | None] = OrderedDict()
 _MAX_FONT_CACHE = 32
@@ -82,18 +74,12 @@ _excel_cache: OrderedDict[str, tuple[tuple[int, int, int], Any, tuple[Any, ...],
 _MAX_EXCEL_CACHE = 8
 _MAX_EXCEL_CACHE_BYTES = 64 * 1024 * 1024
 _excel_cache_bytes = 0
-# Single shared LRU for map screenshots. Validated vs working is tracked with a
-# side set so callers keep the same hit/miss semantics without retaining up to
-# 2x buffers for the same key.
 _map_screenshot_store: OrderedDict[tuple[Any, ...], bytes] = OrderedDict()
 _map_screenshot_validated: set[tuple[Any, ...]] = set()
 _map_screenshot_negative_at: OrderedDict[tuple[Any, ...], float] = OrderedDict()
 _map_screenshot_inflight: dict[tuple[Any, ...], Future[bytes]] = {}
 _preview_composed_cache: dict[tuple[Any, ...], dict[str, Any]] = {}
 _preview_excel_ctx: tuple[str, tuple[int, int, int]] | None = None
-# Guarda las caches mutadas desde el thread daemon de prefetch (B1): sin lock,
-# _trim_cache + __setitem__ concurrentes pueden lanzar RuntimeError o corromper
-# el orden LRU.
 _cache_lock = threading.Lock()
 _MAX_MAP_CACHE = 20
 _MAP_NEGATIVE_TTL_SECONDS = 30.0
@@ -101,7 +87,6 @@ _MAX_COMPOSED_CACHE = 16
 
 
 def _clear_ubicaciones_caches() -> None:
-    """Clear all in-memory static caches in ubicaciones handler."""
     global _preview_excel_ctx, _excel_cache_bytes
     with _cache_lock:
         _map_screenshot_store.clear()
@@ -116,7 +101,6 @@ def _clear_ubicaciones_caches() -> None:
 
 
 class _MapScreenshotCacheView:
-    """Dict-like view over the shared map LRU (validated-only or full store)."""
 
     def __init__(self, *, validated_only: bool) -> None:
         self._validated_only = validated_only
@@ -143,7 +127,6 @@ class _MapScreenshotCacheView:
             if self._validated_only:
                 _map_screenshot_validated.add(key)
                 _map_screenshot_negative_at.pop(key, None)
-            # Working writes must not mark validated; a later validated write upgrades.
             while len(_map_screenshot_store) > _MAX_MAP_CACHE:
                 old_key, _ = _map_screenshot_store.popitem(last=False)
                 _map_screenshot_validated.discard(old_key)
@@ -166,29 +149,16 @@ class _MapScreenshotCacheView:
 
 _map_screenshot_cache = _MapScreenshotCacheView(validated_only=True)
 _map_screenshot_working_cache = _MapScreenshotCacheView(validated_only=False)
-# Filas procesadas en paralelo durante export batch. El cuello es red (OSM tiles
-# / Google Static), no CPU: 4 workers dan ~4x speedup manteniéndose cortés con la
-# política de uso de OSM. Local al handler (no usa submit_heavy del scheduler: el
-# handler ya corre en un slot heavy y anidar saturaría/deadlockearía el budget).
 _MAX_RENDER_WORKERS = 4
 _COORD_PRECISION = 5
-_MAP_CAPTURE_VERSION = 5  # incrementar al cambiar heurística de captura/caché
-_FOOTER_LAYOUT_VERSION = 2  # incrementar al cambiar footer_h o escalado de logo
+_MAP_CAPTURE_VERSION = 5
+_FOOTER_LAYOUT_VERSION = 2
 
-# ── Static map provider (replaces Playwright) ────────────────────────────────
-# Two selectable backends, chosen at processing time:
-#   - "osm":    OpenStreetMap tiles (free, no API key). Default.
-#   - "google": Google Static Maps API (requires ANTARES_GOOGLE_MAPS_KEY).
-# Selection order: per-call payload ("provider") > env ANTARES_MAP_PROVIDER > "osm".
-# The Google key is read from payload ("google_maps_key") > env ANTARES_GOOGLE_MAPS_KEY.
 _MAP_ZOOM = 18
 _MIN_MAP_ZOOM = 0
 _MAX_MAP_ZOOM = 22
 _MAP_PROVIDER_DEFAULT = "osm"
 _MAX_CONSOLIDATED_PAGE_BYTES = 64 * 1024 * 1024
-# Cap the static-map fetch on its long side so OSM tile counts stay bounded and
-# Google's size limit is respected. The composition upsamples to full A4 with
-# LANCZOS, so the map stays sharp enough under the dimming overlay + pin.
 _MAP_FETCH_MAX_DIM = 1024
 _OSM_TILE_SIZE = 256
 _XYZ_PROVIDERS = {
@@ -205,7 +175,6 @@ _HTTP_TIMEOUT = 12
 
 
 def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
-    """Convert '#RRGGBB' or '#RGB' to (R, G, B)."""
     h = hex_str.lstrip("#")
     if len(h) == 3:
         h = h[0] * 2 + h[1] * 2 + h[2] * 2
@@ -213,7 +182,6 @@ def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
 
 
 def _colorize_pin(pin_rgba: Image.Image, target_rgb: tuple[int, int, int]) -> Image.Image:
-    """Tint the pin image to target_rgb preserving luminance and alpha."""
     _r, _g, _b, a = pin_rgba.split()
     gray = pin_rgba.convert("L")
     colored = ImageOps.colorize(gray, black=(0, 0, 0), mid=target_rgb, white=(255, 255, 255))
@@ -244,7 +212,6 @@ def _get_font(bold: bool, size: int) -> ImageFont.FreeTypeFont | ImageFont.Image
 
 
 def _crop_footer_bar(img: Image.Image) -> Image.Image:
-    """Los PNG de footer incluyen una vista previa del mapa debajo; conservar solo la barra."""
     rgb = img.convert("RGB")
     w, h = rgb.size
     step = max(1, w // 30)
@@ -262,7 +229,6 @@ def _crop_footer_bar(img: Image.Image) -> Image.Image:
 
 
 def _measure_footer_band_height(jpg_path: str) -> int:
-    """Mide la altura (px) de la banda negra principal en una plantilla JPG."""
     with Image.open(jpg_path) as opened:
         img = opened.convert("RGB")
     w, h = img.size
@@ -289,7 +255,6 @@ def _measure_footer_band_height(jpg_path: str) -> int:
 
 
 def _get_footer_image(width: int, height: int) -> Image.Image | None:
-    """Pega logo_footer.png en barra negra; escala por ancho (como plantillas JPG)."""
     key = (_FOOTER_LAYOUT_VERSION, width, height)
     with _cache_lock:
         if key in _footer_cache:
@@ -325,7 +290,6 @@ def _get_footer_image(width: int, height: int) -> Image.Image | None:
 
 
 def _map_opts_fingerprint(map_opts: dict[str, Any] | None) -> tuple[Any, ...]:
-    """Identidad de capa/zoom/llave para invalidar cachés al cambiar proveedor."""
     provider = _resolve_provider(map_opts)
     zoom = int(map_opts["zoom"]) if map_opts and map_opts.get("zoom") is not None else _MAP_ZOOM
     api_key = _resolve_api_key(map_opts) or ""
@@ -364,7 +328,6 @@ def _map_cache_key(
 
 
 def _screenshot_has_map_tiles(screenshot_bytes: bytes) -> bool:
-    """Rechaza capturas con cuadrícula gris sin calles cargadas."""
     with Image.open(BytesIO(screenshot_bytes)) as opened:
         img = opened.convert("RGB")
     w, h = img.size
@@ -385,7 +348,6 @@ def _screenshot_has_map_tiles(screenshot_bytes: bytes) -> bool:
 
 
 def _is_gutter_pixel(r: int, g: int, b: int) -> bool:
-    """Detecta píxeles de relleno gris de Google Maps (no tiles)."""
     spread = max(r, g, b) - min(r, g, b)
     return r > 225 and g > 232 and b > 228 and spread < 40
 
@@ -403,7 +365,6 @@ def _row_is_gutter(img: Image.Image, y: int) -> bool:
 
 
 def _trim_map_gutters(img: Image.Image) -> Image.Image:
-    """Recorta bandas grises uniformes en los bordes del canvas capturado."""
     w, h = img.size
     left = 0
     while left < w - 20 and _column_is_gutter(img, left):
@@ -421,7 +382,6 @@ def _trim_map_gutters(img: Image.Image) -> Image.Image:
 
 
 def _center_crop_to_aspect(img: Image.Image, width: int, height: int) -> Image.Image:
-    """Recorte centrado al aspect ratio objetivo (centro geográfico del mapa)."""
     target_aspect = width / height
     w, h = img.size
     src_aspect = w / h
@@ -437,7 +397,6 @@ def _center_crop_to_aspect(img: Image.Image, width: int, height: int) -> Image.I
 
 
 def _normalize_map_screenshot(screenshot_bytes: bytes, width: int, height: int) -> bytes:
-    """Canvas → recorte de márgenes + escala exacta. Usado en preview y export PDF."""
     with Image.open(BytesIO(screenshot_bytes)) as opened:
         img = opened.convert("RGB")
     if img.size != (width, height):
@@ -451,7 +410,6 @@ def _normalize_map_screenshot(screenshot_bytes: bytes, width: int, height: int) 
 
 
 def _resolve_provider(map_opts: dict[str, Any] | None) -> str:
-    """Per-call payload > env > default. Lets the user choose the backend at processing time."""
     if map_opts and map_opts.get("provider"):
         return str(map_opts["provider"]).lower()
     return os.environ.get("ANTARES_MAP_PROVIDER", _MAP_PROVIDER_DEFAULT).lower()
@@ -467,7 +425,6 @@ def _resolve_api_key(map_opts: dict[str, Any] | None) -> str | None:
 
 
 def _cap_fetch_size(width: int, height: int) -> tuple[int, int]:
-    """Scale (width, height) down so the long side <= _MAP_FETCH_MAX_DIM, preserving aspect."""
     longest = max(width, height)
     if longest <= _MAP_FETCH_MAX_DIM:
         return max(1, width), max(1, height)
@@ -476,7 +433,6 @@ def _cap_fetch_size(width: int, height: int) -> tuple[int, int]:
 
 
 def _redact_url_for_log(url: str) -> str:
-    """Strip map API secrets from URLs before logging (query keys like key/token)."""
     try:
         parsed = urllib.parse.urlparse(url)
         if not parsed.query:
@@ -500,28 +456,18 @@ def _http_get(
     timeout: int = _HTTP_TIMEOUT,
     deadline: float | None = None,
 ) -> bytes | None:
-    """HTTP GET returning body bytes, or None on any network/HTTP error.
-
-    When *deadline* (seconds) is given, transient failures are retried until
-    the total budget is exhausted. Transient = 408/429/5xx or network errors
-    (URLError/OSError/TimeoutError). Non-transient HTTP errors (e.g. 404)
-    return immediately. Respects ``Retry-After`` (seconds) on 429/503 when
-    present. Without *deadline* the call is single-shot for backward
-    compatibility with existing tile/Google fetches.
-    """
     _TRANSIENT_CODES = frozenset((408, 429, 500, 502, 503, 504))
     start = time.monotonic() if deadline is not None else None
     while True:
         try:
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=timeout) as resp:  # trusted map endpoints
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return cast(bytes, resp.read())
         except urllib.error.HTTPError as exc:
             is_transient = exc.code in _TRANSIENT_CODES
             if not is_transient or deadline is None:
                 logger.debug("HTTP GET failed for %s: %s", _redact_url_for_log(url), exc)
                 return None
-            # transient with deadline → may retry
             retry_after = 0.0
             try:
                 if exc.headers is not None:
@@ -539,10 +485,9 @@ def _http_get(
                 return None
             last_exc = exc
             retry_after = 0.0
-        except Exception as exc:  # defensive: unexpected errors never retry
+        except Exception as exc:
             logger.debug("HTTP GET failed for %s: %s", _redact_url_for_log(url), exc)
             return None
-        # ——— retry path (deadline is not None and transient) ———
         assert start is not None and deadline is not None
         elapsed = time.monotonic() - start
         remaining = deadline - elapsed
@@ -552,12 +497,10 @@ def _http_get(
         sleep_for = retry_after if retry_after > 0 else 0.0
         if sleep_for > remaining:
             sleep_for = remaining
-        # Always call sleep even with 0 so tests can observe retry count (Retry-After: 0)
         time.sleep(sleep_for)
 
 
 def _fallback_map_bytes(width: int, height: int) -> bytes:
-    """Gray placeholder so composition still renders text + pin when the map fetch fails."""
     img = Image.new("RGB", (max(1, width), max(1, height)), (215, 215, 215))
     buf = BytesIO()
     img.save(buf, format="PNG")
@@ -565,7 +508,6 @@ def _fallback_map_bytes(width: int, height: int) -> bytes:
 
 
 def _lonlat_to_webmercator_pixel(lon: float, lat: float, zoom: int) -> tuple[float, float]:
-    """Web Mercator pixel (x, y) in the global tile pixel space at ``zoom``."""
     n = 2 ** zoom
     x = (lon + 180.0) / 360.0 * n * _OSM_TILE_SIZE
     lat_rad = math.radians(lat)
@@ -574,7 +516,6 @@ def _lonlat_to_webmercator_pixel(lon: float, lat: float, zoom: int) -> tuple[flo
 
 
 def _fetch_xyz_tiles_map(lat: float, lon: float, width: int, height: int, zoom: int, url_template: str, api_key: str = "") -> Image.Image:
-    """Compose XYZ raster tiles centered on (lat, lon) into an RGB image of (width, height)."""
     cx, cy = _lonlat_to_webmercator_pixel(lon, lat, zoom)
     left = cx - width / 2
     top = cy - height / 2
@@ -622,7 +563,6 @@ def _fetch_xyz_tiles_map(lat: float, lon: float, width: int, height: int, zoom: 
 
 
 def _google_static_map_size(width: int, height: int) -> tuple[int, int]:
-    """Fit a Google Static Maps viewport within 640x640 without distortion."""
     width = max(1, int(width))
     height = max(1, int(height))
     longest = max(width, height)
@@ -633,8 +573,6 @@ def _google_static_map_size(width: int, height: int) -> tuple[int, int]:
 
 
 def _fetch_google_static_map(lat: float, lon: float, width: int, height: int, zoom: int, key: str) -> Image.Image:
-    """Fetch a Google Static Maps image centered on (lat, lon). Uses scale=2 for detail."""
-    # Google caps the size parameter at 640x640; preserve the viewport aspect.
     req_w, req_h = _google_static_map_size(width, height)
     params = (
         f"?center={lat},{lon}&zoom={zoom}&size={req_w}x{req_h}&scale=2"
@@ -662,10 +600,6 @@ def fetch_static_map(
     provider: str = _MAP_PROVIDER_DEFAULT,
     api_key: str | None = None,
 ) -> bytes:
-    """Return a PNG map image (capped fetch size) for (lat, lon) using the chosen provider.
-
-    On any failure, returns a gray placeholder so downstream composition still renders.
-    """
     fetch_w, fetch_h = _cap_fetch_size(width, height)
     try:
         if provider == "google":
@@ -679,7 +613,6 @@ def fetch_static_map(
                 logger.warning("Proveedor desconocido %s; haciendo fallback a OSM.", provider)
                 url_template = _XYZ_PROVIDERS["osm"]
 
-            # Most providers other than OSM require a key
             if provider != "osm" and not api_key:
                 logger.warning("Proveedor %s requiere una llave API pero no se proporcionó. La petición de mapa probablemente fallará.", provider)
 
@@ -694,7 +627,6 @@ def fetch_static_map(
 
 
 def _is_na(value: Any) -> bool:
-    """True para None o NaN (numpy/pandas o float nativo). Sin importar pandas."""
     if value is None:
         return True
     try:
@@ -727,7 +659,6 @@ def _trim_excel_cache() -> None:
 
 
 def _load_excel_data(excel_path: str) -> tuple[Any, tuple[Any, ...]]:
-    """Load and parse Excel, reusing cache when the file has not changed."""
     cache_key = _excel_cache_key(excel_path)
     signature = _excel_file_signature(excel_path)
     with _cache_lock:
@@ -735,9 +666,6 @@ def _load_excel_data(excel_path: str) -> tuple[Any, tuple[Any, ...]]:
         if cached and cached[0] == signature:
             _excel_cache.move_to_end(cache_key)
             return cached[1], cached[2]
-    # Local import: pandas/numpy stays out of the module top-level (deferred
-    # module — the first call must not pay ~400 ms of cold imports in the IPC
-    # reader thread; warm_pandas_sync pre-loads it before ready anyway).
     import pandas as pd
 
     df = pd.read_excel(excel_path, engine="openpyxl")
@@ -761,7 +689,6 @@ def _coord_key(lat: float, lon: float) -> tuple[float, float]:
 
 
 def _dimensions_for(formato: str, *, preview: bool = False) -> tuple[int, int, int]:
-    """Retorna (out_w, out_h, footer_height). Preview escala proporcionalmente desde export."""
     spec = _REF_LAYOUT[formato]
     out_w = int(spec["out_w"])
     out_h = int(spec["out_h"])
@@ -777,13 +704,11 @@ def _dimensions_for(formato: str, *, preview: bool = False) -> tuple[int, int, i
 
 
 def _map_capture_size(formato: str, *, preview: bool = False) -> tuple[int, int]:
-    """Viewport = área del mapa. Preview usa tamaño pantalla; export usa A4."""
     out_w, out_h, footer_h = _dimensions_for(formato, preview=preview)
     return out_w, out_h - footer_h
 
 
 def _sync_excel_context(excel_path: str) -> tuple[str, tuple[int, int, int]]:
-    """Invalida caché de previews compuestos cuando cambia el Excel."""
     global _preview_excel_ctx
     ctx = (_excel_cache_key(excel_path), _excel_file_signature(excel_path))
     if _preview_excel_ctx != ctx:
@@ -794,7 +719,6 @@ def _sync_excel_context(excel_path: str) -> tuple[str, tuple[int, int, int]]:
 
 
 def _manual_preview_ctx(datos: dict) -> tuple[Any, ...]:
-    """Clave de caché única por fila manual (coords + textos)."""
     lat = float(datos["lat"])
     lon = float(datos["lon"])
     return (
@@ -823,19 +747,13 @@ def _get_cached_map_screenshot(
     preview: bool = False,
     map_opts: dict[str, Any] | None = None,
 ) -> bytes:
-    """Fetch (or reuse) a static map image for (lat, lon). No browser process needed."""
     key = _map_cache_key(lat, lon, formato, preview=preview, map_opts=map_opts)
-    # El caché sólo guarda capturas que ya pasaron _screenshot_has_map_tiles
-    # (ver gate de escritura más abajo), así que no re-validamos en cada hit.
     with _cache_lock:
         cached = _map_screenshot_store.get(key) if key in _map_screenshot_validated else None
         if cached is not None:
             _map_screenshot_store.move_to_end(key)
             return cached
 
-        # Un fallback gris no debe convertirse en un hit permanente, pero sí
-        # debe tener una ventana corta de backoff para no golpear al proveedor
-        # en cada fila cuando está caído o sin credenciales.
         negative_at = _map_screenshot_negative_at.get(key)
         if negative_at is not None:
             if time.monotonic() - negative_at < _MAP_NEGATIVE_TTL_SECONDS:
@@ -846,9 +764,6 @@ def _get_cached_map_screenshot(
                     return negative
             _map_screenshot_negative_at.pop(key, None)
 
-        # Recheck under the same lock before creating the flight. This closes
-        # the race where another caller completed and cached the fetch between
-        # the initial lookup and this section.
         pending = _map_screenshot_inflight.get(key)
         if pending is None:
             pending = Future()
@@ -868,7 +783,6 @@ def _get_cached_map_screenshot(
             lat, lon, cap_w, cap_h, zoom,
             provider=provider, api_key=_resolve_api_key(map_opts),
         )
-        # Shared LRU: one buffer per key. Working write first; upgrade if tiles OK.
         _map_screenshot_working_cache[key] = screenshot
         if _screenshot_has_map_tiles(screenshot):
             _map_screenshot_cache[key] = screenshot
@@ -913,12 +827,6 @@ def _encode_preview_data(
     total_filas: int,
     formato: str,
 ) -> dict[str, Any]:
-    """Encode composed preview to JPEG.
-
-    ``image`` is a CSP-safe ``data:`` URI for the renderer (Electron blocks
-    ``file:`` in img-src). ``image_path`` keeps the on-disk cache entry used for
-    composed-preview invalidation and optional Electron re-reads.
-    """
     buf = BytesIO()
     preview_img.save(buf, format="JPEG", quality=88, optimize=True, subsampling=0)
     raw = buf.getvalue()
@@ -998,7 +906,6 @@ def _prefetch_alternate_formato(
     custom_styles: dict | None = None,
     map_opts: dict | None = None,
 ) -> None:
-    """Pre-compone la orientación opuesta en background (solo Pillow, sin Playwright)."""
     try:
         alt = "horizontal" if formato == "vertical" else "vertical"
         styles_hash = json.dumps(custom_styles, sort_keys=True) if custom_styles else ""
@@ -1017,15 +924,11 @@ def _prefetch_alternate_formato(
         logger.debug("Prefetch orientación alterna falló", exc_info=True)
 
 
-# Acota el prefetch de orientación alterna: a lo sumo _MAX_PREFETCH_THREADS
-# prefetches concurrentes, y los hilos son daemon para no retrasar el shutdown
-# del backend (un fetch de tiles puede tardar hasta _HTTP_TIMEOUT).
 _MAX_PREFETCH_THREADS = 2
 _prefetch_slots = threading.BoundedSemaphore(_MAX_PREFETCH_THREADS)
 
 
 def _spawn_prefetch(*args: Any, **kwargs: Any) -> None:
-    """Lanza el prefetch si hay cupo; si no, se descarta (optimización best-effort)."""
     if not _prefetch_slots.acquire(blocking=False):
         return
 
@@ -1041,13 +944,10 @@ def _spawn_prefetch(*args: Any, **kwargs: Any) -> None:
         name="ubic-prefetch",
     ).start()
 
-# pin.png is a static asset; cache the decoded RGBA image to avoid re-reading
-# and re-decoding on every Excel row during batch export.
 _pin_cache: Image.Image | None = None
 
 
 def _get_pin_rgba() -> Image.Image | None:
-    """Return the cached pin.png as RGBA, loading it once on first access."""
     global _pin_cache
     if _pin_cache is None:
         pin_path = os.path.join(resource_path("assets/ubicaciones"), "pin.png")
@@ -1055,14 +955,6 @@ def _get_pin_rgba() -> Image.Image | None:
             with Image.open(pin_path) as opened:
                 _pin_cache = opened.convert("RGBA")
     return _pin_cache
-
-
-# ── Map source ───────────────────────────────────────────────────────────────
-# The map image is now fetched from a static-map provider (OSM tiles or Google
-# Static Maps) via fetch_static_map() — see the constants block above. This
-# replaced the persistent Playwright/Chromium browser, which was too heavy for
-# the installer and broken in production (no bundled Chromium). No browser
-# process, warmup, or shutdown lifecycle is needed anymore.
 
 
 def _compose_ubicacion_image(
@@ -1073,19 +965,10 @@ def _compose_ubicacion_image(
     preview: bool = False,
     custom_styles: dict | None = None,
 ) -> Image.Image:
-    """Compone mapa + textos + pin + footer. Preview y export usan la misma lógica
-    escalada proporcionalmente (preview ≈ miniatura fiel del PDF exportado).
-
-    ``custom_styles`` (optional) overrides text appearance (per-field fontSize,
-    bold, color, offsetX, offsetY, visible), pin (color, scale, offsets,
-    visible), overlay (alpha, color), and layout (yStart, lineSpacing, lineGap).
-    When ``None`` or empty, the original hardcoded defaults are used.
-    """
     spec = _REF_LAYOUT[formato]
     out_w, out_h, footer_height = _dimensions_for(formato, preview=preview)
     scale = out_w / int(spec["out_w"])
 
-    # ── Custom styles extraction ──
     cs_texts = (custom_styles or {}).get("texts", {})
     cs_pin = (custom_styles or {}).get("pin", {})
     cs_map = (custom_styles or {}).get("map", {})
@@ -1117,7 +1000,6 @@ def _compose_ubicacion_image(
     border_w = max(1, round(int(spec["border"]) * scale))
     draw.rectangle([0, 0, out_w - 1, out_h - 1], outline=(0, 0, 0), width=border_w)
 
-    # ── Text fields ──
     cod = str(datos.get("cod_componente", ""))
     dir_str = str(datos.get("direccion", ""))
     loc = str(datos.get("localidad", ""))
@@ -1128,7 +1010,6 @@ def _compose_ubicacion_image(
     line_gap = cs_layout.get("lineGap", float(spec["line_gap"]))
 
     def _draw_field(field: str, text: str, default_size: int, y_pos: int, *, is_large: bool = False) -> None:
-        """Draw a single text field with per-field style overrides."""
         ts = cs_texts.get(field, {})
         if not ts.get("visible", True):
             return
@@ -1160,7 +1041,6 @@ def _compose_ubicacion_image(
     y_text += round(line_spacing * line_gap)
     _draw_field("distrito", dist, int(spec["font_medium"]), y_text)
 
-    # ── Pin ──
     if cs_pin.get("visible", True):
         pin = _get_pin_rgba()
         if pin is not None:
@@ -1188,7 +1068,6 @@ def render_ubicacion(
     map_opts: dict[str, Any] | None = None,
     custom_styles: dict | None = None,
 ) -> Image.Image:
-    """Pipeline único: captura mapa + composición WYSIWYG (preview o export)."""
     lat = float(datos["lat"])
     lon = float(datos["lon"])
     screenshot_bytes = _get_cached_map_screenshot(lat, lon, formato, preview=preview, map_opts=map_opts)
@@ -1201,7 +1080,6 @@ def render_imagen_ubicacion(
     map_opts: dict[str, Any] | None = None,
     custom_styles: dict | None = None,
 ) -> Image.Image:
-    """Renderiza la imagen final A4 con mapa, textos, pin y footer."""
     return render_ubicacion(datos, formato, preview=False, map_opts=map_opts, custom_styles=custom_styles)
 
 
@@ -1212,7 +1090,6 @@ def generar_imagen_ubicacion(
     map_opts: dict[str, Any] | None = None,
     custom_styles: dict | None = None,
 ) -> None:
-    """Genera la imagen y la guarda como PDF."""
     final_img = render_imagen_ubicacion(datos, formato, map_opts=map_opts, custom_styles=custom_styles)
     try:
         rgb = final_img.convert("RGB")
@@ -1225,14 +1102,6 @@ def generar_imagen_ubicacion(
 
 
 def _output_pdf_filename(cod_componente: str) -> str:
-    """Construye el nombre de archivo PDF para un cod_componente.
-
-    Sanitiza los caracteres inválidos en Windows (:*?\"<>|) y los separadores
-    de path vía ``sanitizar_nombre``. Antes sólo se reemplazaban ``/`` y ``\\``,
-    por lo que un cod_componente como ``"A:B"`` producía ``A:B.pdf`` y
-    ``PIL.save`` levantaba OSError (Errno 22) en Windows, abortando el batch
-    entero de ubicaciones.
-    """
     safe_stem = sanitizar_nombre(str(cod_componente)) or "ubicacion"
     return f"{safe_stem}.pdf"
 
@@ -1245,7 +1114,6 @@ _COMBINED_COORD_URL_PATTERNS = (
 
 
 def _parse_combined_coord_value(val: Any) -> tuple[float | None, float | None]:
-    """Extrae lat/lon de una celda combinada (par numérico o URL de mapas)."""
     if _is_na(val):
         return None, None
     text = str(val).strip()
@@ -1265,7 +1133,6 @@ def _parse_combined_coord_value(val: Any) -> tuple[float | None, float | None]:
 
 
 def _unique_pdf_filename(cod_componente: str, used_stems: dict[str, int]) -> str:
-    """Asigna un nombre PDF único; añade sufijo numérico si el código se repite."""
     stem = sanitizar_nombre(str(cod_componente)) or "ubicacion"
     count = used_stems.get(stem, 0)
     used_stems[stem] = count + 1
@@ -1275,11 +1142,6 @@ def _unique_pdf_filename(cod_componente: str, used_stems: dict[str, int]) -> str
 
 
 def _coerce_coord(value: Any) -> float | None:
-    """Coerce una celda de lat/lon a ``float``, o ``None`` si falta o no es
-    numérica. ``_is_na`` sólo rechaza None/NaN, no strings como ``"abc"``;
-    sin este guard el worker llamaba ``float(datos['lat'])`` y crasheaba con
-    ValueError, abortando el batch entero de ubicaciones.
-    """
     if _is_na(value):
         return None
     try:
@@ -1289,7 +1151,6 @@ def _coerce_coord(value: Any) -> float | None:
 
 
 def _parse_excel_columns(df):
-    """Detecta las columnas del Excel normalizando nombres."""
     df.columns = [str(c).strip().lower() for c in df.columns]
 
     col_cod = next((c for c in df.columns if 'cod' in c or 'componente' in c), None)
@@ -1313,7 +1174,6 @@ def _parse_excel_columns(df):
     return col_cod, col_dir, col_loc, col_dist, col_lat, col_lon
 
 def _extract_row_data(row, index, col_cod, col_dir, col_loc, col_dist, col_lat, col_lon):
-    """Extrae los datos de una fila del DataFrame."""
     return {
         'cod_componente': row[col_cod] if col_cod and not _is_na(row[col_cod]) else f"ID-{index+1}",
         'direccion': row[col_dir] if col_dir and not _is_na(row[col_dir]) else "",
@@ -1325,7 +1185,6 @@ def _extract_row_data(row, index, col_cod, col_dir, col_loc, col_dist, col_lat, 
 
 @with_locale
 def handle_preview_ubicacion(payload: dict) -> dict[str, Any]:
-    """Genera vista previa WYSIWYG: compone igual que el PDF y reduce para pantalla."""
     excel_path = payload.get("excelPath")
     manual_data = payload.get("manualData")
     formato = payload.get("formato", "vertical")
@@ -1411,7 +1270,6 @@ _CONSOLIDATED_PDF_NAME = "ubicaciones_consolidado.pdf"
 
 
 def _map_opts_from_payload(payload: dict) -> dict[str, Any]:
-    """Build validated per-request map options before any map work starts."""
     zoom = payload.get("zoom")
     if zoom is not None and (
         isinstance(zoom, bool)
@@ -1434,19 +1292,13 @@ def _consolidated_pdf_permission_error(path: str) -> PermissionError:
 
 
 def _is_destination_locked(err: OSError) -> bool:
-    """True when the destination file is locked/in-use (Windows sharing violation or EACCES)."""
     if getattr(err, "errno", None) in (13, getattr(errno, "EACCES", 13)):
         return True
     winerror = getattr(err, "winerror", None)
-    return winerror in (32, 33)  # ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION
+    return winerror in (32, 33)
 
 
 def _merge_consolidated_pdfs(page_paths: list[str], output_dir: str) -> str:
-    """Merge single-page temp PDFs into one multi-page PDF atomically.
-    Cleans up temp page files regardless of success or failure. The write and
-    finalize steps are the same ones production uses (incremental writer →
-    ``_save_consolidated_writer``), so the lock-fallback behavior is tested
-    through the real path."""
     if not page_paths:
         raise ValueError("No hay imágenes para guardar en el PDF consolidado.")
     try:
@@ -1463,7 +1315,6 @@ def _merge_consolidated_pdfs(page_paths: list[str], output_dir: str) -> str:
 
 
 def _save_consolidated_writer(writer: Any, output_dir: str) -> str:
-    """Write an already assembled PDF atomically with the usual lock fallback."""
     base_path = os.path.join(output_dir, _CONSOLIDATED_PDF_NAME)
     tmp_path = base_path + ".antares-tmp"
     try:
@@ -1478,8 +1329,6 @@ def _save_consolidated_writer(writer: Any, output_dir: str) -> str:
 
 
 def _write_consolidated_pdf(tmp_path: str, base_path: str) -> str:
-    """Mueve el PDF temporal a un nombre final; si el destino está bloqueado
-    (p. ej. abierto en Edge/Adobe), prueba alternativas numeradas."""
     candidates = [base_path] + [
         os.path.join(os.path.dirname(base_path), f"ubicaciones_consolidado_{n}.pdf")
         for n in range(2, 51)
@@ -1568,9 +1417,6 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:
         consolidated_writer = PdfWriter()
 
     def _render_one(d: dict) -> tuple[bool, str | None]:
-        """Renderiza (y guarda en no-consolidado) una fila. Devuelve
-        ``(ok, page_path)``: page_path sólo en modo consolidado y ok.
-        Una fila que falle se aísla (no aborta el batch vía ex.map)."""
         logger.info(f"Procesando {d['cod_componente']} en {d['lat']}, {d['lon']}...")
         t0 = time.perf_counter()
         try:
@@ -1605,11 +1451,6 @@ def handle_generar_ubicaciones(payload: dict) -> dict[str, Any]:
         consolidated_temp_dir = managed_temp_dir if consolidado else None
         if valid_rows:
             max_workers = min(_MAX_RENDER_WORKERS, len(valid_rows))
-            # ThreadPoolExecutor local: map() preserva orden de submission → orden
-            # de páginas en el PDF consolidado. Las caches mutables ya están
-            # protegidas por _cache_lock (mismo patrón que el daemon de prefetch).
-            # _render_one atrapa sus propias excepciones y devuelve (False, None),
-            # así que una fila que falle no aborta las demás ni el consolidado.
             with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="ubic-render") as ex:
                 for ok, page_path in ex.map(_render_one, valid_rows):
                     if not ok:

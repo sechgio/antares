@@ -152,10 +152,7 @@ export default function GenerateSidebar(props: GenerateSidebarProps) {
                     accept="image/*"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
-                      // ObjectURL for sidebar/preview; parent revokes on replace/unmount.
                       const url = f ? URL.createObjectURL(f) : null;
-                      // Pass the File too: RGB PDF export can reference it via an
-                      // antares-local-image: token instead of base64 per page.
                       if (side === 'left') onLogoLeft(url, f);
                       else onLogoRight(url, f);
                     }}

@@ -6,7 +6,6 @@ export function logoSideOf(layer: CanvasLayer): LogoSide {
   return layer.meta?.side === 'right' ? 'right' : 'left';
 }
 
-/** Prefer an unoccupied side among existing logo layers (excluding optional ids). */
 export function nextFreeLogoSide(layers: CanvasLayer[], excludeIds?: ReadonlySet<string>): LogoSide {
   const occupied = new Set<LogoSide>();
   for (const layer of layers) {
@@ -23,7 +22,6 @@ export function logoSideLabel(side: LogoSide): string {
   return side === 'right' ? 'Logo derecho' : 'Logo izquierdo';
 }
 
-/** True when another logo layer shares the same side. */
 export function logoSideHasConflict(layers: CanvasLayer[], layerId: string): boolean {
   const layer = layers.find((l) => l.id === layerId);
   if (!layer || layer.type !== 'logo') return false;
@@ -31,10 +29,6 @@ export function logoSideHasConflict(layers: CanvasLayer[], layerId: string): boo
   return layers.some((l) => l.id !== layerId && l.type === 'logo' && logoSideOf(l) === side);
 }
 
-/**
- * For newly created/duplicated logos: if their side collides with another logo,
- * move them to the free side when one is available.
- */
 export function assignUniqueLogoSides(layers: CanvasLayer[], layerIds: string[]): CanvasLayer[] {
   let next = layers;
   for (const id of layerIds) {

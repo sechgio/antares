@@ -159,7 +159,6 @@ describe('exportCanvasPdf with CMYK color mode', () => {
     expect(body.contexts[1]!.images).toEqual(['img-4', 'img-5', 'img-6', 'img-7']);
     expect(body.contexts[2]!.images).toEqual(['img-8']);
     expect(body.document.pages).toHaveLength(3);
-    // Each expanded page carries its own remapped imageSlots.
     for (let p = 0; p < 3; p += 1) {
       const slots = body.document.layers.filter(
         (l) => l.type === 'imageSlot' && (l.pageIndex ?? 0) === p,

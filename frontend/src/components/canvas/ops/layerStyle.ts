@@ -38,7 +38,6 @@ export function parseBorderWidthPx(vars: LayerCssVars, fallback = 0): number {
   return Number.isFinite(n) ? clampStrokeWeight(n) : fallback;
 }
 
-/** Stroke weight in px for a line. Legacy lines (no --border-width) use fill height. */
 export function lineStrokeWidthPx(layer: Pick<CanvasLayer, 'type' | 'cssVars'>): number {
   if (layer.cssVars['--border-width'] != null && layer.cssVars['--border-width'] !== '') {
     return parseBorderWidthPx(layer.cssVars, DEFAULT_LINE_STROKE_PX);
@@ -54,10 +53,6 @@ export function lineHeightMmFromStrokePx(px: number): number {
   return Math.max(0.05, pxToMm(Math.max(0, px)));
 }
 
-/**
- * Persist stroke weight for lines.
- * Path-based lines keep their bbox height; legacy bar-lines sync --height to weight.
- */
 export function applyLineStrokeWeight(layer: CanvasLayer, px: number): CanvasLayer {
   const weight = clampStrokeWeight(px);
   if (weight > 0) rememberStrokeWeight(weight);
@@ -77,7 +72,6 @@ export function applyLineStrokeWeight(layer: CanvasLayer, px: number): CanvasLay
   };
 }
 
-/** Paint color for a line bar (stroke color, with legacy fill fallback). */
 export function resolveLineFillColor(vars: LayerCssVars): string {
   if (vars['--stroke-visible'] === '0') return 'transparent';
   const hex =
@@ -91,10 +85,6 @@ export function resolveLineFillColor(vars: LayerCssVars): string {
   return hexToRgba(normalizeHex(hex, '#000000'), Number.isFinite(opacity) ? opacity : 100);
 }
 
-/**
- * Normalize line cssVars to a filled bar for editor/export (no CSS border stroke).
- * Thickness comes from --border-width; legacy lines keep fill-height appearance.
- */
 export function lineVisualCssVars(vars: LayerCssVars): LayerCssVars {
   const hasStrokeWidth = vars['--border-width'] != null && vars['--border-width'] !== '';
   const strokePx = hasStrokeWidth
@@ -175,7 +165,6 @@ export function isShapeLayer(layer: CanvasLayer): boolean {
 export function layerPanelTitle(layer: CanvasLayer): string {
   const defaultName = LAYER_TYPE_LABELS[layer.type] || layer.type;
   if (!layer.name || layer.name === defaultName) return defaultName;
-  // English defaults from createLayer
   const englishDefaults: Record<string, string> = {
     Rectangle: 'Rectángulo',
     Ellipse: 'Elipse',
@@ -256,7 +245,6 @@ export function resolveFillColor(vars: LayerCssVars): string {
   return hexToRgba(normalizeHex(hex), Number.isFinite(opacity) ? opacity : 100);
 }
 
-/** CSS `background` value — solid rgba, linear-gradient, or radial-gradient. */
 export function resolveFillBackground(vars: LayerCssVars): string {
   if (vars['--fill-visible'] === '0') return 'transparent';
   const type = vars['--fill-type'] || 'solid';
@@ -294,7 +282,6 @@ export function parseImageZoom(vars: LayerCssVars): number {
   return Math.min(3, Math.max(1, Math.round(n * 100) / 100));
 }
 
-/** Inline CSS for <img> content (editor + PDF export). */
 export function imageContentInlineStyle(vars: LayerCssVars): string {
   const fit = vars['--object-fit'] || 'cover';
   const pos = vars['--object-position'] || '50% 50%';
@@ -320,7 +307,6 @@ export function parseRadiusPx(value: string | undefined): number {
   return Number.isFinite(n) ? Math.max(0, n) : 0;
 }
 
-/** Resolved CSS border-radius (1 or 4 values). */
 export function resolveBorderRadius(vars: LayerCssVars): string {
   const uniform = vars['--border-radius'];
   const tl = vars['--radius-tl'];
@@ -345,7 +331,6 @@ export function cornerRadiusPx(vars: LayerCssVars, corner: CornerId): number {
   return parseRadiusPx(vars['--border-radius']);
 }
 
-/** Scale a 1–4 value border-radius string by zoom (skips %). */
 export function scaleBorderRadius(value: string | undefined, scale: number): string | undefined {
   if (!value) return undefined;
   return value
@@ -379,7 +364,6 @@ export function parseStrokeDash(value: string | undefined): StrokeDash {
   return 'solid';
 }
 
-/** SVG stroke-dasharray in mm (viewBox units). */
 export function strokeDasharrayMm(dash: StrokeDash, strokeWidthMm: number): string | undefined {
   if (dash === 'solid') return undefined;
   const w = Math.max(0.05, strokeWidthMm);
@@ -421,7 +405,6 @@ export function resolveStrokeStyle(
     };
   }
   if (align === 'outside') {
-    // box-shadow cannot dash; fall back to outline outside the box.
     if (dash !== 'solid') {
       return {
         outline: `${width} ${lineStyle} ${color}`,
@@ -531,7 +514,6 @@ export const DEFAULT_SHADOW: ParsedShadow = {
   opacity: 25,
 };
 
-/** Blend modes supported for layer compositing (Figma/Canva parity). */
 export const BLEND_MODES = [
   'normal',
   'multiply',
@@ -553,7 +535,6 @@ export const BLEND_MODES = [
 
 export type BlendMode = (typeof BLEND_MODES)[number];
 
-/** Human-readable Spanish labels for each blend mode. */
 export const BLEND_MODE_LABELS: Record<BlendMode, string> = {
   normal: 'Normal',
   multiply: 'Multiplicar',
@@ -573,13 +554,11 @@ export const BLEND_MODE_LABELS: Record<BlendMode, string> = {
   luminosity: 'Luminosidad',
 };
 
-/** Blend mode of a layer; 'normal' when unset or unknown. */
 export function parseBlendMode(vars: LayerCssVars): BlendMode {
   const raw = vars['--blend-mode'];
   return (BLEND_MODES as readonly string[]).includes(raw ?? '') ? (raw as BlendMode) : 'normal';
 }
 
-/** Split a CSS list on top-level commas (ignores commas inside rgba()/hsla()). */
 function splitTopLevelCommas(input: string): string[] {
   const parts: string[] = [];
   let depth = 0;
@@ -598,7 +577,6 @@ function splitTopLevelCommas(input: string): string[] {
   return parts.map((part) => part.trim()).filter(Boolean);
 }
 
-/** All shadows in a (possibly comma-separated) box-shadow value. */
 export function parseBoxShadows(raw: string | undefined): ParsedShadow[] {
   if (!raw || raw === 'none') return [];
   return splitTopLevelCommas(raw)
@@ -606,12 +584,10 @@ export function parseBoxShadows(raw: string | undefined): ParsedShadow[] {
     .filter((shadow): shadow is ParsedShadow => Boolean(shadow));
 }
 
-/** Join multiple shadows into one CSS box-shadow value ("none" when empty). */
 export function formatBoxShadows(shadows: ParsedShadow[]): string {
   return shadows.length ? shadows.map((shadow) => formatBoxShadow(shadow)).join(', ') : 'none';
 }
 
-/** Append a shadow (defaults to DEFAULT_SHADOW) to a box-shadow value. */
 export function addBoxShadow(
   raw: string | undefined,
   shadow: ParsedShadow = DEFAULT_SHADOW,
@@ -619,7 +595,6 @@ export function addBoxShadow(
   return formatBoxShadows([...parseBoxShadows(raw), shadow]);
 }
 
-/** Patch the shadow at `index`; returns the value unchanged when out of range. */
 export function updateBoxShadowAt(
   raw: string | undefined,
   index: number,
@@ -631,15 +606,12 @@ export function updateBoxShadowAt(
   return formatBoxShadows(shadows);
 }
 
-/** Remove the shadow at `index` ("none" when none remain). */
 export function removeBoxShadowAt(raw: string | undefined, index: number): string {
   return formatBoxShadows(parseBoxShadows(raw).filter((_, i) => i !== index));
 }
 
-
 export function parseBoxShadow(value: string | undefined): ParsedShadow | null {
   if (!value || value === 'none') return null;
-  // e.g. "0px 4px 8px rgba(0,0,0,0.25)" or "0 4px 8px #00000040"
   const rgba = value.match(
     /(-?[\d.]+)px\s+(-?[\d.]+)px\s+([\d.]+)px\s+rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/i,
   );
@@ -672,7 +644,6 @@ export function formatBoxShadow(shadow: ParsedShadow): string {
   return `${shadow.x}px ${shadow.y}px ${shadow.blur}px ${color}`;
 }
 
-/** Default second shadow preset (subtle ambient). */
 export const DEFAULT_SHADOW_2: ParsedShadow = {
   color: '#000000',
   x: 0,
@@ -697,7 +668,6 @@ export function collectDocumentColors(layers: CanvasLayer[]): string[] {
   return out.slice(0, 24);
 }
 
-/** Build CSS declarations shared by editor + HTML export. */
 export function cssVarsToStyleParts(vars: LayerCssVars): string[] {
   const skip = new Set([
     '--translate-x',

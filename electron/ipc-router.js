@@ -1,16 +1,3 @@
-/**
- * IPC router: JSON-RPC request/response correlation between renderer and
- * the Python backend, plus notification forwarding.
- *
- * Design goals:
- *   - A request issued before the backend finishes booting **waits** for it
- *     (bounded by a generous startup budget) instead of failing with a
- *     cryptic "Backend no disponible".
- *   - Failures include a meaningful reason: handshake timeout, Python
- *     crashed with stderr, executable missing, etc.
- *   - Mid-flight transient failures (process died while we were waiting
- *     for a response) retry a small, bounded number of times.
- */
 const { ipcMain, dialog } = require('electron');
 const crypto = require('crypto');
 const { handleDialogCall } = require('./dialog-handlers');
@@ -42,9 +29,8 @@ const {
 const _pendingRequests = new Map();
 const _pendingMethodCounts = new Map();
 let _pendingRequestCount = 0;
-let _attachedProcess = null;               // process instance we have listeners on
+let _attachedProcess = null;
 
-/** Cached IPC allowlist. reloadIpcMethods() busts cache in dev. */
 let _ipcMethodsCache = null;
 
 function _loadIpcMethods() {
@@ -65,7 +51,6 @@ function reloadIpcMethods() {
     try {
       delete require.cache[require.resolve(rel)];
     } catch {
-      // ignore missing modules
     }
   }
   _ipcMethodsCache = null;
@@ -112,10 +97,8 @@ const MAX_PENDING_PER_METHOD = _positiveIntegerEnv(
 const IPC_CAPACITY_RETRY_AFTER_MS = 250;
 
 let _ipcBackpressureWaits = 0;
-/** Prefix for structured IPC errors embedded in Error.message (Electron only clones message). */
 const ANTARES_IPC_ERROR_PREFIX = 'ANTARES_IPC_ERROR:';
 
-/** Encode error fields inside Error.message for ipcMain.handle. */
 function _toRendererIpcError(err) {
   const payload = {
     message: err && err.message ? String(err.message) : String(err),
@@ -126,20 +109,17 @@ function _toRendererIpcError(err) {
   return new Error(ANTARES_IPC_ERROR_PREFIX + JSON.stringify(payload));
 }
 
-/** Only idempotent reads are safe to retry. Explicit allowlist — never heuristic. */
 const IDEMPOTENT_METHODS = new Set([
   'version',
   'formats',
   'preview',
   'is_video',
   'process_status',
-  'db_records',
   'db_columns',
   'db_fields',
   'db_template',
   'db_parse_mapping',
   'db_validate_mapping',
-  'db_detect_key_column',
   'theme_presets',
   'theme_preset',
   'panel_aviso_corte_template',
@@ -174,9 +154,6 @@ function _isAllowedIpcSender(event) {
 }
 
 function _handleBackendTermination(proc) {
-  // `exit` is emitted as soon as the child is gone. `close` follows after all
-  // stdio streams close, which can be delayed by a stuck pipe. Both events can
-  // arrive, so deleting the entry before rejecting makes this idempotent.
   for (const [id, entry] of _pendingRequests) {
     if (entry.proc !== proc) continue;
     clearTimeout(entry.timeout);
@@ -190,10 +167,8 @@ function _handleBackendTermination(proc) {
   clearJobActivity();
 }
 
-/** Frame NDJSON lines from stdout without string-concat. Caps pending at maxPendingBytes. */
 function _consumeStdoutLines(pending, chunk, maxPendingBytes = Infinity) {
   const piece = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-  // Normalize pending to list form for zero-copy scan
   let bufs;
   let totalLen;
   const isObjectPending = pending && typeof pending === 'object' && Array.isArray(pending.bufs);
@@ -207,7 +182,6 @@ function _consumeStdoutLines(pending, chunk, maxPendingBytes = Infinity) {
   bufs.push(piece);
   totalLen += piece.length;
 
-  // Pending has no newline; if the new piece also has none, no lines can form.
   if (piece.indexOf(0x0a) === -1) {
     const pendingRemLen = totalLen;
     let dropped = false;
@@ -219,8 +193,6 @@ function _consumeStdoutLines(pending, chunk, maxPendingBytes = Infinity) {
     if (isObjectPending) {
       return { pending: { bufs, len: totalLen }, lines: [], dropped };
     }
-    // Legacy Buffer path — need to materialize pending as single Buffer
-    // but avoid extra copy when pending was empty
     if (bufs.length === 1) return { pending: bufs[0], lines: [], dropped };
     return { pending: Buffer.concat(bufs, totalLen), lines: [], dropped };
   }
@@ -228,16 +200,13 @@ function _consumeStdoutLines(pending, chunk, maxPendingBytes = Infinity) {
   const lines = [];
   let lineStartPos = 0;
   let globalPos = 0;
-  // Scan bufs sequentially for 0x0a without concatenating
   for (let bi = 0; bi < bufs.length; bi++) {
     const buf = bufs[bi];
     for (let i = 0; i < buf.length; i++) {
       if (buf[i] === 0x0a) {
         const lineLen = globalPos - lineStartPos;
         if (lineLen > 0) {
-          // Extract line bytes from lineStartPos..globalPos-1 across bufs
           if (lineLen <= buf.length && lineStartPos >= globalPos - i) {
-            // Line fully inside current buf — zero-copy slice
             const startInBuf = i - lineLen;
             lines.push(buf.subarray(startInBuf, i));
           } else {
@@ -272,8 +241,6 @@ function _consumeStdoutLines(pending, chunk, maxPendingBytes = Infinity) {
     const empty = isObjectPending ? { bufs: [], len: 0 } : Buffer.alloc(0);
     return { pending: empty, lines, dropped };
   }
-  // Build pending remainder — keep as list of slices (no copy) so fragmented
-  // large lines (8MB without newline) do not trigger O(n²) Buffer.concat per chunk.
   if (isObjectPending) {
     const tailParts = [];
     let pos = 0;
@@ -287,18 +254,14 @@ function _consumeStdoutLines(pending, chunk, maxPendingBytes = Infinity) {
     }
     return { pending: { bufs: tailParts, len: pendingRemLen }, lines, dropped };
   }
-  // Legacy Buffer path — extract tail as Buffer
-  // Fast path when pending was single buffer and lineStartPos inside it
   if (bufs.length === 1) {
     return { pending: bufs[0].subarray(lineStartPos), lines, dropped };
   }
   const all = Buffer.concat(bufs, totalLen);
-  // Make a copy of the tail so the large `all` buffer can be GC'd
   const tailSlice = all.subarray(lineStartPos);
   return { pending: Buffer.from(tailSlice), lines, dropped };
 }
 
-/** Attach stdout/close listeners to the current backend process. */
 function _ensureListeners() {
   const proc = getProcess();
   if (!proc) return false;
@@ -307,7 +270,6 @@ function _ensureListeners() {
   _attachedProcess = proc;
   let pending = { bufs: [], len: 0 };
 
-  // Cap pending at 68 MiB to avoid unbounded growth.
   const MAX_STDOUT_PENDING_BYTES = 64 * 1024 * 1024 + 4 * 1024 * 1024;
 
   proc.stdout.on('data', (data) => {
@@ -331,9 +293,7 @@ function _ensureListeners() {
       if (!line.trim()) continue;
       try {
         const msg = JSON.parse(line);
-        // Notification (no `id`): forward to renderer
         if (msg.method && msg.params !== undefined && msg.id === undefined) {
-          // Track job liveness so health checks don't restart mid-job.
           if (
             msg.method === 'process.progress'
             || msg.method === 'process.heartbeat'
@@ -350,7 +310,6 @@ function _ensureListeners() {
           if (win && !win.isDestroyed()) win.webContents.send('ipc-notify', msg.method, msg.params);
           continue;
         }
-        // Response to a pending request
         if (msg.id !== undefined && _pendingRequests.has(String(msg.id))) {
           const entry = _pendingRequests.get(String(msg.id));
           clearTimeout(entry.timeout);
@@ -377,7 +336,7 @@ function _ensureListeners() {
             entry.resolve(msg.result);
           }
         }
-      } catch { /* malformed line — ignore */ }
+      } catch {  }
     }
   });
 
@@ -439,7 +398,6 @@ function _estimateJsonBytes(value) {
   }
 }
 
-
 function _logIpcTelemetry({
   method,
   requestId = null,
@@ -488,7 +446,6 @@ function resetIpcBackpressureWaits() {
   _ipcBackpressureWaits = 0;
 }
 
-/** Write JSON-RPC line to stdin; wait for drain if buffer full. */
 function _writeStdinWithBackpressure(proc, payload) {
   return new Promise((resolve, reject) => {
     if (!proc || !proc.stdin || typeof proc.stdin.write !== 'function') {
@@ -541,7 +498,6 @@ function _sendRequest(method, params) {
   if (!proc || proc.killed) {
     return Promise.reject(new Error('Backend process not available'));
   }
-
 
   const id = crypto.randomUUID();
   const request = { jsonrpc: '2.0', id, method, params };
@@ -642,7 +598,6 @@ function _sendRequest(method, params) {
   });
 }
 
-
 function _buildUnavailableError() {
   const state = getState();
   const last = getLastError();
@@ -671,16 +626,13 @@ function _buildUnavailableError() {
   return err;
 }
 
-
 async function _callBackend(method, params) {
-    // 1. Wait for ready (or fatal). This is the ONLY place we block for boot.
     if (!isReady()) {
       if (getState() === STATE.FATAL) throw _buildUnavailableError();
       const ready = await waitForReady(STARTUP_WAIT_MS);
       if (!ready) throw _buildUnavailableError();
     }
 
-    // 2. Send, retrying on transient mid-flight failures — idempotent methods only.
     let lastErr = null;
     for (let attempt = 0; attempt <= MID_FLIGHT_RETRIES; attempt++) {
       try {
@@ -725,7 +677,6 @@ function _maybeTokenizeResultPaths(method, result, win) {
   return next;
 }
 
-/** Prefix dispatch for native IPC handlers. */
 const _DIALOG_NATIVE_METHODS = new Set(
   require('./ipc-methods').NATIVE_METHODS.filter((m) => !m.startsWith('dialog_'))
 );
@@ -736,18 +687,12 @@ function _dispatchNative(method) {
   return null;
 }
 
-/**
- * Resolve map provider API keys (cached inside ubicaciones-secure-keys;
- * cache clears on ubicaciones_keys_set so mid-session key changes apply).
- */
 function _resolveCachedApiKey(provider, fallbackFromRenderer) {
   const { resolveProviderApiKey } = require('./ubicaciones-secure-keys');
   return resolveProviderApiKey(provider, fallbackFromRenderer);
 }
 
 function registerIpcHandlers() {
-  // Pick up the latest allowlist once at registration. In dev this replaces
-  // the per-call cache bust that previously ran on every ipc-call.
   let isPackaged = false;
   try {
     isPackaged = require('electron').app.isPackaged;
@@ -850,7 +795,6 @@ function registerIpcHandlers() {
 
     _lastBackendRestartAt = now;
     const { getIsDev } = require('./window-manager');
-    // Fallback: determine isDev from app if window-manager doesn't export it
     let isDev;
     try {
       isDev = getIsDev();

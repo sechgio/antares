@@ -243,7 +243,6 @@ describe('canvas renderHtml', () => {
     expect(fieldStyle).toMatch(/(?:^|;)\s*border:/);
     expect(fieldStyle).toContain('dashed');
 
-    // Filled logos drop placeholder fill/border (pre-WYSIWYG clean export).
     expect(logoStyle).toContain('background-color:transparent');
     expect(logoStyle).not.toMatch(/#eef2ff/i);
     expect(logoStyle).not.toContain('dashed');
@@ -307,7 +306,6 @@ describe('canvas renderHtml', () => {
     const grid = doc.layers.find((l) => l.type === 'grid')!;
     const designedCols = grid.meta?.cols ?? 3;
     const designedRows = grid.meta?.rows ?? 2;
-    // 4 images would resolve to 2×2 under DEFAULT_GRID_RULES — must NOT relayout.
     const html = renderCanvasHtml(
       doc,
       {
@@ -320,7 +318,6 @@ describe('canvas renderHtml', () => {
     );
     const slots = doc.layers.filter((l) => l.type === 'imageSlot');
     expect(slots.length).toBe(designedCols * designedRows);
-    // First slot stays at designed position (applyGrid without imageCount).
     const slot0 = slots.find((s) => s.meta?.index === 0)!;
     const style = html.match(new RegExp(`data-layer="${slot0.id}"[^>]*style="([^"]*)"`))?.[1] ?? '';
     const x = Math.round(parseMm(slot0.cssVars['--translate-x']) * (96 / 25.4));
@@ -549,7 +546,6 @@ describe('canvas excel helpers', () => {
     expect(matchesRecordId('ABC-1.jpg', 'ABC')).toBe(true);
     expect(matchesRecordId('ABC_2.png', 'ABC')).toBe(true);
     expect(matchesRecordId('XYZ-1.jpg', 'ABC')).toBe(false);
-    // Basename semantics: extension optional; exact id also matches
     expect(matchesRecordId('ABC', 'ABC')).toBe(true);
     expect(matchesRecordId('ABC-1', 'ABC')).toBe(true);
     expect(matchesRecordId('ABC.pdf', 'ABC')).toBe(true);
@@ -879,7 +875,6 @@ describe('layerOps', () => {
     });
     const next = distributeLayers([a, b, c], [a.id, b.id, c.id], 'horizontal', { mode: 'gaps' });
     const bx = parseMm(next.find((l) => l.id === b.id)!.cssVars['--translate-x']);
-    // Total span between a.right(10) and c.left(90) = 80; one middle box 10 → gap = 35 each side → b at 45
     expect(bx).toBeCloseTo(45, 5);
   });
 
@@ -1035,7 +1030,6 @@ describe('gridLayout', () => {
     }
     layers = applyGridToImageSlots(layers, gridId);
     const slots = layers.filter((l) => l.parentId === gridId);
-    // 3 columns → third slot shares the first row (same Y as first, larger X)
     expect(parseMm(slots[0].cssVars['--translate-y'])).toBe(parseMm(slots[2].cssVars['--translate-y']));
     expect(parseMm(slots[2].cssVars['--translate-x'])).toBeGreaterThan(parseMm(slots[1].cssVars['--translate-x']));
   });
@@ -1084,7 +1078,6 @@ describe('gridLayout', () => {
       expect(parseMm(s.cssVars['--width'])).toBeCloseTo(sourceW, 5);
       expect(parseMm(s.cssVars['--height'])).toBeCloseTo(sourceH, 5);
     }
-    // Larger cells still grow the grid to fit (gap preserved).
     expect(parseMm(grid.cssVars['--width'])).toBeCloseTo(sourceW * 2 + 2, 5);
     expect(parseMm(grid.cssVars['--height'])).toBeCloseTo(sourceH * 2 + 2, 5);
     expect(parseMm(grid.cssVars['--translate-x'])).toBeCloseTo(10, 5);
@@ -1133,13 +1126,11 @@ describe('gridLayout', () => {
       expect(parseMm(s.cssVars['--width'])).toBeCloseTo(30, 5);
       expect(parseMm(s.cssVars['--height'])).toBeCloseTo(20, 5);
     }
-    // Outer frame stays put; gap between cells stays 2mm; content is centered.
     expect(parseMm(grid.cssVars['--width'])).toBeCloseTo(100, 5);
     expect(parseMm(grid.cssVars['--height'])).toBeCloseTo(80, 5);
     expect(parseMm(grid.cssVars['--translate-x'])).toBeCloseTo(10, 5);
     expect(parseMm(grid.cssVars['--translate-y'])).toBeCloseTo(5, 5);
     expect(grid.meta?.gapMm).toBe(2);
-    // content = 30*2+2=62 by 20*2+2=42 → pad (100-62)/2=19, (80-42)/2=19
     const slot0 = slots.find((s) => s.meta?.index === 0)!;
     const slot1 = slots.find((s) => s.meta?.index === 1)!;
     expect(parseMm(slot0.cssVars['--translate-x'])).toBeCloseTo(10 + 19, 5);
@@ -1216,7 +1207,6 @@ describe('drawHelpers', () => {
     expect(mmToScreenPx(25.4, 1)).toBe(96);
     expect(mmToScreenPx(25.4, 2)).toBe(192);
     expect(mmToScreenPx(10, 0.5)).toBe(Math.round(mmToScreenPx(10, 1) / 2));
-    // Fractional zoom must not leave subpixel boxes (blurry AA)
     expect(Number.isInteger(mmToScreenPx(10, 0.85))).toBe(true);
     expect(Number.isInteger(mmToScreenPx(25.4, 1.33))).toBe(true);
   });
@@ -1543,8 +1533,6 @@ describe('viewportCulling', () => {
   });
 
   it('filterVisibleLayers uses rotated AABB for culling', () => {
-    // Local box is y=0..10; 90° rotation expands AABB to y≈-5..15.
-    // View only overlaps the tall AABB, not the flat local box.
     const rotated = createLayer('rect', {
       cssVars: {
         '--width': '20mm',

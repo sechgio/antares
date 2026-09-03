@@ -91,9 +91,7 @@ import PathHandlesOverlay from './PathHandlesOverlay';
 import { SelectionChromeOverlay } from './SelectionChromeOverlay';
 import { screenChromePx } from '../ops/textTypography';
 
-/** Invisible grab zone around a guide line (Figma uses a generous hit area). */
 const GUIDE_HIT_PX = 10;
-/** Guide line thickness in screen px (counter-scaled under CSS camera zoom). */
 const GUIDE_LINE_PX = 2;
 
 interface ArtboardProps {
@@ -109,7 +107,6 @@ interface ArtboardProps {
   onSelect: (id: string | null, additive?: boolean) => void;
   onSelectIds: (ids: string[]) => void;
   onChangeLayers: (layers: CanvasLayer[]) => void;
-  /** Live gesture updates (no undo). Pair with onCommitGesture on pointerup. */
   onPreviewLayers?: (layers: CanvasLayer[]) => void;
   onCommitGesture?: () => void;
   onZoom?: (zoom: number) => void;
@@ -125,18 +122,14 @@ interface ArtboardProps {
   onCommitGuideCreate?: (guide: CanvasGuide) => void;
   onMoveGuide?: (id: string, posMm: number) => void;
   onRemoveGuide?: (id: string) => void;
-  /** Abort an in-progress guide creation from the rulers (silent, no history). */
   onCancelGuideCreate?: (id: string) => void;
   showRulers?: boolean;
   snapToGrid?: boolean;
   gridSizeMm?: number;
-  /** Start inertial panning after hand-tool drag release. */
   onStartInertia?: (velocity: { vx: number; vy: number }) => void;
-  /** Increment to drop local gesture preview without committing. */
   gestureAbortToken?: number;
 }
 
-/** Figma: Escape cancels in-flight pointer gesture without commit. */
 function escapeToAbort(getSession: () => { abort: () => void }): (ev: KeyboardEvent) => void {
   return (ev) => {
     if (ev.key !== 'Escape') return;
@@ -144,7 +137,6 @@ function escapeToAbort(getSession: () => { abort: () => void }): (ev: KeyboardEv
   };
 }
 
-/** Snapshot for a gesture. Deep-clones only `deepIds` (selection); shares other refs. */
 function cloneLayers(layers: CanvasLayer[], deepIds?: ReadonlySet<string>): CanvasLayer[] {
   if (!deepIds || deepIds.size === 0) {
     return layers.map((l) => ({ ...l, cssVars: { ...l.cssVars }, meta: l.meta ? { ...l.meta } : undefined }));
@@ -156,7 +148,6 @@ function cloneLayers(layers: CanvasLayer[], deepIds?: ReadonlySet<string>): Canv
   );
 }
 
-/** Cache artboard client rect for a gesture; refresh if camera zoom changes mid-drag. */
 export function createFrameRectCache(
   frame: HTMLElement,
   zoomRef: { current: number },
@@ -174,7 +165,6 @@ export function createFrameRectCache(
   };
 }
 
-/** Isolated smart-guide chrome so Artboard gesture frames skip reconciling unrelated subtrees. */
 const SmartGuidesOverlay = memo(function SmartGuidesOverlay({
   guides,
   zoom,
@@ -302,25 +292,15 @@ function Artboard({
     setDistanceLabels(next);
   }, []);
   const [panning, setPanning] = useState(false);
-  /** True briefly while pan/zoom is changing — defers GPU filters and widens cull margin. */
   const [cameraMoving, setCameraMoving] = useState(false);
-  /** True while a two-finger pinch is (or was, until all fingers lift) active. */
   const pinchGestureRef = useRef(false);
-  /** Viewport size in CSS px — drives layer culling (virtualized rendering). */
   const [viewportSize, setViewportSize] = useState<{ w: number; h: number } | null>(null);
-  /** Live gesture preview stays in Artboard so CanvasView/sidebars skip per-frame updates. */
   const [gestureLayers, setGestureLayers] = useState<CanvasLayer[] | null>(null);
-  /**
-   * Selection-move uses DOM transforms mid-drag (no setGestureLayers per frame).
-   * `gestureActive` flips once so LayerNode gets `moving` / will-change without
-   * reconciling every layer each frame; chrome bbox is tracked separately.
-   */
   const [gestureActive, setGestureActive] = useState(false);
   const [gestureBbox, setGestureBbox] = useState<RectMm | null>(null);
   const didFit = useRef(false);
   const gestureDirtyRef = useRef(false);
   const gestureLayersRef = useRef<CanvasLayer[] | null>(null);
-  /** Ids being moved via imperative DOM preview (selection move only). */
   const imperativeMoveIdsRef = useRef<string[] | null>(null);
   const layersRef = useRef(document.layers);
 
@@ -366,7 +346,6 @@ function Artboard({
 
   const applyGestureLayers = useCallback((layers: CanvasLayer[]) => {
     if (pinchGestureRef.current) return;
-    // First frame: capture parent baseline so undo can cancel (revert) mid-gesture.
     if (!gestureDirtyRef.current) {
       onPreviewLayersRef.current?.(layersRef.current);
       setCanvasGestureActive(true);
@@ -401,7 +380,6 @@ function Artboard({
     }
   }, []);
 
-  /** Mid-gesture DOM preview (move/resize/rotate): no per-frame LayerNode reconcile. */
   const applyImperativePreview = useCallback((moved: CanvasLayer[], nextIds: string[]) => {
     if (pinchGestureRef.current) return;
     if (!gestureDirtyRef.current) {
@@ -417,11 +395,6 @@ function Artboard({
     if (frame) applyLayerDomGeometry(frame, moved, nextIds);
   }, []);
 
-  /**
-   * Abort path shared by Esc / pointercancel / gestureAbortToken:
-   * restore DOM from pre-gesture layers (when provided), clear will-change + flags.
-   * Must not call endGesture (no commit).
-   */
   const abortGesturePreview = useCallback(
     (restore?: { layers: CanvasLayer[]; ids: string[] }) => {
       const frame = frameRef.current;
@@ -450,7 +423,6 @@ function Artboard({
   useEffect(() => {
     if (gestureAbortToken === prevAbortTokenRef.current) return;
     prevAbortTokenRef.current = gestureAbortToken;
-    // Kill window listeners + RAF first so late pointermove/up cannot re-arm or commit.
     abortActivePointerGestureSession();
     abortGesturePreview();
     setMarquee(null);
@@ -461,10 +433,8 @@ function Artboard({
     setRadiusDrag(null);
   }, [gestureAbortToken, abortGesturePreview]);
 
-  // Unmount mid-gesture must not leave window listeners calling into stale closures.
   useEffect(() => () => abortActivePointerGestureSession(), []);
 
-  /** Re-apply DOM geometry after React chrome commits wipe inline styles. */
   useLayoutEffect(() => {
     if (!gestureActive || !imperativeMoveIdsRef.current || !gestureLayersRef.current) return;
     const frame = frameRef.current;
@@ -478,8 +448,6 @@ function Artboard({
   usePinchZoom(viewportRef, navRef, {
     activeRef: pinchGestureRef,
     onStart: () => {
-      // Abort the single-pointer session before clearing its visuals. Otherwise
-      // the final pinch pointerup can still commit the stale drag or inertia.
       abortActivePointerGestureSession();
       setMarquee(null);
       setDraft(null);
@@ -493,8 +461,6 @@ function Artboard({
   selectedIdsRef.current = selectedIds;
 
   const displayLayers = gestureLayers ?? document.layers;
-  // Keep layersRef on the live gesture snapshot while imperative move is in flight
-  // (gestureLayers state stays null so LayerNodes skip per-frame reconciliation).
   if (gestureDirtyRef.current && gestureLayersRef.current) {
     layersRef.current = gestureLayersRef.current;
   } else {
@@ -525,8 +491,6 @@ function Artboard({
     return map;
   }, [displayLayers]);
 
-  // Virtualized rendering: only mount layers inside the visible page region.
-  // Widen overscan while the camera moves so layers do not thrash mount/unmount mid-pan.
   const viewRectMm = useMemo(
     () =>
       viewportSize
@@ -546,8 +510,6 @@ function Artboard({
     const always = new Set(selectedIds);
     if (editingLayerId) always.add(editingLayerId);
     if (pathEditingLayerId) always.add(pathEditingLayerId);
-    // Boolean operands / mask silhouettes are painted by the composed layer —
-    // skip standalone nodes to avoid ghost duplicates (even if still visible).
     const compositionHidden = compositionHiddenLayerIds(contentLayers);
     return filterVisibleLayers(contentLayers, viewRectMm, always).filter(
       (layer) => !compositionHidden.has(layer.id),
@@ -596,7 +558,6 @@ function Artboard({
   onCommitGuideCreateRef.current = onCommitGuideCreate;
   const onCancelGuideCreateRef = useRef(onCancelGuideCreate);
   onCancelGuideCreateRef.current = onCancelGuideCreate;
-  // Stable identity so memoized rulers skip re-rendering on every gesture frame.
   const handleCreateGuide = useCallback((guide: CanvasGuide) => {
     onUpsertGuideRef.current?.(guide);
   }, []);
@@ -624,10 +585,6 @@ function Artboard({
     return () => ro.disconnect();
   }, [onZoom, onPan]);
 
-  // Track viewport size for layer culling (cheap; updates only on resize).
-  // Synchronously measure on first layout so culling applies from the very
-  // first painted frame instead of mounting every layer while viewportSize
-  // is still null.
   useLayoutEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
@@ -656,7 +613,6 @@ function Artboard({
     return () => ro.disconnect();
   }, []);
 
-  // After the last pan/zoom tick, restore GPU effects once the camera settles.
   const cameraPrimedRef = useRef(false);
   useEffect(() => {
     if (!cameraPrimedRef.current) {
@@ -671,7 +627,6 @@ function Artboard({
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
-    // Viewport client rect is stable across pan/zoom; refresh only on resize.
     let viewportRect = el.getBoundingClientRect();
     let rectDirty = false;
     const refreshViewportRect = () => {
@@ -682,7 +637,6 @@ function Artboard({
       rectDirty = true;
     });
     ro.observe(el);
-    // Coalesce wheel bursts to one camera update per frame (matches drag RAF policy).
     const raf = createGestureRaf((e: WheelEvent) => {
       const { zoom: z, pan: p, onZoom: setZ, onPan: setP } = navRef.current;
       if (rectDirty) refreshViewportRect();
@@ -728,8 +682,6 @@ function Artboard({
     let vx = 0;
     let vy = 0;
 
-    // Pan state updates coalesced to one per frame; velocity sampling stays
-    // per raw event so release inertia keeps sub-frame accuracy.
     const raf = createGestureRaf((ev: PointerEvent) => {
       navRef.current.onPan({
         x: origin.x + (ev.clientX - startX),
@@ -741,8 +693,7 @@ function Artboard({
         if (pinchGestureRef.current) return;
         const now = performance.now();
         const dt = Math.max(1, now - lastT);
-        // Exponential moving average for smooth velocity
-        const instantVx = (ev.clientX - lastX) / dt * 16; // normalize to ~60fps frame
+        const instantVx = (ev.clientX - lastX) / dt * 16;
         const instantVy = (ev.clientY - lastY) / dt * 16;
         vx = vx * 0.6 + instantVx * 0.4;
         vy = vy * 0.6 + instantVy * 0.4;
@@ -754,7 +705,6 @@ function Artboard({
       onEnd: () => {
         raf.flush();
         setPanning(false);
-        // Trigger inertial glide if velocity is significant
         if (!pinchGestureRef.current && onStartInertia && (Math.abs(vx) > 1 || Math.abs(vy) > 1)) {
           onStartInertia({ vx, vy });
         }
@@ -785,7 +735,6 @@ function Artboard({
       );
       let moveIds = ids;
       let didDuplicate = false;
-      /** Alt-duplicate needs a React commit so new LayerNodes mount; stay on that path. */
       let useReactPreview = false;
       gestureDirtyRef.current = false;
       let dragging = false;
@@ -828,7 +777,6 @@ function Artboard({
       let othersRects = buildOthers(snapshot, moveIds);
       let refGaps = collectReferenceGaps(othersRects, pageSizeRef.current);
 
-      // Coalesce to one apply per animation frame; latest pointer position wins.
       const raf = createGestureRaf((ev: PointerEvent) => {
         if (pinchGestureRef.current) return;
         const dxPx = ev.clientX - startClientX;
@@ -851,7 +799,6 @@ function Artboard({
         const z = zoomRef.current;
         let rawDx = dxPx / (z * MM_TO_PX);
         let rawDy = dyPx / (z * MM_TO_PX);
-        // Figma: Shift while dragging locks to the dominant axis.
         const axisLock = ev.shiftKey;
         ({ dx: rawDx, dy: rawDy } = constrainMoveToAxis(rawDx, rawDy, axisLock));
         const lockHorizontal = axisLock && rawDy === 0;
@@ -899,7 +846,6 @@ function Artboard({
             dy = ny - originBounds.y;
           }
         }
-        // Keep axis lock after snap/grid (Figma: guides only on the free axis).
         if (lockHorizontal) {
           dy = 0;
           nextGuides = nextGuides.filter((g) => g.axis === 'x');
@@ -913,8 +859,6 @@ function Artboard({
         const moved = moveSelection(snapshot, moveIds, dx, dy);
         if (useReactPreview) applyGestureLayers(moved);
         else applyMovePreview(moved, moveIds);
-        // Distances always while dragging when neighbors/page gaps exist;
-        // equal-gap badges take priority when present.
         const bounds = selectionBounds(moved, moveIds);
         if (bounds) {
           setGestureBbox(bounds);
@@ -933,13 +877,11 @@ function Artboard({
           setGuidesIfChanged([]);
           setDistanceLabelsIfChanged([]);
           endGesture();
-          // Figma: Shift/Ctrl+click toggles selection only when there was no drag.
           if (!dragging) options?.onClickWithoutDrag?.();
         },
         onKeyDown: escapeToAbort(() => session),
         onAbort: () => {
           raf.cancel();
-          // Restore pre-gesture layers (original ids — not Alt-duplicate moveIds).
           abortGesturePreview({ layers: originLayers, ids });
           if (options?.duplicate && didDuplicate) {
             onSelectIdsRef.current(originSelectedIds);
@@ -959,7 +901,6 @@ function Artboard({
 
   const handleLayerPointerDown = useCallback(
     (id: string, additive: boolean, e: ReactPointerEvent<HTMLDivElement>) => {
-      // Middle-click pans the viewport; ignore other non-primary buttons.
       if (e.button === 1) return;
       if (e.button !== 0) return;
       if (editingLayerIdRef.current) {
@@ -972,8 +913,6 @@ function Artboard({
       let onClickWithoutDrag: (() => void) | undefined;
 
       if (additive) {
-        // Figma: modifier+click toggles; modifier+drag still moves the selection
-        // (with Shift also locking axis during the gesture).
         if (wasSelected) {
           ids = current;
           onClickWithoutDrag = () => {
@@ -1215,7 +1154,6 @@ function Artboard({
         setMarquee(null);
         const currentLayers = layersRef.current;
         if (box.w < 1 && box.h < 1) {
-          // Point pick via spatial index so culled (unmounted) layers remain selectable.
           const hits = buildSpatialIndex(currentLayers).hitTest(cur.xMm, cur.yMm);
           const top = hits[0];
           if (top) {
@@ -1439,7 +1377,6 @@ function Artboard({
     });
   };
 
-  /** Drag an existing guide: live preview, drop on the ruler to remove, Esc to cancel. */
   const beginGuideDrag = (g: CanvasGuide, e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     e.stopPropagation();
@@ -1498,8 +1435,6 @@ function Artboard({
     }
   };
 
-  // Figma-like camera: page is always laid out at design resolution (A4 CSS px).
-  // Compositor `scale()` is the camera — it must NOT re-layout layers/text.
   const designW = A4_WIDTH_PX;
   const designH = A4_HEIGHT_PX;
   const panX = Math.round(pan.x);
@@ -1550,7 +1485,6 @@ function Artboard({
           top: '50%',
           width: designW,
           height: designH,
-          // Compositor pan (avoids left/top layout thrash on every wheel/drag tick).
           transform: `translate3d(calc(-50% + ${panX}px), calc(-50% + ${panY}px), 0)`,
           willChange: panning ? 'transform' : undefined,
         }}
@@ -1562,8 +1496,6 @@ function Artboard({
             position: 'relative',
             width: designW,
             height: designH,
-            // Compositor-only camera: CSS `zoom` re-rasterizes the whole artboard on
-            // every zoom frame (pinch jank that scales with painted layers).
             transform: `scale(${zoom})`,
             transformOrigin: 'center center',
             willChange: 'transform',
@@ -1571,7 +1503,6 @@ function Artboard({
             background: '#ffffff',
             boxShadow: '0 0 0 1px rgba(0,0,0,0.08), 0 12px 40px rgba(0,0,0,0.14)',
             cursor: canPanTool || panning ? cursor : placing ? 'crosshair' : 'default',
-            // Design default; do not inherit .canvas-app UI tracking (-0.01em).
             letterSpacing: 'normal',
           }}
           onPointerDown={(e) => {

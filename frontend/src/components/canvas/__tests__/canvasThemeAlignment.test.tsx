@@ -20,14 +20,11 @@ describe('Canvas Theme Alignment', () => {
   });
 
   it('uses theme variables for context menu, floating toolbars, color picker, and ghosts', () => {
-    // Context menu should use --cv-panel-elevated and --cv-text instead of hardcoded #2c2c2c
     expect(canvasCss).toMatch(/\.canvas-context-menu\s*\{[^}]*background:\s*var\(--cv-panel-elevated\)/);
     expect(canvasCss).toMatch(/\.canvas-context-menu\s*\{[^}]*color:\s*var\(--cv-text\)/);
 
-    // Floating toolbar should use --cv-panel-elevated
     expect(canvasCss).toMatch(/\.canvas-toolbar-float\s*\{[^}]*background:\s*var\(--cv-panel-elevated\)/);
 
-    // Color picker should use --cv-panel-elevated
     expect(canvasCss).toMatch(/\.canvas-color-picker\s*\{[^}]*background:\s*var\(--cv-panel-elevated\)/);
   });
 

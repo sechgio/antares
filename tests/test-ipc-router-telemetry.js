@@ -1,6 +1,3 @@
-/**
- * IPC telemetry + stdin backpressure (write returns false → wait for drain).
- */
 const { EventEmitter } = require('events');
 
 let passed = 0;
@@ -91,7 +88,7 @@ async function run() {
 
   {
     const stdin = new EventEmitter();
-    stdin.write = () => undefined; // stubs in other tests
+    stdin.write = () => undefined;
     const result = await _writeStdinWithBackpressure({ stdin }, 'x\n');
     assert(result.waitedForDrain === false, 'write()===undefined treated as success (no drain wait)');
   }

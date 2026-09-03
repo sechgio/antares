@@ -7,7 +7,6 @@ const {
   onActiveUserChange,
 } = require('./autoimg-user-scope');
 
-// Prefer MIME image/*, also catch common photo extensions when Drive marks them as octet-stream.
 const IMAGE_QUERY =
   "(mimeType contains 'image/' or name contains '.jpg' or name contains '.jpeg' or name contains '.png' or name contains '.webp' or name contains '.JPG' or name contains '.JPEG' or name contains '.PNG')";
 const FOLDER_ID_RE = /^[a-zA-Z0-9_-]{10,128}$/;
@@ -89,13 +88,6 @@ function assertValidFolderId(input) {
   return id;
 }
 
-/**
- * List images in a Drive folder (paginated).
- * @param {string} folderId
- * @param {{ onPage?: Function, collect?: boolean }} [opts]
- *   - collect (default true): accumulate and return all file stubs.
- *     Set false when streaming via onPage to avoid holding the full folder in RAM.
- */
 async function listFolder(folderId, { onPage, collect = true } = {}) {
   const safeId = assertValidFolderId(folderId);
   const files = collect ? [] : null;
@@ -129,7 +121,6 @@ async function listFolder(folderId, { onPage, collect = true } = {}) {
   return files || [];
 }
 
-/** Scan NIS by streaming pages — does not materialize the full file list. */
 async function scanNis(folderId, folderName = '') {
   const nisMap = {};
   await listFolder(folderId, {
@@ -150,11 +141,6 @@ async function assertDriveFolder(input) {
   return { folder_id: meta.id, name: meta.name || '' };
 }
 
-/**
- * Verify folder access without listing the entire folder.
- * Uses a single files.list page (pageSize=200): exact count when has_more is false;
- * otherwise image_count is a lower bound (UI should show e.g. "200+").
- */
 async function verifyFolder(input) {
   const folderId = assertValidFolderId(input);
   const meta = await _driveFetch(`files/${folderId}`, { fields: 'id,name,mimeType' });
@@ -178,10 +164,6 @@ async function verifyFolder(input) {
   };
 }
 
-/**
- * Copia un archivo a otra carpeta con nuevo nombre (no mueve el original).
- * Requiere scope Drive de escritura (no solo drive.readonly).
- */
 async function copyFileToFolder(fileId, destFolderId, newName) {
   const id = String(fileId || '').trim();
   if (!FILE_ID_RE.test(id)) throw new Error('ID de archivo de Drive inválido');
@@ -206,10 +188,6 @@ function escapeDriveQueryValue(value) {
   return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
-/**
- * Busca una subcarpeta por nombre exacto bajo parent; si no existe, la crea.
- * @returns {{ folder_id: string, name: string, created: boolean }}
- */
 async function findOrCreateSubfolder(parentFolderId, folderName) {
   const parent = assertValidFolderId(parentFolderId);
   const name = String(folderName || '').trim();
@@ -253,9 +231,7 @@ async function getDriveStatus() {
 
 const PREVIEW_LIMIT = 4;
 const PREVIEW_TTL_MS = 10 * 60 * 1000;
-/** Single authoritative TTL/LRU cache; the renderer keeps only mounted state. */
 const PREVIEW_CACHE_MAX = 30;
-/** @type {Map<string, { at: number, result: { folder_id: string, thumbs: Array<{ id: string, name: string, dataUrl: string | null }> } }>} */
 const previewCache = new Map();
 
 function _previewCacheKey(session, folderId, pageSize) {
@@ -288,7 +264,6 @@ async function fetchThumbnailDataUrl(thumbnailLink, accessToken) {
   let res = await fetchWithRetry(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  // Some googleusercontent links reject Bearer; retry without auth.
   if (res.status === 401 || res.status === 403) {
     res = await fetchWithRetry(url);
   }
@@ -299,10 +274,6 @@ async function fetchThumbnailDataUrl(thumbnailLink, accessToken) {
   return `data:${mime};base64,${buf.toString('base64')}`;
 }
 
-/**
- * Preview rápido: hasta 4 miniaturas (no lista toda la carpeta).
- * Cache en memoria por usuario, folder_id y cantidad solicitada.
- */
 async function previewFolder(input, { limit = PREVIEW_LIMIT, force = false } = {}) {
   const folderId = assertValidFolderId(input);
   const session = getActiveUserSnapshot();
@@ -356,11 +327,6 @@ function invalidateFolderPreview(folderId) {
   }
 }
 
-/**
- * Lightweight Drive files.get — used to skip Sheet re-reads when modifiedTime is unchanged.
- * @param {string} fileId
- * @param {string} [fields]
- */
 async function getFileMetadata(fileId, fields = 'id,name,modifiedTime,version') {
   const id = String(fileId || '').trim();
   if (!FILE_ID_RE.test(id)) throw new Error('ID de archivo de Drive inválido');

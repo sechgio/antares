@@ -1,12 +1,4 @@
 #!/usr/bin/env pwsh
-# Aplica migraciones locales al proyecto Supabase remoto de Antares.
-# Requiere (una vez): https://supabase.com/dashboard/account/tokens
-#
-#   $env:SUPABASE_ACCESS_TOKEN = "sbp_..."
-#   $env:SUPABASE_DB_PASSWORD = "..."   # Database password del proyecto
-#   $env:SUPABASE_PROJECT_ID = "yoyxclndjevkzzclhdcv"
-#
-# Uso: pwsh scripts/supabase-db-push.ps1
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)

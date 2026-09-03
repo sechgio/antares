@@ -1,8 +1,3 @@
-/**
- * Pure auto-layout for frame/group containers.
- * Positions children via existing --translate-x/y / --width/--height cssVars.
- * Absent meta.autoLayout → no-op (legacy safe).
- */
 
 import type { AutoLayoutAlign, CanvasLayer, LayerAutoLayout } from '../types';
 import { mm, parseMm } from '../types';
@@ -11,7 +6,6 @@ export type ChildBox = { x: number; y: number; w: number; h: number };
 
 const MIN_SIZE_MM = 1;
 
-/** Read geometry box from layer cssVars (mm). */
 export function childBox(layer: CanvasLayer): ChildBox {
   return {
     x: parseMm(layer.cssVars['--translate-x']),
@@ -41,10 +35,6 @@ function applyCross(
   return { origin: pad + crossOffset(align, free), size: childCross };
 }
 
-/**
- * Relayout direct children of a frame/group that has meta.autoLayout.
- * Child --translate-x/y are written in page space (frame origin + local offset).
- */
 export function relayoutAutoFrame(
   frame: CanvasLayer,
   children: CanvasLayer[],

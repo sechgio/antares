@@ -1,4 +1,3 @@
-"""Tests para RenamerEngine con mapeo directo ID → RENOMBRE."""
 
 from backend.core.renamer import RenamerEngine
 

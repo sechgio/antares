@@ -1,4 +1,3 @@
-// Regression test: preload must allow app-used native IPC methods and reject unknown ones.
 const Module = require('module');
 
 let passed = 0;

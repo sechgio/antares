@@ -1,4 +1,3 @@
-"""Phase 3 backend remediations: caps, sanitization, validation, IPC."""
 
 from __future__ import annotations
 
@@ -14,7 +13,6 @@ from backend import ipc_protocol
 from backend import main as backend_main
 from backend.core.exceptions import ValidationError
 from backend.core.sellador_io import MAX_PDF_BYTES, read_user_file, resolve_stamp_bytes
-from backend.handlers.database import db_records
 from backend.handlers.history import history_list
 from backend.handlers.sellador import _estimate_b64_decoded_size, sellador_apply, sellador_inspect_pdf
 from backend.utils.html_sanitizer import sanitize_html_for_pdf
@@ -28,7 +26,6 @@ def test_read_user_file_rejects_oversized_pdf(tmp_path: Path) -> None:
 
 
 def test_read_user_file_rejects_symlink_before_resolve(tmp_path: Path) -> None:
-    """Un symlink a un archivo fuera del alcance no debe leerse (arbitrary read)."""
     target = tmp_path / "secret.pdf"
     target.write_bytes(b"%PDF secret")
     link = tmp_path / "link.pdf"
@@ -41,7 +38,6 @@ def test_read_user_file_rejects_symlink_before_resolve(tmp_path: Path) -> None:
 
 
 def test_read_user_file_rejects_symlink_in_parent(tmp_path: Path) -> None:
-    """Un symlink en un ancestro de la ruta tampoco debe leerse."""
     real_dir = tmp_path / "real"
     real_dir.mkdir()
     (real_dir / "doc.pdf").write_bytes(b"%PDF doc")
@@ -85,19 +81,6 @@ def test_sellador_apply_rejects_oversized_base64() -> None:
             "width": 10,
             "height": 10,
         })
-
-
-def test_db_records_paginates_with_defaults() -> None:
-    result = db_records({})
-    assert result["limit"] == 500
-    assert result["offset"] == 0
-    assert isinstance(result["records"], list)
-    assert isinstance(result["fields"], list)
-
-
-def test_db_records_rejects_limit_above_max() -> None:
-    with pytest.raises(ValueError, match="limit"):
-        db_records({"limit": 5000})
 
 
 def test_sanitize_strips_unsafe_data_uri_in_src() -> None:

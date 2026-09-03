@@ -1,8 +1,3 @@
-// electron/app-log.js
-// Persistencia mínima de logs del proceso principal en el data dir de la app.
-// Usa la MISMA convención que backend/utils/paths.py: en Windows
-// %LOCALAPPDATA%\Antares\logs. Sin dependencias de Electron — testeable con
-// node plano (los tests de integración corren fuera de Electron).
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -46,14 +41,8 @@ const SENSITIVE_TEXT_RE = [
   /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
   /(?:[A-Za-z]:\\|\\\\|\/(?:Users|home|tmp|var|private|opt|mnt|workspace)\/)[^\s"'`]+/g,
 ];
-// Prefixos de mkdtemp/artefactos temporales que pueden quedar huérfanos tras
-// un crash o una sesión interrumpida (tests de backend-command, export PDF,
-// staging de archivos). Excluye cachés/almacenes persistentes
-// (antares-thumb-cache, antares-autoimg).
 const STALE_TEMP_PREFIX_RE = /^antares-(?:backend-command|pdf|staged)-/;
 
-// Referencias a los métodos ORIGINALES antes de instalar el tee: evita
-// recursión y garantiza salida a consola aunque el archivo de log falle.
 const _originalConsole = {
   log: console.log.bind(console),
   warn: console.warn.bind(console),
@@ -153,7 +142,6 @@ function _safePathFor(p) {
   try {
     const st = fs.lstatSync(p);
     if (st.isSymbolicLink()) {
-      // Nunca escribir a través de un link: eliminar el link y recrear plano.
       fs.unlinkSync(p);
     }
   } catch {
@@ -273,7 +261,6 @@ function _markDroppedEvent() {
   _droppedEventCount += 1;
 }
 
-/** Append best-effort a <dataDir>/logs/antares-YYYY-MM-DD.log. Nunca lanza. */
 function appendLogLine(level, text) {
   try {
     const safeLevel = _normaliseLevel(level);
@@ -316,7 +303,6 @@ function getDroppedEventCount() {
   return _droppedEventCount;
 }
 
-/** Garantiza <dataDir>/logs y rota: borra diarios más viejos que LOG_RETENTION_DAYS. */
 function initAppLogs() {
   const dir = getLogsDir();
   fs.mkdirSync(dir, { recursive: true });
@@ -335,11 +321,6 @@ function initAppLogs() {
   return dir;
 }
 
-/**
- * Redirige console.warn/error (y console.log solo con ANTARES_IPC_TELEMETRY=1)
- * a consola + archivo de log. Así la telemetría IPC y los warnings del proceso
- * principal quedan persistidos sin tocar cada punto de emisión.
- */
 function installConsoleLogTee() {
   if (_consoleTeeInstalled) return;
   _consoleTeeInstalled = true;
@@ -361,19 +342,16 @@ function installConsoleLogTee() {
   }
 }
 
-/** ¿Existe un proceso con este pid? (usado para no borrar staging de otra instancia viva). */
 function _isProcessAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
     return true;
   } catch (err) {
-    // EPERM = el proceso existe pero no tenemos permiso para señalarle.
     return err && err.code === 'EPERM';
   }
 }
 
-/** Máximo mtime del CONTENIDO del directorio (los writes internos no tocan el mtime del dir). */
 function _dirContentMaxMtime(p) {
   let max = 0;
   try {
@@ -387,16 +365,6 @@ function _dirContentMaxMtime(p) {
   return max;
 }
 
-/**
- * Elimina residuos temporales huérfanos de sesiones previas
- * (p.ej. %TEMP%\antares-backend-command-* creados por tests) con más de 24 h.
- * Devuelve cuántos directorios eliminó.
- *
- * Seguridad: nunca borra el staging de un proceso VIVO (antares-staged-<pid>)
- * ni directorios con contenido reciente — el mtime del dir no refleja los
- * writes internos (appendStagedChunk escribe dentro sin tocar el dir), así que
- * un import de Excel o un render PDF en curso jamás se trunca por esta limpieza.
- */
 function cleanStaleTempDirs() {
   let removed = 0;
   try {
@@ -408,10 +376,8 @@ function cleanStaleTempDirs() {
       try {
         const st = fs.statSync(p);
         if (!st.isDirectory() || st.mtimeMs >= cutoff) continue;
-        // Staging de otra instancia viva: el dir se llama antares-staged-<pid>.
         const pidMatch = /^antares-staged-(\d+)$/.exec(name);
         if (pidMatch && _isProcessAlive(Number(pidMatch[1]))) continue;
-        // Contenido reciente (archivo .tmp en staging, render.html en PDF) => en uso.
         if (_dirContentMaxMtime(p) >= cutoff) continue;
         fs.rmSync(p, { recursive: true, force: true });
         removed += 1;

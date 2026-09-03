@@ -1,4 +1,3 @@
-"""Tests de preview y conversión con mapeo directo."""
 
 from __future__ import annotations
 
@@ -261,8 +260,6 @@ def test_prepare_chunk_renames_windows_parenthesized_sequence(monkeypatch, tmp_p
 
 
 def test_prepare_chunk_unmapped_sanitizes_invalid_chars(monkeypatch, tmp_path) -> None:
-    """Unmapped / no-BD paths must sanitize like preview_lote (parity)."""
-    # Use a Path that cannot be created on Windows (<>); prepare only needs the name.
     source_file = tmp_path / "bad<>name.jpg"
 
     monkeypatch.setattr(conversion, "es_video", lambda _path: False)
@@ -371,7 +368,6 @@ def test_run_conversion_job_with_mapping_path_and_columns(monkeypatch, tmp_path)
 
 
 def test_preview_with_mapping_path_and_columns(tmp_path) -> None:
-    """preview() must accept mapping_path + id_column + rename_column (B-03)."""
     file_path = tmp_path / "IMG_0001.jpg"
     file_path.write_text("x")
 
@@ -398,7 +394,6 @@ def test_preview_with_mapping_path_and_columns(tmp_path) -> None:
 
 
 def test_preview_mapping_path_auto_detects_columns(tmp_path) -> None:
-    """preview() with mapping_path but no columns auto-detects them."""
     file_path = tmp_path / "IMG_0001.jpg"
     file_path.write_text("x")
 
@@ -421,7 +416,6 @@ def test_preview_mapping_path_auto_detects_columns(tmp_path) -> None:
 
 
 def test_preview_inline_mapping_takes_precedence_over_mapping_path(tmp_path) -> None:
-    """When both inline mapping and mapping_path are present, inline wins."""
     file_path = tmp_path / "IMG_0001.jpg"
     file_path.write_text("x")
 

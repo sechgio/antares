@@ -1,4 +1,3 @@
-"""Read PDF/stamp inputs from disk for large-file sellador workflows."""
 from __future__ import annotations
 
 import base64
@@ -11,9 +10,6 @@ MAX_STAMP_BYTES = 10 * 1024 * 1024
 
 def read_user_file(path_value: str, label: str, *, max_bytes: int) -> bytes:
     raw = Path(path_value).expanduser()
-    # Rechazar symlinks ANTES de resolver: resolve() sigue el enlace y un check
-    # posterior sobre el path resuelto ya no puede ver que era un symlink
-    # (lectura arbitraria fuera del alcance del usuario vía junction a %WINDIR%).
     if raw.is_symlink() or any(parent.is_symlink() for parent in raw.parents):
         msg = f"{label} no permitido: symlink en la ruta"
         raise ValueError(msg)
@@ -53,7 +49,6 @@ def resolve_stamp_bytes(params: dict) -> bytes:
         except ValueError:
             if not raw:
                 raise
-            # Path unreadable — fall back to in-memory base64 from the renderer.
     if not raw:
         msg = "Imagen de sello requerida"
         raise ValueError(msg)

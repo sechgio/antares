@@ -1,7 +1,3 @@
-/**
- * Bump version across all project files and optionally open a release PR.
- * Usage: node scripts/bump-version.js [patch|minor|major] [--pr]
- */
 
 const fs = require('fs');
 const path = require('path');

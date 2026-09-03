@@ -11,7 +11,6 @@ export function getActivePageLayers(doc: CanvasDocument, pageIndex: number): Can
   return doc.layers.filter((l) => (l.pageIndex ?? 0) === pageIndex);
 }
 
-/** Index layers once per document revision so page switches do not rescan every layer. */
 export function indexLayersByPage(layers: readonly CanvasLayer[]): Map<number, CanvasLayer[]> {
   const index = new Map<number, CanvasLayer[]>();
   for (const layer of layers) {
@@ -155,13 +154,6 @@ export function setActivePageLayers(
   pageIndex: number,
   layers: CanvasLayer[],
 ): CanvasDocument {
-  // Replace active-page layers in place to preserve document array order.
-  // The incoming `layers` is the complete set for this page: existing layers
-  // keep their position, removed layers are dropped, new layers are inserted
-  // right after the last active-page layer (not at the very end of the array).
-  //
-  // Identity-preserving: reuse layer object refs when pageIndex already matches
-  // so React.memo(LayerNode) and history diffs skip untouched nodes.
   const byId = new Map(layers.map((l) => [l.id, l]));
   const result: CanvasLayer[] = [];
   const placed = new Set<string>();
@@ -206,7 +198,6 @@ export function setActivePageLayers(
   return { ...doc, layers: result };
 }
 
-/** Photo capacity: slots on the first page that has imageSlots, else settings. */
 export function templateImagesPerPage(doc: CanvasDocument): number {
   const byPage = new Map<number, number>();
   for (const layer of doc.layers) {
@@ -222,7 +213,6 @@ export function templateImagesPerPage(doc: CanvasDocument): number {
   return byPage.get(firstSlotPage) ?? 1;
 }
 
-/** Keep settings.imagesPerPage aligned with template image slots. */
 export function syncImagesPerPage(doc: CanvasDocument): CanvasDocument {
   const n = templateImagesPerPage(doc);
   if (doc.settings?.imagesPerPage === n) return doc;

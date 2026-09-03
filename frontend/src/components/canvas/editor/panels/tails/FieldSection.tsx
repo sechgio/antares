@@ -3,7 +3,6 @@ import { DEFAULT_FIELD_KEYS } from '../../../constants';
 import { SectionHeader } from '../shared';
 import type { SectionProps } from '../types';
 
-/** Excel field binding — matches `field` only. Renders after TextSection. */
 export default function FieldSection({ layer, onChange, emitLive, onCommitLive }: SectionProps) {
   return (
     <div className="canvas-section">

@@ -5,6 +5,7 @@ import {
   Scissors,
   Spline,
 } from 'lucide-react';
+import type { CanvasToolbarPosition } from '../ops/panelChrome';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import type { CanvasTool } from '../types';
 
@@ -13,6 +14,7 @@ export type PathEditTool = Extract<CanvasTool, 'select' | 'lasso' | 'bend' | 'cu
 interface PathEditToolbarProps {
   tool: CanvasTool;
   onTool: (tool: PathEditTool) => void;
+  toolbarPosition?: CanvasToolbarPosition;
   canClosePath?: boolean;
   pathClosed?: boolean;
   onToggleClosed?: () => void;
@@ -28,6 +30,7 @@ const ITEMS: { id: PathEditTool; icon: typeof MousePointer2; title: string }[] =
 export default function PathEditToolbar({
   tool,
   onTool,
+  toolbarPosition = 'top',
   canClosePath = false,
   pathClosed = false,
   onToggleClosed,
@@ -36,7 +39,13 @@ export default function PathEditToolbar({
     tool === 'lasso' || tool === 'bend' || tool === 'cut' ? tool : 'select';
 
   return (
-    <div className="canvas-path-edit-toolbar" data-testid="canvas-path-edit-toolbar" role="toolbar" aria-label="Edición de trazo">
+    <div
+      className="canvas-path-edit-toolbar"
+      data-toolbar-position={toolbarPosition}
+      data-testid="canvas-path-edit-toolbar"
+      role="toolbar"
+      aria-label="Edición de trazo"
+    >
       {ITEMS.map(({ id, icon: Icon, title }) => {
         const isActive = active === id;
         return (

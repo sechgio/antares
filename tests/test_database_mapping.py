@@ -1,4 +1,3 @@
-"""Tests para parse_id_rename_mapping (Excel ID → RENOMBRE)."""
 
 from __future__ import annotations
 
@@ -70,9 +69,6 @@ class TestParseIdRenameMapping:
         assert result == {"A.jpg": "nuevo"}
 
     def test_rename_header_alias_con_guion_bajo(self, tmp_path) -> None:
-        """N2: un encabezado 'new_name'/'nuevo_nombre' debe auto-detectarse
-        aunque el alias lleve guion bajo y el encabezado se normalice con
-        espacios (antes el alias crudo nunca coincidía)."""
         excel = tmp_path / "map.xlsx"
         _write_mapping_excel(excel, [("A.jpg", "nuevo")], headers=("ID", "new_name"))
         result = db.parse_id_rename_mapping(str(excel))
@@ -111,7 +107,6 @@ class TestParseIdRenameMapping:
 
 
 class TestParseIdRenameMappingFull:
-    """parse_id_rename_mapping_full returns mapping + chosen columns + all columns."""
 
     def test_auto_detect_returns_chosen_columns(self, tmp_path) -> None:
         excel = tmp_path / "map.xlsx"
@@ -150,7 +145,6 @@ class TestParseIdRenameMappingFull:
 
 
 class TestDbParseMappingHandler:
-    """db_parse_mapping must return the auto-detected columns (B-01 regression)."""
 
     def test_auto_detect_response_includes_columns(self, tmp_path) -> None:
         from backend.handlers.database import db_parse_mapping
@@ -163,7 +157,6 @@ class TestDbParseMappingHandler:
         )
         result = db_parse_mapping({"path": str(excel), "files": []})
         assert result["mapping"] == {"IMG_0001.jpg": "fachada_norte"}
-        # B-01: these used to be None even when auto-detected.
         assert result["id_column"] == "id"
         assert result["rename_column"] == "renombre"
         assert result["columns"] == ["id", "tipo", "renombre"]

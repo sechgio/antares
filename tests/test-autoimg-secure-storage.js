@@ -1,4 +1,3 @@
-/** Regression tests for atomic encrypted AutoIMG persistence. */
 
 const assert = require('assert');
 const crypto = require('crypto');

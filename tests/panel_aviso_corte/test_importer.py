@@ -1,23 +1,3 @@
-"""Tests del importador de Excel (``.xlsx``) para Panel Aviso de Corte.
-
-Cubre los casos principales de :func:`parse_excel_bytes`:
-
-* Archivo ``.xlsx`` válido con cabecera + filas de datos.
-* Normalización de nombres de columna (tildes, mayúsculas, símbolos).
-* Archivo sin filas de datos (solo cabecera) → mensaje exacto Req 6.5.
-* Archivo con más de 10.000 filas → mensaje exacto Req 6.8.
-* Archivo con extensión incorrecta → mensaje exacto Req 6.2.
-* Archivo corrupto / bytes inválidos → mensaje con prefijo Req 6.6.
-* Archivo con cabecera vacía (celda None en medio) → Req 6.6.
-* Columnas que colisionan tras normalizar → Req 6.6.
-* Celdas vacías coaccionadas a cadena vacía.
-* Filas completamente vacías omitidas con warning informativo.
-
-Las fixtures se construyen **en memoria** con openpyxl (sin tocar disco) y
-devuelven los bytes que recibiría ``parse_excel_bytes`` en producción.
-
-Validates: Requirements 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.8
-"""
 
 from __future__ import annotations
 
@@ -34,16 +14,8 @@ from backend.core.panel_aviso_corte.models import ExcelSource
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-# Fixtures / helpers de construcción de xlsx en memoria
-
 
 def _build_xlsx(rows: Sequence[Sequence[Any]]) -> bytes:
-    """Serializa una matriz de celdas (cabecera + filas) a bytes ``.xlsx``.
-
-    La primera fila se asume como cabecera. Devuelve los bytes del archivo
-    generado por openpyxl, equivalentes a lo que el frontend enviaría al
-    importar un ``.xlsx``.
-    """
     workbook = openpyxl.Workbook()
     sheet = workbook.active
     for row in rows:
@@ -56,7 +28,6 @@ def _build_xlsx(rows: Sequence[Sequence[Any]]) -> bytes:
 
 @pytest.fixture
 def valid_xlsx_bytes() -> bytes:
-    """Bytes de un ``.xlsx`` válido con 3 filas de datos y columnas canónicas."""
     return _build_xlsx(
         [
             ["CUADRANTE AFECTADO", "FECHA DE CORTE", "MOTIVO", "DIRECCIÓN"],
@@ -69,13 +40,9 @@ def valid_xlsx_bytes() -> bytes:
 
 @pytest.fixture
 def header_only_xlsx_bytes() -> bytes:
-    """``.xlsx`` con cabecera pero sin filas de datos."""
     return _build_xlsx(
         [["CUADRANTE AFECTADO", "FECHA DE CORTE", "MOTIVO"]],
     )
-
-
-# Casos de éxito
 
 
 class TestParseValidXlsx:
@@ -174,11 +141,9 @@ class TestParseValidXlsx:
             ],
         )
         result = parse_excel_bytes(content, "x.xlsx")
-        # sólo quedan 2 filas con datos reales
         assert len(result.rows) == 2
         assert result.rows[0]["A"] == "v1"
         assert result.rows[1]["A"] == "v3"
-        # y debe haber al menos una warning reportando las filas omitidas
         assert result.warnings
         assert any("omitieron" in w.lower() for w in result.warnings)
 
@@ -189,12 +154,8 @@ class TestParseValidXlsx:
         assert result.warnings == ()
 
     def test_accepts_uppercase_extension(self, valid_xlsx_bytes: bytes) -> None:
-        # La validación de extensión es case-insensitive.
         result = parse_excel_bytes(valid_xlsx_bytes, "DATOS.XLSX")
         assert result.filename == "DATOS.XLSX"
-
-
-# Errores: extensión (Req 6.2)
 
 
 class TestInvalidExtension:
@@ -204,8 +165,8 @@ class TestInvalidExtension:
             "datos.csv",
             "datos.xls",
             "datos.txt",
-            "datos",          # sin extensión
-            "datos.xlsx.bak", # extensión engañosa
+            "datos",
+            "datos.xlsx.bak",
         ],
     )
     def test_rejects_non_xlsx_extension(
@@ -215,9 +176,6 @@ class TestInvalidExtension:
             InvalidExcelError, match=r"^Solo se admiten archivos \.xlsx$",
         ):
             parse_excel_bytes(valid_xlsx_bytes, bad_name)
-
-
-# Errores: archivo sin filas (Req 6.5)
 
 
 class TestNoDataRows:
@@ -243,12 +201,8 @@ class TestNoDataRows:
             parse_excel_bytes(content, "vacio.xlsx")
 
 
-# Errores: límite de filas (Req 6.8)
-
-
 class TestRowLimit:
     def test_accepts_exactly_max_rows(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """MAX_EXCEL_ROWS filas de datos deben aceptarse (límite inclusivo)."""
         import backend.core.panel_aviso_corte.importer as imp
 
         small_limit = 20
@@ -260,7 +214,6 @@ class TestRowLimit:
         assert len(result.rows) == small_limit
 
     def test_rejects_more_than_max_rows(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """MAX_EXCEL_ROWS + 1 filas de datos → rechazo con mensaje exacto."""
         import backend.core.panel_aviso_corte.importer as imp
 
         small_limit = 20
@@ -273,9 +226,6 @@ class TestRowLimit:
             match=r"El Excel excede el límite",
         ):
             parse_excel_bytes(content, "huge.xlsx")
-
-
-# Errores: archivo corrupto o ilegible (Req 6.6)
 
 
 class TestUnreadableFile:
@@ -292,8 +242,6 @@ class TestUnreadableFile:
             parse_excel_bytes(b"", "datos.xlsx")
 
     def test_truncated_zip_bytes_are_rejected(self) -> None:
-        # Empieza con la firma mágica de ZIP pero el contenido está
-        # truncado → openpyxl lanzará BadZipFile.
         truncated = b"PK\x03\x04" + b"\x00" * 20
         with pytest.raises(
             InvalidExcelError, match=r"^No se pudo leer el archivo Excel:",
@@ -305,9 +253,6 @@ class TestUnreadableFile:
             InvalidExcelError, match=r"^No se pudo leer el archivo Excel:",
         ):
             parse_excel_bytes("not bytes", "datos.xlsx")  # type: ignore[arg-type]
-
-
-# Errores: cabecera inválida / columnas duplicadas (Req 6.6)
 
 
 class TestInvalidHeader:
@@ -336,7 +281,6 @@ class TestInvalidHeader:
             parse_excel_bytes(content, "datos.xlsx")
 
     def test_columns_colliding_after_normalization_rejected(self) -> None:
-        # "Dirección" y "DIRECCION" colapsan a la misma columna normalizada.
         content = _build_xlsx(
             [
                 ["Dirección", "DIRECCION"],

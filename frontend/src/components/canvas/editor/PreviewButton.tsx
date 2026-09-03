@@ -6,7 +6,6 @@ import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 interface PreviewButtonProps {
   active: boolean;
   onToggle: () => void;
-  /** Icon-only when trailing chrome is crowded (e.g. sync conflict visible). */
   compact?: boolean;
 }
 

@@ -27,7 +27,6 @@ describe('PreviewPanel (layout sech-gio)', () => {
     expect(screen.getByText('operaciones@hidroserviciosaa.com.pe')).toBeInTheDocument();
     expect(screen.getByText('+51 946 803 367')).toBeInTheDocument();
     expect(screen.getByText('www.hidroserviciosaa.com.pe/')).toBeInTheDocument();
-    // Empty plantilla: no demo placeholders from PDF blank form
     expect(screen.queryByText('NOMBRE DEL CLIENTE')).not.toBeInTheDocument();
   });
 
@@ -48,9 +47,7 @@ describe('PreviewPanel (layout sech-gio)', () => {
     expect(screen.getByText('Cliente Real')).toBeInTheDocument();
     expect(screen.getByText('Av. Test 123')).toBeInTheDocument();
     expect(screen.getByText('Miraflores')).toBeInTheDocument();
-    // OS strips OS- and hyphens like sech-gio
     expect(screen.getByText('12345')).toBeInTheDocument();
-    // fecha YYYY-MM-DD → DD-MM-YYYY
     expect(screen.getByText('15-03-2026')).toBeInTheDocument();
   });
 
