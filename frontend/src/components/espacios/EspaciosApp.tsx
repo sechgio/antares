@@ -87,7 +87,6 @@ export default function EspaciosApp() {
     setSelectedIds(new Set());
   }, []);
 
-  // Clear selection when project changes; flush pending deletes on unmount.
   useEffect(() => {
     setSelectedIds(new Set());
   }, [sync.activeProyectoId]);
@@ -112,7 +111,6 @@ export default function EspaciosApp() {
     };
   }, []);
 
-  // Surface non-fatal nested load failures without blanking the whole module.
   useEffect(() => {
     if (!sync.warning) return;
     addToast({ message: sync.warning, type: 'error' });
@@ -184,7 +182,6 @@ export default function EspaciosApp() {
   const openTaskForm = useCallback(
     (opts?: { dueDate?: string; startDate?: string; status?: string }) => {
       setEditingTarea(null);
-      // Gantt day-click: same day for start + due so the bar has a real planned range.
       const due = opts?.dueDate ?? null;
       const start = opts?.startDate ?? due;
       setCreateStartDate(start);
@@ -339,8 +336,6 @@ export default function EspaciosApp() {
               const still = pendingDeletesRef.current.get(tarea.id);
               pendingDeletesRef.current.delete(tarea.id);
               if (still?.cancelled) {
-                // Undo won the race after the server delete started — drop the
-                // stale restored row and recreate so local matches the server.
                 sync.softRemoveTarea(tarea.id);
                 void sync.addTarea({
                   title: tarea.title,
@@ -475,7 +470,6 @@ export default function EspaciosApp() {
     scheduleDeleteWithUndo(snapshots);
   }, [sync.tareas, selectedIds, confirm, scheduleDeleteWithUndo]);
 
-  // Local shortcuts when not typing in a field: N nueva, / buscar, 1–5 vistas.
   useEffect(() => {
     const views: VistaType[] = ['list', 'board', 'table', 'calendar', 'gantt'];
     const handler = (e: KeyboardEvent) => {
@@ -707,9 +701,6 @@ export default function EspaciosApp() {
   const hasEspacios = sync.espacios.length > 0;
 
   return (
-    // overflow-hidden + min-h-0 on every flex level so the main pane keeps a
-    // real height inside App's full-bleed shell (otherwise Welcome/views collapse).
-    // Left column (header + nav) shares one width so the vertical edge never splits.
     <div className="flex h-full min-h-0 overflow-hidden bg-[var(--bg-base)]">
       <div
         className="relative flex h-full min-h-0 shrink-0 flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-elevated)]"

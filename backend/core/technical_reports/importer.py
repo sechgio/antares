@@ -448,7 +448,6 @@ def parse_xlsx_file(content: bytes) -> list[dict[str, Any]]:
     return best_rows
 
 
-
 def transform_flat_to_nested(row: dict[str, Any], fallback_report_number: int = 1) -> dict[str, Any]:
     informe_id = _safe_int(row.get("informe_id"), 0)
     if informe_id <= 0:

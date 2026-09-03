@@ -71,7 +71,6 @@ function clearOverride(
   onChange(next);
 }
 
-/** "Crear componente" for frame/component masters; instance overrides when instanceOf is set. */
 export default function InstanceSection({
   layer,
   layers = [],

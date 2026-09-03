@@ -1,11 +1,6 @@
-/** PNG export helpers for canvas layers / selection. */
 
 const SELECTION_RING = '0 0 0 1px var(--cv-accent)';
 
-/**
- * html-to-image `cacheBust:true` re-fetches every image (extra peak RAM).
- * Safe to skip when all `<img>` srcs are already in-memory blob:/data: URLs.
- */
 export function needsImageCacheBust(root: HTMLElement): boolean {
   const imgs = root.querySelectorAll('img');
   for (let i = 0; i < imgs.length; i++) {
@@ -16,7 +11,6 @@ export function needsImageCacheBust(root: HTMLElement): boolean {
   return false;
 }
 
-/** Quita chrome de selección y transform del clon, conservando sombras reales. */
 export function stripSelectionChrome(el: HTMLElement): HTMLElement {
   const clone = el.cloneNode(true) as HTMLElement;
   clone.removeAttribute('data-selected');
@@ -75,10 +69,6 @@ export async function exportLayerPng(layerId: string, name: string, scale: numbe
   }
 }
 
-/**
- * Export one or more selected layers as a single PNG (union bounds).
- * Clones nodes into an offscreen wrapper so chrome (handles/guides) is excluded.
- */
 export async function exportSelectionPng(
   layerIds: string[],
   name: string,

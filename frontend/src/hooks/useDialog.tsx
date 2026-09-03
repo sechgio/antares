@@ -46,7 +46,6 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const openDialog = useCallback((opts: DialogOptions) => {
-    // Cancel any pending close timer and resolve/reject previous pending promises
     if (closeTimerRef.current) {
       clearTimeout(closeTimerRef.current);
       closeTimerRef.current = null;
@@ -79,7 +78,6 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
   const confirm = useCallback((opts: Omit<DialogOptions, 'onConfirm' | 'onCancel'>): Promise<boolean> => {
     return new Promise((resolve) => {
       if (!mountedRef.current) { resolve(false); return; }
-      // Resolve any previous pending promise before creating a new one
       if (resolverRef.current) resolverRef.current(false);
       resolverRef.current = resolve;
       setOptions({
@@ -101,7 +99,6 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
   const alert = useCallback((opts: Omit<DialogOptions, 'type' | 'cancelLabel' | 'onConfirm' | 'onCancel'>): Promise<void> => {
     return new Promise((resolve) => {
       if (!mountedRef.current) { resolve(); return; }
-      // Resolve any previous pending alert promise before creating a new one
       if (alertResolverRef.current) alertResolverRef.current();
       alertResolverRef.current = resolve;
       setOptions({

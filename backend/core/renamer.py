@@ -1,4 +1,3 @@
-"""Motor de renombrado automático basado en reglas y base de datos."""
 
 from __future__ import annotations
 
@@ -12,7 +11,6 @@ from backend.utils.validators import obtener_codigo_desde_nombre, sanitizar_nomb
 
 SequenceMode = Literal["record", "global", "filename"]
 
-# Pre-compiled regex patterns for clean-up in aplicar()
 _RE_MULTIPLE_UNDERSCORES = re.compile(r"_+")
 _RE_TRAILING_SEPARATOR_BEFORE_DOT = re.compile(r"[_\s-]+(?=\.)")
 _RE_MULTIPLE_SPACES = re.compile(r"\s+")
@@ -22,11 +20,9 @@ if TYPE_CHECKING:
 
 
 class RenamerEngine:
-    """Permite construir nombres de archivo dinámicos usando patrones y datos de BD."""
 
     @staticmethod
     def campos_disponibles() -> set[str]:
-        """Retorna el conjunto de placeholders disponibles según la configuración actual."""
         fields = get_field_names()
         return {f"{{{f}}}" for f in fields} | {"{seq}", "{ext}", "{sep}"}
 
@@ -37,16 +33,6 @@ class RenamerEngine:
         separador: str = "_",
         sequence_mode: SequenceMode = "filename",
     ) -> None:
-        """Inicializa el motor de renombrado.
-
-        Args:
-            patron: Cadena con placeholders, ej: "{categoria}_{codigo}_{nombre}{ext}".
-            secuencia_inicial: Número inicial para {seq}.
-            separador: Carácter usado para sustituir {sep} en el patrón.
-            sequence_mode: Modo de numeración: ``record`` (por fila), ``global``
-                (contador continuo) o ``filename`` (respeta la secuencia del
-                nombre del archivo).
-        """
         if patron is None:
             fields = get_field_names()
             default = (
@@ -66,7 +52,6 @@ class RenamerEngine:
         filename: str,
         file_mapping: dict[str, str] | MappingIndex | None,
     ) -> str | None:
-        """Busca un nombre nuevo en el mapeo directo (tolerante a extensión y mayúsculas)."""
         if not file_mapping:
             return None
         if isinstance(file_mapping, MappingIndex):
@@ -96,21 +81,6 @@ class RenamerEngine:
         file_mapping: dict[str, str] | MappingIndex | None = None,
         sequence_group: str | None = None,
     ) -> str:
-        """Genera el nuevo nombre para un archivo.
-
-        Args:
-            ruta_origen: Path o str de la imagen origen.
-            datos_bd: Diccionario opcional con datos ya consultados de la BD.
-            codigo_manual: Cadena opcional para forzar el código a buscar.
-            file_seq: Secuencia extraída del nombre de archivo. Se usa en modo
-                ``filename``; se ignora en modo ``record``.
-            file_mapping: Mapeo directo opcional (id -> nuevo nombre).
-            sequence_group: Clave de fila usada por el modo ``record`` para
-                mantener un contador independiente por grupo.
-
-        Returns:
-            Nuevo nombre de archivo (solo nombre, no ruta completa).
-        """
         ruta = Path(ruta_origen)
         ext = ruta.suffix.lower()
 
@@ -121,7 +91,6 @@ class RenamerEngine:
 
         codigo = codigo_manual or obtener_codigo_desde_nombre(ruta.name)
 
-        # Si no se proporcionaron datos, usar diccionario vacío (desacoplado de BD)
         if datos_bd is None:
             datos_bd = {}
 
@@ -137,12 +106,10 @@ class RenamerEngine:
 
         mapping: dict[str, str] = {"seq": seq_value, "ext": ext, "sep": self.separador}
 
-        # Primero poblamos con los datos de la base de datos si existen
         if datos_bd:
             for k, v in datos_bd.items():
                 mapping[k] = str(v or "")
 
-        # Luego aseguramos que los campos configurados tengan al menos un valor vacío o el código
         field_names = get_field_names()
         first_field = field_names[0] if field_names else None
         for f in field_names:
@@ -154,7 +121,6 @@ class RenamerEngine:
         for key, val in mapping.items():
             nombre_salida = nombre_salida.replace(f"{{{key}}}", val)
 
-        # Limpiar separadores que quedan cuando faltan datos de la BD.
         nombre_salida = _RE_MULTIPLE_UNDERSCORES.sub("_", nombre_salida)
         nombre_salida = _RE_TRAILING_SEPARATOR_BEFORE_DOT.sub("", nombre_salida)
         nombre_salida = _RE_MULTIPLE_SPACES.sub(" ", nombre_salida)
@@ -169,7 +135,6 @@ class RenamerEngine:
 
     @staticmethod
     def _preserve_original_name(ruta: Path) -> str:
-        """Conserva el nombre original aplicando la misma sanitización que ``aplicar()``."""
         ext = ruta.suffix.lower()
         stem = sanitizar_nombre(ruta.stem)
         if not stem:
@@ -183,7 +148,6 @@ class RenamerEngine:
         ruta: Path,
         file_mapping: dict[str, str] | MappingIndex,
     ) -> str | None:
-        """Resuelve el nombre mapeado sin mutar contadores internos del engine."""
         if isinstance(file_mapping, MappingIndex):
             return file_mapping.resolve_output_name(ruta.name)
 
@@ -205,19 +169,6 @@ class RenamerEngine:
         file_mapping: dict[str, str] | MappingIndex | None = None,
         sequence_groups: dict[str, str] | None = None,
     ) -> list[tuple[str, str, bool]]:
-        """Genera una vista previa del renombrado para un lote.
-
-        Args:
-            rutas: Lista de rutas de archivos.
-            lookup_fn: Función opcional para buscar datos en catálogo (code -> dict | None).
-            codigos_manuales: Diccionario opcional {nombre_archivo: codigo}.
-            file_seqs: Diccionario opcional {nombre_archivo: secuencia_del_archivo}.
-            sequence_groups: Diccionario opcional {nombre_archivo: clave_fila}
-                usado por el modo ``record`` para mantener contadores por grupo.
-
-        Returns:
-            Lista de tuplas (ruta_origen, nombre_sugerido, datos_encontrados).
-        """
         codigos_manuales = codigos_manuales or {}
         file_seqs = file_seqs or {}
         sequence_groups = sequence_groups or {}
@@ -238,8 +189,6 @@ class RenamerEngine:
                 codigo = codigos_manuales.get(ruta.name, obtener_codigo_desde_nombre(ruta.name))
                 datos = lookup_fn(codigo) if lookup_fn else None
                 if datos is None and self.sequence_mode == "record":
-                    # Sin coincidencia en BD: conservar nombre original sanitizado y no
-                    # consumir contador de secuencia por fila.
                     resultados.append((str(ruta), self._preserve_original_name(ruta), False))
                     continue
                 fseq = file_seqs.get(ruta.name)

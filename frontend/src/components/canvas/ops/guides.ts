@@ -5,12 +5,9 @@ import type { RectMm } from './selectionTransform';
 export type DistanceLabel = {
   id: string;
   axis: 'x' | 'y';
-  /** Label anchor in page mm */
   x: number;
   y: number;
-  /** Measured gap in mm */
   valueMm: number;
-  /** Line endpoints in page mm */
   x1: number;
   y1: number;
   x2: number;
@@ -38,23 +35,16 @@ export function moveGuide(doc: CanvasDocument, id: string, posMm: number): Canva
   return { ...doc, guides };
 }
 
-/** Remove a guide, or drop it when dragged back into the ruler margin. */
 export function removeGuide(doc: CanvasDocument, id: string): CanvasDocument {
   return { ...doc, guides: (doc.guides ?? []).filter((g) => g.id !== id) };
 }
 
-/** Slack (px) beyond the ruler strip that still counts as "dropped on the ruler". */
 export const GUIDE_REMOVE_SLACK_PX = 4;
 
-/** Clamp a guide position to the page extent on its axis. */
 export function clampGuidePos(posMm: number, maxMm: number): number {
   return Math.max(0, Math.min(maxMm, posMm));
 }
 
-/**
- * True when the pointer is over the ruler strip for the guide's axis.
- * Releasing a guide drag here removes it (Figma drop-on-ruler behavior).
- */
 export function isGuideRemovalPoint(
   axis: 'x' | 'y',
   clientX: number,
@@ -66,11 +56,6 @@ export function isGuideRemovalPoint(
   return clientY < viewportRect.top + rulerSize + GUIDE_REMOVE_SLACK_PX;
 }
 
-
-/**
- * Gap labels from selection AABB to nearest sibling edges / page edges.
- * Used for Alt-hold distance readout while dragging.
- */
 export function measureSelectionGaps(
   selection: RectMm,
   others: RectMm[],
@@ -80,7 +65,6 @@ export function measureSelectionGaps(
   const cx = selection.x + selection.w / 2;
   const cy = selection.y + selection.h / 2;
 
-  // Page edges
   const toLeft = selection.x;
   const toRight = page.widthMm - (selection.x + selection.w);
   const toTop = selection.y;
@@ -139,7 +123,6 @@ export function measureSelectionGaps(
     });
   }
 
-  // Multi-object horizontal gaps for all consecutive adjacent boxes in the Y-overlapping band
   const horizBoxes = [
     selection,
     ...others.filter((o) => boxesOverlapOnAxis(selection.y, selection.y + selection.h, o.y, o.y + o.h)),
@@ -170,7 +153,6 @@ export function measureSelectionGaps(
     }
   }
 
-  // Multi-object vertical gaps for all consecutive adjacent boxes in the X-overlapping band
   const vertBoxes = [
     selection,
     ...others.filter((o) => boxesOverlapOnAxis(selection.x, selection.x + selection.w, o.x, o.x + o.w)),
@@ -213,7 +195,6 @@ function boxesOverlapOnAxis(
   return Math.max(a0, b0) < Math.min(a1, b1);
 }
 
-/** Unique positive gaps between non-overlapping sibling boxes (and page edges). */
 export function collectReferenceGaps(
   others: RectMm[],
   page: { widthMm: number; heightMm: number },
@@ -249,10 +230,6 @@ export function collectReferenceGaps(
   return { x: [...xs], y: [...ys] };
 }
 
-/**
- * Snap move deltas so selection gaps match other equal spacings in the scene.
- * Returns adjusted dx/dy and spacing badges for matched gaps.
- */
 export function snapEqualGaps(
   origin: RectMm,
   dxMm: number,
@@ -485,12 +462,10 @@ function formatMmNumber(valueMm: number): string {
   return Number.isInteger(rounded) ? `${rounded}` : rounded.toFixed(1);
 }
 
-/** Format mm for distance chips (1 decimal when needed). */
 export function formatGapMm(valueMm: number): string {
   return `${formatMmNumber(valueMm)} mm`;
 }
 
-/** Size badge under selection (e.g. "40 × 12") — no unit suffix. */
 export function formatSizeMm(wMm: number, hMm: number): string {
   return `${formatMmNumber(wMm)} × ${formatMmNumber(hMm)}`;
 }

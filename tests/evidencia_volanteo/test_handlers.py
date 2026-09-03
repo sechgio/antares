@@ -1,4 +1,3 @@
-"""Tests de handlers IPC para Evidencia Volanteo."""
 
 from __future__ import annotations
 
@@ -135,7 +134,6 @@ def test_render_pdf_uses_preview_html_when_provided(monkeypatch) -> None:
 
 
 def test_render_pdf_html_path_rejects_over_max_pages(monkeypatch) -> None:
-    """Production PDF export sends html — cap must apply before WeasyPrint."""
     called = {"html": False}
 
     def fake_render_pdf_html(html):  # type: ignore[no-untyped-def]

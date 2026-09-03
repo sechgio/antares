@@ -37,8 +37,6 @@ type CellComponentProps = {
   style: React.CSSProperties;
 } & CellData;
 
-// Cell component: memoized so react-window doesn't re-render all visible
-// cells when cellProps changes identity (e.g. on selection changes).
 const MemoizedFileGridCell = React.memo(function FileGridCell(
   { rowIndex, columnIndex, style, files, columnCount, selectedFiles, selectedFile, onFileClick, onFileDoubleClick, onRemoveFile, fileTokens, fileObjects, videoFiles }: CellComponentProps
 ): React.ReactElement | null {

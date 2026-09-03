@@ -34,8 +34,8 @@ describe('composeBoolean', () => {
     expect(result.type).toBe('boolean');
     expect(parseMm(result.cssVars['--translate-x'])).toBe(10);
     expect(parseMm(result.cssVars['--translate-y'])).toBe(15);
-    expect(parseMm(result.cssVars['--width'])).toBe(55); // 10..65
-    expect(parseMm(result.cssVars['--height'])).toBe(40); // 15..55
+    expect(parseMm(result.cssVars['--width'])).toBe(55);
+    expect(parseMm(result.cssVars['--height'])).toBe(40);
     expect(result.meta?.ops).toEqual([
       { op: 'union', layerId: 'other' },
     ]);

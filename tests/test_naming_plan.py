@@ -1,10 +1,3 @@
-"""Nominador de renombrado con catálogo: resolución y paridad preview ↔ process.
-
-Los tests directos fijan la resolución del nominador (preferencia de stem,
-modo posicional con offset). Los tests de paridad ejercitan `preview()` y
-`_prepare_chunk_tasks()` a través del mismo nominador y exigen que ambos
-produzcan nombres idénticos — el contrato que la UI promete y el disco escribe.
-"""
 
 from __future__ import annotations
 
@@ -14,11 +7,8 @@ from backend.core.naming import resolve_rename_plan
 from backend.core.renamer import RenamerEngine
 from backend.handlers import conversion
 
-# --- Resolución directa -----------------------------------------------------
-
 
 def test_resolve_rename_plan_key_column_prefiere_stem(monkeypatch, tmp_path) -> None:
-    """El stem completo del catálogo gana sobre el código parseado (pref + seq=1)."""
     files = [str(tmp_path / n) for n in ("PLAN_001.jpg", "PLAN_002.jpg")]
     for f in files:
         Path(f).write_text("x")
@@ -36,13 +26,11 @@ def test_resolve_rename_plan_key_column_prefiere_stem(monkeypatch, tmp_path) -> 
         (files[0], "SGIO_P2_1.jpg", True),
         (files[1], "SGIO_P1_002.jpg", True),
     ]
-    # La preferencia de stem reescribe código y secuencia que verá el engine.
     assert plan.codigos_manuales == {"PLAN_001.jpg": "PLAN_001", "PLAN_002.jpg": "PLAN"}
     assert plan.file_seqs == {"PLAN_001.jpg": "1", "PLAN_002.jpg": "002"}
 
 
 def test_resolve_rename_plan_lote_con_grupos_y_lookup(monkeypatch, tmp_path) -> None:
-    """Modo lote: lookup inyectado, grupos record derivados del código post-stem."""
     files = [str(tmp_path / n) for n in ("L1_1.jpg", "L2_5.jpg")]
     catalog = {"L1": {"sgio": "SGIO_A"}, "L2_5": {"sgio": "SGIO_B"}}
 
@@ -61,7 +49,6 @@ def test_resolve_rename_plan_lote_con_grupos_y_lookup(monkeypatch, tmp_path) -> 
 
 
 def test_resolve_rename_plan_posicional_con_offset(monkeypatch, tmp_path) -> None:
-    """Modo posicional: cada archivo toma la fila de su índice global (offset)."""
     files = [str(tmp_path / n) for n in ("X_1.jpg", "X_2.jpg", "X_3.jpg")]
     rows = [{"sgio": "SGIO_A"}, {"sgio": "SGIO_B"}, {"sgio": "SGIO_C"}]
     calls: list[tuple[int, int]] = []
@@ -82,11 +69,7 @@ def test_resolve_rename_plan_posicional_con_offset(monkeypatch, tmp_path) -> Non
     assert calls == [(2, 1)]
 
 
-# --- Paridad preview ↔ process -----------------------------------------------
-
-
 def test_parity_preview_vs_process_key_column(monkeypatch, tmp_path) -> None:
-    """key_column: preview y process declaran los mismos nombres, stem-rule incluida."""
     names = ("PLAN_001.jpg", "PLAN_002.jpg", "SOLO_7.jpg")
     files = [str(tmp_path / n) for n in names]
     for f in files:
@@ -127,7 +110,6 @@ def test_parity_preview_vs_process_key_column(monkeypatch, tmp_path) -> None:
 
 
 def test_parity_preview_vs_process_lote_record(monkeypatch, tmp_path) -> None:
-    """Modo lote record: contadores por grupo y preservación de no coincidentes."""
     names = ("R1_1.jpg", "R1_2.jpg", "ZZZ_9.jpg")
     files = [str(tmp_path / n) for n in names]
     for f in files:
@@ -164,7 +146,6 @@ def test_parity_preview_vs_process_lote_record(monkeypatch, tmp_path) -> None:
 
 
 def test_parity_preview_vs_process_posicional_entre_chunks(monkeypatch, tmp_path) -> None:
-    """Posicional: el engine compartido entre chunks respeta índices globales."""
     names = ("4210502 (1).jpg", "4210502 (2).jpg", "4210502 (3).jpg")
     files = [str(tmp_path / n) for n in names]
     for f in files:

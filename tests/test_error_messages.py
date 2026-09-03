@@ -1,4 +1,3 @@
-"""User-safe error message shaping for IPC dispatch."""
 
 from __future__ import annotations
 
@@ -15,7 +14,6 @@ def test_user_error_message_value_error_passthrough():
 
 
 def test_user_error_message_file_not_found_hides_path():
-    """L1: FileNotFoundError no debe exponer rutas absolutas al renderer."""
     msg = _user_error_message(FileNotFoundError(r"C:\Users\secreto\fotos\IMG_001.jpg"))
     assert msg == "Archivo no encontrado"
     assert "secreto" not in str(msg)

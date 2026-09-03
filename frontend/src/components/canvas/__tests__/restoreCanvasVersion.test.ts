@@ -81,11 +81,8 @@ describe('restoreCanvasVersion', () => {
 
   it('serializes before save, force-resurrects via opChain, returns doc for editor reload', async () => {
     const versionDoc = makeDoc();
-    // 1) fetch version row
     supabaseMock.responses.push({ data: { document: versionDoc }, error: null });
-    // 2) push LWW select
     supabaseMock.responses.push({ data: null, error: null });
-    // 3) push upsert
     supabaseMock.responses.push({ data: null, error: null });
 
     const restored = await restoreCanvasVersion('doc-1', 'ver-1');

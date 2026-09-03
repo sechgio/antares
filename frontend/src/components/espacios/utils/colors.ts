@@ -18,10 +18,6 @@ export function pickDefaultColor(index: number): string {
   return ESPACIOS_COLORS[index % ESPACIOS_COLORS.length];
 }
 
-/**
- * Normalize any stored color to #rrggbb (lowercase).
- * Required by <input type="color"> and safe for CSS backgroundColor.
- */
 export function toColorInputValue(color: string | null | undefined, fallback: string = ESPACIOS_COLORS[0]): string {
   if (!color) return fallback.toLowerCase();
   const trimmed = color.trim();

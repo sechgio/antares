@@ -18,12 +18,7 @@ import { clampZoom, wheelZoomFactor, zoomAtCursor } from '../ops/viewportNav';
 type PreviewChild = ReactNode | ((scale: number) => ReactNode);
 
 interface PreviewViewportProps {
-  /** Optional HTML for print / PDF path (hidden iframe). */
   html?: string;
-  /**
-   * Screen preview. LayerNode pages must render at scale=1; this viewport applies
-   * CSS `zoom` as a Figma-like camera so text layout never changes with zoom.
-   */
   children?: PreviewChild;
   widthPx: number;
   heightPx: number;
@@ -113,7 +108,6 @@ const PreviewViewport = forwardRef<PreviewViewportHandle, PreviewViewportProps>(
 
     const showStage = ready && (children != null || Boolean(html));
 
-    // Always design resolution (scale=1). Camera zoom is CSS `zoom` on the stage.
     let page: ReactNode = null;
     if (typeof children === 'function') {
       page = children(1);
@@ -141,7 +135,6 @@ const PreviewViewport = forwardRef<PreviewViewportHandle, PreviewViewportProps>(
                 top: '50%',
                 width: widthPx,
                 height: heightPx,
-                // Figma camera: CSS zoom re-rasterizes; pan compensated by /zoom.
                 transform: `translate(calc(-50% + ${pan.x / zoom}px), calc(-50% + ${pan.y / zoom}px))`,
                 transformOrigin: 'center center',
                 zoom,

@@ -1,6 +1,3 @@
-// Regression: late close from a replaced backend must not detach the live process,
-// but MUST reject pending requests that were sent on the dead process.
-// Also: mid-flight retries only for idempotent methods.
 const { EventEmitter } = require('events');
 
 let passed = 0;
@@ -93,7 +90,6 @@ function loadIpcRouter({
 async function run() {
   console.log('Testing ipc-router process close identity...\n');
 
-  // ── 4.1: attachment identity + pending reject on stale close ──
   {
     const currentProc = { ref: null };
     let clearCalls = 0;
@@ -146,7 +142,6 @@ async function run() {
     assert(procC.listenerCount('close') === 1, 'process C has one close listener');
   }
 
-  // ── 4.1b: exit must reject before stdio close ──
   {
     const currentProc = { ref: null };
     let decrementCalls = 0;
@@ -168,20 +163,16 @@ async function run() {
       rejected = true;
     });
 
-    // ChildProcess emits `exit` as soon as the child is gone; `close` can be
-    // delayed while stdout/stderr handles are being torn down.
     proc.emit('exit', 1, null);
     await Promise.resolve();
     assert(rejected, 'child exit rejects pending requests before stdio close');
     assert(decrementCalls === 1, 'child exit releases the pending request once');
 
-    // The later close event must be harmless and must not release twice.
     proc.emit('close', 1, null);
     await Promise.resolve();
     assert(decrementCalls === 1, 'exit followed by close releases the request only once');
   }
 
-  // ── 4.2: timeout + late stdin failure release exactly once ──
   console.log('\nTesting idempotent pending-request release...\n');
   {
     const currentProc = { ref: null };
@@ -231,7 +222,6 @@ async function run() {
     }
   }
 
-  // ── 4.3: mid-flight retries only for idempotent methods ──
   console.log('\nTesting mid-flight retry idempotency...\n');
   {
     const currentProc = { ref: null };
@@ -250,7 +240,6 @@ async function run() {
     assert(_isIdempotentMethod('process_cancel') === false, 'process_cancel is NOT idempotent');
   }
 
-  // Non-idempotent: process dies mid-flight → no retry (single write).
   {
     const currentProc = { ref: null };
     let writeCount = 0;
@@ -288,7 +277,6 @@ async function run() {
     assert(waitCalls === 0, 'non-idempotent does not waitForReady for retry');
   }
 
-  // Idempotent: process dies mid-flight → retries once and succeeds.
   {
     const currentProc = { ref: null };
     let writeCount = 0;
@@ -338,7 +326,6 @@ async function run() {
     assert(waitCalls >= 1, 'idempotent waits for backend before retry');
   }
 
-  // process_start with started:true marks job activity without waiting for heartbeat.
   {
     const currentProc = { ref: null };
     let noteCalls = 0;
@@ -410,8 +397,6 @@ async function run() {
   }
 
   {
-    // Regression: plain-object throws from ipcMain.handle become
-    // "Error invoking remote method 'ipc-call': [object Object]" in the renderer.
     delete require.cache[require.resolve('../electron/ipc-router')];
     const { _toRendererIpcError, ANTARES_IPC_ERROR_PREFIX } = require('../electron/ipc-router');
     const err = new Error('Template not found: report.html');

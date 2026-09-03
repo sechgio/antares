@@ -1,10 +1,3 @@
-/**
- * Local-first Canvas cloud sync (Supabase).
- *
- * UX: disk is always the editor source of truth (instant, offline).
- * Cloud sync runs in the background: metadata-only listing, full docs
- * fetched only when remote is newer; LWW by updatedAt.
- */
 import { api } from '../../../api';
 import { supabase } from '../../../lib/supabase';
 import type { CanvasDocument } from '../types';
@@ -23,7 +16,6 @@ export { isNewer, shouldPushCanvasRow };
 
 type LocalSummary = { id: string; name: string; updatedAt?: string };
 
-/** Bound every Supabase round-trip so a hung HTTPS never sticks the sync mutex. */
 export const CLOUD_SYNC_TIMEOUT_MS = 30_000;
 
 export async function withTimeout<T>(
@@ -125,7 +117,6 @@ export async function pushCanvasDocumentResult(
 
   const updatedAt = doc.updatedAt || new Date().toISOString();
 
-  // Try atomic server-side RPC push first (serializes concurrency with row locks)
   if (typeof supabase.rpc === 'function' && !options?.forceResurrect) {
     try {
       const rpcRes = (await withTimeout(
@@ -191,8 +182,6 @@ export async function pushCanvasDocumentResult(
     return pushResult(doc, false, updatedAt, uid);
   }
 
-  // Preserve the original creator on update: upsert overwrites every column,
-  // so without this a second user's push would steal created_by.
   const existingRow = existing as { created_by?: string } | null;
   const row = {
     id: doc.id,
@@ -204,8 +193,6 @@ export async function pushCanvasDocumentResult(
     created_by: existingRow?.created_by ?? uid,
   };
 
-  // Atomic upsert on PK — avoids the select-then-insert/update race where two
-  // concurrent pushes could both see "no existing row" and duplicate.
   const { error } = await withTimeout(
     supabase.from('canvas_documents').upsert(row, { onConflict: 'id' }),
     CLOUD_SYNC_TIMEOUT_MS,
@@ -306,10 +293,6 @@ export type TargetedCanvasPullResult =
   | { kind: 'conflict'; conflict: SyncConflict }
   | { kind: 'deleted'; conflict: SyncConflict };
 
-/**
- * Pull one document after a Realtime invalidation. The remote snapshot is
- * persisted locally before the caller is allowed to replace the open editor.
- */
 export async function pullCanvasDocument(
   documentId: string,
   options: { localDocument: CanvasDocument; openDirty: boolean },
@@ -379,45 +362,17 @@ export async function pullCanvasDocument(
 
 export type SyncOptions = {
   openDocumentId?: string;
-  /**
-   * In-memory open document for conflict.localDoc. Prefer this over disk so
-   * unsaved edits are not dropped when building SyncConflict. Falls back to
-   * api.canvasGet when omitted (compat).
-   */
   openDocument?: CanvasDocument;
-  /** When true, never overwrite the open document from cloud. */
   openDirty?: boolean;
-  /**
-   * Guarded (first-boot) sync: never destroy or overwrite a document that
-   * already exists locally. Local-first principle — the on-disk JSON is the
-   * source of truth and must never be silently clobbered just because a
-   * background startup sync saw a divergent/stale remote row. In guarded mode
-   * the sync only: pushes local docs up (so they survive), pulls remote docs
-   * that have no local counterpart, and surfaces any divergence on an existing
-   * local doc as a conflict for the user to resolve — it never calls
-   * canvasDelete on a present local doc nor overwrites it with a remote.
-   */
   guarded?: boolean;
-  /**
-   * Called with the coalesced retry's SyncResult when this call was skipped
-   * because another sync was in flight. Not invoked for the in-flight caller.
-   */
   followUp?: (result: SyncResult) => void;
 };
 
-// Module-level mutex: focus events and GeneratePanel can both fire sync in
-// overlapping windows; reentrancy here would let a late pull overwrite a
-// doc that was just locally edited and pushed. Declared before use so the
-// queued-push waiter never hits a TDZ violation.
 let syncPromise: Promise<unknown> | null = null;
-/** Coalesced options for one retry after the in-flight sync unlocks. */
 let pendingSyncOptions: SyncOptions | null = null;
-/** Side-effects callbacks from EVERY skipped caller (refreshList / conflict / reload). */
 const pendingSyncFollowUps: Array<(result: SyncResult) => void> = [];
-/** Chain of in-flight sync/push/delete ops — pushes never overtake a coalesced retry. */
 let opChain: Promise<unknown> = Promise.resolve();
 
-/** Last-write-wins pending pushes by document id (flushed once onto opChain). */
 const pendingPushById = new Map<
   string,
   { doc: CanvasDocument; options?: { forceResurrect?: boolean } }
@@ -428,14 +383,11 @@ function mergeSyncOptions(a: SyncOptions | null, b: SyncOptions): SyncOptions {
   return {
     openDocumentId: b.openDocumentId ?? a?.openDocumentId,
     openDocument: b.openDocument ?? a?.openDocument,
-    // Prefer dirty=true so a later dirty caller is not overwritten by a clean retry.
     openDirty: Boolean(a?.openDirty || b.openDirty),
-    // Prefer guarded=true so a first-boot sync is not repeated as an unguarded one.
     guarded: Boolean(a?.guarded || b.guarded),
   };
 }
 
-/** Prefer in-memory open doc for conflict payloads; fall back to disk. */
 async function resolveConflictLocalDoc(options: SyncOptions): Promise<CanvasDocument | null> {
   if (
     options.openDocument &&
@@ -448,10 +400,6 @@ async function resolveConflictLocalDoc(options: SyncOptions): Promise<CanvasDocu
   return normalizeDocument(localGot.document as CanvasDocument);
 }
 
-/**
- * Merge cloud ↔ local without blocking the editor.
- * Pulls only docs where remote is newer; pushes local-only / newer locals.
- */
 export async function syncCanvasDocuments(options: SyncOptions = {}): Promise<SyncResult> {
   const empty: SyncResult = { pulled: 0, pushed: 0, deletedLocal: 0, skipped: false, pushErrors: 0 };
   if (!supabase) return { ...empty, skipped: true, reason: 'no-supabase' };
@@ -479,10 +427,6 @@ export async function syncCanvasDocuments(options: SyncOptions = {}): Promise<Sy
       const followUps = pendingSyncFollowUps.splice(0);
       pendingSyncOptions = null;
       if (next) {
-        // Retry starts here so opChain (updated by this call) includes it before
-        // any queued push's microtask runs. Todos los callers que fueron
-        // coalescidos reciben el mismo resultado, así ningún refreshList o
-        // conflicto se pierde por sobrescritura de followUp.
         const retry = syncCanvasDocuments(next);
         void retry
           .then((retryResult) => {
@@ -527,14 +471,10 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
     if (r.deleted_at) {
       if (localById.has(r.id)) {
         if (options.openDocumentId === r.id) {
-          // Soft-delete of the currently open doc is always a conflict —
-          // never auto-delete the document the user is viewing (dirty or clean).
           conflictRemoteDeletedMeta = r;
           continue;
         }
         if (options.guarded) {
-          // First boot: never destroy a non-open local doc just because the
-          // remote row was soft-deleted elsewhere; keep the local doc intact.
           continue;
         }
         await api.canvasDelete(r.id);
@@ -549,16 +489,11 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
     if (!local) {
       toPullIds.push(r.id);
     } else if (remoteNewer) {
-      // Unchanged unguarded behavior: a dirty open doc conflicts; a clean one
-      // (or a non-open doc) is pulled so the remote wins by LWW.
       if (options.openDocumentId === r.id && options.openDirty) {
         conflictRemoteMeta = r;
         continue;
       }
       if (options.guarded) {
-        // First boot: the local doc already exists and is the source of truth.
-        // Do not overwrite it with a divergent remote; a later unguarded sync
-        // (or an explicit conflict resolution) can reconcile it.
         continue;
       }
       toPullIds.push(r.id);
@@ -576,7 +511,6 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
     }
   }
 
-  // Build the conflict payload if the open doc diverged from cloud.
   if (conflictRemoteDeletedMeta && options.openDocumentId) {
     try {
       const localDoc = await resolveConflictLocalDoc(options);
@@ -626,7 +560,6 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
         await publishAcceptedPush(result);
       }
     } catch (err) {
-      // Offline / RLS — leave local; next sync retries.
       pushErrors += 1;
       lastError = err instanceof Error ? err.message : String(err);
     }
@@ -645,10 +578,6 @@ async function publishAcceptedPush(result: CanvasPushResult): Promise<void> {
   }).catch(() => undefined);
 }
 
-/** Fire-and-forget push after a successful local save.
- *  Serialized behind opChain so pushes never overtake a sync's LWW guard
- *  or a coalesced retry. Multiple pushes for the same id collapse to the
- *  latest doc (last-write-wins) before the next flush runs. */
 export function queueCanvasCloudPush(
   doc: CanvasDocument,
   options?: { forceResurrect?: boolean },
@@ -665,7 +594,6 @@ export function queueCanvasCloudPush(
         await publishAcceptedPush(result);
       }
     });
-    // Keep the chain alive after a failed push so later ops are not stuck.
     opChain = flush.catch(() => {});
   }
   return opChain.then(() => undefined).catch(() => undefined);

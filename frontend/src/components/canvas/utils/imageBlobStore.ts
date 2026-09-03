@@ -15,13 +15,11 @@ export interface RegisteredBlob {
 const blobMap = new Map<string, RegisteredBlob>();
 const urlToBlobIdMap = new Map<string, string>();
 
-/** True when a layer value may point at a managed ObjectURL / blobId. */
 function isManagedImageValue(value: string | undefined): value is string {
   if (!value) return false;
   return value.startsWith('blob:') || value.startsWith('img_blob_') || blobMap.has(value);
 }
 
-/** Add a layer image value (and its paired blobId/url) to a live-ref set. */
 export function trackImageRef(live: Set<string>, value: string | undefined): void {
   if (!value || !isManagedImageValue(value)) return;
   live.add(value);
@@ -39,7 +37,6 @@ export function trackImageRef(live: Set<string>, value: string | undefined): voi
   }
 }
 
-/** Collect managed image refs from image/logo layers. */
 export function collectImageRefsFromLayers(layers: Iterable<CanvasLayer>): Set<string> {
   const live = new Set<string>();
   for (const layer of layers) {
@@ -67,7 +64,6 @@ function collectImageRefsFromDiff(diff: CanvasDiff, live: Set<string>): void {
   }
 }
 
-/** Collect managed image refs retained by undo/redo history steps. */
 export function collectImageRefsFromHistory(steps: Iterable<HistoryStep>): Set<string> {
   const live = new Set<string>();
   for (const step of steps) {
@@ -85,7 +81,6 @@ export function collectImageRefsFromHistory(steps: Iterable<HistoryStep>): Set<s
   return live;
 }
 
-/** Helper to generate unique blob IDs */
 function generateBlobId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return `img_blob_${crypto.randomUUID()}`;
@@ -93,11 +88,6 @@ function generateBlobId(): string {
   return `img_blob_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
-/**
- * Registers an image Blob or File into the in-memory Blob Store.
- * Creates an ObjectURL. Large File uploads are downscaled in a Web Worker
- * (OffscreenCanvas) so decode/re-encode stays off the UI thread.
- */
 export async function registerImageBlob(
   fileOrBlob: Blob | File,
   existingDataUrl?: string,
@@ -107,7 +97,6 @@ export async function registerImageBlob(
   let width = 0;
   let height = 0;
 
-  // Downscale large stills off the UI thread when Worker/OffscreenCanvas exist.
   if (fileOrBlob instanceof File && fileOrBlob.type.startsWith('image/')) {
     try {
       const { processImageFileForCanvas } = await import('../workers/imageProcessorClient');
@@ -139,12 +128,6 @@ export async function registerImageBlob(
   return registered;
 }
 
-/**
- * Register an imported image for immediate Canvas rendering and persist the
- * same bytes when the Electron asset bridge is available. The live ObjectURL
- * is deliberately retained so an import never depends on an IPC round trip to
- * paint the newly-created layer.
- */
 export async function registerAndPersistCanvasImage(
   blob: Blob,
 ): Promise<string> {
@@ -159,9 +142,6 @@ export async function registerAndPersistCanvasImage(
   return registered.url;
 }
 
-/**
- * Retrieves the display ObjectURL for a given image value (blobId, blobUrl, dataUrl, etc.).
- */
 export function getBlobUrl(value: string | undefined): string {
   if (!value) return '';
   if (value.startsWith('blob:') || value.startsWith('http://') || value.startsWith('https://')) {
@@ -172,9 +152,6 @@ export function getBlobUrl(value: string | undefined): string {
   return value;
 }
 
-/**
- * Retrieves the thumbnail ObjectURL for a layer or value (defaults to 400px thumbnail if registered).
- */
 export function getThumbnailUrl(value: string | undefined): string {
   if (!value) return '';
   const reg = blobMap.get(value);
@@ -189,9 +166,6 @@ export function getThumbnailUrl(value: string | undefined): string {
   return getBlobUrl(value);
 }
 
-/**
- * Serializes an in-memory Blob to DataURL for disk / IPC persistence.
- */
 export async function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -201,10 +175,6 @@ export async function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
-/**
- * Prepares a document for saving to disk / IPC by converting in-memory ObjectURLs/blobIds
- * into canvas-asset refs (preferred) or DataURLs (fallback / cloud).
- */
 export async function serializeDocumentImages(
   doc: CanvasDocument,
   options?: { preferAssetRefs?: boolean },
@@ -248,12 +218,6 @@ export async function serializeDocumentImages(
   return { ...doc, layers: updatedLayers };
 }
 
-/**
- * After a successful save, keep the editor's live image/logo values (blob:/blobId)
- * instead of swapping in persisted data: URLs. Avoids ~2× RAM (Blob + base64)
- * while Canvas keep-alive holds the store. Cloud/disk still get data URLs via
- * the serialized doc used for IPC / queueCanvasCloudPush.
- */
 export function applySavedDocumentKeepingImages(
   editorDoc: CanvasDocument,
   savedDoc: CanvasDocument,
@@ -275,12 +239,6 @@ export function applySavedDocumentKeepingImages(
   return changed ? { ...savedDoc, layers } : savedDoc;
 }
 
-/**
- * Expand `canvas-asset:` refs to data: URLs for cloud sync / backends that
- * cannot read the local asset store.
- *
- * @param strict When true, throw if any canvas-asset: ref remains unresolved.
- */
 export async function embedCanvasAssetsAsDataUrls(
   doc: CanvasDocument,
   options?: { strict?: boolean },
@@ -322,7 +280,6 @@ export async function embedCanvasAssetsAsDataUrls(
   return next;
 }
 
-/** Count unresolved canvas-asset: refs on image/logo layers. */
 export function countCanvasAssetRefs(doc: CanvasDocument): number {
   return canvasAssetRefs(doc).length;
 }
@@ -335,10 +292,6 @@ function canvasAssetRefs(doc: CanvasDocument): string[] {
   ));
 }
 
-/**
- * Convert in-memory blob:/blobId layer values to data: URLs so a hidden
- * print BrowserWindow (no shared blob store) can still render images.
- */
 export async function embedManagedBlobsAsDataUrls(doc: CanvasDocument): Promise<CanvasDocument> {
   let changed = false;
   const layers: CanvasLayer[] = [];
@@ -368,12 +321,6 @@ export async function embedManagedBlobsAsDataUrls(doc: CanvasDocument): Promise<
   return changed ? { ...doc, layers } : doc;
 }
 
-/**
- * Prepare image/logo layers for PDF export (RGB or CMYK).
- * - rgb (default): expand assets + blobs to data: URLs for HTML print.
- * - cmyk: persist blobs/data: as canvas-asset: refs so the IPC payload stays small;
- *   Python resolves refs from %LOCALAPPDATA%/Antares/canvas/assets.
- */
 export async function prepareDocumentImagesForExport(
   doc: CanvasDocument,
   options?: { mode?: 'rgb' | 'cmyk' },
@@ -385,13 +332,9 @@ export async function prepareDocumentImagesForExport(
   return embedManagedBlobsAsDataUrls(withAssets);
 }
 
-/**
- * CMYK path: prefer disk refs over inlining base64 into the JSON-RPC payload.
- */
 export async function prepareDocumentImagesForCmykExport(doc: CanvasDocument): Promise<CanvasDocument> {
   let next = await serializeDocumentImages(doc, { preferAssetRefs: true });
   next = await persistDataUrlsAsCanvasAssets(next);
-  // Unsaved blob: must not reach Python — fail loudly if any remain.
   for (const layer of next.layers) {
     if ((layer.type !== 'image' && layer.type !== 'logo') || !layer.value) continue;
     if (layer.value.startsWith('blob:') || blobMap.has(layer.value)) {
@@ -409,7 +352,6 @@ async function readCanvasAssetChunk(getAsset: CanvasAssetGetter, ref: string): P
   return res.chunk;
 }
 
-/** Convert leftover data: layer values into canvas-asset: refs when Electron can store them. */
 async function persistDataUrlsAsCanvasAssets(doc: CanvasDocument): Promise<CanvasDocument> {
   const putAsset = window.electronAPI?.canvasAssetPut;
   if (!putAsset) return doc;
@@ -434,11 +376,6 @@ async function persistDataUrlsAsCanvasAssets(doc: CanvasDocument): Promise<Canva
   return changed ? { ...doc, layers } : doc;
 }
 
-
-/**
- * Hydrates a document loaded from disk / IPC for rendering.
- * Resolves `canvas-asset:` refs into blob: ObjectURLs; legacy data: URLs stay as-is.
- */
 export async function hydrateDocumentImages(
   doc: CanvasDocument,
   options?: { strict?: boolean },
@@ -480,7 +417,6 @@ export async function hydrateDocumentImages(
   return next;
 }
 
-/** Verify persisted canvas assets without mutating the live image store. */
 export async function assertDocumentImagesResolvable(doc: CanvasDocument): Promise<void> {
   const refs = canvasAssetRefs(doc);
   if (refs.length === 0) return;
@@ -579,7 +515,6 @@ async function mapDiffImageValues(
   return changed ? { ...diff, addedLayers, modifiedLayers } : diff;
 }
 
-/** Persist image values in undo/redo stacks (blob: → canvas-asset: / data:). */
 export async function serializeHistorySteps(steps: HistoryStep[]): Promise<HistoryStep[]> {
   return Promise.all(
     steps.map(async (step) => {
@@ -596,7 +531,6 @@ export async function serializeHistorySteps(steps: HistoryStep[]): Promise<Histo
   );
 }
 
-/** Restore image values in undo/redo stacks (canvas-asset: → blob:). */
 export async function hydrateHistorySteps(steps: HistoryStep[]): Promise<HistoryStep[]> {
   return Promise.all(
     steps.map(async (step) => {
@@ -613,9 +547,6 @@ export async function hydrateHistorySteps(steps: HistoryStep[]): Promise<History
   );
 }
 
-/**
- * Revokes a single managed ObjectURL (by blobId or blob: URL) and removes it from the store.
- */
 export function releaseImageBlob(value: string | undefined): void {
   if (!value) return;
 
@@ -633,16 +564,8 @@ export function releaseImageBlob(value: string | undefined): void {
   blobMap.delete(blobId);
 }
 
-/**
- * Revokes managed ObjectURLs that are not referenced by any live value
- * (current doc, history, clipboard, …). Essential under Canvas keep-alive,
- * where `clearBlobStore` rarely runs because CanvasView stays mounted.
- *
- * @returns number of blobs released
- */
 export function sweepOrphanBlobs(liveRefs: Iterable<string>): number {
   const live = liveRefs instanceof Set ? liveRefs : new Set(liveRefs);
-  // Expand live set with paired blobId/url for any registered hits.
   for (const value of [...live]) {
     trackImageRef(live, value);
   }
@@ -658,9 +581,6 @@ export function sweepOrphanBlobs(liveRefs: Iterable<string>): number {
   return released;
 }
 
-/**
- * Revokes all managed ObjectURLs to free browser memory when tearing down or clearing.
- */
 export function clearBlobStore(): void {
   for (const reg of blobMap.values()) {
     if (reg.url.startsWith('blob:')) URL.revokeObjectURL(reg.url);

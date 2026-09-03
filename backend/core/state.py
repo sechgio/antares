@@ -1,8 +1,3 @@
-"""Process state data structure for tracking job progress.
-
-This module is in core/ (not handlers/) to avoid circular imports:
-core/jobs.py needs ProcessState, and handlers/ needs core/jobs.py.
-"""
 
 from __future__ import annotations
 

@@ -10,9 +10,7 @@ import {
 } from '../utils/dueNotifications';
 import { onDueNotificationsInvalidate } from '../utils/dueNotificationsBus';
 
-/** Fallback poll when realtime is unavailable or drops. */
 const POLL_MS = 5 * 60 * 1000;
-/** Coalesce bursty postgres_changes / local invalidations into one refetch. */
 const REALTIME_DEBOUNCE_MS = 350;
 
 export function useDueNotifications(enabled = true) {

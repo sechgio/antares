@@ -27,7 +27,6 @@ const {
 const ROWS_PER_RANGE = 50;
 const RANGES_PER_API_BATCH = 50;
 const CACHE_TTL_MS = 60_000;
-/** Aggregate in-memory budget for BD_IMG + LOGS + BD_ARRASTRE + folders. */
 const SHEET_CACHE_BUDGET_BYTES = 32 * 1024 * 1024;
 const AUTO_SYNC_CONFIG_KEY = 'AUTO_SYNC';
 const RENAME_DEST_CONFIG_KEY = 'RENAME_DEST_FOLDER_ID';
@@ -52,9 +51,7 @@ const _sheetCacheState = {
   arrastre: { loadedAt: 0, revision: null },
   folders: { loadedAt: 0, revision: null },
 };
-/** Raise on repeated 429s during rename copies; decay after clean batches. */
 let _renameConcurrencyBias = 0;
-/** Test-only override for sheet cache budget (null = use default). */
 let _sheetCacheBudgetOverride = null;
 
 function clearSessionCaches() {
@@ -121,11 +118,6 @@ function _clearSheetCaches() {
   _invalidateCache();
 }
 
-/**
- * Commit sheet cache pieces under the aggregate byte budget.
- * Over budget: clear previous caches (no stale/truncated data) and return false.
- * Caller must still return the full response to the IPC client.
- */
 function _tryCommitSheetCache(partial = {}) {
   const next = {
     bdImg: Object.prototype.hasOwnProperty.call(partial, 'bdImg') ? partial.bdImg : _cachedBdImg,
@@ -145,12 +137,6 @@ function _tryCommitSheetCache(partial = {}) {
   return true;
 }
 
-/**
- * Adaptive copy concurrency for Drive rename export.
- * Scales with job count; backs off when recent batches hit rate limits.
- * @param {number} jobCount
- * @returns {number}
- */
 function resolveRenameCopyConcurrency(jobCount) {
   const n = Number(jobCount) || 0;
   let base = 3;
@@ -187,10 +173,6 @@ async function _readSheetRevision() {
   }
 }
 
-/**
- * True when in-memory sheet data is present and Drive reports the same revision.
- * Allows skipping full Sheets reads after TTL expiry when nothing changed.
- */
 async function _canServeUnchangedRevision(blocks = SHEET_CACHE_BLOCKS, knownRevision = null) {
   const requested = _normalizeCacheBlocks(blocks);
   if (!requested.length) return false;
@@ -407,7 +389,6 @@ async function _ensureSheetId() {
   if (sheets.getSheetId()) return sheets.getSheetId();
   await sheets.restorePersistedSheet();
   if (sheets.getSheetId()) return sheets.getSheetId();
-  // Fallbacks: CONFIG sheet (if another path left it) then local secure storage
   let sheetId = '';
   try {
     sheetId = await _readConfigValue('SHEET_ID');
@@ -418,7 +399,6 @@ async function _ensureSheetId() {
   }
   if (sheetId) {
     await sheets.openSpreadsheet(sheetId);
-    // Mirror into CONFIG for sheet-level portability
     try {
       await _upsertConfigValues({ SHEET_ID: sheetId });
     } catch { /* optional */ }
@@ -455,7 +435,6 @@ async function listFolders({ force = false } = {}) {
     }
     return { folders, cached: false, cache_skipped: true };
   } catch (err) {
-    // Offline / unauthenticated: serve last known local mirror so IDs are not "lost"
     const local = loadLocalFolders();
     if (local.length) {
       _tryCommitSheetCache({ folders: local });
@@ -471,7 +450,6 @@ async function addFolder({ name, folder_id, activo }) {
   const safeFolderId = verified.folder_id;
   const folderName = name || verified.name || safeFolderId;
 
-  // Avoid duplicate rows for the same folder_id
   const { values } = await sheets.readRange('FOLDERS!A:E');
   const rows = values.length ? [...values] : [['NOMBRE', 'FOLDER_ID', 'ACTIVO', 'ULTIMO_SCAN', 'CANT_ARCHIVOS']];
   let found = false;
@@ -550,9 +528,6 @@ async function _scanAllCore() {
 
   const dedupStrategy = drive.parseDedupStrategy(await _readConfigValue('DEDUP_STRATEGY'));
   const merged = drive.mergeNisMaps(nisMaps, dedupStrategy);
-  // Retain fields needed by sync / IPC summary / renameExport.
-  // Keep slim Drive file stubs (id + name only) — buildRenameJobs needs them;
-  // drop modifiedTime and other bulky metadata after merge.
   const nisResults = Object.entries(merged).map(([nis, data]) => ({
     nis,
     count: data.count,
@@ -587,7 +562,6 @@ async function _scanAllCore() {
       faltantes,
       sobrantes,
       fuera_padron,
-      /** @deprecated alias de fuera_padron — no confundir con RESUMEN SIN SGIO */
       sin_sgio: fuera_padron,
     },
     folders_failed: foldersFailed,
@@ -602,7 +576,6 @@ async function scanAndSync() {
   return _runLocked('scan_sync', async () => {
     const scanResult = await _scanAllCore();
     const syncResult = await _syncToSheetCore();
-    // Do not IPC-clone full nis_results (UI only uses logs/updated metrics).
     return {
       success: syncResult.success,
       updated: syncResult.updated,
@@ -649,7 +622,6 @@ async function _applySheetBatch(batch) {
     }
     _touchCache(Object.keys(partial));
   } else if (Object.prototype.hasOwnProperty.call(partial, 'folders') && snapshot.folders.length) {
-    // Persist folders to disk even when RAM cache is skipped.
     _persistFoldersLocal(snapshot.folders);
   }
   return { retained, ...snapshot };
@@ -790,7 +762,6 @@ async function _syncToSheetCore() {
 
   const auth = await sheets.getAuthStatus();
   const durationSec = ((Date.now() - start) / 1000).toFixed(1);
-  // El padrón (BD_IMG) manda: no se agregan NIS del escaneo. Log informativo.
   const detail = [
     `${_lastScanResults.folder_summary.length} carpetas`,
     `${_lastScanResults.nis_results.length} NIS en carpetas`,
@@ -887,7 +858,6 @@ async function getStatus() {
 async function bootstrap({ refresh = true } = {}) {
   const auth = await sheets.getAuthStatus();
   const sheetConfig = sheets.getStoredSheetConfig();
-  // Prefer in-memory cache; if empty, surface locally persisted folders
   const foldersForUi = _cachedFolders.length ? _cachedFolders : loadLocalFolders();
   const base = {
     connected: auth.authenticated,
@@ -978,13 +948,6 @@ async function setAutoSync(enabled) {
   return { enabled: _autoSyncEnabled };
 }
 
-/**
- * Escanea carpetas activas, resuelve NIS→SGIO+DESTINO desde BD_IMG y copia
- * las imágenes a subcarpetas (por DESTINO) bajo un parent raíz, con nombre
- * {SGIO}_{n}.ext. El original no se mueve ni se borra.
- *
- * @param {string} dest_folder_id Parent raíz donde se crean carpetas DESTINO
- */
 async function _renameExportCore({ dest_folder_id, only_completos = true } = {}) {
   await _ensureSheetId();
   _throwIfCancelled();
@@ -992,11 +955,9 @@ async function _renameExportCore({ dest_folder_id, only_completos = true } = {})
   const rootMeta = await drive.assertDriveFolder(dest_folder_id);
   const rootFolderId = rootMeta.folder_id;
 
-  // A=NIS, B=SGIO, C=DESTINO
   const { values: bdValues } = await sheets.readRange('BD_IMG!A:C');
   const nisMeta = buildNisMetaMap(bdValues);
 
-  // Re-scan to ensure file IDs + slots are fresh
   const scan = await _scanAllCore();
   _throwIfCancelled();
 
@@ -1004,7 +965,6 @@ async function _renameExportCore({ dest_folder_id, only_completos = true } = {})
     onlyCompletos: only_completos !== false,
   });
 
-  // Pre-create / resolve DESTINO subfolders under root
   const destinoNames = uniqueDestinos(jobs);
   const destinoFolderIds = new Map();
   const foldersCreated = [];
@@ -1155,7 +1115,6 @@ async function persistSheetIdConfig(sheetId) {
 }
 
 async function renameExport(params = {}) {
-  // Persist root folder id immediately so a failed run still remembers the choice
   if (params?.dest_folder_id) {
     try {
       saveRenameDest(String(params.dest_folder_id), '');
@@ -1171,7 +1130,6 @@ async function getRenameDestConfig() {
   } catch { /* sheet unavailable */ }
   const local = loadRenameDest();
   if (!folderId && local.folder_id) folderId = local.folder_id;
-  // Keep local mirror in sync when sheet has the value
   if (folderId && folderId !== local.folder_id) {
     try {
       saveRenameDest(folderId, local.name || '');

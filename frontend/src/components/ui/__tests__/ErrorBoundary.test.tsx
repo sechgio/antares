@@ -56,7 +56,6 @@ describe('ErrorBoundary Component', () => {
 
     expect(screen.getByText('Ocurrió un error inesperado en la interfaz')).toBeInTheDocument();
 
-    // Fix error before retry
     throwError = false;
     fireEvent.click(screen.getByRole('button', { name: /Reintentar/i }));
 

@@ -145,7 +145,6 @@ describe('useProcessRunner', () => {
     const { result } = renderHook(() => useProcessRunner());
     await act(async () => Promise.resolve());
 
-    // Seed a running state via progress notify
     act(() => {
       notifyCallback?.('process.progress', { progress: 10, current_file: 'a.jpg', ok_count: 0, err_count: 0 });
     });
@@ -157,7 +156,6 @@ describe('useProcessRunner', () => {
     expect(result.current.running).toBe(false);
     expect(result.current.status?.running).toBe(false);
 
-    // Re-seed running
     act(() => {
       notifyCallback?.('process.progress', { progress: 20, current_file: 'b.jpg' });
     });
@@ -308,7 +306,6 @@ describe('useProcessRunner', () => {
       startPromise = result.current.startProcess(emptyProcessBody);
     });
 
-    // Before the IPC call resolves, running must already be true
     expect(result.current.running).toBe(true);
 
     await act(async () => {

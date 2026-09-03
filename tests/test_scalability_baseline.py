@@ -1,4 +1,3 @@
-"""Tests for the offline scalability baseline model."""
 
 from __future__ import annotations
 

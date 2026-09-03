@@ -1,6 +1,3 @@
-/**
- * Regresión: OAuth de AutoIMG usa loopback local y selector de cuenta en Google.
- */
 
 function assert(condition, message) {
   if (!condition) {
@@ -39,11 +36,6 @@ async function main() {
   );
   assert(!sheets.isInvalidGrantResponse('invalid_client'), 'no confunde invalid_client');
 
-  // ── B3: PKCE del flujo legacy — getAuthUrl debe PERSISTIR el verifier ──
-  // Antes, cada llamada generaba un verifier nuevo sin guardarlo: exchangeCode
-  // fallaba con "Flujo OAuth no iniciado" o usaba un verifier distinto al del
-  // challenge. Contrato observable sin hooks internos: dos llamadas seguidas
-  // deben producir el MISMO code_challenge (S256 del mismo verifier) y state.
   {
     const urlA = sheets.getAuthUrl();
     const urlB = sheets.getAuthUrl();
@@ -66,7 +58,6 @@ async function main() {
   delete env.AUTOIMG_GOOGLE_CLIENT_ID;
   delete env['AUTOIMG_GOOGLE' + '_CLIENT_SECRET'];
 
-  // ── exchangeCode: identidad ANTES de persistir (no pisa la cuenta activa) ──
   {
     env.AUTOIMG_GOOGLE_CLIENT_ID = '123456789012-testclientid.apps.googleusercontent.com';
     env['AUTOIMG_GOOGLE' + '_CLIENT_SECRET'] = 'test-secret-value';
@@ -132,8 +123,6 @@ async function main() {
         'identidad resuelta antes de persistir: un solo saveTokens en el scope de la cuenta B (no pisa cuenta A)',
       );
 
-      // userinfo falla → el flujo falla y NO persiste nada (no deja tokens
-      // ajenos en el scope de la cuenta activa).
       events.length = 0;
       global.fetch = async (url) => {
         const u = String(url);

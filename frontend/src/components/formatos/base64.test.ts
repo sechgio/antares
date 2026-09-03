@@ -4,15 +4,12 @@ import { safeBase64ToBytes } from './base64';
 
 describe('safeBase64ToBytes', () => {
   it('decodes a well-formed base64 string into a Uint8Array', () => {
-    // JVBERi0= is the base64 of "%PDF-" (the PDF magic header).
     const bytes = safeBase64ToBytes('JVBERi0=');
     expect(Array.from(bytes)).toEqual([37, 80, 68, 70, 45]);
     expect(bytes.buffer.byteLength).toBe(5);
   });
 
   it('strips internal whitespace before decoding', () => {
-    // 'JVBERi0=' with spaces interspersed — after stripping the result
-    // must equal the no-whitespace form.
     const bytes = safeBase64ToBytes('JVBE Ri0=');
     expect(Array.from(bytes)).toEqual([37, 80, 68, 70, 45]);
   });
@@ -32,7 +29,6 @@ describe('safeBase64ToBytes', () => {
 
   it('preserves byte values 0-255 round-trip', () => {
     const original = new Uint8Array(Array.from({ length: 256 }, (_, i) => i));
-    // btoa works on binary strings; build one from the byte values.
     let binary = '';
     for (let i = 0; i < original.length; i++) binary += String.fromCharCode(original[i]);
     // eslint-disable-next-line deprecation/deprecation

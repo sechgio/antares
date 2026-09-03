@@ -185,7 +185,6 @@ def create_empty_report(informe_id: int) -> dict[str, Any]:
 
 
 class TechnicalReport:
-    """Dictionary based report normalizer for IPC-friendly data."""
 
     @staticmethod
     def normalize(data: dict[str, Any] | None) -> dict[str, Any]:
@@ -286,7 +285,6 @@ def _normalize_canastillas(source: Any) -> dict[str, Any]:
 
 
 def next_technical_report_number(reports: list[dict[str, Any]]) -> int:
-    """Return the next sequential informe_id from existing reports."""
     current = 0
     for report in reports:
         try:

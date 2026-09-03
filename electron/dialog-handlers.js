@@ -27,14 +27,11 @@ const { putCanvasAsset, getCanvasAsset, parseAssetRef, gcOrphanCanvasAssets } = 
 const { cleanupSpreadsheetSpillFile, sweepIpcTempDirs } = require('./ipc-temp-cleanup');
 const { embedCanvasManifest } = require('./canvas-pdf-manifest');
 
-// Guard derives from electron/ipc-methods.js — single source of truth.
 const NATIVE_METHODS = new Set(require('./ipc-methods').NATIVE_METHODS);
 
 const REGISTER_LOCAL_PATH_DEPRECATED_MSG = 'register_local_path is deprecated; use file tokens via dialog or staged upload';
 
-/** @type {Set<string>} Directory roots allowed for PDF writes (from dialogs). */
 const _allowedWriteRoots = new Set();
-// Persisted so chosen output folder survives restarts.
 const WRITE_ROOTS_FILE = 'antares-write-roots.json';
 
 function _persistedWriteRootsPath() {
@@ -47,7 +44,6 @@ function _persistedWriteRootsPath() {
   }
 }
 
-
 function _persistWriteRoots() {
   const file = _persistedWriteRootsPath();
   if (!file) return;
@@ -55,7 +51,6 @@ function _persistWriteRoots() {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify([..._allowedWriteRoots], null, 2), 'utf8');
   } catch {
-    /* ignore */
   }
 }
 
@@ -82,11 +77,9 @@ function _loadPersistedWriteRoots() {
         }
         _allowedWriteRoots.add(canonical);
       } catch {
-        /* skip invalid entry */
       }
     }
   } catch {
-    // No file yet, or corrupted: start with session roots only.
   }
 }
 
@@ -136,7 +129,6 @@ function _isUnderAllowedPdfWriteDir(dir) {
       }
     }
   } catch {
-    /* Electron not available (unit tests) */
   }
   return false;
 }
@@ -195,6 +187,32 @@ function _sanitizePdfOutputPath(outputPath, fallbackFilename) {
   }
   const safeName = _sanitizeFilename(path.basename(resolved) || fallbackFilename);
   return path.join(dir, safeName);
+}
+
+function _assertSafePdfOutputPath(outputPath) {
+  const resolved = path.resolve(outputPath);
+  const dir = path.dirname(resolved);
+  const realDir = fs.realpathSync(dir);
+
+  if (!_isUnderAllowedPdfWriteDir(realDir)) {
+    throw new Error('La ruta de salida del PDF no está permitida: symlink no permitido en ruta de salida');
+  }
+  if (path.normalize(realDir).toLowerCase() !== path.normalize(dir).toLowerCase()) {
+    throw new Error('La ruta de salida del PDF no está permitida: symlink no permitido en ruta de salida');
+  }
+
+  if (fs.existsSync(resolved)) {
+    if (fs.lstatSync(resolved).isSymbolicLink()) {
+      throw new Error('La ruta de salida del PDF no está permitida: symlink no permitido en ruta de salida');
+    }
+    const realFile = fs.realpathSync(resolved);
+    if (
+      path.normalize(realFile).toLowerCase() !== path.normalize(resolved).toLowerCase()
+      || !isPathInside(realDir, realFile)
+    ) {
+      throw new Error('La ruta de salida del PDF no está permitida: symlink no permitido en ruta de salida');
+    }
+  }
 }
 
 function _resolveTokenPath(token, webContentsId) {
@@ -259,11 +277,9 @@ async function _scanOneDir(dirPath, extensions, results, pending) {
       }
     }
   } catch {
-    // ignore read errors mid-iteration
   }
 }
 
-// Pooled hidden windows for printToPDF — each slot has its own partition/session.
 const PDF_RENDER_SLOTS = 2;
 const pdfRenderSlots = Array.from({ length: PDF_RENDER_SLOTS }, (_, i) => ({
   queue: Promise.resolve(),
@@ -305,11 +321,10 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
   const localImages = _localImageEntries(params.localImagePaths, webContentsId);
   const allowedFileUrls = new Set(localImages.map(entry => entry.fileUrl));
 
-  const MAX_HTML_BYTES = 150 * 1024 * 1024; // 150 MB
+  const MAX_HTML_BYTES = 150 * 1024 * 1024;
   if (Buffer.byteLength(html, 'utf8') > MAX_HTML_BYTES) {
     throw new Error('HTML excede el tamaño máximo permitido (150 MB)');
   }
-  // Sanitize before injecting allowlisted file:// URLs.
   const sanitizedHtml = sanitizeHtmlForPdf(html);
   const htmlWithLocalImages = localImages.reduce((current, entry) => current.split(entry.token).join(entry.fileUrl), sanitizedHtml);
 
@@ -318,7 +333,6 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
     throw new Error('BrowserWindow no disponible para generar PDF');
   }
 
-  // 15 min budget (matches FE/IPC); timeoutMs overridable.
   const PDF_TIMEOUT_MS = 900_000;
   const timeoutMs =
     Number.isFinite(params.timeoutMs) && params.timeoutMs > 0 ? params.timeoutMs : PDF_TIMEOUT_MS;
@@ -335,10 +349,6 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
   let clearInterceptors = () => {};
 
   const renderBody = async () => {
-    // Each slot owns a dedicated partition so webRequest interceptors never
-    // collide across concurrent renders (they are session-scoped, not
-    // window-scoped). The window itself is PERSISTED on the slot and reused:
-    // only the first render per slot pays the BrowserWindow spin-up.
     const partitionName = slot.partition;
     let pdfSession = slot.session;
     if (!pdfSession && session && typeof session.fromPartition === 'function') {
@@ -360,7 +370,6 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
       slot.window = pdfWindow;
     }
 
-    // Block external resources — only allow data:, fonts.googleapis.com and whitelisted file://.
     clearInterceptors = () => {
       try {
         const targetSession = pdfSession || pdfWindow.webContents.session;
@@ -407,7 +416,6 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
     await pdfWindow.loadFile(htmlPath);
     await didFinishLoad;
 
-    // Wait for webfonts (Google Fonts) so printToPDF is not rasterized with fallbacks.
     try {
       await Promise.race([
         pdfWindow.webContents.executeJavaScript(
@@ -430,9 +438,6 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
       pdfBuffer = await embedCanvasManifest(pdfBuffer, params.canvas_manifest_b64);
     }
 
-    // Purgar el documento renderizado de la ventana del pool para que Chromium
-    // libere el DOM y texturas de imágenes de la memoria, y libere el descriptor
-    // de archivo de render.html en Windows (evitando EBUSY al borrar tempDir).
     if (typeof pdfWindow.loadURL === 'function') {
       try {
         await pdfWindow.loadURL('about:blank');
@@ -454,6 +459,9 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
     }
 
     await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
+    if (typeof params.outputPath === 'string' && params.outputPath.trim()) {
+      _assertSafePdfOutputPath(outputPath);
+    }
     await fs.promises.writeFile(outputPath, pdfBuffer);
 
     const cap = createFileCapability({
@@ -489,10 +497,6 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
     if (timeoutHandle) clearTimeout(timeoutHandle);
     clearInterceptors();
     await _cleanupStagedImageCapabilities(params.localImagePaths, webContentsId);
-    // Pool: la ventana se reutiliza SOLO tras un render OK. En timeout/error
-    // se destruye (destroy() fuerza la cancelación: printToPDF se aborta con
-    // el webContents, y un renderer colgado no responde a close()) y el slot
-    // queda marcado para recrearla en el próximo uso.
     const win = slot.window;
     if (win && !win.isDestroyed()) {
       if (timedOut || renderFailed) {
@@ -500,10 +504,7 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
         slot.window = null;
       }
     }
-    // The per-slot partition is reused across renders — do NOT clear its
-    // storage data so the HTTP cache (fonts) persists between calls.
     if (tempDir) {
-      // Retry removal on Windows where EBUSY is common right after window close
       let attempts = 0;
       const tryRm = async () => {
         for (;;) {
@@ -528,11 +529,6 @@ function _webContentsIdFromWindow(win) {
   try { return win && win.webContents ? win.webContents.id : null; } catch { return null; }
 }
 
-/**
- * Grant read access for a path derived from a File object (webUtils).
- * Unlike the public register_local_path compatibility method, this private
- * grant is reachable only from the preload's authenticated IPC channel.
- */
 function registerFileInputPath(rawPath) {
   if (typeof rawPath !== 'string' || !rawPath.trim() || rawPath.includes('\0') || !path.isAbsolute(rawPath)) {
     return false;
@@ -544,7 +540,6 @@ function registerFileInputPath(rawPath) {
     registerAllowedReadPath(resolvedPath);
     return true;
   } catch {
-    // Best-effort grant: invalid/unreadable files simply use staging/base64.
     return false;
   }
 }
@@ -570,8 +565,6 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
     const MAX_JSON_READ = 64 * 1024 * 1024;
     let parsed;
     try {
-      // Stat primero: un spill de hasta ~100 MB no debe cargarse a memoria
-      // para ser rechazado recién por el chequeo de tamaño posterior.
       const st = await fs.promises.stat(filePath);
       if (!st.isFile()) {
         throw new Error('El resultado JSON no es un archivo regular');
@@ -582,13 +575,9 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
       const raw = await fs.promises.readFile(filePath, 'utf8');
       parsed = JSON.parse(raw);
     } finally {
-      // Spill files are one-shot; delete after read so %TEMP% does not grow
-      // unbounded. El finally cubre también el rechazo por tamaño/stat: el
-      // token se revoca igual (antes quedaba vivo tras el rechazo).
       await cleanupSpreadsheetSpillFile(filePath);
       revokeCapability(token);
     }
-    // Opportunistic sweep of stale PDF/spill temps (best-effort).
     void sweepIpcTempDirs();
     return { handled: true, result: parsed };
   }
@@ -612,12 +601,10 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
 
   if (method === 'file_staged_create') {
     const session = createStagedSession({ name: params.name, size: params.size, webContentsId: _webContentsIdFromWindow(window) });
-    // Do not return tmpPath to the renderer — capability token is sufficient.
     return { handled: true, result: { token: session.token } };
   }
 
   if (method === 'file_staged_append') {
-    // Prefer binary `chunk` (ArrayBuffer/Uint8Array); keep `chunk_b64` for older callers.
     const chunk = params.chunk !== undefined ? params.chunk : params.chunk_b64;
     const res = await appendStagedChunk(params.token, chunk, _webContentsIdFromWindow(window));
     return { handled: true, result: res };
@@ -648,7 +635,6 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
       throw new Error('canvas asset ref required');
     }
     const buf = await getCanvasAsset(ref);
-    // Return binary to renderer (structured clone) — no base64.
     return {
       handled: true,
       result: {
@@ -669,7 +655,6 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
     let resolvedPath = params && params.path;
     if (params && params.file_token) {
       resolvedPath = _resolveTokenPath(params.file_token, _webContentsIdFromWindow(window));
-      // Capability tokens bypass dialog allowlist registration; grant read for this path.
       registerAllowedReadPath(resolvedPath);
     }
     const result = await createLocalThumbnail(
@@ -720,9 +705,6 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
       return { handled: true, result: { paths: [], file_tokens: [] } };
     }
     const folderPath = response.filePaths[0];
-    // `pickOnly` returns just the folder path without scanning its contents.
-    // Used by features that only need a destination (e.g. image optimizer
-    // "save to folder"), so we avoid an expensive recursive scan.
     _registerWriteRootFromPath(folderPath);
     if (params && params.pickOnly) {
       return { handled: true, result: { paths: [], file_tokens: [], folder: folderPath } };
@@ -762,17 +744,13 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
   };
 }
 
-// Folders approved via native dialogs survive restarts (raw output paths are
-// only accepted under a registered root).
 _loadPersistedWriteRoots();
 
 module.exports = {
   handleDialogCall,
   NATIVE_METHODS,
-  /** Write roots registered by native dialogs (dialog_folder/dialog_dest/dialog_save). */
   isUnderAllowedWriteRoot: (dir) => _isUnderAllowedPdfWriteDir(dir),
   _clearAllowedWriteRoots: () => _allowedWriteRoots.clear(),
-  /** Test hook: reset the persistent PDF render pool (windows/sessions/queues). */
   _resetPdfRenderPool,
   registerFileInputPath,
 };

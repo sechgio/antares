@@ -1,21 +1,5 @@
-/**
- * Persistencia única de AutoIMG (fachada consolidada).
- *
- * Secciones:
- *  - GLOBAL (no user-scoped): oauth config (client_id/client_secret de la app)
- *  - USER-SCOPED: tokens, sheet config, prefs locales
- *
- * Archivos y namespaces de cifrado son IDÉNTICOS a los históricos
- * (autoimg-token-storage / autoimg-sheet-storage / autoimg-local-prefs)
- * para no exigir migración de datos ni cambiar la semántica de logout:
- * clearTokens() borra SOLO tokens.json; sheet y prefs sobreviven al logout.
- */
 const { readSecureJson, writeSecureJson, clearSecureJson, migratePlaintextJson } = require('./autoimg-secure-storage');
 const { scopedFilename, scopedNamespace, getActiveUserKey } = require('./autoimg-user-scope');
-
-// ---------------------------------------------------------------------------
-// SECCIÓN GLOBAL — OAuth config (client_id / client_secret de la app)
-// ---------------------------------------------------------------------------
 
 const OAUTH_CONFIG_FILE = 'autoimg-oauth-config.json';
 const OAUTH_CONFIG_NS = 'oauth';
@@ -51,10 +35,6 @@ function saveOAuthConfig(clientId, clientSecret) {
   return { success: true };
 }
 
-// ---------------------------------------------------------------------------
-// SECCIÓN USER-SCOPED — tokens
-// ---------------------------------------------------------------------------
-
 function _tokenPaths() {
   return {
     file: scopedFilename('tokens.json'),
@@ -83,8 +63,6 @@ function _safeTokens(tokens) {
 }
 
 function loadTokens() {
-  // Solo el scope del usuario activo (o anonymous). Sin fallback a legacy
-  // para no mezclar tokens entre cuentas.
   const { file, ns } = _tokenPaths();
   return readSecureJson(file, ns);
 }
@@ -115,15 +93,10 @@ function clearTokensForUserKey(userKey) {
   if (paths) clearSecureJson(paths.file);
 }
 
-/** Borra restos de tokens en rutas legacy/anonymous (usado al vincular sesión a un usuario). */
 function clearTokensLegacyPaths() {
   clearSecureJson('autoimg/anonymous/tokens.json');
   clearSecureJson('autoimg-tokens.json');
 }
-
-// ---------------------------------------------------------------------------
-// SECCIÓN USER-SCOPED — sheet config
-// ---------------------------------------------------------------------------
 
 function _sheetPaths() {
   return {
@@ -133,7 +106,6 @@ function _sheetPaths() {
 }
 
 function loadSheetConfig() {
-  // Sin usuario activo: no devolver sheet de nadie
   if (!getActiveUserKey()) {
     return { sheet_id: '', name: '' };
   }
@@ -147,7 +119,6 @@ function loadSheetConfig() {
 
 function saveSheetConfig(sheet_id, name = '') {
   if (!getActiveUserKey()) {
-    // No guardar sheet sin usuario (evita archivo anonymous compartido)
     return;
   }
   const id = String(sheet_id || '').trim();
@@ -166,10 +137,6 @@ function clearSheetConfig() {
   const { file } = _sheetPaths();
   clearSecureJson(file);
 }
-
-// ---------------------------------------------------------------------------
-// SECCIÓN USER-SCOPED — prefs locales (carpetas de scan + destino de renombre)
-// ---------------------------------------------------------------------------
 
 function _prefsPaths() {
   return {
@@ -259,10 +226,8 @@ function clearLocalPrefs() {
 }
 
 module.exports = {
-  // global
   loadOAuthConfigFromDisk,
   saveOAuthConfig,
-  // tokens
   loadTokens,
   saveTokens,
   clearTokens,
@@ -270,11 +235,9 @@ module.exports = {
   saveTokensForUserKey,
   clearTokensForUserKey,
   clearTokensLegacyPaths,
-  // sheet
   loadSheetConfig,
   saveSheetConfig,
   clearSheetConfig,
-  // prefs
   loadLocalPrefs,
   saveLocalPrefs,
   saveLocalFolders,

@@ -92,7 +92,6 @@ export function hexToMappingColor(hex: string): { color_r: number; color_g: numb
   };
 }
 
-/** Matches backend visual_overlay baseline: pdf_y = pageHeight - y - font_size */
 export function mappingTextTopPercent(y: number, fontSize: number, pageHeight: number): string {
   const baselineFromTop = y + fontSize;
   const ascenderRatio = 0.718;

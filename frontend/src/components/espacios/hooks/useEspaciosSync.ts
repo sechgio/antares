@@ -92,10 +92,8 @@ export function useEspaciosSync(userId: string | undefined) {
   const [activeEspacioId, setActiveEspacioId] = useState<string | null>(null);
   const [activeProyectoId, setActiveProyectoId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  /** True while fetchTareas is in flight for the active project (avoids empty-state flash). */
   const [tareasLoading, setTareasLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** Non-fatal nested load errors (proyectos/tareas/columns) for UI toast. */
   const [warning, setWarning] = useState<string | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('idle');
   const proyectosRequestRef = useRef(0);
@@ -104,7 +102,6 @@ export function useEspaciosSync(userId: string | undefined) {
   const reloadAllRequestRef = useRef(0);
   const activeEspacioIdRef = useRef<string | null>(null);
   const activeProyectoIdRef = useRef<string | null>(null);
-  /** Soft-deleted task ids waiting for undo timer / hard delete commit. */
   const pendingDeleteIdsRef = useRef<Set<string>>(new Set());
   const prefs = useRef(readEspaciosPrefs());
 
@@ -161,7 +158,6 @@ export function useEspaciosSync(userId: string | undefined) {
     try {
       const data = await fetchTareas(proyectoId);
       if (requestId !== tareasRequestRef.current) return data;
-      // Never re-inject soft-deleted tasks while undo window is open.
       const pending = pendingDeleteIdsRef.current;
       setTareas(pending.size ? data.filter((t) => !pending.has(t.id)) : data);
       setWarning(null);
@@ -183,7 +179,6 @@ export function useEspaciosSync(userId: string | undefined) {
 
   const reloadAll = useCallback(async () => {
     const requestId = ++reloadAllRequestRef.current;
-    // Supersede any in-flight nested loads started before this reload.
     proyectosRequestRef.current = requestId;
     tareasRequestRef.current = requestId;
     columnsRequestRef.current = requestId;
@@ -263,12 +258,9 @@ export function useEspaciosSync(userId: string | undefined) {
       setTareasLoading(false);
       return;
     }
-    // Clear nested data immediately so UI never shows stale proyecto/tareas.
     setTareas([]);
     setBoardColumns([]);
     void loadProyectos(activeEspacioId).catch((err) => {
-      // Nested load failures must not replace the whole Espacios screen with a
-      // fatal error — keep the sidebar usable and surface a non-blocking warning.
       const message = errorMessage(err, 'Error al cargar proyectos');
       console.error('[espacios] loadProyectos failed:', message);
       if (activeEspacioIdRef.current === activeEspacioId) {
@@ -349,7 +341,6 @@ export function useEspaciosSync(userId: string | undefined) {
           const tarea = row ?? old;
           if (!isTareaRow(tarea)) return;
           if (tarea.proyecto_id !== activeProyectoId && eventType !== 'DELETE') return;
-          // Soft-deleted tasks must stay hidden until undo or hard commit.
           if (eventType !== 'DELETE' && pendingDeleteIdsRef.current.has(tarea.id)) return;
           setTareas((prev) => mergeById(prev, tarea, eventType));
         }
@@ -404,7 +395,6 @@ export function useEspaciosSync(userId: string | undefined) {
       return [...prev, proyecto].sort((a, b) => a.name.localeCompare(b.name));
     });
     setActiveProyectoId(proyecto.id);
-    // Reconcile: supersede any in-flight load that started before this create.
     void loadProyectos(activeEspacioId).catch((err) => {
       console.error('[espacios] reconcile loadProyectos failed:', errorMessage(err, 'Error al cargar proyectos'));
     });
@@ -425,7 +415,6 @@ export function useEspaciosSync(userId: string | undefined) {
       }
       setTareas((prev) => (prev.some((t) => t.id === tarea.id) ? prev : [...prev, tarea]));
       emitDueNotificationsInvalidate();
-      // Reconcile: supersede any in-flight load that started before this create.
       void loadTareas(proyectoId).catch((err) => {
         console.error('[espacios] reconcile loadTareas failed:', errorMessage(err, 'Error al cargar tareas'));
       });
@@ -455,7 +444,6 @@ export function useEspaciosSync(userId: string | undefined) {
     }
   }, [activeProyectoId, loadTareas]);
 
-  /** Local-only remove (for undoable delete). Pair with commitDeleteTarea / restoreTarea. */
   const softRemoveTarea = useCallback((id: string) => {
     pendingDeleteIdsRef.current.add(id);
     setTareas((prev) => prev.filter((t) => t.id !== id));
@@ -464,8 +452,6 @@ export function useEspaciosSync(userId: string | undefined) {
 
   const restoreTarea = useCallback((tarea: Tarea) => {
     pendingDeleteIdsRef.current.delete(tarea.id);
-    // Only re-inject into the UI when viewing the task's project (avoid
-    // painting a project-A task into project B after a space switch).
     if (activeProyectoIdRef.current && tarea.proyecto_id !== activeProyectoIdRef.current) {
       return;
     }
@@ -504,7 +490,6 @@ export function useEspaciosSync(userId: string | undefined) {
         }
         return [...prev, column].sort((a, b) => a.sort_order - b.sort_order);
       });
-      // Reconcile: supersede any in-flight load that started before this create.
       void loadBoardColumns(proyectoId).catch((err) => {
         console.error(
           '[espacios] reconcile loadBoardColumns failed:',
@@ -525,7 +510,6 @@ export function useEspaciosSync(userId: string | undefined) {
       );
       try {
         await updateBoardColumn(id, patch);
-        // is_done changes affect which statuses count as open for due notifications.
         if (patch.is_done !== undefined) emitDueNotificationsInvalidate();
       } catch (err) {
         if (activeProyectoId) await loadBoardColumns(activeProyectoId);

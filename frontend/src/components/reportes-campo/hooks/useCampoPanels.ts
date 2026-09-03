@@ -31,7 +31,6 @@ export function createEmptyPanel(config: ReportTypeConfig): CampoPanel {
 }
 
 const SAVE_DEBOUNCE_MS = 400;
-/** Style tweaks (size/color) shouldn't thrash IndexedDB with full photo blobs. */
 const STYLE_SAVE_DEBOUNCE_MS = 900;
 
 export interface CampoPanelsSelectionState {
@@ -98,7 +97,6 @@ export function useCampoPanels(config: ReportTypeConfig): CampoPanelsHookResult 
         [panels, selectedPanelId],
     );
 
-    // Refs para evitar closures obsoletas entre renders y cargas async.
     const panelsRef = useRef(panels);
     useEffect(() => {
         panelsRef.current = panels;
@@ -110,7 +108,6 @@ export function useCampoPanels(config: ReportTypeConfig): CampoPanelsHookResult 
 
     const loadedTypeRef = useRef<string | null>(null);
     const saveTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-    /** Panel ids with a pending debounced write (may outlive the timer map briefly). */
     const dirtyIdsRef = useRef<Set<string>>(new Set());
 
     const cancelPendingSave = useCallback((id: string) => {
@@ -126,7 +123,6 @@ export function useCampoPanels(config: ReportTypeConfig): CampoPanelsHookResult 
         void savePanel(panelToStored(panel, type));
     }, []);
 
-    /** Flush debounced writes immediately (tab switch / unmount / type change). */
     const flushPendingSaves = useCallback((type: ReportTypeConfig['id'] = reportTypeRef.current) => {
         const ids = new Set<string>([
             ...saveTimersRef.current.keys(),
@@ -147,26 +143,21 @@ export function useCampoPanels(config: ReportTypeConfig): CampoPanelsHookResult 
         cancelPendingSave(panel.id);
         const timer = setTimeout(() => {
             saveTimersRef.current.delete(panel.id);
-            // Read latest panel from ref so rapid style edits only write once.
             const latest = panelsRef.current.find((p) => p.id === panel.id) ?? panel;
             persistPanelNow(latest, reportTypeRef.current);
         }, debounceMs);
         saveTimersRef.current.set(panel.id, timer);
     }, [cancelPendingSave, persistPanelNow]);
 
-    // Carga por plantilla: al montar y al cambiar de tipo (config.id).
-    // Reemplaza al resetSession() que antes borraba todo al cambiar de plantilla.
     useEffect(() => {
         const type = reportType;
         const firstRun = loadedTypeRef.current === null;
 
-        // En el primer run, si el usuario ya editó el seed, no lo pisamos.
         if (firstRun) {
             loadedTypeRef.current = type;
         } else if (loadedTypeRef.current === type) {
             return;
         } else {
-            // Flush under the previous template id before swapping panels.
             flushPendingSaves(loadedTypeRef.current as ReportTypeConfig['id']);
             loadedTypeRef.current = type;
         }
@@ -177,11 +168,6 @@ export function useCampoPanels(config: ReportTypeConfig): CampoPanelsHookResult 
             if (cancelled) return;
 
             if (stored.length === 0) {
-                // Sin hojas guardadas para este tipo:
-                //  - primer montaje: conservar el seed inicial (o trabajo del
-                //    usuario previo a la carga) sin pisarlo.
-                //  - cambio de plantilla: descartar los paneles del tipo anterior
-                //    y crear un seed nuevo.
                 if (firstRun) return;
                 panelsRef.current.forEach((panel) => revokePhotos(panel.photos));
                 const fresh = createEmptyPanel(config);
@@ -201,7 +187,6 @@ export function useCampoPanels(config: ReportTypeConfig): CampoPanelsHookResult 
         };
     }, [reportType, config, flushPendingSaves]);
 
-    // Flush pending debounced writes on unmount (tab switch drops the view).
     useEffect(() => {
         return () => {
             flushPendingSaves();
@@ -242,7 +227,6 @@ export function useCampoPanels(config: ReportTypeConfig): CampoPanelsHookResult 
                 updated = {
                     ...panel,
                     header,
-                    // Style keys don't affect the panel list label.
                     label: styleOnly ? panel.label : derivePanelLabel(header),
                 };
                 return updated;

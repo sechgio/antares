@@ -1,4 +1,3 @@
-"""Tests de handlers IPC para Panel Aviso de Corte."""
 
 from __future__ import annotations
 
@@ -134,11 +133,6 @@ def test_render_pdf_prefers_disk_backed_images(
 
 
 def test_render_pdf_handles_null_images_and_logos(monkeypatch) -> None:
-    """Regression: frontend may send `images: null` / `logos: null` / etc.
-
-    The handler must NOT crash with AttributeError on `.items()` and should
-    treat null values as empty mappings.
-    """
     captured: dict[str, object] = {}
 
     def fake_render_pdf(*, panels, logos, images, image_paths, export_mode, template_id=None):  # type: ignore[no-untyped-def]
@@ -162,17 +156,12 @@ def test_render_pdf_handles_null_images_and_logos(monkeypatch) -> None:
     assert captured["images"] == {}
     assert captured["image_paths"] == {}
     assert captured["logos"] == {"left": None, "right": None}
-    # New keys for caller to disambiguate content type, plus backward-compat
-    # `pdf_base64` alias must still be present.
     assert result["format"] == "pdf"
     assert result["mime_type"] == "application/pdf"
     assert result["pdf_base64"] == result["content_base64"]
 
 
 def test_render_docx_response_advertises_docx_format(monkeypatch) -> None:
-    """When format=docx the response must advertise the real content type
-    via `format` / `mime_type`, while keeping `pdf_base64` as legacy alias.
-    """
     def fake_render_docx(*, panels, logos, images, image_paths, export_mode, template_id=None):  # type: ignore[no-untyped-def]
         return b"PK\x03\x04docx-bytes", "panel.docx"
 
@@ -195,9 +184,6 @@ def test_render_docx_response_advertises_docx_format(monkeypatch) -> None:
 
 
 def test_render_pdf_writes_to_disk_when_output_path_given(monkeypatch, tmp_path) -> None:
-    """When output_path is provided, the handler writes the file to disk
-    and returns saved_path instead of base64-encoding the content.
-    """
     def fake_render_pdf(*, panels, logos, images, image_paths, export_mode, template_id=None):  # type: ignore[no-untyped-def]
         return b"%PDF-1.4disk-content", "panel.pdf"
 
@@ -223,9 +209,6 @@ def test_render_pdf_writes_to_disk_when_output_path_given(monkeypatch, tmp_path)
 
 
 def test_render_docx_writes_to_disk_when_output_path_given(monkeypatch, tmp_path) -> None:
-    """When output_path is provided with format=docx, the handler writes
-    the file to disk and returns saved_path instead of base64.
-    """
     def fake_render_docx(*, panels, logos, images, image_paths, export_mode, template_id=None):  # type: ignore[no-untyped-def]
         return b"PK\x03\x04docx-disk-content", "panel.docx"
 
@@ -251,9 +234,6 @@ def test_render_docx_writes_to_disk_when_output_path_given(monkeypatch, tmp_path
 
 
 def test_render_docx_resolves_write_token_saved_path(monkeypatch, tmp_path) -> None:
-    """When output_path is a write token and _resolved_output_path is provided,
-    saved_path must return the resolved physical path on disk, not the token.
-    """
     def fake_render_docx(*, panels, logos, images, image_paths, export_mode, template_id=None):  # type: ignore[no-untyped-def]
         return b"PK\x03\x04docx-token-content", "panel.docx"
 

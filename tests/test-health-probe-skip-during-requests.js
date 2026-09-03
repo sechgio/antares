@@ -1,10 +1,3 @@
-// Regression test: health probe must NOT restart the backend when there are
-// in-flight IPC requests OR recent conversion/job activity. A timeout during
-// active work is a false positive — the backend is busy, not dead.
-//
-// Job activity is marked via noteJobActivity() from ipc-router when it receives
-// process.progress / process.heartbeat / job.*.progress / job.*.heartbeat.
-// Heartbeats use the same noteJobActivity path as progress (no separate spawner API).
 const { EventEmitter } = require('events');
 const childProcess = require('child_process');
 
@@ -120,17 +113,13 @@ async function run() {
   } = require('../electron/backend-spawner.js');
 
   try {
-    // Start the backend
     await startPythonBackend(true);
     assert(getState() === 'ready', 'Backend should be ready');
     assert(getPendingRequestCount() === 0, 'No pending requests initially');
 
-    // Simulate an in-flight request
     incrementPendingRequests();
     assert(getPendingRequestCount() === 1, 'Pending count should be 1 after increment');
 
-    // Run health check — it will timeout (fake process doesn't respond to probes)
-    // but should NOT restart because there's a pending request
     await runHealthCheckOnce();
     await flushAsyncTurns(5);
 
@@ -138,13 +127,9 @@ async function run() {
     assert(spawnCount === 1, 'Should NOT have spawned a new process (spawnCount still 1)');
     assert(getHealthStatus().last_skip_reason === 'requests_in_flight', 'Health status records request-based probe skip');
 
-    // Clean up the pending request
     decrementPendingRequests();
     assert(getPendingRequestCount() === 0, 'Pending count should be 0 after decrement');
 
-    // Simulate a conversion job that already released process_start IPC but still
-    // emits progress/heartbeat — health must not kill the backend mid-batch.
-    // (ipc-router maps process.heartbeat / job.*.heartbeat to the same noteJobActivity.)
     noteJobActivity();
     assert(hasRecentJobActivity(), 'Job activity should be marked recent (progress or heartbeat)');
     await runHealthCheckOnce();
@@ -153,7 +138,6 @@ async function run() {
     assert(spawnCount === 1, 'Should NOT restart while job activity is recent');
     assert(getHealthStatus().last_skip_reason === 'job_active', 'Health status records job-based probe skip');
 
-    // Second pulse (as if another heartbeat arrived) still holds the grace window.
     noteJobActivity();
     assert(hasRecentJobActivity(), 'Repeated heartbeat/progress still marks activity recent');
     await runHealthCheckOnce();
@@ -164,7 +148,6 @@ async function run() {
     clearJobActivity();
     assert(!hasRecentJobActivity(), 'Job activity cleared');
 
-    // Now run health check with no pending requests and no job activity — SHOULD restart
     await runHealthCheckOnce();
     const restarted = await waitFor(() => spawnCount >= 2 && getState() === 'ready');
     assert(restarted, 'Backend SHOULD restart when no requests are in flight and no job activity');

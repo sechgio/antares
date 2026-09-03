@@ -10,7 +10,6 @@ interface Props {
   onSelect: (id: string) => void;
 }
 
-/** Normalize list dates: strip midnight timestamps, prefer DD/MM/YYYY. */
 function formatListDate(value: string): string {
   const raw = (value || '').trim();
   if (!raw) return '';

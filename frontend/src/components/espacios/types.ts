@@ -1,4 +1,3 @@
-/** Free-form status key matching board_columns.key (defaults: todo, in_progress, …). */
 export type TareaStatus = string;
 
 export type VistaType = 'list' | 'board' | 'table' | 'calendar' | 'gantt';

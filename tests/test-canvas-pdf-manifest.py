@@ -1,4 +1,3 @@
-"""Round-trip attachment coverage for the native CMYK Canvas exporter."""
 
 from __future__ import annotations
 

@@ -4,7 +4,6 @@ import { Check, Save } from 'lucide-react';
 
 interface SaveButtonProps {
   onSave: () => void;
-  /** Persistent "there are unsaved changes" signal (not just the transient flash). */
   dirty?: boolean;
 }
 

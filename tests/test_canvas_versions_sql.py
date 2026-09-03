@@ -1,6 +1,3 @@
-"""
-Tests for Canvas document versions SQL migration syntax & trigger definitions.
-"""
 from pathlib import Path
 
 

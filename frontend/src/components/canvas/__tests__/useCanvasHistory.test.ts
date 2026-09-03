@@ -187,14 +187,12 @@ describe('useCanvasHistory gesture coalesce', () => {
     expect(result.current.canRedo).toBe(true);
     expect(result.current.past.length).toBe(MAX_HISTORY);
     expect(result.current.future.length).toBe(1);
-    // Restored undo history alone must not mark the document unsaved.
     expect(result.current.hasUnsavedEditsRef.current).toBe(false);
 
     act(() => {
       result.current.undo();
     });
 
-    // Performing undo after restore diverges from the saved open doc.
     expect(result.current.hasUnsavedEditsRef.current).toBe(true);
     expect(parseMm(result.current.document.layers.find((l) => l.type === 'text')!.cssVars['--translate-x'])).toBe(
       35,
@@ -203,7 +201,7 @@ describe('useCanvasHistory gesture coalesce', () => {
 
   it('dramatically reduces memory footprint for history with large Base64 image layers', () => {
     const base = createEmptyDocument('RAM Test');
-    const largeValue = 'data:image/png;base64,' + 'X'.repeat(5 * 1024 * 1024); // 5 MB image
+    const largeValue = 'data:image/png;base64,' + 'X'.repeat(5 * 1024 * 1024);
     const imageLayer = createLayer('image');
     imageLayer.value = largeValue;
     imageLayer.cssVars['--translate-x'] = '0mm';
@@ -211,7 +209,6 @@ describe('useCanvasHistory gesture coalesce', () => {
 
     const { result } = renderHook(() => useCanvasHistory(base));
 
-    // Perform 20 moves on the image layer
     for (let i = 1; i <= 20; i++) {
       act(() => {
         result.current.setDocument({
@@ -227,15 +224,10 @@ describe('useCanvasHistory gesture coalesce', () => {
 
     expect(result.current.past.length).toBe(20);
 
-    // Calculate total JSON string size of past stack
     const pastJsonSize = JSON.stringify(result.current.past).length;
 
-    // 20 full document copies with a 5MB image would be > 100 MB.
-    // With structural diffs, unchanged value is NOT duplicated across history steps.
-    // Total size of 20 diffs should be well under 100 KB (102,400 bytes)!
     expect(pastJsonSize).toBeLessThan(100 * 1024);
 
-    // Verify undo still works all 20 steps back to 0mm
     act(() => {
       for (let i = 0; i < 20; i++) {
         result.current.undo();
@@ -277,14 +269,12 @@ describe('useCanvasHistory gesture coalesce', () => {
       result.current.replaceDocument(saved);
       result.current.restoreHistory(savedPast, []);
     });
-    // Post-save with restored undo stack: canUndo may be true, unsaved must be false.
     expect(result.current.canUndo).toBe(true);
     expect(result.current.hasUnsavedEditsRef.current).toBe(false);
 
     act(() => {
       result.current.undo();
     });
-    // Undo after save must mark dirty so cloud sync does not clobber memory.
     expect(result.current.hasUnsavedEditsRef.current).toBe(true);
 
     act(() => {
@@ -347,7 +337,6 @@ describe('useCanvasHistory gesture coalesce', () => {
     const steps: HistoryStepDiff[] = Array.from({ length: 10 }, (_, i) => {
       const a = createEmptyDocument(`a-${i}`);
       const b = createEmptyDocument(`b-${i}`);
-      // Stuff large payload into a field so JSON size grows.
       a.layers.push({
         ...createLayer('text'),
         value: heavy,
@@ -368,12 +357,10 @@ describe('useCanvasHistory gesture coalesce', () => {
     expect(trimmed.past.length).toBeLessThan(steps.length);
     expect(trimmed.past.length).toBeGreaterThan(0);
     expect(estimateHistoryBytes(trimmed.past)).toBeLessThanOrEqual(tinyBudget);
-    // Newest steps retained (oldest dropped first).
     expect(trimmed.past[trimmed.past.length - 1]).toBe(steps[steps.length - 1]);
   });
 
   it('estimateStepBytes caches per-step size (steps are immutable)', () => {
-    // JSON.stringify invokes toJSON; count it as a proxy for real serializations.
     const serializations = { count: 0 };
     const inner = {
       type: 'diff' as const,
@@ -441,7 +428,6 @@ describe('useCanvasHistory gesture coalesce', () => {
             l.type === 'image'
               ? {
                   ...l,
-                  // Change value each step so diffs carry large payloads.
                   value: fat + String(i),
                   cssVars: { ...l.cssVars, '--translate-x': `${i}mm` },
                 }
@@ -475,7 +461,6 @@ describe('useCanvasHistory gesture coalesce', () => {
       parseMm(result.current.document.layers.find((l) => l.type === 'image')!.cssVars['--translate-x']),
     ).toBe(beforeUndoX);
 
-    // New edit after undo clears redo and still respects budgets.
     act(() => {
       result.current.undo();
       result.current.setDocument({

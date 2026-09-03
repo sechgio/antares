@@ -38,6 +38,19 @@ function run() {
   assert(!qualityGate.includes("trySh('npm run ci"), 'quality gate cannot fail open');
 
   assert(
+    content.includes('const remoteTag = sh('),
+    'remote tag lookup must fail closed when git ls-remote fails',
+  );
+  assert(
+    content.includes('shDetailed('),
+    'GitHub release lookup must distinguish not-found from command failures',
+  );
+  assert(
+    content.includes('git fetch --dry-run origin main') && content.includes('refreshRemote'),
+    'dry-run must not mutate git refs while ship mode refreshes origin/main',
+  );
+
+  assert(
     content.includes('HEAD...origin/main') || content.includes('HEAD === origin/main'),
     'release requires local HEAD to equal origin/main'
   );

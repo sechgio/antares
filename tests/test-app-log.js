@@ -1,4 +1,3 @@
-// Smoke test de los fixes en app-log.js: limpieza segura, mkdir cacheado, symlink.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -9,8 +8,8 @@ fs.rmSync(process.env.LOCALAPPDATA, { recursive: true, force: true });
 const l = require('../electron/app-log.js');
 
 const tmp = os.tmpdir();
-const OLD = Date.now() - 2 * 24 * 60 * 60 * 1000; // hace 48h
-const FRESH = Date.now() - 60 * 1000;              // hace 1 min
+const OLD = Date.now() - 2 * 24 * 60 * 60 * 1000;
+const FRESH = Date.now() - 60 * 1000;
 
 function makeDir(name, contentMtime) {
   const p = path.join(tmp, name);
@@ -18,20 +17,15 @@ function makeDir(name, contentMtime) {
   fs.mkdirSync(p, { recursive: true });
   const f = path.join(p, 'payload.tmp');
   fs.writeFileSync(f, 'x');
-  if (contentMtime) fs.utimesSync(f, contentMtime / 1000, contentMtime / 1000); // segundos
-  fs.utimesSync(p, OLD / 1000, OLD / 1000); // dir siempre viejo
+  if (contentMtime) fs.utimesSync(f, contentMtime / 1000, contentMtime / 1000);
+  fs.utimesSync(p, OLD / 1000, OLD / 1000);
   return p;
 }
 
-// Escenario A: staging de pid INEXISTENTE con contenido viejo -> debe borrarse
 makeDir('antares-staged-99999999', OLD);
-// Escenario B: staging de pid VIVO (este proceso) con contenido viejo -> NO borrar
 makeDir(`antares-staged-${process.pid}`, OLD);
-// Escenario C: staging de pid inexistente con contenido RECIENTE -> NO borrar
 makeDir('antares-staged-88888888', FRESH);
-// Escenario D: pdf viejo -> borrarse
 makeDir('antares-pdf-x1y2z3', OLD);
-// Escenario E: backend-command viejo -> borrarse
 makeDir('antares-backend-command-abc', OLD);
 
 const removed = l.cleanStaleTempDirs();
@@ -44,7 +38,6 @@ assert(fs.existsSync(path.join(tmp, 'antares-pdf-x1y2z3')) === false, 'D: pdf vi
 assert(fs.existsSync(path.join(tmp, 'antares-backend-command-abc')) === false, 'E: backend-command viejo debe borrarse');
 console.log('cleanStaleTempDirs: 5/5 escenarios OK');
 
-// Logging normal (mkdir cacheado + symlink)
 const dir = l.initAppLogs();
 l.appendLogLine('INFO', 'linea normal con\nsalto de linea inyectado');
 const d = new Date();
@@ -57,7 +50,6 @@ assert(content.includes('linea normal con salto de linea inyectado'), 'CRLF sani
 assert(!content.includes('\n[') || content.split('\n').length === 2, 'una sola linea');
 console.log('appendLogLine + sanitización CRLF: OK');
 
-// Symlink: intentar colocar un link en lugar del log -> debe romperse y escribir plano
 try {
   fs.unlinkSync(logFile);
   fs.symlinkSync(path.join(dir, 'victima.txt'), logFile, 'file');
@@ -76,7 +68,6 @@ try {
   }
 }
 
-// Limpieza de residuos del test
 for (const name of ['antares-staged-99999999', `antares-staged-${process.pid}`, 'antares-staged-88888888', 'antares-pdf-x1y2z3', 'antares-backend-command-abc']) {
   fs.rmSync(path.join(tmp, name), { recursive: true, force: true });
 }

@@ -1,4 +1,3 @@
-/* Scoped chrome for Reportes de Campo. The printable sheet keeps its own paper colors in React. */
 
 .rcampo-app {
     --rcampo-base: var(--bg-base);
@@ -641,7 +640,6 @@
     border-bottom-color: var(--rcampo-danger);
 }
 
-/* Compact title typography toolbar — sits under the title input */
 .rcampo-titulo-toolbar {
     display: inline-flex;
     align-items: center;

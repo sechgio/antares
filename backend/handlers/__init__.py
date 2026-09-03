@@ -1,16 +1,3 @@
-"""Handler modules — feature-scoped IPC handlers aggregated into a single registry.
-
-Heavy feature modules (conversion/Pillow, sellador/PyMuPDF, ubicaciones, PDF
-renderers, etc.) are imported lazily on targeted registry lookup. Backend startup
-warms a minimal core before operational ``ready``; conversion/canvas warm in a
-background thread after ready; remaining deferred modules stay lazy unless
-``ANTARES_WARM_DEFERRED=1`` eager-warms them before the handshake.
-
-Critical: resolving one method must import only that method's module. An
-eager load of every handler group on the IPC reader thread caused
-``IPC timeout: fichas_tecnicas_create`` when heavy imports exceeded the 30s
-frontend budget (common under frozen builds + antivirus).
-"""
 
 from __future__ import annotations
 
@@ -32,11 +19,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Set once the post-ready warm finishes its guarded cold imports. Requests
-# that cold-import C extensions wait on it (see backend.main._dispatch).
 WARM_CRITICAL_DONE = threading.Event()
 
-# Module paths eagerly imported by warm().
 _HANDLER_MODULES: tuple[str, ...] = (
     "backend.handlers.info",
     "backend.handlers.diagnostics",
@@ -59,10 +43,6 @@ _HANDLER_MODULES: tuple[str, ...] = (
     "backend.handlers.telemetry",
 )
 
-# Modules required before the ready handshake. Keep this list minimal: default
-# tab (previewPanel) only needs templates/catalog + light shell handlers.
-# conversion (Pillow) and canvas are warmed in a daemon thread after ready so
-# they do not block the Electron handshake.
 _CORE_HANDLER_MODULES: tuple[str, ...] = (
     "backend.handlers.info",
     "backend.handlers.diagnostics",
@@ -72,20 +52,17 @@ _CORE_HANDLER_MODULES: tuple[str, ...] = (
     "backend.handlers.templates",
 )
 
-# Common next-use modules: warm in background after ready (not on handshake).
 _POST_READY_HANDLER_MODULES: tuple[str, ...] = (
     "backend.handlers.canvas",
     "backend.handlers.conversion",
 )
 
-# Feature modules warmed after core when ANTARES_WARM_DEFERRED=1; otherwise lazy.
 _DEFERRED_HANDLER_MODULES: tuple[str, ...] = tuple(
     m
     for m in _HANDLER_MODULES
     if m not in _CORE_HANDLER_MODULES and m not in _POST_READY_HANDLER_MODULES
 )
 
-# Exact method → module for names that do not follow a feature prefix.
 _EXACT_MODULE: dict[str, str] = {
     "version": "backend.handlers.info",
     "formats": "backend.handlers.info",
@@ -95,7 +72,6 @@ _EXACT_MODULE: dict[str, str] = {
     "process_start": "backend.handlers.conversion",
     "process_status": "backend.handlers.conversion",
     "process_cancel": "backend.handlers.conversion",
-    "db_detect_key_column": "backend.handlers.conversion",
     "generar_ubicaciones": "backend.handlers.ubicaciones",
     "preview_ubicacion": "backend.handlers.ubicaciones",
     "template_get": "backend.handlers.templates",
@@ -105,7 +81,6 @@ _EXACT_MODULE: dict[str, str] = {
     "telemetry": "backend.handlers.telemetry",
 }
 
-# Longest-prefix-first feature routing (checked after exact matches).
 _PREFIX_MODULE: tuple[tuple[str, str], ...] = (
     ("fichas_tecnicas_", "backend.handlers.fichas_tecnicas"),
     ("informes_v2_", "backend.handlers.informes_v2"),
@@ -136,7 +111,6 @@ def _module_for_method(method: str) -> str | None:
 
 
 class HandlerRegistry:
-    """Dict-like registry that loads one handler module per resolved method."""
 
     def __init__(self) -> None:
         self._map: dict[str, Callable[[dict[str, Any]], Any]] = {}
@@ -153,7 +127,6 @@ class HandlerRegistry:
             return lock
 
     def _load_module(self, mod_name: str) -> None:
-        """Import one handler module. Safe under concurrent callers."""
         with self._lock:
             if mod_name in self._loaded_modules:
                 return
@@ -161,9 +134,6 @@ class HandlerRegistry:
             with self._lock:
                 if mod_name in self._loaded_modules:
                     return
-            # Serialized with other cold imports: a C-extension load racing
-            # another one can deadlock the process on Windows (Python import
-            # lock x loader lock), e.g. Pillow here vs numpy in db_import.
             with serialized_import():
                 mod = importlib.import_module(mod_name)
             group = mod.HANDLERS
@@ -172,7 +142,6 @@ class HandlerRegistry:
                 self._loaded_modules.add(mod_name)
 
     def warm(self, modules: tuple[str, ...] | None = None) -> None:
-        """Eagerly load handler modules. Default: all. Prefer warm_core + warm_deferred at boot."""
         for mod_name in modules if modules is not None else _HANDLER_MODULES:
             try:
                 self._load_module(mod_name)
@@ -181,21 +150,9 @@ class HandlerRegistry:
         logger.info("Handler registry warmed (%d methods)", len(self._map))
 
     def warm_core(self) -> None:
-        """Load modules needed before the ready handshake (catalog + light shell)."""
         self.warm(_CORE_HANDLER_MODULES)
 
     def warm_pandas_sync(self) -> None:
-        """Pre-import pandas/openpyxl on the MAIN thread before the ready handshake.
-
-        A cold ``import pandas`` in the heavy worker serializes behind the
-        post-ready daemon's import chain via Python's global import lock:
-        measured at ~122 s for the first ``db_import`` (worker waited on
-        ``serialized_import`` while the warm thread loaded numpy's DLL).
-        Importing pandas/openpyxl synchronously before ``ready`` costs
-        ~2-3 s of startup but makes the first db_import hit ``sys.modules``
-        instead of the lock. Failures are non-fatal - the lazy import in
-        ``importar_excel`` still retries with its own error message.
-        """
         try:
             with serialized_import():
                 import openpyxl  # noqa: F401
@@ -206,39 +163,19 @@ class HandlerRegistry:
             logger.exception("pandas/openpyxl pre-ready warm failed")
 
     def warm_post_ready(self) -> None:
-        """Load canvas + conversion after ready so first convert/canvas use is warm.
-
-        Every cold-import block runs under ``serialized_import()``: two threads
-        loading C extensions at once can deadlock the process on Windows
-        (Python import lock x Windows loader lock). Failures are non-fatal.
-
-        History schema is off the critical path: background ThreadPoolExecutor
-        so first ``canvas_list`` (light, no WARM_CRITICAL_DONE wait) never
-        contends the ``serialized_import`` lock for ~180 ms DDL
-        (179.9 ms vs 3.6 ms via ANTARES_IPC_TELEMETRY).
-        """
-        # pandas/openpyxl already pre-imported in warm_pandas_sync before ready;
-        # never touch them here (would re-contend the 122 s guard).
         try:
             with serialized_import():
                 self.warm(_POST_READY_HANDLER_MODULES)
         except Exception:
             logger.exception("canvas/conversion post-ready warm failed")
-        # WeasyPrint: import under guard (cold cliff), render outside.
         write_pdf_sanitized: Callable[[str], bytes] | None = None
         try:
             with serialized_import():
                 from backend.utils.pdf_html import write_pdf_sanitized
         except Exception:
             logger.exception("WeasyPrint import warm failed")
-        # Release cold-import waiters (db_import, renders, preview …).
         WARM_CRITICAL_DONE.set()
-        # Formatos core (pypdf) costs ~770 ms on cold import; the first
-        # formatos_list/render used to pay it on the IPC path. Warm it after
-        # WARM_CRITICAL_DONE so critical waiters are released first.
         self._warm_formatos_core()
-        # History warm off critical path: import under guard, DDL outside.
-        # Runs concurrently with WeasyPrint render (seconds, no guard).
         try:
             def _warm_history_bg() -> None:
                 try:
@@ -263,16 +200,9 @@ class HandlerRegistry:
                 logger.exception("WeasyPrint post-ready warm failed")
 
     def warm_deferred(self) -> None:
-        """Load remaining feature modules (opt-in via ANTARES_WARM_DEFERRED)."""
         self.warm(_DEFERRED_HANDLER_MODULES)
 
     def _warm_formatos_core(self) -> None:
-        """Pre-import backend.core.formatos (pulls pypdf, ~770 ms cold).
-
-        Runs in warm_post_ready AFTER WARM_CRITICAL_DONE so critical waiters
-        are released first. Failures are non-fatal: formatos handlers lazy-
-        import the module per call and still work (paying the cold cost).
-        """
         try:
             with serialized_import():
                 import backend.core.formatos  # noqa: F401
@@ -293,17 +223,10 @@ class HandlerRegistry:
             return self._map.get(key, default)
 
     def get_loaded(self, key: str, default: Any = None) -> Any:
-        """Devuelve el handler SOLO si su módulo ya está cargado (sin importar).
-
-        El reader de IPC usa esto: los módulos deferred (ubicaciones, sellador,
-        …) se resuelven en el worker — un import de ~120-450 ms no debe
-        congelar el thread que atiende health probes y demás mensajes.
-        """
         with self._lock:
             return self._map.get(key, default)
 
     def is_known(self, method: str) -> bool:
-        """True si el método pertenece a un módulo registrado, cargado o no."""
         return _module_for_method(method) is not None
 
     def __contains__(self, key: object) -> bool:
@@ -340,7 +263,6 @@ class HandlerRegistry:
 
 HANDLERS = HandlerRegistry()
 
-# Backward-compatible aliases for tests
 _state = process_state
 _reset_state = reset_state
 

@@ -1,21 +1,9 @@
-"""Tests for `backend.core.formatos.delete_format` and related safety invariants.
-
-Covers the BP-ALTO-4 regression (deleting a builtin format must NOT remove
-its read-only .b64 distribution file) and the BP-CRÍTICO-2 sanitisation
-guard in `add_uploaded_format`.
-"""
 from __future__ import annotations
 
 from backend.core import formatos
 
 
 def test_delete_format_disables_builtin_without_removing_b64_file(monkeypatch, tmp_path) -> None:
-    # Regression guard for BP-ALTO-4: `delete_format` on a builtin used to
-    # call `os.remove(_resolve_path(entry))` on the read-only .b64 file in
-    # the distribution `formatos/` directory. After disable, re-enabling
-    # the builtin would then raise FileNotFoundError because the file was
-    # gone. delete_format must only flip `enabled=False` for builtins and
-    # leave the file on disk untouched.
     builtin_b64 = tmp_path / "builtin.b64"
     builtin_b64.write_text("JVBERi0=", encoding="ascii")
 
@@ -44,27 +32,19 @@ def test_delete_format_disables_builtin_without_removing_b64_file(monkeypatch, t
 
     def spy_remove(path):
         removed_paths.append(str(path))
-        # Don't actually remove — we want to assert it was never called
-        # for the builtin .b64 file.
 
     monkeypatch.setattr(formatos.os, "remove", spy_remove)
 
     result = formatos.delete_format("builtin-test")
 
     assert result is True
-    # The builtin file MUST still exist — delete_format must not touch it.
     assert builtin_b64.exists()
-    # And os.remove must not have been called at all for builtins.
     assert removed_paths == []
-    # The entry stays in _formats but is disabled.
     assert formatos._formats["builtin-test"]["enabled"] is False
-    # Clean up the monkeypatched os.remove so other tests aren't affected.
     monkeypatch.setattr(formatos.os, "remove", real_remove)
 
 
 def test_delete_format_removes_uploaded_file_and_drops_entry(monkeypatch, tmp_path) -> None:
-    # Uploaded formats DO own a file in _UPLOADS_DIR, so delete_format
-    # must remove both the file and the catalog entry.
     uploads_dir = tmp_path / "uploads"
     uploads_dir.mkdir()
     uploaded_pdf = uploads_dir / "upload-abc.pdf"
@@ -93,7 +73,6 @@ def test_delete_format_removes_uploaded_file_and_drops_entry(monkeypatch, tmp_pa
     result = formatos.delete_format("upload-abc")
 
     assert result is True
-    # The uploaded file is gone and the entry is dropped from the catalog.
     assert not uploaded_pdf.exists()
     assert "upload-abc" not in formatos._formats
 

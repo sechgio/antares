@@ -28,7 +28,6 @@ function readDraft(): { selectedId: string | null; formData: FichaTecnica | null
     if (!raw) return { selectedId: null, formData: null };
     const parsed = JSON.parse(raw) as { selectedId?: string | null; formData?: FichaTecnica | null };
     const formData = parsed.formData ? normalizeFicha(parsed.formData) : null;
-    // Ignore empty placeholder drafts without id
     if (formData && !formData.id) {
       return { selectedId: null, formData: null };
     }
@@ -82,7 +81,6 @@ export default function FichasTecnicasApp() {
 
   const withBusy = useCallback(
     async (fn: () => Promise<void>, fallbackError: string) => {
-      // Nested/overlapping calls must not clear busy while a later op still runs.
       busyCountRef.current += 1;
       setBusy(true);
       try {

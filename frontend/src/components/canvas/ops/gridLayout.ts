@@ -9,7 +9,6 @@ export const DEFAULT_GRID_RULES: GridRule[] = [
   { whenImages: 9, cols: 3, rows: 3 },
 ];
 
-/** Hard cap so panel typos (e.g. cols=999) cannot freeze the editor. */
 export const MAX_GRID_DIM = 12;
 export const MIN_GRID_CELL_MM = 2;
 
@@ -27,7 +26,6 @@ export function resolveGridLayout(
   return fallback;
 }
 
-/** Normalize relative track weights to `count` positive numbers (default equal). */
 export function normalizeTracks(tracks: number[] | undefined, count: number): number[] {
   const n = Math.max(0, count);
   if (n === 0) return [];
@@ -48,7 +46,6 @@ function sizesFromTracks(tracks: number[], available: number, minMm: number): nu
   const usable = Math.max(minTotal, available);
   const sum = tracks.reduce((a, b) => a + b, 0) || tracks.length;
   const raw = tracks.map((t) => (t / sum) * usable);
-  // Enforce minimums, then redistribute leftover among tracks above min.
   const sizes = raw.map((s) => Math.max(minMm, s));
   let overflow = sizes.reduce((a, b) => a + b, 0) - usable;
   if (overflow <= 1e-9) return sizes;
@@ -112,7 +109,6 @@ function gridChildSlots(layers: CanvasLayer[], gridLayerId: string): CanvasLayer
     .sort((a, b) => (a.meta?.index ?? 0) - (b.meta?.index ?? 0));
 }
 
-/** True when panel edits to cols/rows/gapMm require rebuilding child slots. */
 export function gridSlotLayoutMetaChanged(
   prev: CanvasLayer['meta'] | undefined,
   next: CanvasLayer['meta'] | undefined,
@@ -124,7 +120,6 @@ export function gridSlotLayoutMetaChanged(
   );
 }
 
-/** Apply a live panel layer edit; rebuilds grid children only when layout meta changes. */
 export function applyLivePanelLayerChange(
   layers: CanvasLayer[],
   prev: CanvasLayer | undefined,
@@ -159,10 +154,6 @@ function createGridImageSlot(gridId: string, pageIndex: number, index: number): 
   };
 }
 
-/**
- * Sync child image slots to cols×rows and relayout.
- * Used when the user edits Cols / Rows / Gap in the properties panel.
- */
 export function rebuildGridSlots(layers: CanvasLayer[], gridLayerId: string): CanvasLayer[] {
   const grid = layers.find((l) => l.id === gridLayerId && l.type === 'grid');
   if (!grid) return layers;
@@ -185,7 +176,6 @@ export function rebuildGridSlots(layers: CanvasLayer[], gridLayerId: string): Ca
     next = [...next, ...added];
   }
 
-  // Keep track array lengths in sync with cols/rows (pad/truncate; don't force equal).
   const colTracks = normalizeTracks(grid.meta?.colTracks, cols);
   const rowTracks = normalizeTracks(grid.meta?.rowTracks, rows);
   next = next.map((l) =>
@@ -222,8 +212,6 @@ export function applyGridToImageSlots(
     cols: clampGridDim(grid.meta?.cols ?? 2),
     rows: clampGridDim(grid.meta?.rows ?? 2),
   };
-  // Adaptive rules only when generating/exporting with a known image count.
-  // In the editor, respect the designed cols × rows from meta.
   const { cols, rows } =
     imageCount != null && imageCount > 0
       ? resolveGridLayout(imageCount, rules, fallback)
@@ -247,7 +235,6 @@ export function applyGridToImageSlots(
 
   return layers.map((layer) => {
     if (layer.id === gridLayerId) {
-      // Persist normalized dims/tracks so later edits stay consistent.
       return {
         ...layer,
         meta: {
@@ -280,11 +267,6 @@ export function applyGridToImageSlots(
   });
 }
 
-/**
- * Make every cell in the parent grid match the source slot's w×h.
- * Keeps gapMm; never shrinks the grid frame (grows only if cells need more room).
- * When the frame is larger than the cell block, centers the block inside it.
- */
 export function matchGridSlotsToSourceSize(
   layers: CanvasLayer[],
   sourceSlotId: string,
@@ -307,7 +289,6 @@ export function matchGridSlotsToSourceSize(
 
   const contentW = cellW * cols + gapMm * Math.max(cols - 1, 0);
   const contentH = cellH * rows + gapMm * Math.max(rows - 1, 0);
-  // Never shrink the outer frame — only grow when cells no longer fit.
   const gridW = Math.max(currentW, contentW);
   const gridH = Math.max(currentH, contentH);
   const padX = (gridW - contentW) / 2;

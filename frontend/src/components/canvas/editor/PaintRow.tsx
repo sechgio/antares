@@ -9,11 +9,8 @@ interface PaintRowProps {
   opacity: number;
   visible: boolean;
   pageColors: string[];
-  /** Apply color + opacity together (avoids race when picker updates both). */
   onPaintChange: (color: string, opacity: number) => void;
-  /** Coalesce undo after a paint interaction (picker close / field blur). */
   onPaintCommit?: () => void;
-  /** When omitted the visibility toggle is hidden (e.g. gradient stop 2). */
   onVisibleChange?: (visible: boolean) => void;
   onRemove: () => void;
 }

@@ -40,13 +40,11 @@ export function useBackendStatus(): BackendStatusResult {
       setBackendState(rawState);
       setHealth(status.health ?? null);
       if (status.lastError && rawState !== 'ready') {
-        // Only show non-scary truncated error
         setErrorMessage(status.lastError.message);
       } else {
         setErrorMessage(null);
       }
     } catch {
-      // IPC not available yet — backend is still booting or Electron not ready
       if (mountedRef.current) setBackendState('starting');
     } finally {
       isPollingRef.current = false;
@@ -55,7 +53,6 @@ export function useBackendStatus(): BackendStatusResult {
 
   useEffect(() => {
     mountedRef.current = true;
-    // Initial poll
     lastPollAtRef.current = Date.now();
     pollStatus();
     return () => {
@@ -67,8 +64,6 @@ export function useBackendStatus(): BackendStatusResult {
     backendStateRef.current = backendState;
   }, [backendState]);
 
-  // Stable interval: poll frequently while starting, less often once ready,
-  // without recreating timers whenever the state changes.
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
@@ -80,7 +75,6 @@ export function useBackendStatus(): BackendStatusResult {
     return () => clearInterval(interval);
   }, [pollStatus]);
 
-  // Listen for backend lifecycle notifications
   useEffect(() => {
     const unsub = onNotify((method, _params) => {
       if (!mountedRef.current) return;

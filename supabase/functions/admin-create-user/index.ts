@@ -95,14 +95,21 @@ Deno.serve(async (req: Request) => {
     }
 
     if (body.role === "admin" && userData.user?.id) {
-      const { error: adminError } = await adminClient
-        .from("user_profiles")
-        .update({ is_admin: true })
-        .eq("user_id", userData.user.id);
+      const { error: adminError } = await userClient.rpc("admin_set_admin", {
+        p_user_id: userData.user.id,
+        p_is_admin: true,
+      });
       if (adminError) {
+        const { error: cleanupError } = await adminClient.auth.admin.deleteUser(userData.user.id);
         return new Response(
-          JSON.stringify({ error: adminError.message, user: userData.user }),
-          { status: 400, headers: { ...cors, "Content-Type": "application/json" } },
+          JSON.stringify({
+            error: adminError.message,
+            ...(cleanupError ? { cleanup_error: cleanupError.message } : {}),
+          }),
+          {
+            status: cleanupError ? 500 : 400,
+            headers: { ...cors, "Content-Type": "application/json" },
+          },
         );
       }
     }

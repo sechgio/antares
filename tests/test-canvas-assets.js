@@ -1,4 +1,3 @@
-// Canvas assets on disk (no base64 through IPC).
 const assert = require('assert');
 const fs = require('fs');
 const fsp = fs.promises;
@@ -26,7 +25,6 @@ async function main() {
   const diskPath = path.join(assetsDir(), first.asset_id);
   assert.ok(fs.existsSync(diskPath));
 
-  // Cleanup this test asset only
   await fsp.rm(diskPath, { force: true });
 
   console.log('  ✓ canvas asset put/get + sha256 dedupe');

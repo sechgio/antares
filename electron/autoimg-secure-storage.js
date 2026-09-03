@@ -30,7 +30,6 @@ function _deriveKey(namespace) {
   return crypto.createHash('sha256').update(seed).digest();
 }
 
-/** Legacy AES-GCM (v1). Used when Electron safeStorage is unavailable (tests/headless). */
 function encryptPayloadAes(namespace, payload) {
   const iv = crypto.randomBytes(12);
   const key = _deriveKey(namespace);
@@ -88,7 +87,6 @@ function readSecureJson(filename, namespace) {
     if (raw?.data && typeof raw.data === 'string') {
       const version = Number(raw.v) === 2 ? 2 : 1;
       const payload = decryptPayload(namespace, raw.data, version);
-      // Migrate legacy AES envelopes to OS-backed storage when available.
       if (version === 1 && _safeStorageAvailable()) {
         try {
           writeSecureJson(filename, namespace, payload);
@@ -128,7 +126,6 @@ function clearSecureJson(filename) {
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 }
 
-/** Migra un JSON legible en disco a formato cifrado y borra el secreto en claro. */
 function migratePlaintextJson(filename, namespace, isPlaintext) {
   const filePath = userDataPath(filename);
   if (!fs.existsSync(filePath)) return false;
@@ -148,7 +145,6 @@ module.exports = {
   writeSecureJson,
   clearSecureJson,
   migratePlaintextJson,
-  // AES helpers kept for unit tests that exercise the fallback path.
   encryptPayload: encryptPayloadAes,
   decryptPayload: decryptPayloadAes,
   _safeStorageAvailable,

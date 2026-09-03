@@ -1,9 +1,5 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
-// Resolve the IPC allowlist. Under sandbox: true the preload cannot
-// `require('./ipc-methods')`, so the main process injects the list via
-// webPreferences.additionalArguments. We fall back to requiring the shared
-// module for non-sandboxed contexts and Node-based integration tests.
 function resolveAllowedMethods() {
   const prefix = '--allowed-ipc-methods=';
   const argv = Array.isArray(process.argv) ? process.argv : [];
@@ -12,7 +8,6 @@ function resolveAllowedMethods() {
     try {
       return new Set(JSON.parse(arg.slice(prefix.length)));
     } catch {
-      /* fall through to the shared-module fallback */
     }
   }
   try {
@@ -29,7 +24,6 @@ function reportRendererError(payload) {
   try {
     ipcRenderer.send('renderer-error', payload);
   } catch {
-    // Error reporting is best-effort and must not affect the renderer.
   }
 }
 
@@ -47,16 +41,9 @@ function reportRendererEvent(event, fields, level) {
   try {
     ipcRenderer.send('renderer-event', { event, fields, level });
   } catch {
-    // Event reporting is best-effort and must not affect the renderer.
   }
 }
 
-// NODE_ENV no es confiable en apps empaquetadas (Electron no lo setea por
-// defecto, así que los logs debug aparecían en producción). El marcador fiable
-// es `app.isPackaged`, pero el preload corre con sandbox: true y no tiene
-// acceso a `app` ni a `__dirname`, así que el main lo inyecta vía
-// additionalArguments (mismo canal que la allowlist). En contextos no
-// sandboxed (tests Node) sin la inyección, se cae al marcador asar.
 function resolveIsPackaged() {
   const prefix = '--app-is-packaged=';
   const argv = Array.isArray(process.argv) ? process.argv : [];
@@ -78,18 +65,12 @@ if (isDev) {
 try {
   contextBridge.exposeInMainWorld('electronAPI', {
     invoke: (method, params = {}) => {
-      // Always forward to the main process. The real security gate lives in
-      // ipc-router (which re-reads ipc-methods.js in unpackaged/dev builds).
-      // A stale preload allowlist (window created before new methods were added)
-      // used to reject valid methods before main could allow them — that broke
-      // tools like fichas_tecnicas_* after Vite HMR without a full Electron restart.
       if (typeof method !== 'string' || !method) {
         return Promise.reject(new Error('IPC method not allowed: invalid method name.'));
       }
       if (!isDev && ALLOWED_RENDERER_METHODS.size > 0 && !ALLOWED_RENDERER_METHODS.has(method)) {
         return Promise.reject(new Error(`IPC method not allowed: ${method}`));
       }
-      // Soft warn for unknown methods in dev when we still have an injected list.
       if (ALLOWED_RENDERER_METHODS.size > 0 && !ALLOWED_RENDERER_METHODS.has(method) && isDev) {
         console.warn(
           `[preload] method "${method}" not in window-create allowlist; forwarding to main (may require Electron restart if main is also stale)`,
@@ -117,17 +98,10 @@ try {
       ipcRenderer.on('auto-update-status', listener);
       return () => ipcRenderer.removeListener('auto-update-status', listener);
     },
-    // Electron 32+ removed File.path; webUtils.getPathForFile is the
-    // supported way to resolve a File from <input> or drop events to an
-    // absolute filesystem path. Exposed here because the renderer runs with
-    // contextIsolation and cannot import electron modules directly.
     getPathForFile: (file) => {
       try {
         const resolvedPath = webUtils.getPathForFile(file) || '';
         if (resolvedPath) {
-          // File-derived paths (file inputs / drag-drop) are registered through
-          // a private authenticated channel. Registration is best-effort and
-          // never changes the caller's path-resolution behavior.
           registerFileInputPath(resolvedPath);
         }
         return resolvedPath;
@@ -139,7 +113,6 @@ try {
     canvasFlushAck: () => ipcRenderer.invoke('canvas-flush-ack'),
     registerLocalPath: (filePath) => ipcRenderer.invoke('ipc-call', 'register_local_path', { path: filePath }),
     fileStagedCreate: (name, size) => ipcRenderer.invoke('ipc-call', 'file_staged_create', { name, size }),
-    // Prefer ArrayBuffer/Uint8Array (no base64). Strings still sent as chunk_b64 for legacy.
     fileStagedAppend: (token, chunk) => {
       if (typeof chunk === 'string') {
         return ipcRenderer.invoke('ipc-call', 'file_staged_append', { token, chunk_b64: chunk });

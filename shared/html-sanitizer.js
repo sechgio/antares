@@ -1,16 +1,3 @@
-/**
- * Shared HTML sanitizer for PDF rendering (Electron main + renderer).
- * Strips active content and external resource URLs before printToPDF.
- *
- * This is a defense-in-depth layer. The authoritative guard against
- * external resources is the webRequest interceptor in dialog-handlers.js
- * (which now covers both HTTP/HTTPS schemes and the file scheme), plus
- * the CSP meta injected below. The regexes here catch the common payload
- * shapes so the rendered HTML never even attempts a blocked request.
- *
- * Exception: Google Fonts (fonts.googleapis.com / fonts.gstatic.com) are
- * allowlisted so canvas PDF export can load webfonts for WYSIWYG parity.
- */
 
 const GOOGLE_FONT_HOST_RE = /^https:\/\/fonts\.(googleapis|gstatic)\.com\//i;
 
@@ -20,9 +7,6 @@ const CSP_META =
 const PREVIEW_CSP_META =
   "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data: blob:; media-src data: blob:; connect-src 'none'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'\">";
 
-// data: URIs we consider safe to keep in CSS url() / img src. SVG is
-// intentionally excluded — `data:image/svg+xml` can carry `<script>` and
-// event handlers, and Chromium will execute them in some contexts.
 const SAFE_DATA_URI_PREFIXES = [
   'data:image/png',
   'data:image/jpeg',
@@ -43,8 +27,6 @@ function isAllowedGoogleFontUrl(url) {
 }
 
 function neutralizeUrlAttr(match, attr, quote, urlValue) {
-  // Normalize whitespace so `href=" javascript :alert(1)"` (espacio antes del
-  // colon) también se detecta; el regex captura el valor con espacios.
   const cleaned = String(urlValue).replace(/\s+/g, '').toLowerCase();
   const schemeMatch = cleaned.match(/^([a-z][a-z0-9+.-]*):/);
   const scheme = schemeMatch ? schemeMatch[1] : '';
@@ -65,7 +47,6 @@ function neutralizeUrlAttr(match, attr, quote, urlValue) {
   return match;
 }
 
-/** Keep only stylesheet/preconnect links pointing at Google Fonts hosts. */
 function stripOrKeepLink(fullTag) {
   const hrefMatch = fullTag.match(/\bhref\s*=\s*(['"])([^'"]+)\1/i)
     || fullTag.match(/\bhref\s*=\s*([^\s>]+)/i);
@@ -125,7 +106,6 @@ function sanitizeHtmlForPdf(html) {
       if (isAllowedGoogleFontUrl(urlValue)) return match;
       return "url('')";
     });
-  // Inject CSP into a real <head> tag, or prepend at the beginning of the document
   if (/(^|[\s>])<head\b([^>]*)>/i.test(stripped)) {
     return stripped.replace(/(^|[\s>])<head\b([^>]*)>/i, `$1<head$2>${CSP_META}`);
   }

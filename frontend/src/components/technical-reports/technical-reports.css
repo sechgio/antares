@@ -97,7 +97,6 @@
   letter-spacing: -0.01em;
 }
 
-/* Minimal form header */
 .tr-form-header {
   padding: 7px 10px;
   gap: 8px;
@@ -283,8 +282,6 @@
   padding: 8px 10px;
 }
 
-/* ── Fichas técnicas: panel de base de datos ───────────────────────────── */
-
 .ft-app .tr-header {
   border-bottom: none;
   background: color-mix(in srgb, var(--bg-base) 78%, transparent);
@@ -456,7 +453,6 @@
   color: var(--text-muted);
 }
 
-/* Segmented: outer 8px, pad 2px → inner 6px */
 .ft-db-filters {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -778,8 +774,6 @@
   text-wrap: pretty;
 }
 
-/* ── Fichas técnicas: auto-scale preview paper ─────────────────────────── */
-
 .ft-preview-scroll {
   container-type: inline-size;
 }
@@ -848,8 +842,6 @@
     transform: none;
   }
 }
-
-/* ── Fichas técnicas: editor (sidebar derecho) ─────────────────────────── */
 
 .ft-form.tr-panel {
   display: flex;
@@ -1445,7 +1437,6 @@
   margin: 0;
 }
 
-/* Collapsible sections */
 .tr-collapsible {
   gap: 0;
 }
@@ -1551,7 +1542,6 @@
   gap: 6px;
 }
 
-/* Checkbox option grid — fixed control column, top-aligned labels */
 .tr-check-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -1607,7 +1597,6 @@
   gap: 6px;
 }
 
-/* Compact logo chips — dual-row control, no tall dropzone */
 .tr-section-logos {
   padding: 6px 2px 8px;
   gap: 0;
@@ -1897,7 +1886,6 @@
   line-height: 1.15;
 }
 
-/* Auto-scale paper to fit preview container at any width */
 @container (max-width: 840px) {
   .tr-paper {
     zoom: 0.92;
@@ -2063,8 +2051,6 @@
   min-height: 100%;
 }
 
-/* ── Mobile tab bar (hidden on large screens) ──────────────────────────── */
-
 .tr-mobile-tabs {
   display: none;
 }
@@ -2078,14 +2064,11 @@
   }
 }
 
-/* ── Small-screen layout (tabbed panel switching) ──────────────────────── */
-
 @media (max-width: 900px) {
   .tr-header h1 {
     font-size: 15px;
   }
 
-  /* Hide button labels, keep icons only (text nodes can't be targeted directly) */
   .tr-header-actions .tr-primary:not(.tr-icon-button),
   .tr-header-actions .tr-secondary:not(.tr-icon-button) {
     font-size: 0;
@@ -2104,7 +2087,6 @@
     padding: 0 10px;
   }
 
-  /* Show tab bar */
   .tr-mobile-tabs {
     display: flex;
     align-items: stretch;
@@ -2144,7 +2126,6 @@
     border-bottom-color: var(--accent-primary);
   }
 
-  /* Switch to single-column stacked layout */
   .tr-workspace {
     display: flex;
     flex-direction: column;
@@ -2153,7 +2134,6 @@
     overflow: hidden;
   }
 
-  /* Panel switching via data-attribute */
   .tr-workspace > .tr-panel,
   .tr-workspace > .tr-database,
   .tr-workspace > .tr-preview-wrap,
@@ -2179,14 +2159,11 @@
     display: flex;
   }
 
-  /* Preview panel: remove borders in mobile layout */
   .tr-preview-wrap {
     padding: 8px;
     border-radius: 0;
   }
 }
-
-/* ── Extra-small screens ───────────────────────────────────────────────── */
 
 @media (max-width: 600px) {
   .tr-header h1 {

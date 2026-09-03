@@ -7,7 +7,7 @@ const previousLocalAppData = process.env.LOCALAPPDATA;
 const previousXdgDataHome = process.env.XDG_DATA_HOME;
 const testRoot = path.join(os.tmpdir(), `antares-renderer-observability-${process.pid}`);
 process.env.LOCALAPPDATA = testRoot;
-process.env.XDG_DATA_HOME = testRoot; // non-win32: app-log ignores LOCALAPPDATA
+process.env.XDG_DATA_HOME = testRoot;
 fs.rmSync(testRoot, { recursive: true, force: true });
 
 const { getLogsDir } = require('../electron/app-log');

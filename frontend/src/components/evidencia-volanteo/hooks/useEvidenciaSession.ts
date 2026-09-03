@@ -62,7 +62,6 @@ export interface EvidenciaSessionHookResult {
   isExporting: boolean;
   actions: EvidenciaSessionActions;
 
-  // Legacy flat accessors for backward compatibility
   title: string;
   cuadranteLabel: string;
   showCuadranteLabel: boolean;

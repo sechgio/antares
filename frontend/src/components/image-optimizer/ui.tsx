@@ -6,7 +6,6 @@ import '../../i18n';
 import { ImageItem, Toast } from './types';
 import { formatBytes } from './utils';
 
-/** Surfaces use solid theme tokens so text stays readable on any appearance preset. */
 export const glassPanelClass =
   'rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface)]';
 
@@ -22,7 +21,7 @@ const pressable =
 export type ThemeSelectOption = { value: string; label: string };
 
 const MENU_ROW_H = 28;
-const MENU_PAD_Y = 8; // py-1
+const MENU_PAD_Y = 8;
 
 type MenuBox = {
   top: number;
@@ -31,7 +30,6 @@ type MenuBox = {
   height: number;
 };
 
-/** Floating popover — fixed size on open; never clipped by parent overflow. */
 export function ThemeSelect({
   value,
   options,
@@ -107,7 +105,6 @@ export function ThemeSelect({
       if (event.key === 'Escape') close();
     };
     window.addEventListener('resize', onReposition);
-    // Only document/window scroll of ancestors — ignore events from the menu itself
     const onScroll = (event: Event) => {
       if (menuRef.current && event.target instanceof Node && menuRef.current.contains(event.target)) {
         return;

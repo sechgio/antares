@@ -1,4 +1,3 @@
-"""Ciclo de vida observable de los jobs sin exponer sus parámetros."""
 
 from __future__ import annotations
 

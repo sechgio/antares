@@ -27,16 +27,11 @@ interface TopBarProps {
   onDuplicate: () => void;
   onImportPdf?: () => void;
   importDisabled?: boolean;
-  /** Shows the persistent unsaved-changes dot on the save button. */
   dirty?: boolean;
-  /** Design-mode UI chrome lock (panels stay put). */
   uiLocked?: boolean;
   onToggleUiLock?: () => void;
-  /** When true, brand+name span matches left sidebar width so the edge aligns. */
   leftPanelOpen?: boolean;
-  /** When true, actions span matches right panel width so the edge aligns. */
   rightPanelOpen?: boolean;
-  /** Inline sync-conflict chip (TopBar chrome — never over the artboard). */
   syncConflictSlot?: ReactNode;
 }
 

@@ -1,9 +1,3 @@
-"""Shared, low-cardinality context for backend diagnostics.
-
-The backend keeps the JSON-RPC contract unchanged and emits one JSON object per
-log line. Request-specific values live in a context variable so worker threads
-can correlate logs without copying params or file paths into every call.
-"""
 
 from __future__ import annotations
 
@@ -87,7 +81,6 @@ _APP_VERSION = _safe_token(os.environ.get("ANTARES_APP_VERSION"))
 
 
 def redact_text(value: Any) -> str:
-    """Remove newlines and common secret/PII forms from human messages."""
     safe = str(value)
     for pattern, replacement in _TEXT_REDACTIONS:
         safe = pattern.sub(replacement, safe)
@@ -95,7 +88,6 @@ def redact_text(value: Any) -> str:
 
 
 def get_context() -> dict[str, Any]:
-    """Return immutable process context plus the active request correlation."""
     active = _REQUEST_CONTEXT.get() or {}
     return {
         "session_id": _SESSION_ID,
@@ -120,7 +112,6 @@ def request_context(
     job_id: str | None = None,
     operation_id: str | None = None,
 ) -> Iterator[None]:
-    """Temporarily bind safe correlation fields to the current execution."""
     previous = _REQUEST_CONTEXT.get() or {}
     current = dict(previous)
     for key, value in {
@@ -177,7 +168,6 @@ def build_event(
     fields: Mapping[str, Any] | None = None,
     **extra_fields: Any,
 ) -> dict[str, Any]:
-    """Build a redacted event without serializing request payloads."""
     context = get_context()
     record: dict[str, Any] = {
         "schema_version": 1,
@@ -207,7 +197,6 @@ def build_event(
 
 
 class JsonLogFormatter(logging.Formatter):
-    """Serialize every backend log record as one redacted JSON line."""
 
     def format(self, record: logging.LogRecord) -> str:
         message = record.getMessage()
@@ -229,7 +218,6 @@ def log_event(
     message: Any | None = None,
     **fields: Any,
 ) -> None:
-    """Emit a named structured event through the regular backend logger."""
     logger.log(
         level,
         "" if message is None else str(message),
@@ -238,11 +226,12 @@ def log_event(
 
 
 def configure_logging(stream: Any = None) -> None:
-    """Install the JSON formatter while preserving the existing log level."""
     output = stream or sys.stderr
     root = logging.getLogger()
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=output)
     root.setLevel(logging.INFO)
+    logging.getLogger("weasyprint").setLevel(logging.WARNING)
+    logging.getLogger("fontTools").setLevel(logging.WARNING)
     if not root.handlers:
         root.addHandler(logging.StreamHandler(output))
     for h in root.handlers:

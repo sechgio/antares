@@ -1,8 +1,3 @@
-"""Tests para el módulo de conversión de imágenes.
-
-Crea imágenes reales con Pillow para verificar conversiones,
-redimensiones y manejo de errores.
-"""
 
 import base64
 import io
@@ -23,7 +18,6 @@ from backend.core.format_registry import get_registry
 
 @pytest.fixture
 def imagen_rgb(tmp_path):
-    """Crea una imagen RGB de 100x100 píxeles."""
     ruta = tmp_path / "origen_rgb.png"
     img = Image.new("RGB", (100, 100), color=(255, 0, 0))
     img.save(ruta)
@@ -32,7 +26,6 @@ def imagen_rgb(tmp_path):
 
 @pytest.fixture
 def imagen_rgba(tmp_path):
-    """Crea una imagen RGBA con transparencia."""
     ruta = tmp_path / "origen_rgba.png"
     img = Image.new("RGBA", (100, 100), color=(0, 255, 0, 128))
     img.save(ruta)
@@ -87,7 +80,6 @@ class TestConvertirImagen:
             assert img.size == (50, 50)
 
     def test_mantiene_exif(self, tmp_path) -> None:
-        # Crear imagen JPEG con EXIF real mínimo válido
         origen = tmp_path / "con_exif.jpg"
         img = Image.new("RGB", (10, 10))
         exif_bytes = b"Exif\x00\x00II\x2a\x00\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00"
@@ -99,7 +91,6 @@ class TestConvertirImagen:
             assert "exif" in img.info
 
     def test_aplica_exif_transpose_when_oriented(self, tmp_path, monkeypatch) -> None:
-        """Phone photos with Orientation≠1 must bake pixels upright via exif_transpose."""
         from PIL import ImageOps
 
         from backend.core import converter
@@ -107,7 +98,7 @@ class TestConvertirImagen:
         origen = tmp_path / "oriented.jpg"
         img = Image.new("RGB", (20, 10), color=(255, 0, 0))
         exif = img.getexif()
-        exif[0x0112] = 6  # Rotate 90 CW
+        exif[0x0112] = 6
         img.save(origen, "JPEG", exif=exif)
         salida = tmp_path / "out.jpg"
 
@@ -125,7 +116,6 @@ class TestConvertirImagen:
             assert out.size == (10, 20)
 
     def test_skips_exif_transpose_when_upright(self, tmp_path, monkeypatch) -> None:
-        """Missing/Orientation=1 must not call exif_transpose (avoids no-op Image.copy)."""
         from backend.core import converter
 
         origen = tmp_path / "upright.jpg"
@@ -179,7 +169,6 @@ class TestConvertirImagen:
         assert salida.read_text(encoding="utf-8") == "TXTIMG:RGB:100x100:77"
 
     def test_escribe_via_tmp_y_replace(self, imagen_rgb, tmp_path, monkeypatch) -> None:
-        """Destination must appear via tmp + os.replace (atomic on same volume)."""
         import backend.core.converter as conv
 
         replace_calls: list[tuple[str, str]] = []
@@ -195,7 +184,6 @@ class TestConvertirImagen:
         resultado = convertir_imagen(imagen_rgb, salida, "JPEG", calidad=90)
         assert resultado == salida
         assert salida.exists()
-        # Temp opaco (mkstemp) en el mismo directorio, sin dejar residuos.
         assert not list(tmp_path.glob("*.antares-tmp"))
         assert len(replace_calls) == 1
         src, dst = replace_calls[0]
@@ -206,7 +194,6 @@ class TestConvertirImagen:
         assert Path(dst) == salida
 
     def test_ensure_dir_false_writes_when_parent_exists(self, imagen_rgb, tmp_path, monkeypatch) -> None:
-        """With ensure_dir=False, skip mkdir but still write if parent exists."""
         out_dir = tmp_path / "already_there"
         out_dir.mkdir()
         salida = out_dir / "out.jpg"
@@ -226,7 +213,6 @@ class TestConvertirImagen:
         assert salida.parent not in mkdir_calls
 
     def test_animated_gif_converts_only_first_frame(self, tmp_path) -> None:
-        """Animated GIF/WEBP sources: only the first frame is converted."""
         f0 = Image.new("RGB", (8, 8), (255, 0, 0))
         f1 = Image.new("RGB", (8, 8), (0, 255, 0))
         f2 = Image.new("RGB", (8, 8), (0, 0, 255))
@@ -251,7 +237,6 @@ class TestConvertirImagen:
 
 
 class TestFastCopy:
-    """Fast-path byte-idéntico: mismo formato + calidad alta + sin transformaciones."""
 
     def _make_jpeg(self, tmp_path, name="src.jpg", quality=95, exif: bytes | None = None):
         ruta = tmp_path / name
@@ -263,7 +248,6 @@ class TestFastCopy:
         return ruta
 
     def test_copia_byte_identica_jpeg_mismo_formato(self, tmp_path, monkeypatch) -> None:
-        """JPEG→JPEG q95 sin EXIF: copy2, sin decode+encode."""
 
 
         origen = self._make_jpeg(tmp_path)
@@ -282,7 +266,6 @@ class TestFastCopy:
         assert salida.read_bytes() == origen.read_bytes()
 
     def test_copia_byte_identica_con_alias_jpg(self, tmp_path, monkeypatch) -> None:
-        """JPG→JPEG es el mismo formato real: copia."""
 
 
         origen = self._make_jpeg(tmp_path, name="src.jpg")
@@ -300,7 +283,6 @@ class TestFastCopy:
         assert salida.read_bytes() == origen.read_bytes()
 
     def test_no_fast_path_cuando_calidad_baja(self, tmp_path, monkeypatch) -> None:
-        """q80 pide compresión real: re-encode obligatorio."""
 
 
         origen = self._make_jpeg(tmp_path, quality=95)
@@ -352,13 +334,12 @@ class TestFastCopy:
         assert save_calls, "optimize=True must re-encode"
 
     def test_no_fast_path_con_exif_y_keep_exif_false(self, tmp_path, monkeypatch) -> None:
-        """keep_exif=False + EXIF presente: el re-encode actual lo STRIPEA."""
 
 
         origen = tmp_path / "con_exif.jpg"
         img = Image.new("RGB", (10, 10))
         exif = img.getexif()
-        exif[0x010F] = "TestMake"  # EXIF real: Make tag
+        exif[0x010F] = "TestMake"
         img.save(origen, "JPEG", exif=exif)
         with Image.open(origen) as src:
             assert src.getexif(), "fixture must carry parseable EXIF"
@@ -377,13 +358,12 @@ class TestFastCopy:
             assert "exif" not in out.info
 
     def test_fast_path_con_exif_y_keep_exif_true(self, tmp_path, monkeypatch) -> None:
-        """keep_exif=True + EXIF presente: copiar conserva el EXIF (contrato OK)."""
 
 
         origen = tmp_path / "con_exif.jpg"
         img = Image.new("RGB", (10, 10))
         exif = img.getexif()
-        exif[0x010F] = "TestMake"  # EXIF real: Make tag
+        exif[0x010F] = "TestMake"
         img.save(origen, "JPEG", exif=exif)
         with Image.open(origen) as src:
             assert src.getexif(), "fixture must carry parseable EXIF"
@@ -403,7 +383,6 @@ class TestFastCopy:
         assert salida.read_bytes() == origen.read_bytes()
 
     def test_no_fast_path_con_orientacion(self, tmp_path, monkeypatch) -> None:
-        """Orientation≠1 exige bake de píxeles: re-encode."""
 
 
         origen = tmp_path / "oriented.jpg"
@@ -427,7 +406,6 @@ class TestFastCopy:
             assert out.size == (10, 20)
 
     def test_no_fast_path_png_a_jpeg(self, tmp_path, monkeypatch) -> None:
-        """Formatos distintos: siempre re-encode."""
 
 
         origen = tmp_path / "src.png"
@@ -445,7 +423,6 @@ class TestFastCopy:
         assert save_calls
 
     def test_fast_path_png_a_png(self, tmp_path, monkeypatch) -> None:
-        """PNG→PNG lossless: copiar es el resultado correcto (y más rápido)."""
 
 
         origen = tmp_path / "src.png"
@@ -486,13 +463,11 @@ class TestCopiarArchivo:
 
 
 class TestConvertirAPreview:
-    """Vista previa: cap de 400px (B1), cache por mtime (B2), path por defecto."""
 
     def test_preview_cap_400px_con_resize_grande(self, tmp_path) -> None:
         from backend.core.preview_cache import get_preview_cache
 
         get_preview_cache().clear()
-        # Imagen grande; el resize pedido (4000x3000) excede el cap de 400px.
         origen = tmp_path / "grande.png"
         Image.new("RGB", (2000, 1500), color=(10, 20, 30)).save(origen)
 
@@ -502,9 +477,7 @@ class TestConvertirAPreview:
         assert "preview_path" in resultado
         assert resultado["preview"].startswith("file:")
         img = Image.open(resultado["preview_path"])
-        # El cap de 400px debe sostenerse aunque resize sea enorme.
         assert max(img.size) <= 400, f"preview excede 400px: {img.size}"
-        # El aspect del resize (4:3) se respeta dentro del cap.
         assert img.size == (400, 300)
 
     def test_preview_legacy_data_uri_opt_in(self, tmp_path) -> None:
@@ -529,10 +502,9 @@ class TestConvertirAPreview:
 
         r1 = convertir_a_preview(origen, "PNG")
         r2 = convertir_a_preview(origen, "PNG")
-        assert r2["preview"] == r1["preview"]  # cache hit: misma mtime
+        assert r2["preview"] == r1["preview"]
         assert r2["preview_path"] == r1["preview_path"]
 
-        # Reescribir contenido y avanzar mtime -> cache miss, preview nueva.
         Image.new("RGB", (800, 600), color=(0, 0, 255)).save(origen)
         os.utime(origen, (2_000_000, 2_000_000))
         r3 = convertir_a_preview(origen, "PNG")

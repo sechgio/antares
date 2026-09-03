@@ -1,5 +1,3 @@
-// Regression test: transient crashes must keep recovering instead of ending in
-// a fatal state after an arbitrary restart budget is exhausted.
 const { EventEmitter } = require('events');
 const childProcess = require('child_process');
 

@@ -65,7 +65,6 @@ export interface HeaderFormState {
   motivo: string;
 }
 
-/** IPC wire shape from panel_aviso_corte_compute_match (snake_case). */
 export interface PanelMatchImageRefResponse {
   filename: string;
   caption: string;

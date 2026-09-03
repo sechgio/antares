@@ -1,13 +1,10 @@
-/**
- * Theme application and persistence primitives, shared by the Appearance
- * settings view, the app boot (main.tsx) and the backend-authority boot fetch.
- * Pure DOM/localStorage — no React, no i18n, no heavy deps (kept out of the
- * lazy SettingsModal chunk path).
- */
+import defaultThemeJson from '../../../shared/default-theme.json';
 import type { ThemeConfig } from '../types';
 
 export type ThemeMode = 'dark' | 'light' | 'system';
 export type ThemeDensity = 'compact' | 'comfortable' | 'spacious';
+
+export const DEFAULT_THEME: ThemeConfig = defaultThemeJson as ThemeConfig;
 
 export const CUSTOM_ACCENT_KEY = 'custom';
 export const THEME_CSS_CACHE_KEY = 'hc_theme_css_cache';
@@ -208,8 +205,6 @@ export function hasCachedThemeCSS() {
 function ensureReadableTheme(theme: ThemeConfig): ThemeConfig {
   const background = theme.bg || '#0A0A0A';
   const isDarkBg = relativeLuminance(background) <= 0.55;
-  // Primary needs full AA (4.5:1). Secondary/muted may use large-text AA (3:1)
-  // so intentional dark-theme hierarchies (e.g. Vanta Black) are preserved.
   const primary = contrastRatio(background, theme.fg || '#FFFFFF') >= 4.5
     ? theme.fg
     : readableTextFor(background, '#F8FAFC', '#111827');
@@ -338,7 +333,6 @@ export function applyThemeToCSS(theme: ThemeConfig, mode: ThemeMode, accentKey: 
   } catch {}
 }
 
-/** Restores the cached theme (CSS vars + mode + density + pointer/sidebar flags) before first paint. */
 export function restoreCachedTheme(): void {
   try {
     const cached = localStorage.getItem(THEME_CSS_CACHE_KEY);
@@ -398,18 +392,12 @@ function activeCacheSignature(): string | null {
   }
 }
 
-/**
- * Boot-time theme reconciliation: applies the persisted backend theme as the
- * authority over any cached CSS (which painted first for no-flash startup).
- * Returns a cancel function for unmount safety.
- */
 export function bootThemeFromBackend(fetchTheme: () => Promise<ThemeConfig>): () => void {
   let cancelled = false;
   const cacheAtBoot = activeCacheSignature();
   fetchTheme()
     .then((theme) => {
       if (cancelled || !theme) return;
-      // User edited the theme while the fetch was in flight — do not stomp it.
       if (activeCacheSignature() !== cacheAtBoot) return;
       const mode = (theme.mode as ThemeMode) || 'dark';
       applyThemeToCSS(theme, mode, accentKeyForTheme(theme));

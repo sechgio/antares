@@ -1,15 +1,3 @@
-/**
- * Auto-update wiring around `electron-updater`.
- *
- * Strategy: GitHub Releases (free for public repos). The updater downloads
- * the new installer in the background and leaves the restart/install action
- * to the renderer titlebar button once the download finishes.
- *
- * Requirements:
- *   - electron-builder publishes installers + `latest.yml` to GitHub Releases.
- *   - `publish` block in electron-builder.yml is configured to GitHub.
- *   - Only runs when the app is packaged (skips dev mode).
- */
 const { app, ipcMain } = require('electron');
 const { getMainWindow } = require('./window-manager');
 
@@ -23,7 +11,6 @@ let _manualCheckRequested = false;
 let _periodicCheckTimer = null;
 let _lastLoggedPercent = -1;
 
-/** If download never finishes/errors, clear the stuck flag so checks can resume. */
 const UPDATE_IN_PROGRESS_TIMEOUT_MS = 30 * 60 * 1000;
 
 function _clearUpdateInProgress() {
@@ -53,11 +40,6 @@ function _loadAutoUpdater() {
     return null;
   }
 
-  // Firma Windows pospuesta: la INSTALACIÓN queda bajo confirmación explícita
-  // del usuario (botón de la barra de título → quitAndInstall). La DESCARGA
-  // debe ser automática: con autoDownload=false, checkForUpdates() no baja
-  // nada y el flujo se queda atascado en 'available' sin llegar jamás a
-  // 'ready' (no hay ninguna llamada a downloadUpdate() en el código).
   _autoUpdater.autoDownload = true;
   _autoUpdater.autoInstallOnAppQuit = false;
 
@@ -189,8 +171,6 @@ function setupAutoUpdater(isDev) {
     });
   }, 8_000);
 
-  // Retain the handle so shutdown can clear it; otherwise the dangling timer
-  // keeps the process alive and prevents a clean exit.
   _periodicCheckTimer = setInterval(() => {
     if (_updateInProgress) return;
     updater.checkForUpdates().catch(() => {});
@@ -232,7 +212,6 @@ function setupAutoUpdater(isDev) {
   });
 }
 
-/** Clear the periodic update-check timer so the process can exit cleanly. */
 function cleanupAutoUpdater() {
   if (_periodicCheckTimer) {
     clearInterval(_periodicCheckTimer);

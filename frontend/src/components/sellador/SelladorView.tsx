@@ -277,7 +277,6 @@ export default function SelladorView() {
       if (stampPreviewUrl) URL.revokeObjectURL(stampPreviewUrl);
       const previewUrl = URL.createObjectURL(file);
       setStampFile(file);
-      // Keep the File and create a fresh token when applying the PDF.
       setStampPreviewUrl(previewUrl);
       if (pageSize) {
         await initializePositions(pageSize, previewUrl);

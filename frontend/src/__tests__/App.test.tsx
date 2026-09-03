@@ -48,7 +48,6 @@ const { mockSupabase } = vi.hoisted(() => {
 
 vi.mock('../lib/supabase', () => ({ supabase: mockSupabase }));
 
-// Mock AuthContext so the app renders as an authenticated admin in tests.
 vi.mock('../auth/AuthContext', () => ({
   AuthProvider: ({ children }: { children: React.ReactNode }) => children,
   useAuth: () => ({
@@ -85,7 +84,6 @@ describe('App', () => {
   it('can open Espacios tab', async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole('button', { name: 'Espacios' }, { timeout: 5000 }));
-    // Wait past sync.loading ("Cargando espacios...") then welcome CTA.
     await waitFor(
       () => {
         expect(screen.queryByText(/Cargando espacios/i)).not.toBeInTheDocument();
@@ -151,7 +149,6 @@ describe('App', () => {
         },
         { timeout: 5000 },
       );
-      // Wait for the lazy canvas chunk to settle so Vitest does not tear down mid-import.
       if (tab.id === 'canvas') {
         await waitFor(() => {
           expect(document.querySelector('.canvas-app')).toBeTruthy();

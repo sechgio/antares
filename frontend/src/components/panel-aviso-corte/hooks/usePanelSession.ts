@@ -202,10 +202,6 @@ export function usePanelSession(): PanelSession {
 
   const clearErrors = useCallback(() => setErrors([]), []);
 
-  /**
-   * Find the original column name from an ExcelSource by checking its
-   * normalized column names. Returns '' if not found.
-   */
   const _findColumnValue = useCallback(
     (src: ExcelSource, normalizedName: string, rowIndex = 0): string => {
       const idx = src.normalizedColumns.findIndex((n) => n === normalizedName);
@@ -270,7 +266,6 @@ export function usePanelSession(): PanelSession {
         image_names: imgs.map((i) => i.file.name),
         export_mode: exportModeRef.current,
       });
-      // Ignore stale responses when the user changed rules/images quickly.
       if (token !== matchTokenRef.current) return;
       const panels = resp.panels.map(panelResponseToVm);
       const summary = resp.summary;
@@ -296,7 +291,6 @@ export function usePanelSession(): PanelSession {
     }
   }, []);
 
-  // Auto-compute match when dependencies change
   const debounceRef = useRef<number | null>(null);
   useEffect(() => {
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
@@ -308,7 +302,6 @@ export function usePanelSession(): PanelSession {
     };
   }, [excelSource, images, matchRule, addressColumn, exportMode, computeMatch]);
 
-  // Saneamiento de URLs de objetos al desmontar el componente (evita fugas de memoria)
   useEffect(() => {
     return () => {
       if (logoLeftRef.current) {

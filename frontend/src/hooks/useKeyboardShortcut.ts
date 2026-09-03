@@ -5,7 +5,6 @@ function isEditableTarget(target: EventTarget | null): boolean {
   const tag = target.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
   if (target.isContentEditable) return true;
-  // jsdom often leaves isContentEditable false; also honor the attribute.
   const attr = target.getAttribute('contenteditable');
   return attr === '' || attr === 'true';
 }
@@ -18,7 +17,6 @@ export function useKeyboardShortcut(
     shift?: boolean;
     alt?: boolean;
     preventDefault?: boolean;
-    /** When true, fire even if focus is in an input/textarea/select/contentEditable. */
     allowInInput?: boolean;
   }
 ) {

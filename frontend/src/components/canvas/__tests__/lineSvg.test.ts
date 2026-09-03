@@ -3,7 +3,6 @@ import { createLayer } from '../constants';
 import { buildLineSvgContent } from '../ops/lineSvg';
 import type { CanvasLayer } from '../types';
 
-/** Helper: a line layer with default geometry and optional cssVar overrides. */
 function lineLayer(overrides: Record<string, string | undefined> = {}): CanvasLayer {
   const layer = createLayer('line');
   for (const [k, v] of Object.entries(overrides)) {
@@ -52,8 +51,6 @@ describe('buildLineSvgContent', () => {
   });
 
   it('does not inject unescaped markup from a hostile layer id into marker ids', () => {
-    // The marker id is sanitized to [a-zA-Z0-9_-]; special chars are stripped, so
-    // no raw <, >, or " leak into the <defs><marker> block.
     const layer = lineLayer({ '--stroke-end': 'arrow' });
     layer.id = 'x"><script>alert(1)</script>';
     const svg = buildLineSvgContent(layer);

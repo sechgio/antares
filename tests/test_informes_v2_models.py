@@ -16,7 +16,6 @@ def test_create_empty_report_defaults() -> None:
 
 
 def test_normalize_keeps_empty_photo_id() -> None:
-    """Empty photo_id must stay empty so preview/PDF mapping stay aligned."""
     report = InformeV2.normalize(
         {
             "metadata": {"informe_id": 1},

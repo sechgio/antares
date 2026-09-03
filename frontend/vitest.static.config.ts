@@ -1,10 +1,5 @@
 import { defineConfig } from 'vitest/config'
 
-/**
- * Static CSS / theme guards: read files from disk and assert tokens/classes.
- * Kept outside the jsdom product suite so they do not inflate coverage or
- * compete with UI tests for host resources.
- */
 const STATIC_CSS_TESTS = [
   'src/__tests__/css-classes.test.ts',
   'src/__tests__/responsive-surfaces.test.ts',

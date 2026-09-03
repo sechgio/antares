@@ -44,7 +44,6 @@ function StylePreview({ style }: { style: CanvasSharedStyle }) {
 interface StylesSectionProps {
   styles: CanvasSharedStyle[];
   layer: CanvasLayer | null;
-  /** True when exactly one editable layer is selected. */
   canLink: boolean;
   onCreate: (kind: CanvasStyleKind) => void;
   onApply: (styleId: string) => void;

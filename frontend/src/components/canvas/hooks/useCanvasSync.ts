@@ -19,43 +19,20 @@ const REALTIME_PULL_DEBOUNCE_MS = 350;
 const REALTIME_PULL_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
 
 export interface UseCanvasSyncOptions {
-  /** Ref to the current open document id (read inside sync without re-subscribing). */
   historyDocRef: React.MutableRefObject<CanvasDocument>;
-  /** Ref to combined dirty signal (unsaved edits / panel / gesture baselines). */
   openDirtyRef: React.MutableRefObject<boolean>;
-  /** Refresh the doc list (also used by docs hook). */
   refreshList: () => Promise<void>;
-  /** Replace the open document after a remote-side reload. */
   replaceDocument: CanvasHistoryHandle['replaceDocument'];
-  /**
-   * Notify UI of a conflict. Must not block — sync finishes immediately.
-   * Caller owns resolution (keep-local / use-remote) outside the sync cycle.
-   */
   onConflict?: (conflict: SyncConflict) => void;
-  /**
-   * When false (Canvas keep-alive hidden), skip focus-triggered sync so a
-   * background tab cannot silently replaceDocument / pulse docsSyncing.
-   */
   active?: boolean;
-  /**
-   * First-boot guarded sync: never delete or overwrite an existing local doc.
-   * Set on the initial run after mount so opening the app cannot clobber the
-   * documents you saved on disk. Later focus/refresh syncs use normal LWW.
-   */
   guarded?: boolean;
-  /** Current document id used to scope the Realtime channel. */
   documentId?: string;
-  /** Do not subscribe until the initial local document has been selected. */
   documentReady?: boolean;
-  /** Current dirty state used to advertise viewing/editing Presence. */
   openDirty?: boolean;
-  /** Keep Realtime invalidations muted until the first guarded sync completes. */
   initialGuarded?: boolean;
-  /** Called after a remote snapshot was hydrated and applied to the editor. */
   onRemoteDocumentApplied?: (document: CanvasDocument) => void;
 }
 
-/** Dirty for cloud reload skip: unsaved edits, live panel/gesture, or in-flight rename. */
 export function isOpenDocumentDirty(
   hasUnsavedEdits: boolean,
   hasPanelBaseline: boolean,
@@ -73,7 +50,6 @@ function isLaterTimestamp(next: string, previous?: string | null): boolean {
   return Number.isNaN(previousMs) || nextMs > previousMs;
 }
 
-/** Cloud sync: focus-triggered reconciliation plus targeted Realtime pulls. */
 export function useCanvasSync({
   historyDocRef,
   openDirtyRef,

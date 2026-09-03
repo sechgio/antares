@@ -1,4 +1,3 @@
-// Contrato y sink local de observabilidad: sesión, redacción, rotación y stderr.
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');

@@ -13,7 +13,6 @@ export default function LogoPicker({ right, onRight }: Props) {
   const [dragging, setDragging] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Auto-dismiss the error after a few seconds so it doesn't linger.
   useEffect(() => {
     if (!errorMessage) return;
     const timer = setTimeout(() => setErrorMessage(null), 4000);
@@ -29,7 +28,6 @@ export default function LogoPicker({ right, onRight }: Props) {
   const openFilePicker = useCallback(() => {
     const input = inputRef.current;
     if (!input) return;
-    // Reset value so re-selecting the same file triggers onChange
     input.value = '';
     input.click();
   }, []);

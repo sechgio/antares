@@ -1,11 +1,3 @@
-/**
- * LRU-cached, concurrency-limited local thumbnails for conversion grid.
- * Uses Electron nativeImage via api.localThumbnail (Path A). On any failure
- * returns null so callers can show a placeholder (file:// is CSP-blocked).
- *
- * Also exposes getLocalImageDataUrl for full-fidelity CSP-safe previews
- * (e.g. Ubicaciones composed maps written to disk by the backend).
- */
 
 import { api } from '../api';
 
@@ -15,10 +7,8 @@ const MAX_CONCURRENCY = 8;
 const DEFAULT_MAX_EDGE = 256;
 const FULL_IMAGE_CACHE_PREFIX = 'full\0';
 
-/** key = path + maxEdge → data URL (thumbs); full\0path → full image */
 const cache = new Map<string, string>();
 
-/** Coalesce concurrent requests for the same key into one IPC call. */
 const inFlight = new Map<string, Promise<string | null>>();
 
 let active = 0;
@@ -45,7 +35,6 @@ function cacheKey(filePath: string, maxEdge: number): string {
 function cacheGet(key: string): string | undefined {
   const hit = cache.get(key);
   if (hit === undefined) return undefined;
-  // Refresh LRU order: re-insert at end.
   cache.delete(key);
   cache.set(key, hit);
   return hit;
@@ -90,11 +79,6 @@ function runLimited<T>(fn: () => Promise<T>): Promise<T> {
   });
 }
 
-/**
- * Resolve a display-size data URL for a local absolute path, or null on failure.
- * Cache hits skip IPC; concurrent requests for the same key share one in-flight
- * promise; distinct keys are limited by adaptive concurrency (4–8).
- */
 export async function getLocalThumbnail(
   filePath: string,
   maxEdge: number = DEFAULT_MAX_EDGE,
@@ -128,11 +112,6 @@ export async function getLocalThumbnail(
   return promise;
 }
 
-/**
- * Resolve a full-fidelity data URL for an allowlisted local image path.
- * Used when the backend returns a disk JPEG/file URI that cannot be used as
- * <img src> under Electron CSP (img-src has no file:).
- */
 export async function getLocalImageDataUrl(filePath: string): Promise<string | null> {
   if (typeof filePath !== 'string' || !filePath.trim()) return null;
 
@@ -162,7 +141,6 @@ export async function getLocalImageDataUrl(filePath: string): Promise<string | n
   return promise;
 }
 
-/** Test helper — clears cache, in-flight map, and pending concurrency queue. */
 export function _resetLocalThumbForTests(): void {
   cache.clear();
   inFlight.clear();

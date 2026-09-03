@@ -7,10 +7,8 @@ export function useFileSelection(files: string[]) {
 
   useEffect(() => { filesRef.current = files; }, [files]);
 
-  // Build a Set for O(1) lookup instead of O(n) Array.includes
   const filesSet = useMemo(() => new Set(files), [files]);
 
-  // Remove deleted files from selection — uses filesSet for O(1) lookups
   useEffect(() => {
     setSelectedFiles((prev) => {
       let needsUpdate = false;
@@ -41,14 +39,10 @@ export function useFileSelection(files: string[]) {
       setSelectedFile((prevSel) => {
         const anchorPath = prevSel || filesRef.current[0];
         const idx2 = filesRef.current.indexOf(path);
-        // The clicked path must exist; bail out to a single selection otherwise.
         if (idx2 < 0) {
           setSelectedFiles(new Set([path]));
           return path;
         }
-        // If the anchor was removed from the list between clicks, indexOf
-        // returns -1; fall back to the clicked item so we never iterate from
-        // -1 and push `undefined` into the selection set.
         const idx1 = filesRef.current.indexOf(anchorPath);
         const anchorIdx = idx1 < 0 ? idx2 : idx1;
         const start = Math.min(anchorIdx, idx2);

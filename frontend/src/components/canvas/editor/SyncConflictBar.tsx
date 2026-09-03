@@ -6,8 +6,6 @@ import type { SyncConflict } from '../sync/syncCompare';
 
 import type { SyncConflictChoice } from '../hooks/useCanvasSync';
 
-
-
 interface SyncConflictBarProps {
 
   conflict: SyncConflict;
@@ -16,17 +14,11 @@ interface SyncConflictBarProps {
 
 }
 
-
-
-/** Icon-only sync conflict actions — lives next to the UI-lock control. */
-
 export default function SyncConflictBar({ conflict, onResolve }: SyncConflictBarProps) {
 
   const docName =
 
     conflict.remoteDoc?.name || conflict.localDoc.name || 'documento';
-
-
 
   if (conflict.remoteDeleted) {
 
@@ -95,8 +87,6 @@ export default function SyncConflictBar({ conflict, onResolve }: SyncConflictBar
     );
 
   }
-
-
 
   return (
 

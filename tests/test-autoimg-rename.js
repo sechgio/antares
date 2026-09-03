@@ -1,6 +1,3 @@
-/**
- * Renombre NIS → SGIO_secuencia + carpeta DESTINO
- */
 
 function assert(condition, message) {
   if (!condition) {
@@ -96,7 +93,6 @@ assert(skipped.some((s) => s.nis === '2222222' && s.reason === 'sin_destino'), '
 const destinos = uniqueDestinos(jobs);
 assert(destinos.join(',') === 'SECTOR A,SECTOR B', 'uniqueDestinos orden');
 
-// Same SGIO name allowed in different DESTINO folders
 const multi = buildRenameJobs(
   [
     {
@@ -118,7 +114,6 @@ const multi = buildRenameJobs(
 );
 assert(multi.jobs.length === 2, 'dos destinos distintos');
 
-// Slim scan stubs (id + name only, no modifiedTime) must still plan rename jobs.
 const slimScanJobs = buildRenameJobs(
   [
     {

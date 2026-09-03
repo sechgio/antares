@@ -145,7 +145,7 @@ const defaultEncabezados: FlyerEncabezados = {
   detalleZonas: DEFAULT_ENCABEZADOS.detalleZonas,
 };
 
-const LOGO_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+const LOGO_MAX_BYTES = 5 * 1024 * 1024;
 const LOGO_ALLOWED_TYPES = new Set([
   "image/png",
   "image/jpeg",
@@ -153,8 +153,6 @@ const LOGO_ALLOWED_TYPES = new Set([
   "image/gif",
   "image/bmp",
 ]);
-// Reuse a single FileReader per slot so a quick re-pick aborts the previous
-// in-flight decode instead of racing two onload callbacks.
 const imageReaders: Record<string, FileReader | null> = {
   logoIzquierdo: null,
   logoDerecho: null,
@@ -216,7 +214,6 @@ export default function VolantesView() {
     records[0] ??
     null;
 
-  /* ── pending single-record export ── */
   useEffect(() => {
     if (!pendingExport) return;
     let cancelled = false;
@@ -255,7 +252,6 @@ export default function VolantesView() {
     return () => { cancelled = true; };
   }, [pendingExport, addToast]);
 
-  /* ── handlers ── */
   const updateSelectedRecord = (
     patch: Partial<Omit<FlyerRecord, "id">>,
   ): void => {
@@ -449,7 +445,6 @@ export default function VolantesView() {
     }
   };
 
-  /* ── render ── */
   return (
     <div data-surface="volantes" className="vgen-app">
       <header className="vgen-header">

@@ -1,4 +1,3 @@
-"""Visual overlay strategy for PDF correlative number generation."""
 from __future__ import annotations
 
 import io
@@ -151,9 +150,6 @@ class VisualOverlayStrategy:
         for number in range(desde, hasta + 1):
             reader = PdfReader(io.BytesIO(template_bytes))
             target_page_idx = min(mapping.get("page", 0), len(reader.pages) - 1)
-            # Añadir la página al writer ANTES de mergear: merge_page sobre una
-            # página sin writer asignado invoca PageObject.replace_contents(),
-            # deprecado por pypdf (se eliminará en 7.0.0).
             writer.add_page(reader.pages[target_page_idx])
             page = writer.pages[-1]
             if mapping.get("blank_mcids"):
@@ -170,8 +166,6 @@ class SimpleOverlayStrategy:
         for number in range(desde, hasta + 1):
             reader = PdfReader(io.BytesIO(template_bytes))
             target_page_idx = min(_DEFAULT_OVERLAY_MAPPING.get("page", 0), len(reader.pages) - 1)
-            # Mismo patrón que VisualOverlayStrategy: attach antes de mergear
-            # para no usar PageObject.replace_contents() (deprecado en pypdf).
             writer.add_page(reader.pages[target_page_idx])
             page = writer.pages[-1]
             _apply_visual_overlay(page, number, _DEFAULT_OVERLAY_MAPPING)

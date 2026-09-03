@@ -1,10 +1,3 @@
-/**
- * Lightweight local image thumbnails via Electron nativeImage.
- * Path A for conversion grid display — never touches Python preview_image.
- *
- * Optional on-disk cache keyed by path + file signature + maxEdge so revisiting a
- * folder across sessions avoids re-decoding via nativeImage.
- */
 
 const path = require('path');
 const fs = require('fs');
@@ -19,7 +12,6 @@ const MAX_MAX_EDGE = 1024;
 const JPEG_QUALITY = 60;
 const DISK_CACHE_MAX_FILES = 400;
 const DISK_CACHE_MAX_BYTES = 64 * 1024 * 1024;
-/** Cap for full-fidelity local → data URL reads (Ubicaciones preview, etc.). */
 const MAX_LOCAL_IMAGE_BYTES = 12 * 1024 * 1024;
 
 const EXT_MIME = {
@@ -33,9 +25,6 @@ const EXT_MIME = {
 let _cacheDir = null;
 let _trimScheduled = false;
 
-/**
- * @param {string} [dir]
- */
 function setThumbnailCacheDir(dir) {
   _cacheDir = dir ? String(dir) : null;
 }
@@ -43,24 +32,16 @@ function setThumbnailCacheDir(dir) {
 function getThumbnailCacheDir() {
   if (_cacheDir) return _cacheDir;
   try {
-    // Prefer Electron userData when available; fall back to OS temp in tests.
     // eslint-disable-next-line global-require, import/no-extraneous-dependencies
     const { app } = require('electron');
     if (app && typeof app.getPath === 'function') {
       return path.join(app.getPath('userData'), 'thumb-cache');
     }
   } catch {
-    /* not in Electron */
   }
   return path.join(os.tmpdir(), 'antares-thumb-cache');
 }
 
-/**
- * Validate and resolve an absolute local file path for thumbnail generation.
- * Rejects empty/relative/null-byte paths and non-files.
- * @param {unknown} filePath
- * @returns {string} resolved absolute path
- */
 function assertSafeLocalPath(filePath) {
   if (typeof filePath !== 'string' || !filePath.trim()) {
     throw new Error('invalid path');
@@ -68,7 +49,6 @@ function assertSafeLocalPath(filePath) {
   if (filePath.includes('\0')) {
     throw new Error('invalid path');
   }
-  // Require absolute input before resolve so relative + cwd tricks are rejected.
   if (!path.isAbsolute(filePath)) {
     throw new Error('path must be absolute');
   }
@@ -78,8 +58,6 @@ function assertSafeLocalPath(filePath) {
     throw new Error('path must be absolute');
   }
 
-  // After resolve, reject any remaining ".." segment (defensive; resolve should
-  // collapse them, but keep the guard for odd Windows/UNC edge cases).
   const parts = resolved.split(path.sep);
   if (parts.some((p) => p === '..')) {
     throw new Error('invalid path');
@@ -106,8 +84,6 @@ async function _readDiskCache(cachePath) {
   try {
     const buf = await fsp.readFile(cachePath);
     if (!buf || !buf.length) return null;
-    // atime is not reliable on Windows/NTFS, so explicitly refresh mtime to
-    // make the disk cache eviction order reflect actual use (LRU), not writes.
     try {
       const now = new Date();
       await fsp.utimes(cachePath, now, now);
@@ -189,12 +165,6 @@ async function _trimDiskCache(cacheDir, { maxFiles = DISK_CACHE_MAX_FILES, maxBy
   }
 }
 
-/**
- * @param {string} filePath absolute local path
- * @param {number} [maxEdge]
- * @param {import('electron').NativeImageConstructor | typeof import('electron').nativeImage} nativeImage
- * @returns {Promise<{ dataUrl: string }>}
- */
 async function createLocalThumbnail(filePath, maxEdge, nativeImage) {
   if (!nativeImage) {
     throw new Error('nativeImage not available');
@@ -206,8 +176,6 @@ async function createLocalThumbnail(filePath, maxEdge, nativeImage) {
   let fileSignature = '';
   try {
     const st = await fsp.stat(resolved);
-    // mtime alone can be preserved by copy tools/editors. Size and ctime add
-    // cheap protection against serving bytes from a replaced local image.
     fileSignature = `${st.mtimeMs}|${st.size}|${st.ctimeMs}`;
   } catch {
     throw new Error('unable to load image');
@@ -220,7 +188,6 @@ async function createLocalThumbnail(filePath, maxEdge, nativeImage) {
 
   let image = null;
 
-  // Prefer OS thumbnail API when present (macOS/Windows in modern Electron).
   if (typeof nativeImage.createThumbnailFromPath === 'function') {
     try {
       image = await nativeImage.createThumbnailFromPath(resolved, { width: edge, height: edge });
@@ -248,7 +215,6 @@ async function createLocalThumbnail(filePath, maxEdge, nativeImage) {
     }
   }
 
-  // Prefer JPEG for smaller IPC payload; fall back to PNG data URL.
   if (typeof image.toJPEG === 'function') {
     const buf = image.toJPEG(JPEG_QUALITY);
     if (buf && buf.length) {
@@ -266,12 +232,6 @@ async function createLocalThumbnail(filePath, maxEdge, nativeImage) {
   throw new Error('unable to encode thumbnail');
 }
 
-/**
- * Read an allowlisted local image as a data URL without resize/recompress.
- * Used for composed previews (e.g. Ubicaciones) where file:// is blocked by CSP.
- * @param {unknown} filePath absolute local path
- * @returns {Promise<{ dataUrl: string }>}
- */
 async function createLocalImageDataUrl(filePath) {
   const resolved = assertSafeLocalPath(filePath);
   const ext = path.extname(resolved).toLowerCase();
@@ -306,7 +266,6 @@ module.exports = {
   createLocalImageDataUrl,
   setThumbnailCacheDir,
   getThumbnailCacheDir,
-  // Test helpers (not part of public IPC contract)
   _trimDiskCache,
   DISK_CACHE_MAX_FILES,
   DISK_CACHE_MAX_BYTES,

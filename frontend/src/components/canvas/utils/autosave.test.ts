@@ -1,4 +1,3 @@
-/** Regression tests for the adaptive autosave budget estimator. */
 import { describe, expect, it, vi } from 'vitest';
 import { createEmptyDocument } from '../types';
 import {

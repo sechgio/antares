@@ -73,7 +73,6 @@ describe('buildLayerPaintStyle', () => {
     const style = buildLayerPaintStyle(vars({}));
     expect(style.color).toBe(DEFAULT_LAYER_COLOR);
     expect(style.fontFamily).toBe(DEFAULT_LAYER_FONT);
-    // Default font-size is scaled (scale=1 → '11px').
     expect(style.fontSize).toBe('11px');
   });
 
@@ -89,7 +88,6 @@ describe('buildLayerPaintStyle', () => {
       defaults: { '--color': '#fallback', '--opacity': '80' } as LayerCssVars,
     });
     expect(style.color).toBe('#abc');
-    // cssVarsToStyleParts converts opacity 0–100 to a 0–1 fraction.
     expect(style.opacity).toBe('0.8');
   });
 

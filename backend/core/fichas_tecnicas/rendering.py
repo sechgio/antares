@@ -1,4 +1,3 @@
-"""Jinja2 HTML rendering for Fichas Técnicas PDFs."""
 
 from __future__ import annotations
 
@@ -42,7 +41,6 @@ def _format_fecha_display(value: Any) -> str:
 
 
 def _format_os_display(value: Any) -> str:
-    """Mirror PreviewPanel: strip leading OS- then all hyphens."""
     text = str(value or "").strip()
     if not text:
         return "00000"

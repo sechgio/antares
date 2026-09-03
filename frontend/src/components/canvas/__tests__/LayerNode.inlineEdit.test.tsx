@@ -94,7 +94,6 @@ describe('LayerNode inline edit', () => {
     );
     const node = container.querySelector('[data-layer-id]') as HTMLElement;
     expect(node.style.fontSize).toBe('18pt');
-    // Must not inherit .canvas-app letter-spacing: -0.01em
     expect(node.style.letterSpacing).toBe('normal');
     const span = node.querySelector('span') as HTMLElement;
     expect(span.style.letterSpacing || 'normal').toMatch(/^(normal|0px)?$/);

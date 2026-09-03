@@ -25,6 +25,19 @@ function trySh(command, opts = {}) {
   }
 }
 
+function shDetailed(command, opts = {}) {
+  try {
+    return { ok: true, output: sh(command, opts), status: 0 };
+  } catch (error) {
+    const output = [error.stdout, error.stderr]
+      .filter(Boolean)
+      .map((value) => value.toString())
+      .join('')
+      .trim();
+    return { ok: false, output, status: error.status || null };
+  }
+}
+
 function step(label, fn) {
   process.stdout.write(`  ${label} ... `);
   try {
@@ -56,6 +69,7 @@ module.exports = {
   ROOT,
   sh,
   trySh,
+  shDetailed,
   step,
   skip,
   die,

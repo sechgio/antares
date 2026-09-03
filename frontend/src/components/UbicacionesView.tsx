@@ -47,10 +47,6 @@ function isCspSafeImageSrc(src: string | undefined | null): boolean {
   return src.startsWith('data:') || src.startsWith('blob:');
 }
 
-/**
- * Backend returns file:// + image_path for IPC size; Electron CSP blocks file:
- * in img-src, so resolve a data: URL from the allowlisted disk path.
- */
 async function resolvePreviewImageSrc(data: {
   image?: string;
   image_path?: string;
@@ -70,9 +66,6 @@ async function resolvePreviewImageSrc(data: {
 
 type OutputMode = 'individual' | 'consolidado';
 
-// ──────────────────────────────────────────────
-// Segmented Control (generic toggle pills)
-// ──────────────────────────────────────────────
 const SegmentedControl: React.FC<{
   options: { value: string; label: React.ReactNode }[];
   value: string;
@@ -282,7 +275,6 @@ export const UbicacionesView: React.FC = () => {
   const [result, setResult] = useState<Result>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  // Preview state
   const [preview, setPreview] = useState<PreviewData>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -290,7 +282,6 @@ export const UbicacionesView: React.FC = () => {
   const [excelPath, setExcelPath] = useState<string>('');
   const [totalFilas, setTotalFilas] = useState(0);
 
-  // Zoom & Provider states
   const [zoom, setZoom] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('antares:ubicaciones:zoom');
@@ -312,23 +303,17 @@ export const UbicacionesView: React.FC = () => {
   const [keysConfigured, setKeysConfigured] = useState<Record<string, boolean>>({});
   const apiKeysHydratedRef = useRef(false);
 
-  // Design custom styles state
   const [customStyles, setCustomStyles] = useState<CustomStyles>(loadCustomStylesFromStorage);
   const [designOpen, setDesignOpen] = useState(false);
   const [designTab, setDesignTab] = useState<'texts' | 'pin' | 'map'>('texts');
 
-  // Track the latest fetch request to avoid race conditions
   const fetchIdRef = useRef(0);
-  // File bytes needed to (re)stage a fresh read token for previews/generation:
-  // tokens expire after 30 min, so we re-stage from the File whenever needed.
   const excelFileRef = useRef<File | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stylePreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // softLoad only makes sense when we already have an image on screen
   const hasPreviewRef = useRef(false);
 
-  // Keep params ref up to date to avoid recreating fetchPreview
   const lastParamsRef = useRef({
     excelPath,
     inputMode,
@@ -364,7 +349,6 @@ export const UbicacionesView: React.FC = () => {
 
     (async () => {
       try {
-        // One-shot migrate plaintext localStorage → secure store, then wipe LS.
         const migrated = readPlaintextApiKeys();
         if (Object.keys(migrated).length > 0) {
           try {
@@ -378,8 +362,6 @@ export const UbicacionesView: React.FC = () => {
         const { keys: secureKeys, configured } = await api.ubicacionesKeysGet();
         if (cancelled) return;
 
-        // Keep draft state empty for configured providers (mask only in UI);
-        // Electron injects real keys for preview/generate.
         const next: Record<string, string> = {};
         for (const [k, v] of Object.entries(secureKeys || {})) {
           if (configured?.[k]) next[k] = '';
@@ -422,7 +404,6 @@ export const UbicacionesView: React.FC = () => {
 
   useEffect(() => {
     if (!apiKeysHydratedRef.current) return;
-    // Only persist entries that look like freshly typed secrets (not empty/mask).
     const dirty: Record<string, string> = {};
     for (const [k, v] of Object.entries(apiKeys)) {
       const s = String(v || '').trim();
@@ -432,7 +413,6 @@ export const UbicacionesView: React.FC = () => {
     const timer = setTimeout(() => {
       api.ubicacionesKeysSet(dirty).then((resp) => {
         if (resp?.configured) setKeysConfigured(resp.configured);
-        // Clear draft after successful save so secrets don't linger in React state.
         setApiKeys((prev) => {
           const next = { ...prev };
           for (const k of Object.keys(dirty)) next[k] = '';
@@ -498,8 +478,6 @@ export const UbicacionesView: React.FC = () => {
         return;
       }
 
-      // Read tokens expire after 30 min; re-stage a fresh one so previews keep
-      // working after the Excel has been loaded for a long time.
       let excelToken = path;
       if (currentInputMode === 'excel' && excelFileRef.current) {
         const fresh = await stageFileForIpc(excelFileRef.current);
@@ -509,8 +487,6 @@ export const UbicacionesView: React.FC = () => {
 
       const previewManualData = currentManualData;
       const myId = ++fetchIdRef.current;
-      // softLoad avoids spinner flicker when an image is already visible; on first
-      // load (or after clear) we must show the loading state or the panel stays blank.
       const softLoad =
         (options?.softLoad === true || options?.recomposeOnly === true) && hasPreviewRef.current;
       if (!softLoad) {
@@ -529,13 +505,10 @@ export const UbicacionesView: React.FC = () => {
           api_key: currentApiKeys[currentProvider] || '',
           manualData: currentInputMode === 'manual' ? previewManualData : undefined,
         });
-        // Ignore stale responses
         if (myId !== fetchIdRef.current) return;
         if (resp?.total_filas) {
           setTotalFilas(resp.total_filas);
         }
-        // Defensive: if the response carries a formato field and it does
-        // not match the current selection, skip it (stale format toggle).
         if (resp?.formato && resp.formato !== currentFormato) return;
         const safeSrc = await resolvePreviewImageSrc(resp);
         if (myId !== fetchIdRef.current) return;
@@ -559,7 +532,6 @@ export const UbicacionesView: React.FC = () => {
     [],
   );
 
-  // Single-active-request coordinator for style and map updates
   const isFetchInFlightRef = useRef(false);
   const hasPendingFetchRef = useRef(false);
   const pendingRowIndexRef = useRef<number | null>(null);
@@ -664,7 +636,6 @@ export const UbicacionesView: React.FC = () => {
   const prevFormatoRef = useRef(formato);
   const lonInputRef = useRef<HTMLInputElement>(null);
 
-  // Solo re-fetch al cambiar orientación (la carga inicial la disparan los handlers)
   useEffect(() => {
     if (!excelPath && inputMode !== 'manual') {
       setPreview(null);
@@ -677,8 +648,6 @@ export const UbicacionesView: React.FC = () => {
     triggerPreviewFetch(previewRowIndex, { recomposeOnly: true, softLoad: true });
   }, [formato, excelPath, inputMode, previewRowIndex, triggerPreviewFetch]);
 
-  // Restaurar vista previa al montar en modo manual con coords ya guardadas
-  // (localStorage). Sin esto el panel queda en blanco aunque lat/lon existan.
   useEffect(() => {
     if (
       inputMode === 'manual'
@@ -693,9 +662,6 @@ export const UbicacionesView: React.FC = () => {
 
   const loadExcelFile = useCallback(
     async (file: File) => {
-      // Stage the File into Electron temp storage: the backend reads the
-      // resolved path behind this token (raw absolute paths are rejected by
-      // the IPC router). Tokens expire, so refresh them per use.
       const token = await stageFileForIpc(file);
       if (!token) {
         setExcelFile(null);
@@ -740,7 +706,6 @@ export const UbicacionesView: React.FC = () => {
   };
 
   const handleRemoveExcel = () => {
-    // Cancel any in-flight preview request so stale responses don't update state
     fetchIdRef.current++;
     excelFileRef.current = null;
     setExcelFile(null);
@@ -789,7 +754,6 @@ export const UbicacionesView: React.FC = () => {
       
       let path = '';
       if (inputMode === 'excel' && excelFile) {
-        // Fresh token: staged read capabilities expire after 30 min.
         path = (await stageFileForIpc(excelFile)) || '';
         if (!path) {
           setResult({ success: false, error: 'No se pudo preparar el archivo Excel.' });
@@ -859,7 +823,6 @@ export const UbicacionesView: React.FC = () => {
   );
 
   const handleManualChange = (field: keyof typeof manualData, value: string) => {
-    // Volver al panel de preview si aún se muestra el resultado de una generación previa
     setResult(null);
     if (field === 'lat') {
       const parsed = parseCombinedCoords(value);
@@ -1601,9 +1564,6 @@ export const UbicacionesView: React.FC = () => {
   );
 };
 
-// ──────────────────────────────────────────────
-// Empty Preview (no Excel loaded yet)
-// ──────────────────────────────────────────────
 const EmptyPreviewPanel: React.FC<{ formato: string }> = ({ formato }) => (
   <div className="flex-1 flex flex-col overflow-hidden">
     <div className="shrink-0 flex items-center gap-2.5 px-5 h-11 border-b border-[var(--border-subtle)] bg-[var(--bg-base)]">
@@ -1645,9 +1605,6 @@ const EmptyPreviewPanel: React.FC<{ formato: string }> = ({ formato }) => (
   </div>
 );
 
-// ──────────────────────────────────────────────
-// Real Preview Panel (with actual generated image)
-// ──────────────────────────────────────────────
 const RealPreviewPanel: React.FC<{
   preview: PreviewData;
   loading: boolean;
@@ -1827,9 +1784,6 @@ const RealPreviewPanel: React.FC<{
   );
 };
 
-// ──────────────────────────────────────────────
-// Result Panel
-// ──────────────────────────────────────────────
 export const ResultPanel: React.FC<{ result: Result; outputDir: string }> = ({ result, outputDir }) => {
   if (!result) return null;
 

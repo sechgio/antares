@@ -45,7 +45,6 @@ describe('selectGenerateRowIndices', () => {
 
   it("includes the current row in 'single' scope when an image matches the record id", () => {
     const rows = [{ ID: 'A' }];
-    // matchesRecordId matches `{id}-1.jpg`, `{id}_2.png`, etc.
     const images = [new File([], 'A-1.jpg')];
     expect(
       selectGenerateRowIndices({
@@ -75,7 +74,7 @@ describe('selectGenerateRowIndices', () => {
 
   it("filters out rows in 'all' scope when images are required and missing", () => {
     const rows = [{ ID: 'A' }, { ID: 'B' }];
-    const images = [new File([], 'A-1.jpg')]; // only A matches
+    const images = [new File([], 'A-1.jpg')];
     expect(
       selectGenerateRowIndices({
         rows,

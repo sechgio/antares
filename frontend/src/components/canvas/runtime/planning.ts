@@ -27,7 +27,6 @@ export function renderMultiPageHtml(
   );
 }
 
-/** Same as renderMultiPageHtml but yields between pages so large templates stay responsive. */
 export async function renderMultiPageHtmlAsync(
   doc: CanvasDocument,
   ctx: FillContext,
@@ -61,7 +60,6 @@ export function planMultiPageRender(
   const firstSlotPage = hasSlots ? Math.min(...slotPages) : -1;
   const lastSlotPage = hasSlots ? Math.max(...slotPages) : -1;
 
-  // Slots win when present; options/settings only apply when the template has no slots.
   const slotPerPage = templateImagesPerPage(doc);
   const configured = options?.imagesPerPage ?? doc.settings?.imagesPerPage;
   const perPage = hasSlots
@@ -84,7 +82,6 @@ export function planMultiPageRender(
     pageCtx: { ...ctx, images, imageMeta },
   });
 
-  // Cover / trailing pages without slots must not receive photo chunks.
   if (hasSlots && useImagePagination) {
     const plan: Array<{ pageDoc: CanvasDocument; pageCtx: FillContext }> = [];
     for (let i = 0; i < firstSlotPage; i += 1) {
@@ -114,7 +111,6 @@ export function planMultiPageRender(
     });
   }
 
-  // No slots: settings-based pagination (legacy).
   const totalPages = useImagePagination
     ? Math.max(docPageCount, imageChunks.length)
     : docPageCount;
@@ -131,10 +127,6 @@ export function planMultiPageRender(
   });
 }
 
-/**
- * Same pagination as HTML export, but layers remapped to pageIndex 0 so each
- * slice renders cleanly in PageLayerPreview (default pageIndex=0).
- */
 export function planMultiPageDocuments(
   doc: CanvasDocument,
   ctx: FillContext,

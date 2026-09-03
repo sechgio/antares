@@ -12,7 +12,6 @@ describe('ColorSwatchPicker', () => {
 
     const dialog = screen.getByRole('dialog', { name: /Paleta de color para CHORRILLOS/i });
     expect(dialog).toBeInTheDocument();
-    // Panel is portaled to document.body (escapes sidebar overflow).
     expect(dialog.parentElement).toBe(document.body);
 
     fireEvent.click(screen.getByRole('button', { name: `Color ${ESPACIOS_COLORS[1]}` }));

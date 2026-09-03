@@ -29,9 +29,6 @@ function cloneLayer(l: CanvasLayer): CanvasLayer {
   };
 }
 
-/** Deep-clone a document for gesture/edit baselines (independent undo entry).
- *  Shallow-clones the doc, page, settings; deep-clones layers (with cssVars + meta),
- *  fields, pages, and grid rules. */
 export function cloneDocument(doc: CanvasDocument): CanvasDocument {
   return {
     ...doc,
@@ -47,10 +44,6 @@ export function cloneDocument(doc: CanvasDocument): CanvasDocument {
   };
 }
 
-/**
- * Baseline clone for a single-page edit: deep-clones layers on `pageIndex`,
- * shares refs for other pages (structural sharing). Cuts history RAM on multi-page docs.
- */
 export function cloneDocumentBaseline(doc: CanvasDocument, pageIndex: number): CanvasDocument {
   return {
     ...doc,

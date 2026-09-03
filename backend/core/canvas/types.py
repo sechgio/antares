@@ -1,8 +1,3 @@
-"""Static contracts for Canvas documents.
-
-The backend still normalizes untyped JSON at runtime; these TypedDicts only
-describe the normalized shape for static checks.
-"""
 
 from __future__ import annotations
 
@@ -165,6 +160,5 @@ class CanvasDocument(TypedDict, total=False):
     styles: list[CanvasSharedStyle]
 
 
-# JSON values used by generic IPC helpers.
 JsonValue = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
 JsonObject = dict[str, JsonValue]

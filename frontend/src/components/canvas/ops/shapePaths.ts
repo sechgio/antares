@@ -1,4 +1,3 @@
-/** CSS clip-path values for vector-like shape layers. */
 
 import type { CanvasLayer } from '../types';
 import { parseMm } from '../types';
@@ -21,14 +20,12 @@ export function clipPathForLayerType(type: string): string | undefined {
   return undefined;
 }
 
-/** Build a CSS polygon/circle clip from meta.path points (layer-local mm → %). */
 export function clipPathFromMetaPath(layer: CanvasLayer): string | undefined {
   const points = layer.meta?.path?.points;
   if (!points?.length) return undefined;
   const w = Math.max(0.01, parseMm(layer.cssVars['--width'], 40));
   const h = Math.max(0.01, parseMm(layer.cssVars['--height'], 40));
 
-  // Single-point or near-circular 2-pt path → circle at bbox center.
   if (points.length === 1) {
     return 'circle(50% at 50% 50%)';
   }
@@ -44,10 +41,6 @@ export function clipPathFromMetaPath(layer: CanvasLayer): string | undefined {
   return `polygon(${parts.join(', ')})`;
 }
 
-/**
- * Clip-path for a single operand/shape layer (no boolean recursion).
- * Used by booleanOps to avoid circular imports with clipPathForLayer.
- */
 export function clipPathForOperandLayer(layer: CanvasLayer): string | undefined {
   const byType = clipPathForLayerType(layer.type);
   if (byType) return byType;
@@ -57,7 +50,6 @@ export function clipPathForOperandLayer(layer: CanvasLayer): string | undefined 
   return undefined;
 }
 
-/** Outline approximation for type:'boolean' from operand silhouettes (CSS composition). */
 function clipPathForBooleanLayer(
   layer: CanvasLayer,
   allLayers: CanvasLayer[],
@@ -77,12 +69,6 @@ function clipPathForBooleanLayer(
   return fallback;
 }
 
-/**
- * Resolve clip-path for any layer:
- * - predefined shape types
- * - meta.path geometry
- * - type:'boolean' via operand outline approximation (CSS composition, not geometric solver)
- */
 export function clipPathForLayer(
   layer: CanvasLayer,
   allLayers?: CanvasLayer[],
@@ -131,7 +117,6 @@ const SQUARE_CONSTRAIN_TOOLS = new Set([
   'pentagon',
 ]);
 
-/** Tools whose draw gesture constrains to a square while Shift is held. */
 export function isSquareConstrainTool(tool: string): boolean {
   return SQUARE_CONSTRAIN_TOOLS.has(tool);
 }

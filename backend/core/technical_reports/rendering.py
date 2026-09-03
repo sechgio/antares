@@ -17,7 +17,6 @@ def _templates_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "templates" / "technical_reports"
 
 
-# Module-level singleton — avoids recreating Environment + losing template cache on each render.
 _jinja_env: Environment | None = None
 _jinja_template_mtime: float = 0.0
 

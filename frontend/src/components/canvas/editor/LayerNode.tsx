@@ -25,28 +25,21 @@ import { getBlobUrl } from '../utils/imageBlobStore';
 
 interface LayerNodeProps {
   layer: CanvasLayer;
-  /** Master component when `layer.meta.instanceOf` is set — used to resolve overrides. */
   masterLayer?: CanvasLayer | null;
-  /** Document layers for mask / boolean operand resolution. */
   documentLayers?: CanvasLayer[];
   selected: boolean;
   interactive: boolean;
   scale: number;
   editing?: boolean;
-  /** When true (default), focus selects all text; false keeps caret at end (type-to-edit). */
   editingSelectAll?: boolean;
   pathEditing?: boolean;
-  /** True while the layer is part of an active drag gesture (enables GPU compositing). */
   moving?: boolean;
-  /** True when the layer is outside the active viewport region. Pauses inner DOM subtree rendering. */
   offscreen?: boolean;
-  /** True while camera zoom or pan navigation is actively moving. Pauses expensive GPU filters. */
   panning?: boolean;
   onSelect: (id: string, additive?: boolean) => void;
   onLayerPointerDown: (id: string, additive: boolean, e: ReactPointerEvent<HTMLDivElement>) => void;
   onContextMenu?: (id: string, clientX: number, clientY: number) => void;
   onStartEdit?: (id: string) => void;
-  /** `contentHeightPx` is the editor scrollHeight, for live auto-grow while typing. */
   onEditValue?: (id: string, value: string, contentHeightPx?: number) => void;
   onFitTextHeight?: (id: string, contentHeightPx: number) => void;
   onCommitEdit?: () => void;
@@ -73,7 +66,6 @@ function imgStyleFromCssVars(cssVars: CanvasLayer['cssVars']): CSSProperties {
   return style;
 }
 
-/** Fingerprint paint-relevant cssVars (position translate excluded — applied separately). */
 const paintKeyCache = new WeakMap<CanvasLayer['cssVars'], Map<string, string>>();
 function paintVarsKey(vars: CanvasLayer['cssVars'], scale: number, lineOverride: boolean): string {
   let byScale = paintKeyCache.get(vars);
@@ -124,7 +116,6 @@ function LayerNode({
   }, [layerProp, masterLayer]);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const paintCacheRef = useRef<{ key: string; paint: Record<string, string> } | null>(null);
-  // Keep latest callbacks behind refs so memo can ignore handler identity without going stale.
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
   const onLayerPointerDownRef = useRef(onLayerPointerDown);
@@ -169,9 +160,7 @@ function LayerNode({
     () => (layer.type === 'line' ? buildLineSvgContent(lineLayer) : ''),
     [layer.type, lineLayer],
   );
-  // Hooks must stay above early returns (visible / offscreen culling).
   const clipPath = useMemo(() => {
-    // Mask takes priority: clip this layer to the mask silhouette (CSS composition).
     const maskId = layer.meta?.maskLayerId;
     if (maskId && documentLayers.length) {
       const maskLayer = documentLayers.find((l) => l.id === maskId);
@@ -188,10 +177,6 @@ function LayerNode({
     return resolveBooleanRender(layer, documentLayers);
   }, [layer, documentLayers]);
 
-  // Geometry contract: translate × paint transform × origin × line height,
-  // shared with imperativeLayerDom (drag) and renderHtml (export).
-  // lineLayer is ensured for lines, so the contract reads the same
-  // width/height the paint path actually renders.
   const geometry = useMemo(() => layerGeometry(lineLayer, scale), [lineLayer, scale]);
 
   if (layer.type === 'frame' || layer.visible === false) return null;
@@ -232,8 +217,6 @@ function LayerNode({
   const highlighted = selected || editing || pathEditing;
 
   const paintSource = isLine ? lineLayer.cssVars : layer.cssVars;
-  // moving (layer drag) strips filter + box-shadow; panning (camera zoom) strips filter only,
-  // so outside strokes (rendered as box-shadow) don't flicker on zoom. Key must distinguish them.
   const paintDefer = moving ? 2 : panning ? 1 : 0;
   const paintCacheKey = `${paintVarsKey(paintSource, scale, isLine)}|${clipPath ?? ''}|${hasExplicitRadius ? 1 : 0}|${layer.type}|${paintDefer}`;
   let paint: Record<string, string>;
@@ -256,10 +239,6 @@ function LayerNode({
     } else if (!hasExplicitRadius && layer.type === 'ellipse') {
       paint.borderRadius = '50%';
     }
-    // Defer expensive GPU effects while dragging or camera panning (restore on commit/stop).
-    // - moving (layer drag): strip filter + box-shadow (full degradation).
-    // - panning (camera zoom): strip filter + blurred/offset shadows, but keep spread-only
-    //   box-shadows (outside strokes/frames) so borders don't flicker on zoom.
     if (moving || panning) {
       const { filter: _filter, ...rest } = paint;
       if (moving) {
@@ -274,20 +253,15 @@ function LayerNode({
     paintCacheRef.current = { key: paintCacheKey, paint };
   }
 
-  // Position via translate; keep rotate/flip from paint (do not clobber).
-  // `transform` is excluded from paintRest; the geometry contract re-adds it
-  // (translate + paint transform) so paint never carries a bare transform.
   const { transform: _paintTransform, ...paintRest } = paint;
 
   const style: CSSProperties = {
     ...paintRest,
     contain: 'layout paint',
-    // Isolate from .canvas-app UI letter-spacing (-0.01em); Figma default is 0/normal.
     letterSpacing: paintRest.letterSpacing || 'normal',
     position: 'absolute',
     left: 0,
     top: 0,
-    // Compositor-driven positioning: drag moves update transform only (no layout).
     transform: geometry.transform,
     transformOrigin: geometry.transformOrigin,
     willChange: moving ? 'transform' : undefined,
@@ -312,7 +286,6 @@ function LayerNode({
     userSelect: editing ? 'text' : 'none',
     zIndex: highlighted ? 20 : 1,
     pointerEvents:
-      // Group/grid/component chrome is behind children; let slots receive hits unless selected.
       (layer.type === 'group' || layer.type === 'grid' || layer.type === 'component') && !selected
         ? 'none'
         : interactive || editing
@@ -321,8 +294,6 @@ function LayerNode({
     mixBlendMode: (layer.cssVars['--blend-mode'] as CSSProperties['mixBlendMode']) || undefined,
   };
 
-  // Selection handles live on SelectionChromeOverlay; keep a light ring on the
-  // layer so locked/non-editable selections remain visible (Figma-like).
   if (selected || editing || pathEditing) {
     if (paint.outline) {
       style.boxShadow = [paint.boxShadow, '0 0 0 1px var(--cv-accent)'].filter(Boolean).join(',');
@@ -363,7 +334,6 @@ function LayerNode({
       return;
     }
     if (!interactive) return;
-    // Let middle-click bubble for viewport pan.
     if (e.button === 1) return;
     if (e.button !== 0) return;
     e.stopPropagation();
@@ -424,14 +394,11 @@ function LayerNode({
       onKeyDown={(e) => {
         if (!interactive || editing) return;
         if (e.key === ' ' || e.key === 'Spacebar') {
-          // Space → select (equivalent to a click on the layer).
           e.preventDefault();
           onSelectRef.current(layer.id, e.shiftKey || e.ctrlKey || e.metaKey);
           return;
         }
         if (e.key === 'Enter') {
-          // Enter → select + enter edit mode (equivalent to double-click),
-          // since double-click isn't keyboard-accessible. Mirrors onDoubleClick.
           e.preventDefault();
           e.stopPropagation();
           onSelectRef.current(layer.id, false);
@@ -460,7 +427,6 @@ function LayerNode({
           onBlur={() => finishEdit()}
           onPointerDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
-            // Let Ctrl/Cmd+D bubble to CanvasView (window) for duplicate.
             if ((e.ctrlKey || e.metaKey) && e.code === 'KeyD') {
               e.preventDefault();
               finishEdit();
@@ -505,7 +471,6 @@ function LayerNode({
             position: 'relative',
             width: '100%',
             height: '100%',
-            // Isolation so mix-blend-mode approximates boolean ops within this stack.
             isolation: 'isolate',
             pointerEvents: 'none',
           }}
@@ -653,12 +618,10 @@ function LayerNode({
   );
 }
 
-/** Only mask/boolean layers read `documentLayers`; others must ignore array identity. */
 export function layerNeedsDocumentLayers(layer: CanvasLayer): boolean {
   return layer.type === 'boolean' || Boolean(layer.meta?.maskLayerId);
 }
 
-/** Layer ids whose identity affects mask/boolean rendering for `layer`. */
 function documentLayerDependencyIds(layer: CanvasLayer): string[] {
   const ids: string[] = [];
   const maskId = layer.meta?.maskLayerId;
@@ -671,10 +634,6 @@ function documentLayerDependencyIds(layer: CanvasLayer): string[] {
   return ids;
 }
 
-/**
- * True when `documentLayers` identity changed but none of the mask/boolean
- * operands this node reads changed by reference — safe to skip re-render.
- */
 export function documentLayersRelevantEqual(
   layer: CanvasLayer,
   prevLayers: CanvasLayer[] | undefined,

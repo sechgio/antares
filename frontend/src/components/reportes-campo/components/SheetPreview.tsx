@@ -102,7 +102,6 @@ const PhotoGridCell = React.memo(function PhotoGridCell({
     );
 });
 
-/** Isolated so title size/color tweaks don't re-render photo nodes. */
 const SheetPhotoGrid = React.memo(function SheetPhotoGrid({ images }: { images: PhotoFile[] }) {
     const gridLayout = getPhotoGridLayout(images.length);
     const cellWidth = photoGridCellWidth(gridLayout.columns);

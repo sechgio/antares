@@ -59,8 +59,6 @@ function parseArgs(argv) {
   };
 }
 
-// ─── PR discovery & status ───────────────────────────────────────────────────
-
 function currentBranch() {
   return sh('git rev-parse --abbrev-ref HEAD');
 }
@@ -89,7 +87,6 @@ function getPrInfo(prNumber) {
 }
 
 function getPrChecks(prNumber) {
-  // Devuelve array de { name, state, bucket }
   const json = trySh(`gh pr checks ${prNumber} --json name,state,bucket 2>&1`);
   if (!json || json === 'null' || json.includes('error')) return [];
   try {
@@ -101,7 +98,6 @@ function getPrChecks(prNumber) {
 
 function allChecksPass(checks) {
   if (!checks || checks.length === 0) return false;
-  // GitHub usa buckets: PASS, FAIL, SKIP, PENDING
   return checks.every((c) => c.bucket === 'PASS' || c.bucket === 'SKIP');
 }
 
@@ -109,10 +105,7 @@ function anyCheckFails(checks) {
   return checks.some((c) => c.bucket === 'FAIL' || c.bucket === 'CANCEL');
 }
 
-// ─── CI log capture ─────────────────────────────────────────────────────────
-
 function captureFailedRunLogs(prNumber) {
-  // Lista runs asociados al PR y captura el log failed de los rojos
   const runsJson = trySh(
     `gh run list --branch "$(gh pr view ${prNumber} --json headRefName --jq .headRefName)" --status failure --limit 5 --json databaseId,name,status,conclusion 2>&1`
   );
@@ -135,10 +128,7 @@ function captureFailedRunLogs(prNumber) {
   return logs.join('\n\n') || '(no se capturaron logs)';
 }
 
-// ─── Heuristics (deterministic, never delete code) ──────────────────────────
-
 function applyPythonLintFix() {
-  // ruff --fix + ruff format: nunca elimina codigo, solo reordena/repara
   const fix = trySh('npm run lint:fix 2>&1');
   const fmt = trySh('npx ruff format backend tests scripts 2>&1');
   const touched = Boolean(trySh('git status --porcelain'));
@@ -147,7 +137,6 @@ function applyPythonLintFix() {
 }
 
 function applyFrontendPrettierFix() {
-  // Si hay prettier configurado, aplica formato (no elimina codigo)
   const fmt = trySh('cd frontend && npx prettier --write src 2>&1');
   if (!fmt) return null;
   const touched = Boolean(trySh('git status --porcelain frontend'));
@@ -155,10 +144,6 @@ function applyFrontendPrettierFix() {
   return `prettier: ${fmt.slice(0, 200)}`;
 }
 
-// ─── Droid invocation (when heuristics are not enough) ───────────────────────
-
-// El droid no puede invocarse en dry-run ni en CI sin Factory runtime.
-// En modo --ship local, lanzamos el subagent worker con los logs.
 function invokeDroidFixer(logs, prNumber) {
   const prompt = [
     'Goal: Corrige los errores de CI del PR #' + prNumber + ' de Antares.',
@@ -185,15 +170,10 @@ function invokeDroidFixer(logs, prNumber) {
     '  - Si consideras que un error es un false-positive',
   ].join('\n');
 
-  // Nota: el droid worker se invoca via Task tool desde el agente que corre este script
-  // en modo local. En CI (GH Actions), este paso se omite por defecto.
-  // Para invocarlo localmente, el caller (el agente principal) debe usar Task tool.
   console.log('    (El caller debe invocar el subagent worker con el prompt generado.)');
   console.log('    Prompt de fix guardado para entrega al droid.');
   return prompt;
 }
-
-// ─── Commit & push ───────────────────────────────────────────────────────────
 
 function workingTreeDirty() {
   return Boolean(trySh('git status --porcelain'));
@@ -216,8 +196,6 @@ function commitAndPush(branch) {
   console.log(`    Commit [skip-ci-fix] pusheado a ${branch}.`);
   return true;
 }
-
-// ─── Auto-merge with guard ───────────────────────────────────────────────────
 
 function canAutoMerge(prInfo, checks) {
   const reasons = [];
@@ -247,10 +225,7 @@ function commentOnPr(prNumber, body) {
   trySh(`gh pr comment ${prNumber} --body "${body.replace(/"/g, '\\"')}" 2>&1`);
 }
 
-// ─── Main loop ──────────────────────────────────────────────────────────────
-
 function runLoop(options) {
-  // Resolver PR number
   let prNumber = options.prNumber ? Number(options.prNumber) : null;
   if (!prNumber) {
     const branch = currentBranch();
@@ -304,7 +279,6 @@ function runLoop(options) {
       break;
     }
 
-    // Paso 1: heuristicas deterministas (nunca eliminan codigo)
     console.log('    Aplicando heuristicas deterministas...');
     const pythonFix = applyPythonLintFix();
     if (pythonFix) console.log(`      python: ${pythonFix.slice(0, 80)}`);
@@ -312,7 +286,6 @@ function runLoop(options) {
     const feFix = applyFrontendPrettierFix();
     if (feFix) console.log(`      frontend: ${feFix.slice(0, 80)}`);
 
-    // Re-verificar localmente si las heuristicas resolvieron algo
     const stillDirty = workingTreeDirty();
     if (stillDirty) {
       const pushed = commitAndPush(branch);
@@ -323,15 +296,11 @@ function runLoop(options) {
       console.log('    Heuristicas no generaron cambios.');
     }
 
-    // Paso 2: si quedan errores, invocar droid (en CI esto es no-op, en local el caller lo gestiona)
     const checksAfter = getPrChecks(prNumber);
     if (anyCheckFails(checksAfter)) {
       console.log('    Errores residuales. Invocando droid fixer...');
       const prompt = invokeDroidFixer(logs, prNumber);
-      // En CI, el droid no puede correr directamente; el caller decide.
-      // Si el caller es el agente principal, debe lanzar Task worker con este prompt.
       if (process.env.FACTORY_DROID_AVAILABLE === '1') {
-        // Hook para integracion futura con Factory runtime en CI
         console.log('    (Factory droid disponible — el caller debe procesar el prompt.)');
       }
       break;
@@ -352,7 +321,6 @@ function runLoop(options) {
     }
   }
 
-  // Auto-merge con guardia
   if (resolved && options.doMerge) {
     console.log('\n  ── Auto-merge con guardia ──');
     const finalInfo = getPrInfo(prNumber);

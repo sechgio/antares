@@ -1,4 +1,3 @@
-// Regression test for dev-mode startup when Python is resolved from PATH.
 const path = require('path');
 
 let passed = 0;

@@ -1,4 +1,3 @@
-# -*- mode: python ; coding: utf-8 -*-
 import sys
 from pathlib import Path
 
@@ -9,11 +8,6 @@ block_cipher = None
 backend_dir = Path(sys._getframe().f_code.co_filename).parent.resolve()
 project_dir = backend_dir.parent
 
-# ── Collect all submodules for complex packages ───────────────────────────
-# Manual hiddenimports lists miss dynamically-imported submodules (e.g.
-# pandas._config.localization, openpyxl submodules, docx oxml parts).
-# collect_submodules walks the installed package and returns every importable
-# submodule, preventing ModuleNotFoundError at runtime in the frozen build.
 _hidden = [
     'backend.core.converter',
     'backend.core.database',
@@ -48,10 +42,6 @@ _hidden = [
     'backend.ipc_protocol',
     'backend.handlers',
     'backend.handlers.common',
-    # CRITICAL: handlers load via importlib (lazy registry). PyInstaller cannot
-    # see those dynamic imports — without these hiddenimports the frozen exe
-    # starts (ready) but every IPC method fails with ModuleNotFoundError
-    # (templates_list, canvas_*, etc.). At v0.10.20 these were static imports.
     'backend.handlers.info',
     'backend.handlers.diagnostics',
     'backend.handlers.theme',
@@ -73,15 +63,9 @@ _hidden = [
     'backend.handlers.telemetry',
     'backend.version',
 ]
-# Collect every backend.handlers submodule as a safety net for future features.
 _hidden += collect_submodules('backend.handlers')
 _hidden += collect_submodules('backend.core')
 
-# Collect ALL submodules from heavy third-party deps so PyInstaller does not
-# miss dynamically-loaded ones (pandas._config.localization caused a startup
-# crash in v0.10.10/v0.10.11 — see CHANGELOG).
-# Skip *.tests / *.testing — collect_submodules walks them and burns minutes
-# analyzing pandas.tests.* that never ship at runtime.
 def _runtime_submodules(pkg: str) -> list[str]:
     return [
         m
@@ -94,21 +78,11 @@ for _pkg in ('pandas', 'openpyxl', 'weasyprint', 'PIL', 'lxml', 'pypdf',
              'jinja2', 'jsonschema', 'docx', 'fitz', 'pymupdf'):
     _hidden += _runtime_submodules(_pkg)
 
-# psutil has optional platform-specific binary extensions; collect them too.
 try:
     _hidden += _runtime_submodules('psutil')
 except Exception:
     _hidden.append('psutil')
 
-# WeasyPrint uses urllib.request.HTTPSHandler and ssl at runtime for URL
-# fetching (CSS url(), remote images). PyInstaller misses these on Windows
-# because they are conditionally imported via C extensions. Add them
-# explicitly so PDF generation does not crash with
-# "module 'urllib.request' has no attribute 'HTTPSHandler'".
-# ssl must be collected with its binaries (_ssl.pyd, libssl, libcrypto) —
-# collect_submodules alone is not enough because PyInstaller may strip the
-# native crypto DLLs, causing `import ssl` to silently fail, which makes
-# urllib.request set _have_ssl=False and skip HTTPSHandler definition.
 _hidden += [
     'ssl',
     'urllib.request',
@@ -122,9 +96,6 @@ _hidden += [
     'ctypes.wintypes',
 ]
 
-# Collect ssl native binaries (_ssl.pyd and its dependencies) explicitly.
-# strip=True on these DLLs can corrupt them on some toolchains, so we add
-# them to upx_exclude as well.
 _ssl_binaries = []
 _ssl_dir = Path(sys.base_prefix) / 'DLLs'
 for _name in ('_ssl.pyd', '_hashlib.pyd', 'libssl-3.dll', 'libcrypto-3.dll',
@@ -133,13 +104,12 @@ for _name in ('_ssl.pyd', '_hashlib.pyd', 'libssl-3.dll', 'libcrypto-3.dll',
     if _candidate.exists():
         _ssl_binaries.append((str(_candidate), '.'))
 
-# Collect data files (templates, fonts, CSS) bundled inside packages.
 _datas = [
     (str(backend_dir / 'templates'), 'backend/templates'),
     (str(backend_dir / 'core' / 'presets.json'), 'backend/core'),
     (str(project_dir / 'assets' / 'ubicaciones'), 'assets/ubicaciones'),
+    (str(project_dir / 'shared' / 'default-theme.json'), 'shared'),
 ]
-# weasyprint ships CSS default stylesheets and font config that must be present.
 _datas += collect_data_files('weasyprint')
 
 a = Analysis(
@@ -152,8 +122,6 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
 excludes=[
-        # Optional acceleration/analytics stacks pulled in by pandas hooks.
-        # The app uses pandas/openpyxl for Excel I/O, not SciPy/Numba.
         'scipy',
         'numba',
         'llvmlite',
@@ -174,7 +142,6 @@ excludes=[
         'pandas.io.excel._pyxlsb',
         'pandas.io.excel._odf',
         'pandas.io.excel._calamine',
-        # Unused large modules and tooling
         'matplotlib',
         'notebook',
         'IPython',
@@ -198,10 +165,6 @@ excludes=[
         'test',
         'tests',
         'playwright',
-        # ML / vision stacks often present in the builder's site-packages.
-        # If PyInstaller pulls them in, the onedir tree exceeds size budgets and
-        # cold-start AV scans drag past the IPC handshake window. Antares does
-        # not import these — exclude unconditionally.
         'torch',
         'torchvision',
         'torchaudio',
@@ -221,14 +184,10 @@ excludes=[
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
-    # Loose .pyc next to the onedir tree — faster cold start than extracting a
-    # onefile archive into %TEMP% on every launch (AV + handshake cliffs).
     noarchive=True,
 )
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
-# Onedir (COLLECT): AntaresBackend.exe + deps live on disk under resources/backend.
-# Avoids PyInstaller onefile re-extract + Windows AV on every cold start.
 exe = EXE(
     pyz,
     a.scripts,

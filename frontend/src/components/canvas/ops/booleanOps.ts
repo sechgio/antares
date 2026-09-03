@@ -1,7 +1,3 @@
-/**
- * Boolean layer ops — CSS composition (clip-path / blend / stack), NOT an exact
- * geometric boolean solver. Good enough for creative clip control in HTML/PDF export.
- */
 
 import type { CanvasLayer, LayerCssVars } from '../types';
 import { mm, parseMm } from '../types';
@@ -13,19 +9,10 @@ export type BooleanOperandRef = { op: BooleanOpKind; layerId: string };
 
 export type BooleanRenderItem = {
   layerId: string;
-  /** Source layer silhouette (CSS clip-path), when available. */
   clipPath?: string;
-  /** Approximate CSS mix-blend-mode for subtract/intersect/exclude. */
   blendMode?: string;
-  /**
-   * When true, treat this operand as a subtract mask (inverted clip approximation).
-   * Limitation: CSS cannot invert arbitrary polygon clip-paths exactly —
-   * we approximate with mix-blend-mode / nested mask.
-   */
   inverted?: boolean;
-  /** Fill color taken from the operand (for stacked paint). */
   backgroundColor?: string;
-  /** Position relative to the boolean layer origin (mm). */
   offsetXMm: number;
   offsetYMm: number;
   widthMm: number;
@@ -88,15 +75,6 @@ function normalizeBooleanOperands(
   );
 }
 
-/**
- * Build a type:'boolean' layer from a base + operands.
- * Empty operands → return base unchanged (legacy-safe).
- * Default operand op is `union` when not specified on the operand entry.
- *
- * Note: converts `base` in place (same id). Operand layers stay in the document
- * and are referenced by meta.ops; callers should hide them (see
- * {@link applyBooleanCompose}) so they are not painted twice.
- */
 export function composeBoolean(
   base: CanvasLayer,
   operands: Array<CanvasLayer | { layer: CanvasLayer; op?: BooleanOpKind }>,
@@ -125,10 +103,6 @@ export function composeBoolean(
   };
 }
 
-/**
- * Compose a boolean layer and hide operand layers so Artboard does not paint
- * them both standalone and inside the boolean stack.
- */
 export function applyBooleanCompose(
   layers: CanvasLayer[],
   base: CanvasLayer,
@@ -147,7 +121,6 @@ export function applyBooleanCompose(
 
 const compositionHiddenCache = new WeakMap<CanvasLayer[], Set<string>>();
 
-/** Layer ids that must not paint as standalone nodes (boolean operands / masks). */
 export function compositionHiddenLayerIds(layers: CanvasLayer[]): Set<string> {
   const cached = compositionHiddenCache.get(layers);
   if (cached) return cached;
@@ -165,7 +138,6 @@ export function compositionHiddenLayerIds(layers: CanvasLayer[]): Set<string> {
 function blendForOp(op: BooleanOpKind): string | undefined {
   switch (op) {
     case 'subtract':
-      // Approximate hole-punch; not geometrically exact.
       return 'difference';
     case 'intersect':
       return 'darken';
@@ -176,13 +148,6 @@ function blendForOp(op: BooleanOpKind): string | undefined {
   }
 }
 
-/**
- * Resolve CSS composition data for painting a boolean layer.
- * Does NOT solve exact geometry — returns clip/blend hints for LayerNode.
- *
- * Order starts with the boolean layer's own fill (base plate over the unified
- * bbox), then each operand from meta.ops.
- */
 export function resolveBooleanRender(
   booleanLayer: CanvasLayer,
   allLayers: CanvasLayer[],
@@ -225,7 +190,6 @@ export function resolveBooleanRender(
     });
   }
 
-  // Outline approximation: first operand clip (skip base plate).
   const outline = order.slice(1).find((item) => !item.inverted && item.clipPath)?.clipPath
     ?? order.slice(1).find((item) => item.clipPath)?.clipPath;
 

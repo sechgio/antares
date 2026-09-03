@@ -20,13 +20,6 @@ interface UseGestureBaselinesOptions {
   pageIndex: number;
 }
 
-/** Gesture/panel live-preview + commit baselines. Both share the same shape:
- * capture the document on the first live update, `updateSilent` while the
- * gesture/panel is in flight, `commitFromBaseline` once on release so the
- * whole interaction is a single undo entry.
- *
- * `panelBaselineRef` / `gestureBaselineRef` are exposed so CanvasView can seal
- * panel edits and cancel in-flight gestures (undo, dirty sync gate). */
 export function useGestureBaselines({ history, pageIndex }: UseGestureBaselinesOptions) {
   const gestureBaselineRef = useRef<CanvasDocument | null>(null);
   const panelBaselineRef = useRef<CanvasDocument | null>(null);
@@ -109,7 +102,6 @@ export function useGestureBaselines({ history, pageIndex }: UseGestureBaselinesO
     history.commitFromBaseline(baseline);
   }, [history]);
 
-  /** Revert in-flight gesture to the captured baseline (prefer cancel over commit). */
   const cancelPageLayersGesture = useCallback(() => {
     const baseline = gestureBaselineRef.current;
     if (!baseline) return false;

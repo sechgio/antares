@@ -19,10 +19,6 @@ function clearMetaKey(layer: CanvasLayer, key: 'maskLayerId' | 'ops'): CanvasLay
   return { ...layer, meta: Object.keys(meta).length ? meta : undefined };
 }
 
-/**
- * Mask + boolean composition controls.
- * Boolean ops are CSS visual composition (clip/blend/stack), not a geometric solver.
- */
 export default function BooleanMaskSection({
   layer,
   layers = [],
@@ -78,7 +74,6 @@ export default function BooleanMaskSection({
       onReplaceLayers(applyBooleanCompose(layers, layer, entries));
       return;
     }
-    // Fallback: update boolean only (operands may still paint until reload).
     onChange(composeBoolean(layer, entries));
   };
 
@@ -195,7 +190,6 @@ export default function BooleanMaskSection({
   );
 }
 
-/** Shapes, images, and boolean layers can participate in mask/boolean composition. */
 export function showBooleanMaskSection(layer: CanvasLayer): boolean {
   return (
     layer.type === 'boolean' ||

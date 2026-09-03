@@ -1,4 +1,3 @@
-"""HTML template handlers for the report generator."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,9 +8,6 @@ from backend.utils.paths import resource_path, user_data_path
 
 
 def _preview_template_dirs() -> list[Path]:
-    # Prefer a user templates dir only when it actually has HTML (overrides).
-    # Otherwise use bundled paths under sys._MEIPASS so the installer always
-    # sees backend/templates even if %LOCALAPPDATA%\\Antares\\templates is empty.
     bundled = [
         resource_path("backend/templates"),
         resource_path("templates"),

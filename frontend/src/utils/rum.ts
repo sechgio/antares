@@ -1,7 +1,3 @@
-/**
- * RUM: web-vitals sampled 10% → api.telemetry() → backend stderr.
- * Dynamic import so unsampled sessions pay 0KB; onLCP/onINP/onCLS only.
- */
 import { api } from '../api';
 
 let inited = false;

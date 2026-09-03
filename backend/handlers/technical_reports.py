@@ -1,4 +1,3 @@
-"""Technical reports handlers."""
 from __future__ import annotations
 
 from typing import Any
@@ -92,7 +91,6 @@ def technical_reports_import_file(params: dict[str, Any]) -> dict[str, Any]:
     return {"success": True, "message": f"{len(imported)} informes importados", "deleted_count": deleted_count, "imported_count": len(imported), "total_rows_in_file": len(reports)}
 
 
-
 def technical_reports_autocomplete_cs(params: dict[str, Any]) -> dict[str, Any]:
     return {"options": _db().get_unique_cs()}
 
@@ -102,7 +100,6 @@ def technical_reports_autocomplete_contratista(params: dict[str, Any]) -> dict[s
     return {"options": _db().get_unique_contratista(cs if cs else None)}
 
 def _resolve_report_for_render(params: dict[str, Any]) -> dict[str, Any]:
-    """Prefer the inline report payload from the editor over stale DB snapshots."""
     report_payload = params.get("report")
     report_id = str(params.get("id") or "").strip()
 

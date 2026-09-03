@@ -14,13 +14,9 @@ interface TaskFormProps {
   open: boolean;
   members: TeamMember[];
   columns?: BoardColumn[];
-  /** When set, form edits this task instead of creating a new one. */
   initial?: Tarea | null;
-  /** Prefill start date when creating (e.g. from Gantt day click). */
   defaultStartDate?: string | null;
-  /** Prefill due date when creating (e.g. from calendar day click). */
   defaultDueDate?: string | null;
-  /** Prefill status when creating (e.g. from board column). */
   defaultStatus?: TareaStatus | null;
   onClose: () => void;
   onSubmit: (input: TareaInput) => Promise<void>;

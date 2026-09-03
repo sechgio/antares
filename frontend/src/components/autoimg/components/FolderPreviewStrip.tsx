@@ -53,8 +53,6 @@ export function useFolderPreviews(folderIds: string[]) {
           next[id] = { status: 'loading' };
         }
       }
-      // Drop removed folders from state. The TTL/LRU cache lives in the main
-      // process, so the renderer retains only the currently mounted result.
       for (const key of Object.keys(next)) {
         if (!ids.includes(key)) delete next[key];
       }

@@ -18,11 +18,6 @@ const PAGE_STACK_GAP_PX = 24;
 
 interface GeneratePanelProps {
   document: CanvasDocument;
-  /**
-   * Unused on mount: Generar only lists via canvasList.
-   * Shell focus sync (useCanvasSync) already covers cloud pull — do not call here.
-   * Kept optional so CanvasView can keep passing it without a pull on open.
-   */
   runCloudSync?: () => Promise<void>;
 }
 
@@ -30,7 +25,6 @@ function revokeIfBlobUrl(url: string | null | undefined): void {
   if (url && url.startsWith('blob:')) URL.revokeObjectURL(url);
 }
 
-/** Revoke after two animation frames so the new preview can paint first. */
 function revokeBlobUrlsAfterPaint(urls: string[]): void {
   if (urls.length === 0) return;
   requestAnimationFrame(() => {
@@ -44,14 +38,12 @@ export default function GeneratePanel({
   document: designDocument,
 }: GeneratePanelProps) {
   const previewRef = useRef<PreviewViewportHandle>(null);
-  /** Preview ObjectURLs created for the current row — revoked on refresh/unmount. */
   const previewObjectUrlsRef = useRef<string[]>([]);
 
   const [docs, setDocs] = useState<CanvasDocumentSummary[]>([]);
   const [externalDoc, setExternalDoc] = useState<CanvasDocument | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState(designDocument.id);
 
-  /** Live design doc when selected; disk-loaded doc when user picks another template. */
   const templateDoc = useMemo(
     () => (selectedTemplateId === designDocument.id ? designDocument : externalDoc ?? designDocument),
     [selectedTemplateId, designDocument, externalDoc],
@@ -64,7 +56,6 @@ export default function GeneratePanel({
   const [images, setImages] = useState<File[]>([]);
   const [logoLeft, setLogoLeft] = useState<string | null>(null);
   const [logoRight, setLogoRight] = useState<string | null>(null);
-  /** Local Files behind the logo URLs — enable antares-local-image: tokens in RGB export. */
   const [logoLeftFile, setLogoLeftFile] = useState<File | null>(null);
   const [logoRightFile, setLogoRightFile] = useState<File | null>(null);
 
@@ -118,7 +109,6 @@ export default function GeneratePanel({
     let cancelled = false;
     void (async () => {
       try {
-        // List only — shell focus sync already covers cloud; do not pull here.
         const res = await api.canvasList();
         if (!cancelled) setDocs(res.documents);
       } catch {
@@ -212,9 +202,6 @@ export default function GeneratePanel({
           for (const s of sources) {
             if (s.token && s.fileToken) localImagePaths[s.token] = s.fileToken;
           }
-          // PDF path needs durable data: URLs — blob: is session-local. In RGB
-          // mode a local logo File becomes an antares-local-image: token
-          // (Electron expands it to file://) instead of base64 per page.
           const useLocalTokens = colorMode === 'rgb';
           logos = {
             logoLeft: await logoToPdfSource(logoLeft, logoLeftFile, 'logo-left', localImagePaths, useLocalTokens),
@@ -236,18 +223,15 @@ export default function GeneratePanel({
         const { contexts } = await buildContexts([rowIndex], 'preview');
         ctx = contexts[0] || ctx;
       } else if (showPlaceholders) {
-        // Match design artboard: empty data → field.meta.fallback ("-"), Logo L/R, Foto N.
         ctx = { data: {}, images: [], logoLeft, logoRight };
       }
       const prevPreviewUrls = previewObjectUrlsRef.current;
       previewObjectUrlsRef.current = ctx.images.filter((u) => u.startsWith('blob:'));
-      // Screen preview uses LayerNode (same as Diseño). HTML kept for print/PDF only.
       const plan = planMultiPageDocuments(templateDoc, ctx);
       setPreviewPages(plan.map(({ pageDoc, pageCtx }) => documentWithFill(pageDoc, pageCtx)));
       const html = renderMultiPageHtml(templateDoc, ctx, { forScreen: true });
       setPreviewHtml(html);
       setError(null);
-      // Wait until after paint so <img> of the new row is not left on a revoked blob:.
       revokeBlobUrlsAfterPaint(prevPreviewUrls);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al renderizar preview');

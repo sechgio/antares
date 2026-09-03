@@ -1,6 +1,3 @@
-/**
- * High-fidelity panel presets — visual reference: backend/templates/*.html (read-only).
- */
 import type { CanvasDocument, CanvasLayer } from '../types';
 import { mm, newId } from '../types';
 import {
@@ -59,7 +56,6 @@ function tealField(f: FieldSpec): CanvasLayer {
   return { ...layer, cssVars: { ...layer.cssVars, '--color': '#3BA9AF' } };
 }
 
-/** report.html — panel fotográfico estándar (3×2 fill). */
 export function createReportPreset(name = 'Panel fotográfico'): CanvasDocument {
   const layers: CanvasLayer[] = [
     baseFrame(),
@@ -97,7 +93,6 @@ export function createReportPreset(name = 'Panel fotográfico'): CanvasDocument 
   return docFrom(name, layers, uniqueKeys(fields));
 }
 
-/** emergencias.html — informe técnico 2×2 contain. */
 export function createEmergenciasPreset(name = 'Emergencias'): CanvasDocument {
   const layers: CanvasLayer[] = [
     baseFrame(),
@@ -123,7 +118,6 @@ export function createEmergenciasPreset(name = 'Emergencias'): CanvasDocument {
   return docFrom(name, layers, uniqueKeys(fields));
 }
 
-/** panel-aviso-corte.html — aviso de corte con leyendas bajo cada par. */
 export function createPanelAvisoCortePreset(name = 'Aviso de corte'): CanvasDocument {
   const M = 12.7;
   const W = 210 - M * 2;
@@ -187,7 +181,6 @@ export function createPanelAvisoCortePreset(name = 'Aviso de corte'): CanvasDocu
   return docFrom(name, layers, fields.map((f) => f.key));
 }
 
-/** panel-volanteo.html — volanteo 2×2 contain. */
 export function createPanelVolanteoPreset(name = 'Panel volanteo'): CanvasDocument {
   const layers: CanvasLayer[] = [
     baseFrame(),
@@ -215,7 +208,6 @@ export function createPanelVolanteoPreset(name = 'Panel volanteo'): CanvasDocume
   return docFrom(name, layers, uniqueKeys(fields));
 }
 
-/** evidencia-volanteo.html — 3×2 fill, logos compactos. */
 export function createEvidenciaVolanteoPreset(name = 'Evidencia volanteo'): CanvasDocument {
   const layers: CanvasLayer[] = [
     baseFrame(),
@@ -236,7 +228,6 @@ export function createEvidenciaVolanteoPreset(name = 'Evidencia volanteo'): Canv
   return docFrom(name, layers, uniqueKeys(fields));
 }
 
-/** maquina-balde.html — 2×2 contain. */
 export function createMaquinaBaldePreset(name = 'Máquina de balde'): CanvasDocument {
   const layers: CanvasLayer[] = [
     baseFrame(),
@@ -266,7 +257,6 @@ export function createMaquinaBaldePreset(name = 'Máquina de balde'): CanvasDocu
   return docFrom(name, layers, uniqueKeys(fields));
 }
 
-/** volan maq balde sjl.html — panel fotográfico SJL. */
 export function createVolanMaqBaldeSjlPreset(name = 'Volanteo máq. balde SJL'): CanvasDocument {
   const layers: CanvasLayer[] = [
     baseFrame(),
@@ -296,7 +286,6 @@ export function createVolanMaqBaldeSjlPreset(name = 'Volanteo máq. balde SJL'):
   return docFrom(name, layers, uniqueKeys(fields));
 }
 
-/** aniegos chorrillos.html — 2×3 contain, campos punteados. */
 export function createAniegosChorrillosPreset(name = 'Aniegos Chorrillos'): CanvasDocument {
   const layers: CanvasLayer[] = [
     baseFrame(),

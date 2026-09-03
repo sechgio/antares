@@ -1,6 +1,5 @@
 import { daysBetweenIsoDates, localTodayString } from './dates';
 
-/** How many days ahead count as "cerca de vencer" (incluye hoy). */
 export const DUE_SOON_DAYS = 3;
 
 export type DueUrgency = 'overdue' | 'today' | 'soon';
@@ -25,7 +24,6 @@ export interface DueNotification {
   proyecto_name: string;
   espacio_id: string | null;
   espacio_name: string | null;
-  /** Days until due: negative = overdue. */
   daysUntil: number;
   urgency: DueUrgency;
 }
@@ -46,9 +44,6 @@ export function urgencyFromDays(daysUntil: number): DueUrgency {
   return 'soon';
 }
 
-/**
- * Tasks open with a due date on or before today+soonDays, ordered by urgency then date.
- */
 export function collectDueNotifications(
   tasks: DueTaskInput[],
   options: { today?: string; soonDays?: number; doneKeys?: Set<string> } = {},

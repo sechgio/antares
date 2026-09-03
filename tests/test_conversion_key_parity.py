@@ -1,4 +1,3 @@
-"""Preview empty key_column must use the same lookup strategy as process."""
 
 from __future__ import annotations
 
@@ -8,7 +7,6 @@ from backend.handlers import conversion
 
 
 def test_preview_empty_key_uses_lote_not_auto_column(monkeypatch) -> None:
-    """When key_column is empty, preview must call buscar_lote_por_codigos only."""
     lote_calls: list[list[str]] = []
     columna_calls: list[tuple] = []
 
@@ -24,7 +22,6 @@ def test_preview_empty_key_uses_lote_not_auto_column(monkeypatch) -> None:
         "backend.core.config_fields.get_field_names",
         lambda: ["codigo", "nis"],
     )
-    # If auto-detect ran it would probe columns; make probe look attractive.
     monkeypatch.setattr(
         conversion,
         "_preview_detect_fields",

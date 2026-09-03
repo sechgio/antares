@@ -12,13 +12,8 @@ const {
   setAppContext,
 } = require('./app-log');
 
-// Persistencia de logs del proceso principal en <dataDir>/logs (antes: solo consola).
-// El tee se instala antes de cualquier handler para que warnings/errores y la
-// telemetría IPC (ipc-router) queden grabados desde el primer momento.
 installConsoleLogTee();
 
-// Prevent unhandled rejections from crashing the process
-// (e.g. auto-updater 404, dialog errors, etc.)
 process.on('unhandledRejection', (reason) => {
   console.warn('[main] Unhandled rejection caught:', reason instanceof Error ? reason.message : reason);
 });
@@ -45,7 +40,6 @@ app.whenReady().then(async () => {
   startPythonBackend(isDev).catch((err) => {
     console.error('[main] startPythonBackend threw:', err);
   });
-  // Deferred orphan canvas-asset GC (after docs settle; grace protects unsaved).
   setTimeout(() => {
     try {
       const { gcOrphanCanvasAssets } = require('./canvas-assets');
@@ -62,7 +56,6 @@ app.whenReady().then(async () => {
       console.warn('[main] canvas asset GC unavailable:', err && err.message);
     }
   }, 45_000);
-  // Kick off auto-update check (no-op in dev / unpackaged builds).
   try {
     const { setupAutoUpdater } = require('./auto-updater');
     setupAutoUpdater(isDev);
@@ -71,11 +64,6 @@ app.whenReady().then(async () => {
   }
 });
 
-// Deduplicate shutdown: ensure killPython is invoked at most once per app lifecycle.
-// Multiple shutdown events (`before-quit`, `will-quit`, `process.exit`,
-// `window-all-closed` on non-macOS) can otherwise trigger redundant kills,
-// which is benign (`_forceKillProcess` is idempotent) but produces noisy
-// `taskkill` calls and potential races with auto-restart.
 let _shutdownStarted = false;
 let _isQuittingDeferred = false;
 let _allowQuit = false;
@@ -104,9 +92,6 @@ function _shutdownOnce() {
   }
 }
 
-// Closing the window directly (titlebar X, Alt+F4, window-control close) can
-// destroy the renderer before `before-quit` gets a chance to flush Canvas.
-// Keep the guard reusable when macOS recreates the window after activation.
 function _installWindowCloseGuard() {
   const { getMainWindow } = require('./window-manager');
   const win = getMainWindow();
@@ -121,7 +106,6 @@ function _installWindowCloseGuard() {
   }
 }
 
-// Handler for the renderer flush acknowledgement; resolves before-quit.
 ipcMain.handle('canvas-flush-ack', async (event) => {
   let trustedSender = false;
   try {
@@ -142,9 +126,6 @@ ipcMain.handle('canvas-flush-ack', async (event) => {
   return { ok: true };
 });
 
-// Private channel used by the preload to register paths derived from File
-// objects (native file inputs / drag-drop). The renderer cannot invoke this
-// through the generic ipc-call surface; the sender frame is authenticated.
 if (typeof ipcMain.on === 'function') {
   ipcMain.on('register-file-input-path', (event, rawPath) => {
     try {
@@ -159,7 +140,6 @@ if (typeof ipcMain.on === 'function') {
   });
 }
 
-/** Grace period for the renderer to persist dirty Canvas docs. */
 const CANVAS_FLUSH_TIMEOUT_MS = 120000;
 
 async function _cleanupStagedFiles() {
@@ -205,7 +185,6 @@ async function _flushCanvasBeforeQuit(win) {
   return result;
 }
 
-/** Flush Canvas, clean staged files, stop Python, then complete the quit. */
 async function _flushCanvasAndQuit(win) {
   try {
     if (win && !win.isDestroyed()) await _flushCanvasBeforeQuit(win);

@@ -86,7 +86,6 @@ describe('LayerNode viewport culling and performance', () => {
     );
 
     const elPanning = container.querySelector('[data-layer-id]') as HTMLElement;
-    // Blurred/offset shadow is deferred during camera zoom.
     expect(elPanning.style.boxShadow).toBe('');
     expect(elPanning.style.filter).toBe('');
   });
@@ -132,7 +131,6 @@ describe('LayerNode viewport culling and performance', () => {
     );
 
     const elPanning = container.querySelector('[data-layer-id]') as HTMLElement;
-    // Frame (spread-only shadow) must survive camera zoom — no flicker.
     expect(elPanning.style.boxShadow).toBe(frameShadow);
   });
 

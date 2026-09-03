@@ -1,6 +1,3 @@
-/**
- * Regresión: helpers de sync AutoIMG (NOTAS, sin_sgio, dedup ya cubierto en drive).
- */
 
 function assert(condition, message) {
   if (!condition) {

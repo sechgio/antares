@@ -1,6 +1,3 @@
-/**
- * Drive verify (single-page) + streaming listFolder/scanNis.
- */
 function assert(condition, message) {
   if (!condition) {
     console.error(`[FAIL] ${message}`);
@@ -29,7 +26,6 @@ let listCalls = 0;
 let metaCalls = 0;
 
 async function main() {
-  // --- accumulate / finalize parity with buildNisMap ---
   const files = [
     { id: 'a', name: '6553447_1.jpg', modifiedTime: 't1' },
     { id: 'b', name: '6553447-2.jpeg', modifiedTime: 't2' },
@@ -44,7 +40,6 @@ async function main() {
   assert(streamed['6553447'].slots.join(',') === batched['6553447'].slots.join(','), 'stream slots match');
   assert(streamed['9999999'].count === 1, 'second page NIS present');
 
-  // --- verifyFolder: one meta + one list page, no full pagination ---
   listCalls = 0;
   metaCalls = 0;
   global.fetch = async (url) => {
@@ -89,7 +84,6 @@ async function main() {
   assert(verified.sample_files.length === 5, 'verify sample_files capped at 5');
   assert(verified.sample_files[0] === 'f0.jpg', 'verify sample starts at first file');
 
-  // Small folder: exact count, has_more false
   listCalls = 0;
   global.fetch = async (url) => {
     const u = String(url);
@@ -122,7 +116,6 @@ async function main() {
   assert(small.image_count === 2 && small.has_more === false, 'small folder exact count');
   assert(listCalls === 1, 'small folder still one list call');
 
-  // --- listFolder collect:false streams pages without returning full array ---
   listCalls = 0;
   const seenPages = [];
   global.fetch = async (url) => {
@@ -167,7 +160,6 @@ async function main() {
   assert(seenPages[0].hasMore === true && seenPages[1].hasMore === false, 'hasMore flags');
   assert(seenPages[1].totalSoFar === 3, 'totalSoFar accumulates');
 
-  // --- scanNis streams and builds same map ---
   listCalls = 0;
   global.fetch = async (url) => {
     const u = String(url);

@@ -1,6 +1,5 @@
 import type { VistaType } from '../types';
 
-/** Persist last Espacios context (view + selection) across sessions. */
 export const ESPACIOS_PREFS_KEY = 'antares.espacios.prefs';
 
 export interface EspaciosPrefs {

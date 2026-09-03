@@ -27,9 +27,7 @@ export type SheetPreviewVariant = 'screen' | 'export';
 interface Props {
   title: string;
   cuadrante: string;
-  /** Etiqueta superior del bloque de cuadrante. Por defecto DEFAULT_CUADRANTE_LABEL. */
   cuadranteLabel?: string;
-  /** Si false, no se muestra la etiqueta (solo el valor). */
   showCuadranteLabel?: boolean;
   logoLeft: string | null;
   logoRight: string | null;
@@ -74,7 +72,6 @@ export default function SheetPreview({
     <div
       className={`preview-paper-scope bg-white text-black${isExport ? ' ev-sheet-page' : ''}`}
       style={{
-        // Export: mismo ancho útil A4 que la preview; altura automática (sin clip).
         width: isExport ? `${TABLE_WIDTH_CM}cm` : '210mm',
         height: isExport ? 'auto' : '297mm',
         padding: isExport ? 0 : `${PAGE_MARGIN_MM}mm`,

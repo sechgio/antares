@@ -1,7 +1,3 @@
-/**
- * Client for canvas/workers/imageProcessorWorker — downscale large image
- * uploads off the main thread before registerImageBlob.
- */
 import type { ImageProcessingResult, ImageProcessingTask } from './imageProcessorWorker';
 
 type Pending = {
@@ -39,13 +35,38 @@ function getWorker(): Worker | null {
   }
 }
 
+const WORKER_TIMEOUT_MS = 60_000;
+
 function runOnWorker(tasks: ImageProcessingTask[]): Promise<ImageProcessingResult[]> {
   const w = getWorker();
   if (!w) return Promise.reject(new Error('image worker unavailable'));
 
   const run = () =>
     new Promise<ImageProcessingResult[]>((resolve, reject) => {
-      pending = { resolve, reject };
+      const timer = setTimeout(() => {
+        if (pending?.resolve === wrappedResolve) {
+          pending = null;
+          try {
+            worker?.terminate();
+          } catch {
+            /* ignore */
+          }
+          worker = null;
+          reject(new Error('image worker timed out'));
+        }
+      }, WORKER_TIMEOUT_MS);
+
+      const wrappedResolve = (value: ImageProcessingResult[]) => {
+        clearTimeout(timer);
+        resolve(value);
+      };
+
+      const wrappedReject = (reason?: unknown) => {
+        clearTimeout(timer);
+        reject(reason);
+      };
+
+      pending = { resolve: wrappedResolve, reject: wrappedReject };
       w.postMessage(tasks);
     });
 
@@ -57,7 +78,6 @@ function runOnWorker(tasks: ImageProcessingTask[]): Promise<ImageProcessingResul
   return result;
 }
 
-/** Downscale / compress a single image file in a worker; falls back to the original File. */
 export async function processImageFileForCanvas(
   file: File,
   maxDimension = 2048,

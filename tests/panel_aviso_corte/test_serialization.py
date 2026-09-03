@@ -1,17 +1,3 @@
-"""Tests de serialización (round-trip) para Panel Aviso de Corte — ejemplos fijos.
-
-El módulo ``backend.core.panel_aviso_corte.serialization`` está implementado
-y todos los tests deben pasar. Si fallan, indica una regresión.
-
-Cubre los casos base del contrato:
-
-* ``serialize_panel(panel) -> dict`` devuelve un ``dict`` JSON-friendly
-  (listas, strings, ints, None; sin tuplas ni dataclasses anidados).
-* ``deserialize_panel(data) -> Panel`` reconstruye el mismo Panel (round-trip).
-* Errores descriptivos ante campos obligatorios faltantes o tipos inválidos.
-
-Validates: Requirements 13.2, 13.3, 14.4
-"""
 
 from __future__ import annotations
 
@@ -26,8 +12,6 @@ from backend.core.panel_aviso_corte.serialization import (
     deserialize_panel,
     serialize_panel,
 )
-
-# Helpers
 
 
 def _ref(
@@ -44,7 +28,6 @@ def _ref(
 
 
 def _contains_tuple(obj: Any) -> bool:
-    """True si ``obj`` (recursivamente) contiene alguna tuple."""
     if isinstance(obj, tuple):
         return True
     if isinstance(obj, list):
@@ -55,7 +38,6 @@ def _contains_tuple(obj: Any) -> bool:
 
 
 def _valid_payload() -> dict[str, Any]:
-    """Payload mínimo válido, útil como base para tests negativos."""
     return {
         "cuadrante": "CUAD-1",
         "fecha_corte": "2024-01-15",
@@ -65,11 +47,7 @@ def _valid_payload() -> dict[str, Any]:
     }
 
 
-# serialize_panel: forma del dict
-
-
 class TestSerializeReturnsJsonFriendlyDict:
-    """El dict devuelto es JSON-friendly: sin dataclasses, sin tuplas."""
 
     def test_returns_dict_type(self) -> None:
         panel = Panel(cuadrante="CUAD-1", fecha_corte="", motivo="M")
@@ -110,19 +88,14 @@ class TestSerializeReturnsJsonFriendlyDict:
             source_row_index=42,
         )
         data = serialize_panel(panel)
-        encoded = json.dumps(data)  # no debe lanzar
+        encoded = json.dumps(data)
         assert isinstance(encoded, str)
-        # El round-trip por JSON también debe conservar los campos clave.
         reloaded = json.loads(encoded)
         assert reloaded["cuadrante"] == "Cuadrante Ñandú"
         assert reloaded["imagenes"][0]["position"] == 1
 
 
-# Round-trip: ejemplos fijos (Req 13.3 / 14.4)
-
-
 class TestRoundTripFixedExamples:
-    """``deserialize_panel(serialize_panel(p)) == p`` para ejemplos fijos."""
 
     def test_round_trip_zero_images_form_mode_empty_fecha(self) -> None:
         panel = Panel(
@@ -161,7 +134,6 @@ class TestRoundTripFixedExamples:
         result = deserialize_panel(serialize_panel(panel))
         assert result == panel
         assert len(result.imagenes) == 4
-        # Posiciones 1..4 preservadas en orden.
         assert tuple(r.position for r in result.imagenes) == (1, 2, 3, 4)
 
     def test_round_trip_iso_fecha_with_source_row_index(self) -> None:
@@ -189,18 +161,12 @@ class TestRoundTripFixedExamples:
         )
         result = deserialize_panel(serialize_panel(panel))
         assert result == panel
-        # Verificación explícita de que los caracteres unicode se preservaron.
         assert result.cuadrante == "Ñuñoa — Sector 4°"
         assert result.motivo.endswith("(área crítica)")
         assert result.imagenes[1].caption == "IMAGEN N°2: Pasaje Ñirehuao s/n"
 
 
-# Errores: campos obligatorios faltantes (Req 13.4)
-
-
 class TestDeserializeMissingRequiredFields:
-    """``deserialize_panel`` lanza ``InvalidPanelError`` con mensaje que
-    nombra el campo faltante."""
 
     def test_missing_cuadrante_raises(self) -> None:
         data = _valid_payload()
@@ -227,11 +193,7 @@ class TestDeserializeMissingRequiredFields:
             deserialize_panel(data)
 
 
-# Errores: tipos inválidos (Req 13.4)
-
-
 class TestDeserializeInvalidImagenesType:
-    """Cuando ``imagenes`` no es list/tuple, debe lanzar con mensaje descriptivo."""
 
     @pytest.mark.parametrize(
         "bad_value",
@@ -250,8 +212,6 @@ class TestDeserializeInvalidImagenesType:
 
 
 class TestDeserializeInvalidImageRef:
-    """Cuando un item de ``imagenes`` tiene campos faltantes o tipos
-    inválidos, debe lanzar con mensaje que nombre el campo problemático."""
 
     def test_image_ref_missing_filename_raises(self) -> None:
         data = _valid_payload()
@@ -276,9 +236,9 @@ class TestDeserializeInvalidImageRef:
     @pytest.mark.parametrize(
         "bad_position",
         [
-            "1",       # string
-            1.5,       # float
-            None,      # None
+            "1",
+            1.5,
+            None,
         ],
     )
     def test_image_ref_position_not_int_raises(self, bad_position: Any) -> None:

@@ -63,17 +63,14 @@ interface BoardViewProps {
   onEditTask?: (tarea: Tarea) => void;
   onCompleteTask?: (tarea: Tarea) => void;
   onDeleteTask?: (tarea: Tarea) => void;
-  /** Prefill status when creating from a column. */
   onAddTask?: (status?: TareaStatus) => void;
   onAddColumn?: (name: string) => Promise<void>;
   onRenameColumn?: (id: string, name: string) => Promise<void>;
   onDeleteColumn?: (id: string) => Promise<void>;
 }
 
-// Large columns use react-window; SortableContext still receives all task ids for DnD.
 const BOARD_VIRTUALIZE_THRESHOLD = ESPACIOS_VIRTUALIZE_THRESHOLD;
 
-/** Prefer pointer-over targets; fall back so empty columns still receive drops. */
 const boardCollisionDetection: CollisionDetection = (args) => {
   const pointerHits = pointerWithin(args);
   if (pointerHits.length > 0) {
@@ -863,7 +860,6 @@ export default function BoardView({
   const itemsRef = useRef(items);
   itemsRef.current = items;
 
-  // Sync from props when not dragging (avoid fighting local DnD state).
   useEffect(() => {
     if (activeId) return;
     setItems(buildBoardItems(tareas, columnKeys));

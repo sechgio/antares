@@ -14,9 +14,6 @@ import MappingColorField from './MappingColorField';
 import { mappingColorCss, mappingFontNameToCss, mappingFontWeight } from './mappingCoords';
 import { safeBase64ToBytes } from './base64';
 import { ensurePdfJs } from '../../lib/pdfjs';
-// Re-export so existing imports (FormatosView.test.tsx) keep working.
-// The canonical home for this helper is now ./base64 — see the docstring
-// there for why it was extracted out of this component module.
 export { safeBase64ToBytes };
 
 const MAX_PREVIEW_PAGES = 30;
@@ -56,7 +53,6 @@ async function renderPageToUrl(
 ): Promise<string> {
     const page = await pdf.getPage(pageNum);
     const unscaled = page.getViewport({ scale: 1 });
-    // Cap scale so hi-res PDFs don't create massive canvases
     const scale = Math.min((containerW / unscaled.width) * dpr, 2.5);
     const viewport = page.getViewport({ scale });
 
@@ -68,7 +64,6 @@ async function renderPageToUrl(
     ctx.fillRect(0, 0, viewport.width, viewport.height);
     const renderTask = page.render({ canvasContext: ctx, viewport });
     await renderTask.promise;
-    // JPEG is ~5x faster than PNG toDataURL and smaller
     return canvas.toDataURL('image/jpeg', 0.88);
 }
 
@@ -96,13 +91,12 @@ function PdfMultiViewer({ blob, desde, total, padLen, zoom }: { blob: Blob | nul
             const numPages = pdf.numPages;
             const rawContainerW = (containerRef.current?.clientWidth ?? 1100) - 32;
             const containerW = Math.max(rawContainerW, 200);
-            const dpr = Math.min(window.devicePixelRatio || 1, 1.5); // Cap DPR for speed
+            const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
 
             for (let i = 1; i <= numPages; i++) {
                 if (cancelled) break;
                 setRenderingPage(i);
 
-                // Yield to event loop between pages to keep UI responsive
                 await new Promise<void>(r => { rafId.current = requestAnimationFrame(() => r()); });
 
                 const url = await renderPageToUrl(pdf, i, containerW, dpr);
@@ -124,7 +118,6 @@ function PdfMultiViewer({ blob, desde, total, padLen, zoom }: { blob: Blob | nul
         return () => {
             cancelled = true;
             cancelAnimationFrame(rafId.current);
-            // Data URLs don't need revocation; just drop refs
             setPageImgs([]);
         };
     }, [blob, renderKey]);
@@ -132,7 +125,6 @@ function PdfMultiViewer({ blob, desde, total, padLen, zoom }: { blob: Blob | nul
     const isCapped = total > MAX_PREVIEW_PAGES;
     const previewCount = Math.min(total, MAX_PREVIEW_PAGES);
 
-    /* Error state – clean retry + download instead of iframe */
     if (renderError && blob) {
         return (
             <div ref={containerRef} className="w-full h-full flex flex-col items-center justify-center gap-5 px-8">
@@ -519,7 +511,6 @@ export default function FormatosView() {
     const previewToken = useRef(0);
     const previewSkipEffectRef = useRef(false);
 
-    // Bump token on unmount so late in-flight results never setState.
     useEffect(() => () => { previewToken.current += 1; }, []);
 
     const [showUpload, setShowUpload] = useState(false);
@@ -541,16 +532,12 @@ export default function FormatosView() {
     const isValid = selected !== null && desde >= numMin && hasta >= desde && total <= maxPages && hasta <= numMax;
     const canGenerate = isValid && (selected?.strategy === 'legacy_xobject' || selected?.strategy === 'simple_overlay' || selected?.has_mapping);
 
-    /* ── Load formats ── */
     const fetchFormats = useCallback(async () => {
         setLoadingFormats(true);
         try {
             const res = await api.formatosList();
             setFormats(res.formats ?? []);
             if (res.formats.length > 0) {
-                // Auto-select the first format only when nothing is selected yet.
-                // Uses a functional update so this callback doesn't depend on
-                // selectedId — otherwise every selection change would re-fetch.
                 setSelectedId(prev => prev || res.formats[0].id);
             }
         } catch (err: unknown) {
@@ -562,7 +549,6 @@ export default function FormatosView() {
 
     useEffect(() => { fetchFormats(); }, [fetchFormats]);
 
-    /* ── Auto-preview on desde/hasta/format change ── */
     useEffect(() => {
         if (mappingMode) return;
         if (previewSkipEffectRef.current) {
@@ -601,7 +587,6 @@ export default function FormatosView() {
         };
     }, [desde, hasta, selectedId, selected?.has_mapping, selected?.strategy, selected?.id, mappingMode, canGenerate, numMin]);
 
-    /* ── Download handler ── */
     const handleGenerate = async () => {
         if (!canGenerate || !selected) return;
         setLoading(true);
@@ -643,7 +628,6 @@ export default function FormatosView() {
         }
     };
 
-    /* ── Delete handler ── */
     const handleDelete = async (fid: string) => {
         const ok = await confirm({
             title: '¿Eliminar este formato?',
@@ -665,7 +649,6 @@ export default function FormatosView() {
         }
     };
 
-    /* ── Save mapping ── */
     const handleSaveMapping = async () => {
         if (!selected || !editMapping) return;
         try {
@@ -702,7 +685,6 @@ export default function FormatosView() {
         }
     };
 
-    /* ── Upload callback ── */
     const handleUploaded = (f: FormatInfo) => {
         setFormats(prev => [...prev, f]);
         setSelectedId(f.id);
@@ -840,10 +822,21 @@ export default function FormatosView() {
                         </div>
                         <div className="space-y-1.5">
                             {formats.map(f => (
-                                <button
+                                <div
                                     key={f.id}
+                                    role="button"
+                                    tabIndex={0}
                                     onClick={() => { setSelectedId(f.id); setMappingMode(false); setEditMapping(null); setMappingBaseline(null); }}
-                                    className={`w-full flex items-center gap-2.5 rounded-md px-3 py-2.5 transition-colors group text-left ${f.id === selectedId
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault();
+                                            setSelectedId(f.id);
+                                            setMappingMode(false);
+                                            setEditMapping(null);
+                                            setMappingBaseline(null);
+                                        }
+                                    }}
+                                    className={`w-full flex items-center gap-2.5 rounded-md px-3 py-2.5 transition-colors group text-left cursor-pointer ${f.id === selectedId
                                             ? 'bg-[var(--accent-primary)]/[0.08] border border-[var(--accent-primary)]/25'
                                             : 'bg-[var(--bg-elevated)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)]'
                                         }`}
@@ -857,13 +850,16 @@ export default function FormatosView() {
                                     </div>
                                     {f.origen === 'uploaded' && (
                                         <button
+                                            type="button"
                                             onClick={e => { e.stopPropagation(); handleDelete(f.id); }}
                                             className="opacity-0 group-hover:opacity-100 text-[var(--text-muted)] hover:text-[var(--accent-red)] transition-all"
+                                            title="Eliminar formato"
+                                            aria-label={`Eliminar formato ${f.nombre}`}
                                         >
                                             <Trash2 size={12} />
                                         </button>
                                     )}
-                                </button>
+                                </div>
                             ))}
                             {formats.length === 0 && !loadingFormats && (
                                 <div className="text-center text-[10px] text-[var(--text-muted)] py-4" style={{ fontFamily: "'Roboto Mono', monospace" }}>Sin formatos</div>

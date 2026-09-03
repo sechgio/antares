@@ -1,18 +1,3 @@
-/**
- * Python backend process lifecycle.
- *
- * Responsibilities:
- *   - Spawn the Python process (dev: venv / system python; prod: PyInstaller .exe).
- *   - Handshake: wait for the `ready` JSON-RPC notification on stdout.
- *   - Track process state (`starting` → `ready` → `exited`/`fatal`).
- *   - Capture a rolling tail of stderr so failures can be diagnosed.
- *   - Auto-restart on unexpected crashes, with bounded backoff.
- *   - Emit lifecycle notifications to the renderer (`backend.starting`,
- *     `backend.ready`, `backend.error`, `backend.restarting`, `backend.fatal`).
- *
- * The IPC router relies on `waitForReady()` and `getLastError()` to decide
- * whether to queue a pending request or fail it with a helpful message.
- */
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -34,14 +19,14 @@ const STATE = Object.freeze({
   FATAL: 'fatal',
 });
 
-const HANDSHAKE_TIMEOUT_MS = 60_000;    // AV scan of onedir deps can still be slow on cold start
-const AUTO_RESTART_LIMIT = 8;            // max consecutive auto-restarts before FATAL
+const HANDSHAKE_TIMEOUT_MS = 60_000;
+const AUTO_RESTART_LIMIT = 8;
 const RESTART_BACKOFF_BASE_MS = 1_000;
-const MAX_RESTART_BACKOFF_MS = 30_000;    // cap backoff at 30s
-const RESTART_RESET_MS = 60_000;         // time of stability before counter resets
-const STDERR_BUFFER_LINES = 30;          // rolling stderr tail
-const HEALTH_CHECK_INTERVAL_MS = 15_000; // detect crashes faster
-const HEALTH_PROBE_TIMEOUT_MS = 3_000;   // version probe is cheap — should answer in <1s
+const MAX_RESTART_BACKOFF_MS = 30_000;
+const RESTART_RESET_MS = 60_000;
+const STDERR_BUFFER_LINES = 30;
+const HEALTH_CHECK_INTERVAL_MS = 15_000;
+const HEALTH_PROBE_TIMEOUT_MS = 3_000;
 
 let pythonProcess = null;
 let _state = STATE.IDLE;
@@ -51,17 +36,14 @@ let _restartCount = 0;
 let _restartResetTimer = null;
 let _stderrBuffer = [];
 let _stderrLineBuffer = '';
-let _lastError = null;                   // { kind: 'fatal'|'transient', message, stderrTail }
-let _healthCheckTimer = null;            // periodic health check interval
-let _healthProbeInFlight = false;        // avoid overlapping liveness probes
-let _currentStart = null;                // { inProgress, abort } — active start/retry cycle
-let _autoRestartAbort = null;            // aborts in-flight auto-restart backoff when preempted
-let _autoRestartInProgress = false;      // synchronous claim for _autoRestart() concurrency
-let _manualRestartInProgress = false;    // synchronous claim for manualRestart() concurrency
-let _pendingRequestCount = 0;            // track in-flight IPC requests to avoid killing busy backend
-// Background jobs (conversion, etc.) finish their process_start IPC quickly but
-// keep working. Progress notifications refresh this timestamp so a health-probe
-// timeout during a long job does not force-restart the backend.
+let _lastError = null;
+let _healthCheckTimer = null;
+let _healthProbeInFlight = false;
+let _currentStart = null;
+let _autoRestartAbort = null;
+let _autoRestartInProgress = false;
+let _manualRestartInProgress = false;
+let _pendingRequestCount = 0;
 let _lastJobActivityAt = 0;
 const JOB_ACTIVITY_GRACE_MS = 60_000;
 let _healthStatus = {
@@ -80,11 +62,9 @@ let _healthStatus = {
   restarts_total: 0,
 };
 
-// Promise-based readiness gate; resolves when state === READY,
-// rejects when state === FATAL.
 let _readyResolve = null;
 let _readyReject = null;
-let _readyGatePending = false;             // true while the gate is unsettled
+let _readyGatePending = false;
 let _readyPromise = _createReadyPromise();
 
 function _createReadyPromise() {
@@ -96,14 +76,7 @@ function _createReadyPromise() {
 }
 
 function _resetReadyGate() {
-  // Never replace a pending gate: an in-flight start cycle (initial spawn,
-  // auto-restart backoff, or manual restart) is responsible for settling it.
-  // Replacing it here would orphan current waitForReady() callers — they
-  // would hang until their own timeout and fail with "backend unavailable"
-  // even if the backend becomes ready seconds later.
   if (_readyGatePending) return;
-  // Rejections must be swallowed to avoid unhandled rejection warnings
-  // when no one is awaiting.
   if (_readyPromise) {
     _readyPromise.catch(() => {});
   }
@@ -122,10 +95,6 @@ function getPendingRequestCount() { return _pendingRequestCount; }
 function incrementPendingRequests() { _pendingRequestCount++; }
 function decrementPendingRequests() { if (_pendingRequestCount > 0) _pendingRequestCount--; }
 
-/**
- * Mark that the backend is doing background job work (conversion progress, etc.).
- * Called from the IPC router when process/job progress notifications arrive.
- */
 function noteJobActivity() {
   _lastJobActivityAt = Date.now();
 }
@@ -187,10 +156,6 @@ function _recordHealthProbe({ outcome, durationMs, reason, errorCode = undefined
   });
 }
 
-/**
- * Wait until the backend is ready. Resolves true when ready, false when it
- * fails fatally or the timeout expires. Never rejects.
- */
 async function waitForReady(timeoutMs = 60_000) {
   if (_state === STATE.READY && pythonProcess && !pythonProcess.killed) return true;
   if (_state === STATE.FATAL) return false;
@@ -213,20 +178,14 @@ function _notifyRenderer(method, params) {
       win.webContents.send('ipc-notify', method, params);
     }
   } catch {
-    // window-manager may not be loaded during tests
   }
 }
 
 function _resolveAppVersion() {
-  // In a packaged build npm is not involved, so npm_package_version is absent
-  // and the renderer would otherwise receive version: null. Prefer Electron's
-  // app.getVersion() (available in production) and fall back to the npm env var
-  // for dev runs / tests where Electron is not importable.
   try {
     const { app } = require('electron');
     if (app && typeof app.getVersion === 'function') return app.getVersion();
   } catch {
-    /* Electron not available (e.g. unit tests run in plain Node) */
   }
   return process.env.npm_package_version || null;
 }
@@ -292,10 +251,7 @@ function _persistStderrLine(line, sourcePid) {
 
 function _recordStderr(chunk, sourcePid) {
   const text = chunk.toString();
-  // Forward to main-process stderr for CLI visibility
   process.stderr.write(text);
-  // Keep a rolling buffer of the last N non-empty lines for diagnostics and
-  // persist complete lines so a crash does not erase the useful stderr tail.
   _stderrLineBuffer += text;
   const lines = _stderrLineBuffer.split(/\r?\n/);
   _stderrLineBuffer = lines.pop() || '';
@@ -325,12 +281,6 @@ function _clearStartCycle() {
   _currentStart = null;
 }
 
-/**
- * Drop the start-cycle slot only if `myAbort` still owns it. An aborted cycle
- * that resumes after a successor claimed `_currentStart` must not clear the
- * successor's slot. When we do still own the slot and the ready gate is
- * pending with no successor, reject it so waitForReady() callers do not hang.
- */
 function _releaseStartCycleIfOwned(myAbort) {
   if (!myAbort || _currentStart?.abort !== myAbort) return;
   _clearStartCycle();
@@ -390,7 +340,6 @@ function _enterFatalFromRestartBudget(message) {
 
 function _classifyStartupError(rawMessage) {
   const msg = (rawMessage || '').toLowerCase();
-  // Fatal = no point retrying: executable missing, python not installed, DB unusable.
   if (msg.includes('backend executable not found')) return 'fatal';
   if (msg.includes('python no encontrado')) return 'fatal';
   if (msg.includes('enoent')) return 'fatal';
@@ -413,9 +362,6 @@ function _getRestartBackoffMs(attempt) {
 
 async function startPythonBackend(isDev, attempt = 1) {
   _isDev = isDev;
-  // If the app is quitting, never (re)spawn — killPython() sets this and it
-  // must stay set. Without this guard, a concurrent manual/auto restart can
-  // reset the flag and spawn a backend that outlives the app (zombie process).
   if (_isShuttingDown) {
     console.log('[backend-spawner] Shutdown requested, aborting start.');
     _clearStartCycle();
@@ -423,9 +369,6 @@ async function startPythonBackend(isDev, attempt = 1) {
   }
 
   if (attempt === 1) {
-    // Never clear `_isShuttingDown` here. killPython() may race after the guard
-    // above; undoing it would spawn a zombie that outlives the app. Cold start
-    // begins with the flag already false; manualRestart re-checks before calling.
     if (_isShuttingDown) {
       console.log('[backend-spawner] Shutdown requested, aborting start.');
       _clearStartCycle();
@@ -443,15 +386,12 @@ async function startPythonBackend(isDev, attempt = 1) {
     _notifyRenderer('backend.starting', { attempt: 1, limit: getAutoRestartLimit() });
   }
 
-  // Capture this cycle's abort controller. After a preempt, a successor may own
-  // `_currentStart` / `pythonProcess`; abort cleanup must not touch those.
   const myAbort = _currentStart?.abort;
   const cycleSignal = myAbort?.signal;
 
   try {
     const myPid = await _spawn(isDev);
     if (_isShuttingDown || cycleSignal?.aborted) {
-      // A shutdown or preempt was requested while the spawn was in flight.
       console.log('[backend-spawner] Start cycle aborted after spawn.');
       if (pythonProcess?.pid === myPid) {
         _forceKillProcess(pythonProcess);
@@ -480,8 +420,6 @@ async function startPythonBackend(isDev, attempt = 1) {
     console.error(`[backend-spawner] Start attempt ${attempt} failed (${kind}): ${err.message}`);
     if (stderrTail) console.error(`[backend-spawner] stderr tail:\n${stderrTail}`);
 
-    // Only truly fatal if Python / executable is missing. Everything else keeps
-    // retrying because renderer availability matters more than giving up early.
     if (kind === 'fatal') {
       _state = STATE.FATAL;
       _clearStartCycle();
@@ -524,14 +462,6 @@ async function startPythonBackend(isDev, attempt = 1) {
   }
 }
 
-/**
- * Periodic health check: if the backend process exited without firing 'close',
- * or if it's a zombie, force a restart.
- *
- * The probe attaches a temporary stdout listener (removed in cleanup via finish())
- * in addition to ipc-router's persistent listener. Both parse JSON lines; the
- * probe only handles responses matching its probeId.
- */
 function _probeBackendResponsiveness(proc) {
   if (!proc || proc.killed) {
     return Promise.reject(new Error('process unavailable'));
@@ -567,8 +497,6 @@ function _probeBackendResponsiveness(proc) {
         if (idx === -1) break;
         if (idx > start) {
           const lineBuf = buf.subarray(start, idx);
-          // Fast byte check: probe response is small (<1 KB) and MUST contain probeId.
-          // Skips string decode and JSON.parse on unrelated large concurrent RPC payloads.
           if (lineBuf.includes(probeIdBytes)) {
             try {
               const msg = JSON.parse(lineBuf.toString('utf8'));
@@ -585,7 +513,6 @@ function _probeBackendResponsiveness(proc) {
       }
       pending = start === 0 ? buf : buf.subarray(start);
       if (pending.length > 128 * 1024) {
-        // Line exceeds 128 KiB without newline — probe response is <500 bytes, drop pending
         pending = Buffer.alloc(0);
       }
     };
@@ -654,24 +581,16 @@ async function runHealthCheckOnce() {
       reason: failureReason,
       errorCode: failureReason,
     });
-    // If there are in-flight requests, the backend is likely busy — not dead.
-    // A health probe timeout during active work is a false positive; restarting
-    // would kill the user's operation mid-flight.
     if (_pendingRequestCount > 0) {
       _recordHealthSkip('requests_in_flight');
       console.log(`[backend-spawner] Health probe timed out but ${_pendingRequestCount} request(s) in flight — skipping restart (backend is busy, not dead).`);
       return;
     }
-    // Conversion jobs release the process_start IPC immediately but keep running.
-    // Progress notifications mark recent activity so we don't kill mid-batch.
     if (hasRecentJobActivity()) {
       _recordHealthSkip('job_active');
       console.log('[backend-spawner] Health probe timed out but a job was recently active — skipping restart (backend is busy, not dead).');
       return;
     }
-    // Re-check synchronously immediately before triggering a restart: a new
-    // request could have arrived between the probe failing and this point
-    // (await boundaries are scheduling points). Avoid killing it mid-flight.
     if (_pendingRequestCount > 0) {
       _recordHealthSkip('requests_in_flight_after_probe');
       console.log(`[backend-spawner] Pending request arrived during probe failure handling — skipping restart.`);
@@ -757,7 +676,6 @@ async function _autoRestart(reason = 'unexpected_exit', previousPid = null, { re
       limit: getAutoRestartLimit(),
     });
 
-    // Exponential backoff with a cap so we don't spam too fast.
     await _sleep(_getRestartBackoffMs(_restartCount), restartSignal);
     if (_isShuttingDown || _manualRestartInProgress || _currentStart?.inProgress || restartSignal.aborted) {
       if (_isShuttingDown) {
@@ -770,9 +688,6 @@ async function _autoRestart(reason = 'unexpected_exit', previousPid = null, { re
       _clearAutoRestartCycle();
       return;
     }
-    // Health probes can detect a live-but-unresponsive child, unlike the
-    // close-driven path where the old process is already gone. Only kill the
-    // exact process that failed the probe; a concurrent replacement wins.
     if (replaceProcess && pythonProcess === replaceProcess) {
       _forceKillProcess(pythonProcess);
       pythonProcess = null;
@@ -795,31 +710,17 @@ async function _autoRestart(reason = 'unexpected_exit', previousPid = null, { re
   }
 }
 
-/**
- * Whitelist only the env vars the Python backend needs instead of cloning the
- * entire process.env (Windows env block limit ~32K; avoids leaking unrelated
- * secrets and keeps the child env block small).
- *
- * Regression note (post-0.10.20): the first whitelist omitted Windows shell
- * identity vars, SSL/proxy, XDG paths, and ANTARES_* flags that ubicaciones
- * and subprocess helpers read via os.environ — keep those prefixes/keys.
- */
 const _CHILD_ENV_WHITELIST = [
-  // Process / paths
   'PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'OS',
   'TEMP', 'TMP', 'PYTHONIOENCODING', 'PYTHONUTF8',
-  // User data roots (backend/utils/paths.py)
   'LOCALAPPDATA', 'APPDATA', 'USERPROFILE', 'HOME', 'HOMEDRIVE', 'HOMEPATH',
   'XDG_DATA_HOME', 'USERNAME', 'USER',
-  // Locale
   'LANG', 'LC_ALL', 'LC_CTYPE',
-  // Native libs / TLS / corporate proxy (maps, HTTPS fetch)
   'ProgramData', 'ProgramFiles', 'ProgramFiles(x86)',
   'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE',
   'SSL_CERT_FILE', 'SSL_CERT_DIR', 'REQUESTS_CA_BUNDLE', 'CURL_CA_BUNDLE',
   'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy',
 ];
-/** Dev-only: never inject into the frozen AntaresBackend.exe (breaks MEIPASS imports). */
 const _CHILD_ENV_DEV_ONLY = ['PYTHONPATH', 'VIRTUAL_ENV'];
 
 function _buildChildEnv(isDev = false) {
@@ -832,7 +733,6 @@ function _buildChildEnv(isDev = false) {
       if (process.env[key] !== undefined) env[key] = process.env[key];
     }
   }
-  // Feature flags + map keys the backend reads (ANTARES_MAP_PROVIDER, etc.)
   for (const key of Object.keys(process.env)) {
     if (key.startsWith('ANTARES_') && process.env[key] !== undefined) {
       env[key] = process.env[key];
@@ -843,8 +743,6 @@ function _buildChildEnv(isDev = false) {
   const appContext = getAppContext();
   env.ANTARES_SESSION_ID = appContext.session_id;
   if (appContext.app_version) env.ANTARES_APP_VERSION = appContext.app_version;
-  // IPC phase telemetry: always enabled in the child, sampled at emit time
-  // (1% fast-success + 100% errors/slow). Cost ~ <0.1ms per request.
   env.ANTARES_IPC_TELEMETRY = '1';
   return env;
 }
@@ -886,8 +784,6 @@ function _spawn(isDev) {
       outcome: wasReady ? 'failed' : 'cancelled',
       reason: signal ? 'signal' : 'exit',
     });
-    // Only null out pythonProcess if it still references this closed process.
-    // Prevents race where a new process was already spawned.
     if (pythonProcess && pythonProcess.pid === spawnedPid) {
       pythonProcess = null;
     }
@@ -901,7 +797,6 @@ function _spawn(isDev) {
         );
         return;
       }
-      // Unexpected crash after being healthy → try to restart.
       _autoRestart('unexpected_exit', spawnedPid).catch((err) => console.error('[backend-spawner] Auto-restart failed:', err));
     }
   });
@@ -945,7 +840,6 @@ function _spawn(isDev) {
 
     const handshakeTimer = setTimeout(() => {
       spawnedProcess.stdout.off('data', onData);
-      // Only kill if this handshake's process is still the active one.
       if (pythonProcess && pythonProcess.pid === spawnedPid && !pythonProcess.killed) {
         _forceKillProcess(pythonProcess);
       }
@@ -972,12 +866,8 @@ function _forceKillProcess(proc) {
   if (!proc || proc.killed) return;
   try { proc.stdin.end(); } catch { /* ignore */ }
   try { proc.kill(); } catch { /* ignore */ }
-  // On Windows, child processes may survive SIGTERM. Use taskkill to force-kill
-  // the entire process tree to prevent zombie processes from blocking the port
-  // or holding file locks.
   if (process.platform === 'win32' && proc.pid && typeof proc.pid === 'number') {
     try {
-      // Keep shutdown responsive while Windows tears down the child tree.
       execFile('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { stdio: 'ignore', timeout: 5000 }, () => {});
     } catch { /* process may already be dead */ }
   }
@@ -993,23 +883,16 @@ function killPython() {
   _forceKillProcess(pythonProcess);
 }
 
-/**
- * Manual restart: reset the FATAL state so a fresh start cycle can proceed.
- * Returns true if a start cycle was kicked off, false if already running.
- */
 async function manualRestart(isDev, { force = false, reason = null } = {}) {
-  // If already ready, nothing to do
   if (!force && _state === STATE.READY && pythonProcess && !pythonProcess.killed) {
     return true;
   }
-  // Synchronous claim — concurrent manualRestart() calls cannot both pass.
   if (_manualRestartInProgress) {
     console.warn('[backend-spawner] Manual restart skipped: another manual restart is in progress.');
     return false;
   }
   _manualRestartInProgress = true;
 
-  // If the app is quitting, do not restart — killPython() must win this race.
   if (_isShuttingDown) {
     console.warn('[backend-spawner] Manual restart aborted: shutdown in progress.');
     _manualRestartInProgress = false;
@@ -1020,26 +903,18 @@ async function manualRestart(isDev, { force = false, reason = null } = {}) {
   _healthStatus.restarts_total += 1;
 
   try {
-    // Abort any in-flight auto-start/retry so this restart cannot leave a stale
-    // start cycle that blocks all future restarts.
     _preemptStartCycle('manual restart requested');
     _abortAutoRestart('manual restart requested');
 
-    // Kill any lingering process (handles Windows zombie processes)
     _forceKillProcess(pythonProcess);
     pythonProcess = null;
     _stopHealthCheck();
 
-    // Re-check shutdown flag — killPython() may have been called concurrently
-    // between the guard above and this synchronous section.
     if (_isShuttingDown) {
       console.warn('[backend-spawner] Manual restart aborted: shutdown arrived during cleanup.');
       return false;
     }
 
-    // Reset ANY state so startPythonBackend can proceed — even if previously fatal.
-    // Do NOT force `_isShuttingDown = false`: if quit raced after the re-check
-    // above, clearing the flag would spawn a zombie that outlives the app.
     _state = STATE.IDLE;
     _restartCount = 0;
     if (_restartResetTimer) clearTimeout(_restartResetTimer);
@@ -1048,14 +923,11 @@ async function manualRestart(isDev, { force = false, reason = null } = {}) {
     _stderrBuffer = [];
     clearJobActivity();
 
-    // Final re-check immediately before start — killPython may have arrived
-    // during the synchronous reset above.
     if (_isShuttingDown) {
       console.warn('[backend-spawner] Manual restart aborted: shutdown arrived before start.');
       return false;
     }
 
-    // Kill-and-replace: tell the UI to drop in-flight job state (unlike cold start).
     const restartReason = reason || (force ? 'forced' : 'manual');
     _notifyRenderer('backend.restarting', {
       reason: restartReason,

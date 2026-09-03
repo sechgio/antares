@@ -64,7 +64,6 @@ describe('PetMascot', () => {
       act(() => pending[0](time));
     };
 
-    // The first sprite/state tick transitions the pet from idle to walking.
     const initialCommitCount = commitCount;
     const firstFrameTime = performance.now() + 16.7;
     for (let frame = 1; frame <= 8; frame += 1) {
@@ -90,10 +89,8 @@ describe('PetMascot', () => {
 
     const mascot = await screen.findByTestId('pet-mascot-container');
     
-    // Hover over mascot
     fireEvent.mouseEnter(mascot);
 
-    // Bounding div transitions to reflecting reacting state (row 3, which translates to background-position-y of -624px)
     await waitFor(() => {
       const sprite = mascot.firstChild as HTMLDivElement;
       expect(sprite.style.backgroundPosition).toContain('-624px');
@@ -108,10 +105,8 @@ describe('PetMascot', () => {
 
     const mascot = await screen.findByTestId('pet-mascot-container');
 
-    // Click mascot
     fireEvent.click(mascot);
 
-    // Bounding div transitions to reflecting clicked state (row 4, which translates to background-position-y of -832px)
     await waitFor(() => {
       const sprite = mascot.firstChild as HTMLDivElement;
       expect(sprite.style.backgroundPosition).toContain('-832px');

@@ -1,5 +1,3 @@
-"""Canvas tool — independent A4 template editor store."""
-
 from __future__ import annotations
 
 from backend.core.canvas.models import CanvasDocument, create_empty_document, normalize_document

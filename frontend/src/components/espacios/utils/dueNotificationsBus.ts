@@ -1,4 +1,3 @@
-/** In-process invalidation when Espacios mutates tareas (same window as the bell). */
 
 type Listener = () => void;
 

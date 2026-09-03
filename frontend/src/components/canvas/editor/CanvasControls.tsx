@@ -4,7 +4,6 @@ interface CanvasToggleProps {
   label?: string;
   disabled?: boolean;
 }
-/** Compact work-tool switch (scoped to Canvas) — Figma-like pill toggle. */
 export function CanvasToggle({ checked, onChange, label, disabled }: CanvasToggleProps) {
   return (
     <label
@@ -41,14 +40,9 @@ interface CanvasSegmentedProps<T extends string> {
   options: SegmentOption<T>[];
   onChange: (value: T) => void;
   ariaLabel?: string;
-  /** `md` (default) for the TopBar Diseñar/Generar switch; `sm` for compact
-   * inline segmented controls (e.g. Generate wizard). */
   size?: 'sm' | 'md';
 }
 
-/** Segmented control. One implementation for both the TopBar switch and the
- * Generate wizard compact variant — previously `GenerateSegmented` duplicated
- * this with slightly different padding/border, producing inconsistent visuals. */
 export function CanvasSegmented<T extends string>({
   value,
   options,
@@ -105,9 +99,6 @@ interface CanvasCheckboxProps {
   disabled?: boolean;
 }
 
-/** Figma-like checkbox for canvas panels. Replaces native `<input type="checkbox">`
- *  in RightPanel imageSlot/checkbox sections so they don't render with the
- *  browser default style while the rest of the panel uses canvas tokens. */
 export function CanvasCheckbox({ checked, onChange, label, disabled }: CanvasCheckboxProps) {
   return (
     <label

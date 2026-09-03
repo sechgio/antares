@@ -16,13 +16,6 @@ interface UseInlineEditOptions {
   setContextMenu: (state: CanvasContextMenuState | null) => void;
 }
 
-/** Inline text editing: owns `editingLayerId`, the edit baseline, and the
- * "select-all on first focus" flag. `beginEditWithBaseline` lets `addLayerAt`
- * start editing a freshly created text layer without re-cloning or re-seeding.
- *
- * Commit policy mirrors the gesture pattern: capture the document snapshot on
- * start, `updateSilent` while typing, `commitFromBaseline` on blur/Enter so the
- * whole edit is one undo entry. */
 export function useInlineEdit({
   history,
   setSelectedIds,
@@ -107,9 +100,6 @@ export function useInlineEdit({
     [history],
   );
 
-  /** Used by `addLayerAt` to enter edit mode on a freshly created text layer.
-   *  The caller already has the post-add document snapshot, so we accept it
-   *  verbatim instead of re-cloning. */
   const beginEditWithBaseline = useCallback(
     (baseline: CanvasDocument, id: string) => {
       editBaselineRef.current = baseline;

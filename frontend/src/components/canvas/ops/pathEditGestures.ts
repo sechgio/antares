@@ -1,4 +1,3 @@
-/** Apply path edits back onto a line layer, renormalizing bbox. */
 
 import type { CanvasLayer, LayerPath } from '../types';
 import { parseMm } from '../types';
@@ -14,9 +13,7 @@ import {
   togglePathClosed,
 } from './pathGeometry';
 
-/** Max distance (mm) from pointer to segment for bend to take effect. */
 export const BEND_HIT_MM = 20;
-/** Max distance (mm) from pointer to segment for cut to take effect. */
 export const CUT_HIT_MM = 8;
 
 function lineOrigin(layer: CanvasLayer): { ensured: CanvasLayer; path: LayerPath; ox: number; oy: number } | null {

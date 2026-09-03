@@ -1,4 +1,3 @@
-"""History store for processing runs."""
 
 from __future__ import annotations
 
@@ -12,13 +11,8 @@ from backend.core.migrations import Migration, MigrationManager
 from backend.core.repository import _db_lock, _db_read_lock, get_connection, get_read_connection
 from backend.core.run_types import ALL_RUN_TYPES  # noqa: F401
 
-# ─── Constants ─────────────────────────────────────────────────────────────
-
-# Run type id used as the default for ``save_run``. The canonical registry
-# lives in ``backend.core.run_types.RUN_TYPE_REGISTRY``.
 RUN_TYPE_CONVERSION = "conversion"
 
-# Known historial columns — explicit projection (never ``SELECT *``).
 _HISTORIAL_COLUMNS: tuple[str, ...] = (
     "id",
     "run_type",
@@ -37,11 +31,8 @@ _HISTORIAL_COLUMNS: tuple[str, ...] = (
 )
 _HISTORIAL_SELECT = ", ".join(_HISTORIAL_COLUMNS)
 
-# Current schema version. Bump when adding a new migration to ``HISTORIAL_MIGRATIONS``.
 CURRENT_HISTORIAL_SCHEMA_VERSION = 1
 
-# ─── Migrations ────────────────────────────────────────────────────────────
-# Forward-only, additive, idempotent. New columns are always NULL-able.
 
 HISTORIAL_MIGRATIONS: list[Migration] = [
     Migration(
@@ -66,7 +57,6 @@ HISTORIAL_MIGRATIONS: list[Migration] = [
                 err_count INTEGER DEFAULT 0
             )
             """,
-            # Idempotent for legacy installs that pre-date the run_type column.
             "ALTER TABLE historial ADD COLUMN run_type TEXT",
         ),
     ),
@@ -98,11 +88,6 @@ _ensured_dbs: set[Path] = set()
 
 
 def _ensure_table() -> None:
-    """Idempotently migrate the historial schema to the latest version.
-
-    Runs once per database file to avoid lock contention and write commits
-    on every SELECT query.
-    """
     db_path = get_db_path()
     resolved_db = db_path.resolve() if db_path.exists() else db_path
     if resolved_db in _ensured_dbs:
@@ -113,7 +98,6 @@ def _ensure_table() -> None:
         conn = get_connection(db_path)
         manager = MigrationManager(conn)
         manager.apply_all(HISTORIAL_MIGRATIONS)
-        # Safety net for rows written by code that pre-dated the run_type column.
         conn.execute(
             "UPDATE historial SET run_type = 'conversion' WHERE run_type IS NULL"
         )
@@ -133,16 +117,8 @@ def save_run(
     run_type: str = RUN_TYPE_CONVERSION,
     duration_ms: int | None = None,
 ) -> int:
-    """Save a processing run to history and return its ID.
-
-    Validates the payload against the RunType registry when ``jsonschema`` is
-    available; falls back to a permissive save (with ``schema_version=0``) when
-    the library is missing. Records the application version that produced the
-    row so the data is self-describing across updates.
-    """
     _ensure_table()
 
-    # Lazy import to avoid a hard dependency at module import time.
     from backend.core.run_types import (
         validate_run_payload,
     )
@@ -190,12 +166,6 @@ def list_runs(
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> list[dict[str, Any]]:
-    """List recent processing runs, newest first.
-
-    Optional ``date_from`` and ``date_to`` are ISO 8601 strings and are
-    compared against the stored ``timestamp`` (string comparison works for
-    ISO 8601 because it is lexicographically ordered).
-    """
     _ensure_table()
     db = get_db_path()
     where: list[str] = []
@@ -222,7 +192,6 @@ def list_runs(
 
 
 def list_runs_by_ids(ids: list[int]) -> list[dict[str, Any]]:
-    """Return runs whose ids are in ``ids``. Preserves the given ordering."""
     if not ids:
         return []
     _ensure_table()
@@ -236,12 +205,10 @@ def list_runs_by_ids(ids: list[int]) -> list[dict[str, Any]]:
             ids,
         ).fetchall()
     by_id = {r["id"]: r for r in rows}
-    # Preserve caller ordering, drop missing ids silently.
     return [dict(by_id[i]) for i in ids if i in by_id]
 
 
 def get_run(run_id: int) -> dict[str, Any] | None:
-    """Get a single run by ID."""
     _ensure_table()
     db = get_db_path()
     with _db_read_lock:
@@ -254,7 +221,6 @@ def get_run(run_id: int) -> dict[str, Any] | None:
 
 
 def delete_run(run_id: int) -> bool:
-    """Delete a run by ID."""
     _ensure_table()
     db = get_db_path()
     with _db_lock:

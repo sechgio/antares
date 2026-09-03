@@ -1,4 +1,3 @@
-"""Sellador PDF stamp handlers."""
 from __future__ import annotations
 
 import base64
@@ -15,7 +14,6 @@ _MAX_INLINE_PDF_BYTES = 8 * 1024 * 1024
 
 
 def _estimate_b64_decoded_size(value: str) -> int:
-    """Upper-bound decoded byte size from a base64 string (before decode)."""
     raw = str(value).strip()
     if "," in raw and raw.lower().startswith("data:"):
         raw = raw.split(",", 1)[1]
@@ -177,7 +175,6 @@ def sellador_apply(params: dict[str, Any]) -> dict[str, Any]:
         payload["pdf_base64"] = base64.b64encode(result_bytes).decode("ascii")
 
     return payload
-
 
 
 HANDLERS = {

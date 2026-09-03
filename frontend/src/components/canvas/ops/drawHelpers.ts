@@ -1,4 +1,3 @@
-/** Helpers for OpenPencil-style click-drag drawing on the A4 artboard. */
 
 export const MM_TO_PX = 96 / 25.4;
 
@@ -7,28 +6,16 @@ export type DrawRect = {
   y: number;
   w: number;
   h: number;
-  /** Original drag endpoints in page mm (line tool). */
   x0?: number;
   y0?: number;
   x1?: number;
   y1?: number;
 };
 
-/**
- * mm → screen px at the current zoom.
- * Prefer this over CSS `transform: scale()` so the browser re-paints vectors/text
- * at the zoomed size (Figma / OpenPencil crispness) instead of upscaling a bitmap.
- * Rounded to whole CSS pixels to avoid subpixel AA blur on borders/text.
- */
 export function mmToScreenPx(mmValue: number, zoom: number): number {
   return Math.round(mmValue * MM_TO_PX * zoom);
 }
 
-/**
- * Scale a CSS length by zoom (`11px` → `22px` at 200%).
- * Leaves percentages and non-length keywords unchanged.
- * Pixel lengths are rounded so fonts/borders stay on whole CSS pixels.
- */
 export function scaleCssLength(value: string | undefined, zoom: number): string | undefined {
   if (value == null || value === '') return value;
   const trimmed = value.trim();
@@ -43,7 +30,6 @@ export function scaleCssLength(value: string | undefined, zoom: number): string 
   return `${snapped}${unit || 'px'}`;
 }
 
-/** Convert client pointer position to mm relative to the artboard frame. */
 export function clientToMm(
   clientX: number,
   clientY: number,
@@ -57,10 +43,6 @@ export function clientToMm(
   };
 }
 
-/**
- * Normalize a drag from (x0,y0) to (x1,y1) into a positive rect.
- * Shift constrains to square (OpenPencil behavior for rect/ellipse).
- */
 export function normalizeDrawRect(
   x0: number,
   y0: number,
@@ -85,15 +67,10 @@ export function normalizeDrawRect(
   return { x, y, w: absW, h: absH };
 }
 
-/** True if drag was essentially a click (place default-sized layer). */
 export function isClickPlace(rect: DrawRect, thresholdMm = 3): boolean {
   return rect.w < thresholdMm && rect.h < thresholdMm;
 }
 
-/**
- * CSS translate/size vars for placing a layer.
- * Allows negative x/y (free canvas), matching moveSelection.
- */
 export function placeRectCssVars(
   x: number,
   y: number,

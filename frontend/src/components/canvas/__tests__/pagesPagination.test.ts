@@ -41,14 +41,12 @@ describe('planMultiPageRender photo pagination', () => {
       { id: newId(), name: 'Portada' },
       { id: newId(), name: 'Fotos' },
     ];
-    // settings.imagesPerPage must be ignored when the doc has imageSlots.
     doc.settings = { imagesPerPage: 2 };
     doc.layers = [
       { ...doc.layers[0]!, pageIndex: 0 },
       ...Array.from({ length: 4 }, (_, i) => slot(1, i)),
     ];
     const plan = planMultiPageRender(doc, ctx(5));
-    // Cover (empty) + chunk of 4 + chunk of 1 — never assign a chunk to the cover.
     expect(plan).toHaveLength(3);
     expect(plan[0]!.pageCtx.images).toEqual([]);
     expect(plan[0]!.pageDoc.layers.every((l) => l.type !== 'imageSlot')).toBe(true);

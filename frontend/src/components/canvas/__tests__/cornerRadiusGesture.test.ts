@@ -15,7 +15,6 @@ import { cornerRadiusPx } from '../ops/layerStyle';
 
 describe('cornerRadiusGesture', () => {
   it('clamps max radius to half the shortest side in CSS px', () => {
-    // 50mm × 40mm → shortest 40mm
     expect(maxCornerRadiusPx(50, 40)).toBeCloseTo((40 * MM_TO_PX) / 2);
     expect(maxCornerRadiusPx(10, 100)).toBeCloseTo((10 * MM_TO_PX) / 2);
   });
@@ -24,7 +23,6 @@ describe('cornerRadiusGesture', () => {
     expect(radiusHandleInsetPx(0, 1)).toBe(14);
     expect(radiusHandleInsetPx(12, 1)).toBe(14);
     expect(radiusHandleInsetPx(20, 1)).toBe(20);
-    // Under CSS camera zoom, min clearance shrinks in layout px.
     expect(radiusHandleInsetPx(0, 2)).toBe(7);
   });
 

@@ -99,7 +99,6 @@ export const appendPagesToPdf = async (
     pointerEvents: container.style.pointerEvents
   };
 
-  // Use opacity:0 instead of left:-9999px for Electron compatibility
   container.style.position = "fixed";
   container.style.left = "0";
   container.style.top = "0";

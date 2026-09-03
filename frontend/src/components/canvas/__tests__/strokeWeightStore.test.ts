@@ -30,7 +30,6 @@ describe('strokeWeightStore', () => {
 
   it('clamps weights to the allowed range', () => {
     rememberStrokeWeight(1000);
-    // STROKE_WEIGHT_MAX_PX = 100
     expect(strokeWeightForNewLine()).toBe(100);
   });
 
@@ -49,7 +48,6 @@ describe('strokeWeightStore', () => {
     resetLastStrokeWeight(1000);
     expect(strokeWeightForNewLine()).toBe(100);
     resetLastStrokeWeight(-5);
-    // Negative clamps to 0, then `|| DEFAULT_LINE_STROKE_PX` kicks in.
     expect(strokeWeightForNewLine()).toBe(DEFAULT_LINE_STROKE_PX);
   });
 });

@@ -1,8 +1,3 @@
-/**
- * Tests for _maybeTokenizeResultPaths in ipc-router.js.
- * Validates that raw result_path fields are converted into capability tokens
- * and stripped from the renderer payload across all backend methods.
- */
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
@@ -52,7 +47,6 @@ async function run() {
   fs.writeFileSync(tmpFile, JSON.stringify({ ok: true, data: [1, 2, 3] }));
 
   try {
-    // 1. spreadsheet_parse with result_path
     {
       const rawResult = {
         workbookName: 'test.xlsx',
@@ -72,7 +66,6 @@ async function run() {
       revokeCapability(tokenized.result_file_token);
     }
 
-    // 2. Generic export method with result_path and custom filename
     {
       const rawResult = {
         success: true,
@@ -91,7 +84,6 @@ async function run() {
       revokeCapability(tokenized.result_file_token);
     }
 
-    // 3. Fallback when result is not an object or has no result_path
     {
       const passthrough = { count: 42 };
       assert.strictEqual(_maybeTokenizeResultPaths('any_method', passthrough, null), passthrough);

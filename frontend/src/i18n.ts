@@ -8,7 +8,6 @@ i18n
     resources: {
       es: { translation: es },
     },
-    // Explicit locale lock: no browser LanguageDetector; only es/en.
     lng: 'es',
     fallbackLng: 'es',
     supportedLngs: ['es', 'en'],
@@ -19,7 +18,6 @@ i18n
     },
   });
 
-/** Load English strings on first switch — keeps en.json out of the shell entry. */
 async function ensureLocaleBundle(lng: string | undefined): Promise<void> {
   const code = (lng || 'es').split('-')[0];
   if (code !== 'en' || i18n.hasResourceBundle('en', 'translation')) return;

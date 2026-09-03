@@ -1,6 +1,3 @@
-/**
- * Preview de carpeta Drive: pageSize=4, thumbs pequeños, cache en memoria.
- */
 function assert(condition, message) {
   if (!condition) {
     console.error(`[FAIL] ${message}`);

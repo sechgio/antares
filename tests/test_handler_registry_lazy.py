@@ -1,9 +1,3 @@
-"""Regression: light feature IPC must not wait for heavy handler imports.
-
-Root cause of `IPC timeout: fichas_tecnicas_create`: HandlerRegistry loaded
-every handler module (conversion/sellador/ubicaciones/…) on the first
-membership check, blocking the IPC reader past the 30s frontend budget.
-"""
 
 from __future__ import annotations
 
@@ -15,15 +9,8 @@ import pytest
 
 
 def test_fichas_create_resolves_without_waiting_on_heavy_imports(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Simulates slow PyInstaller/AV imports of heavy modules.
-
-    Resolving fichas_tecnicas_create must stay well under the 30s IPC budget
-    even when unrelated heavy modules each take many seconds to import.
-    """
     from backend.handlers import HandlerRegistry
 
-    # Import real modules once so slow_import can return cached originals
-    # without paying real import cost inside the timed section.
     heavy = {
         "backend.handlers.conversion",
         "backend.handlers.sellador",
@@ -107,7 +94,6 @@ def test_unknown_method_does_not_eager_load_all_modules(monkeypatch: pytest.Monk
 
 
 def test_warm_core_skips_deferred_modules(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The core phase stays isolated from deferred feature imports."""
     from backend.handlers import (
         _CORE_HANDLER_MODULES,
         _DEFERRED_HANDLER_MODULES,
@@ -126,7 +112,6 @@ def test_warm_core_skips_deferred_modules(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(importlib, "import_module", tracking_import)
 
     reg = HandlerRegistry()
-    # Pre-import core so tracking only sees deferred if warm_core wrongly loads them.
     for name in _CORE_HANDLER_MODULES:
         importlib.import_module(name)
     imported.clear()
@@ -139,7 +124,6 @@ def test_warm_core_skips_deferred_modules(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_warm_core_excludes_pillow_conversion() -> None:
-    """Handshake must not wait on conversion/Pillow — that is post-ready warm."""
     from backend.handlers import _CORE_HANDLER_MODULES, _POST_READY_HANDLER_MODULES
 
     assert "backend.handlers.conversion" not in _CORE_HANDLER_MODULES
@@ -150,14 +134,12 @@ def test_warm_core_excludes_pillow_conversion() -> None:
 def test_post_ready_methods_resolve_without_prior_warm_core_of_those_modules(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """First convert/canvas IPC must lazy-load even if warm_post_ready has not run."""
     from backend.handlers import (
         _CORE_HANDLER_MODULES,
         _POST_READY_HANDLER_MODULES,
         HandlerRegistry,
     )
 
-    # Ensure a clean registry; do not pre-import post-ready modules.
     imported: list[str] = []
     orig_import = importlib.import_module
 
@@ -169,7 +151,6 @@ def test_post_ready_methods_resolve_without_prior_warm_core_of_those_modules(
     monkeypatch.setattr(importlib, "import_module", tracking_import)
 
     reg = HandlerRegistry()
-    # Warm only core (as main does before ready).
     for name in _CORE_HANDLER_MODULES:
         orig_import(name)
     imported.clear()
@@ -219,12 +200,10 @@ def test_warm_core_faster_than_full_warm_when_deferred_are_slow(
     full_ms = (time.perf_counter() - t1) * 1000
 
     assert core_ms < full_ms, f"expected warm_core ({core_ms:.0f}ms) < warm all ({full_ms:.0f}ms)"
-    # With 8 deferred x 50ms, full warm should be clearly slower than core.
     assert full_ms - core_ms >= 200, f"expected >=200ms gap, got core={core_ms:.0f} full={full_ms:.0f}"
 
 
 def test_every_electron_backend_method_resolves() -> None:
-    """Keep prefix/exact routing aligned with electron/ipc-methods.js allowlist."""
     import re
     from pathlib import Path
 
@@ -247,7 +226,6 @@ def test_every_electron_backend_method_resolves() -> None:
 def test_warm_post_ready_releases_critical_waiters_before_formatos_warm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """pypdf warm (~770 ms cold) must run AFTER WARM_CRITICAL_DONE is set."""
     import sys
     import types
 
@@ -261,8 +239,6 @@ def test_warm_post_ready_releases_critical_waiters_before_formatos_warm(
     monkeypatch.setattr("backend.handlers.serialized_import", nullcontext)
 
     reg = HandlerRegistry()
-    # Keep the test hermetic: don't really import canvas/conversion/formatos,
-    # only record that warm_post_ready orders critical release first.
     monkeypatch.setattr(reg, "warm", lambda modules=None: order.append("handler_warm"))
     monkeypatch.setattr(reg, "_warm_formatos_core", lambda: order.append("formatos_import"))
 
@@ -276,7 +252,6 @@ def test_warm_post_ready_releases_critical_waiters_before_formatos_warm(
 
 
 def test_warm_formatos_core_failure_is_non_fatal(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A failing formatos import must not break warm_post_ready."""
     from backend.handlers import HandlerRegistry
 
     real_import = importlib.import_module
@@ -290,11 +265,10 @@ def test_warm_formatos_core_failure_is_non_fatal(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr("backend.handlers.serialized_import", nullcontext)
 
     reg = HandlerRegistry()
-    reg._warm_formatos_core()  # must not raise
+    reg._warm_formatos_core()
 
 
 def test_warm_core_does_not_import_formatos_core(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The pre-ready handshake must stay off the pypdf cliff."""
     import sys
 
     from backend.handlers import HandlerRegistry

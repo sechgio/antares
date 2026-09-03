@@ -1,4 +1,3 @@
-"""Generate the small, deterministic PDFs used to exercise Canvas PDF import."""
 
 from __future__ import annotations
 

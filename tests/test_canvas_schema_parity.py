@@ -1,4 +1,3 @@
-"""Keep Canvas schema and scheduler contracts aligned."""
 
 from __future__ import annotations
 
@@ -8,7 +7,6 @@ from typing import get_args
 
 
 def test_allowed_layer_types_match_typed_literal() -> None:
-    """ALLOWED_LAYER_TYPES (runtime) must equal CanvasLayerType Literal values (static)."""
     from backend.core.canvas.models import ALLOWED_LAYER_TYPES
     from backend.core.canvas.types import CanvasLayerType
 
@@ -20,7 +18,6 @@ def test_allowed_layer_types_match_typed_literal() -> None:
 
 
 def test_heavy_methods_subset_of_shared_json() -> None:
-    """Backend heavy methods must be covered by the shared method list."""
     from backend.main import HEAVY_METHODS
 
     shared_path = pathlib.Path(__file__).resolve().parent.parent / "shared" / "long-running-methods.json"
@@ -37,7 +34,6 @@ def test_heavy_methods_subset_of_shared_json() -> None:
 
 
 def test_canvas_document_version_matches_frontend() -> None:
-    """Keep the Canvas document version aligned across runtimes (single source: shared/canvas-schema.json)."""
     import json
 
     from backend.core.canvas.models import A4_HEIGHT_MM, A4_WIDTH_MM, ALLOWED_LAYER_TYPES, DOCUMENT_VERSION

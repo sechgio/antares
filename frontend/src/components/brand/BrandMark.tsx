@@ -7,16 +7,6 @@ interface BrandMarkProps {
   className?: string;
 }
 
-/* ──────────────────────────────────────────────────────────
-   Determine whether the actual rendered background is
-   perceptually "dark" or "light" by reading the live
-   --bg-base CSS variable and computing its relative
-   luminance.  This is the ONLY reliable way to choose
-   the correct logo variant, because the user can pick
-   any arbitrary background color regardless of the
-   "mode" label (dark / light / system).
-   ────────────────────────────────────────────────────── */
-
 function hexToRgb(hex: string) {
   const h = hex.replace('#', '').trim();
   if (!/^[0-9a-fA-F]{6}$/.test(h)) return null;
@@ -37,7 +27,6 @@ function relativeLuminance(hex: string) {
   return 0.2126 * ch(rgb.r) + 0.7152 * ch(rgb.g) + 0.0722 * ch(rgb.b);
 }
 
-/** Read the current --bg-base value and decide if it's light */
 function isBgLight(): boolean {
   if (typeof document === 'undefined') return false;
   const raw = getComputedStyle(document.documentElement)
@@ -54,18 +43,15 @@ function useIsBgLight(): boolean {
     const root = document.documentElement;
     const update = () => setLight(isBgLight());
 
-    // Re-check whenever theme attributes or inline styles change
     const observer = new MutationObserver(update);
     observer.observe(root, {
       attributes: true,
       attributeFilter: ['data-theme-mode', 'class', 'style'],
     });
 
-    // Also listen to system preference changes
     const mq = window.matchMedia?.('(prefers-color-scheme: light)');
     mq?.addEventListener?.('change', update);
 
-    // Initial check
     update();
 
     return () => {
@@ -77,8 +63,6 @@ function useIsBgLight(): boolean {
   return light;
 }
 
-/* ──────────────────────────────────────────────────────── */
-
 export default function BrandMark({
   showText = false,
   tagline,
@@ -87,8 +71,6 @@ export default function BrandMark({
 }: BrandMarkProps) {
   const bgIsLight = useIsBgLight();
 
-  // brand-mark-*@2x.webp = 64px webp (2x for 26px display) — replaces 1024² favicon masters
-  // logo-antares-*@2x.webp = 280×64 webp (2x for 32/24px display) — replaces 525×120 logo masters
   const iconSrc = bgIsLight ? './brand-mark-light@2x.webp' : './brand-mark-dark@2x.webp';
   const logoSrc = bgIsLight ? './logo-antares-light@2x.webp' : './logo-antares-dark@2x.webp';
 

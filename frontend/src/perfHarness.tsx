@@ -1,15 +1,3 @@
-/**
- * Throwaway browser harness: measures REAL frame cadence while driving the
- * REAL Artboard gesture pipeline (drag + pinch) under configurable stress.
- *
- * Served by Vite at /perf-harness.html. Exposes window.__perfHarness:
- *   run(cfg?) -> Promise<RunResult>
- *
- * The stage owns real zoom/pan state (like DesignStage), so wheel/pinch
- * exercise the actual re-render path (culling recompute + LayerNodes).
- * Frame deltas are sampled with requestAnimationFrame; a delta > 20ms means
- * the browser dropped a display frame — the "janky gesture" the user feels.
- */
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createLayer } from './components/canvas/constants';
@@ -71,7 +59,6 @@ interface StageProps {
   tool: 'select' | 'hand';
 }
 
-/** Minimal CanvasDocument shape Artboard consumes. */
 type CanvasDocumentLike = ReturnType<typeof createEmptyDocument>;
 
 let stageApi: { setZoom: (z: number) => void } | null = null;
@@ -161,8 +148,6 @@ function stats(deltas: number[]) {
 }
 
 function actualZoom(): number {
-  // Camera zoom is applied as an inline `transform: scale(z)` on the artboard
-  // (compositor-only camera), not `style.zoom`.
   const el = document.querySelector<HTMLElement>('[data-testid="canvas-artboard"]');
   if (!el) return 1;
   const match = /scale\(([^)]+)\)/.exec(el.style.transform);
@@ -198,13 +183,7 @@ async function runDrag(frames: number): Promise<DragResult> {
     window.dispatchEvent(
       pe('pointermove', { clientX: cx + i * MM_PX, clientY: cy + i * 0.4 * MM_PX }),
     );
-    // ONE display frame per iteration: the delta is the true frame cadence,
-    // including the gesture's apply + commit + style/layout/paint of that frame.
     await nextFrame();
-    // The first imperative transform lands a couple of frames after the drag
-    // threshold is crossed (gestureActive flips → React re-render → the
-    // layout-effect re-applies geometry). Detect the change on any frame, not
-    // a fixed early one — a fixed i===3 check races the React commit.
     if (!applied && node.style.transform !== before) applied = true;
     const now = performance.now();
     deltas.push(now - prev);
@@ -249,8 +228,6 @@ async function runPinch(frames: number): Promise<{ deltas: number[]; zoomed: boo
   }
   touch('pointerup', 1, cx - 40 - frames * 0.6, cy);
   touch('pointerup', 2, cx + 40 + frames * 0.6, cy);
-  // The final pinch flush applies zoom via setState — let React commit before
-  // reading the camera transform, or `zoomed` reports stale false.
   await nextFrame();
   return { deltas, zoomed: actualZoom() !== zoomBefore };
 }
@@ -313,7 +290,6 @@ async function run(overrides: Partial<PerfConfig> = {}): Promise<RunResult> {
   currentConfig = cfg;
   mount(cfg);
   await settle();
-  // Apply the requested zoom after the mount-fit effect settles.
   if (stageApi && Math.abs(actualZoom() - cfg.zoom) > 0.01) {
     stageApi.setZoom(cfg.zoom);
     await settle();
@@ -344,5 +320,4 @@ async function run(overrides: Partial<PerfConfig> = {}): Promise<RunResult> {
   },
 };
 
-// Mount once so the page is interactive immediately.
 mount(currentConfig);

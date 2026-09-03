@@ -1,4 +1,3 @@
-"""Tests de secuencia por fila de BD en preview y conversion."""
 
 from __future__ import annotations
 
@@ -140,8 +139,6 @@ def test_conversion_mantiene_secuencia_por_fila_entre_bloques(monkeypatch, tmp_p
 
 
 def test_preview_archivo_sin_fila_conserva_nombre_y_no_consume_contador(monkeypatch, tmp_path) -> None:
-    """Un archivo sin coincidencia en BD conserva su nombre original y no
-    consume un numero de secuencia en modo record."""
     names = ["4210502 (7).jpg", "DESCONOCIDO (3).jpg", "4210502 (1).jpg"]
     files = [str(tmp_path / name) for name in names]
     for path in files:

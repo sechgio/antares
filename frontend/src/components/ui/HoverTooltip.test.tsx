@@ -85,7 +85,6 @@ describe('WithHoverTooltip', () => {
     expect(tip).toHaveTextContent('Acciones');
     expect(tip).toHaveTextContent('Ctrl+,');
     expect(tip.className).toMatch(/bg-\[#1e1e1e\]/);
-    // Must stay fixed — `relative` would collapse it to a full-width bottom bar via twMerge
     expect(tip).toHaveClass('fixed');
     expect(tip).not.toHaveClass('relative');
   });

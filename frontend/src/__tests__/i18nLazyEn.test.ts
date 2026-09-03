@@ -12,7 +12,6 @@ describe('i18n lazy English bundle', () => {
   });
 
   it('loads en.json on first changeLanguage("en")', async () => {
-    // Bundle may already exist if a prior test loaded English — remove to force lazy path.
     if (i18n.hasResourceBundle('en', 'translation')) {
       i18n.removeResourceBundle('en', 'translation');
     }

@@ -4,7 +4,6 @@ import { applyGridToImageSlots } from '../ops/gridLayout';
 import { renderMultiPageHtml } from '../runtime/planning';
 import { createEmptyDocument, mm, newId, type CanvasLayer } from '../types';
 
-/** Preset-style grid: real stroke on the grid box + real stroke on slots (like addPhotoGrid). */
 function docWithPresetGrid() {
   const doc = createEmptyDocument('Repro');
   const gridId = newId();
@@ -51,7 +50,6 @@ function docWithPresetGrid() {
   return { ...doc, layers };
 }
 
-/** Editor-style drawn grid + slots: dashed placeholder shorthand only. */
 function docWithDrawnGrid() {
   const doc = createEmptyDocument('Repro drawn');
   const grid = createLayer('grid');
@@ -199,7 +197,6 @@ describe('renderHtml stored grid geometry (D7)', () => {
       { forScreen: true },
     );
     const slotStyle = styleOf(html, slot.id);
-    // forScreen uses px; 42mm ≈ 159px at 96dpi
     expect(slotStyle).toMatch(/left:\s*159px/);
     expect(slotStyle).toMatch(/top:\s*454px/);
   });

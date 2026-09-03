@@ -278,7 +278,6 @@ export async function runProcessInWorker(input: WorkerProcessInput): Promise<{
   };
 }
 
-/** Test / HMR helper — tear down workers. */
 export function _resetProcessWorkersForTests(): void {
   pool?.forEach((entry) => entry.worker.terminate());
   pool = null;

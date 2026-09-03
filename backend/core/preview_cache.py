@@ -1,4 +1,3 @@
-"""Backend preview cache with TTL and LRU eviction."""
 from __future__ import annotations
 
 import threading
@@ -6,12 +5,10 @@ import time
 from collections import OrderedDict
 from typing import Any
 
-# Skip caching oversized payloads (data-URI strings) to bound process memory.
 _MAX_ENTRY_BYTES = 512 * 1024
 
 
 class PreviewCache:
-    """Thread-safe LRU cache for image previews with TTL."""
 
     def __init__(
         self,
@@ -26,7 +23,6 @@ class PreviewCache:
         self._lock = threading.Lock()
 
     def get(self, key: str) -> Any | None:
-        """Get item from cache if not expired."""
         with self._lock:
             if key not in self._cache:
                 return None
@@ -36,17 +32,10 @@ class PreviewCache:
                 del self._cache[key]
                 return None
 
-            # Move to end (MRU)
             self._cache.move_to_end(key)
             return value
 
     def set(self, key: str, value: Any) -> None:
-        """Add item to cache, evicting oldest if necessary. Skips oversized values.
-
-        Data-URI / embedded base64 previews are never cached: a full fill of
-        ``max_size`` x ``max_entry_bytes`` would retain tens of MB for little
-        benefit versus path-mode (file://) entries.
-        """
         size = 0
         if isinstance(value, (str, bytes)):
             size = len(value)
@@ -69,7 +58,6 @@ class PreviewCache:
                 self._cache.popitem(last=False)
 
     def clear(self) -> None:
-        """Clear all entries."""
         with self._lock:
             self._cache.clear()
 
@@ -77,5 +65,4 @@ _preview_cache = PreviewCache(max_size=75, ttl_seconds=180)
 
 
 def get_preview_cache() -> PreviewCache:
-    """Return the global preview cache singleton."""
     return _preview_cache

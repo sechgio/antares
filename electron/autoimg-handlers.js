@@ -74,7 +74,7 @@ async function handleAutoimgCall(method, params = {}) {
         if (result?.sheet_id) {
           try {
             await engine.persistSheetIdConfig(result.sheet_id);
-          } catch { /* CONFIG tab optional */ }
+          } catch {  }
         }
         return { handled: true, result };
       }

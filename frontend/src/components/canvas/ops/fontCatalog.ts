@@ -1,13 +1,10 @@
-/** Curated font catalog for canvas text layers (system + Google Fonts). */
 
 export type CanvasFontSource = 'system' | 'google';
 
 export interface CanvasFontEntry {
   id: string;
   label: string;
-  /** CSS font-family name (unquoted). */
   family: string;
-  /** Full CSS stack stored in `--font-family`. */
   stack: string;
   source: CanvasFontSource;
 }
@@ -15,7 +12,6 @@ export interface CanvasFontEntry {
 const GOOGLE_LINK_ID = 'antares-canvas-google-fonts';
 
 export const CANVAS_FONTS: readonly CanvasFontEntry[] = [
-  // System (existing picker values — keep stacks for doc compatibility)
   {
     id: 'segoe-ui',
     label: 'Segoe UI',
@@ -44,7 +40,6 @@ export const CANVAS_FONTS: readonly CanvasFontEntry[] = [
     stack: 'Consolas, monospace',
     source: 'system',
   },
-  // Google — sans
   {
     id: 'inter',
     label: 'Inter',
@@ -129,7 +124,6 @@ export const CANVAS_FONTS: readonly CanvasFontEntry[] = [
     stack: "'Oswald', sans-serif",
     source: 'google',
   },
-  // Google — serif
   {
     id: 'playfair-display',
     label: 'Playfair Display',
@@ -165,7 +159,6 @@ export const CANVAS_FONTS: readonly CanvasFontEntry[] = [
     stack: "'Libre Baskerville', serif",
     source: 'google',
   },
-  // Google — display
   {
     id: 'bebas-neue',
     label: 'Bebas Neue',
@@ -187,7 +180,6 @@ export const CANVAS_FONTS: readonly CanvasFontEntry[] = [
     stack: "'Caveat', cursive",
     source: 'google',
   },
-  // Google — mono
   {
     id: 'jetbrains-mono',
     label: 'JetBrains Mono',
@@ -218,12 +210,10 @@ export function getFontByStack(stack: string | undefined | null): CanvasFontEntr
   if (!stack) return undefined;
   const exact = byStack.get(stack);
   if (exact) return exact;
-  // Match primary family name inside arbitrary stacks (legacy / hand-edited).
   const primary = stack.split(',')[0]?.trim().replace(/^['"]|['"]$/g, '') ?? '';
   return byFamilyLower.get(primary.toLowerCase());
 }
 
-/** Build Google Fonts css2 URL for the given family names. */
 export function buildGoogleFontsStylesheetUrl(families: string[]): string {
   const unique = [...new Set(families.filter(Boolean))];
   if (unique.length === 0) return '';
@@ -233,15 +223,10 @@ export function buildGoogleFontsStylesheetUrl(families: string[]): string {
   return `https://fonts.googleapis.com/css2?${params}&display=swap`;
 }
 
-/** All Google families in the catalog (for editor preload). */
 export function allGoogleFontFamilies(): string[] {
   return CANVAS_FONTS.filter((f) => f.source === 'google').map((f) => f.family);
 }
 
-/**
- * Inject a single stylesheet link for the full Google catalog (idempotent).
- * Safe to call from the FontPicker on open; CSP already allows Google Fonts.
- */
 export function ensureCanvasFontsLoaded(doc: Document = document): void {
   if (typeof doc === 'undefined') return;
   if (doc.getElementById(GOOGLE_LINK_ID)) return;
@@ -266,7 +251,6 @@ export function ensureCanvasFontsLoaded(doc: Document = document): void {
   doc.head.appendChild(link);
 }
 
-/** Google family names used by layers (for export HTML). */
 export function collectGoogleFontFamilies(
   layers: Array<{ cssVars?: { '--font-family'?: string } }>,
 ): string[] {
@@ -278,7 +262,6 @@ export function collectGoogleFontFamilies(
   return [...names].sort();
 }
 
-/** HTML `<link>` tags for used Google fonts (empty string if none). */
 export function googleFontsHeadHtml(families: string[]): string {
   const url = buildGoogleFontsStylesheetUrl(families);
   if (!url) return '';

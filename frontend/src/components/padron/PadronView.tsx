@@ -1,7 +1,3 @@
-/**
- * Padron Generator - Vista principal
- * Adaptado al estilo del proyecto principal Antares
- */
 import React, { useMemo, useRef, useState, useEffect, useCallback, Component, type ReactNode, type ErrorInfo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
@@ -131,7 +127,6 @@ export default function PadronView() {
 
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
-  // Inject @page rule dynamically so it only applies while this component is mounted
   useEffect(() => {
     const style = document.createElement('style');
     style.setAttribute('data-vpad-page', 'true');

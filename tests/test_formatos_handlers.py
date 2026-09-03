@@ -22,11 +22,6 @@ def test_formatos_upload_rejects_non_pdf_content() -> None:
 
 
 def test_formatos_upload_rejects_filename_with_path_traversal() -> None:
-    # Regression guard for BP-CRÍTICO-2: a crafted filename with path
-    # separators used to be concatenated verbatim into the destination
-    # path, letting the IPC caller write outside `_UPLOADS_DIR` after
-    # Path.resolve() normalised the `..` segments. The handler must now
-    # sanitise the filename and reject the request if it can't be made safe.
     with pytest.raises(ValueError):
         formatos_upload(
             {
@@ -120,29 +115,20 @@ def test_formatos_render_template_page_returns_image(monkeypatch) -> None:
 
 
 def test_formatos_render_template_page_rejects_non_positive_page_num() -> None:
-    # Regression guard for A1: `page_num=0` or negative used to bubble a
-    # generic ValueError from deep inside sellador_preview. The handler
-    # must validate at the boundary and raise a localised, specific error.
     with pytest.raises(ValueError, match="page_num"):
         formatos_render_template_page({"format_id": "template-d", "page_num": 0})
 
 
 def test_formatos_render_template_page_rejects_non_numeric_page_num() -> None:
-    # `int("abc")` previously raised an unhelpful ValueError with no
-    # field name. The handler should now report `page_num inválido`.
     with pytest.raises(ValueError, match="page_num"):
         formatos_render_template_page({"format_id": "template-d", "page_num": "abc"})
 
 
 def test_formatos_render_template_page_rejects_oversized_max_width() -> None:
-    # Without an upper bound, a renderer could ask for a 50000px preview
-    # and burn CPU + memory. The handler must clamp at the boundary.
     with pytest.raises(ValueError, match="max_width"):
         formatos_render_template_page({"format_id": "template-d", "page_num": 1, "max_width": 99999})
 
 
 def test_formatos_generate_rejects_non_numeric_desde() -> None:
-    # Regression guard for the parse_positive_int migration: `int(None)`
-    # previously raised a TypeError with a cryptic message.
     with pytest.raises(ValueError, match="desde"):
         formatos_generate({"format_id": "template-d", "desde": None, "hasta": 5})

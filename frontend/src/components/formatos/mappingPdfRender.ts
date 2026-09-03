@@ -43,11 +43,6 @@ export const MAPPING_LOAD_TIMEOUT_MS = 25_000;
 const RESTART_HINT =
   'Cierra y reinicia la aplicación por completo (npm run dev) para aplicar los nuevos métodos del backend.';
 
-/**
- * Detecta errores que indican que el proceso Electron o el backend Python en
- * ejecución todavía no conocen el método (allowlist viejo o backend sin reiniciar).
- * Vite HMR solo recarga el frontend, por lo que se requiere reinicio completo.
- */
 export function isStaleBackendError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
   return (

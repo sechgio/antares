@@ -1,4 +1,3 @@
-"""Spreadsheet parse/export handlers (backend replacement for frontend xlsx)."""
 from __future__ import annotations
 
 import base64
@@ -20,27 +19,16 @@ from typing import Any
 from backend.handlers.common import with_locale
 
 MAX_SPREADSHEET_BYTES = 100 * 1024 * 1024
-# Temp files for b64 inline payloads: unique per call (concurrency-safe) and
-# deleted by spreadsheet_parse after parsing — never left in %TEMP%.
 _INLINE_TEMP_PREFIX = "antares_inline_"
-_INLINE_B64_CHUNK_CHARS = 1024 * 1024  # divisible by 4; ~768 KiB decoded per block
+_INLINE_B64_CHUNK_CHARS = 1024 * 1024
 MAX_SHEETS = 50
 MAX_CELLS = 2_000_000
 MAX_ZIP_RATIO = 100
-# Keep small workbooks inline on IPC; larger grids spill to a temp JSON file.
 INLINE_RESULT_MAX_BYTES = 512 * 1024
 DEFAULT_GET_ROWS_LIMIT = 500
 MAX_GET_ROWS_LIMIT = 5_000
 _SUPPORTED_FORMATS = frozenset({"xlsx", "xls", "csv"})
 
-# ─── Spill cache ────────────────────────────────────────────────────────────
-# La paginación (spreadsheet_get_rows) releía y re-parseaba el JSON completo
-# del spill en CADA página (O(archivo) por request, hasta MAX_SPREADSHEET_BYTES).
-# LRU acotado por número de entradas y por tamaño de entrada: un spill de
-# 100 MB nunca queda retenido en RAM. La clave incluye (mtime_ns, size) para
-# que una reescritura invalide; un spill borrado por file_token_read_json
-# (Electron) falla en el stat() antes de consultar el cache — nunca se sirven
-# datos obsoletos.
 _SPILL_CACHE_MAX_ENTRIES = 2
 _SPILL_CACHE_MAX_ENTRY_BYTES = 8 * 1024 * 1024
 
@@ -49,7 +37,6 @@ _spill_cache_lock = threading.Lock()
 
 
 def _clear_spreadsheet_caches() -> None:
-    """Clear all in-memory static caches in spreadsheet handler."""
     with _spill_cache_lock:
         _spill_cache.clear()
 
@@ -58,8 +45,6 @@ def _spill_dir() -> Path:
     out = Path(tempfile.gettempdir()) / "antares-spreadsheet-results"
     with contextlib.suppress(FileExistsError):
         out.mkdir(parents=True, exist_ok=False)
-    # lstat no sigue symlinks/junctions: si %TEMP%\antares-spreadsheet-results
-    # fue pre-creado como symlink, rechazar en vez de escribir a través de él.
     if not stat.S_ISDIR(out.lstat().st_mode):
         raise RuntimeError("antares-spreadsheet-results no es un directorio seguro")
     return out
@@ -116,7 +101,6 @@ def _resolve_cache_path(params: dict[str, Any]) -> Path:
         msg = "cache_token o result_path requerido"
         raise ValueError(msg)
     p = Path(str(raw)).expanduser()
-    # Only allow reads from our spill directory (or capability-resolved paths).
     spill = _spill_dir().resolve()
     try:
         resolved = p.resolve()
@@ -131,7 +115,6 @@ def _resolve_cache_path(params: dict[str, Any]) -> Path:
 
 
 def _serialize_cell(value: Any) -> Any:
-    """Make cell values JSON-safe for IPC (openpyxl may return datetime/date)."""
     if value is None:
         return None
     if isinstance(value, datetime):
@@ -175,7 +158,6 @@ def _validate_zip_bomb(path: Path) -> None:
 
 
 def _decode_inline_base64_to_fd(encoded: str, fd: int) -> None:
-    """Decode an inline payload without materializing the whole file in RAM."""
     max_encoded_chars = ((MAX_SPREADSHEET_BYTES + 2) // 3) * 4
     if len(encoded) > max_encoded_chars:
         msg = f"Archivo excede {MAX_SPREADSHEET_BYTES // (1024*1024)} MiB"
@@ -200,13 +182,8 @@ def _decode_inline_base64_to_fd(encoded: str, fd: int) -> None:
 
 
 def _resolve_input_path(params: dict[str, Any]) -> tuple[Path, bool]:
-    """Resuelve la entrada a parsear. Devuelve ``(path, is_temp)``: ``is_temp``
-    es True solo cuando el archivo fue creado aquí para un payload b64 inline
-    (el único que la llamada puede borrar tras parsear)."""
-    # Resolved by Electron file-capabilities; fallback to legacy path for compat
     raw = params.get("_resolved_file_token_path") or params.get("file_token") or params.get("path") or params.get("excelPath")
     if not raw:
-        # Also support b64 inline for panel-aviso-corte compat
         b64 = params.get("xlsx_b64")
         if b64:
             import tempfile
@@ -219,7 +196,6 @@ def _resolve_input_path(params: dict[str, Any]) -> tuple[Path, bool]:
                 finally:
                     os.close(fd)
             except Exception:
-                # Never leave a half-written temp file behind (e.g. disk full).
                 with contextlib.suppress(OSError):
                     tmp_path.unlink(missing_ok=True)
                 raise
@@ -265,12 +241,10 @@ def _detect_format_from_content(path: Path) -> str | None:
 
 
 def _resolve_format(params: dict[str, Any], path: Path) -> tuple[str, str]:
-    """Return (fmt, token_name). Prefer format_hint, then original name, then sniff."""
     hint = str(params.get("format_hint") or "").lower().lstrip(".")
     token_name = str(params.get("_resolved_file_token_name") or "").strip()
     token_ext = Path(token_name).suffix.lower().lstrip(".") if token_name else ""
     path_ext = path.suffix.lower().lstrip(".")
-    # Ignore staging leftovers like ".tmp"
     if path_ext == "tmp":
         path_ext = ""
 
@@ -291,8 +265,6 @@ def _parse_xlsx(path: Path) -> tuple[str, list[dict[str, Any]], list[str]]:
     import openpyxl
 
     _validate_zip_bomb(path)
-    # A file-like object does not depend on the staging suffix and avoids a
-    # second in-memory copy of the complete workbook.
     with path.open("rb") as source:
         wb = openpyxl.load_workbook(source, read_only=True, data_only=True)
         warnings: list[str] = []
@@ -388,10 +360,6 @@ def spreadsheet_parse(params: dict[str, Any]) -> dict[str, Any]:
         else:
             name, sheets, warnings = _parse_csv(p)
     finally:
-        # b64 inline payloads live in a per-call temp file; never leave it in
-        # %TEMP%. Best-effort: a Windows lock must not fail a successful parse.
-        # Only delete files this handler created (is_temp) — a user file named
-        # like a temp must never be unlinked.
         if is_temp:
             with contextlib.suppress(OSError):
                 p.unlink(missing_ok=True)
@@ -414,7 +382,6 @@ def spreadsheet_parse(params: dict[str, Any]) -> dict[str, Any]:
 
 @with_locale
 def spreadsheet_get_rows(params: dict[str, Any]) -> dict[str, Any]:
-    """Return a page of rows from a spilled spreadsheet_parse cache."""
     cache_path = _resolve_cache_path(params)
     data = _load_sheet_cache(cache_path)
     sheets: list[dict[str, Any]] = data["sheets"]
@@ -494,7 +461,6 @@ def spreadsheet_export_volantes_template(params: dict[str, Any]) -> dict[str, An
         df.to_excel(dest, index=False, engine="openpyxl")
         return {"path": str(dest), "filename": dest.name}
 
-    # Inline base64 fallback
     buf = io.BytesIO()
     df.to_excel(buf, index=False, engine="openpyxl")
     b64 = base64.b64encode(buf.getvalue()).decode("ascii")

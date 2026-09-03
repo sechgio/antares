@@ -53,8 +53,6 @@ export async function exportPanelDocument(
   const ext = format === 'docx' ? 'docx' : 'pdf';
   const defaultName = buildTimestampedFilename('panel_aviso_corte', format);
 
-  // In Electron: write directly to disk via save dialog to avoid
-  // base64-encoding large documents through IPC (which caps at ~128MB).
   if (window.electronAPI?.invoke) {
     const dialogResp = await api.dialogSave({
       title: 'Guardar documento',
@@ -78,7 +76,6 @@ export async function exportPanelDocument(
     return { filename: '' };
   }
 
-  // Browser fallback: download via blob
   const resp = await api.panelAvisoCorteRenderPdf({
     panels: panelsPayload,
     logos,

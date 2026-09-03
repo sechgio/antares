@@ -1,9 +1,3 @@
-"""
-Generador de formatos PDF con correlativo.
-Adaptado del módulo formatos para IPC backend.
-
-PDF generation is delegated to format_strategies/ modules.
-"""
 from __future__ import annotations
 
 import base64
@@ -37,12 +31,7 @@ _CATALOG_PATH = _DATA_DIR / "catalog.json"
 _UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 _DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-# ─── Modelos simples (dict-based para IPC serializable) ──────────────────────
 
-# Strategies
-# LEGACY_XOBJECT: mantenida para compatibilidad con el template "Formato D (SEDAPAL)"
-# que usa un XObject específico del PDF para inyectar el número de correlativo.
-# No usar para nuevos formatos — preferir VISUAL_OVERLAY o SIMPLE_OVERLAY.
 LEGACY_XOBJECT = "legacy_xobject"
 VISUAL_OVERLAY = "visual_overlay"
 SIMPLE_OVERLAY = "simple_overlay"
@@ -109,7 +98,6 @@ _BUILTIN_FORMATS: list[dict[str, Any]] = [
     },
 ]
 
-# ─── Catalogo en memoria ────────────────────────────────────────────────────
 
 _formats: dict[str, dict[str, Any]] = {}
 _formats_lock = threading.RLock()
@@ -145,10 +133,6 @@ def _load_catalog() -> None:
 
 
 def _save_catalog() -> None:
-    # Hold the lock for the entire snapshot + write so concurrent
-    # delete/upload calls cannot interleave and corrupt catalog.json.
-    # Write to a temp file and atomically replace to avoid leaving a
-    # partially-written catalog if the process is interrupted mid-write.
     with _formats_lock:
         persistable = [fmt for fmt in _formats.values() if fmt.get("persisted", True)]
         tmp_path = _CATALOG_PATH.with_suffix(_CATALOG_PATH.suffix + ".tmp")
@@ -161,9 +145,6 @@ def _save_catalog() -> None:
 
 def _resolve_path(fmt: dict[str, Any]) -> Path:
     if fmt["origen"] == "uploaded":
-        # Sanitize storage_path so it cannot escape the uploads directory
-        # (defense in depth — storage_path is created server-side but we
-        # still validate before touching the filesystem).
         candidate = (_UPLOADS_DIR / str(fmt["storage_path"])).resolve()
         uploads_resolved = _UPLOADS_DIR.resolve()
         try:
@@ -174,17 +155,12 @@ def _resolve_path(fmt: dict[str, Any]) -> Path:
         return candidate
 
     fname = str(fmt["storage_path"])
-    # 1. Development: project root /formatos/
     builtin = _BUILTIN_DIR / fname
     if builtin.exists():
         return builtin
-    # 2. Production (electron-builder + PyInstaller):
-    #    backend exe is in resources/backend/, extraResources put formatos/ in resources/formatos/
     exe_dir = Path(sys.executable).parent.resolve()
     prod_root = (exe_dir.parent / "formatos").resolve()
     prod_path = (prod_root / fname).resolve()
-    # Ensure prod_path actually lives under prod_root (rejects traversal via
-    # crafted storage_path or symlink shenanigans).
     try:
         prod_path.relative_to(prod_root)
     except ValueError:
@@ -192,7 +168,6 @@ def _resolve_path(fmt: dict[str, Any]) -> Path:
     else:
         if prod_path.exists():
             return prod_path
-    # 3. Fallback to data dir
     return _DATA_DIR / fname
 
 
@@ -201,10 +176,8 @@ def _load_template_bytes(fmt: dict[str, Any]) -> bytes:
     if not path.exists():
         msg = f"Template no encontrado: {path}"
         raise FileNotFoundError(msg)
-    # Uploaded formats are stored as raw PDF binary
     if fmt.get("origen") == "uploaded":
         return path.read_bytes()
-    # Built-in formats are stored as .b64 base64 text
     text = path.read_text(encoding="ascii")
     return base64.b64decode(text)
 
@@ -241,10 +214,6 @@ def delete_format(fmt_id: str) -> bool:
             entry["enabled"] = False
         else:
             _formats.pop(fmt_id, None)
-        # Only uploaded formats own a file on disk that we should remove.
-        # Builtins live in the read-only `formatos/` (or `data/formatos/`)
-        # distribution directory and must survive disable/enable cycles —
-        # removing them would brick the builtin until reinstall.
         if not is_builtin:
             try:
                 os.remove(_resolve_path(entry))
@@ -257,11 +226,6 @@ def delete_format(fmt_id: str) -> bool:
 
 
 def update_mapping(fmt_id: str, mapping: dict[str, Any]) -> dict[str, Any] | None:
-    # Hold the lock for the full read+mutate+persist so concurrent
-    # update_mapping / list_formats / delete_format calls cannot interleave
-    # and produce a corrupt catalog.json or lose updates. Returning a
-    # snapshot copy keeps the caller from mutating the live entry after
-    # we release the lock.
     with _formats_lock:
         entry = _formats.get(fmt_id)
         if entry is None:
@@ -275,8 +239,6 @@ def update_mapping(fmt_id: str, mapping: dict[str, Any]) -> dict[str, Any] | Non
     return result
 
 
-# ─── Upload ─────────────────────────────────────────────────────────────────
-
 def add_uploaded_format(
     nombre: str,
     filename: str,
@@ -285,21 +247,12 @@ def add_uploaded_format(
     filename_pattern: str | None = None,
 ) -> dict[str, Any]:
     fmt_id = f"upload-{uuid.uuid4().hex[:8]}"
-    # Sanitize the user-supplied filename before concatenating it with our
-    # fmt_id: without this, a crafted `filename` like `../../foo.pdf` would
-    # let the IPC caller write outside `_UPLOADS_DIR` after Path.resolve()
-    # normalises the path. `sanitizar_nombre` strips path separators and
-    # traversal sequences, and the `is_safe_user_path` guard is a second
-    # belt-and-braces check before we touch the filesystem.
     safe_filename = sanitizar_nombre(filename) or "archivo.pdf"
     if not is_safe_user_path(safe_filename):
         msg = "Nombre de archivo inválido"
         raise ValueError(msg)
     safe_name = f"{fmt_id}_{safe_filename}"
     dest = _UPLOADS_DIR / safe_name
-    # Resolve and verify the final destination stays inside _UPLOADS_DIR —
-    # this catches anything sanitizar_nombre missed (e.g. weird Unicode
-    # normalisation tricks).
     uploads_resolved = _UPLOADS_DIR.resolve()
     try:
         dest.resolve().relative_to(uploads_resolved)
@@ -362,9 +315,6 @@ def add_uploaded_format(
     if persisted:
         _save_catalog()
     return entry
-
-
-# ─── Generación de PDFs (delegated to format_strategies) ─────────────────────
 
 
 def get_template_pdf(fmt_id: str) -> tuple[bytes, str]:
@@ -431,5 +381,4 @@ def generate_pdf(fmt_id: str, desde: int, hasta: int) -> tuple[bytes, str]:
     return pdf_bytes, filename
 
 
-# ─── Init ───────────────────────────────────────────────────────────────────
 _load_catalog()

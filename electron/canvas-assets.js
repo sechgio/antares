@@ -1,8 +1,3 @@
-/**
- * Disk-backed canvas image assets under %LOCALAPPDATA%/Antares/canvas/assets.
- * Matches backend.utils.paths.user_data_path("canvas/assets") so Python export
- * can resolve the same refs.
- */
 const crypto = require('crypto');
 const fs = require('fs');
 const fsp = fs.promises;
@@ -44,10 +39,6 @@ function toAssetRef(assetId) {
   return `${ASSET_REF_PREFIX}${assetId}`;
 }
 
-/**
- * @param {Buffer|Uint8Array|ArrayBuffer} bytes
- * @returns {Promise<{ asset_id: string, ref: string, bytes: number }>}
- */
 async function putCanvasAsset(bytes) {
   const buf = Buffer.isBuffer(bytes)
     ? bytes
@@ -75,10 +66,6 @@ async function putCanvasAsset(bytes) {
   return { asset_id: assetId, ref: toAssetRef(assetId), bytes: buf.length };
 }
 
-/**
- * @param {string} assetIdOrRef
- * @returns {Promise<Buffer>}
- */
 async function getCanvasAsset(assetIdOrRef) {
   const id = parseAssetRef(assetIdOrRef) || assetIdOrRef;
   const dest = assetPath(id);
@@ -88,7 +75,6 @@ async function getCanvasAsset(assetIdOrRef) {
 }
 
 const ASSET_REF_SCAN_RE = /canvas-asset:([a-f0-9]{32,128})/gi;
-/** Do not delete assets younger than this — unsaved docs may still reference them. */
 const GC_GRACE_MS = 60 * 60 * 1000;
 
 function canvasDocsAndHistoryDirs() {
@@ -96,10 +82,6 @@ function canvasDocsAndHistoryDirs() {
   return [path.join(base, 'documents'), path.join(base, 'history')];
 }
 
-/**
- * Collect sha256 asset ids referenced as canvas-asset:… in docs + history JSON.
- * @returns {Promise<Set<string>>}
- */
 async function collectReferencedAssetIds(roots = canvasDocsAndHistoryDirs()) {
   const ids = new Set();
   for (const root of roots) {
@@ -127,11 +109,6 @@ async function collectReferencedAssetIds(roots = canvasDocsAndHistoryDirs()) {
   return ids;
 }
 
-/**
- * Delete canvas asset files not referenced by any document/history JSON.
- * Skips files newer than GC_GRACE_MS to avoid races with in-flight saves.
- * @returns {Promise<{ removed: number, kept: number, skippedGrace: number }>}
- */
 async function gcOrphanCanvasAssets({ nowMs = Date.now(), graceMs = GC_GRACE_MS } = {}) {
   const referenced = await collectReferencedAssetIds();
   const dir = assetsDir();

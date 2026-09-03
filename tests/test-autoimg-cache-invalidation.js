@@ -1,7 +1,3 @@
-/**
- * Regresión: invalidar cache de folders/logs tras mutaciones.
- * Sin invalidar TTL, listFolders/listLogs con force:false pueden devolver [].
- */
 
 const path = require('path');
 const Module = require('module');
@@ -74,7 +70,6 @@ async function main() {
   });
 
   delete require.cache[enginePath];
-  // Also clear sheet-rows / deps that may have been loaded with real sheets
   for (const key of Object.keys(require.cache)) {
     if (key.includes(`${path.sep}electron${path.sep}autoimg-`)) {
       delete require.cache[key];
@@ -105,16 +100,9 @@ async function main() {
     'tras addFolder, cache no debe fingir lista vacía fresca',
   );
 
-  // Populate logs cache, then simulate sync-to clearing logs incorrectly
   const logsFresh = await engine.listLogs({ force: true });
   assert(logsFresh.values.length >= 2, 'listLogs force carga header+fila');
 
-  // Replicate the buggy post-sync pattern by calling internal-equivalent via module state:
-  // After a successful sync the engine sets _cachedLogs=[] and _touchCache().
-  // We trigger that by requiring the engine to expose the bug via a second addFolder
-  // path that only clears folders — for logs we call listLogs after manually
-  // exercising removeFolder (which clears folders) then checking logs still work.
-  // Direct regression: invalidate must force refetch, not serve [].
   await engine.removeFolder({ folder_id: 'folder-pedro' });
   const afterRemove = await engine.listFolders({ force: false });
   assert(

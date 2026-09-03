@@ -1,4 +1,3 @@
-/* Canvas — scoped chrome aligned with active appearance theme */
 .canvas-app {
   --cv-bg: var(--bg-base, #eef1f4);
   --cv-bg-deep: var(--bg-base, #e4e9ef);
@@ -14,7 +13,7 @@
   --cv-accent: var(--accent-primary, #0d99ff);
   --cv-accent-hover: var(--accent-primary-hover, #0b8ce8);
   --cv-accent-soft: var(--accent-primary-glow, rgba(13, 153, 255, 0.14));
-  --cv-accent-2: #d931c8;     /* Figma spacing guides (magenta) */
+  --cv-accent-2: #d931c8;
   --cv-danger: var(--accent-red, #e03e2f);
   --cv-danger-soft: color-mix(in srgb, var(--cv-danger) 12%, var(--bg-surface, #ffffff));
   --cv-warn-bg: color-mix(in srgb, var(--accent-yellow, #F59E0B) 12%, var(--bg-surface, #ffffff));
@@ -25,7 +24,6 @@
   --cv-shadow-float: 0 4px 6px rgba(0, 0, 0, 0.08), 0 12px 28px rgba(0, 0, 0, 0.2);
   --cv-radius: 8px;
   --cv-radius-sm: 6px;
-  /* Figma-like inspector rhythm (right Properties panel) */
   --cv-inspector-pad-x: 16px;
   --cv-inspector-pad-y: 16px;
   --cv-inspector-gap: 8px;
@@ -64,7 +62,6 @@
   box-shadow: 0 0 0 3px var(--cv-accent-soft);
 }
 
-/* Ghost input for inline list rename — row selection is the only chrome */
 .canvas-input.canvas-input--inline {
   height: auto;
   border: none;
@@ -209,7 +206,6 @@ select.canvas-input option {
   font-size: 11px;
   color: var(--cv-text);
   padding: 0;
-  /* hide number spinners */
   appearance: textfield;
   -moz-appearance: textfield;
 }
@@ -348,7 +344,6 @@ select.canvas-input option {
   background: var(--cv-accent-soft);
 }
 
-/* Shared styles panel — Figma-like local styles list */
 .canvas-style-groups {
   display: flex;
   flex-direction: column;
@@ -725,8 +720,7 @@ select.canvas-input option {
   line-height: 1.2;
 }
 
-.canvas-inspector-context-label,
-.canvas-inspector-priority-label {
+.canvas-inspector-context-label {
   flex-shrink: 0;
   color: var(--cv-text-muted);
   font-size: 9px;
@@ -742,27 +736,6 @@ select.canvas-input option {
   font-weight: 550;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.canvas-inspector-priority-hint {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  align-items: flex-start;
-  gap: 2px;
-  margin: 10px 12px 0;
-  border: 1px solid color-mix(in srgb, var(--cv-accent) 28%, transparent);
-  border-radius: var(--cv-radius-sm);
-  background: var(--cv-accent-soft);
-  padding: 7px 9px;
-  color: var(--cv-text-secondary);
-  font-size: 10px;
-  line-height: 1.3;
-}
-
-.canvas-inspector-priority-hint > span:last-child {
-  min-width: 0;
-  color: var(--cv-text-secondary);
 }
 
 .canvas-inspector-group {
@@ -911,7 +884,6 @@ select.canvas-input option {
   background-color: var(--cv-bg-deep);
 }
 
-/* Tool cursor hints (data-canvas-tool set on viewport — instant CSS, no CanvasView work). */
 .canvas-dot-bg[data-canvas-tool='hand']:not([data-canvas-panning='1']),
 .canvas-dot-bg[data-canvas-tool='hand']:not([data-canvas-panning='1']) .canvas-artboard-cursor {
   cursor: grab;
@@ -958,7 +930,6 @@ select.canvas-input option {
 
 .canvas-topbar {
   height: 44px;
-  /* Same surface as side panels so left/right chrome columns read as one theme. */
   background: var(--cv-panel);
   border-bottom: 1px solid var(--cv-border);
 }
@@ -973,7 +944,6 @@ select.canvas-input option {
   padding: 0 12px;
 }
 
-/* Match LeftSidebar w-[248px] so the edge lines up with the panel border. */
 .canvas-topbar-leading--panel {
   width: 248px;
   border-right: 1px solid var(--cv-border);
@@ -990,17 +960,11 @@ select.canvas-input option {
   padding: 0 12px;
 }
 
-/* Match RightPanel w-[272px] so actions sit in the Propiedades column. */
 .canvas-topbar-trailing--panel {
   width: 272px;
   border-left: 1px solid var(--cv-border);
 }
 
-/*
- * On compact windows the canvas is the primary surface. Keep the existing
- * panel controls and callbacks, but let the sidebars float over the stage
- * instead of reserving 520 px of horizontal space.
- */
 @media (max-width: 1180px) {
   .canvas-panel-chrome--left,
   .canvas-panel-chrome--right {
@@ -1101,7 +1065,6 @@ select.canvas-input option {
   will-change: transform;
 }
 
-/* GPU-only blink (scaleY ≈ 2/9) — avoids layout thrash from animating height. */
 .canvas-brand-face-eye[data-blink='true'] {
   transform: scaleY(0.22);
 }
@@ -1227,7 +1190,6 @@ select.canvas-input option {
   background: var(--cv-border);
 }
 
-/* Contextual path-edit toolbar (below the primary Figma-like tool dock) */
 .canvas-path-edit-toolbar {
   position: absolute;
   left: 50%;
@@ -1243,6 +1205,11 @@ select.canvas-input option {
   padding: 3px;
   box-shadow: var(--cv-shadow-float);
   color: var(--cv-text);
+}
+
+.canvas-path-edit-toolbar[data-toolbar-position='bottom'] {
+  top: auto;
+  bottom: 64px;
 }
 
 .canvas-path-edit-btn {
@@ -1275,7 +1242,6 @@ select.canvas-input option {
   background: var(--cv-border);
 }
 
-/* Figma-like tool toggle: hover tile + solid active */
 .canvas-toolbar-tool {
   display: inline-flex;
   align-items: center;
@@ -1412,7 +1378,6 @@ select.canvas-input option {
   color: var(--cv-text);
 }
 
-/* Shape flyout — light chrome tokens (same family as CanvasSelect / zoom) */
 .canvas-shape-menu {
   z-index: 12000;
   width: 220px;
@@ -1540,7 +1505,6 @@ select.canvas-input option {
   }
 }
 
-/* Figma-like switch used in Generar */
 .canvas-switch {
   position: relative;
   width: 32px;
@@ -1593,7 +1557,6 @@ select.canvas-input option {
   transform: translateX(14px);
 }
 
-/* Figma-like checkbox used in RightPanel imageSlot/checkbox sections. */
 .canvas-checkbox {
   position: relative;
   width: 16px;
@@ -1953,7 +1916,6 @@ select.canvas-input option {
   animation: canvas-pulse 1.1s ease-in-out infinite;
 }
 
-/* Context menu aligned with appearance theme */
 .canvas-context-menu {
   position: fixed;
   z-index: 80;
@@ -2015,7 +1977,6 @@ select.canvas-input option {
   background: var(--cv-border);
 }
 
-/* kbd chips inside the menu */
 .canvas-context-menu .canvas-kbd {
   border-color: var(--cv-border);
   background: var(--cv-hover);
@@ -2094,7 +2055,6 @@ select.canvas-input option {
 }
 
 @media (max-width: 1180px) {
-  /* Keep this transient overlay out of either floating sidebar's hit area. */
   .canvas-shortcuts-panel {
     top: 64px;
     right: auto;
@@ -2119,7 +2079,6 @@ select.canvas-input option {
   }
 }
 
-/* Zoom menu — compact chip beside Propiedades (Figma-like) */
 .canvas-zoom-trigger {
   display: inline-flex;
   align-items: center;
@@ -2272,7 +2231,6 @@ select.canvas-input option {
   }
 }
 
-/* Sync conflict — icon pair beside UI lock */
 .canvas-sync-conflict-bar {
   display: inline-flex;
   flex-shrink: 0;

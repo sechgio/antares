@@ -1,4 +1,3 @@
-"""Tests for the date range, CSV export and bulk delete handlers."""
 
 from __future__ import annotations
 
@@ -14,22 +13,16 @@ from backend.handlers.history import HANDLERS
 
 @pytest.fixture
 def seeded_db(tmp_path, monkeypatch):
-    """Create a temp DB and seed it with three runs on different days."""
     db_file = tmp_path / "test.db"
     monkeypatch.setattr("backend.core.history.get_db_path", lambda: db_file)
     _ensure_table()
 
     runs = [
-        # (timestamp-iso, run_type, formato, ok, err, duration_ms)
         ("2026-01-01T10:00:00", "conversion", "JPEG", 5, 0, 1500),
         ("2026-01-15T10:00:00", "conversion", "PNG", 3, 1, 2200),
         ("2026-02-01T10:00:00", "formato", "PDF-A4", 1, 0, 800),
     ]
     for ts, run_type, formato, ok, err, dur in runs:
-        # We can't override timestamp via save_run, so we build a class
-        # whose ``now`` captures the current `ts` via a default argument.
-        # This sidesteps B023 (late-binding closure) and the timezone arg
-        # that save_run passes to datetime.now.
         from datetime import datetime
 
         class FakeDateTime:
@@ -86,7 +79,6 @@ def test_history_export_csv_with_filter(seeded_db) -> None:
     rows = list(reader)
     assert len(rows) == 2
     columns = reader.fieldnames or []
-    # New schema columns must be exported.
     for required in ("id", "run_type", "timestamp", "duration_ms", "app_version", "schema_version"):
         assert required in columns
 
@@ -109,7 +101,6 @@ def test_history_export_csv_by_ids(seeded_db) -> None:
 def test_history_export_csv_skips_missing_ids(seeded_db) -> None:
     _db_file, _runs = seeded_db
     result = HANDLERS["history_export"]({"ids": [1, 999, 2]})
-    # ids 1 and 2 exist, 999 does not — it must be silently dropped
     assert result["count"] == 2
 
 
@@ -117,14 +108,12 @@ def test_history_delete_many(seeded_db) -> None:
     _db_file, _runs = seeded_db
     result = HANDLERS["history_delete_many"]({"ids": [1, 2]})
     assert result == {"deleted": 2, "requested": 2}
-    # The third row remains
     remaining = HANDLERS["history_list"]({})["runs"]
     assert len(remaining) == 1
 
 
 def test_history_export_csv_drops_missing_gracefully(seeded_db) -> None:
     _db_file, _runs = seeded_db
-    # All-missing ids produce a CSV with only the header row.
     result = HANDLERS["history_export"]({"ids": [998, 999]})
     assert result["count"] == 0
     text = base64.b64decode(result["csv"]).decode("utf-8")

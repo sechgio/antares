@@ -36,7 +36,6 @@ describe('mapping helpers', () => {
     const mapping = { '123.jpg': 'a', '123': 'b' };
     expect(lookupMappingValue(mapping, '123.jpg')).toBe('a');
     expect(lookupMappingValue(mapping, '123')).toBe('b');
-    // Ambiguous stem — no stem fallback for a different extension.
     expect(lookupMappingValue(mapping, '123.png')).toBeUndefined();
 
     const stats = computeMappingStats(mapping, [
@@ -55,11 +54,9 @@ describe('mapping helpers', () => {
   });
 
   it('falls back to catalog import only for mapping schema mismatches', () => {
-    // Current backend messages (post flexible-mapping-columns refactor).
     expect(isMappingSchemaMismatch(new Error('El Excel de mapeo necesita al menos 2 columnas'))).toBe(true);
     expect(isMappingSchemaMismatch(new Error('No se detectó una columna ID'))).toBe(true);
     expect(isMappingSchemaMismatch(new Error('No se detectó una columna de nuevo nombre'))).toBe(true);
-    // Content errors are NOT schema mismatches — they must surface to the user.
     expect(isMappingSchemaMismatch(new Error("ID duplicado 'A.jpg' en la fila 3"))).toBe(false);
     expect(isMappingSchemaMismatch(new Error('Nuevo nombre vacío en la fila 4'))).toBe(false);
   });

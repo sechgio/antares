@@ -1,18 +1,3 @@
-"""RunType registry: single source of truth for historial run types.
-
-Each registered ``RunType`` declares:
-
-* a stable id (``"conversion"``, ``"formato"``, …)
-* an i18n ``label_key`` consumed by the frontend
-* a ``color_token`` (CSS variable name) for badges / accents
-* a JSON Schema (draft-07) for ``options_json`` and ``files_json`` validation
-* a list of stats fields rendered in the run detail panel
-* a ``description_key`` for tooltips / docs
-
-Adding a new run type is a one-line change here plus a corresponding
-entry in ``frontend/src/components/history/runTypes.ts``. No handler or
-component edits required.
-"""
 
 from __future__ import annotations
 
@@ -25,9 +10,6 @@ import jsonschema  # type: ignore
 
 logger = logging.getLogger(__name__)
 
-
-# ─── Schema fragments ──────────────────────────────────────────────────────
-# Reusable JSON Schema pieces. Kept module-private; consumed by RunTypeMeta.
 
 _NON_EMPTY_STRING_ARRAY: dict[str, Any] = {
     "type": "array",
@@ -155,17 +137,12 @@ _FICHA_TECNICA_OPTIONS_SCHEMA: dict[str, Any] = {
     },
 }
 
-# Empty schema used as a permissive fallback (accepts anything). Used for
-# the generic "unknown" entry and as a marker that no validation is desired.
 _ANY_OBJECT: dict[str, Any] = {"type": "object", "additionalProperties": True}
 _ANY_ARRAY: dict[str, Any] = {"type": "array"}
 
 
-# ─── Registry data model ───────────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class StatField:
-    """A single stat tile shown in the run detail panel."""
 
     key: str
     label_key: str
@@ -175,7 +152,6 @@ class StatField:
 
 @dataclass(frozen=True)
 class RunTypeMeta:
-    """Metadata for a single run type."""
 
     id: str
     label_key: str
@@ -185,12 +161,8 @@ class RunTypeMeta:
     files_schema: dict[str, Any] = field(default_factory=dict)
     stats: tuple[StatField, ...] = ()
     show_patron: bool = False
-    filter_group: str = "default"  # "default" or "hidden"
+    filter_group: str = "default"
 
-
-# ─── Stats builders ────────────────────────────────────────────────────────
-# Each returns a tuple of StatField. Kept in module scope so the registry
-# body stays declarative.
 
 def _conversion_stats() -> tuple[StatField, ...]:
     return (
@@ -472,10 +444,7 @@ def _ficha_tecnica_stats() -> tuple[StatField, ...]:
     )
 
 
-# ─── Helpers used by stats builders ────────────────────────────────────────
-
 def _opt(run: dict[str, Any], key: str) -> Any:
-    """Return ``options_json[key]`` or ``None``. Tolerates non-JSON / missing keys."""
     import json
 
     raw = run.get("options_json")
@@ -491,7 +460,6 @@ def _opt(run: dict[str, Any], key: str) -> Any:
 
 
 def _files(run: dict[str, Any]) -> list[str]:
-    """Return ``files_json`` parsed as a list. Tolerates non-JSON / missing keys."""
     import json
 
     raw = run.get("files_json")
@@ -503,8 +471,6 @@ def _files(run: dict[str, Any]) -> list[str]:
         return []
     return data if isinstance(data, list) else []
 
-
-# ─── Registry ──────────────────────────────────────────────────────────────
 
 RUN_TYPE_REGISTRY: dict[str, RunTypeMeta] = {
     "conversion": RunTypeMeta(
@@ -633,12 +599,10 @@ UNKNOWN_RUN_TYPE: RunTypeMeta = RunTypeMeta(
 
 
 def get_run_type(run_type: str) -> RunTypeMeta:
-    """Return the metadata for ``run_type`` or a permissive ``UNKNOWN_RUN_TYPE`` fallback."""
     return RUN_TYPE_REGISTRY.get(run_type) or UNKNOWN_RUN_TYPE
 
 
 def validate_run_payload(run_type: str, options: Any, files: Any) -> None:
-    """Validate a payload against the registry schema. Raises ``ValueError`` for unknown types."""
     meta = RUN_TYPE_REGISTRY.get(run_type)
     if meta is None:
         msg = f"Unknown run_type: {run_type!r}. Registered types: {ALL_RUN_TYPES}"
@@ -651,7 +615,6 @@ def validate_run_payload(run_type: str, options: Any, files: Any) -> None:
 
 
 def registry_payload() -> dict[str, Any]:
-    """Return a JSON-serializable snapshot of the registry (consumed by the frontend)."""
     return {
         "run_types": [
             {

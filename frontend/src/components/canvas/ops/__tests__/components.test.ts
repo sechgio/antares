@@ -153,7 +153,6 @@ describe('components', () => {
 
     expect(instA.cssVars['--width']).toBe(mm(80));
     expect(instB.cssVars['--width']).toBe(mm(80));
-    // Geo overrides survive master move.
     expect(instA.cssVars['--translate-x']).toBe(mm(100));
     expect(instA.cssVars['--translate-y']).toBe(mm(20));
     expect(instA.cssVars['--background-color']).toBe('#0000FF');
@@ -177,7 +176,6 @@ describe('components', () => {
       '--translate-x': mm(10),
       '--translate-y': mm(10),
     });
-    // Simulate PositionSection writing cssVars without touch overrideVars.
     const dragged = {
       ...instance,
       cssVars: {
@@ -189,7 +187,6 @@ describe('components', () => {
     const baked = bakeInstanceOverrides(dragged, master);
     expect(baked.meta?.overrideVars?.['--translate-x']).toBe(mm(77));
     expect(baked.meta?.overrideVars?.['--background-color']).toBe('#ABCDEF');
-    // LayerNode resolve must keep the edit.
     expect(applyInstanceOverrides(baked, master)['--translate-x']).toBe(mm(77));
     expect(applyInstanceOverrides(baked, master)['--background-color']).toBe('#ABCDEF');
   });

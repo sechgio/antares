@@ -14,7 +14,6 @@ interface TimePickerProps {
   onChange: (value: string) => void;
   label?: string;
   className?: string;
-  /** Prefer popup alignment when near the right edge of the sidebar. */
   align?: "start" | "end" | "center";
 }
 

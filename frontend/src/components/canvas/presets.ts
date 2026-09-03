@@ -1,7 +1,3 @@
-/**
- * Canvas presets — editable A4 layouts modeled after backend/templates/*.html.
- * Reference HTML is never imported or modified; tools keep using those files.
- */
 export type { FieldSpec } from './presets/helpers';
 
 import { createCertLugoPreset, createCertSjlBlancoPreset, createCertSjlGuardaminoPreset } from './presets/certificates';

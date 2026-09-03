@@ -71,7 +71,6 @@ VALVULA_ALIASES = {
 LINEA_ALIASES = {
     "aduccion": ("lineaaduccion", "tuberiaaduccion", "aduccionlinea"),
     "alimentacion": ("alimentacion", "lineaalimentacion", "aliment"),
-    # Template headers use "Lin Impulsion …" → linimpulsion*
     "impulsion_rebombeo": (
         "impulsionrebombeo",
         "impulsionebombeo",
@@ -108,7 +107,6 @@ for section, aliases in LINEA_ALIASES.items():
         COLUMN_MAPPING[f"{alias}obs"] = f"linea_{section}_obs"
         COLUMN_MAPPING[f"obs{alias}"] = f"linea_{section}_obs"
 
-# Explicit short headers used in the downloadable template
 for section in VALVULA_ROWS:
     for diameter in DIAMETERS:
         COLUMN_MAPPING[f"valv{section}{diameter}"] = f"valvulas_{section}_{diameter}"
@@ -371,7 +369,6 @@ def _format_fecha(value: Any) -> str:
     return text
 
 
-# Canonical headers for the downloadable Excel template (human-readable).
 TEMPLATE_HEADERS: list[str] = [
     "ID",
     "Informe",

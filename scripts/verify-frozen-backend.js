@@ -1,7 +1,3 @@
-/**
- * Post-build smoke for the frozen AntaresBackend.exe:
- * handshake ready + templates_list must return bundled HTML templates.
- */
 const { spawn } = require('child_process');
 
 function verifyFrozenBackendTemplates(exePath, options = {}) {

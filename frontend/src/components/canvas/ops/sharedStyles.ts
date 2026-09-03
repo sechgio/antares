@@ -7,7 +7,6 @@ import type {
 } from '../types';
 import { newId } from '../types';
 
-/** Fill / stroke keys belonging to a shared color style. */
 export const COLOR_STYLE_KEYS = [
   '--background-color',
   '--fill-type',
@@ -26,7 +25,6 @@ export const COLOR_STYLE_KEYS = [
   '--stroke-end',
 ] as const;
 
-/** Typography keys belonging to a shared text style. */
 export const TEXT_STYLE_KEYS = [
   '--color',
   '--font-family',
@@ -40,7 +38,6 @@ export const TEXT_STYLE_KEYS = [
   '--text-transform',
 ] as const;
 
-/** Effect keys belonging to a shared effect style. */
 export const EFFECT_STYLE_KEYS = ['--box-shadow', '--filter-blur'] as const;
 
 const KEYS_BY_KIND: Record<CanvasStyleKind, readonly string[]> = {
@@ -78,7 +75,6 @@ function defaultStyleName(kind: CanvasStyleKind, layer: CanvasLayer): string {
   return `Efecto · ${base}`;
 }
 
-/** Extract a new shared style from a layer's current cssVars. */
 export function createStyleFromLayer(layer: CanvasLayer, kind: CanvasStyleKind): CanvasSharedStyle {
   return {
     id: newId(),
@@ -98,7 +94,6 @@ function withStyleLink(layer: CanvasLayer, style: CanvasSharedStyle): CanvasLaye
   };
 }
 
-/** Apply a shared style to selected layers (writes cssVars + sets *StyleId). */
 export function applyStyleToLayers(
   layers: CanvasLayer[],
   style: CanvasSharedStyle,
@@ -112,7 +107,6 @@ export function applyStyleToLayers(
   });
 }
 
-/** Remove style link; keep baked cssVars. */
 export function detachStyle(layer: CanvasLayer, kind: CanvasStyleKind): CanvasLayer {
   const field = styleIdField(kind);
   if (!layer[field]) return layer;
@@ -130,10 +124,6 @@ export function detachStyleOnLayers(
   return layers.map((layer) => (idSet.has(layer.id) ? detachStyle(layer, kind) : layer));
 }
 
-/**
- * Update a style definition and push its vars to every linked layer.
- * Unlinked layers are untouched.
- */
 export function updateStyle(
   doc: CanvasDocument,
   styleId: string,
@@ -169,15 +159,10 @@ export function updateStyle(
   };
 }
 
-/** Add a style to the document catalog (does not apply to layers). */
 export function addStyleToDocument(doc: CanvasDocument, style: CanvasSharedStyle): CanvasDocument {
   return { ...doc, styles: [...(doc.styles ?? []), style] };
 }
 
-/**
- * Create a style from the layer, add it to the doc, and link the layer.
- * Convenience for “Crear estilo desde selección”.
- */
 export function createAndLinkStyle(
   doc: CanvasDocument,
   layerId: string,
@@ -193,7 +178,6 @@ export function createAndLinkStyle(
   };
 }
 
-/** Delete a style from the catalog and detach all linked layers. */
 export function removeStyle(doc: CanvasDocument, styleId: string): CanvasDocument {
   const styles = doc.styles ?? [];
   const target = styles.find((s) => s.id === styleId);
@@ -211,7 +195,6 @@ export function removeStyle(doc: CanvasDocument, styleId: string): CanvasDocumen
   };
 }
 
-/** Named color swatches from color styles (for picker append). */
 export function colorStyleSwatches(doc: CanvasDocument): Array<{ id: string; name: string; color: string }> {
   return stylesOfKind(doc, 'color')
     .map((s) => {

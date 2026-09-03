@@ -1,4 +1,3 @@
-"""Tests para MappingIndex (lookup, stats, colisiones)."""
 
 from __future__ import annotations
 
@@ -26,7 +25,6 @@ class TestMappingIndex:
         assert stats["orphanEntries"] == ["C.jpg"]
 
     def test_compute_stats_orphan_parity_stem_and_case(self) -> None:
-        """O(1) orphan path must match prior _id_matches_file semantics."""
         index = MappingIndex({
             "photo.jpg": "a",
             "STEM_ONLY": "b",
@@ -35,7 +33,6 @@ class TestMappingIndex:
         })
         files = ["C:/in/photo.jpg", "C:/in/stem_only.png", "C:/in/mixed.jpg"]
         stats = index.compute_stats(files)
-        # photo.jpg exact; STEM_ONLY via file stem; Mixed.JPG via case; orphan_id alone
         assert set(stats["orphanEntries"]) == {"orphan_id"}
         assert stats["matchedFiles"] == 3
 
@@ -56,6 +53,5 @@ class TestMappingIndex:
         })
         assert index.lookup("123.jpg") == "a"
         assert index.lookup("123") == "b"
-        # Ambiguous stem must not silently pick the last writer for other extensions.
         assert index.lookup("123.png") is None
         assert "123" in index.stem_conflicts or any(c.lower() == "123" for c in index.stem_conflicts)

@@ -1,7 +1,3 @@
-/**
- * Regresión: claves de mapa Ubicaciones en almacenamiento cifrado y sin
- * localStorage.setItem para apiKeys en el renderer.
- */
 
 const fs = require('fs');
 const os = require('os');
@@ -76,15 +72,10 @@ function main() {
     failed = true;
   }
 
-  // ── B8: el cache de resolución está acotado ──
-  // Un renderer que enviara fallbacks variables por llamada (hoy envía el
-  // placeholder enmascarado estable) haría crecer el Map sin cota. Con store
-  // vacío, cada fallback distinto genera una entrada nueva: sin tope serían
-  // 40; con tope deben quedar ≤ _RESOLVE_CACHE_MAX (32).
   {
     const ubicacionesKeys = require(path.join(ROOT, 'electron', 'ubicaciones-secure-keys'));
     ubicacionesKeys.clearProviderApiKeyCache();
-    ubicacionesKeys.setUbicacionesApiKeys({}); // store vacío → cada resolución usa el fallback
+    ubicacionesKeys.setUbicacionesApiKeys({});
     try {
       for (let i = 0; i < 40; i++) {
         ubicacionesKeys.resolveProviderApiKey('google', `fallback-${i}`);

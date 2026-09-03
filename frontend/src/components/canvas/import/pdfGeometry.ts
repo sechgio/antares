@@ -45,7 +45,6 @@ function byteHex(value: number): string {
     .toUpperCase();
 }
 
-/** Convert PDF.js RGB/gray color values into the Canvas color format. */
 export function parsePdfColor(value: unknown, fallback?: string): string | undefined {
   if (typeof value === 'string') {
     const trimmed = value.trim();
@@ -85,11 +84,6 @@ function transformPoint(matrix: PdfMatrix, x: number, y: number): { x: number; y
   };
 }
 
-/**
- * Return an axis-aligned box plus CSS-compatible scale/rotation for an affine
- * rectangle transform. Shear and non-orthogonal transforms are intentionally
- * rejected because representing them with Canvas cssVars would distort edits.
- */
 export function transformedBounds(box: PdfBox, matrix: PdfMatrix): TransformedPdfBounds | null {
   const scaleX = Math.hypot(matrix.a, matrix.b);
   const scaleY = Math.hypot(matrix.c, matrix.d);

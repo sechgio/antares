@@ -174,7 +174,6 @@ export default function DataPreviewModal({
 
   useFocusTrap(modalRef, open && data.length > 0, searchInputRef);
 
-  // Sync focused row when selectedIndex changes
   useEffect(() => {
     const idx = parseInt(selectedIndex, 10);
     if (!isNaN(idx) && idx >= 0 && idx < data.length) {
@@ -182,7 +181,6 @@ export default function DataPreviewModal({
     }
   }, [selectedIndex, data.length]);
 
-  // Close column dropdown on click outside
   useEffect(() => {
     if (!showColumnDropdown) return;
     const onClickOutside = (e: MouseEvent) => {
@@ -194,46 +192,6 @@ export default function DataPreviewModal({
     return () => window.removeEventListener('mousedown', onClickOutside);
   }, [showColumnDropdown]);
 
-  // Keyboard navigation & Escape
-  useEffect(() => {
-    if (!open) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        if (showColumnDropdown) {
-          setShowColumnDropdown(false);
-          return;
-        }
-        onClose();
-        return;
-      }
-
-      // Allow typing in search input without intercepting regular keys
-      if (document.activeElement === searchInputRef.current && !['ArrowDown', 'ArrowUp', 'Enter'].includes(e.key)) {
-        return;
-      }
-
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setFocusedRowIndex((prev) => Math.min(prev + 1, data.length - 1));
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setFocusedRowIndex((prev) => Math.max(prev - 1, 0));
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        if (focusedRowIndex >= 0 && focusedRowIndex < data.length) {
-          onSelectRow(focusedRowIndex);
-          onClose();
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, onClose, data.length, focusedRowIndex, onSelectRow, showColumnDropdown]);
-
-  // O(n) photo index: build once, lookup per row (avoid O(n*m) filter per row)
   const imagesByRecordId = useMemo(
     () => buildImagesByRecordId(data as Record<string, string>[], idColumn, images),
     [data, idColumn, images],
@@ -253,7 +211,6 @@ export default function DataPreviewModal({
     return map;
   }, [data, idColumn, imagesByRecordId]);
 
-  // Total counts for photo tabs
   const photoStats = useMemo(() => {
     let withPhotos = 0;
     let withoutPhotos = 0;
@@ -265,30 +222,25 @@ export default function DataPreviewModal({
     return { total: data.length, withPhotos, withoutPhotos };
   }, [data, rowPhotoMap]);
 
-  // Visible columns list
   const visibleHeaders = useMemo(() => {
     return headers.filter((h) => !hiddenColumns.has(h));
   }, [headers, hiddenColumns]);
 
-  // Filter & Sort Rows (debounced query avoids per-keystroke rescan)
   const filteredAndSortedRows = useMemo(() => {
     const query = debouncedQuery.trim().toLowerCase();
 
-    // Map each original item with its original index
     let items = data.map((row, originalIndex) => ({
       row,
       originalIndex,
       photoInfo: rowPhotoMap.get(originalIndex) ?? { count: 0, files: [] },
     }));
 
-    // Photo filter
     if (photoFilter === 'with-photos') {
       items = items.filter((item) => item.photoInfo.count > 0);
     } else if (photoFilter === 'without-photos') {
       items = items.filter((item) => item.photoInfo.count === 0);
     }
 
-    // Text search query filter across all headers
     if (query) {
       items = items.filter(({ row }) => {
         return headers.some((h) => {
@@ -298,7 +250,6 @@ export default function DataPreviewModal({
       });
     }
 
-    // Sorting
     if (sortCol) {
       items.sort((a, b) => {
         if (sortCol === '#') {
@@ -312,7 +263,6 @@ export default function DataPreviewModal({
         const valA = String(a.row[sortCol] ?? '').trim();
         const valB = String(b.row[sortCol] ?? '').trim();
 
-        // Numeric comparison
         const numA = Number(valA);
         const numB = Number(valB);
         if (!isNaN(numA) && !isNaN(numB) && valA !== '' && valB !== '') {
@@ -351,12 +301,62 @@ export default function DataPreviewModal({
     [onSelectRow, onClose]
   );
 
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (showColumnDropdown) {
+          setShowColumnDropdown(false);
+          return;
+        }
+        onClose();
+        return;
+      }
+
+      if (document.activeElement === searchInputRef.current && !['ArrowDown', 'ArrowUp', 'Enter'].includes(e.key)) {
+        return;
+      }
+
+      if (filteredAndSortedRows.length === 0) return;
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setFocusedRowIndex((prev) => {
+          const currentPos = filteredAndSortedRows.findIndex((r) => r.originalIndex === prev);
+          const nextPos = currentPos === -1 ? 0 : Math.min(currentPos + 1, filteredAndSortedRows.length - 1);
+          return filteredAndSortedRows[nextPos].originalIndex;
+        });
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setFocusedRowIndex((prev) => {
+          const currentPos = filteredAndSortedRows.findIndex((r) => r.originalIndex === prev);
+          const prevPos = currentPos === -1 ? 0 : Math.max(currentPos - 1, 0);
+          return filteredAndSortedRows[prevPos].originalIndex;
+        });
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const activeItem = filteredAndSortedRows.find((r) => r.originalIndex === focusedRowIndex);
+        if (activeItem) {
+          onSelectRow(activeItem.originalIndex);
+          onClose();
+        } else if (filteredAndSortedRows.length > 0) {
+          onSelectRow(filteredAndSortedRows[0].originalIndex);
+          onClose();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, onClose, filteredAndSortedRows, focusedRowIndex, onSelectRow, showColumnDropdown]);
+
   const toggleColumnVisibility = (header: string) => {
     setHiddenColumns((prev) => {
       const next = new Set(prev);
       if (next.has(header)) next.delete(header);
       else {
-        // Keep at least one column visible
         if (headers.length - next.size > 1) {
           next.add(header);
         }

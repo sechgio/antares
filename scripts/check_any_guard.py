@@ -1,12 +1,3 @@
-#!/usr/bin/env python
-"""Fail if new canvas code uses unallowlisted `dict[str, Any]`.
-
-Allowlist: line must contain `# allowlist`, `# type: ignore` or `# noqa`.
-
-Usage:
-  python scripts/check_any_guard.py              # check backend/
-  python scripts/check_any_guard.py --baseline   # print current counts
-"""
 
 from __future__ import annotations
 

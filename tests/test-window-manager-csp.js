@@ -1,4 +1,3 @@
-// Regression: Google Fonts (Inter) in index.html must be allowed by Electron CSP.
 const fs = require('fs');
 const path = require('path');
 
@@ -35,7 +34,6 @@ function run() {
   for (const csp of [devCsp, prodCsp]) {
     assert(csp.includes('https://fonts.googleapis.com'), 'style-src allows fonts.googleapis.com');
     assert(csp.includes('https://fonts.gstatic.com'), 'font-src allows fonts.gstatic.com');
-    // Accepts wildcard or project-specific host (specific is stricter).
     assert(/https:\/\/[\w.*-]+\.supabase\.co/.test(csp), 'connect-src allows Supabase HTTPS');
     assert(/wss:\/\/[\w.*-]+\.supabase\.co/.test(csp), 'connect-src allows Supabase Realtime WSS');
   }

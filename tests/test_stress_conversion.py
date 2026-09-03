@@ -1,4 +1,3 @@
-"""Stress and scale tests for the conversion pipeline."""
 
 from __future__ import annotations
 
@@ -69,30 +68,22 @@ def _run_conversion_stress(monkeypatch, tmp_path, file_count: int) -> None:
 
 
 def test_conversion_queue_accepts_1000_files(monkeypatch, tmp_path) -> None:
-    """Fast scale check — runs in default CI."""
     _run_conversion_stress(monkeypatch, tmp_path, 1000)
 
 
 @pytest.mark.slow
 def test_conversion_queue_accepts_10k_files(monkeypatch, tmp_path) -> None:
-    """Full audit stress target — opt-in via `pytest -m slow`."""
     _run_conversion_stress(monkeypatch, tmp_path, 10_000)
 
 
 @pytest.mark.slow
 def test_conversion_copy_real_io_small_files(monkeypatch, tmp_path) -> None:
-    """Real disk I/O stress — does not mock ``copiar_archivo``.
-
-    Opt-in via ``pytest -m slow`` / ``npm run test:stress``. Soft time budget
-    and optional RSS delta (psutil) catch regressions without being CI-fragile.
-    """
     import time
 
     n = 200
     src_dir = tmp_path / "src"
     src_dir.mkdir()
     files: list[str] = []
-    # Minimal JPEG SOI/EOI + padding — enough for a real filesystem copy.
     payload = b"\xff\xd8\xff\xd9" + (b"x" * 64)
     for index in range(n):
         path = src_dir / f"img_{index:05d}.jpg"

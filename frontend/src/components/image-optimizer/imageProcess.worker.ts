@@ -1,7 +1,3 @@
-/**
- * OffscreenCanvas image process worker for the optimizer.
- * Receives transferable ArrayBuffers; returns encoded image bytes.
- */
 /// <reference lib="webworker" />
 
 import type { BatchSettings, CropOffset } from './types';

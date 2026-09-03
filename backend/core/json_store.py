@@ -1,4 +1,3 @@
-"""Generic thread-safe JSON file document store with corrupt-file recovery."""
 from __future__ import annotations
 
 import json
@@ -16,7 +15,6 @@ logger = logging.getLogger(__name__)
 
 
 def backup_corrupt_file(path: Path) -> Path:
-    """Create a dated backup of a corrupt JSON file."""
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     backup_path = path.with_name(f"{path.name}.corrupt.{timestamp}.bak")
     shutil.copy2(path, backup_path)
@@ -24,7 +22,6 @@ def backup_corrupt_file(path: Path) -> Path:
 
 
 class JsonDocumentStore:
-    """Thread-safe JSON document store with atomic writes and corrupt file recovery."""
 
     def __init__(
         self,

@@ -1,6 +1,3 @@
-/**
- * Window management: BrowserWindow creation and lifecycle.
- */
 const { BrowserWindow, screen, session, Menu } = require('electron');
 const path = require('path');
 const { ALLOWED_RENDERER_METHODS } = require('./ipc-methods');
@@ -42,23 +39,14 @@ function createWindow(isDev) {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
   const iconPath = path.join(__dirname, '..', 'assets', 'icon.ico');
 
-  // The preload runs with sandbox: true, so it cannot `require('./ipc-methods')`
-  // (sandboxed preloads can only require a small set of built-ins). Inject the
-  // IPC allowlist via additionalArguments — the canonical way to pass small,
-  // trusted data into a sandboxed preload. ipc-methods.js stays the single
-  // source of truth (still required by the main-process ipc-router, which is
-  // the real security boundary).
-  // Re-resolve from the shared module so createWindow always gets the current Set
-  // (including methods added after this file was first required in long-lived tooling).
   const { ALLOWED_RENDERER_METHODS: allowedNow } = require('./ipc-methods');
   const allowedList = [...allowedNow];
   const allowedMethodsArg = `--allowed-ipc-methods=${JSON.stringify(allowedList)}`;
-  // `app.isPackaged` marcador fiable de build empaquetado, inyectado al preload
-  // (sandbox: true => sin acceso a `app` ni `__dirname` allá).
   const isPackagedArg = `--app-is-packaged=${isDev ? '0' : '1'}`;
 
   mainWindow = new BrowserWindow({
-    width, height, show: false, frame: false,
+    width, height, show: true, frame: false,
+    backgroundColor: '#0f172a',
     titleBarStyle: 'hidden', autoHideMenuBar: true, icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -66,16 +54,14 @@ function createWindow(isDev) {
       additionalArguments: [allowedMethodsArg, isPackagedArg],
     },
   });
+  mainWindow.maximize();
 
-  // Set Content-Security-Policy to prevent XSS → RCE escalation
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           isDev
-            // wss://*.supabase.co is required for Supabase Realtime (Espacios live sync).
-            // https: does NOT imply wss: under CSP scheme matching.
             ? "default-src 'self' http://localhost:5173; script-src 'self' http://localhost:5173 'unsafe-inline'; style-src 'self' 'unsafe-inline' http://localhost:5173 https://fonts.googleapis.com; img-src 'self' data: blob: http://localhost:5173 https://assets.petdex.dev; font-src 'self' http://localhost:5173 https://fonts.gstatic.com; connect-src 'self' http://localhost:5173 ws://localhost:5173 wss://*.supabase.co https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev"
             : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://assets.petdex.dev; font-src 'self' https://fonts.gstatic.com; connect-src 'self' wss://*.supabase.co https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev"
         ]
@@ -117,17 +103,6 @@ function createWindow(isDev) {
     });
   });
 
-  if (isDev) {
-    mainWindow.loadURL('http://localhost:5173');
-    // Only open DevTools when explicitly in dev mode AND app is not packaged
-    if (!require('electron').app.isPackaged) {
-      mainWindow.webContents.openDevTools();
-    }
-  } else {
-    const htmlPath = path.join(__dirname, '..', 'frontend', 'dist', 'index.html');
-    mainWindow.loadFile(htmlPath);
-  }
-
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http:') || url.startsWith('https:')) {
       require('electron').shell.openExternal(url).catch(() => {});
@@ -142,10 +117,16 @@ function createWindow(isDev) {
     if (!allowed) event.preventDefault();
   });
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.maximize();
-    mainWindow.show();
-  });
+  if (isDev) {
+    mainWindow.loadURL('http://localhost:5173');
+    if (!require('electron').app.isPackaged) {
+      mainWindow.webContents.openDevTools();
+    }
+  } else {
+    const htmlPath = path.join(__dirname, '..', 'frontend', 'dist', 'index.html');
+    mainWindow.loadFile(htmlPath);
+  }
+
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 

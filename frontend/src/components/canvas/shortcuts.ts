@@ -1,4 +1,3 @@
-/** Keyboard shortcuts shown in Canvas design mode (Spanish UI). */
 export const CANVAS_SHORTCUTS: Array<{ keys: string; action: string }> = [
   { keys: 'V', action: 'Seleccionar' },
   { keys: 'H / Espacio', action: 'Mano (pan)' },

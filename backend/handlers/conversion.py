@@ -1,10 +1,3 @@
-"""Conversion process handlers: preview, start, status, cancel.
-
-Supports concurrent jobs via JobManager while maintaining backward compatibility
-with the legacy single-job frontend API.
-
-See backend/core/jobs.py for the full explanation of the legacy layer.
-"""
 from __future__ import annotations
 
 import contextlib
@@ -41,8 +34,6 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 _CANCEL_GRACE_SECONDS = 0.25
-# Keep Electron health probe (JOB_ACTIVITY_GRACE_MS=60s) from force-restarting
-# during long single-file conversions that emit no progress until complete.
 _HEARTBEAT_INTERVAL_SECONDS = 15.0
 
 _SEQUENCE_MODES = {"record", "global", "filename"}
@@ -50,12 +41,6 @@ _SEQUENCE_MODES = {"record", "global", "filename"}
 
 @contextlib.contextmanager
 def _engine_snapshot(engine: RenamerEngine):
-    """Guarda y restaura ``engine.secuencia`` y ``engine._record_sequences``.
-
-    Los previews de catálogo aplican renombres directamente (sin pasar por
-    ``engine.preview_lote``, que ya restaura su propio estado), así que deben
-    aislar los cambios para no alterar el contador del engine entre llamadas.
-    """
     seq_backup = engine.secuencia
     record_sequences_backup = engine._record_sequences.copy()
     try:
@@ -66,7 +51,6 @@ def _engine_snapshot(engine: RenamerEngine):
 
 
 def _resolve_sequence_mode(params: dict[str, Any]) -> SequenceMode:
-    """Resuelve el modo de secuencia explícito o hereda del booleano legacy."""
     requested = params.get("sequence_mode")
     if isinstance(requested, str) and requested in _SEQUENCE_MODES:
         return cast(SequenceMode, requested)
@@ -78,14 +62,6 @@ def _probe_key_columns(
     columns: list[str],
     sample_size: int = 30,
 ) -> tuple[str, int, list[tuple[str, int]], bool]:
-    """Shared core of key-column auto-detection.
-
-    Parses a sample of files into search keys (parsed codes + full stems),
-    then counts ``buscar_por_columna`` matches per column. Exceptions become
-    -1 so a broken column never wins. Returns ``(best_col, best_count,
-    per_column_counts, had_search_keys)``; ``best_col`` is ``columns[0]``
-    when nothing parses or every probe fails.
-    """
     from backend.core.database import buscar_por_columna
 
     sample_files = files[:sample_size]
@@ -123,17 +99,6 @@ def _resolve_key_column(
     sample_size: int = 30,
     probe_result: tuple[str, int, list[tuple[str, int]], bool] | None = None,
 ) -> str:
-    """Resolve the effective key column, auto-detecting if needed.
-
-    Always probes all DB columns and picks the one with the most file-code
-    matches. This fixes the case where the user's provided key_column is a
-    valid column name but doesn't contain the file codes (e.g. 'nis' when
-    the codes are actually in 'sgio').
-
-    When ``key_column`` is falsy (auto-detect mode) the user-preference rule
-    is skipped and the best-scoring column is returned — this is the
-    behaviour ``_detect_best_key_column`` relies on.
-    """
     from backend.core.config_fields import get_field_names
 
     columns = db_columns if db_columns is not None else get_field_names()
@@ -147,7 +112,6 @@ def _resolve_key_column(
     best_col, best_count, per_column, had_keys = probe_result
     if not had_keys:
         return best_col
-    # Keep the user's choice if it matches equally well as the best
     if key_column and key_column in columns:
         user_count = dict(per_column).get(key_column, -1)
         if user_count >= 0 and user_count >= best_count and user_count > 0:
@@ -160,18 +124,6 @@ def _detect_best_key_column(
     db_columns: list[str],
     sample_size: int = 30,
 ) -> str:
-    """Auto-detect which DB column contains the file codes.
-
-    Tries each column and picks the one with the most matches against the
-    file codes (parsed stems). This fixes the common case where the user's
-    file codes live in a column that is NOT the first one (e.g. 'sgio'
-    instead of 'nis'), which caused silent rename failures because
-    buscar_por_columna found nothing in the wrong column.
-
-    Returns:
-        Best matching column name, or the first column if none match.
-        Empty string when there are no DB columns to probe.
-    """
     if not db_columns:
         return ""
     return _resolve_key_column(None, files, db_columns, sample_size=sample_size)
@@ -181,7 +133,6 @@ def _preview_detect_fields(
     files: list[str],
     db_cols: list[str],
 ) -> tuple[dict[str, Any], tuple[str, int, list[tuple[str, int]], bool] | None]:
-    """Additive preview metadata mirroring db_detect_key_column for multi-column DBs."""
     if len(db_cols) <= 1:
         return {}, None
     probe = _probe_key_columns(files, db_cols)
@@ -211,9 +162,6 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     use_column_rename = params.get("use_column_rename", False)
     key_column = params.get("key_column", "")
     file_mapping = params.get("mapping") or None
-    # Precedence: inline mapping > mapping_path + columns > key_column.
-    # When mapping_path is provided without inline mapping, parse the Excel
-    # using the (optionally) chosen id/rename columns.
     if not file_mapping and params.get("mapping_path"):
         from backend.core.database import parse_id_rename_mapping
 
@@ -254,7 +202,6 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
         )
         collisions = mapping_index.find_collisions(files)
     elif key_column:
-        # Auto-detect the best key column if the provided one is invalid
         from backend.core.config_fields import get_field_names
 
         db_cols = get_field_names()
@@ -274,9 +221,6 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
             plan = resolve_rename_plan(files, engine, use_column_rename=True)
         res = plan.items
     else:
-        # Empty key_column: match process path (buscar_lote_por_codigos across
-        # all fields). Do NOT auto-detect a single column here — that made
-        # preview disagree with on-disk rename results.
         with _engine_snapshot(engine):
             plan = resolve_rename_plan(files, engine)
         res = engine.preview_lote(
@@ -287,17 +231,8 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
             sequence_groups=plan.sequence_groups,
         )
 
-    # Catalog / plain rename: mirror process out-path dedupe so preview shows
-    # ``-2``, ``-3`` suffixes. Mapping keeps raw names + collisions (process aborts).
     if not file_mapping and res:
         reserved_preview: set[str] = set()
-        # Mismo criterio que el job: escanear destino UNA vez. Sin destino (o
-        # carpeta inexistente) se usa set() — nunca None — para que
-        # _claim_out_path no caiga a Path.exists() sobre nombres pelados
-        # resueltos contra el CWD del backend (divergía del job y miraba una
-        # carpeta sin relación con la salida). Con destino, los fake_tasks van
-        # unidos a destino, así el fallback exists() de un escaneo fallido
-        # (disk_keys=None) consulta la ruta real de salida.
         destino = str(params.get("destino") or "").strip()
         disk_keys = _scan_dest_out_keys(destino) if destino else set()
         dest_base = Path(destino) if destino else None
@@ -327,11 +262,6 @@ def preview(params: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
 @with_locale
 @validate_params("files", "destino")
 def process_start(params: dict[str, Any]) -> dict[str, Any]:
-    """Start a conversion job.
-
-    Accepts optional job_id for concurrent jobs. Falls back to "default"
-    for backward compatibility with legacy frontend.
-    """
     files = params.get("files", [])
     if not files or not isinstance(files, list) or len(files) == 0:
         log_message(t("error.no_files_to_process"), "error")
@@ -366,7 +296,6 @@ def process_start(params: dict[str, Any]) -> dict[str, Any]:
 
 
 def _slim_process_status(job: Job) -> dict[str, Any]:
-    """Status payload for polling: full logs/result, no bulk files list."""
     with job.state._lock:
         logs = [dict(log) for log in job.state.logs]
         result = dict(job.result) if isinstance(job.result, dict) else job.result
@@ -376,8 +305,6 @@ def _slim_process_status(job: Job) -> dict[str, Any]:
     if isinstance(files, list) and files:
         file_count = len(files)
     else:
-        # After JobManager._slim_completed_job, ``files`` is [] and the
-        # original length lives in ``params.file_count``.
         stored = raw_params.get("file_count")
         file_count = stored if isinstance(stored, int) else 0
     return {
@@ -394,20 +321,11 @@ def _slim_process_status(job: Job) -> dict[str, Any]:
 
 @with_locale
 def process_status(params: dict[str, Any]) -> dict[str, Any]:
-    """Get status of a conversion job.
-
-    Accepts optional job_id. Falls back to "default" for backward compat.
-    Omits the full start-time ``files`` list so large batches do not block the
-    IPC reader thread (SYNC_METHODS). Logs and the final result dict are
-    always included; the original ``files`` list is dropped once the job
-    completes (JobManager._slim_completed_job).
-    """
     job_id = resolve_job_id(params)
     mgr = get_job_manager()
     job = mgr.get_job(job_id)
     if job:
         return _slim_process_status(job)
-    # Legacy fallback: return empty state if no job exists
     return {
         "running": False,
         "progress": 0,
@@ -420,10 +338,6 @@ def process_status(params: dict[str, Any]) -> dict[str, Any]:
 
 @with_locale
 def process_cancel(params: dict[str, Any]) -> dict[str, Any]:
-    """Request cancellation of a conversion job.
-
-    Accepts optional job_id. Falls back to "default" for backward compat.
-    """
     job_id = resolve_job_id(params)
     mgr = get_job_manager()
     result = mgr.cancel_job(job_id)
@@ -439,7 +353,6 @@ def is_video(params: dict[str, Any]) -> dict[str, bool]:
 
 
 def _run_conversion_job(job: Job) -> None:
-    """Thread target for a conversion job. Receives a Job object instead of raw params."""
     from backend.core.database import buscar_lote_por_codigos
 
     state = job.state
@@ -452,7 +365,6 @@ def _run_conversion_job(job: Job) -> None:
     heartbeat_thread: threading.Thread | None = None
 
     def _heartbeat_loop() -> None:
-        # Wait first so quick-abort paths never emit; then pulse while running.
         while not stop_heartbeat.wait(_HEARTBEAT_INTERVAL_SECONDS):
             with state._lock:
                 if not state.running:
@@ -467,9 +379,6 @@ def _run_conversion_job(job: Job) -> None:
                 daemon=True,
             )
             heartbeat_thread.start()
-            # Emit once immediately so Electron job-activity grace starts before
-            # the wait-first loop's first pulse (~15s). Closes the post-process_start
-            # window where health probes could force-restart a live job.
             _emit_heartbeat(job_id, is_default)
 
             set_locale(params.get("locale", "es"))
@@ -478,7 +387,6 @@ def _run_conversion_job(job: Job) -> None:
             destino = params.get("destino", "")
             formato = params.get("formato", "JPEG")
             calidad = params.get("calidad", 95)
-            # Opt-in Huffman optimize (default off — same quality, less encode CPU).
             optimize_jpeg = bool(params.get("optimize_jpeg", False))
             conversion_enabled = params.get("conversion_enabled", True)
             resize_ancho = params.get("resize_ancho")
@@ -496,11 +404,6 @@ def _run_conversion_job(job: Job) -> None:
             mapping_rename_column = params.get("rename_column") or None
             mapping_index = None
 
-            # Auto-detect the best key column if rename is enabled without mapping
-            # and the provided key_column is empty or not in the DB schema.
-            # Only run auto-detection when key_column is explicitly provided to
-            # preserve the legacy fallback path (buscar_lote_por_codigos) that
-            # matches across all fields.
             if usar_rename and not file_mapping and not mapping_path and files and key_column:
                 from backend.core.config_fields import get_field_names
 
@@ -580,7 +483,6 @@ def _run_conversion_job(job: Job) -> None:
             ext_dest = FORMATOS_SOPORTADOS[formato]["ext"] if conversion_enabled else None
             total = len(files)
 
-            # Create destination once when possible; fall back to per-file mkdir.
             ensure_dir_per_file = True
             if destino:
                 try:
@@ -592,9 +494,6 @@ def _run_conversion_job(job: Job) -> None:
                         destino,
                         exc_info=True,
                     )
-            # Snapshot of existing basenames for O(1) collision checks (refreshed
-            # as we claim). Avoids Nx path.exists() on the job thread.
-            # None means scandir failed → _claim_out_path uses exists() fallback.
             disk_out_keys: set[str] | None = _scan_dest_out_keys(destino) if destino else set()
 
             completed = 0
@@ -631,15 +530,10 @@ def _run_conversion_job(job: Job) -> None:
             _last_notify_time = 0.0
             _NOTIFY_INTERVAL = 0.5
             futures: list = []
-            # Track output paths across chunks so same-name collisions never overwrite.
             reserved_out_paths: set[str] = set()
-            # Prefetch: prepare chunk N+1 on the light pool while chunk N converts.
-            # Dedupe against reserved_out_paths stays on the job thread after collect.
             prefetched_raw: list[tuple[str, Path, bool]] | None = None
             prefetched_for_start: int | None = None
             submit_light = getattr(scheduler, "submit_light", None)
-            # Sliding window: keep at most heavy_capacity futures in flight so
-            # progress/cancel update while the rest of the chunk is still queued.
             max_in_flight = max(1, int(getattr(scheduler, "heavy_capacity", 8) or 8))
 
             def _warn_dedupe(msg: str) -> None:
@@ -690,7 +584,6 @@ def _run_conversion_job(job: Job) -> None:
 
                 now = time.time()
                 is_last = completed == total
-                # Interval + first + last only (no OR on 1% that flooded stdio).
                 should_notify = (
                     is_last
                     or _last_notify_time == 0.0
@@ -743,7 +636,6 @@ def _run_conversion_job(job: Job) -> None:
                         _in_flight: dict[Future, None] = in_flight,
                         _futures: list = futures,
                     ) -> bool:
-                        """Submit next task; return False if cancelled via None future."""
                         nonlocal cancelled
                         if not _task_queue:
                             return True
@@ -761,7 +653,6 @@ def _run_conversion_job(job: Job) -> None:
                         _futures.append(future)
                         return True
 
-                    # Seed window so heavy work starts before we wait on results.
                     while len(in_flight) < max_in_flight and task_queue:
                         if not _submit_one():
                             break
@@ -782,7 +673,6 @@ def _run_conversion_job(job: Job) -> None:
                         wait(list(in_flight), timeout=_CANCEL_GRACE_SECONDS, return_when=ALL_COMPLETED)
                         break
 
-                    # Kick off prepare for the next chunk while this chunk converts.
                     next_start = chunk_start + CHUNK_SIZE
                     prefetch_future: Future | None = None
                     if submit_light is not None and next_start < len(files):
@@ -799,7 +689,6 @@ def _run_conversion_job(job: Job) -> None:
                             prefetch_future = None
 
                     while in_flight:
-                        # as_completed for real Futures; sync test doubles finish in submit.
                         if all(isinstance(f, Future) for f in in_flight):
                             done_fut = next(as_completed(list(in_flight.keys())))
                         else:
@@ -833,7 +722,6 @@ def _run_conversion_job(job: Job) -> None:
                             task_queue.clear()
                             break
 
-                    # Resolve prefetch after the current chunk's heavy work (or cancel).
                     if prefetch_future is not None:
                         try:
                             raw_next = prefetch_future.result()
@@ -891,7 +779,6 @@ def _run_conversion_job(job: Job) -> None:
                         "id_column": mapping_id_column or None,
                         "rename_column": mapping_rename_column or None,
                         "key_column": key_column or None,
-                        # Restored by History → Reejecutar so conversion matches the original run.
                         "destino": destino or None,
                         "secuencia": secuencia,
                         "word_separator": word_separator,
@@ -931,7 +818,6 @@ def _run_conversion_job(job: Job) -> None:
 
 
 def _emit_heartbeat(job_id: str, is_default: bool) -> None:
-    """Tell Electron the conversion job is still alive (no fake progress %)."""
     payload = {"running": True, "job_id": job_id}
     send_notification(f"job.{job_id}.heartbeat", payload)
     if is_default:
@@ -939,7 +825,6 @@ def _emit_heartbeat(job_id: str, is_default: bool) -> None:
 
 
 def _emit_progress_notifications(job_id: str, data: dict[str, Any], is_default: bool) -> None:
-    """Send modern job progress notification + legacy one when needed."""
     send_notification(f"job.{job_id}.progress", data)
     if is_default:
         send_notification("process.progress", {
@@ -958,7 +843,6 @@ def _notify_complete(
     cancelled: bool = False,
     progress: int | None = None,
 ) -> None:
-    """Send modern job complete notification + legacy one when needed."""
     is_default = is_legacy_default_job(job.id)
     final_progress = 100 if not cancelled else (progress if progress is not None else 0)
     notif_data = {
@@ -981,51 +865,12 @@ def _notify_complete(
         )
 
 
-@with_locale
-@validate_params("files")
-def db_detect_key_column(params: dict[str, Any]) -> dict[str, Any]:
-    """Auto-detect the DB column that best matches the file codes.
-
-    Probes each configured DB column against the parsed file codes and
-    returns the column with the most matches. This lets the frontend
-    pick the right key column without the user having to guess.
-
-    Returns:
-        Dict with:
-        - key_column: best matching column name (or first column if no match)
-        - matches: number of matched files in the best column
-        - columns: all probed columns with their match counts
-    """
-    files = params.get("files", [])
-    if not files or not isinstance(files, list):
-        return {"key_column": "", "matches": 0, "columns": []}
-
-    from backend.core.config_fields import get_field_names
-
-    db_cols = get_field_names()
-    if not db_cols:
-        return {"key_column": "", "matches": 0, "columns": []}
-
-    if len(db_cols) == 1:
-        return {"key_column": db_cols[0], "matches": 0, "columns": [{"name": db_cols[0], "matches": 0}]}
-
-    best_col, best_count, per_column, had_keys = _probe_key_columns(files, db_cols)
-    if not had_keys:
-        return {"key_column": best_col, "matches": 0, "columns": []}
-    return {
-        "key_column": best_col,
-        "matches": best_count,
-        "columns": [{"name": col, "matches": count} for col, count in per_column],
-    }
-
-
 HANDLERS = {
     "preview": preview,
     "process_start": process_start,
     "process_status": process_status,
     "process_cancel": process_cancel,
     "is_video": is_video,
-    "db_detect_key_column": db_detect_key_column,
 }
 
 
@@ -1036,15 +881,6 @@ _MAX_DEST_SCAN_ENTRIES = 100_000
 
 
 def _calculate_chunk_size() -> int:
-    """Choose an adaptive chunk size without materializing the full batch.
-
-    Caps by ``heavy_capacity * 6`` so huge RAM machines do not pick C=1000
-    when the scheduler can only run a handful of heavy tasks at once (progress
-    valleys + futures bloat). Floor 100 avoids pathological 50-file chunks
-    under memory pressure (20 chunks for 1000 files -> 20x dedupe + prefetch).
-    Heavy workers still bound peak RAM (each Pillow resize holds ~18 MB for
-    3000x2000), so queueing 100 closures is cheap vs processing 100 images.
-    """
     size = 500
     if psutil is not None:
         try:
@@ -1064,16 +900,6 @@ def _calculate_chunk_size() -> int:
 
 
 def _scan_dest_out_keys(destino: str | Path) -> set[str] | None:
-    """Return normalized out-path keys for names already present in ``destino``.
-
-    Returns an empty set when the directory does not exist yet. Returns
-    ``None`` when the scan fails for other OS errors so callers fall back to
-    per-path ``exists()`` instead of treating the destination as empty.
-    Cached by directory mtime so repeated preview/convert calls reuse the scan.
-    Large directories return ``None`` after a bounded prefix; callers then use
-    per-path existence checks, preserving collision safety without retaining an
-    unbounded set of every directory entry.
-    """
     dest = Path(destino)
     try:
         dir_mtime = dest.stat().st_mtime if dest.is_dir() else 0.0
@@ -1123,7 +949,6 @@ def _prepare_chunk_tasks(
     key_column: str = "",
     mapping_index: Any | None = None,
 ) -> list[tuple[str, Path, bool]]:
-    """Prepare one chunk of file work and batch only that chunk's DB lookup."""
     plan: RenamePlan | None = None
     if engine and not mapping_index:
         plan = resolve_rename_plan(
@@ -1164,7 +989,6 @@ def _prepare_chunk_tasks(
 
 
 def _out_path_key(path: Path) -> str:
-    """Normalize output paths for collision detection (Windows-safe)."""
     return str(path).replace("\\", "/").casefold()
 
 
@@ -1178,11 +1002,6 @@ def _claim_out_path(
     job_id: str | None = None,
     disk_keys: set[str] | None = None,
 ) -> bool:
-    """Try to claim ``path`` for this batch (and optionally cross-job).
-
-    Returns False if already reserved in-batch, on disk, or held by another job.
-    When ``disk_keys`` is provided, membership replaces per-call ``path.exists()``.
-    """
     key = _out_path_key(path)
     if key in reserved:
         return False
@@ -1207,16 +1026,6 @@ def _dedupe_chunk_out_paths(
     log: Callable[[str], None] | None = None,
     disk_keys: set[str] | None = None,
 ) -> list[tuple[str, Path, bool]]:
-    """Ensure each task writes to a unique path within the batch and on disk.
-
-    Mapping mode already fails the job on collisions; catalog / plain rename can
-    still map two inputs to the same destination and silently overwrite. Auto-suffix
-    (``name-2.ext``) preserves both files without changing unique renames.
-    Also avoids overwriting pre-existing files from a previous run, and paths
-    reserved by a concurrent conversion job targeting the same destino.
-
-    Prefer a pre-scanned ``disk_keys`` set (updated on claim) over Nx ``exists``.
-    """
     if not tasks:
         return tasks
 
@@ -1241,7 +1050,6 @@ def _dedupe_chunk_out_paths(
             attempts += 1
             candidate = parent / f"{stem}-{n}{suffix}"
         if not claimed:
-            # Best-effort pin after exhausting attempts (same as prior behavior).
             key = _out_path_key(candidate)
             reserved.add(key)
             if disk_keys is not None:
@@ -1249,8 +1057,6 @@ def _dedupe_chunk_out_paths(
             if job_id is not None:
                 get_job_manager().try_reserve_out_path(job_id, key)
         if log is not None:
-            # exists() only on the rare collision path (keeps log accurate vs
-            # disk_keys which also tracks newly claimed not-yet-written paths).
             reason = "ya existe en disco" if out_path.exists() else "ya reservado"
             log(
                 f"Colisión de salida: '{out_path.name}' {reason}; "

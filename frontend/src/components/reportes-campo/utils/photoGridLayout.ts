@@ -1,4 +1,3 @@
-/** Image index in the photos array, or null for an empty placeholder cell. */
 export type PhotoGridCell = number | null;
 
 export type PhotoImageSizing = 'aspectPreserve' | 'fill';
@@ -14,10 +13,6 @@ const MAX_PHOTOS = 6;
 const ASPECT_PRESERVE: PhotoImageSizing = 'aspectPreserve';
 const FILL: PhotoImageSizing = 'fill';
 
-/**
- * Dynamic photo grid layout for the 3.0 Panel Fotográfico section.
- * 6 → 3×2 · 5 → 3+2 centered · 4 → 2×2 · 3 → 2+1 centered · 2/1 → 2 cols · 0 → empty 3×2
- */
 export function getPhotoGridLayout(imageCount: number): PhotoGridLayout {
     const count = Math.max(0, Math.min(imageCount, MAX_PHOTOS));
 

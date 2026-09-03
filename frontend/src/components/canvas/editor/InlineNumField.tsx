@@ -4,7 +4,6 @@ interface InlineNumFieldProps {
   prefix: string;
   value: number;
   onChange: (n: number) => void;
-  /** Fired on blur so parents can coalesce undo. */
   onCommit?: () => void;
   suffix?: string;
   step?: number;
@@ -20,7 +19,6 @@ export default function InlineNumField({
   step = 0.5,
   title,
 }: InlineNumFieldProps) {
-  // Draft while focused so partial input ("", "-", "1.") doesn't snap to 0.
   const [draft, setDraft] = useState<string | null>(null);
   const display = Number.isFinite(value) ? String(Math.round(value * 100) / 100) : '0';
   return (

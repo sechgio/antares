@@ -132,8 +132,8 @@ def test_xlsx_import_handles_datetime_cells_and_title_row() -> None:
     from datetime import date, datetime
     wb = Workbook()
     ws = wb.active
-    ws.append(["INFORMES TÉCNICOS 2026"])  # Title row before header
-    ws.append(["N°", "CS", "Fecha", "Caja Registro", "Marco Tapa"])  # Header row
+    ws.append(["INFORMES TÉCNICOS 2026"])
+    ws.append(["N°", "CS", "Fecha", "Caja Registro", "Marco Tapa"])
     ws.append([10, "SUR", datetime(2026, 5, 15), "CONFORME", "INOPERATIVO"])
     ws.append([11, "NORTE", date(2026, 8, 20), "OPERATIVO", "MALO"])
     buf = BytesIO()

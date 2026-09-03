@@ -14,10 +14,8 @@ describe('lerpViewport / inertiaStep', () => {
     const from = { zoom: 1, pan: { x: 0, y: 0 } };
     const to = { zoom: 4, pan: { x: 100, y: 50 } };
     const mid = lerpViewport(from, to, 0.5);
-    // easeOutCubic(0.5) = 0.875 — closer to the target than linear 0.5.
     expect(mid.pan.x).toBeCloseTo(87.5, 5);
     expect(mid.pan.y).toBeCloseTo(43.75, 5);
-    // log-space: exp(log(1) + (log(4)-log(1))*0.875) = 4^0.875
     expect(mid.zoom).toBeCloseTo(Math.pow(4, 0.875), 3);
     expect(lerpViewport(from, to, 0)).toMatchObject({ zoom: 1, pan: { x: 0, y: 0 } });
     expect(lerpViewport(from, to, 1)).toMatchObject({ zoom: 4, pan: { x: 100, y: 50 } });
@@ -84,7 +82,7 @@ describe('useSmoothViewport', () => {
       result.current.animateTo({ zoom: 2, pan: { x: 80, y: 0 } }, 200);
     });
     act(() => tick(0));
-    act(() => tick(100)); // halfway through duration
+    act(() => tick(100));
     expect(result.current.zoom).toBeGreaterThan(1);
     expect(result.current.zoom).toBeLessThan(2);
     expect(result.current.pan.x).toBeGreaterThan(0);
@@ -100,7 +98,6 @@ describe('useSmoothViewport', () => {
       result.current.startInertia({ vx: 8, vy: 0 });
     });
     const before = result.current.pan.x;
-    // Drive enough frames for friction to settle below PAN_MIN_VELOCITY.
     for (let i = 0; i < 80 && frames.size > 0; i += 1) {
       act(() => tick(i * 16));
     }

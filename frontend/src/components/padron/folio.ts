@@ -1,12 +1,9 @@
-/** How the page/folio number is written on each sheet. */
 export type PageNumberStyle = 'auto' | 'pagina_de' | 'n_de' | 'solo';
 
 export type ResolvedPageNumberStyle = Exclude<PageNumberStyle, 'auto'>;
 
-/** Font size of the folio label. `auto` keeps plantilla CSS defaults. */
 export type PageNumberSize = 'auto' | 'sm' | 'md' | 'lg' | 'xl';
 
-/** Typographic weight/style of the folio label. `auto` keeps plantilla defaults. */
 export type PageNumberFontStyle = 'auto' | 'normal' | 'bold' | 'italic' | 'bold_italic';
 
 export const PAGE_NUMBER_STYLE_OPTIONS: ReadonlyArray<{
@@ -42,7 +39,6 @@ export const PAGE_NUMBER_FONT_STYLE_OPTIONS: ReadonlyArray<{
   { value: 'bold_italic', label: 'Negrita cursiva' },
 ];
 
-/** Pixel sizes used when the user overrides plantilla defaults. */
 export const PAGE_NUMBER_SIZE_PX: Record<Exclude<PageNumberSize, 'auto'>, number> = {
   sm: 8,
   md: 10,
@@ -54,13 +50,9 @@ export interface FolioConfig {
   folioStart: number;
   folioEnd: number | null;
   folioInverted: boolean;
-  /** Tracks the page count folioEnd was last synced against. */
   syncedPageCount: number | null;
-  /** Label format for the folio shown on each page. */
   pageNumberStyle: PageNumberStyle;
-  /** Font size override for the folio label. */
   pageNumberSize: PageNumberSize;
-  /** Font weight/style override for the folio label. */
   pageNumberFontStyle: PageNumberFontStyle;
 }
 
@@ -76,7 +68,6 @@ export function createDefaultFolioConfig(): FolioConfig {
   };
 }
 
-/** Inline styles for folio appearance. Empty object when both size and font stay auto. */
 export function getPageNumberAppearanceStyle(
   size: PageNumberSize = 'auto',
   fontStyle: PageNumberFontStyle = 'auto',
@@ -92,12 +83,6 @@ export function getPageNumberAppearanceStyle(
   return style;
 }
 
-/**
- * Resolve effective style. `auto` keeps each plantilla's historical default:
- * - volanteo lurigancho v2 → solo número
- * - volante lurigancho → "N de X"
- * - resto → "Página N de X"
- */
 export function resolvePageNumberStyle(
   style: PageNumberStyle,
   variant?: string | null,
@@ -126,17 +111,11 @@ export function formatPageNumberLabel(
   }
 }
 
-/** Last folio when numbering `totalPages` sheets starting at `folioStart`. */
 export function expectedFolioEnd(folioStart: number, totalPages: number): number {
   if (totalPages <= 0) return folioStart;
   return folioStart + totalPages - 1;
 }
 
-/**
- * One unique consecutive folio per sheet.
- * Non-inverted: folioStart, folioStart+1, … (totalPages values).
- * Inverted: folioEnd, folioEnd-1, … down for totalPages values.
- */
 export function resolvePhysicalFolios(
   totalPages: number,
   config: { folioStart: number; folioEnd: number; folioInverted: boolean },

@@ -15,7 +15,6 @@ export interface PreparedExportImages {
   localImagePaths: Record<string, string>;
 }
 
-/** Prefer local file tokens. Never return raw data-URLs (they blow the 64MB IPC limit). */
 export async function photoToPdfPath(
   photo: PhotoAsset,
   key: string,
@@ -29,7 +28,6 @@ export async function photoToPdfPath(
       const blob = await res.blob();
       const file = new File([blob], photo.name || `${key}.jpg`, { type: blob.type || 'image/jpeg' });
       const compressed = await imageToPdfDataUrl(file, quality);
-      // Guard: a single compressed image over ~1.5MB is still dangerous in batches.
       if (compressed.length > 1_500_000) {
         throw new Error(
           `La foto "${photo.name}" es demasiado grande para el consolidado. Vuelve a cargarla desde disco (Archivo → Cargar fotos) para usar la ruta local.`,
@@ -53,7 +51,6 @@ export async function logoToPdfPath(
 ): Promise<string | null> {
   if (!logo) return null;
   if (logo.file) return fileToPdfImageSource(logo.file, key, localImagePaths);
-  // Logos are small; data-URL fallback is acceptable.
   return logo.src;
 }
 

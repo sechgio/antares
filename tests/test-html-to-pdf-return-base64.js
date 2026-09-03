@@ -1,7 +1,3 @@
-/**
- * Static contract: any frontend caller of api.htmlToPdf that reads pdf_base64
- * must pass return_base64: true (otherwise Electron omits the field).
- */
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -25,7 +21,6 @@ function checkFile(filePath) {
   if (!src.includes('htmlToPdf(') || !src.includes('pdf_base64')) return [];
 
   const violations = [];
-  // Rough call-site windows: from htmlToPdf( to the matching closing ); — limited depth.
   let idx = 0;
   while ((idx = src.indexOf('htmlToPdf(', idx)) !== -1) {
     const start = idx;
@@ -44,7 +39,6 @@ function checkFile(filePath) {
     }
     if (end < 0) break;
     const call = src.slice(start, end + 1);
-    // Look at a short window after the call for pdf_base64 consumption.
     const after = src.slice(end, Math.min(src.length, end + 400));
     const usesBase64 = /\.pdf_base64\b/.test(after) || /pdf\.pdf_base64\b/.test(after);
     if (usesBase64 && !/return_base64\s*:/.test(call)) {

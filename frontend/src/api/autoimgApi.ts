@@ -55,7 +55,6 @@ export function createAutoimgApi(invoke: IpcInvoke) {
           faltantes: number;
           sobrantes: number;
           fuera_padron: number;
-          /** @deprecated alias de fuera_padron */
           sin_sgio?: number;
         };
         folders_failed: number;

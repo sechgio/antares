@@ -131,13 +131,11 @@ export default function PetMascot() {
   useEffect(() => {
     if (!config.enabled) return;
 
-    // Un solo bucle rAF: movimiento suave por delta-time (60fps), la lógica de
-    // estado y el sprite siguen avanzando al ritmo del tick anterior (130ms).
     let rafId = 0;
     let lastTime = performance.now();
     let frameAccum = 0;
     const TICK_MS = 130;
-    const walkSpeed = 4 / TICK_MS; // px/ms — misma velocidad que el tick anterior (~30.8 px/s)
+    const walkSpeed = 4 / TICK_MS;
 
     const tick = () => {
       setFrameCol((f) => (f + 1) % 8);
@@ -181,8 +179,6 @@ export default function PetMascot() {
       const dt = Math.min(Math.max(time - lastTime, 0), 100);
       lastTime = time;
 
-      // Coalescing del drag: los pointermove solo guardan en el ref y aquí se
-      // aplica una única posición por frame (latest-event-wins).
       if (pendingDragPosRef.current) {
         const next = pendingDragPosRef.current;
         pendingDragPosRef.current = null;
@@ -257,7 +253,6 @@ export default function PetMascot() {
       }
 
       didDragRef.current = true;
-      // El bucle rAF aplica una sola posición por frame (coalescing, latest-event-wins).
       pendingDragPosRef.current = clampPosition(
         ev.clientX - dragOffsetRef.current.x,
         ev.clientY - dragOffsetRef.current.y,
@@ -276,7 +271,6 @@ export default function PetMascot() {
       if (isDraggingRef.current) {
         isDraggingRef.current = false;
         setIsDragging(false);
-        // Aplica el último pointermove pendiente (puede no haberse pintado aún).
         const final = pendingDragPosRef.current ?? readPosition();
         pendingDragPosRef.current = null;
         writePosition(final);

@@ -8,13 +8,6 @@ import {
   type ViewportState,
 } from '../ops/viewportNav';
 
-/**
- * Owns zoom/pan state with Figma-like smooth animated transitions
- * for programmatic zoom (fit, selection, menu) and inertial panning
- * after hand-tool drag release.
- *
- * Wheel zoom remains instant (already incremental).
- */
 export function useSmoothViewport(initialZoom = 0.85) {
   const [zoom, setZoomRaw] = useState(initialZoom);
   const [pan, setPanRaw] = useState({ x: 0, y: 0 });
@@ -26,7 +19,6 @@ export function useSmoothViewport(initialZoom = 0.85) {
   zoomRef.current = zoom;
   panRef.current = pan;
 
-  /** Cancel any running animation. */
   const cancelAnim = useCallback(() => {
     if (animRef.current != null) {
       cancelAnimationFrame(animRef.current);
@@ -41,7 +33,6 @@ export function useSmoothViewport(initialZoom = 0.85) {
     }
   }, []);
 
-  /** Instant set (for wheel zoom / drag pan — no animation). */
   const setZoom = useCallback(
     (z: number | ((prev: number) => number)) => {
       cancelAnim();
@@ -61,7 +52,6 @@ export function useSmoothViewport(initialZoom = 0.85) {
     [cancelInertia],
   );
 
-  /** Animated transition to target viewport (for fit/selection/menu actions). */
   const animateTo = useCallback(
     (target: ViewportState, duration?: number) => {
       cancelAnim();
@@ -94,7 +84,6 @@ export function useSmoothViewport(initialZoom = 0.85) {
     [cancelAnim, cancelInertia],
   );
 
-  /** Start inertial panning with given velocity (px/frame). */
   const startInertia = useCallback(
     (velocity: Velocity) => {
       cancelInertia();
@@ -115,7 +104,6 @@ export function useSmoothViewport(initialZoom = 0.85) {
     [cancelAnim, cancelInertia],
   );
 
-  // Cleanup on unmount.
   useEffect(() => {
     return () => {
       if (animRef.current != null) cancelAnimationFrame(animRef.current);

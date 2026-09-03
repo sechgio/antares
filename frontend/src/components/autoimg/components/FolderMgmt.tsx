@@ -243,7 +243,6 @@ export default function FolderMgmt({ folders: externalFolders, onFoldersChange }
     }
   };
 
-  /** Agregar no exige un Verificar previo: el backend ya valida el folder en Drive. */
   const handleAdd = async () => {
     if (!resolvedFolderId) return;
     setLoading(true);

@@ -1,5 +1,3 @@
-// Regression test: a backend that remains alive but stops responding should be
-// treated as unhealthy and restarted by the supervisor.
 const { EventEmitter } = require('events');
 const childProcess = require('child_process');
 
@@ -112,21 +110,18 @@ async function run() {
   try {
     await startPythonBackend(true);
 
-    // Test 1: Responsive backend handling large concurrent stdout traffic during probe
     const activeProc = childProcess.spawn.lastProc;
     if (activeProc) {
       activeProc.stdin.write = (chunk) => {
         try {
           const msg = JSON.parse(chunk.toString().trim());
           if (msg.id && String(msg.id).startsWith('health-')) {
-            // Emit large unrelated RPC response first
             const hugePayload = JSON.stringify({
               jsonrpc: '2.0',
               id: 'large-canvas-123',
               result: { layers: new Array(100).fill({ type: 'shape', data: 'x'.repeat(2000) }) },
             });
             activeProc.stdout.emit('data', Buffer.from(hugePayload + '\n'));
-            // Then emit matching health probe response
             const probeResponse = JSON.stringify({
               jsonrpc: '2.0',
               id: msg.id,
@@ -146,7 +141,6 @@ async function run() {
     assert(typeof healthyStatus.last_probe_ms === 'number', 'Health status records probe latency');
     assert(healthyStatus.consecutive_failures === 0, 'Successful probe clears consecutive failures');
 
-    // Test 2: Unresponsive backend (stdin.write does nothing) triggers restart
     if (activeProc) {
       activeProc.stdin.write = () => {};
     }

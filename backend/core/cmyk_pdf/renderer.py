@@ -1,4 +1,3 @@
-"""Native PyMuPDF CMYK Vector PDF Renderer for Canvas Documents."""
 
 from __future__ import annotations
 
@@ -14,7 +13,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any, cast
 
-import fitz  # PyMuPDF
+import fitz
 from PIL import Image, ImageOps
 
 from backend.core.cmyk_pdf.color import convert_pil_to_cmyk_bytes, css_color_to_cmyk
@@ -25,7 +24,7 @@ apply_default_pixels_limit()
 
 logger = logging.getLogger(__name__)
 
-MM_TO_PT = 72.0 / 25.4  # ~2.834645669 pt per mm
+MM_TO_PT = 72.0 / 25.4
 _CANVAS_ASSET_RE = re.compile(r"^canvas-asset:([a-fA-F0-9]{32,128})$")
 _DATA_URL_RE = re.compile(r"^data:([^;,]+)?(;base64)?,(.*)$", re.DOTALL)
 _CANVAS_MANIFEST_FILENAME = "antares-canvas-manifest.json"
@@ -56,7 +55,6 @@ _TEXT_ALIGN: dict[str, int] = {
 
 
 def _decode_canvas_manifest(value: Any) -> bytes | None:
-    """Validate the small semantic attachment before it enters the PDF."""
     if value is None or value == "":
         return None
     if not isinstance(value, str):
@@ -131,7 +129,6 @@ def _prepare_image_bytes(
     h_px: int,
     dpi: int,
 ) -> tuple[bytes, int, int]:
-    """Fit + convert a CMYK JPEG bytes. Devuelve (bytes, cw, ch) del procesado."""
     resample = Image.Resampling.LANCZOS
     if fit == "cover":
         processed = ImageOps.fit(pil_img, (w_px, h_px), method=resample)
@@ -147,7 +144,6 @@ def _canvas_asset_path(asset_id: str) -> str:
 
 
 def _resolve_image_path(src: str, local_image_paths: dict[str, str]) -> str:
-    """Map token / canvas-asset ref / path to a filesystem path when possible."""
     mapped = local_image_paths.get(src) or src
     match = _CANVAS_ASSET_RE.match(mapped)
     if match:
@@ -157,7 +153,6 @@ def _resolve_image_path(src: str, local_image_paths: dict[str, str]) -> str:
 
 @contextmanager
 def _open_export_image(src: str, local_image_paths: dict[str, str]) -> Iterator[Image.Image | None]:
-    """Open an image from path, canvas-asset ref, or data: URL. Yields None if missing."""
     mapped = local_image_paths.get(src) or src
     if not mapped:
         yield None
@@ -209,9 +204,7 @@ def _draw_shape_rect(
         )
 
 
-
 def _parse_length_pt(val_str: Any, default_mm: float = 0.0) -> float:
-    """Parse CSS dimension string (e.g. '10mm', '100px', '2.5') to points."""
     if val_str is None:
         return default_mm * MM_TO_PT
     s = str(val_str).strip().lower()
@@ -222,7 +215,6 @@ def _parse_length_pt(val_str: Any, default_mm: float = 0.0) -> float:
             return default_mm * MM_TO_PT
     if s.endswith("px"):
         try:
-            # Assume 96 DPI CSS pixels -> 72 DPI points: 1px = 0.75pt
             return float(s[:-2]) * 0.75
         except ValueError:
             return default_mm * MM_TO_PT
@@ -232,20 +224,17 @@ def _parse_length_pt(val_str: Any, default_mm: float = 0.0) -> float:
         except ValueError:
             return default_mm * MM_TO_PT
     try:
-        # Fallback raw number -> treat as mm
         return float(s) * MM_TO_PT
     except ValueError:
         return default_mm * MM_TO_PT
 
 
 def _resolve_template_value(val: str, ctx: dict[str, Any]) -> str:
-    """Substitute {{key}} from ctx['values'] (wins) then ctx['data']."""
     if not val or "{{" not in val:
         return val
     out = val
     values = ctx.get("values") or {}
     data = ctx.get("data") or {}
-    # values take precedence; fall back to data for keys not in values.
     merged: dict[str, Any] = {**data, **values}
     for key, item in merged.items():
         placeholder = f"{{{{{key}}}}}"
@@ -255,7 +244,6 @@ def _resolve_template_value(val: str, ctx: dict[str, Any]) -> str:
 
 
 def _resolve_image_src(layer: dict[str, Any], ctx: dict[str, Any]) -> str:
-    """Resolve image/logo/imageSlot src — same contract as renderHtml.ts."""
     meta = layer.get("meta") or {}
     l_type = layer.get("type", "")
 
@@ -263,7 +251,6 @@ def _resolve_image_src(layer: dict[str, Any], ctx: dict[str, Any]) -> str:
         side = meta.get("side")
         if side == "right":
             return str(ctx.get("logoRight") or "")
-        # Default logo side is left (matches frontend).
         return str(ctx.get("logoLeft") or "")
 
     if "index" in meta:
@@ -282,7 +269,6 @@ def _resolve_image_src(layer: dict[str, Any], ctx: dict[str, Any]) -> str:
 
 
 class CanvasCmykRenderer:
-    """Generates print-ready CMYK PDFs from Canvas documents using PyMuPDF."""
 
     def _prepare_image_for_rect_cached(
         self,
@@ -291,13 +277,6 @@ class CanvasCmykRenderer:
         rect: fitz.Rect,
         object_fit: Any,
     ) -> tuple[bytes, fitz.Rect] | None:
-        """Resize/crop image for object-fit before CMYK embed, with LRU cache.
-
-        Key: (resolved src, fit, target px, dpi). A logo repeated across N
-        pages is decoded + converted ONCE instead of N times (open + LANCZOS +
-        CMYK + JPEG were the dominant CMYK cost). Returns None when the image
-        cannot be opened.
-        """
         fit = str(object_fit or "fill").strip().lower()
         w_pt, h_pt = rect.width, rect.height
         w_px = max(1, int(w_pt * self.dpi / 72))
@@ -345,12 +324,7 @@ class CanvasCmykRenderer:
         self.bleed_mm = max(0.0, bleed_mm)
         self.show_crop_marks = show_crop_marks
         self.canvas_manifest_b64 = canvas_manifest_b64
-        # When True and len(contexts)==len(pages), pair context[i] with page i.
-        # Otherwise keep legacy cartesian product (N contexts x M pages).
         self.pair_context_pages = pair_context_pages
-        # CMYK bytes cache per (resolved src, fit, target px, dpi): a logo
-        # repeated across N pages converts ONCE instead of N times (the
-        # dominant CMYK cost was open + LANCZOS + CMYK + JPEG per page).
         self._image_cache: OrderedDict[tuple[Any, ...], tuple[bytes, int, int]] = OrderedDict()
         self._image_cache_max = 128
 
@@ -366,7 +340,6 @@ class CanvasCmykRenderer:
             trim_w_pt = self.page_w_mm * MM_TO_PT
             trim_h_pt = self.page_h_mm * MM_TO_PT
 
-            # If crop marks are enabled, extend MediaBox beyond bleed by 10mm margin
             crop_margin_pt = (10.0 * MM_TO_PT) if self.show_crop_marks else 0.0
             media_w_pt = trim_w_pt + 2 * (bleed_pt + crop_margin_pt)
             media_h_pt = trim_h_pt + 2 * (bleed_pt + crop_margin_pt)
@@ -393,7 +366,6 @@ class CanvasCmykRenderer:
                 media_rect = fitz.Rect(0, 0, media_w_pt, media_h_pt)
                 page.set_mediabox(media_rect)
 
-                # Set PDF geometry boxes (TrimBox & BleedBox)
                 mbox = page.mediabox
                 trim_rect = fitz.Rect(
                     max(mbox.x0, origin_x_pt),
@@ -413,15 +385,12 @@ class CanvasCmykRenderer:
                 if self.show_crop_marks and crop_margin_pt > 0:
                     self._draw_crop_marks(page, trim_rect, crop_margin_pt)
 
-                # Render page layers
                 page_layers = [
                     layer for layer in layers if layer.get("pageIndex", 0) == page_idx and layer.get("visible", True)
                 ]
                 shape = page.new_shape()
 
                 for layer in page_layers:
-                    # Text/image write to the page stream directly: flush pending
-                    # vector ops first so z-order matches document order.
                     if layer.get("type") in ("text", "field", "image", "logo", "imageSlot"):
                         shape = self._flush_shape(page, shape)
                     self._render_layer(page, shape, layer, ctx, origin_x_pt, origin_y_pt, local_image_paths)
@@ -442,23 +411,15 @@ class CanvasCmykRenderer:
             pdf.close()
 
     def _flush_shape(self, page: fitz.Page, shape: fitz.Shape) -> fitz.Shape:
-        """Commit accumulated vector ops and start a fresh shape.
-
-        Text/image layers write straight to the page content stream, so any
-        pending shape must be committed BEFORE them or it would paint on top
-        (inverted z-order).
-        """
         shape.commit()
         return page.new_shape()
 
     def _draw_crop_marks(self, page: fitz.Page, trim: fitz.Rect, margin_pt: float) -> None:
-        """Draw prepress crop marks outside trim box."""
         shape = page.new_shape()
         mark_len = margin_pt * 0.6
         mark_offset = margin_pt * 0.2
-        cmyk_black = (0.0, 0.0, 0.0, 1.0)  # 100% Key/Registration black
+        cmyk_black = (0.0, 0.0, 0.0, 1.0)
 
-        # Top-Left
         shape.draw_line(
             fitz.Point(trim.x0 - mark_offset - mark_len, trim.y0),
             fitz.Point(trim.x0 - mark_offset, trim.y0),
@@ -468,7 +429,6 @@ class CanvasCmykRenderer:
             fitz.Point(trim.x0, trim.y0 - mark_offset),
         )
 
-        # Top-Right
         shape.draw_line(
             fitz.Point(trim.x1 + mark_offset, trim.y0),
             fitz.Point(trim.x1 + mark_offset + mark_len, trim.y0),
@@ -478,7 +438,6 @@ class CanvasCmykRenderer:
             fitz.Point(trim.x1, trim.y0 - mark_offset),
         )
 
-        # Bottom-Left
         shape.draw_line(
             fitz.Point(trim.x0 - mark_offset - mark_len, trim.y1),
             fitz.Point(trim.x0 - mark_offset, trim.y1),
@@ -488,7 +447,6 @@ class CanvasCmykRenderer:
             fitz.Point(trim.x0, trim.y1 + mark_offset + mark_len),
         )
 
-        # Bottom-Right
         shape.draw_line(
             fitz.Point(trim.x1 + mark_offset, trim.y1),
             fitz.Point(trim.x1 + mark_offset + mark_len, trim.y1),
@@ -551,8 +509,6 @@ class CanvasCmykRenderer:
                 )
 
         elif l_type in ("line", "arrow"):
-            # Horizontal or diagonal line within rect bounds
-            # (path-edited lines with meta.path are not expanded yet — midline fallback).
             p1 = fitz.Point(x, y + h / 2)
             p2 = fitz.Point(x + w, y + h / 2)
             shape.draw_line(p1, p2)
@@ -580,7 +536,7 @@ class CanvasCmykRenderer:
 
             color_str = css_vars.get("--color") or css_vars.get("color") or "#000000"
             text_cmyk = css_color_to_cmyk(color_str)
-            font_size_pt = _parse_length_pt(css_vars.get("--font-size"), 4)  # default font size
+            font_size_pt = _parse_length_pt(css_vars.get("--font-size"), 4)
             font_size_pt = max(6.0, font_size_pt)
 
             page.insert_textbox(
@@ -617,21 +573,16 @@ class CanvasCmykRenderer:
                         rotate=round(rotate_deg),
                     )
                 else:
-                    # Empty / missing src → grey placeholder (no crash).
                     shape.draw_rect(rect)
                     shape.finish(color=(0, 0, 0, 0.5))
             else:
-                # Empty / missing src → grey placeholder (no crash).
                 shape.draw_rect(rect)
                 shape.finish(color=(0, 0, 0, 0.5))
 
         elif l_type == "group":
-            # Children are separate layers; the group frame is chrome-only.
             return
 
         else:
-            # Clipped shapes / table / grid / checkbox / signature: bbox fallback
-            # so print never silently drops them. Full fidelity remains RGB HTML.
             if bg_cmyk or border_cmyk:
                 shape.draw_rect(rect)
                 shape.finish(

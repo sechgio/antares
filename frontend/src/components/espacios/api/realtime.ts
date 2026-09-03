@@ -8,7 +8,6 @@ export type RealtimeHandler = (payload: {
   old: Record<string, unknown> | null;
 }) => void;
 
-/** Connection health for UI badge. */
 export type RealtimeStatus = 'idle' | 'connecting' | 'live' | 'error' | 'offline';
 
 function onTable(table: string, onChange: RealtimeHandler) {
@@ -75,11 +74,6 @@ export function subscribeEspaciosSync(
   });
 }
 
-/**
- * Global realtime for the titlebar due-notifications bell.
- * Listens to all tareas / board_columns the user can see (RLS-scoped).
- * Callers should debounce their refresh handler.
- */
 export function subscribeDueNotifications(
   onChange: () => void,
   onStatus?: (status: RealtimeStatus) => void,

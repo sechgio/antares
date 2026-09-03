@@ -1,4 +1,3 @@
-"""Configuración personalizable de campos de base de datos."""
 
 from __future__ import annotations
 
@@ -42,7 +41,6 @@ _SQLITE_KEYWORDS: set[str] = {
     "where", "with", "without",
 }
 
-# Columnas del esquema interno de imagenes; no pueden usarse como campos de catálogo.
 _RESERVED_FIELD_NAMES: frozenset[str] = frozenset({"id"})
 
 _CONFIG_PATH: Path | None = None
@@ -56,7 +54,6 @@ def _config_file() -> Path:
 
 
 def _validar_nombre_campo(nombre: str) -> bool:
-    """Valida que el nombre sea seguro para SQL: alfanumérico + guiones bajos, sin keywords."""
     if not nombre:
         return False
     if not re.fullmatch(r"[a-z_][a-z0-9_]*", nombre):
@@ -65,18 +62,10 @@ def _validar_nombre_campo(nombre: str) -> bool:
 
 
 def _validar_tipo_campo(tipo: str) -> bool:
-    """Valida que el tipo sea un tipo SQLite permitido."""
     return tipo.upper() in {"TEXT", "INTEGER", "REAL", "BLOB", "NUMERIC"}
 
 
 def sanitize_field_defs(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Valida y normaliza definiciones de campo.
-
-    Convierte nombres a minúsculas y tipos a mayúsculas; dropea definiciones
-    inválidas (nombre inseguro para SQL o tipo no soportado). Compartida por
-    ``save_fields`` y el dry-run de migración del handler de BD para que ambos
-    operen sobre exactamente la misma forma saneada.
-    """
     validated: list[dict[str, Any]] = []
     for f in fields:
         if isinstance(f, dict) and "name" in f and "type" in f:
@@ -94,14 +83,10 @@ def sanitize_field_defs(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 _cached_fields: tuple[Path, list[dict[str, Any]]] | None = None
-# Derived field-name list, cached separately so the per-file rename hot path
-# (RenamerEngine.aplicar -> get_field_names) does not pay load_fields()'s
-# defensive dict deep-copy on every call. Invalidated alongside _cached_fields.
 _cached_field_names: tuple[Path, list[str]] | None = None
 
 
 def _invalidate_fields_cache() -> None:
-    """Clear the in-memory fields cache so next read hits disk."""
     global _cached_fields, _cached_field_names
     with _db_schema_lock.write():
         _cached_fields = None
@@ -114,18 +99,12 @@ def load_fields() -> list[dict[str, Any]]:
 
 
 def _load_fields_unlocked() -> list[dict[str, Any]]:
-    """Carga la configuración de campos desde disco o retorna los defaults.
-
-    Results are cached in memory and invalidated on write or if the config
-    file path changes (e.g. during tests with monkeypatch).
-    """
     global _cached_fields
     path = _config_file()
     if _cached_fields is not None:
         cached_path, cached_data = _cached_fields
         if cached_path == path:
             return [dict(f) for f in cached_data]
-        # Path changed — cache is stale, fall through to disk read below.
     if path.exists():
         try:
             with open(path, encoding="utf-8") as f:
@@ -156,7 +135,6 @@ def _load_fields_unlocked() -> list[dict[str, Any]]:
 
 
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-    """Write JSON via temp file + os.replace so crashes cannot leave empty files."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(path.suffix + ".tmp")
     with open(tmp_path, "w", encoding="utf-8") as file:
@@ -167,7 +145,6 @@ def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def save_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Guarda la configuración de campos en disco."""
     with _db_schema_lock.write():
         path = _config_file()
         validated = sanitize_field_defs(fields)
@@ -177,12 +154,6 @@ def save_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def get_field_names() -> list[str]:
-    """Retorna lista de nombres de campos.
-
-    Cached separately from :func:`load_fields` to avoid its per-call dict
-    deep-copy on the per-file rename hot path. Returns a fresh list of
-    (immutable) strings so callers may mutate the result safely.
-    """
     global _cached_field_names
     with _db_schema_lock.read():
         path = _config_file()
@@ -194,15 +165,12 @@ def get_field_names() -> list[str]:
 
 
 def get_required_fields() -> list[str]:
-    """Retorna lista de campos requeridos."""
     return [f["name"] for f in load_fields() if f.get("required")]
 
 
 def get_unique_fields() -> list[str]:
-    """Retorna lista de campos únicos."""
     return [f["name"] for f in load_fields() if f.get("unique")]
 
 
 def reset_to_defaults() -> list[dict[str, Any]]:
-    """Restaura la configuración a los valores por defecto."""
     return save_fields(DEFAULT_FIELDS)

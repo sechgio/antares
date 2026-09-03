@@ -1,4 +1,3 @@
-"""Characterization tests for real format PDF strategies (no generate_pdf mock)."""
 
 from __future__ import annotations
 
@@ -27,7 +26,6 @@ def test_simple_overlay_generate_page_count() -> None:
 
 
 def test_legacy_xobject_rejects_blank_template() -> None:
-    """Blank PDFs lack XObjects — strategy must fail closed (current behavior)."""
     strategy = get_strategy("legacy_xobject")
     template = _minimal_pdf_bytes()
     try:

@@ -1,15 +1,3 @@
-"""Dynamic plugin loader for format extensions.
-
-Security model
---------------
-Plugins are loaded only from ``user_data_path("plugins")`` and must expose a
-``register()`` entry point.  Source is validated with an AST whitelist before
-``exec_module`` runs, but plugins still execute in the same Python process as
-the backend.  Treat third-party plugins as *use at your own risk*.
-Opt-in via ``ANTARES_ENABLE_PLUGINS=1``. Approved plugins must be allowlisted
-by SHA-256 hash in ``user_data_path("plugins/allowlist.json")``; others are
-rejected. The AST allowlist is not a sandbox.
-"""
 
 from __future__ import annotations
 
@@ -31,10 +19,6 @@ _BLOCKED_IMPORTS = {"os", "sys", "subprocess", "ctypes", "socket", "urllib", "ht
 _BLOCKED_NAMES = {"eval", "exec", "compile", "__import__", "open", "globals", "locals", "vars", "getattr", "setattr", "delattr", "type", "super", "__build_class__", "breakpoint", "memoryview", "input"}
 _BLOCKED_ATTRS = {"__class__", "__bases__", "__subclasses__", "__mro__", "__globals__", "__code__", "__func__", "__self__", "__dict__", "__weakref__", "__subclasshook__"}
 
-# Dunder attributes/names are a primary sandbox-escape vector (e.g.
-# ``__builtins__``, ``__getattribute__``, ``__reduce__``, ``__init_subclass__``).
-# Rather than enumerate every dangerous dunder, block ALL dunder access and only
-# permit a tiny allowlist that legitimate plugins may need at module scope.
 _ALLOWED_DUNDERS = {"__name__", "__doc__", "__module__", "__file__", "__qualname__", "__init__"}
 
 _PLUGIN_ALLOWED_ATTRS = {"register", "add_format", "__name__", "__doc__", "__module__", "__file__"}
@@ -49,13 +33,11 @@ def _is_dangerous_dunder(identifier: str) -> bool:
 
 
 class PluginRegistry:
-    """Registry exposed to plugins for registering formats."""
 
     def __init__(self, format_registry: FormatRegistry) -> None:
         self.formats = format_registry
 
     def add_format(self, name: str, ext: str, modes: tuple[str, ...], encoder=None) -> None:
-        """Register a new image format via plugin."""
         self.formats.add_format(name, ext, modes, encoder)
 
 
@@ -83,9 +65,6 @@ def _is_safe_plugin(source: str) -> bool:
             return False
         if isinstance(node, ast.Name) and (node.id in _BLOCKED_NAMES or _is_dangerous_dunder(node.id)):
             return False
-        # Block metaclass / class-keyword hooks (e.g. ``class X(metaclass=...)``)
-        # which can run arbitrary code at class-creation time, bypassing the
-        # name/attribute filters above.
         if isinstance(node, ast.ClassDef) and node.keywords:
             return False
     return has_register
@@ -106,7 +85,6 @@ def _load_allowlist(plugins_dir: Path) -> dict[str, str] | None:
 
 
 def load_plugins_from_dir(plugins_dir: Path | None = None) -> None:
-    """Load all .py plugins from the plugins directory."""
     if plugins_dir is None:
         plugins_dir = user_data_path("plugins")
     plugins_dir.mkdir(parents=True, exist_ok=True)
@@ -126,14 +104,11 @@ def load_plugins_from_dir(plugins_dir: Path | None = None) -> None:
                     logger.warning("Plugin %s rechazado: no está en allowlist o hash no coincide", file_path.name)
                     continue
             elif file_path.name != "example.py":
-                # Without an allowlist, only the example is allowed as a placeholder; others need explicit allowlist
                 logger.warning("Plugin %s rechazado: sin allowlist.json no se cargan plugins (excepto example.py)", file_path.name)
                 continue
             if not _is_safe_plugin(source):
                 logger.warning("Plugin %s bloqueado por uso de APIs no permitidas", file_path.name)
                 continue
-            # Módulo con nombre único para evitar colisiones (el stem del
-            # archivo podría chocar con un módulo real del backend).
             module_name = f"_plugin_{file_path.stem}"
             spec = importlib.util.spec_from_file_location(module_name, file_path)
             if spec is None or spec.loader is None:
@@ -142,7 +117,6 @@ def load_plugins_from_dir(plugins_dir: Path | None = None) -> None:
             try:
                 spec.loader.exec_module(module)
             except Exception:
-                # Remove partial module from sys.modules on load failure
                 sys.modules.pop(module_name, None)
                 raise
             sys.modules[module_name] = module

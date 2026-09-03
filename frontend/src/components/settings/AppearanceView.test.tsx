@@ -393,4 +393,26 @@ describe('AppearanceView', () => {
       expect(document.documentElement.style.getPropertyValue('--accent-primary-hover')).toBe('#67E8F9');
     });
   });
+
+  it('falls back to DEFAULT_THEME when IPC fetch fails and there is no cache', async () => {
+    window.electronAPI = {
+      invoke: async (method: string) => {
+        if (method === 'theme_get') throw new Error('IPC disconnected');
+        if (method === 'theme_presets') return { presets: [] };
+        return {};
+      },
+      onNotify: () => () => {},
+      onUpdateAvailable: () => () => {},
+      onUpdateDownloaded: () => () => {},
+    };
+
+    renderAppearance();
+
+    expect(await screen.findByTestId('appearance-view')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(document.documentElement.style.getPropertyValue('--bg-base')).toBe('#0F172A');
+      expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('#3B82F6');
+    });
+  });
 });
+

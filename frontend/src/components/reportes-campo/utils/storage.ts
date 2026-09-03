@@ -9,22 +9,15 @@ import type {
     StoredPhoto,
 } from '../types';
 
-// ─── Disponibilidad ──────────────────────────────────────────────────────────
-// jsdom (tests) y navegadores sin Electron pueden no exponer IndexedDB. En ese
-// caso todas las operaciones se degradan a no-op / vacío para no romper nada.
-
 export function isPersistenceAvailable(): boolean {
     return typeof indexedDB !== 'undefined';
 }
-
-// ─── Serialización foto ↔ registro (funciones puras, testeables) ─────────────
 
 export function photoFileToStored(photo: PhotoFile): StoredPhoto {
     return {
         id: photo.id,
         name: photo.file.name,
         type: photo.file.type,
-        // File extiende Blob: se almacena directamente sin codificar a base64.
         blob: photo.file,
     };
 }
@@ -105,15 +98,12 @@ export function storedToBrandingLogos(stored: StoredBranding | null): {
     };
 }
 
-// ─── Wrapper IndexedDB ───────────────────────────────────────────────────────
-
 const DB_NAME = 'antares_reportes_campo';
 const DB_VERSION = 2;
 const STORE = 'panels';
 const BRANDING_STORE = 'branding';
 const TYPE_INDEX = 'by_type';
 
-/** Serializes writes so a remount load never races ahead of an in-flight put. */
 let writeChain: Promise<void> = Promise.resolve();
 
 function enqueueWrite(op: () => Promise<void>): Promise<void> {
@@ -121,7 +111,6 @@ function enqueueWrite(op: () => Promise<void>): Promise<void> {
     return writeChain;
 }
 
-/** Await pending puts/deletes before reading (used by loaders). */
 export async function waitForPendingWrites(): Promise<void> {
     await writeChain;
 }

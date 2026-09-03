@@ -13,7 +13,6 @@ export function sumDiameterColumns(
   return totals;
 }
 
-/** Sum all diameter values in a single row (horizontal total for OPER.) */
 export function sumDiameterRow(
   row: Record<string, number>,
   diameters: string[],

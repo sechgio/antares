@@ -1,4 +1,3 @@
-// Regression test: unexpected backend exit after ready must clear readiness.
 const { EventEmitter } = require('events');
 const childProcess = require('child_process');
 

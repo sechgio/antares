@@ -63,8 +63,6 @@ describe('GanttView', () => {
     fireEvent.click(screen.getByRole('button', { name: /Crear tarea el 2026-07-08/i }));
     expect(onAddTaskOnDate).toHaveBeenCalledWith('2026-07-08');
 
-    // click without drag opens edit via pointerup
-    // Narrow bars put the title outside; locate by aria-label on the end handle's sibling bar
     const bar = screen.getByLabelText(/Redimensionar fin de Tarea 1/i).closest('[data-gantt-bar]')!;
     fireEvent.pointerDown(bar, { clientX: 100, pointerId: 1 });
     fireEvent.pointerUp(bar, { clientX: 100, pointerId: 1 });
@@ -73,7 +71,6 @@ describe('GanttView', () => {
 
   it('resizes duration by dragging the end handle', () => {
     const onDatesChange = vi.fn();
-    // Without a real layout viewport, colW uses day preset (72)
     const colW = 72;
     const tareas = [
       makeTarea({
@@ -159,12 +156,9 @@ describe('GanttView', () => {
     const scroll = container.querySelector('.gantt-scroll')!;
     expect(scroll).toBeTruthy();
 
-    // Zoom out (positive deltaY with ctrl)
     fireEvent.wheel(scroll, { deltaY: 120, ctrlKey: true });
-    // Zoom in
     fireEvent.wheel(scroll, { deltaY: -120, ctrlKey: true });
 
-    // Still renders after free zoom
     expect(screen.getByText('Tarea zoom')).toBeInTheDocument();
   });
 
@@ -187,7 +181,6 @@ describe('GanttView', () => {
     };
     const dayCount = () => container.querySelectorAll('.gantt-day-head').length;
 
-    // Default: Día
     expect(screen.getByRole('button', { name: 'Día' })).toHaveAttribute('aria-pressed', 'true');
     expect(dayHeadWidth()).toBe('72px');
     const daySpan = dayCount();
@@ -208,7 +201,6 @@ describe('GanttView', () => {
     expect(monthSpan).toBeGreaterThanOrEqual(120);
     expect(monthSpan).toBeGreaterThan(weekSpan);
 
-    // Back to Día restores the wide preset
     fireEvent.click(screen.getByRole('button', { name: 'Día' }));
     expect(dayHeadWidth()).toBe('72px');
     expect(dayCount()).toBe(daySpan);

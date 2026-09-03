@@ -10,23 +10,10 @@ interface PinchNav {
 }
 
 interface UsePinchZoomOptions {
-  /** Called once when the second finger lands (cancel drafts/marquee visuals). */
   onStart?: () => void;
-  /**
-   * Set true while a pinch is (or was, until all fingers lift) in progress so
-   * single-pointer gesture handlers can no-op their move/up actions.
-   */
   activeRef?: MutableRefObject<boolean>;
 }
 
-/**
- * Native two-finger pinch-to-zoom for touch devices (Figma/Canva-like).
- * Tracks touch pointer events on the viewport; the second finger starts the
- * gesture, and the content point under the fingers' midpoint follows them.
- * Extra-finger pointerdowns are stopped so single-pointer gestures do not
- * restart mid-pinch.
- * Pointer moves are coalesced to one apply per animation frame (same as drag).
- */
 export function usePinchZoom(
   viewportRef: RefObject<HTMLElement | null>,
   navRef: MutableRefObject<PinchNav>,
@@ -104,7 +91,6 @@ export function usePinchZoom(
       if (e.pointerType !== 'touch') return;
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pointers.size >= 2) {
-        // Extra fingers must not restart single-pointer gestures.
         e.stopPropagation();
         if (!start) beginPinch();
       }
@@ -129,7 +115,6 @@ export function usePinchZoom(
         pinched = false;
         setActive(false);
       } else if (pinched) {
-        // Residual finger after pinch must not complete stale gestures either.
         e.stopPropagation();
       }
     };

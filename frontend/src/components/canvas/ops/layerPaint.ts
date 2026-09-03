@@ -6,7 +6,6 @@ export const DEFAULT_LAYER_FONT = "'Segoe UI', 'Helvetica Neue', Arial, sans-ser
 export const DEFAULT_LAYER_COLOR = '#1e1e1e';
 export const DEFAULT_LINE_HEIGHT = '1.2';
 
-/** Scale length-like cssVars so cssVarsToStyleParts matches zoomed LayerNode paint. */
 export function scaleCssVarsForZoom(vars: LayerCssVars, scale: number): LayerCssVars {
   if (scale === 1) return vars;
   const next: LayerCssVars = { ...vars };
@@ -38,12 +37,6 @@ export function scaleCssVarsForZoom(vars: LayerCssVars, scale: number): LayerCss
   return next;
 }
 
-/**
- * Keep only spread-only box-shadows (offset 0 0 0 …) — the stroke/frame kind — from a
- * combined box-shadow string. Used during camera zoom to preserve frames (cheap) while
- * deferring blurred/offset decorative shadows (expensive). Splits respecting parens so
- * rgba(…,…) colors are not broken on their commas.
- */
 export function keepSpreadOnlyShadows(boxShadow: string): string {
   const parts: string[] = [];
   let depth = 0;
@@ -57,7 +50,6 @@ export function keepSpreadOnlyShadows(boxShadow: string): string {
       start = i + 1;
       if (!shadow) continue;
       const toks = shadow.split(/\s+/);
-      // First three tokens are offset-x, offset-y, blur; spread-only when all are zero.
       if (parseFloat(toks[0]) === 0 && parseFloat(toks[1]) === 0 && parseFloat(toks[2]) === 0) {
         parts.push(shadow);
       }
@@ -66,7 +58,6 @@ export function keepSpreadOnlyShadows(boxShadow: string): string {
   return parts.join(', ');
 }
 
-/** Convert `prop:value` declarations from cssVarsToStyleParts into a style map. */
 export function cssDeclarationsToStyle(parts: string[]): Record<string, string> {
   const style: Record<string, string> = {};
   for (const part of parts) {
@@ -81,10 +72,6 @@ export function cssDeclarationsToStyle(parts: string[]): Record<string, string> 
   return style;
 }
 
-/**
- * Paint styles shared by LayerNode and HTML export (fill, stroke, type, shadow…).
- * Position/size and editor chrome (selection) stay outside.
- */
 export function buildLayerPaintStyle(
   vars: LayerCssVars,
   options?: { scale?: number; defaults?: Partial<LayerCssVars> },
@@ -96,7 +83,6 @@ export function buildLayerPaintStyle(
   };
   if (!merged['--color']) merged['--color'] = DEFAULT_LAYER_COLOR;
   if (!merged['--font-family']) merged['--font-family'] = DEFAULT_LAYER_FONT;
-  // Default size is unscaled; scaleCssVarsForZoom applies zoom once (avoid double-scale).
   if (!merged['--font-size']) merged['--font-size'] = '11px';
   const scaled = scaleCssVarsForZoom(merged, scale);
   return cssDeclarationsToStyle(cssVarsToStyleParts(scaled));

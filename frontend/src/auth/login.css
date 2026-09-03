@@ -64,7 +64,6 @@ html[data-theme-mode="dark"] .at-login {
   --at-error-border: rgba(239, 68, 68, 0.36);
 }
 
-/* Background video */
 .at-login__video {
   position: fixed;
   inset: 0;
@@ -85,7 +84,6 @@ html[data-theme-mode="dark"] .at-login {
   transform: scale(1.08);
 }
 
-/* Navbar */
 .at-nav {
   position: fixed;
   top: 0;
@@ -132,7 +130,6 @@ html[data-theme-mode="dark"] .at-login {
   color: var(--at-text);
 }
 
-/* Appearance toggle (functional, B/W) */
 .at-mode-toggle {
   display: inline-flex;
   align-items: center;
@@ -160,7 +157,6 @@ html[data-theme-mode="dark"] .at-login {
   color: var(--at-active-fg);
 }
 
-/* Centered login form */
 .at-access {
   position: relative;
   z-index: 20;
@@ -213,7 +209,6 @@ html[data-theme-mode="dark"] .at-login {
   color: var(--at-text-muted);
 }
 
-/* Form */
 .at-form {
   display: flex;
   flex-direction: column;
@@ -358,7 +353,6 @@ html[data-theme-mode="dark"] .at-login {
   animation: at-spin 800ms linear infinite;
 }
 
-/* Footer */
 .at-login__footer {
   position: relative;
   z-index: 30;
@@ -409,7 +403,6 @@ html[data-theme-mode="dark"] .at-login {
   to { transform: rotate(360deg); }
 }
 
-/* Desktop */
 @media (min-width: 768px) {
   .at-login__video {
     width: 100%;

@@ -6,15 +6,10 @@ export interface LayerPatch {
 }
 
 export interface CanvasDiff {
-  /** Layers added in this step */
   addedLayers?: CanvasLayer[];
-  /** IDs of layers removed in this step */
   removedLayerIds?: string[];
-  /** Modified properties of existing layers */
   modifiedLayers?: LayerPatch[];
-  /** Ordered list of layer IDs if the layer order changed */
   layerOrder?: string[];
-  /** Top-level document metadata changes */
   docPatch?: Partial<Omit<CanvasDocument, 'layers'>>;
 }
 
@@ -97,13 +92,11 @@ function computeLayerDiff(prev: CanvasLayer, next: CanvasLayer): Partial<CanvasL
     }
   }
 
-  // Compare cssVars
   if (prev.cssVars !== next.cssVars && !isShallowEqualDict(prev.cssVars as unknown as Record<string, unknown>, next.cssVars as unknown as Record<string, unknown>)) {
     changes.cssVars = { ...next.cssVars };
     hasChanges = true;
   }
 
-  // Compare meta
   if (prev.meta !== next.meta && !isShallowEqualDict(prev.meta as unknown as Record<string, unknown>, next.meta as unknown as Record<string, unknown>) && !isDeepEqual(prev.meta, next.meta)) {
     changes.meta = next.meta ? { ...next.meta } : undefined;
     hasChanges = true;
@@ -112,15 +105,11 @@ function computeLayerDiff(prev: CanvasLayer, next: CanvasLayer): Partial<CanvasL
   return hasChanges ? changes : null;
 }
 
-/**
- * Compute the structural difference to transform `prev` into `next`.
- */
 export function computeDocumentDiff(prev: CanvasDocument, next: CanvasDocument): CanvasDiff {
   if (prev === next) return {};
 
   const diff: CanvasDiff = {};
 
-  // 1. Top-level document fields check
   const docPatch: Partial<Omit<CanvasDocument, 'layers'>> = {};
   let docChanged = false;
 
@@ -150,12 +139,10 @@ export function computeDocumentDiff(prev: CanvasDocument, next: CanvasDocument):
     diff.docPatch = docPatch;
   }
 
-  // 2. Layer-level diff
   if (prev.layers !== next.layers) {
     const prevLayers = prev.layers;
     const nextLayers = next.layers;
 
-    // Check if layer count and layer order are identical (the common edit case)
     let sameOrderAndIds = prevLayers.length === nextLayers.length;
     if (sameOrderAndIds) {
       for (let i = 0; i < prevLayers.length; i++) {
@@ -182,7 +169,6 @@ export function computeDocumentDiff(prev: CanvasDocument, next: CanvasDocument):
         diff.modifiedLayers = modifiedLayers;
       }
     } else {
-      // General case (layer added, removed, or re-ordered)
       const prevLayerMap = new Map<string, CanvasLayer>();
       for (let i = 0; i < prevLayers.length; i++) {
         prevLayerMap.set(prevLayers[i].id, prevLayers[i]);
@@ -193,7 +179,6 @@ export function computeDocumentDiff(prev: CanvasDocument, next: CanvasDocument):
         nextLayerMap.set(nextLayers[i].id, nextLayers[i]);
       }
 
-      // Added layers
       const addedLayers: CanvasLayer[] = [];
       for (let i = 0; i < nextLayers.length; i++) {
         const layer = nextLayers[i];
@@ -205,7 +190,6 @@ export function computeDocumentDiff(prev: CanvasDocument, next: CanvasDocument):
         diff.addedLayers = addedLayers;
       }
 
-      // Removed layers
       const removedLayerIds: string[] = [];
       for (let i = 0; i < prevLayers.length; i++) {
         const layer = prevLayers[i];
@@ -217,7 +201,6 @@ export function computeDocumentDiff(prev: CanvasDocument, next: CanvasDocument):
         diff.removedLayerIds = removedLayerIds;
       }
 
-      // Modified layers
       const modifiedLayers: LayerPatch[] = [];
       for (let i = 0; i < nextLayers.length; i++) {
         const nextLayer = nextLayers[i];
@@ -233,7 +216,6 @@ export function computeDocumentDiff(prev: CanvasDocument, next: CanvasDocument):
         diff.modifiedLayers = modifiedLayers;
       }
 
-      // Layer order check
       let orderChanged = prevLayers.length !== nextLayers.length;
       if (!orderChanged) {
         for (let i = 0; i < prevLayers.length; i++) {
@@ -252,15 +234,11 @@ export function computeDocumentDiff(prev: CanvasDocument, next: CanvasDocument):
   return diff;
 }
 
-/**
- * Apply a structural diff to `base` document to return a new `CanvasDocument`.
- */
 export function applyDocumentDiff(base: CanvasDocument, diff: CanvasDiff): CanvasDocument {
   if (!diff || Object.keys(diff).length === 0) {
     return base;
   }
 
-  // Build top-level doc
   const doc: CanvasDocument = {
     ...base,
     ...(diff.docPatch || {}),
@@ -269,7 +247,6 @@ export function applyDocumentDiff(base: CanvasDocument, diff: CanvasDiff): Canva
 
   const removedSet = new Set(diff.removedLayerIds || []);
 
-  // Map modified layers
   const modifiedMap = new Map<string, Partial<CanvasLayer>>();
   if (diff.modifiedLayers) {
     for (const patch of diff.modifiedLayers) {
@@ -277,7 +254,6 @@ export function applyDocumentDiff(base: CanvasDocument, diff: CanvasDiff): Canva
     }
   }
 
-  // Build new layers list
   const layerMap = new Map<string, CanvasLayer>();
 
   for (const existingLayer of base.layers) {
@@ -296,14 +272,12 @@ export function applyDocumentDiff(base: CanvasDocument, diff: CanvasDiff): Canva
     }
   }
 
-  // Add new layers
   if (diff.addedLayers) {
     for (const added of diff.addedLayers) {
       layerMap.set(added.id, added);
     }
   }
 
-  // Reorder layers
   let finalLayers: CanvasLayer[];
   if (diff.layerOrder) {
     finalLayers = [];
@@ -314,12 +288,10 @@ export function applyDocumentDiff(base: CanvasDocument, diff: CanvasDiff): Canva
         layerMap.delete(id);
       }
     }
-    // Append any extra layers not present in layerOrder (failsafe)
     for (const layer of layerMap.values()) {
       finalLayers.push(layer);
     }
   } else {
-    // Preserve existing order + append added layers if order was unspecified
     finalLayers = Array.from(layerMap.values());
   }
 

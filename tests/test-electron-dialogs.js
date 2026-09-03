@@ -1,4 +1,3 @@
-// Tests for Electron dialog IPC handling without requiring Electron at import time.
 const fsForDialog = require('fs');
 const osForDialog = require('os');
 const pathForDialog = require('path');
@@ -63,8 +62,6 @@ async function run() {
   assert(save.result.paths[0] === 'C:/tmp/export.xlsx', 'dialog_save should return saved file path');
   assert(calls[1].options.title === 'Guardar archivo', 'dialog_save should set a save title');
 
-  // dialog_folder: should open a directory picker and recursively return
-  // only files with supported extensions.
   const folderFs = require('fs');
   const folderOs = require('os');
   const folderPath = require('path');
@@ -103,9 +100,6 @@ async function run() {
     assert(canceledFolder.result.paths.length === 0, 'dialog_folder should return empty paths on cancel');
     assert(canceledFolder.result.file_tokens.length === 0, 'dialog_folder should return no tokens on cancel');
 
-    // dialog_folder with pickOnly: returns the raw folder path without
-    // scanning its contents. Used by the optimizer's "save to folder" flow
-    // so we don't recursively list files we're about to overwrite anyway.
     const pickOnlyDialog = {
       async showOpenDialog(win, options) {
         calls.push({ kind: 'pickOnly', win, options });
@@ -122,7 +116,7 @@ async function run() {
     await folderFs.promises.rm(tempFolderDir, { recursive: true, force: true });
   }
 
-  const ignored = await handleDialogCall('db_records', {}, dialog, win);
+  const ignored = await handleDialogCall('db_columns', {}, dialog, win);
   assert(ignored.handled === false, 'non-dialog methods should not be handled');
 
   class FakeBrowserWindow {
@@ -137,9 +131,6 @@ async function run() {
         session: {
           webRequest: {
             onBeforeRequest: (filter, callback) => {
-              // Support both register (callback=fn) and unregister
-              // (callback=null) calls. We keep the last non-null callback
-              // so tests can still invoke it directly.
               this.lastFilter = filter;
               if (callback) {
                 this.onBeforeRequest = callback;
@@ -208,7 +199,6 @@ async function run() {
   assert(!pdfWindow.loadedHtml.includes('file:///etc/passwd'), 'html_to_pdf should block local file URLs');
   assert(pdfWindow.loadedUrl === 'about:blank', 'html_to_pdf unloads DOM to about:blank on pooled window to prevent memory leaks');
 
-  // Without return_base64 (and without user outputPath): disk + token only — no base64.
   {
     _resetPdfRenderPool();
     FakeBrowserWindow.instances.length = 0;
@@ -379,7 +369,6 @@ async function run() {
   assert(DeferredBrowserWindow.instances.length === 1, 'first queued PDF render should create one window (slot 0)');
   assert(typeof DeferredBrowserWindow.instances[0].resolvePrint === 'function', 'first queued PDF render should reach printToPDF');
 
-  // Pool: el segundo render va al slot 1 y corre EN PARALELO (no espera).
   const secondQueuedPdf = handleDialogCall(
     'html_to_pdf',
     { html: '<!doctype html><html><body>second</body></html>', filename: 'second.pdf' },
@@ -396,8 +385,6 @@ async function run() {
   await firstQueuedPdf;
   await secondQueuedPdf;
 
-  // Tercer render: vuelve al slot 0 y REUTILIZA la ventana persistente
-  // (no crea una tercera: el spin-up se paga una sola vez por slot).
   const thirdQueuedPdf = handleDialogCall(
     'html_to_pdf',
     { html: '<!doctype html><html><body>third</body></html>', filename: 'third.pdf' },
@@ -411,8 +398,6 @@ async function run() {
   DeferredBrowserWindow.instances[0].resolvePrint(Buffer.from('%PDF-third'));
   await thirdQueuedPdf;
 
-  // Timeout de render: una ventana colgada en load (did-finish-load nunca
-  // llega) debe abortar y NO bloquear la cola compartida de PDFs.
   {
     class HungBrowserWindow {
       static instances = [];
@@ -468,7 +453,6 @@ async function run() {
       'la ventana colgada debe destruirse al agotar el tiempo (destroy, no close)',
     );
 
-    // La cola avanza: un render posterior (ventana sana) completa.
     const afterHung = await handleDialogCall(
       'html_to_pdf',
       { html: '<!doctype html><html><body>after</body></html>', filename: 'after.pdf' },
@@ -481,8 +465,6 @@ async function run() {
       'el render posterior a un timeout debe completar',
     );
 
-    // El slot destruido se RECREA en el siguiente uso (no queda muerto):
-    // el slot 0 apuntaba a la ventana colgada destruida → se crea una nueva.
     const recreated = await handleDialogCall(
       'html_to_pdf',
       { html: '<!doctype html><html><body>recreate</body></html>', filename: 'recreate.pdf' },
@@ -535,6 +517,40 @@ async function run() {
     assert(pdfToDisk.result.pdf_base64 === undefined, 'html_to_pdf should skip base64 when saving to disk');
     assert((await fs.promises.readFile(outputPath, 'utf8')) === '%PDF-test', 'html_to_pdf should write PDF bytes to disk');
 
+    const outsidePdfDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'antares-pdf-outside-'));
+    const symlinkPdfDir = path.join(tempDir, 'pdf-escape');
+    let symlinkCreated = false;
+    try {
+      await fs.promises.symlink(outsidePdfDir, symlinkPdfDir, 'junction');
+      symlinkCreated = true;
+    } catch {
+      assert(true, 'PDF symlink escape test skipped when junctions are unavailable');
+    }
+    if (symlinkCreated) {
+      let rejectedSymlinkPdf = false;
+      try {
+        await handleDialogCall(
+          'html_to_pdf',
+          {
+            html: '<!doctype html><html><body>symlink escape</body></html>',
+            filename: 'escape.pdf',
+            outputPath: path.join(symlinkPdfDir, 'escape.pdf'),
+          },
+          dialog,
+          win,
+          { BrowserWindow: FakeBrowserWindow },
+        );
+      } catch (err) {
+        rejectedSymlinkPdf = /no está permitida|symlink|ruta de salida/i.test(err.message);
+      }
+      assert(rejectedSymlinkPdf, 'html_to_pdf should reject a PDF path through an escaping junction');
+      assert(
+        !(await fs.promises.access(path.join(outsidePdfDir, 'escape.pdf')).then(() => true).catch(() => false)),
+        'html_to_pdf should not write through an escaping junction',
+      );
+    }
+    await fs.promises.rm(outsidePdfDir, { recursive: true, force: true });
+
     let rejectedDisallowedPdf = false;
     try {
       await handleDialogCall(
@@ -556,7 +572,6 @@ async function run() {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
 
-  // ─── local_thumbnail (Path A) ─────────────────────────────────────────────
   console.log('\nTesting local_thumbnail path validation and nativeImage path...\n');
   const { assertSafeLocalPath } = require('../electron/local-thumbnail.js');
 
@@ -595,7 +610,7 @@ async function run() {
   const thumbTempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'antares-thumb-test-'));
   try {
     const imgPath = path.join(thumbTempDir, 'tiny.jpg');
-    await fs.promises.writeFile(imgPath, Buffer.from([0xff, 0xd8, 0xff, 0xd9])); // minimal JPEG marker pair
+    await fs.promises.writeFile(imgPath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
 
     const { createFileCapability } = require('../electron/file-capabilities');
     const thumbCap = createFileCapability({
@@ -659,7 +674,6 @@ async function run() {
     }
     assert(unregisteredHandled, 'local_thumbnail should reject unregistered paths');
 
-    // Full-fidelity local → data URL (Ubicaciones / CSP-safe img src)
     const fullJpeg = Buffer.from([0xff, 0xd8, 0xff, 0xd9, 0x00, 0x01, 0x02]);
     await fs.promises.writeFile(imgPath, fullJpeg);
     const fullCap = createFileCapability({
@@ -690,10 +704,6 @@ async function run() {
     await fs.promises.rm(thumbTempDir, { recursive: true, force: true });
   }
 
-  // ── B4: file_token_read_json rechaza spills grandes ANTES de leer ──
-  // Antes, readFile cargaba el archivo completo a memoria (hasta ~100 MB de
-  // spill) para descartarlo recién en el chequeo de tamaño posterior; además
-  // el rechazo ocurría FUERA del try/finally y dejaba el token sin revocar.
   {
     const osB4 = require('os');
     const pathB4 = require('path');
@@ -707,7 +717,6 @@ async function run() {
       assert(smallRes.handled === true, 'file_token_read_json maneja tokens válidos');
       assert(smallRes.result.ok === true, 'file_token_read_json parsea el JSON pequeño');
 
-      // Sparse file > 64 MB: stat.size ya supera el tope sin llenar disco.
       const bigPath = pathB4.join(tmpDir, 'big.json');
       const fh = await fs.promises.open(bigPath, 'w');
       await fh.truncate(64 * 1024 * 1024 + 1024);

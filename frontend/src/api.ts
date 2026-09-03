@@ -1,7 +1,3 @@
-/**
- * API bridge: habla con el backend Python via Electron IPC (JSON-RPC)
- * en vez de HTTP fetch como en la arquitectura antigua (FastAPI+PyQt5).
- */
 
 import type { ProcessStatus, LogEntry, PreviewItem, DBField, RenamePattern, DBRecord, ThemeConfig, VisualMapping, FormatInfo, FormatOrigin, MappingStrategy, MappingResult, MappingCollision } from './types';
 import type { PanelMatchResponse, PanelVM } from './components/panel-aviso-corte/types';
@@ -14,13 +10,8 @@ import { createAutoimgApi } from './api/autoimgApi';
 
 export type { ProcessStatus, LogEntry, PreviewItem, DBField, RenamePattern, DBRecord, ThemeConfig, VisualMapping, FormatInfo, FormatOrigin, MappingStrategy, MappingResult, MappingCollision, AutoImgFolder };
 
-// Single source of truth for which methods get the extended IPC timeout.
-// Shared with electron/ipc-methods.js via shared/long-running-methods.json so
-// the renderer and main process cannot drift on timeout classification.
 import longRunningMethods from '../../shared/long-running-methods.json';
 import heavyIpcMethods from '../../shared/heavy-ipc-methods.json';
-
-// ─── Electron IPC bridge ───────────────────────────────────────────────────
 
 declare global {
   interface Window {
@@ -54,20 +45,11 @@ declare global {
   }
 }
 
-const IPC_TIMEOUT = 30_000;           // default timeout — most ops finish in <5s
-const IPC_LONG_TIMEOUT = 300_000;     // 5 min for most long ops
-const IPC_HEAVY_TIMEOUT = 900_000;    // 15 min for process_start/spreadsheet_parse/html_to_pdf
-// Startup wait budget in Electron Main (waitForReady in ipc-router.js) is 60s.
-// Renderer backstop must outlive Electron main's (STARTUP_WAIT_MS + REQUEST_TIMEOUT_MS)
-// so main always handles/times-out the request and returns structured errors first.
+const IPC_TIMEOUT = 30_000;
+const IPC_LONG_TIMEOUT = 300_000;
+const IPC_HEAVY_TIMEOUT = 900_000;
 const FE_STARTUP_BUFFER_MS = 60_000;
 const FE_TIMEOUT_BUFFER_MS = 10_000;
-// No frontend retry layer: the Electron main process (ipc-router._callBackend)
-// already waits for backend readiness and retries transient mid-flight failures
-// with waitForReady() between attempts. A second retry layer here multiplied
-// transient errors into up to 9 attempts and added blind latency on top of the
-// backend's informed recovery. The timeout race below stays as a backstop in
-// case the main process itself hangs before the backend timeout fires.
 
 export type APIErrorCategory =
   | 'INTERNAL_ERROR'
@@ -193,7 +175,6 @@ function invalidateDatabaseCaches() {
   invalidateApiCache('db_columns');
 }
 
-/** Must match electron/ipc-router.js — structured fields survive only inside Error.message. */
 const ANTARES_IPC_ERROR_PREFIX = 'ANTARES_IPC_ERROR:';
 const ELECTRON_INVOKE_PREFIX = /^Error invoking remote method '[^']+': (?:Error: )?/;
 
@@ -217,7 +198,6 @@ function antaresErrorFromPayload(raw: {
   );
 }
 
-/** Recover structured IPC errors encoded by the main process (or plain-object rejects in tests). */
 function parseIpcInvokeError(err: unknown): AntaresAPIError | null {
   if (err instanceof AntaresAPIError) return err;
 
@@ -239,7 +219,6 @@ function parseIpcInvokeError(err: unknown): AntaresAPIError | null {
     return null;
   }
 
-  // Plain object (unit tests; Electron itself does not deliver this shape).
   if (err && typeof err === 'object' && 'message' in err) {
     return antaresErrorFromPayload(
       err as { message?: unknown; code?: unknown; category?: unknown; details?: unknown },
@@ -260,9 +239,6 @@ const _invoke = async <T>(method: string, params?: Record<string, unknown> | obj
       ? IPC_LONG_TIMEOUT
       : IPC_TIMEOUT;
   const timeoutMs = baseTimeout + FE_STARTUP_BUFFER_MS + FE_TIMEOUT_BUFFER_MS;
-  // Single attempt: retry logic lives in ipc-router._callBackend (main process),
-  // which can actually wait for the backend to recover. The timeout race is a
-  // backstop for the case where the main process never resolves the invoke.
   let timer: ReturnType<typeof setTimeout> | undefined;
   let timedOut = false;
   const timeoutErr = () => new AntaresAPIError(`IPC timeout: ${method}`, -32001, 'TIMEOUT');
@@ -297,8 +273,6 @@ const _invoke = async <T>(method: string, params?: Record<string, unknown> | obj
     }
     throw new AntaresAPIError(String(err));
   } finally {
-    // Limpiar el timer en éxito: sin esto el closure del setTimeout vive hasta
-    // que dispara, goteando memoria en sesiones largas con muchos IPC calls.
     if (timer) clearTimeout(timer);
   }
 };
@@ -341,8 +315,6 @@ export async function restartBackend(): Promise<{ success: boolean; state: strin
   return window.electronAPI.backendRestart() as Promise<{ success: boolean; state: string }>;
 }
 
-// ─── API methods ───────────────────────────────────────────────────────────
-
 export type SequenceMode = 'record' | 'global' | 'filename';
 
 export interface ProcessBody {
@@ -380,16 +352,13 @@ export interface PreviewBody {
   id_column?: string;
   rename_column?: string;
   sequence_mode?: SequenceMode;
-  /** Carpeta de salida: el preview replica la dedupe del job contra archivos ya existentes ahí. */
   destino?: string;
 }
 
 export interface FileDialogResult {
   paths: string[];
-  /** Read capabilities aligned by index with `paths`. */
   file_tokens: string[];
 }
-
 
 export interface DbDetectKeyColumnResult {
   key_column: string;
@@ -402,9 +371,7 @@ export interface PreviewResult {
   collisions?: MappingCollision[];
   detected_key_column?: string;
   detected_key_column_matches?: number;
-  /** True when the backend capped the preview batch (see total_files). */
   truncated?: boolean;
-  /** Full input file count before preview truncation. */
   total_files?: number;
 }
 
@@ -536,16 +503,13 @@ export interface HtmlToPdfBody {
   filename: string;
   localImagePaths?: Record<string, string>;
   outputPath?: string;
-  /** Optional Antares Canvas semantic manifest to embed as a PDF attachment. */
   canvas_manifest_b64?: string;
-  /** Opt-in: inline PDF as base64 (prefer outputPath / saved_path for large exports). */
   return_base64?: boolean;
 }
 
 export interface CanvasExportCmykPdfBody {
   document: import('./components/canvas/types').CanvasDocument;
   contexts?: unknown[];
-  /** When true, render context[i] with page i (1:1) instead of cartesian product. */
   pair_context_pages?: boolean;
   color_profile?: string;
   dpi?: number;
@@ -554,7 +518,6 @@ export interface CanvasExportCmykPdfBody {
   filename?: string;
   outputPath?: string;
   localImagePaths?: Record<string, string>;
-  /** Optional Antares Canvas semantic manifest to embed as a PDF attachment. */
   canvas_manifest_b64?: string;
 }
 
@@ -596,11 +559,9 @@ export const api = {
     _invoke<FileDialogResult & { folder?: string }>('dialog_folder', params),
   dialogSave: (params?: { title?: string; defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }) => _invoke<{ paths: string[] }>('dialog_save', params),
 
-  /** Display-size local thumbnail via Electron nativeImage (Path A). */
   localThumbnail: (body: { path?: string; file_token?: string; maxEdge?: number }) =>
     _invoke<{ dataUrl: string }>('local_thumbnail', body),
 
-  /** Full-fidelity allowlisted local image → data URL (CSP-safe; no file://). */
   localImageDataUrl: (body: { path?: string; file_token?: string }) =>
     _invoke<{ dataUrl: string }>('local_image_data_url', body),
 
@@ -613,13 +574,6 @@ export const api = {
   preview: (body: PreviewBody) => _invoke<PreviewResult>('preview', body),
   isVideo: (path: string) => _invoke<{ is_video: boolean }>('is_video', { path }),
 
-  dbDetectKeyColumn: (files: string[]) => _invoke<DbDetectKeyColumnResult>('db_detect_key_column', { files }),
-
-  getRecords: (opts?: { limit?: number; offset?: number }) =>
-    _invoke<{ records: DBRecord[]; fields: string[]; limit: number; offset: number }>(
-      'db_records',
-      opts ?? {},
-    ),
   importExcel: (path: string) =>
     _invoke<{ imported: number; inserted?: number; skipped?: number }>('db_import', { path }).then((v) => {
       invalidateDatabaseCaches();
@@ -704,10 +658,6 @@ export const api = {
   }) => _invoke<{ id: number }>('history_save', body),
   historyExport: (body?: { ids?: number[]; limit?: number; run_type?: string }) => _invoke<{ csv: string; count: number; filename: string }>('history_export', body),
 
-  // ─── Formatos PDF ───────────────────────────────────────────────────────
-  // formatos_list es quasi-estático (catálogo builtin + uploads locales); las
-  // mutaciones lo invalidan explícitamente. Dedupe in-flight evita que la
-  // doble invocación en dev pague dos veces el import frío de core.formatos.
   formatosList: () =>
     cachedInvoke('formatos_list', () => _invoke<{ formats: FormatInfo[] }>('formatos_list')),
   formatosGenerate: (body: { format_id: string; desde: number; hasta: number; output_path?: string }) =>
@@ -737,7 +687,6 @@ export const api = {
       return v;
     }),
 
-  // ─── Sellador ───────────────────────────────────────────────────────────
   selladorInspectPdf: (body: { pdf_path: string }) =>
     _invoke<{
       filename: string;
@@ -782,17 +731,9 @@ export const api = {
     seed: number;
   }>('sellador_apply', body),
 
-  // ─── Image Optimizer ────────────────────────────────────────────────────
-  imageOptimizerZip: (body: { files: Array<{ filename: string; content_b64: string }>; zip_name: string; output_path?: string }) =>
-    _invoke<{ zip_base64?: string; saved_path?: string; filename: string }>('image_optimizer_zip', body),
   imageOptimizerSaveFiles: (body: { files: Array<{ filename: string; content_b64: string }>; output_folder: string }) =>
     _invoke<ImageOptimizerSaveFilesResponse>('image_optimizer_save_files', body),
 
-  // ─── Plantillas PreviewPanel ─────────────────────────────────────────────
-  // templates_list is quasi-immutable: bundled HTML under backend/templates (plus
-  // user_data/templates overrides). No mutating IPC exists (no template upload/
-  // delete); the only way to add templates is to drop HTML files and restart.
-  // TTL=5min is intentional — avoids stale while keeping dedupe/cache benefits.
   templatesList: () =>
     cachedInvoke('templates_list', () =>
       _invoke<{ templates: Array<{ id: string; name: string; filename: string; source?: string }> }>('templates_list'),
@@ -800,7 +741,6 @@ export const api = {
   templateGet: (name: string) =>
     _invoke<{ name: string; content: string; source?: string }>('template_get', { name }),
 
-  // ─── Canvas (independent template editor) ────────────────────────────────
   canvasList: () =>
     _invoke<{ documents: Array<{ id: string; name: string; updatedAt?: string }> }>('canvas_list'),
   canvasGet: (id: string) => _invoke<{ document: import('./components/canvas/types').CanvasDocument }>('canvas_get', { id }),
@@ -868,19 +808,14 @@ export const api = {
       total: number;
       has_more: boolean;
     }>('spreadsheet_get_rows', body as unknown as Record<string, unknown>),
-  /** Drop a spill/result file token early (Preview hydrate:false path). */
   fileTokenCleanup: (token: string) =>
     _invoke<{ cleaned: boolean }>('file_token_cleanup', { token }),
   spreadsheetExportVolantesTemplate: (body?: { output_path?: string }) =>
     _invoke<{ content_b64: string; filename: string; path?: string }>('spreadsheet_export_volantes_template', (body || {}) as unknown as Record<string, unknown>),
 
-  // ─── Render HTML to PDF via Electron ─────────────────────────────────────
-  // Sanitization happens once, in Electron's renderHtmlToPdf (defense in depth
-  // at the trust boundary), so the renderer just forwards the raw HTML.
   htmlToPdf: (body: HtmlToPdfBody) =>
     _invoke<HtmlToPdfResponse>('html_to_pdf', body),
 
-  // ─── Informes técnicos ─────────────────────────────────────────────────
   technicalReportsList: (body?: TechnicalReportsListBody) =>
     _invoke<{ reports: TechnicalReportListItem[] | TechnicalReport[] }>('technical_reports_list', body),
   technicalReportsGet: (id: string) =>
@@ -904,7 +839,6 @@ export const api = {
   technicalReportsRenderConsolidatedHtml: (body?: { report_ids?: string[]; logo_left?: string | null; logo_right?: string | null }) =>
     _invoke<{ html: string; filename: string; count: number }>('technical_reports_render_consolidated_html', body),
 
-  // ─── Informes v2 ───────────────────────────────────────────────────────
   informesV2List: (body?: InformesV2ListBody) =>
     _invoke<{ reports: InformeV2ListItem[] | InformeV2[] }>('informes_v2_list', body),
   informesV2Get: (id: string) =>
@@ -931,7 +865,6 @@ export const api = {
   }) =>
     _invoke<{ html: string; filename: string; count: number }>('informes_v2_render_consolidated_html', body),
 
-  // ─── Fichas Técnicas ───────────────────────────────────────────────────
   fichasTecnicasList: (body?: FichasTecnicasListBody) =>
     _invoke<{ fichas: FichaTecnicaListItem[] | FichaTecnica[]; total: number }>('fichas_tecnicas_list', body),
   fichasTecnicasGet: (id: string) =>
@@ -951,7 +884,6 @@ export const api = {
   fichasTecnicasRenderConsolidatedHtml: (body?: { ficha_ids?: string[]; logo_left?: string | null; logo_right?: string | null }) =>
     _invoke<{ html: string; filename: string; count: number }>('fichas_tecnicas_render_consolidated_html', body),
 
-  // ─── Panel Aviso de Corte ──────────────────────────────────────────────
   panelAvisoCorteParseExcel: (body: { xlsx_b64: string; filename: string }) =>
     _invoke<{ columns: string[]; normalizedColumns: string[]; rows: Array<Record<string, string>>; warnings: string[] }>('panel_aviso_corte_parse_excel', body),
   panelAvisoCorteComputeMatch: (body: {
@@ -975,7 +907,6 @@ export const api = {
   }) => _invoke<{ pdf_base64: string; content_base64?: string; saved_path?: string; filename: string; format?: string; mime_type?: string }>('panel_aviso_corte_render_pdf', body),
   panelAvisoCorteTemplate: (body: { output_path: string; overwrite?: boolean }) => _invoke<{ path: string }>('panel_aviso_corte_template', body),
 
-  // ─── Evidencia Volanteo ───────────────────────────────────────────────
   evidenciaVolanteoRender: (body: {
     title: string;
     cuadrante: string;
@@ -990,12 +921,6 @@ export const api = {
     output_path?: string;
   }) => _invoke<{ pdf_base64: string; content_base64?: string; saved_path?: string; filename: string; format?: string; mime_type?: string }>('evidencia_volanteo_render', body),
 
-  // ─── Ubicaciones ──────────────────────────────────────────────────────
-  /**
-   * `excelPath` is either a staged read token (`antares-read-*`, obtained via
-   * `stageFileForIpc`) or null for manual-data mode. Raw absolute paths are
-   * rejected by the IPC router — do not send `getPathForFile` results here.
-   */
   previewUbicacion: (body: PreviewUbicacionParams) => _invoke<PreviewUbicacionResponse>('preview_ubicacion', body),
   generarUbicaciones: (body: GenerarUbicacionesParams) => _invoke<GenerarUbicacionesResponse>('generar_ubicaciones', body),
   ubicacionesKeysGet: () =>
@@ -1005,7 +930,6 @@ export const api = {
 
   ...createAutoimgApi(_invoke),
 
-  // ─── RUM Telemetry (web-vitals → stderr) ────────────────────────────────
   telemetry: (body: {
     name: string;
     value: number;

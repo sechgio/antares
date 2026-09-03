@@ -20,12 +20,10 @@ const {
 
 const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
-  // Full Drive (not readonly): required to copy/rename images into a destination folder.
   'https://www.googleapis.com/auth/drive',
   'https://www.googleapis.com/auth/userinfo.email',
 ].join(' ');
 
-/** Mensaje cuando Google invalida el refresh token (revocado, caducado o secret cambiado). */
 const REAUTH_REQUIRED_MESSAGE =
   'La sesión de Google expiró o fue revocada. Vuelve a conectar tu cuenta con "Conectar con Google".';
 const SESSION_CHANGED_MESSAGE = 'La sesión de Google cambió durante la operación.';
@@ -68,14 +66,12 @@ function _validateClientId(clientId) {
 let _sheetId = null;
 let _sheetMeta = null;
 
-/** Al cambiar de usuario Google, el Sheet en memoria debe re-resolverse desde el almacén scoped. */
 onActiveUserChange(() => {
   _sheetId = null;
   _sheetMeta = null;
 });
 
 function _loadOAuthConfigFromDisk() {
-  // Cifrado, migración plaintext→sealed y paths viven en el store consolidado.
   return store.loadOAuthConfigFromDisk();
 }
 
@@ -89,7 +85,6 @@ function getOAuthConfig() {
 }
 
 function saveOAuthConfig(clientId, clientSecret) {
-  // Validación y cifrado viven en el store consolidado.
   return store.saveOAuthConfig(clientId, clientSecret);
 }
 
@@ -167,7 +162,6 @@ async function _refreshAccessToken(tokens, session = _captureAuthSession()) {
   const updated = {
     ...tokens,
     access_token: data.access_token,
-    // Google may omit refresh_token on refresh; keep the existing one.
     refresh_token: data.refresh_token || tokens.refresh_token,
     expiry_date: Date.now() + (data.expires_in || 3600) * 1000,
   };
@@ -237,7 +231,6 @@ function _buildAuthUrl(redirectUri, codeChallenge, state) {
     response_type: 'code',
     scope: SCOPES,
     access_type: 'offline',
-    // consent forces a new refresh_token (select_account alone often reuses an old grant).
     prompt: 'select_account consent',
     code_challenge: codeChallenge,
     code_challenge_method: 'S256',
@@ -249,9 +242,6 @@ function _buildAuthUrl(redirectUri, codeChallenge, state) {
 function getAuthUrl() {
   const redirectUri = _pendingRedirectUri || 'http://127.0.0.1:42813';
   const verifier = _pendingCodeVerifier || _generateCodeVerifier();
-  // Persistir: exchangeCode debe usar el MISMO verifier que generó el
-  // challenge. Sin esto, el flujo legacy producía URLs cuyo PKCE jamás
-  // podía completarse (verifier nuevo por llamada, nunca guardado).
   _pendingCodeVerifier = verifier;
   const challenge = _generateCodeChallenge(verifier);
   const state = _pendingOAuthState || crypto.randomBytes(24).toString('base64url');
@@ -335,8 +325,6 @@ async function exchangeCode(code, redirectUri) {
   const previous = store.loadTokens() || {};
   const tokens = {
     access_token: data.access_token,
-    // Re-auth sometimes omits refresh_token; keep prior only if still present in response path.
-    // Prefer the new one. If Google omitted it after consent, fall back to previous.
     refresh_token: data.refresh_token || previous.refresh_token,
     expiry_date: Date.now() + (data.expires_in || 3600) * 1000,
   };
@@ -345,10 +333,6 @@ async function exchangeCode(code, redirectUri) {
       'Google no devolvió un refresh token. Revoca el acceso de la app en myaccount.google.com/permissions y vuelve a conectar.',
     );
   }
-  // Resolver la identidad de Google ANTES de persistir: guardar bajo el scope
-  // del usuario activo anterior pisaría los tokens de la cuenta conectada
-  // previamente (cuenta A al conectar cuenta B). Con el email conocido, el
-  // guardado cae directamente en el almacén de la cuenta correcta.
   const email = await _resolveGoogleEmail(tokens.access_token);
   if (!email) {
     throw new Error(
@@ -361,7 +345,6 @@ async function exchangeCode(code, redirectUri) {
   return tokens;
 }
 
-/** Resuelve el email de la cuenta autorizada sin persistir nada. */
 async function _resolveGoogleEmail(accessToken) {
   if (!accessToken) return null;
   try {
@@ -391,7 +374,6 @@ async function getAuthStatus() {
     const email = info.email || undefined;
     if (email) {
       setActiveUser(email);
-      // Ensure tokens live under this user (covers process restart with only tokens loaded)
       store.saveTokens({
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
@@ -423,7 +405,6 @@ async function revokeAuth() {
       { retries: 0 },
     ).catch(() => {});
   }
-  // Solo tokens del usuario activo. Sheet/carpetas quedan en autoimg/users/<hash>/.
   store.clearTokensForUserKey(_sessionStoreKey(session));
   if (_isAuthSessionCurrent(session)) clearActiveUser();
   _sheetId = null;
@@ -519,7 +500,6 @@ async function openSpreadsheet(rawId) {
   const name = data.properties?.title || '';
   _sheetId = sheetId;
   _sheetMeta = data;
-  // Persist locally — survives logout / token revoke / app restart
   store.saveSheetConfig(sheetId, name);
   const { created_tabs } = await ensureAutoImgTabs();
   return {

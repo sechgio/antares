@@ -1,4 +1,3 @@
-"""Helpers para rutas compatibles con PyInstaller y ejecución desde fuente."""
 
 from __future__ import annotations
 
@@ -10,12 +9,6 @@ _config_path_cache: dict[str, Path] = {}
 
 
 def resource_path(relative_path: str) -> Path:
-    """
-    Resuelve la ruta absoluta a un recurso empaquetado.
-    En ejecución desde fuente usa la raíz del repo.
-    En PyInstaller onefile usa sys._MEIPASS (directorio temporal de extracción).
-    En onedir (sin _MEIPASS) usa el directorio del ejecutable / `_internal`.
-    """
     if getattr(sys, "frozen", False):
         meipass = getattr(sys, "_MEIPASS", None)
         if meipass:
@@ -31,12 +24,6 @@ def resource_path(relative_path: str) -> Path:
 
 
 def user_data_path(relative_path: str) -> Path:
-    """
-    Resuelve una ruta writable para datos de usuario (BD, logs, etc.).
-    En Windows: %LOCALAPPDATA%\\Antares
-    En macOS: ~/Library/Application Support/Antares
-    En Linux: ~/.local/share/Antares
-    """
     app_name = "Antares"
     if sys.platform == "win32":
         local = Path(os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))) / app_name
@@ -50,11 +37,6 @@ def user_data_path(relative_path: str) -> Path:
 
 
 def cached_config_path(key: str, filename: str) -> Path:
-    """Return and cache a user-data path for a config file.
-
-    Avoids repeated filesystem resolution for the same config file.
-    The *key* is a unique identifier (e.g. 'fields', 'patterns', 'theme').
-    """
     cached = _config_path_cache.get(key)
     if cached is None:
         cached = user_data_path(filename)

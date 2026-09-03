@@ -1,4 +1,3 @@
-"""Memory-pressure spill lifecycle tests for Canvas handlers."""
 
 from __future__ import annotations
 

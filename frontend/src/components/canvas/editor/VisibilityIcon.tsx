@@ -7,11 +7,6 @@ type IconProps = SVGProps<SVGSVGElement> & {
   size?: string | number;
 };
 
-/**
- * Lucide `EyeOff` uses truncated eye arcs that collapse into an illegible
- * scribble below ~16px (looks like two icons stacked). This keeps a full eye
- * plus a single slash so hide/show stays readable in toolbar buttons.
- */
 export function EyeSlash({
   size = 24,
   className,

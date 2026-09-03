@@ -1,9 +1,5 @@
 #!/usr/bin/env node
 
-/**
- * Instala hooks de git del repo (.githooks) vía core.hooksPath.
- * Uso: node scripts/install-hooks.js
- */
 
 const { execSync } = require('child_process');
 const path = require('path');

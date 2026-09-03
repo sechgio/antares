@@ -16,7 +16,6 @@ function resolvedParentId(layers: CanvasLayer[], layer: CanvasLayer): string | u
   return layer.parentId && layers.some((l) => l.id === layer.parentId) ? layer.parentId : undefined;
 }
 
-/** Move root ids by delta, expanding descendants (like nudge/move). */
 function translateRoots(
   layers: CanvasLayer[],
   rootIds: string[],
@@ -40,10 +39,6 @@ function translateRoots(
   });
 }
 
-/**
- * Reorder siblings so `siblingIds` sit at the front (or back) of their parent group,
- * preserving relative order of movers and of non-movers.
- */
 function reorderSiblingsExtreme(
   layers: CanvasLayer[],
   siblingIds: string[],
@@ -73,7 +68,6 @@ function reorderSiblingsExtreme(
   return result;
 }
 
-/** Bring selected layers to the front among their siblings (parent-scoped). */
 export function bringToFront(layers: CanvasLayer[], ids: string[]): CanvasLayer[] {
   const idSet = new Set(ids);
   const selected = layers.filter((l) => idSet.has(l.id) && !isLocked(l) && l.type !== 'frame');
@@ -94,7 +88,6 @@ export function bringToFront(layers: CanvasLayer[], ids: string[]): CanvasLayer[
   return next;
 }
 
-/** Send selected layers to the back among their siblings (parent-scoped). */
 export function sendToBack(layers: CanvasLayer[], ids: string[]): CanvasLayer[] {
   const idSet = new Set(ids);
   const selected = layers.filter((l) => idSet.has(l.id) && !isLocked(l) && l.type !== 'frame');
@@ -164,10 +157,6 @@ export function duplicateLayers(
   return { layers: result, newIds };
 }
 
-/**
- * Reorder dragged among siblings relative to Capas visual order (paint-top-first).
- * Capas "before" = closer to front = later in the document array.
- */
 export function reorderAmongSiblings(
   layers: CanvasLayer[],
   draggedId: string,
@@ -191,10 +180,6 @@ export function reorderAmongSiblings(
 
 export type LayerTreeDropPosition = 'before' | 'after' | 'inside';
 
-/**
- * Capas drag: reorder and/or reparent. Capas "before" = later in the document array.
- * `inside` nests under a group/grid (front of Capas children = end of sibling run).
- */
 export function moveLayerInTree(
   layers: CanvasLayer[],
   draggedId: string,
@@ -245,7 +230,6 @@ export function moveLayerInTree(
   return without;
 }
 
-/** One step toward front among siblings (later in document). */
 export function bringForward(layers: CanvasLayer[], ids: string[]): CanvasLayer[] {
   let next = layers;
   for (const id of ids) {
@@ -262,7 +246,6 @@ export function bringForward(layers: CanvasLayer[], ids: string[]): CanvasLayer[
   return next;
 }
 
-/** One step toward back among siblings (earlier in document). */
 export function sendBackward(layers: CanvasLayer[], ids: string[]): CanvasLayer[] {
   let next = layers;
   for (const id of [...ids].reverse()) {
@@ -309,7 +292,6 @@ export function nudgeLayers(
   return translateRoots(layers, ids, dxMm, dyMm);
 }
 
-/** Remove layers and all descendants linked via parentId. */
 export function deleteLayers(layers: CanvasLayer[], ids: string[]): CanvasLayer[] {
   const remove = new Set(expandWithDescendants(layers, ids));
   return layers.filter((l) => !remove.has(l.id));
@@ -317,11 +299,6 @@ export function deleteLayers(layers: CanvasLayer[], ids: string[]): CanvasLayer[
 
 export type AlignMode = 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom';
 
-/**
- * Align selected layers. Single selection aligns to the page frame
- * (optionally for `pageIndex`). Multi-select aligns to selection bounds.
- * Moving a group also moves its descendants.
- */
 export function alignLayers(
   layers: CanvasLayer[],
   ids: string[],
@@ -339,7 +316,6 @@ export function alignLayers(
     const layer = layers.find((l) => l.id === rootId);
     if (!layer) return { dx: 0, dy: 0 };
     const visual = layerBounds(layer);
-    // CSS rotate is around center, so a visual AABB shift equals a local translate shift.
     return {
       dx: targetVisualX - visual.x,
       dy: targetVisualY - visual.y,
@@ -398,11 +374,6 @@ export function alignLayers(
   return next;
 }
 
-/**
- * Distribute selected layers (≥3).
- * - `centers` (default): even spacing between centers (legacy).
- * - `gaps`: equal gaps between bounding boxes (Figma-like tidy spacing).
- */
 export function distributeLayers(
   layers: CanvasLayer[],
   ids: string[],
@@ -488,8 +459,6 @@ export function groupLayers(
   const maxY = Math.max(...bounds.map((b) => b.bottom));
   const groupId = newId();
   const pageIndex = children[0].pageIndex ?? 0;
-  // Guard: grouping across pages would place children on a page where they
-  // are invisible. The UI prevents cross-page selection, but defend anyway.
   if (!children.every((c) => (c.pageIndex ?? 0) === pageIndex)) {
     return { layers, groupId: '' };
   }
@@ -535,11 +504,6 @@ function isAutoLayoutContainer(layer: CanvasLayer): boolean {
   return layer.type === 'frame' || layer.type === 'group' || layer.type === 'component';
 }
 
-/**
- * After a frame/group resize: apply parent constraints to direct children,
- * then optionally run auto-layout (overwrites child positions).
- * Children without constraintH/V are left alone (unless autoLayout relayouts them).
- */
 export function propagateContainerResize(
   layers: CanvasLayer[],
   containerId: string,
@@ -579,7 +543,6 @@ export function propagateContainerResize(
   return patchLayersById(next, layoutUpdates);
 }
 
-/** True when a single-root container resize should use constraint/auto-layout path. */
 export function containerUsesLayoutConstraints(
   layers: CanvasLayer[],
   containerId: string,
@@ -595,7 +558,6 @@ export function containerUsesLayoutConstraints(
   );
 }
 
-/** Relayout children when autoLayout meta is present/changed (no parent delta). */
 export function applyAutoLayoutIfNeeded(layers: CanvasLayer[], containerId: string): CanvasLayer[] {
   const frame = layers.find((l) => l.id === containerId);
   if (!frame || !isAutoLayoutContainer(frame) || !frame.meta?.autoLayout) return layers;
@@ -606,10 +568,6 @@ export function applyAutoLayoutIfNeeded(layers: CanvasLayer[], containerId: stri
   return patchLayersById(layers, updates);
 }
 
-/**
- * Panel live/commit hook: after a container W/H/pos or autoLayout edit,
- * propagate constraints and/or run auto-layout on children.
- */
 export function applyContainerLayoutPanelEffects(
   layers: CanvasLayer[],
   prev: CanvasLayer | undefined,

@@ -1,11 +1,9 @@
-/** Header keys for title typography (persisted in IndexedDB via HeaderMap). */
 export const TITULO_SIZE_KEY = 'tituloSize';
 export const TITULO_COLOR_KEY = 'tituloColor';
 
 export const DEFAULT_TITULO_SIZE_PX = 14;
 export const DEFAULT_TITULO_COLOR = '#000000';
 
-/** Preset sizes offered in the form (px). */
 export const TITULO_SIZE_OPTIONS = [10, 12, 14, 16, 18, 20, 22, 24, 28] as const;
 
 const HEX_COLOR_RE = /^#([0-9A-Fa-f]{6})$/;
@@ -19,7 +17,6 @@ export function isTituloStyleKey(key: string): boolean {
     return key === TITULO_SIZE_KEY || key === TITULO_COLOR_KEY;
 }
 
-/** Nearest preset at or below `size`, for stepper controls. */
 export function stepTituloSize(size: number, direction: -1 | 1): number {
     const presets = TITULO_SIZE_OPTIONS as readonly number[];
     if (direction === 1) {

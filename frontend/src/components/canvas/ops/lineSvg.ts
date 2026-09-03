@@ -1,4 +1,3 @@
-/** SVG markup helpers for vector line layers. */
 
 import type { CanvasLayer } from '../types';
 import { parseMm } from '../types';
@@ -28,7 +27,6 @@ function arrowMarker(id: string, color: string, orient: 'auto-start-reverse' | '
   return `<marker id="${escapeAttr(id)}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="${orient}" markerUnits="strokeWidth"><path d="M 0 0 L 10 5 L 0 10 z" fill="${escapeAttr(color)}"/></marker>`;
 }
 
-/** Inner SVG for a line layer. Path coordinates are mm (same as meta.path). */
 export function buildLineSvgContent(layer: CanvasLayer): string {
   const ensured = ensureLinePath(layer);
   const path = ensured.meta?.path;

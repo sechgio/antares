@@ -1,4 +1,3 @@
-"""Tests para utilidades de validación."""
 
 from backend.utils.validators import (
     is_path_like_key,
@@ -59,7 +58,6 @@ class TestParseFilenameParts:
         assert parse_filename_parts("4210502 (3).jpeg") == ("4210502", "3")
 
     def test_no_trata_anio_como_secuencia(self) -> None:
-        """Trailing _2024 / -2019 are year-like, not sequence numbers."""
         assert parse_filename_parts("photo_2024.jpg") == ("photo_2024", "1")
         assert parse_filename_parts("vacation-2019.png") == ("vacation-2019", "1")
 
@@ -91,7 +89,6 @@ class TestIsPathLikeKey:
         assert is_path_like_key("image_paths")
 
     def test_keys_camel_case(self) -> None:
-        # Regression: camelCase path keys must be screened too (B3).
         assert is_path_like_key("excelPath")
         assert is_path_like_key("outputDir")
         assert is_path_like_key("filePath")

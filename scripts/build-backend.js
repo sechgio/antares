@@ -103,7 +103,6 @@ async function main() {
       throw new Error(`${backendExeName} not found in ${pyInstallerFolder}`);
     }
 
-    // Flat layout: resources/backend/AntaresBackend.exe (+ deps beside it).
     moveOrCopyDir(pyInstallerFolder, distBackendDir);
     const targetExe = path.join(distBackendDir, backendExeName);
     if (!fs.existsSync(targetExe)) {
@@ -112,7 +111,6 @@ async function main() {
 
     const sizeMb = directorySizeBytes(distBackendDir) / (1024 * 1024);
     console.log(`[build-backend] Backend onedir copied to ${distBackendDir} (${sizeMb.toFixed(1)} MB)`);
-    // Guard: ML stacks accidentally pulled in produce multi-GB trees.
     const MAX_BACKEND_MB = 450;
     if (sizeMb > MAX_BACKEND_MB) {
       throw new Error(

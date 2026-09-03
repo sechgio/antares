@@ -1,14 +1,3 @@
-"""Reproducible IPC latency benchmark: Primera vs stable p50/p95.
-
-Spawns a real ``backend.main`` process over JSON-RPC stdio with a disposable
-``LOCALAPPDATA`` profile. Prints JSON to stdout; does not write results into
-the repository.
-
-Usage:
-  python scripts/benchmark_ipc_latency.py
-  python scripts/benchmark_ipc_latency.py --methods panel_aviso_corte_render_pdf,version
-  python scripts/benchmark_ipc_latency.py --confirm-method panel_aviso_corte_render_pdf
-"""
 
 from __future__ import annotations
 
@@ -308,12 +297,10 @@ def build_params(fixtures: dict[str, Any], setup: dict[str, Any], methods: list[
             },
             "canvas_delete": {"id": "audit-missing-document"},
             "canvas_export_cmyk_pdf": {"document": setup.get("canvas_document", {})},
-            "db_detect_key_column": {"files": []},
             "db_export": {"path": str(output_dir / "catalog-export.xlsx")},
             "db_fields_update": {"fields": setup.get("db_fields", [])},
             "db_import": {"path": fixtures["workbook_path"]},
             "db_parse_mapping": {"path": fixtures["workbook_path"], "files": ["A001.jpg"]},
-            "db_records": {"limit": 1, "offset": 0},
             "db_template": {"path": str(output_dir / "catalog-template.xlsx")},
             "db_validate_mapping": {"mapping": {"A001": "muestra"}, "files": ["A001.jpg"]},
             "fichas_tecnicas_delete": {"id": "audit-missing"},
@@ -349,7 +336,6 @@ def build_params(fixtures: dict[str, Any], setup: dict[str, Any], methods: list[
                 "files": [png_file],
                 "output_folder": str(output_dir / "optimized"),
             },
-            "image_optimizer_zip": {"files": [png_file], "zip_name": "audit.zip"},
             "informes_v2_delete": {"id": "audit-missing"},
             "informes_v2_get": {"id": setup.get("informe_id", "audit-missing")},
             "informes_v2_render_html": {"report": setup.get("informe_report", {})},
@@ -440,7 +426,6 @@ def build_params(fixtures: dict[str, Any], setup: dict[str, Any], methods: list[
             "version": {},
         }
     )
-    # Ensure every requested method has a params entry.
     for method in methods:
         params.setdefault(method, {})
     return params
@@ -459,7 +444,6 @@ def setup_process(ipc: IPCProcess, fixtures: dict[str, Any]) -> dict[str, Any]:
     presets = result("theme_presets", {}).get("presets", [])
     setup["preset_name"] = presets[0] if presets else ""
 
-    # Upload a disposable PDF format so render/generate paths are representative.
     upload = result(
         "formatos_upload",
         {
@@ -538,7 +522,6 @@ def _is_soft_fail(response: dict[str, Any]) -> bool:
     result = response.get("result")
     if not isinstance(result, dict):
         return False
-    # Ubicaciones soft-rejects when required geo/payload data is absent.
     if result.get("ok") is False:
         return True
     return bool(result.get("rejected") or result.get("semantic_reject"))
@@ -590,7 +573,6 @@ def benchmark_methods(
             )
         errors = sum(1 for item in stable_meta if item["error"])
         route_status = _classify_route(stable_meta, timeouts)
-        # Preserve first error info for debugging without polluting percentiles.
         row = summarize_latencies(
             method=method,
             first_ms=first_ms,
@@ -612,8 +594,6 @@ def confirm_method(
     *,
     samples: int = HEAVY_SAMPLES,
 ) -> dict[str, Any]:
-    # Extra warm-up batch (discarded) so both measured batches start from a
-    # settled WeasyPrint/font cache rather than mixing residual cold cost.
     for _ in range(samples):
         ipc.rpc(method, params)
 
@@ -662,7 +642,6 @@ def telemetry_smoke(
         ipc.wait_ready()
         setup = setup_process(ipc, fixtures)
         params = build_params(fixtures, setup, [method])[method]
-        # Discard first (cold/warm-up), then one measured call.
         ipc.rpc(method, params)
         ipc.rpc(method, params)
         phase_lines = [line for line in ipc.stderr_tail(200) if "ipc_phase" in line and method in line]
@@ -687,7 +666,6 @@ def run_benchmark(
         if unknown:
             raise ValueError(f"Unknown methods not in HANDLERS: {unknown}")
         missing_coverage = sorted(set(registered) - set(methods))
-        # Filtered runs are allowed; full runs must cover the registry.
         if not missing_coverage and set(methods) != set(registered):
             pass
     if methods == registered and len(methods) != len(registered):

@@ -1,4 +1,3 @@
-"""Tests de dimensiones de layout A4."""
 
 from __future__ import annotations
 

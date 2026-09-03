@@ -1,8 +1,3 @@
-"""Validación de use_column_rename: lookup roto vs fix por índice.
-
-Cada test documenta un escenario del análisis datos=None vs codigo in codigos_list.
-Los tests ``broken_*`` reproducen el comportamiento viejo sin tocar producción.
-"""
 
 from __future__ import annotations
 
@@ -46,7 +41,6 @@ class _RecordingScheduler:
 
 
 def _broken_lookup(codigos_list: list[str], db_rows: list[dict[str, Any]]):
-    """Réplica exacta del lookup roto eliminado de conversion.preview."""
     db_cache = {str(i): rec for i, rec in enumerate(db_rows)}
 
     def lookup(codigo: str) -> dict[str, Any] | None:
@@ -64,7 +58,6 @@ def _preview_via_broken_lookup(
     sequence_mode: str = "global",
     autofill_codigos_manuales: bool = True,
 ) -> list[tuple[str, bool]]:
-    """Simula el preview viejo (preview_lote + lookup por codigo)."""
     codigos_manuales = {} if codigos_manuales is None else dict(codigos_manuales)
     codigos_list: list[str] = []
     file_seqs: dict[str, str] = {}
@@ -95,9 +88,6 @@ def _preview_via_broken_lookup(
         sequence_groups=sequence_groups,
     )
     return [(nuevo, en_bd) for _orig, nuevo, en_bd in rows]
-
-
-# --- Fix actual (producción) ------------------------------------------------
 
 
 def test_preview_column_rename_maps_by_file_index_not_first_code_match(monkeypatch, tmp_path) -> None:
@@ -166,7 +156,6 @@ def test_preview_column_rename_sin_fila_bd_conserva_nombre(monkeypatch, tmp_path
 
 
 def test_preview_column_rename_record_mode_usa_fila_correcta_por_indice(monkeypatch, tmp_path) -> None:
-    """Cada archivo toma su fila BD; la secuencia record agrupa por código parseado (mismo grupo)."""
     names = ["4210502 (1).jpg", "4210544 (2).jpg", "4210502 (3).jpg"]
     files = [str(tmp_path / name) for name in names]
     for path in files:
@@ -197,9 +186,6 @@ def test_preview_column_rename_record_mode_usa_fila_correcta_por_indice(monkeypa
         "SGIO_A_002.jpg",
     ]
     assert [item["en_bd"] for item in result["preview"]] == [True, True, True]
-
-
-# --- Lookup roto (validación histórica, no producción) ------------------------
 
 
 def test_broken_lookup_codigos_duplicados_nunca_devuelve_none() -> None:
@@ -233,7 +219,6 @@ def test_broken_preview_tres_archivos_mismo_codigo_usa_siempre_fila_cero(tmp_pat
 
 
 def test_broken_preview_mas_archivos_que_filas_tercero_tambien_usa_fila_cero(tmp_path) -> None:
-    """Valida la fila del resumen: con lookup roto el archivo 3 NO obtiene datos=None."""
     names = ["4210502 (1).jpg", "4210502 (2).jpg", "4210502 (3).jpg"]
     files = [str(tmp_path / name) for name in names]
     db_rows = [
@@ -258,7 +243,6 @@ def test_broken_lookup_codigo_fuera_de_lista_devuelve_none() -> None:
 
 
 def test_broken_preview_fallback_stem_distinto_al_grupo_da_datos_none_en_record(tmp_path) -> None:
-    """codigo not in codigos_list: fallback obtener_codigo_desde_nombre usa stem completo."""
     names = ["IMG_1.jpg", "IMG_2.jpg"]
     files = [str(tmp_path / name) for name in names]
     db_rows = [
@@ -281,7 +265,6 @@ def test_broken_preview_fallback_stem_distinto_al_grupo_da_datos_none_en_record(
 
 
 def test_flujo_normal_siempre_usa_codigos_manuales_no_fallback(tmp_path) -> None:
-    """En preview real, codigos_manuales se llena antes del loop: el fallback no aplica."""
     names = ["IMG_1.jpg"]
     files = [str(tmp_path / name) for name in names]
     for path in files:
@@ -300,9 +283,6 @@ def test_flujo_normal_siempre_usa_codigos_manuales_no_fallback(tmp_path) -> None
     )
 
     assert rows == [(files[0], "OK_1.jpg", True)]
-
-
-# --- Proceso (_prepare_chunk_tasks + job completo) -----------------------------
 
 
 def test_prepare_chunk_tasks_column_rename_mapea_por_indice(monkeypatch, tmp_path) -> None:
@@ -420,7 +400,6 @@ def test_conversion_column_rename_tercer_archivo_sin_fila(monkeypatch, tmp_path)
 
 
 def test_conversion_column_rename_tercer_archivo_sin_fila_entre_chunks(monkeypatch, tmp_path) -> None:
-    """Con chunking, global_offset debe seguir el índice global aunque la BD sea corta."""
     src = tmp_path / "in"
     dst = tmp_path / "out"
     src.mkdir()

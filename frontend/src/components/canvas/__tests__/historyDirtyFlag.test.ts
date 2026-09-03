@@ -1,7 +1,3 @@
-/**
- * hasUnsavedEdits — reactive dirty flag for the SaveButton dot.
- * The ref existed for autosave gating; the UI needs the same signal re-rendered.
- */
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { createEmptyDocument } from '../types';

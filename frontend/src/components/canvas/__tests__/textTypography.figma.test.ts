@@ -13,7 +13,7 @@ describe('textTypography (Figma-like inspector)', () => {
   it('parses font-size pt / px / bare number', () => {
     expect(parseFontSizePt('14pt')).toBe(14);
     expect(parseFontSizePt('14')).toBe(14);
-    expect(parseFontSizePt('16px')).toBeCloseTo(12, 5); // 16 * 72/96
+    expect(parseFontSizePt('16px')).toBeCloseTo(12, 5);
     expect(formatFontSizePt(11)).toBe('11pt');
   });
 

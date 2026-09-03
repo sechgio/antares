@@ -1,4 +1,3 @@
-"""Tests for the versioned SQLite migration system used by historial."""
 
 from __future__ import annotations
 
@@ -11,7 +10,6 @@ from backend.core.migrations import MIGRATIONS_TABLE, Migration, MigrationManage
 
 @pytest.fixture
 def conn() -> sqlite3.Connection:
-    """In-memory SQLite connection for migration tests."""
     connection = sqlite3.connect(":memory:")
     connection.row_factory = sqlite3.Row
     yield connection
@@ -35,7 +33,6 @@ class TestMigrationManager:
         m = Migration(id="t1", sql=("CREATE TABLE foo (id INTEGER)",))
         assert manager.apply(m) is True
         assert manager.apply(m) is False
-        # foo was created exactly once
         names = {
             row[0]
             for row in conn.execute(
@@ -67,10 +64,8 @@ class TestMigrationManager:
         assert applied == ["b"]
 
     def test_idempotent_add_column(self, conn: sqlite3.Connection) -> None:
-        """Migrations that include 'ALTER TABLE ... ADD COLUMN' can be re-applied safely."""
         manager = MigrationManager(conn)
         manager.apply(Migration(id="init", sql=("CREATE TABLE t (id INTEGER)",)))
-        # Same ALTER statement twice: second call must not raise.
         manager.apply_all(
             [
                 Migration(
@@ -86,14 +81,12 @@ class TestMigrationManager:
         assert "flag" in cols
 
     def test_other_operational_errors_still_raise(self, conn: sqlite3.Connection) -> None:
-        """Only 'duplicate column' / 'already exists' are tolerated; other errors propagate."""
         manager = MigrationManager(conn)
         with pytest.raises(sqlite3.OperationalError):
             manager.apply(Migration(id="bad", sql=("THIS IS NOT SQL",)))
 
 
 class TestHistorialMigrations:
-    """End-to-end check that historial's migration set produces the expected schema."""
 
     def test_baseline_then_metadata_columns_present(self, conn: sqlite3.Connection) -> None:
         from backend.core.history import HISTORIAL_MIGRATIONS
@@ -107,11 +100,9 @@ class TestHistorialMigrations:
         ]
 
         cols = {row[1]: row[2] for row in conn.execute("PRAGMA table_info(historial)").fetchall()}
-        # Original columns still present
         for required in ("id", "run_type", "timestamp", "files_json", "options_json",
                           "patron", "formato", "calidad", "resize", "ok_count", "err_count"):
             assert required in cols, f"missing legacy column {required}"
-        # New metadata columns present
         for added in ("schema_version", "app_version", "duration_ms"):
             assert added in cols, f"missing new column {added}"
 
@@ -125,8 +116,6 @@ class TestHistorialMigrations:
         assert "idx_historial_run_type" in index_names
 
     def test_existing_data_preserved_across_migrations(self, conn: sqlite3.Connection) -> None:
-        """Rows inserted with the legacy schema stay readable after migrating."""
-        # Simulate a pre-migration legacy install: table without new columns.
         conn.execute(
             """
             CREATE TABLE historial (
@@ -163,7 +152,6 @@ class TestHistorialMigrations:
         row = rows[0]
         assert row["formato"] == "JPEG"
         assert row["calidad"] == 90
-        # New columns default to NULL / 0
         assert row["app_version"] is None
         assert row["duration_ms"] is None
         assert row["schema_version"] == 0
@@ -173,5 +161,4 @@ class TestHistorialMigrations:
 
         manager = MigrationManager(conn)
         manager.apply_all(HISTORIAL_MIGRATIONS)
-        # Second pass returns no newly applied ids.
         assert manager.apply_all(HISTORIAL_MIGRATIONS) == []

@@ -47,7 +47,6 @@ describe('applyParentConstraint', () => {
   });
 
   it('scale scales position and size proportional to dw/dh', () => {
-    // Parent was 100×50 at (10,10); grows to 200×100 (dw=100, dh=50), origin fixed.
     const parentBefore = { x: 10, y: 10, w: 100, h: 50 };
     const next = applyParentConstraint(
       child(),
@@ -56,10 +55,8 @@ describe('applyParentConstraint', () => {
       'scale',
       parentBefore,
     );
-    // relX = 30-10 = 20 → 20*2 = 40 → x' = 10+40 = 50; w' = 40*2 = 80
     expect(parseMm(next.cssVars['--translate-x'])).toBe(50);
     expect(parseMm(next.cssVars['--width'])).toBe(80);
-    // relY = 40-10 = 30 → 30*2 = 60 → y' = 10+60 = 70; h' = 20*2 = 40
     expect(parseMm(next.cssVars['--translate-y'])).toBe(70);
     expect(parseMm(next.cssVars['--height'])).toBe(40);
   });

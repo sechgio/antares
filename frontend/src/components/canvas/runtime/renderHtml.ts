@@ -19,7 +19,6 @@ import { parseTableData } from '../ops/tableData';
 
 export { cssVarsToStyleParts };
 
-/** Inner chrome paddings — must match LayerNode at zoom=1 (not mm). */
 const SIGNATURE_PAD = '1px';
 const TABLE_CELL_PAD = '1px 2px';
 const CAPTION_PAD = '2px 4px';
@@ -32,7 +31,6 @@ export interface FillContext {
   imageMeta?: Array<{ date?: string; coords?: string; name?: string }>;
 }
 
-/** Matches LayerNode chrome placeholders (logo / empty imageSlot / grid) at zoom=1. */
 const CHROME_PLACEHOLDER_STYLE =
   'width:100%;text-align:center;color:#94a3b8;font-size:10px;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;';
 
@@ -45,7 +43,6 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-/** Serialize buildLayerPaintStyle (same defaults as LayerNode @ zoom 1) to inline CSS. */
 function paintVarsToInline(vars: CanvasLayer['cssVars']): string {
   const paint = buildLayerPaintStyle(vars, { scale: 1 });
   return Object.entries(paint)
@@ -56,7 +53,6 @@ function paintVarsToInline(vars: CanvasLayer['cssVars']): string {
     .join(';');
 }
 
-/** Drop editor placeholder fill/border — used for filled logos (clean Generar/PDF). */
 export function stripPlaceholderChrome(vars: CanvasLayer['cssVars']): CanvasLayer['cssVars'] {
   return {
     ...vars,
@@ -68,11 +64,6 @@ export function stripPlaceholderChrome(vars: CanvasLayer['cssVars']): CanvasLaye
   };
 }
 
-/**
- * Line layers clear box paint (SVG stroke carries the visual).
- * Filled logos drop placeholder chrome so brand marks sit on the page without a grey box.
- * Empty logo/field slots keep design chrome (WYSIWYG placeholders).
- */
 function cssVarsForExport(layer: CanvasLayer, ctx?: FillContext): CanvasLayer['cssVars'] {
   if (layer.type === 'line') {
     const ensured = ensureLinePath(layer);
@@ -203,7 +194,6 @@ function resolveLayerContent(
       checked = raw === '1' || raw === 'true' || raw === 'si' || raw === 'sí' || raw === 'x' || raw === 'yes';
     }
     const mark = checked ? '✓' : '';
-    // font-size/color inherit from outer paint (same as LayerNode).
     return {
       kind: 'html',
       html: `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:inherit;color:inherit;box-sizing:border-box;">${mark}</div>`,
@@ -244,12 +234,9 @@ function resolveLayerContent(
 }
 
 function prepareLayers(document: CanvasDocument): CanvasLayer[] {
-  // Do not re-layout grids here — Design renders stored slot positions as-is.
-  // Relayout only happens in the editor when the user edits grid cols/rows/gap.
   return document.layers.filter((l) => l.visible !== false && l.type !== 'frame');
 }
 
-/** Build a filled A4 HTML document from Canvas layers + runtime data. */
 export function renderCanvasHtml(
   document: CanvasDocument,
   ctx: FillContext,
@@ -258,7 +245,6 @@ export function renderCanvasHtml(
   const { widthMm, heightMm } = document.page;
   const forScreen = options?.forScreen ?? false;
   const MM_TO_PX = 96 / 25.4;
-  // Match Design artboard (mmToScreenPx at zoom=1): whole CSS pixels, no subpixel drift.
   const u = (mmVal: number) => (forScreen ? `${Math.round(mmVal * MM_TO_PX)}px` : `${mmVal}mm`);
   const pageW = forScreen ? `${Math.round(widthMm * MM_TO_PX)}px` : `${widthMm}mm`;
   const pageH = forScreen ? `${Math.round(heightMm * MM_TO_PX)}px` : `${heightMm}mm`;
@@ -293,13 +279,11 @@ export function renderCanvasHtml(
       const justify = justifyContentForTextAlign(ensured.cssVars['--text-align']);
       const isTextBox = ensured.type === 'text' || ensured.type === 'field';
       const pad = isTextBox ? 'padding:2px 6px;' : 'padding:0;';
-      // Match LayerNode: every layer is a flex box (alignment + chrome placeholders).
       const valign = isTextBox ? ensured.cssVars['--text-valign'] || 'center' : 'center';
       const flex = `display:flex;align-items:${valign};justify-content:${justify};`;
       const blendMode = ensured.cssVars['--blend-mode']
         ? `mix-blend-mode:${ensured.cssVars['--blend-mode']};`
         : '';
-      // clipRadius last so it overrides any border-radius from cssVarsToStyleParts
       const box = `position:absolute;left:${u(x)};top:${u(y)};width:${u(w)};height:${u(h)};box-sizing:border-box;overflow:${overflow};${flex}${pad}${blendMode}${clipStyle}${transformOriginStyle}${ellipseRadius}${extra};${clipRadius}`;
       if (resolved.kind === 'text') {
         const lineHeight = ensured.cssVars['--line-height'] || DEFAULT_LINE_HEIGHT;

@@ -4,21 +4,6 @@ import { mmToScreenPx } from './drawHelpers';
 import { buildLayerTransform } from './layerStyle';
 import { ensureLinePath } from './pathGeometry';
 
-/**
- * GEOMETRY CONTRACT — the single source of truth for layer geometry.
- *
- * drag (imperativeLayerDom), rest (LayerNode) and export (renderHtml) all
- * compose position/size from this one seam: translate × paint-transform ×
- * origin × line-height. Mid-drag preview === committed frame === export.
- *
- * Rules (kept identical to the previous LayerNode semantics):
- * - transform = `translate(x,y) [rotate scaleX scaleY]` (paint transform only
- *   when present, same order as buildLayerTransform).
- * - transformOrigin = `center center` only when a paint transform exists.
- * - width default 10mm (plain layer cssVars, as both renderers used).
- * - height default 10mm, except lines: use the ensured line height
- *   (ensureLinePath guarantees it; legacy fallback 2mm).
- */
 export interface LayerGeometry {
   transform: string;
   transformOrigin?: string;
@@ -27,8 +12,6 @@ export interface LayerGeometry {
 }
 
 export function layerGeometry(layer: CanvasLayer, scale = 1): LayerGeometry {
-  // Lines resolve through the ensured path so drag and rest read the same
-  // width/height the renderer actually paints.
   const source = layer.type === 'line' ? ensureLinePath(layer) : layer;
   const x = parseMm(layer.cssVars['--translate-x']);
   const y = parseMm(layer.cssVars['--translate-y']);

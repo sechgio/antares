@@ -37,9 +37,6 @@ const TEXT_V_ALIGN = [
   { icon: AlignVerticalJustifyEnd, align: 'flex-end', label: 'Alinear abajo' },
 ] as const;
 
-/** Text inspector — matches `text` and `field`. The textarea only renders for
- *  `text`; `field` shows the color/family/align controls but no editable value
- *  (its value comes from the Excel binding, edited in FieldSection). */
 export default function TextSection({
   layer,
   emitLive,

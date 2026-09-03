@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import '../../i18n';
 import { DialogProvider } from '../../hooks/useDialog';
@@ -91,10 +91,56 @@ describe('HistoryView', () => {
     expect(await screen.findByText('JPEG-1')).toBeInTheDocument();
 
     const rowButtons = screen.getAllByRole('button');
-    // Click on the first row button to select it
     fireEvent.click(rowButtons[0]);
 
-    // Detail view for run #1 should open
     expect(await screen.findByText('#1')).toBeInTheDocument();
+  });
+
+  it('calls history_export when Exportar CSV button is clicked', async () => {
+    const rows = [makeRun(1), makeRun(2)];
+    const electronApi = window.electronAPI!;
+    const invoke = vi.spyOn(electronApi, 'invoke').mockImplementation(async (method: string) => {
+      if (method === 'history_list') return { runs: rows };
+      if (method === 'history_export') return { csv: 'Y29kaWdvLG5pcw==', count: 2 };
+      return {};
+    });
+
+    renderHistoryView();
+    expect(await screen.findByText('JPEG-1')).toBeInTheDocument();
+
+    const exportBtn = screen.getByRole('button', { name: /Exportar CSV/i });
+    expect(exportBtn).toBeInTheDocument();
+
+    fireEvent.click(exportBtn);
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('history_export', { run_type: undefined });
+    });
+  });
+
+  it('calls history_export with selected IDs when export selection is clicked in bulk bar', async () => {
+    const rows = [makeRun(1), makeRun(2)];
+    const electronApi = window.electronAPI!;
+    const invoke = vi.spyOn(electronApi, 'invoke').mockImplementation(async (method: string) => {
+      if (method === 'history_list') return { runs: rows };
+      if (method === 'history_export') return { csv: 'Y29kaWdvLG5pcw==', count: 1 };
+      return {};
+    });
+
+    renderHistoryView();
+    expect(await screen.findByText('JPEG-1')).toBeInTheDocument();
+
+    const checkboxes = screen.getAllByRole('checkbox');
+    fireEvent.click(checkboxes[0]);
+
+    const bulkBar = await screen.findByTestId('history-bulk-bar');
+    expect(bulkBar).toBeInTheDocument();
+
+    const bulkExportBtn = within(bulkBar).getByRole('button', { name: /Exportar CSV/i });
+    fireEvent.click(bulkExportBtn);
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('history_export', { ids: [1] });
+    });
   });
 });

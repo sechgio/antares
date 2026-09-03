@@ -1,8 +1,3 @@
-/**
- * Renombre de evidencias: NIS (7 dig) → SGIO (8 dig) + secuencia.
- * Carpeta destino: columna DESTINO de BD_IMG (subcarpeta bajo un parent raíz).
- * Origen: 6553447_1.jpg  →  Destino: {DESTINO}/70942759_1.jpg
- */
 
 const SGIO_RE = /^(\d{8})$/;
 const SGIO_IN_TEXT_RE = /(?:^|[^\d])(\d{8})(?=[^\d]|$)/;
@@ -12,7 +7,6 @@ function extensionOf(filename) {
   return m ? m[1].toLowerCase() : '.jpg';
 }
 
-/** SGIO válido: exactamente 8 dígitos (extrae de celdas con basura alrededor). */
 function normalizeSgio(value) {
   const raw = String(value || '').trim();
   if (!raw) return null;
@@ -21,11 +15,9 @@ function normalizeSgio(value) {
   return m ? m[1] : null;
 }
 
-/** Nombre de carpeta desde columna DESTINO (trim; vacío → null). */
 function normalizeDestino(value) {
   const raw = String(value || '').trim().replace(/\s+/g, ' ');
   if (!raw) return null;
-  // Drive folder names cannot contain / or \
   const cleaned = raw.replace(/[\\/]/g, '-').slice(0, 200);
   return cleaned || null;
 }
@@ -43,10 +35,6 @@ function buildSgioFilename(sgio, slot, originalName) {
   return name;
 }
 
-/**
- * Map NIS → { sgio, destino } desde filas BD_IMG
- * (A=NIS, B=SGIO, C=DESTINO).
- */
 function buildNisMetaMap(rows) {
   const map = new Map();
   if (!rows?.length) return map;
@@ -66,7 +54,6 @@ function buildNisMetaMap(rows) {
   return map;
 }
 
-/** @deprecated use buildNisMetaMap */
 function buildNisToSgioMap(rows) {
   const meta = buildNisMetaMap(rows);
   const map = new Map();
@@ -86,16 +73,9 @@ function _fileMeta(file) {
   };
 }
 
-/**
- * Plan de copias renombradas: SGIO + subcarpeta DESTINO.
- * @param {Array<{nis:string,count:number,files?:unknown[]}>} nisResults
- * @param {Map<string,{sgio?:string|null,destino?:string|null}>|Map<string,string>} nisMeta
- * @param {{ onlyCompletos?: boolean }} [opts]
- */
 function buildRenameJobs(nisResults, nisMeta, opts = {}) {
   const onlyCompletos = Boolean(opts.onlyCompletos);
 
-  // Accept legacy Map<nis, sgioString> or Map<nis, {sgio, destino}>
   const lookup = new Map();
   if (nisMeta instanceof Map) {
     for (const [k, v] of nisMeta) {
@@ -120,7 +100,6 @@ function buildRenameJobs(nisResults, nisMeta, opts = {}) {
 
   const jobs = [];
   const skipped = [];
-  // Dedupe per destino folder: same SGIO_n.ext in different DESTINO is allowed
   const usedNames = new Set();
 
   for (const result of nisResults || []) {
@@ -241,7 +220,6 @@ function buildRenameJobs(nisResults, nisMeta, opts = {}) {
   return { jobs, skipped };
 }
 
-/** Unique DESTINO folder names from a job list (stable order). */
 function uniqueDestinos(jobs) {
   const seen = new Set();
   const list = [];

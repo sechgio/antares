@@ -415,7 +415,6 @@ export function formatRunStats(run: HistoryRunRow, t: TFunction): ResolvedStat[]
 }
 
 export function schemaOptionKeys(meta: RunTypeMeta): Set<string> {
-  // Frontend mirrors backend permissive schemas; keys declared in options are surfaced in UI.
   const backendKeys: Record<string, string[]> = {
     conversion: ['formato', 'calidad', 'resize', 'keep_exif'],
     formato: ['desde', 'hasta', 'format_id'],

@@ -5,7 +5,6 @@ import { createPortal } from 'react-dom';
 export interface SelectPickerOption {
   value: string;
   label: string;
-  /** Optional accent dot (e.g. status color). */
   color?: string;
 }
 
@@ -27,10 +26,6 @@ interface SelectPickerProps {
 const MENU_GAP = 6;
 const MENU_EST_HEIGHT = 200;
 
-/**
- * Compact filter dropdown — same visual language as StatusPicker/DatePicker
- * (portal menu, soft elevation, token colors) instead of native OS selects.
- */
 export default function SelectPicker({
   value,
   options,

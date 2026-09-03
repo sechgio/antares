@@ -137,7 +137,6 @@ describe('useCanvasSync conflict handling', () => {
     await waitFor(() => {
       expect(result.current.syncing).toBe(false);
     });
-    // Resolution is owned by the UI — sync must not apply remote itself.
     expect(replaceDocument).not.toHaveBeenCalled();
     expect(syncCanvasDocuments).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -156,7 +155,6 @@ describe('useCanvasSync conflict handling', () => {
 
     const openDirtyRef = { current: false };
     syncCanvasDocuments.mockImplementation(async () => {
-      // Dirtied after disk pull, before applySyncResult.
       openDirtyRef.current = true;
       return {
         pulled: 1,

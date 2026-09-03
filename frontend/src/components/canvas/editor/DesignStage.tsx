@@ -17,7 +17,6 @@ export type ViewportNavApi = {
   setPan: (pan: { x: number; y: number }) => void;
   zoomToFit: () => void;
   zoomToSelection: (ids?: string[]) => void;
-  /** Animated viewport transition (Figma-like smooth). */
   animateTo: (target: { zoom: number; pan: { x: number; y: number } }) => void;
 };
 
@@ -52,26 +51,18 @@ interface DesignStageProps {
   onToggleRulers?: () => void;
   snapToGrid?: boolean;
   onToggleSnapToGrid?: () => void;
-  /** Portal target in RightPanel header (next to Propiedades). */
   zoomPortalTarget?: HTMLElement | null;
-  /** Register DesignStage fallback slot when right panel is hidden. */
   zoomFallbackSlotRef?: (el: HTMLDivElement | null) => void;
-  /** Show floating zoom slot (when right panel is collapsed). */
   showZoomFallback?: boolean;
-  /** Reopen collapsed sidebars from stage edges. */
   showLeftReopen?: boolean;
   showRightReopen?: boolean;
   onShowLeftPanel?: () => void;
   onShowRightPanel?: () => void;
   reopenDisabled?: boolean;
-  /** Increment to abort in-flight Artboard gestures without committing. */
   gestureAbortToken?: number;
   children?: React.ReactNode;
 }
 
-/**
- * Owns zoom/pan so CanvasView (and sidebars) do not re-render on every wheel tick.
- */
 export default function DesignStage({
   navRef,
   document,
@@ -116,7 +107,6 @@ export default function DesignStage({
 }: DesignStageProps) {
   const { zoom, pan, setZoom, setPan, animateTo, startInertia } = useSmoothViewport(0.85);
 
-  /** Menu/preset zoom actions glide to the target (Figma-like); wheel stays instant. */
   const animateZoomTo = useCallback((z: number) => animateTo({ zoom: z, pan }), [animateTo, pan]);
 
   const artboardDocument = useMemo(

@@ -1,4 +1,3 @@
-"""Benchmark the Formatos PDF page preview without persistent side effects."""
 
 from __future__ import annotations
 
@@ -72,7 +71,6 @@ def _measure_warm_sequence(
     call: Callable[[], dict[str, Any]],
     samples: int,
 ) -> tuple[dict[str, Any], list[float], int, int]:
-    """Measure all warm calls against one RSS baseline and sampler."""
     process = psutil.Process()
     baseline_rss = process.memory_info().rss
     peak_rss = baseline_rss

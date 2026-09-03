@@ -38,7 +38,6 @@ function Divider() {
   return <span className="h-3 w-px shrink-0 bg-[var(--border-subtle)]" aria-hidden />;
 }
 
-/** Compact horizontal stats bar (same metrics as the old sidebar). */
 export default function StatsPanel({ stats, filteredCount, totalCount }: StatsPanelProps) {
   return (
     <div

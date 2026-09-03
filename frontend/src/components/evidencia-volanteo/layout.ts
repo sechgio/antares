@@ -1,4 +1,3 @@
-/** Dimensiones A4 — espejo de backend/core/evidencia_volanteo/layout.py */
 
 export const PAGE_MARGIN_MM = 8;
 export const TABLE_WIDTH_CM = 19.4;
@@ -8,12 +7,9 @@ export const HEADER_TITLE_HEIGHT_CM = 1.5;
 export const HEADER_INFO_HEIGHT_CM = 1.3;
 export const HEADER_TOTAL_HEIGHT_CM = 2.8;
 export const GAP_UNDER_HEADER_CM = 0.4;
-/** Gutter uniforme dentro del marco exterior del panel. */
 export const PHOTO_GAP_CM = 0.1;
 export const GAP_HEIGHT_CM = PHOTO_GAP_CM;
-/** gap | foto | gap | foto | gap | foto | gap */
 export const PHOTO_TABLE_COLS = 7;
-/** gap | foto | gap | foto | gap */
 export const PHOTO_TABLE_ROWS = 5;
 
 export const HEADER_LOGO_WIDTH_CM = 4.2;

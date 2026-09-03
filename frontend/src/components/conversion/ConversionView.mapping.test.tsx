@@ -3,7 +3,6 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ToastProvider } from '../../hooks/useToast';
 import { DialogProvider } from '../../hooks/useDialog';
 
-// Hoisted mocks — must be defined before the vi.mock call.
 const mockApi = vi.hoisted(() => ({
   formats: vi.fn().mockResolvedValue({ formats: ['JPEG', 'PNG'] }),
   getFields: vi.fn().mockResolvedValue({ fields: [{ name: 'codigo', type: 'string', required: true, unique: false }] }),
@@ -29,7 +28,6 @@ vi.mock('../history/historyEvents', () => ({
 
 import ConversionView from './ConversionView';
 
-// jsdom does not implement ResizeObserver — stub it so FileGrid can mount.
 class ResizeObserverStub {
   observe() {}
   unobserve() {}
@@ -62,7 +60,6 @@ describe('ConversionView mapping auto-detection', () => {
   });
 
   it('activates mapping mode when an ID+RENOMBRE Excel is imported', async () => {
-    // Simulate files already loaded so the mapping path is exercised.
     mockApi.dialogFiles.mockResolvedValueOnce({ paths: ['C:\\fotos\\IMG_0001.jpg'] });
     mockApi.dbParseMapping.mockResolvedValueOnce({
       mapping: { 'IMG_0001.jpg': 'fachada_norte' },
@@ -78,16 +75,13 @@ describe('ConversionView mapping auto-detection', () => {
 
     renderView();
 
-    // Wait for the initial config fetch to settle.
     await waitFor(() => expect(mockApi.getDbColumns).toHaveBeenCalled());
 
-    // Add a file first (required for mapping detection path).
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /Seleccionar archivos/i }));
     });
     await waitFor(() => expect(mockApi.dialogFiles).toHaveBeenCalled());
 
-    // Now import a mapping Excel via the "Base de datos" button.
     mockApi.dialogFiles.mockResolvedValueOnce({ paths: ['C:\\mapeo\\renombres.xlsx'] });
 
     await act(async () => {
@@ -95,11 +89,9 @@ describe('ConversionView mapping auto-detection', () => {
       fireEvent.click(dbButton);
     });
 
-    // dbParseMapping should have been called and importExcel should NOT.
     await waitFor(() => expect(mockApi.dbParseMapping).toHaveBeenCalled());
     expect(mockApi.importExcel).not.toHaveBeenCalled();
 
-    // The mapping section should be visible.
     await waitFor(() => {
       expect(screen.getByText('Mapeo directo activo')).toBeInTheDocument();
     });
@@ -107,7 +99,6 @@ describe('ConversionView mapping auto-detection', () => {
 
   it('falls back to catalog import when the Excel is not a mapping schema', async () => {
     mockApi.dialogFiles.mockResolvedValueOnce({ paths: ['C:\\fotos\\IMG_0001.jpg'] });
-    // dbParseMapping fails with a schema mismatch error (not a mapping Excel).
     mockApi.dbParseMapping.mockRejectedValueOnce(new Error('No se detectó una columna ID'));
     mockApi.importExcel.mockResolvedValue({ imported: 5 });
 
@@ -115,13 +106,11 @@ describe('ConversionView mapping auto-detection', () => {
 
     await waitFor(() => expect(mockApi.getDbColumns).toHaveBeenCalled());
 
-    // Add a file first.
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /Seleccionar archivos/i }));
     });
     await waitFor(() => expect(mockApi.dialogFiles).toHaveBeenCalled());
 
-    // Import a catalog Excel.
     mockApi.dialogFiles.mockResolvedValueOnce({ paths: ['C:\\catalogo\\productos.xlsx'] });
 
     await act(async () => {
@@ -129,7 +118,6 @@ describe('ConversionView mapping auto-detection', () => {
       fireEvent.click(dbButton);
     });
 
-    // dbParseMapping should have been attempted first, then importExcel as fallback.
     await waitFor(() => expect(mockApi.dbParseMapping).toHaveBeenCalled(), { timeout: 5000 });
     await waitFor(() => expect(mockApi.importExcel).toHaveBeenCalled(), { timeout: 5000 });
   });
@@ -162,7 +150,6 @@ describe('ConversionView mapping auto-detection', () => {
     await waitFor(() => expect(mockApi.preview).toHaveBeenLastCalledWith(
       expect.objectContaining({ sequence_mode: 'record' }),
     ));
-
 
     fireEvent.click(screen.getByRole('button', { name: /carpeta de destino/i }));
     await waitFor(() => expect(mockApi.dialogDest).toHaveBeenCalled());

@@ -1,5 +1,3 @@
-/* Self-hosted Inter variable — latin only (es/en UI). Other unicode subsets
-   were unused and duplicated the full @fontsource-variable/inter import. */
 @font-face {
   font-family: 'Inter';
   font-style: normal;
@@ -39,12 +37,10 @@
   --selection-fg: #FFFFFF;
   --app-density-scale: 1;
   --ease-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);
-  /* Motion tokens (Emil Kowalski / improve-animations) */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 
-  /* shadcn semantic tokens → Antares theme vars */
   --background: var(--bg-base);
   --foreground: var(--text-primary);
   --card: var(--bg-surface);
@@ -683,10 +679,6 @@
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* ─── Login Screen: S-Tier animations (transform + opacity only) ─── */
-/* Performance: all keyframes use compositor-only props per Motion.dev tier list */
-
-/* Conic orb rotation — S-Tier (transform rotate only, no blur) */
 @keyframes lg-orb-spin {
   0% { transform: translate(-50%, -50%) rotate(0deg) scale(1.4); }
   100% { transform: translate(-50%, -50%) rotate(360deg) scale(1.4); }
@@ -704,7 +696,6 @@
   opacity: 0.6;
 }
 
-/* Sparkle twinkle — S-Tier (opacity + scale only) */
 @keyframes lg-sparkle-twinkle {
   0%, 100% { opacity: 0; transform: scale(0.5); }
   50% { opacity: 0.7; transform: scale(1); }
@@ -716,14 +707,12 @@
   animation: lg-sparkle-twinkle ease-in-out infinite;
 }
 
-/* Card entrance — S-Tier (translateY + scale + opacity) */
 @keyframes lg-card-in {
   0% { opacity: 0; transform: translateY(24px) scale(0.96); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 .lg-card-enter { animation: lg-card-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
 
-/* Error shake — S-Tier (translateX only) */
 @keyframes lg-shake {
   0%, 100% { transform: translateX(0); }
   20% { transform: translateX(-6px); }
@@ -733,7 +722,6 @@
 }
 .lg-shake { animation: lg-shake 0.4s ease-in-out; }
 
-/* Logo pulse glow — S-Tier (scale + opacity) */
 @keyframes lg-logo-pulse {
   0%, 100% { transform: scale(1); opacity: 1; }
   50% { transform: scale(1.05); opacity: 0.9; }
@@ -744,19 +732,16 @@
   box-shadow: 0 4px 24px color-mix(in srgb, var(--accent-primary) 30%, transparent);
 }
 
-/* Input focus — transition is cheap (border-color only) */
 .lg-input { transition: border-color 0.3s, box-shadow 0.3s; }
 .lg-input:focus {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-primary) 18%, transparent);
 }
 
-/* Button hover — S-Tier (translateY) + cheap box-shadow transition */
 .lg-btn { transition: transform 0.2s, box-shadow 0.3s, background-color 0.2s; }
 .lg-btn:hover:not(:disabled) {
   box-shadow: 0 8px 24px color-mix(in srgb, var(--accent-primary) 30%, transparent);
 }
 
-/* Aurora blobs — drift via transform only */
 @keyframes lg-aurora-drift {
   0%, 100% { transform: translate(0, 0) scale(1); }
   33% { transform: translate(8%, -6%) scale(1.08); }
@@ -796,7 +781,6 @@
   animation-duration: 24s;
 }
 
-/* Shimmer title */
 @keyframes lg-shimmer {
   0% { background-position: 200% center; }
   100% { background-position: -200% center; }
@@ -815,7 +799,6 @@
   animation: lg-shimmer 6s linear infinite;
 }
 
-/* Interactive spotlight on form panel */
 .lg-spotlight {
   background: radial-gradient(
     300px circle at calc(var(--mx, 0.5) * 100%) calc(var(--my, 0.5) * 100%),
@@ -824,7 +807,6 @@
   );
 }
 
-/* 3D form card depth layers */
 .lg-form-card {
   transform-style: preserve-3d;
   perspective: 1000px;
@@ -832,7 +814,6 @@
 .lg-depth-logo { transform: translateZ(30px); }
 .lg-depth-input { transform: translateZ(15px); }
 
-/* Magnetic submit button ripple */
 .lg-btn-ripple {
   position: absolute;
   border-radius: 50%;
@@ -845,12 +826,10 @@
   to { transform: scale(4); opacity: 0; }
 }
 
-/* Stagger entrance for form children (via inline animation-delay) */
 .lg-depth-logo, .lg-depth-input {
   animation: lg-card-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* Reduced motion — disable all animations */
 @media (prefers-reduced-motion: reduce) {
   [data-surface="autoimg"] *,
   [data-surface="autoimg"] *::before,
@@ -881,7 +860,6 @@
   }
 }
 
-/* ── Zoom Slider (Formatos topbar) ─────────────────────────────── */
 .zoom-slider {
   -webkit-appearance: none;
   appearance: none;
@@ -932,7 +910,6 @@
   background: var(--border-medium);
 }
 
-/* Responsive layout contracts for dense feature surfaces. */
 [data-surface="formatos"],
 [data-surface="ubicaciones"],
 [data-surface="image-optimizer"] {

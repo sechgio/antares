@@ -1,5 +1,3 @@
-// tests/test-file-staging.js
-// Staging must preserve the original extension (not rewrite to .tmp).
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
@@ -18,7 +16,7 @@ async function main() {
   assert.ok(session.tmpPath.endsWith('datos.xlsx'), `staged path should end with datos.xlsx, got ${session.tmpPath}`);
   assert.ok(!session.tmpPath.endsWith('.tmp'), 'staged path must not force .tmp suffix');
 
-  const payload = Buffer.from('PK\x03\x04'); // minimal zip magic; content unused by path check
+  const payload = Buffer.from('PK\x03\x04');
   await appendStagedChunk(session.token, payload.toString('base64'), 1);
   const cap = await completeStagedSession(session.token, 1);
   assert.strictEqual(cap.name, 'datos.xlsx');
@@ -28,7 +26,6 @@ async function main() {
   await abortStagedSession(session.token);
   await cleanupAllStaged();
 
-  // Binary append (Uint8Array / ArrayBuffer — renderer structured-clone shape)
   {
     const session2 = createStagedSession({ name: 'bin.xlsx', size: 6, webContentsId: 1 });
     const raw = new Uint8Array([1, 2, 3, 4, 255, 0]);
@@ -48,7 +45,6 @@ async function main() {
     await abortStagedSession(session3.token);
   }
 
-  // A completed staged capability must remove both the read token and the temp file.
   {
     const session4 = createStagedSession({ name: 'cleanup.xlsx', size: 4, webContentsId: 1 });
     await appendStagedChunk(session4.token, Buffer.from('data'), 1);
@@ -67,16 +63,11 @@ async function main() {
     assert.throws(() => resolveCapability(cap4.token, 'read', 1), /capability not found|expired/);
   }
 
-  // Ensure no leftover tmp dirs from this process leak forever (best-effort)
   const root = path.join(os.tmpdir(), `antares-staged-${process.pid}`);
   if (fs.existsSync(root)) {
     fs.rmSync(root, { recursive: true, force: true });
   }
 
-  // ── B5: contrato de createFileCapability / resolveCapability ──
-  // Lockea el comportamiento que la limpieza del chequeo muerto no debe cambiar
-  // y documenta la restricción de write-tokens (solo archivos existentes; el
-  // flujo "guardar como" usa validación de ruta cruda bajo roots registrados).
   {
     const { createFileCapability, resolveCapability, revokeCapability } = require('../electron/file-capabilities.js');
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-b5-'));

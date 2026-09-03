@@ -1,5 +1,3 @@
-// Regression: automatic recovery after an unresponsive backend must honor the
-// same exponential backoff as unexpected child exits.
 const { EventEmitter } = require('events');
 const childProcess = require('child_process');
 

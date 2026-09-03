@@ -13,7 +13,6 @@ interface SyncPanelProps {
   faltantes?: number;
   sobrantes?: number;
   sinSgio?: number;
-  /** Mensaje de estado de las acciones del toolbar superior */
   statusMessage?: { error?: string; result?: string };
 }
 

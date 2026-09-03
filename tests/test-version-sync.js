@@ -1,4 +1,3 @@
-// Regression test: all version manifests must stay in sync (H-05).
 const fs = require('fs');
 const path = require('path');
 

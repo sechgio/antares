@@ -1,4 +1,3 @@
-"""Tests for opt-in IPC phase telemetry (latency + RSS)."""
 
 from __future__ import annotations
 
@@ -18,8 +17,6 @@ from backend.core import ipc_phase_telemetry as telemetry
 def _reset_telemetry(monkeypatch: pytest.MonkeyPatch) -> None:
     telemetry.reset_for_tests()
     monkeypatch.delenv("ANTARES_IPC_TELEMETRY", raising=False)
-    # Force 100% sampling during tests so success-path emits are deterministic.
-    # Sampling-specific tests override random to verify the 1% logic.
     monkeypatch.setattr(telemetry.random, "random", lambda: 0.0)
     yield
     telemetry.reset_for_tests()
@@ -94,7 +91,6 @@ def test_read_message_parse_ms_excludes_stdin_idle(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(telemetry, "_rss_bytes", lambda: 50 * 1024 * 1024)
 
     class SlowFirstRead:
-        """Blocks only inside readline; line bytes are already available after return."""
 
         def __init__(self) -> None:
             self._data = b'{"jsonrpc":"2.0","id":"p1","method":"version","params":{}}\n'
@@ -124,12 +120,10 @@ def test_read_message_parse_ms_excludes_stdin_idle(monkeypatch: pytest.MonkeyPat
     with caplog.at_level(logging.INFO, logger="backend.core.ipc_phase_telemetry"):
         msg = ipc_protocol.read_message()
         assert msg is not None and getattr(msg, "id", None) == "p1"
-        # Force emit so we can inspect parse_ms without a full dispatch.
         telemetry.set_fields("p1", method="version", lane="sync", ok=True, write_ok=True)
         telemetry.emit_and_clear("p1")
 
     line = next(r.message for r in caplog.records if "ipc_phase" in r.message)
-    # parse_ms must be far below the 50 ms stdin idle sleep.
     assert "parse_ms=" in line
     parse_token = next(part for part in line.split() if part.startswith("parse_ms="))
     parse_ms = float(parse_token.split("=", 1)[1])
@@ -185,7 +179,6 @@ def test_scheduler_wait_ms_positive_when_dispatch_delayed(monkeypatch: pytest.Mo
     stdout = io.StringIO()
     monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
 
-    # Pre-create enqueue mark as submit would.
     telemetry.start("d1", method="version", lane="light")
     telemetry.mark("d1", "enqueue")
     time.sleep(0.03)
@@ -207,7 +200,6 @@ def test_sync_lane_reports_zero_scheduler_wait(monkeypatch: pytest.MonkeyPatch, 
     monkeypatch.setattr(ipc_protocol.sys, "stdout", stdout)
 
     telemetry.start("s1", method="process_status", lane="sync")
-    # Sync path: no enqueue mark before dispatch — wait should be 0.
     with caplog.at_level(logging.INFO, logger="backend.core.ipc_phase_telemetry"):
         backend_main._dispatch(lambda _p: {"running": False}, {}, "s1", "process_status")
 

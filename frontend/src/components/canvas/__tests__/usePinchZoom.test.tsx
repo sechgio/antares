@@ -3,11 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useRef, type MutableRefObject } from 'react';
 import { usePinchZoom } from '../hooks/usePinchZoom';
 
-/**
- * Two-finger pinch (Figma/Canva-like): second touch starts the gesture,
- * moves coalesce to one apply per frame, activeRef stays true until all
- * fingers lift.
- */
 function PinchHost({
   navRef,
   activeRef,
@@ -99,21 +94,18 @@ describe('usePinchZoom', () => {
       },
     });
 
-    // First finger alone does not start a pinch.
     act(() => {
       touch('pointerdown', 1, 150, 150, el);
     });
     expect(onStart).not.toHaveBeenCalled();
     expect(activeRef.current).toBe(false);
 
-    // Second finger begins the gesture.
     act(() => {
       touch('pointerdown', 2, 250, 150, el);
     });
     expect(onStart).toHaveBeenCalledTimes(1);
     expect(activeRef.current).toBe(true);
 
-    // Spread and shift fingers (distance 100 → 200 = 2×) within one frame.
     act(() => {
       touch('pointermove', 1, 120, 160, el);
       touch('pointermove', 2, 320, 160, el);

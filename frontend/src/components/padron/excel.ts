@@ -1,6 +1,3 @@
-/**
- * Utilidades para parsear archivos Excel del padron
- */
 import type { HeaderData, PadronItem, ParseResult, ExcelRecord, OutputFormat, WaterCutItem } from './data';
 import {
   FIELD_ALIASES,

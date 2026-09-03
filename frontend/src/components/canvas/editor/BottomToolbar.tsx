@@ -13,6 +13,8 @@ import {
   Images,
   LayoutTemplate,
   MousePointer2,
+  PanelBottom,
+  PanelTop,
   PenLine,
   Plus,
   Slash,
@@ -26,12 +28,15 @@ import {
   Type,
 } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
+import type { CanvasToolbarPosition } from '../ops/panelChrome';
 import { isShapeTool, type ShapeTool } from '../ops/shapePaths';
 import type { CanvasTool } from '../types';
 
 interface BottomToolbarProps {
   tool: CanvasTool;
   onTool: (tool: CanvasTool) => void;
+  position?: CanvasToolbarPosition;
+  onPositionChange?: (position: CanvasToolbarPosition) => void;
 }
 
 type ToolItem = { id: CanvasTool; icon: typeof Type; title: string; tip: string };
@@ -86,6 +91,15 @@ const MORE_SECTIONS: { label: string; items: ToolItem[] }[] = [
 
 const MORE_TOOLS = MORE_SECTIONS.flatMap((section) => section.items);
 
+const TOOLBAR_POSITIONS: {
+  id: CanvasToolbarPosition;
+  icon: typeof Type;
+  title: string;
+}[] = [
+  { id: 'top', icon: PanelTop, title: 'Parte superior' },
+  { id: 'bottom', icon: PanelBottom, title: 'Parte inferior' },
+];
+
 const MENU_WIDTH = 220;
 const MORE_MENU_WIDTH = 236;
 const MENU_GAP = 8;
@@ -97,13 +111,16 @@ function isMenuItemChecked(id: ShapeTool | 'image', tool: CanvasTool, lastShapeT
   return isShapeTool(tool) ? tool === id : lastShapeTool === id;
 }
 
-function menuPosition(trigger: DOMRect, width: number): MenuCoords {
+function menuPosition(trigger: DOMRect, width: number, position: CanvasToolbarPosition): MenuCoords {
   const left = Math.min(Math.max(width / 2 + 8, trigger.left + trigger.width / 2), window.innerWidth - width / 2 - 8);
-  const top = Math.min(trigger.bottom + MENU_GAP, window.innerHeight - 8);
+  const top =
+    position === 'bottom'
+      ? Math.max(8, trigger.top - MENU_GAP)
+      : Math.min(trigger.bottom + MENU_GAP, window.innerHeight - 8);
   return { left, top };
 }
 
-function ShapeToolMenu({ tool, onTool }: BottomToolbarProps) {
+function ShapeToolMenu({ tool, onTool, position = 'top' }: BottomToolbarProps) {
   const [lastShapeTool, setLastShapeTool] = useState<ShapeTool>('rect');
   const [menu, setMenu] = useState<MenuCoords | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -125,9 +142,8 @@ function ShapeToolMenu({ tool, onTool }: BottomToolbarProps) {
     let onPointer: ((e: MouseEvent) => void) | null = null;
     const onLayout = () => {
       const el = rootRef.current;
-      if (el) setMenu(menuPosition(el.getBoundingClientRect(), MENU_WIDTH));
+      if (el) setMenu(menuPosition(el.getBoundingClientRect(), MENU_WIDTH, position));
     };
-    // Defer so the opening click does not immediately close the menu.
     const timer = window.setTimeout(() => {
       onPointer = (e: MouseEvent) => {
         const target = e.target as Node;
@@ -147,7 +163,7 @@ function ShapeToolMenu({ tool, onTool }: BottomToolbarProps) {
       window.removeEventListener('scroll', onLayout, true);
       if (onPointer) window.removeEventListener('mousedown', onPointer);
     };
-  }, [open]);
+  }, [open, position]);
 
   const currentShapeId: ShapeTool | 'image' = tool === 'image' ? 'image' : isShapeTool(tool) ? tool : lastShapeTool;
   const currentShape = SHAPE_MENU_ITEMS.find((item) => item.id === currentShapeId) ?? SHAPE_MENU_ITEMS[0];
@@ -165,7 +181,7 @@ function ShapeToolMenu({ tool, onTool }: BottomToolbarProps) {
     }
     const el = rootRef.current;
     if (!el) return;
-    setMenu(menuPosition(el.getBoundingClientRect(), MENU_WIDTH));
+    setMenu(menuPosition(el.getBoundingClientRect(), MENU_WIDTH, position));
   };
 
   const selectTool = (id: ShapeTool | 'image') => {
@@ -177,7 +193,12 @@ function ShapeToolMenu({ tool, onTool }: BottomToolbarProps) {
   return (
     <div ref={rootRef} className="relative shrink-0">
       <div className="canvas-shape-split" data-active={shapeActive || open} data-open={open}>
-        <WithHoverTooltip label={lastLabel} shortcut={lastTip} placement="bottom" variant="dark">
+        <WithHoverTooltip
+          label={lastLabel}
+          shortcut={lastTip}
+          placement={position === 'bottom' ? 'top' : 'bottom'}
+          variant="dark"
+        >
           <button
             type="button"
             aria-label={lastLabel}
@@ -195,7 +216,11 @@ function ShapeToolMenu({ tool, onTool }: BottomToolbarProps) {
             <span className="canvas-toolbar-tool-label">{lastLabel}</span>
           </button>
         </WithHoverTooltip>
-        <WithHoverTooltip label="Más formas" placement="bottom" variant="dark">
+        <WithHoverTooltip
+          label="Más formas"
+          placement={position === 'bottom' ? 'top' : 'bottom'}
+          variant="dark"
+        >
           <button
             type="button"
             aria-label="Más formas"
@@ -227,7 +252,8 @@ function ShapeToolMenu({ tool, onTool }: BottomToolbarProps) {
                 left: menu.left,
                 top: menu.top,
                 width: MENU_WIDTH,
-                transform: 'translateX(-50%)',
+                transform: position === 'bottom' ? 'translate(-50%, -100%)' : 'translateX(-50%)',
+                transformOrigin: position === 'bottom' ? 'bottom center' : 'top center',
                 pointerEvents: 'auto',
               }}
             >
@@ -267,7 +293,12 @@ function isMoreTool(tool: CanvasTool): boolean {
   return MORE_TOOLS.some((item) => item.id === tool);
 }
 
-function MoreToolMenu({ tool, onTool }: BottomToolbarProps) {
+function MoreToolMenu({
+  tool,
+  onTool,
+  position = 'top',
+  onPositionChange,
+}: BottomToolbarProps) {
   const [menu, setMenu] = useState<MenuCoords | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -285,7 +316,7 @@ function MoreToolMenu({ tool, onTool }: BottomToolbarProps) {
     let onPointer: ((e: MouseEvent) => void) | null = null;
     const onLayout = () => {
       const el = rootRef.current;
-      if (el) setMenu(menuPosition(el.getBoundingClientRect(), MORE_MENU_WIDTH));
+      if (el) setMenu(menuPosition(el.getBoundingClientRect(), MORE_MENU_WIDTH, position));
     };
     const timer = window.setTimeout(() => {
       onPointer = (e: MouseEvent) => {
@@ -306,7 +337,7 @@ function MoreToolMenu({ tool, onTool }: BottomToolbarProps) {
       window.removeEventListener('scroll', onLayout, true);
       if (onPointer) window.removeEventListener('mousedown', onPointer);
     };
-  }, [open]);
+  }, [open, position]);
 
   const toggleMenu = () => {
     if (open) {
@@ -315,7 +346,7 @@ function MoreToolMenu({ tool, onTool }: BottomToolbarProps) {
     }
     const el = rootRef.current;
     if (!el) return;
-    setMenu(menuPosition(el.getBoundingClientRect(), MORE_MENU_WIDTH));
+    setMenu(menuPosition(el.getBoundingClientRect(), MORE_MENU_WIDTH, position));
   };
 
   const selectTool = (id: CanvasTool) => {
@@ -323,9 +354,18 @@ function MoreToolMenu({ tool, onTool }: BottomToolbarProps) {
     setMenu(null);
   };
 
+  const selectPosition = (next: CanvasToolbarPosition) => {
+    onPositionChange?.(next);
+    setMenu(null);
+  };
+
   return (
     <div ref={rootRef} className="relative shrink-0" data-testid="canvas-more-tools">
-      <WithHoverTooltip label="Más herramientas" placement="bottom" variant="dark">
+      <WithHoverTooltip
+        label="Más herramientas"
+        placement={position === 'bottom' ? 'top' : 'bottom'}
+        variant="dark"
+      >
         <button
           type="button"
           aria-label="Más herramientas"
@@ -360,7 +400,8 @@ function MoreToolMenu({ tool, onTool }: BottomToolbarProps) {
                 left: menu.left,
                 top: menu.top,
                 width: MORE_MENU_WIDTH,
-                transform: 'translateX(-50%)',
+                transform: position === 'bottom' ? 'translate(-50%, -100%)' : 'translateX(-50%)',
+                transformOrigin: position === 'bottom' ? 'bottom center' : 'top center',
                 pointerEvents: 'auto',
               }}
             >
@@ -392,7 +433,33 @@ function MoreToolMenu({ tool, onTool }: BottomToolbarProps) {
                     );
                   })}
                 </div>
-              ))}
+                ))}
+              <div className="canvas-shape-menu-sep" role="separator" />
+              <div role="group" aria-label="Posición de la barra">
+                <div className="canvas-tool-menu-heading">Posición</div>
+                {TOOLBAR_POSITIONS.map(({ id, icon: ItemIcon, title }) => {
+                  const checked = position === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={checked}
+                      className="canvas-shape-menu-item"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        selectPosition(id);
+                      }}
+                    >
+                      <span className="canvas-shape-menu-icon" aria-hidden>
+                        <ItemIcon className="h-3.5 w-3.5" strokeWidth={1.75} />
+                      </span>
+                      <span className="canvas-shape-menu-label">{title}</span>
+                      {checked ? <Check className="canvas-tool-menu-check" strokeWidth={2.5} aria-hidden /> : null}
+                    </button>
+                  );
+                })}
+              </div>
             </div>,
             (rootRef.current?.closest('.canvas-app') as HTMLElement | null) ?? document.body,
           )
@@ -405,11 +472,13 @@ function ToolGroup({
   tools,
   tool,
   onTool,
+  tooltipPlacement,
   showLabels = false,
 }: {
   tools: ToolItem[];
   tool: CanvasTool;
   onTool: (tool: CanvasTool) => void;
+  tooltipPlacement: 'top' | 'bottom';
   showLabels?: boolean;
 }) {
   return (
@@ -417,7 +486,13 @@ function ToolGroup({
       {tools.map(({ id, icon: Icon, title, tip }) => {
         const active = tool === id;
         return (
-          <WithHoverTooltip key={id} label={title} shortcut={tip || undefined} placement="bottom" variant="dark">
+          <WithHoverTooltip
+            key={id}
+            label={title}
+            shortcut={tip || undefined}
+            placement={tooltipPlacement}
+            variant="dark"
+          >
             <button
               type="button"
               aria-label={title}
@@ -439,20 +514,46 @@ function ToolGroup({
   );
 }
 
-export default memo(function BottomToolbar({ tool, onTool }: BottomToolbarProps) {
+export default memo(function BottomToolbar({
+  tool,
+  onTool,
+  position = 'top',
+  onPositionChange,
+}: BottomToolbarProps) {
+  const toolbarPositionClass = position === 'bottom' ? 'bottom-3' : 'top-3';
+  const tooltipPlacement = position === 'bottom' ? 'top' : 'bottom';
+
   return (
     <div
-      className="canvas-toolbar-dock pointer-events-none absolute left-1/2 top-3 z-[70] -translate-x-1/2"
+      className={`canvas-toolbar-dock pointer-events-none absolute left-1/2 z-[70] -translate-x-1/2 ${toolbarPositionClass}`}
+      data-position={position}
       data-testid="canvas-toolbar-dock"
     >
       <div className="canvas-toolbar-float pointer-events-auto" role="toolbar" aria-label="Herramientas Canvas">
-        <ToolGroup tools={NAV} tool={tool} onTool={onTool} showLabels />
+        <ToolGroup
+          tools={NAV}
+          tool={tool}
+          onTool={onTool}
+          tooltipPlacement={tooltipPlacement}
+          showLabels
+        />
         <div className="canvas-toolbar-sep" aria-hidden />
-        <ShapeToolMenu tool={tool} onTool={onTool} />
+        <ShapeToolMenu tool={tool} onTool={onTool} position={position} />
         <div className="canvas-toolbar-sep" aria-hidden />
-        <ToolGroup tools={CONTENT} tool={tool} onTool={onTool} showLabels />
+        <ToolGroup
+          tools={CONTENT}
+          tool={tool}
+          onTool={onTool}
+          tooltipPlacement={tooltipPlacement}
+          showLabels
+        />
         <div className="canvas-toolbar-sep" aria-hidden />
-        <MoreToolMenu tool={tool} onTool={onTool} />
+        <MoreToolMenu
+          tool={tool}
+          onTool={onTool}
+          position={position}
+          onPositionChange={onPositionChange}
+        />
       </div>
     </div>
   );

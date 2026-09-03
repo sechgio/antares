@@ -1,4 +1,3 @@
-"""Configuración personalizable de patrones de renombrado."""
 
 from __future__ import annotations
 
@@ -33,17 +32,14 @@ def _config_file() -> Path:
 
 
 def _validate_pattern(pattern: str, available_vars: set[str]) -> bool:
-    """Valida que el patrón use variables disponibles."""
     if not pattern:
-        return True  # Patrón vacío = mantener nombre
+        return True
     placeholders = set(re.findall(r"\{(\w+)\}", pattern))
-    # {seq} y {ext} siempre están disponibles
     allowed = available_vars | {"seq", "ext", "sep"}
     return placeholders.issubset(allowed)
 
 
 def load_patterns() -> list[dict[str, Any]]:
-    """Carga los patrones guardados o retorna los defaults."""
     global _cached_patterns
     if _cached_patterns is not None:
         return [dict(p) for p in _cached_patterns]
@@ -72,7 +68,6 @@ def load_patterns() -> list[dict[str, Any]]:
 
 
 def save_patterns(patterns: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Guarda la configuración de patrones en disco."""
     global _cached_patterns
     path = _config_file()
     available_vars = set(get_field_names())
@@ -98,7 +93,6 @@ def save_patterns(patterns: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def reset_to_defaults() -> list[dict[str, Any]]:
-    """Restaura los patrones por defecto."""
     global _cached_patterns
     save_patterns(DEFAULT_PATTERNS)
     _cached_patterns = [dict(p) for p in DEFAULT_PATTERNS]

@@ -1,4 +1,3 @@
-"""Módulo de base de datos: SQLite embebido con importación/exportación de Excel."""
 
 from __future__ import annotations
 
@@ -21,11 +20,6 @@ _IDENTIFIER_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
 
 
 def _validate_identifier(name: str, context: str = "column") -> str:
-    """Validate a SQL identifier to prevent injection.
-
-    Only allows lowercase alphanumeric + underscore identifiers.
-    Raises ValueError if the name is not a safe identifier.
-    """
     if not _IDENTIFIER_RE.match(name):
         msg = f"Invalid SQL {context} name: {name!r}"
         raise ValueError(msg)
@@ -33,22 +27,18 @@ def _validate_identifier(name: str, context: str = "column") -> str:
 
 
 def _qi(name: str) -> str:
-    """Quote a validated SQL identifier with double-quotes (SQLite style)."""
     return f'"{name}"'
 
 
 def _get_connection() -> sqlite3.Connection:
-    """Retorna la conexión compartida del pool."""
     return get_connection(get_db_path())
 
 
 def _get_read_connection() -> sqlite3.Connection:
-    """Retorna la conexión de solo lectura para SELECT."""
     return get_read_connection(get_db_path())
 
 
 def _normalize_excel_column_name(name: Any, fallback: str) -> str:
-    """Convierte encabezados de Excel en nombres de columna SQLite seguros."""
     text = unicodedata.normalize("NFKD", str(name or ""))
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     text = re.sub(r"[^a-zA-Z0-9_]+", "_", text.strip().lower())
@@ -59,7 +49,6 @@ def _normalize_excel_column_name(name: Any, fallback: str) -> str:
 
 
 def _normalize_excel_columns(columns: list[Any]) -> list[str]:
-    """Normaliza encabezados preservando unicidad."""
     normalized: list[str] = []
     seen: dict[str, int] = {}
     for idx, column in enumerate(columns, 1):
@@ -71,21 +60,17 @@ def _normalize_excel_columns(columns: list[Any]) -> list[str]:
 
 
 def get_db_path() -> Path:
-    """Retorna la ruta de la base de datos SQLite local (writable)."""
     return user_data_path("catalogo.db")
 
 
 def _data_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Fields that become data columns. Reserved PK ``id`` is never duplicated."""
     return [f for f in fields if str(f.get("name", "")).lower() != "id"]
 
 
 def _build_schema(fields: list[dict[str, Any]]) -> str:
-    """Construye la sentencia CREATE TABLE a partir de la configuración de campos."""
     columns = ["id INTEGER PRIMARY KEY AUTOINCREMENT"]
     for f in _data_fields(fields):
         name = _validate_identifier(f["name"])
-        # Defensa: `id` es la PK interna; un field homónimo rompería CREATE TABLE.
         if name == "id":
             continue
         quoted_name = _qi(name)
@@ -103,18 +88,13 @@ def _build_schema(fields: list[dict[str, Any]]) -> str:
 
 
 def _table_matches_config(cursor: sqlite3.Cursor, fields: list[dict[str, Any]]) -> bool:
-    """Verifica si la tabla actual coincide con la configuración de campos."""
     cursor.execute("PRAGMA table_info(imagenes)")
     existing = {row[1]: row[2].upper() for row in cursor.fetchall()}
     expected = {f["name"]: f["type"] for f in fields}
-    # id siempre existe, lo ignoramos en la comparación
     expected["id"] = "INTEGER"
     return existing == expected
 
 
-# Mensaje compartido por la migración real (init_db) y el dry-run
-# (validate_fields_migration): el esquema nuevo no comparte ninguna columna con
-# un catálogo poblado, así que la migración no podría preservar datos.
 _MIGRATION_NO_OVERLAP_MSG = (
     "Migración abortada: el nuevo esquema no conserva "
     "ninguna columna del catálogo existente y dejaría "
@@ -127,12 +107,6 @@ def _schema_diff(
     fields: list[dict[str, Any]],
     existing_cols: dict[str, str],
 ) -> tuple[dict[str, str], list[str], list[str]]:
-    """Diff entre un set de fields propuesto y las columnas vivas de la tabla.
-
-    Returns ``(new_cols, removed_cols, changed_cols)`` — misma semántica que el
-    diff inline que usaba ``init_db``. Compartida para que la validación dry-run
-    y la migración real no puedan divergir.
-    """
     expected_cols = {f["name"]: f["type"] for f in fields}
     expected_cols["id"] = "INTEGER"
     new_cols = {
@@ -148,13 +122,6 @@ def _schema_diff(
 
 
 def _create_indexes(cursor: sqlite3.Cursor, fields: list[dict[str, Any]]) -> None:
-    """Create indexes on all queryable fields to avoid full-table scans.
-
-    Also creates expression indexes on ``lower(col)`` so case-insensitive
-    lookups (``WHERE lower(col) IN (...)``) can use an index instead of a
-    full scan. Plain UNIQUE indexes stay on the raw column (case-sensitive
-    uniqueness); lower() indexes are always non-unique.
-    """
     data_fields = _data_fields(fields)
     if not data_fields:
         return
@@ -165,7 +132,6 @@ def _create_indexes(cursor: sqlite3.Cursor, fields: list[dict[str, Any]]) -> Non
         cursor.execute(
             f"CREATE {unique_clause} INDEX IF NOT EXISTS idx_imagenes_{name} ON imagenes({_qi(name)})"
         )
-        # Expression index matching buscar_* queries: lower(col) IN (...)
         cursor.execute(
             f"CREATE INDEX IF NOT EXISTS idx_imagenes_lower_{name} "
             f"ON imagenes(lower({_qi(name)}))"
@@ -178,19 +144,11 @@ def init_db(*, allow_catalog_wipe: bool = False) -> None:
 
 
 def _init_db(*, allow_catalog_wipe: bool = False) -> None:
-    """Inicializa la base de datos SQLite con la tabla principal según campos configurados.
-
-    Args:
-        allow_catalog_wipe: Si True, permite migraciones sin solapamiento de
-            columnas que vacían el catálogo (p. ej. import Excel con esquema
-            nuevo). Si False (default), esas migraciones abortan con error.
-    """
     fields = load_fields()
     conn = _get_connection()
     with _db_lock:
         cursor = conn.cursor()
 
-        # Start a manual transaction for atomic schema creation and migrations
         cursor.execute("BEGIN IMMEDIATE")
         try:
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='imagenes'")
@@ -206,27 +164,16 @@ def _init_db(*, allow_catalog_wipe: bool = False) -> None:
                 if removed_cols or changed_cols:
                     read_cursor: sqlite3.Cursor | None = None
                     try:
-                        # Contar primero (barato) para decidir la rama sin
-                        # materializar filas que se van a descartar.
                         cursor.execute("SELECT COUNT(*) FROM imagenes")
                         total_old = int(cursor.fetchone()[0])
                         has_rows = total_old > 0
                         old_cols: list[str] = []
                         if has_rows:
-                            # Segundo cursor sobre la MISMA conexión: mantiene
-                            # un snapshot de la tabla vieja a través del RENAME
-                            # (ALTER TABLE RENAME no libera el btree) y permite
-                            # insertar por chunks sin retener todas las filas
-                            # en memoria (fetchall materializaba el catálogo
-                            # completo).
                             read_cursor = conn.cursor()
                             read_cursor.execute("SELECT * FROM imagenes")
                             old_cols = [d[0] for d in read_cursor.description]
                     except sqlite3.Error as exc:
                         logger.warning("No se pudieron leer datos antiguos durante migración: %s", exc)
-                        # Si el SELECT falló a mitad (p. ej. OOM), cerrar el
-                        # cursor antes del DDL: un cursor vivo mantiene el
-                        # lock del btree y bloquearía el siguiente init_db.
                         if read_cursor is not None:
                             with contextlib.suppress(sqlite3.Error):
                                 read_cursor.close()
@@ -236,11 +183,6 @@ def _init_db(*, allow_catalog_wipe: bool = False) -> None:
                         old_cols = []
                     cursor.execute("ALTER TABLE imagenes RENAME TO imagenes_old")
                     cursor.execute(_build_schema(fields))
-                    # Sólo se preservan filas si alguna columna vieja (no-id)
-                    # mapea al nuevo esquema. Sin solapamiento (p. ej.
-                    # nis/sgio → codigo/nombre/...) las filas viejas no llevan
-                    # dato útil al nuevo esquema y reinsertarlas generaría rows
-                    # de puros defaults/placeholder, además de chocar con UNIQUE.
                     preserved_cols = [
                         c for c in old_cols
                         if c in {f["name"] for f in fields} and c != "id"
@@ -264,12 +206,6 @@ def _init_db(*, allow_catalog_wipe: bool = False) -> None:
                                         values.append(row_dict[col])
                                     elif f.get("required"):
                                         default = defaults.get(f["type"], "")
-                                        # Un campo required+unique sin dato de origen
-                                        # recibiría el mismo default en cada fila y
-                                        # chocaría con el UNIQUE al reinsertar >1 fila
-                                        # (p. ej. codigo="" en todas). Uniquificar por
-                                        # índice sólo en ese caso; el resto conserva el
-                                        # default constante original.
                                         if f.get("unique") and total_old > 1:
                                             if isinstance(default, str):
                                                 default = f"{default}{i}" if default else str(i)
@@ -286,12 +222,12 @@ def _init_db(*, allow_catalog_wipe: bool = False) -> None:
                                     chunk.clear()
                             if chunk:
                                 cursor.executemany(insert_sql, chunk)
-                            read_cursor.close()  # consumido; libera el lock del SELECT
+                            read_cursor.close()
                             read_cursor = None
                             cursor.execute("DROP TABLE imagenes_old")
                         except sqlite3.Error as exc:
                             if read_cursor is not None:
-                                read_cursor.close()  # el SELECT activo bloquearía el DROP
+                                read_cursor.close()
                                 read_cursor = None
                             logger.error("Fallo migración de datos, se mantiene tabla antigua: %s", exc)
                             cursor.execute("DROP TABLE imagenes")
@@ -299,13 +235,9 @@ def _init_db(*, allow_catalog_wipe: bool = False) -> None:
                             raise DatabaseError(f"Migración fallida, esquema anterior preservado: {exc}") from exc
                     else:
                         if read_cursor is not None:
-                            # Rama abort/wipe: el SELECT quedó abierto sin consumir
-                            # y mantiene un lock que bloquearía el DROP/ALTER.
                             read_cursor.close()
                             read_cursor = None
                         if has_rows and not allow_catalog_wipe:
-                            # Abort: dropping old data with zero column overlap would
-                            # silently empty the catalog (e.g. full column rename via UI).
                             cursor.execute("DROP TABLE imagenes")
                             cursor.execute("ALTER TABLE imagenes_old RENAME TO imagenes")
                             raise DatabaseError(_MIGRATION_NO_OVERLAP_MSG)
@@ -330,15 +262,9 @@ def _init_db(*, allow_catalog_wipe: bool = False) -> None:
             cursor.execute("COMMIT")
         except Exception as exc:
             try:
-                # Con isolation_level=None el BEGIN IMMEDIATE es manual: solo
-                # hacemos ROLLBACK si hay una transacción viva, para no correr
-                # un ROLLBACK fantasma que deje la conexión en un estado raro.
                 if conn.in_transaction:
                     cursor.execute("ROLLBACK")
             except sqlite3.Error as rollback_exc:
-                # Don't shadow the original failure, but surface this for
-                # post-mortem debugging — silent suppression hid real DB
-                # corruption issues in the past.
                 logger.error(
                     "ROLLBACK failed after migration error (%s): %s",
                     type(exc).__name__,
@@ -353,64 +279,32 @@ def validate_fields_migration(fields: list[dict[str, Any]]) -> None:
 
 
 def _validate_fields_migration(fields: list[dict[str, Any]]) -> None:
-    """Dry-run: raise DatabaseError si aplicar estos fields al catálogo vivo abortaría.
-
-    La migración aborta cuando el nuevo esquema elimina/cambia columnas, el
-    catálogo tiene filas y NO hay ninguna columna compartida que preserve datos.
-    Este chequeo NO escribe nada (ni disco ni BD): los handlers lo ejecutan
-    ANTES de persistir la config nueva, para que un cambio de campos inválido
-    no deje el archivo de config adelantado respecto al esquema real de la tabla
-    (esa divergencia rompía el arranque del backend en el siguiente inicio:
-    init_db falla → sys.exit(1)).
-
-    El veredicto replica exactamente la rama de aborto de ``init_db`` usando
-    ``_schema_diff``, así la validación y la migración real no pueden divergir.
-    """
     with _db_schema_lock.read(), _db_read_lock:
         conn = _get_read_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='imagenes'")
         if cursor.fetchone() is None:
-            return  # instalación fresca: el path CREATE nunca aborta
+            return
         cursor.execute("PRAGMA table_info(imagenes)")
         existing_cols = {row[1]: row[2].upper() for row in cursor.fetchall()}
         _new_cols, removed_cols, changed_cols = _schema_diff(fields, existing_cols)
         if not removed_cols and not changed_cols:
-            return  # aditivo o idéntico: nunca aborta
+            return
         preserved = [
             c for c in existing_cols
             if c in {f["name"] for f in fields} and c != "id"
         ]
         if preserved:
-            return  # hay solape de columnas: la migración preserva datos
+            return
         cursor.execute("SELECT COUNT(*) FROM imagenes")
         row = cursor.fetchone()
         if not (row and row[0]):
-            return  # tabla vacía: nada que perder
+            return
         raise DatabaseError(_MIGRATION_NO_OVERLAP_MSG)
 
 
 def importar_excel(excel_path: str) -> dict[str, int]:
-    """Importa datos desde Excel (.xlsx) a SQLite.
-
-    Args:
-        excel_path: Ruta al archivo Excel.
-
-    Returns:
-        Dict con ``inserted`` (filas válidas escritas) y ``skipped`` (filas
-        omitidas por campos required vacíos). El catálogo previo se vacía
-        siempre antes de insertar.
-
-    Raises:
-        ImportError: Si openpyxl no está instalado.
-        ValueError: Si el Excel no contiene columnas válidas.
-        DatabaseError: Si ocurre un error de base de datos.
-    """
     try:
-        # Cold import under the serialized-import guard: openpyxl (and its
-        # optional numpy bridge via pandas compat) must never load
-        # concurrently with another C-extension import (e.g. rpds via
-        # history) or the process can deadlock on Windows.
         from backend.core.import_guard import serialized_import
 
         with serialized_import():
@@ -423,12 +317,6 @@ def importar_excel(excel_path: str) -> dict[str, int]:
         msg = f"No se encontró el archivo: {excel_path}"
         raise FileNotFoundError(msg)
 
-    # Lectura y normalización FUERA del lock: el streaming puede tardar
-    # segundos en Excels grandes y no debe bloquear las demás operaciones de
-    # BD (antes todo el import corría bajo _db_lock, congelando previews).
-    # read_only + iter_rows evita materializar el DataFrame completo
-    # (pandas read_excel: 100-300 MB pico en 50k filas) y evita el import de
-    # pandas/numpy en el worker. data_only=False keep formulas as stored text.
     wb = load_workbook(excel_path, read_only=True, data_only=False)
     try:
         ws = wb.active
@@ -458,17 +346,12 @@ def importar_excel(excel_path: str) -> dict[str, int]:
 
             fields = save_fields(fields)
             try:
-                # Asegurar que el esquema de BD coincida con los campos, incluyendo columnas del Excel.
                 init_db(allow_catalog_wipe=True)
             except Exception:
-                # The importer intentionally replaces the configured schema, but
-                # a failed migration must not leave the JSON config ahead of SQLite.
                 with contextlib.suppress(Exception):
                     save_fields(old_fields)
                 raise
 
-        # Keep the long row insertion readable while preventing a concurrent
-        # schema publication from changing the columns used by this import.
         with _db_schema_lock.read(), _db_lock:
             if load_fields() != fields:
                 raise DatabaseError(
@@ -489,7 +372,6 @@ def importar_excel(excel_path: str) -> dict[str, int]:
                 col_names = ", ".join(_qi(fn) for fn in field_names)
                 sql = f"INSERT INTO imagenes ({col_names}) VALUES ({placeholders})"
 
-                # Chunked executemany: avoid retaining every row's values list at once.
                 chunk: list[list[Any]] = []
                 chunk_size = 500
                 inserted = 0
@@ -522,8 +404,6 @@ def importar_excel(excel_path: str) -> dict[str, int]:
                     inserted += len(chunk)
 
                 cursor.execute("COMMIT")
-                # Full-table reload: refresh planner stats so indexes stay effective
-                # after large Excel imports (audit: periodic ANALYZE).
                 try:
                     conn.execute("ANALYZE imagenes")
                 except sqlite3.Error:
@@ -538,7 +418,6 @@ def importar_excel(excel_path: str) -> dict[str, int]:
 
 
 def exportar_excel(excel_path: str) -> int:
-    """Exporta los datos actuales de SQLite a un archivo Excel."""
     try:
         import pandas as pd
     except ImportError as exc:
@@ -555,8 +434,6 @@ def exportar_excel(excel_path: str) -> int:
     return len(df)
 
 
-
-
 def _record_code_match(
     result: dict[str, dict[str, Any]],
     code_rowids: dict[str, int],
@@ -564,12 +441,6 @@ def _record_code_match(
     row_id: int,
     row_dict: dict[str, Any],
 ) -> None:
-    """Map ``val -> row_dict`` with first-wins semantics.
-
-    Codes are expected to be unique across the catalog. If ``val`` was already
-    resolved to a *different* row, keep the first match and log the collision
-    instead of silently letting the last row win.
-    """
     prev_id = code_rowids.get(val)
     if prev_id is not None and prev_id != row_id:
         logger.warning(
@@ -583,21 +454,6 @@ def _record_code_match(
 
 
 def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
-    """Busca múltiples códigos en una sola operación de BD.
-
-    Pre-carga todos los registros que coincidan con cualquiera de los códigos
-    proporcionados, eliminando la necesidad de N queries individuales.
-
-    Strategy: prefer a single-column ``codigo`` (or first field) lookup with a
-    large chunk size, then fall back to multi-field OR only for unresolved codes
-    so multi-key catalogs keep working. Matching is case-insensitive (casefold).
-
-    Args:
-        codigos: Lista de códigos a buscar.
-
-    Returns:
-        Dict {codigo: registro} keyed by the query code form provided.
-    """
     if not codigos:
         return {}
     with _db_schema_lock.read(), _db_read_lock:
@@ -607,7 +463,6 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
         if not field_names:
             return {}
 
-        # casefold → first query spelling (results keyed by caller's form)
         query_by_fold: dict[str, str] = {}
         for raw in codigos:
             text = str(raw).strip()
@@ -618,9 +473,6 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
         folded_codes = list(query_by_fold.keys())
 
         result: dict[str, dict[str, Any]] = {}
-        # Track which DB row each code was first resolved to, so collisions (the
-        # same code matching two distinct records) are logged instead of letting
-        # the last row win. Codes are expected to be unique.
         code_rowids: dict[str, int] = {}
         cols = ", ".join(_qi(fn) for fn in field_names)
 
@@ -648,14 +500,10 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
                         if query_key:
                             _record_code_match(result, code_rowids, query_key, row_id, row_dict)
 
-        # Pass 1: fast path on preferred key column.
         _scan_column(folded_codes, preferred)
 
         unresolved = [c for c in folded_codes if query_by_fold[c] not in result]
         if unresolved and len(field_names) > 1:
-            # Pass 2: multi-field OR only for codes still missing.
-            # safe margin for SQLite param limit; clamp to >=1 so a schema with
-            # >900 fields cannot produce CHUNK == 0 (range step of 0 -> ValueError).
             CHUNK = max(1, 900 // len(field_names))
             other_fields = [fn for fn in field_names if fn != preferred]
             for i in range(0, len(unresolved), CHUNK):
@@ -681,18 +529,6 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
 
 
 def buscar_por_columna(codigos: list[str], column: str) -> dict[str, dict[str, Any]]:
-    """Busca múltiples códigos en una columna específica de la BD.
-
-    Matching is case-insensitive (casefold). Result keys use the caller's
-    query spelling.
-
-    Args:
-        codigos: Lista de códigos a buscar.
-        column: Nombre de la columna clave donde buscar.
-
-    Returns:
-        Dict {codigo: registro} para los códigos encontrados.
-    """
     if not codigos or not column:
         return {}
     safe_column = _validate_identifier(column)
@@ -714,11 +550,8 @@ def buscar_por_columna(codigos: list[str], column: str) -> dict[str, dict[str, A
         folded_codes = list(query_by_fold.keys())
 
         result: dict[str, dict[str, Any]] = {}
-        # Track which DB row each code was first resolved to, so collisions (the
-        # same code matching two distinct records) are logged instead of letting
-        # the last row win. Codes are expected to be unique.
         code_rowids: dict[str, int] = {}
-        CHUNK = 900  # safe margin for SQLite param limit
+        CHUNK = 900
         cols = ", ".join(_qi(fn) for fn in field_names_list)
         for i in range(0, len(folded_codes), CHUNK):
             chunk = folded_codes[i:i + CHUNK]
@@ -739,18 +572,6 @@ def buscar_por_columna(codigos: list[str], column: str) -> dict[str, dict[str, A
 
 
 def obtener_todos(limit: int | None = None, offset: int = 0) -> list[dict[str, Any]]:
-    """Retorna registros como lista de diccionarios con paginación opcional.
-
-    Ordenado explícitamente por ``id`` (rowid): el mapeo posicional del modo
-    ``use_column_rename`` (archivo i ↔ registro i, en preview y en cada chunk
-    del job) depende de un orden determinista — sin ORDER BY, SQLite podía
-    devolver un orden distinto según el plan de consulta y desalinear el
-    renombrado respecto al registro correcto.
-
-    Args:
-        limit: Número máximo de registros a retornar. None = todos.
-        offset: Número de registros a saltar desde el inicio.
-    """
     with _db_schema_lock.read(), _db_read_lock:
         conn = _get_read_connection()
         cursor = conn.cursor()
@@ -767,7 +588,6 @@ def obtener_todos(limit: int | None = None, offset: int = 0) -> list[dict[str, A
 
 
 def limpiar_base_datos() -> int:
-    """Elimina todos los registros de la tabla imagenes."""
     db_path = get_db_path()
     if not db_path.exists():
         return 0
@@ -777,13 +597,7 @@ def limpiar_base_datos() -> int:
         cursor.execute("SELECT COUNT(*) FROM imagenes")
         row = cursor.fetchone()
         count = int(row[0]) if row else 0
-        # La conexión usa isolation_level=None (autocommit): el DELETE ya quedó
-        # commiteado; un commit() explícito aquí era un no-op.
         cursor.execute("DELETE FROM imagenes")
-    # No VACUUM aquí: reescribe TODO el archivo (incluidas historial/ubicaciones)
-    # y puede tardar segundos con catálogos grandes. SQLite reutiliza las páginas
-    # liberadas en el siguiente import, así que el archivo no crece sin límite
-    # entre ciclos de vaciar/reimportar.
     return count
 
 
@@ -792,7 +606,6 @@ _MAPPING_RENAME_ALIASES = ("renombre", "rename", "new_name", "newname", "nombre 
 
 
 def _normalize_header_alias(header: str) -> str:
-    """Normaliza un encabezado para matching de alias: minúsculas, sin acentos, espacios/underscores/guiones unificados."""
     text = str(header).lower().strip()
     text = "".join(c for c in unicodedata.normalize("NFKD", text) if unicodedata.category(c) != "Mn")
     text = re.sub(r"[\s_\-]+", " ", text)
@@ -801,12 +614,6 @@ def _normalize_header_alias(header: str) -> str:
 
 
 def _detect_column(columns: list[str], aliases: tuple[str, ...]) -> str | None:
-    """Devuelve la columna que mejor coincida con los alias, respetando el orden de prioridad.
-
-    Los alias se normalizan con la misma función que los encabezados: alias con
-    guiones bajos ("new_name", "nuevo_nombre") ahora matchean encabezados con
-    espacios ("new name", "nuevo nombre") y viceversa.
-    """
     for alias in aliases:
         normalized_alias = _normalize_header_alias(alias)
         for col in columns:
@@ -820,25 +627,6 @@ def parse_id_rename_mapping(
     id_column: str | None = None,
     rename_column: str | None = None,
 ) -> dict[str, str]:
-    """Parsea un Excel de mapeo (columnas ID y nuevo nombre) en un dict de mapeo directo.
-
-    Args:
-        excel_path: Ruta al archivo .xlsx.
-        id_column: Nombre de la columna ID. Si no se indica, se auto-detecta.
-        rename_column: Nombre de la columna con el nuevo nombre. Si no se indica, se auto-detecta.
-
-    Returns:
-        Dict {ID.strip(): nuevo_nombre_sanitizado.strip()}.
-
-    Raises:
-        ValueError: Si la estructura no es válida (columnas, duplicados, celdas vacías).
-        FileNotFoundError: Si el archivo no existe.
-        ImportError: Si pandas/openpyxl no están instalados.
-
-    Note:
-        Para obtener también las columnas detectadas y todas las disponibles, usa
-        :func:`parse_id_rename_mapping_full`.
-    """
     result = parse_id_rename_mapping_full(excel_path, id_column, rename_column)
     return cast(dict[str, str], result["mapping"])
 
@@ -848,20 +636,6 @@ def parse_id_rename_mapping_full(
     id_column: str | None = None,
     rename_column: str | None = None,
 ) -> dict[str, Any]:
-    """Variante de :func:`parse_id_rename_mapping` que devuelve metadatos de columnas.
-
-    Returns:
-        Dict con claves:
-        - ``mapping``: dict {ID.strip(): nuevo_nombre_sanitizado.strip()}.
-        - ``id_column``: nombre (normalizado) de la columna ID usada.
-        - ``rename_column``: nombre (normalizado) de la columna de nuevo nombre usada.
-        - ``columns``: lista de todas las columnas normalizadas del Excel.
-
-    Raises:
-        ValueError: Si la estructura no es válida (columnas, duplicados, celdas vacías).
-        FileNotFoundError: Si el archivo no existe.
-        ImportError: Si pandas/openpyxl no están instalados.
-    """
     try:
         from backend.core.import_guard import serialized_import
 
@@ -919,7 +693,7 @@ def parse_id_rename_mapping_full(
     seen_ids: set[str] = set()
 
     for row_idx, row in df.iterrows():
-        excel_row = int(row_idx) + 2  # encabezado + base 1
+        excel_row = int(row_idx) + 2
         raw_id = row.get(chosen_id)
         raw_rename = row.get(chosen_rename)
 
@@ -951,11 +725,6 @@ def parse_id_rename_mapping_full(
 
 
 def generar_plantilla_excel(ruta_salida: str) -> int:
-    """Genera un archivo Excel de plantilla con las columnas esperadas.
-
-    Args:
-        ruta_salida: Ruta donde guardar la plantilla.
-    """
     try:
         import pandas as pd
     except ImportError as exc:

@@ -1,10 +1,6 @@
 import { ZOrderButtons } from '../shared';
 import type { SectionProps } from '../types';
 
-/** Name + z-order block for shapes. The non-shape variant is kept inline in the
- *  orchestrator because it uses `emitLive`/`onCommitLive` (live name editing),
- *  while the shape variant commits via `onChange` directly — Cirugía de
- *  Precisión: don't unify the two subtle variants into one component. */
 export default function ShapeSection({ layer, onChange, zOrder }: SectionProps) {
   return (
     <div className="canvas-section">

@@ -310,9 +310,7 @@ function ReportDiameterTable({
     diameters,
   );
 
-  // Row totals (horizontal sum per row) → shown in OPER. column
   const rowTotals = rows.map(([, data]) => sumDiameterRow(data, diameters));
-  // Grand total = sum of all row totals (== sum of all column totals)
   const grandTotal = rowTotals.reduce((acc, v) => acc + v, 0);
 
   return (

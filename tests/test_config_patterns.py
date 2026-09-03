@@ -1,4 +1,3 @@
-"""Tests for rename pattern config (atomic save + validation)."""
 
 from __future__ import annotations
 

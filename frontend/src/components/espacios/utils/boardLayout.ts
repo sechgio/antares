@@ -3,7 +3,6 @@ import { parseColumnDropId } from './statusConfig';
 
 export type BoardItems = Record<string, string[]>;
 
-/** Group task ids into columns by status, preserving sort_order. */
 export function buildBoardItems(tareas: Tarea[], columnKeys: string[]): BoardItems {
   const map = Object.fromEntries(columnKeys.map((s) => [s, [] as string[]])) as BoardItems;
   const sorted = [...tareas].sort((a, b) => a.sort_order - b.sort_order);
@@ -13,7 +12,6 @@ export function buildBoardItems(tareas: Tarea[], columnKeys: string[]): BoardIte
   return map;
 }
 
-/** Resolve which column contains a drag id (column drop zone or task id). */
 export function findContainer(items: BoardItems, id: string): TareaStatus | null {
   const fromColumn = parseColumnDropId(id);
   if (fromColumn && fromColumn in items) return fromColumn;
@@ -25,10 +23,6 @@ export function findContainer(items: BoardItems, id: string): TareaStatus | null
   return null;
 }
 
-/**
- * Compute a sort_order for inserting `tareaId` into `targetStatus` relative to `overId`.
- * overId null / column drop → append at end.
- */
 export function computeInsertSortOrder(
   items: BoardItems,
   tareasById: Map<string, Tarea>,

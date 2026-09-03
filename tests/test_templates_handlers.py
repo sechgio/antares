@@ -1,4 +1,3 @@
-"""Tests for report generator template handlers."""
 
 from pathlib import Path
 
@@ -33,7 +32,6 @@ def test_templates_list_and_get_across_multiple_dirs(tmp_path: Path, monkeypatch
 
 
 def test_empty_user_templates_dir_does_not_hide_bundled(tmp_path: Path, monkeypatch) -> None:
-    """Installer regression: empty user templates dir must not hide bundled HTML."""
     user = tmp_path / "user_templates"
     bundled = tmp_path / "bundled"
     user.mkdir()

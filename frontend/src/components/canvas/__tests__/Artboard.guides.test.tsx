@@ -5,11 +5,6 @@ import { MM_TO_PX } from '../ops/drawHelpers';
 import { createGuide } from '../ops/guides';
 import { createEmptyDocument } from '../types';
 
-/**
- * Manual guide dragging (Figma parity): live preview while dragging, commit
- * once on release, drop on the ruler strip to remove (with visual feedback),
- * Esc cancels and restores the original position.
- */
 describe('Artboard guide dragging', () => {
   let frames: Map<number, FrameRequestCallback>;
   let nextId: number;
@@ -69,7 +64,6 @@ describe('Artboard guide dragging', () => {
       fireEvent.pointerMove(window, { clientX: 265, clientY: 300 });
       tick();
     });
-    // Live preview only: chip follows the pointer, nothing committed yet.
     expect(screen.getByTestId('canvas-guide-chip').textContent).toBe('70.1 mm');
     expect(onMoveGuide).not.toHaveBeenCalled();
 
@@ -110,7 +104,6 @@ describe('Artboard guide dragging', () => {
     });
     expect(screen.getByTestId('canvas-guide-chip').textContent).toBe('Eliminar guía');
 
-    // Drag back out of the zone → the removal is cancelled.
     act(() => {
       fireEvent.pointerMove(window, { clientX: 265, clientY: 300 });
       tick();
@@ -141,7 +134,6 @@ describe('Artboard guide dragging', () => {
     });
     expect(onMoveGuide).not.toHaveBeenCalled();
     expect(onRemoveGuide).not.toHaveBeenCalled();
-    // Line restored to its original spot (50mm → 189px at zoom 1).
     expect((screen.getByTestId('canvas-manual-guide') as HTMLElement).style.left).toBe('189px');
   });
 
@@ -178,7 +170,6 @@ describe('Artboard guide dragging', () => {
       />,
     );
     const atHalf = screen.getByTestId('canvas-manual-guide') as HTMLElement;
-    // Inside camera scale 0.5, layout width 20px → 10px on screen.
     expect(atHalf.style.width).toBe('20px');
   });
 });

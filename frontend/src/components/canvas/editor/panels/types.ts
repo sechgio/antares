@@ -8,24 +8,14 @@ export interface ZOrderCallbacks {
   onSendBackward: () => void;
 }
 
-/** Flat prop bag passed to every panel section.
- *
- * The mutators are closures built by the orchestrator (RightPanel) bound to
- * the current `layer`; sections just call them. Derived single-selection flags
- * are computed once by the orchestrator so sections don't recompute them. */
 export interface SectionProps {
   layer: CanvasLayer;
   pageColors: string[];
-  /** All document layers (for resolving component masters / variants). */
   layers?: CanvasLayer[];
-  /** Selected layer ids (multi-select combine for boolean ops). */
   selectedIds?: string[];
-  // Mutators.
   onChange: (layer: CanvasLayer) => void;
-  /** Replace the full layer list (boolean compose hides operands in one undo step). */
   onReplaceLayers?: (layers: CanvasLayer[]) => void;
   emitLive: (layer: CanvasLayer) => void;
-  /** Apply a transform to the latest live layer (survives rapid multi-field edits). */
   mapLive: (fn: (layer: CanvasLayer) => CanvasLayer) => void;
   setVar: (key: string, value: string) => void;
   setVarLive: (key: string, value: string) => void;
@@ -37,9 +27,7 @@ export interface SectionProps {
   onAlign: (align: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => void;
   logoSideConflict?: boolean;
   zOrder: ZOrderCallbacks;
-  /** Instantiate the selected component master into the document. */
   onInstantiateComponent?: () => void;
-  // Derived single-selection flags.
   shape: boolean;
   isLine: boolean;
   showRadius: boolean;
@@ -48,14 +36,12 @@ export interface SectionProps {
   strokeWeightPx: number;
   strokeWeightPct: number;
   setStrokeWeight: (raw: number) => void;
-  // Export state (shared with the multi-select export button in the orchestrator).
   exportScale: number;
   setExportScale: (n: number) => void;
   exporting: boolean;
   setExporting: (b: boolean) => void;
 }
 
-/** Registry entry: a type-specific tail section rendered after the common inspectors. */
 export interface PanelSection {
   test: (layer: CanvasLayer) => boolean;
   Component: FC<SectionProps>;

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ThemeConfig } from '../../types';
 import {
+  DEFAULT_THEME,
   THEME_ACTIVE_CACHE_KEY,
   THEME_CSS_CACHE_KEY,
   THEME_DENSITY_CACHE_KEY,
@@ -75,7 +76,6 @@ describe('restoreCachedTheme', () => {
 
 describe('bootThemeFromBackend', () => {
   it('applies the backend theme as authority over the cached css', async () => {
-    // Stale cache painted first (old accent)
     localStorage.setItem(THEME_CSS_CACHE_KEY, JSON.stringify({ '--accent-primary': '#FF0000' }));
     restoreCachedTheme();
     expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('#FF0000');
@@ -85,7 +85,6 @@ describe('bootThemeFromBackend', () => {
       expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('#00FF88');
     });
 
-    // Cache is re-written with the backend theme so future boots stay consistent
     const cached = JSON.parse(localStorage.getItem(THEME_CSS_CACHE_KEY) || '{}') as Record<string, string>;
     expect(cached['--accent-primary']).toBe('#00FF88');
     expect(localStorage.getItem(THEME_ACTIVE_CACHE_KEY)).toContain('"mode":"dark"');
@@ -120,7 +119,6 @@ describe('bootThemeFromBackend', () => {
     const cancel = bootThemeFromBackend(
       () => new Promise<ThemeConfig>((resolve) => { resolveFetch = resolve; }),
     );
-    // User edits during the flight: the active cache is re-written.
     localStorage.setItem(THEME_ACTIVE_CACHE_KEY, JSON.stringify({ ...backendTheme, accent: '#123456' }));
     resolveFetch(backendTheme);
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -168,5 +166,19 @@ describe('applyThemeToCSS', () => {
     expect(document.documentElement.dataset.theme).toBe('light');
     expect(document.documentElement.classList.contains('theme-light')).toBe(true);
     expect(document.documentElement.classList.contains('theme-dark')).toBe(false);
+  });
+});
+
+describe('DEFAULT_THEME', () => {
+  it('matches the canonical Slate Professional identity and defines all required theme tokens', () => {
+    expect(DEFAULT_THEME.name).toBe('Slate Professional');
+    expect(DEFAULT_THEME.bg).toBe('#0F172A');
+    expect(DEFAULT_THEME.bg_secondary).toBe('#172033');
+    expect(DEFAULT_THEME.fg).toBe('#F8FAFC');
+    expect(DEFAULT_THEME.accent).toBe('#3B82F6');
+    expect(DEFAULT_THEME.border).toBe('#334155');
+    expect(DEFAULT_THEME.error).toBe('#EF4444');
+    expect(DEFAULT_THEME.warning).toBe('#F59E0B');
+    expect(DEFAULT_THEME.success).toBe('#22C55E');
   });
 });

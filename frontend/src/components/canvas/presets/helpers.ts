@@ -1,7 +1,3 @@
-/**
- * Shared builders for canvas presets.
- * Visual reference: backend/templates/*.html (read-only — never imported at runtime).
- */
 import { applyGridToImageSlots, DEFAULT_GRID_RULES } from '../ops/gridLayout';
 import type { CanvasDocument, CanvasLayer } from '../types';
 import { DOCUMENT_VERSION, mm, newId } from '../types';
@@ -52,7 +48,6 @@ export function logoSlot(opts: {
   };
 }
 
-/** Dual logos matching report/emergencias header (55×18 mm @ 8 mm pad). */
 export function dualLogos(pad = 8, w = 55, h = 18): CanvasLayer[] {
   return [
     logoSlot({ side: 'left', x: pad, y: pad, w, h }),

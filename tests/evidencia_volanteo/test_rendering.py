@@ -1,4 +1,3 @@
-"""Tests de rendering PDF y DOCX para Evidencia Volanteo."""
 
 from __future__ import annotations
 
@@ -144,13 +143,11 @@ def test_docx_border_width_matches_preview() -> None:
     docx_bytes, _ = render_docx(doc, {}, {})
     document = Document(BytesIO(docx_bytes))
     expected_sz = str(int(BORDER_PT * 8))
-    # Header table keeps table-level borders
     header_borders = document.tables[0]._tbl.tblPr.find(qn("w:tblBorders"))
     assert header_borders is not None
     top = header_borders.find(qn("w:top"))
     assert top is not None
     assert top.get(qn("w:sz")) == expected_sz
-    # Spacer (sin bordes) + panel de fotos (solo marco exterior)
     assert len(document.tables) >= 3
     spacer_borders = document.tables[1]._tbl.tblPr.find(qn("w:tblBorders"))
     assert spacer_borders is not None
@@ -159,7 +156,6 @@ def test_docx_border_width_matches_preview() -> None:
     assert photos_borders is not None
     assert photos_borders.find(qn("w:top")).get(qn("w:sz")) == expected_sz
     assert photos_borders.find(qn("w:insideH")).get(qn("w:val")) == "nil"
-    # Marco exterior en celdas del perímetro (Word ignora tblBorders si tcBorders=nil)
     corner = document.tables[2].cell(0, 0)._tc.tcPr.find(qn("w:tcBorders"))
     assert corner is not None
     assert corner.find(qn("w:top")).get(qn("w:val")) == "single"
@@ -172,7 +168,6 @@ def test_docx_border_width_matches_preview() -> None:
 
 
 def test_docx_info_row_grows_for_long_cuadrante() -> None:
-    """hRule=exact recortaba el texto; atLeast permite ver el cuadrante completo."""
     long_value = "QWSADD" + ("D" * 80)
     doc = EvidenciaDocument(
         title="TEST",
@@ -186,7 +181,6 @@ def test_docx_info_row_grows_for_long_cuadrante() -> None:
     assert info_height.get(qn("w:hRule")) == "atLeast"
     info_text = document.tables[0].cell(1, 1).paragraphs[0].text.replace("\u200b", "")
     assert long_value.upper() in info_text or long_value in info_text
-
 
 
 def test_empty_cuadrante_shows_placeholder_in_docx() -> None:
@@ -377,7 +371,6 @@ def test_docx_long_cuadrante_stays_editable_text() -> None:
     info_text = document.tables[0].cell(1, 1).paragraphs[0].text
     assert "QWSADD" in info_text
     assert info_text.replace("\u200b", "").endswith("D" * 10)
-    # DOCX nativo: tablas editables (header + spacer + fotos), no página rasterizada
     assert len(document.tables) == 3
 
 

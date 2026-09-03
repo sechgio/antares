@@ -17,8 +17,6 @@ export function isLayerContainer(layer: CanvasLayer): boolean {
   return CONTAINER_TYPES.has(layer.type);
 }
 
-/** Expand ids to include all descendants linked via parentId.
- *  O(n) index + O(k + descendants) BFS — not O(n × depth). */
 export function expandWithDescendants(layers: CanvasLayer[], ids: string[]): string[] {
   if (ids.length === 0) return [];
   const childrenByParent = new Map<string, string[]>();
@@ -43,7 +41,6 @@ export function expandWithDescendants(layers: CanvasLayer[], ids: string[]): str
   return [...idSet];
 }
 
-/** Ancestor chain from parent up to root (nearest parent first). */
 export function ancestorIds(
   layers: CanvasLayer[] | Map<string, CanvasLayer>,
   id: string,
@@ -64,10 +61,6 @@ export function childIdsOf(layers: CanvasLayer[], parentId: string): string[] {
   return layers.filter((l) => l.parentId === parentId).map((l) => l.id);
 }
 
-/**
- * Build a tree for Capas. Frame layers are omitted.
- * Sibling order is paint-top-first (reverse of document array order).
- */
 export function buildLayerTree(layers: CanvasLayer[]): LayerTreeNode[] {
   const content = layers.filter((l) => l.type !== 'frame');
   const idSet = new Set(content.map((l) => l.id));

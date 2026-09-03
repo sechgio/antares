@@ -8,7 +8,6 @@
   "db_parse_mapping",
   "formatos_generate",
   "formatos_render_template_page",
-  "image_optimizer_zip",
   "image_optimizer_save_files",
   "sellador_apply",
   "sellador_inspect_pdf",

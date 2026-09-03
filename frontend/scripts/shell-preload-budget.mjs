@@ -1,13 +1,3 @@
-/**
- * Feedback loop: app-shell modulepreload must stay free of heavy vendors.
- *
- * Symptom: AuthProvider / LoginScreen static imports pulled vendor-supabase
- * (~209 KB) and vendor-framer (~127 KB) into index.html modulepreload, so every
- * cold start paid for cloud-auth + motion before the local PreviewPanel painted.
- *
- * Usage (after `npm run build` / vite build in frontend/):
- *   node frontend/scripts/shell-preload-budget.mjs
- */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,7 +5,6 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const indexHtmlPath = path.resolve(__dirname, '../dist/index.html');
 
-/** Must never appear in entry script or modulepreload hrefs. */
 const BUDGETS_PATH = path.resolve(__dirname, '../../shared/budgets.json');
 let FORBIDDEN_SHELL = ['vendor-supabase', 'vendor-framer', 'vendor-jspdf', 'vendor-pdfjs', 'vendor-fullcalendar'];
 try {

@@ -160,6 +160,5 @@ export interface PdfImportOptions {
   limits?: Partial<PdfImportLimits>;
   signal?: AbortSignal;
   onProgress?: (progress: PdfImportProgress) => void;
-  /** Optional coordinator hook; true skips heuristic extraction after a valid manifest. */
   onManifest?: (bytes: Uint8Array) => boolean | Promise<boolean>;
 }

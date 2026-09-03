@@ -33,7 +33,6 @@ export default function Thumbnail({ path, fileToken, file, size = 48, variant = 
     setState({ kind: 'error' });
   }, []);
 
-  // Lazy-load: only request thumbs when near the viewport.
   useEffect(() => {
     if (!containerRef.current || inView) return;
     const observer = new IntersectionObserver(
@@ -49,7 +48,6 @@ export default function Thumbnail({ path, fileToken, file, size = 48, variant = 
     return () => observer.disconnect();
   }, [inView]);
 
-  // When in view: try display-size thumb; on failure show placeholder (no file://).
   useEffect(() => {
     if (!inView) return;
     let cancelled = false;
@@ -60,12 +58,8 @@ export default function Thumbnail({ path, fileToken, file, size = 48, variant = 
       if (file) {
         const staged = await stageFileForIpc(file);
         if (staged) return staged;
-        // No Electron staging bridge means this is a browser/test File. It
-        // has no safe filesystem reference to send to native IPC.
         return null;
       }
-      // A path without an accompanying token is a legacy/history display
-      // value. Do not forward it to the protected IPC router.
       return null;
     };
 

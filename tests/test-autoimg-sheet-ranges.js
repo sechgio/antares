@@ -1,6 +1,3 @@
-/**
- * Regresión: allowlist de rangos AutoIMG y validación de folder IDs.
- */
 
 function assert(condition, message) {
   if (!condition) {

@@ -73,7 +73,6 @@ export interface InformeV2ListItem {
 export interface PhotoAsset {
   name: string;
   src: string;
-  /** Kept for PDF export through staged file tokens. */
   file?: File;
 }
 

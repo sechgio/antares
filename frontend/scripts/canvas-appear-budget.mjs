@@ -1,16 +1,3 @@
-/**
- * Feedback loop: Canvas "time to appear" after packaging (production chunks).
- *
- * Symptom (fixed): packaged app sat on "Cargando Canvas…" while the Canvas
- * lazy route paid for vendor-jspdf (~371KB) because Vite's `__vitePreload`
- * helper was colocated inside that manual chunk. React/react-dom similarly
- * leaked into vendor-dnd / vendor-i18n, so the entry even modulepreloaded dnd.
- *
- * Usage (from repo root, after `npm run build:frontend`):
- *   node frontend/scripts/canvas-appear-budget.mjs
- *
- * Exit 0 = green. Exit 1 = red.
- */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,7 +7,6 @@ const distDir = path.resolve(__dirname, '../dist');
 const jsDir = path.join(distDir, 'assets/js');
 const indexHtmlPath = path.join(distDir, 'index.html');
 
-/** Vendors Canvas must never statically import (not used by Canvas source). */
 const BUDGETS_PATH = path.resolve(__dirname, '../../shared/budgets.json');
 let FORBIDDEN_STATIC = [
   'vendor-jspdf',
@@ -71,7 +57,6 @@ const canvasKb = kb(fs.statSync(canvasPath).size);
 const staticFrom = [...canvasText.matchAll(/from\s*["']\.\/([^"']+)["']/g)].map((m) => m[1]);
 const uniqueStatic = [...new Set(staticFrom)];
 
-/** Chunks already fetched for the app shell (entry + modulepreload). */
 const alreadyLoaded = new Set();
 if (fs.existsSync(indexHtmlPath)) {
   const html = fs.readFileSync(indexHtmlPath, 'utf8');
@@ -99,7 +84,6 @@ for (const rel of uniqueStatic) {
   }
 }
 
-// Canvas chunk itself is never in the shell preload list (lazy route).
 if (!alreadyLoaded.has(canvasChunk)) {
   incrementalKb += canvasKb;
 }

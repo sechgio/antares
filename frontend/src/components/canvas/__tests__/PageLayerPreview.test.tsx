@@ -56,7 +56,6 @@ describe('documentWithFill', () => {
     });
     const rows = JSON.parse(filled.layers.find((l) => l.id === 't1')!.meta!.rowsData!);
     expect(rows.cells[0][1]).toBe('4587');
-    // Empty data keeps designed cell (same rule as renderHtml).
     expect(rows.cells[1][1]).toBe('fallback');
   });
 });

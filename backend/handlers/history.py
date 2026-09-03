@@ -1,4 +1,3 @@
-"""History handlers."""
 from __future__ import annotations
 
 import base64
@@ -28,13 +27,6 @@ _CSV_COLUMNS = [
 
 
 def _core_history() -> Any:
-    """Import ``backend.core.history`` under the serialized-import guard.
-
-    Its module-level import chain (run_types -> jsonschema -> referencing ->
-    rpds C extension) must never race another cold C-extension import (numpy
-    via pandas in db_import): Python import lock x Windows loader lock can
-    deadlock the process.
-    """
     with serialized_import():
         from backend.core import history
 
@@ -42,7 +34,6 @@ def _core_history() -> Any:
 
 
 def _safe_int(value: Any) -> int | None:
-    """Coacciona defensiva: ids no numéricos devuelven None en vez de lanzar."""
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -122,17 +113,7 @@ def history_save(params: dict[str, Any]) -> dict[str, Any]:
     return {"id": run_id}
 
 
-
 def history_export(params: dict[str, Any]) -> dict[str, Any]:
-    """Export historial rows to CSV. Returns ``{"csv": base64, "count": N}``.
-
-    Selection rules (applied in order):
-      1. If ``ids`` is provided and non-empty, export those rows (missing ids
-         are silently dropped).
-      2. Otherwise, apply the optional ``run_type`` / ``date_from`` / ``date_to``
-         filter set (same semantics as ``history_list``). A large ``limit`` is
-         applied to keep memory bounded.
-    """
     core = _core_history()
 
     ids = params.get("ids") or []

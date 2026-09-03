@@ -1,4 +1,3 @@
-// Regression test for the renderer-authenticated Canvas flush before quit.
 const Module = require('module');
 const { EventEmitter } = require('events');
 const fs = require('fs');

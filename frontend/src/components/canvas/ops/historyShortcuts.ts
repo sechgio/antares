@@ -1,4 +1,3 @@
-/** Resolve Ctrl/Cmd+Z / Shift+Z / Y to undo|redo. Uses `code` so Shift/CapsLock work. */
 export function matchHistoryShortcut(e: {
   ctrlKey: boolean;
   metaKey: boolean;

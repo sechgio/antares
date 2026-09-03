@@ -1,5 +1,3 @@
-// Regression test: killing the backend during app shutdown must not block the
-// main process on Windows while taskkill runs.
 const { EventEmitter } = require('events');
 const childProcess = require('child_process');
 
@@ -82,7 +80,6 @@ async function run() {
     assert(syncTaskkillCalls === 0, 'Shutdown should not use blocking taskkill');
     assert(asyncTaskkillCalls === 1, 'Shutdown should schedule taskkill asynchronously on Windows');
 
-    // 4.4: manualRestart must not undo quit / spawn a zombie after killPython.
     const spawnBefore = spawnCount;
     const restarted = await manualRestart(true, { force: true });
     assert(restarted === false, 'manualRestart aborts when shutdown is in progress');

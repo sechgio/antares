@@ -24,7 +24,6 @@ const sanitizeOutputStem = (value: string) =>
     .replace(/^\.+/, '')
     .replace(/^[_\. ]+|[_\. ]+$/g, '');
 
-/** Stem of a bare name/key — mirrors ``Path(...).stem`` (last suffix only). */
 const nameStem = (name: string) =>
   name.includes('.') ? name.slice(0, name.lastIndexOf('.')) : name;
 
@@ -35,11 +34,6 @@ type MappingLookupIndex = {
   conflictedStemsLower: Set<string>;
 };
 
-/**
- * Precompute tolerant lookup matching backend ``MappingIndex``:
- * exact / case-insensitive name, then stem fallback — disabled when multiple
- * keys share a stem with disagreeing RENOMBRE values.
- */
 export const buildMappingLookupIndex = (mapping: Record<string, string>): MappingLookupIndex => {
   const exact = new Map<string, string>();
   const lower = new Map<string, string>();

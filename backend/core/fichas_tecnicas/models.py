@@ -1,4 +1,3 @@
-"""Domain models for Fichas Técnicas (dict-normalized, mirror of frontend types)."""
 
 from __future__ import annotations
 
@@ -152,7 +151,6 @@ def _normalize_personal(raw: Any) -> list[str]:
 
 
 class FichaTecnica:
-    """Normalization helpers (dicts, not Pydantic — matches technical_reports style)."""
 
     @staticmethod
     def normalize(raw: dict[str, Any] | None) -> dict[str, Any]:
@@ -228,7 +226,6 @@ class FichaTecnica:
 
 
 def template_placeholder_ficha() -> dict[str, Any]:
-    """Blank/demo ficha for PDF plantilla."""
     today = datetime.now().strftime("%Y-%m-%d")
     ficha = create_empty_ficha(0)
     ficha.update(

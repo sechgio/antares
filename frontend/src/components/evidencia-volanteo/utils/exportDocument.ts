@@ -6,12 +6,6 @@ import type { CuadranteRange, LocalImage, LogoAsset } from '../types';
 import { buildExportHtml, imageExportKey } from './buildExportHtml';
 import { resolveCuadranteForPage } from './cuadranteRanges';
 
-/**
- * Build export image maps.
- * - Stageable files use read capabilities for DOCX and non-HTML PDF exports.
- * - Base64 is used when the bridge is unavailable or WeasyPrint needs data:
- *   URIs. file: URLs stay out of the HTML payload.
- */
 export async function buildImagePayload(
   images: LocalImage[],
   options: { needDataUris?: boolean } = {},
@@ -36,7 +30,6 @@ export async function buildImagePayload(
 
     const hasToken = Boolean(imagePaths[exportKey]);
 
-    // WeasyPrint HTML needs data: URIs. DOCX can use capability-backed paths.
     if (needDataUris || !hasToken) {
       const base64 = await fileToBase64(image.file);
       if (!hasToken) {
@@ -117,8 +110,6 @@ export async function exportEvidenciaDocument(
     )
     : undefined;
 
-  // PDF with html: images already live inside HTML data: URIs — skip duplicate
-  // images/Base64/paths on the IPC payload. DOCX (and PDF without html) keep maps.
   const logos: { left_b64?: string; right_b64?: string } = {};
   if (!html) {
     if (leftLogo.b64) logos.left_b64 = leftLogo.b64;

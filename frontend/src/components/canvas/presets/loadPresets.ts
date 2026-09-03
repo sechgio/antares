@@ -1,7 +1,3 @@
-/**
- * Lazy loader for CANVAS_PRESETS so the heavy preset factories stay out of the
- * initial CanvasView chunk until templates are shown or a preset is applied.
- */
 import type { CanvasDocument } from '../types';
 
 export type CanvasPreset = {

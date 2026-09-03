@@ -51,9 +51,6 @@ def test_render_html_prefers_inline_report_over_database(monkeypatch, tmp_path) 
 
 
 def test_html_to_pdf_handler_removed_from_backend() -> None:
-    """html_to_pdf is now handled entirely by Electron's dialog-handlers (NATIVE_METHODS).
-    The backend handler was dead code that was never reachable.
-    """
     assert "html_to_pdf" not in HANDLERS, "html_to_pdf should not be in backend HANDLERS (Electron handles it)"
 
 

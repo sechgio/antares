@@ -1,6 +1,3 @@
-/**
- * Regresión: varios consumidores no deben refrescar el mismo token en paralelo.
- */
 
 function assert(condition, message) {
   if (!condition) {
@@ -92,8 +89,6 @@ async function main() {
     assert(tokens.every((value) => value?.access_token === 'fresh-token'), 'todos reciben el token nuevo');
     assert(savedScopes.length === 1 && savedScopes[0].userKey === 'user-key', 'refresh guarda en el scope capturado');
 
-    // Un refresh iniciado por A no debe guardar su respuesta ni devolverla
-    // después de cambiar a B. B tampoco debe unirse al vuelo de A.
     currentTokens = { access_token: 'expired-a', refresh_token: 'refresh-a', expiry_date: 0 };
     savedScopes.length = 0;
     let releaseA;
@@ -124,7 +119,6 @@ async function main() {
     assert((await refreshA) === null, 'A obsoleto no se entrega después del cambio de sesión');
     assert(savedScopes.length === 1 && savedScopes[0].userKey === 'user-b', 'A obsoleto no se guarda en B');
 
-    // Un invalid_grant de A solo limpia el scope de A, nunca los tokens de B.
     changeUser('user-a');
     currentTokens = { access_token: 'expired-a', refresh_token: 'refresh-a', expiry_date: 0 };
     clearedScopes.length = 0;

@@ -36,22 +36,22 @@ describe('api cache dedupe', () => {
     await api.formatosList();
     mockInvoke.mockResolvedValueOnce({ formats: [{ id: 'f1' }] });
     await api.formatosList();
-    expect(mockInvoke).toHaveBeenCalledTimes(1); // served from cache
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
     mockInvoke.mockResolvedValueOnce({ format: { id: 'f2' } });
     await api.formatosUpload({ nombre: 'n', filename: 'f.pdf', content_b64: 'x' });
-    expect(mockInvoke).toHaveBeenCalledTimes(2); // upload invalidates
+    expect(mockInvoke).toHaveBeenCalledTimes(2);
     mockInvoke.mockResolvedValueOnce({ formats: [{ id: 'f1' }, { id: 'f2' }] });
     await api.formatosList();
     expect(mockInvoke).toHaveBeenCalledTimes(3);
     mockInvoke.mockResolvedValueOnce({ deleted: true });
     await api.formatosDelete('f2');
-    expect(mockInvoke).toHaveBeenCalledTimes(4); // delete invalidates
+    expect(mockInvoke).toHaveBeenCalledTimes(4);
     mockInvoke.mockResolvedValueOnce({ formats: [{ id: 'f1' }] });
     await api.formatosList();
     expect(mockInvoke).toHaveBeenCalledTimes(5);
     mockInvoke.mockResolvedValueOnce({ format: { id: 'f1' } });
     await api.formatosUpdateMapping('f1', {} as never);
-    expect(mockInvoke).toHaveBeenCalledTimes(6); // updateMapping invalidates
+    expect(mockInvoke).toHaveBeenCalledTimes(6);
     mockInvoke.mockResolvedValueOnce({ formats: [{ id: 'f1' }] });
     await api.formatosList();
     expect(mockInvoke).toHaveBeenCalledTimes(7);
@@ -165,16 +165,13 @@ describe('api cache dedupe', () => {
     mockInvoke.mockResolvedValueOnce({ name: 'a' });
     await api.getTheme();
     expect(mockInvoke).toHaveBeenCalledTimes(1);
-    // next getTheme should be cached
     await api.getTheme();
     expect(mockInvoke).toHaveBeenCalledTimes(1);
-    // mutating saveTheme should invalidate
     mockInvoke.mockResolvedValueOnce({ name: 'b' });
     await api.saveTheme({ name: 'b' } as any);
-    // after invalidation, next getTheme should invoke again
     mockInvoke.mockResolvedValueOnce({ name: 'b' });
     await api.getTheme();
-    expect(mockInvoke).toHaveBeenCalledTimes(3); // getTheme, saveTheme, getTheme
+    expect(mockInvoke).toHaveBeenCalledTimes(3);
   });
 
   it('does not cache failed invokes', async () => {
@@ -192,7 +189,6 @@ describe('api cache dedupe', () => {
     await api.formats();
     mockInvoke.mockResolvedValue({ fields: [] });
     await api.getFields();
-    // both cached now
     expect(mockInvoke).toHaveBeenCalledTimes(2);
     invalidateApiCache();
     mockInvoke.mockResolvedValue({ formats: ['JPEG'] });

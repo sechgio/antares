@@ -11,7 +11,6 @@ from backend import main as backend_main
 
 
 def _run_main_until_eof(monkeypatch, *, warm_env: str | None) -> dict[str, int]:
-    """Drive main() through ready handshake then EOF on stdin; count warm calls."""
     counts = {
         "warm_core": 0,
         "warm_pandas_sync": 0,
@@ -66,7 +65,7 @@ def _run_main_until_eof(monkeypatch, *, warm_env: str | None) -> dict[str, int]:
             counts["ready"] += 1
 
     monkeypatch.setattr(backend_main, "send_notification", fake_notify)
-    monkeypatch.setattr(backend_main, "read_message", lambda: None)  # EOF → exit loop
+    monkeypatch.setattr(backend_main, "read_message", lambda: None)
     monkeypatch.setattr(backend_main, "close_connection", lambda: None)
 
     scheduler = MagicMock()
@@ -102,9 +101,7 @@ def test_main_warms_deferred_for_true_yes_env(monkeypatch) -> None:
 
 
 def test_backend_boot_smoke_ready_and_lazy_deferred_methods(tmp_path: Path) -> None:
-    """Subprocess smoke: ready handshake + core/deferred methods resolve (lazy OK)."""
     root = Path(__file__).resolve().parent.parent
-    # Isolate catalog from the developer's real %LOCALAPPDATA%\\Antares DB.
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
     env["LOCALAPPDATA"] = str(tmp_path)
@@ -159,7 +156,6 @@ def test_backend_boot_smoke_ready_and_lazy_deferred_methods(tmp_path: Path) -> N
         canvas = rpc("canvas_list", 2)
         assert canvas.get("error", {}).get("code") != -32601, canvas
 
-        # Deferred module: must resolve (validation error OK; METHOD_NOT_FOUND not OK).
         sellador = rpc("sellador_apply", 3, {})
         assert sellador.get("error", {}).get("code") != -32601, sellador
         assert "error" in sellador or "result" in sellador
@@ -229,7 +225,6 @@ def test_dispatch_uses_heavy_scheduler_for_heavy_methods(monkeypatch) -> None:
 
 
 def test_heavy_methods_include_fichas_and_evidencia() -> None:
-    """Long PDF/import handlers must not run on the light pool."""
     assert "db_fields_update" in backend_main.HEAVY_METHODS
     assert "db_fields_reset" in backend_main.HEAVY_METHODS
     assert "db_parse_mapping" in backend_main.HEAVY_METHODS
@@ -248,21 +243,16 @@ def test_heavy_methods_include_fichas_and_evidencia() -> None:
 
 
 def test_classify_init_db_failure_is_fatal_message() -> None:
-    """Document expected stderr phrase used by Electron fatal classification."""
-    # The spawner looks for this substring in startup error / stderr tails.
     assert "init_db failed" in "init_db failed during startup: disk full"
 
 
 def test_sync_methods_are_liveness_safe() -> None:
-    """version/process_status stay off the pool so health probes never starve."""
     assert "version" in backend_main.SYNC_METHODS
     assert "process_status" in backend_main.SYNC_METHODS
-    # Sync methods must remain cheap — never also classified as heavy work.
     assert backend_main.SYNC_METHODS.isdisjoint(backend_main.HEAVY_METHODS)
 
 
 def test_process_start_is_not_heavy() -> None:
-    """Start only spawns a job thread; must not consume heavy slots."""
     assert "process_start" not in backend_main.HEAVY_METHODS
 
 
@@ -299,7 +289,6 @@ def test_maybe_log_ipc_timing_verbose_logs_fast_handlers(monkeypatch) -> None:
 
 
 def test_main_emits_ready_immediately_before_reading_stdin(monkeypatch) -> None:
-    """The ready handshake must mean the backend can accept IPC immediately."""
     events: list[str] = []
 
     class FakeScheduler:
@@ -426,7 +415,6 @@ def test_main_emits_ready_after_opt_in_warm_deferred(monkeypatch) -> None:
 
 
 def test_main_does_not_emit_ready_if_shutdown_arrives_during_startup(monkeypatch) -> None:
-    """A process already stopping must never advertise operational readiness."""
     notifications: list[str] = []
 
     class FakeScheduler:
@@ -465,9 +453,6 @@ def test_main_does_not_emit_ready_if_shutdown_arrives_during_startup(monkeypatch
 
 
 def test_submit_handler_sends_response_when_scheduler_submit_raises(monkeypatch) -> None:
-    """Si submit_heavy/submit_light lanza una excepción que no es SchedulerBusy
-    (p.ej. RuntimeError tras shutdown, o BrokenThreadPool), el caller debe
-    recibir una respuesta JSON-RPC de error en vez de bloquear hasta timeout."""
 
     class BrokenScheduler:
         def submit_heavy(self, fn, *args, **kwargs):  # type: ignore[no-untyped-def]
@@ -496,7 +481,6 @@ def test_submit_handler_sends_response_when_scheduler_submit_raises(monkeypatch)
 
 
 def test_submit_handler_rejects_unexpected_memory_guard_failure(monkeypatch) -> None:
-    """A failed pre-queue memory check must not silently enqueue its payload."""
     from backend.handlers import canvas as canvas_handlers
 
     class FakeScheduler:
@@ -532,8 +516,6 @@ def test_submit_handler_rejects_unexpected_memory_guard_failure(monkeypatch) -> 
 
 
 def test_main_resolves_deferred_method_in_worker_not_reader(monkeypatch) -> None:
-    """Un método de módulo deferred (no cargado) se resuelve DENTRO del worker:
-    el reader no debe importar el módulo (ubicaciones/sellador ~120-450 ms)."""
 
     loaded: dict[str, object] = {}
     reads: list[str] = []
@@ -552,7 +534,7 @@ def test_main_resolves_deferred_method_in_worker_not_reader(monkeypatch) -> None
             pass
 
         def get(self, method: str, default=None):
-            reads.append(method)  # import ocurre en el worker
+            reads.append(method)
             return loaded.get(method, default)
 
         def get_loaded(self, method: str, default=None):
@@ -589,13 +571,10 @@ def test_main_resolves_deferred_method_in_worker_not_reader(monkeypatch) -> None
 
     assert calls, "método deferred debe enviarse al scheduler (worker)"
     assert calls[0][0] == "heavy" or calls[0][0] == "light", "deferred va a una lane"
-    # El handler NO se resuelve en el reader: get() (que importa) se llama
-    # dentro del worker, no antes del submit.
     assert reads == [], "el reader no debe importar módulos deferred"
 
 
 def test_main_unknown_method_rejected_without_import(monkeypatch) -> None:
-    """Método desconocido: error MethodNotFound sin intentar importar nada."""
 
     class StrictHandlers:
         def warm_core(self) -> None:

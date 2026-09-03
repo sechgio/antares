@@ -16,7 +16,6 @@ interface StatusPickerProps {
   columns?: BoardColumn[];
   label?: string;
   disabled?: boolean;
-  /** Compact chip for table cells; default is form-sized. */
   size?: 'sm' | 'md';
   className?: string;
 }

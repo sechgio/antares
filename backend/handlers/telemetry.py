@@ -1,7 +1,3 @@
-"""RUM telemetry sink: frontend web-vitals → stderr.
-
-Stores no PII; logs are sampled (10%) on the frontend.
-"""
 from __future__ import annotations
 
 import logging

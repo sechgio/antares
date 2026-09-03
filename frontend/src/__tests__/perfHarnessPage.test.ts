@@ -2,15 +2,6 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 
-/**
- * Guard for the Canvas perf harness page (dev-only entry).
- *
- * perfHarness.tsx measures real frame cadence while driving the Artboard
- * gesture pipeline. It is served by Vite in `npm run dev` via
- * perf-harness.html and must NOT ship in the production build/installer
- * (the production rollup inputs default to index.html only).
- */
-
 const FRONTEND_DIR = path.resolve(__dirname, '..', '..');
 const HARNESS_HTML = path.join(FRONTEND_DIR, 'perf-harness.html');
 const INDEX_HTML = path.join(FRONTEND_DIR, 'index.html');

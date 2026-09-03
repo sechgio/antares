@@ -1,4 +1,3 @@
-"""Índice de mapeo ID → RENOMBRE con lookup O(1) y validación de colisiones."""
 
 from __future__ import annotations
 
@@ -9,7 +8,6 @@ from backend.utils.validators import sanitizar_nombre
 
 
 class MappingIndex:
-    """Índice precalculado para lookup tolerante (nombre, stem, case-insensitive)."""
 
     def __init__(self, file_mapping: dict[str, str]) -> None:
         self.raw = dict(file_mapping)
@@ -57,7 +55,6 @@ class MappingIndex:
                 self._lower[stem_l] = value
 
     def lookup(self, filename: str) -> str | None:
-        """Devuelve el valor RENOMBRE crudo (sin extensión garantizada)."""
         if not self.raw:
             return None
         name = Path(filename).name
@@ -66,7 +63,6 @@ class MappingIndex:
             return self._exact[name]
         if name.lower() in self._lower:
             return self._lower[name.lower()]
-        # Stem fallback is disabled when multiple keys disagree on that stem.
         if stem in self._conflicted_stems or stem.lower() in self._conflicted_stems_lower:
             return None
         if stem in self._exact:
@@ -76,7 +72,6 @@ class MappingIndex:
         return None
 
     def resolve_output_name(self, filename: str) -> str | None:
-        """Nombre de salida final con extensión del archivo origen."""
         mapped = self.lookup(filename)
         if mapped is None:
             return None
@@ -105,16 +100,13 @@ class MappingIndex:
         stems: set[str],
         stems_lower: set[str],
     ) -> bool:
-        """Same membership rules as ``_id_matches_file`` over prebuilt sets."""
         key_lower = id_key.lower()
         stem_key = Path(id_key).stem.lower()
         if id_key in names or key_lower in names_lower:
             return True
-        # file_stem == id_key  OR  file_stem.lower() in {stem_key, key_lower}
         return id_key in stems or stem_key in stems_lower or key_lower in stems_lower
 
     def compute_stats(self, file_paths: list[str]) -> dict[str, Any]:
-        """Calcula coincidencias, huérfanos y colisiones sin releer Excel."""
         file_names = [Path(f).name for f in file_paths if f]
         matched_names: list[str] = []
         for name in file_names:
@@ -147,7 +139,6 @@ class MappingIndex:
         }
 
     def find_collisions(self, file_paths: list[str]) -> list[dict[str, Any]]:
-        """Detecta varios archivos que quedarían con el mismo nombre de salida."""
         grouped: dict[str, tuple[str, list[str]]] = {}
         for fpath in file_paths:
             if not fpath:

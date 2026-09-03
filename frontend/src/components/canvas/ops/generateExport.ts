@@ -2,7 +2,6 @@ import { matchesRecordId, normalizeRecordId } from '../runtime/excel';
 
 export type GenerateExportScope = 'single' | 'all';
 
-/** Indices of rows to include in PDF export (mirrors Generador Reportes). */
 export function selectGenerateRowIndices(options: {
   rows: Record<string, string>[];
   rowIndex: number;

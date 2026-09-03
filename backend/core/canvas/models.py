@@ -1,4 +1,3 @@
-"""CanvasDocument schema — Layer[] inspired by shadcn/designer (reference only)."""
 
 from __future__ import annotations
 
@@ -13,7 +12,6 @@ from typing import Any, cast
 
 
 def _load_canvas_schema() -> dict[str, Any]:  # allowlist: dict[str, Any]
-    """Load shared/canvas-schema.json as single source of truth; fallback to hardcoded."""
     try:
         p = pathlib.Path(__file__).resolve().parents[3] / "shared" / "canvas-schema.json"
         if p.exists():
@@ -254,7 +252,6 @@ _ALLOWED_BOOLEAN_OPS = frozenset({"union", "subtract", "intersect", "exclude"})
 
 
 def _normalize_boolean_ops(raw: Any) -> list[dict[str, str]] | None:
-    """Keep valid boolean ops entries; omit key entirely if none valid."""
     if not isinstance(raw, list) or not raw:
         return None
     ops_out: list[dict[str, str]] = []
@@ -276,7 +273,6 @@ _FRAME_CONSTRAINTS = frozenset({"start", "end", "center", "scale"})
 
 
 def _normalize_auto_layout(raw: Any) -> dict[str, Any] | None:  # allowlist: dict[str, Any]
-    """Keep a valid autoLayout object; omit key entirely if invalid (no defaults)."""
     if not isinstance(raw, dict):
         return None
     direction = raw.get("direction")
@@ -313,7 +309,6 @@ def _normalize_frame_constraint(raw: Any) -> str | None:
 
 
 def _normalize_track_list(raw: Any) -> list[float] | None:
-    """Keep positive float track weights; omit key if invalid (do not invent defaults)."""
     if not isinstance(raw, list) or not raw:
         return None
     tracks: list[float] = []
@@ -322,7 +317,7 @@ def _normalize_track_list(raw: Any) -> list[float] | None:
             value = float(item)
         except (TypeError, ValueError):
             return None
-        if value <= 0 or value != value:  # NaN check
+        if value <= 0 or value != value:
             return None
         tracks.append(value)
     return tracks
@@ -517,10 +512,6 @@ def normalize_document(raw: Any) -> dict[str, Any]:  # allowlist: dict[str, Any]
 
     raw_pages = raw.get("pages")
     pages = _normalize_pages(raw_pages)
-    # Legacy v1 docs may have pages=[] but layers with pageIndex>0. Synthesize
-    # missing pages so we don't collapse multipage docs to 1 page - only when
-    # the doc had no pages to begin with (v1). Normal docs with stray pageIndex
-    # still clamp to last_page (tested by test_normalize_clamps_out_of_range).
     is_legacy_no_pages = not isinstance(raw_pages, list) or len(raw_pages) == 0
     if is_legacy_no_pages and layers:
         try:
@@ -530,15 +521,11 @@ def normalize_document(raw: Any) -> dict[str, Any]:  # allowlist: dict[str, Any]
         if max_idx >= len(pages):
             for i in range(len(pages), max_idx + 1):
                 pages.append({"id": _new_id(), "name": f"Página {i + 1}"})
-    # Clamp pageIndex into the valid page range so a stale/legacy index cannot
-    # create invisible "ghost" layers on a non-existent page.
     last_page = len(pages) - 1
     layers = [
         {**layer, "pageIndex": min(max(0, int(layer.get("pageIndex", 0))), last_page)} for layer in layers
     ]
 
-    # Prune dangling parentId references and self-cycles so dropped layers
-    # never leave broken pointers or loops in the document tree.
     valid_ids = {layer["id"] for layer in layers}
     for layer in layers:
         parent = layer.get("parentId")
@@ -563,7 +550,6 @@ def normalize_document(raw: Any) -> dict[str, Any]:  # allowlist: dict[str, Any]
 CanvasDocument = dict[str, Any]  # allowlist: dict[str, Any]
 
 def next_copy_name(name: str, existing_names: set[str] | None = None) -> str:
-    """Build a unique copy name: 'X (copia)', 'X (copia 2)', … without nesting suffixes."""
     taken = existing_names or set()
     raw = (name or "").strip() or "Sin título"
     base = re.sub(r"(?: \(copia(?: \d+)?\))+$", "", raw).strip() or raw
@@ -599,8 +585,6 @@ def duplicate_document(
             if parent in id_map:
                 layer["parentId"] = id_map[parent]
             else:
-                # Parent was not duplicated (orphan reference in source) — drop
-                # the dangling id instead of pointing at a non-existent layer.
                 layer.pop("parentId", None)
         meta = layer.get("meta")
         if isinstance(meta, dict):

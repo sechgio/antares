@@ -62,7 +62,6 @@ describe('canvas perf hot path', () => {
     }
     const elapsed = performance.now() - t0;
     expect(current).not.toBe(layers);
-    // Loose CI budget (~16ms/frame × 60 would be 960ms; we expect far less for pure ops).
     expect(elapsed).toBeLessThan(250);
   });
 
@@ -239,7 +238,6 @@ describe('canvas perf hot path', () => {
     expect(layerNeedsDocumentLayers(bool)).toBe(true);
     const layersA = [mask, masked];
     const layersB = [mask, { ...masked, name: 'renamed-unrelated' }];
-    // Same mask layer ref → masked node skips re-render despite array identity change.
     expect(documentLayersRelevantEqual(masked, layersA, layersB)).toBe(true);
     const layersC = [{ ...mask, name: 'mask-moved' }, masked];
     expect(documentLayersRelevantEqual(masked, layersA, layersC)).toBe(false);

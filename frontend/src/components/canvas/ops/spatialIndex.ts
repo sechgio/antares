@@ -1,27 +1,16 @@
-/**
- * Lightweight spatial index (uniform grid) for fast layer hit-testing.
- * Replaces O(n) linear scans in marquee selection and pointer hit-tests
- * with O(1) cell lookup + small candidate set.
- *
- * Rebuilt per gesture frame from the current layers array (cheap for <200 layers).
- * For documents with hundreds of layers this avoids scanning all bounds per query.
- */
 
 import type { CanvasLayer } from '../types';
 import { layerBounds } from './layerBounds';
 
 export type BBox = { x: number; y: number; w: number; h: number };
 
-type Cell = string[]; // layer ids
+type Cell = string[];
 
 export interface SpatialIndex {
-  /** Query all layer ids whose cell overlaps the given rect. */
   query(rect: BBox): string[];
-  /** Point hit-test: returns layer ids in the cell containing (x,y). */
   hitTest(x: number, y: number): string[];
 }
 
-/** Cell size in mm. 20mm balances granularity vs. overhead for A4 (210×297). */
 const CELL_SIZE_MM = 20;
 
 function cellKey(cx: number, cy: number): string {
@@ -34,11 +23,6 @@ function rectsOverlap(a: BBox, b: BBox): boolean {
 
 const spatialIndexCache = new WeakMap<CanvasLayer[], SpatialIndex>();
 
-/**
- * Build a spatial index from the given layers.
- * Only indexes transformable layers (non-frame, visible, unlocked).
- * `hitTest` returns candidates top-most first (higher document index wins).
- */
 export function buildSpatialIndex(layers: CanvasLayer[]): SpatialIndex {
   const cached = spatialIndexCache.get(layers);
   if (cached) return cached;
@@ -110,7 +94,6 @@ export function buildSpatialIndex(layers: CanvasLayer[]): SpatialIndex {
         hits.push(id);
       }
     }
-    // Top-most first (document array order = paint order).
     hits.sort((a, b) => (zOrder.get(b) ?? 0) - (zOrder.get(a) ?? 0));
     return hits;
   }

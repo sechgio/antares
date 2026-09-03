@@ -1,8 +1,3 @@
-/**
- * Exhaustive frozen-exe smoke: every Electron BACKEND_METHODS entry must
- * return a JSON-RPC result or structured error — never ModuleNotFoundError
- * (the lazy-registry packaging regression).
- */
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -56,7 +51,6 @@ function sendNext() {
     const fails = results.filter((r) => !r.ok);
     console.log(`\nSUMMARY total=${results.length} ok=${results.length - fails.length} fail=${fails.length}`);
     for (const f of fails) console.error(`  FAIL ${f.method}: ${f.detail}`);
-    // Spot-check templates count
     const templates = results.find((r) => r.method === 'templates_list');
     if (templates && templates.count != null) {
       console.log(`templates_list count=${templates.count}`);

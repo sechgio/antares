@@ -13,13 +13,11 @@ DEFAULT_DB_PATH = user_data_path("technical_reports.json") if getattr(sys, "froz
 
 _backup_corrupt_file = backup_corrupt_file
 
-# Module-level singleton — prevents concurrent instances from clobbering each other's data.
 _db_instance: TechnicalReportsDB | None = None
 _db_instance_lock = threading.Lock()
 
 
 def get_reports_db(db_path: str | Path | None = None) -> TechnicalReportsDB:
-    """Return the process-wide TechnicalReportsDB singleton."""
     global _db_instance
     if _db_instance is None:
         with _db_instance_lock:
@@ -36,7 +34,6 @@ class TechnicalReportsDB(JsonDocumentStore):
     def get(self, report_id: str) -> dict[str, Any] | None:
         with self._lock:
             item = self._items.get(str(report_id))
-            # Return a fresh normalized copy so edit forms cannot mutate storage.
             return TechnicalReport.normalize(item) if item else None
 
     def create(self, report: dict[str, Any]) -> dict[str, Any]:
@@ -74,14 +71,12 @@ class TechnicalReportsDB(JsonDocumentStore):
             return imported
 
     def get_unique_cs(self) -> list[str]:
-        """Return sorted unique CS values without full normalization overhead."""
         with self._lock:
             return sorted(
                 {r.get("header", {}).get("cs", "") for r in self._items.values() if r.get("header", {}).get("cs")}
             )
 
     def get_unique_contratista(self, cs: str | None = None) -> list[str]:
-        """Return sorted unique contratista values, optionally filtered by CS."""
         with self._lock:
             all_items = self._items.values()
             filtered_items = [r for r in all_items if r.get("header", {}).get("cs") == cs] if cs else list(all_items)

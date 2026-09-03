@@ -25,7 +25,6 @@ describe('isOpenDocumentDirty', () => {
   });
 
   it('is clean when undo history alone would have been true but unsaved is false', () => {
-    // Restored undo stack alone is not dirty; performing undo sets hasUnsavedEdits.
     expect(isOpenDocumentDirty(false, false, false)).toBe(false);
   });
 });
@@ -174,7 +173,6 @@ describe('applyLivePanelLayerChange', () => {
     const lockedGrid: typeof grid = { ...grid, locked: true };
     const next = applyLivePanelLayerChange(layers, grid, lockedGrid);
     const nextSlot = next.find((l) => l.id === 's1')!;
-    // Must keep custom cell size/position (e.g. after "Mismo tamaño para todos").
     expect(parseMm(nextSlot.cssVars['--width'])).toBeCloseTo(30, 5);
     expect(parseMm(nextSlot.cssVars['--height'])).toBeCloseTo(20, 5);
     expect(parseMm(nextSlot.cssVars['--translate-x'])).toBeCloseTo(19, 5);

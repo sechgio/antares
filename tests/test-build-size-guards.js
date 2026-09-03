@@ -1,4 +1,3 @@
-// Guardrails for keeping packaged app size under control.
 const fs = require('fs');
 const path = require('path');
 
@@ -25,16 +24,10 @@ const spec = readProjectFile('backend', 'backend.spec');
 for (const moduleName of ['scipy', 'numba', 'llvmlite', 'torch', 'tensorflow', 'cv2']) {
   assert(spec.includes(`'${moduleName}'`) || spec.includes(`"${moduleName}"`), `PyInstaller should exclude optional heavy module ${moduleName}`);
 }
-// pandas submodules (pandas._testing, pandas.io.json, pandas.io.parquet,
-// pandas.io.sql) are imported internally by pandas itself — excluding them
-// causes ModuleNotFoundError at startup in the frozen build. They must NOT
-// be in the excludes list.
 for (const moduleName of ['pandas._testing', 'pandas.io.json', 'pandas.io.parquet', 'pandas.io.sql']) {
   const inExcludes = new RegExp(`excludes=\\[[\\s\\S]*?'${moduleName.replace(/\./g, '\\.').replace(/'/g, "\\'")}'`).test(spec);
   assert(!inExcludes, `PyInstaller must NOT exclude ${moduleName} (pandas imports it internally)`);
 }
-// The spec uses a for-loop over a tuple of package names, so we check that
-// each package name appears in the collect_submodules section.
 assert(spec.includes("'pandas'") && spec.includes('collect_submodules'), 'PyInstaller should collect all pandas submodules via collect_submodules');
 assert(spec.includes("'openpyxl'") && spec.includes('collect_submodules'), 'PyInstaller should collect all openpyxl submodules via collect_submodules');
 assert(spec.includes("'weasyprint'") && spec.includes('collect_submodules'), 'PyInstaller should collect all weasyprint submodules via collect_submodules');

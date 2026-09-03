@@ -1,4 +1,3 @@
-"""Regression tests for PDF preview raster sizing."""
 
 from __future__ import annotations
 
