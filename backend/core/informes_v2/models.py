@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any
+
+from backend.utils.coercion import safe_int as _safe_int
+from backend.utils.coercion import safe_str as _safe_str
 
 REPORT_TYPES = {"ELEVADO", "ENTERRADO", "SEMIENTERRADO", "APOYADO", "CISTERNA"}
 DIAMETERS = ["2", "4", "6", "8", "10", "12", "14", "16"]
@@ -20,26 +23,6 @@ MEDIDA_FIELDS = [
 
 def report_id_from_number(value: int) -> str:
     return f"IV2-{int(value):04d}"
-
-
-def _safe_int(value: Any, default: int = 0) -> int:
-    if value is None or value == "":
-        return default
-    if isinstance(value, (datetime, date)):
-        return default
-    try:
-        return int(float(value))
-    except (TypeError, ValueError):
-        return default
-
-
-def _safe_str(value: Any, default: str = "") -> str:
-    if value is None:
-        return default
-    if isinstance(value, (datetime, date)):
-        return value.strftime("%Y-%m-%d")
-    text = str(value).strip()
-    return text or default
 
 
 def _diameter_map(source: dict[str, Any] | None = None) -> dict[str, int]:

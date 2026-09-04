@@ -1,4 +1,4 @@
-import { DragEvent, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { Crop, FileDown, GripVertical, Image as ImageIcon, Loader2, Trash2 } from 'lucide-react';
@@ -34,6 +34,10 @@ const chipBtn =
 const iconBtn =
   'flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-secondary)] transition-[color,background-color,transform] duration-100 hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] active:scale-[0.96] disabled:pointer-events-none disabled:opacity-25';
 
+const QUEUE_VIRTUALIZATION_THRESHOLD = 100;
+const QUEUE_ROW_HEIGHT = 48;
+const QUEUE_OVERSCAN = 6;
+
 function statusColor(item: ImageItem): string {
   if (item.excluded) return 'var(--text-secondary)';
   if (item.status === 'error') return 'var(--accent-red)';
@@ -67,12 +71,48 @@ export default function QueuePanel({
   const { t } = useTranslation();
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [queueScrollTop, setQueueScrollTop] = useState(0);
+  const [queueViewportHeight, setQueueViewportHeight] = useState(480);
+  const queueScrollRef = useRef<HTMLDivElement>(null);
+  const isVirtualized = items.length >= QUEUE_VIRTUALIZATION_THRESHOLD;
   const downloadNameMap = useMemo(
     () => buildExportNameMap(items, settings),
     [items, settings]
   );
   const pendingCount = items.filter(i => i.status === 'pending' && !i.excluded).length;
   const allSelected = items.length > 0 && items.every((item) => item.selected);
+
+  useEffect(() => {
+    if (!isVirtualized) return undefined;
+
+    const scrollElement = queueScrollRef.current;
+    if (!scrollElement) return undefined;
+
+    const updateViewport = () => {
+      const rect = scrollElement.getBoundingClientRect();
+      setQueueViewportHeight(Math.max(1, rect.height || scrollElement.clientHeight || 480));
+    };
+    const handleScroll = () => setQueueScrollTop(scrollElement.scrollTop);
+
+    updateViewport();
+    scrollElement.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', updateViewport);
+    return () => {
+      scrollElement.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', updateViewport);
+    };
+  }, [isVirtualized, items.length]);
+
+  const startIndex = isVirtualized
+    ? Math.max(0, Math.floor(queueScrollTop / QUEUE_ROW_HEIGHT) - QUEUE_OVERSCAN)
+    : 0;
+  const endIndex = isVirtualized
+    ? Math.min(
+        items.length,
+        startIndex + Math.ceil(queueViewportHeight / QUEUE_ROW_HEIGHT) + QUEUE_OVERSCAN * 2,
+      )
+    : items.length;
+  const visibleItems = items.slice(startIndex, endIndex);
 
   const handleDragStart = (event: DragEvent<HTMLDivElement>, id: string) => {
     setDraggedItemId(id);
@@ -146,9 +186,21 @@ export default function QueuePanel({
         )}
       </header>
 
-      <div className="custom-scrollbar relative flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5 pb-1.5">
-        <div className="flex w-full flex-1 flex-col gap-1">
-          {items.map((item) => {
+      <div
+        ref={queueScrollRef}
+        data-virtualized-queue={isVirtualized ? 'true' : undefined}
+        onScroll={isVirtualized ? () => setQueueScrollTop(queueScrollRef.current?.scrollTop ?? 0) : undefined}
+        className="custom-scrollbar relative flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5 pb-1.5"
+      >
+        <div
+          className="flex w-full flex-1 flex-col gap-1"
+          style={isVirtualized ? { minHeight: items.length * QUEUE_ROW_HEIGHT } : undefined}
+        >
+          {isVirtualized && startIndex > 0 && (
+            <div aria-hidden="true" style={{ height: startIndex * QUEUE_ROW_HEIGHT, flexShrink: 0 }} />
+          )}
+
+          {visibleItems.map((item) => {
             const outputName = downloadNameMap.get(item.id) || item.originalName;
             const isActive = item.id === activeItemId;
             const isReady = !!getResolvedBlob(item);
@@ -256,6 +308,10 @@ export default function QueuePanel({
               </WithHoverTooltip>
             );
           })}
+
+          {isVirtualized && endIndex < items.length && (
+            <div aria-hidden="true" style={{ height: (items.length - endIndex) * QUEUE_ROW_HEIGHT, flexShrink: 0 }} />
+          )}
 
           {items.length === 0 && (
             <div className="flex h-full min-h-[7rem] w-full flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-[var(--border-medium)] text-center">

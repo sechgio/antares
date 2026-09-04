@@ -37,7 +37,7 @@ try {
 } finally {
   try {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
-  } catch { /* no enmascarar un error previo */ }
+  } catch {}
 }
 
 console.log('\nTest 3: Dev mode on linux');

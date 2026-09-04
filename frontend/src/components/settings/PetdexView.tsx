@@ -272,7 +272,6 @@ export default function PetdexView() {
 
   return (
     <div className="flex h-full flex-col gap-3 p-4 animate-fade-in text-[var(--text-primary)]">
-      {/* Toolbar: enable + compact controls + sync */}
       <div className="shrink-0 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2.5">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <div className="flex items-center gap-2 pr-3 border-r border-[var(--border-subtle)]">
@@ -346,7 +345,6 @@ export default function PetdexView() {
         <p className="sr-only">{catalogStatus.detail}</p>
       </div>
 
-      {/* Search + filters */}
       <div className="shrink-0 flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[180px]">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
@@ -406,7 +404,6 @@ export default function PetdexView() {
         )}
       </div>
 
-      {/* Catalog grid */}
       <div className="flex-1 min-h-0 overflow-y-auto rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
         {loading ? (
           <div className="flex h-full items-center justify-center gap-2 text-[11px] text-[var(--text-muted)]">
@@ -472,7 +469,6 @@ export default function PetdexView() {
         )}
       </div>
 
-      {/* Footer */}
       {!loading && filteredPets.length > 0 && (
         <div className="shrink-0 flex items-center justify-between rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1.5">
           <div className="flex items-center gap-2 min-w-0">

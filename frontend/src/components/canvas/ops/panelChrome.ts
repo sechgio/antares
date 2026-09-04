@@ -1,4 +1,3 @@
-
 export type CanvasToolbarPosition = 'top' | 'bottom';
 
 export const PANEL_CHROME_KEYS = {
@@ -22,7 +21,6 @@ export function writeBoolLS(key: string, value: boolean): void {
   try {
     localStorage.setItem(key, String(value));
   } catch {
-    // Quota / private mode — ignore.
   }
 }
 
@@ -34,7 +32,6 @@ export function readToolbarPosition(
     const value = localStorage.getItem(key);
     if (value === 'top' || value === 'bottom') return value;
   } catch {
-    // Private mode / unavailable storage — use the default.
   }
   return fallback;
 }
@@ -43,7 +40,6 @@ export function writeToolbarPosition(key: string, value: CanvasToolbarPosition):
   try {
     localStorage.setItem(key, value);
   } catch {
-    // Quota / private mode — ignore.
   }
 }
 

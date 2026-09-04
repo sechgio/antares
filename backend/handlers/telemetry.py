@@ -5,6 +5,7 @@ import math
 import re
 from typing import Any
 
+from backend.core.observability import log_event
 from backend.handlers.common import with_locale
 
 logger = logging.getLogger(__name__)
@@ -55,15 +56,19 @@ def telemetry(params: dict[str, Any]) -> dict[str, bool]:
     msg = (
         f"rum metric={name} value={value:.4f} rating={rating} id={metric_id} nav={nav_type}"
     )
-    logger.info(
-        msg,
-        extra={
-            "rum_name": name,
-            "rum_value": value,
-            "rum_rating": rating,
-            "rum_id": metric_id,
-            "rum_navigation_type": nav_type,
-        },
+    # Evento estructurado con nombre: dimensiones en campos agregables
+    # (allowlist validado en el sink por observability._rum_safe_field),
+    # message solo como respaldo humano. Sin URL/PII por contrato.
+    log_event(
+        logger,
+        logging.INFO,
+        "rum.metric",
+        message=msg,
+        rum_name=name,
+        rum_value=value,
+        rum_rating=rating,
+        rum_id=metric_id,
+        rum_navigation_type=nav_type,
     )
     return {"ok": True}
 

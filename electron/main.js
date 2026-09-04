@@ -18,6 +18,23 @@ process.on('unhandledRejection', (reason) => {
   console.warn('[main] Unhandled rejection caught:', reason instanceof Error ? reason.message : reason);
 });
 
+// Un throw no capturado en main antes mataba el proceso sin rastro en el JSONL.
+// Registramos el evento (appendFileSync es síncrono: queda en disco) y
+// conservamos el comportamiento de terminación con exit(1).
+process.on('uncaughtException', (err) => {
+  const message = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+  console.error('[main] Uncaught exception:', message);
+  try {
+    appendLogEvent('ERROR', 'app.uncaught_exception', {
+      component: 'electron',
+      outcome: 'failed',
+      reason: err instanceof Error && err.name ? err.name : 'uncaught_exception',
+      message,
+    });
+  } catch {}
+  process.exit(1);
+});
+
 const isDev = !app.isPackaged;
 const { isTrustedRendererFrame } = require('./renderer-trust');
 
@@ -135,7 +152,6 @@ if (typeof ipcMain.on === 'function') {
       const { registerFileInputPath } = require('./dialog-handlers');
       registerFileInputPath(rawPath);
     } catch {
-      // Best effort: callers fall back to staging/base64 if unavailable.
     }
   });
 }
@@ -195,7 +211,7 @@ async function _flushCanvasAndQuit(win) {
   _shutdownOnce();
   _allowQuit = true;
   if (win && !win.isDestroyed()) {
-    try { win.destroy(); } catch { /* already destroyed */ }
+    try { win.destroy(); } catch {}
   }
   app.quit();
 }

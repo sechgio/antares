@@ -49,6 +49,21 @@ export interface FlyerEncabezados {
   detalleZonas: string;
 }
 
+export interface VolantesDraft {
+  records: FlyerRecord[];
+  brand: BrandConfig;
+  footer: FooterConfig;
+  heading: FlyerHeading;
+  encabezados: FlyerEncabezados;
+  layoutMode: LayoutMode;
+  selectedRecordId: string | null;
+}
+
+export interface StoredVolantesDraft extends VolantesDraft {
+  version: 1;
+  updatedAt: number;
+}
+
 export interface ImportResult {
   records: FlyerRecord[];
   warnings: string[];

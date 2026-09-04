@@ -173,7 +173,6 @@ export function subscribeCanvasDocument(
           return true;
         }
       } catch {
-        // The channel status callback remains the source of connection state.
       }
       return false;
     },
@@ -236,7 +235,6 @@ export function subscribeCanvasDocument(
       realtimeAuthSubscriptions.set(topic, authSubscription);
     }
   } catch {
-    // Auth cleanup is best-effort; channel cleanup remains idempotent.
   }
 
   return subscription;

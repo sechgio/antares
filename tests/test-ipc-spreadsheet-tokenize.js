@@ -85,6 +85,11 @@ async function main() {
   assert.deepStrictEqual(tokenized.sheets, []);
 
   const { resolveCapability, revokeCapability } = require('../electron/file-capabilities');
+  const spillResolved = resolveCapability(tokenized.result_file_token, 'read', null);
+  assert.strictEqual(spillResolved.path, spillPath);
+  assert.strictEqual(spillResolved.name, 'spreadsheet-result.json');
+  revokeCapability(tokenized.result_file_token);
+
   const named = _maybeTokenizeResultPaths(
     'informes_v2_export_consolidated_pdf',
     { success: true, filename: 'informe_consolidado.pdf', result_path: spillPath },
@@ -97,8 +102,10 @@ async function main() {
   assert.strictEqual(resolved.name, 'informe_consolidado.pdf', 'custom filename reaches capability');
   revokeCapability(named.result_file_token);
 
-  const passthrough = _maybeTokenizeResultPaths('version', { version: '1' }, null);
-  assert.deepStrictEqual(passthrough, { version: '1' });
+  const passthrough = { version: '1' };
+  assert.strictEqual(_maybeTokenizeResultPaths('version', passthrough, null), passthrough);
+  assert.strictEqual(_maybeTokenizeResultPaths('version', null, null), null);
+  assert.strictEqual(_maybeTokenizeResultPaths('version', 'string', null), 'string');
 
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log('  ✓ spill result_path → result_file_token (path stripped)');

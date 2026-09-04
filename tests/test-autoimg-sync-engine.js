@@ -131,8 +131,8 @@ async function main() {
   assert(builtWithIndex[0] === '4210999' && builtWithIndex[1] === '11111111', 'buildScanResultRow usa rowIndex precalculado');
 
   const applied = applyScanResultsToRows(rows, [
-    { nis: '4210802', count: 2, folders: ['JUAN'] }, // fuera del padrón → ignorado
-    { nis: '4210999', count: 1, folders: ['JUAN'] }, // en padrón → actualiza
+    { nis: '4210802', count: 2, folders: ['JUAN'] },
+    { nis: '4210999', count: 1, folders: ['JUAN'] },
   ], '2026-07-03');
   assert(applied.newRows === 0, 'applyScanResultsToRows no inserta NIS fuera del padrón');
   assert(applied.updated === 1 && applied.matched === 1, 'applyScanResultsToRows solo actualiza filas cambiadas del padrón');

@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextvars
 import json
 import logging
+import math
 import os
 import re
 import sys
@@ -23,6 +24,16 @@ except ImportError:  # pragma: no cover - direct module execution fallback
 _SAFE_TOKEN_RE = re.compile(r"[^a-zA-Z0-9_.:-]")
 _LEVEL_NAMES = {"DEBUG", "INFO", "WARN", "ERROR", "FATAL"}
 _OUTCOMES = {"success", "partial", "degraded", "failed", "timeout", "cancelled", "rejected"}
+
+# RUM web-vitals: allowlist de dimensiones y validación en el sink
+# (ver backend/handlers/telemetry.py para el contrato del payload).
+_RUM_METRIC_NAMES = frozenset({"CLS", "INP", "LCP"})
+_RUM_RATINGS = frozenset({"good", "needs-improvement", "poor", "unknown"})
+_RUM_NAV_TYPES = frozenset(
+    {"navigate", "reload", "back-forward", "back-forward-cache", "prerender", "restore", "unknown"}
+)
+_RUM_ID_PATTERN = re.compile(r"v\d+-\d{13}-\d{13}")
+_RUM_ID_MAX_LENGTH = 30
 _EVENT_FIELDS = {
     "attempt",
     "backend_pid",
@@ -39,6 +50,11 @@ _EVENT_FIELDS = {
     "provider",
     "reason",
     "request_id",
+    "rum_id",
+    "rum_name",
+    "rum_navigation_type",
+    "rum_rating",
+    "rum_value",
     "status_class",
     "stream",
     "view",
@@ -141,9 +157,35 @@ def _level_name(level: int | str) -> str:
     return value if value in _LEVEL_NAMES else "INFO"
 
 
+def _rum_safe_field(key: str, value: Any) -> tuple[bool, Any]:
+    if key == "rum_name":
+        text = str(value or "").strip().upper()
+        return (True, text) if text in _RUM_METRIC_NAMES else (False, None)
+    if key == "rum_value":
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return False, None
+        parsed = float(value)
+        if not math.isfinite(parsed) or parsed < 0:
+            return False, None
+        return True, round(parsed, 4)
+    if key == "rum_rating":
+        text = str(value or "").strip().lower()
+        return (True, text) if text in _RUM_RATINGS else (False, None)
+    if key == "rum_id":
+        text = str(value or "").strip()
+        if not text or len(text) > _RUM_ID_MAX_LENGTH or not _RUM_ID_PATTERN.fullmatch(text):
+            return True, "-"
+        return True, text
+    # rum_navigation_type
+    text = str(value or "").strip().lower()
+    return (True, text) if text in _RUM_NAV_TYPES else (False, None)
+
+
 def _safe_field(key: str, value: Any) -> tuple[bool, Any]:
     if key not in _EVENT_FIELDS:
         return False, None
+    if key.startswith("rum_"):
+        return _rum_safe_field(key, value)
     if key == "message":
         return True, redact_text(value)
     if key == "outcome":

@@ -221,7 +221,6 @@ export default function SelladorView() {
       try {
         fileToken = await stageFileForIpc(file);
       } catch {
-        // A bounded Base64 fallback keeps browser/pathless selection usable.
       }
       if (fileToken) {
         const info = await api.selladorInspectPdf({ pdf_path: fileToken });

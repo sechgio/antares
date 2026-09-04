@@ -246,6 +246,11 @@ function _persistStderrLine(line, sourcePid) {
     error_code: structured?.error_code,
     attempt: structured?.attempt,
     reason: structured?.reason,
+    rum_name: structured?.rum_name,
+    rum_value: structured?.rum_value,
+    rum_rating: structured?.rum_rating,
+    rum_id: structured?.rum_id,
+    rum_navigation_type: structured?.rum_navigation_type,
   });
 }
 
@@ -322,6 +327,16 @@ function _sleep(ms, signal) {
   });
 }
 
+function _emitFatalEvent(message, reason, attempts) {
+  appendLogEvent('ERROR', 'backend.fatal', {
+    component: 'backend',
+    outcome: 'failed',
+    reason,
+    attempt: Number.isInteger(attempts) ? attempts : undefined,
+    message,
+  });
+}
+
 function _enterFatalFromRestartBudget(message) {
   const stderrTail = getStderrTail();
   const fatalMessage = message || `Backend auto-restart budget exhausted (${getAutoRestartLimit()} attempts)`;
@@ -331,6 +346,7 @@ function _enterFatalFromRestartBudget(message) {
   _abortAutoRestart();
   _stopHealthCheck();
   _readyReject?.(new Error(fatalMessage));
+  _emitFatalEvent(fatalMessage, 'restart_budget_exhausted', _restartCount);
   _notifyRenderer('backend.fatal', {
     message: fatalMessage,
     stderrTail,
@@ -424,6 +440,7 @@ async function startPythonBackend(isDev, attempt = 1) {
       _state = STATE.FATAL;
       _clearStartCycle();
       _readyReject?.(err);
+      _emitFatalEvent(err.message, 'startup_error_fatal', attempt);
       _notifyRenderer('backend.fatal', {
         message: err.message,
         stderrTail,
@@ -436,6 +453,7 @@ async function startPythonBackend(isDev, attempt = 1) {
       _state = STATE.FATAL;
       _clearStartCycle();
       _readyReject?.(err);
+      _emitFatalEvent(err.message, 'restart_budget_exhausted', attempt);
       _notifyRenderer('backend.fatal', {
         message: err.message,
         stderrTail,
@@ -505,7 +523,6 @@ function _probeBackendResponsiveness(proc) {
                 return;
               }
             } catch {
-              // Ignore malformed lines
             }
           }
         }
@@ -773,16 +790,20 @@ function _spawn(isDev) {
   spawnedProcess.stdin.on('error', (err) => {
     console.error('[backend-spawner] stdin error:', err.message);
   });
+  const spawnStartedAtMs = Date.now();
 
   spawnedProcess.on('close', (code, signal) => {
     _flushStderr(spawnedPid);
     console.log(`[backend-spawner] Python backend exited (code=${code}, signal=${signal})`);
     const wasReady = _state === STATE.READY;
-    appendLogEvent(wasReady ? 'WARN' : 'INFO', 'backend.exited', {
+    const isCleanShutdown = !!_isShuttingDown;
+    // Un cierre ordenado del backend (quit de la app) no es un fallo:
+    // se registra como INFO/cancelled para no contaminar señales de crash.
+    appendLogEvent(isCleanShutdown ? 'INFO' : (wasReady ? 'WARN' : 'INFO'), 'backend.exited', {
       component: 'backend',
       pid: Number.isInteger(spawnedPid) ? spawnedPid : undefined,
-      outcome: wasReady ? 'failed' : 'cancelled',
-      reason: signal ? 'signal' : 'exit',
+      outcome: isCleanShutdown ? 'cancelled' : (wasReady ? 'failed' : 'cancelled'),
+      reason: isCleanShutdown ? 'shutdown' : (signal ? 'signal' : 'exit'),
     });
     if (pythonProcess && pythonProcess.pid === spawnedPid) {
       pythonProcess = null;
@@ -803,8 +824,6 @@ function _spawn(isDev) {
 
   spawnedProcess.on('error', (err) => {
     console.error('[backend-spawner] Failed to start Python backend:', err);
-    // The handshake promise below will reject on timeout; no dialog here —
-    // let startPythonBackend() decide how to surface the failure.
   });
 
   return new Promise((resolve, reject) => {
@@ -829,11 +848,12 @@ function _spawn(isDev) {
               component: 'backend',
               pid: Number.isInteger(spawnedPid) ? spawnedPid : undefined,
               outcome: 'success',
+              duration_ms: Date.now() - spawnStartedAtMs,
             });
             resolve(spawnedPid);
             return;
           }
-        } catch { /* not JSON yet */ }
+        } catch {}
       }
     };
     spawnedProcess.stdout.on('data', onData);
@@ -864,12 +884,12 @@ function _spawn(isDev) {
 
 function _forceKillProcess(proc) {
   if (!proc || proc.killed) return;
-  try { proc.stdin.end(); } catch { /* ignore */ }
-  try { proc.kill(); } catch { /* ignore */ }
+  try { proc.stdin.end(); } catch {}
+  try { proc.kill(); } catch {}
   if (process.platform === 'win32' && proc.pid && typeof proc.pid === 'number') {
     try {
       execFile('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { stdio: 'ignore', timeout: 5000 }, () => {});
-    } catch { /* process may already be dead */ }
+    } catch {}
   }
 }
 

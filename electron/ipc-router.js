@@ -410,7 +410,12 @@ function _logIpcTelemetry({
   const slow = elapsedMs >= IPC_TELEMETRY_SLOW_MS;
   const large = requestBytes >= IPC_TELEMETRY_LARGE_BYTES || responseBytes >= IPC_TELEMETRY_LARGE_BYTES;
   const normalizedOutcome = outcome === 'ok' ? 'success' : outcome === 'error' ? 'failed' : outcome;
-  if (!_ipcTelemetryVerbose() && !slow && !large && !waitedForDrain && normalizedOutcome !== 'rejected') return;
+  // Línea base de latencia: además de anomalías (slow/large/backpressure/rejected),
+  // muestreo determinístico ~1% del tráfico exitoso para poder derivar p50/p95.
+  // Solo successes: los errores ordinarios rápidos siguen filtrados (contrato del test).
+  const baselineSample = normalizedOutcome === 'success'
+    && ((elapsedMs ^ Math.imul(requestBytes + responseBytes, 2654435761)) >>> 0) % 100 === 0;
+  if (!_ipcTelemetryVerbose() && !slow && !large && !waitedForDrain && normalizedOutcome !== 'rejected' && !baselineSample) return;
 
   const safeRequestId = requestId === null || requestId === undefined
     ? ''
@@ -648,6 +653,14 @@ async function _callBackend(method, params) {
           throw err;
         }
 
+        // Reintento mid-flight estructurado: antes solo console.warn.
+        appendLogEvent('WARN', 'ipc.retry', {
+          component: 'electron',
+          method,
+          attempt: attempt + 1,
+          reason: 'transient_error',
+          outcome: 'degraded',
+        });
         console.warn(`[ipc-router] "${method}" transient failure (attempt ${attempt + 1}/${MID_FLIGHT_RETRIES + 1}): ${msg}. Waiting for backend...`);
         const ready = await waitForReady(STARTUP_WAIT_MS);
         if (!ready) throw _buildUnavailableError();
@@ -697,7 +710,6 @@ function registerIpcHandlers() {
   try {
     isPackaged = require('electron').app.isPackaged;
   } catch {
-    /* tests */
   }
   if (!isPackaged) reloadIpcMethods();
 
@@ -759,7 +771,6 @@ function registerIpcHandlers() {
     try {
       isPackaged = require('electron').app.isPackaged;
     } catch {
-      /* tests */
     }
     return {
       state: getState(),

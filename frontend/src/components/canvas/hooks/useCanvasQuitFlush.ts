@@ -1,6 +1,7 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
 import { api, onNotify } from '../../../api';
 import { acknowledgeCanvasFlush } from '../../../utils/ackCanvasFlush';
+import { reportFrontendEvent } from '../../../utils/observability';
 import { isOpenDocumentDirty } from './useCanvasSync';
 import type { CanvasHistoryHandle } from './useCanvasHistory';
 import type { CanvasDocument } from '../types';
@@ -35,6 +36,8 @@ export function useCanvasQuitFlush({
 
   useEffect(() => {
     flushRef.current = async () => {
+      const startedAt = Date.now();
+      let flushFailed: 'onSave_failed' | 'canvas_save_failed' | undefined;
       try {
         if (panelBaselineRef.current) onPanelCommitLive();
       } catch {}
@@ -61,18 +64,33 @@ export function useCanvasQuitFlush({
         }
       } catch {}
 
-      if (!history.hasUnsavedEditsRef.current && !openDirtyRef.current) return;
-      try {
-        await onSave({ silent: true });
-      } catch {}
-
-      if (history.hasUnsavedEditsRef.current) {
+      if (history.hasUnsavedEditsRef.current || openDirtyRef.current) {
         try {
-          const serialized = await serializeDocumentImages(history.documentRef.current);
-          await api.canvasSave(serialized);
-          history.markSaved();
-        } catch {}
+          await onSave({ silent: true });
+        } catch {
+          flushFailed = 'onSave_failed';
+        }
+
+        if (history.hasUnsavedEditsRef.current) {
+          try {
+            const serialized = await serializeDocumentImages(history.documentRef.current);
+            await api.canvasSave(serialized);
+            history.markSaved();
+          } catch {
+            flushFailed = 'canvas_save_failed';
+          }
+        }
       }
+      // El flush fallido antes era silencioso: el doc podía perderse sin rastro
+      // al cerrar. El ack se mantiene igual (no cuelga el cierre); esto solo
+      // deja evidencia en el JSONL vía renderer-event.
+      reportFrontendEvent({
+        event: 'canvas.quit_flush',
+        level: flushFailed ? 'ERROR' : 'INFO',
+        outcome: flushFailed ? 'failed' : 'success',
+        durationMs: Date.now() - startedAt,
+        reason: flushFailed,
+      });
     };
   }, [
     commitInlineEdit,

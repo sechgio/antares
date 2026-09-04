@@ -276,7 +276,6 @@ export async function processImageItem(
       return await processImageItemInWorker(item, effectiveSettings, plan, signature, signal);
     } catch (error) {
       if (signal?.aborted) throw error;
-      // Fall back to main-thread canvas path (tests / unsupported environments).
     }
   }
 

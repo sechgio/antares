@@ -46,9 +46,7 @@ export default function PreviewPanel({ ficha, logoLeft }: Props) {
           }}
         >
           <div style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          {/* Header: título y número en la misma línea; O.S.N° debajo del número */}
           <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: '10px', gap: '4px' }}>
-            {/* Logo Izquierdo */}
             <div
               style={{
                 background: '#ffffff',
@@ -71,7 +69,6 @@ export default function PreviewPanel({ ficha, logoLeft }: Props) {
             </div>
 
             <div style={{ flex: 1, minWidth: 0 }}>
-              {/* Misma línea: título + número */}
               <div
                 style={{
                   display: 'flex',
@@ -108,7 +105,6 @@ export default function PreviewPanel({ ficha, logoLeft }: Props) {
                   {data.os_numero ? data.os_numero.replace(/^OS-/, '').replace(/-/g, '') : '00000'}
                 </span>
               </div>
-              {/* O.S.N° + rectángulo alineados a la derecha, debajo del número */}
               <div
                 style={{
                   display: 'flex',
@@ -132,7 +128,6 @@ export default function PreviewPanel({ ficha, logoLeft }: Props) {
             </div>
           </div>
 
-          {/* Client Info */}
           <div style={{ display: 'flex', gap: '15px', marginBottom: '6px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
               <label style={{ fontWeight: 'bold', fontSize: '9px', whiteSpace: 'nowrap' }}>Cliente :</label>
@@ -162,7 +157,6 @@ export default function PreviewPanel({ ficha, logoLeft }: Props) {
             </div>
           </div>
 
-          {/* Service and Diagnostic */}
           <div style={{ border: '2px solid #333', marginBottom: '8px' }}>
             <div style={{ display: 'flex' }}>
               <div style={{ flex: 1, borderRight: '2px solid #333' }}>
@@ -238,7 +232,6 @@ export default function PreviewPanel({ ficha, logoLeft }: Props) {
             </div>
           </div>
 
-          {/* Sanitary Condition */}
           <div style={{ border: '2px solid #333', marginBottom: '8px' }}>
             <div
               style={{
@@ -255,7 +248,6 @@ export default function PreviewPanel({ ficha, logoLeft }: Props) {
             <div style={{ padding: '4px', minHeight: '40px', fontSize: '9px' }}>{data.condicion_sanitaria}</div>
           </div>
 
-          {/* Treatment Types */}
           <div style={{ border: '2px solid #333', marginBottom: '8px' }}>
             <div
               style={{
@@ -348,7 +340,6 @@ export default function PreviewPanel({ ficha, logoLeft }: Props) {
             </div>
           </div>
 
-          {/* Products Table */}
           <div style={{ border: '2px solid #333', marginBottom: '8px' }}>
             <div
               style={{
@@ -420,7 +411,6 @@ export default function PreviewPanel({ ficha, logoLeft }: Props) {
             </table>
           </div>
 
-          {/* Corrective Actions */}
           <div style={{ border: '2px solid #333', marginBottom: '8px' }}>
             <div
               style={{
@@ -437,7 +427,6 @@ export default function PreviewPanel({ ficha, logoLeft }: Props) {
             <div style={{ padding: '4px', minHeight: '50px', fontSize: '9px' }}>{data.acciones_correctivas}</div>
           </div>
 
-          {/* Treated Areas */}
           <div style={{ border: '2px solid #333', marginBottom: '8px' }}>
             <div
               style={{
@@ -454,7 +443,6 @@ export default function PreviewPanel({ ficha, logoLeft }: Props) {
             <div style={{ padding: '4px', minHeight: '50px', fontSize: '9px' }}>{data.areas_tratadas}</div>
           </div>
 
-          {/* Technical Staff */}
           <div style={{ border: '2px solid #333', marginBottom: '8px' }}>
             <div
               style={{
@@ -536,7 +524,6 @@ export default function PreviewPanel({ ficha, logoLeft }: Props) {
             </div>
           </div>
 
-          {/* Observations and Recommendations */}
           <div style={{ border: '2px solid #333', marginBottom: '8px' }}>
             <div style={{ display: 'flex' }}>
               <div style={{ flex: 1, padding: '4px', borderRight: '1px solid #333' }}>
@@ -568,7 +555,6 @@ export default function PreviewPanel({ ficha, logoLeft }: Props) {
             </div>
           </div>
 
-          {/* Satisfaction */}
           <div style={{ border: '2px solid #333', marginBottom: 0 }}>
             <div
               style={{
@@ -613,9 +599,7 @@ export default function PreviewPanel({ ficha, logoLeft }: Props) {
           </div>
           </div>
 
-          {/* Firmas + footer al pie del marco A4 (igual que el PDF) */}
           <div style={{ flex: '0 0 auto', marginTop: 'auto' }}>
-          {/* Signatures */}
           <div style={{ display: 'flex', justifyContent: 'space-around', margin: '28px 0 10px 0' }}>
             {['Responsable de Servicio', 'Cliente', 'Director Técnico'].map((label) => (
               <div key={label} style={{ textAlign: 'center' }}>
@@ -625,7 +609,6 @@ export default function PreviewPanel({ ficha, logoLeft }: Props) {
             ))}
           </div>
 
-          {/* Footer — idéntico a sech-gio / PDF */}
           <div
             style={{
               display: 'flex',

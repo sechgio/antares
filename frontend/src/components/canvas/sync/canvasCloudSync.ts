@@ -177,7 +177,7 @@ export async function pushCanvasDocumentResult(
           CLOUD_SYNC_TIMEOUT_MS,
           'canvas-push-skip-preserve-fallback',
         );
-      } catch { /* ignore */ }
+      } catch {}
     }
     return pushResult(doc, false, updatedAt, uid);
   }
@@ -439,7 +439,6 @@ export async function syncCanvasDocuments(options: SyncOptions = {}): Promise<Sy
     }
   })();
   opChain = run.catch(() => {
-    // Sync errors are returned as SyncResult; keep opChain from rejecting forever.
   });
   return run;
 }
@@ -524,7 +523,6 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
         };
       }
     } catch {
-      // Fetch failed — degrade to the old skip behavior.
     }
   } else if (conflictRemoteMeta && options.openDocumentId) {
     try {
@@ -542,7 +540,6 @@ async function runSync(options: SyncOptions): Promise<SyncResult> {
         };
       }
     } catch {
-      // Fetch failed — degrade to the old skip behavior.
     }
   }
 

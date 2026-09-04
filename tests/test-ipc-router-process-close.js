@@ -299,7 +299,6 @@ async function run() {
                 Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: req.id, result: { ok: true } }) + '\n'),
               );
             } catch {
-              /* ignore */
             }
           });
           return true;

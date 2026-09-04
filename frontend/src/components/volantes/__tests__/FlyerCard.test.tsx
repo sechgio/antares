@@ -148,3 +148,45 @@ describe("FlyerCard - Bullet Styles", () => {
     expect(container.textContent).toBe("1. Urb. Los Olivos\n2. Av. Marañón\n3. Jr. Las Palmeras");
   });
 });
+
+describe("FlyerCard - Date line", () => {
+  const renderSheet = (exportMode = false, record = mockRecord) =>
+    render(
+      <SheetPreview
+        brand={DEFAULT_BRAND}
+        heading={{ titulo: "Título Test", subtitulo: "Subtítulo Test" }}
+        encabezados={{
+          limpiezaReservorios: "LIMPIEZA:",
+          zonasAfectadas: "Zonas:",
+          detalleZonas: "Detalle:",
+        }}
+        exportMode={exportMode}
+        layoutMode="2-up"
+        records={[record]}
+      />,
+    );
+
+  it("omits the year in the preview date line", () => {
+    renderSheet();
+
+    const dateLines = screen.getAllByText(/25 de agosto/);
+    expect(dateLines).toHaveLength(2);
+    expect(dateLines.every((line) => !line.textContent?.includes("2026"))).toBe(true);
+  });
+
+  it("uses septiembre for the ninth month", () => {
+    renderSheet(false, { ...mockRecord, fecha: "2026-09-03" });
+
+    const dateLines = screen.getAllByText(/3 de septiembre/);
+    expect(dateLines).toHaveLength(2);
+    expect(dateLines.every((line) => !line.textContent?.includes("setiembre"))).toBe(true);
+  });
+
+  it("omits the year in the export date line", () => {
+    renderSheet(true);
+
+    const dateLines = screen.getAllByText(/25 de agosto/);
+    expect(dateLines).toHaveLength(2);
+    expect(dateLines.every((line) => !line.textContent?.includes("2026"))).toBe(true);
+  });
+});

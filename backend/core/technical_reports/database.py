@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import threading
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -34,14 +35,14 @@ class TechnicalReportsDB(JsonDocumentStore):
     def get(self, report_id: str) -> dict[str, Any] | None:
         with self._lock:
             item = self._items.get(str(report_id))
-            return TechnicalReport.normalize(item) if item else None
+            return deepcopy(TechnicalReport.normalize(item)) if item else None
 
     def create(self, report: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
             normalized = TechnicalReport.normalize(report)
             self._items[normalized["id"]] = normalized
             self._save()
-            return normalized
+            return deepcopy(normalized)
 
     def create_empty(self) -> dict[str, Any]:
         with self._lock:
@@ -49,7 +50,7 @@ class TechnicalReportsDB(JsonDocumentStore):
             report = create_empty_report(next_id)
             self._items[report["id"]] = report
             self._save()
-            return report
+            return deepcopy(report)
 
     def update(self, report_id: str, report: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
@@ -61,14 +62,14 @@ class TechnicalReportsDB(JsonDocumentStore):
             normalized = TechnicalReport.normalize(payload)
             self._items[str(report_id)] = normalized
             self._save()
-            return normalized
+            return deepcopy(normalized)
 
     def replace_all(self, reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
         with self._lock:
             imported = [TechnicalReport.normalize(report) for report in reports]
             self._items = {report["id"]: report for report in imported}
             self._save()
-            return imported
+            return [deepcopy(report) for report in imported]
 
     def get_unique_cs(self) -> list[str]:
         with self._lock:

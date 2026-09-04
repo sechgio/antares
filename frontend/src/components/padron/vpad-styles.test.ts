@@ -33,3 +33,60 @@ describe('volante lurigancho print styles', () => {
     expect(css).toMatch(/\.vpad-sheet\.volante-lurigancho\.is-followup\s*\{[^}]*padding-top:\s*8mm/s);
   });
 });
+
+describe('appearance theme integration', () => {
+  it('keeps preview chrome on shared appearance variables', () => {
+    const css = readFileSync(join(process.cwd(), 'src/components/padron/vpad-styles.css'), 'utf-8');
+
+    const rulePropertyValues = (selector: string, property: string) => {
+      const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return Array.from(css.matchAll(new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`, 'g')))
+        .map((match) => match[1].match(new RegExp(`${property}\\s*:\\s*([^;]+)`))?.[1]?.trim())
+        .filter((value): value is string => Boolean(value));
+    };
+
+    for (const [selector, property] of [
+      ['.vpad-preview-toolbar', 'background'],
+      ['.vpad-preview-toolbar', 'color'],
+      ['.vpad-preview-title h2', 'color'],
+      ['.vpad-badge', 'background'],
+      ['.vpad-badge', 'color'],
+      ['.vpad-btn-nav', 'background'],
+      ['.vpad-btn-nav', 'color'],
+      ['.vpad-preview-scroll-container', 'background-color'],
+      ['.vpad-preview-toolbar .vpad-tool-cluster', 'background'],
+    ] as const) {
+      const values = rulePropertyValues(selector, property);
+      expect(values.length, `${selector} ${property} should be declared`).toBeGreaterThan(0);
+      for (const value of values) {
+        expect(value, `${selector} ${property}`).toMatch(/var\(--vpad-/);
+      }
+    }
+
+    expect(css).toMatch(
+      /\.vpad-preview-toolbar \.vpad-tool-chip,\s*\.vpad-preview-toolbar \.vpad-folio-menu--toolbar \.vpad-folio-menu-trigger\s*\{[^}]*color:\s*var\(--vpad-/s,
+    );
+  });
+});
+
+describe('padron form control borders', () => {
+  it('uses neutral appearance borders until a control receives focus', () => {
+    const css = readFileSync(join(process.cwd(), 'src/components/padron/vpad-styles.css'), 'utf-8');
+
+    expect(css).toMatch(
+      /\.vpad-inset-control,\s*\.vpad-inset-control-wrap input,\s*\.vpad-inset-control-wrap textarea,\s*\.vpad-inset-control-wrap select,\s*\.vpad-inset-control-wrap \.app-date-picker-trigger\s*\{[^}]*border:\s*1px solid var\(--vpad-border-strong\)/s,
+    );
+    expect(css).toMatch(
+      /\.vpad-field input,\s*\.vpad-field select,\s*\.vpad-field textarea,\s*\.vpad-field \.app-date-picker-trigger\s*\{[^}]*border:\s*1px solid var\(--vpad-border-strong\)/s,
+    );
+    expect(css).toMatch(
+      /\.vpad-inset-control:hover,\s*\.vpad-inset-control-wrap input:hover,\s*\.vpad-inset-control-wrap textarea:hover,\s*\.vpad-inset-control-wrap select:hover,\s*\.vpad-inset-control-wrap \.app-date-picker-trigger:hover:not\(:disabled\)\s*\{[^}]*border-color:\s*var\(--vpad-border-strong\)/s,
+    );
+    expect(css).toMatch(
+      /\.vpad-field input:hover,\s*\.vpad-field select:hover,\s*\.vpad-field textarea:hover,\s*\.vpad-field \.app-date-picker-trigger:hover:not\(:disabled\)\s*\{[^}]*border-color:\s*var\(--vpad-border-strong\)/s,
+    );
+    expect(css).toMatch(
+      /\.vpad-inset-control:focus,\s*\.vpad-inset-control-wrap input:focus,\s*\.vpad-inset-control-wrap textarea:focus,\s*\.vpad-inset-control-wrap select:focus,\s*\.vpad-inset-control-wrap \.app-date-picker-trigger:focus-visible,\s*\.vpad-inset-control-wrap \.app-date-picker-trigger\.is-open\s*\{[^}]*border-color:\s*var\(--vpad-accent\)/s,
+    );
+  });
+});

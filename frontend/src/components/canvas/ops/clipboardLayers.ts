@@ -25,7 +25,6 @@ export function writeClipboardLayersText(layers: CanvasLayer[]): void {
   try {
     void navigator.clipboard.writeText(JSON.stringify(layers)).catch(() => {});
   } catch {
-    /* permission / unavailable */
   }
 }
 

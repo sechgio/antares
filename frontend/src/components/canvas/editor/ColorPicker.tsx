@@ -168,7 +168,6 @@ export default function ColorPicker({
       setS(next.s);
       setV(next.v);
     } catch {
-      /* user cancelled */
     }
   };
 

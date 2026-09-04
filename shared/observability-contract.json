@@ -30,7 +30,12 @@
     "stream",
     "bytes",
     "count",
-    "dropped_events"
+    "dropped_events",
+    "rum_name",
+    "rum_value",
+    "rum_rating",
+    "rum_id",
+    "rum_navigation_type"
   ],
   "levels": ["DEBUG", "INFO", "WARN", "ERROR", "FATAL"],
   "outcomes": [

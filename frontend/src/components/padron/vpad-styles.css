@@ -20,11 +20,7 @@
     min-height: 100vh;
     max-height: 100vh;
     overflow: hidden;
-    font-family:
-        system-ui,
-        -apple-system,
-        "Segoe UI",
-        sans-serif;
+    font-family: var(--app-interface-font, system-ui, -apple-system, "Segoe UI", sans-serif);
     -webkit-font-smoothing: antialiased;
     position: relative;
 }
@@ -282,7 +278,7 @@
     min-width: 0;
     margin: 0;
     padding: 4px 8px;
-    border: 1px solid color-mix(in srgb, var(--vpad-accent) 55%, transparent);
+    border: 1px solid var(--vpad-border-strong);
     border-radius: 5px;
     background: transparent;
     color: var(--vpad-primary);
@@ -330,7 +326,7 @@
 .vpad-inset-control-wrap textarea:hover,
 .vpad-inset-control-wrap select:hover,
 .vpad-inset-control-wrap .app-date-picker-trigger:hover:not(:disabled) {
-    border-color: color-mix(in srgb, var(--vpad-accent) 75%, transparent);
+    border-color: var(--vpad-border-strong);
 }
 
 .vpad-inset-control:focus,
@@ -457,7 +453,7 @@
 .vpad-field .app-date-picker-trigger {
     width: 100%;
     padding: 6px 10px;
-    border: 1px solid color-mix(in srgb, var(--vpad-accent) 55%, transparent);
+    border: 1px solid var(--vpad-border-strong);
     border-radius: 7px;
     background: var(--vpad-input);
     color: var(--vpad-primary);
@@ -473,7 +469,7 @@
 .vpad-field select:hover,
 .vpad-field textarea:hover,
 .vpad-field .app-date-picker-trigger:hover:not(:disabled) {
-    border-color: color-mix(in srgb, var(--vpad-accent) 75%, transparent);
+    border-color: var(--vpad-border-strong);
 }
 
 .vpad-field input:focus,
@@ -671,7 +667,7 @@
     height: 100%;
     max-height: 100vh;
     overflow: hidden;
-    background: color-mix(in srgb, var(--vpad-base) 92%, #ebebeb);
+    background: color-mix(in srgb, var(--vpad-base) 92%, var(--vpad-elevated));
 }
 
 .vpad-preview-toolbar {
@@ -683,14 +679,14 @@
     min-height: 45px;
     max-height: 45px;
     padding: 0 16px;
-    background: rgba(247, 247, 248, 0.78);
+    background: color-mix(in srgb, var(--vpad-surface) 82%, transparent);
     backdrop-filter: blur(20px) saturate(180%);
     -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    border-bottom: 1px solid color-mix(in srgb, var(--vpad-primary) 10%, transparent);
     z-index: 20;
     position: sticky;
     top: 0;
-    color: #1f2937;
+    color: var(--vpad-primary);
 }
 
 .vpad-preview-title {
@@ -703,7 +699,7 @@
     font-size: 0.85rem;
     font-weight: 600;
     letter-spacing: -0.01em;
-    color: #1f2937;
+    color: var(--vpad-primary);
     margin: 0;
 }
 
@@ -717,11 +713,11 @@
     font-size: 0.65rem;
     font-weight: 500;
     padding: 4px 10px;
-    background: rgba(0, 0, 0, 0.04);
+    background: color-mix(in srgb, var(--vpad-primary) 7%, transparent);
     border: none;
-    box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.08);
+    box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--vpad-primary) 10%, transparent);
     border-radius: 99px;
-    color: #6b7280;
+    color: var(--vpad-muted);
 }
 
 .vpad-preview-nav {
@@ -733,7 +729,7 @@
 .vpad-preview-nav-info {
     font-size: 0.7rem;
     font-weight: 500;
-    color: #6b7280;
+    color: var(--vpad-muted);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
 }
@@ -748,10 +744,10 @@
     min-height: 28px;
     padding: 0;
     border-radius: 8px;
-    background: rgba(0, 0, 0, 0.04);
+    background: color-mix(in srgb, var(--vpad-primary) 7%, transparent);
     border: none;
-    box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.08);
-    color: #1f2937;
+    box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--vpad-primary) 10%, transparent);
+    color: var(--vpad-primary);
     font-weight: 600;
     font-size: 0.8rem;
     cursor: pointer;
@@ -761,7 +757,7 @@
 }
 
 .vpad-btn-nav:hover:not(:disabled) {
-    background: rgba(0, 0, 0, 0.08);
+    background: color-mix(in srgb, var(--vpad-primary) 12%, transparent);
 }
 
 .vpad-btn-nav:active:not(:disabled) {
@@ -781,12 +777,12 @@
     display: flex;
     align-items: flex-start;
     justify-content: center;
-    background-color: #f5f5f7;
+    background-color: color-mix(in srgb, var(--vpad-base) 92%, var(--vpad-elevated));
     background-image: none;
     min-height: 0;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: thin;
-    scrollbar-color: #aaaaaa #d8d8d8;
+    scrollbar-color: var(--scrollbar-thumb) var(--vpad-elevated);
 }
 
 .vpad-preview-scroll-container::-webkit-scrollbar {
@@ -794,19 +790,19 @@
     height: 7px;
 }
 .vpad-preview-scroll-container::-webkit-scrollbar-track {
-    background: #d8d8d8;
+    background: var(--vpad-elevated);
     border-radius: 4px;
 }
 .vpad-preview-scroll-container::-webkit-scrollbar-thumb {
-    background: #aaaaaa;
+    background: var(--scrollbar-thumb);
     border-radius: 4px;
-    border: 2px solid #d8d8d8;
+    border: 2px solid var(--vpad-elevated);
 }
 .vpad-preview-scroll-container::-webkit-scrollbar-thumb:hover {
-    background: #777777;
+    background: var(--scrollbar-thumb-hover);
 }
 .vpad-preview-scroll-container::-webkit-scrollbar-corner {
-    background: #d8d8d8;
+    background: var(--vpad-elevated);
 }
 
 .vpad-print-doc {
@@ -837,7 +833,7 @@
     top: -12px;
     left: 12%;
     right: 12%;
-    border-top: 1px solid color-mix(in srgb, #000 12%, transparent);
+    border-top: 1px solid color-mix(in srgb, var(--vpad-primary) 12%, transparent);
 }
 
 .vpad-print-page {
@@ -849,7 +845,7 @@
 }
 
 .vpad-print-page:hover {
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 20px 60px color-mix(in srgb, var(--vpad-base) 45%, transparent);
 }
 
 .vpad-print-page:not(:last-child) {
@@ -1490,7 +1486,7 @@
         max-height: none;
         position: static;
         border-right: none;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        border-bottom: 1px solid color-mix(in srgb, var(--vpad-primary) 8%, transparent);
     }
     .vpad-config-panel {
         max-height: none;
@@ -1606,225 +1602,6 @@
     }
 }
 
-[data-theme="light"] .vpad-sidebar {
-    background: #f7f7f8;
-    border-right-color: rgba(0, 0, 0, 0.08);
-}
-
-[data-theme="light"] .vpad-sidebar-header {
-    border-bottom-color: rgba(0, 0, 0, 0.08);
-}
-
-[data-theme="light"] .vpad-brand-title {
-    color: #1f2937;
-}
-
-[data-theme="light"] .vpad-brand-title svg {
-    color: #1f2937;
-}
-
-[data-theme="light"] .vpad-config-panel::-webkit-scrollbar-track {
-    background: #e5e5e5;
-}
-
-[data-theme="light"] .vpad-config-panel::-webkit-scrollbar-thumb {
-    background: #999999;
-    border-color: #e5e5e5;
-}
-
-[data-theme="light"] .vpad-config-panel::-webkit-scrollbar-thumb:hover {
-    background: #777777;
-}
-
-[data-theme="light"] .vpad-section-title {
-    color: #6b7280;
-}
-
-[data-theme="light"] .vpad-inset-group {
-    background: color-mix(in srgb, #ffffff 88%, transparent);
-    box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.08);
-}
-
-[data-theme="light"] .vpad-card {
-    background: #ffffff;
-    border-color: rgba(0, 0, 0, 0.08);
-}
-
-[data-theme="light"] .vpad-upload-zone {
-    border-color: rgba(0, 0, 0, 0.15);
-    background: #ffffff;
-}
-
-[data-theme="light"] .vpad-upload-zone:hover {
-    border-color: rgba(0, 0, 0, 0.25);
-    background: #f0f0f0;
-}
-
-[data-theme="light"] .vpad-upload-zone.active {
-    border-color: rgba(0, 0, 0, 0.25);
-    background: #f0f0f0;
-}
-
-[data-theme="light"] .vpad-upload-zone.loaded {
-    border-color: rgba(0, 0, 0, 0.1);
-}
-
-[data-theme="light"] .vpad-upload-icon {
-    background: rgba(0, 0, 0, 0.06);
-    color: #1f2937;
-}
-
-[data-theme="light"] .vpad-upload-icon-loaded {
-    color: #15803d;
-    background: color-mix(in srgb, #22c55e 12%, transparent);
-}
-
-[data-theme="light"] .vpad-upload-zone:hover .vpad-upload-icon-loaded {
-    background: color-mix(in srgb, #22c55e 18%, transparent);
-}
-
-[data-theme="light"] .vpad-upload-text {
-    color: #1f2937;
-}
-
-[data-theme="light"] .vpad-upload-hint {
-    color: #6b7280;
-}
-
-[data-theme="light"] .vpad-field span,
-[data-theme="light"] .vpad-field label {
-    color: #6b7280;
-}
-
-[data-theme="light"] .vpad-field input,
-[data-theme="light"] .vpad-field select,
-[data-theme="light"] .vpad-field textarea,
-[data-theme="light"] .vpad-field .app-date-picker-trigger {
-    border-color: color-mix(in srgb, var(--vpad-accent) 45%, transparent);
-    background: #ffffff;
-    color: #1f2937;
-}
-
-[data-theme="light"] .vpad-field input:hover,
-[data-theme="light"] .vpad-field select:hover,
-[data-theme="light"] .vpad-field textarea:hover,
-[data-theme="light"] .vpad-field .app-date-picker-trigger:hover:not(:disabled) {
-    border-color: color-mix(in srgb, var(--vpad-accent) 65%, transparent);
-}
-
-[data-theme="light"] .vpad-field input:focus,
-[data-theme="light"] .vpad-field select:focus,
-[data-theme="light"] .vpad-field textarea:focus,
-[data-theme="light"] .vpad-field .app-date-picker-trigger:focus-visible,
-[data-theme="light"] .vpad-field .app-date-picker-trigger.is-open {
-    border-color: var(--vpad-accent);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--vpad-accent) 30%, transparent);
-    background: #ffffff;
-}
-
-[data-theme="light"] .vpad-field input::placeholder,
-[data-theme="light"] .vpad-field textarea::placeholder {
-    color: rgba(0, 0, 0, 0.25);
-}
-
-[data-theme="light"] .vpad-field select option {
-    background: #ffffff;
-    color: #1f2937;
-}
-
-[data-theme="light"] .vpad-action-box {
-    border-top-color: rgba(0, 0, 0, 0.08);
-    background: transparent;
-}
-
-[data-theme="light"] .vpad-actions-row {
-    background: color-mix(in srgb, #000 4%, transparent);
-    box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.08);
-}
-
-[data-theme="light"] .vpad-action-box .vpad-btn-secondary {
-    border-right-color: rgba(0, 0, 0, 0.08);
-}
-
-[data-theme="light"] .vpad-action-box .vpad-btn-secondary,
-[data-theme="light"] .vpad-action-box .vpad-btn-ghost {
-    color: #4b5563;
-}
-
-[data-theme="light"] .vpad-action-box .vpad-btn-secondary:hover,
-[data-theme="light"] .vpad-action-box .vpad-btn-ghost:hover {
-    background: rgba(0, 0, 0, 0.05);
-    color: #111827;
-}
-
-[data-theme="light"] .vpad-btn-primary {
-    background: #1f2937;
-    color: #ffffff;
-}
-
-[data-theme="light"] .vpad-btn-primary:hover {
-    background: #374151;
-    box-shadow: none;
-    filter: none;
-}
-
-[data-theme="light"] .vpad-btn-secondary {
-    background: #ffffff;
-    color: #1f2937;
-    border-color: rgba(0, 0, 0, 0.1);
-}
-
-[data-theme="light"] .vpad-btn-secondary:hover {
-    background: #f0f0f0;
-    border-color: rgba(0, 0, 0, 0.18);
-}
-
-[data-theme="light"] .vpad-btn-ghost {
-    color: #6b7280;
-}
-
-[data-theme="light"] .vpad-btn-ghost:hover {
-    color: #374151;
-    background: rgba(0, 0, 0, 0.05);
-}
-
-[data-theme="light"] .vpad-preview-toolbar {
-    background: color-mix(in srgb, #f7f7f8 78%, transparent);
-    border-bottom-color: rgba(0, 0, 0, 0.08);
-    color: #1f2937;
-}
-
-[data-theme="light"] .vpad-badge {
-    background: rgba(0, 0, 0, 0.04);
-    box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.08);
-    color: #6b7280;
-}
-
-[data-theme="light"] .vpad-btn-nav {
-    background: rgba(0, 0, 0, 0.04);
-    box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.08);
-    color: #1f2937;
-}
-
-[data-theme="light"] .vpad-btn-nav:hover:not(:disabled) {
-    background: rgba(0, 0, 0, 0.08);
-}
-
-[data-theme="light"] .vpad-preview-nav-info {
-    color: #6b7280;
-}
-
-[data-theme="light"] .vpad-preview-scroll-container {
-    background-color: #f5f5f7;
-    background-image: none;
-}
-
-@media (max-width: 1100px) {
-    [data-theme="light"] .vpad-sidebar {
-        border-bottom-color: rgba(0, 0, 0, 0.08);
-    }
-}
-
 .vpad-preview-toolbar .vpad-toolbar-right {
     margin-left: auto;
     display: flex;
@@ -1832,7 +1609,7 @@
     gap: 8px;
     flex-shrink: 0;
     min-width: 0;
-    color: #1f2937;
+    color: var(--vpad-primary);
 }
 
 .vpad-preview-toolbar .vpad-tool-cluster {
@@ -1841,8 +1618,8 @@
     gap: 2px;
     padding: 2px;
     border-radius: 10px;
-    background: rgba(255, 255, 255, 0.65);
-    box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.1);
+    background: color-mix(in srgb, var(--vpad-elevated) 75%, transparent);
+    box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--vpad-primary) 10%, transparent);
 }
 
 .vpad-preview-toolbar .vpad-tool-chip,
@@ -1858,8 +1635,8 @@
     border: none;
     border-radius: 8px;
     background: transparent;
-    color: #111111 !important;
-    -webkit-text-fill-color: #111111;
+    color: var(--vpad-primary) !important;
+    -webkit-text-fill-color: var(--vpad-primary);
     font-family: inherit;
     font-size: 0.875rem;
     font-weight: 600;
@@ -1884,13 +1661,13 @@
 .vpad-preview-toolbar .vpad-folio-menu--toolbar .vpad-folio-menu-chevron {
     flex-shrink: 0;
     opacity: 1 !important;
-    color: #111111 !important;
-    stroke: #111111;
+    color: var(--vpad-primary) !important;
+    stroke: var(--vpad-primary);
 }
 
 .vpad-preview-toolbar .vpad-folio-menu--toolbar .vpad-folio-menu-trigger-label {
-    color: #111111 !important;
-    -webkit-text-fill-color: #111111;
+    color: var(--vpad-primary) !important;
+    -webkit-text-fill-color: var(--vpad-primary);
     font-size: inherit;
     font-weight: inherit;
     overflow: visible;
@@ -1901,15 +1678,15 @@
 
 .vpad-preview-toolbar .vpad-tool-chip:hover,
 .vpad-preview-toolbar .vpad-folio-menu--toolbar .vpad-folio-menu-trigger:hover {
-    background: rgba(0, 0, 0, 0.07);
-    color: #000000 !important;
-    -webkit-text-fill-color: #000000;
+    background: color-mix(in srgb, var(--vpad-primary) 10%, transparent);
+    color: var(--vpad-primary) !important;
+    -webkit-text-fill-color: var(--vpad-primary);
 }
 
 .vpad-preview-toolbar .vpad-tool-chip:hover svg,
 .vpad-preview-toolbar .vpad-folio-menu--toolbar .vpad-folio-menu-trigger:hover .vpad-folio-menu-chevron {
-    color: #000000 !important;
-    stroke: #000000;
+    color: var(--vpad-primary) !important;
+    stroke: var(--vpad-primary);
 }
 
 .vpad-preview-toolbar .vpad-tool-chip:active,
@@ -1929,7 +1706,7 @@
 .vpad-preview-toolbar .vpad-tool-chip.vpad-btn-folio-active,
 .vpad-preview-toolbar .vpad-tool-chip.vpad-btn-folio-open,
 .vpad-preview-toolbar .vpad-folio-menu--toolbar.is-open .vpad-folio-menu-trigger {
-    background: color-mix(in srgb, var(--vpad-accent) 14%, #ffffff);
+    background: color-mix(in srgb, var(--vpad-accent) 14%, var(--vpad-elevated));
     color: var(--vpad-accent) !important;
     -webkit-text-fill-color: var(--vpad-accent);
     font-weight: 600;
@@ -1949,23 +1726,23 @@
 .vpad-preview-toolbar .vpad-tool-chip.vpad-btn-folio-active:hover,
 .vpad-preview-toolbar .vpad-tool-chip.vpad-btn-folio-open:hover,
 .vpad-preview-toolbar .vpad-folio-menu--toolbar.is-open .vpad-folio-menu-trigger:hover {
-    background: color-mix(in srgb, var(--vpad-accent) 22%, #ffffff);
+    background: color-mix(in srgb, var(--vpad-accent) 22%, var(--vpad-elevated));
 }
 
 .vpad-preview-toolbar .vpad-tool-chip-quiet {
-    color: #1f1f1f !important;
-    -webkit-text-fill-color: #1f1f1f;
+    color: var(--vpad-secondary) !important;
+    -webkit-text-fill-color: var(--vpad-secondary);
     font-weight: 600;
 }
 
 .vpad-preview-toolbar .vpad-tool-chip-quiet svg {
-    color: #1f1f1f !important;
-    stroke: #1f1f1f;
+    color: var(--vpad-secondary) !important;
+    stroke: var(--vpad-secondary);
 }
 
 .vpad-preview-toolbar .vpad-tool-chip-quiet:hover {
-    color: #000000 !important;
-    -webkit-text-fill-color: #000000;
+    color: var(--vpad-primary) !important;
+    -webkit-text-fill-color: var(--vpad-primary);
 }
 
 .vpad-folio-wrapper {
@@ -2220,7 +1997,7 @@
     width: 18px;
     height: 18px;
     border-radius: 999px;
-    background: #ffffff;
+    background: var(--vpad-surface);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
     transition-property: transform;
     transition-duration: 180ms;
@@ -2233,6 +2010,7 @@
 
 .vpad-folio-row-toggle:has(.vpad-folio-switch-input:checked) .vpad-folio-switch-thumb {
     transform: translateX(16px);
+    background: var(--vpad-on-accent);
 }
 
 .vpad-folio-row-toggle:has(.vpad-folio-switch-input:focus-visible) .vpad-folio-switch {
@@ -2523,7 +2301,7 @@
     }
 
     .vpad-preview-toolbar {
-        background: #f7f7f8;
+        background: var(--vpad-surface);
         backdrop-filter: none;
         -webkit-backdrop-filter: none;
     }

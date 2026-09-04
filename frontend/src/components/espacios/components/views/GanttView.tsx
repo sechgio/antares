@@ -321,7 +321,6 @@ export default function GanttView({
       try {
         target.setPointerCapture(pointerId);
       } catch {
-        // jsdom / browsers without full pointer capture support
       }
     }
   };
@@ -424,7 +423,6 @@ export default function GanttView({
 
   return (
     <div className="espacios-gantt flex h-full min-h-0 flex-1 flex-col bg-[var(--bg-elevated)]">
-      {/* Toolbar */}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-[var(--border-subtle)] px-3 py-2">
         <div className="min-w-0 shrink-0">
           <ViewStatsBar
@@ -526,15 +524,12 @@ export default function GanttView({
         </div>
       )}
 
-      {/* Chart */}
       <div ref={scrollRef} className="gantt-scroll relative min-h-0 flex-1 overflow-auto">
         <div
           className="relative"
           style={{ width: gridWidth, minHeight: HEADER_WEEK_H + HEADER_DAY_H + bodyHeight }}
         >
-          {/* Sticky headers */}
           <div className="sticky top-0 z-20 bg-[var(--bg-elevated)]" style={{ width: gridWidth }}>
-            {/* Week groups */}
             <div
               className="relative border-b border-[var(--border-subtle)]"
               style={{ height: HEADER_WEEK_H, width: gridWidth }}
@@ -552,7 +547,6 @@ export default function GanttView({
               ))}
             </div>
 
-            {/* Day headers */}
             <div
               className="relative border-b border-[var(--border-subtle)]"
               style={{ height: HEADER_DAY_H, width: gridWidth }}
@@ -613,7 +607,6 @@ export default function GanttView({
             </div>
           </div>
 
-          {/* Body grid */}
           <div
             className="relative cursor-cell"
             style={{ width: gridWidth, height: bodyHeight }}
@@ -625,7 +618,6 @@ export default function GanttView({
             onMouseLeave={() => setHoverDate(null)}
             role="presentation"
           >
-            {/* Day columns + weekend tint (equal width boxes) */}
             {days.map((day, i) => {
               let background = 'transparent';
               if (day.isToday) {
@@ -649,7 +641,6 @@ export default function GanttView({
               );
             })}
 
-            {/* Subtle lane guides across the full stretched body */}
             {Array.from({ length: visualLanes }, (_, lane) => (
               <div
                 key={`lane-${lane}`}
@@ -659,7 +650,6 @@ export default function GanttView({
               />
             ))}
 
-            {/* Today vertical line + header connector */}
             {(() => {
               const idx = days.findIndex((d) => d.isToday);
               if (idx < 0) return null;
@@ -677,7 +667,6 @@ export default function GanttView({
               );
             })()}
 
-            {/* Task bars — Fragment (not display:contents) so absolute coords stay in the body */}
             {bars.map((bar) => {
               const preview = dragPreview?.id === bar.tarea.id ? dragPreview : null;
               const start = preview?.start ?? bar.start;
@@ -753,7 +742,6 @@ export default function GanttView({
                       }
                     }}
                   >
-                    {/* Left resize handle — no native title tooltip (avoids floating text over the card) */}
                     <span
                       className="gantt-handle gantt-handle-start"
                       data-gantt-handle="start"
@@ -774,7 +762,6 @@ export default function GanttView({
                       isDone={columnIsDone(columns, bar.tarea.status)}
                     />
 
-                    {/* Right resize handle */}
                     <span
                       className="gantt-handle gantt-handle-end"
                       data-gantt-handle="end"
@@ -790,7 +777,6 @@ export default function GanttView({
                     />
                   </div>
 
-                  {/* Title + drag range — always outside, never overlaid on the bar */}
                   <span
                     className="gantt-bar-label pointer-events-none absolute z-[6] truncate text-[10px] font-medium"
                     style={{
@@ -809,7 +795,6 @@ export default function GanttView({
               );
             })}
 
-            {/* Empty-lane create hint on hover */}
             {hoverDate && (onAddTask || onAddTaskOnDate) && (
               <div
                 className="pointer-events-none absolute bottom-2 z-[1] flex items-center justify-center text-[10px] text-[var(--text-muted)]"
@@ -825,7 +810,6 @@ export default function GanttView({
         </div>
       </div>
 
-      {/* Legend */}
       <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-[var(--border-subtle)] px-3 py-2">
         {pickerColumns(columns).map((col) => (
           <span key={col.key} className="inline-flex items-center gap-1.5 text-[10px] text-[var(--text-muted)]">

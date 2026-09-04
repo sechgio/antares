@@ -87,7 +87,6 @@ export default function ZoomMenu({
       inputRef.current?.select();
     }, 0);
     return () => window.clearTimeout(t);
-    // Only on open transition — pct changes while open are handled below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, updateMenuBox]);
 

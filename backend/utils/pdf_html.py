@@ -25,20 +25,19 @@ def reset_pdf_cache_for_tests() -> None:
 def _thread_font_config() -> Any:
     config = getattr(_FONT_CONFIG, "value", None)
     if config is None:
-        from weasyprint.text.fonts import FontConfiguration  # type: ignore[import-untyped]
+        from weasyprint import text
 
-        config = FontConfiguration()
+        config = text.fonts.FontConfiguration()
         _FONT_CONFIG.value = config
     return config
 
 
 def deny_external_url_fetcher(url: str, **kwargs: Any) -> Any:
-    from weasyprint.urls import URLFetcher, URLFetcherResponse  # type: ignore[import-untyped]
+    from weasyprint import urls
 
     if str(url).strip().lower().startswith("data:"):
-
-        return URLFetcher().fetch(url, **kwargs)
-    return URLFetcherResponse(url, body=b"")
+        return urls.URLFetcher().fetch(url, **kwargs)
+    return urls.URLFetcherResponse(url, body=b"")
 
 
 def _cache_get(digest: str) -> bytes | None:

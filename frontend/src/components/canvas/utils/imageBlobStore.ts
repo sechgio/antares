@@ -137,7 +137,6 @@ export async function registerAndPersistCanvasImage(
   try {
     await putAsset(await blob.arrayBuffer());
   } catch {
-    // Keep the live URL. The asset GC will reclaim it if the import fails.
   }
   return registered.url;
 }
@@ -203,7 +202,6 @@ export async function serializeDocumentImages(
               if (reg.dataUrl) delete reg.dataUrl;
               return { ...layer, value: stored.ref };
             } catch {
-              // Fall through to DataURL persistence.
             }
           }
           const dataUrl = reg.dataUrl ?? (await blobToDataUrl(reg.blob));
@@ -461,7 +459,6 @@ async function persistLayerImageValue(val: string): Promise<string> {
       if (reg.dataUrl) delete reg.dataUrl;
       return stored.ref;
     } catch {
-      // fall through to data URL
     }
   }
   const dataUrl = reg.dataUrl ?? (await blobToDataUrl(reg.blob));

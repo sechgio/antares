@@ -49,7 +49,6 @@ function runOnWorker(tasks: ImageProcessingTask[]): Promise<ImageProcessingResul
           try {
             worker?.terminate();
           } catch {
-            /* ignore */
           }
           worker = null;
           reject(new Error('image worker timed out'));

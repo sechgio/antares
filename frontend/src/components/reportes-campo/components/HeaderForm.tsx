@@ -3,6 +3,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import type { Variants } from 'framer-motion';
 import { ChevronDown, Upload, X, FileText, MapPin, Briefcase, Image as ImageIcon, Minus, Plus, RotateCcw } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
+import DatePicker from '../../ui/DatePicker';
 import type { FieldDef, LogoData, ReportTypeConfig } from '../types';
 import {
     DEFAULT_TITULO_COLOR,
@@ -98,6 +99,14 @@ export default function HeaderForm({
                         onChange={(e) => onFieldChange(field.key, e.target.value)}
                         placeholder={field.label}
                     />
+                ) : field.type === 'date' ? (
+                    <DatePicker
+                        value={header[field.key] ?? ''}
+                        onChange={(value) => onFieldChange(field.key, value)}
+                        aria-label={field.label}
+                        placeholder={field.label}
+                        size="sm"
+                    />
                 ) : (
                     <input
                         type={field.type ?? 'text'}
@@ -125,7 +134,6 @@ export default function HeaderForm({
 
     return (
         <>
-            {/* ── DATOS GENERALES ── */}
             <div className={`rcampo-section ${openSections.generales ? 'is-open' : ''}`}>
                 <button type="button" className="rcampo-section-header" onClick={() => toggle('generales')} aria-expanded={openSections.generales}>
                     <span className="rcampo-section-title">
@@ -322,7 +330,6 @@ export default function HeaderForm({
 
             <div className="rcampo-divider" />
 
-            {/* ── LOCALIZACION + TRABAJO ── */}
             {grouped
                 .filter((g) => g.section !== 'generales')
                 .map(({ section, fields: sectionFields }) => {

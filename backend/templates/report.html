@@ -184,6 +184,18 @@
             grid-template-rows: repeat(2, minmax(0, 1fr));
         }
 
+        /* === LAYOUT: 2 IMAGES (stacked and vertically centered) === */
+        .layout-2 {
+            grid-template-columns: minmax(0, 1fr);
+            grid-template-rows: repeat(2, minmax(0, 1fr));
+            align-items: center;
+        }
+
+        .layout-2 .photo-item {
+            width: 100%;
+            height: calc(50% - 1mm);
+        }
+
         .layout-3 .photo-item:nth-child(3) {
             grid-column: 1 / -1;
             justify-self: center;
@@ -343,19 +355,12 @@
             <div class="no-photos">No se encontraron imágenes asociadas a esta orden.</div>
             {% else %}
             <!-- Layout based on image count: 3 -> 2+1 centered, 4 -> 2x2, 5 -> 3+2 centered, 6 -> 3x2 -->
-            <div class="photo-grid layout-{{ img_count if img_count in [3, 4, 5] else '6' }}">
+            <div class="photo-grid layout-{{ img_count if img_count in [1, 2, 3, 4, 5, 6] else '6' }}">
                 {% for img in report.images[:6] %}
                 <div class="photo-item">
                     <img src="{{ img.path }}" alt="{{ img.name }}">
                 </div>
                 {% endfor %}
-                {% if report.images|length < 3 %}
-                {% for i in range(report.images|length, 6) %}
-                <div class="photo-item">
-                    <div class="photo-placeholder"></div>
-                </div>
-                {% endfor %}
-                {% endif %}
             </div>
             {% endif %}
         </div>

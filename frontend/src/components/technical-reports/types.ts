@@ -42,6 +42,30 @@ export interface InspeccionDescripcion {
   ducto_ventilacion: CheckState;
   cerco_perimetrico: CheckState;
   descarga: CheckState;
+  observaciones_caja_registro: string;
+  sugerencias_caja_registro: string;
+  observaciones_marco_tapa: string;
+  sugerencias_marco_tapa: string;
+  observaciones_escalera_int: string;
+  sugerencias_escalera_int: string;
+  observaciones_escalera_ext: string;
+  sugerencias_escalera_ext: string;
+  observaciones_cuba_int: string;
+  sugerencias_cuba_int: string;
+  observaciones_cuba_ext: string;
+  sugerencias_cuba_ext: string;
+  observaciones_loza_fondo: string;
+  sugerencias_loza_fondo: string;
+  observaciones_loza_techo_int: string;
+  sugerencias_loza_techo_int: string;
+  observaciones_loza_techo_ext: string;
+  sugerencias_loza_techo_ext: string;
+  observaciones_ducto: string;
+  sugerencias_ducto: string;
+  observaciones_cerco: string;
+  sugerencias_cerco: string;
+  observaciones_descarga: string;
+  sugerencias_descarga: string;
 }
 
 export interface DiameterMap {

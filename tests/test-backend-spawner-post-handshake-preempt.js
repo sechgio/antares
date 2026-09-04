@@ -68,7 +68,6 @@ async function run() {
 
     if (spawnCount === 1) {
       processA = fakeProcess;
-      // Hold A's ready until the test releases it after B owns pythonProcess.
     } else if (spawnCount === 2) {
       processB = fakeProcess;
       releaseB = () => emitReady(fakeProcess);

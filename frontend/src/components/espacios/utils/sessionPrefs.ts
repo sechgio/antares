@@ -51,6 +51,5 @@ export function writeEspaciosPrefs(patch: Partial<EspaciosPrefs>): void {
     };
     localStorage.setItem(ESPACIOS_PREFS_KEY, JSON.stringify(next));
   } catch {
-    // private mode / quota — ignore
   }
 }

@@ -129,7 +129,7 @@ async function run() {
             });
             activeProc.stdout.emit('data', Buffer.from(probeResponse + '\n'));
           }
-        } catch { /* ignore */ }
+        } catch {}
       };
     }
     await runHealthCheckOnce();

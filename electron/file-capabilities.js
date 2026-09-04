@@ -138,7 +138,6 @@ function sweepExpired() {
     const { sweepIpcTempDirs } = require('./ipc-temp-cleanup');
     void sweepIpcTempDirs(now);
   } catch {
-    /* optional during early load */
   }
 }
 
@@ -290,8 +289,6 @@ function _assertNoRawAbsolutePaths(params, options = {}) {
             assertAllowedReadPath(value);
             isRegisteredReadPath = true;
           } catch {
-            // Keep the generic rejection below so callers do not learn whether
-            // an arbitrary path exists on disk.
           }
         }
         if (!isExplicitlyAllowed && !isRegisteredReadPath) {

@@ -39,7 +39,6 @@ function verifyFrozenBackendTemplates(exePath, options = {}) {
       try {
         proc.kill();
       } catch {
-        /* ignore */
       }
       if (err) reject(err);
       else resolve(result);

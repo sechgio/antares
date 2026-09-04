@@ -82,7 +82,6 @@ export default function PanelAvisoCorteApp() {
     <div className="pac-app flex h-full overflow-hidden">
       <div className="pac-sidebar flex flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-base)] overflow-y-auto">
         <div className="flex flex-col gap-3 p-3.5">
-          {/* ── Datos del panel ── */}
           <div className="pac-sidebar-section">
             <HeaderForm
               value={session.headerForm}
@@ -95,7 +94,6 @@ export default function PanelAvisoCorteApp() {
             />
           </div>
 
-          {/* ── Archivos ── */}
           <div className="pac-sidebar-section">
             <ImageUploader
               images={session.images}
@@ -121,7 +119,6 @@ export default function PanelAvisoCorteApp() {
             </div>
           )}
 
-          {/* ── Export controls ── */}
           <div className="pac-sidebar-export__row">
             <select
               aria-label="Formato de exportación"
