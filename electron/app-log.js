@@ -13,6 +13,18 @@ const MANAGED_LOG_RE = /^antares-\d{4}-\d{2}-\d{2}(?:\.\d+)?\.(?:log|jsonl)$/;
 const SAFE_VALUE_RE = /^[a-zA-Z0-9_.:-]{1,160}$/;
 const LEVELS = new Set(OBSERVABILITY_CONTRACT.levels);
 const OUTCOMES = new Set(OBSERVABILITY_CONTRACT.outcomes);
+const RUM_METRIC_NAMES = new Set(['CLS', 'INP', 'LCP']);
+const RUM_RATINGS = new Set(['good', 'needs-improvement', 'poor', 'unknown']);
+const RUM_NAV_TYPES = new Set([
+  'navigate',
+  'reload',
+  'back-forward',
+  'back-forward-cache',
+  'prerender',
+  'restore',
+  'unknown',
+]);
+const RUM_ID_RE = /^v\d+-\d{13}-\d{13}$/;
 const EVENT_FIELDS = new Set([
   'backend_pid',
   'bytes',
@@ -34,6 +46,11 @@ const EVENT_FIELDS = new Set([
   'component',
   'view',
   'count',
+  'rum_name',
+  'rum_value',
+  'rum_rating',
+  'rum_id',
+  'rum_navigation_type',
 ]);
 const SENSITIVE_TEXT_RE = [
   /(\b(?:authorization|proxy-authorization)\s*[:=]\s*bearer\s+)[^\s,;]+/gi,
@@ -145,7 +162,6 @@ function _safePathFor(p) {
       fs.unlinkSync(p);
     }
   } catch {
-    // No existe — se creará al abrir.
   }
   return p;
 }
@@ -183,6 +199,27 @@ function _normaliseEventField(key, value) {
   if (!EVENT_FIELDS.has(key)) return undefined;
   if (key === 'message') return _redactText(value);
   if (key === 'outcome') return OUTCOMES.has(value) ? value : undefined;
+  if (key === 'rum_name') {
+    const text = String(value ?? '').trim().toUpperCase();
+    return RUM_METRIC_NAMES.has(text) ? text : undefined;
+  }
+  if (key === 'rum_value') {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return undefined;
+    return Math.round(value * 10000) / 10000;
+  }
+  if (key === 'rum_rating') {
+    const text = String(value ?? '').trim().toLowerCase();
+    return RUM_RATINGS.has(text) ? text : undefined;
+  }
+  if (key === 'rum_id') {
+    const text = String(value ?? '').trim();
+    if (!text) return '-';
+    return text.length <= 30 && RUM_ID_RE.test(text) ? text : '-';
+  }
+  if (key === 'rum_navigation_type') {
+    const text = String(value ?? '').trim().toLowerCase();
+    return RUM_NAV_TYPES.has(text) ? text : undefined;
+  }
   if (['pid', 'backend_pid', 'bytes', 'attempt', 'count'].includes(key)) {
     return Number.isInteger(value) && value >= 0 ? value : undefined;
   }
@@ -223,8 +260,6 @@ function _selectLogPath(basePath, line) {
       if (candidateSize + lineBytes <= _maxLogFileBytes()) return _safePathFor(candidate);
     }
   } catch {
-    // Si stat falla, se intenta escribir en el archivo base y el sink sigue
-    // siendo fail-open desde el llamador.
   }
   return target;
 }
@@ -246,14 +281,28 @@ function _enforceLogBudget() {
       total -= entry.size;
     }
   } catch {
-    // La limpieza nunca debe bloquear el flujo principal ni el sink.
   }
+}
+
+// El barrido del directorio completo (readdirSync + statSync por archivo) por cada
+// evento medía ~0.27ms adicionales en ráfagas de stderr/IPC y congelaba el event
+// loop del main process. Se amortiza: un barrido cada N eventos mantiene el budget
+// como saneamiento periódico mientras la escritura y la rotación por archivo
+// (por tamaño en _selectLogPath) siguen siendo por evento.
+const _BUDGET_ENFORCE_INTERVAL = 200;
+let _budgetEnforceCounter = 0;
+
+function _enforceLogBudgetThrottled() {
+  _budgetEnforceCounter += 1;
+  if (_budgetEnforceCounter < _BUDGET_ENFORCE_INTERVAL) return;
+  _budgetEnforceCounter = 0;
+  _enforceLogBudget();
 }
 
 function _appendManagedLine(basePath, line) {
   _ensureLogsDir();
   fs.appendFileSync(_selectLogPath(basePath, line), line, 'utf8');
-  _enforceLogBudget();
+  _enforceLogBudgetThrottled();
 }
 
 function _markDroppedEvent() {
@@ -315,9 +364,9 @@ function initAppLogs() {
         if (fs.statSync(path.join(dir, name)).mtimeMs < cutoff) {
           fs.unlinkSync(path.join(dir, name));
         }
-      } catch { /* best-effort */ }
+      } catch {}
     }
-  } catch { /* best-effort */ }
+  } catch {}
   return dir;
 }
 
@@ -359,9 +408,9 @@ function _dirContentMaxMtime(p) {
       try {
         const st = fs.statSync(path.join(p, entry));
         if (st.mtimeMs > max) max = st.mtimeMs;
-      } catch { /* best-effort */ }
+      } catch {}
     }
-  } catch { /* best-effort */ }
+  } catch {}
   return max;
 }
 
@@ -381,9 +430,9 @@ function cleanStaleTempDirs() {
         if (_dirContentMaxMtime(p) >= cutoff) continue;
         fs.rmSync(p, { recursive: true, force: true });
         removed += 1;
-      } catch { /* best-effort */ }
+      } catch {}
     }
-  } catch { /* best-effort */ }
+  } catch {}
   return removed;
 }
 

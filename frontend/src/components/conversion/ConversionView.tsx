@@ -136,10 +136,10 @@ export default function ConversionView() {
       let options: Record<string, unknown> = {};
       try {
         f = JSON.parse(run.files_json || '[]') as string[];
-      } catch { /* keep default */ }
+      } catch {}
       try {
         options = JSON.parse(run.options_json || '{}') as Record<string, unknown>;
-      } catch { /* keep default */ }
+      } catch {}
 
       if (gen !== applyHistoryGenRef.current) return;
 
@@ -398,7 +398,6 @@ export default function ConversionView() {
         addToast({ message: `Error importando Excel: ${msg}`, type: 'error' });
         return;
       }
-      // Schema mismatch → not a mapping Excel, fall through to catalog import.
     }
     try {
       const result = await api.importExcel(excelToken ?? excelPath);

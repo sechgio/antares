@@ -373,7 +373,6 @@ export default function DataPreviewModal({
         setTimeout(() => setCopiedNotification(null), 2000);
       }
     } catch {
-      /* ignore */
     }
   };
 
@@ -602,7 +601,6 @@ export default function DataPreviewModal({
             '0 24px 60px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px color-mix(in srgb, var(--border-medium) 60%, transparent)',
         }}
       >
-        {/* ─── Modal Top Header ─── */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/80 px-5 py-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-primary)]/15 text-[var(--accent-primary)] border border-[var(--accent-primary)]/30 shadow-sm">
@@ -628,9 +626,7 @@ export default function DataPreviewModal({
             </div>
           </div>
 
-          {/* Right Action Tools */}
           <div className="flex items-center gap-2 ml-auto">
-            {/* Search Filter Input */}
             <div className="relative flex items-center min-w-[210px] sm:min-w-[280px]">
               <Search size={14} className="pointer-events-none absolute left-2.5 text-[var(--text-muted)]" />
               <input
@@ -653,7 +649,6 @@ export default function DataPreviewModal({
               )}
             </div>
 
-            {/* Column Manager Button & Popover */}
             <div className="relative" ref={columnMenuRef}>
               <WithHoverTooltip label="Configurar columnas visibles" placement="bottom">
                 <button
@@ -676,7 +671,6 @@ export default function DataPreviewModal({
                 </button>
               </WithHoverTooltip>
 
-              {/* Column Selection Dropdown */}
               {showColumnDropdown && (
                 <div
                   className="absolute right-0 top-full z-50 mt-1.5 w-64 rounded-xl border border-[var(--border-medium)] bg-[var(--bg-base)] p-3 shadow-2xl animate-fade-in"
@@ -743,7 +737,6 @@ export default function DataPreviewModal({
               )}
             </div>
 
-            {/* Density Selector */}
             <WithHoverTooltip label={`Densidad: ${density}`} placement="bottom">
               <button
                 type="button"
@@ -758,7 +751,6 @@ export default function DataPreviewModal({
               </button>
             </WithHoverTooltip>
 
-            {/* Text Wrap Toggle */}
             <WithHoverTooltip label={wrapText ? 'Modo compacto (una línea)' : 'Modo legible (ajustar texto)'} placement="bottom">
               <button
                 type="button"
@@ -775,7 +767,6 @@ export default function DataPreviewModal({
               </button>
             </WithHoverTooltip>
 
-            {/* Detail Pane Toggle */}
             <WithHoverTooltip label={showDetailPane ? 'Ocultar panel de detalle' : 'Ver detalle del registro'} placement="bottom">
               <button
                 type="button"
@@ -792,7 +783,6 @@ export default function DataPreviewModal({
               </button>
             </WithHoverTooltip>
 
-            {/* CSV Export Button */}
             <WithHoverTooltip label="Descargar tabla filtrada como CSV" placement="bottom">
               <button
                 type="button"
@@ -804,7 +794,6 @@ export default function DataPreviewModal({
               </button>
             </WithHoverTooltip>
 
-            {/* Full Screen Toggle */}
             <WithHoverTooltip label={isFullScreen ? 'Reducir tamaño' : 'Pantalla completa'} placement="bottom">
               <button
                 type="button"
@@ -816,7 +805,6 @@ export default function DataPreviewModal({
               </button>
             </WithHoverTooltip>
 
-            {/* Close Button */}
             <WithHoverTooltip label="Cerrar vista previa" placement="bottom" shortcut="Esc">
               <button
                 type="button"
@@ -830,9 +818,7 @@ export default function DataPreviewModal({
           </div>
         </div>
 
-        {/* ─── Subheader / Filter Pills Bar ─── */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/40 px-5 py-2">
-          {/* Quick Photo Filter Tabs */}
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -895,7 +881,6 @@ export default function DataPreviewModal({
             </button>
           </div>
 
-          {/* Search match stats & Feedback chip */}
           <div className="flex items-center gap-3 text-[11px] text-[var(--text-muted)]">
             {copiedNotification && (
               <span className="flex items-center gap-1 text-[var(--accent-green)] font-medium animate-fade-in">
@@ -925,9 +910,7 @@ export default function DataPreviewModal({
           </div>
         </div>
 
-        {/* ─── Main Content: Table + Side Inspector ─── */}
         <div className="flex flex-1 min-h-0 overflow-hidden bg-[var(--bg-base)]">
-          {/* Table Container */}
           <div ref={tableContainerRef} className="pp-data-table-scroll flex-1 overflow-auto select-text relative pb-1">
             {filteredAndSortedRows.length === 0 ? (
               <div className="flex h-64 flex-col items-center justify-center p-6 text-center">
@@ -964,7 +947,6 @@ export default function DataPreviewModal({
               <table className="w-full min-w-full border-collapse text-left">
                 <thead>
                   <tr className="sticky top-0 z-20 border-b border-[var(--border-medium)] bg-[var(--bg-elevated)]/95 backdrop-blur-md shadow-sm">
-                    {/* Sticky Row Number Header */}
                     <th
                       className="sticky left-0 z-30 w-12 px-3 py-2.5 text-center font-semibold text-[11px] uppercase tracking-wider text-[var(--text-secondary)] bg-[var(--bg-elevated)]/95 border-r border-[var(--border-subtle)] cursor-pointer hover:text-[var(--text-primary)] select-none transition-colors"
                       onClick={() => handleHeaderClick('#')}
@@ -981,7 +963,6 @@ export default function DataPreviewModal({
                       </div>
                     </th>
 
-                    {/* Dynamic Visible Data Headers */}
                     {visibleHeaders.map((header) => {
                       const isSorted = sortCol === header;
                       return (
@@ -1011,7 +992,6 @@ export default function DataPreviewModal({
                       );
                     })}
 
-                    {/* Photos Column Header */}
                     <th
                       onClick={() => handleHeaderClick('__fotos__')}
                       className="sticky right-0 z-20 w-28 px-3 py-2.5 text-center font-semibold text-[11px] uppercase tracking-wider text-[var(--text-secondary)] bg-[var(--bg-elevated)]/95 border-l border-[var(--border-subtle)] cursor-pointer hover:text-[var(--text-primary)] select-none transition-colors"
@@ -1064,7 +1044,6 @@ export default function DataPreviewModal({
                             : 'even:bg-[var(--bg-surface)]/25 hover:bg-[var(--accent-primary)]/8'
                         }`}
                       >
-                        {/* Sticky Row Index Cell */}
                         <td
                           className={`sticky left-0 z-10 px-2 py-2 text-center font-mono text-[11px] tabular-nums border-r border-[var(--border-subtle)] transition-colors ${
                             isSelected
@@ -1087,7 +1066,6 @@ export default function DataPreviewModal({
                           </span>
                         </td>
 
-                        {/* Data Cells */}
                         {visibleHeaders.map((header) => {
                           const rawValue = row[header];
                           const cellText = rawValue !== null && rawValue !== undefined ? String(rawValue).trim() : '';
@@ -1126,7 +1104,6 @@ export default function DataPreviewModal({
                           );
                         })}
 
-                        {/* Photos Count Badge Cell */}
                         <td
                           className={`sticky right-0 z-10 px-3 py-2.5 text-center align-middle border-l border-[var(--border-subtle)] transition-colors ${
                             isSelected
@@ -1157,7 +1134,6 @@ export default function DataPreviewModal({
             )}
           </div>
 
-          {/* ─── Side Inspector Detail Pane ─── */}
           {showDetailPane && focusedRowData && (
             <aside className="w-80 sm:w-96 border-l border-[var(--border-subtle)] bg-[var(--bg-surface)]/60 flex flex-col overflow-hidden animate-fade-in">
               <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]">
@@ -1187,9 +1163,7 @@ export default function DataPreviewModal({
                 </div>
               </div>
 
-              {/* Inspector Content */}
               <div className="flex-1 overflow-y-auto p-4 space-y-4 pp-data-table-scroll">
-                {/* Photos Box */}
                 <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-1.5">
@@ -1228,7 +1202,6 @@ export default function DataPreviewModal({
                   )}
                 </div>
 
-                {/* Key-Value Fields */}
                 <div className="space-y-2">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] block">
                     Campos de Datos
@@ -1263,7 +1236,6 @@ export default function DataPreviewModal({
                 </div>
               </div>
 
-              {/* Inspector Bottom Action */}
               <div className="p-3 border-t border-[var(--border-subtle)] bg-[var(--bg-surface)]">
                 <button
                   type="button"
@@ -1277,7 +1249,6 @@ export default function DataPreviewModal({
           )}
         </div>
 
-        {/* ─── Modal Footer ─── */}
         <div className="relative z-20 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-subtle)] bg-[var(--bg-surface)] px-5 py-3 text-[11px] shadow-[0_-6px_20px_rgba(0,0,0,0.28)]">
           <div className="flex items-center gap-3 text-[var(--text-secondary)]">
             <span className="flex items-center gap-1.5 font-medium text-[var(--accent-primary)]">

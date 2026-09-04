@@ -300,7 +300,7 @@ async function _readConfigValue(key) {
   try {
     const batch = await sheets.readRanges(['CONFIG!A:B']);
     return configValueFromRows(batch['CONFIG!A:B'], key);
-  } catch { /* sheet may not exist yet */ }
+  } catch {}
   return '';
 }
 
@@ -322,7 +322,7 @@ async function _upsertConfigValues(entries) {
       if (!found) rows.push([key, value]);
     }
     await sheets.writeRange('CONFIG!A:B', rows);
-  } catch { /* CONFIG sheet may not exist yet */ }
+  } catch {}
 }
 
 function buildFolderErrorSummary(folder, error) {
@@ -356,7 +356,7 @@ async function _markFolderErrorsInSheet(folderSummary) {
       }
     }
     if (fValues.length) await sheets.writeRange('FOLDERS!A:E', fValues);
-  } catch { /* FOLDERS sheet may not exist yet */ }
+  } catch {}
 }
 
 function _applyFolderSummaryToSheetRows(fValues, summary, timestamp) {
@@ -381,7 +381,7 @@ async function _loadExistingNisSet() {
       const nis = String(values[i][0] || '').trim();
       if (nis) existing.add(nis);
     }
-  } catch { /* BD_IMG may not exist yet */ }
+  } catch {}
   return existing;
 }
 
@@ -392,7 +392,7 @@ async function _ensureSheetId() {
   let sheetId = '';
   try {
     sheetId = await _readConfigValue('SHEET_ID');
-  } catch { /* not linked yet */ }
+  } catch {}
   if (!sheetId) {
     const stored = sheets.getStoredSheetConfig?.() || {};
     sheetId = stored.sheet_id || '';
@@ -401,7 +401,7 @@ async function _ensureSheetId() {
     await sheets.openSpreadsheet(sheetId);
     try {
       await _upsertConfigValues({ SHEET_ID: sheetId });
-    } catch { /* optional */ }
+    } catch {}
     return sheetId;
   }
   throw new Error('No hay Sheet configurado. Abre un Sheet con su ID primero.');
@@ -410,7 +410,7 @@ async function _ensureSheetId() {
 function _persistFoldersLocal(folders) {
   try {
     saveLocalFolders(folders);
-  } catch { /* disk full / permissions — non-fatal */ }
+  } catch {}
 }
 
 async function listFolders({ force = false } = {}) {
@@ -837,7 +837,7 @@ async function getStatus() {
     const retained = _tryCommitSheetCache({ folders });
     _restoreAutoSyncFromConfig(batch['CONFIG!A:B'] || []);
     if (retained) _touchCache(['folders']);
-  } catch { /* sheet not configured yet */ }
+  } catch {}
 
   return {
     connected: auth.authenticated,
@@ -944,7 +944,7 @@ async function setAutoSync(enabled) {
   _applyAutoSyncTimer(next);
   try {
     await _upsertConfigValues({ [AUTO_SYNC_CONFIG_KEY]: next ? 'true' : 'false' });
-  } catch { /* CONFIG sheet may not exist yet */ }
+  } catch {}
   return { enabled: _autoSyncEnabled };
 }
 
@@ -1072,7 +1072,7 @@ async function _renameExportCore({ dest_folder_id, only_completos = true } = {})
   await _upsertConfigValues({ [RENAME_DEST_CONFIG_KEY]: rootFolderId });
   try {
     saveRenameDest(rootFolderId, rootMeta.name);
-  } catch { /* local prefs best-effort */ }
+  } catch {}
 
   const detail =
     `Renombre SGIO → ${rootMeta.name}/{DESTINO}: ${copied.length} copiadas` +
@@ -1083,7 +1083,7 @@ async function _renameExportCore({ dest_folder_id, only_completos = true } = {})
 
   try {
     await sheets.appendRow('LOGS!A:E', [_now(), 'RENAME_SGIO', detail, '', '']);
-  } catch { /* LOGS optional */ }
+  } catch {}
 
   emit('autoimg.rename.complete', {
     copied: copied.length,
@@ -1118,7 +1118,7 @@ async function renameExport(params = {}) {
   if (params?.dest_folder_id) {
     try {
       saveRenameDest(String(params.dest_folder_id), '');
-    } catch { /* ignore */ }
+    } catch {}
   }
   return _runLocked('rename', () => _renameExportCore(params));
 }
@@ -1127,13 +1127,13 @@ async function getRenameDestConfig() {
   let folderId = '';
   try {
     folderId = (await _readConfigValue(RENAME_DEST_CONFIG_KEY)) || '';
-  } catch { /* sheet unavailable */ }
+  } catch {}
   const local = loadRenameDest();
   if (!folderId && local.folder_id) folderId = local.folder_id;
   if (folderId && folderId !== local.folder_id) {
     try {
       saveRenameDest(folderId, local.name || '');
-    } catch { /* ignore */ }
+    } catch {}
   }
   return { folder_id: folderId, name: local.name || '' };
 }

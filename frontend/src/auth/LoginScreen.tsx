@@ -38,7 +38,6 @@ function readInitialAppearanceMode(): AppearanceMode {
     const stored = window.localStorage.getItem(HC_LOGIN_APPEARANCE_KEY);
     if (stored === 'light' || stored === 'dark') return stored;
   } catch {
-    /* ignore */
   }
   return 'light';
 }
@@ -52,7 +51,6 @@ function applyAppearanceMode(mode: AppearanceMode) {
   try {
     window.localStorage.setItem(HC_LOGIN_APPEARANCE_KEY, mode);
   } catch {
-    /* ignore */
   }
 }
 
@@ -68,7 +66,6 @@ function restoreAppThemeMode() {
     root.classList.toggle('theme-light', mode === 'light');
     root.classList.toggle('theme-dark', mode === 'dark');
   } catch {
-    /* ignore */
   }
 }
 

@@ -1,4 +1,3 @@
-
 import { matchesRecordId as matchesRecordIdCanvas } from '../canvas/runtime/excel';
 
 export function formatDateValue(value: string | number | undefined): string {
@@ -7,8 +6,8 @@ export function formatDateValue(value: string | number | undefined): string {
   if (!text) return '-';
 
   const datePatterns = [
-    /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/, // DD/MM/YYYY
-    /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/, // YYYY/MM/DD
+    /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/,
+    /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/,
   ];
 
   for (const pattern of datePatterns) {

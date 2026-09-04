@@ -525,7 +525,6 @@ async function restorePersistedSheet() {
     try {
       await ensureAutoImgTabs();
     } catch {
-      /* tab provisioning is best-effort on restore */
     }
     return getStoredSheetConfig();
   }

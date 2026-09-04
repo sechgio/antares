@@ -1,4 +1,3 @@
-
 function assert(condition, message) {
   if (!condition) {
     console.error(`[FAIL] ${message}`);
@@ -12,7 +11,6 @@ function assertThrows(fn, message) {
     console.error(`[FAIL] ${message}`);
     process.exit(1);
   } catch {
-    /* expected */
   }
 }
 

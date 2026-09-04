@@ -111,7 +111,6 @@ export default function AppearanceView() {
     try {
       backendTheme = await api.getTheme();
     } catch {
-      // IPC fetch failed — use cached theme or fallback
     }
 
     const initialTheme = cachedTheme || backendTheme || DEFAULT_THEME;

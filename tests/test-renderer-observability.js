@@ -74,6 +74,20 @@ try {
     .find((entry) => entry.event === 'canvas.realtime');
   assert(realtimeEvent, 'canvas realtime event is persisted');
   assert.strictEqual(realtimeEvent.count, 2);
+
+  recordRendererEvent({
+    event: 'canvas.quit_flush',
+    level: 'ERROR',
+    fields: { outcome: 'failed', reason: 'canvas_save_failed', duration_ms: 8123 },
+  });
+    const allNow = fs.readFileSync(path.join(getLogsDir(), jsonl), 'utf8').trim().split(/\r?\n/)
+    .map((line) => JSON.parse(line));
+  const quitEvent = allNow.find((entry) => entry.event === 'canvas.quit_flush');
+  assert(quitEvent, 'canvas.quit_flush pasa la allowlist y se persiste');
+  assert.strictEqual(quitEvent.outcome, 'failed');
+  assert.strictEqual(quitEvent.reason, 'canvas_save_failed');
+  assert.strictEqual(quitEvent.duration_ms, 8123);
+
   console.log('renderer observability: OK');
 } finally {
   fs.rmSync(testRoot, { recursive: true, force: true });

@@ -1,25 +1,5 @@
 #!/usr/bin/env node
 
-/**
- * Antares Push Pipeline Loop (PR-first)
- * ======================================
- *
- * Flujo para enviar cambios siempre mediante Pull Request — nunca push directo a main.
- *
- * Flags:
- *   (ninguno)  = dry-run — valida todo, sin side effects
- *   --ship     = commit (si hay cambios), push branch, crear/actualizar PR
- *   --merge    = tras crear PR, esperar CI y mergear (requiere --ship)
- *   --message  = mensaje de commit (obligatorio si hay cambios sin commit)
- *   --title    = título del PR (default: branch name o commit message)
- *   --branch   = nombre de branch (si estás en main, se crea esta branch)
- *
- * Uso:
- *   node scripts/push-loop.js
- *   node scripts/push-loop.js --ship --message "fix: corregir conversión HEIC"
- *   node scripts/push-loop.js --ship --merge --message "feat: nueva opción de export"
- */
-
 const { execFileSync, execSync } = require('child_process');
 const {
   REPO_OWNER,

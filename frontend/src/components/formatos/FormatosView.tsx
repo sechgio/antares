@@ -276,7 +276,6 @@ function MappingEditor({ mapping, originalMapping, showColorReset, onChange, onS
                 onChange={colors => onChange({ ...mapping, ...colors })}
             />
 
-            {/* Preview of number */}
             <div className="border border-[var(--border-subtle)] bg-[var(--bg-elevated)] rounded-md p-3 text-center">
                 <span className="text-[9px] text-[var(--text-muted)] block mb-1" style={{ fontFamily: "'Roboto Mono', monospace" }}>Ejemplo</span>
                 <span
@@ -695,11 +694,9 @@ export default function FormatosView() {
 
     return (
         <div data-surface="formatos" className="flex h-full min-h-0 overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]" style={{ fontFamily: "'Outfit', sans-serif" }}>
-            {/* ── LEFT: PREVIEW ─────────────────────────────────────── */}
             <div data-surface-part="preview" className="flex-1 flex flex-col min-w-0 relative">
                 <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle, color-mix(in srgb, var(--border-medium) 70%, transparent) 1px, transparent 1px)', backgroundSize: '28px 28px' }} />
 
-                {/* topbar */}
                 <div className="relative z-10 flex h-11 items-center justify-between px-6 border-b border-[var(--border-subtle)]">
                     <div className="flex items-center gap-2.5">
                         <ScanLine size={13} className="text-[var(--accent-primary)]" />
@@ -778,7 +775,6 @@ export default function FormatosView() {
                     </div>
                 </div>
 
-                {/* viewer area — keep PdfMultiViewer mounted (hidden) during mapping to avoid remount blink */}
                 <div className="relative flex-1 overflow-hidden">
                     {previewBlob ? (
                         <div
@@ -803,12 +799,9 @@ export default function FormatosView() {
                 </div>
             </div>
 
-            {/* ── RIGHT: SIDEBAR ────────────────────────────────────── */}
             <div data-surface-part="sidebar" className="w-[320px] flex-shrink-0 flex flex-col border-l border-[var(--border-subtle)] bg-[var(--bg-base)]">
-                {/* scrollable config */}
                 <div className={`flex-1 px-6 pt-5 pb-3 space-y-4 ${mappingMode ? 'overflow-y-auto' : 'overflow-y-hidden'}`}>
 
-                    {/* ─ Format Selector ─ */}
                     <section>
                         <div className="flex items-center justify-between mb-3">
                             <p className="text-[9px] tracking-[0.25em] uppercase text-[var(--text-muted)]" style={{ fontFamily: "'Roboto Mono', monospace" }}>Formato</p>
@@ -869,7 +862,6 @@ export default function FormatosView() {
 
                     <div className="border-t border-[var(--border-subtle)]" />
 
-                    {/* ─ Mapping Mode Toggle ─ */}
                     {selected && (selected.strategy === 'visual_overlay' || selected.strategy === 'simple_overlay') && (
                         <>
                             <section>
@@ -918,7 +910,6 @@ export default function FormatosView() {
                         </>
                     )}
 
-                    {/* ─ Rango ─ */}
                     {selected && !mappingMode && (
                         <section>
                             <p className="text-[9px] tracking-[0.25em] uppercase text-[var(--text-muted)] mb-3" style={{ fontFamily: "'Roboto Mono', monospace" }}>Rango de números</p>
@@ -958,7 +949,6 @@ export default function FormatosView() {
                         </section>
                     )}
 
-                    {/* ─ Resumen ─ */}
                     {selected && !mappingMode && (
                         <>
                             <div className="border-t border-[var(--border-subtle)]" />
@@ -978,7 +968,6 @@ export default function FormatosView() {
                         </>
                     )}
 
-                    {/* ─ Error ─ */}
                     {error && (
                         <div className="flex items-start gap-2 bg-[var(--accent-red)]/10 border border-[var(--accent-red)]/30 rounded-md p-3">
                             <AlertCircle size={11} className="text-[var(--accent-red)] mt-0.5 flex-shrink-0" />
@@ -987,7 +976,6 @@ export default function FormatosView() {
                     )}
                 </div>
 
-                {/* ─ Footer / Generate ─ */}
                 {!mappingMode && (
                     <div className="px-6 pb-12 pt-3 border-t border-[var(--border-subtle)]">
                         <button
@@ -1008,7 +996,6 @@ export default function FormatosView() {
                 )}
             </div>
 
-            {/* Upload Modal */}
             {showUpload && <UploadModal onClose={() => setShowUpload(false)} onUploaded={handleUploaded} />}
         </div>
     );

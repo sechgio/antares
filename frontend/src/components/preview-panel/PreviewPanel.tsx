@@ -677,7 +677,6 @@ const PreviewPanel = forwardRef<HTMLIFrameElement, PreviewPanelProps>(
           }, 150);
         }
       } catch {
-        // cross-origin
       }
     };
 

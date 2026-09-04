@@ -9,13 +9,10 @@ import FloatingRecordsPanel from "./components/FloatingRecordsPanel";
 import DatePicker from "./components/DatePicker";
 import TimePicker from "./components/TimePicker";
 import TutorialOverlay from "./components/TutorialOverlay";
-import { DEFAULT_BRAND, DEFAULT_ENCABEZADOS, DEFAULT_FOOTER, DEFAULT_HEADING } from "./constants";
 import type {
   BrandConfig,
   BulletStyle,
   FooterConfig,
-  FlyerEncabezados,
-  FlyerHeading,
   FlyerRecord,
   LayoutMode,
 } from "./types";
@@ -30,8 +27,10 @@ import {
 } from "./utils/pdf";
 import { importSpreadsheet, exportTemplateWorkbook } from "./utils/import";
 import { useToast } from "../../hooks/useToast";
+import { useDialog } from "../../hooks/useDialog";
 import { saveFeatureHistory } from "../../utils/history";
 import { WithHoverTooltip } from "@/components/ui/HoverTooltip";
+import { useVolantesDraft } from "./hooks/useVolantesDraft";
 
 interface BulletOption {
   id: BulletStyle;
@@ -124,27 +123,6 @@ const BULLET_OPTIONS: BulletOption[] = [
   },
 ];
 
-const defaultBrand: BrandConfig = {
-  logoIzquierdo: DEFAULT_BRAND.logoIzquierdo,
-  logoDerecho: DEFAULT_BRAND.logoDerecho,
-};
-
-const defaultFooter: FooterConfig = {
-  logoOperativo: DEFAULT_FOOTER.logoOperativo,
-  servicioAgua: DEFAULT_FOOTER.servicioAgua,
-};
-
-const defaultHeading: FlyerHeading = {
-  titulo: DEFAULT_HEADING.titulo,
-  subtitulo: DEFAULT_HEADING.subtitulo,
-};
-
-const defaultEncabezados: FlyerEncabezados = {
-  limpiezaReservorios: DEFAULT_ENCABEZADOS.limpiezaReservorios,
-  zonasAfectadas: DEFAULT_ENCABEZADOS.zonasAfectadas,
-  detalleZonas: DEFAULT_ENCABEZADOS.detalleZonas,
-};
-
 const LOGO_MAX_BYTES = 5 * 1024 * 1024;
 const LOGO_ALLOWED_TYPES = new Set([
   "image/png",
@@ -176,7 +154,7 @@ function readImageAsDataUrl(
   }
   let reader = imageReaders[slotKey];
   if (reader) {
-    try { reader.abort(); } catch { /* already complete */ }
+    try { reader.abort(); } catch {}
   }
   reader = new FileReader();
   imageReaders[slotKey] = reader;
@@ -190,14 +168,25 @@ function readImageAsDataUrl(
 
 export default function VolantesView() {
   const { addToast } = useToast();
-  const [records, setRecords] = useState<FlyerRecord[]>([]);
-  const [brand, setBrand] = useState<BrandConfig>(defaultBrand);
-  const [footer, setFooter] = useState<FooterConfig>(defaultFooter);
-  const [heading, setHeading] = useState<FlyerHeading>(defaultHeading);
-  const [encabezados, setEncabezados] =
-    useState<FlyerEncabezados>(defaultEncabezados);
-  const [layoutMode, setLayoutMode] = useState<LayoutMode>("2-up");
-  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
+  const { confirm } = useDialog();
+  const {
+    records,
+    setRecords,
+    brand,
+    setBrand,
+    footer,
+    setFooter,
+    heading,
+    setHeading,
+    encabezados,
+    setEncabezados,
+    layoutMode,
+    setLayoutMode,
+    selectedRecordId,
+    setSelectedRecordId,
+    persistenceStatus,
+    clearDraft,
+  } = useVolantesDraft();
   const [filterText, setFilterText] = useState("");
   const [pendingExport, setPendingExport] = useState<{
     record: FlyerRecord;
@@ -367,6 +356,29 @@ export default function VolantesView() {
     });
   };
 
+  const handleClearDraft = async (): Promise<void> => {
+    const confirmed = await confirm({
+      title: "¿Limpiar el borrador de volantes?",
+      description: "Se eliminarán los registros y la configuración guardada localmente.",
+      type: "destructive",
+      confirmLabel: "Limpiar",
+      cancelLabel: "Conservar trabajo",
+    });
+    if (!confirmed) return;
+
+    const cleared = await clearDraft();
+    setFilterText("");
+    setPendingExport(null);
+    setIsSizePanelOpen(false);
+    setIsRecordsPanelOpen(false);
+    addToast({
+      message: cleared
+        ? "Borrador de volantes limpiado"
+        : "No se pudo limpiar el borrador guardado",
+      type: cleared ? "success" : "error",
+    });
+  };
+
   const handleExportAllPdf = async (): Promise<void> => {
     if (records.length === 0) {
       addToast({ message: "No hay contenido para exportar.", type: "error" });
@@ -445,11 +457,28 @@ export default function VolantesView() {
     }
   };
 
+  const persistenceLabel =
+    persistenceStatus === "loading"
+      ? "Restaurando..."
+      : persistenceStatus === "saving"
+        ? "Guardando..."
+        : persistenceStatus === "error"
+          ? "No se pudo guardar"
+          : "Guardado local";
+
   return (
     <div data-surface="volantes" className="vgen-app">
       <header className="vgen-header">
         <div className="vgen-brand">
           <span className="vgen-badge">{records.length} registros</span>
+          <span
+            className={`vgen-save-status${persistenceStatus === "error" ? " is-error" : ""}`}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="vgen-save-status-dot" aria-hidden="true" />
+            {persistenceLabel}
+          </span>
         </div>
 
         <div className="vgen-layout-toggle" role="group">
@@ -491,13 +520,15 @@ export default function VolantesView() {
         </div>
 
         <div className="vgen-header-actions">
-          <WithHoverTooltip label="Ver tutorial de como usar Generar Volantes" placement="bottom">
+          <WithHoverTooltip label="Ver tutorial" placement="bottom">
             <button
-              className="tutorial-trigger-btn"
+              aria-label="Como usar"
+              className="tutorial-trigger-btn vgen-icon-action"
               onClick={() => setIsTutorialOpen(true)}
               type="button"
             >
               <svg
+                aria-hidden="true"
                 width="16"
                 height="16"
                 viewBox="0 0 24 24"
@@ -509,15 +540,17 @@ export default function VolantesView() {
                 <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
                 <line x1="12" y1="17" x2="12.01" y2="17" />
               </svg>
-              Como usar
             </button>
           </WithHoverTooltip>
           <WithHoverTooltip label="Descargar Plantilla Excel" placement="bottom">
             <button
-              className="v-btn v-btn-outline vgen-btn-template"
+              aria-label="Plantilla"
+              className="v-btn v-btn-outline vgen-btn-template vgen-icon-action"
               onClick={handleExportTemplate}
+              type="button"
             >
               <svg
+                aria-hidden="true"
                 width="16"
                 height="16"
                 viewBox="0 0 24 24"
@@ -531,36 +564,68 @@ export default function VolantesView() {
                 <line x1="16" y1="17" x2="8" y2="17" />
                 <polyline points="10 9 9 9 8 9" />
               </svg>
-              Plantilla
+              <span className="sr-only">Plantilla</span>
             </button>
           </WithHoverTooltip>
-          <label className="v-btn v-btn-outline vgen-btn-import">
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
+          <WithHoverTooltip label="Importar archivo Excel" placement="bottom">
+            <label aria-label="Importar" className="v-btn v-btn-outline vgen-btn-import vgen-icon-action">
+              <svg
+                aria-hidden="true"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+              <span className="sr-only">Importar</span>
+              <input
+                accept=".xlsx,.xls,.csv"
+                onChange={handleImport}
+                type="file"
+                hidden
+              />
+            </label>
+          </WithHoverTooltip>
+          <WithHoverTooltip label="Eliminar" placement="bottom">
+            <button
+              aria-label="Limpiar"
+              className="v-btn v-btn-outline vgen-btn-clear vgen-icon-action"
+              onClick={() => void handleClearDraft()}
+              type="button"
             >
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
-            Importar
-            <input
-              accept=".xlsx,.xls,.csv"
-              onChange={handleImport}
-              type="file"
-              hidden
-            />
-          </label>
+              <svg
+                aria-hidden="true"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M3 6h18" />
+                <path d="M8 6V4h8v2" />
+                <path d="m19 6-1 14H6L5 6" />
+                <path d="M10 11v5" />
+                <path d="M14 11v5" />
+              </svg>
+            </button>
+          </WithHoverTooltip>
           <button
-            className="v-btn v-btn-primary vgen-btn-export-all"
+            aria-label="Exportar todo"
+            className="v-btn v-btn-primary vgen-btn-export-all vgen-icon-action"
             onClick={handleExportAllPdf}
+            title="Exportar todo"
             type="button"
           >
             <svg
+              aria-hidden="true"
               width="16"
               height="16"
               viewBox="0 0 24 24"
@@ -572,7 +637,7 @@ export default function VolantesView() {
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
             </svg>
-            Exportar Todo
+            <span className="sr-only">Todo</span>
           </button>
         </div>
       </header>
@@ -803,7 +868,7 @@ export default function VolantesView() {
                     </div>
                   </div>
 
-                  <div className="vgen-section">
+                  <div className="vgen-section vgen-section-zones">
                     <div className="vgen-group-title">Zonas afectadas</div>
                     <textarea
                       className="vgen-input vgen-textarea-compact"
@@ -965,6 +1030,7 @@ export default function VolantesView() {
                       </label>
                     </div>
                   </div>
+
                 </div>
               ) : (
                 <div className="vgen-empty-state">
@@ -1001,7 +1067,6 @@ export default function VolantesView() {
             records={selectedRecord ? [selectedRecord] : []}
           />
 
-          {/* Hidden: single-record export (individual download) */}
           <div
             aria-hidden="true"
             className="sheet-export-root"

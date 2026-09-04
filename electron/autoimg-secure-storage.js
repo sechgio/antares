@@ -91,7 +91,6 @@ function readSecureJson(filename, namespace) {
         try {
           writeSecureJson(filename, namespace, payload);
         } catch {
-          /* keep readable payload even if re-encrypt fails */
         }
       }
       return payload;
@@ -115,7 +114,6 @@ function writeSecureJson(filename, namespace, payload) {
     try {
       if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
     } catch {
-      /* ignore cleanup error */
     }
     throw err;
   }

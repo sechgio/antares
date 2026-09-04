@@ -162,7 +162,6 @@ export default function PdfPagePreview({
         try {
           await pdf.destroy();
         } catch {
-          /* ignore destroy errors */
         }
       }
     }

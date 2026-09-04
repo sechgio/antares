@@ -13,13 +13,49 @@ export const MAX_HISTORY_BYTES = 64 * 1024 * 1024;
 
 const stepBytesCache = new WeakMap<object, number>();
 
+function estimateStructuredBytes(value: unknown, seen = new Set<object>()): number {
+  if (value === null) return 8;
+
+  switch (typeof value) {
+    case 'string':
+      return value.length * 2 + 4;
+    case 'number':
+      return 32;
+    case 'boolean':
+      return 10;
+    case 'bigint':
+      return 32;
+    case 'undefined':
+    case 'function':
+    case 'symbol':
+      return 0;
+    case 'object':
+      break;
+  }
+
+  if (seen.has(value)) return 0;
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return 4 + value.reduce((total, item) => total + estimateStructuredBytes(item, seen), 0);
+  }
+
+  return Object.entries(value).reduce(
+    (total, [key, item]) => total + key.length * 2 + 8 + estimateStructuredBytes(item, seen),
+    4,
+  );
+}
+
 export function estimateStepBytes(step: HistoryStep): number {
   const cacheable = typeof step === 'object' && step !== null;
   const cached = cacheable ? stepBytesCache.get(step) : undefined;
   if (cached !== undefined) return cached;
   let bytes: number;
   try {
-    bytes = JSON.stringify(step).length * 2;
+    const hasCustomSerializer = cacheable && typeof (step as { toJSON?: unknown }).toJSON === 'function';
+    bytes = isHistoryStepDiff(step) && !hasCustomSerializer
+      ? estimateStructuredBytes(step)
+      : JSON.stringify(step).length * 2;
   } catch {
     return Number.POSITIVE_INFINITY;
   }

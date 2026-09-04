@@ -738,7 +738,6 @@ export default function EspaciosApp() {
           onProyectoColorChange={(id, color) => void handleProyectoColorChange(id, color)}
         />
 
-        {/* Hit target over the right border (no extra layout gap). Pointer capture = reliable drag. */}
         <WithHoverTooltip
           label="Arrastrar para cambiar tamaño · Doble clic para restablecer"
           placement="right"

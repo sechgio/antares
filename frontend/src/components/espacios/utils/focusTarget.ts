@@ -11,7 +11,6 @@ export function writeEspaciosFocusTarget(target: EspaciosFocusTarget): void {
   try {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(target));
   } catch {
-    // Ignore storage failures in restricted environments.
   }
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(ESPACIOS_FOCUS_EVENT));

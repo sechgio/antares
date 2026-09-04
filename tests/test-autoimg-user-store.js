@@ -36,8 +36,8 @@ scope.setActiveUser('user-store-test@example.com');
 store.saveLocalFolders([
   { name: 'A', folder_id: 'folderAAA111', activo: true, ultimo_scan: '', cant_archivos: 3 },
   { name: 'B', folder_id: 'folderBBB222', activo: false, ultimo_scan: '', cant_archivos: 0 },
-  { name: 'invalida', folder_id: 'x', activo: true }, // folder_id < 10 chars: se filtra
-  { name: 'sin-id', activo: true }, // sin folder_id: se filtra
+  { name: 'invalida', folder_id: 'x', activo: true },
+  { name: 'sin-id', activo: true },
 ]);
 const folders = store.loadLocalFolders();
 assert(folders.length === 2, 'folders válidos guardados, inválidos filtrados');

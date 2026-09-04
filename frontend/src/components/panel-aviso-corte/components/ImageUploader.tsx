@@ -40,7 +40,6 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
 
   return (
     <div className="flex flex-col gap-2">
-      {/* Drop zone */}
       <div
         role="button"
         tabIndex={0}
@@ -82,7 +81,6 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
         onChange={(e) => handleFiles(e.target.files)}
       />
 
-      {/* Errors */}
       {errors.length > 0 && (
         <div className="flex flex-col gap-1 px-1">
           {errors.map((err, i) => (
@@ -92,7 +90,6 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
         </div>
       )}
 
-      {/* Thumbnail grid */}
       {images.length > 0 && (
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between px-0.5">
@@ -122,7 +119,6 @@ export default function ImageUploader({ images, onAdd, onRemove, onClear }: Prop
             ))}
           </div>
 
-          {/* Ver más / Ver menos toggle */}
           {hasMore && (
             <button
               type="button"

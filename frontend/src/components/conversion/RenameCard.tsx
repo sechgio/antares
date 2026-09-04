@@ -369,7 +369,6 @@ export default function RenameCard(props: RenameCardProps) {
             </div>
           ) : (
             <>
-              {/* Paso 1: Columna ID */}
               <div className="space-y-2.5">
                 <div className="flex items-center gap-2">
                   <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[var(--text-on-accent)] text-[10px] font-bold">1</div>
@@ -394,7 +393,6 @@ export default function RenameCard(props: RenameCardProps) {
                 </p>
               </div>
 
-              {/* Pasos 2 y 3: Columna renombre + Secuencia */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
@@ -466,7 +464,6 @@ export default function RenameCard(props: RenameCardProps) {
                 </div>
               </div>
 
-              {/* Paso 4: Separador */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[var(--text-on-accent)] text-[10px] font-bold">4</div>

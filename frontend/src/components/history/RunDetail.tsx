@@ -65,7 +65,6 @@ export default function RunDetail({ run, onReexecute, onDelete }: RunDetailProps
         </div>
       </div>
 
-      {/* Barra de progreso de exito */}
       <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
         <div className="flex items-center justify-between mb-2">
           <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Tasa de éxito</span>
@@ -85,7 +84,6 @@ export default function RunDetail({ run, onReexecute, onDelete }: RunDetailProps
         </div>
       </div>
 
-      {/* Estadisticas clave */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {stats.map((stat) => (
           <div key={stat.label} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3.5 transition-colors hover:border-[var(--border-medium)]">

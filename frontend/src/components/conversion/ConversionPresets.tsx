@@ -116,14 +116,14 @@ function loadPresets(): SavedPreset[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw);
-  } catch { /* ignore */ }
+  } catch {}
   return [];
 }
 
 function savePresets(presets: SavedPreset[]) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(presets));
-  } catch { /* ignore */ }
+  } catch {}
 }
 
 export default function ConversionPresets({ currentConfig, onLoadConfig, className = '' }: ConversionPresetsProps) {

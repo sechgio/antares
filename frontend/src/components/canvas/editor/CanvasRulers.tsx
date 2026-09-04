@@ -192,7 +192,6 @@ function CanvasRulers({
 
   return (
     <>
-      {/* Corner */}
       <div
         style={{
           position: 'absolute',
@@ -208,7 +207,6 @@ function CanvasRulers({
         }}
       />
 
-      {/* Top ruler */}
       <div
         data-testid="canvas-ruler-top"
         onPointerDown={(e) => startCreate('y', e)}
@@ -257,7 +255,6 @@ function CanvasRulers({
         </div>
       </div>
 
-      {/* Left ruler */}
       <div
         data-testid="canvas-ruler-left"
         onPointerDown={(e) => startCreate('x', e)}

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { cloneDocument } from '../ops/document';
 import {
   canFocusFieldBinding,
@@ -25,6 +25,17 @@ export function useInlineEdit({
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
   const [editingSelectAll, setEditingSelectAll] = useState(true);
   const editBaselineRef = useRef<CanvasDocument | null>(null);
+  const previousDocumentIdRef = useRef(history.document.id);
+
+  useEffect(() => {
+    const documentId = history.document.id;
+    if (previousDocumentIdRef.current === documentId) return;
+
+    previousDocumentIdRef.current = documentId;
+    editBaselineRef.current = null;
+    setEditingLayerId(null);
+    setEditingSelectAll(true);
+  }, [history.document.id]);
 
   const commitInlineEdit = useCallback(() => {
     if (!editingLayerId) return;

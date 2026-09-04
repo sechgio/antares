@@ -83,7 +83,6 @@ export default function SheetPreview({
         boxShadow: isExport ? 'none' : '0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)',
       }}
     >
-      {/* ── Header Table ── */}
       <table
         style={{
           width: `${TABLE_WIDTH_CM}cm`,
@@ -97,7 +96,6 @@ export default function SheetPreview({
           <col style={{ width: `${HEADER_LOGO_WIDTH_CM}cm` }} />
         </colgroup>
         <tbody>
-          {/* Header Row 1: Logo Left (rowspan 2) | Title | Logo Right (rowspan 2) */}
           <tr style={{ height: `${HEADER_TITLE_HEIGHT_CM}cm` }}>
             <td
               rowSpan={2}
@@ -168,7 +166,6 @@ export default function SheetPreview({
               ) : null}
             </td>
           </tr>
-          {/* Header Row 2: Cuadrante Info (center cell only) */}
           <tr style={{ height: `${HEADER_INFO_HEIGHT_CM}cm` }}>
             <td
               style={{
@@ -217,10 +214,8 @@ export default function SheetPreview({
         </tbody>
       </table>
 
-      {/* Spacer between header and photos */}
       <div style={{ height: `${GAP_UNDER_HEADER_CM}cm`, width: '100%' }} />
 
-      {/* ── Photos: un marco exterior + gutters blancos uniformes ── */}
       <table
         style={{
           width: `${TABLE_WIDTH_CM}cm`,

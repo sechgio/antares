@@ -316,7 +316,7 @@ async function run() {
 
   try {
     await fsForImage.promises.rm(imageTempDir, { recursive: true, force: true });
-  } catch { /* ignore */ }
+  } catch {}
 
   class DeferredBrowserWindow {
     static instances = [];
@@ -416,8 +416,6 @@ async function run() {
       }
 
       async loadFile() {
-        // Nunca dispara did-finish-load ni did-fail-load: el render se cuelga
-        // ANTES de printToPDF (el hueco que el timeout por fase no cubría).
       }
 
       isDestroyed() {

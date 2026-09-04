@@ -378,7 +378,6 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
           targetSession.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, null);
         }
       } catch {
-        /* window/session already destroyed */
       }
     };
 
@@ -424,7 +423,6 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
         new Promise((resolve) => setTimeout(resolve, 1500)),
       ]);
     } catch {
-      /* fonts.ready unavailable — proceed with system fallbacks */
     }
 
     let pdfBuffer = await pdfWindow.webContents.printToPDF({
@@ -635,11 +633,18 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
       throw new Error('canvas asset ref required');
     }
     const buf = await getCanvasAsset(ref);
+    // Evitar la copia intermedia de buf.buffer.slice (medida: ~48ms + pico 3x por
+    // asset de 64MB) cuando el Buffer ya es contiguo y dueño exclusivo de su
+    // ArrayBuffer: structured clone del IPC copia una sola vez el arreglo completo.
+    const chunk =
+      buf.byteOffset === 0 && buf.byteLength === buf.buffer.byteLength
+        ? buf.buffer
+        : buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
     return {
       handled: true,
       result: {
         ref: typeof ref === 'string' && ref.startsWith('canvas-asset:') ? ref : `canvas-asset:${ref}`,
-        chunk: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength),
+        chunk,
         bytes: buf.length,
       },
     };

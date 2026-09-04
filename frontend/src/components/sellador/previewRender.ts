@@ -279,7 +279,6 @@ export async function renderOtherPagesPreview(
       try {
         await pdf.destroy();
       } catch {
-        /* ignore destroy errors */
       }
     }
   }

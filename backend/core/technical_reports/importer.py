@@ -11,11 +11,11 @@ from openpyxl import load_workbook
 
 from backend.core.technical_reports.models import (
     TechnicalReport,
-    _safe_int,
-    _safe_str,
     create_empty_report,
     report_id_from_number,
 )
+from backend.utils.coercion import safe_int as _safe_int
+from backend.utils.coercion import safe_str as _safe_str
 
 MESES = {
     1: "ENERO",

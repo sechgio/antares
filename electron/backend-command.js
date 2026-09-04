@@ -18,7 +18,7 @@ function getBackendCommand(isDev, platform, dir) {
       try {
         require('child_process').execSync(`${cmd} --version`, { stdio: 'ignore' });
         return { cmd, args: script ? [script] : [] };
-      } catch { /* try next */ }
+      } catch {}
     }
 
     return { cmd: 'python', args: script ? [script] : [] };

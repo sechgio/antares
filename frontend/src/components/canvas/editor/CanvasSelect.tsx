@@ -120,7 +120,6 @@ export default function CanvasSelect({
 
   return (
     <div ref={containerRef} className={`relative w-full ${className}`}>
-      {/* Synchronized select element for form accessibility & test compatibility */}
       <select
         ref={selectRef}
         value={value}
@@ -160,7 +159,6 @@ export default function CanvasSelect({
         />
       </button>
 
-      {/* Portal escapes overflow:hidden; mount under .canvas-app to keep --cv-* scope */}
       {isOpen &&
         portalRoot &&
         createPortal(

@@ -1,4 +1,3 @@
-
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -50,7 +49,6 @@ function main() {
   try {
     fs.unlinkSync(filePath);
   } catch {
-    // ignore missing file
   }
 
   const saved = setUbicacionesApiKeys({ maptiler: 'mt-key', google: 'g-key', bogus: 'x' });
@@ -89,7 +87,6 @@ function main() {
       try {
         fs.unlinkSync(filePath);
       } catch {
-        // ignore cleanup errors
       }
     }
   }
@@ -97,7 +94,6 @@ function main() {
   try {
     fs.unlinkSync(filePath);
   } catch {
-    // ignore cleanup errors
   }
 
   if (failed) {

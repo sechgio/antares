@@ -166,7 +166,6 @@ async function resolvePdfImage(page: unknown, reference: unknown): Promise<unkno
     const direct = (get as (id: unknown) => unknown)(imageId);
     if (direct) return direct;
   } catch {
-    // PDF.js throws when an object is not ready and expects the callback form.
   }
   if (imageId === undefined) return reference;
   return new Promise((resolve) => {

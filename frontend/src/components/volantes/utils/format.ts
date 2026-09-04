@@ -3,9 +3,11 @@ import type { BulletStyle } from "../types";
 const dateFormatter = new Intl.DateTimeFormat("es-PE", {
   weekday: "long",
   day: "numeric",
-  month: "long",
-  year: "numeric"
+  month: "long"
 });
+
+const normalizeFlyerMonthName = (value: string): string =>
+  value.replace(/\bsetiembre\b/gi, "septiembre");
 
 const stripAccents = (value: string): string =>
   value
@@ -142,7 +144,7 @@ export const formatFlyerDateLine = (
     return "Fecha no disponible";
   }
 
-  const prettyDate = dateFormatter.format(date);
+  const prettyDate = normalizeFlyerMonthName(dateFormatter.format(date));
   const normalizeFlyerTime = (timeValue: string): string => {
     const [hoursText, minutesText = "00"] = timeValue.split(":");
     const hours = Number(hoursText);

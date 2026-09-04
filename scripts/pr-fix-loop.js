@@ -1,31 +1,5 @@
 #!/usr/bin/env node
 
-/**
- * Antares PR Fix Loop (auto-correction + auto-merge with guard)
- * =============================================================
- *
- * Loop que se dispara cuando un PR falla CI (lint, typecheck, tests).
- * Aplica correcciones SIN eliminar codigo, vuelve a pushear, espera CI
- * y si todo pasa y el PR esta aprobado, hace auto-merge con guardia.
- *
- * Flags:
- *   (ninguno)   = dry-run — analiza el PR, muestra que corregiria, sin side effects
- *   --ship      = aplica fixes, commitea, pushea, espera CI
- *   --merge     = tras CI verde y PR aprobado, mergea (auto-merge con guardia)
- *   --pr <num>  = opera sobre un PR especifico (default: PR abierto de tu branch actual)
- *   --max <n>   = maximo de iteraciones (default: 5)
- *
- * Anti-loop:
- *   - Commit de auto-fix usa suffix [skip-ci-fix]
- *   - Maximo de iteraciones (default 5)
- *   - Si llega al limite, comenta en el PR y sale
- *
- * Uso:
- *   node scripts/pr-fix-loop.js
- *   node scripts/pr-fix-loop.js --ship --pr 42
- *   node scripts/pr-fix-loop.js --ship --merge --pr 42
- */
-
 const {
   REPO_OWNER,
   REPO_NAME,

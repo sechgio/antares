@@ -68,8 +68,6 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
   }, [isOpen, onClose, section, onSectionChange, visibleSectionDefs]);
 
   useEffect(() => {
-    // Prevent auto-focusing the button to avoid showing the focus ring visually
-    // when opening the modal with a mouse.
   }, [isOpen, section]);
 
   const sections = useMemo(
@@ -120,7 +118,6 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
             '0 24px 48px color-mix(in srgb, var(--bg-base) 55%, transparent), 0 0 0 1px color-mix(in srgb, var(--border-subtle) 80%, transparent)',
         }}
       >
-        {/* Sidebar interno de secciones */}
         <aside
           data-testid="settings-modal-sidebar"
           aria-label="Secciones de configuración"
@@ -171,7 +168,6 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
           </div>
         </aside>
 
-        {/* Contenido de la seccion activa */}
         <div className="relative flex min-w-0 flex-1 flex-col bg-[var(--bg-base)]">
           <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] px-6">
             <div className="flex min-w-0 items-center gap-3">

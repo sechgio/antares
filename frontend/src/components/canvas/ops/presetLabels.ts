@@ -1,4 +1,3 @@
-
 const STORAGE_KEY = 'antares.canvas.presetLabels';
 
 type LabelMap = Record<string, string>;
@@ -35,7 +34,6 @@ export function setPresetLabel(presetId: string, label: string): void {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
     }
   } catch {
-    // Quota / private mode — ignore.
   }
 }
 
@@ -50,7 +48,6 @@ export function resetPresetLabel(presetId: string): void {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
     }
   } catch {
-    // ignore
   }
 }
 

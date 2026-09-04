@@ -165,7 +165,6 @@ function readPlaintextApiKeys(): Record<string, string> {
     const oldGoogleKey = localStorage.getItem(LS_GOOGLE_MAPS_KEY);
     if (oldGoogleKey) return { google: oldGoogleKey };
   } catch {
-    // Corrupt plaintext — treat as empty and let the user re-enter.
   }
   return {};
 }
@@ -656,7 +655,6 @@ export const UbicacionesView: React.FC = () => {
     ) {
       triggerPreviewFetch(0);
     }
-    // Solo al montar: cambios posteriores los manejan handleManualChange / mode switch
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -888,19 +886,15 @@ export const UbicacionesView: React.FC = () => {
 
   return (
     <div data-surface="ubicaciones" className="flex h-full overflow-hidden">
-      {/* ── Sidebar: Config ── */}
       <div data-surface-part="sidebar" className="w-[340px] flex flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-base)] overflow-hidden">
-        {/* Title (fixed top) */}
         <div className="shrink-0 flex items-center gap-2.5 px-4 h-11 border-b border-[var(--border-subtle)]">
           <MapPin size={16} className="text-[var(--accent-primary)] shrink-0" />
           <h2 className="text-sm font-semibold text-[var(--text-primary)]">Generador de Ubicaciones</h2>
         </div>
 
-        {/* Scrollable config sections */}
         <div className="flex-1 overflow-y-auto px-4 py-3">
           <div className="flex flex-col gap-3">
 
-            {/* ── Origen de Datos ── */}
             <section className="flex flex-col gap-1.5">
               <label className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                 Origen de Datos
@@ -978,7 +972,6 @@ export const UbicacionesView: React.FC = () => {
                 )
               ) : (
                 <div className="flex flex-col gap-2 mt-1 p-2 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-subtle)]">
-                  {/* Fila 1: Coordenadas */}
                   <div className="grid grid-cols-2 gap-2">
                     <div className="flex flex-col gap-1">
                       <label className="text-[9px] font-semibold text-[var(--text-muted)] uppercase">Latitud*</label>
@@ -1002,7 +995,6 @@ export const UbicacionesView: React.FC = () => {
                       />
                     </div>
                   </div>
-                  {/* Fila 2: Código */}
                   <div className="flex flex-col gap-1">
                     <label className="text-[9px] font-semibold text-[var(--text-muted)] uppercase">Código</label>
                     <input
@@ -1013,7 +1005,6 @@ export const UbicacionesView: React.FC = () => {
                       placeholder="Ej. UBI-001"
                     />
                   </div>
-                  {/* Fila 3: Dirección */}
                   <div className="flex flex-col gap-1">
                     <label className="text-[9px] font-semibold text-[var(--text-muted)] uppercase">Dirección</label>
                     <input
@@ -1024,7 +1015,6 @@ export const UbicacionesView: React.FC = () => {
                       placeholder="Ej. Av. Principal 123"
                     />
                   </div>
-                  {/* Fila 4: Localidad y Distrito */}
                   <div className="grid grid-cols-2 gap-2">
                     <div className="flex flex-col gap-1">
                       <label className="text-[9px] font-semibold text-[var(--text-muted)] uppercase">Localidad</label>
@@ -1051,7 +1041,6 @@ export const UbicacionesView: React.FC = () => {
               )}
             </section>
 
-            {/* ── Carpeta de Destino ── */}
             <section className="flex flex-col gap-1.5">
               <label className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                 Carpeta de Destino
@@ -1083,7 +1072,6 @@ export const UbicacionesView: React.FC = () => {
               </button>
             </section>
 
-            {/* ── Orientación + Modo de Salida ── */}
             <section className="flex flex-col gap-2">
               <div className="flex flex-col gap-1.5">
                 <label className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
@@ -1113,7 +1101,6 @@ export const UbicacionesView: React.FC = () => {
               </div>
             </section>
 
-            {/* ── Personalización de Diseño ── */}
             <div className="border-t border-[var(--border-subtle)] pt-3">
               <button
                 type="button"
@@ -1128,7 +1115,6 @@ export const UbicacionesView: React.FC = () => {
 
               {designOpen && (
                 <div className="mt-2 space-y-2">
-                  {/* Tab buttons */}
                   <div className="flex gap-0.5 rounded-lg bg-[var(--bg-input)] p-0.5">
                     {(['texts', 'pin', 'map'] as const).map(tab => (
                       <button
@@ -1180,7 +1166,6 @@ export const UbicacionesView: React.FC = () => {
                               </div>
                             </div>
                             
-                            {/* Size + Color row */}
                             <div className="flex items-center gap-2">
                               <span className="text-[9px] text-[var(--text-muted)] w-6 shrink-0">Tam.</span>
                               <input
@@ -1213,7 +1198,6 @@ export const UbicacionesView: React.FC = () => {
                                 />
                               </div>
 
-                            {/* Offsets row */}
                             <div className="flex gap-4">
                               <div className="flex-1 min-w-0 flex items-center gap-2">
                                 <span className="text-[9px] text-[var(--text-muted)] shrink-0">X</span>
@@ -1271,7 +1255,6 @@ export const UbicacionesView: React.FC = () => {
                         </button>
                       </div>
 
-                      {/* Color presets */}
                       <div className="space-y-1">
                         <span className="text-[9px] text-[var(--text-muted)] block">Color del Pin</span>
                         <div className="flex flex-wrap gap-1">
@@ -1297,7 +1280,6 @@ export const UbicacionesView: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Scale */}
                       <div className="flex items-center gap-2">
                         <span className="text-[9px] text-[var(--text-muted)] w-7 shrink-0">Escala</span>
                         <input
@@ -1314,7 +1296,6 @@ export const UbicacionesView: React.FC = () => {
                         </span>
                       </div>
 
-                      {/* Pin Offsets */}
                       <div className="flex gap-4">
                         <div className="flex-1 min-w-0 flex items-center gap-2">
                           <span className="text-[9px] text-[var(--text-muted)] shrink-0">X</span>
@@ -1353,7 +1334,6 @@ export const UbicacionesView: React.FC = () => {
                       <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-2 space-y-2">
                         <span className="text-[10px] font-medium text-[var(--text-primary)] block">Capa y Zoom</span>
                         
-                        {/* Map Provider */}
                         <div className="space-y-0.5">
                           <label className="text-[9px] text-[var(--text-muted)]">Proveedor</label>
                           <ThemedSelect
@@ -1401,7 +1381,6 @@ export const UbicacionesView: React.FC = () => {
                           </div>
                         )}
 
-                        {/* Zoom */}
                         <div className="flex items-center gap-2">
                           <span className="text-[9px] text-[var(--text-muted)] w-8 shrink-0">Zoom</span>
                           <input
@@ -1422,7 +1401,6 @@ export const UbicacionesView: React.FC = () => {
                       <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-2 space-y-1.5">
                         <span className="text-[10px] font-medium text-[var(--text-primary)] block">Filtro de Contraste</span>
                         
-                        {/* Overlay Color */}
                         <div className="flex items-center gap-2">
                           <span className="text-[9px] text-[var(--text-muted)] w-7 shrink-0">Color</span>
                           <input
@@ -1434,7 +1412,6 @@ export const UbicacionesView: React.FC = () => {
                           <span className="text-[9px] text-[var(--text-muted)] font-mono">{customStyles.map.overlayColor ?? '#F6F6F6'}</span>
                         </div>
 
-                        {/* Overlay Alpha */}
                         <div className="flex items-center gap-2">
                           <span className="text-[9px] text-[var(--text-muted)] w-7 shrink-0">Opacidad</span>
                           <input
@@ -1454,7 +1431,6 @@ export const UbicacionesView: React.FC = () => {
                       <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-2 space-y-1.5">
                         <span className="text-[10px] font-medium text-[var(--text-primary)] block">Distribución</span>
                         
-                        {/* yStart */}
                         <div className="flex items-center gap-2">
                           <span className="text-[9px] text-[var(--text-muted)] w-10 shrink-0">Inicio Y</span>
                           <input
@@ -1470,7 +1446,6 @@ export const UbicacionesView: React.FC = () => {
                           </span>
                         </div>
 
-                        {/* lineSpacing */}
                         <div className="flex items-center gap-2">
                           <span className="text-[9px] text-[var(--text-muted)] w-10 shrink-0">Espaciado</span>
                           <input
@@ -1486,7 +1461,6 @@ export const UbicacionesView: React.FC = () => {
                           </span>
                         </div>
 
-                        {/* lineGap */}
                         <div className="flex items-center gap-2">
                           <span className="text-[9px] text-[var(--text-muted)] w-10 shrink-0">Separación</span>
                           <input
@@ -1520,7 +1494,6 @@ export const UbicacionesView: React.FC = () => {
           </div>
         </div>
 
-        {/* Sticky Generate Button (fixed bottom) */}
         <div className="shrink-0 border-t border-[var(--border-subtle)] bg-[var(--bg-base)] px-4 py-2">
           <Button className="w-full" disabled={!canGenerate} onClick={handleGenerate}>
             {isProcessing ? (
@@ -1538,7 +1511,6 @@ export const UbicacionesView: React.FC = () => {
         </div>
       </div>
 
-      {/* ── Main: Preview & Results ── */}
       <div data-surface-part="workspace" className="flex-1 flex flex-col bg-[var(--bg-elevated)] overflow-hidden">
         {result ? (
           <ResultPanel result={result} outputDir={outputDir} />
@@ -1576,7 +1548,6 @@ const EmptyPreviewPanel: React.FC<{ formato: string }> = ({ formato }) => (
         formato === 'vertical' ? 'w-48 h-64' : 'w-64 h-48'
       }`}
     >
-      {/* Dotted background pattern using CSS variable */}
       <div
         className="absolute inset-0 opacity-20"
         style={{
@@ -1651,7 +1622,6 @@ const RealPreviewPanel: React.FC<{
 
   return (
   <div className="flex-1 flex flex-col overflow-hidden">
-    {/* Toolbar — h-11 matches sidebar title bar for horizontal alignment */}
     <div className="shrink-0 flex items-center justify-between px-5 h-11 border-b border-[var(--border-subtle)] bg-[var(--bg-base)]">
       <div className="flex items-center gap-2.5">
         <Eye size={18} className="text-[var(--accent-primary)] shrink-0" />
@@ -1699,7 +1669,6 @@ const RealPreviewPanel: React.FC<{
 
     </div>
 
-    {/* Preview Content */}
     <div className="flex-1 overflow-hidden flex items-center justify-center bg-[var(--bg-elevated)] p-6 relative">
       {error ? (
         <div className="flex flex-col items-center gap-3 max-w-sm">
@@ -1732,7 +1701,6 @@ const RealPreviewPanel: React.FC<{
               style={{ opacity: loading ? 0.85 : 1 }}
             />
           </div>
-          {/* Metadata bar - below image */}
           {showMeta && (
           <div className="flex items-center gap-3 shrink-0 px-4 py-2 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)] max-w-full overflow-hidden">
             <span className="text-sm font-bold text-[var(--text-primary)] shrink-0">{meta!.cod_componente || '—'}</span>

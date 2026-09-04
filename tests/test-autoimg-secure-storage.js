@@ -1,4 +1,3 @@
-
 const assert = require('assert');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -18,10 +17,9 @@ function cleanup() {
     .filter((entry) => entry.name.startsWith(`${filename}.`) && entry.name.endsWith('.tmp'))
     .map((entry) => path.join(path.dirname(filePath), entry.name));
   } catch {
-    // The storage directory may not exist on the first test run.
   }
   for (const candidate of [filePath, ...temporaryFiles]) {
-    try { fs.unlinkSync(candidate); } catch { /* already absent */ }
+    try { fs.unlinkSync(candidate); } catch {}
   }
 }
 

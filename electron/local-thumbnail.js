@@ -1,4 +1,3 @@
-
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
@@ -88,7 +87,6 @@ async function _readDiskCache(cachePath) {
       const now = new Date();
       await fsp.utimes(cachePath, now, now);
     } catch {
-      /* cache hit remains valid when touching is unavailable */
     }
     _scheduleTrim(path.dirname(cachePath));
     return `data:image/jpeg;base64,${buf.toString('base64')}`;
@@ -104,7 +102,6 @@ function _scheduleTrim(cacheDir) {
   setImmediate(() => {
     _trimScheduled = false;
     _trimDiskCache(cacheDir).catch(() => {
-      /* ignore */
     });
   });
 }
@@ -117,7 +114,6 @@ async function _writeDiskCache(cacheDir, cachePath, jpegBuf) {
     await fsp.rename(tmp, cachePath);
     _scheduleTrim(cacheDir);
   } catch {
-    /* disk full / permissions — non-fatal */
   }
 }
 
@@ -156,12 +152,10 @@ async function _trimDiskCache(cacheDir, { maxFiles = DISK_CACHE_MAX_FILES, maxBy
         try {
           await fsp.unlink(entry.full);
         } catch {
-          /* ignore */
         }
       }),
     );
   } catch {
-    /* ignore */
   }
 }
 

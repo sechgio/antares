@@ -66,11 +66,11 @@ function loadPersistedLogo(key: string): { dataUrl: string; fileName: string } |
 }
 
 function savePersistedLogo(key: string, dataUrl: string, fileName: string) {
-  try { localStorage.setItem(key, JSON.stringify({ dataUrl, fileName })); } catch { /* ignore */ }
+  try { localStorage.setItem(key, JSON.stringify({ dataUrl, fileName })); } catch {}
 }
 
 function clearPersistedLogo(key: string) {
-  try { localStorage.removeItem(key); } catch { /* ignore */ }
+  try { localStorage.removeItem(key); } catch {}
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -288,7 +288,7 @@ export default function PreviewPanelView() {
   }, [logoRight]);
 
   useEffect(() => {
-    try { localStorage.setItem(CUSTOM_COLS_KEY, JSON.stringify(customColumns)); } catch { /* ignore */ }
+    try { localStorage.setItem(CUSTOM_COLS_KEY, JSON.stringify(customColumns)); } catch {}
   }, [customColumns]);
 
   const loadTemplates = useCallback(async () => {
@@ -796,9 +796,7 @@ export default function PreviewPanelView() {
 
   return (
     <div className="flex h-full w-full bg-[var(--bg-base)] text-[var(--text-primary)] overflow-hidden">
-      {/* Sidebar */}
       <aside className={`flex flex-col bg-[var(--bg-surface)] border-r border-[var(--border-subtle)] transition-all duration-300 ${isFocusMode ? 'w-0 overflow-hidden opacity-0 border-none' : 'w-[340px]'}`}>
-        {/* Sidebar header — identity + workflow progress */}
         <div className="shrink-0 h-11 px-3 flex items-center border-b border-[var(--border-subtle)]">
           <div className="flex items-center gap-2 w-full">
             <div className="flex-1 flex gap-1" aria-hidden>
@@ -812,7 +810,6 @@ export default function PreviewPanelView() {
 
         <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5">
 
-          {/* Step 0: Logos */}
           <Step number="0" title="Logos y Cabecera" icon={<Settings size={12} />} defaultOpen={!!(logoLeft || logoRight)} status={stepStates[0] ? 'done' : 'pending'}>
             <div className="grid grid-cols-2 gap-1.5">
               {(['left', 'right'] as const).map(side => {
@@ -836,7 +833,6 @@ export default function PreviewPanelView() {
             </div>
           </Step>
 
-          {/* Step 1: Template */}
           <Step
             number="1"
             title="Plantilla"
@@ -893,7 +889,6 @@ export default function PreviewPanelView() {
             </div>
           </Step>
 
-          {/* Step 2: Data */}
           <Step
             number="2"
             title="Datos"
@@ -947,7 +942,6 @@ export default function PreviewPanelView() {
             </div>
           </Step>
 
-          {/* Step 3: Mapping */}
           <Step number="3" title="Mapeo de Columnas" icon={<Settings size={12} />} disabled={headers.length === 0} defaultOpen={false} status={stepStates[3] ? 'done' : 'pending'}>
             <div className="space-y-1.5">
               <div>
@@ -1013,7 +1007,6 @@ export default function PreviewPanelView() {
             </div>
           </Step>
 
-          {/* Step 4: Images */}
           <Step
             number="4"
             title={requiresImages ? 'Imágenes' : 'Imágenes (Opcional)'}
@@ -1048,7 +1041,6 @@ export default function PreviewPanelView() {
             )}
           </Step>
 
-          {/* Step 5: Select Record & Export */}
           <Step number="5" title="Seleccionar y Exportar" icon={<Search size={12} />} disabled={requiresImages ? images.length === 0 : data.length === 0} status={stepStates[5] ? 'done' : 'pending'}>
             <div className="space-y-1.5">
               <div className="relative">
@@ -1145,7 +1137,6 @@ export default function PreviewPanelView() {
 
       </aside>
 
-      {/* Main Preview */}
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
         <PreviewPanel
           ref={panelRef}
@@ -1159,7 +1150,6 @@ export default function PreviewPanelView() {
           isFocusMode={isFocusMode}
         />
 
-        {/* Data Preview Modal */}
         <DataPreviewModal
           open={showDataPreview && data.length > 0}
           onClose={() => setShowDataPreview(false)}
@@ -1172,7 +1162,6 @@ export default function PreviewPanelView() {
           sheetName={selectedSheetName}
         />
 
-        {/* Custom Column Modal */}
         {showColumnModal && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center"
@@ -1231,7 +1220,6 @@ export default function PreviewPanelView() {
           </div>
         )}
 
-        {/* Focus Mode Navigation */}
         {isFocusMode && (
           <>
             <button type="button" aria-label={canPrevRow ? 'Registro anterior' : 'Registro anterior (deshabilitado)'} onClick={goToPrevRow} disabled={!canPrevRow} className={`fixed left-4 top-1/2 -translate-y-1/2 p-2 transition-colors z-[100] ${!canPrevRow ? 'text-[var(--text-muted)] opacity-30 cursor-not-allowed' : 'text-[var(--accent-primary)] hover:opacity-100 opacity-70'}`}>

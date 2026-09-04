@@ -276,8 +276,6 @@ export default function HistoryView() {
 
     <div className="flex flex-col h-full w-full bg-[var(--bg-base)] text-[var(--text-primary)]">
 
-      {/* Barra de herramientas superior */}
-
       <div className="shrink-0 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] px-5 py-3">
 
         <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -408,10 +406,6 @@ export default function HistoryView() {
 
         </div>
 
-
-
-        {/* Panel de filtros desplegable */}
-
         {filtersOpen && (
 
           <div className="mt-3 animate-fade-in rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4">
@@ -459,10 +453,6 @@ export default function HistoryView() {
         )}
 
       </div>
-
-
-
-      {/* Barra de seleccion masiva */}
 
       {selectedIds.size > 0 && (
 
@@ -541,10 +531,6 @@ export default function HistoryView() {
         </div>
 
       )}
-
-
-
-      {/* Cuerpo: lista + detalle */}
 
       <div className="flex flex-1 min-h-0">
 

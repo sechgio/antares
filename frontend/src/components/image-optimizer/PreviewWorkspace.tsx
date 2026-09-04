@@ -1,4 +1,5 @@
 import type { DragEvent, KeyboardEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { CheckCircle2, Crop, Download, Eye, Loader2, Sparkles, Trash2 } from 'lucide-react';
@@ -43,6 +44,12 @@ interface PreviewWorkspaceProps {
 const chromeBtn =
   'inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[10px] font-medium text-[var(--text-secondary)] transition-[color,background-color,transform] duration-100 hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] active:scale-[0.96] motion-reduce:active:scale-100 disabled:pointer-events-none disabled:opacity-40';
 
+const GRID_VIRTUALIZATION_THRESHOLD = 100;
+const GRID_CARD_MIN_WIDTH = 160;
+const GRID_GAP = 8;
+const GRID_ROW_HEIGHT = 260;
+const GRID_OVERSCAN = 2;
+
 export default function PreviewWorkspace({
   items,
   downloadNameMap,
@@ -79,6 +86,49 @@ export default function PreviewWorkspace({
   const { t } = useTranslation();
   const previewStageClass = 'flex min-h-0 flex-1 items-center justify-center overflow-hidden';
   const previewImageClass = 'block max-h-full max-w-full object-contain';
+  const gridIsVirtualized = viewMode === 'grid' && items.length >= GRID_VIRTUALIZATION_THRESHOLD;
+  const [gridScrollTop, setGridScrollTop] = useState(0);
+  const [gridViewport, setGridViewport] = useState({ width: 640, height: 480 });
+  const gridScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!gridIsVirtualized) return undefined;
+
+    const scrollElement = gridScrollRef.current;
+    if (!scrollElement) return undefined;
+
+    const updateViewport = () => {
+      const rect = scrollElement.getBoundingClientRect();
+      setGridViewport({
+        width: Math.max(1, rect.width || scrollElement.clientWidth || 640),
+        height: Math.max(1, rect.height || scrollElement.clientHeight || 480),
+      });
+    };
+    const handleScroll = () => setGridScrollTop(scrollElement.scrollTop);
+
+    updateViewport();
+    scrollElement.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', updateViewport);
+    return () => {
+      scrollElement.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', updateViewport);
+    };
+  }, [gridIsVirtualized, items.length]);
+
+  const gridColumnCount = Math.max(1, Math.floor((gridViewport.width + GRID_GAP) / (GRID_CARD_MIN_WIDTH + GRID_GAP)));
+  const gridRowCount = Math.ceil(items.length / gridColumnCount);
+  const gridStartRow = gridIsVirtualized
+    ? Math.max(0, Math.floor(gridScrollTop / GRID_ROW_HEIGHT) - GRID_OVERSCAN)
+    : 0;
+  const gridEndRow = gridIsVirtualized
+    ? Math.min(
+        gridRowCount,
+        gridStartRow + Math.ceil(gridViewport.height / GRID_ROW_HEIGHT) + GRID_OVERSCAN * 2,
+      )
+    : gridRowCount;
+  const visibleGridItems = gridIsVirtualized
+    ? items.slice(gridStartRow * gridColumnCount, Math.min(items.length, gridEndRow * gridColumnCount))
+    : items;
 
   if (items.length === 0) {
     return (
@@ -124,9 +174,25 @@ export default function PreviewWorkspace({
   if (viewMode === 'grid') {
     return (
       <section data-surface-part="preview" className={`relative flex h-full flex-col overflow-hidden ${previewStageShellClass}`}>
-        <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto p-2.5">
-          <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
-            {items.map((item) => {
+        <div
+          ref={gridScrollRef}
+          data-virtualized-grid={gridIsVirtualized ? 'true' : undefined}
+          onScroll={gridIsVirtualized ? () => setGridScrollTop(gridScrollRef.current?.scrollTop ?? 0) : undefined}
+          className="custom-scrollbar min-h-0 flex-1 overflow-y-auto p-2.5"
+        >
+          <div
+            className="grid gap-2"
+            style={{
+              gridTemplateColumns: gridIsVirtualized
+                ? `repeat(${gridColumnCount}, minmax(0, 1fr))`
+                : 'repeat(auto-fill, minmax(160px, 1fr))',
+            }}
+          >
+            {gridIsVirtualized && gridStartRow > 0 && (
+              <div aria-hidden="true" style={{ height: gridStartRow * GRID_ROW_HEIGHT, gridColumn: '1 / -1' }} />
+            )}
+
+            {visibleGridItems.map((item) => {
               const outputName = downloadNameMap.get(item.id) || item.originalName;
               const statusColor = item.excluded ? 'var(--text-muted)'
                 : item.status === 'error' ? 'var(--accent-red)'
@@ -139,6 +205,7 @@ export default function PreviewWorkspace({
               return (
                 <div
                   key={item.id}
+                  data-image-optimizer-card="true"
                   className="group relative flex cursor-pointer flex-col overflow-hidden rounded-lg border border-[var(--border-medium)] bg-[var(--bg-surface)] transition-[transform,background-color,border-color] duration-100 hover:bg-[var(--bg-elevated)] active:scale-[0.98] motion-reduce:active:scale-100"
                   onClick={() => {
                     onSetActiveItem(item.id);
@@ -214,6 +281,13 @@ export default function PreviewWorkspace({
                 </div>
               );
             })}
+
+            {gridIsVirtualized && gridEndRow < gridRowCount && (
+              <div
+                aria-hidden="true"
+                style={{ height: (gridRowCount - gridEndRow) * GRID_ROW_HEIGHT, gridColumn: '1 / -1' }}
+              />
+            )}
           </div>
         </div>
       </section>

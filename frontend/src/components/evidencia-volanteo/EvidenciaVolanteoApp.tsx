@@ -84,7 +84,6 @@ export default function EvidenciaVolanteoApp() {
 
   return (
     <div className="ev-app flex h-full overflow-hidden" data-surface="evidencia-volanteo">
-      {/* Sidebar izquierdo: activos */}
       <aside className={`${SIDEBAR_CLASS} ev-sidebar-left border-r relative`}>
         <div className={SIDEBAR_HEADER_CLASS}>
           <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Activos del Documento</span>
@@ -107,7 +106,6 @@ export default function EvidenciaVolanteoApp() {
         </div>
 
         <div className="mt-auto sticky bottom-0 z-10 shrink-0 pointer-events-none">
-          {/* Fondo con blur desvanecido estilo iOS */}
           <div 
             className="absolute inset-0 bg-[var(--bg-base)]/60 backdrop-blur-md pointer-events-none"
             style={{ 
@@ -115,7 +113,6 @@ export default function EvidenciaVolanteoApp() {
               maskImage: 'linear-gradient(to top, black 70%, transparent 100%)'
             }} 
           />
-          {/* Contenido interactivo */}
           <div className="relative pointer-events-auto flex flex-col gap-3 w-full px-4 pt-8 pb-4">
             <ExportBar format={exportFormat} onFormatChange={setExportFormat} />
             <button
@@ -131,7 +128,6 @@ export default function EvidenciaVolanteoApp() {
         </div>
       </aside>
 
-      {/* Centro: vista previa */}
       <div className="ev-preview flex-1 flex flex-col min-w-0 bg-[var(--bg-elevated)] overflow-hidden">
         <div className="ev-preview-scroll flex-1 overflow-auto flex items-start justify-center px-6 pb-6 pt-2">
           <SheetPreview
@@ -148,7 +144,6 @@ export default function EvidenciaVolanteoApp() {
         </div>
       </div>
 
-      {/* Sidebar derecho: encabezado y cuadrantes */}
       <aside className={`${SIDEBAR_CLASS} ev-sidebar-right border-l relative`}>
         <div className={SIDEBAR_HEADER_CLASS}>
           <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Configuración del Documento</span>
@@ -169,9 +164,7 @@ export default function EvidenciaVolanteoApp() {
           />
         </div>
 
-        {/* Navegador de páginas - Sticky al fondo flotante */}
         <div className="mt-auto sticky bottom-0 z-10 shrink-0 pointer-events-none">
-          {/* Fondo con blur desvanecido estilo iOS */}
           <div 
             className="absolute inset-0 bg-[var(--bg-base)]/60 backdrop-blur-md pointer-events-none"
             style={{ 
@@ -179,7 +172,6 @@ export default function EvidenciaVolanteoApp() {
               maskImage: 'linear-gradient(to top, black 70%, transparent 100%)'
             }} 
           />
-          {/* Contenido interactivo */}
           <div className="relative pointer-events-auto px-4 pt-8 pb-4 flex flex-col w-full">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[10px] font-semibold text-[var(--text-secondary)] uppercase tracking-wider">Vista Previa</span>

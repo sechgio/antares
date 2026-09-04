@@ -1,4 +1,3 @@
-
 export function parseTableData(
   raw: string | undefined,
 ): { cells: string[][]; fieldKeys?: (string | null)[][] } {
@@ -9,7 +8,6 @@ export function parseTableData(
       return { cells: parsed.cells, fieldKeys: parsed.fieldKeys };
     }
   } catch {
-    /* ignore malformed JSON */
   }
   return { cells: [['', '']] };
 }

@@ -6,7 +6,10 @@ const ALLOWED_KINDS = new Set([
   'global_error',
   'unhandled_rejection',
 ]);
-const ALLOWED_EVENT_NAMES = new Set(['canvas.realtime']);
+const ALLOWED_EVENT_NAMES = new Set([
+  'canvas.realtime',
+  'canvas.quit_flush',
+]);
 const ALLOWED_EVENT_FIELDS = new Set([
   'view',
   'status_class',
@@ -115,14 +118,17 @@ function registerRendererObservability(ipcMain) {
       if (!isTrustedRendererFrame(event, getMainWindow(), isDev)) return;
       recordRendererError(payload);
     } catch {
-      // Renderer diagnostics must never affect the main process.
     }
   });
-  ipcMain.on('renderer-event', (_event, payload) => {
+  ipcMain.on('renderer-event', (event, payload) => {
     try {
+      const { app } = require('electron');
+      const { getMainWindow } = require('./window-manager');
+      const { isTrustedRendererFrame } = require('./renderer-trust');
+      const isDev = !app.isPackaged;
+      if (!isTrustedRendererFrame(event, getMainWindow(), isDev)) return;
       recordRendererEvent(payload);
     } catch {
-      // Renderer diagnostics must never affect the main process.
     }
   });
 }

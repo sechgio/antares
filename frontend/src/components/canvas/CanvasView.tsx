@@ -275,7 +275,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
       const res = await api.canvasList();
       setDocs(res.documents);
     } catch {
-      // Transient IPC/backend failure: keep the last known list.
     }
   }, []);
 
@@ -353,7 +352,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
             await queueCanvasCloudPush(saved, { forceResurrect: true });
             await refreshList();
           } catch {
-            // Consolidate failed (offline/RLS); dismissal stays; next sync retries.
           }
         })();
         return;
@@ -374,7 +372,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
           handleRemoteDocumentApplied(hydrated);
           await refreshList();
         } catch {
-          /* local remains; next sync retries */
         }
       })();
     },
@@ -709,7 +706,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         setClipboard(parsed);
         applyPasteLayers(parsed, offsetMm);
       } catch {
-        /* permission / unavailable — keep in-memory paste behavior */
       }
     },
     [applyPasteLayers, clipboard],

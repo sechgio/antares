@@ -187,7 +187,6 @@ export default function SheetPreview({
                 boxShadow: '0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)',
             }}
         >
-            {/* Header band */}
             <div
                 style={{
                     display: 'flex',
@@ -234,7 +233,6 @@ export default function SheetPreview({
                 </div>
             </div>
 
-            {/* Info bar */}
             <div
                 style={{
                     display: 'flex',
@@ -271,7 +269,6 @@ export default function SheetPreview({
                 })}
             </div>
 
-            {/* 1.0 Localización */}
             <div style={{ marginBottom: '2mm', flexShrink: 0 }}>
                 <div style={sectionTitleStyle}>1.0 Localización</div>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9pt' }}>
@@ -311,7 +308,6 @@ export default function SheetPreview({
                 </table>
             </div>
 
-            {/* 2.0 Detalles de Orden de Trabajo (optional) */}
             {config.trabajoSection && (
                 <div style={{ marginBottom: '2mm', flexShrink: 0 }}>
                     <div style={sectionTitleStyle}>{config.trabajoSection.title}</div>
@@ -345,7 +341,6 @@ export default function SheetPreview({
                 </div>
             )}
 
-            {/* 3.0 Panel Fotográfico */}
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
                 <div style={sectionTitleStyle}>3.0 Panel Fotográfico</div>
                 <SheetPhotoGrid images={images} />

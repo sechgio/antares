@@ -136,7 +136,6 @@ async function gcOrphanCanvasAssets({ nowMs = Date.now(), graceMs = GC_GRACE_MS 
       await fsp.rm(full, { force: true });
       removed += 1;
     } catch {
-      /* ignore */
     }
   }
   return { removed, kept: referenced.size, skippedGrace };

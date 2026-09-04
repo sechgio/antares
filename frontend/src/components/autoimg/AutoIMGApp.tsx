@@ -103,7 +103,7 @@ export default function AutoIMGApp() {
     try {
       const res = await api.autoimgFoldersList(true);
       setFolders(res.folders);
-    } catch { /* sheet not ready */ }
+    } catch {}
   }, []);
 
   const refreshAfterFolderChange = useCallback(async (nextFolders?: AutoImgFolder[]) => {
@@ -117,7 +117,7 @@ export default function AutoIMGApp() {
     await refreshFolders();
     try {
       setStatus(await api.autoimgStatus());
-    } catch { /* sheet not ready */ }
+    } catch {}
   }, [refreshFolders]);
 
   const refreshLogs = useCallback(async () => {

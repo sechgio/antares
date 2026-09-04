@@ -313,9 +313,9 @@ function validateAndResolveWriteParams(params, win, method) {
           try {
             const stdRoot = app.getPath(name);
             if (stdRoot && isPathInside(stdRoot, dir)) { allowed = true; break; }
-          } catch { /* ignore */ }
+          } catch {}
         }
-      } catch { /* Electron unavailable in unit tests */ }
+      } catch {}
       if (!allowed) {
         const { isUnderAllowedWriteRoot } = require('./dialog-handlers');
         if (isUnderAllowedWriteRoot(dir)) allowed = true;

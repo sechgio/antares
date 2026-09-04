@@ -403,7 +403,6 @@ export function bootThemeFromBackend(fetchTheme: () => Promise<ThemeConfig>): ()
       applyThemeToCSS(theme, mode, accentKeyForTheme(theme));
     })
     .catch(() => {
-      // IPC unavailable — the cached theme painted in main.tsx is the best we have.
     });
   return () => {
     cancelled = true;

@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
 import { Pause, Play } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 
@@ -15,7 +14,7 @@ export default function PreviewButton({ active, onToggle, compact = false }: Pre
 
   return (
     <WithHoverTooltip label="Vista previa" placement="bottom" variant="dark">
-      <motion.button
+      <button
         type="button"
         data-testid="canvas-preview-btn"
         aria-label="Vista previa"
@@ -30,34 +29,25 @@ export default function PreviewButton({ active, onToggle, compact = false }: Pre
         }
       >
         <span className="relative inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-          <AnimatePresence mode="popLayout" initial={false}>
-            {!showPause ? (
-              <motion.span
-                key="play"
-                initial={{ scale: 0.95, opacity: 0, filter: 'blur(2px)' }}
-                animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
-                exit={{ scale: 0.95, opacity: 0, filter: 'blur(2px)' }}
-                transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
-                className="absolute inset-0 flex items-center justify-center"
-              >
-                <Play className="h-3.5 w-3.5" />
-              </motion.span>
-            ) : (
-              <motion.span
-                key="pause"
-                initial={{ scale: 0.95, opacity: 0, filter: 'blur(2px)' }}
-                animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
-                exit={{ scale: 0.95, opacity: 0, filter: 'blur(2px)' }}
-                transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
-                className="absolute inset-0 flex items-center justify-center"
-              >
-                <Pause className="h-3.5 w-3.5" />
-              </motion.span>
-            )}
-          </AnimatePresence>
+          <span
+            aria-hidden={showPause}
+            className={`absolute inset-0 flex items-center justify-center transition-all duration-300 ease-out ${
+              showPause ? 'scale-95 opacity-0 blur-[2px]' : 'scale-100 opacity-100 blur-none'
+            }`}
+          >
+            <Play className="h-3.5 w-3.5" />
+          </span>
+          <span
+            aria-hidden={!showPause}
+            className={`absolute inset-0 flex items-center justify-center transition-all duration-300 ease-out ${
+              showPause ? 'scale-100 opacity-100 blur-none' : 'scale-95 opacity-0 blur-[2px]'
+            }`}
+          >
+            <Pause className="h-3.5 w-3.5" />
+          </span>
         </span>
         {!compact ? 'Vista previa' : null}
-      </motion.button>
+      </button>
     </WithHoverTooltip>
   );
 }

@@ -124,6 +124,31 @@
     color: var(--vgen-ink-soft);
 }
 
+.vgen-save-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--vgen-ink-faint);
+    font-size: 0.68rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.vgen-save-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-green);
+}
+
+.vgen-save-status.is-error {
+    color: var(--vgen-danger);
+}
+
+.vgen-save-status.is-error .vgen-save-status-dot {
+    background: var(--vgen-danger);
+}
+
 .vgen-layout-toggle {
     display: flex;
     background: var(--vgen-bg-canvas);
@@ -156,6 +181,32 @@
 .vgen-header-actions {
     display: flex;
     gap: 10px;
+}
+
+.vgen-header-actions .vgen-icon-action {
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    gap: 0;
+    justify-content: center;
+    flex: 0 0 34px;
+}
+
+.vgen-btn-export-all {
+    margin-left: auto;
+    margin-right: -8px;
+}
+
+.vgen-sidebar-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.vgen-sidebar-actions > div,
+.vgen-sidebar-actions .v-btn {
+    min-width: 0;
+    width: 100%;
 }
 
 .v-btn {
@@ -196,6 +247,16 @@
 
 .v-btn-outline:hover {
     background: var(--vgen-bg-canvas);
+}
+
+.vgen-btn-clear {
+    color: var(--vgen-danger);
+    border-color: color-mix(in srgb, var(--vgen-danger) 45%, var(--vgen-line));
+}
+
+.vgen-btn-clear:hover {
+    background: color-mix(in srgb, var(--vgen-danger) 10%, transparent);
+    border-color: var(--vgen-danger);
 }
 
 .v-btn-primary {
@@ -551,6 +612,10 @@ textarea.vgen-input {
     user-select: none;
 }
 
+.vgen-section-zones .vgen-group-title {
+    margin-left: 0;
+}
+
 .vgen-label {
     display: flex;
     align-items: center;
@@ -762,6 +827,10 @@ textarea.vgen-input {
     border: 1px solid var(--vgen-line);
     border-radius: var(--vgen-radius-control);
     width: fit-content;
+}
+
+.vgen-section-zones .vgen-bullet-toolbar {
+    padding-left: 0;
 }
 
 .vgen-bullet-btn {

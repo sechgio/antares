@@ -13,7 +13,7 @@ export type FrontendEventLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
 export type FrontendEventOutcome = 'success' | 'partial' | 'degraded' | 'failed' | 'timeout' | 'cancelled' | 'rejected';
 
 export interface FrontendEventReport {
-  event: 'canvas.realtime';
+  event: 'canvas.realtime' | 'canvas.quit_flush';
   level?: FrontendEventLevel;
   view?: string;
   status?: string;
@@ -48,7 +48,6 @@ export function reportFrontendError(report: FrontendErrorReport): void {
     };
     reporter(payload);
   } catch {
-    // Diagnostics must never interfere with the renderer or its fallback UI.
   }
 }
 
@@ -71,6 +70,5 @@ export function reportFrontendEvent(report: FrontendEventReport): void {
     if (reason) fields.reason = reason;
     reporter(report.event, fields, report.level ?? 'INFO');
   } catch {
-    // Diagnostics must never interfere with the renderer or its fallback UI.
   }
 }

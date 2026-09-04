@@ -66,7 +66,6 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
         if (config.linked) onSheetLinked?.();
       }
     } catch {
-      /* sheet not linked yet */
     }
   }, [onSheetLinked]);
 

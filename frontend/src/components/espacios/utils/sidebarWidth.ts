@@ -25,6 +25,5 @@ export function writeStoredSidebarWidth(width: number): void {
   try {
     localStorage.setItem(ESPACIOS_SIDEBAR_WIDTH_KEY, String(clampSidebarWidth(width)));
   } catch {
-    // ignore quota / private mode
   }
 }

@@ -110,7 +110,6 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab }: Sideb
     try {
       localStorage.setItem(SIDEBAR_STORAGE_KEY, String(expanded));
     } catch {
-      // Ignore storage failures in restricted environments.
     }
   }, [expanded]);
 

@@ -75,11 +75,6 @@ export function GenerateStep({
           style={{ color: 'var(--cv-text-muted)' }}
         />
       </button>
-      {/*
-        CSS grid 0fr/1fr expands to natural content height without JS measurement.
-        Avoids the classic maxHeight+scrollHeight bug that clips growing children
-        (e.g. column mapping rows after Excel load).
-      */}
       <div
         className="grid transition-[grid-template-rows,opacity] duration-200 ease-in-out"
         style={{

@@ -100,11 +100,11 @@ async function main() {
   const rows = [
     BD_IMG_HEADER,
     ['4210999', '11111111', 'DVD', 'X', '', '', '', '', '', '', '', '', ''],
-    ['4210888', '22222222', 'DVD', 'Y', '', '', '', '', '', '', '', '', ''], // en padrón, sin imágenes en scan
+    ['4210888', '22222222', 'DVD', 'Y', '', '', '', '', '', '', '', '', ''],
   ];
   const applied = applyScanResultsToRows(rows, [
-    { nis: '4210801', count: 2, folders: ['CARPETA_A'] }, // fuera del padrón → ignorado
-    { nis: '4210999', count: 3, folders: ['CARPETA_B'] }, // en padrón → actualiza
+    { nis: '4210801', count: 2, folders: ['CARPETA_A'] },
+    { nis: '4210999', count: 3, folders: ['CARPETA_B'] },
   ], '2026-07-06');
 
   assert(applied.updated === 2, 'applyScanResultsToRows actualiza todas las filas del padrón');

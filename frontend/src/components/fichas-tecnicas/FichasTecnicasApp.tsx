@@ -99,7 +99,6 @@ export default function FichasTecnicasApp() {
     try {
       localStorage.setItem(DRAFT_KEY, JSON.stringify({ selectedId, formData }));
     } catch {
-      // ignore storage failures
     }
   }, [selectedId, formData]);
 
@@ -213,7 +212,6 @@ export default function FichasTecnicasApp() {
       try {
         localStorage.removeItem(DRAFT_KEY);
       } catch {
-        // ignore
       }
       addToast({ message: 'Base de fichas limpiada', type: 'success' });
     }, 'No se pudo limpiar la base');
