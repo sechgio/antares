@@ -219,8 +219,9 @@ export default function SelladorView() {
     try {
       let fileToken: string | null = null;
       try {
-        fileToken = await stageFileForIpc(file);
-      } catch {
+        fileToken = await stageFileForIpc(file, { reuse: true });
+      } catch (err) {
+        console.warn('No se pudo preparar el PDF para IPC; se usa la ruta en memoria', err);
       }
       if (fileToken) {
         const info = await api.selladorInspectPdf({ pdf_path: fileToken });
@@ -392,7 +393,7 @@ export default function SelladorView() {
       } else if (pdfBase64) {
         pdfSource = { pdf_b64: pdfBase64 };
       } else {
-        const stagedPdf = await stageFileForIpc(pdfFile);
+        const stagedPdf = await stageFileForIpc(pdfFile, { reuse: true });
         if (stagedPdf) {
           pdfSource = { pdf_path: stagedPdf };
         } else {
@@ -416,7 +417,7 @@ export default function SelladorView() {
         filename: defaultName,
         output_path: outputPath,
       };
-      const stagedStamp = await stageFileForIpc(stampFile);
+      const stagedStamp = await stageFileForIpc(stampFile, { reuse: true });
       let stampSource: { stamp_path: string } | { stamp_b64: string };
       if (stagedStamp) {
         stampSource = { stamp_path: stagedStamp };

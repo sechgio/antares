@@ -150,7 +150,8 @@ class _CmykPixmap:
 
 
 def test_pixmap_png_falls_back_for_unsupported_modes() -> None:
-    encoded = sellador_preview._pixmap_to_png_bytes(_CmykPixmap())
+    encoded, mime_type = sellador_preview._pixmap_to_preview_bytes(_CmykPixmap(), "png")
+    assert mime_type == "image/png"
     assert encoded == b"\x89PNG\r\n\x1a\nfallback"
 
 
@@ -163,8 +164,9 @@ def test_pixmap_png_encodes_rgb_samples() -> None:
         stride = 6
         samples = bytes([255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0])
 
-    encoded = sellador_preview._pixmap_to_png_bytes(_RgbPixmap())
+    encoded, mime_type = sellador_preview._pixmap_to_preview_bytes(_RgbPixmap(), "png")
     image = Image.open(BytesIO(encoded))
+    assert mime_type == "image/png"
     assert image.format == "PNG"
     assert image.size == (2, 2)
     assert image.convert("RGB").getpixel((0, 0)) == (255, 0, 0)

@@ -166,7 +166,7 @@ async function renderPageWithStampFromFile(
   stampRects: StampRect[],
   pageSize: PdfPageSize,
 ): Promise<string> {
-  const fileToken = await stageFileForIpc(pdfFile);
+  const fileToken = await stageFileForIpc(pdfFile, { reuse: true });
   if (!fileToken) throw new Error('No se pudo preparar el PDF para la vista previa.');
   return renderPageWithStampFromPath(
     fileToken,

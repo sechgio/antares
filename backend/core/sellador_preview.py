@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import io
+import logging
 import math
 from pathlib import Path
+from typing import Literal
 
 from PIL import Image
-from pypdf import PdfReader
 
 _PREVIEW_MAX_WIDTH = 6144
 _MAX_RENDER_PIXELS = 24_000_000
@@ -13,22 +14,35 @@ _MIN_PREVIEW_DPI = 220
 _MAX_PREVIEW_DPI = 300
 _PIL_PREVIEW_MODES = {1: "L", 3: "RGB"}
 _PREVIEW_JPEG_QUALITY = 85
+_PREVIEW_MIME = {"png": "image/png", "jpeg": "image/jpeg"}
+
+PreviewFormat = Literal["png", "jpeg"]
+logger = logging.getLogger(__name__)
+
+
+def _require_fitz():
+    try:
+        import fitz
+    except ImportError as exc:
+        msg = "PyMuPDF no está instalado. Ejecuta: pip install pymupdf"
+        raise ValueError(msg) from exc
+    return fitz
 
 
 def inspect_pdf_path(pdf_path: str) -> dict[str, float | int | str]:
+    fitz = _require_fitz()
     path = Path(pdf_path).expanduser().resolve()
-    reader = PdfReader(str(path))
-    if len(reader.pages) == 0:
-        msg = "El PDF no tiene páginas"
-        raise ValueError(msg)
-    page = reader.pages[0]
-    mediabox = page.mediabox
-    return {
-        "filename": path.name,
-        "page_count": len(reader.pages),
-        "page_width": float(mediabox.width),
-        "page_height": float(mediabox.height),
-    }
+    with fitz.open(path) as doc:
+        if doc.page_count == 0:
+            msg = "El PDF no tiene páginas"
+            raise ValueError(msg)
+        rect = doc.load_page(0).rect
+        return {
+            "filename": path.name,
+            "page_count": int(doc.page_count),
+            "page_width": float(rect.width),
+            "page_height": float(rect.height),
+        }
 
 
 def _resolve_preview_dpi(
@@ -72,15 +86,6 @@ def _resolve_preview_dpi(
     raise ValueError(msg)
 
 
-def _require_fitz():
-    try:
-        import fitz
-    except ImportError as exc:
-        msg = "PyMuPDF no está instalado. Ejecuta: pip install pymupdf"
-        raise ValueError(msg) from exc
-    return fitz
-
-
 def _pil_image_from_pixmap(pixmap) -> Image.Image | None:
     mode = _PIL_PREVIEW_MODES.get(int(pixmap.n))
     if mode is None or pixmap.alpha:
@@ -96,38 +101,20 @@ def _pil_image_from_pixmap(pixmap) -> Image.Image | None:
     )
 
 
-def _pixmap_to_png_bytes(pixmap) -> bytes:
+def _pixmap_to_preview_bytes(pixmap, image_format: PreviewFormat) -> tuple[bytes, str]:
+    mime_type = _PREVIEW_MIME.get(image_format, _PREVIEW_MIME["png"])
     try:
         image = _pil_image_from_pixmap(pixmap)
-        if image is None:
-            return pixmap.tobytes("png")
-        buffer = io.BytesIO()
-        image.save(buffer, format="PNG", compress_level=1, optimize=False)
-        return buffer.getvalue()
+        if image is not None:
+            buffer = io.BytesIO()
+            if image_format == "jpeg":
+                image.save(buffer, format="JPEG", quality=_PREVIEW_JPEG_QUALITY, optimize=False)
+            else:
+                image.save(buffer, format="PNG", compress_level=1, optimize=False)
+            return buffer.getvalue(), mime_type
     except Exception:
-        return pixmap.tobytes("png")
-
-
-def _pixmap_to_jpeg_bytes(pixmap) -> bytes | None:
-    try:
-        image = _pil_image_from_pixmap(pixmap)
-        if image is None:
-            return None
-        if image.mode not in ("L", "RGB"):
-            image = image.convert("RGB")
-        buffer = io.BytesIO()
-        image.save(buffer, format="JPEG", quality=_PREVIEW_JPEG_QUALITY, optimize=False)
-        return buffer.getvalue()
-    except Exception:
-        return None
-
-
-def _pixmap_to_preview_bytes(pixmap, image_format: str) -> tuple[bytes, str]:
-    if image_format == "jpeg":
-        jpeg_bytes = _pixmap_to_jpeg_bytes(pixmap)
-        if jpeg_bytes is not None:
-            return jpeg_bytes, "image/jpeg"
-    return _pixmap_to_png_bytes(pixmap), "image/png"
+        logger.warning("PIL preview encode failed; falling back to MuPDF PNG", exc_info=True)
+    return pixmap.tobytes("png"), "image/png"
 
 
 def _render_doc_page(
@@ -137,7 +124,7 @@ def _render_doc_page(
     *,
     minimum_dpi: int = _MIN_PREVIEW_DPI,
     enforce_max_width: bool = False,
-    image_format: str = "png",
+    image_format: PreviewFormat = "png",
 ) -> dict[str, float | str]:
     import base64
 
@@ -175,7 +162,7 @@ def render_pdf_page_preview(
     *,
     minimum_dpi: int = _MIN_PREVIEW_DPI,
     enforce_max_width: bool = False,
-    image_format: str = "png",
+    image_format: PreviewFormat = "jpeg",
 ) -> dict[str, float | str]:
     fitz = _require_fitz()
     path = Path(pdf_path).expanduser().resolve()
@@ -197,7 +184,7 @@ def render_pdf_bytes_page_preview(
     *,
     minimum_dpi: int = _MIN_PREVIEW_DPI,
     enforce_max_width: bool = False,
-    image_format: str = "png",
+    image_format: PreviewFormat = "png",
 ) -> dict[str, float | str]:
     fitz = _require_fitz()
     with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
