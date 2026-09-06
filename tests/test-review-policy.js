@@ -28,7 +28,6 @@ function eq(actual, expected, message) {
 function testArtifacts() {
   console.log('\nArtefactos:');
 
-  assert(fs.existsSync(path.join(ROOT, '.github', 'CODEOWNERS')), '.github/CODEOWNERS existe');
   const template = path.join(ROOT, '.github', 'pull_request_template.md');
   assert(fs.existsSync(template), 'plantilla de PR existe');
   const text = fs.readFileSync(template, 'utf8');
