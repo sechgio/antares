@@ -1,10 +1,9 @@
-"""Static contracts for Ficha Técnica documents."""
-
 from __future__ import annotations
 
 from typing import Literal, TypedDict
 
 FichaStatus = Literal["draft", "completed"]
+FichaSatisfaccion = Literal["muy_satisfecho", "satisfecho", "regular", "insatisfecho", ""]
 
 
 class FichaServicio(TypedDict):
@@ -60,16 +59,6 @@ class FichaDocument(TypedDict):
     hora_termino: str
     numero_certificado: str
     obs_rec: FichaObsRec
-    satisfaccion: str
+    satisfaccion: FichaSatisfaccion
     status: FichaStatus
     last_modified: str
-
-
-class FichaSummary(TypedDict):
-    id: str
-    os_numero: str
-    cliente: str
-    direccion: str
-    distrito: str
-    fecha: str
-    status: FichaStatus

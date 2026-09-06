@@ -528,6 +528,45 @@ def buscar_lote_por_codigos(codigos: list[str]) -> dict[str, dict[str, Any]]:
         return result
 
 
+def _folded_query_keys(codigos: list[str]) -> dict[str, str]:
+    query_by_fold: dict[str, str] = {}
+    for raw in codigos:
+        text = str(raw).strip()
+        if text:
+            query_by_fold.setdefault(text.casefold(), text)
+    return query_by_fold
+
+
+def contar_por_columna(codigos: list[str], column: str) -> int:
+    if not codigos or not column:
+        return 0
+    safe_column = _validate_identifier(column)
+    with _db_schema_lock.read(), _db_read_lock:
+        conn = _get_read_connection()
+        cursor = conn.cursor()
+        field_names = {_validate_identifier(fn) for fn in get_field_names()}
+        if safe_column not in field_names:
+            return 0
+        query_by_fold = _folded_query_keys(codigos)
+        if not query_by_fold:
+            return 0
+        folded_codes = list(query_by_fold.keys())
+        total = 0
+        chunk_size = 900
+        quoted = _qi(safe_column)
+        for i in range(0, len(folded_codes), chunk_size):
+            chunk = folded_codes[i : i + chunk_size]
+            placeholders = ", ".join(["?"] * len(chunk))
+            cursor.execute(
+                f"SELECT COUNT(DISTINCT lower({quoted})) FROM imagenes "
+                f"WHERE lower({quoted}) IN ({placeholders})",
+                chunk,
+            )
+            row = cursor.fetchone()
+            total += int(row[0] or 0) if row else 0
+        return total
+
+
 def buscar_por_columna(codigos: list[str], column: str) -> dict[str, dict[str, Any]]:
     if not codigos or not column:
         return {}
@@ -540,11 +579,7 @@ def buscar_por_columna(codigos: list[str], column: str) -> dict[str, dict[str, A
         if safe_column not in field_names:
             return {}
 
-        query_by_fold: dict[str, str] = {}
-        for raw in codigos:
-            text = str(raw).strip()
-            if text:
-                query_by_fold.setdefault(text.casefold(), text)
+        query_by_fold = _folded_query_keys(codigos)
         if not query_by_fold:
             return {}
         folded_codes = list(query_by_fold.keys())

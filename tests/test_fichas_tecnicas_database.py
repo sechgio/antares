@@ -16,3 +16,12 @@ def test_corrupt_json_is_preserved_and_backed_up(tmp_path) -> None:
     backups = list(tmp_path.glob("fichas_tecnicas.json.corrupt.*.bak"))
     assert len(backups) == 1
     assert backups[0].read_text(encoding="utf-8") == original
+
+
+def test_get_renormalizes_stale_satisfaccion(tmp_path) -> None:
+    db = FichasTecnicasDB(tmp_path / "fichas.json")
+    created = db.create({"cliente": "Acme"})
+    db._items[created["id"]]["satisfaccion"] = "no-existe"
+    got = db.get(created["id"])
+    assert got is not None
+    assert got["satisfaccion"] == ""

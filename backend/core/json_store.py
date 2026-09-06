@@ -5,6 +5,7 @@ import logging
 import shutil
 import threading
 from collections.abc import Callable
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ def backup_corrupt_file(path: Path) -> Path:
 
 
 class JsonDocumentStore:
+    not_found_template = "Documento no encontrado: {id}"
 
     def __init__(
         self,
@@ -72,6 +74,44 @@ class JsonDocumentStore:
     def get_all(self) -> list[dict[str, Any]]:
         with self._lock:
             return [dict(item) for item in self._items.values()]
+
+    def get(self, item_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            item = self._items.get(str(item_id))
+            if item is None:
+                return None
+            return deepcopy(self._normalizer(item))
+
+    def _commit(self, normalized: dict[str, Any]) -> dict[str, Any]:
+        item_id = str(normalized["id"])
+        self._items[item_id] = normalized
+        self._save()
+        return deepcopy(normalized)
+
+    def insert(self, item: dict[str, Any]) -> dict[str, Any]:
+        with self._lock:
+            return self._commit(self._normalizer(dict(item)))
+
+    def update(self, item_id: str, item: dict[str, Any]) -> dict[str, Any]:
+        with self._lock:
+            key = str(item_id)
+            if key not in self._items:
+                raise KeyError(self.not_found_template.format(id=key))
+            payload = dict(item)
+            payload["id"] = key
+            return self._commit(self._normalizer(payload))
+
+    def replace_all_counted(self, items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+        with self._lock:
+            deleted_count = len(self._items)
+            imported = [self._normalizer(dict(item)) for item in items]
+            self._items = {str(item["id"]): item for item in imported}
+            self._save()
+            return [deepcopy(item) for item in imported], deleted_count
+
+    def replace_all(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        imported, _deleted_count = self.replace_all_counted(items)
+        return imported
 
     def delete(self, item_id: str) -> bool:
         with self._lock:

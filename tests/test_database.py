@@ -180,6 +180,7 @@ class TestBuscarLotePorCodigos:
         por_col = db.buscar_por_columna(["abc"], "codigo")
         assert "abc" in por_col
         assert por_col["abc"]["nombre"] == "Producto"
+        assert db.contar_por_columna(["abc", "ABC"], "codigo") == 1
 
     def test_no_encuentra_retorna_vacio(self, db_path, monkeypatch, tmp_path) -> None:
         config_path = tmp_path / "fields_config.json"
