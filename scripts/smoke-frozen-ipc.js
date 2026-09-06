@@ -1,6 +1,7 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const { frozenBackendEnv } = require('./verify-frozen-backend');
 
 const ROOT = path.resolve(__dirname, '..');
 const exe = path.join(ROOT, 'dist', 'backend', 'AntaresBackend.exe');
@@ -14,21 +15,7 @@ if (!fs.existsSync(exe)) {
   process.exit(1);
 }
 
-const env = {
-  PATH: process.env.PATH,
-  SYSTEMROOT: process.env.SYSTEMROOT,
-  WINDIR: process.env.WINDIR,
-  TEMP: process.env.TEMP,
-  TMP: process.env.TMP,
-  LOCALAPPDATA: process.env.LOCALAPPDATA,
-  APPDATA: process.env.APPDATA,
-  USERPROFILE: process.env.USERPROFILE,
-  HOMEDRIVE: process.env.HOMEDRIVE,
-  HOMEPATH: process.env.HOMEPATH,
-  PATHEXT: process.env.PATHEXT,
-  PYTHONIOENCODING: 'utf-8',
-  PYTHONUTF8: '1',
-};
+const env = frozenBackendEnv();
 
 const proc = spawn(exe, [], { stdio: ['pipe', 'pipe', 'pipe'], env, windowsHide: true });
 let stdoutBuf = '';

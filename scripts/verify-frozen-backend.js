@@ -1,25 +1,29 @@
 const { spawn } = require('child_process');
 
+function frozenBackendEnv() {
+  return {
+    PATH: process.env.PATH,
+    SYSTEMROOT: process.env.SYSTEMROOT,
+    WINDIR: process.env.WINDIR,
+    TEMP: process.env.TEMP,
+    TMP: process.env.TMP,
+    LOCALAPPDATA: process.env.LOCALAPPDATA,
+    APPDATA: process.env.APPDATA,
+    USERPROFILE: process.env.USERPROFILE,
+    HOMEDRIVE: process.env.HOMEDRIVE,
+    HOMEPATH: process.env.HOMEPATH,
+    PATHEXT: process.env.PATHEXT,
+    PYTHONIOENCODING: 'utf-8',
+    PYTHONUTF8: '1',
+  };
+}
+
 function verifyFrozenBackendTemplates(exePath, options = {}) {
   const timeoutMs = options.timeoutMs || 90_000;
   const minTemplates = options.minTemplates || 5;
 
   return new Promise((resolve, reject) => {
-    const env = {
-      PATH: process.env.PATH,
-      SYSTEMROOT: process.env.SYSTEMROOT,
-      WINDIR: process.env.WINDIR,
-      TEMP: process.env.TEMP,
-      TMP: process.env.TMP,
-      LOCALAPPDATA: process.env.LOCALAPPDATA,
-      APPDATA: process.env.APPDATA,
-      USERPROFILE: process.env.USERPROFILE,
-      HOMEDRIVE: process.env.HOMEDRIVE,
-      HOMEPATH: process.env.HOMEPATH,
-      PATHEXT: process.env.PATHEXT,
-      PYTHONIOENCODING: 'utf-8',
-      PYTHONUTF8: '1',
-    };
+    const env = frozenBackendEnv();
 
     const proc = spawn(exePath, [], {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -101,4 +105,4 @@ function verifyFrozenBackendTemplates(exePath, options = {}) {
   });
 }
 
-module.exports = { verifyFrozenBackendTemplates };
+module.exports = { frozenBackendEnv, verifyFrozenBackendTemplates };

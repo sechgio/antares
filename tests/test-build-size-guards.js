@@ -60,7 +60,7 @@ const backendBuild = readProjectFile('scripts', 'build-backend.js');
 for (const staleName of ['AntaresBackend.exe', 'HidroConvertBackend.exe']) {
   assert(backendBuild.includes(staleName), `backend build should guard against stale ${staleName}`);
 }
-assert(backendBuild.includes('rmSync'), 'backend build should clean stale PyInstaller output before rebuilding');
+assert(backendBuild.includes('removeInsideProject'), 'backend build should clean stale PyInstaller output before rebuilding');
 assert(backendBuild.includes('venv312'), 'backend build should prefer the local venv312 Python over PATH');
 assert(backendBuild.includes('resolvePythonCommand'), 'backend build should resolve Python before invoking PyInstaller');
 assert(backendBuild.includes('onedir') || backendBuild.includes('copyDirFlat'), 'backend build should produce an onedir layout (not onefile)');
@@ -99,7 +99,7 @@ const afterPackageClean = readProjectFile('scripts', 'clean-after-package.js');
 for (const stalePath of ['win-unpacked', 'frontend', 'backend']) {
   assert(afterPackageClean.includes(stalePath), `post-package cleanup should remove ${stalePath} staging output`);
 }
-assert(afterPackageClean.includes('assertInsideProject'), 'post-package cleanup should verify paths before deleting');
+assert(afterPackageClean.includes('removeInsideProject'), 'post-package cleanup should verify paths before deleting');
 
 console.log(`\n${'='.repeat(50)}`);
 console.log(`Results: ${passed} passed, ${failed} failed`);

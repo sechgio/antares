@@ -1,16 +1,23 @@
 #!/usr/bin/env node
 
-const { execFileSync, execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const {
   REPO_OWNER,
   REPO_NAME,
   BASE_BRANCH,
-  ROOT,
   sh,
   trySh,
   step,
   skip,
   die,
+  requireGhAuth,
+  requireOriginRepo,
+  currentBranch,
+  workingTreeDirty,
+  findOpenPrNumber,
+  mergePr,
+  runQualityCommand,
+  runQualityGate,
 } = require('./lib/loop-utils');
 
 function parseArgs(argv) {
@@ -31,27 +38,9 @@ function parseArgs(argv) {
 }
 
 function validateEnvironment() {
-  const ghStatus = trySh('gh auth status 2>&1');
-  if (!ghStatus) {
-    throw new Error('GitHub CLI (gh) no está autenticado. Corre: gh auth login');
-  }
-
-  const remoteUrl = trySh('git remote get-url origin');
-  if (!remoteUrl || !remoteUrl.includes(`${REPO_OWNER}/${REPO_NAME}`)) {
-    throw new Error(
-      `Remote origin debe apuntar a ${REPO_OWNER}/${REPO_NAME}, actual: ${remoteUrl || '(sin remote)'}`
-    );
-  }
-
+  requireGhAuth();
+  requireOriginRepo();
   sh('git fetch origin 2>&1');
-}
-
-function currentBranch() {
-  return sh('git rev-parse --abbrev-ref HEAD');
-}
-
-function workingTreeDirty() {
-  return Boolean(sh('git status --porcelain'));
 }
 
 function slugifyBranchName(input) {
@@ -97,33 +86,6 @@ function ensureFeatureBranch(options) {
   return branch;
 }
 
-function runQualityCommand(command, label, options = {}) {
-  try {
-    return execSync(command, {
-      cwd: ROOT,
-      encoding: 'utf8',
-      stdio: 'pipe',
-      maxBuffer: 50 * 1024 * 1024,
-      ...options,
-    }).trim();
-  } catch (error) {
-    const output = [error.stdout, error.stderr]
-      .filter(Boolean)
-      .map((value) => value.toString())
-      .join('\n')
-      .trim();
-    const status = Number.isInteger(error.status) ? error.status : 1;
-    const failure = new Error(`${label} falló (exit ${status}):\n${output.slice(0, 800)}`);
-    failure.code = status;
-    throw failure;
-  }
-}
-
-function runQualityGate() {
-  console.log('');
-  runQualityCommand('npm run ci 2>&1', 'Quality gate (npm run ci)', { timeout: 900000 });
-}
-
 function runGit(args) {
   return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', stdio: 'pipe' }).trim();
 }
@@ -158,15 +120,6 @@ function pushBranch(branch) {
   console.log(`    Branch ${branch} pusheada a origin.`);
 }
 
-function findOpenPrNumber(branch) {
-  const json = trySh(
-    `gh pr list --head "${branch}" --base "${BASE_BRANCH}" --state open --json number --jq ".[0].number" 2>&1`
-  );
-  if (!json || json.includes('error') || json === 'null') return null;
-  const num = Number(json);
-  return Number.isFinite(num) ? num : null;
-}
-
 function createOrUpdatePr(branch, title, body) {
   const existing = findOpenPrNumber(branch);
   if (existing) {
@@ -198,11 +151,6 @@ function waitForCi(prNumber) {
     throw new Error(`CI falló en PR #${prNumber}:\n${result.slice(-500)}`);
   }
   console.log('    CI pasó.');
-}
-
-function mergePr(prNumber) {
-  sh(`gh pr merge ${prNumber} --merge --delete-branch`);
-  console.log(`    PR #${prNumber} mergeado a ${BASE_BRANCH}.`);
 }
 
 function defaultPrBody(branch, message) {

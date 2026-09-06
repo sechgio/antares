@@ -33,8 +33,12 @@ function run() {
   assert(content.includes('mergeable'), 'script checks mergeable state before merge');
   assert(content.includes('APPROVED'), 'script enforces APPROVED review');
   assert(content.includes('lint:fix') || content.includes('lint:fix'), 'script applies deterministic heuristics (ruff --fix)');
+  assert(content.includes('uv run --project . --locked --extra dev ruff format'), 'script formats Python with locked ruff');
+  assert(!content.includes('prettier'), 'script does not invoke prettier (not a project dependency)');
+  assert(!/HIDROAA|C:\\\\Users\\\\/.test(content), 'script does not hardcode a developer machine path');
   assert(content.includes('invokeDroidFixer'), 'script has droid fallback for residual errors');
   assert(/NO elimines/i.test(content) || /no elimines codigo/i.test(content), 'script instructs droid to never delete code');
+  assert(content.includes('sleepMs'), 'pending-check wait uses a portable Node sleep');
 
   assert(fs.existsSync(workflowPath), '.github/workflows/pr-fix-loop.yml exists');
   const wf = fs.readFileSync(workflowPath, 'utf8');

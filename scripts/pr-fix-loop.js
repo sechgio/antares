@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 
 const {
-  REPO_OWNER,
-  REPO_NAME,
   BASE_BRANCH,
   ROOT,
   sh,
@@ -10,6 +8,12 @@ const {
   step,
   skip,
   die,
+  requireGhAuth,
+  currentBranch,
+  workingTreeDirty,
+  findOpenPrNumber,
+  mergePr,
+  sleepMs,
 } = require('./lib/loop-utils');
 
 const MAX_ITER_DEFAULT = 5;
@@ -31,19 +35,6 @@ function parseArgs(argv) {
     prNumber: getValue('--pr'),
     maxIter: getValue('--max') ? Number(getValue('--max')) : MAX_ITER_DEFAULT,
   };
-}
-
-function currentBranch() {
-  return sh('git rev-parse --abbrev-ref HEAD');
-}
-
-function findPrForBranch(branch) {
-  const json = trySh(
-    `gh pr list --head "${branch}" --base "${BASE_BRANCH}" --state open --json number --jq ".[0].number" 2>&1`
-  );
-  if (!json || json === 'null' || json.includes('error')) return null;
-  const num = Number(json);
-  return Number.isFinite(num) ? num : null;
 }
 
 function getPrInfo(prNumber) {
@@ -104,18 +95,9 @@ function captureFailedRunLogs(prNumber) {
 
 function applyPythonLintFix() {
   const fix = trySh('npm run lint:fix 2>&1');
-  const fmt = trySh('npx ruff format backend tests scripts 2>&1');
-  const touched = Boolean(trySh('git status --porcelain'));
-  if (!touched) return null;
+  const fmt = trySh('uv run --project . --locked --extra dev ruff format backend tests scripts 2>&1');
+  if (!workingTreeDirty()) return null;
   return `ruff --fix + format:${(fix || '').slice(0, 200)}\n${(fmt || '').slice(0, 200)}`;
-}
-
-function applyFrontendPrettierFix() {
-  const fmt = trySh('cd frontend && npx prettier --write src 2>&1');
-  if (!fmt) return null;
-  const touched = Boolean(trySh('git status --porcelain frontend'));
-  if (!touched) return null;
-  return `prettier: ${fmt.slice(0, 200)}`;
 }
 
 function invokeDroidFixer(logs, prNumber) {
@@ -128,7 +110,7 @@ function invokeDroidFixer(logs, prNumber) {
     '3. Modifica solo lo que el error indica.',
     '4. Si un test falla por un bug, arregla el codigo que el test cubre, no el test.',
     '',
-    'Contexto del repo: C:\\Users\\HIDROAA\\Desktop\\antares',
+    `Contexto del repo: ${ROOT}`,
     '  - backend/ (Python, ruff lint, mypy typecheck)',
     '  - frontend/ (TypeScript+React, tsc typecheck, vitest)',
     '  - tests/ (pytest + node integration tests)',
@@ -144,13 +126,9 @@ function invokeDroidFixer(logs, prNumber) {
     '  - Si consideras que un error es un false-positive',
   ].join('\n');
 
-  console.log('    (El caller debe invocar el subagent worker con el prompt generado.)');
-  console.log('    Prompt de fix guardado para entrega al droid.');
+  console.log('    Prompt de fix residual (heuristicas no bastaron):');
+  console.log(prompt.slice(0, 500));
   return prompt;
-}
-
-function workingTreeDirty() {
-  return Boolean(trySh('git status --porcelain'));
 }
 
 function commitAndPush(branch) {
@@ -190,11 +168,6 @@ function canAutoMerge(prInfo, checks) {
   return { ok: reasons.length === 0, reasons };
 }
 
-function mergePr(prNumber) {
-  sh(`gh pr merge ${prNumber} --merge --delete-branch`);
-  console.log(`    PR #${prNumber} mergeado a ${BASE_BRANCH}.`);
-}
-
 function commentOnPr(prNumber, body) {
   trySh(`gh pr comment ${prNumber} --body "${body.replace(/"/g, '\\"')}" 2>&1`);
 }
@@ -208,7 +181,7 @@ function runLoop(options) {
         `Estas en ${BASE_BRANCH}. Pasa --pr <num> o cambiate a una feature branch.`
       );
     }
-    prNumber = findPrForBranch(branch);
+    prNumber = findOpenPrNumber(branch);
     if (!prNumber) {
       throw new Error(
         `No se encontro un PR abierto para la branch actual "${branch}". Pasa --pr <num>.`
@@ -240,7 +213,7 @@ function runLoop(options) {
     if (!anyCheckFails(checks) && checks.length > 0 && checks.some((c) => c.bucket === 'PENDING')) {
       console.log('    Checks pendientes. Esperando 30s...');
       if (options.isShip) {
-        trySh('sleep 30');
+        sleepMs(30000);
         continue;
       }
       break;
@@ -257,9 +230,6 @@ function runLoop(options) {
     const pythonFix = applyPythonLintFix();
     if (pythonFix) console.log(`      python: ${pythonFix.slice(0, 80)}`);
 
-    const feFix = applyFrontendPrettierFix();
-    if (feFix) console.log(`      frontend: ${feFix.slice(0, 80)}`);
-
     const stillDirty = workingTreeDirty();
     if (stillDirty) {
       const pushed = commitAndPush(branch);
@@ -273,10 +243,7 @@ function runLoop(options) {
     const checksAfter = getPrChecks(prNumber);
     if (anyCheckFails(checksAfter)) {
       console.log('    Errores residuales. Invocando droid fixer...');
-      const prompt = invokeDroidFixer(logs, prNumber);
-      if (process.env.FACTORY_DROID_AVAILABLE === '1') {
-        console.log('    (Factory droid disponible — el caller debe procesar el prompt.)');
-      }
+      invokeDroidFixer(logs, prNumber);
       break;
     }
 
@@ -331,10 +298,7 @@ function main() {
 
   try {
     step('Entorno (gh auth, fetch)', () => {
-      const ghStatus = trySh('gh auth status 2>&1');
-      if (!ghStatus) {
-        throw new Error('GitHub CLI (gh) no esta autenticado. Corre: gh auth login');
-      }
+      requireGhAuth();
       trySh('git fetch origin 2>&1');
     });
 

@@ -1,9 +1,9 @@
 const { execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const { ROOT: projectRoot } = require('./lib/loop-utils');
+const { removeInsideProject } = require('./lib/fs-safe');
 const { verifyFrozenBackendTemplates } = require('./verify-frozen-backend');
-
-const projectRoot = path.resolve(__dirname, '..');
 const backendDir = path.join(projectRoot, 'backend');
 const distDir = path.join(projectRoot, 'dist');
 const distBackendDir = path.join(distDir, 'backend');
@@ -19,16 +19,8 @@ if (process.platform !== 'win32') {
   process.exit(1);
 }
 
-function assertInsideProject(targetPath) {
-  const relative = path.relative(projectRoot, targetPath);
-  if (relative.startsWith('..') || path.isAbsolute(relative)) {
-    throw new Error(`Refusing to clean path outside project: ${targetPath}`);
-  }
-}
-
 function removePath(targetPath) {
-  assertInsideProject(targetPath);
-  fs.rmSync(targetPath, { recursive: true, force: true });
+  removeInsideProject(targetPath);
 }
 
 function copyDirFlat(src, dest) {
