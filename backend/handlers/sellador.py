@@ -103,7 +103,7 @@ def sellador_render_page(params: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(msg)
     page_num = parse_positive_int(params.get("page_num", 1), "Página")
     max_width = parse_positive_int(params.get("max_width", 2800), "Ancho de vista previa")
-    return render_pdf_page_preview(pdf_path, page_num, max_width=max_width)
+    return render_pdf_page_preview(pdf_path, page_num, max_width=max_width, image_format="jpeg")
 
 
 @with_locale

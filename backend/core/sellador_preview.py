@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import io
 import math
 from pathlib import Path
 
+from PIL import Image
 from pypdf import PdfReader
 
 _PREVIEW_MAX_WIDTH = 6144
 _MAX_RENDER_PIXELS = 24_000_000
 _MIN_PREVIEW_DPI = 220
 _MAX_PREVIEW_DPI = 300
+_PIL_PREVIEW_MODES = {1: "L", 3: "RGB"}
+_PREVIEW_JPEG_QUALITY = 85
 
 
 def inspect_pdf_path(pdf_path: str) -> dict[str, float | int | str]:
@@ -77,6 +81,55 @@ def _require_fitz():
     return fitz
 
 
+def _pil_image_from_pixmap(pixmap) -> Image.Image | None:
+    mode = _PIL_PREVIEW_MODES.get(int(pixmap.n))
+    if mode is None or pixmap.alpha:
+        return None
+    return Image.frombytes(
+        mode,
+        (int(pixmap.width), int(pixmap.height)),
+        pixmap.samples,
+        "raw",
+        mode,
+        int(pixmap.stride),
+        1,
+    )
+
+
+def _pixmap_to_png_bytes(pixmap) -> bytes:
+    try:
+        image = _pil_image_from_pixmap(pixmap)
+        if image is None:
+            return pixmap.tobytes("png")
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG", compress_level=1, optimize=False)
+        return buffer.getvalue()
+    except Exception:
+        return pixmap.tobytes("png")
+
+
+def _pixmap_to_jpeg_bytes(pixmap) -> bytes | None:
+    try:
+        image = _pil_image_from_pixmap(pixmap)
+        if image is None:
+            return None
+        if image.mode not in ("L", "RGB"):
+            image = image.convert("RGB")
+        buffer = io.BytesIO()
+        image.save(buffer, format="JPEG", quality=_PREVIEW_JPEG_QUALITY, optimize=False)
+        return buffer.getvalue()
+    except Exception:
+        return None
+
+
+def _pixmap_to_preview_bytes(pixmap, image_format: str) -> tuple[bytes, str]:
+    if image_format == "jpeg":
+        jpeg_bytes = _pixmap_to_jpeg_bytes(pixmap)
+        if jpeg_bytes is not None:
+            return jpeg_bytes, "image/jpeg"
+    return _pixmap_to_png_bytes(pixmap), "image/png"
+
+
 def _render_doc_page(
     doc,
     page_num: int,
@@ -84,6 +137,7 @@ def _render_doc_page(
     *,
     minimum_dpi: int = _MIN_PREVIEW_DPI,
     enforce_max_width: bool = False,
+    image_format: str = "png",
 ) -> dict[str, float | str]:
     import base64
 
@@ -101,16 +155,16 @@ def _render_doc_page(
         enforce_max_width=enforce_max_width,
     )
     pixmap = page.get_pixmap(dpi=dpi, alpha=False)
-    png_bytes = pixmap.tobytes("png")
+    payload, mime_type = _pixmap_to_preview_bytes(pixmap, image_format)
 
     return {
-        "image_base64": base64.b64encode(png_bytes).decode("ascii"),
+        "image_base64": base64.b64encode(payload).decode("ascii"),
         "page_width": float(rect.width),
         "page_height": float(rect.height),
         "rendered_width": float(pixmap.width),
         "rendered_height": float(pixmap.height),
         "render_dpi": float(dpi),
-        "mime_type": "image/png",
+        "mime_type": mime_type,
     }
 
 
@@ -121,6 +175,7 @@ def render_pdf_page_preview(
     *,
     minimum_dpi: int = _MIN_PREVIEW_DPI,
     enforce_max_width: bool = False,
+    image_format: str = "png",
 ) -> dict[str, float | str]:
     fitz = _require_fitz()
     path = Path(pdf_path).expanduser().resolve()
@@ -131,6 +186,7 @@ def render_pdf_page_preview(
             max_width,
             minimum_dpi=minimum_dpi,
             enforce_max_width=enforce_max_width,
+            image_format=image_format,
         )
 
 
@@ -141,6 +197,7 @@ def render_pdf_bytes_page_preview(
     *,
     minimum_dpi: int = _MIN_PREVIEW_DPI,
     enforce_max_width: bool = False,
+    image_format: str = "png",
 ) -> dict[str, float | str]:
     fitz = _require_fitz()
     with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
@@ -150,4 +207,5 @@ def render_pdf_bytes_page_preview(
             max_width,
             minimum_dpi=minimum_dpi,
             enforce_max_width=enforce_max_width,
+            image_format=image_format,
         )

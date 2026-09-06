@@ -137,8 +137,11 @@ def test_sellador_render_page_returns_image(tmp_path) -> None:
             pytest.skip("pymupdf not installed")
         raise
     assert rendered["image_base64"]
-    assert rendered["mime_type"] == "image/png"
+    assert rendered["mime_type"] == "image/jpeg"
     assert rendered["rendered_width"] >= 400
+    image = Image.open(BytesIO(base64.b64decode(rendered["image_base64"])))
+    assert image.format == "JPEG"
+    assert image.size == (int(rendered["rendered_width"]), int(rendered["rendered_height"]))
 
 
 def test_apply_sellador_rejects_duplicate_page_placements() -> None:

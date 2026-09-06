@@ -1,10 +1,12 @@
 
 from __future__ import annotations
 
+import base64
 import math
 from io import BytesIO
 
 import pytest
+from PIL import Image
 from pypdf import PdfWriter
 
 from backend.core import sellador_preview
@@ -120,3 +122,69 @@ def test_formatos_preview_preserves_page_range_validation() -> None:
             minimum_dpi=72,
             enforce_max_width=True,
         )
+
+
+def test_preview_png_roundtrip_matches_raster_size() -> None:
+    result = sellador_preview.render_pdf_bytes_page_preview(
+        _a4_pdf_bytes(),
+        1,
+        max_width=1200,
+    )
+    image = Image.open(BytesIO(base64.b64decode(str(result["image_base64"]))))
+    assert image.format == "PNG"
+    assert image.size == (int(result["rendered_width"]), int(result["rendered_height"]))
+    assert result["render_dpi"] == 220.0
+
+
+class _CmykPixmap:
+    n = 4
+    alpha = 0
+    width = 2
+    height = 2
+    stride = 8
+    samples = b"\x00" * 16
+
+    def tobytes(self, output: str = "png") -> bytes:
+        assert output == "png"
+        return b"\x89PNG\r\n\x1a\nfallback"
+
+
+def test_pixmap_png_falls_back_for_unsupported_modes() -> None:
+    encoded = sellador_preview._pixmap_to_png_bytes(_CmykPixmap())
+    assert encoded == b"\x89PNG\r\n\x1a\nfallback"
+
+
+def test_pixmap_png_encodes_rgb_samples() -> None:
+    class _RgbPixmap:
+        n = 3
+        alpha = 0
+        width = 2
+        height = 2
+        stride = 6
+        samples = bytes([255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0])
+
+    encoded = sellador_preview._pixmap_to_png_bytes(_RgbPixmap())
+    image = Image.open(BytesIO(encoded))
+    assert image.format == "PNG"
+    assert image.size == (2, 2)
+    assert image.convert("RGB").getpixel((0, 0)) == (255, 0, 0)
+
+
+def test_sellador_preview_jpeg_roundtrip_keeps_raster_size() -> None:
+    result = sellador_preview.render_pdf_bytes_page_preview(
+        _a4_pdf_bytes(),
+        1,
+        max_width=1200,
+        image_format="jpeg",
+    )
+    image = Image.open(BytesIO(base64.b64decode(str(result["image_base64"]))))
+    assert result["mime_type"] == "image/jpeg"
+    assert image.format == "JPEG"
+    assert image.size == (int(result["rendered_width"]), int(result["rendered_height"]))
+    assert result["render_dpi"] == 220.0
+
+
+def test_pixmap_jpeg_falls_back_to_png_for_unsupported_modes() -> None:
+    payload, mime_type = sellador_preview._pixmap_to_preview_bytes(_CmykPixmap(), "jpeg")
+    assert mime_type == "image/png"
+    assert payload == b"\x89PNG\r\n\x1a\nfallback"
