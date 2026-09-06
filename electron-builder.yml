@@ -42,8 +42,7 @@ files:
   - "!node_modules/electron-publish/**/*"
   - "!node_modules/electron-rebuild/**/*"
   - "!node_modules/@electron/**/*"
-  # Build-only native binaries and dev tooling hoisted to top-level node_modules.
-  # These are transitives of electron-builder/typescript and must NOT ship in the installer.
+  # Transitives de electron-builder/typescript: no van en el instalador.
   - "!node_modules/app-builder-bin/**/*"
   - "!node_modules/7zip-bin/**/*"
   - "!node_modules/typescript/**/*"
@@ -73,7 +72,7 @@ extraResources:
   - from: formatos
     to: formatos
     filter: ["**/*"]
-  # Onedir tree produced by scripts/build-backend.js (exe + deps flat).
+  # Onedir de scripts/build-backend.js.
   - from: dist/backend
     to: backend
     filter: ["**/*"]
@@ -114,8 +113,7 @@ publish:
   repo: antares
   releaseType: release
 asar: true
-# Only unpack truly native modules (.node binaries) so they're loadable from disk.
-# Everything else stays inside app.asar to keep the install footprint small.
+# asarUnpack: solo .node, el resto queda en asar.
 asarUnpack:
   - "**/*.node"
   - "node_modules/**/build/Release/*.node"

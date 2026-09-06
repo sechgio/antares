@@ -148,5 +148,6 @@ Está estrictamente prohibido hacer `commit` o `push` de archivos `.md`, salvo:
 - `README.md`
 - `CONTEXT.md`
 - `docs/adr/*.md` y `docs/adr/README.md`
+- `.github/pull_request_template.md`
 
 Todo otro Markdown —incluyendo documentación temporal, planes, notas, drafts, reportes, `scratch/*.md` y `docs/*.md` fuera de ADR— debe permanecer local, añadirse a `.gitignore` o eliminarse antes del commit/PR. Esta regla no se omite.
