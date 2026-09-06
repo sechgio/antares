@@ -24,9 +24,14 @@ describe('Informes v2 PreviewPanel', () => {
     expect(grid.querySelectorAll('img')).toHaveLength(2);
   });
 
-  it('renders empty message when report is null', () => {
+  it('renders blank template when report is null', () => {
     render(<PreviewPanel report={null} logoLeft={null} logoRight={null} photos={[]} />);
-    expect(screen.getByText('Selecciona un informe para previsualizar')).toBeInTheDocument();
+    const paper = screen.getByTestId('iv2-preview');
+    expect(paper).toHaveAttribute('data-template', 'true');
+    expect(screen.getByText('Limpieza y Desinfección de Reservorios y Cisternas')).toBeInTheDocument();
+    expect(screen.getByText('DIAMETRO DE VALVULAS')).toBeInTheDocument();
+    expect(screen.getByText('DIAMETRO DE TUBERIA')).toBeInTheDocument();
+    expect(screen.queryByText('Selecciona un informe para previsualizar')).not.toBeInTheDocument();
   });
 
   it('computes and renders valve totals in table', () => {
