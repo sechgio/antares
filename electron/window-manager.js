@@ -1,6 +1,5 @@
-const { BrowserWindow, screen, session, Menu } = require('electron');
+const { BrowserWindow, screen, Menu } = require('electron');
 const path = require('path');
-const { ALLOWED_RENDERER_METHODS } = require('./ipc-methods');
 const { appendLogEvent } = require('./app-log');
 
 let mainWindow = null;

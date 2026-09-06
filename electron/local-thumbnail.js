@@ -101,7 +101,8 @@ function _scheduleTrim(cacheDir) {
   _trimScheduled = true;
   setImmediate(() => {
     _trimScheduled = false;
-    _trimDiskCache(cacheDir).catch(() => {
+    _trimDiskCache(cacheDir).catch((err) => {
+      console.warn('[local-thumbnail] trim de cache falló:', err && err.message ? err.message : err);
     });
   });
 }
@@ -113,7 +114,8 @@ async function _writeDiskCache(cacheDir, cachePath, jpegBuf) {
     await fsp.writeFile(tmp, jpegBuf);
     await fsp.rename(tmp, cachePath);
     _scheduleTrim(cacheDir);
-  } catch {
+  } catch (err) {
+    console.warn('[local-thumbnail] escritura de cache falló:', err && err.message ? err.message : err);
   }
 }
 

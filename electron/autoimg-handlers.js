@@ -191,4 +191,4 @@ async function handleAutoimgCall(method, params = {}) {
   }
 }
 
-module.exports = { AUTOIMG_METHODS, handleAutoimgCall };
+module.exports = { handleAutoimgCall };

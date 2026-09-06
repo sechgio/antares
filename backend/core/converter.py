@@ -80,10 +80,6 @@ def copiar_archivo(
     ruta_origen = Path(ruta_origen)
     ruta_destino = Path(ruta_destino)
 
-    if not ruta_origen.exists():
-        msg = f"No se encontró el archivo: {ruta_origen}"
-        raise FileNotFoundError(msg)
-
     if ensure_dir:
         ruta_destino.parent.mkdir(parents=True, exist_ok=True)
     if ruta_destino.is_symlink() or ruta_destino.parent.is_symlink():
@@ -97,6 +93,11 @@ def copiar_archivo(
     try:
         shutil.copy2(ruta_origen, tmp_destino)
         os.replace(tmp_destino, ruta_destino)
+    except FileNotFoundError as exc:
+        with contextlib.suppress(OSError):
+            tmp_destino.unlink(missing_ok=True)
+        msg = f"No se encontró el archivo: {ruta_origen}"
+        raise FileNotFoundError(msg) from exc
     except Exception:
         with contextlib.suppress(OSError):
             tmp_destino.unlink(missing_ok=True)
@@ -189,10 +190,6 @@ def convertir_imagen(
     ruta_origen = Path(ruta_origen)
     ruta_destino = Path(ruta_destino)
 
-    if not ruta_origen.exists():
-        msg = f"No se encontró la imagen: {ruta_origen}"
-        raise FileNotFoundError(msg)
-
     formato = formato_salida.upper()
     if formato not in _registry:
         msg = f"Formato no soportado: {formato_salida}"
@@ -200,7 +197,13 @@ def convertir_imagen(
 
     calidad = max(1, min(100, int(calidad)))
 
-    with Image.open(ruta_origen) as source_img:
+    try:
+        source_img_ctx = Image.open(ruta_origen)
+    except FileNotFoundError as exc:
+        msg = f"No se encontró la imagen: {ruta_origen}"
+        raise FileNotFoundError(msg) from exc
+
+    with source_img_ctx as source_img:
         if source_img.width == 0 or source_img.height == 0:
             msg = f"Imagen con dimensiones inválidas ({source_img.width}x{source_img.height}): {ruta_origen}"
             raise ValueError(msg)
@@ -287,13 +290,14 @@ def convertir_a_preview(
     from backend.utils.paths import user_data_path
 
     ruta_origen = Path(ruta_origen).resolve()
-    if not ruta_origen.exists():
-        msg = f"No se encontró: {ruta_origen}"
-        raise FileNotFoundError(msg)
 
     from backend.core.preview_cache import get_preview_cache
 
-    stat = ruta_origen.stat()
+    try:
+        stat = ruta_origen.stat()
+    except FileNotFoundError as exc:
+        msg = f"No se encontró: {ruta_origen}"
+        raise FileNotFoundError(msg) from exc
     formato = formato_salida.upper()
     pil_formato = PIL_FORMAT_MAP.get(formato, formato)
     resize_key = f"{resize[0]}x{resize[1]}" if resize and len(resize) == 2 else "none"

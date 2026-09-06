@@ -1,11 +1,3 @@
-"""Adversarial stress tests for Python Backend IPC and JSON-RPC Protocol.
-
-Focus Areas:
-1. Oversized payload (>64MB) handling and drain recovery.
-2. ASCII vs unicode-escaped ID extraction.
-3. Live backend burst throughput and queue saturation mismatch analysis.
-"""
-
 import io
 import json
 import os
@@ -23,12 +15,11 @@ from backend.ipc_protocol import (
 
 
 def test_adversarial_oversized_payload_handling():
-    """Verify that inbound payloads exceeding 64MB are safely drained and return -32600 with request id."""
     msg_id = "adv-oversized-req-999"
     header = f'{{"jsonrpc":"2.0","id":"{msg_id}","method":"formats","params":{{"data":"'.encode()
     tail = b'"}}\n'
-    padding_chunk = b"A" * (1024 * 1024) # 1MB chunk
-    padding_count = 65 # 65MB
+    padding_chunk = b"A" * (1024 * 1024)
+    padding_count = 65
 
     class FastLargeStream(io.RawIOBase):
         def __init__(self):
@@ -65,22 +56,17 @@ def test_adversarial_oversized_payload_handling():
 
 
 def test_adversarial_ascii_and_unicode_escaped_id_extraction():
-    """Test extracting request id from ASCII and JSON-escaped unicode strings."""
-    # Standard ASCII and UUID ids
     prefix_ascii = b'{"jsonrpc":"2.0","id":"550e8400-e29b-41d4-a716-446655440000","method":"version"}'
     assert _try_extract_request_id_bytes(prefix_ascii) == "550e8400-e29b-41d4-a716-446655440000"
 
-    # Numeric id
     prefix_num = b'{"jsonrpc":"2.0","id":12345,"method":"version"}'
     assert _try_extract_request_id_bytes(prefix_num) == 12345
 
-    # JSON unicode-escaped characters (\uXXXX)
     prefix_escaped = b'{"jsonrpc":"2.0","id":"req-\\u00e9-\\u2714","method":"version"}'
     assert _try_extract_request_id_bytes(prefix_escaped) == "req-é-✔"
 
 
 def test_adversarial_live_backend_burst_and_queue_saturation():
-    """Spawn real backend/main.py process and test burst response distribution across sync and light lanes."""
     env = os.environ.copy()
     env.update({
         "PYTHONUNBUFFERED": "1",
@@ -130,10 +116,8 @@ def test_adversarial_live_backend_burst_and_queue_saturation():
     t_stderr.start()
 
     try:
-        # Wait for ready signal
         assert ready_event.wait(timeout=10.0), "Timed out waiting for backend ready handshake"
 
-        # Send 200 interleaved requests: 100 version (sync) + 100 formats (light)
         t0_burst = time.perf_counter()
         for i in range(total_requests):
             method = "version" if i % 2 == 0 else "formats"
@@ -178,11 +162,9 @@ def test_adversarial_live_backend_burst_and_queue_saturation():
             f"  light_lane (formats): {light_success}/100 success, {light_rejected}/100 rejected (due to light_queue_limit saturation)"
         )
 
-        # Sync lane (inline) must NEVER reject even under 100-request burst
         assert sync_success == 100
         assert sync_rejected == 0
 
-        # Light lane rejects excess requests when queue exceeds light_queue_limit (16)
         assert light_success > 0
         assert (light_success + light_rejected) == 100
 

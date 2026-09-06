@@ -94,7 +94,6 @@ const MAX_PENDING_PER_METHOD = _positiveIntegerEnv(
   'ANTARES_IPC_MAX_PENDING_PER_METHOD',
   DEFAULT_MAX_PENDING_PER_METHOD,
 );
-const IPC_CAPACITY_RETRY_AFTER_MS = 250;
 
 let _ipcBackpressureWaits = 0;
 const ANTARES_IPC_ERROR_PREFIX = 'ANTARES_IPC_ERROR:';
@@ -336,7 +335,11 @@ function _ensureListeners() {
             entry.resolve(msg.result);
           }
         }
-      } catch {  }
+      } catch (err) {
+        appendLogEvent('WARN', 'ipc.stdout_parse', {
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
   });
 
@@ -410,9 +413,7 @@ function _logIpcTelemetry({
   const slow = elapsedMs >= IPC_TELEMETRY_SLOW_MS;
   const large = requestBytes >= IPC_TELEMETRY_LARGE_BYTES || responseBytes >= IPC_TELEMETRY_LARGE_BYTES;
   const normalizedOutcome = outcome === 'ok' ? 'success' : outcome === 'error' ? 'failed' : outcome;
-  // Línea base de latencia: además de anomalías (slow/large/backpressure/rejected),
-  // muestreo determinístico ~1% del tráfico exitoso para poder derivar p50/p95.
-  // Solo successes: los errores ordinarios rápidos siguen filtrados (contrato del test).
+  // Éxitos rápidos ~1% (p50/p95). Un error normal no se loguea.
   const baselineSample = normalizedOutcome === 'success'
     && ((elapsedMs ^ Math.imul(requestBytes + responseBytes, 2654435761)) >>> 0) % 100 === 0;
   if (!_ipcTelemetryVerbose() && !slow && !large && !waitedForDrain && normalizedOutcome !== 'rejected' && !baselineSample) return;
@@ -653,7 +654,6 @@ async function _callBackend(method, params) {
           throw err;
         }
 
-        // Reintento mid-flight estructurado: antes solo console.warn.
         appendLogEvent('WARN', 'ipc.retry', {
           component: 'electron',
           method,
@@ -700,6 +700,18 @@ function _dispatchNative(method) {
   return null;
 }
 
+const _NATIVE_CALLS = {
+  dialog: (method, params, win, electron) => handleDialogCall(method, params, dialog, win, electron),
+  autoimg: (method, params) => {
+    const { handleAutoimgCall } = require('./autoimg-handlers');
+    return handleAutoimgCall(method, params);
+  },
+  ubicaciones: (method, params) => {
+    const { handleUbicacionesCall } = require('./ubicaciones-handlers');
+    return handleUbicacionesCall(method, params);
+  },
+};
+
 function _resolveCachedApiKey(provider, fallbackFromRenderer) {
   const { resolveProviderApiKey } = require('./ubicaciones-secure-keys');
   return resolveProviderApiKey(provider, fallbackFromRenderer);
@@ -728,17 +740,8 @@ function registerIpcHandlers() {
       const { BrowserWindow, session, nativeImage } = require('electron');
       const nativeHandler = _dispatchNative(method);
       if (nativeHandler) {
-        const result = nativeHandler === 'dialog'
-          ? await handleDialogCall(method, params, dialog, win, { BrowserWindow, session, nativeImage })
-          : nativeHandler === 'autoimg'
-            ? await (async () => {
-              const { handleAutoimgCall } = require('./autoimg-handlers');
-              return handleAutoimgCall(method, params);
-            })()
-            : await (async () => {
-              const { handleUbicacionesCall } = require('./ubicaciones-handlers');
-              return handleUbicacionesCall(method, params);
-            })();
+        const nativeCall = _NATIVE_CALLS[nativeHandler];
+        const result = await nativeCall(method, params, win, { BrowserWindow, session, nativeImage });
         if (result.handled) return result.result;
       }
       let backendParams = _maybeResolveFileTokens(params, win, method);
@@ -755,7 +758,6 @@ function registerIpcHandlers() {
         const result = await _callBackend(method, backendParams);
         return _maybeTokenizeResultPaths(method, result, win);
       } catch (err) {
-
         throw _toRendererIpcError(err);
       }
     } finally {

@@ -21,7 +21,7 @@ async function handleUbicacionesCall(method, params = {}) {
         if (!s || s.startsWith('••••')) continue;
         merged[k] = s;
       }
-      const saved = setUbicacionesApiKeys(merged);
+      setUbicacionesApiKeys(merged);
       return { handled: true, result: getMaskedUbicacionesApiKeys() };
     }
 

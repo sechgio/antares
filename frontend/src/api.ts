@@ -135,27 +135,29 @@ const LONG_RUNNING_METHODS = new Set<string>(longRunningMethods);
 const HEAVY_IPC_METHODS = new Set<string>(heavyIpcMethods);
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
-type CacheEntry<T> = { value: T; expires: number; promise?: Promise<T> };
-const _cache = new Map<string, CacheEntry<any>>();
+type CacheEntry<T> =
+  | { status: 'ok'; value: T; expires: number }
+  | { status: 'pending'; promise: Promise<T> };
+const _cache = new Map<string, CacheEntry<unknown>>();
 const _cacheGenerations = new Map<string, number>();
 function cachedInvoke<T>(key: string, fn: () => Promise<T>, ttl = CACHE_TTL_MS): Promise<T> {
   const now = Date.now();
   const generation = _cacheGenerations.get(key) ?? 0;
   const hit = _cache.get(key);
-  if (hit?.promise) return hit.promise;
-  if (hit && hit.expires > now) return Promise.resolve(hit.value);
+  if (hit?.status === 'pending') return hit.promise as Promise<T>;
+  if (hit?.status === 'ok' && hit.expires > now) return Promise.resolve(hit.value as T);
   const p = fn()
     .then((v) => {
       if ((_cacheGenerations.get(key) ?? 0) === generation) {
-        _cache.set(key, { value: v, expires: now + ttl });
+        _cache.set(key, { status: 'ok', value: v, expires: now + ttl });
       }
       return v;
     })
     .finally(() => {
       const e = _cache.get(key);
-      if (e?.promise === p) delete (e as { promise?: Promise<T> }).promise;
+      if (e?.status === 'pending' && e.promise === p) _cache.delete(key);
     });
-  _cache.set(key, { value: undefined, expires: 0, promise: p } as unknown as CacheEntry<T>);
+  _cache.set(key, { status: 'pending', promise: p });
   return p;
 }
 export function invalidateApiCache(key?: string) {

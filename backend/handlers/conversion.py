@@ -62,7 +62,7 @@ def _probe_key_columns(
     columns: list[str],
     sample_size: int = 30,
 ) -> tuple[str, int, list[tuple[str, int]], bool]:
-    from backend.core.database import buscar_por_columna
+    from backend.core.database import contar_por_columna
 
     sample_files = files[:sample_size]
     codigos: list[str] = []
@@ -81,8 +81,9 @@ def _probe_key_columns(
     per_column: list[tuple[str, int]] = []
     for col in columns:
         try:
-            count = len(buscar_por_columna(search_keys, col))
+            count = contar_por_columna(search_keys, col)
         except Exception:
+            logger.warning("No se pudo sondear la columna de catálogo %s", col, exc_info=True)
             count = -1
         per_column.append((col, count))
         if count > best_count:
@@ -117,16 +118,6 @@ def _resolve_key_column(
         if user_count >= 0 and user_count >= best_count and user_count > 0:
             return key_column
     return best_col
-
-
-def _detect_best_key_column(
-    files: list[str],
-    db_columns: list[str],
-    sample_size: int = 30,
-) -> str:
-    if not db_columns:
-        return ""
-    return _resolve_key_column(None, files, db_columns, sample_size=sample_size)
 
 
 def _preview_detect_fields(

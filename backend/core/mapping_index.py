@@ -83,14 +83,6 @@ class MappingIndex:
             output += ext
         return output
 
-    def _id_matches_file(self, id_key: str, file_name: str) -> bool:
-        key_lower = id_key.lower()
-        stem_key = Path(id_key).stem.lower()
-        if file_name == id_key or file_name.lower() == key_lower:
-            return True
-        file_stem = Path(file_name).stem
-        return file_stem == id_key or file_stem.lower() in {stem_key, key_lower}
-
     def _id_matches_any_file(
         self,
         id_key: str,

@@ -346,7 +346,6 @@ def test_save_run_receives_duration_ms(monkeypatch, tmp_path) -> None:
     assert "duration_ms" in captured
     assert isinstance(captured["duration_ms"], int)
     assert captured["duration_ms"] >= 0
-    """Unexpected exceptions must still emit complete so the UI does not hang."""
     completes: list[tuple[int, int]] = []
 
     def fake_notify(job, ok, err, **_kwargs):  # type: ignore[no-untyped-def]
